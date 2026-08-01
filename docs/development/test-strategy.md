@@ -80,6 +80,38 @@ wiederhergestellt. Eine Änderung am Installer benötigt den normalen
 Plugin-Manager-Weg; ein Merge allein benötigt keine vollständige
 Installationsabnahme.
 
+## Öffentliche Betatests für nicht vorhandene Hardware
+
+Steht eine zugesagte Hardwaregeneration den Maintainern nicht zur Verfügung,
+wird die fehlende reale Prüfung ausdrücklich als `unverified` beziehungsweise
+`experimental` ausgewiesen. Sie wird nicht durch Mocks als bestanden erklärt.
+
+Tests auf einem Miniserver Gen. 2 werden durch freiwillige Dritte über eine
+öffentliche Beta erbracht. Dafür stellt das Projekt ein versioniertes
+Pre-Release-Paket, Prüfsumme, Testplan, Rücksetzweg, maskierten Diagnoseexport
+und ein strukturiertes GitHub-Issue-Formular bereit. Der Test startet read-only
+und verwendet einen dedizierten Loxone-Benutzer mit Minimalrechten.
+
+Ein verwertbarer Bericht enthält:
+
+- Plugin-, LoxBerry- und Miniserver-Version
+- CPU-Architektur sowie MCP-Client und dessen Version
+- ausgeführte Testfälle mit erwartetem und beobachtetem Ergebnis
+- ausschließlich maskierte relevante Logauszüge
+- Kennzeichnung, ob nur gelesen oder ausdrücklich eine Teststeuerung bedient
+  wurde
+
+Passwörter, Tokens, vollständige Strukturdateien, interne Adressen und
+unmaskierte Zustandsdaten werden nicht angefordert. Schreibtests sind ein
+separater Opt-in-Schritt an unkritischen Steuerungen mit dokumentierter
+Wiederherstellung. Maintainer und KI-Agenten greifen nicht ohne eine separate,
+ausdrückliche Zustimmung remote auf Geräte der Betatester zu.
+
+Die Support-Matrix unterscheidet selbst getestete, durch mindestens einen
+vollständigen unabhängigen Bericht bestätigte, experimentelle und nicht
+unterstützte Kombinationen. Ein fehlender Betatester ist kein fehlgeschlagener
+Test, aber die betreffende Kombination bleibt unbestätigt.
+
 ## Mindestanforderungen an Tests
 
 - Tests sind deterministisch, wiederholbar und enthalten keine echten Secrets,

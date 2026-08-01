@@ -102,7 +102,8 @@ Vor der Festlegung beweist ein Spike:
   auf den ausgewählten Architekturen
 - Streamable HTTP/Origin-Prüfung hinter dem LoxBerry-Apache
 - OAuth-Interoperabilität mit mindestens zwei relevanten Clients
-- Loxone-Anmeldung, Rechtefilterung und WebSocket-Zustände auf Gen. 1 und Gen. 2
+- Loxone-Anmeldung, Rechtefilterung und WebSocket-Zustände auf dem verfügbaren
+  Miniserver Gen. 1
 
 Falls Python an einer erforderlichen Altplattform, fehlenden ARM-Wheels oder dem
 Ressourcenbudget scheitert, wird Go verwendet. TypeScript bleibt eine weitere,
@@ -544,7 +545,9 @@ Nachweise erforderlich:
 
 ### Reale Systeme
 
-- mindestens ein bestätigter Miniserver Gen. 1 und Gen. 2
+- Miniserver Gen. 1 wird auf dem verfügbaren eigenen Zielsystem geprüft
+- Miniserver Gen. 2 wird mangels eigener Hardware ausschließlich durch
+  freiwillige Dritte in einer öffentlichen Beta geprüft
 - eingeschränkter Loxone-Testbenutzer: unsichtbare Controls bleiben unsichtbar
 - erlaubte und verbotene Schreibaktionen
 - WebSocket-Zustand und Reconnect
@@ -556,6 +559,44 @@ Nachweise erforderlich:
 Reale Zugangsdaten und Strukturdateien werden nicht in Fixtures oder CI
 übernommen.
 
+### Öffentliche Gen.-2-Beta
+
+Die öffentliche Beta ist ein eigener, reproduzierbarer Testkanal und kein
+Ersatz für automatisierte Tests. Sie beginnt read-only. Betatester erhalten:
+
+- ein eindeutig versioniertes Pre-Release-Paket mit Prüfsumme
+- eine kurze Installations-, Rücksetz- und Deinstallationsanleitung
+- einen Testplan für Anmeldung, Rechtefilterung, Struktur, Zustände und Reconnect
+- eine Liste der für die Beta vorgesehenen MCP-Clients; über alle Berichte
+  sollen mindestens zwei unterschiedliche Clients abgedeckt werden
+- die Vorgabe, einen dedizierten Loxone-Benutzer mit Minimalrechten zu verwenden
+- einen lokalen Diagnoseexport, der Secrets, interne Adressen, Namen und
+  Strukturinhalte standardmäßig maskiert
+- ein öffentliches GitHub-Issue-Formular für strukturierte Ergebnisse
+
+Ein Beta-Bericht nennt mindestens LoxBerry-Version, CPU-Architektur,
+Miniserver-Generation und -Firmware, Pluginversion, MCP-Client/-Version,
+ausgeführte Testfälle und Ergebnis. Passwörter, Tokens, komplette
+Strukturdateien und unmaskierte Logs werden weder angefordert noch veröffentlicht.
+
+Gen.-2-Schreibtests folgen erst nach erfolgreicher Read-only-Beta. Sie sind
+separat opt-in, verwenden unkritische Teststeuerungen und dokumentieren
+Ausgangszustand, erwartete Aktion, Ergebnis und Wiederherstellung. Das Projekt
+greift nicht ohne separate ausdrückliche Zustimmung remote auf Systeme von
+Betatestern zu.
+
+Die Support-Matrix unterscheidet:
+
+- `maintainer-tested`: selbst auf vorhandener Hardware geprüft
+- `community-confirmed`: mindestens ein vollständiger, nachvollziehbarer
+  Beta-Bericht eines unabhängigen Dritten
+- `experimental`: implementiert, aber ohne ausreichenden realen Nachweis
+- `unsupported`: nicht angeboten oder bekanntermaßen inkompatibel
+
+Ohne erfolgreichen Gen.-2-Betabericht wird Gen. 2 nicht als bestätigt
+unterstützt bezeichnet. Ein Release kann dann Gen. 1 unterstützen und Gen. 2
+weiterhin als experimentell ausweisen.
+
 ## 17. Umsetzungsphasen
 
 ### Phase 0: Architektur-Spikes
@@ -565,7 +606,7 @@ Reale Zugangsdaten und Strukturdateien werden nicht in Fixtures oder CI
   sind
 - MCP Streamable HTTP hinter Apache
 - OAuth-End-to-End mit zwei Clients
-- Loxone-Tokenauth und Rechtefilterung Gen. 1/2
+- Loxone-Tokenauth und Rechtefilterung auf Gen. 1
 - WebSocket-Snapshot-/Delta-Verhalten
 - Ressourcenverbrauch
 
@@ -580,6 +621,8 @@ Support-Matrix.
 - nur `loxone:read`
 - lokale/LAN-Nutzung
 - deterministische Tests und CI
+- versioniertes öffentliches Gen.-2-Betapaket samt Testplan und maskiertem
+  Diagnoseexport
 
 ### Phase 2: Kontrollierte Loxone-Schreibaktionen
 
@@ -615,6 +658,8 @@ Support-Matrix.
 - lokaler Endpunkt und Sessionwiderruf sind verständlich dokumentiert
 - Admin-UI funktioniert auf Desktop und Mobile
 - Support-Matrix nennt nur tatsächlich geprüfte Kombinationen
+- Gen. 2 ist bis zu einem vollständigen unabhängigen Betanachweis ausdrücklich
+  als `experimental` gekennzeichnet
 
 ## 19. Noch zu entscheidende Punkte
 
@@ -625,7 +670,8 @@ Vor der Implementierung benötigt das Review Entscheidungen zu:
 3. Bestätigung von Python durch den Runtime- und Paketierungsspike
 4. exakter öffentlicher Pluginpfad und Apache-Integration
 5. OAuth-Clientregistrierung und Sessionpersistenz
-6. Mindestfirmware für Miniserver Gen. 1 und Gen. 2
+6. lokal bestätigte Mindestfirmware für Gen. 1 und durch die öffentliche Beta
+   bestätigte Firmwarestände für Gen. 2
 7. erste unterstützte Control-Typen
 8. Zeitpunkt und konkreter Umfang von `loxberry:read`
 9. ob externer HTTPS-Zugriff bereits im ersten öffentlichen Test enthalten ist

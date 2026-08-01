@@ -394,10 +394,10 @@ auf echten Zielsystemen:
    ein plugin-eigenes venv installieren?
 3. Wie wird Streamable HTTP einschließlich SSE durch den LoxBerry-Apache ohne
    Buffering- oder Timeoutprobleme weitergeleitet?
-4. Filtert `LoxApp3.json` bei jeder unterstützten Miniserver-Generation exakt
-   nach dem angemeldeten Benutzer?
-5. Welche Tokenauthentifizierung ist für Gen. 1 und Gen. 2 bei den festgelegten
-   Mindestfirmwares zuverlässig und dokumentiert?
+4. Filtert `LoxApp3.json` bei Gen. 1 und in unabhängigen öffentlichen
+   Gen.-2-Betatests exakt nach dem angemeldeten Benutzer?
+5. Welche Tokenauthentifizierung ist für Gen. 1 lokal und für Gen. 2 durch
+   reproduzierbare Beta-Berichte bei den jeweiligen Firmwareständen bestätigt?
 6. Welche OAuth-Clients müssen für den ersten Release interoperabel sein?
 7. Wie werden LoxBerry-Scopes durch einen LoxBerry-Administrator erteilt und
    widerrufen, ohne Loxone- und LoxBerry-Rechte zu vermischen?
