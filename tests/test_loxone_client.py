@@ -79,6 +79,34 @@ async def test_http_errors_suppress_encrypted_request_url(
 
 
 @pytest.mark.asyncio
+async def test_probe_accepts_gen1_nested_json_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = LoxoneClient(
+        MiniserverEndpoint.parse_gen1("http://192.168.1.10"),
+        client_uuid=UUID("098802e1-02b4-603c-ffff-eee000d80cfd"),
+    )
+
+    async def fake_get_json(path: str) -> dict[str, object]:
+        assert path == "/jdev/cfg/apiKey"
+        return {
+            "LL": {
+                "Code": "200",
+                "value": (
+                    "{'version':'17.1.7.27','snr':'000000000000','local':true,'hasEventSlots':true}"
+                ),
+            }
+        }
+
+    monkeypatch.setattr(client, "_get_json", fake_get_json)
+
+    result = await client.probe()
+
+    assert result.firmware == "17.1.7.27"
+    assert result.serial == "000000000000"
+    assert result.is_local is True
+    assert result.has_event_slots is True
+
+
+@pytest.mark.asyncio
 async def test_probe_rejects_tls_capable_miniserver(monkeypatch: pytest.MonkeyPatch) -> None:
     client = LoxoneClient(
         MiniserverEndpoint.parse_gen1("http://192.168.1.10"),
@@ -164,7 +192,7 @@ async def test_token_acquisition_encrypts_credentials_and_retains_hash_algorithm
 
     token = await client.acquire_token("restricted-reader", "password-secret")
 
-    assert token.hash_algorithm == "SHA256"
+    assert token.hash_algorithm == "SHA1"
     assert "jwt-secret" not in repr(token)
     assert "password-secret" not in "".join(command for command, _ in commands)
     assert commands[0][1] is False
@@ -216,6 +244,69 @@ async def test_token_acquisition_closes_websocket_when_keyexchange_fails(
         await client.acquire_token("restricted-reader", "password-secret")
 
     assert websocket.closed is True
+
+
+@pytest.mark.asyncio
+async def test_token_revocation_uses_encrypted_websocket_and_destroys_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = LoxoneClient(
+        MiniserverEndpoint.parse_gen1("http://192.168.1.10"),
+        client_uuid=UUID("098802e1-02b4-603c-ffff-eee000d80cfd"),
+    )
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    public_pem = (
+        private_key.public_key()
+        .public_bytes(
+            serialization.Encoding.PEM,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        .decode()
+    )
+    commands: list[tuple[str, bool]] = []
+
+    class FakeWebSocket:
+        closed = False
+
+        async def close(self) -> None:
+            self.closed = True
+
+    websocket = FakeWebSocket()
+
+    async def fake_websocket_public_key() -> str:
+        return public_pem
+
+    async def fake_connect_websocket() -> Any:
+        return websocket
+
+    async def fake_websocket_command(
+        _websocket: Any,
+        _encryptor: Any,
+        command: str,
+        *,
+        encrypted: bool,
+        timeout_seconds: float,
+        max_payload_bytes: int,
+    ) -> object:
+        assert timeout_seconds == client.timeout_seconds
+        assert max_payload_bytes == client.max_response_bytes
+        commands.append((command, encrypted))
+        return "OK"
+
+    monkeypatch.setattr(client, "websocket_public_key", fake_websocket_public_key)
+    monkeypatch.setattr(client, "_connect_websocket", fake_connect_websocket)
+    monkeypatch.setattr("mcpserver.loxone.client._websocket_command", fake_websocket_command)
+    token = LoxoneToken("jwt-secret", "restricted-reader", "00112233", "SHA1", 123)
+
+    await client.kill_token(token)
+
+    assert commands[0][0].startswith("jdev/sys/keyexchange/")
+    assert commands[0][1] is False
+    assert commands[1][0].startswith("jdev/sys/killtoken/")
+    assert commands[1][1] is True
+    assert "jwt-secret" not in commands[1][0]
+    assert websocket.closed is True
+    assert token.value == ""
 
 
 @pytest.mark.asyncio

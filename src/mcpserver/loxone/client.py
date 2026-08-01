@@ -241,6 +241,22 @@ class LoxoneClient:
 
     async def probe(self) -> ProbeResult:
         value = _response_value(await self._get_json("/jdev/cfg/apiKey"))
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except json.JSONDecodeError:
+                # Gen. 1 returns this fixed, flat object with JavaScript-style
+                # single-quoted keys and strings instead of valid JSON.
+                if not value.startswith("{'") or '"' in value:
+                    raise LoxoneConnectionError(
+                        "Miniserver probe returned an invalid value"
+                    ) from None
+                try:
+                    value = json.loads(value.replace("'", '"'))
+                except json.JSONDecodeError:
+                    raise LoxoneConnectionError(
+                        "Miniserver probe returned an invalid value"
+                    ) from None
         if not isinstance(value, Mapping):
             raise LoxoneConnectionError("Miniserver probe returned an invalid value")
         https_status = value.get("httpsStatus")
@@ -353,19 +369,39 @@ class LoxoneClient:
             or not isinstance(valid_until, int)
         ):
             raise LoxoneConnectionError("Miniserver returned an invalid token")
-        return LoxoneToken(token, username, token_key, algorithm, valid_until)
+        # The token key is equivalent to a getkey result. Token operations use
+        # HMAC-SHA1 independently of getkey2's password hashing algorithm.
+        return LoxoneToken(token, username, token_key, "SHA1", valid_until)
 
     async def kill_token(self, token: LoxoneToken) -> None:
         if not token.value:
             return
-        public_key = await self.public_key()
+        public_key = await self.websocket_public_key()
         digest = token_hmac(token.value, token.hash_key, token.hash_algorithm)
         user = quote(token.username, safe="")
         command = f"jdev/sys/killtoken/{digest}/{user}"
+        websocket = await self._connect_websocket()
+        encryptor = CommandEncryptor.generate()
         try:
-            encrypted_path = CommandEncryptor.generate().encrypted_http_request(command, public_key)
-            _response_value(await self._get_json(encrypted_path))
+            session_key = encryptor.encrypted_session_key(public_key)
+            await _websocket_command(
+                websocket,
+                encryptor,
+                f"jdev/sys/keyexchange/{session_key}",
+                encrypted=False,
+                timeout_seconds=self.timeout_seconds,
+                max_payload_bytes=self.max_response_bytes,
+            )
+            await _websocket_command(
+                websocket,
+                encryptor,
+                command,
+                encrypted=True,
+                timeout_seconds=self.timeout_seconds,
+                max_payload_bytes=self.max_response_bytes,
+            )
         finally:
+            await websocket.close()
             token.destroy()
 
     async def open_session(self, token: LoxoneToken) -> LoxoneWebSocketSession:

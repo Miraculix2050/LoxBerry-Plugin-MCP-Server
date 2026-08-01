@@ -67,12 +67,17 @@ mit Code `200`. Außerdem serialisiert der Adapter Client-IDs im von Loxone
 geforderten UUID-Format `8-4-4-16`. Fehler des HTTP-Unterbaus werden ohne die
 möglicherweise sensitive verschlüsselte Request-URL weitergegeben.
 
-Die reale WebSocket-Prüfung bestätigte anschließend `keyexchange` und das
-verschlüsselte `getkey2`. Erst die verschlüsselte JWT-Anforderung antwortete mit
-`401`, identisch für die Tokenrechte Web (`2`) und App (`4`). Im gespeicherten
-Loxone-Projekt sind beide Rechte für den vorgesehenen Testbenutzer gesetzt; ob
-dieser Benutzerstand unverändert auf dem aktiven Miniserver liegt, kann der
-Client nicht prüfen. Daher bleiben die im externen Testdatenordner ausgewählten
-sichtbaren und unsichtbaren Controls bis zur Bestätigung der aktiven
-Testanmeldung ausdrücklich unbestätigt; Rechtefilterung, Statusereignisse,
-Reconnect und Tokenwiderruf sind noch offen.
+Die reale WebSocket-Prüfung bestätigte anschließend `keyexchange`, das
+verschlüsselte `getkey2` und die verschlüsselte JWT-Anforderung mit dem
+vorgesehenen Testbenutzer. Der `apiKey`-Probe berücksichtigt dabei das
+historische Gen.-1-Format, in dem `LL.value` ein flaches, einfach quotiertes
+Objekt statt standardkonformem JSON enthält. Passwort- und Token-Hashverfahren
+werden getrennt behandelt: `getkey2` bestimmt dynamisch SHA1 oder SHA256 für den
+Passworthash, während nachfolgende Tokenoperationen den `getkey`-kompatiblen
+HMAC-SHA1 verwenden.
+
+Die im externen Testdatenordner ausgewählten sichtbaren und unsichtbaren
+Controls bleiben bis zum vollständigen Strukturnachweis ausdrücklich
+unbestätigt. Rechtefilterung, Statusereignisse und Reconnect sind noch offen;
+der korrigierte Tokenwiderruf ist nach lokalem Regressionstest noch einmal am
+Zielgerät zu bestätigen.
