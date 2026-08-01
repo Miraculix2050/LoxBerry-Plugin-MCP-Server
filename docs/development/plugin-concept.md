@@ -171,16 +171,16 @@ LoxBerry Admin-UI (htmlauth)
 ## 7. Netzwerk und Veröffentlichung
 
 Der Dienst lauscht ausschließlich auf `127.0.0.1` an einem konfigurierten,
-konfliktgeprüften Port. Apache veröffentlicht den MCP-Endpunkt unter einem
-Pluginpfad, beispielsweise:
+konfliktgeprüften Port. Apache veröffentlicht den MCP-Endpunkt verbindlich unter:
 
 ```text
 https://<loxberry>/plugins/mcpserver/mcp
 ```
 
-Der genaue Pfad wird im Transport-Spike festgelegt. Er muss GET und POST sowie
-die zugehörige OAuth-Discovery unterstützen. Reverse-Proxy-Header werden nur von
-einem explizit vertrauten lokalen Proxy akzeptiert.
+Dieser MCP-Pfad ist durch den realen Apache-Transport-Spike bestätigt und muss
+GET und POST unterstützen. Die separat weitergeleiteten OAuth-Discovery-Pfade
+unter `/.well-known/` werden im OAuth-Spike festgelegt. Reverse-Proxy-Header
+werden nur von einem explizit vertrauten lokalen Proxy akzeptiert.
 
 Für externe Nutzung gilt:
 

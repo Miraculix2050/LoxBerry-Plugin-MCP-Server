@@ -30,10 +30,9 @@ Implementierungsdetails ersetzen.
 
 - Ein einzelner unprivilegierter Dienst läuft als `loxberry`, bindet nur an
   `127.0.0.1` und stellt Streamable HTTP bereit.
-- Kandidat für den öffentlichen MCP-Pfad im Transport-Spike ist
-  `/plugins/mcpserver/mcp`. Der endgültige Pfad und die separat weitergeleiteten
-  OAuth-Discovery-Pfade unter `/.well-known/` werden erst nach dem realen
-  Apache-Nachweis festgelegt.
+- Der durch den realen Apache-Transport-Spike bestätigte öffentliche MCP-Pfad ist
+  `/plugins/mcpserver/mcp`. Die separat weitergeleiteten OAuth-Discovery-Pfade
+  unter `/.well-known/` werden im OAuth-Spike festgelegt.
 - Externer HTTPS-Zugriff bleibt im ersten öffentlichen Test deaktiviert.
 - Proxy-Header werden nur vom lokalen Apache akzeptiert. Host und Origin werden
   gegen explizite Allowlisten geprüft.
