@@ -111,10 +111,26 @@ nicht zur Pflicht des MCP-Kerndienstes werden.
 
 ### Protokollversion
 
-Der erste Release zielt auf die stabile MCP-Version `2025-11-25` und nutzt die
-Versionsaushandlung des SDK. Eine noch nicht finale Protokollrevision darf
-zusätzlich unterstützt werden, aber niemals die einzige kompatible Version
-sein.
+Der erste öffentliche Release implementiert die finale MCP-Version
+`2025-11-25` über die stabile v1-Linie des offiziellen Python-SDKs. Die konkrete
+SDK-Version und ihre transitiven Abhängigkeiten werden im Build exakt fixiert;
+die Protokollversion wird nicht durch eigene Konstanten am SDK vorbei erzwungen.
+
+Die Revision `2026-07-28` bleibt solange außerhalb des produktiven Umfangs, bis
+alle folgenden Bedingungen erfüllt sind:
+
+1. die MCP-Spezifikation ist final veröffentlicht,
+2. ein stabiles offizielles Python-SDK unterstützt sie vollständig,
+3. die offizielle Conformance-Suite ist erfolgreich,
+4. mindestens zwei relevante Clients sind real interoperabel getestet und
+5. `2025-11-25` bleibt während einer dokumentierten Übergangsphase per
+   Versionsaushandlung nutzbar.
+
+Die interne Architektur wird dennoch auf den stateless Ansatz vorbereitet:
+Tool-Handler sind wiedereintrittsfähig, fachlicher Zustand liegt nicht nur in
+einer MCP-Transportsession, und der MVP hängt nicht von Roots, Sampling oder
+MCP-Logging ab. Damit wird das spätere Upgrade kleiner, ohne einen Release
+Candidate zum Produktionsvertrag zu machen.
 
 ## 6. Zielarchitektur
 

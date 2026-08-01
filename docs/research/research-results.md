@@ -272,9 +272,19 @@ Quelle: [LoxBerry V4 Sample Plugin](https://github.com/mschlenstedt/LoxBerry-Plu
 Für HTTP-Server ist Streamable HTTP der aktuelle Standardtransport. Der Server
 muss einen gemeinsamen GET-/POST-Endpunkt anbieten, den `Origin`-Header gegen
 DNS-Rebinding prüfen und jede Verbindung authentifizieren. Die stabile
-MCP-Spezifikation ist zum Recherchestand `2025-11-25`; die Revision
-`2026-07-28` ist noch Release Candidate und darf nicht die einzige unterstützte
-Version sein.
+MCP-Spezifikation ist zum Recherchestand `2025-11-25`. Die Revision
+`2026-07-28` wird im offiziellen Repository weiterhin als Release Candidate
+geführt, obwohl ihre Finalisierung ursprünglich für den 28. Juli 2026 geplant
+war. Sie verändert den Protokollkern grundlegend: stateless Requests ersetzen
+den bisherigen Initialisierungs-/Session-Lifecycle, `server/discover` übernimmt
+die Erkennung und Extensions werden stärker vom Kern getrennt.
+
+Für das Plugin ist deshalb `2025-11-25` das richtige Produktionsziel. Der
+stabile Python-SDK-Zweig v1 unterstützt diese Version; Python-SDK v2 ist zum
+Recherchestand noch Alpha. `2026-07-28` sollte erst nach finaler Spezifikation,
+stabilem Python-SDK, erfolgreicher Conformance-Suite und realen Clienttests
+hinzukommen. Versionsaushandlung muss `2025-11-25` während einer dokumentierten
+Übergangsphase erhalten.
 
 Die Autorisierungsspezifikation verlangt für geschützte HTTP-Ressourcen OAuth-
 Discovery über Protected Resource Metadata, OAuth 2.1, PKCE, Resource Indicators
@@ -316,6 +326,7 @@ bietet weniger dynamische Schema-Ergonomie. Das Rust-SDK ist Tier 2.
 Quelle: [MCP-Transporte](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports),
 [MCP-Autorisierung](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization),
 [MCP-SDKs](https://modelcontextprotocol.io/docs/sdk),
+[MCP-Spezifikations-Releases](https://github.com/modelcontextprotocol/modelcontextprotocol/releases),
 [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk),
 [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk),
 [LoxBerry-Installation](https://wiki.loxberry.de/installation_von_loxberry/die_installation_von_loxberry/start),
