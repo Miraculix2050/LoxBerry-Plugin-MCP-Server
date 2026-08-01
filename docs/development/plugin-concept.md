@@ -714,13 +714,16 @@ Support-Matrix.
 | --- | --- | --- |
 | 1 | Plugin-ID und Ordner | festgelegt: `NAME=mcpserver`, `FOLDER=mcpserver`, `TITLE=LoxBerry MCP Server` |
 | 2 | erste CPU-Architektur | festgelegt: LoxBerry 4 auf Debian 13, `arm64` |
-| 3 | Runtime | offen: Python durch Runtime- und Paketierungsspike bestätigen |
-| 4 | öffentlicher Pluginpfad/Apache | offen; `/plugins/mcpserver/mcp` bleibt ein Beispiel |
-| 5 | MCP-OAuth-Clientregistrierung und Sessionpersistenz | offen |
+| 3 | Runtime | vorläufig: Python 3.13 und MCP-SDK 1.28.1; Wheel-Spike erfolgreich, Start-/RAM-Gates ausstehend |
+| 4 | öffentlicher Pluginpfad/Apache | Spike-Kandidat: `/plugins/mcpserver/mcp` plus Root-Discovery; Festlegung erst nach realer Apache-Prüfung |
+| 5 | MCP-OAuth-Clientregistrierung und Sessionpersistenz | festgelegt: öffentliche Registrierung, PKCE S256, opaque Tokens und atomare dateibasierte Persistenz; Clientprüfung ausstehend |
 | 6 | Miniserver-Firmware | Gen. 1 mindestens `17.1.7.27`; Gen.-2-Stände werden durch die öffentliche Beta bestätigt |
-| 7 | erste unterstützte Control-Typen | offen |
-| 8 | Zeitpunkt und Umfang von `loxberry:read` | offen |
+| 7 | erste unterstützte Control-Typen | festgelegt für Phase 2: `Switch` mit explizitem `on` und `off` |
+| 8 | Zeitpunkt und Umfang von `loxberry:read` | festgelegt: erst Phase 3 mit eigener lokaler Freigabe |
 | 9 | externer HTTPS-Zugriff im ersten Test | festgelegt: nicht enthalten, erster Test nur lokal/LAN |
 
 Offene Punkte bleiben bewusst sichtbar und werden nicht durch zufällige
 Implementierungsdetails vorweggenommen.
+
+Die zusammenhängenden Architekturentscheidungen und ihre Evidenz stehen in
+[ADR 0001](adr/0001-phase-0-foundation.md).
