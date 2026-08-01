@@ -154,7 +154,7 @@ async def _receive_websocket(
         actual_size = len(payload.encode() if isinstance(payload, str) else payload)
         if actual_size != header.payload_length:
             raise LoxoneProtocolError("WebSocket payload length does not match its header")
-    return header, payload
+        return header, payload
 
 
 async def _close_websocket(websocket: ClientConnection, timeout_seconds: float) -> None:

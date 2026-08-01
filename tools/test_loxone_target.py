@@ -88,17 +88,24 @@ async def _run(args: argparse.Namespace) -> None:
     client = LoxoneClient(endpoint, client_uuid=uuid4(), client_name="LoxBerry MCP Phase-0 Test")
     token = None
     try:
-        probe = await client.probe()
+        probe = await asyncio.wait_for(client.probe(), timeout=args.operation_timeout)
         if probe.firmware != args.expected_firmware:
             raise RuntimeError("Miniserver firmware does not match the expected target")
-        token = await client.acquire_token(args.username, password)
+        print("LOXONE_PROBE=pass", flush=True)
+        token = await asyncio.wait_for(
+            client.acquire_token(args.username, password), timeout=args.operation_timeout
+        )
         password = ""
+        print("LOXONE_TOKEN_ACQUISITION=pass", flush=True)
 
-        session = await client.open_session(token)
+        session = await asyncio.wait_for(client.open_session(token), timeout=args.operation_timeout)
         try:
-            structure = await session.load_structure()
+            structure = await asyncio.wait_for(
+                session.load_structure(), timeout=args.operation_timeout
+            )
         finally:
-            await session.close()
+            await asyncio.wait_for(session.close(), timeout=args.operation_timeout)
+        print("LOXONE_STRUCTURE_FETCH=pass", flush=True)
 
         controls = _control_uuids(structure.controls)
         if args.visible_control not in controls:
@@ -108,10 +115,14 @@ async def _run(args: argparse.Namespace) -> None:
         visible_states = _state_uuids(structure.controls)
         if not visible_states:
             raise RuntimeError("Restricted structure does not contain a state UUID")
+        print("LOXONE_RESTRICTED_STRUCTURE=pass", flush=True)
 
         subject = f"{probe.serial}:{args.username}"
         cache = UserStateCache()
-        print("Operate one visible test control through its normal UI now; waiting for a delta.")
+        print(
+            "Operate one visible test control through its normal UI now; waiting for a delta.",
+            flush=True,
+        )
         observed = await _observe_snapshot_and_delta(
             client, subject, token, cache, visible_states, args.observe_seconds
         )
@@ -126,14 +137,13 @@ async def _run(args: argparse.Namespace) -> None:
         serial_fingerprint = hashlib.sha256(probe.serial.encode()).hexdigest()[:12]
         print(f"LOXONE_FIRMWARE={probe.firmware}")
         print(f"LOXONE_SERIAL_FINGERPRINT={serial_fingerprint}")
-        print("LOXONE_RESTRICTED_STRUCTURE=pass")
-        print("LOXONE_WEBSOCKET_SNAPSHOT=pass")
-        print("LOXONE_WEBSOCKET_RECONNECT=pass")
+        print("LOXONE_WEBSOCKET_SNAPSHOT=pass", flush=True)
+        print("LOXONE_WEBSOCKET_RECONNECT=pass", flush=True)
     finally:
         password = ""
         if token is not None:
-            await client.kill_token(token)
-            print("LOXONE_TOKEN_REVOCATION=pass")
+            await asyncio.wait_for(client.kill_token(token), timeout=args.operation_timeout)
+            print("LOXONE_TOKEN_REVOCATION=pass", flush=True)
 
 
 def main() -> int:
@@ -146,6 +156,7 @@ def main() -> int:
     parser.add_argument("--hidden-control", required=True, help="Control UUID hidden from the user")
     parser.add_argument("--expected-firmware", default="17.1.7.27")
     parser.add_argument("--observe-seconds", type=float, default=60.0)
+    parser.add_argument("--operation-timeout", type=float, default=20.0)
     args = parser.parse_args()
     asyncio.run(_run(args))
     return 0

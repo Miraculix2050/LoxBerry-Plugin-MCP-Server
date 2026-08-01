@@ -17,7 +17,9 @@ from mcpserver.loxone.client import (
     MiniserverEndpoint,
     _close_websocket,
     _loxone_uuid,
+    _receive_websocket,
 )
+from mcpserver.loxone.events import MessageType
 from mcpserver.loxone.security import token_hmac
 
 
@@ -43,6 +45,52 @@ async def test_websocket_close_is_bounded() -> None:
             await asyncio.Event().wait()
 
     await _close_websocket(cast(Any, BlockingWebSocket()), 0.001)
+
+
+@pytest.mark.asyncio
+async def test_websocket_receive_returns_complete_payload_without_waiting_again() -> None:
+    class FakeWebSocket:
+        def __init__(self) -> None:
+            self.messages: list[bytes | str] = [
+                bytes((3, MessageType.TEXT, 0, 0, 2, 0, 0, 0)),
+                "{}",
+            ]
+            self.receive_count = 0
+
+        async def recv(self) -> bytes | str:
+            self.receive_count += 1
+            return self.messages.pop(0)
+
+    websocket = FakeWebSocket()
+
+    header, payload = await _receive_websocket(
+        cast(Any, websocket), timeout_seconds=0.1, max_payload_bytes=100
+    )
+
+    assert header.message_type is MessageType.TEXT
+    assert payload == "{}"
+    assert websocket.receive_count == 2
+
+
+@pytest.mark.asyncio
+async def test_websocket_receive_skips_estimated_header() -> None:
+    class FakeWebSocket:
+        def __init__(self) -> None:
+            self.messages: list[bytes | str] = [
+                bytes((3, MessageType.TEXT, 1, 0, 0, 0, 0, 0)),
+                bytes((3, MessageType.TEXT, 0, 0, 2, 0, 0, 0)),
+                "{}",
+            ]
+
+        async def recv(self) -> bytes | str:
+            return self.messages.pop(0)
+
+    header, payload = await _receive_websocket(
+        cast(Any, FakeWebSocket()), timeout_seconds=0.1, max_payload_bytes=100
+    )
+
+    assert header.estimated is False
+    assert payload == "{}"
 
 
 def test_gen1_endpoint_builds_canonical_websocket_url() -> None:
