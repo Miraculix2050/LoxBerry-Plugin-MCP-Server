@@ -170,8 +170,10 @@ LoxBerry Admin-UI (htmlauth)
 
 ## 7. Netzwerk und Veröffentlichung
 
-Der Dienst lauscht ausschließlich auf `127.0.0.1` an einem konfigurierten,
-konfliktgeprüften Port. Apache veröffentlicht den MCP-Endpunkt verbindlich unter:
+Der Dienst lauscht ausschließlich auf `127.0.0.1:8765`. Dieser feste interne
+Port ist Teil des gemeinsam ausgelieferten Dienst-/Apache-Vertrags und wird vor
+dem Dienststart auf Konflikte geprüft. Apache veröffentlicht den MCP-Endpunkt
+verbindlich unter:
 
 ```text
 https://<loxberry>/plugins/mcpserver/mcp
