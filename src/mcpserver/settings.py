@@ -47,7 +47,7 @@ def _validate_origins(origins: tuple[str, ...]) -> tuple[str, ...]:
 
         host = parsed.hostname
         try:
-            ipaddress.ip_address(host)
+            host = str(ipaddress.ip_address(host))
         except ValueError:
             try:
                 host = host.encode("idna").decode("ascii")
