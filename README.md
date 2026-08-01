@@ -17,7 +17,9 @@ Das Plugin befindet sich im Aufbau. Installations-, Konfigurations- und Nutzungs
 ## Entwicklung
 
 - [Implementierungsrichtlinien](docs/development/implementation-guidelines.md)
+- [Plugin-Konzept](docs/development/plugin-concept.md)
 - [Änderungsgetriebene Teststrategie](docs/development/test-strategy.md)
+- [Recherche-Ergebnisse](docs/research/research-results.md)
 - [Beitragen und Git-Workflow](CONTRIBUTING.md)
 
 ## Lizenz
