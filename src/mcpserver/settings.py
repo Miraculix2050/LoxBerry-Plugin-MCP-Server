@@ -5,19 +5,18 @@ from __future__ import annotations
 import ipaddress
 import os
 from dataclasses import dataclass
+from typing import Final
 from urllib.parse import urlsplit
 
 import idna
 
+SERVER_PORT: Final = 8765
 
-def _parse_port(value: str) -> int:
-    try:
-        port = int(value, 10)
-    except ValueError as exc:
-        raise ValueError("MCPSERVER_PORT must be an integer") from exc
-    if not 1024 <= port <= 65535:
-        raise ValueError("MCPSERVER_PORT must be between 1024 and 65535")
-    return port
+
+def _fixed_port_from_environment() -> int:
+    if os.getenv("MCPSERVER_PORT", str(SERVER_PORT)) != str(SERVER_PORT):
+        raise ValueError(f"MCPSERVER_PORT must remain {SERVER_PORT} to match the Apache proxy")
+    return SERVER_PORT
 
 
 def _parse_csv(value: str, *, setting: str) -> tuple[str, ...]:
@@ -167,7 +166,7 @@ class ServerSettings:
 
     @classmethod
     def from_environment(cls) -> ServerSettings:
-        port = _parse_port(os.getenv("MCPSERVER_PORT", "8765"))
+        port = _fixed_port_from_environment()
         host = os.getenv("MCPSERVER_HOST", "127.0.0.1").strip()
         if host != "127.0.0.1":
             raise ValueError("MCPSERVER_HOST must remain 127.0.0.1")

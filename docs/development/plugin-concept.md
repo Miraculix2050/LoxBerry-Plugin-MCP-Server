@@ -170,17 +170,19 @@ LoxBerry Admin-UI (htmlauth)
 
 ## 7. Netzwerk und Veröffentlichung
 
-Der Dienst lauscht ausschließlich auf `127.0.0.1` an einem konfigurierten,
-konfliktgeprüften Port. Apache veröffentlicht den MCP-Endpunkt unter einem
-Pluginpfad, beispielsweise:
+Der Dienst lauscht ausschließlich auf `127.0.0.1:8765`. Dieser feste interne
+Port ist Teil des gemeinsam ausgelieferten Dienst-/Apache-Vertrags und wird vor
+dem Dienststart auf Konflikte geprüft. Apache veröffentlicht den MCP-Endpunkt
+verbindlich unter:
 
 ```text
 https://<loxberry>/plugins/mcpserver/mcp
 ```
 
-Der genaue Pfad wird im Transport-Spike festgelegt. Er muss GET und POST sowie
-die zugehörige OAuth-Discovery unterstützen. Reverse-Proxy-Header werden nur von
-einem explizit vertrauten lokalen Proxy akzeptiert.
+Dieser MCP-Pfad ist durch den realen Apache-Transport-Spike bestätigt und muss
+GET und POST unterstützen. Die separat weitergeleiteten OAuth-Discovery-Pfade
+unter `/.well-known/` werden im OAuth-Spike festgelegt. Reverse-Proxy-Header
+werden nur von einem explizit vertrauten lokalen Proxy akzeptiert.
 
 Für externe Nutzung gilt:
 
@@ -445,7 +447,6 @@ Vorgesehene Bereiche:
 
 ```text
 schema_version
-server.listen_port
 server.local_base_url
 server.external_base_url
 server.allowed_origins
@@ -469,7 +470,7 @@ und sind kein Ersatz für die Admin-UI:
 | Variable | Default | Vertrag |
 | --- | --- | --- |
 | `MCPSERVER_HOST` | `127.0.0.1` | ausschließlich exakt dieser Loopback-Host |
-| `MCPSERVER_PORT` | `8765` | ganzzahlig von `1024` bis `65535`; Apache und Dienst müssen denselben Wert erhalten |
+| `MCPSERVER_PORT` | `8765` | ausschließlich exakt dieser interne Port; Dienst und Apache teilen diesen Vertrag |
 | `MCPSERVER_ALLOWED_HOSTS` | `127.0.0.1:<Port>,localhost:<Port>` | kommaseparierte exakte Host-/Port-Werte oder ein Host mit `:*`; mindestens ein Eintrag |
 | `MCPSERVER_ALLOWED_ORIGINS` | leer | kommaseparierte kanonische `http`-/`https`-Origins ohne Pfad, Zugangsdaten, Query oder Fragment; Standardports und Unicode-Hostnamen werden nicht als alternative Schreibweise akzeptiert |
 
@@ -487,6 +488,9 @@ Origins mit internationalisierten Domains werden in der vom Browser gesendeten
 IDNA-ASCII-Schreibweise eingetragen, beispielsweise
 `https://xn--bcher-kva.example`. Zugangsdaten, Tokens oder Sessionwerte gehören
 in keine dieser Variablen.
+
+Der interne Loopback-Port `8765` ist nicht benutzerkonfigurierbar. Eine Änderung
+erfordert eine synchronisierte Migration beider Komponenten.
 
 ### Secrets und Sessions
 
@@ -743,7 +747,7 @@ Support-Matrix.
 | 1 | Plugin-ID und Ordner | festgelegt: `NAME=mcpserver`, `FOLDER=mcpserver`, `TITLE=LoxBerry MCP Server` |
 | 2 | erste CPU-Architektur | festgelegt: LoxBerry 4 auf Debian 13, `arm64` |
 | 3 | Runtime | festgelegt: Python 3.13 und MCP-SDK 1.28.1; Wheel-, Start- und RAM-Gates erfolgreich |
-| 4 | öffentlicher Pluginpfad/Apache | Spike-Kandidat: `/plugins/mcpserver/mcp` plus Root-Discovery; Festlegung erst nach realer Apache-Prüfung |
+| 4 | öffentlicher Pluginpfad/Apache | `/plugins/mcpserver/mcp` mit Apache 2.4.68 real bestätigt; Root-Discovery folgt mit dem OAuth-Spike |
 | 5 | MCP-OAuth-Clientregistrierung und Sessionpersistenz | festgelegt: öffentliche Registrierung, PKCE S256, opaque Tokens und atomare dateibasierte Persistenz; Clientprüfung ausstehend |
 | 6 | Miniserver-Firmware | Gen. 1 mindestens `17.1.7.27`; Gen.-2-Stände werden durch die öffentliche Beta bestätigt |
 | 7 | erste unterstützte Control-Typen | festgelegt für Phase 2: `Switch` mit explizitem `on` und `off` |

@@ -30,10 +30,9 @@ Implementierungsdetails ersetzen.
 
 - Ein einzelner unprivilegierter Dienst läuft als `loxberry`, bindet nur an
   `127.0.0.1` und stellt Streamable HTTP bereit.
-- Kandidat für den öffentlichen MCP-Pfad im Transport-Spike ist
-  `/plugins/mcpserver/mcp`. Der endgültige Pfad und die separat weitergeleiteten
-  OAuth-Discovery-Pfade unter `/.well-known/` werden erst nach dem realen
-  Apache-Nachweis festgelegt.
+- Der durch den realen Apache-Transport-Spike bestätigte öffentliche MCP-Pfad ist
+  `/plugins/mcpserver/mcp`. Die separat weitergeleiteten OAuth-Discovery-Pfade
+  unter `/.well-known/` werden im OAuth-Spike festgelegt.
 - Externer HTTPS-Zugriff bleibt im ersten öffentlichen Test deaktiviert.
 - Proxy-Header werden nur vom lokalen Apache akzeptiert. Host und Origin werden
   gegen explizite Allowlisten geprüft.
@@ -136,9 +135,15 @@ Health-Endpunkt war nach 4,088 bis 4,386 Sekunden erreichbar. Der RSS lag direkt
 danach zwischen 53.428 und 53.452 KiB und nach zehn Minuten Idle bei 53.448 KiB.
 Damit sind Paket-, Startzeit- und Speichergrenze erfüllt.
 
+Der Transport-Spike lief auf demselben Zielsystem mit Apache 2.4.68 als zweite,
+unprivilegierte Instanz auf einem hohen Loopback-Port. Die Konfiguration war
+syntaktisch gültig, MCP-Initialisierung über `/plugins/mcpserver/mcp` gelang,
+eine fremde Origin wurde abgewiesen und die SSE-Verbindung blieb 120 Sekunden
+offen. Die produktive System-Apache-Konfiguration wurde dabei nicht verändert.
+
 ## Folgen
 
-Python ist nach den erfolgreichen Wheel-, Startzeit- und Idle-RSS-Spikes für die
-Referenzplattform bestätigt; ein vorsorglicher paralleler Go-Build entfällt.
-Apache-, Loxone-, WebSocket- und OAuth-Aussagen bleiben bis zu den jeweiligen
-reproduzierbaren Spikes als noch nicht real bestätigt gekennzeichnet.
+Python und der Apache-Transport sind für die Referenzplattform bestätigt; ein
+vorsorglicher paralleler Go-Build entfällt. Loxone-, WebSocket- und OAuth-
+Aussagen bleiben bis zu den jeweiligen reproduzierbaren Spikes als noch nicht
+real bestätigt gekennzeichnet.
