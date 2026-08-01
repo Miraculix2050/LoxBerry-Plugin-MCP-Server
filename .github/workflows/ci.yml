@@ -25,3 +25,5 @@ jobs:
           python -m pip install --disable-pip-version-check --no-deps -e .
       - name: Test
         run: python tools/test.py
+      - name: Check target integration scripts
+        run: sh -n tests/integration/test_apache_transport.sh

@@ -136,9 +136,15 @@ Health-Endpunkt war nach 4,088 bis 4,386 Sekunden erreichbar. Der RSS lag direkt
 danach zwischen 53.428 und 53.452 KiB und nach zehn Minuten Idle bei 53.448 KiB.
 Damit sind Paket-, Startzeit- und Speichergrenze erfüllt.
 
+Der Transport-Spike lief auf demselben Zielsystem mit Apache 2.4.68 als zweite,
+unprivilegierte Instanz auf einem hohen Loopback-Port. Die Konfiguration war
+syntaktisch gültig, MCP-Initialisierung über `/plugins/mcpserver/mcp` gelang,
+eine fremde Origin wurde abgewiesen und die SSE-Verbindung blieb 120 Sekunden
+offen. Die produktive System-Apache-Konfiguration wurde dabei nicht verändert.
+
 ## Folgen
 
-Python ist nach den erfolgreichen Wheel-, Startzeit- und Idle-RSS-Spikes für die
-Referenzplattform bestätigt; ein vorsorglicher paralleler Go-Build entfällt.
-Apache-, Loxone-, WebSocket- und OAuth-Aussagen bleiben bis zu den jeweiligen
-reproduzierbaren Spikes als noch nicht real bestätigt gekennzeichnet.
+Python und der Apache-Transport sind für die Referenzplattform bestätigt; ein
+vorsorglicher paralleler Go-Build entfällt. Loxone-, WebSocket- und OAuth-
+Aussagen bleiben bis zu den jeweiligen reproduzierbaren Spikes als noch nicht
+real bestätigt gekennzeichnet.
