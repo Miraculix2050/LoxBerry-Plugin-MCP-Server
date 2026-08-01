@@ -82,6 +82,7 @@ def test_canonical_allowed_hosts_are_retained(monkeypatch: pytest.MonkeyPatch) -
         "HTTPS://client.example",
         "https://bücher.example",
         "https://[2001:0db8:0:0:0:0:0:1]",
+        "https://[::ffff:192.168.1.1]",
         "https://example%2ecom",
         "https://example.com\\evil",
         "https://127.1",
@@ -119,3 +120,13 @@ def test_canonical_ipv6_origin_is_retained(monkeypatch: pytest.MonkeyPatch) -> N
     settings = ServerSettings.from_environment()
 
     assert settings.allowed_origins == ("https://[2001:db8::1]",)
+
+
+def test_browser_canonical_ipv4_mapped_ipv6_origin_is_retained(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MCPSERVER_ALLOWED_ORIGINS", "https://[::ffff:c0a8:101]")
+
+    settings = ServerSettings.from_environment()
+
+    assert settings.allowed_origins == ("https://[::ffff:c0a8:101]",)

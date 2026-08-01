@@ -1,6 +1,7 @@
 # Exact additions for the deterministic development and CI environment.
 colorama==0.4.6
 iniconfig==2.3.0
+librt==0.13.0; python_version >= "3.13"
 mypy==1.17.1
 mypy-extensions==1.1.0
 packaging==26.2

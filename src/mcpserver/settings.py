@@ -27,7 +27,32 @@ def _parse_csv(value: str, *, setting: str) -> tuple[str, ...]:
 
 def _canonical_hostname(host: str, *, setting: str) -> str:
     try:
-        return str(ipaddress.ip_address(host))
+        address = ipaddress.ip_address(host)
+        if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+            # URL hosts serialize IPv4-mapped IPv6 addresses as hexadecimal
+            # hextets, while ipaddress uses a dotted-decimal suffix.
+            pieces = [
+                int.from_bytes(address.packed[index : index + 2]) for index in range(0, 16, 2)
+            ]
+            best_start = 0
+            best_length = 0
+            start = 0
+            while start < len(pieces):
+                if pieces[start] != 0:
+                    start += 1
+                    continue
+                end = start
+                while end < len(pieces) and pieces[end] == 0:
+                    end += 1
+                if end - start > best_length:
+                    best_start = start
+                    best_length = end - start
+                start = end
+
+            before = ":".join(f"{piece:x}" for piece in pieces[:best_start])
+            after = ":".join(f"{piece:x}" for piece in pieces[best_start + best_length :])
+            return f"{before}::{after}"
+        return str(address)
     except ValueError:
         numeric_label = host.rstrip(".").rsplit(".", 1)[-1].lower()
         looks_numeric = numeric_label.isdigit() or (
