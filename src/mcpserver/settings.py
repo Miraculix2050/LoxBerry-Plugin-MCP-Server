@@ -68,8 +68,17 @@ def _canonical_hostname(host: str, *, setting: str) -> str:
             raise ValueError(f"{setting} contains an invalid hostname") from exc
 
         labels = canonical.split(".")
+        try:
+            valid_alabels = all(
+                not label.lower().startswith("xn--")
+                or label.encode("ascii").decode("idna").encode("idna").decode("ascii") == label
+                for label in labels
+            )
+        except UnicodeError:
+            valid_alabels = False
         if (
             len(canonical) > 253
+            or not valid_alabels
             or any(not label or len(label) > 63 for label in labels)
             or any(label.startswith("-") or label.endswith("-") for label in labels)
             or any(

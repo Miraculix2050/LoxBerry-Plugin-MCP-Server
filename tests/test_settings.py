@@ -88,6 +88,7 @@ def test_canonical_allowed_hosts_are_retained(monkeypatch: pytest.MonkeyPatch) -
         "https://127.1",
         "https://0177.0.0.1",
         "https://0x7f000001",
+        "https://xn--a.example",
     ],
 )
 def test_invalid_origin_is_rejected(monkeypatch: pytest.MonkeyPatch, origin: str) -> None:
