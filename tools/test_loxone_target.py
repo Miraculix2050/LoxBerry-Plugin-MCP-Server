@@ -6,12 +6,24 @@ import argparse
 import asyncio
 import getpass
 import hashlib
+import sys
 from collections.abc import Iterable
 from uuid import uuid4
 
 from mcpserver.loxone.cache import UserStateCache
 from mcpserver.loxone.client import LoxoneClient, LoxoneToken, MiniserverEndpoint
 from mcpserver.loxone.models import Control, Freshness
+
+
+def _read_password(*, from_stdin: bool) -> str:
+    password = (
+        sys.stdin.readline().rstrip("\r\n")
+        if from_stdin
+        else getpass.getpass("Dedicated Loxone test-user password: ")
+    )
+    if not password:
+        raise RuntimeError("Dedicated Loxone test-user password is empty")
+    return password
 
 
 def _control_uuids(controls: Iterable[Control]) -> set[str]:
@@ -83,7 +95,7 @@ async def _observe_snapshot_and_delta(
 
 
 async def _run(args: argparse.Namespace) -> None:
-    password = getpass.getpass("Dedicated Loxone test-user password: ")
+    password = _read_password(from_stdin=args.password_stdin)
     endpoint = MiniserverEndpoint.parse_gen1(args.endpoint)
     client = LoxoneClient(endpoint, client_uuid=uuid4(), client_name="LoxBerry MCP Phase-0 Test")
     token = None
@@ -157,6 +169,11 @@ def main() -> int:
     parser.add_argument("--expected-firmware", default="17.1.7.27")
     parser.add_argument("--observe-seconds", type=float, default=60.0)
     parser.add_argument("--operation-timeout", type=float, default=20.0)
+    parser.add_argument(
+        "--password-stdin",
+        action="store_true",
+        help="Read one password line from redirected stdin; never from argv or environment",
+    )
     args = parser.parse_args()
     asyncio.run(_run(args))
     return 0

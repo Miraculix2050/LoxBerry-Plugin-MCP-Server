@@ -13,8 +13,10 @@ Miniserver Gen. 1 mit Firmware `17.1.7.27`.
 - ein anderes Control, das für den Testbenutzer unsichtbar ist
 - beide Control-UUIDs, aber keine Strukturdatei oder Zugangsdaten im Repository
 
-Das Passwort wird ausschließlich interaktiv und ohne Echo abgefragt. Es wird
-weder als Argument noch als Umgebungsvariable übergeben. Während des Tests darf
+Das Passwort wird standardmäßig interaktiv und ohne Echo abgefragt. Für einen
+lokalen Automationsprozess kann es mit `--password-stdin` als genau eine
+umgeleitete Eingabezeile übergeben werden. Es wird niemals als Argument oder
+Umgebungsvariable übergeben oder vom Test gespeichert. Während des Tests darf
 der Benutzer ein sichtbares Control auf normalem Weg bedienen, damit ein
 Zustands-Delta beobachtet werden kann; der Test selbst sendet keinen
 Steuerbefehl.
