@@ -54,6 +54,22 @@ def test_unknown_host_is_rejected() -> None:
     assert response.status_code == 421
 
 
+def test_unknown_forwarded_host_is_rejected_and_redacted(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    app = create_server(_settings()).streamable_http_app()
+    secret = "host-value-that-must-not-be-logged"
+    headers = {"X-Forwarded-Host": secret}
+    caplog.set_level(logging.WARNING, logger="mcp.server.transport_security")
+
+    with TestClient(app, base_url="http://testserver") as client:
+        response = client.get("/mcp", headers=headers)
+
+    assert response.status_code == 421
+    assert secret not in caplog.text
+    assert "Invalid forwarded Host header: [redacted]" in caplog.text
+
+
 def test_unknown_origin_is_rejected() -> None:
     app = create_server(_settings()).streamable_http_app()
     headers = {"Origin": "https://untrusted.example"}

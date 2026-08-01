@@ -69,7 +69,7 @@ EOF
 
 /usr/sbin/apache2 -t -f "$work_dir/apache.conf"
 
-MCPSERVER_ALLOWED_HOSTS="127.0.0.1:8765" \
+MCPSERVER_ALLOWED_HOSTS="127.0.0.1:8765,127.0.0.1:18888" \
 	MCPSERVER_ALLOWED_ORIGINS="http://127.0.0.1:18888" \
 	PYTHONPATH="$repository_root/src" \
 	"$python" -m mcpserver.server >"$work_dir/server.log" 2>&1 &
@@ -105,6 +105,14 @@ response=$(curl -fsS \
 printf '%s' "$response" | "$python" -c \
 	'import json,sys; body=json.load(sys.stdin); assert body["result"]["protocolVersion"] == "2025-11-25"'
 
+untrusted_host_status=$(curl -sS -o /dev/null -w '%{http_code}' \
+	-H 'Host: untrusted.example' \
+	-H 'Accept: application/json, text/event-stream' \
+	-H 'Content-Type: application/json' \
+	--data "$request" \
+	http://127.0.0.1:18888/plugins/mcpserver/mcp)
+test "$untrusted_host_status" = "421"
+
 untrusted_status=$(curl -sS -o /dev/null -w '%{http_code}' \
 	-H 'Accept: application/json, text/event-stream' \
 	-H 'Content-Type: application/json' \
@@ -124,5 +132,6 @@ set -e
 test "$stream_status" = "124"
 
 printf 'APACHE_STREAMABLE_HTTP=pass\n'
+printf 'APACHE_HOST_REJECTION=pass\n'
 printf 'APACHE_ORIGIN_REJECTION=pass\n'
 printf 'APACHE_SSE_%s_SECONDS=pass\n' "$stream_seconds"

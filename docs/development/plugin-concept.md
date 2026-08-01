@@ -445,7 +445,6 @@ Vorgesehene Bereiche:
 
 ```text
 schema_version
-server.listen_port
 server.local_base_url
 server.external_base_url
 server.allowed_origins
@@ -469,7 +468,7 @@ und sind kein Ersatz für die Admin-UI:
 | Variable | Default | Vertrag |
 | --- | --- | --- |
 | `MCPSERVER_HOST` | `127.0.0.1` | ausschließlich exakt dieser Loopback-Host |
-| `MCPSERVER_PORT` | `8765` | ganzzahlig von `1024` bis `65535`; Apache und Dienst müssen denselben Wert erhalten |
+| `MCPSERVER_PORT` | `8765` | ausschließlich exakt dieser interne Port; Dienst und Apache teilen diesen Vertrag |
 | `MCPSERVER_ALLOWED_HOSTS` | `127.0.0.1:<Port>,localhost:<Port>` | kommaseparierte exakte Host-/Port-Werte oder ein Host mit `:*`; mindestens ein Eintrag |
 | `MCPSERVER_ALLOWED_ORIGINS` | leer | kommaseparierte kanonische `http`-/`https`-Origins ohne Pfad, Zugangsdaten, Query oder Fragment; Standardports und Unicode-Hostnamen werden nicht als alternative Schreibweise akzeptiert |
 
@@ -487,6 +486,9 @@ Origins mit internationalisierten Domains werden in der vom Browser gesendeten
 IDNA-ASCII-Schreibweise eingetragen, beispielsweise
 `https://xn--bcher-kva.example`. Zugangsdaten, Tokens oder Sessionwerte gehören
 in keine dieser Variablen.
+
+Der interne Loopback-Port `8765` ist nicht benutzerkonfigurierbar. Eine Änderung
+erfordert eine synchronisierte Migration beider Komponenten.
 
 ### Secrets und Sessions
 

@@ -29,10 +29,10 @@ def test_non_loopback_bind_is_rejected(monkeypatch: pytest.MonkeyPatch, host: st
         ServerSettings.from_environment()
 
 
-@pytest.mark.parametrize("port", ["abc", "0", "1023", "65536"])
-def test_invalid_port_is_rejected(monkeypatch: pytest.MonkeyPatch, port: str) -> None:
+@pytest.mark.parametrize("port", ["abc", "8766", "08765"])
+def test_non_proxy_port_is_rejected(monkeypatch: pytest.MonkeyPatch, port: str) -> None:
     monkeypatch.setenv("MCPSERVER_PORT", port)
-    with pytest.raises(ValueError, match="MCPSERVER_PORT"):
+    with pytest.raises(ValueError, match="must remain 8765"):
         ServerSettings.from_environment()
 
 

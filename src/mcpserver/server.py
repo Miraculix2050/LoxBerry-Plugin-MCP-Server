@@ -7,8 +7,11 @@ from typing import Final
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecurityMiddleware, TransportSecuritySettings
+from starlette.applications import Starlette
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
+from starlette.types import ASGIApp
 
 from mcpserver import __version__
 from mcpserver.settings import ServerSettings
@@ -40,6 +43,45 @@ if not any(isinstance(item, _RedactRejectedTransportHeader) for item in _transpo
     _transport_logger.addFilter(_RedactRejectedTransportHeader())
 
 
+def _host_is_allowed(host: str, allowed_hosts: tuple[str, ...]) -> bool:
+    if host in allowed_hosts:
+        return True
+    return any(
+        allowed.endswith(":*") and host.startswith(f"{allowed[:-2]}:") for allowed in allowed_hosts
+    )
+
+
+class _ForwardedHostValidationMiddleware(BaseHTTPMiddleware):
+    """Validate the original Host supplied by the trusted loopback proxy."""
+
+    def __init__(self, app: ASGIApp, *, allowed_hosts: tuple[str, ...]) -> None:
+        super().__init__(app)
+        self._allowed_hosts = allowed_hosts
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        forwarded_host = request.headers.get("x-forwarded-host")
+        if forwarded_host is not None and not _host_is_allowed(forwarded_host, self._allowed_hosts):
+            logging.getLogger(_TRANSPORT_LOGGER_NAME).warning(
+                "Invalid forwarded Host header: [redacted]"
+            )
+            return Response("Invalid forwarded Host header", status_code=421)
+        return await call_next(request)
+
+
+class _ForwardedHostFastMCP(FastMCP):
+    """FastMCP application that also validates Apache's original Host header."""
+
+    forwarded_allowed_hosts: tuple[str, ...] = ()
+
+    def streamable_http_app(self) -> Starlette:
+        app = super().streamable_http_app()
+        app.add_middleware(
+            _ForwardedHostValidationMiddleware,
+            allowed_hosts=self.forwarded_allowed_hosts,
+        )
+        return app
+
+
 def create_server(settings: ServerSettings) -> FastMCP:
     """Create the MCP server from already validated settings."""
     transport_security = TransportSecuritySettings(
@@ -48,7 +90,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
         allowed_origins=list(settings.allowed_origins),
     )
     transport_guard = TransportSecurityMiddleware(transport_security)
-    server = FastMCP(
+    server = _ForwardedHostFastMCP(
         SERVER_NAME,
         host=settings.host,
         port=settings.port,
@@ -57,6 +99,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
         stateless_http=True,
         transport_security=transport_security,
     )
+    server.forwarded_allowed_hosts = settings.allowed_hosts
 
     @server.custom_route(  # type: ignore[misc]
         "/healthz", methods=["GET"], include_in_schema=False
