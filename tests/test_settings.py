@@ -44,9 +44,22 @@ def test_invalid_port_is_rejected(monkeypatch: pytest.MonkeyPatch, port: str) ->
         "https://:secret@example.test",
         "https://example.test/",
         "https://example.test/path",
+        "https://client.example:443",
+        "http://client.example:80",
+        "HTTPS://client.example",
     ],
 )
 def test_invalid_origin_is_rejected(monkeypatch: pytest.MonkeyPatch, origin: str) -> None:
     monkeypatch.setenv("MCPSERVER_ALLOWED_ORIGINS", origin)
     with pytest.raises(ValueError, match="MCPSERVER_ALLOWED_ORIGINS"):
         ServerSettings.from_environment()
+
+
+def test_canonical_non_default_origin_port_is_retained(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MCPSERVER_ALLOWED_ORIGINS", "https://client.example:8443")
+
+    settings = ServerSettings.from_environment()
+
+    assert settings.allowed_origins == ("https://client.example:8443",)

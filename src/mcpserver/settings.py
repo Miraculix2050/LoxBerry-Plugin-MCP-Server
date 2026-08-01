@@ -27,7 +27,7 @@ def _parse_csv(value: str, *, setting: str) -> tuple[str, ...]:
 def _validate_origins(origins: tuple[str, ...]) -> tuple[str, ...]:
     for origin in origins:
         parsed = urlsplit(origin)
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.hostname is None:
             raise ValueError("MCPSERVER_ALLOWED_ORIGINS must contain HTTP(S) origins")
         if (
             parsed.path != ""
@@ -39,6 +39,19 @@ def _validate_origins(origins: tuple[str, ...]) -> tuple[str, ...]:
             raise ValueError(
                 "MCPSERVER_ALLOWED_ORIGINS entries must not contain paths or credentials"
             )
+        try:
+            port = parsed.port
+        except ValueError as exc:
+            raise ValueError("MCPSERVER_ALLOWED_ORIGINS contains an invalid port") from exc
+
+        host = parsed.hostname
+        if ":" in host:
+            host = f"[{host}]"
+        default_port = 80 if parsed.scheme == "http" else 443
+        authority = host if port in {None, default_port} else f"{host}:{port}"
+        canonical = f"{parsed.scheme}://{authority}"
+        if origin != canonical:
+            raise ValueError("MCPSERVER_ALLOWED_ORIGINS entries must use canonical origins")
     return origins
 
 
