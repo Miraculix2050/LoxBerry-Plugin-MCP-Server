@@ -1,6 +1,6 @@
 # ADR 0001: Phase-0-Grundarchitektur
 
-- **Status:** Angenommen; Runtime bis zum vollständigen Ressourcen-Spike vorläufig
+- **Status:** Angenommen
 - **Datum:** 2026-08-01
 - **Geltung:** Runtime, Transport, Authentifizierung, Persistenz und erster
   ausführbarer Stand
@@ -138,8 +138,7 @@ Damit sind Paket-, Startzeit- und Speichergrenze erfüllt.
 
 ## Folgen
 
-Python ist nach dem erfolgreichen Wheel-Spike die vorläufige Ausgangsruntime.
-Die Bestätigung und der Verzicht auf einen Go-Vergleich erfolgen erst, wenn auch
-Startzeit und Idle-RSS die festgelegten Grenzen erfüllen. Apache-, Loxone-,
-WebSocket- und OAuth-Aussagen bleiben bis zu den jeweiligen reproduzierbaren
-Spikes als noch nicht real bestätigt gekennzeichnet.
+Python ist nach den erfolgreichen Wheel-, Startzeit- und Idle-RSS-Spikes für die
+Referenzplattform bestätigt; ein vorsorglicher paralleler Go-Build entfällt.
+Apache-, Loxone-, WebSocket- und OAuth-Aussagen bleiben bis zu den jeweiligen
+reproduzierbaren Spikes als noch nicht real bestätigt gekennzeichnet.
