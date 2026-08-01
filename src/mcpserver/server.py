@@ -44,6 +44,8 @@ if not any(isinstance(item, _RedactRejectedTransportHeader) for item in _transpo
 
 
 def _host_is_allowed(host: str, allowed_hosts: tuple[str, ...]) -> bool:
+    if "," in host:
+        return False
     if host in allowed_hosts:
         return True
     return any(

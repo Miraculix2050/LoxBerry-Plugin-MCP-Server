@@ -70,6 +70,22 @@ def test_unknown_forwarded_host_is_rejected_and_redacted(
     assert "Invalid forwarded Host header: [redacted]" in caplog.text
 
 
+def test_concatenated_forwarded_host_does_not_match_wildcard() -> None:
+    settings = ServerSettings(
+        host="127.0.0.1",
+        port=8765,
+        allowed_hosts=("testserver:*",),
+        allowed_origins=(),
+    )
+    app = create_server(settings).streamable_http_app()
+    headers = {"X-Forwarded-Host": "testserver:123, untrusted.example"}
+
+    with TestClient(app, base_url="http://testserver:8765") as client:
+        response = client.get("/mcp", headers=headers)
+
+    assert response.status_code == 421
+
+
 def test_unknown_origin_is_rejected() -> None:
     app = create_server(_settings()).streamable_http_app()
     headers = {"Origin": "https://untrusted.example"}
