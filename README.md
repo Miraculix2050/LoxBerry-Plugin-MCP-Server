@@ -22,6 +22,19 @@ Das Plugin befindet sich im Aufbau. Installations-, Konfigurations- und Nutzungs
 - [Recherche-Ergebnisse](docs/research/research-results.md)
 - [Beitragen und Git-Workflow](CONTRIBUTING.md)
 
+Die Referenzentwicklung verwendet Python 3.13. Nach dem Anlegen eines lokalen
+virtuellen Environments werden die fixierten Laufzeit- und Testabhängigkeiten
+installiert und das Projekt ohne erneute Abhängigkeitsauflösung eingebunden:
+
+```text
+python -m pip install -r requirements/runtime-arm64.lock -r requirements/dev.lock
+python -m pip install --no-deps -e .
+python tools/test.py
+```
+
+`python tools/test.py` ist der einheitliche lokale und CI-Testbefehl. Er führt
+Formatprüfung, Lint, strikte Typprüfung und die deterministischen Tests aus.
+
 ## Lizenz
 
 Dieses Projekt steht unter der [Apache License 2.0](LICENSE).

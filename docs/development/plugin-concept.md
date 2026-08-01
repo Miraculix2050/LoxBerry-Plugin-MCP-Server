@@ -460,6 +460,34 @@ limits.max_parallel_calls
 audit.retention_days
 ```
 
+### Phase-0-Dienstvariablen
+
+Der ausführbare Phase-0-Dienst liest die folgenden internen Variablen. Sie werden
+später aus der validierten Plugin-Konfiguration in die systemd-Umgebung erzeugt
+und sind kein Ersatz für die Admin-UI:
+
+| Variable | Default | Vertrag |
+| --- | --- | --- |
+| `MCPSERVER_HOST` | `127.0.0.1` | ausschließlich exakt dieser Loopback-Host |
+| `MCPSERVER_PORT` | `8765` | ganzzahlig von `1024` bis `65535`; Apache und Dienst müssen denselben Wert erhalten |
+| `MCPSERVER_ALLOWED_HOSTS` | `127.0.0.1:<Port>,localhost:<Port>` | kommaseparierte exakte Host-/Port-Werte oder ein Host mit `:*`; mindestens ein Eintrag |
+| `MCPSERVER_ALLOWED_ORIGINS` | leer | kommaseparierte kanonische `http`-/`https`-Origins ohne Pfad, Zugangsdaten, Query oder Fragment; Standardports und Unicode-Hostnamen werden nicht als alternative Schreibweise akzeptiert |
+
+Für einen später erzeugten lokalen Apache-Vertrag lautet ein schematisches
+Beispiel:
+
+```text
+MCPSERVER_HOST=127.0.0.1
+MCPSERVER_PORT=8765
+MCPSERVER_ALLOWED_HOSTS=127.0.0.1:8765,loxberry.local
+MCPSERVER_ALLOWED_ORIGINS=https://assistant.example
+```
+
+Origins mit internationalisierten Domains werden in der vom Browser gesendeten
+IDNA-ASCII-Schreibweise eingetragen, beispielsweise
+`https://xn--bcher-kva.example`. Zugangsdaten, Tokens oder Sessionwerte gehören
+in keine dieser Variablen.
+
 ### Secrets und Sessions
 
 - getrennt von normaler Konfiguration
@@ -714,7 +742,7 @@ Support-Matrix.
 | --- | --- | --- |
 | 1 | Plugin-ID und Ordner | festgelegt: `NAME=mcpserver`, `FOLDER=mcpserver`, `TITLE=LoxBerry MCP Server` |
 | 2 | erste CPU-Architektur | festgelegt: LoxBerry 4 auf Debian 13, `arm64` |
-| 3 | Runtime | vorläufig: Python 3.13 und MCP-SDK 1.28.1; Wheel-Spike erfolgreich, Start-/RAM-Gates ausstehend |
+| 3 | Runtime | festgelegt: Python 3.13 und MCP-SDK 1.28.1; Wheel-, Start- und RAM-Gates erfolgreich |
 | 4 | öffentlicher Pluginpfad/Apache | Spike-Kandidat: `/plugins/mcpserver/mcp` plus Root-Discovery; Festlegung erst nach realer Apache-Prüfung |
 | 5 | MCP-OAuth-Clientregistrierung und Sessionpersistenz | festgelegt: öffentliche Registrierung, PKCE S256, opaque Tokens und atomare dateibasierte Persistenz; Clientprüfung ausstehend |
 | 6 | Miniserver-Firmware | Gen. 1 mindestens `17.1.7.27`; Gen.-2-Stände werden durch die öffentliche Beta bestätigt |
