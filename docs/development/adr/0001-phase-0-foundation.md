@@ -130,8 +130,11 @@ Der erste Runtime-Spike wurde am 2026-08-01 auf einem LoxBerry 4 mit Debian 13,
 `aarch64` und Python 3.13.5 ausgeführt. MCP `1.28.1` und alle transitiven
 Abhängigkeiten ließen sich als 29 Binär-Wheels laden und anschließend offline
 installieren. Das Wheelhouse belegte 9 MiB, das vollständige `venv` 51 MiB.
-Startzeit und Idle-RSS werden mit dem Minimaldienst im nächsten ausführbaren
-Arbeitspaket ergänzt.
+
+Der Minimaldienst wurde aus demselben Abhängigkeitssatz fünfmal gestartet. Der
+Health-Endpunkt war nach 4,088 bis 4,386 Sekunden erreichbar. Der RSS lag direkt
+danach zwischen 53.428 und 53.452 KiB und nach zehn Minuten Idle bei 53.448 KiB.
+Damit sind Paket-, Startzeit- und Speichergrenze erfüllt.
 
 ## Folgen
 

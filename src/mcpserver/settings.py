@@ -1,0 +1,74 @@
+"""Validated process settings with secure local defaults."""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+from urllib.parse import urlsplit
+
+
+def _parse_port(value: str) -> int:
+    try:
+        port = int(value, 10)
+    except ValueError as exc:
+        raise ValueError("MCPSERVER_PORT must be an integer") from exc
+    if not 1024 <= port <= 65535:
+        raise ValueError("MCPSERVER_PORT must be between 1024 and 65535")
+    return port
+
+
+def _parse_csv(value: str, *, setting: str) -> tuple[str, ...]:
+    entries = tuple(item.strip() for item in value.split(",") if item.strip())
+    if any(any(ord(character) < 32 for character in item) for item in entries):
+        raise ValueError(f"{setting} contains a control character")
+    return entries
+
+
+def _validate_origins(origins: tuple[str, ...]) -> tuple[str, ...]:
+    for origin in origins:
+        parsed = urlsplit(origin)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("MCPSERVER_ALLOWED_ORIGINS must contain HTTP(S) origins")
+        if parsed.path not in {"", "/"} or parsed.query or parsed.fragment or parsed.username:
+            raise ValueError(
+                "MCPSERVER_ALLOWED_ORIGINS entries must not contain paths or credentials"
+            )
+    return origins
+
+
+@dataclass(frozen=True, slots=True)
+class ServerSettings:
+    """Runtime settings for the local MCP process."""
+
+    host: str
+    port: int
+    allowed_hosts: tuple[str, ...]
+    allowed_origins: tuple[str, ...]
+
+    @classmethod
+    def from_environment(cls) -> ServerSettings:
+        port = _parse_port(os.getenv("MCPSERVER_PORT", "8765"))
+        host = os.getenv("MCPSERVER_HOST", "127.0.0.1").strip()
+        if host != "127.0.0.1":
+            raise ValueError("MCPSERVER_HOST must remain 127.0.0.1")
+
+        default_hosts = f"127.0.0.1:{port},localhost:{port}"
+        allowed_hosts = _parse_csv(
+            os.getenv("MCPSERVER_ALLOWED_HOSTS", default_hosts),
+            setting="MCPSERVER_ALLOWED_HOSTS",
+        )
+        if not allowed_hosts:
+            raise ValueError("MCPSERVER_ALLOWED_HOSTS must not be empty")
+
+        allowed_origins = _validate_origins(
+            _parse_csv(
+                os.getenv("MCPSERVER_ALLOWED_ORIGINS", ""),
+                setting="MCPSERVER_ALLOWED_ORIGINS",
+            )
+        )
+        return cls(
+            host=host,
+            port=port,
+            allowed_hosts=allowed_hosts,
+            allowed_origins=allowed_origins,
+        )

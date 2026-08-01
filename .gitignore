@@ -3,6 +3,7 @@
 Thumbs.db
 .idea/
 .vscode/
+.venv/
 *.swp
 *~
 
@@ -18,3 +19,8 @@ temp/
 
 # Logs
 *.log
+__pycache__/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/

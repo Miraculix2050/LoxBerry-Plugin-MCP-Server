@@ -1,0 +1,12 @@
+# Exact additions for the deterministic development and CI environment.
+colorama==0.4.6
+iniconfig==2.3.0
+mypy==1.17.1
+mypy-extensions==1.1.0
+packaging==26.2
+pathspec==1.1.1
+pluggy==1.6.0
+pygments==2.20.0
+pytest==8.4.2
+pytest-asyncio==1.2.0
+ruff==0.12.12
