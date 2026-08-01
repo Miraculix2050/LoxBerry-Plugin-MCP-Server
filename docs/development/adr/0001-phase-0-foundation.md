@@ -84,6 +84,27 @@ Implementierungsdetails ersetzen.
   Erhalt des letzten gültigen Secret-Stands.
 - Struktur- und Zustandscaches sind pro Loxone-Benutzer getrennt.
 
+### Persistente Ablage
+
+- Alle plugin-eigenen Pfade werden zur Laufzeit über die von LoxBerry ermittelten
+  Verzeichnisse des tatsächlich vergebenen Pluginordners bezogen; `mcpserver`
+  wird nicht als Installationsordner hart codiert. `LBPCONFIGDIR` und
+  `LBPDATADIR` bezeichnen hier die so ermittelten absoluten LoxBerry-Pfade und
+  keine vorausgesetzten Prozess-Umgebungsvariablen.
+- Die autoritative normale Konfiguration liegt in
+  `LBPCONFIGDIR/mcpserver.json` und gehört `loxberry:loxberry` mit Modus
+  `0600`.
+- OAuth-Clients und Sessions liegen atomar in
+  `LBPDATADIR/auth/sessions.json`, verschlüsselte Loxone-Tokens getrennt in
+  `LBPDATADIR/auth/loxone-tokens.json.enc`. Das Verzeichnis `auth` hat Modus
+  `0700`, beide Dateien gehören `loxberry:loxberry` und haben Modus `0600`.
+- Der Root-Hook erzeugt den Installationsschlüssel unter
+  `LBPDATADIR/auth/install.key` als `root:loxberry` mit Modus `0640`. Er wird
+  weder durch die UI exportiert noch in Plugin-Backups aufgenommen. Bei einer
+  Wiederherstellung ohne Schlüssel werden vorhandene Sessions und Loxone-Tokens
+  verworfen und neu autorisiert, statt unentschlüsselbar weiterverwendet zu
+  werden.
+
 ### Produktabgrenzung
 
 - Phase 1 bleibt read-only. Das erste spätere Schreibziel ist der Loxone-
@@ -94,9 +115,12 @@ Implementierungsdetails ersetzen.
 
 ### Qualität und Lieferung
 
-- Der erste ausführbare Commit enthält einen einheitlichen lokalen Testbefehl,
-  Format-/Lintprüfung, Typprüfung, Unit- und MCP-Vertragstests sowie denselben
-  CI-Pfad für Pull Requests und `master`.
+- Der kanonische lokale Testbefehl lautet nach Installation der exakt fixierten
+  Runtime- und Entwicklungsabhängigkeiten `python tools/test.py`. Er führt
+  Formatprüfung, Lint, strikte Typprüfung, Unit- und MCP-Vertragstests aus.
+- GitHub Actions verwendet `ubuntu-24.04` und CPython 3.13. Derselbe Befehl läuft
+  bei Pull Requests sowie bei Pushes nach `master`; echte LoxBerry- oder
+  Miniserver-Ziele sind kein Bestandteil dieser öffentlichen CI.
 - Ausführbare, normative und sicherheitsrelevante Änderungen werden über normale
   Review-Pull-Requests geliefert und nicht automatisch gemergt.
 
