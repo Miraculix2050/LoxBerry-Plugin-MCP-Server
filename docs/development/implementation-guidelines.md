@@ -98,6 +98,12 @@ Architekturentscheidung festgehalten.
 - Loxone-Zugriffe werden mit dem angemeldeten Loxone-Benutzer ausgeführt und auf
   dessen tatsächlich sicht- und bedienbare Elemente begrenzt.
 - Für jeden Assistenten wird ein eigenes Konto mit minimalen Rechten empfohlen.
+- Der Miniserver-Adapter verwendet ausschließlich Loxone-JWT/Tokenauth. HTTP
+  Basic Authentication und persistente Loxone-Passwörter werden nicht angeboten.
+- Gen. 1 wird mangels TLS ausschließlich lokal über HTTP/WS angebunden;
+  Authentifizierung und Steuerkommandos verwenden zusätzlich die Loxone Command
+  Encryption. Gen. 2 verwendet HTTPS/WSS mit vollständiger Zertifikatsprüfung
+  und ohne stillen Rückfall auf Klartexttransport.
 - LoxBerry-Funktionen haben eine separate Berechtigungsschicht. Zunächst sind sie
   nur lesend; Systemänderungen benötigen eine explizite Freigabe pro Aktionstyp.
 - Schreibende Tools prüfen die Berechtigung unmittelbar vor der Aktion und

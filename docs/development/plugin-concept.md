@@ -191,6 +191,10 @@ Für externe Nutzung gilt:
 - Host-/Origin-Allowlist und Schutz vor DNS Rebinding
 - dokumentierter Verbindungscheck vor Freigabe
 
+Der erste öffentliche Test bietet noch keinen externen MCP-Zugriff. Er ist auf
+lokale beziehungsweise LAN-Clients begrenzt. Die externe Veröffentlichung wird
+erst nach einem eigenen Reverse-Proxy-, OAuth- und Sicherheitstest aktiviert.
+
 LAN-Clients können direkt über die lokale HTTPS-Adresse arbeiten. stdio wird
 nicht als zweiter Servermodus benötigt; ein lokaler Client kann bei Bedarf eine
 generische Streamable-HTTP-zu-stdio-Bridge verwenden.
@@ -214,14 +218,42 @@ oder andere Dienste weitergereicht.
 
 ### Plugin zum Miniserver
 
-Im Autorisierungsablauf meldet sich der Benutzer mit einem dedizierten
-Loxone-Konto am ausgewählten Miniserver an. Das Passwort wird nur zur Anmeldung
-verwendet und nicht gespeichert. Nach erfolgreicher Anmeldung verwendet das
-Plugin, soweit vom Miniserver unterstützt, ein erneuerbares Loxone-Token.
+Beide Miniserver-Generationen werden direkt über die normale Loxone-Webservice-
+und WebSocket-API angebunden. Das Plugin verwendet Loxone JSON Web Tokens; es
+verwendet weder HTTP Basic Authentication noch die OAuth-Schnittstelle des
+nativen Gen.-2-MCP-Servers. MCP-OAuth und Loxone-JWT bleiben getrennte
+Sicherheitsdomänen.
 
-Zu prüfen ist, wie das Token auf den unterstützten Generationen sicher erneuert
-und widerrufen wird. Bis dieser Nachweis vorliegt, ist eine erneute Anmeldung
-nach Dienstneustart akzeptabler als persistente Passwortspeicherung.
+| Merkmal | Miniserver Gen. 1 | Miniserver Gen. 2/Compact |
+| --- | --- | --- |
+| Transport | ausschließlich HTTP und WS | ausschließlich HTTPS und WSS für das Plugin |
+| Serverauthentizität | keine TLS-Serveridentität; nur lokales, vertrauenswürdiges Netz | Zertifikats- und Hostnamenprüfung zwingend |
+| Loxone-Anmeldung | JWT mit `getkey2`, HMAC und Loxone Command Encryption | JWT über die TLS-geschützte API |
+| Anwendungskryptografie | RSA-Schlüsselaustausch und AES-256-CBC für Auth-/Steuerkommandos | ab Firmware 11.2 bei geprüftem TLS nicht erforderlich |
+| HTTP Basic Auth | nicht unterstützt | nicht unterstützt |
+| Reale Ausgangsbasis | verfügbares Testgerät mit Firmware `17.1.7.27`; Prüfung noch ausstehend | Firmwarestände erst durch öffentliche Beta bestätigt |
+
+Der Verbindungsaufbau beginnt lokal mit dem nicht sensitiven
+`jdev/cfg/apiKey`-Probe. Der Adapter wertet Firmware und `httpsStatus` aus:
+
+1. Meldet der Miniserver TLS-Unterstützung, sind HTTPS/WSS, ein zum Zertifikat
+   passender Hostname und vollständige Zertifikatsprüfung Pflicht. Nach einem
+   TLS-Fehler erfolgt kein stiller Rückfall auf HTTP/WS.
+2. Fehlt TLS-Unterstützung, wird die Verbindung nur für Gen. 1 und nur zu einem
+   lokalen Ziel zugelassen. Tokenanforderung, Tokenauthentifizierung und
+   Steuerkommandos verwenden die Loxone Command Encryption.
+3. Der Adapter verwendet den von `getkey2` gemeldeten Hashalgorithmus und darf
+   SHA1 oder SHA256 nicht anhand der Generation fest annehmen.
+4. Das Passwort lebt nur für die erstmalige Tokenanforderung im Speicher und
+   wird weder gespeichert noch protokolliert. Das erneuerbare Loxone-JWT wird
+   im geschützten Secret-Speicher abgelegt, erneuert und bei Widerruf mit
+   `killtoken` invalidiert.
+
+Command Encryption ersetzt auf Gen. 1 kein TLS. Insbesondere Strukturdateien,
+Statusereignisse und Teile der Antworten besitzen keine garantierte
+Ende-zu-Ende-Vertraulichkeit. Deshalb sind Gen.-1-Verbindungen auf das lokale
+Netz beschränkt, verwenden einen dedizierten Benutzer mit Minimalrechten und
+werden in der UI als transportseitig unverschlüsselt gekennzeichnet.
 
 Jede Server-Session bindet mindestens:
 
@@ -463,6 +495,18 @@ Architekturabhängige Binaries werden reproduzierbar gebaut und eindeutig
 ausgewählt. Plugin-Identität und Ordnername werden vor dem ersten Paket
 festgelegt und danach nicht geändert.
 
+Die dauerhafte Plugin-Identität lautet:
+
+```ini
+[PLUGIN]
+NAME=mcpserver
+FOLDER=mcpserver
+TITLE=LoxBerry MCP Server
+```
+
+Code ermittelt weiterhin den tatsächlich von LoxBerry vergebenen Ordner, da
+bei einer Namenskollision ein numerischer Suffix ergänzt werden kann.
+
 ### Dienst
 
 - eigener systemd-Dienst oder nachweislich gleichwertiger nativer
@@ -660,21 +704,23 @@ Support-Matrix.
 - Support-Matrix nennt nur tatsächlich geprüfte Kombinationen
 - Gen. 2 ist bis zu einem vollständigen unabhängigen Betanachweis ausdrücklich
   als `experimental` gekennzeichnet
+- erster Test auf LoxBerry 4, Debian 13 und `arm64`
+- Gen. 1 mindestens Firmware `17.1.7.27`; ältere Versionen sind unbestätigt
+- externer MCP-Zugriff ist nicht konfigurierbar
 
-## 19. Noch zu entscheidende Punkte
+## 19. Entscheidungen vor dem ersten ausführbaren Commit
 
-Vor der Implementierung benötigt das Review Entscheidungen zu:
+| Nr. | Thema | Entscheidung/Status |
+| --- | --- | --- |
+| 1 | Plugin-ID und Ordner | festgelegt: `NAME=mcpserver`, `FOLDER=mcpserver`, `TITLE=LoxBerry MCP Server` |
+| 2 | erste CPU-Architektur | festgelegt: LoxBerry 4 auf Debian 13, `arm64` |
+| 3 | Runtime | offen: Python durch Runtime- und Paketierungsspike bestätigen |
+| 4 | öffentlicher Pluginpfad/Apache | offen; `/plugins/mcpserver/mcp` bleibt ein Beispiel |
+| 5 | MCP-OAuth-Clientregistrierung und Sessionpersistenz | offen |
+| 6 | Miniserver-Firmware | Gen. 1 mindestens `17.1.7.27`; Gen.-2-Stände werden durch die öffentliche Beta bestätigt |
+| 7 | erste unterstützte Control-Typen | offen |
+| 8 | Zeitpunkt und Umfang von `loxberry:read` | offen |
+| 9 | externer HTTPS-Zugriff im ersten Test | festgelegt: nicht enthalten, erster Test nur lokal/LAN |
 
-1. endgültiger Plugin-ID und Installationsordner
-2. erste CPU-Architekturen für LoxBerry 4 unter Debian 13
-3. Bestätigung von Python durch den Runtime- und Paketierungsspike
-4. exakter öffentlicher Pluginpfad und Apache-Integration
-5. OAuth-Clientregistrierung und Sessionpersistenz
-6. lokal bestätigte Mindestfirmware für Gen. 1 und durch die öffentliche Beta
-   bestätigte Firmwarestände für Gen. 2
-7. erste unterstützte Control-Typen
-8. Zeitpunkt und konkreter Umfang von `loxberry:read`
-9. ob externer HTTPS-Zugriff bereits im ersten öffentlichen Test enthalten ist
-
-Diese Punkte sind absichtlich sichtbar offen. Sie werden nicht durch zufällige
+Offene Punkte bleiben bewusst sichtbar und werden nicht durch zufällige
 Implementierungsdetails vorweggenommen.

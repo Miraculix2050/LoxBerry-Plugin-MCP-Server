@@ -100,6 +100,36 @@ administrativen Rechte auf dem LoxBerry. LoxBerry-Funktionen benötigen daher
 eine eigene, explizite Autorisierung. Diese Grenze ist die wichtigste
 zusätzliche Sicherheitsanforderung unseres Projekts.
 
+### Authentifizierung der allgemeinen Miniserver-API
+
+Transportverschlüsselung und Authentifizierung sind getrennt zu betrachten:
+
+| Verfahren | Gen. 1 | Gen. 2/Compact | Bewertung für das Plugin |
+| --- | --- | --- | --- |
+| HTTP/WS | ja | weiterhin möglich | nur für Gen. 1 und nur lokal verwenden |
+| HTTPS/WSS | nein | ja | für Gen. 2 zwingend verwenden und Zertifikat prüfen |
+| HTTP Basic Auth | für Debug/Test weiterhin vorhanden | für Debug/Test weiterhin vorhanden | vollständig ausschließen |
+| Loxone Legacy-Token | vorhanden, seit 10.2 deprecated | vorhanden, seit 10.2 deprecated | nicht neu implementieren |
+| Loxone JWT | seit Firmware 10.2 | seit Firmware 10.2 | gemeinsames primäres Authverfahren |
+| HMAC SHA1/SHA256 | ja, Algorithmus wird von `getkey2` gemeldet | ja | dynamisch nach Serverantwort verwenden |
+| RSA/AES Command Encryption | ja; Ersatz für fehlendes vollständiges TLS | möglich, bei TLS ab 11.2 nicht zwingend | Gen. 1 für Auth- und Steuerkommandos; Gen. 2 verlässt sich auf geprüftes TLS |
+| OAuth des nativen MCP-Servers | nein | ab nativem MCP-Plugin vorhanden | nicht für den direkten API-Adapter verwenden |
+
+Die Aussage „Gen. 1 unterstützt keine Kryptografie“ trifft damit nicht zu.
+Richtig ist: Gen. 1 unterstützt keine vollständige TLS-Transportverschlüsselung.
+Loxone stellt stattdessen Hashing sowie RSA-/AES-basierte Command Encryption
+bereit. Diese schützt jedoch nicht automatisch Strukturdateien, Statusereignisse
+und sämtliche Antworten. Gen.-1-Zugriff bleibt deshalb auf das lokale Netz
+beschränkt.
+
+Die offizielle API-Dokumentation nennt Tokenauthentifizierung seit Version 9.0,
+JWT seit 10.2 und die Abschaffung der regulären passwortbasierten Anmeldung seit
+9.3. HTTP Basic Auth bleibt nur für Debugging und Tests verfügbar und wird für
+das Produkt nicht berücksichtigt.
+
+Quelle: [Loxone: Communicating with the Miniserver](https://www.loxone.com/wp-content/uploads/datasheets/CommunicatingWithMiniserver.pdf),
+[Loxone Web Services](https://www.loxone.com/enen/kb/web-services/)
+
 ## 4. Vergleichsprojekte
 
 ### 4.1 `reijosirila/loxone-mcp-server`
