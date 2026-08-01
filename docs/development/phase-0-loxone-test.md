@@ -73,10 +73,10 @@ Die reale WebSocket-Prüfung bestätigte anschließend `keyexchange`, das
 verschlüsselte `getkey2` und die verschlüsselte JWT-Anforderung mit dem
 vorgesehenen Testbenutzer. Der `apiKey`-Probe berücksichtigt dabei das
 historische Gen.-1-Format, in dem `LL.value` ein flaches, einfach quotiertes
-Objekt statt standardkonformem JSON enthält. Passwort- und Token-Hashverfahren
-werden getrennt behandelt: `getkey2` bestimmt dynamisch SHA1 oder SHA256 für den
-Passworthash, während nachfolgende Tokenoperationen den `getkey`-kompatiblen
-HMAC-SHA1 verwenden.
+Objekt statt standardkonformem JSON enthält. `getkey2` bestimmt dynamisch SHA1
+oder SHA256 für den Passwort- und Tokenhash. Jede Tokenauthentifizierung,
+-erneuerung und -widerrufung bezieht über die jeweilige verschlüsselte
+WebSocket-Verbindung einen frischen `getkey`-Einmalschlüssel.
 
 Die im externen Testdatenordner ausgewählten sichtbaren und unsichtbaren
 Controls bleiben bis zum vollständigen Strukturnachweis ausdrücklich

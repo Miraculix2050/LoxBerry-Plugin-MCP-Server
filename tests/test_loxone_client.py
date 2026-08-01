@@ -19,7 +19,7 @@ from mcpserver.loxone.client import (
     _loxone_uuid,
     _receive_websocket,
 )
-from mcpserver.loxone.events import MessageType
+from mcpserver.loxone.events import MessageHeader, MessageType
 from mcpserver.loxone.security import token_hmac
 
 
@@ -91,6 +91,26 @@ async def test_websocket_receive_skips_estimated_header() -> None:
 
     assert header.estimated is False
     assert payload == "{}"
+
+
+@pytest.mark.asyncio
+async def test_websocket_receive_accepts_gen1_character_count_for_text() -> None:
+    class FakeWebSocket:
+        def __init__(self) -> None:
+            self.messages: list[bytes | str] = [
+                bytes((3, MessageType.BINARY_FILE, 0, 0, 1, 0, 0, 0)),
+                "ä",
+            ]
+
+        async def recv(self) -> bytes | str:
+            return self.messages.pop(0)
+
+    header, payload = await _receive_websocket(
+        cast(Any, FakeWebSocket()), timeout_seconds=0.1, max_payload_bytes=100
+    )
+
+    assert header.message_type is MessageType.BINARY_FILE
+    assert payload == "ä"
 
 
 def test_gen1_endpoint_builds_canonical_websocket_url() -> None:
@@ -251,7 +271,7 @@ async def test_token_acquisition_encrypts_credentials_and_retains_hash_algorithm
 
     token = await client.acquire_token("restricted-reader", "password-secret")
 
-    assert token.hash_algorithm == "SHA1"
+    assert token.hash_algorithm == "SHA256"
     assert "jwt-secret" not in repr(token)
     assert "password-secret" not in "".join(command for command, _ in commands)
     assert commands[0][1] is False
@@ -350,22 +370,100 @@ async def test_token_revocation_uses_encrypted_websocket_and_destroys_token(
         assert timeout_seconds == client.timeout_seconds
         assert max_payload_bytes == client.max_response_bytes
         commands.append((command, encrypted))
+        if command == "jdev/sys/getkey":
+            return "aabbccdd"
         return "OK"
 
     monkeypatch.setattr(client, "websocket_public_key", fake_websocket_public_key)
     monkeypatch.setattr(client, "_connect_websocket", fake_connect_websocket)
     monkeypatch.setattr("mcpserver.loxone.client._websocket_command", fake_websocket_command)
-    token = LoxoneToken("jwt-secret", "restricted-reader", "00112233", "SHA1", 123)
+    token = LoxoneToken("jwt-secret", "restricted-reader", "00112233", "SHA256", 123)
 
     await client.kill_token(token)
 
     assert commands[0][0].startswith("jdev/sys/keyexchange/")
     assert commands[0][1] is False
-    assert commands[1][0].startswith("jdev/sys/killtoken/")
-    assert commands[1][1] is True
-    assert "jwt-secret" not in commands[1][0]
+    assert commands[1] == ("jdev/sys/getkey", True)
+    assert commands[2][0].startswith("jdev/sys/killtoken/")
+    assert commands[2][1] is True
+    assert "jwt-secret" not in commands[2][0]
     assert websocket.closed is True
     assert token.value == ""
+
+
+@pytest.mark.asyncio
+async def test_session_authentication_requests_a_fresh_token_hash_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    public_pem = (
+        private_key.public_key()
+        .public_bytes(
+            serialization.Encoding.PEM,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        .decode()
+    )
+    token = LoxoneToken("jwt-secret", "reader", "expired-key", "SHA256", 100)
+    session = LoxoneWebSocketSession(
+        cast(Any, object()),
+        public_key=public_pem,
+        token=token,
+        timeout_seconds=1,
+        max_payload_bytes=100,
+    )
+    commands: list[tuple[str, bool]] = []
+
+    async def fake_command(command: str, *, encrypted: bool = False) -> object:
+        commands.append((command, encrypted))
+        if command == "jdev/sys/getkey":
+            return "aabbccdd"
+        return "OK"
+
+    monkeypatch.setattr(session, "_command", fake_command)
+
+    await session.authenticate()
+
+    expected = token_hmac("jwt-secret", "aabbccdd", "SHA256")
+    assert commands[0][0].startswith("jdev/sys/keyexchange/")
+    assert commands[1] == ("jdev/sys/getkey", True)
+    assert commands[2] == (f"authwithtoken/{expected}/reader", True)
+
+
+@pytest.mark.asyncio
+async def test_structure_accepts_text_content_in_file_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = (
+        '{"lastModified":"now","msInfo":{"serialNr":"000000000000"},'
+        '"rooms":{},"cats":{},"controls":{}}'
+    )
+
+    class FakeWebSocket:
+        def __init__(self) -> None:
+            self.sent: list[str] = []
+
+        async def send(self, command: str) -> None:
+            self.sent.append(command)
+
+    websocket = FakeWebSocket()
+    session = LoxoneWebSocketSession(
+        cast(Any, websocket),
+        public_key="unused",
+        token=LoxoneToken("jwt", "reader", "key", "SHA256", 100),
+        timeout_seconds=1,
+        max_payload_bytes=1_000,
+    )
+
+    async def fake_receive() -> tuple[MessageHeader, str]:
+        return MessageHeader(MessageType.BINARY_FILE, False, len(payload)), payload
+
+    monkeypatch.setattr(session, "_receive", fake_receive)
+
+    structure = await session.load_structure()
+
+    assert websocket.sent == ["data/LoxAPP3.json"]
+    assert structure.identity.username == "reader"
 
 
 @pytest.mark.asyncio
@@ -381,8 +479,11 @@ async def test_refresh_rotates_in_memory_token_with_dynamic_hash(
         max_payload_bytes=100,
     )
 
-    async def fake_command(command: str, *, encrypted: bool = False) -> dict[str, object]:
-        expected = token_hmac("old-secret", "00112233", "SHA256")
+    async def fake_command(command: str, *, encrypted: bool = False) -> object:
+        if command == "jdev/sys/getkey":
+            assert encrypted is True
+            return "aabbccdd"
+        expected = token_hmac("old-secret", "aabbccdd", "SHA256")
         assert command == f"jdev/sys/refreshjwt/{expected}/reader"
         assert encrypted is True
         return {"token": "new-secret", "validUntil": 200}

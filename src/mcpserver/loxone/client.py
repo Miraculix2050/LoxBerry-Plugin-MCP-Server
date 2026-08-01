@@ -151,8 +151,10 @@ async def _receive_websocket(
         if header.message_type in {MessageType.OUT_OF_SERVICE, MessageType.KEEPALIVE}:
             return header, None
         payload = await asyncio.wait_for(websocket.recv(), timeout=timeout_seconds)
-        actual_size = len(payload.encode() if isinstance(payload, str) else payload)
-        if actual_size != header.payload_length:
+        actual_sizes = {len(payload)}
+        if isinstance(payload, str):
+            actual_sizes.add(len(payload.encode("utf-8")))
+        if header.payload_length not in actual_sizes:
             raise LoxoneProtocolError("WebSocket payload length does not match its header")
         return header, payload
 
@@ -378,17 +380,13 @@ class LoxoneClient:
             or not isinstance(valid_until, int)
         ):
             raise LoxoneConnectionError("Miniserver returned an invalid token")
-        # The token key is equivalent to a getkey result. Token operations use
-        # HMAC-SHA1 independently of getkey2's password hashing algorithm.
-        return LoxoneToken(token, username, token_key, "SHA1", valid_until)
+        return LoxoneToken(token, username, token_key, algorithm, valid_until)
 
     async def kill_token(self, token: LoxoneToken) -> None:
         if not token.value:
             return
         public_key = await self.websocket_public_key()
-        digest = token_hmac(token.value, token.hash_key, token.hash_algorithm)
         user = quote(token.username, safe="")
-        command = f"jdev/sys/killtoken/{digest}/{user}"
         websocket = await self._connect_websocket()
         encryptor = CommandEncryptor.generate()
         try:
@@ -401,10 +399,21 @@ class LoxoneClient:
                 timeout_seconds=self.timeout_seconds,
                 max_payload_bytes=self.max_response_bytes,
             )
+            key = await _websocket_command(
+                websocket,
+                encryptor,
+                "jdev/sys/getkey",
+                encrypted=True,
+                timeout_seconds=self.timeout_seconds,
+                max_payload_bytes=self.max_response_bytes,
+            )
+            if not isinstance(key, str):
+                raise LoxoneConnectionError("Miniserver returned an invalid token hashing key")
+            digest = token_hmac(token.value, key, token.hash_algorithm)
             await _websocket_command(
                 websocket,
                 encryptor,
-                command,
+                f"jdev/sys/killtoken/{digest}/{user}",
                 encrypted=True,
                 timeout_seconds=self.timeout_seconds,
                 max_payload_bytes=self.max_response_bytes,
@@ -472,20 +481,24 @@ class LoxoneWebSocketSession:
     async def authenticate(self) -> None:
         session_key = self._encryptor.encrypted_session_key(self._public_key)
         await self._command(f"jdev/sys/keyexchange/{session_key}")
-        digest = token_hmac(
-            self._token.value,
-            self._token.hash_key,
-            self._token.hash_algorithm,
-        )
+        digest = await self._fresh_token_digest()
         await self._command(
             f"authwithtoken/{digest}/{quote(self._token.username, safe='')}",
             encrypted=True,
         )
 
+    async def _fresh_token_digest(self) -> str:
+        key = await self._command("jdev/sys/getkey", encrypted=True)
+        if not isinstance(key, str):
+            raise LoxoneConnectionError("Miniserver returned an invalid token hashing key")
+        return token_hmac(self._token.value, key, self._token.hash_algorithm)
+
     async def load_structure(self) -> LoxoneStructure:
         await self._websocket.send("data/LoxAPP3.json")
         header, payload = await self._receive()
-        if header.message_type is not MessageType.TEXT or not isinstance(payload, str):
+        if header.message_type not in {MessageType.TEXT, MessageType.BINARY_FILE} or not isinstance(
+            payload, str
+        ):
             raise LoxoneProtocolError("Miniserver structure response is not text")
         try:
             document = json.loads(payload)
@@ -497,11 +510,7 @@ class LoxoneWebSocketSession:
 
     async def refresh_token(self) -> None:
         """Rotate the in-memory JWT over the authenticated encrypted WebSocket."""
-        digest = token_hmac(
-            self._token.value,
-            self._token.hash_key,
-            self._token.hash_algorithm,
-        )
+        digest = await self._fresh_token_digest()
         user = quote(self._token.username, safe="")
         value = await self._command(f"jdev/sys/refreshjwt/{digest}/{user}", encrypted=True)
         if not isinstance(value, Mapping):
