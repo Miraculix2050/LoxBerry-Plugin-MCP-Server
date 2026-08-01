@@ -154,7 +154,15 @@ async def _receive_websocket(
         actual_size = len(payload.encode() if isinstance(payload, str) else payload)
         if actual_size != header.payload_length:
             raise LoxoneProtocolError("WebSocket payload length does not match its header")
-        return header, payload
+    return header, payload
+
+
+async def _close_websocket(websocket: ClientConnection, timeout_seconds: float) -> None:
+    """Close without allowing an unresponsive peer to block cleanup indefinitely."""
+    try:
+        await asyncio.wait_for(websocket.close(), timeout=timeout_seconds)
+    except (OSError, TimeoutError) as exc:  # pragma: no cover - transport dependent
+        _LOGGER.debug("WebSocket close failed: %s", type(exc).__name__)
 
 
 async def _websocket_command(
@@ -301,6 +309,7 @@ class LoxoneClient:
                     subprotocols=[Subprotocol("remotecontrol")],
                     max_size=self.max_response_bytes,
                     open_timeout=self.timeout_seconds,
+                    close_timeout=self.timeout_seconds,
                     proxy=None,
                 ),
                 timeout=self.timeout_seconds,
@@ -357,7 +366,7 @@ class LoxoneClient:
                 max_payload_bytes=self.max_response_bytes,
             )
         finally:
-            await websocket.close()
+            await _close_websocket(websocket, self.timeout_seconds)
         if not isinstance(token_value, Mapping):
             raise LoxoneConnectionError("Miniserver returned an invalid token")
         token = token_value.get("token")
@@ -401,7 +410,7 @@ class LoxoneClient:
                 max_payload_bytes=self.max_response_bytes,
             )
         finally:
-            await websocket.close()
+            await _close_websocket(websocket, self.timeout_seconds)
             token.destroy()
 
     async def open_session(self, token: LoxoneToken) -> LoxoneWebSocketSession:
@@ -527,7 +536,4 @@ class LoxoneWebSocketSession:
             raise LoxoneProtocolError("Miniserver did not acknowledge keepalive")
 
     async def close(self) -> None:
-        try:
-            await self._websocket.close()
-        except Exception as exc:  # pragma: no cover - best effort close
-            _LOGGER.debug("WebSocket close failed: %s", type(exc).__name__)
+        await _close_websocket(self._websocket, self._timeout)

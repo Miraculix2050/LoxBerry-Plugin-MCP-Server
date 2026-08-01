@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any, cast
 from uuid import UUID
 
@@ -14,6 +15,7 @@ from mcpserver.loxone.client import (
     LoxoneToken,
     LoxoneWebSocketSession,
     MiniserverEndpoint,
+    _close_websocket,
     _loxone_uuid,
 )
 from mcpserver.loxone.security import token_hmac
@@ -32,6 +34,15 @@ from mcpserver.loxone.security import token_hmac
 def test_gen1_endpoint_rejects_nonlocal_or_credentialed_values(value: str) -> None:
     with pytest.raises(ValueError):
         MiniserverEndpoint.parse_gen1(value)
+
+
+@pytest.mark.asyncio
+async def test_websocket_close_is_bounded() -> None:
+    class BlockingWebSocket:
+        async def close(self) -> None:
+            await asyncio.Event().wait()
+
+    await _close_websocket(cast(Any, BlockingWebSocket()), 0.001)
 
 
 def test_gen1_endpoint_builds_canonical_websocket_url() -> None:
