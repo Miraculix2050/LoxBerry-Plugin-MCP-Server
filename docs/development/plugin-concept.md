@@ -460,6 +460,34 @@ limits.max_parallel_calls
 audit.retention_days
 ```
 
+### Phase-0-Dienstvariablen
+
+Der ausführbare Phase-0-Dienst liest die folgenden internen Variablen. Sie werden
+später aus der validierten Plugin-Konfiguration in die systemd-Umgebung erzeugt
+und sind kein Ersatz für die Admin-UI:
+
+| Variable | Default | Vertrag |
+| --- | --- | --- |
+| `MCPSERVER_HOST` | `127.0.0.1` | ausschließlich exakt dieser Loopback-Host |
+| `MCPSERVER_PORT` | `8765` | ganzzahlig von `1024` bis `65535`; Apache und Dienst müssen denselben Wert erhalten |
+| `MCPSERVER_ALLOWED_HOSTS` | `127.0.0.1:<Port>,localhost:<Port>` | kommaseparierte exakte Host-/Port-Werte oder ein Host mit `:*`; mindestens ein Eintrag |
+| `MCPSERVER_ALLOWED_ORIGINS` | leer | kommaseparierte kanonische `http`-/`https`-Origins ohne Pfad, Zugangsdaten, Query oder Fragment; Standardports und Unicode-Hostnamen werden nicht als alternative Schreibweise akzeptiert |
+
+Für einen später erzeugten lokalen Apache-Vertrag lautet ein schematisches
+Beispiel:
+
+```text
+MCPSERVER_HOST=127.0.0.1
+MCPSERVER_PORT=8765
+MCPSERVER_ALLOWED_HOSTS=127.0.0.1:8765,loxberry.local
+MCPSERVER_ALLOWED_ORIGINS=https://assistant.example
+```
+
+Origins mit internationalisierten Domains werden in der vom Browser gesendeten
+IDNA-ASCII-Schreibweise eingetragen, beispielsweise
+`https://xn--bcher-kva.example`. Zugangsdaten, Tokens oder Sessionwerte gehören
+in keine dieser Variablen.
+
 ### Secrets und Sessions
 
 - getrennt von normaler Konfiguration

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import os
 from dataclasses import dataclass
 from urllib.parse import urlsplit
@@ -45,6 +46,13 @@ def _validate_origins(origins: tuple[str, ...]) -> tuple[str, ...]:
             raise ValueError("MCPSERVER_ALLOWED_ORIGINS contains an invalid port") from exc
 
         host = parsed.hostname
+        try:
+            ipaddress.ip_address(host)
+        except ValueError:
+            try:
+                host = host.encode("idna").decode("ascii")
+            except UnicodeError as exc:
+                raise ValueError("MCPSERVER_ALLOWED_ORIGINS contains an invalid hostname") from exc
         if ":" in host:
             host = f"[{host}]"
         default_port = 80 if parsed.scheme == "http" else 443
