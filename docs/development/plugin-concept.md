@@ -59,10 +59,10 @@ Nicht zum Produktumfang gehören:
 
 ### Kernruntime
 
-Bevorzugt wird ein eigenständiger Python-Dienst, sofern der Runtime-Spike die
-Support-Matrix bestätigt:
+Für den MVP wird ein eigenständiger Python-Dienst auf LoxBerry 4 unter Debian 13
+(Trixie) bevorzugt:
 
-- Python 3.10 oder neuer
+- systemseitiges Python 3.13; das MCP-SDK selbst verlangt mindestens Python 3.10
 - offizielles MCP-Python-SDK (Tier 1), auf eine geprüfte Hauptversion fixiert
 - `asyncio`/ASGI mit Streamable HTTP auf einem Loopback-Port
 - typisierte Ein- und Ausgabemodelle
@@ -77,26 +77,25 @@ kleinen Toolumfang aber nicht als grundsätzlicher Engpass erwartet.
 
 Das Plugin installiert niemals Abhängigkeiten in das System-Python. Es erhält
 ein eigenes virtuelles Environment und einen vollständig fixierten,
-reproduzierbaren Abhängigkeitssatz. Auf Debian 12 verhindert dies zugleich
-Konflikte mit PEP 668. Für jede unterstützte Architektur müssen vorgebaute
-Wheels vorhanden oder im Paket mitgeliefert sein; die normale Installation
-darf weder Compiler noch Rust-Toolchain benötigen.
+reproduzierbaren Abhängigkeitssatz. Dies respektiert das von Debian verwaltete
+System-Python und PEP 668. Für jede unterstützte Architektur müssen vorgebaute
+Wheels vorhanden oder im Paket mitgeliefert sein; die normale Installation darf
+weder Compiler noch Rust-Toolchain benötigen.
 
-Diese Empfehlung bedeutet zunächst auch: LoxBerry-/Debian-Kombinationen mit
-Python 3.9 sind nicht automatisch unterstützt. Soll insbesondere Debian 11 zur
-ersten Support-Matrix gehören, werden drei Optionen im Spike verglichen:
+LoxBerry 3 und ältere Debian-Basen gehören nicht zur anfänglichen Support-Matrix.
+Sie können später ergänzt werden, wenn Python-Version und Abhängigkeiten dafür
+reproduzierbar bereitgestellt werden können. Diese optionale
+Rückwärtskompatibilität blockiert den MVP nicht.
 
-1. Support-Basis auf Systeme mit Python 3.10 oder neuer begrenzen,
-2. eine plugin-eigene Python-Runtime sicher und wartbar mitliefern oder
-3. den Kerndienst als statisches Go-Binary bauen.
-
-Go ist damit die dokumentierte Rückfalloption. Das offizielle Go-SDK ist
-ebenfalls Tier 1; ein einzelnes Binary reduziert Installations- und
-Abhängigkeitsrisiken, kostet aber mehr Implementierungsaufwand.
+Go bleibt die dokumentierte Rückfalloption, falls Python-Wheels oder das
+Ressourcenbudget auf einer erforderlichen LoxBerry-4-Architektur scheitern. Das
+offizielle Go-SDK ist ebenfalls Tier 1; ein einzelnes Binary reduziert
+Installations- und Abhängigkeitsrisiken, kostet aber mehr Implementierungsaufwand.
 
 Vor der Festlegung beweist ein Spike:
 
-- Python-Version und venv-Erstellung auf allen ausgewählten LoxBerry-Basen
+- Python 3.13 und venv-Erstellung auf allen ausgewählten
+  LoxBerry-4-/Debian-13-Architekturen
 - Installation aller fixierten Abhängigkeiten ausschließlich aus verfügbaren
   oder mitgelieferten Wheels
 - Paketgröße, Start sowie RAM- und CPU-Bedarf im Idle und bei Zustandsupdates
@@ -546,7 +545,7 @@ Reale Zugangsdaten und Strukturdateien werden nicht in Fixtures oder CI
 ### Phase 0: Architektur-Spikes
 
 - Python-Version, venv und Wheels auf allen Zielarchitekturen
-- kleiner Go-Vergleichsbuild, falls Altplattform oder Ressourcenbudget kritisch
+- kleiner Go-Vergleichsbuild nur, falls Wheels oder Ressourcenbudget kritisch
   sind
 - MCP Streamable HTTP hinter Apache
 - OAuth-End-to-End mit zwei Clients
@@ -606,8 +605,8 @@ Support-Matrix.
 Vor der Implementierung benötigt das Review Entscheidungen zu:
 
 1. endgültiger Plugin-ID und Installationsordner
-2. erste LoxBerry-Versionen und CPU-Architekturen
-3. verbindliche Python-/Go-Entscheidung nach dem Runtime- und Paketierungsspike
+2. erste CPU-Architekturen für LoxBerry 4 unter Debian 13
+3. Bestätigung von Python durch den Runtime- und Paketierungsspike
 4. exakter öffentlicher Pluginpfad und Apache-Integration
 5. OAuth-Clientregistrierung und Sessionpersistenz
 6. Mindestfirmware für Miniserver Gen. 1 und Gen. 2

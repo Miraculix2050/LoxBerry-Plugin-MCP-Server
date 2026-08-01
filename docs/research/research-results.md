@@ -24,15 +24,15 @@ getrennten Struktur-/Zustandssicht und einem kleinen, standardmäßig lesenden
 Tool-Inventar. Beliebige Miniserver-Kommandos, globale Raumaktionen und
 allgemeiner Shellzugriff gehören nicht in die erste Version.
 
-Als technische Basis ist Python besonders prüfenswert: Der Dienst ist vor allem
-I/O-lastig, das offizielle MCP-Python-SDK ist Tier 1 und bringt Streamable HTTP,
-Schemas sowie die Resource-Server-Seite der OAuth-Integration mit. Python ist
-jedoch nur dann die einfachere Lösung, wenn die festgelegte LoxBerry-Basis
-mindestens Python 3.10 und installierbare ARM-Pakete für alle fixierten
-Abhängigkeiten bietet. Andernfalls bleibt ein statisches Go-Binary die robustere
-Paketierungsoption. Diese Entscheidung muss vor der Implementierung durch einen
-kleinen Zielsystem-, Transport-, Abhängigkeits- und OAuth-Spike bestätigt
-werden.
+Als technische Basis wird für die erste Referenzplattform Python bevorzugt: Das
+Projekt zielt zunächst auf LoxBerry 4 unter Debian 13 (Trixie) mit Python 3.13.
+Der Dienst ist vor allem I/O-lastig, das offizielle MCP-Python-SDK ist Tier 1
+und bringt Streamable HTTP, Schemas sowie die Resource-Server-Seite der
+OAuth-Integration mit. Ein Zielsystem-, Transport-, Abhängigkeits- und
+OAuth-Spike muss noch die verfügbaren Wheels und den Ressourcenbedarf auf den
+konkret unterstützten Architekturen bestätigen. Go bleibt eine
+Paketierungsalternative, ist aber für den MVP keine gleichrangige
+Vorentscheidung mehr.
 
 ## 2. Quellenlage und Grenzen
 
@@ -295,14 +295,18 @@ Abhängigkeiten explizit fixieren.
 Python passt fachlich gut: MCP-, HTTP- und WebSocket-Verarbeitung sind in diesem
 Plugin überwiegend I/O-lastig, nicht rechenintensiv. Es gibt auch keinen
 technischen Konflikt mit den Perl-/PHP-Bestandteilen von LoxBerry, wenn der
-Python-Dienst als eigener unprivilegierter Prozess läuft. Die Risiken liegen in
-der Auslieferung: LoxBerry 3 kann auf Debian 11 oder Debian 12 betrieben werden;
-Debian 11 liefert standardmäßig Python 3.9 und erfüllt damit die SDK-Anforderung
-nicht. Debian 12 erzwingt für das System-Python PEP 668, weshalb
-Plugin-Abhängigkeiten in ein eigenes virtuelles Environment gehören. Zusätzlich
-müssen Wheels für alle unterstützten Architekturen verfügbar sein; ein
-Compiler- oder Rust-Build auf dem Zielgerät ist kein akzeptabler normaler
-Installationsweg.
+Python-Dienst als eigener unprivilegierter Prozess läuft.
+
+Als erste Referenzbasis wird LoxBerry 4 unter Debian 13 (Trixie) festgelegt.
+Debian 13 liefert Python 3.13 und erfüllt damit die Anforderung des MCP-SDKs.
+Plugin-Abhängigkeiten gehören wegen der Trennung vom verwalteten System-Python
+trotzdem in ein eigenes virtuelles Environment. Zusätzlich müssen Wheels für
+alle unterstützten Architekturen verfügbar sein; ein Compiler- oder Rust-Build
+auf dem Zielgerät ist kein akzeptabler normaler Installationsweg.
+
+Ältere LoxBerry-3-/Debian-11-Systeme liefern möglicherweise nur Python 3.9.
+Ihre Unterstützung ist daher eine spätere, eigene Kompatibilitätsentscheidung
+und blockiert den Python-basierten MVP auf LoxBerry 4 nicht.
 
 Das offizielle Go-SDK ist ebenfalls Tier 1, unterstützt Streamable HTTP und
 mehrere Protokollversionen. Ein statisches Go-Binary vereinfacht Installation,
@@ -313,7 +317,9 @@ Quelle: [MCP-Transporte](https://modelcontextprotocol.io/specification/2025-11-2
 [MCP-Autorisierung](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization),
 [MCP-SDKs](https://modelcontextprotocol.io/docs/sdk),
 [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk),
-[MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk)
+[MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk),
+[LoxBerry-Installation](https://wiki.loxberry.de/installation_von_loxberry/die_installation_von_loxberry/start),
+[Debian-13-Versionshinweise](https://www.debian.org/releases/trixie/release-notes/whats-new.de.html)
 
 ## 7. Lizenzbewertung
 
@@ -371,10 +377,10 @@ Recherche selbst übernimmt keinen Fremdcode.
 Folgende Punkte benötigen vor der Implementierung einen reproduzierbaren Spike
 auf echten Zielsystemen:
 
-1. Welche LoxBerry-4-Architekturen sollen das erste Release tatsächlich tragen?
-2. Ist auf allen Zielsystemen Python 3.10 oder neuer vorhanden und lassen sich
-   alle fixierten Abhängigkeiten ohne Kompilierung in ein plugin-eigenes venv
-   installieren?
+1. Welche LoxBerry-4-/Debian-13-Architekturen soll das erste Release tatsächlich
+   tragen?
+2. Lassen sich alle fixierten Python-3.13-Abhängigkeiten ohne Kompilierung in
+   ein plugin-eigenes venv installieren?
 3. Wie wird Streamable HTTP einschließlich SSE durch den LoxBerry-Apache ohne
    Buffering- oder Timeoutprobleme weitergeleitet?
 4. Filtert `LoxApp3.json` bei jeder unterstützten Miniserver-Generation exakt
@@ -384,9 +390,9 @@ auf echten Zielsystemen:
 6. Welche OAuth-Clients müssen für den ersten Release interoperabel sein?
 7. Wie werden LoxBerry-Scopes durch einen LoxBerry-Administrator erteilt und
    widerrufen, ohne Loxone- und LoxBerry-Rechte zu vermischen?
-8. Wie unterscheiden sich Python- und Go-Prototyp bei Paketgröße, Installation,
-   Startzeit und Speicherbedarf auf der ältesten Zielhardware?
-8. Welche externen HTTPS-/Reverse-Proxy-Varianten können sicher unterstützt und
+8. Bleiben Paketgröße, Startzeit und Speicherbedarf des Python-Prototyps auf der
+   ältesten unterstützten LoxBerry-4-Hardware im festgelegten Budget?
+9. Welche externen HTTPS-/Reverse-Proxy-Varianten können sicher unterstützt und
    real getestet werden?
 
 Die vorgeschlagene Antwort auf diese Fragen und ein gestufter MVP stehen im
