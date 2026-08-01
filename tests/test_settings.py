@@ -25,7 +25,7 @@ def test_secure_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.parametrize("host", ["0.0.0.0", "::", "192.0.2.10"])
 def test_non_loopback_bind_is_rejected(monkeypatch: pytest.MonkeyPatch, host: str) -> None:
     monkeypatch.setenv("MCPSERVER_HOST", host)
-    with pytest.raises(ValueError, match="must remain 127.0.0.1"):
+    with pytest.raises(ValueError, match=r"must remain 127\.0\.0\.1"):
         ServerSettings.from_environment()
 
 
