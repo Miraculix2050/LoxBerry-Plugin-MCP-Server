@@ -6,19 +6,24 @@ import base64
 import binascii
 import hashlib
 import hmac
+import re
 import secrets
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from itertools import pairwise
 from typing import Final
 from urllib.parse import quote
 
 from cryptography import x509
-from cryptography.hazmat.primitives import serialization
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding as asymmetric_padding
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 _AES_BLOCK_BYTES: Final = 16
 _SUPPORTED_HASHES: Final = {"SHA1": hashlib.sha1, "SHA256": hashlib.sha256}
+_LOXONE_ROOT_SHA256: Final = "db486e6a9d868ae2fd7e1b199c038924b3d270ce669b5ef37f1113b5bc3ec1d7"
 
 
 class LoxoneSecurityError(ValueError):
@@ -118,12 +123,70 @@ def normalize_rsa_public_key_pem(value: str) -> str:
     ).decode("ascii")
 
 
+def normalize_loxone_certificate_chain_pem(value: str) -> str:
+    """Verify the pinned Gen. 1 certificate chain and return its leaf RSA key."""
+    blocks = re.findall(
+        r"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----",
+        value,
+        flags=re.DOTALL,
+    )
+    if len(blocks) < 2:
+        raise LoxoneSecurityError("Miniserver returned an invalid certificate chain")
+    try:
+        certificates = [x509.load_pem_x509_certificate(block.encode()) for block in blocks]
+        root = certificates[0]
+        if root.fingerprint(hashes.SHA256()).hex() != _LOXONE_ROOT_SHA256:
+            raise LoxoneSecurityError("Miniserver certificate chain has an untrusted root")
+        now = datetime.now(UTC)
+        for certificate in certificates:
+            if not certificate.not_valid_before_utc <= now <= certificate.not_valid_after_utc:
+                raise LoxoneSecurityError("Miniserver certificate chain is outside its validity")
+        for issuer, certificate in pairwise(certificates):
+            if certificate.issuer != issuer.subject:
+                raise LoxoneSecurityError("Miniserver certificate chain has an invalid issuer")
+            issuer_key = issuer.public_key()
+            if not isinstance(issuer_key, RSAPublicKey):
+                raise LoxoneSecurityError("Miniserver certificate issuer key is not RSA")
+            signature_hash = certificate.signature_hash_algorithm
+            if signature_hash is None:
+                raise LoxoneSecurityError("Miniserver certificate signature is unsupported")
+            issuer_key.verify(
+                certificate.signature,
+                certificate.tbs_certificate_bytes,
+                asymmetric_padding.PKCS1v15(),
+                signature_hash,
+            )
+        root_key = root.public_key()
+        if not isinstance(root_key, RSAPublicKey):
+            raise LoxoneSecurityError("Miniserver certificate root key is not RSA")
+        root_signature_hash = root.signature_hash_algorithm
+        if root_signature_hash is None:
+            raise LoxoneSecurityError("Miniserver root certificate signature is unsupported")
+        root_key.verify(
+            root.signature,
+            root.tbs_certificate_bytes,
+            asymmetric_padding.PKCS1v15(),
+            root_signature_hash,
+        )
+    except LoxoneSecurityError:
+        raise
+    except (InvalidSignature, TypeError, ValueError) as exc:
+        raise LoxoneSecurityError("Miniserver returned an invalid certificate chain") from exc
+    leaf_key = certificates[-1].public_key()
+    if not isinstance(leaf_key, RSAPublicKey):
+        raise LoxoneSecurityError("Miniserver certificate leaf key is not RSA")
+    return leaf_key.public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode("ascii")
+
+
 def encrypt_session_key(public_key_pem: str, key: bytes, iv: bytes) -> str:
-    """Encrypt the hexadecimal AES key and IV with RSA PKCS#1 v1.5."""
+    """Encrypt the hexadecimal AES key and IV as raw Base64 for WebSocket use."""
     loaded = _load_rsa_public_key(public_key_pem)
     payload = f"{key.hex()}:{iv.hex()}".encode("ascii")
     encrypted = loaded.encrypt(payload, asymmetric_padding.PKCS1v15())
-    return quote(base64.b64encode(encrypted).decode("ascii"), safe="")
+    return base64.b64encode(encrypted).decode("ascii")
 
 
 @dataclass(slots=True)
@@ -156,5 +219,5 @@ class CommandEncryptor:
         return encrypt_session_key(public_key_pem, self.key, self.iv)
 
     def encrypted_http_request(self, command: str, public_key_pem: str) -> str:
-        session_key = self.encrypted_session_key(public_key_pem)
+        session_key = quote(self.encrypted_session_key(public_key_pem), safe="")
         return f"/{self.encrypted_command(command)}?sk={session_key}"

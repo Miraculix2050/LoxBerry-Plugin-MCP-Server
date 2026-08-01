@@ -57,17 +57,22 @@ dabei nicht verändert. Der nachfolgende Miniserver-Test ergänzt diesen
 Runtime-Nachweis um Anmeldung, Rechtefilterung, Ereignisse, Reconnect und
 Tokenwiderruf.
 
-Der reale Gen.-1-Endpunkt lieferte am selben Tag bei `getPublicKey` einen
-DER-codierten RSA-Public-Key mit dem historischen PEM-Label `CERTIFICATE`, aber
-kein X.509-Zertifikat. Der Adapter akzeptiert diese Gen.-1-Variante nur, wenn
-der Inhalt als DER-Public-Key parsebar und tatsächlich RSA ist. Ein über diesen
-Schlüssel vollständig per RSA/AES Command Encryption gesendeter `apiKey`-Probe
-antwortete mit Code `200`. Außerdem serialisiert der Adapter Client-IDs im von
-Loxone geforderten UUID-Format `8-4-4-16`. Fehler des HTTP-Unterbaus werden ohne
-die möglicherweise sensitive verschlüsselte Request-URL weitergegeben.
+Der reale Gen.-1-Endpunkt lieferte am selben Tag über `getcertificate` eine
+X.509-Kette mit dem Loxone-Root-Zertifikat und einem RSA-Leaf-Zertifikat. Der
+Adapter validiert Gültigkeitszeiträume, Ausstellerbeziehungen und Signaturen der
+Kette gegen den fest hinterlegten SHA-256-Fingerprint des Loxone-Roots und nutzt
+erst danach den öffentlichen Leaf-Schlüssel. Ein über diesen Schlüssel
+vollständig per RSA/AES Command Encryption gesendeter `apiKey`-Probe antwortete
+mit Code `200`. Außerdem serialisiert der Adapter Client-IDs im von Loxone
+geforderten UUID-Format `8-4-4-16`. Fehler des HTTP-Unterbaus werden ohne die
+möglicherweise sensitive verschlüsselte Request-URL weitergegeben.
 
-Die anschließende JWT-Anforderung antwortete noch mit `401`. Daher bleiben die
-im externen Testdatenordner ausgewählten sichtbaren und unsichtbaren Controls
-bis zur Korrektur beziehungsweise Bestätigung der Testanmeldung ausdrücklich
-unbestätigt; Rechtefilterung, Statusereignisse, Reconnect und Tokenwiderruf sind
-noch offen.
+Die reale WebSocket-Prüfung bestätigte anschließend `keyexchange` und das
+verschlüsselte `getkey2`. Erst die verschlüsselte JWT-Anforderung antwortete mit
+`401`, identisch für die Tokenrechte Web (`2`) und App (`4`). Im gespeicherten
+Loxone-Projekt sind beide Rechte für den vorgesehenen Testbenutzer gesetzt; ob
+dieser Benutzerstand unverändert auf dem aktiven Miniserver liegt, kann der
+Client nicht prüfen. Daher bleiben die im externen Testdatenordner ausgewählten
+sichtbaren und unsichtbaren Controls bis zur Bestätigung der aktiven
+Testanmeldung ausdrücklich unbestätigt; Rechtefilterung, Statusereignisse,
+Reconnect und Tokenwiderruf sind noch offen.

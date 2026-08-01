@@ -18,6 +18,7 @@ from mcpserver.loxone.security import (
     LoxoneSecurityError,
     encrypt_aes_command,
     encrypt_session_key,
+    normalize_loxone_certificate_chain_pem,
     normalize_rsa_public_key_pem,
     password_hmac,
 )
@@ -50,9 +51,29 @@ def test_session_key_uses_rsa_pkcs1_v15() -> None:
     )
 
     encoded = encrypt_session_key(public_pem, b"k" * 32, b"i" * 16)
-    plaintext = private_key.decrypt(base64.b64decode(unquote(encoded)), padding.PKCS1v15())
+    plaintext = private_key.decrypt(base64.b64decode(encoded), padding.PKCS1v15())
 
     assert plaintext == f"{'6b' * 32}:{'69' * 16}".encode()
+
+
+def test_http_command_uri_encodes_the_raw_session_key() -> None:
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    public_pem = (
+        private_key.public_key()
+        .public_bytes(
+            serialization.Encoding.PEM,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        .decode()
+    )
+    encryptor = CommandEncryptor(key=b"k" * 32, iv=b"i" * 16, salt="salt")
+
+    path = encryptor.encrypted_http_request("jdev/test", public_pem)
+    encoded_session_key = path.split("?sk=", 1)[1]
+
+    assert "/" not in encoded_session_key
+    assert "+" not in encoded_session_key
+    assert unquote(encoded_session_key) != encoded_session_key or "=" in encoded_session_key
 
 
 def test_gen1_certificate_without_line_breaks_yields_rsa_public_key() -> None:
@@ -92,6 +113,70 @@ def test_gen1_mislabelled_der_public_key_yields_rsa_public_key() -> None:
 
     assert isinstance(loaded, rsa.RSAPublicKey)
     assert loaded.public_numbers() == private_key.public_key().public_numbers()
+
+
+def test_loxone_certificate_chain_uses_verified_leaf_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    leaf_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    root_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Loxone test root")])
+    leaf_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Miniserver")])
+    now = datetime.now(UTC)
+    root = (
+        x509.CertificateBuilder()
+        .subject_name(root_name)
+        .issuer_name(root_name)
+        .public_key(root_key.public_key())
+        .serial_number(1)
+        .not_valid_before(now - timedelta(minutes=1))
+        .not_valid_after(now + timedelta(days=1))
+        .sign(root_key, hashes.SHA256())
+    )
+    leaf = (
+        x509.CertificateBuilder()
+        .subject_name(leaf_name)
+        .issuer_name(root_name)
+        .public_key(leaf_key.public_key())
+        .serial_number(2)
+        .not_valid_before(now - timedelta(minutes=1))
+        .not_valid_after(now + timedelta(days=1))
+        .sign(root_key, hashes.SHA256())
+    )
+    monkeypatch.setattr(
+        "mcpserver.loxone.security._LOXONE_ROOT_SHA256",
+        root.fingerprint(hashes.SHA256()).hex(),
+    )
+    chain = (
+        root.public_bytes(serialization.Encoding.PEM)
+        + leaf.public_bytes(serialization.Encoding.PEM)
+    ).decode()
+
+    normalized = normalize_loxone_certificate_chain_pem(chain)
+    loaded = serialization.load_pem_public_key(normalized.encode())
+
+    assert isinstance(loaded, rsa.RSAPublicKey)
+    assert loaded.public_numbers() == leaf_key.public_key().public_numbers()
+
+
+def test_loxone_certificate_chain_rejects_unpinned_root() -> None:
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Untrusted")])
+    now = datetime.now(UTC)
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(1)
+        .not_valid_before(now - timedelta(minutes=1))
+        .not_valid_after(now + timedelta(days=1))
+        .sign(key, hashes.SHA256())
+    )
+    chain = (certificate.public_bytes(serialization.Encoding.PEM) * 2).decode()
+
+    with pytest.raises(LoxoneSecurityError, match="untrusted root"):
+        normalize_loxone_certificate_chain_pem(chain)
 
 
 def test_aes_command_validates_session_material() -> None:

@@ -121,35 +121,101 @@ async def test_token_acquisition_encrypts_credentials_and_retains_hash_algorithm
         )
         .decode()
     )
-    paths: list[str] = []
+    commands: list[tuple[str, bool]] = []
 
-    async def fake_get_json(path: str) -> dict[str, object]:
-        paths.append(path)
-        if path == "/jdev/sys/getPublicKey":
-            return {"LL": {"Code": "200", "value": public_pem}}
-        if path == "/jdev/sys/getkey2/restricted-reader":
-            return {
-                "LL": {
-                    "Code": "200",
-                    "value": {"key": "00112233", "salt": "a1b2", "hashAlg": "SHA256"},
-                }
-            }
-        assert path.startswith("/jdev/sys/enc/")
-        return {
-            "LL": {
-                "Code": "200",
-                "value": {"token": "jwt-secret", "key": "44556677", "validUntil": 123},
-            }
-        }
+    class FakeWebSocket:
+        closed = False
 
-    monkeypatch.setattr(client, "_get_json", fake_get_json)
+        async def close(self) -> None:
+            self.closed = True
+
+    websocket = FakeWebSocket()
+
+    async def fake_websocket_public_key() -> str:
+        return public_pem
+
+    async def fake_connect_websocket() -> Any:
+        return websocket
+
+    async def fake_websocket_command(
+        _websocket: Any,
+        _encryptor: Any,
+        command: str,
+        *,
+        encrypted: bool,
+        timeout_seconds: float,
+        max_payload_bytes: int,
+    ) -> object:
+        assert timeout_seconds == client.timeout_seconds
+        assert max_payload_bytes == client.max_response_bytes
+        commands.append((command, encrypted))
+        if not encrypted:
+            assert command.startswith("jdev/sys/keyexchange/")
+            return "OK"
+        if command == "jdev/sys/getkey2/restricted-reader":
+            return {"key": "00112233", "salt": "a1b2", "hashAlg": "SHA256"}
+        assert command.startswith("jdev/sys/getjwt/")
+        assert "/restricted-reader/4/098802e1-02b4-603c-ffffeee000d80cfd/" in command
+        return {"token": "jwt-secret", "key": "44556677", "validUntil": 123}
+
+    monkeypatch.setattr(client, "websocket_public_key", fake_websocket_public_key)
+    monkeypatch.setattr(client, "_connect_websocket", fake_connect_websocket)
+    monkeypatch.setattr("mcpserver.loxone.client._websocket_command", fake_websocket_command)
 
     token = await client.acquire_token("restricted-reader", "password-secret")
 
     assert token.hash_algorithm == "SHA256"
     assert "jwt-secret" not in repr(token)
-    assert "password-secret" not in "".join(paths)
-    assert all("getjwt" not in path for path in paths)
+    assert "password-secret" not in "".join(command for command, _ in commands)
+    assert commands[0][1] is False
+    assert commands[1] == ("jdev/sys/getkey2/restricted-reader", True)
+    assert commands[2][1] is True
+    assert websocket.closed is True
+
+
+@pytest.mark.asyncio
+async def test_token_acquisition_closes_websocket_when_keyexchange_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = LoxoneClient(
+        MiniserverEndpoint.parse_gen1("http://192.168.1.10"),
+        client_uuid=UUID("098802e1-02b4-603c-ffff-eee000d80cfd"),
+    )
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    public_pem = (
+        private_key.public_key()
+        .public_bytes(
+            serialization.Encoding.PEM,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        .decode()
+    )
+
+    class FakeWebSocket:
+        closed = False
+
+        async def close(self) -> None:
+            self.closed = True
+
+    websocket = FakeWebSocket()
+
+    async def fake_websocket_public_key() -> str:
+        return public_pem
+
+    async def fake_connect_websocket() -> Any:
+        return websocket
+
+    async def fail_command(*_args: object, **_kwargs: object) -> object:
+        raise LoxoneConnectionError("Miniserver rejected the request")
+
+    monkeypatch.setattr(client, "websocket_public_key", fake_websocket_public_key)
+    monkeypatch.setattr(client, "_connect_websocket", fake_connect_websocket)
+    monkeypatch.setattr("mcpserver.loxone.client._websocket_command", fail_command)
+
+    with pytest.raises(LoxoneConnectionError, match="rejected"):
+        await client.acquire_token("restricted-reader", "password-secret")
+
+    assert websocket.closed is True
 
 
 @pytest.mark.asyncio
