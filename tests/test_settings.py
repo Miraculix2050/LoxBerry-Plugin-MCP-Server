@@ -38,7 +38,12 @@ def test_invalid_port_is_rejected(monkeypatch: pytest.MonkeyPatch, port: str) ->
 
 @pytest.mark.parametrize(
     "origin",
-    ["ftp://example.test", "https://user@example.test", "https://example.test/path"],
+    [
+        "ftp://example.test",
+        "https://user@example.test",
+        "https://:secret@example.test",
+        "https://example.test/path",
+    ],
 )
 def test_invalid_origin_is_rejected(monkeypatch: pytest.MonkeyPatch, origin: str) -> None:
     monkeypatch.setenv("MCPSERVER_ALLOWED_ORIGINS", origin)

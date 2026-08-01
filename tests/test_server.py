@@ -26,6 +26,23 @@ def test_health_is_small_and_contains_no_configuration() -> None:
     assert set(response.json()) == {"ok", "service", "version"}
 
 
+def test_health_rejects_unknown_host() -> None:
+    app = create_server(_settings()).streamable_http_app()
+    with TestClient(app, base_url="http://untrusted.example") as client:
+        response = client.get("/healthz")
+
+    assert response.status_code == 421
+
+
+def test_health_rejects_unknown_origin() -> None:
+    app = create_server(_settings()).streamable_http_app()
+    headers = {"Origin": "https://untrusted.example"}
+    with TestClient(app, base_url="http://testserver") as client:
+        response = client.get("/healthz", headers=headers)
+
+    assert response.status_code == 403
+
+
 def test_unknown_host_is_rejected() -> None:
     app = create_server(_settings()).streamable_http_app()
     with TestClient(app, base_url="http://untrusted.example") as client:

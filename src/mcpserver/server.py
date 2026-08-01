@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Final
 
 from mcp.server.fastmcp import FastMCP
-from mcp.server.transport_security import TransportSecuritySettings
+from mcp.server.transport_security import TransportSecurityMiddleware, TransportSecuritySettings
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
@@ -22,6 +22,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
         allowed_hosts=list(settings.allowed_hosts),
         allowed_origins=list(settings.allowed_origins),
     )
+    transport_guard = TransportSecurityMiddleware(transport_security)
     server = FastMCP(
         SERVER_NAME,
         host=settings.host,
@@ -35,7 +36,10 @@ def create_server(settings: ServerSettings) -> FastMCP:
     @server.custom_route(  # type: ignore[misc]
         "/healthz", methods=["GET"], include_in_schema=False
     )
-    async def health(_: Request) -> Response:
+    async def health(request: Request) -> Response:
+        rejection = await transport_guard.validate_request(request)
+        if rejection is not None:
+            return rejection
         return JSONResponse(
             {
                 "ok": True,

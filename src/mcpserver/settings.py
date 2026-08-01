@@ -29,7 +29,13 @@ def _validate_origins(origins: tuple[str, ...]) -> tuple[str, ...]:
         parsed = urlsplit(origin)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise ValueError("MCPSERVER_ALLOWED_ORIGINS must contain HTTP(S) origins")
-        if parsed.path not in {"", "/"} or parsed.query or parsed.fragment or parsed.username:
+        if (
+            parsed.path not in {"", "/"}
+            or parsed.query
+            or parsed.fragment
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
             raise ValueError(
                 "MCPSERVER_ALLOWED_ORIGINS entries must not contain paths or credentials"
             )
