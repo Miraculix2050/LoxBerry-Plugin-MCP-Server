@@ -49,6 +49,8 @@ def test_invalid_port_is_rejected(monkeypatch: pytest.MonkeyPatch, port: str) ->
         "HTTPS://client.example",
         "https://bücher.example",
         "https://[2001:0db8:0:0:0:0:0:1]",
+        "https://example%2ecom",
+        "https://example.com\\evil",
     ],
 )
 def test_invalid_origin_is_rejected(monkeypatch: pytest.MonkeyPatch, origin: str) -> None:
