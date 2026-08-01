@@ -25,6 +25,28 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+require_running() {
+	process_name=$1
+	process_pid=$2
+	process_log=$3
+	if ! kill -0 "$process_pid" 2>/dev/null; then
+		printf '%s exited before owning its test port\n' "$process_name" >&2
+		cat "$process_log" >&2 2>/dev/null || true
+		exit 1
+	fi
+}
+
+"$python" - <<'PY'
+import socket
+
+for port in (8765, 18888):
+    with socket.socket() as listener:
+        try:
+            listener.bind(("127.0.0.1", port))
+        except OSError as error:
+            raise SystemExit(f"test port {port} is already occupied: {error}") from error
+PY
+
 mkdir "$work_dir/empty"
 cat >"$work_dir/apache.conf" <<EOF
 ServerRoot "/etc/apache2"
@@ -58,12 +80,20 @@ apache_pid=$!
 
 attempt=0
 while [ "$attempt" -lt 100 ]; do
+	require_running "MCP server" "$server_pid" "$work_dir/server.log"
+	require_running "Apache" "$apache_pid" "$work_dir/apache-error.log"
 	if curl -fsS http://127.0.0.1:8765/healthz >/dev/null 2>&1; then
 		break
 	fi
 	attempt=$((attempt + 1))
 	sleep 0.05
 done
+require_running "MCP server" "$server_pid" "$work_dir/server.log"
+require_running "Apache" "$apache_pid" "$work_dir/apache-error.log"
+if [ "$attempt" -eq 100 ]; then
+	printf 'MCP server did not become ready\n' >&2
+	exit 1
+fi
 
 request='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"apache-spike","version":"1"}}}'
 response=$(curl -fsS \
