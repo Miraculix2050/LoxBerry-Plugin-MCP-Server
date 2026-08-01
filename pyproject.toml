@@ -9,6 +9,7 @@ description = "Local MCP server for LoxBerry and Loxone"
 requires-python = ">=3.13,<3.14"
 license = "Apache-2.0"
 dependencies = [
+    "idna==3.18",
     "mcp==1.28.1",
 ]
 

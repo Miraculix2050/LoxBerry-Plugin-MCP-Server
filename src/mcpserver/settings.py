@@ -7,6 +7,8 @@ import os
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
+import idna
+
 
 def _parse_port(value: str) -> int:
     try:
@@ -63,22 +65,13 @@ def _canonical_hostname(host: str, *, setting: str) -> str:
         if looks_numeric or host.endswith("."):
             raise ValueError(f"{setting} contains a noncanonical numeric hostname") from None
         try:
-            canonical = host.encode("idna").decode("ascii")
-        except UnicodeError as exc:
+            canonical = idna.encode(host, uts46=True, std3_rules=True).decode("ascii")
+        except idna.IDNAError as exc:
             raise ValueError(f"{setting} contains an invalid hostname") from exc
 
         labels = canonical.split(".")
-        try:
-            valid_alabels = all(
-                not label.lower().startswith("xn--")
-                or label.encode("ascii").decode("idna").encode("idna").decode("ascii") == label
-                for label in labels
-            )
-        except UnicodeError:
-            valid_alabels = False
         if (
             len(canonical) > 253
-            or not valid_alabels
             or any(not label or len(label) > 63 for label in labels)
             or any(label.startswith("-") or label.endswith("-") for label in labels)
             or any(

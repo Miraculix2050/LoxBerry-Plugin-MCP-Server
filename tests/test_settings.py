@@ -108,11 +108,18 @@ def test_canonical_non_default_origin_port_is_retained(
 
 
 def test_canonical_idna_origin_is_retained(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("MCPSERVER_ALLOWED_ORIGINS", "https://xn--bcher-kva.example")
+    monkeypatch.setenv(
+        "MCPSERVER_ALLOWED_ORIGINS",
+        "https://xn--bcher-kva.example,https://xn--fa-hia.de,https://xn--3xa.gr",
+    )
 
     settings = ServerSettings.from_environment()
 
-    assert settings.allowed_origins == ("https://xn--bcher-kva.example",)
+    assert settings.allowed_origins == (
+        "https://xn--bcher-kva.example",
+        "https://xn--fa-hia.de",
+        "https://xn--3xa.gr",
+    )
 
 
 def test_canonical_ipv6_origin_is_retained(monkeypatch: pytest.MonkeyPatch) -> None:
