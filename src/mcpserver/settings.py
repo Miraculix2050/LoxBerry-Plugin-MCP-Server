@@ -30,7 +30,7 @@ def _validate_origins(origins: tuple[str, ...]) -> tuple[str, ...]:
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise ValueError("MCPSERVER_ALLOWED_ORIGINS must contain HTTP(S) origins")
         if (
-            parsed.path not in {"", "/"}
+            parsed.path != ""
             or parsed.query
             or parsed.fragment
             or parsed.username is not None

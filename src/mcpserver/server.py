@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Final
 
 from mcp.server.fastmcp import FastMCP
@@ -13,6 +14,30 @@ from mcpserver import __version__
 from mcpserver.settings import ServerSettings
 
 SERVER_NAME: Final = "LoxBerry MCP Server"
+_TRANSPORT_LOGGER_NAME: Final = "mcp.server.transport_security"
+_SENSITIVE_REJECTION_PREFIXES: Final = (
+    "Invalid Host header:",
+    "Invalid Origin header:",
+    "Invalid Content-Type header:",
+)
+
+
+class _RedactRejectedTransportHeader(logging.Filter):
+    """Prevent rejected attacker-controlled headers from reaching service logs."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        for prefix in _SENSITIVE_REJECTION_PREFIXES:
+            if message.startswith(prefix):
+                record.msg = f"{prefix} [redacted]"
+                record.args = ()
+                break
+        return True
+
+
+_transport_logger = logging.getLogger(_TRANSPORT_LOGGER_NAME)
+if not any(isinstance(item, _RedactRejectedTransportHeader) for item in _transport_logger.filters):
+    _transport_logger.addFilter(_RedactRejectedTransportHeader())
 
 
 def create_server(settings: ServerSettings) -> FastMCP:

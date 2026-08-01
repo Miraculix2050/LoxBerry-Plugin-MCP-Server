@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import logging
+
+import pytest
 from starlette.testclient import TestClient
 
 from mcpserver.server import create_server
@@ -58,6 +61,21 @@ def test_unknown_origin_is_rejected() -> None:
         response = client.get("/mcp", headers=headers)
 
     assert response.status_code == 403
+
+
+@pytest.mark.parametrize("path", ["/healthz", "/mcp"])
+def test_rejected_origin_is_redacted_from_logs(caplog: pytest.LogCaptureFixture, path: str) -> None:
+    app = create_server(_settings()).streamable_http_app()
+    secret = "token-that-must-not-be-logged"
+    headers = {"Origin": f"https://user:{secret}@untrusted.example"}
+    caplog.set_level(logging.WARNING, logger="mcp.server.transport_security")
+
+    with TestClient(app, base_url="http://testserver") as client:
+        response = client.get(path, headers=headers)
+
+    assert response.status_code == 403
+    assert secret not in caplog.text
+    assert "Invalid Origin header: [redacted]" in caplog.text
 
 
 def test_mcp_initialize_uses_expected_protocol() -> None:

@@ -42,6 +42,7 @@ def test_invalid_port_is_rejected(monkeypatch: pytest.MonkeyPatch, port: str) ->
         "ftp://example.test",
         "https://user@example.test",
         "https://:secret@example.test",
+        "https://example.test/",
         "https://example.test/path",
     ],
 )
