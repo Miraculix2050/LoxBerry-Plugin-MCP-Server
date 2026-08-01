@@ -14,6 +14,7 @@ from uuid import UUID
 
 import httpx
 from websockets.asyncio.client import ClientConnection, connect
+from websockets.exceptions import ConnectionClosedOK
 from websockets.typing import Subprotocol
 
 from mcpserver.loxone.events import (
@@ -152,35 +153,15 @@ async def _receive_websocket(
             return header, None
         payload = await asyncio.wait_for(websocket.recv(), timeout=timeout_seconds)
         if isinstance(payload, str):
-            combined_text = payload
-            while True:
-                actual_sizes = {len(combined_text)}
-                encoded_size = len(combined_text.encode("utf-8"))
-                if encoded_size > max_payload_bytes:
-                    raise LoxoneProtocolError("WebSocket text payload exceeds the configured limit")
-                actual_sizes.add(encoded_size)
-                if header.payload_length in actual_sizes:
-                    return header, combined_text
-                if min(actual_sizes) > header.payload_length:
-                    raise LoxoneProtocolError("WebSocket payload length does not match its header")
-                chunk = await asyncio.wait_for(websocket.recv(), timeout=timeout_seconds)
-                if not isinstance(chunk, str):
-                    raise LoxoneProtocolError("WebSocket payload changes type between chunks")
-                combined_text += chunk
-        else:
-            combined_bytes = payload
-            while len(combined_bytes) < header.payload_length:
-                chunk = await asyncio.wait_for(websocket.recv(), timeout=timeout_seconds)
-                if not isinstance(chunk, bytes):
-                    raise LoxoneProtocolError("WebSocket payload changes type between chunks")
-                combined_bytes += chunk
-                if len(combined_bytes) > max_payload_bytes:
-                    raise LoxoneProtocolError(
-                        "WebSocket binary payload exceeds the configured limit"
-                    )
-            if len(combined_bytes) != header.payload_length:
+            actual_sizes = {len(payload), len(payload.encode("utf-8"))}
+            if max(actual_sizes) > max_payload_bytes:
+                raise LoxoneProtocolError("WebSocket text payload exceeds the configured limit")
+            if header.payload_length not in actual_sizes:
                 raise LoxoneProtocolError("WebSocket payload length does not match its header")
-            return header, combined_bytes
+            return header, payload
+        if len(payload) != header.payload_length:
+            raise LoxoneProtocolError("WebSocket payload length does not match its header")
+        return header, payload
 
 
 async def _close_websocket(websocket: ClientConnection, timeout_seconds: float) -> None:
@@ -520,7 +501,13 @@ class LoxoneWebSocketSession:
         """Invalidate the current token over this authenticated session."""
         digest = await self._fresh_token_digest()
         user = quote(self._token.username, safe="")
-        await self._command(f"jdev/sys/killtoken/{digest}/{user}", encrypted=True)
+        try:
+            await self._command(f"jdev/sys/killtoken/{digest}/{user}", encrypted=True)
+        except ConnectionClosedOK:
+            # A Miniserver may close the authenticated connection immediately
+            # after invalidating the connection token. A normal close is the
+            # successful terminal response in that case.
+            return
 
     async def state_events(self) -> AsyncIterator[tuple[StateEvent, ...]]:
         await self._command("jdev/sps/enablebinstatusupdate")

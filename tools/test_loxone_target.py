@@ -99,6 +99,7 @@ async def _run(args: argparse.Namespace) -> None:
     endpoint = MiniserverEndpoint.parse_gen1(args.endpoint)
     client = LoxoneClient(endpoint, client_uuid=uuid4(), client_name="LoxBerry MCP Phase-0 Test")
     token = None
+    primary_error: BaseException | None = None
     try:
         probe = await asyncio.wait_for(client.probe(), timeout=args.operation_timeout)
         if probe.firmware != args.expected_firmware:
@@ -151,11 +152,20 @@ async def _run(args: argparse.Namespace) -> None:
         print(f"LOXONE_SERIAL_FINGERPRINT={serial_fingerprint}")
         print("LOXONE_WEBSOCKET_SNAPSHOT=pass", flush=True)
         print("LOXONE_WEBSOCKET_RECONNECT=pass", flush=True)
+    except BaseException as exc:
+        primary_error = exc
+        raise
     finally:
         password = ""
         if token is not None:
-            await asyncio.wait_for(client.kill_token(token), timeout=args.operation_timeout)
-            print("LOXONE_TOKEN_REVOCATION=pass", flush=True)
+            try:
+                await asyncio.wait_for(client.kill_token(token), timeout=args.operation_timeout)
+            except Exception:
+                print("LOXONE_TOKEN_REVOCATION=fail", flush=True)
+                if primary_error is None:
+                    raise
+            else:
+                print("LOXONE_TOKEN_REVOCATION=pass", flush=True)
 
 
 def main() -> int:

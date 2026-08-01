@@ -8,6 +8,8 @@ import httpx
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+from websockets.exceptions import ConnectionClosedOK
+from websockets.frames import Close
 
 from mcpserver.loxone.client import (
     LoxoneClient,
@@ -77,7 +79,7 @@ async def test_websocket_receive_skips_estimated_header() -> None:
     class FakeWebSocket:
         def __init__(self) -> None:
             self.messages: list[bytes | str] = [
-                bytes((3, MessageType.TEXT, 1, 0, 0, 0, 0, 0)),
+                bytes((3, MessageType.TEXT, 0x80, 0, 0, 0, 0, 0)),
                 bytes((3, MessageType.TEXT, 0, 0, 2, 0, 0, 0)),
                 "{}",
             ]
@@ -111,27 +113,6 @@ async def test_websocket_receive_accepts_gen1_character_count_for_text() -> None
 
     assert header.message_type is MessageType.BINARY_FILE
     assert payload == "ä"
-
-
-@pytest.mark.asyncio
-async def test_websocket_receive_assembles_a_chunked_file() -> None:
-    class FakeWebSocket:
-        def __init__(self) -> None:
-            self.messages: list[bytes | str] = [
-                bytes((3, MessageType.BINARY_FILE, 0, 0, 6, 0, 0, 0)),
-                "abc",
-                "def",
-            ]
-
-        async def recv(self) -> bytes | str:
-            return self.messages.pop(0)
-
-    header, payload = await _receive_websocket(
-        cast(Any, FakeWebSocket()), timeout_seconds=0.1, max_payload_bytes=100
-    )
-
-    assert header.message_type is MessageType.BINARY_FILE
-    assert payload == "abcdef"
 
 
 def test_gen1_endpoint_builds_canonical_websocket_url() -> None:
@@ -451,7 +432,31 @@ async def test_authenticated_session_kills_token_with_a_fresh_key(
 
 
 @pytest.mark.asyncio
-async def test_structure_accepts_text_content_in_file_message(
+async def test_authenticated_session_accepts_normal_close_after_killing_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    token = LoxoneToken("jwt-secret", "reader", "expired-key", "SHA256", 100)
+    session = LoxoneWebSocketSession(
+        cast(Any, object()),
+        public_key="unused",
+        token=token,
+        timeout_seconds=1,
+        max_payload_bytes=100,
+    )
+
+    async def fake_command(command: str, *, encrypted: bool = False) -> object:
+        if command == "jdev/sys/getkey":
+            return "aabbccdd"
+        assert encrypted is True
+        raise ConnectionClosedOK(Close(1000, ""), Close(1000, ""), True)
+
+    monkeypatch.setattr(session, "_command", fake_command)
+
+    await session.kill_token()
+
+
+@pytest.mark.asyncio
+async def test_structure_accepts_gen1_text_content_in_file_message(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     payload = (

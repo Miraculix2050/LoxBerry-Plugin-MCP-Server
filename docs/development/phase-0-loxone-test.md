@@ -78,8 +78,15 @@ oder SHA256 für den Passwort- und Tokenhash. Jede Tokenauthentifizierung,
 -erneuerung und -widerrufung bezieht über die jeweilige verschlüsselte
 WebSocket-Verbindung einen frischen `getkey`-Einmalschlüssel.
 
-Die im externen Testdatenordner ausgewählten sichtbaren und unsichtbaren
-Controls bleiben bis zum vollständigen Strukturnachweis ausdrücklich
-unbestätigt. Rechtefilterung, Statusereignisse und Reconnect sind noch offen;
-der korrigierte Tokenwiderruf ist nach lokalem Regressionstest noch einmal am
-Zielgerät zu bestätigen.
+Der reale Strukturabruf bestätigte außerdem das dokumentierte Estimated-Bit
+`0x80` vor dem exakten Header. Der getestete Gen.-1-Miniserver kennzeichnet die
+`LoxAPP3.json` im exakten Header abweichend als Binärdatei, überträgt den Inhalt
+aber als Textnachricht. Der Adapter akzeptiert ausschließlich diese Kombination
+für Textstrukturen und gibt keine rohe Struktur aus. Der Miniserver beendet die
+authentifizierte Verbindung nach erfolgreichem `killtoken` regulär mit Status
+`1000`; dieser Abschluss wurde am Zielgerät als erfolgreicher Widerruf bestätigt.
+
+Der vollständige Rechtefiltertest ist noch offen: Das als unsichtbar vorgesehene
+Control erschien im benutzerbezogenen Strukturfile und ist daher für den
+Testbenutzer derzeit noch berechtigt. Statusereignisse und Reconnect werden erst
+nach Korrektur dieser externen Testbenutzerrechte geprüft.

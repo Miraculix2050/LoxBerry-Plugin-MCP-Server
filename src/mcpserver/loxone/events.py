@@ -51,7 +51,7 @@ def parse_header(payload: bytes, *, max_payload_bytes: int) -> MessageHeader:
     if len(payload) != _HEADER.size:
         raise LoxoneProtocolError("WebSocket header must contain exactly 8 bytes")
     marker, identifier, info, reserved, payload_length = _HEADER.unpack(payload)
-    if marker != 0x03 or reserved != 0:
+    if marker != 0x03 or reserved != 0 or info & 0x7F:
         raise LoxoneProtocolError("WebSocket header contains invalid reserved data")
     try:
         message_type = MessageType(identifier)
@@ -61,7 +61,7 @@ def parse_header(payload: bytes, *, max_payload_bytes: int) -> MessageHeader:
         raise LoxoneProtocolError("WebSocket payload exceeds the configured limit")
     return MessageHeader(
         message_type=message_type,
-        estimated=bool(info & 0x01),
+        estimated=bool(info & 0x80),
         payload_length=payload_length,
     )
 
