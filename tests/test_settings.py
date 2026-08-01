@@ -37,6 +37,39 @@ def test_invalid_port_is_rejected(monkeypatch: pytest.MonkeyPatch, port: str) ->
 
 
 @pytest.mark.parametrize(
+    "hosts",
+    [
+        "https://loxberry.local",
+        "loxberry.local:*:443",
+        "user@loxberry.local",
+        "loxberry.local/path",
+        "EXAMPLE.local:8765",
+    ],
+)
+def test_invalid_allowed_host_is_rejected(monkeypatch: pytest.MonkeyPatch, hosts: str) -> None:
+    monkeypatch.setenv("MCPSERVER_ALLOWED_HOSTS", hosts)
+
+    with pytest.raises(ValueError, match="MCPSERVER_ALLOWED_HOSTS"):
+        ServerSettings.from_environment()
+
+
+def test_canonical_allowed_hosts_are_retained(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(
+        "MCPSERVER_ALLOWED_HOSTS",
+        "loxberry.local,loxberry.local:8765,loxberry.local:*,[2001:db8::1]:8765",
+    )
+
+    settings = ServerSettings.from_environment()
+
+    assert settings.allowed_hosts == (
+        "loxberry.local",
+        "loxberry.local:8765",
+        "loxberry.local:*",
+        "[2001:db8::1]:8765",
+    )
+
+
+@pytest.mark.parametrize(
     "origin",
     [
         "ftp://example.test",
