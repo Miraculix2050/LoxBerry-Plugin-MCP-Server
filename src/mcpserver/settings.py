@@ -53,6 +53,16 @@ def _validate_origins(origins: tuple[str, ...]) -> tuple[str, ...]:
         try:
             host = str(ipaddress.ip_address(host))
         except ValueError:
+            numeric_label = host.rstrip(".").rsplit(".", 1)[-1].lower()
+            looks_numeric = numeric_label.isdigit() or (
+                numeric_label.startswith("0x")
+                and len(numeric_label) > 2
+                and all(character in "0123456789abcdef" for character in numeric_label[2:])
+            )
+            if looks_numeric or host.endswith("."):
+                raise ValueError(
+                    "MCPSERVER_ALLOWED_ORIGINS contains a noncanonical numeric hostname"
+                ) from None
             try:
                 host = host.encode("idna").decode("ascii")
             except UnicodeError as exc:
