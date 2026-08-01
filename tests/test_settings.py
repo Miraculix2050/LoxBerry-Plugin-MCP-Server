@@ -1,8 +1,16 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from mcpserver.settings import ServerSettings
+
+
+def test_arm64_runtime_lock_contains_no_windows_only_packages() -> None:
+    lock_path = Path(__file__).parents[1] / "requirements" / "runtime-arm64.lock"
+
+    assert "pywin32" not in lock_path.read_text(encoding="utf-8").lower()
 
 
 def test_secure_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
