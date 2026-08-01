@@ -14,6 +14,12 @@ Für jeden Assistenten sollte ein eigener Loxone-Benutzer mit den minimal erford
 
 Das Plugin befindet sich im Aufbau. Installations-, Konfigurations- und Nutzungsanleitungen werden zusammen mit der ersten lauffähigen Version ergänzt.
 
+## Entwicklung
+
+- [Implementierungsrichtlinien](docs/development/implementation-guidelines.md)
+- [Änderungsgetriebene Teststrategie](docs/development/test-strategy.md)
+- [Beitragen und Git-Workflow](CONTRIBUTING.md)
+
 ## Lizenz
 
 Dieses Projekt steht unter der [Apache License 2.0](LICENSE).
