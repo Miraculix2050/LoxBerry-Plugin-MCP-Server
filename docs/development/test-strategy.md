@@ -71,6 +71,10 @@ Grenze nicht beweisen können:
 - Benutzer, Gruppen, Dateirechte oder `sudo`
 - systemd und Prozess-Lifecycle
 - Netzwerkbindung und Verbindung zum Miniserver
+- Gen.-1-JWT-Anforderung und -Authentifizierung mit Command Encryption auf
+  Firmware `17.1.7.27`
+- Prüfung, dass Basic Auth, Zugangsdaten in URLs und Klartextpasswörter abgelehnt
+  beziehungsweise niemals erzeugt werden
 - Installation, Upgrade oder Deinstallation
 - reale Berechtigungsfilter des Loxone-Benutzers
 
@@ -79,6 +83,43 @@ Dateirechte und Dienstzustände werden vorher gesichert und danach
 wiederhergestellt. Eine Änderung am Installer benötigt den normalen
 Plugin-Manager-Weg; ein Merge allein benötigt keine vollständige
 Installationsabnahme.
+
+## Öffentliche Betatests für nicht vorhandene Hardware
+
+Steht eine zugesagte Hardwaregeneration den Maintainern nicht zur Verfügung,
+wird die fehlende reale Prüfung ausdrücklich als `unverified` beziehungsweise
+`experimental` ausgewiesen. Sie wird nicht durch Mocks als bestanden erklärt.
+
+Tests auf einem Miniserver Gen. 2 werden durch freiwillige Dritte über eine
+öffentliche Beta erbracht. Dafür stellt das Projekt ein versioniertes
+Pre-Release-Paket, Prüfsumme, Testplan, Rücksetzweg, maskierten Diagnoseexport
+und ein strukturiertes GitHub-Issue-Formular bereit. Der Test startet read-only
+und verwendet einen dedizierten Loxone-Benutzer mit Minimalrechten.
+
+Die Gen.-2-Beta prüft zusätzlich HTTPS/WSS mit gültiger Hostnamen- und
+Zertifikatsprüfung, JWT-Anforderung/-Erneuerung und den fehlenden Klartext-
+Fallback nach einem TLS-Fehler. Der jeweilige Firmwarestand wird im Bericht
+festgehalten und erst danach in die Support-Matrix aufgenommen.
+
+Ein verwertbarer Bericht enthält:
+
+- Plugin-, LoxBerry- und Miniserver-Version
+- CPU-Architektur sowie MCP-Client und dessen Version
+- ausgeführte Testfälle mit erwartetem und beobachtetem Ergebnis
+- ausschließlich maskierte relevante Logauszüge
+- Kennzeichnung, ob nur gelesen oder ausdrücklich eine Teststeuerung bedient
+  wurde
+
+Passwörter, Tokens, vollständige Strukturdateien, interne Adressen und
+unmaskierte Zustandsdaten werden nicht angefordert. Schreibtests sind ein
+separater Opt-in-Schritt an unkritischen Steuerungen mit dokumentierter
+Wiederherstellung. Maintainer und KI-Agenten greifen nicht ohne eine separate,
+ausdrückliche Zustimmung remote auf Geräte der Betatester zu.
+
+Die Support-Matrix unterscheidet selbst getestete, durch mindestens einen
+vollständigen unabhängigen Bericht bestätigte, experimentelle und nicht
+unterstützte Kombinationen. Ein fehlender Betatester ist kein fehlgeschlagener
+Test, aber die betreffende Kombination bleibt unbestätigt.
 
 ## Mindestanforderungen an Tests
 
