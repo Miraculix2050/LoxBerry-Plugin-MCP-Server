@@ -714,8 +714,8 @@ Support-Matrix.
 | --- | --- | --- |
 | 1 | Plugin-ID und Ordner | festgelegt: `NAME=mcpserver`, `FOLDER=mcpserver`, `TITLE=LoxBerry MCP Server` |
 | 2 | erste CPU-Architektur | festgelegt: LoxBerry 4 auf Debian 13, `arm64` |
-| 3 | Runtime | festgelegt: Python 3.13 und MCP-SDK 1.28.1; erster aarch64-Wheel-Spike erfolgreich |
-| 4 | öffentlicher Pluginpfad/Apache | festgelegt für den Transport-Spike: `/plugins/mcpserver/mcp` plus Root-Discovery; reale Apache-Prüfung ausstehend |
+| 3 | Runtime | vorläufig: Python 3.13 und MCP-SDK 1.28.1; Wheel-Spike erfolgreich, Start-/RAM-Gates ausstehend |
+| 4 | öffentlicher Pluginpfad/Apache | Spike-Kandidat: `/plugins/mcpserver/mcp` plus Root-Discovery; Festlegung erst nach realer Apache-Prüfung |
 | 5 | MCP-OAuth-Clientregistrierung und Sessionpersistenz | festgelegt: öffentliche Registrierung, PKCE S256, opaque Tokens und atomare dateibasierte Persistenz; Clientprüfung ausstehend |
 | 6 | Miniserver-Firmware | Gen. 1 mindestens `17.1.7.27`; Gen.-2-Stände werden durch die öffentliche Beta bestätigt |
 | 7 | erste unterstützte Control-Typen | festgelegt für Phase 2: `Switch` mit explizitem `on` und `off` |

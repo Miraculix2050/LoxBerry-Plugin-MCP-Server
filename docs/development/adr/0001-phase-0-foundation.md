@@ -1,6 +1,6 @@
 # ADR 0001: Phase-0-Grundarchitektur
 
-- **Status:** Angenommen
+- **Status:** Angenommen; Runtime bis zum vollständigen Ressourcen-Spike vorläufig
 - **Datum:** 2026-08-01
 - **Geltung:** Runtime, Transport, Authentifizierung, Persistenz und erster
   ausführbarer Stand
@@ -30,8 +30,10 @@ Implementierungsdetails ersetzen.
 
 - Ein einzelner unprivilegierter Dienst läuft als `loxberry`, bindet nur an
   `127.0.0.1` und stellt Streamable HTTP bereit.
-- Der geplante öffentliche MCP-Pfad ist `/plugins/mcpserver/mcp`. Apache leitet
-  die erforderlichen OAuth-Discovery-Pfade unter `/.well-known/` separat weiter.
+- Kandidat für den öffentlichen MCP-Pfad im Transport-Spike ist
+  `/plugins/mcpserver/mcp`. Der endgültige Pfad und die separat weitergeleiteten
+  OAuth-Discovery-Pfade unter `/.well-known/` werden erst nach dem realen
+  Apache-Nachweis festgelegt.
 - Externer HTTPS-Zugriff bleibt im ersten öffentlichen Test deaktiviert.
 - Proxy-Header werden nur vom lokalen Apache akzeptiert. Host und Origin werden
   gegen explizite Allowlisten geprüft.
@@ -48,6 +50,26 @@ Implementierungsdetails ersetzen.
 - Codex CLI und Claude Desktop sind die beiden Phase-0-Interoperabilitätsclients.
   Nicht standardkonformes Clientverhalten führt nicht zu einem unsicheren
   Server-Sonderweg.
+
+### Anmeldung des Ressourceninhabers und Einwilligung
+
+- Jeder MCP-Client startet den Authorization-Code-Flow in einem Browser. Die
+  Anmeldeseite wird ausschließlich vom lokalen Plugin ausgeliefert und verlangt
+  ein dediziertes Loxone-Benutzerkonto; ein LoxBerry-Login gilt dafür nicht.
+- Der Benutzername und das Passwort werden nur für die unmittelbare, mit Command
+  Encryption geschützte erste Loxone-Tokenanforderung verwendet. Das Passwort
+  wird weder gespeichert noch protokolliert oder in einen MCP-Token übernommen.
+- Eine Freigabe entsteht erst nach erfolgreicher Loxone-Anmeldung und einer
+  Einwilligungsseite, die MCP-Client, Miniserver, Loxone-Identität und die
+  beantragten Scopes anzeigt. Der Authorization Code bindet genau diese Werte
+  sowie Redirect-URI und PKCE-Challenge.
+- Eine Session ist unveränderlich an diese Loxone-Identität gebunden. Ein anderer
+  Loxone-Benutzer benötigt eine neue Anmeldung; gemeinsame vorkonfigurierte
+  Tokens und eine nachträgliche Identitätsumschaltung sind nicht zulässig.
+- Jeder LAN-Client darf den Flow initiieren, kann ihn aber ohne gültige Loxone-
+  Zugangsdaten nicht abschließen. Fehlversuche werden begrenzt und auditierbar
+  erfasst. LoxBerry-Administratoren können MCP-Sessions widerrufen, erhalten
+  dadurch aber keine Loxone-Rechte und können keine Loxone-Identität zuweisen.
 
 ### Loxone-Anbindung und Secrets
 
@@ -89,6 +111,8 @@ Arbeitspaket ergänzt.
 
 ## Folgen
 
-Python ist die bestätigte Ausgangsruntime; ein vorsorglicher paralleler Go-Build
-entfällt. Apache-, Loxone-, WebSocket- und OAuth-Aussagen bleiben bis zu den
-jeweiligen reproduzierbaren Spikes als noch nicht real bestätigt gekennzeichnet.
+Python ist nach dem erfolgreichen Wheel-Spike die vorläufige Ausgangsruntime.
+Die Bestätigung und der Verzicht auf einen Go-Vergleich erfolgen erst, wenn auch
+Startzeit und Idle-RSS die festgelegten Grenzen erfüllen. Apache-, Loxone-,
+WebSocket- und OAuth-Aussagen bleiben bis zu den jeweiligen reproduzierbaren
+Spikes als noch nicht real bestätigt gekennzeichnet.
