@@ -28,6 +28,7 @@ from pydantic import ValidationError
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
+from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore
 from mcpserver.auth.provider import SCOPE, Phase0OAuthProvider
 from mcpserver.loxone.client import (
     LoxoneClient,
@@ -179,11 +180,13 @@ class Phase0OAuthWeb:
         endpoint: MiniserverEndpoint,
         issuer: str,
         resource: str,
+        loxone_store: EncryptedLoxoneTokenStore | None = None,
     ) -> None:
         self.provider = provider
         self.endpoint = endpoint
         self.issuer = issuer
         self.resource = resource
+        self.loxone_store = loxone_store
         self.transactions: dict[str, LoginTransaction] = {}
         self._client_uuid = uuid5(NAMESPACE_URL, issuer)
         self._login_slots = asyncio.Semaphore(2)
@@ -425,13 +428,39 @@ class Phase0OAuthWeb:
                 and transaction.miniserver_id
             ):
                 transaction.phase = "approving"
-                if not await self._kill(transaction):
-                    transaction.phase = "consent"
-                    return _html_page(
-                        "Authorization unavailable",
-                        "<h1>Authorization unavailable</h1>",
-                        status=503,
-                    )
+                family_id: str | None = None
+                if self.loxone_store is None:
+                    if not await self._kill(transaction):
+                        transaction.phase = "consent"
+                        return _html_page(
+                            "Authorization unavailable",
+                            "<h1>Authorization unavailable</h1>",
+                            status=503,
+                        )
+                else:
+                    family_id = secrets.token_hex(16)
+                    token = transaction.loxone_token
+                    if token is None:
+                        transaction.phase = "consent"
+                        return _html_page(
+                            "Authorization unavailable",
+                            "<h1>Authorization unavailable</h1>",
+                            status=503,
+                        )
+                    try:
+                        self.loxone_store.put(
+                            family_id,
+                            transaction.miniserver_id,
+                            transaction.identity_id,
+                            token,
+                        )
+                    except Exception:
+                        transaction.phase = "consent"
+                        return _html_page(
+                            "Authorization unavailable",
+                            "<h1>Authorization unavailable</h1>",
+                            status=503,
+                        )
                 try:
                     code = self.provider.issue_authorization_code(
                         client_id=transaction.client_id,
@@ -440,14 +469,18 @@ class Phase0OAuthWeb:
                         resource=transaction.resource,
                         identity_id=transaction.identity_id,
                         miniserver_id=transaction.miniserver_id,
+                        family_id=family_id,
                     )
                 except TokenError:
+                    if family_id is not None and self.loxone_store is not None:
+                        self.loxone_store.delete(family_id)
                     transaction.phase = "consent"
                     return _html_page(
                         "Authorization unavailable",
                         "<h1>Authorization unavailable</h1>",
                         status=503,
                     )
+                transaction.loxone_token = None
                 transaction.phase = "finished"
                 self.transactions.pop(transaction_id, None)
                 response = _redirect(

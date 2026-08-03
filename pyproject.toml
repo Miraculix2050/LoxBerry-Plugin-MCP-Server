@@ -4,11 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "loxberry-mcpserver"
-version = "0.0.1"
+version = "0.1.0-alpha.1"
 description = "Local MCP server for LoxBerry and Loxone"
 requires-python = ">=3.13,<3.14"
 license = "Apache-2.0"
 dependencies = [
+    "cryptography==50.0.0",
+    "httpx==0.28.1",
     "idna==3.18",
     "mcp==1.28.1",
     "websockets==17.0.1",

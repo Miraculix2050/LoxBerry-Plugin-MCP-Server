@@ -27,6 +27,8 @@ AUTHORIZATION_CODE_TTL: Final = 5 * 60
 ACCESS_TOKEN_TTL: Final = 10 * 60
 REFRESH_FAMILY_TTL: Final = 30 * 24 * 60 * 60
 _MAX_REGISTERED_CLIENTS: Final = 256
+_MAX_ACTIVE_FAMILIES: Final = 256
+_MAX_FAMILIES_PER_CLIENT: Final = 16
 _UNUSED_CLIENT_TTL: Final = 24 * 60 * 60
 
 
@@ -92,11 +94,13 @@ class Phase0OAuthProvider(
         issuer: str,
         resource: str,
         clock: Callable[[], float] = time.time,
+        on_family_revoked: Callable[[str], None] | None = None,
     ) -> None:
         self.store = store
         self.issuer = issuer
         self.resource = resource
         self._clock = clock
+        self._on_family_revoked = on_family_revoked
 
     def now(self) -> int:
         return int(self._clock())
@@ -152,6 +156,8 @@ class Phase0OAuthProvider(
         }
         for family_id in expired_families:
             document["families"].pop(family_id, None)
+            if self._on_family_revoked is not None:
+                self._on_family_revoked(family_id)
         document["codes"] = {
             digest: record
             for digest, record in document["codes"].items()
@@ -194,13 +200,14 @@ class Phase0OAuthProvider(
         resource: str,
         identity_id: str,
         miniserver_id: str,
+        family_id: str | None = None,
     ) -> str:
         if resource != self.resource:
             raise TokenError("invalid_grant", "Resource mismatch")
         raw_code = _opaque_token()
         digest = token_digest(raw_code)
         now = self.now()
-        family_id = secrets.token_hex(16)
+        family_id = family_id or secrets.token_hex(16)
         record = {
             "client_id": client_id,
             "redirect_uri": redirect_uri,
@@ -215,8 +222,19 @@ class Phase0OAuthProvider(
         }
 
         def insert(document: dict[str, Any]) -> None:
+            self._garbage_collect(document)
             if client_id not in document["clients"]:
                 raise TokenError("invalid_client", "Client registration is unavailable")
+            active_families = [
+                item for item in document["families"].values() if not item.get("revoked", False)
+            ]
+            if len(active_families) >= _MAX_ACTIVE_FAMILIES:
+                raise TokenError("invalid_request", "Session capacity reached")
+            if (
+                sum(item.get("client_id") == client_id for item in active_families)
+                >= _MAX_FAMILIES_PER_CLIENT
+            ):
+                raise TokenError("invalid_request", "Client session capacity reached")
             document["codes"][digest] = record
             document["families"][family_id] = {
                 "client_id": client_id,
@@ -342,8 +360,7 @@ class Phase0OAuthProvider(
             refresh_token=raw_refresh,
         )
 
-    @staticmethod
-    def _revoke_family(document: dict[str, Any], family_id: str) -> None:
+    def _revoke_family(self, document: dict[str, Any], family_id: str) -> None:
         family = document["families"].get(family_id)
         if family is not None:
             family["revoked"] = True
@@ -351,6 +368,8 @@ class Phase0OAuthProvider(
             for record in document[collection].values():
                 if record.get("family_id") == family_id:
                     record["status"] = "revoked"
+        if self._on_family_revoked is not None:
+            self._on_family_revoked(family_id)
 
     @staticmethod
     def _refresh_model(raw_token: str, record: dict[str, Any]) -> StoredRefreshToken:

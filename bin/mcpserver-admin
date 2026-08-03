@@ -1,0 +1,3 @@
+#!/bin/bash
+set -u
+exec "${LBPDATA:?}/venv/bin/python" -m mcpserver.admin

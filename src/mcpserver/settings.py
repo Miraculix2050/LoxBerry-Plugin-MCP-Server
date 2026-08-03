@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import ipaddress
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final
 from urllib.parse import urlsplit
 
 import idna
 
+from mcpserver.config import AtomicConfigStore, PluginConfig
 from mcpserver.loxone.client import MiniserverEndpoint
 
 SERVER_PORT: Final = 8765
@@ -160,11 +161,14 @@ def _validate_origins(origins: tuple[str, ...]) -> tuple[str, ...]:
 
 @dataclass(frozen=True, slots=True)
 class Phase0AuthSettings:
-    """Injected Phase-0 OAuth settings; no Loxone credentials are persisted."""
+    """Validated OAuth and Loxone runtime paths (name retained for compatibility)."""
 
     public_origin: str
     store_path: Path
     loxone_endpoint: MiniserverEndpoint
+    loxone_store_path: Path | None = None
+    install_key_path: Path | None = None
+    plugin_config: PluginConfig | None = None
 
     @property
     def resource_url(self) -> str:
@@ -200,7 +204,58 @@ def _phase0_auth_from_environment() -> Phase0AuthSettings | None:
     return Phase0AuthSettings(
         public_origin=public_origin,
         store_path=store_path,
-        loxone_endpoint=MiniserverEndpoint.parse_gen1(values[2]),
+        loxone_endpoint=MiniserverEndpoint.parse(values[2]),
+    )
+
+
+def _phase1_auth_from_environment(
+    base: Phase0AuthSettings | None,
+) -> tuple[Phase0AuthSettings | None, bool]:
+    config_value = os.getenv("MCPSERVER_CONFIG", "").strip()
+    token_value = os.getenv("MCPSERVER_LOXONE_TOKEN_STORE", "").strip()
+    key_value = os.getenv("MCPSERVER_INSTALL_KEY", "").strip()
+    if bool(token_value) != bool(key_value):
+        raise ValueError(
+            "MCPSERVER_LOXONE_TOKEN_STORE and MCPSERVER_INSTALL_KEY are required together"
+        )
+    config: PluginConfig | None = None
+    if config_value:
+        config_path = Path(config_value)
+        if not config_path.is_absolute():
+            raise ValueError("MCPSERVER_CONFIG must be an absolute path")
+        config = AtomicConfigStore(config_path).load()
+        if not config.enabled:
+            return None, False
+        if base is None:
+            public_origin = config.public_origin or os.getenv("MCPSERVER_PUBLIC_ORIGIN", "").strip()
+            auth_store = os.getenv("MCPSERVER_AUTH_STORE", "").strip()
+            if not public_origin or not auth_store or not config.loxone_endpoint:
+                raise ValueError("OAuth settings are required when the plugin is enabled")
+            public_origin = _validate_origins((public_origin,))[0]
+            if not public_origin.startswith("https://"):
+                raise ValueError("MCPSERVER_PUBLIC_ORIGIN must use HTTPS")
+            store_path = Path(auth_store)
+            if not store_path.is_absolute() or store_path.suffix.lower() != ".json":
+                raise ValueError("MCPSERVER_AUTH_STORE must be an absolute JSON file path")
+            base = Phase0AuthSettings(
+                public_origin=public_origin,
+                store_path=store_path,
+                loxone_endpoint=MiniserverEndpoint.parse(config.loxone_endpoint),
+            )
+    if base is None:
+        return None, True
+    endpoint = base.loxone_endpoint
+    if config is not None and config.loxone_endpoint:
+        endpoint = MiniserverEndpoint.parse(config.loxone_endpoint)
+    return (
+        replace(
+            base,
+            loxone_endpoint=endpoint,
+            loxone_store_path=Path(token_value) if token_value else None,
+            install_key_path=Path(key_value) if key_value else None,
+            plugin_config=config,
+        ),
+        True,
     )
 
 
@@ -213,6 +268,7 @@ class ServerSettings:
     allowed_hosts: tuple[str, ...]
     allowed_origins: tuple[str, ...]
     phase0_auth: Phase0AuthSettings | None = None
+    service_enabled: bool = True
 
     @classmethod
     def from_environment(cls) -> ServerSettings:
@@ -237,10 +293,25 @@ class ServerSettings:
                 setting="MCPSERVER_ALLOWED_ORIGINS",
             )
         )
+        phase_auth, service_enabled = _phase1_auth_from_environment(
+            None if os.getenv("MCPSERVER_CONFIG", "").strip() else _phase0_auth_from_environment()
+        )
+        if phase_auth is not None and phase_auth.plugin_config is not None:
+            public = urlsplit(phase_auth.public_origin)
+            public_host = public.hostname or ""
+            if ":" in public_host:
+                public_host = f"[{public_host}]"
+            if public.port is not None and public.port != 443:
+                public_host = f"{public_host}:{public.port}"
+            if public_host not in allowed_hosts:
+                allowed_hosts = (*allowed_hosts, public_host)
+            if phase_auth.public_origin not in allowed_origins:
+                allowed_origins = (*allowed_origins, phase_auth.public_origin)
         return cls(
             host=host,
             port=port,
             allowed_hosts=allowed_hosts,
             allowed_origins=allowed_origins,
-            phase0_auth=_phase0_auth_from_environment(),
+            phase0_auth=phase_auth,
+            service_enabled=service_enabled,
         )

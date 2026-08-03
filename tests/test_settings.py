@@ -22,6 +22,9 @@ def test_secure_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
         "MCPSERVER_PUBLIC_ORIGIN",
         "MCPSERVER_AUTH_STORE",
         "MCPSERVER_LOXONE_ENDPOINT",
+        "MCPSERVER_CONFIG",
+        "MCPSERVER_LOXONE_TOKEN_STORE",
+        "MCPSERVER_INSTALL_KEY",
     ):
         monkeypatch.delenv(key, raising=False)
 
@@ -32,6 +35,47 @@ def test_secure_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.allowed_hosts == ("127.0.0.1:8765", "localhost:8765")
     assert settings.allowed_origins == ()
     assert settings.phase0_auth is None
+    assert settings.service_enabled is True
+
+
+def test_disabled_phase1_configuration_fails_closed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config = tmp_path / "mcpserver.json"
+    config.write_text('{"schema_version":1,"server":{"enabled":false}}', encoding="utf-8")
+    monkeypatch.setenv("MCPSERVER_CONFIG", str(config))
+
+    settings = ServerSettings.from_environment()
+
+    assert settings.phase0_auth is None
+    assert settings.service_enabled is False
+
+
+def test_enabled_phase1_configuration_supplies_endpoint_and_public_origin(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config = tmp_path / "mcpserver.json"
+    config.write_text(
+        '{"schema_version":1,"server":{"enabled":true,"public_origin":'
+        '"https://mcp.example"},"loxone":{"endpoint":"https://miniserver.example"}}',
+        encoding="utf-8",
+    )
+    key = tmp_path / "install.key"
+    key.write_bytes(b"k" * 32)
+    monkeypatch.setenv("MCPSERVER_CONFIG", str(config))
+    monkeypatch.setenv("MCPSERVER_PUBLIC_ORIGIN", "")
+    monkeypatch.setenv("MCPSERVER_AUTH_STORE", str(tmp_path / "sessions.json"))
+    monkeypatch.delenv("MCPSERVER_LOXONE_ENDPOINT", raising=False)
+    monkeypatch.setenv("MCPSERVER_LOXONE_TOKEN_STORE", str(tmp_path / "tokens.json.enc"))
+    monkeypatch.setenv("MCPSERVER_INSTALL_KEY", str(key))
+
+    settings = ServerSettings.from_environment()
+
+    assert settings.phase0_auth is not None
+    assert settings.service_enabled is True
+    assert settings.phase0_auth.loxone_endpoint.secure is True
+    assert "mcp.example" in settings.allowed_hosts
+    assert "https://mcp.example" in settings.allowed_origins
 
 
 def test_phase0_auth_settings_are_derived_without_credentials(
