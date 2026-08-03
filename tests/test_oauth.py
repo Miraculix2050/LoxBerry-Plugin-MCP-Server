@@ -1,20 +1,24 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 from pathlib import Path
 from types import SimpleNamespace
 
+import httpx
 import pytest
+from mcp.server.auth.provider import RegistrationError, TokenError
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
 from starlette.applications import Starlette
+from starlette.requests import Request
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
 from mcpserver.auth.provider import SCOPE, Phase0OAuthProvider
 from mcpserver.auth.store import AtomicJsonAuthStore
-from mcpserver.auth.web import Phase0OAuthWeb
+from mcpserver.auth.web import Phase0OAuthWeb, _limited_body
 from mcpserver.loxone.client import LoxoneToken, MiniserverEndpoint, ProbeResult
 
 ISSUER = "https://public.example/plugins/mcpserver/oauth"
@@ -54,6 +58,90 @@ async def _client(provider: Phase0OAuthProvider) -> OAuthClientInformationFull:
     )
     await provider.register_client(client)
     return client
+
+
+def _client_info(client_id: str, *, grants: list[str] | None = None) -> OAuthClientInformationFull:
+    return OAuthClientInformationFull(
+        client_id=client_id,
+        client_id_issued_at=1_800_000_000,
+        redirect_uris=[AnyUrl(REDIRECT)],
+        token_endpoint_auth_method="none",
+        grant_types=grants or ["authorization_code", "refresh_token"],
+        response_types=["code"],
+        scope=SCOPE,
+    )
+
+
+@pytest.mark.asyncio
+async def test_limited_body_rejects_negative_and_oversized_streams() -> None:
+    negative = Request(
+        {"type": "http", "method": "POST", "path": "/", "headers": [(b"content-length", b"-1")]}
+    )
+    assert await _limited_body(negative, 4) is None
+
+    messages = iter(
+        [
+            {"type": "http.request", "body": b"abc", "more_body": True},
+            {"type": "http.request", "body": b"def", "more_body": False},
+        ]
+    )
+
+    async def receive() -> dict[str, object]:
+        return next(messages)
+
+    streamed = Request({"type": "http", "method": "POST", "path": "/", "headers": []}, receive)
+    assert await _limited_body(streamed, 4) is None
+
+
+@pytest.mark.asyncio
+async def test_registration_capacity_returns_protocol_error_and_prunes_old_clients(
+    tmp_path: Path,
+) -> None:
+    clock = Clock()
+    provider = _provider(tmp_path, clock)
+    template = _client_info("template").model_dump(mode="json", exclude_none=True)
+
+    def fill(document: dict[str, object]) -> None:
+        clients = document["clients"]
+        assert isinstance(clients, dict)
+        for index in range(256):
+            clients[f"old-{index}"] = {**template, "client_id": f"old-{index}"}
+
+    provider.store.mutate(fill)
+    with pytest.raises(RegistrationError, match="capacity"):
+        await provider.register_client(_client_info("overflow"))
+
+    clock.value += 24 * 60 * 60 + 1
+    await provider.register_client(_client_info("replacement"))
+    assert set(provider.store.snapshot()["clients"]) == {"replacement"}
+
+
+@pytest.mark.asyncio
+async def test_registration_requires_authorization_code_and_refresh_grants(tmp_path: Path) -> None:
+    provider = _provider(tmp_path)
+    with pytest.raises(RegistrationError, match="Unsupported"):
+        await provider.register_client(_client_info("refresh-only", grants=["refresh_token"]))
+
+
+@pytest.mark.asyncio
+async def test_stale_unused_client_is_removed_before_authorization_starts(tmp_path: Path) -> None:
+    clock = Clock()
+    provider = _provider(tmp_path, clock)
+    client = _client_info("stale-client")
+    await provider.register_client(client)
+
+    clock.value += 24 * 60 * 60 + 1
+
+    assert await provider.get_client("stale-client") is None
+    with pytest.raises(TokenError, match="registration"):
+        provider.issue_authorization_code(
+            client_id="stale-client",
+            redirect_uri=REDIRECT,
+            code_challenge=CHALLENGE,
+            resource=RESOURCE,
+            identity_id="identity",
+            miniserver_id="miniserver",
+        )
 
 
 @pytest.mark.asyncio
@@ -263,6 +351,27 @@ def test_registration_rejects_another_scope(tmp_path: Path) -> None:
     assert response.json()["error"] == "invalid_client_metadata"
 
 
+def test_registration_rejects_refresh_only_metadata(tmp_path: Path) -> None:
+    payload = {**_registration_payload(), "grant_types": ["refresh_token"]}
+    with TestClient(_web_app(_provider(tmp_path))) as client:
+        response = client.post("/register", json=payload)
+
+    assert response.status_code == 400
+    assert response.json()["error"] == "invalid_client_metadata"
+
+
+def test_invalid_registration_requests_do_not_consume_valid_client_quota(tmp_path: Path) -> None:
+    with TestClient(_web_app(_provider(tmp_path))) as client:
+        invalid = [
+            client.post("/register", content=b"invalid", headers={"Content-Type": "text/plain"})
+            for _ in range(20)
+        ]
+        valid = client.post("/register", json=_registration_payload())
+
+    assert all(response.status_code == 400 for response in invalid)
+    assert valid.status_code == 201
+
+
 def test_authorize_uses_secure_cookie_csrf_and_exact_resource(tmp_path: Path) -> None:
     provider = _provider(tmp_path)
     with TestClient(_web_app(provider), follow_redirects=False) as client:
@@ -304,6 +413,153 @@ def test_authorize_bounds_concurrent_login_transactions(tmp_path: Path) -> None:
 
     assert all(response.status_code == 200 for response in accepted)
     assert rejected.status_code == 503
+
+
+def test_login_rate_limit_survives_new_authorization_transactions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    provider = _provider(tmp_path)
+    web = Phase0OAuthWeb(
+        provider,
+        endpoint=MiniserverEndpoint.parse_gen1("http://192.168.255.254"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+    )
+
+    class FailingLoxoneClient:
+        def __init__(self, endpoint: object, *, client_uuid: object) -> None:
+            pass
+
+        async def probe(self) -> ProbeResult:
+            raise RuntimeError("unavailable")
+
+    monkeypatch.setattr("mcpserver.auth.web.LoxoneClient", FailingLoxoneClient)
+    app = Starlette(
+        routes=[
+            Route("/register", web.register, methods=["POST"]),
+            Route("/authorize", web.authorize, methods=["GET", "POST"]),
+        ]
+    )
+    with TestClient(app, follow_redirects=False) as client:
+        results = []
+        for _ in range(6):
+            registration = client.post("/register", json=_registration_payload())
+            parameters = _authorize_parameters(registration.json()["client_id"])
+            client.cookies.clear()
+            client.get("/authorize", params=parameters)
+            transaction = next(reversed(web.transactions.values()))
+            results.append(
+                client.post(
+                    "/authorize",
+                    headers={"Cookie": f"phase0_oauth_tx={transaction.transaction_id}"},
+                    data={
+                        "csrf": transaction.csrf_token,
+                        "action": "login",
+                        "username": "same-user",
+                        "password": "wrong-password",
+                    },
+                )
+            )
+
+    assert [response.status_code for response in results] == [200, 200, 200, 200, 200, 429]
+
+
+@pytest.mark.asyncio
+async def test_parallel_login_posts_acquire_only_one_loxone_token(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    provider = _provider(tmp_path)
+    web = Phase0OAuthWeb(
+        provider,
+        endpoint=MiniserverEndpoint.parse_gen1("http://192.168.255.254"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+    )
+    acquired: list[LoxoneToken] = []
+
+    class FakeSession:
+        async def load_structure(self) -> object:
+            await asyncio.sleep(0.01)
+            return SimpleNamespace(identity=SimpleNamespace(username="parallel-user"))
+
+        async def close(self) -> None:
+            return None
+
+    class FakeLoxoneClient:
+        def __init__(self, endpoint: object, *, client_uuid: object) -> None:
+            pass
+
+        async def probe(self) -> ProbeResult:
+            return ProbeResult("17.1.7.27", "serial", True, True)
+
+        async def acquire_token(self, username: str, password: str) -> LoxoneToken:
+            token = LoxoneToken(f"jwt-{len(acquired)}", username, "key", "SHA256", 1)
+            acquired.append(token)
+            return token
+
+        async def open_session(self, token: LoxoneToken) -> FakeSession:
+            return FakeSession()
+
+        async def kill_token(self, token: LoxoneToken) -> None:
+            token.destroy()
+
+    monkeypatch.setattr("mcpserver.auth.web.LoxoneClient", FakeLoxoneClient)
+    app = Starlette(
+        routes=[
+            Route("/register", web.register, methods=["POST"]),
+            Route("/authorize", web.authorize, methods=["GET", "POST"]),
+        ]
+    )
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport, base_url="https://public.example", follow_redirects=False
+    ) as client:
+        registration = await client.post("/register", json=_registration_payload())
+        await client.get(
+            "/authorize", params=_authorize_parameters(registration.json()["client_id"])
+        )
+        transaction = next(iter(web.transactions.values()))
+        data = {
+            "csrf": transaction.csrf_token,
+            "action": "login",
+            "username": "parallel-user",
+            "password": "password",
+        }
+        headers = {"Cookie": f"phase0_oauth_tx={transaction.transaction_id}"}
+        responses = await asyncio.gather(
+            client.post("/authorize", headers=headers, data=data),
+            client.post("/authorize", headers=headers, data=data),
+        )
+
+    assert sorted(response.status_code for response in responses) == [200, 400]
+    assert len(acquired) == 1
+    await web._kill(transaction)
+
+
+@pytest.mark.asyncio
+async def test_expired_store_records_are_garbage_collected(tmp_path: Path) -> None:
+    clock = Clock()
+    provider = _provider(tmp_path, clock)
+    client = await _client(provider)
+    raw_code = provider.issue_authorization_code(
+        client_id=client.client_id or "",
+        redirect_uri=REDIRECT,
+        code_challenge=CHALLENGE,
+        resource=RESOURCE,
+        identity_id="identity",
+        miniserver_id="miniserver",
+    )
+    code = await provider.load_authorization_code(client, raw_code)
+    assert code is not None
+    await provider.exchange_authorization_code(client, code)
+
+    clock.value += 30 * 24 * 60 * 60 + 1
+    await provider.register_client(_client_info("new-client"))
+    document = provider.store.snapshot()
+    assert document["codes"] == {}
+    assert document["families"] == {}
+    assert document["access_tokens"] == {}
+    assert document["refresh_tokens"] == {}
 
 
 @pytest.mark.asyncio

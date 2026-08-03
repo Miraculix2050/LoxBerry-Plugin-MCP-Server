@@ -9,16 +9,21 @@ import hmac
 import json
 import os
 import secrets
+import stat
 import sys
 import threading
 from collections.abc import Callable
 from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import Any, BinaryIO, Final, TypeVar
+from typing import Any, BinaryIO, Final, Protocol, TypeVar, cast
 
 _SCHEMA_VERSION: Final = 1
 _COLLECTIONS: Final = ("clients", "codes", "access_tokens", "refresh_tokens", "families")
 T = TypeVar("T")
+
+
+class _UidProvider(Protocol):
+    def geteuid(self) -> int: ...
 
 
 class AuthStoreError(RuntimeError):
@@ -73,6 +78,7 @@ class AtomicJsonAuthStore:
             if not self.path.exists():
                 self._write_unlocked(self._new_document())
             else:
+                self._secure_existing_file()
                 self._read_unlocked()
 
     def _prepare_directory(self) -> None:
@@ -89,6 +95,23 @@ class AtomicJsonAuthStore:
             "subject_key": base64.urlsafe_b64encode(secrets.token_bytes(32)).decode("ascii"),
             **{name: {} for name in _COLLECTIONS},
         }
+
+    def _secure_existing_file(self) -> None:
+        try:
+            metadata = self.path.lstat()
+            if not stat.S_ISREG(metadata.st_mode) or self.path.is_symlink():
+                raise AuthStoreError("Auth store path is not a regular file")
+            if os.name != "nt":
+                import posix
+
+                current_uid = cast(_UidProvider, posix).geteuid()
+                if metadata.st_uid != current_uid:
+                    raise AuthStoreError("Auth store owner is invalid")
+            os.chmod(self.path, 0o600)
+        except AuthStoreError:
+            raise
+        except OSError as exc:
+            raise AuthStoreError("Auth store file cannot be secured") from exc
 
     @contextmanager
     def _locked(self):  # type: ignore[no-untyped-def]
@@ -170,11 +193,20 @@ class AtomicJsonAuthStore:
 
     def mutate(self, operation: Callable[[dict[str, Any]], T]) -> T:
         """Apply and durably commit one operation while holding both locks."""
+        result: T | None = None
+        failure: BaseException | None = None
         with self._locked():
-            document = self._read_unlocked()
-            result = operation(document)
-            self._write_unlocked(document)
-            return result
+            try:
+                document = self._read_unlocked()
+                original = copy.deepcopy(document)
+                result = operation(document)
+                if document != original:
+                    self._write_unlocked(document)
+            except BaseException as exc:
+                failure = exc
+        if failure is not None:
+            raise failure
+        return result  # type: ignore[return-value]
 
     def pseudonym(self, *parts: str) -> str:
         """Create a stable store-local identifier without retaining source values."""

@@ -25,10 +25,15 @@ Testabschluss bestmöglich mit `killtoken` widerrufen.
 
 ## Automatisierte und Zielsystem-Nachweise
 
-Am 2026-08-03 liefen Formatprüfung, Ruff, striktes mypy und 121 Pytests lokal
+Am 2026-08-03 liefen Formatprüfung, Ruff, striktes mypy und 132 Pytests lokal
 erfolgreich. Die Tests umfassen DCR, Redirect-Grenzen, Scope, Audience, PKCE,
 CSRF, Ablauf, Code-Replay, Refresh-Rotation, Familien-Replay, Widerruf,
 pseudonymisierte Identität und das Fehlen roher Credentials im Store.
+
+Ein unabhängiger Sicherheitsreview ergänzte Regressionen für begrenzte
+Streaming-Request-Bodies, DCR-Kapazität und -Drosselung, transaktionsübergreifende
+Loginbegrenzung, parallele Einmaltransaktionen, Store-Bereinigung sowie
+Dateirechte bereits vorhandener Stores.
 
 Auf LoxBerry `4.0.0.14`, Debian 13, `aarch64`, Python `3.13.5` und Apache
 `2.4.68` wurden zusätzlich bestätigt:

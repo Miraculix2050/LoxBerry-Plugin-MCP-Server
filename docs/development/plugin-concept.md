@@ -709,6 +709,10 @@ Support-Matrix.
 
 - Pluginlayout, Dienst und Admin-UI-Grundgerüst
 - OAuth und Sessionwiderruf
+- OAuth-Store-Lifecycle mit harten Gesamt-/Pro-Client-Grenzen, administrativer
+  Wiederherstellung und belastbarer Größenüberwachung
+- feinere, installationsweite Quoten für erfolgreiche Autorisierungen und
+  langfristige DCR-Bereinigung
 - Struktur, Suche, Beschreibung und Zustände
 - nur `loxone:read`
 - lokale/LAN-Nutzung

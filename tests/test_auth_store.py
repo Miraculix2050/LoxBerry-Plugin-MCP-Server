@@ -37,6 +37,26 @@ def test_store_fails_closed_on_corruption(tmp_path: Path) -> None:
     assert path.read_text(encoding="utf-8") == "not-json"
 
 
+def test_existing_store_is_secured_before_it_is_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "auth" / "sessions.json"
+    AtomicJsonAuthStore(path)
+    calls: list[tuple[Path, int]] = []
+    real_chmod = os.chmod
+
+    def recording_chmod(
+        target: str | bytes | os.PathLike[str] | os.PathLike[bytes], mode: int
+    ) -> None:
+        calls.append((Path(target), mode))
+        real_chmod(target, mode)
+
+    monkeypatch.setattr("mcpserver.auth.store.os.chmod", recording_chmod)
+    AtomicJsonAuthStore(path)
+
+    assert (path, 0o600) in calls
+
+
 def test_pseudonyms_are_stable_and_store_local(tmp_path: Path) -> None:
     first = AtomicJsonAuthStore(tmp_path / "one" / "sessions.json")
     second = AtomicJsonAuthStore(tmp_path / "two" / "sessions.json")

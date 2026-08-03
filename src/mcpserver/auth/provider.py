@@ -14,6 +14,7 @@ from mcp.server.auth.provider import (
     AuthorizationParams,
     OAuthAuthorizationServerProvider,
     RefreshToken,
+    RegistrationError,
     TokenError,
 )
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
@@ -26,6 +27,7 @@ AUTHORIZATION_CODE_TTL: Final = 5 * 60
 ACCESS_TOKEN_TTL: Final = 10 * 60
 REFRESH_FAMILY_TTL: Final = 30 * 24 * 60 * 60
 _MAX_REGISTERED_CLIENTS: Final = 256
+_UNUSED_CLIENT_TTL: Final = 24 * 60 * 60
 
 
 class StoredAuthorizationCode(AuthorizationCode):
@@ -100,7 +102,14 @@ class Phase0OAuthProvider(
         return int(self._clock())
 
     async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
-        record = self.store.snapshot()["clients"].get(client_id)
+        record: dict[str, Any] | None = None
+
+        def load(document: dict[str, Any]) -> None:
+            nonlocal record
+            self._garbage_collect(document)
+            record = document["clients"].get(client_id)
+
+        self.store.mutate(load)
         return OAuthClientInformationFull.model_validate(record) if record is not None else None
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
@@ -111,23 +120,18 @@ class Phase0OAuthProvider(
             or client_info.redirect_uris is None
             or not client_info.redirect_uris
             or any(not redirect_uri_is_allowed(str(uri)) for uri in client_info.redirect_uris)
-            or any(
-                grant not in {"authorization_code", "refresh_token"}
-                for grant in client_info.grant_types
-            )
+            or set(client_info.grant_types) != {"authorization_code", "refresh_token"}
+            or len(client_info.grant_types) != 2
             or client_info.response_types != ["code"]
             or client_info.scope != SCOPE
         ):
-            from mcp.server.auth.provider import RegistrationError
-
             raise RegistrationError("invalid_client_metadata", "Unsupported public client metadata")
 
         record = client_info.model_dump(mode="json", exclude_none=True)
 
         def insert(document: dict[str, Any]) -> None:
+            self._garbage_collect(document)
             if client_info.client_id in document["clients"]:
-                from mcp.server.auth.provider import RegistrationError
-
                 raise RegistrationError(
                     "invalid_client_metadata", "Client identifier already exists"
                 )
@@ -138,6 +142,43 @@ class Phase0OAuthProvider(
             document["clients"][client_info.client_id] = record
 
         self.store.mutate(insert)
+
+    def _garbage_collect(self, document: dict[str, Any]) -> None:
+        now = self.now()
+        expired_families = {
+            family_id
+            for family_id, record in document["families"].items()
+            if record.get("expires_at", 0) <= now
+        }
+        for family_id in expired_families:
+            document["families"].pop(family_id, None)
+        document["codes"] = {
+            digest: record
+            for digest, record in document["codes"].items()
+            if record.get("expires_at", 0) > now and record.get("family_id") not in expired_families
+        }
+        document["access_tokens"] = {
+            digest: record
+            for digest, record in document["access_tokens"].items()
+            if record.get("expires_at", 0) > now and record.get("family_id") not in expired_families
+        }
+        document["refresh_tokens"] = {
+            digest: record
+            for digest, record in document["refresh_tokens"].items()
+            if record.get("family_id") not in expired_families
+        }
+        referenced_clients = {
+            str(record.get("client_id"))
+            for collection in ("codes", "families", "access_tokens", "refresh_tokens")
+            for record in document[collection].values()
+            if record.get("client_id")
+        }
+        document["clients"] = {
+            client_id: record
+            for client_id, record in document["clients"].items()
+            if client_id in referenced_clients
+            or int(record.get("client_id_issued_at", now)) + _UNUSED_CLIENT_TTL > now
+        }
 
     async def authorize(
         self, client: OAuthClientInformationFull, params: AuthorizationParams
@@ -174,6 +215,8 @@ class Phase0OAuthProvider(
         }
 
         def insert(document: dict[str, Any]) -> None:
+            if client_id not in document["clients"]:
+                raise TokenError("invalid_client", "Client registration is unavailable")
             document["codes"][digest] = record
             document["families"][family_id] = {
                 "client_id": client_id,
@@ -264,6 +307,7 @@ class Phase0OAuthProvider(
 
         def exchange(document: dict[str, Any]) -> None:
             nonlocal access_expires_at, raw_access, raw_refresh
+            self._garbage_collect(document)
             digest = token_digest(authorization_code.code)
             record = document["codes"].get(digest)
             if (
@@ -329,6 +373,7 @@ class Phase0OAuthProvider(
 
         def load(document: dict[str, Any]) -> None:
             nonlocal result
+            self._garbage_collect(document)
             record = document["refresh_tokens"].get(token_digest(refresh_token))
             if record is None or record.get("client_id") != client.client_id:
                 return
@@ -364,6 +409,7 @@ class Phase0OAuthProvider(
 
         def exchange(document: dict[str, Any]) -> None:
             nonlocal access_expires_at, failure, raw_access, raw_refresh
+            self._garbage_collect(document)
             record = document["refresh_tokens"].get(token_digest(refresh_token.token))
             if record is None or record.get("client_id") != client.client_id:
                 failure = "Refresh token is invalid"
@@ -401,7 +447,14 @@ class Phase0OAuthProvider(
         )
 
     async def load_access_token(self, token: str) -> StoredAccessToken | None:
-        document = self.store.snapshot()
+        document: dict[str, Any] = {}
+
+        def load(current: dict[str, Any]) -> None:
+            nonlocal document
+            self._garbage_collect(current)
+            document = current
+
+        self.store.mutate(load)
         record = document["access_tokens"].get(token_digest(token))
         if record is None or record.get("status") != "active" or record["expires_at"] <= self.now():
             return None

@@ -14,9 +14,10 @@ import json
 import re
 import secrets
 import time
+from collections import deque
 from collections.abc import Mapping
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Final
 from urllib.parse import urlencode, urlsplit
 from uuid import NAMESPACE_URL, uuid5
@@ -40,6 +41,12 @@ _MAX_JSON_BYTES: Final = 32 * 1024
 _TRANSACTION_TTL: Final = 5 * 60
 _MAX_LOGIN_ATTEMPTS: Final = 5
 _MAX_LOGIN_TRANSACTIONS: Final = 16
+_LOGIN_RATE_WINDOW: Final = 5 * 60
+_MAX_CLIENT_LOGIN_FAILURES: Final = 10
+_MAX_GLOBAL_LOGIN_FAILURES: Final = 20
+_MAX_RATE_KEYS: Final = 512
+_REGISTRATION_RATE_WINDOW: Final = 5 * 60
+_MAX_REGISTRATIONS_PER_WINDOW: Final = 16
 _COOKIE_NAME: Final = "phase0_oauth_tx"
 _PKCE_CHALLENGE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 _PKCE_VERIFIER = re.compile(r"^[A-Za-z0-9._~-]{43,128}$")
@@ -62,6 +69,8 @@ class LoginTransaction:
     identity_id: str | None = None
     miniserver_id: str | None = None
     miniserver_name: str | None = None
+    phase: str = "login"
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
 
 
 def _callback_csp_source(uri: str) -> str:
@@ -125,16 +134,29 @@ label{{display:block;margin:.9rem 0 .25rem}}input{{box-sizing:border-box;width:1
     )
 
 
+async def _limited_body(request: Request, limit: int) -> bytes | None:
+    length_header = request.headers.get("content-length")
+    if length_header is not None:
+        try:
+            length = int(length_header)
+        except ValueError:
+            return None
+        if length < 0 or length > limit:
+            return None
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > limit:
+            return None
+        body.extend(chunk)
+    return bytes(body)
+
+
 async def _form(request: Request, *, allowed: set[str]) -> dict[str, str] | None:
     content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
-    try:
-        length = int(request.headers.get("content-length", "0"))
-    except ValueError:
+    if content_type != "application/x-www-form-urlencoded":
         return None
-    if content_type != "application/x-www-form-urlencoded" or length > _MAX_FORM_BYTES:
-        return None
-    body = await request.body()
-    if len(body) > _MAX_FORM_BYTES:
+    body = await _limited_body(request, _MAX_FORM_BYTES)
+    if body is None:
         return None
     from urllib.parse import parse_qsl
 
@@ -165,6 +187,9 @@ class Phase0OAuthWeb:
         self.transactions: dict[str, LoginTransaction] = {}
         self._client_uuid = uuid5(NAMESPACE_URL, issuer)
         self._login_slots = asyncio.Semaphore(2)
+        self._login_failures: dict[str, deque[int]] = {}
+        self._global_login_failures: deque[int] = deque()
+        self._registration_attempts: dict[str, deque[int]] = {}
 
     async def _kill(self, transaction: LoginTransaction) -> bool:
         token = transaction.loxone_token
@@ -185,8 +210,76 @@ class Phase0OAuthWeb:
             if value.created_at + _TRANSACTION_TTL <= now
         ]
         for key in expired:
-            transaction = self.transactions.pop(key)
-            await self._kill(transaction)
+            transaction = self.transactions.get(key)
+            if transaction is None:
+                continue
+            async with transaction.lock:
+                if self.transactions.get(key) is transaction and await self._kill(transaction):
+                    self.transactions.pop(key, None)
+
+    @staticmethod
+    def _prune_times(values: deque[int], *, now: int, window: int) -> None:
+        while values and values[0] + window <= now:
+            values.popleft()
+
+    def _login_rate_keys(self, transaction: LoginTransaction, username: str) -> tuple[str, str]:
+        normalized = username.casefold()
+        identity_key = self.provider.store.pseudonym(
+            "login-identity", self.endpoint.origin, normalized
+        )
+        return f"identity:{identity_key}", f"client:{transaction.client_id}"
+
+    def _login_is_limited(self, keys: tuple[str, str], now: int) -> bool:
+        self._prune_times(self._global_login_failures, now=now, window=_LOGIN_RATE_WINDOW)
+        if len(self._global_login_failures) >= _MAX_GLOBAL_LOGIN_FAILURES:
+            return True
+        limits = (_MAX_LOGIN_ATTEMPTS, _MAX_CLIENT_LOGIN_FAILURES)
+        for key, limit in zip(keys, limits, strict=True):
+            values = self._login_failures.setdefault(key, deque())
+            self._prune_times(values, now=now, window=_LOGIN_RATE_WINDOW)
+            if len(values) >= limit:
+                return True
+        return False
+
+    def _record_login_failure(self, keys: tuple[str, str], now: int) -> None:
+        self._global_login_failures.append(now)
+        for key in keys:
+            self._login_failures.setdefault(key, deque()).append(now)
+        empty = [key for key, values in self._login_failures.items() if not values]
+        for key in empty:
+            self._login_failures.pop(key, None)
+        if len(self._login_failures) > _MAX_RATE_KEYS:
+            oldest = sorted(
+                self._login_failures,
+                key=lambda key: self._login_failures[key][-1],
+            )
+            for key in oldest[: len(self._login_failures) - _MAX_RATE_KEYS]:
+                self._login_failures.pop(key, None)
+
+    def _clear_identity_failures(self, keys: tuple[str, str]) -> None:
+        self._login_failures.pop(keys[0], None)
+
+    def _registration_key(self, request: Request) -> str:
+        source = request.client.host if request.client is not None else "unknown"
+        return self.provider.store.pseudonym("registration-source", source)
+
+    def _registration_is_limited(self, key: str) -> bool:
+        now = int(time.time())
+        values = self._registration_attempts.setdefault(key, deque())
+        self._prune_times(values, now=now, window=_REGISTRATION_RATE_WINDOW)
+        return len(values) >= _MAX_REGISTRATIONS_PER_WINDOW
+
+    def _record_registration(self, key: str) -> None:
+        self._registration_attempts.setdefault(key, deque()).append(int(time.time()))
+        self._bound_rate_map(self._registration_attempts)
+
+    @staticmethod
+    def _bound_rate_map(values: dict[str, deque[int]]) -> None:
+        if len(values) <= _MAX_RATE_KEYS:
+            return
+        oldest = sorted(values, key=lambda key: values[key][-1] if values[key] else 0)
+        for key in oldest[: len(values) - _MAX_RATE_KEYS]:
+            values.pop(key, None)
 
     @staticmethod
     def _single_query(request: Request) -> dict[str, str] | None:
@@ -317,40 +410,69 @@ class Phase0OAuthWeb:
         ):
             return _html_page("Authorization expired", "<h1>Authorization expired</h1>", status=400)
         action = form.get("action")
-        if action == "login" and transaction.identity_id is None:
-            return await self._login(transaction, form)
-        if action == "approve" and transaction.identity_id and transaction.miniserver_id:
-            if not await self._kill(transaction):
+        async with transaction.lock:
+            if self.transactions.get(transaction_id) is not transaction:
                 return _html_page(
-                    "Authorization unavailable", "<h1>Authorization unavailable</h1>", status=503
+                    "Authorization expired", "<h1>Authorization expired</h1>", status=400
                 )
-            code = self.provider.issue_authorization_code(
-                client_id=transaction.client_id,
-                redirect_uri=transaction.redirect_uri,
-                code_challenge=transaction.code_challenge,
-                resource=transaction.resource,
-                identity_id=transaction.identity_id,
-                miniserver_id=transaction.miniserver_id,
-            )
-            self.transactions.pop(transaction_id, None)
-            response = _redirect(
-                transaction.redirect_uri,
-                {"code": code, "state": transaction.state, "iss": self.issuer},
-            )
-            response.delete_cookie(_COOKIE_NAME, path="/plugins/mcpserver/oauth/authorize")
-            return response
-        if action == "deny":
-            if not await self._kill(transaction):
-                return _html_page(
-                    "Authorization unavailable", "<h1>Authorization unavailable</h1>", status=503
+            if action == "login" and transaction.phase == "login":
+                transaction.phase = "login_pending"
+                return await self._login(transaction, form)
+            if (
+                action == "approve"
+                and transaction.phase == "consent"
+                and transaction.identity_id
+                and transaction.miniserver_id
+            ):
+                transaction.phase = "approving"
+                if not await self._kill(transaction):
+                    transaction.phase = "consent"
+                    return _html_page(
+                        "Authorization unavailable",
+                        "<h1>Authorization unavailable</h1>",
+                        status=503,
+                    )
+                try:
+                    code = self.provider.issue_authorization_code(
+                        client_id=transaction.client_id,
+                        redirect_uri=transaction.redirect_uri,
+                        code_challenge=transaction.code_challenge,
+                        resource=transaction.resource,
+                        identity_id=transaction.identity_id,
+                        miniserver_id=transaction.miniserver_id,
+                    )
+                except TokenError:
+                    transaction.phase = "consent"
+                    return _html_page(
+                        "Authorization unavailable",
+                        "<h1>Authorization unavailable</h1>",
+                        status=503,
+                    )
+                transaction.phase = "finished"
+                self.transactions.pop(transaction_id, None)
+                response = _redirect(
+                    transaction.redirect_uri,
+                    {"code": code, "state": transaction.state, "iss": self.issuer},
                 )
-            self.transactions.pop(transaction_id, None)
-            response = _redirect(
-                transaction.redirect_uri,
-                {"error": "access_denied", "state": transaction.state, "iss": self.issuer},
-            )
-            response.delete_cookie(_COOKIE_NAME, path="/plugins/mcpserver/oauth/authorize")
-            return response
+                response.delete_cookie(_COOKIE_NAME, path="/plugins/mcpserver/oauth/authorize")
+                return response
+            if action == "deny" and transaction.phase in {"login", "consent"}:
+                transaction.phase = "denying"
+                if not await self._kill(transaction):
+                    transaction.phase = "consent" if transaction.identity_id else "login"
+                    return _html_page(
+                        "Authorization unavailable",
+                        "<h1>Authorization unavailable</h1>",
+                        status=503,
+                    )
+                transaction.phase = "finished"
+                self.transactions.pop(transaction_id, None)
+                response = _redirect(
+                    transaction.redirect_uri,
+                    {"error": "access_denied", "state": transaction.state, "iss": self.issuer},
+                )
+                response.delete_cookie(_COOKIE_NAME, path="/plugins/mcpserver/oauth/authorize")
+                return response
         return _html_page(
             "Invalid authorization request", "<h1>Invalid authorization request</h1>", status=400
         )
@@ -359,10 +481,22 @@ class Phase0OAuthWeb:
         transaction.attempts += 1
         if transaction.attempts > _MAX_LOGIN_ATTEMPTS:
             self.transactions.pop(transaction.transaction_id, None)
+            transaction.phase = "finished"
             return _html_page("Authorization expired", "<h1>Authorization expired</h1>", status=429)
         username = form.get("username", "")
         password = form.get("password", "")
+        now = int(time.time())
+        rate_keys = self._login_rate_keys(transaction, username)
+        if self._login_is_limited(rate_keys, now):
+            transaction.phase = "login"
+            return _html_page(
+                "Sign-in temporarily unavailable",
+                "<h1>Sign-in temporarily unavailable / Anmeldung vorübergehend nicht verfügbar</h1>",
+                status=429,
+            )
         if not username or len(username) > 128 or not password or len(password) > 1024:
+            self._record_login_failure(rate_keys, now)
+            transaction.phase = "login"
             return self._login_page(transaction, "Sign-in failed. / Anmeldung fehlgeschlagen.")
         client = LoxoneClient(self.endpoint, client_uuid=self._client_uuid)
         token: LoxoneToken | None = None
@@ -379,18 +513,22 @@ class Phase0OAuthWeb:
             if token is not None:
                 with suppress(LoxoneConnectionError):
                     await client.kill_token(token)
+            self._record_login_failure(rate_keys, now)
+            transaction.phase = "login"
             return self._login_page(transaction, "Sign-in failed. / Anmeldung fehlgeschlagen.")
-        transaction.loxone_token = token
-        transaction.identity_name = structure.identity.username
-        transaction.miniserver_name = probe.serial
-        transaction.miniserver_id = self.provider.store.pseudonym(
-            self.endpoint.origin, probe.serial
-        )
-        transaction.identity_id = self.provider.store.pseudonym(
+        miniserver_id = self.provider.store.pseudonym(self.endpoint.origin, probe.serial)
+        identity_id = self.provider.store.pseudonym(
             self.endpoint.origin,
             probe.serial,
             structure.identity.username,
         )
+        transaction.loxone_token = token
+        transaction.identity_name = structure.identity.username
+        transaction.miniserver_name = probe.serial
+        transaction.miniserver_id = miniserver_id
+        transaction.identity_id = identity_id
+        self._clear_identity_failures(rate_keys)
+        transaction.phase = "consent"
         return self._consent_page(transaction)
 
     async def token(self, request: Request) -> Response:
@@ -461,15 +599,11 @@ class Phase0OAuthWeb:
     async def register(self, request: Request) -> Response:
         if request.headers.get("authorization"):
             return _oauth_error("invalid_client_metadata")
-        try:
-            length = int(request.headers.get("content-length", "0"))
-        except ValueError:
-            return _oauth_error("invalid_client_metadata")
         media_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
-        if media_type != "application/json" or length > _MAX_JSON_BYTES:
+        if media_type != "application/json":
             return _oauth_error("invalid_client_metadata")
-        raw = await request.body()
-        if len(raw) > _MAX_JSON_BYTES:
+        raw = await _limited_body(request, _MAX_JSON_BYTES)
+        if raw is None:
             return _oauth_error("invalid_client_metadata")
         reason = "Malformed client metadata"
         try:
@@ -499,10 +633,16 @@ class Phase0OAuthWeb:
             normalized["scope"] = SCOPE
             normalized["token_endpoint_auth_method"] = "none"
             normalized["client_id"] = _opaque()
-            normalized["client_id_issued_at"] = int(time.time())
+            normalized["client_id_issued_at"] = self.provider.now()
             full = OAuthClientInformationFull.model_validate(normalized)
+            registration_key = self._registration_key(request)
+            if self._registration_is_limited(registration_key):
+                response = _oauth_error("temporarily_unavailable", status=429)
+                response.headers["Retry-After"] = str(_REGISTRATION_RATE_WINDOW)
+                return response
             reason = "Client registration was rejected"
             await self.provider.register_client(full)
+            self._record_registration(registration_key)
         except (ValueError, ValidationError, TypeError, RegistrationError):
             return _json(
                 {"error": "invalid_client_metadata", "error_description": reason}, status=400
