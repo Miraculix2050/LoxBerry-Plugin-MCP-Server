@@ -56,3 +56,21 @@ def test_cache_drops_states_outside_the_filtered_structure() -> None:
 
     assert cache.get("subject", "allowed").freshness is Freshness.CURRENT
     assert cache.get("subject", "denied").freshness is Freshness.UNKNOWN
+
+
+def test_cache_purges_state_removed_from_the_filtered_structure() -> None:
+    cache = UserStateCache()
+    cache.begin_connection("subject")
+    cache.apply(
+        "subject",
+        [
+            StateEvent(uuid="still-allowed", value=1.0),
+            StateEvent(uuid="revoked", value=2.0),
+        ],
+        allowed_uuids={"still-allowed", "revoked"},
+    )
+
+    cache.apply("subject", [], allowed_uuids={"still-allowed"})
+
+    assert cache.get("subject", "still-allowed").freshness is Freshness.CURRENT
+    assert cache.get("subject", "revoked").freshness is Freshness.UNKNOWN

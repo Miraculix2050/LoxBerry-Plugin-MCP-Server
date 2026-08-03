@@ -50,6 +50,10 @@ class LoxoneConnectionError(RuntimeError):
     """Sanitized error raised when the Miniserver cannot be used securely."""
 
 
+class _WebSocketIdleTimeout(TimeoutError):
+    """No WebSocket header arrived within the configured idle interval."""
+
+
 def _loxone_uuid(value: UUID) -> str:
     """Serialize a standard UUID using Loxone's 8-4-4-16 representation."""
     first, second, third, fourth, fifth = str(value).split("-")
@@ -143,7 +147,10 @@ async def _receive_websocket(
     max_payload_bytes: int,
 ) -> tuple[MessageHeader, str | bytes | None]:
     while True:
-        raw_header = await asyncio.wait_for(websocket.recv(), timeout=timeout_seconds)
+        try:
+            raw_header = await asyncio.wait_for(websocket.recv(), timeout=timeout_seconds)
+        except TimeoutError:
+            raise _WebSocketIdleTimeout from None
         if not isinstance(raw_header, bytes):
             raise LoxoneProtocolError("Expected a binary WebSocket header")
         header = parse_header(raw_header, max_payload_bytes=max_payload_bytes)
@@ -218,40 +225,45 @@ class LoxoneClient:
         self.max_response_bytes = max_response_bytes
 
     async def _get_json(self, path: str) -> Mapping[str, Any]:
+        body, _encoding = await self._get_bytes(path)
         try:
-            async with httpx.AsyncClient(
-                base_url=self.endpoint.origin,
-                follow_redirects=False,
-                timeout=self.timeout_seconds,
-                trust_env=False,
-            ) as client:
-                response = await client.get(path)
-                response.raise_for_status()
-                if len(response.content) > self.max_response_bytes:
-                    raise LoxoneConnectionError("Miniserver response exceeds the configured limit")
-                value = response.json()
-        except (httpx.HTTPError, json.JSONDecodeError):
-            # httpx exceptions may contain the complete encrypted request URL.
-            # Suppress the cause so callers and logs only see this fixed text.
+            value = json.loads(body)
+        except (json.JSONDecodeError, UnicodeDecodeError):
             raise LoxoneConnectionError("Miniserver request failed") from None
         if not isinstance(value, Mapping):
             raise LoxoneConnectionError("Miniserver returned an invalid response")
         return value
 
     async def _get_text(self, path: str) -> str:
+        body, encoding = await self._get_bytes(path)
         try:
-            async with httpx.AsyncClient(
-                base_url=self.endpoint.origin,
-                follow_redirects=False,
-                timeout=self.timeout_seconds,
-                trust_env=False,
-            ) as client:
-                response = await client.get(path)
+            return body.decode(encoding)
+        except (LookupError, UnicodeDecodeError):
+            raise LoxoneConnectionError("Miniserver request failed") from None
+
+    async def _get_bytes(self, path: str) -> tuple[bytes, str]:
+        try:
+            async with (
+                httpx.AsyncClient(
+                    base_url=self.endpoint.origin,
+                    follow_redirects=False,
+                    timeout=self.timeout_seconds,
+                    trust_env=False,
+                ) as client,
+                client.stream("GET", path) as response,
+            ):
                 response.raise_for_status()
-                if len(response.content) > self.max_response_bytes:
-                    raise LoxoneConnectionError("Miniserver response exceeds the configured limit")
-                return response.text
+                body = bytearray()
+                async for chunk in response.aiter_bytes():
+                    if len(body) + len(chunk) > self.max_response_bytes:
+                        raise LoxoneConnectionError(
+                            "Miniserver response exceeds the configured limit"
+                        )
+                    body.extend(chunk)
+                return bytes(body), response.encoding or "utf-8"
         except httpx.HTTPError:
+            # httpx exceptions may contain the complete encrypted request URL.
+            # Suppress the cause so callers and logs only see this fixed text.
             raise LoxoneConnectionError("Miniserver request failed") from None
 
     async def probe(self) -> ProbeResult:
@@ -511,8 +523,17 @@ class LoxoneWebSocketSession:
 
     async def state_events(self) -> AsyncIterator[tuple[StateEvent, ...]]:
         await self._command("jdev/sps/enablebinstatusupdate")
+        keepalive_pending = False
         while True:
-            header, payload = await self._receive()
+            try:
+                header, payload = await self._receive()
+            except _WebSocketIdleTimeout:
+                if keepalive_pending:
+                    raise LoxoneConnectionError("Miniserver did not respond to keepalive") from None
+                await self._websocket.send("keepalive")
+                keepalive_pending = True
+                continue
+            keepalive_pending = False
             if header.message_type is MessageType.OUT_OF_SERVICE:
                 raise LoxoneConnectionError("Miniserver is temporarily out of service")
             if header.message_type in {

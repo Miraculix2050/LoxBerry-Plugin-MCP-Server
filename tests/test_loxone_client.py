@@ -143,7 +143,7 @@ async def test_http_errors_suppress_encrypted_request_url(
         async def __aexit__(self, *_args: object) -> None:
             return None
 
-        async def get(self, _path: str) -> httpx.Response:
+        def stream(self, _method: str, _path: str) -> Any:
             request = httpx.Request("GET", "http://192.168.1.10/secret-encrypted-path")
             raise httpx.ConnectError("request failed", request=request)
 
@@ -157,6 +157,58 @@ async def test_http_errors_suppress_encrypted_request_url(
     assert captured.value.__cause__ is None
     assert captured.value.__suppress_context__ is True
     assert "secret-encrypted-path" not in str(captured.value)
+
+
+@pytest.mark.asyncio
+async def test_http_response_limit_is_enforced_while_streaming(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = LoxoneClient(
+        MiniserverEndpoint.parse_gen1("http://192.168.1.10"),
+        client_uuid=UUID("098802e1-02b4-603c-ffff-eee000d80cfd"),
+        max_response_bytes=5,
+    )
+    chunks_read = 0
+
+    class FakeResponse:
+        encoding = "utf-8"
+
+        async def __aenter__(self) -> FakeResponse:
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        def raise_for_status(self) -> None:
+            return None
+
+        async def aiter_bytes(self) -> Any:
+            nonlocal chunks_read
+            for chunk in (b"123", b"456", b"unused"):
+                chunks_read += 1
+                yield chunk
+
+    class FakeClient:
+        async def __aenter__(self) -> FakeClient:
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        def stream(self, method: str, path: str) -> FakeResponse:
+            assert method == "GET"
+            assert path == "/large"
+            return FakeResponse()
+
+    monkeypatch.setattr(
+        "mcpserver.loxone.client.httpx.AsyncClient",
+        lambda **_kwargs: FakeClient(),
+    )
+
+    with pytest.raises(LoxoneConnectionError, match="exceeds"):
+        await client._get_text("/large")
+
+    assert chunks_read == 2
 
 
 @pytest.mark.asyncio
@@ -520,3 +572,50 @@ async def test_refresh_rotates_in_memory_token_with_dynamic_hash(
     assert token.value == "new-secret"
     assert token.valid_until == 200
     assert "new-secret" not in repr(token)
+
+
+@pytest.mark.asyncio
+async def test_state_events_uses_keepalive_after_idle_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    value_payload = b"\0" * 24
+
+    class FakeWebSocket:
+        def __init__(self) -> None:
+            self.sent: list[str] = []
+            self.messages: list[bytes | BaseException] = [
+                TimeoutError(),
+                bytes((3, MessageType.KEEPALIVE, 0, 0, 0, 0, 0, 0)),
+                bytes((3, MessageType.VALUE_STATES, 0, 0, 24, 0, 0, 0)),
+                value_payload,
+            ]
+
+        async def recv(self) -> bytes:
+            message = self.messages.pop(0)
+            if isinstance(message, BaseException):
+                raise message
+            return message
+
+        async def send(self, command: str) -> None:
+            self.sent.append(command)
+
+    websocket = FakeWebSocket()
+    session = LoxoneWebSocketSession(
+        cast(Any, websocket),
+        public_key="unused",
+        token=LoxoneToken("jwt", "reader", "key", "SHA256", 100),
+        timeout_seconds=0.1,
+        max_payload_bytes=100,
+    )
+
+    async def fake_command(command: str, *, encrypted: bool = False) -> object:
+        assert command == "jdev/sps/enablebinstatusupdate"
+        assert encrypted is False
+        return "OK"
+
+    monkeypatch.setattr(session, "_command", fake_command)
+
+    events = await anext(session.state_events())
+
+    assert len(events) == 1
+    assert websocket.sent == ["keepalive"]

@@ -34,6 +34,9 @@ class UserStateCache:
         self, subject: str, events: Iterable[StateEvent], *, allowed_uuids: Container[str]
     ) -> None:
         values = self._values.setdefault(subject, OrderedDict())
+        for uuid in tuple(values):
+            if uuid not in allowed_uuids:
+                del values[uuid]
         observed_at = self._clock()
         for event in events:
             if event.uuid not in allowed_uuids:
