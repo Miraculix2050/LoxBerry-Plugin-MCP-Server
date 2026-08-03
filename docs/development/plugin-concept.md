@@ -180,9 +180,14 @@ https://<loxberry>/plugins/mcpserver/mcp
 ```
 
 Dieser MCP-Pfad ist durch den realen Apache-Transport-Spike bestätigt und muss
-GET und POST unterstützen. Die separat weitergeleiteten OAuth-Discovery-Pfade
-unter `/.well-known/` werden im OAuth-Spike festgelegt. Reverse-Proxy-Header
-werden nur von einem explizit vertrauten lokalen Proxy akzeptiert.
+GET und POST unterstützen. Der OAuth-Issuer liegt unter
+`/plugins/mcpserver/oauth`; nur `/authorize`, `/token`, `/register` und
+`/revoke` werden darunter weitergeleitet. Die Metadaten liegen ausschließlich
+unter `/.well-known/oauth-protected-resource/plugins/mcpserver/mcp` und
+`/.well-known/oauth-authorization-server/plugins/mcpserver/oauth`.
+Prefix-Aliase und Trailing-Slash-Weiterleitungen sind nicht Teil des Vertrags.
+Reverse-Proxy-Header werden nur von einem explizit vertrauten lokalen Proxy
+akzeptiert.
 
 Für externe Nutzung gilt:
 
@@ -214,6 +219,9 @@ Der HTTP-Endpunkt implementiert die MCP-Autorisierung mit OAuth 2.1:
 - kurzlebige Access Tokens
 - rotierende, widerrufbare Refresh Tokens
 - sichere Registrierung unterstützter öffentlicher Clients
+- ausschließlich `token_endpoint_auth_method=none` und Scope `loxone:read`
+- einmalige Codes mit fünf Minuten, Access Tokens mit zehn Minuten und
+  rotierende Refresh-Token-Familien mit höchstens 30 Tagen Laufzeit
 
 MCP-Tokens sind ausschließlich für das Plugin gültig. Sie werden nie an Loxone
 oder andere Dienste weitergereicht.
@@ -473,6 +481,9 @@ und sind kein Ersatz für die Admin-UI:
 | `MCPSERVER_PORT` | `8765` | ausschließlich exakt dieser interne Port; Dienst und Apache teilen diesen Vertrag |
 | `MCPSERVER_ALLOWED_HOSTS` | `127.0.0.1:<Port>,localhost:<Port>` | kommaseparierte exakte Host-/Port-Werte oder ein Host mit `:*`; mindestens ein Eintrag |
 | `MCPSERVER_ALLOWED_ORIGINS` | leer | kommaseparierte kanonische `http`-/`https`-Origins ohne Pfad, Zugangsdaten, Query oder Fragment; Standardports und Unicode-Hostnamen werden nicht als alternative Schreibweise akzeptiert |
+| `MCPSERVER_PUBLIC_ORIGIN` | leer | kanonische lokale HTTPS-Origin; aktiviert zusammen mit den beiden folgenden Werten den Phase-0-OAuth-Spike |
+| `MCPSERVER_AUTH_STORE` | leer | absoluter injizierter Pfad einer JSON-Datei; Phase 1 setzt dafür `LBPDATADIR/auth/sessions.json` ein |
+| `MCPSERVER_LOXONE_ENDPOINT` | leer | kanonischer privater Gen.-1-HTTP-Origin ohne Zugangsdaten oder Pfad |
 
 Für einen später erzeugten lokalen Apache-Vertrag lautet ein schematisches
 Beispiel:
@@ -481,7 +492,10 @@ Beispiel:
 MCPSERVER_HOST=127.0.0.1
 MCPSERVER_PORT=8765
 MCPSERVER_ALLOWED_HOSTS=127.0.0.1:8765,loxberry.local
-MCPSERVER_ALLOWED_ORIGINS=https://assistant.example
+MCPSERVER_ALLOWED_ORIGINS=https://loxberry.local
+MCPSERVER_PUBLIC_ORIGIN=https://loxberry.local
+MCPSERVER_AUTH_STORE=/absolute/private/test/path/sessions.json
+MCPSERVER_LOXONE_ENDPOINT=http://PRIVATE-IP
 ```
 
 Origins mit internationalisierten Domains werden in der vom Browser gesendeten
@@ -499,6 +513,8 @@ erfordert eine synchronisierte Migration beider Komponenten.
 - atomare Schreibvorgänge
 - Signing-/Encryption-Key bei Installation kryptografisch erzeugt
 - Refresh Tokens serverseitig nur gehasht, soweit das Verfahren dies erlaubt
+- Codes, Access Tokens und Refresh Tokens ausschließlich als SHA-256-Digests
+- Rotation mit familienweitem Widerruf bei Refresh-Token-Replay
 - keine Secrets in Backups/Diagnosen ohne ausdrückliche, dokumentierte Regel
 - Widerruf einzelner Clients und aller Sessions über die Admin-UI
 
@@ -747,8 +763,8 @@ Support-Matrix.
 | 1 | Plugin-ID und Ordner | festgelegt: `NAME=mcpserver`, `FOLDER=mcpserver`, `TITLE=LoxBerry MCP Server` |
 | 2 | erste CPU-Architektur | festgelegt: LoxBerry 4 auf Debian 13, `arm64` |
 | 3 | Runtime | festgelegt: Python 3.13 und MCP-SDK 1.28.1; Wheel-, Start- und RAM-Gates erfolgreich |
-| 4 | öffentlicher Pluginpfad/Apache | `/plugins/mcpserver/mcp` mit Apache 2.4.68 real bestätigt; Root-Discovery folgt mit dem OAuth-Spike |
-| 5 | MCP-OAuth-Clientregistrierung und Sessionpersistenz | festgelegt: öffentliche Registrierung, PKCE S256, opaque Tokens und atomare dateibasierte Persistenz; Clientprüfung ausstehend |
+| 4 | öffentlicher Pluginpfad/Apache | exakte MCP-, OAuth- und Well-known-Pfade mit Apache 2.4.68 real bestätigt |
+| 5 | MCP-OAuth-Clientregistrierung und Sessionpersistenz | implementiert und automatisiert bestätigt: öffentliche Registrierung, PKCE S256, audience-gebundene opaque Tokens, Replay-Widerruf und atomare dateibasierte Persistenz; beide Clientprüfungen vor Merge ausstehend |
 | 6 | Miniserver-Firmware | Gen. 1 mindestens `17.1.7.27`; Gen.-2-Stände werden durch die öffentliche Beta bestätigt |
 | 7 | erste unterstützte Control-Typen | festgelegt für Phase 2: `Switch` mit explizitem `on` und `off` |
 | 8 | Zeitpunkt und Umfang von `loxberry:read` | festgelegt: erst Phase 3 mit eigener lokaler Freigabe |

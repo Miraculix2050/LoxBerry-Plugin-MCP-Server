@@ -30,9 +30,11 @@ Implementierungsdetails ersetzen.
 
 - Ein einzelner unprivilegierter Dienst läuft als `loxberry`, bindet nur an
   `127.0.0.1` und stellt Streamable HTTP bereit.
-- Der durch den realen Apache-Transport-Spike bestätigte öffentliche MCP-Pfad ist
-  `/plugins/mcpserver/mcp`. Die separat weitergeleiteten OAuth-Discovery-Pfade
-  unter `/.well-known/` werden im OAuth-Spike festgelegt.
+- Der öffentliche MCP-Pfad ist `/plugins/mcpserver/mcp`; der OAuth-Issuer ist
+  `/plugins/mcpserver/oauth`. Apache leitet ausschließlich die vier exakten
+  Issuer-Endpunkte `/authorize`, `/token`, `/register` und `/revoke` sowie die
+  RFC-konformen Protected-Resource- und Authorization-Server-Metadaten unter
+  `/.well-known/` weiter.
 - Externer HTTPS-Zugriff bleibt im ersten öffentlichen Test deaktiviert.
 - Proxy-Header werden nur vom lokalen Apache akzeptiert. Host und Origin werden
   gegen explizite Allowlisten geprüft.
@@ -46,6 +48,10 @@ Implementierungsdetails ersetzen.
 - Access- und Refresh Tokens werden serverseitig nur gehasht gespeichert.
   Client- und Sessionzustand liegt in einer atomar ersetzten Datei mit Modus
   `0600`; eine Datenbank ist für den MVP nicht erforderlich.
+- Authorization Codes sind einmalig und fünf Minuten gültig. Opaque Access
+  Tokens gelten zehn Minuten. Refresh Tokens rotieren bei jeder Verwendung;
+  ihre Familie endet spätestens nach 30 Tagen. Die Wiederverwendung eines
+  rotierten Refresh Tokens widerruft die gesamte Familie.
 - Codex CLI und Claude Desktop sind die beiden Phase-0-Interoperabilitätsclients.
   Nicht standardkonformes Clientverhalten führt nicht zu einem unsicheren
   Server-Sonderweg.
@@ -75,9 +81,11 @@ Implementierungsdetails ersetzen.
 - Gen. 1 wird ausschließlich im lokalen Netz über HTTP/WS angebunden. Anmeldung,
   Tokenanforderung und spätere Steuerkommandos verwenden Loxone-JWT und Command
   Encryption; HTTP Basic Authentication wird nicht implementiert.
-- Das Loxone-Passwort lebt nur während der Tokenanforderung im Speicher. Das
-  erneuerbare Loxone-Token wird getrennt von normaler Konfiguration
-  AES-GCM-verschlüsselt gespeichert.
+- Das Loxone-Passwort lebt nur während der Tokenanforderung im Speicher. Im
+  Phase-0-Browser-Spike bleibt auch das Loxone-Token ausschließlich in der
+  einmaligen RAM-Transaktion und wird vor Ausgabe oder Ablehnung des
+  Authorization Codes mit `killtoken` widerrufen. Erst Phase 1 führt den
+  getrennten AES-GCM-geschützten Loxone-Token-Speicher ein.
 - Der Installationsschlüssel wird durch einen Root-Hook erzeugt, ist nicht Teil
   von Konfiguration, Diagnose oder Backup und unterstützt atomare Rotation mit
   Erhalt des letzten gültigen Secret-Stands.
@@ -103,6 +111,9 @@ Implementierungsdetails ersetzen.
   Wiederherstellung ohne Schlüssel werden vorhandene Sessions und Loxone-Tokens
   verworfen und neu autorisiert, statt unentschlüsselbar weiterverwendet zu
   werden.
+- Für Phase 0 wird der Pfad der Sessiondatei ausdrücklich injiziert. Der Spike
+  beweist Dateisperre, atomaren Austausch sowie Modus `0700` für das Verzeichnis
+  und `0600` für Datei und Lock, ohne das spätere Pluginlayout vorwegzunehmen.
 
 ### Produktabgrenzung
 
@@ -141,9 +152,22 @@ syntaktisch gültig, MCP-Initialisierung über `/plugins/mcpserver/mcp` gelang,
 eine fremde Origin wurde abgewiesen und die SSE-Verbindung blieb 120 Sekunden
 offen. Die produktive System-Apache-Konfiguration wurde dabei nicht verändert.
 
+Der OAuth-Spike wurde am 2026-08-03 mit demselben Python-3.13-/arm64-Ziel erneut
+aus einem Offline-Wheelhouse installiert. Einschließlich Projekt-Wheel waren 31
+Wheels mit 9.372 KiB erforderlich; das Laufzeit-`venv` belegte 53.932 KiB. Fünf
+Starts mit aktiviertem OAuth waren nach 4.604 bis 4.772 ms gesund. Der RSS lag
+zwischen 64.364 und 64.384 KiB und blieb nach 30 Sekunden bei 64.368 KiB.
+
+Die isolierte Apache-2.4.68-Instanz bestätigte die exakten MCP-, OAuth- und
+Well-known-Pfade, Host-/Origin-Abweisung, DCR, geschützte MCP-Ressource und
+fehlende Alias- beziehungsweise Trailing-Slash-Weiterleitungen. Die
+deterministische Negativmatrix und der Browserablauf sind automatisiert; die
+beiden realen Clientnachweise bleiben vor dem Merge dieses Spikes Pflicht.
+
 ## Folgen
 
-Python und der Apache-Transport sind für die Referenzplattform bestätigt; ein
-vorsorglicher paralleler Go-Build entfällt. Loxone-, WebSocket- und OAuth-
-Aussagen bleiben bis zu den jeweiligen reproduzierbaren Spikes als noch nicht
-real bestätigt gekennzeichnet.
+Python, Apache-Transport, Gen.-1-Loxone und WebSocket sind für die
+Referenzplattform bestätigt; ein vorsorglicher paralleler Go-Build entfällt.
+OAuth ist automatisiert und hinter einer isolierten realen Apache-Instanz
+bestätigt. Die Interoperabilitätsaussage folgt erst nach den dokumentierten
+Codex-CLI- und Claude-Desktop-Tests.
