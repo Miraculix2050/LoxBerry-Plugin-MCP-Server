@@ -55,7 +55,7 @@ async def _observe_once(
     try:
         async with asyncio.timeout(timeout):
             async for events in session.state_events():
-                cache.apply(token_subject, events)
+                cache.apply(token_subject, events, allowed_uuids=visible_states)
                 matching = next(
                     (event.uuid for event in events if event.uuid in visible_states), None
                 )
@@ -81,7 +81,7 @@ async def _observe_snapshot_and_delta(
     try:
         async with asyncio.timeout(timeout):
             async for events in session.state_events():
-                cache.apply(token_subject, events)
+                cache.apply(token_subject, events, allowed_uuids=visible_states)
                 for event in events:
                     if event.uuid not in visible_states:
                         continue

@@ -86,7 +86,19 @@ für Textstrukturen und gibt keine rohe Struktur aus. Der Miniserver beendet die
 authentifizierte Verbindung nach erfolgreichem `killtoken` regulär mit Status
 `1000`; dieser Abschluss wurde am Zielgerät als erfolgreicher Widerruf bestätigt.
 
-Der vollständige Rechtefiltertest ist noch offen: Das als unsichtbar vorgesehene
-Control erschien im benutzerbezogenen Strukturfile und ist daher für den
-Testbenutzer derzeit noch berechtigt. Statusereignisse und Reconnect werden erst
-nach Korrektur dieser externen Testbenutzerrechte geprüft.
+Der vollständige Zieltest wurde am 2026-08-03 erfolgreich abgeschlossen. Dabei
+zeigte sich eine Gen.-1-Besonderheit: Ein in der Visualisierung ausdrücklich
+verweigertes Control bleibt mit `restrictions = 17` in der Rohstruktur enthalten,
+und der Miniserver liefert auch dessen Zustandsereignisse an die authentifizierte
+App-Verbindung. Die Bits kennzeichnen das Control intern und extern als „nur
+referenziert“. Der Adapter entfernt solche top-level Controls deshalb bei der
+Normalisierung für die lokale Verbindung und lässt den benutzerbezogenen Cache
+ausschließlich Zustands-UUIDs aus dieser gefilterten Struktur übernehmen.
+Referenzierte Subcontrols eines erlaubten Eltern-Controls bleiben erhalten.
+
+Mit dieser Filterung bestätigte der Test ein sichtbares und ein verweigertes
+Control, den initialen Zustandssnapshot, eine reale Temperaturänderung, sofortiges
+`stale` nach Verbindungsabbruch, einen neuen Snapshot nach Reconnect und den
+abschließenden Tokenwiderruf. Ausgegeben wurden ausschließlich die Firmware
+`17.1.7.27`, der gekürzte SHA-256-Serienfingerprint `bf61df2269cd` und die
+benannten PASS-Zeilen.

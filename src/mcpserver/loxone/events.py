@@ -6,7 +6,6 @@ import struct
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import Final
-from uuid import UUID
 
 from mcpserver.loxone.models import StateValue
 
@@ -71,7 +70,7 @@ def _uuid(raw: bytes) -> str:
         raise LoxoneProtocolError("Event UUID must contain 16 bytes")
     data1, data2, data3 = struct.unpack("<IHH", raw[:8])
     tail = "".join(f"{byte:02x}" for byte in raw[8:])
-    return str(UUID(f"{data1:08x}-{data2:04x}-{data3:04x}-{tail[:4]}-{tail[4:]}"))
+    return f"{data1:08x}-{data2:04x}-{data3:04x}-{tail}"
 
 
 def parse_value_events(payload: bytes) -> tuple[StateEvent, ...]:

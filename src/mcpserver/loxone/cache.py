@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 from collections import OrderedDict
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Container, Iterable
 from dataclasses import replace
 
 from mcpserver.loxone.events import StateEvent
@@ -30,10 +30,14 @@ class UserStateCache:
             values[uuid] = replace(record, freshness=Freshness.STALE)
         self._available[subject] = True
 
-    def apply(self, subject: str, events: Iterable[StateEvent]) -> None:
+    def apply(
+        self, subject: str, events: Iterable[StateEvent], *, allowed_uuids: Container[str]
+    ) -> None:
         values = self._values.setdefault(subject, OrderedDict())
         observed_at = self._clock()
         for event in events:
+            if event.uuid not in allowed_uuids:
+                continue
             values[event.uuid] = StateRecord(
                 uuid=event.uuid,
                 value=event.value,

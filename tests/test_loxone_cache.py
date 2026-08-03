@@ -8,7 +8,11 @@ from mcpserver.loxone.models import Freshness
 def test_cache_isolates_users_and_marks_disconnect_stale() -> None:
     cache = UserStateCache(clock=lambda: 123.0)
     cache.begin_connection("miniserver:user-a")
-    cache.apply("miniserver:user-a", [StateEvent(uuid="state", value=1.0)])
+    cache.apply(
+        "miniserver:user-a",
+        [StateEvent(uuid="state", value=1.0)],
+        allowed_uuids={"state"},
+    )
     cache.begin_connection("miniserver:user-b")
 
     assert cache.get("miniserver:user-a", "state").freshness is Freshness.CURRENT
@@ -30,7 +34,25 @@ def test_cache_evicts_oldest_state_at_limit() -> None:
             StateEvent(uuid="two", value=2.0),
             StateEvent(uuid="three", value=3.0),
         ],
+        allowed_uuids={"one", "two", "three"},
     )
 
     assert cache.get("subject", "one").freshness is Freshness.UNKNOWN
     assert cache.get("subject", "two").freshness is Freshness.CURRENT
+
+
+def test_cache_drops_states_outside_the_filtered_structure() -> None:
+    cache = UserStateCache()
+    cache.begin_connection("subject")
+
+    cache.apply(
+        "subject",
+        [
+            StateEvent(uuid="allowed", value=1.0),
+            StateEvent(uuid="denied", value=2.0),
+        ],
+        allowed_uuids={"allowed"},
+    )
+
+    assert cache.get("subject", "allowed").freshness is Freshness.CURRENT
+    assert cache.get("subject", "denied").freshness is Freshness.UNKNOWN

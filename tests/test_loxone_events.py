@@ -43,7 +43,10 @@ def test_value_table_decodes_multiple_events() -> None:
 
     events = parse_value_events(payload)
 
-    assert [(event.uuid, event.value) for event in events] == [(first, 1.5), (second, -2.0)]
+    assert [(event.uuid, event.value) for event in events] == [
+        ("00112233-4455-6677-8899aabbccddeeff", 1.5),
+        ("11112222-3333-4444-aaaabbbbccccdddd", -2.0),
+    ]
 
 
 def test_text_table_honors_four_byte_padding() -> None:
@@ -53,4 +56,7 @@ def test_text_table_honors_four_byte_padding() -> None:
     payload = _loxone_uuid(state_uuid) + _loxone_uuid(icon_uuid) + struct.pack("<I", len(text))
     payload += text + b"\0\0"
 
-    assert parse_text_events(payload)[0].value == "on"
+    event = parse_text_events(payload)[0]
+
+    assert event.uuid == "00112233-4455-6677-8899aabbccddeeff"
+    assert event.value == "on"
