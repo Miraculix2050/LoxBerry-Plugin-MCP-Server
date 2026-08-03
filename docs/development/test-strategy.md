@@ -6,8 +6,8 @@
 Tests werden durch tatsächliche Entwicklungsänderungen ausgelöst. Es gibt keine
 täglichen oder wöchentlichen Pflichtläufe. Gewählt wird der kleinste
 reproduzierbare Prüfumfang, der die Wirkung und das Risiko des Diffs abdeckt.
-Die vollständige deterministische Suite wird später zum Gate für Pull Requests
-und `master`, sobald ausführbarer Code vorhanden ist.
+Die vollständige deterministische Suite ist das Gate für Pull Requests und
+`master`, seit ausführbarer Code vorhanden ist.
 
 ## Testebenen
 
@@ -136,10 +136,9 @@ Test, aber die betreffende Kombination bleibt unbestätigt.
 
 ## CI-Aufbau
 
-Solange noch kein ausführbarer Code vorhanden ist, wird kein Platzhalter-Workflow
-benötigt. Der erste ausführbare Commit führt einen einheitlichen lokalen
-Testbefehl und denselben CI-Pfad ein. CI läuft auf Pull Requests und Pushes nach
-`master` und umfasst mindestens Syntax/Lint, Unit- und MCP-Vertragstests.
+Der einheitliche lokale Testbefehl und derselbe CI-Pfad wurden mit dem ersten
+ausführbaren Stand eingeführt. CI läuft auf Pull Requests und Pushes nach
+`master` und umfasst Syntax/Lint, Unit- und MCP-Vertragstests.
 
 Ein GitHub-Pflichtcheck wird erst aktiviert, wenn sein Name und seine Runtime
 stabil sind. Zielgeräte und echte Miniserver werden nicht aus öffentlicher CI

@@ -241,7 +241,7 @@ Sicherheitsdomänen.
 | Loxone-Anmeldung | JWT mit `getkey2`, HMAC und Loxone Command Encryption | JWT über die TLS-geschützte API |
 | Anwendungskryptografie | RSA-Schlüsselaustausch und AES-256-CBC für Auth-/Steuerkommandos | ab Firmware 11.2 bei geprüftem TLS nicht erforderlich |
 | HTTP Basic Auth | nicht unterstützt | nicht unterstützt |
-| Reale Ausgangsbasis | verfügbares Testgerät mit Firmware `17.1.7.27`; Prüfung noch ausstehend | Firmwarestände erst durch öffentliche Beta bestätigt |
+| Reale Ausgangsbasis | Firmware `17.1.7.27` auf dem verfügbaren Testgerät bestätigt | Firmwarestände erst durch öffentliche Beta bestätigt |
 
 Der Verbindungsaufbau beginnt lokal mit dem nicht sensitiven
 `jdev/cfg/apiKey`-Probe. Der Adapter wertet Firmware und `httpsStatus` aus:
@@ -693,6 +693,9 @@ weiterhin als experimentell ausweisen.
 
 ### Phase 0: Architektur-Spikes
 
+**Status:** abgeschlossen am 2026-08-03. Die bestätigten Kombinationen und
+bekannten Clientgrenzen stehen in der [Support-Matrix](support-matrix.md).
+
 - Python-Version, venv und Wheels auf allen Zielarchitekturen
 - kleiner Go-Vergleichsbuild nur, falls Wheels oder Ressourcenbudget kritisch
   sind
@@ -768,7 +771,7 @@ Support-Matrix.
 | 2 | erste CPU-Architektur | festgelegt: LoxBerry 4 auf Debian 13, `arm64` |
 | 3 | Runtime | festgelegt: Python 3.13 und MCP-SDK 1.28.1; Wheel-, Start- und RAM-Gates erfolgreich |
 | 4 | öffentlicher Pluginpfad/Apache | exakte MCP-, OAuth- und Well-known-Pfade mit Apache 2.4.68 real bestätigt |
-| 5 | MCP-OAuth-Clientregistrierung und Sessionpersistenz | implementiert und automatisiert bestätigt: öffentliche Registrierung, PKCE S256, audience-gebundene opaque Tokens, Replay-Widerruf und atomare dateibasierte Persistenz; beide Clientprüfungen vor Merge ausstehend |
+| 5 | MCP-OAuth-Clientregistrierung und Sessionpersistenz | implementiert und automatisiert bestätigt: öffentliche Registrierung, PKCE S256, audience-gebundene opaque Tokens, Replay-Widerruf und atomare dateibasierte Persistenz; Claude Desktop vollständig real bestätigt; Codex Login und authentifizierter Aufruf bestätigt, Refresh und Revoke als dokumentierte Client-Limitierungen akzeptiert |
 | 6 | Miniserver-Firmware | Gen. 1 mindestens `17.1.7.27`; Gen.-2-Stände werden durch die öffentliche Beta bestätigt |
 | 7 | erste unterstützte Control-Typen | festgelegt für Phase 2: `Switch` mit explizitem `on` und `off` |
 | 8 | Zeitpunkt und Umfang von `loxberry:read` | festgelegt: erst Phase 3 mit eigener lokaler Freigabe |

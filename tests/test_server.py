@@ -137,6 +137,26 @@ def test_mcp_initialize_uses_expected_protocol() -> None:
     assert response.json()["result"]["serverInfo"]["name"] == "LoxBerry MCP Server"
 
 
+def test_no_unreleased_domain_tools_are_published() -> None:
+    app = create_server(_settings()).streamable_http_app()
+    request = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/list",
+        "params": {},
+    }
+    headers = {
+        "Accept": "application/json, text/event-stream",
+        "Content-Type": "application/json",
+        "Origin": "https://client.example",
+    }
+    with TestClient(app, base_url="http://testserver") as client:
+        response = client.post("/mcp", json=request, headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["result"]["tools"] == []
+
+
 def test_oauth_routes_and_protected_resource_metadata_are_exact(tmp_path: Path) -> None:
     settings = ServerSettings(
         host="127.0.0.1",
