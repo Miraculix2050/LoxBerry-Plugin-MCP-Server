@@ -19,6 +19,9 @@ def test_secure_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
         "MCPSERVER_PORT",
         "MCPSERVER_ALLOWED_HOSTS",
         "MCPSERVER_ALLOWED_ORIGINS",
+        "MCPSERVER_PUBLIC_ORIGIN",
+        "MCPSERVER_AUTH_STORE",
+        "MCPSERVER_LOXONE_ENDPOINT",
     ):
         monkeypatch.delenv(key, raising=False)
 
@@ -28,6 +31,48 @@ def test_secure_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.port == 8765
     assert settings.allowed_hosts == ("127.0.0.1:8765", "localhost:8765")
     assert settings.allowed_origins == ()
+    assert settings.phase0_auth is None
+
+
+def test_phase0_auth_settings_are_derived_without_credentials(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    store = tmp_path / "auth" / "sessions.json"
+    monkeypatch.setenv("MCPSERVER_PUBLIC_ORIGIN", "https://loxberry.example")
+    monkeypatch.setenv("MCPSERVER_AUTH_STORE", str(store))
+    monkeypatch.setenv("MCPSERVER_LOXONE_ENDPOINT", "http://192.168.255.254:7080")
+
+    settings = ServerSettings.from_environment()
+
+    assert settings.phase0_auth is not None
+    assert settings.phase0_auth.store_path == store
+    assert settings.phase0_auth.resource_url == "https://loxberry.example/plugins/mcpserver/mcp"
+    assert settings.phase0_auth.issuer_url == "https://loxberry.example/plugins/mcpserver/oauth"
+    assert settings.phase0_auth.loxone_endpoint.origin == "http://192.168.255.254:7080"
+
+
+def test_partial_phase0_auth_settings_are_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MCPSERVER_PUBLIC_ORIGIN", "https://loxberry.example")
+    monkeypatch.delenv("MCPSERVER_AUTH_STORE", raising=False)
+    monkeypatch.delenv("MCPSERVER_LOXONE_ENDPOINT", raising=False)
+
+    with pytest.raises(ValueError, match="must be configured together"):
+        ServerSettings.from_environment()
+
+
+@pytest.mark.parametrize(
+    "origin",
+    ["http://loxberry.example", "https://loxberry.example/", "https://user@loxberry.example"],
+)
+def test_invalid_phase0_public_origin_is_rejected(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, origin: str
+) -> None:
+    monkeypatch.setenv("MCPSERVER_PUBLIC_ORIGIN", origin)
+    monkeypatch.setenv("MCPSERVER_AUTH_STORE", str(tmp_path / "sessions.json"))
+    monkeypatch.setenv("MCPSERVER_LOXONE_ENDPOINT", "http://192.168.255.254")
+
+    with pytest.raises(ValueError, match="MCPSERVER_(PUBLIC_ORIGIN|ALLOWED_ORIGINS)"):
+        ServerSettings.from_environment()
 
 
 @pytest.mark.parametrize("host", ["0.0.0.0", "::", "192.0.2.10"])

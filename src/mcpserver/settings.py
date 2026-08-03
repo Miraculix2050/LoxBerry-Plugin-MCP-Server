@@ -5,10 +5,13 @@ from __future__ import annotations
 import ipaddress
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Final
 from urllib.parse import urlsplit
 
 import idna
+
+from mcpserver.loxone.client import MiniserverEndpoint
 
 SERVER_PORT: Final = 8765
 
@@ -156,6 +159,52 @@ def _validate_origins(origins: tuple[str, ...]) -> tuple[str, ...]:
 
 
 @dataclass(frozen=True, slots=True)
+class Phase0AuthSettings:
+    """Injected Phase-0 OAuth settings; no Loxone credentials are persisted."""
+
+    public_origin: str
+    store_path: Path
+    loxone_endpoint: MiniserverEndpoint
+
+    @property
+    def resource_url(self) -> str:
+        return f"{self.public_origin}/plugins/mcpserver/mcp"
+
+    @property
+    def issuer_url(self) -> str:
+        return f"{self.public_origin}/plugins/mcpserver/oauth"
+
+
+def _phase0_auth_from_environment() -> Phase0AuthSettings | None:
+    names = (
+        "MCPSERVER_PUBLIC_ORIGIN",
+        "MCPSERVER_AUTH_STORE",
+        "MCPSERVER_LOXONE_ENDPOINT",
+    )
+    values = tuple(os.getenv(name, "").strip() for name in names)
+    if not any(values):
+        return None
+    if not all(values):
+        raise ValueError(f"{', '.join(names)} must be configured together")
+
+    public_origin = _validate_origins((values[0],))[0]
+    if not public_origin.startswith("https://"):
+        raise ValueError("MCPSERVER_PUBLIC_ORIGIN must use HTTPS")
+
+    store_path = Path(values[1])
+    if not store_path.is_absolute() or store_path.name in {"", ".", ".."}:
+        raise ValueError("MCPSERVER_AUTH_STORE must be an absolute JSON file path")
+    if store_path.suffix.lower() != ".json":
+        raise ValueError("MCPSERVER_AUTH_STORE must name a JSON file")
+
+    return Phase0AuthSettings(
+        public_origin=public_origin,
+        store_path=store_path,
+        loxone_endpoint=MiniserverEndpoint.parse_gen1(values[2]),
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class ServerSettings:
     """Runtime settings for the local MCP process."""
 
@@ -163,6 +212,7 @@ class ServerSettings:
     port: int
     allowed_hosts: tuple[str, ...]
     allowed_origins: tuple[str, ...]
+    phase0_auth: Phase0AuthSettings | None = None
 
     @classmethod
     def from_environment(cls) -> ServerSettings:
@@ -192,4 +242,5 @@ class ServerSettings:
             port=port,
             allowed_hosts=allowed_hosts,
             allowed_origins=allowed_origins,
+            phase0_auth=_phase0_auth_from_environment(),
         )

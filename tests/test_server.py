@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import pytest
 from starlette.testclient import TestClient
 
+from mcpserver.loxone.client import MiniserverEndpoint
 from mcpserver.server import create_server
-from mcpserver.settings import ServerSettings
+from mcpserver.settings import Phase0AuthSettings, ServerSettings
 
 
 def _settings() -> ServerSettings:
@@ -133,3 +135,43 @@ def test_mcp_initialize_uses_expected_protocol() -> None:
     assert response.status_code == 200
     assert response.json()["result"]["protocolVersion"] == "2025-11-25"
     assert response.json()["result"]["serverInfo"]["name"] == "LoxBerry MCP Server"
+
+
+def test_oauth_routes_and_protected_resource_metadata_are_exact(tmp_path: Path) -> None:
+    settings = ServerSettings(
+        host="127.0.0.1",
+        port=8765,
+        allowed_hosts=("testserver",),
+        allowed_origins=(),
+        phase0_auth=Phase0AuthSettings(
+            public_origin="https://public.example",
+            store_path=tmp_path / "sessions.json",
+            loxone_endpoint=MiniserverEndpoint.parse_gen1("http://192.168.255.254"),
+        ),
+    )
+    app = create_server(settings).streamable_http_app()
+    with TestClient(app, base_url="http://testserver") as client:
+        authorization = client.get(
+            "/.well-known/oauth-authorization-server/plugins/mcpserver/oauth"
+        )
+        resource = client.get("/.well-known/oauth-protected-resource/plugins/mcpserver/mcp")
+        unauthenticated = client.post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+            headers={"Accept": "application/json, text/event-stream"},
+        )
+        aliases = [
+            client.get("/.well-known/oauth-authorization-server"),
+            client.get("/plugins/mcpserver/oauth/authorize"),
+            client.get("/authorize/"),
+        ]
+
+    assert authorization.status_code == 200
+    assert authorization.json()["issuer"] == "https://public.example/plugins/mcpserver/oauth"
+    assert resource.status_code == 200
+    assert resource.json()["resource"] == "https://public.example/plugins/mcpserver/mcp"
+    assert resource.json()["authorization_servers"] == [
+        "https://public.example/plugins/mcpserver/oauth"
+    ]
+    assert unauthenticated.status_code == 401
+    assert all(response.status_code == 404 for response in aliases)

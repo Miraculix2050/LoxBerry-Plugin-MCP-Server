@@ -131,7 +131,99 @@ stream_status=$?
 set -e
 test "$stream_status" = "124"
 
+# Restart the same loopback service with Phase-0 OAuth enabled so every exact
+# public Apache route is exercised without contacting a real Miniserver.
+kill "$server_pid"
+wait "$server_pid" 2>/dev/null || true
+server_pid=""
+mkdir "$work_dir/auth"
+MCPSERVER_ALLOWED_HOSTS="127.0.0.1:8765,127.0.0.1:18888" \
+	MCPSERVER_ALLOWED_ORIGINS="http://127.0.0.1:18888" \
+	MCPSERVER_PUBLIC_ORIGIN="https://localhost:18888" \
+	MCPSERVER_AUTH_STORE="$work_dir/auth/sessions.json" \
+	MCPSERVER_LOXONE_ENDPOINT="http://192.168.255.254" \
+	PYTHONPATH="$repository_root/src" \
+	"$python" -m mcpserver.server >"$work_dir/oauth-server.log" 2>&1 &
+server_pid=$!
+
+attempt=0
+while [ "$attempt" -lt 100 ]; do
+	require_running "OAuth MCP server" "$server_pid" "$work_dir/oauth-server.log"
+	if curl -fsS http://127.0.0.1:8765/healthz >/dev/null 2>&1; then
+		break
+	fi
+	attempt=$((attempt + 1))
+	sleep 0.05
+done
+test "$attempt" -lt 100
+
+authorization_metadata=$(curl -fsS \
+	http://127.0.0.1:18888/.well-known/oauth-authorization-server/plugins/mcpserver/oauth)
+printf '%s' "$authorization_metadata" | "$python" -c \
+	'import json,sys; body=json.load(sys.stdin); assert body["issuer"] == "https://localhost:18888/plugins/mcpserver/oauth"; assert body["token_endpoint_auth_methods_supported"] == ["none"]'
+
+resource_metadata=$(curl -fsS \
+	http://127.0.0.1:18888/.well-known/oauth-protected-resource/plugins/mcpserver/mcp)
+printf '%s' "$resource_metadata" | "$python" -c \
+	'import json,sys; body=json.load(sys.stdin); assert body["resource"] == "https://localhost:18888/plugins/mcpserver/mcp"'
+
+registration=$(curl -fsS \
+	-H 'Content-Type: application/json' \
+	--data '{"redirect_uris":["http://127.0.0.1:48999/callback"],"token_endpoint_auth_method":"none","grant_types":["authorization_code","refresh_token"],"response_types":["code"],"client_name":"Apache integration"}' \
+	http://127.0.0.1:18888/plugins/mcpserver/oauth/register)
+client_id=$(printf '%s' "$registration" | "$python" -c \
+	'import json,sys; body=json.load(sys.stdin); assert body["scope"] == "loxone:read"; assert "client_secret" not in body; print(body["client_id"])')
+
+authorize_status=$(curl -sS -o "$work_dir/authorize.html" -w '%{http_code}' -G \
+	--data-urlencode 'response_type=code' \
+	--data-urlencode "client_id=$client_id" \
+	--data-urlencode 'redirect_uri=http://127.0.0.1:48999/callback' \
+	--data-urlencode 'scope=loxone:read' \
+	--data-urlencode 'resource=https://localhost:18888/plugins/mcpserver/mcp' \
+	--data-urlencode 'code_challenge=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' \
+	--data-urlencode 'code_challenge_method=S256' \
+	--data-urlencode 'state=apache-integration' \
+	http://127.0.0.1:18888/plugins/mcpserver/oauth/authorize)
+test "$authorize_status" = "200"
+grep -q 'Loxone-Benutzer' "$work_dir/authorize.html"
+
+token_status=$(curl -sS -o /dev/null -w '%{http_code}' \
+	-H 'Content-Type: application/x-www-form-urlencoded' \
+	--data-urlencode 'grant_type=authorization_code' \
+	--data-urlencode "client_id=$client_id" \
+	http://127.0.0.1:18888/plugins/mcpserver/oauth/token)
+test "$token_status" = "400"
+
+revoke_status=$(curl -sS -o /dev/null -w '%{http_code}' \
+	-H 'Content-Type: application/x-www-form-urlencoded' \
+	--data-urlencode "client_id=$client_id" \
+	--data-urlencode 'token=unknown' \
+	http://127.0.0.1:18888/plugins/mcpserver/oauth/revoke)
+test "$revoke_status" = "200"
+
+protected_status=$(curl -sS -o /dev/null -w '%{http_code}' \
+	-H 'Accept: application/json, text/event-stream' \
+	-H 'Content-Type: application/json' \
+	--data "$request" \
+	http://127.0.0.1:18888/plugins/mcpserver/mcp)
+test "$protected_status" = "401"
+
+for unmatched in \
+	/plugins/mcpserver/oauth/authorize/ \
+	/plugins/mcpserver/oauth/token/ \
+	/.well-known/oauth-authorization-server; do
+	unmatched_status=$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:18888$unmatched")
+	test "$unmatched_status" != "200"
+	test "$unmatched_status" != "301"
+	test "$unmatched_status" != "302"
+	test "$unmatched_status" != "307"
+	test "$unmatched_status" != "308"
+done
+
 printf 'APACHE_STREAMABLE_HTTP=pass\n'
 printf 'APACHE_HOST_REJECTION=pass\n'
 printf 'APACHE_ORIGIN_REJECTION=pass\n'
 printf 'APACHE_SSE_%s_SECONDS=pass\n' "$stream_seconds"
+printf 'APACHE_OAUTH_EXACT_ROUTES=pass\n'
+printf 'APACHE_OAUTH_DISCOVERY=pass\n'
+printf 'APACHE_OAUTH_PROTECTED_RESOURCE=pass\n'
