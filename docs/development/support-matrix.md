@@ -1,7 +1,7 @@
 # Support-Matrix
 
-- **Stand:** Implementierungsstand Phase 1, 2026-08-03
-- **Nächster Meilenstein:** vollständige Gen.-1-End-to-End-Abnahme `0.1.0-alpha.1`
+- **Stand:** Abnahmestand Phase 1, 2026-08-04
+- **Nächster Meilenstein:** Review und Prerelease-Veröffentlichung `0.1.0-alpha.1`
 
 Diese Matrix unterscheidet reale Nachweise von implementierten, aber noch nicht
 real bestätigten Kombinationen. Das Alpha-Paket bleibt ein Prerelease, bis alle
@@ -37,6 +37,9 @@ Sessionwiderruf für reguläre Installationen.
 
 ## Phase-1-Paketnachweis
 
+Der vollständige maskierte Nachweis steht im
+[Phase-1-Abnahmebericht](phase-1-acceptance.md).
+
 - Das Plugin wurde auf LoxBerry `4.0.0.14`, Debian 13/aarch64 über die native
   Plugin-Verwaltung installiert und aktualisiert; Offline-Venv, Icon,
   systemd-Start und Admin-UI waren erfolgreich.
@@ -48,14 +51,19 @@ Sessionwiderruf für reguläre Installationen.
   AJAX-Status und sichtbarer Tastaturfokus wurden ebenfalls real bestätigt.
 - Das ZIP wurde zweimal byteidentisch gebaut und durch seine SHA-256-Prüfsumme
   abgesichert.
+- Eine frische Claude-OAuth-Anmeldung mit ausschließlich `loxone:read`, exakt
+  sechs Read-only-Tools, alle sechs realen Toolaufrufe und die reale
+  Sichtbarkeitsgrenze wurden auf dem installierten Alpha-Paket bestätigt.
+- Nach dem nativen Upgrade desselben finalen Artefakts blieb die Sitzung ohne
+  Neuanmeldung nutzbar. Konfiguration, Sessions, verschlüsselte Tokens und der
+  zugehörige Installationsschlüssel wurden gemeinsam erhalten.
 
 ## Noch nicht als vollständige Phase-1-Abnahme bestätigt
 
-- Deinstallation und anschließende saubere Neuinstallation des finalen ZIPs
-  stehen noch aus.
 - Der vollständige Kernablauf mit im Browser deaktiviertem JavaScript steht noch
   aus; die serverseitigen POST/Redirect/GET-Fallbacks sind automatisiert geprüft.
 - Externer oder cloudbasierter MCP-Zugriff ist nicht freigegeben.
-- Die sechs Phase-1-Loxone-Lesetools sind implementiert; ihre erneute reale
-  Gen.-1-Abnahme im installierten Alpha-Paket steht aus.
+- Codex CLI wurde im finalen Abschlusslauf wegen der lokalen
+  Windows-Ausführungsstörung nicht erneut abgenommen; der bekannte Clientfehler
+  ist für den Server- und Claude-Nachweis nicht blockierend.
 - Schreibende MCP-Tools sind nicht Bestandteil von Phase 0 oder Phase 1.

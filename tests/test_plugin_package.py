@@ -54,6 +54,23 @@ def test_v4_package_manifest_is_present() -> None:
     assert "LBPDATA/$actual_folder" in hooks
 
 
+def test_upgrade_preserves_configuration_in_plugin_data() -> None:
+    preupgrade = (ROOT / "preupgrade.sh").read_text(encoding="utf-8")
+    postinstall = (ROOT / "postinstall.sh").read_text(encoding="utf-8")
+
+    assert "installer_root=${6:-}" in preupgrade
+    assert 'backup_dir="$installer_root/.mcpserver-upgrade"' in preupgrade
+    assert 'install -m 600 "$config_file" "$backup_dir/mcpserver.json"' in preupgrade
+    assert "sessions.json loxone-tokens.json.enc install.key" in preupgrade
+    assert "installer_root=${6:-}" in postinstall
+    assert 'upgrade_backup="$upgrade_backup_dir/mcpserver.json"' in postinstall
+    assert 'install -m 600 "$upgrade_backup" "$config_file"' in postinstall
+    assert "sessions.json loxone-tokens.json.enc install.key" in postinstall
+    assert postinstall.index('install -m 600 "$upgrade_backup" "$config_file"') < postinstall.index(
+        'cp "$plugin_config/default-config.json" "$config_file"'
+    )
+
+
 def test_shell_hooks_have_valid_syntax() -> None:
     bash = shutil.which("bash")
     if bash is None:

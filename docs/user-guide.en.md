@@ -45,5 +45,7 @@ best-effort `killtoken`.
 
 Disable the service in the UI first. If a prerelease is faulty, reinstall the
 previous plugin ZIP through Plugin Manager. Configuration and sessions survive
-upgrades. Uninstall removes the service, Apache rule and narrow sudoers rule
-only when their plugin ownership marker matches.
+upgrades together with encrypted Loxone tokens and the local installation key,
+so a still-valid session can continue without another login. Uninstall removes
+the service, Apache rule and narrow sudoers rule only when their plugin
+ownership marker matches.

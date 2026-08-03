@@ -47,6 +47,8 @@ best effort `killtoken`.
 
 Deaktiviere zuerst den Dienst in der UI. Bei einer fehlerhaften Vorabversion
 kann das vorherige Plugin-ZIP über den Plugin Manager erneut installiert
-werden. Konfiguration und Sitzungen bleiben beim Upgrade erhalten. Eine
-Deinstallation entfernt Dienst, Apache-Regel und die enge sudoers-Regel nur,
-wenn sie eindeutig dem Plugin gehören.
+werden. Konfiguration, Sitzungen, verschlüsselte Loxone-Tokens und der lokale
+Installationsschlüssel bleiben beim Upgrade gemeinsam erhalten, sodass eine
+gültige Sitzung anschließend ohne erneute Anmeldung weiterverwendet werden
+kann. Eine Deinstallation entfernt Dienst, Apache-Regel und die enge
+sudoers-Regel nur, wenn sie eindeutig dem Plugin gehören.

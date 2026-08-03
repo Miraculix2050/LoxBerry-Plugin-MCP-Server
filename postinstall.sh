@@ -2,7 +2,8 @@
 set -u
 
 actual_folder=$3
-if [ -z "$actual_folder" ] || [ -z "${LBPBIN:-}" ] || [ -z "${LBPCONFIG:-}" ] || [ -z "${LBPDATA:-}" ] || [ -z "${LBPLOG:-}" ]; then
+installer_root=${6:-}
+if [ -z "$actual_folder" ] || [ -z "$installer_root" ] || [ -z "${LBPBIN:-}" ] || [ -z "${LBPCONFIG:-}" ] || [ -z "${LBPDATA:-}" ] || [ -z "${LBPLOG:-}" ]; then
     echo "<ERROR> LoxBerry did not provide the plugin paths or actual folder."
     exit 2
 fi
@@ -12,6 +13,8 @@ plugin_config="$LBPCONFIG/$actual_folder"
 plugin_data="$LBPDATA/$actual_folder"
 plugin_log="$LBPLOG/$actual_folder"
 config_file="$plugin_config/mcpserver.json"
+upgrade_backup_dir="$installer_root/.mcpserver-upgrade"
+upgrade_backup="$upgrade_backup_dir/mcpserver.json"
 venv="$plugin_data/venv"
 new_venv="$plugin_data/.venv.new.$$"
 old_venv="$plugin_data/.venv.previous.$$"
@@ -24,10 +27,23 @@ trap cleanup EXIT
 mkdir -p "$plugin_config" "$plugin_data/auth" "$plugin_log"
 chmod 700 "$plugin_data/auth"
 
-if [ ! -f "$config_file" ]; then
+if [ -f "$upgrade_backup" ] && [ ! -L "$upgrade_backup" ]; then
+    install -m 600 "$upgrade_backup" "$config_file" || exit 2
+    rm -f -- "$upgrade_backup"
+    echo "<INFO> Existing configuration restored after the upgrade."
+elif [ ! -f "$config_file" ]; then
     cp "$plugin_config/default-config.json" "$config_file"
 fi
 chmod 600 "$config_file"
+
+for auth_file in sessions.json loxone-tokens.json.enc install.key; do
+    upgrade_auth="$upgrade_backup_dir/$auth_file"
+    if [ -f "$upgrade_auth" ] && [ ! -L "$upgrade_auth" ]; then
+        install -m 600 "$upgrade_auth" "$plugin_data/auth/$auth_file" || exit 2
+        rm -f -- "$upgrade_auth"
+    fi
+done
+rmdir "$upgrade_backup_dir" 2>/dev/null || true
 
 if [ ! -d "$wheelhouse" ] || ! find "$wheelhouse" -maxdepth 1 -name '*.whl' -print -quit | grep -q .; then
     echo "<ERROR> Offline wheelhouse is missing from the package."

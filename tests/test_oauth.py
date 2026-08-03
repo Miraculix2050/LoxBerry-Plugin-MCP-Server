@@ -18,8 +18,13 @@ from starlette.testclient import TestClient
 
 from mcpserver.auth.provider import SCOPE, Phase0OAuthProvider
 from mcpserver.auth.store import AtomicJsonAuthStore
-from mcpserver.auth.web import Phase0OAuthWeb, _limited_body
-from mcpserver.loxone.client import LoxoneToken, MiniserverEndpoint, ProbeResult
+from mcpserver.auth.web import LoginTransaction, Phase0OAuthWeb, _limited_body
+from mcpserver.loxone.client import (
+    LoxoneConnectionError,
+    LoxoneToken,
+    MiniserverEndpoint,
+    ProbeResult,
+)
 
 ISSUER = "https://public.example/plugins/mcpserver/oauth"
 RESOURCE = "https://public.example/plugins/mcpserver/mcp"
@@ -534,6 +539,47 @@ async def test_parallel_login_posts_acquire_only_one_loxone_token(
     assert sorted(response.status_code for response in responses) == [200, 400]
     assert len(acquired) == 1
     await web._kill(transaction)
+
+
+@pytest.mark.asyncio
+async def test_expired_login_transaction_is_removed_when_remote_kill_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    provider = _provider(tmp_path)
+    web = Phase0OAuthWeb(
+        provider,
+        endpoint=MiniserverEndpoint.parse_gen1("http://192.168.255.254"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+    )
+    token = LoxoneToken("sensitive-jwt", "user", "key", "SHA256", 1)
+    transaction = LoginTransaction(
+        transaction_id="expired",
+        client_id="client",
+        client_name="Client",
+        redirect_uri=REDIRECT,
+        state="state",
+        code_challenge=CHALLENGE,
+        resource=RESOURCE,
+        csrf_token="csrf",
+        created_at=0,
+        loxone_token=token,
+    )
+    web.transactions[transaction.transaction_id] = transaction
+
+    class FailingLoxoneClient:
+        def __init__(self, endpoint: object, *, client_uuid: object) -> None:
+            pass
+
+        async def kill_token(self, value: LoxoneToken) -> None:
+            raise LoxoneConnectionError("remote unavailable")
+
+    monkeypatch.setattr("mcpserver.auth.web.LoxoneClient", FailingLoxoneClient)
+    await web._cleanup()
+
+    assert web.transactions == {}
+    assert transaction.loxone_token is None
+    assert token.value == ""
 
 
 @pytest.mark.asyncio

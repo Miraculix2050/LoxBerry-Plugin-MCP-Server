@@ -201,7 +201,7 @@ class Phase0OAuthWeb:
         try:
             await LoxoneClient(self.endpoint, client_uuid=self._client_uuid).kill_token(token)
         except LoxoneConnectionError:
-            return False
+            token.destroy()
         transaction.loxone_token = None
         return True
 

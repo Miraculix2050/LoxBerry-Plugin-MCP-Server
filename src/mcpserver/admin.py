@@ -13,7 +13,7 @@ from typing import Any, Final
 from uuid import UUID
 
 from mcpserver import __version__
-from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore
+from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore, LoxoneTokenStoreError
 from mcpserver.auth.store import AtomicJsonAuthStore
 from mcpserver.config import AtomicConfigStore, ConfigError, PluginConfig
 from mcpserver.loxone.client import LoxoneClient, LoxoneConnectionError, MiniserverEndpoint
@@ -103,6 +103,8 @@ def _sessions() -> list[dict[str, Any]]:
     document = _auth_store().snapshot()
     result = []
     for family_id, record in document["families"].items():
+        if record.get("revoked"):
+            continue
         result.append(
             {
                 "id": family_id,
@@ -155,14 +157,18 @@ def _revoke(family_id: str | None) -> int:
 
         async def kill_tokens() -> None:
             for target, miniserver_id, identity_id in bindings:
-                token = token_store.get(target, miniserver_id, identity_id)
+                try:
+                    token = token_store.get(target, miniserver_id, identity_id)
+                except LoxoneTokenStoreError:
+                    token = None
                 if token is not None:
                     with suppress(LoxoneConnectionError):
                         await client.kill_token(token)
 
         asyncio.run(kill_tokens())
     for target in revoked:
-        token_store.delete(target)
+        with suppress(LoxoneTokenStoreError):
+            token_store.delete(target)
     return len(revoked)
 
 
