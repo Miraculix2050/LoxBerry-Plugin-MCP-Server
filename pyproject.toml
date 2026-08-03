@@ -11,6 +11,7 @@ license = "Apache-2.0"
 dependencies = [
     "idna==3.18",
     "mcp==1.28.1",
+    "websockets==17.0.1",
 ]
 
 [project.optional-dependencies]
