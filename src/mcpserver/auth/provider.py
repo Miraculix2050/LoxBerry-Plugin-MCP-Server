@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import secrets
 import time
 from collections.abc import Callable
@@ -23,6 +24,7 @@ from pydantic import AnyUrl
 from mcpserver.auth.store import AtomicJsonAuthStore, token_digest
 
 SCOPE: Final = "loxone:read"
+_LOGGER = logging.getLogger("mcpserver.auth.provider")
 AUTHORIZATION_CODE_TTL: Final = 5 * 60
 ACCESS_TOKEN_TTL: Final = 10 * 60
 REFRESH_FAMILY_TTL: Final = 30 * 24 * 60 * 60
@@ -369,7 +371,13 @@ class Phase0OAuthProvider(
                 if record.get("family_id") == family_id:
                     record["status"] = "revoked"
         if self._on_family_revoked is not None:
-            self._on_family_revoked(family_id)
+            try:
+                self._on_family_revoked(family_id)
+            except Exception as exc:
+                _LOGGER.warning(
+                    "component=oauth severity=WARNING outcome=token_cleanup_failed error_type=%s",
+                    type(exc).__name__,
+                )
 
     @staticmethod
     def _refresh_model(raw_token: str, record: dict[str, Any]) -> StoredRefreshToken:

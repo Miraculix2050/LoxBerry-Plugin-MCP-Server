@@ -191,6 +191,8 @@ def test_exact_phase1_read_only_tools_are_published() -> None:
     ]
     assert all(tool["annotations"]["readOnlyHint"] is True for tool in tools)
     assert all(tool["annotations"]["destructiveHint"] is False for tool in tools)
+    assert all(tool["outputSchema"]["properties"]["data"].get("anyOf") for tool in tools)
+    assert all(tool["outputSchema"].get("$defs") for tool in tools)
 
 
 def test_oauth_routes_and_protected_resource_metadata_are_exact(tmp_path: Path) -> None:

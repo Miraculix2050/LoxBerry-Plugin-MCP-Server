@@ -36,6 +36,7 @@ from mcpserver.loxone.client import (
     LoxoneToken,
     MiniserverEndpoint,
 )
+from mcpserver.loxone.events import LoxoneProtocolError
 
 _MAX_FORM_BYTES: Final = 16 * 1024
 _MAX_JSON_BYTES: Final = 32 * 1024
@@ -200,7 +201,7 @@ class Phase0OAuthWeb:
             return True
         try:
             await LoxoneClient(self.endpoint, client_uuid=self._client_uuid).kill_token(token)
-        except LoxoneConnectionError:
+        except (LoxoneConnectionError, LoxoneProtocolError):
             token.destroy()
         transaction.loxone_token = None
         return True

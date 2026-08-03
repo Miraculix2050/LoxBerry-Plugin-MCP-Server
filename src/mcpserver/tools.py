@@ -15,7 +15,7 @@ from uuid import uuid4
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, JsonValue
 
 from mcpserver.auth.provider import StoredAccessToken
 from mcpserver.loxone.models import Control, Freshness, NamedGroup
@@ -27,23 +27,110 @@ MAX_STATE_UUIDS: Final = 100
 _LOGGER = logging.getLogger("mcpserver.tools")
 
 
+class ErrorData(BaseModel):
+    error: str
+    message: str
+
+
+class NamedGroupData(BaseModel):
+    uuid: str
+    name: str
+
+
+class NamedGroupPageData(BaseModel):
+    items: list[NamedGroupData]
+    next_cursor: str | None
+
+
+class ControlSummaryData(BaseModel):
+    uuid: str
+    name: str
+    type: str
+    room: NamedGroupData | None
+    category: NamedGroupData | None
+
+
+class ControlPageData(BaseModel):
+    items: list[ControlSummaryData]
+    next_cursor: str | None
+
+
+class StateReferenceData(BaseModel):
+    name: str
+    uuid: str
+
+
+class CapabilitiesData(BaseModel):
+    readable: bool
+    allowed_actions: list[str]
+
+
+class ControlDescriptionData(ControlSummaryData):
+    states: list[StateReferenceData]
+    capabilities: CapabilitiesData
+
+
+class StateData(BaseModel):
+    uuid: str
+    value: JsonValue
+    freshness: str
+    observed_at: str | None
+
+
+class StatesData(BaseModel):
+    states: list[StateData]
+
+
+class SystemStatusData(BaseModel):
+    reachable: bool
+    miniserver_serial: str
+    structure_last_modified: str
+    cache_freshness: str
+
+
 class ToolEnvelope(BaseModel):
     ok: bool
-    data: Any
+    data: object
     warnings: list[str] = Field(default_factory=list)
     observed_at: str
     stale: bool
     trace_id: str
 
 
+class SystemStatusEnvelope(ToolEnvelope):
+    data: SystemStatusData | ErrorData
+
+
+class NamedGroupPageEnvelope(ToolEnvelope):
+    data: NamedGroupPageData | ErrorData
+
+
+class ControlPageEnvelope(ToolEnvelope):
+    data: ControlPageData | ErrorData
+
+
+class ControlDescriptionEnvelope(ToolEnvelope):
+    data: ControlDescriptionData | ErrorData
+
+
+class StatesEnvelope(ToolEnvelope):
+    data: StatesData | ErrorData
+
+
 def _now() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
-def _result(data: Any, *, stale: bool = False, warnings: list[str] | None = None) -> ToolEnvelope:
+def _result[EnvelopeT: ToolEnvelope](
+    envelope_type: type[EnvelopeT],
+    data: Any,
+    *,
+    stale: bool = False,
+    warnings: list[str] | None = None,
+) -> EnvelopeT:
     trace_id = str(uuid4())
     _LOGGER.info("component=tools severity=INFO trace_id=%s outcome=ok", trace_id)
-    return ToolEnvelope(
+    return envelope_type(
         ok=True,
         data=data,
         warnings=warnings or [],
@@ -53,14 +140,16 @@ def _result(data: Any, *, stale: bool = False, warnings: list[str] | None = None
     )
 
 
-def _error(code: str, message: str) -> ToolEnvelope:
+def _error[EnvelopeT: ToolEnvelope](
+    envelope_type: type[EnvelopeT], code: str, message: str
+) -> EnvelopeT:
     trace_id = str(uuid4())
     _LOGGER.warning(
         "component=tools severity=WARNING trace_id=%s outcome=error code=%s",
         trace_id,
         code,
     )
-    return ToolEnvelope(
+    return envelope_type(
         ok=False,
         data={"error": code, "message": message},
         observed_at=_now(),
@@ -173,10 +262,11 @@ def register_read_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> None:
         annotations=annotations,
         structured_output=True,
     )
-    async def get_system_status() -> ToolEnvelope:
+    async def get_system_status() -> SystemStatusEnvelope:
         try:
             _access_token, snapshot = await _snapshot(runtime)
             return _result(
+                SystemStatusEnvelope,
                 {
                     "reachable": snapshot.connected,
                     "miniserver_serial": snapshot.structure.identity.miniserver_serial,
@@ -186,9 +276,13 @@ def register_read_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> None:
                 stale=not snapshot.connected,
             )
         except PermissionError:
-            return _error("unauthenticated", "Authentication with loxone:read is required")
+            return _error(
+                SystemStatusEnvelope,
+                "unauthenticated",
+                "Authentication with loxone:read is required",
+            )
         except RuntimeUnavailable as exc:
-            return _error("temporarily_unavailable", str(exc))
+            return _error(SystemStatusEnvelope, "temporarily_unavailable", str(exc))
 
     @server.tool(
         name="loxone_list_rooms",
@@ -196,18 +290,25 @@ def register_read_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> None:
         annotations=annotations,
         structured_output=True,
     )
-    async def list_rooms(cursor: str | None = None, limit: int = DEFAULT_PAGE_SIZE) -> ToolEnvelope:
+    async def list_rooms(
+        cursor: str | None = None, limit: int = DEFAULT_PAGE_SIZE
+    ) -> NamedGroupPageEnvelope:
         try:
             _access_token, snapshot = await _snapshot(runtime)
             return _result(
-                _page(cursors, "rooms", _groups(snapshot.structure.rooms), cursor, limit)
+                NamedGroupPageEnvelope,
+                _page(cursors, "rooms", _groups(snapshot.structure.rooms), cursor, limit),
             )
         except ValueError as exc:
-            return _error("invalid_input", str(exc))
+            return _error(NamedGroupPageEnvelope, "invalid_input", str(exc))
         except PermissionError:
-            return _error("unauthenticated", "Authentication with loxone:read is required")
+            return _error(
+                NamedGroupPageEnvelope,
+                "unauthenticated",
+                "Authentication with loxone:read is required",
+            )
         except RuntimeUnavailable as exc:
-            return _error("temporarily_unavailable", str(exc))
+            return _error(NamedGroupPageEnvelope, "temporarily_unavailable", str(exc))
 
     @server.tool(
         name="loxone_list_categories",
@@ -217,18 +318,23 @@ def register_read_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> None:
     )
     async def list_categories(
         cursor: str | None = None, limit: int = DEFAULT_PAGE_SIZE
-    ) -> ToolEnvelope:
+    ) -> NamedGroupPageEnvelope:
         try:
             _access_token, snapshot = await _snapshot(runtime)
             return _result(
-                _page(cursors, "categories", _groups(snapshot.structure.categories), cursor, limit)
+                NamedGroupPageEnvelope,
+                _page(cursors, "categories", _groups(snapshot.structure.categories), cursor, limit),
             )
         except ValueError as exc:
-            return _error("invalid_input", str(exc))
+            return _error(NamedGroupPageEnvelope, "invalid_input", str(exc))
         except PermissionError:
-            return _error("unauthenticated", "Authentication with loxone:read is required")
+            return _error(
+                NamedGroupPageEnvelope,
+                "unauthenticated",
+                "Authentication with loxone:read is required",
+            )
         except RuntimeUnavailable as exc:
-            return _error("temporarily_unavailable", str(exc))
+            return _error(NamedGroupPageEnvelope, "temporarily_unavailable", str(exc))
 
     @server.tool(
         name="loxone_find_controls",
@@ -243,9 +349,9 @@ def register_read_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> None:
         control_type: str | None = None,
         cursor: str | None = None,
         limit: int = DEFAULT_PAGE_SIZE,
-    ) -> ToolEnvelope:
+    ) -> ControlPageEnvelope:
         if query is not None and len(query) > 200:
-            return _error("invalid_input", "query is too long")
+            return _error(ControlPageEnvelope, "invalid_input", "query is too long")
         try:
             _access_token, snapshot = await _snapshot(runtime)
             controls = _flatten(snapshot.structure.controls)
@@ -262,13 +368,20 @@ def register_read_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> None:
                 json.dumps([normalized, room_uuid, category_uuid, control_type]).encode()
             ).hexdigest()
             values = [_control_summary(item, snapshot) for item in matches]
-            return _result(_page(cursors, f"controls:{scope}", values, cursor, limit))
+            return _result(
+                ControlPageEnvelope,
+                _page(cursors, f"controls:{scope}", values, cursor, limit),
+            )
         except ValueError as exc:
-            return _error("invalid_input", str(exc))
+            return _error(ControlPageEnvelope, "invalid_input", str(exc))
         except PermissionError:
-            return _error("unauthenticated", "Authentication with loxone:read is required")
+            return _error(
+                ControlPageEnvelope,
+                "unauthenticated",
+                "Authentication with loxone:read is required",
+            )
         except RuntimeUnavailable as exc:
-            return _error("temporarily_unavailable", str(exc))
+            return _error(ControlPageEnvelope, "temporarily_unavailable", str(exc))
 
     @server.tool(
         name="loxone_describe_control",
@@ -276,7 +389,7 @@ def register_read_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> None:
         annotations=annotations,
         structured_output=True,
     )
-    async def describe_control(control_uuid: str) -> ToolEnvelope:
+    async def describe_control(control_uuid: str) -> ControlDescriptionEnvelope:
         try:
             _access_token, snapshot = await _snapshot(runtime)
             control = next(
@@ -288,15 +401,19 @@ def register_read_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> None:
                 None,
             )
             if control is None:
-                return _error("not_found", "control is not visible")
+                return _error(ControlDescriptionEnvelope, "not_found", "control is not visible")
             value = _control_summary(control, snapshot)
             value["states"] = [{"name": name, "uuid": uuid} for name, uuid in control.state_uuids]
             value["capabilities"] = {"readable": True, "allowed_actions": []}
-            return _result(value)
+            return _result(ControlDescriptionEnvelope, value)
         except PermissionError:
-            return _error("unauthenticated", "Authentication with loxone:read is required")
+            return _error(
+                ControlDescriptionEnvelope,
+                "unauthenticated",
+                "Authentication with loxone:read is required",
+            )
         except RuntimeUnavailable as exc:
-            return _error("temporarily_unavailable", str(exc))
+            return _error(ControlDescriptionEnvelope, "temporarily_unavailable", str(exc))
 
     @server.tool(
         name="loxone_get_states",
@@ -304,13 +421,17 @@ def register_read_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> None:
         annotations=annotations,
         structured_output=True,
     )
-    async def get_states(state_uuids: list[str]) -> ToolEnvelope:
+    async def get_states(state_uuids: list[str]) -> StatesEnvelope:
         if (
             not state_uuids
             or len(state_uuids) > MAX_STATE_UUIDS
             or len(set(state_uuids)) != len(state_uuids)
         ):
-            return _error("invalid_input", "state_uuids must contain 1 to 100 unique values")
+            return _error(
+                StatesEnvelope,
+                "invalid_input",
+                "state_uuids must contain 1 to 100 unique values",
+            )
         try:
             _access_token, snapshot = await _snapshot(runtime)
             allowed = {
@@ -319,7 +440,7 @@ def register_read_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> None:
                 for _name, uuid in control.state_uuids
             }
             if any(uuid not in allowed for uuid in state_uuids):
-                return _error("not_found", "one or more states are not visible")
+                return _error(StatesEnvelope, "not_found", "one or more states are not visible")
             records = [runtime.state(snapshot, uuid) for uuid in state_uuids] if runtime else []
             stale = any(record.freshness is not Freshness.CURRENT for record in records)
             values = [
@@ -337,8 +458,12 @@ def register_read_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> None:
                 }
                 for record in records
             ]
-            return _result({"states": values}, stale=stale)
+            return _result(StatesEnvelope, {"states": values}, stale=stale)
         except PermissionError:
-            return _error("unauthenticated", "Authentication with loxone:read is required")
+            return _error(
+                StatesEnvelope,
+                "unauthenticated",
+                "Authentication with loxone:read is required",
+            )
         except RuntimeUnavailable as exc:
-            return _error("temporarily_unavailable", str(exc))
+            return _error(StatesEnvelope, "temporarily_unavailable", str(exc))

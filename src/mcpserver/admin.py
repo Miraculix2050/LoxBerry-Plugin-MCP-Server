@@ -17,6 +17,7 @@ from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore, LoxoneTokenSt
 from mcpserver.auth.store import AtomicJsonAuthStore
 from mcpserver.config import AtomicConfigStore, ConfigError, PluginConfig
 from mcpserver.loxone.client import LoxoneClient, LoxoneConnectionError, MiniserverEndpoint
+from mcpserver.loxone.events import LoxoneProtocolError
 
 _MAX_REQUEST_BYTES: Final = 32 * 1024
 _SERVICE: Final = "loxberry-mcpserver.service"
@@ -63,24 +64,39 @@ def _service_active() -> bool:
 
 
 def _restart_service() -> None:
-    result = subprocess.run(
-        ["sudo", "-n", "/bin/systemctl", "restart", _SERVICE],
-        check=False,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        timeout=15,
-    )
+    try:
+        result = subprocess.run(
+            ["sudo", "-n", "/bin/systemctl", "restart", _SERVICE],
+            check=False,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise AdminError("the service could not be restarted") from exc
     if result.returncode != 0:
-        raise AdminError("configuration was saved but the service could not be restarted")
+        raise AdminError("the service could not be restarted")
 
 
 def _save(payload: object) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise AdminError("configuration payload is invalid")
     config = PluginConfig.from_document(payload)
-    _config_store().save(config)
-    _restart_service()
+    store = _config_store()
+    previous = store.load()
+    store.save(config)
+    try:
+        _restart_service()
+    except AdminError as apply_error:
+        try:
+            store.save(previous)
+            _restart_service()
+        except (AdminError, ConfigError) as rollback_error:
+            raise AdminError("configuration apply and rollback failed") from rollback_error
+        raise AdminError(
+            "configuration was not applied; previous configuration restored"
+        ) from apply_error
     return {"configuration": config.to_document(), "applied": True}
 
 
@@ -146,9 +162,12 @@ def _revoke(family_id: str | None) -> int:
                         record["status"] = "revoked"
 
     _auth_store().mutate(mutate)
-    token_store = _token_store()
+    try:
+        token_store = _token_store()
+    except LoxoneTokenStoreError:
+        token_store = None
     config = _config_store().load()
-    if config.loxone_endpoint:
+    if config.loxone_endpoint and token_store is not None:
         client = LoxoneClient(
             MiniserverEndpoint.parse(config.loxone_endpoint),
             client_uuid=_CLIENT_UUID,
@@ -162,13 +181,14 @@ def _revoke(family_id: str | None) -> int:
                 except LoxoneTokenStoreError:
                     token = None
                 if token is not None:
-                    with suppress(LoxoneConnectionError):
+                    with suppress(LoxoneConnectionError, LoxoneProtocolError):
                         await client.kill_token(token)
 
         asyncio.run(kill_tokens())
-    for target in revoked:
-        with suppress(LoxoneTokenStoreError):
-            token_store.delete(target)
+    if token_store is not None:
+        for target in revoked:
+            with suppress(LoxoneTokenStoreError):
+                token_store.delete(target)
     return len(revoked)
 
 
