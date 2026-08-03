@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import getpass
-import hashlib
 import sys
 from collections.abc import Iterable
 from uuid import uuid4
@@ -147,9 +146,7 @@ async def _run(args: argparse.Namespace) -> None:
         if cache.get(subject, observed).freshness is not Freshness.STALE:
             raise RuntimeError("Reconnected state was not marked stale after the second close")
 
-        serial_fingerprint = hashlib.sha256(probe.serial.encode()).hexdigest()[:12]
         print(f"LOXONE_FIRMWARE={probe.firmware}")
-        print(f"LOXONE_SERIAL_FINGERPRINT={serial_fingerprint}")
         print("LOXONE_WEBSOCKET_SNAPSHOT=pass", flush=True)
         print("LOXONE_WEBSOCKET_RECONNECT=pass", flush=True)
     except BaseException as exc:

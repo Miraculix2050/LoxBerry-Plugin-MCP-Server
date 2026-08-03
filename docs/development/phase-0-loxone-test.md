@@ -36,9 +36,9 @@ Der Test akzeptiert für Gen. 1 ausschließlich eine kanonische private IP-Adres
 Authentifizierung zusätzlich Loxone Command Encryption. Das kurzlebig gehaltene
 Test-JWT wird auch nach einem Fehler bestmöglich mit `killtoken` widerrufen.
 
-Ein erfolgreicher Bericht enthält nur Firmware, einen SHA-256-Fingerprint der
-Seriennummer und benannte PASS-Zeilen. Passwort, JWT, interne Adresse,
-Benutzernamen, Control-Namen und vollständige UUIDs werden nicht ausgegeben.
+Ein erfolgreicher Bericht enthält nur die Firmware und benannte PASS-Zeilen.
+Passwort, JWT, Seriennummer, interne Adresse, Benutzernamen, Control-Namen und
+vollständige UUIDs werden nicht ausgegeben.
 
 ## Runtime-Nachweis für PR 1
 
@@ -100,5 +100,4 @@ Mit dieser Filterung bestätigte der Test ein sichtbares und ein verweigertes
 Control, den initialen Zustandssnapshot, eine reale Temperaturänderung, sofortiges
 `stale` nach Verbindungsabbruch, einen neuen Snapshot nach Reconnect und den
 abschließenden Tokenwiderruf. Ausgegeben wurden ausschließlich die Firmware
-`17.1.7.27`, der gekürzte SHA-256-Serienfingerprint `bf61df2269cd` und die
-benannten PASS-Zeilen.
+`17.1.7.27` und die benannten PASS-Zeilen.
