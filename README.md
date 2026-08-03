@@ -12,13 +12,20 @@ Für jeden Assistenten sollte ein eigener Loxone-Benutzer mit den minimal erford
 
 ## Projektstatus
 
-Das Plugin befindet sich im Aufbau. Installations-, Konfigurations- und Nutzungsanleitungen werden zusammen mit der ersten lauffähigen Version ergänzt.
+Phase 0 ist abgeschlossen. Runtime, Apache-Transport, OAuth-Server sowie die
+Gen.-1-Loxone-/WebSocket-Anbindung sind auf der dokumentierten Referenzplattform
+bestätigt. Der nächste Meilenstein ist Phase 1, die lokale Read-only Alpha mit
+Pluginlayout, Dienst, Admin-UI und den ersten stabilen lesenden Tools.
+
+Es gibt noch kein installierbares Testpaket. Die bestätigten Kombinationen und
+bekannten Clientgrenzen stehen in der [Support-Matrix](docs/development/support-matrix.md).
 
 ## Entwicklung
 
 - [Implementierungsrichtlinien](docs/development/implementation-guidelines.md)
 - [Plugin-Konzept](docs/development/plugin-concept.md)
 - [Änderungsgetriebene Teststrategie](docs/development/test-strategy.md)
+- [Support-Matrix](docs/development/support-matrix.md)
 - [Recherche-Ergebnisse](docs/research/research-results.md)
 - [Beitragen und Git-Workflow](CONTRIBUTING.md)
 

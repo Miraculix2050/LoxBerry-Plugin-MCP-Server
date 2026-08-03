@@ -1,7 +1,8 @@
 # ADR 0001: Phase-0-Grundarchitektur
 
-- **Status:** Angenommen
+- **Status:** Angenommen; Phase 0 abgeschlossen
 - **Datum:** 2026-08-01
+- **Abschluss:** 2026-08-03
 - **Geltung:** Runtime, Transport, Authentifizierung, Persistenz und erster
   ausführbarer Stand
 
@@ -120,8 +121,8 @@ Implementierungsdetails ersetzen.
 - Phase 1 bleibt read-only. Das erste spätere Schreibziel ist der Loxone-
   Control-Typ `Switch` mit ausschließlich explizitem `on` und `off`.
 - `loxberry:read` folgt erst in Phase 3 mit einer eigenen lokalen Freigabe.
-- Phase-0-Probe-Tools sind keine veröffentlichten MCP-Verträge und werden vor
-  dem ersten Paket entfernt.
+- Phase-0-Probe-Tools sind keine veröffentlichten MCP-Verträge. Das temporäre
+  Identitäts-Probe-Tool wurde mit Abschluss der Phase entfernt.
 
 ### Qualität und Lieferung
 
@@ -161,13 +162,26 @@ zwischen 64.364 und 64.384 KiB und blieb nach 30 Sekunden bei 64.368 KiB.
 Die isolierte Apache-2.4.68-Instanz bestätigte die exakten MCP-, OAuth- und
 Well-known-Pfade, Host-/Origin-Abweisung, DCR, geschützte MCP-Ressource und
 fehlende Alias- beziehungsweise Trailing-Slash-Weiterleitungen. Die
-deterministische Negativmatrix und der Browserablauf sind automatisiert; die
-beiden realen Clientnachweise bleiben vor dem Merge dieses Spikes Pflicht.
+deterministische Negativmatrix und der Browserablauf sind automatisiert.
+
+Claude Desktop `1.24012.9` mit `mcp-remote 0.1.38` bestätigte Anmeldung,
+MCP-Initialisierung, authentifizierten Aufruf, Refresh und Widerruf. Codex CLI
+`0.146.0` bestätigte Anmeldung, MCP-Initialisierung und authentifizierten Aufruf.
+Sein Refresh lässt den nach RFC 8707 verpflichtenden Parameter `resource` weg;
+sein Logout entfernt nur lokale Credentials und ruft den Widerrufsendpunkt nicht
+auf.
+
+Diese beiden Codex-Grenzen wurden für Phase 0 ausdrücklich als externe
+Client-Limitierung akzeptiert. Die Ausnahme ändert den Serververtrag nicht:
+Audience-Bindung und Widerrufsregeln bleiben strikt, und es gibt keinen
+clientspezifischen Fallback. Die konkrete Einstufung steht in der
+[Support-Matrix](../support-matrix.md).
 
 ## Folgen
 
 Python, Apache-Transport, Gen.-1-Loxone und WebSocket sind für die
 Referenzplattform bestätigt; ein vorsorglicher paralleler Go-Build entfällt.
-OAuth ist automatisiert und hinter einer isolierten realen Apache-Instanz
-bestätigt. Die Interoperabilitätsaussage folgt erst nach den dokumentierten
-Codex-CLI- und Claude-Desktop-Tests.
+OAuth ist automatisiert, hinter einer isolierten realen Apache-Instanz und mit
+zwei dokumentierten Clients bestätigt. Phase 0 ist abgeschlossen. Phase 1
+liefert als nächsten Meilenstein die lokale Read-only Alpha mit Pluginlayout,
+Lifecycle, Admin-UI und stabilen lesenden MCP-Tools.

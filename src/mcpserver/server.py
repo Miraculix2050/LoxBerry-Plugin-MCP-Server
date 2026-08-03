@@ -1,16 +1,14 @@
-"""Minimal Phase-0 MCP transport with no released domain tools."""
+"""MCP transport foundation with no released domain tools."""
 
 from __future__ import annotations
 
 import logging
 from typing import Final
 
-from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecurityMiddleware, TransportSecuritySettings
-from mcp.types import ToolAnnotations
 from pydantic import AnyHttpUrl
 from starlette.applications import Starlette
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
@@ -179,27 +177,6 @@ def create_server(settings: ServerSettings) -> FastMCP:
             methods=["GET"],
             include_in_schema=False,
         )(oauth_web.authorization_metadata)
-
-        @server.tool(
-            name="phase0_identity_probe",
-            description="Unpublished Phase-0 OAuth identity interoperability probe.",
-            annotations=ToolAnnotations(
-                readOnlyHint=True,
-                destructiveHint=False,
-                idempotentHint=True,
-                openWorldHint=False,
-            ),
-        )
-        async def phase0_identity_probe() -> dict[str, object]:
-            token = get_access_token()
-            if token is None or token.claims is None:
-                raise RuntimeError("Authenticated identity is unavailable")
-            return {
-                "identity": token.claims["identity"],
-                "client_id": token.client_id,
-                "audience": token.claims["audience"],
-                "scope": token.scopes,
-            }
 
     @server.custom_route(  # type: ignore[misc]
         "/healthz", methods=["GET"], include_in_schema=False

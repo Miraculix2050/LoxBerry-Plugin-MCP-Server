@@ -1,9 +1,10 @@
 # Phase-0-Test: OAuth und Clientinteroperabilität
 
-Dieser Nachweis prüft den unveröffentlichten OAuth-Spike über die lokale
-HTTPS-Adresse des LoxBerry. Er veröffentlicht noch keinen dauerhaften
-MCP-Toolvertrag. Zugangsdaten, Tokens, interne Adressen, Callback-Parameter und
-lokale Testpfade werden nicht in diesen Bericht übernommen.
+Dieser Nachweis prüfte den OAuth-Spike über die lokale HTTPS-Adresse des
+LoxBerry. Das dabei verwendete Identitäts-Probe-Tool war kein dauerhafter
+MCP-Toolvertrag und wurde mit dem Abschluss von Phase 0 entfernt. Zugangsdaten,
+Tokens, interne Adressen, Callback-Parameter und lokale Testpfade werden nicht in
+diesen Bericht übernommen.
 
 ## Vertrag
 
@@ -48,11 +49,11 @@ Auf LoxBerry `4.0.0.14`, Debian 13, `aarch64`, Python `3.13.5` und Apache
 
 Die produktive Apache-Konfiguration wurde für diese Nachweise nicht verändert.
 
-## Verbleibende reale Abnahme vor Merge
+## Reale Clientabnahme
 
-| Client | Version | Callback | Login | Probe | Refresh | Revoke |
+| Client | Version | Callback | Login | authentifizierter Aufruf | Refresh | Revoke |
 | --- | --- | --- | --- | --- | --- | --- |
-| Codex CLI | `0.146.0` | dynamischer IPv4-Loopback mit pfadgebundener Callback-ID | erfolgreich | erfolgreich | extern blockiert | lokal abgemeldet; Client sendet keinen Widerruf |
+| Codex CLI | `0.146.0` | dynamischer IPv4-Loopback mit pfadgebundener Callback-ID | erfolgreich | erfolgreich | fehlgeschlagen; `resource` fehlt | lokal abgemeldet; Client sendet keinen Widerruf |
 | Claude Desktop mit `mcp-remote@0.1.38` | `1.24012.9` | `localhost`-Loopback; Port anonymisiert | erfolgreich | erfolgreich | erfolgreich | erfolgreich |
 
 Für Node-basierte Clients wird die Windows-System-CA mit
@@ -92,3 +93,17 @@ Der Token-Endpunkt akzeptierte den Refresh, der Store markierte die alte
 Refresh-Generation als verbraucht und legte eine neue aktive Generation an.
 Der abschließende RFC-7009-Widerruf markierte die gesamte Testfamilie sowie alle
 zugehörigen Access- und Refresh-Tokens als widerrufen.
+
+## Abschlussentscheidung
+
+Phase 0 wurde am 2026-08-03 mit einer ausdrücklichen Ausnahme für die beiden
+bestätigten Codex-CLI-Grenzen abgeschlossen. Die Interoperabilitätsabnahme
+verlangt für beide ausgewählten Clients erfolgreiche Anmeldung,
+MCP-Initialisierung und einen authentifizierten Aufruf. Refresh und Widerruf sind
+serverseitig automatisiert sowie mit Claude Desktop real bestätigt.
+
+Der fehlende RFC-8707-Parameter beim Codex-Refresh und der rein lokale
+Codex-Logout werden als Client-Limitierungen dokumentiert. Sie werden weder durch
+eine gelockerte Audience-Prüfung noch durch einen serverseitigen Sonderpfad
+umgangen. Das temporäre `phase0_identity_probe` wurde nach dieser Entscheidung
+entfernt; Phase 1 führt die ersten dauerhaften Read-only-Tools ein.
