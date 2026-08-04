@@ -26,6 +26,11 @@ For Claude Desktop, follow the short
 [step-by-step guide](clients/claude-desktop.en.md), which includes a ready-to-use
 configuration example and troubleshooting help.
 
+For the ChatGPT/Codex desktop app, the
+[direct Streamable HTTP guide](clients/chatgpt-codex-desktop.en.md) explains URL
+setup, browser authentication, and the requested read or write permissions. It
+does not require a local Node.js bridge.
+
 The six read tools remain enabled by default. To operate Gen. 1 switches,
 additionally enable **Loxone control**. A new OAuth grant with `loxone:control`
 is then required. Disabling control revokes existing control sessions while
