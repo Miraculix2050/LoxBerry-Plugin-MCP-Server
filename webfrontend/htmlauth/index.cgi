@@ -92,7 +92,8 @@ if ($action ne '') {
             },
             tools => {
                 loxone_read_enabled => JSON::PP::true,
-                loxone_control_enabled => $q->{loxone_control_enabled} ? JSON::PP::true : JSON::PP::false,
+                loxone_control_enabled => ($q->{loxone_control_enabled} // '') eq '1'
+                    ? JSON::PP::true : JSON::PP::false,
             },
             limits => {
                 requests_per_minute => 0 + ($q->{requests_per_minute} // 60),

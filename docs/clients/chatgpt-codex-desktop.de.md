@@ -23,9 +23,9 @@ Miniservers. Trage keine Zugangsdaten in die URL ein.
 
 Entscheide außerdem vor der Anmeldung, welche Rechte benötigt werden:
 
-- Ist **Loxone-Steuerung** im Plugin deaktiviert, wird nur der Lesezugriff
+- Ist im Plugin **Nur lesen** ausgewählt, wird nur der Lesezugriff
   `loxone:read` angeboten.
-- Ist **Loxone-Steuerung** aktiviert, bietet der Server zusätzlich
+- Ist **Lesen und schalten** ausgewählt, bietet der Server zusätzlich
   `loxone:control` an. Die Desktop-App bevorzugt die vom Server angebotenen
   Scopes und fordert deshalb bei einer neuen Anmeldung beide Rechte an.
 
@@ -56,8 +56,8 @@ Desktop-App die verbundenen MCP-Server kontrollieren.
 
 ## Lese- und Schreibrechte verstehen
 
-Wenn die Loxone-Steuerung im Plugin aktiviert ist, fordert die Desktop-App bei
-der Authentifizierung beide Scopes an:
+Wenn im Plugin **Lesen und schalten** ausgewählt ist, fordert die Desktop-App
+bei der Authentifizierung beide Scopes an:
 
 ```text
 loxone:read loxone:control
@@ -75,7 +75,7 @@ Die Schreibrechte werden nicht nachträglich still hinzugefügt: Sie müssen auf
 der Browser-Freigabeseite ausgewählt und dort bestätigt werden. Für reinen
 Lesezugriff lässt du die optionale Checkbox deaktiviert.
 
-Beim späteren Deaktivieren der Loxone-Steuerung widerruft das Plugin bestehende
+Beim späteren Wechsel auf **Nur lesen** widerruft das Plugin bestehende
 Control-Sitzungen. Authentifiziere die Desktop-App danach erneut, um eine reine
 Read-only-Sitzung zu erhalten.
 

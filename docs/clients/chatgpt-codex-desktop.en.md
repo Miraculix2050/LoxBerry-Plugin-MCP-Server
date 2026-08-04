@@ -23,9 +23,9 @@ credentials in the URL.
 
 Also decide which permissions are needed before authentication:
 
-- When **Loxone control** is disabled in the plugin, the server offers only
+- When **Read only** is selected in the plugin, the server offers only
   `loxone:read`.
-- When **Loxone control** is enabled, the server also advertises
+- When **Read and switch** is selected, the server also advertises
   `loxone:control`. The desktop app prefers the server-advertised scopes and
   therefore requests both permissions during a new login.
 
@@ -55,8 +55,8 @@ inspect connected MCP servers.
 
 ## Understand read and write access
 
-When Loxone control is enabled in the plugin, the desktop app requests both
-scopes during authentication:
+When **Read and switch** is selected in the plugin, the desktop app requests
+both scopes during authentication:
 
 ```text
 loxone:read loxone:control
@@ -72,8 +72,9 @@ Write access is not silently added later: it must be selected and approved on
 the browser consent page. For read-only access, leave the optional checkbox
 clear.
 
-If Loxone control is disabled later, the plugin revokes existing control
-sessions. Authenticate the desktop app again to obtain a read-only session.
+If the setting is later changed to **Read only**, the plugin revokes existing
+control sessions. Authenticate the desktop app again to obtain a read-only
+session.
 
 ## Troubleshooting
 

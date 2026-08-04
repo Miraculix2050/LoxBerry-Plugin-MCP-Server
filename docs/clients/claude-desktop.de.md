@@ -127,9 +127,9 @@ Freigabeseite im Browser.
 > vollständigen Claude-Test von Registrierung, Freigabe und Werkzeugaufruf
 > bestätigt. Der dokumentierte und geprüfte Standard bleibt Read-only.
 
-Dieser Abschnitt gilt nur, wenn die kontrollierte Gen.-1-Switch-Steuerung in der
-Plugin-Oberfläche bewusst aktiviert wurde. Für normalen Lesezugriff ist er nicht
-erforderlich.
+Dieser Abschnitt gilt nur, wenn in der Plugin-Oberfläche unter **Zugriff auf den
+Miniserver über den MCP Server** bewusst **Lesen und schalten** gewählt wurde.
+Für normalen Lesezugriff ist er nicht erforderlich.
 
 Die Steuerung benötigt immer beide Scopes:
 
@@ -140,7 +140,7 @@ loxone:read loxone:control
 `loxone:control` allein ist ungültig. Bestehende Read-only-Sitzungen erhalten
 den zusätzlichen Scope nicht automatisch.
 
-1. Aktiviere **Loxone-Steuerung** im Plugin und speichere die Konfiguration.
+1. Wähle im Plugin **Lesen und schalten** und speichere die Konfiguration.
 2. Erstelle den lokalen Ordner `C:\Users\Public\LoxBerryMCP` und darin die Datei
    `loxberry-oauth-client.json` mit diesem Inhalt:
 

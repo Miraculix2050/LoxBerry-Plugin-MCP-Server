@@ -121,8 +121,9 @@ the browser consent page before approving access.
 > consent, and tool availability has not yet confirmed it. Read-only remains the
 > documented and tested default.
 
-This section applies only when controlled Gen. 1 Switch operation was
-deliberately enabled in the plugin UI. It is unnecessary for normal read access.
+This section applies only when **Read and switch** was deliberately selected
+under **Miniserver access through the MCP server** in the plugin UI. It is
+unnecessary for normal read access.
 
 Control always requires both scopes:
 
@@ -133,7 +134,7 @@ loxone:read loxone:control
 `loxone:control` alone is invalid. Existing read-only sessions never receive the
 additional scope automatically.
 
-1. Enable **Loxone control** in the plugin and save the configuration.
+1. Select **Read and switch** in the plugin and save the configuration.
 2. Create the local folder `C:\Users\Public\LoxBerryMCP` and add
    `loxberry-oauth-client.json` with this content:
 

@@ -29,6 +29,17 @@ def test_common_actions_update_the_page_without_a_reload() -> None:
     assert "url.searchParams.delete('notice')" in template
 
 
+def test_miniserver_access_mode_is_an_explicit_read_or_switch_selection() -> None:
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+
+    assert '<select name="loxone_control_enabled">' in template
+    assert '<option value="0" <TMPL_UNLESS LOXONE_CONTROL_ENABLED>selected' in template
+    assert '<option value="1" <TMPL_IF LOXONE_CONTROL_ENABLED>selected' in template
+    assert 'name="loxone_control_enabled" type="checkbox"' not in template
+    assert "($q->{loxone_control_enabled} // '') eq '1'" in cgi
+
+
 def test_session_expiry_is_rendered_as_a_local_date_and_time() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
