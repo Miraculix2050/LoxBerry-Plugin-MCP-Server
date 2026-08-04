@@ -105,7 +105,7 @@
   });
   const MAX_EXPIRY_EPOCH = 4102444799;
   const parseExpiry = (raw) => {
-    if (!/^(?:0|[1-9]\d*)$/.test(raw) || raw.length > 12) return null;
+    if (!/^(?:0|[1-9][0-9]*)$/.test(raw) || raw.length > 10) return null;
     const value = Number(raw);
     return Number.isSafeInteger(value) && value <= MAX_EXPIRY_EPOCH ? value : null;
   };

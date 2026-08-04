@@ -143,8 +143,8 @@ use constant MAX_EXPIRY_EPOCH => 4_102_444_799;
 sub format_expiry {
     my ($value) = @_;
     my $raw = defined($value) ? "$value" : '';
-    return $raw if $raw !~ /\A(?:0|[1-9]\d*)\z/
-        || length($raw) > 12
+    return $raw if $raw !~ /\A(?:0|[1-9][0-9]*)\z/
+        || length($raw) > 10
         || 0 + $raw > MAX_EXPIRY_EPOCH;
     my $formatted = eval {
         strftime('%Y-%m-%d %H:%M:%S %Z', localtime(0 + $raw));
