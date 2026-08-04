@@ -113,11 +113,14 @@ def main() -> int:
     lock = root / "requirements" / "runtime-arm64.lock"
 
     requirements = _locked_requirements(lock)
-    wheel_versions = _wheel_versions(wheelhouse)
+    wheel_files = list(wheelhouse.glob("*.whl"))
+    wheel_identities = _wheel_identities(wheelhouse)
+    wheel_versions = set(wheel_identities)
+    project_identities = [
+        identity for identity in wheel_identities if identity[0] == "loxberry-mcpserver"
+    ]
     runtime_wheels = [
-        identity
-        for identity in _wheel_identities(wheelhouse)
-        if identity[0] != "loxberry-mcpserver"
+        identity for identity in wheel_identities if identity[0] != "loxberry-mcpserver"
     ]
     expected_runtime = {(name, version.lower()) for name, version in requirements.items()}
     missing = set(requirements) - _wheel_names(wheelhouse)
@@ -127,14 +130,28 @@ def main() -> int:
         if (name, version.lower()) not in wheel_versions
     }
     project_wheels = tuple(wheelhouse.glob("loxberry_mcpserver-0.1.0a1-*.whl"))
+    expected_project = [("loxberry-mcpserver", "0.1.0a1")]
     unexpected = set(runtime_wheels) - expected_runtime
     duplicates = len(runtime_wheels) != len(set(runtime_wheels))
-    if missing or mismatched or unexpected or duplicates or len(project_wheels) != 1:
+    invalid_wheel = len(wheel_files) != len(wheel_identities)
+    if (
+        missing
+        or mismatched
+        or unexpected
+        or duplicates
+        or invalid_wheel
+        or len(project_wheels) != 1
+        or project_identities != expected_project
+    ):
         detail = ", ".join(sorted(missing | mismatched)) or "project wheel"
         if unexpected:
             detail = ", ".join(sorted(name for name, _version in unexpected))
         if duplicates:
             detail = "duplicate runtime wheel"
+        if invalid_wheel:
+            detail = "invalid wheel filename"
+        if project_identities != expected_project:
+            detail = "unexpected project wheel"
         raise SystemExit(f"wheelhouse is incomplete: {detail}")
 
     entries: list[tuple[Path, str]] = []

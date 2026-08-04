@@ -135,19 +135,30 @@ def verify_archive(archive: Path, *, require_checksum: bool = True) -> str:
         ):
             raise PackageVerificationError("plugin identity is invalid")
         version = parser["PLUGIN"].get("VERSION", "")
-        expected_wheel = f"bin/wheelhouse/loxberry_mcpserver-{_expected_project_version(version)}-"
-        project_wheels = [name for name in names if name.startswith(expected_wheel)]
-        if len(project_wheels) != 1:
+        expected_project = ("loxberry-mcpserver", _expected_project_version(version).lower())
+        wheelhouse_entries = [name for name in names if name.startswith("bin/wheelhouse/")]
+        if any(
+            PurePosixPath(name).parent != PurePosixPath("bin/wheelhouse")
+            or PurePosixPath(name).suffix != ".whl"
+            or _wheel_identity(name) is None
+            for name in wheelhouse_entries
+        ):
+            raise PackageVerificationError("wheelhouse contains an invalid entry")
+        wheel_identities = [_wheel_identity(name) for name in wheelhouse_entries]
+        project_wheels = [
+            identity
+            for identity in wheel_identities
+            if identity is not None and identity[0] == "loxberry-mcpserver"
+        ]
+        if project_wheels != [expected_project]:
             raise PackageVerificationError("exactly one matching project wheel is required")
         expected_runtime = _locked_requirements(
             package.read("bin/runtime-arm64.lock").decode("utf-8")
         )
         runtime_wheels = [
             identity
-            for name in names
-            if name.startswith("bin/wheelhouse/")
-            and not name.startswith("bin/wheelhouse/loxberry_mcpserver-")
-            if (identity := _wheel_identity(name)) is not None
+            for identity in wheel_identities
+            if identity is not None and identity[0] != "loxberry-mcpserver"
         ]
         if len(runtime_wheels) != len(set(runtime_wheels)):
             raise PackageVerificationError("offline runtime wheelhouse contains duplicates")

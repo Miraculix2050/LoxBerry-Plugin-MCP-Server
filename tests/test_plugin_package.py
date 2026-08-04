@@ -262,6 +262,42 @@ def test_plugin_archive_verifier_accepts_builder_output(tmp_path: Path) -> None:
         cwd=ROOT,
     )
     assert rejected.returncode != 0
+    (wheelhouse / "foreign_package-9.9-py3-none-any.whl").unlink()
+    (wheelhouse / "loxberry_mcpserver-0.0.9-py3-none-any.whl").write_bytes(b"stale project")
+    stale_project = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "tools" / "build_plugin.py"),
+            "--wheelhouse",
+            str(wheelhouse),
+            "--output",
+            str(tmp_path / "stale-project.zip"),
+        ],
+        check=False,
+        cwd=ROOT,
+    )
+    assert stale_project.returncode != 0
+
+    placeholder = tmp_path / "placeholder.zip"
+    with zipfile.ZipFile(output) as source, zipfile.ZipFile(placeholder, "w") as destination:
+        for entry in source.infolist():
+            if entry.filename.startswith("bin/wheelhouse/loxberry_mcpserver-"):
+                replacement = zipfile.ZipInfo(
+                    "bin/wheelhouse/loxberry_mcpserver-0.1.0a1-placeholder.txt",
+                    entry.date_time,
+                )
+                replacement.create_system = entry.create_system
+                replacement.external_attr = entry.external_attr
+                replacement.compress_type = entry.compress_type
+                destination.writestr(replacement, b"not a wheel")
+            else:
+                destination.writestr(entry, source.read(entry))
+    placeholder_digest = hashlib.sha256(placeholder.read_bytes()).hexdigest()
+    placeholder.with_suffix(".zip.sha256").write_text(
+        f"{placeholder_digest}  {placeholder.name}\n", encoding="ascii"
+    )
+    with pytest.raises(PackageVerificationError, match="invalid entry"):
+        verify_archive(placeholder)
 
 
 def test_release_helpers_exclude_stale_project_wheel_and_refuse_overwrite(
