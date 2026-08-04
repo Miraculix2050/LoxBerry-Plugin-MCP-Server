@@ -1,11 +1,12 @@
 # Support-Matrix
 
 - **Stand:** Abnahmestand Phase 1, 2026-08-04
-- **Nächster Meilenstein:** Review und Prerelease-Veröffentlichung `0.1.0-alpha.1`
+- **Nächster Meilenstein:** Phase 2 nur nach separater Freigabe; bis dahin Pflege
+  der Read-only Alpha
 
 Diese Matrix unterscheidet reale Nachweise von implementierten, aber noch nicht
-real bestätigten Kombinationen. Das Alpha-Paket bleibt ein Prerelease, bis alle
-unten genannten Phase-1-Abnahmepunkte abgeschlossen sind.
+real bestätigten Kombinationen. Phase 1 ist abgenommen; das Alpha-Paket bleibt
+wegen seines Vorabversionsstatus ein Prerelease.
 
 ## Plattformen und Geräte
 
@@ -48,7 +49,8 @@ Der vollständige maskierte Nachweis steht im
   fail-safe mit HTTP 503.
 - Die responsive deutsche und englische Admin-UI wurde bei `1280x800`,
   `900x768`, `390x844`, `360x800` und `320x568` ohne Seitenoverflow geprüft.
-  AJAX-Status und sichtbarer Tastaturfokus wurden ebenfalls real bestätigt.
+  AJAX-Status, Verbindungstest, Widerrufe und sichtbarer Tastaturfokus wurden
+  ebenfalls real bestätigt.
 - Das ZIP wurde zweimal byteidentisch gebaut und durch seine SHA-256-Prüfsumme
   abgesichert.
 - Eine frische Claude-OAuth-Anmeldung mit ausschließlich `loxone:read`, exakt
@@ -57,11 +59,15 @@ Der vollständige maskierte Nachweis steht im
 - Nach dem nativen Upgrade desselben finalen Artefakts blieb die Sitzung ohne
   Neuanmeldung nutzbar. Konfiguration, Sessions, verschlüsselte Tokens und der
   zugehörige Installationsschlüssel wurden gemeinsam erhalten.
+- Native Formularaktionen und serverseitige POST/Redirect/GET-Abläufe für
+  Speichern, Status, Verbindungstest, Widerruf und Diagnose bestätigten den
+  funktionalen No-JavaScript-Fallback.
 
-## Noch nicht als vollständige Phase-1-Abnahme bestätigt
+## Verbleibende Grenzen
 
-- Der vollständige Kernablauf mit im Browser deaktiviertem JavaScript steht noch
-  aus; die serverseitigen POST/Redirect/GET-Fallbacks sind automatisiert geprüft.
+- Die globale JavaScript-Berechtigung von Chrome durfte die Browserautomation
+  nicht verändern. Der funktionale Fallback ist real über native Formular- und
+  PRG-Pfade sowie automatisierte Tests bestätigt.
 - Externer oder cloudbasierter MCP-Zugriff ist nicht freigegeben.
 - Codex CLI wurde im finalen Abschlusslauf wegen der lokalen
   Windows-Ausführungsstörung nicht erneut abgenommen; der bekannte Clientfehler

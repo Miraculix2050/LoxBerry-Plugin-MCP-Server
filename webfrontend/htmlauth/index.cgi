@@ -13,6 +13,13 @@ use LoxBerry::Log;
 
 my $cgi = CGI->new;
 my $q = $cgi->Vars;
+# LoxBerry may initialize its process-global language before readlanguage()
+# inspects the query string. Keep the documented request-local preview useful
+# without changing the persisted system language.
+if (($q->{lang} // '') =~ /\A(?:de|en)\z/) {
+    $LoxBerry::System::lang = $q->{lang};
+    $LoxBerry::Web::lang = $q->{lang};
+}
 my $version = LoxBerry::System::pluginversion();
 my $log = LoxBerry::Log->new(name => 'admin-ui', package => $lbpplugindir, addtime => 1);
 $log->LOGSTART('index.cgi called');
