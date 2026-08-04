@@ -81,6 +81,53 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert result.data.content == read_skill_markdown()  # type: ignore[union-attr]
 
 
+def test_tool_input_schemas_explain_every_argument() -> None:
+    server = FastMCP("documented-contract")
+    register_read_tools(server, None, control_enabled=True)
+    register_control_tool(server, None)
+    published = {tool.name: tool for tool in server._tool_manager.list_tools()}
+
+    expected_fields = {
+        "loxone_list_rooms": {"cursor", "limit"},
+        "loxone_list_categories": {"cursor", "limit"},
+        "loxone_find_controls": {
+            "query",
+            "room_uuid",
+            "category_uuid",
+            "control_type",
+            "cursor",
+            "limit",
+        },
+        "loxone_describe_control": {"control_uuid"},
+        "loxone_get_states": {"state_uuids"},
+        "loxone_operate_control": {"control_uuid", "action"},
+    }
+    for tool_name, field_names in expected_fields.items():
+        properties = published[tool_name].parameters["properties"]
+        assert set(properties) == field_names
+        assert all(properties[name].get("description") for name in field_names)
+
+    find_properties = published["loxone_find_controls"].parameters["properties"]
+    assert find_properties["query"]["maxLength"] == 200
+    assert find_properties["limit"]["minimum"] == 1
+    assert find_properties["limit"]["maximum"] == 100
+    state_uuids = published["loxone_get_states"].parameters["properties"]["state_uuids"]
+    assert state_uuids["minItems"] == 1
+    assert state_uuids["maxItems"] == 100
+
+
+@pytest.mark.asyncio
+async def test_schema_metadata_keeps_structured_invalid_input_envelope() -> None:
+    server = FastMCP("structured-validation")
+    register_read_tools(server, None)
+
+    result = await server._tool_manager.call_tool("loxone_find_controls", {"query": "x" * 201})
+
+    assert result.ok is False
+    assert result.data.error == "invalid_input"  # type: ignore[union-attr]
+    assert result.trace_id
+
+
 @pytest.mark.asyncio
 async def test_describe_control_only_advertises_actions_to_control_scope(
     monkeypatch: pytest.MonkeyPatch,
@@ -135,3 +182,53 @@ async def test_describe_control_only_advertises_actions_to_control_scope(
         "on",
         "off",
     ]
+
+
+@pytest.mark.asyncio
+async def test_find_controls_matches_control_type_case_insensitively(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    access = StoredAccessToken(
+        token="opaque",
+        client_id="client",
+        scopes=[READ_SCOPE],
+        expires_at=2_000_000_000,
+        resource="https://loxberry.local/plugins/mcpserver/mcp",
+        subject="identity",
+        claims={},
+        family_id="family",
+        identity_id="identity",
+        miniserver_id="miniserver",
+    )
+    structure = LoxoneStructure(
+        identity=LoxoneIdentity("user", "serial"),
+        last_modified="1",
+        rooms=(),
+        categories=(),
+        controls=(
+            Control(
+                uuid="control-1",
+                name="Light",
+                control_type="Switch",
+                room_uuid=None,
+                category_uuid=None,
+                action_uuid="action-1",
+                state_uuids=(("active", "state-1"),),
+            ),
+        ),
+    )
+
+    async def snapshot(_runtime: object) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+        return access, RuntimeSnapshot("family", structure, True)
+
+    monkeypatch.setattr(tools_module, "_snapshot", snapshot)
+    server = FastMCP("case-insensitive-control-types")
+    register_read_tools(server, None)
+    tool = next(
+        item for item in server._tool_manager.list_tools() if item.name == "loxone_find_controls"
+    )
+
+    result = await tool.fn(control_type="switch")
+
+    assert result.ok is True
+    assert [item.type for item in result.data.items] == ["Switch"]  # type: ignore[union-attr]

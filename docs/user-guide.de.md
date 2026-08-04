@@ -104,6 +104,16 @@ Werte lassen sich nur in schemakompatible Parameter eines neuen Aufrufs überneh
 Eine einzelne State-UUID wird bei der Übernahme in `loxone_get_states`
 automatisch als Liste mit einem Eintrag eingesetzt.
 
+Listen liefern höchstens die mit `limit` angeforderte Anzahl von Einträgen. Ein
+nicht leerer `next_cursor` zeigt eine weitere Seite an. **Nächste Seite abrufen**
+ruft sie mit denselben Filtern und demselben Limit direkt ab. Alternativ wird
+`next_cursor` bei **Wert übernehmen** bevorzugt dem Feld `cursor` desselben Tools
+zugeordnet; auch dabei bleiben die bisherigen Argumente erhalten. Der Cursor ist
+ein nicht zu bearbeitender Fortsetzungswert und gilt nur für dasselbe Tool mit
+denselben Filtern. Der Filter `control_type` vergleicht den vollständigen
+Loxone-Typ ohne Beachtung der Groß-/Kleinschreibung, beispielsweise `Switch` oder
+`switch`.
+
 Der MCP-Transkriptbereich zeigt bereinigte JSON-RPC-Nachrichten, Status und Dauer.
 Authorization-Header, OAuth-Werte und als geheim erkannte Argumente werden nicht
 angezeigt. Tokens, Entwürfe, Ergebnisse und der auf 50 Aufrufe begrenzte Verlauf

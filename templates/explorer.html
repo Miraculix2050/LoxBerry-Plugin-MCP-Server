@@ -71,6 +71,15 @@
   data-optional="<TMPL_VAR EXPLORER.OPTIONAL ESCAPE=HTML>"
   data-array-help="<TMPL_VAR EXPLORER.ARRAY_HELP ESCAPE=HTML>"
   data-object-help="<TMPL_VAR EXPLORER.OBJECT_HELP ESCAPE=HTML>"
+  data-help-cursor="<TMPL_VAR EXPLORER.HELP_CURSOR ESCAPE=HTML>"
+  data-help-limit="<TMPL_VAR EXPLORER.HELP_LIMIT ESCAPE=HTML>"
+  data-help-query="<TMPL_VAR EXPLORER.HELP_QUERY ESCAPE=HTML>"
+  data-help-room-uuid="<TMPL_VAR EXPLORER.HELP_ROOM_UUID ESCAPE=HTML>"
+  data-help-category-uuid="<TMPL_VAR EXPLORER.HELP_CATEGORY_UUID ESCAPE=HTML>"
+  data-help-control-type="<TMPL_VAR EXPLORER.HELP_CONTROL_TYPE ESCAPE=HTML>"
+  data-help-control-uuid="<TMPL_VAR EXPLORER.HELP_CONTROL_UUID ESCAPE=HTML>"
+  data-help-state-uuids="<TMPL_VAR EXPLORER.HELP_STATE_UUIDS ESCAPE=HTML>"
+  data-help-action="<TMPL_VAR EXPLORER.HELP_ACTION ESCAPE=HTML>"
   data-request="<TMPL_VAR EXPLORER.REQUEST ESCAPE=HTML>"
   data-response="<TMPL_VAR EXPLORER.RESPONSE ESCAPE=HTML>"
   data-duration="<TMPL_VAR EXPLORER.DURATION ESCAPE=HTML>"
@@ -127,6 +136,7 @@
       <h2><TMPL_VAR EXPLORER.RESULT></h2>
       <div class="mcp-explorer-actions">
         <button id="explorer-copy" class="lb-button" type="button" disabled><TMPL_VAR EXPLORER.COPY_JSON></button>
+        <button id="explorer-next-page" class="lb-button" type="button" hidden disabled><TMPL_VAR EXPLORER.NEXT_PAGE></button>
       </div>
       <div id="explorer-result-tree" class="mcp-explorer-tree"><p class="mcp-explorer-muted"><TMPL_VAR EXPLORER.EMPTY_RESULT></p></div>
       <details id="explorer-raw-details"><summary><TMPL_VAR EXPLORER.JSON></summary><pre id="explorer-result-raw" class="mcp-explorer-pre">{}</pre></details>

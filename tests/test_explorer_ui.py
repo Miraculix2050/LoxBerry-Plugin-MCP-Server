@@ -94,6 +94,75 @@ def test_explorer_reuses_only_schema_compatible_values() -> None:
     assert run_core("core.valueForTransfer(['one'],'direct')") == ["one"]
 
 
+def test_explorer_prioritizes_next_cursor_for_the_same_tool() -> None:
+    tools = [
+        {
+            "name": "other",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"query": {"type": "string"}, "cursor": {"type": "string"}},
+            },
+        },
+        {
+            "name": "paged",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"query": {"type": "string"}, "cursor": {"type": "string"}},
+            },
+        },
+    ]
+
+    targets = run_core(
+        f"core.compatibleTargets({json.dumps(tools)},'opaque',"
+        "{sourcePath:['data','next_cursor'],sourceTool:'paged'})"
+    )
+
+    assert targets[0] == {"tool": "paged", "field": "cursor"}
+    assert targets[1] == {"tool": "other", "field": "cursor"}
+
+
+def test_explorer_cursor_transfer_and_next_page_preserve_previous_filters() -> None:
+    tool = {
+        "name": "paged",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": ["string", "null"], "default": None},
+                "cursor": {"type": ["string", "null"], "default": None},
+                "limit": {"type": "integer", "default": 50, "minimum": 1, "maximum": 100},
+            },
+            "additionalProperties": False,
+        },
+    }
+    context = {"tool": "paged", "arguments": {"query": "light", "limit": 25}}
+    encoded_tool = json.dumps(tool)
+    encoded_context = json.dumps(context)
+
+    assert run_core(
+        f"core.transferArguments({encoded_tool},'cursor','opaque','direct',{encoded_context})"
+    ) == {"query": "light", "limit": 25, "cursor": "opaque"}
+    context_with_cursor = {
+        "tool": "paged",
+        "arguments": {"query": "light", "limit": 25, "cursor": "old"},
+    }
+    assert run_core(
+        f"core.transferArguments({encoded_tool},'query','new','direct',"
+        f"{json.dumps(context_with_cursor)})"
+    ) == {"query": "new", "limit": 25}
+    assert run_core(
+        f"core.nextPageArguments({encoded_tool},{json.dumps(context['arguments'])},"
+        "{data:{next_cursor:'opaque'}})"
+    ) == {"query": "light", "limit": 25, "cursor": "opaque"}
+    assert (
+        run_core(
+            f"core.nextPageArguments({encoded_tool},{json.dumps(context['arguments'])},"
+            "{data:{next_cursor:null}})"
+        )
+        is None
+    )
+
+
 def test_explorer_reuse_honours_full_nested_schema() -> None:
     tools = [
         {
@@ -254,6 +323,8 @@ def test_explorer_disconnect_clears_all_in_memory_session_data() -> None:
         "history": [],
         "transcript": [],
         "lastResult": None,
+        "lastResultContext": None,
+        "nextPageRequest": None,
         "transferPath": "",
     }
 
@@ -395,6 +466,9 @@ def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
     assert ":focus-visible" in template
     assert "<dialog" in template
     assert 'id="explorer-confirm-tool"' in template
+    assert 'id="explorer-next-page"' in template
+    assert 'data-help-control-type="<TMPL_VAR EXPLORER.HELP_CONTROL_TYPE ESCAPE=HTML>"' in template
+    assert "const description = helpKey ? label(helpKey) : effective.description" in source
     assert 'id="explorer-access-mode"' in template
     assert '<option value="read">' in template
     assert 'id="explorer-control-option" value="control" disabled' in template
