@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import configparser
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -363,6 +364,106 @@ def test_mcp_client_probe_has_valid_powershell_syntax() -> None:
         check=True,
         env={**os.environ, "MCPSERVER_POWERSHELL_TEST_SCRIPT": str(script)},
     )
+
+
+def _write_claude_config(path: Path, *, configured: bool) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    document = (
+        {"mcpServers": {"loxberry-mcp": {"command": "node", "args": []}}}
+        if configured
+        else {"preferences": {}}
+    )
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+
+def _run_claude_config_check(tmp_path: Path, *extra_args: str) -> subprocess.CompletedProcess[str]:
+    pwsh = shutil.which("pwsh")
+    if pwsh is None:
+        pytest.skip("PowerShell is unavailable")
+    app_data = tmp_path / "Roaming"
+    local_app_data = tmp_path / "Local"
+    return subprocess.run(
+        [
+            pwsh,
+            "-NoProfile",
+            "-File",
+            str(ROOT / "tools" / "test_mcp_client.ps1"),
+            "-CheckConfigurationOnly",
+            *extra_args,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "APPDATA": str(app_data),
+            "LOCALAPPDATA": str(local_app_data),
+        },
+    )
+
+
+def test_mcp_client_probe_prefers_active_store_profile(tmp_path: Path) -> None:
+    store_config = (
+        tmp_path
+        / "Local"
+        / "Packages"
+        / "Claude_test"
+        / "LocalCache"
+        / "Roaming"
+        / "Claude"
+        / "claude_desktop_config.json"
+    )
+    classic_config = tmp_path / "Roaming" / "Claude" / "claude_desktop_config.json"
+    _write_claude_config(store_config, configured=False)
+    _write_claude_config(classic_config, configured=True)
+
+    result = _run_claude_config_check(tmp_path)
+
+    assert result.returncode != 0
+    assert "claude_mcp_configuration=pass" not in result.stdout
+
+
+def test_mcp_client_probe_accepts_configured_store_profile(tmp_path: Path) -> None:
+    store_config = (
+        tmp_path
+        / "Local"
+        / "Packages"
+        / "Claude_test"
+        / "LocalCache"
+        / "Roaming"
+        / "Claude"
+        / "claude_desktop_config.json"
+    )
+    _write_claude_config(store_config, configured=True)
+
+    result = _run_claude_config_check(tmp_path)
+
+    assert result.returncode == 0
+    assert result.stdout.strip() == "claude_mcp_configuration=pass"
+
+
+def test_mcp_client_probe_falls_back_to_classic_profile(tmp_path: Path) -> None:
+    classic_config = tmp_path / "Roaming" / "Claude" / "claude_desktop_config.json"
+    _write_claude_config(classic_config, configured=True)
+
+    result = _run_claude_config_check(tmp_path)
+
+    assert result.returncode == 0
+    assert result.stdout.strip() == "claude_mcp_configuration=pass"
+
+
+def test_mcp_client_probe_respects_explicit_config_path(tmp_path: Path) -> None:
+    explicit_config = tmp_path / "explicit" / "claude.json"
+    _write_claude_config(explicit_config, configured=True)
+
+    result = _run_claude_config_check(
+        tmp_path,
+        "-ClaudeConfigPath",
+        str(explicit_config),
+    )
+
+    assert result.returncode == 0
+    assert result.stdout.strip() == "claude_mcp_configuration=pass"
 
 
 def test_plugin_archive_verifier_rejects_checksum_mismatch(tmp_path: Path) -> None:

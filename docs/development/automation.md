@@ -13,7 +13,8 @@ authorization, connection profiles, credentials, and private test fixtures outsi
 - `python tools/verify_plugin.py <archive.zip>` verifies checksum, paths, file modes,
   LF text files, plugin identity, required entries, and the offline wheelhouse without
   extracting or installing the archive.
-- `pwsh -File tools/test_mcp_client.ps1` starts the configured Claude MCP proxy and
+- `pwsh -File tools/test_mcp_client.ps1` detects the active Microsoft Store or
+  classic Claude profile, starts its configured MCP proxy, and
   exercises all six read-only tools. Use `-VisibilityFixturePath <private-json>` to add
   a real visible/hidden-control boundary test. The private JSON contains only
   `visible_control_uuid` and `hidden_control_uuid` and remains outside Git.
