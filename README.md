@@ -39,9 +39,12 @@ Bestätigte Kombinationen, Nachweise und bekannte Clientgrenzen stehen in der
 - [Recherche-Ergebnisse](docs/research/research-results.md)
 - [Beitragen und Git-Workflow](CONTRIBUTING.md)
 
-Die Referenzentwicklung verwendet Python 3.13. Nach dem Anlegen eines lokalen
-virtuellen Environments werden die fixierten Laufzeit- und Testabhängigkeiten
-installiert und das Projekt ohne erneute Abhängigkeitsauflösung eingebunden:
+Die Referenzentwicklung verwendet Python 3.13. Für das vollständige lokale Gate
+müssen außerdem Perl und Node.js im `PATH` verfügbar sein; damit werden die
+ausführbaren Regressionstests für die Perl-CGI- und Browserlogik ausgeführt.
+Nach dem Anlegen eines lokalen virtuellen Environments werden die fixierten
+Laufzeit- und Testabhängigkeiten installiert und das Projekt ohne erneute
+Abhängigkeitsauflösung eingebunden:
 
 ```text
 python -m pip install -r requirements/runtime-arm64.lock -r requirements/dev.lock

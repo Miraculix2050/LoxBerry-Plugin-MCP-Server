@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -49,11 +50,16 @@ def test_perl_expiry_formatter_rejects_out_of_range_values_safely() -> None:
 
     assert constant is not None
     assert formatter is not None
+    perl = shutil.which("perl")
+    assert perl is not None, "Perl is required for the complete deterministic gate"
     script = f"""
 use POSIX qw(strftime);
 {constant.group(0)}
 {formatter.group(0)}
 for my $value (@ARGV) {{ print format_expiry($value), "\\n"; }}
+for my $value ("1" . chr(0x0662), "1" . chr(0xff12)) {{
+    print format_expiry($value) eq $value ? "unicode-raw\\n" : "unicode-changed\\n";
+}}
 print format_expiry(undef), "\\n";
 """
     values = [
@@ -67,7 +73,7 @@ print format_expiry(undef), "\\n";
         "01",
     ]
     result = subprocess.run(
-        ["perl", "-e", script, *values],
+        [perl, "-e", script, *values],
         check=True,
         capture_output=True,
         text=True,
@@ -76,7 +82,7 @@ print format_expiry(undef), "\\n";
 
     assert output[0] != values[0]
     assert output[1] != values[1]
-    assert output[2:] == [*values[2:], ""]
+    assert output[2:] == [*values[2:], "unicode-raw", "unicode-raw", ""]
 
 
 def test_browser_expiry_parser_uses_the_same_bounds() -> None:
@@ -88,6 +94,8 @@ def test_browser_expiry_parser_uses_the_same_bounds() -> None:
     )
 
     assert parser is not None
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
     values = [
         "1900000000",
         "4102444799",
@@ -97,6 +105,8 @@ def test_browser_expiry_parser_uses_the_same_bounds() -> None:
         "1.5",
         " 1",
         "01",
+        "1\u0662",
+        "1\uff12",
         "",
     ]
     script = f"""
@@ -104,10 +114,12 @@ def test_browser_expiry_parser_uses_the_same_bounds() -> None:
 console.log(JSON.stringify(process.argv.slice(1).map(parseExpiry)));
 """
     result = subprocess.run(
-        ["node", "-e", script, *values],
+        [node, "-e", script, *values],
         check=True,
         capture_output=True,
         text=True,
     )
 
-    assert result.stdout.strip() == "[1900000000,4102444799,null,null,null,null,null,null,null]"
+    assert result.stdout.strip() == (
+        "[1900000000,4102444799,null,null,null,null,null,null,null,null,null]"
+    )

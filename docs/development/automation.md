@@ -6,6 +6,8 @@ authorization, connection profiles, credentials, and private test fixtures outsi
 ## Local and CI-safe commands
 
 - `python tools/test.py` runs the deterministic formatting, lint, type, and test gate.
+  The complete gate requires Python 3.13, Perl, and Node.js on `PATH`; missing
+  runtimes are failures rather than silently skipped browser or CGI checks.
 - `python tools/build_release_candidate.py --runtime-wheelhouse <cache>` rebuilds the
   project wheel, runs the full gate, builds the plugin twice, requires byte-identical
   ZIPs, writes the checksum, and verifies the final archive. Omit the cache argument to
