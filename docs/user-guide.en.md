@@ -22,6 +22,10 @@ all Python wheels for offline installation. Then open **LoxBerry MCP Server**:
 4. Connect Codex CLI or Claude Desktop to
    `https://loxberry.local/plugins/mcpserver/mcp` and complete OAuth login.
 
+For Claude Desktop, follow the short
+[step-by-step guide](clients/claude-desktop.en.md), which includes a ready-to-use
+configuration example and troubleshooting help.
+
 The six read tools remain enabled by default. To operate Gen. 1 switches,
 additionally enable **Loxone control**. A new OAuth grant with `loxone:control`
 is then required. Disabling control revokes existing control sessions while

@@ -1,16 +1,58 @@
 param(
-    [string]$ClaudeConfigPath = (Join-Path $env:APPDATA 'Claude\claude_desktop_config.json'),
+    [string]$ClaudeConfigPath,
     [string]$ServerName = 'loxberry-mcp',
     [string]$VisibilityFixturePath,
     [string]$ControlFixturePath,
-    [int]$TimeoutSeconds = 120
+    [int]$TimeoutSeconds = 120,
+    [switch]$CheckConfigurationOnly
 )
 
 $ErrorActionPreference = 'Stop'
+
+function Resolve-ClaudeConfigPath([string]$RequestedPath) {
+    if ($RequestedPath) {
+        if (-not (Test-Path -LiteralPath $RequestedPath -PathType Leaf)) {
+            throw 'The requested Claude configuration file does not exist.'
+        }
+        return (Get-Item -LiteralPath $RequestedPath).FullName
+    }
+
+    if ($env:LOCALAPPDATA) {
+        $packagesPath = Join-Path $env:LOCALAPPDATA 'Packages'
+        if (Test-Path -LiteralPath $packagesPath -PathType Container) {
+            $storeCandidates = @(
+                Get-ChildItem -LiteralPath $packagesPath -Directory -Filter 'Claude_*' -ErrorAction SilentlyContinue |
+                    ForEach-Object {
+                        Join-Path $_.FullName 'LocalCache\Roaming\Claude\claude_desktop_config.json'
+                    } |
+                    Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
+                    Sort-Object { (Get-Item -LiteralPath $_).LastWriteTimeUtc } -Descending
+            )
+            if ($storeCandidates.Count -gt 0) {
+                return $storeCandidates[0]
+            }
+        }
+    }
+
+    if ($env:APPDATA) {
+        $classicPath = Join-Path $env:APPDATA 'Claude\claude_desktop_config.json'
+        if (Test-Path -LiteralPath $classicPath -PathType Leaf) {
+            return $classicPath
+        }
+    }
+
+    throw 'No active Claude Desktop configuration file was found.'
+}
+
+$ClaudeConfigPath = Resolve-ClaudeConfigPath $ClaudeConfigPath
 $config = Get-Content -LiteralPath $ClaudeConfigPath -Raw | ConvertFrom-Json
 $server = $config.mcpServers.$ServerName
 if (-not $server -or -not $server.command) {
-    throw 'Claude MCP configuration is missing.'
+    throw "Claude MCP server '$ServerName' is missing from the active configuration."
+}
+if ($CheckConfigurationOnly) {
+    'claude_mcp_configuration=pass'
+    return
 }
 
 $startInfo = [System.Diagnostics.ProcessStartInfo]::new()

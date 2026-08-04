@@ -22,6 +22,13 @@ Bestätigte Kombinationen, Nachweise und bekannte Clientgrenzen stehen in der
 [Support-Matrix](docs/development/support-matrix.md) und im
 [Phase-1-Abnahmebericht](docs/development/phase-1-acceptance.md).
 
+## Nutzung
+
+- [Benutzeranleitung (Deutsch)](docs/user-guide.de.md)
+- [User guide (English)](docs/user-guide.en.md)
+- [Claude Desktop einrichten](docs/clients/claude-desktop.de.md)
+- [Connect Claude Desktop](docs/clients/claude-desktop.en.md)
+
 ## Entwicklung
 
 - [Implementierungsrichtlinien](docs/development/implementation-guidelines.md)
