@@ -50,6 +50,30 @@ async def test_websocket_close_is_bounded() -> None:
 
 
 @pytest.mark.asyncio
+async def test_switch_operation_uses_encrypted_explicit_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = LoxoneWebSocketSession(
+        cast(Any, object()),
+        public_key="",
+        token=LoxoneToken("jwt", "user", "key", "SHA256", 1),
+        timeout_seconds=1,
+        max_payload_bytes=1024,
+    )
+    commands: list[tuple[str, bool]] = []
+
+    async def command(value: str, *, encrypted: bool = False) -> object:
+        commands.append((value, encrypted))
+        return None
+
+    monkeypatch.setattr(session, "_command", command)
+
+    await session.operate_switch("action-1", "off")
+
+    assert commands == [("jdev/sps/io/action-1/off", True)]
+
+
+@pytest.mark.asyncio
 async def test_websocket_receive_returns_complete_payload_without_waiting_again() -> None:
     class FakeWebSocket:
         def __init__(self) -> None:

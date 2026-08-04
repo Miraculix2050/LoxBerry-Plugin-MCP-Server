@@ -1,4 +1,4 @@
-"""Build and verify a reproducible Phase 1 LoxBerry release candidate."""
+"""Build and verify a reproducible LoxBerry MCP Server release candidate."""
 
 from __future__ import annotations
 

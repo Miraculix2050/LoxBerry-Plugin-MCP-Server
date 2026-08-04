@@ -3,6 +3,7 @@ from __future__ import annotations
 import configparser
 import hashlib
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -25,7 +26,7 @@ def test_plugin_identity_and_platform_contract() -> None:
     assert parser["PLUGIN"]["NAME"] == "mcpserver"
     assert parser["PLUGIN"]["FOLDER"] == "mcpserver"
     assert parser["PLUGIN"]["TITLE"] == "LoxBerry MCP Server"
-    assert parser["PLUGIN"]["VERSION"] == "0.1.0-alpha.1"
+    assert parser["PLUGIN"]["VERSION"] == "0.2.0-alpha.1"
     assert parser["SYSTEM"]["LB_MINIMUM"] == "4.0.0"
     assert parser["SYSTEM"]["INTERFACE"] == "2.0"
     for name in ("release.cfg", "prerelease.cfg"):
@@ -112,6 +113,15 @@ def test_postinstall_rewrites_moved_venv_entrypoints() -> None:
     assert 'sed -i "1c\\\\#!$venv/bin/python"' in hook
     assert 'rm -rf -- "$venv"' in hook
     assert 'mv "$old_venv" "$venv"' in hook
+
+
+def test_postinstall_project_pin_matches_plugin_version() -> None:
+    parser = configparser.ConfigParser()
+    parser.read(ROOT / "plugin.cfg", encoding="utf-8")
+    project_version = re.sub(r"(?i)-alpha\.(\d+)$", r"a\1", parser["PLUGIN"]["VERSION"])
+    hook = (ROOT / "postinstall.sh").read_text(encoding="utf-8")
+
+    assert f"loxberry-mcpserver=={project_version}" in hook
 
 
 def test_package_builder_includes_plugin_icon() -> None:
@@ -214,7 +224,7 @@ def test_plugin_archive_verifier_accepts_builder_output(tmp_path: Path) -> None:
     for name, version in _locked_requirements(ROOT / "requirements" / "runtime-arm64.lock").items():
         wheel_name = name.replace("-", "_")
         (wheelhouse / f"{wheel_name}-{version}-py3-none-any.whl").write_bytes(b"wheel")
-    (wheelhouse / "loxberry_mcpserver-0.1.0a1-py3-none-any.whl").write_bytes(b"project")
+    (wheelhouse / "loxberry_mcpserver-0.2.0a1-py3-none-any.whl").write_bytes(b"project")
     output = tmp_path / "plugin.zip"
 
     subprocess.run(

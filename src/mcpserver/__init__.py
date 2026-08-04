@@ -5,6 +5,6 @@ from importlib.metadata import PackageNotFoundError, version
 try:
     __version__ = version("loxberry-mcpserver")
 except PackageNotFoundError:  # pragma: no cover - source tree without installation
-    __version__ = "0.1.0-alpha.1"
+    __version__ = "0.2.0-alpha.1"
 
 __all__ = ["__version__"]

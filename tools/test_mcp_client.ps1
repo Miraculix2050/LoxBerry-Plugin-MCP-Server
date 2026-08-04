@@ -2,6 +2,7 @@ param(
     [string]$ClaudeConfigPath = (Join-Path $env:APPDATA 'Claude\claude_desktop_config.json'),
     [string]$ServerName = 'loxberry-mcp',
     [string]$VisibilityFixturePath,
+    [string]$ControlFixturePath,
     [int]$TimeoutSeconds = 120
 )
 
@@ -92,12 +93,12 @@ function Invoke-ToolEnvelope([int]$Id, [string]$Name, [hashtable]$Arguments) {
         params = @{ name = $Name; arguments = $Arguments }
     }
     $response = Read-JsonRpc $Id
-    if ($response.error -or $response.result.isError) { throw "Read-only tool $Name failed." }
+    if ($response.error -or $response.result.isError) { throw "MCP tool $Name failed." }
     $envelope = $response.result.structuredContent
     if (-not $envelope -and $response.result.content[0].text) {
         $envelope = $response.result.content[0].text | ConvertFrom-Json
     }
-    if (-not $envelope) { throw "Read-only tool $Name returned no envelope." }
+    if (-not $envelope) { throw "MCP tool $Name returned no envelope." }
     return $envelope
 }
 
@@ -125,12 +126,19 @@ try {
         'loxone_get_system_status', 'loxone_list_rooms', 'loxone_list_categories',
         'loxone_find_controls', 'loxone_describe_control', 'loxone_get_states'
     )
+    if ($ControlFixturePath) { $expected += 'loxone_operate_control' }
     $actual = @($toolsResponse.result.tools | ForEach-Object { $_.name } | Sort-Object)
     if (($actual -join "`n") -ne (($expected | Sort-Object) -join "`n")) {
-        throw 'MCP tool inventory differs from the six-tool read-only contract.'
+        throw 'MCP tool inventory differs from the expected enabled contract.'
     }
     foreach ($tool in $toolsResponse.result.tools) {
-        if ($tool.annotations.readOnlyHint -ne $true -or $tool.annotations.destructiveHint -ne $false) {
+        if ($tool.name -eq 'loxone_operate_control') {
+            if ($tool.annotations.readOnlyHint -ne $false -or
+                $tool.annotations.destructiveHint -ne $true -or
+                $tool.annotations.idempotentHint -ne $true) {
+                throw 'MCP control tool annotations violate the control contract.'
+            }
+        } elseif ($tool.annotations.readOnlyHint -ne $true -or $tool.annotations.destructiveHint -ne $false) {
             throw 'MCP tool annotations violate the read-only contract.'
         }
         if (-not $tool.outputSchema.properties.data.anyOf) {
@@ -201,11 +209,45 @@ try {
     if (-not $stateUuid) { throw 'The selected visible control has no readable state.' }
     [void](Invoke-ReadTool (Get-NextId) 'loxone_get_states' @{ state_uuids = @($stateUuid) })
 
+    if ($ControlFixturePath) {
+        $controlFixture = Get-Content -LiteralPath $ControlFixturePath -Raw | ConvertFrom-Json
+        $controlUuid = [string]$controlFixture.control_uuid
+        $initialState = [string]$controlFixture.initial_state
+        if (-not $controlUuid -or $initialState -notin @('on', 'off')) {
+            throw 'Control fixture must contain control_uuid and initial_state on/off.'
+        }
+        $testState = if ($initialState -eq 'on') { 'off' } else { 'on' }
+        $changed = $false
+        try {
+            $operation = Invoke-ToolEnvelope (Get-NextId) 'loxone_operate_control' @{
+                control_uuid = $controlUuid; action = $testState
+            }
+            if (-not $operation.ok -or -not $operation.data.accepted -or
+                -not $operation.data.confirmed -or $operation.data.observed_state -ne $testState) {
+                throw 'The test Switch action was not confirmed.'
+            }
+            $changed = $true
+        } finally {
+            if ($changed) {
+                $restore = Invoke-ToolEnvelope (Get-NextId) 'loxone_operate_control' @{
+                    control_uuid = $controlUuid; action = $initialState
+                }
+                if (-not $restore.ok -or -not $restore.data.accepted -or
+                    -not $restore.data.confirmed -or $restore.data.observed_state -ne $initialState) {
+                    throw 'The test Switch initial state was not restored and confirmed.'
+                }
+            }
+        }
+        $controlUuid = $null
+        'mcp_switch_control=pass'
+    }
+
     $visibleUuid = $null
     $hiddenUuid = $null
     $stateUuid = $null
     'mcp_tool_contract=pass'
-    'mcp_six_read_tools=pass'
+    if ($ControlFixturePath) { 'mcp_six_read_tools_plus_control=pass' }
+    else { 'mcp_six_read_tools=pass' }
     if ($VisibilityFixturePath) { 'mcp_visibility_filter=pass' }
 } finally {
     try { $process.StandardInput.Close() } catch {}

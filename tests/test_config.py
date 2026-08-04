@@ -14,8 +14,10 @@ def test_defaults_are_disabled_and_bounded() -> None:
     assert config.enabled is False
     assert config.loxone_endpoint == ""
     assert config.loxone_read_enabled is True
+    assert config.loxone_control_enabled is False
     assert config.connection_timeout == 10
     assert config.requests_per_minute == 60
+    assert config.control_requests_per_minute == 10
     assert config.max_parallel_calls == 4
 
 
@@ -59,6 +61,17 @@ def test_configuration_round_trip_preserves_unknown_keys(tmp_path: Path) -> None
 def test_invalid_configuration_is_rejected(document: object) -> None:
     with pytest.raises(ConfigError):
         PluginConfig.from_document(document)
+
+
+def test_gen2_control_configuration_is_rejected() -> None:
+    with pytest.raises(ConfigError, match="only for Gen. 1"):
+        PluginConfig.from_document(
+            {
+                "schema_version": 1,
+                "loxone": {"endpoint": "https://miniserver.example"},
+                "tools": {"loxone_control_enabled": True},
+            }
+        )
 
 
 def test_failed_save_keeps_previous_valid_configuration(

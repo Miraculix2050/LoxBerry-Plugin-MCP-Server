@@ -79,6 +79,52 @@ def test_failed_config_apply_restores_previous_configuration(
     assert store.load().to_document() == previous.to_document()
 
 
+def test_disabling_control_revokes_control_sessions_after_successful_restart(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    previous_document = PluginConfig.defaults().to_document()
+    previous_document["tools"]["loxone_control_enabled"] = True
+    previous_document["loxone"]["endpoint"] = "http://192.168.10.20"
+    previous = PluginConfig.from_document(previous_document)
+    store.save(previous)
+    next_document = previous.to_document()
+    next_document["tools"]["loxone_control_enabled"] = False
+    next_document["loxone"]["endpoint"] = "http://192.168.10.30"
+    events: list[str] = []
+    revocations: list[tuple[str, str | None, float | None]] = []
+
+    class AuthStore:
+        def snapshot(self) -> dict[str, object]:
+            return {
+                "families": {
+                    "control-family": {
+                        "scope": "loxone:read loxone:control",
+                        "revoked": False,
+                    },
+                    "read-family": {"scope": "loxone:read", "revoked": False},
+                }
+            }
+
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._auth_store", lambda: AuthStore())
+    monkeypatch.setattr("mcpserver.admin._restart_service", lambda: events.append("restart"))
+
+    def revoke(
+        family_id: str, *, endpoint: str | None = None, timeout_seconds: float | None = None
+    ) -> int:
+        events.append(f"revoke:{family_id}")
+        revocations.append((family_id, endpoint, timeout_seconds))
+        return 1
+
+    monkeypatch.setattr("mcpserver.admin._revoke", revoke)
+
+    _save(next_document)
+
+    assert events == ["restart", "revoke:control-family"]
+    assert revocations == [("control-family", "http://192.168.10.20", previous.connection_timeout)]
+
+
 def test_session_list_excludes_revoked_families(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

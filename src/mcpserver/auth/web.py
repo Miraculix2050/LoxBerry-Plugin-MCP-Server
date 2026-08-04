@@ -29,7 +29,13 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore
-from mcpserver.auth.provider import SCOPE, Phase0OAuthProvider
+from mcpserver.auth.provider import (
+    CONTROL_SCOPE,
+    READ_SCOPE,
+    Phase0OAuthProvider,
+    normalize_scopes,
+    scope_text,
+)
 from mcpserver.loxone.client import (
     LoxoneClient,
     LoxoneConnectionError,
@@ -65,6 +71,7 @@ class LoginTransaction:
     code_challenge: str
     resource: str
     created_at: int
+    scopes: tuple[str, ...] = (READ_SCOPE,)
     attempts: int = 0
     loxone_token: LoxoneToken | None = None
     identity_name: str | None = None
@@ -333,9 +340,17 @@ class Phase0OAuthWeb:
                 "<h1>Invalid authorization request</h1>",
                 status=400,
             )
+        try:
+            scopes = normalize_scopes(
+                query.get("scope"), control_enabled=self.provider.control_enabled
+            )
+        except ValueError:
+            return _redirect(
+                redirect_uri,
+                {"error": "invalid_scope", "state": query.get("state", ""), "iss": self.issuer},
+            )
         if (
             query.get("response_type") != "code"
-            or query.get("scope") != SCOPE
             or query.get("resource") != self.resource
             or query.get("code_challenge_method") != "S256"
             or not _PKCE_CHALLENGE.fullmatch(query.get("code_challenge", ""))
@@ -360,6 +375,7 @@ class Phase0OAuthWeb:
             state=query["state"],
             code_challenge=query["code_challenge"],
             resource=query["resource"],
+            scopes=scopes,
             created_at=int(time.time()),
         )
         self.transactions[transaction.transaction_id] = transaction
@@ -391,11 +407,22 @@ class Phase0OAuthWeb:
         return _html_page("Connect Loxone", body, callback_uri=transaction.redirect_uri)
 
     def _consent_page(self, transaction: LoginTransaction) -> HTMLResponse:
-        body = f"""<h1>Allow read-only access? / Lesezugriff erlauben?</h1><dl>
+        control = CONTROL_SCOPE in transaction.scopes
+        heading = (
+            "Allow Loxone control? / Loxone-Steuerung erlauben?"
+            if control
+            else "Allow read-only access? / Lesezugriff erlauben?"
+        )
+        warning = (
+            '<p class="error"><strong>This client can switch permitted Loxone controls on and off. / Dieser Client darf freigegebene Loxone-Steuerungen ein- und ausschalten.</strong></p>'
+            if control
+            else ""
+        )
+        body = f"""<h1>{heading}</h1>{warning}<dl>
 <dt>Client</dt><dd>{html.escape(transaction.client_name)}</dd>
 <dt>Miniserver</dt><dd>{html.escape(transaction.miniserver_name or "")}</dd>
 <dt>Loxone identity / Loxone-Identität</dt><dd>{html.escape(transaction.identity_name or "")}</dd>
-<dt>Scope / Berechtigung</dt><dd>{SCOPE}</dd></dl>
+<dt>Scope / Berechtigung</dt><dd>{html.escape(scope_text(list(transaction.scopes)))}</dd></dl>
 <form method="post" action="{html.escape(self.issuer)}/authorize">{self._hidden(transaction, "approve")}
 <div class="actions"><button type="submit">Allow / Erlauben</button></div></form>
 <form method="post" action="{html.escape(self.issuer)}/authorize">{self._hidden(transaction, "deny")}
@@ -470,6 +497,7 @@ class Phase0OAuthWeb:
                         resource=transaction.resource,
                         identity_id=transaction.identity_id,
                         miniserver_id=transaction.miniserver_id,
+                        scopes=transaction.scopes,
                         family_id=family_id,
                     )
                 except TokenError:
@@ -624,10 +652,16 @@ class Phase0OAuthWeb:
         refresh = await self.provider.load_refresh_token(client, form.get("refresh_token", ""))
         if refresh is None or refresh.resource != form.get("resource"):
             return _oauth_error("invalid_grant")
-        scope = form.get("scope", SCOPE)
-        if scope != SCOPE:
+        requested = form.get("scope")
+        try:
+            scopes = (
+                normalize_scopes(requested, control_enabled=self.provider.control_enabled)
+                if requested is not None
+                else tuple(refresh.scopes)
+            )
+        except ValueError:
             return _oauth_error("invalid_scope")
-        token = await self.provider.exchange_refresh_token(client, refresh, [SCOPE])
+        token = await self.provider.exchange_refresh_token(client, refresh, list(scopes))
         return _json(token.model_dump(mode="json", exclude_none=True))
 
     async def register(self, request: Request) -> Response:
@@ -655,16 +689,20 @@ class Phase0OAuthWeb:
             reason = "Only public clients are supported"
             if payload.get("token_endpoint_auth_method") not in {None, "none"}:
                 raise ValueError
-            reason = "Only loxone:read is supported"
-            if payload.get("scope") not in {None, SCOPE}:
-                raise ValueError
+            reason = "Unsupported scope"
+            try:
+                scopes = normalize_scopes(
+                    payload.get("scope"), control_enabled=self.provider.control_enabled
+                )
+            except (AttributeError, ValueError):
+                raise ValueError from None
             reason = "Client metadata schema is invalid"
             sdk_payload = {
                 key: value for key, value in payload.items() if key != "application_type"
             }
             metadata = OAuthClientMetadata.model_validate(sdk_payload)
             normalized = metadata.model_dump()
-            normalized["scope"] = SCOPE
+            normalized["scope"] = scope_text(list(scopes))
             normalized["token_endpoint_auth_method"] = "none"
             normalized["client_id"] = _opaque()
             normalized["client_id_issued_at"] = self.provider.now()
@@ -703,7 +741,8 @@ class Phase0OAuthWeb:
                 "token_endpoint": f"{self.issuer}/token",
                 "registration_endpoint": f"{self.issuer}/register",
                 "revocation_endpoint": f"{self.issuer}/revoke",
-                "scopes_supported": [SCOPE],
+                "scopes_supported": [READ_SCOPE]
+                + ([CONTROL_SCOPE] if self.provider.control_enabled else []),
                 "response_types_supported": ["code"],
                 "grant_types_supported": ["authorization_code", "refresh_token"],
                 "token_endpoint_auth_methods_supported": ["none"],

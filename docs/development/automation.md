@@ -17,6 +17,11 @@ authorization, connection profiles, credentials, and private test fixtures outsi
   exercises all six read-only tools. Use `-VisibilityFixturePath <private-json>` to add
   a real visible/hidden-control boundary test. The private JSON contains only
   `visible_control_uuid` and `hidden_control_uuid` and remains outside Git.
+- `-ControlFixturePath <private-json>` is a separate explicit opt-in for the Phase 2
+  target smoke. It expects only `control_uuid` and `initial_state` (`on` or `off`),
+  switches once to the opposite state and restores the recorded initial state. Use it
+  only for a previously approved non-critical Gen. 1 Switch; keep the fixture outside
+  Git.
 
 `tools/build_plugin.py` and `tools/prepare_wheelhouse.py` remain useful low-level
 building blocks for focused development. Use the release-candidate wrapper for any

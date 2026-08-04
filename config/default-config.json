@@ -1,5 +1,6 @@
 {
   "limits": {
+    "control_requests_per_minute": 10,
     "max_parallel_calls": 4,
     "requests_per_minute": 60
   },
@@ -13,6 +14,7 @@
     "public_origin": ""
   },
   "tools": {
+    "loxone_control_enabled": false,
     "loxone_read_enabled": true
   }
 }

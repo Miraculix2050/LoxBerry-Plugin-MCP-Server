@@ -21,6 +21,7 @@ SCHEMA_VERSION: Final = 1
 DEFAULT_CONNECTION_TIMEOUT: Final = 10.0
 DEFAULT_REQUESTS_PER_MINUTE: Final = 60
 DEFAULT_MAX_PARALLEL_CALLS: Final = 4
+DEFAULT_CONTROL_REQUESTS_PER_MINUTE: Final = 10
 
 
 class ConfigError(ValueError):
@@ -63,7 +64,9 @@ class PluginConfig:
     loxone_endpoint: str = ""
     connection_timeout: float = DEFAULT_CONNECTION_TIMEOUT
     loxone_read_enabled: bool = True
+    loxone_control_enabled: bool = False
     requests_per_minute: int = DEFAULT_REQUESTS_PER_MINUTE
+    control_requests_per_minute: int = DEFAULT_CONTROL_REQUESTS_PER_MINUTE
     max_parallel_calls: int = DEFAULT_MAX_PARALLEL_CALLS
     _source: dict[str, Any] | None = None
 
@@ -133,13 +136,24 @@ class PluginConfig:
         read_enabled = _boolean(
             tools.get("loxone_read_enabled", True), name="tools.loxone_read_enabled"
         )
+        control_enabled = _boolean(
+            tools.get("loxone_control_enabled", False), name="tools.loxone_control_enabled"
+        )
         if enabled and not read_enabled:
             raise ConfigError("the Phase 1 service requires tools.loxone_read_enabled")
+        if control_enabled and endpoint and MiniserverEndpoint.parse(endpoint).secure:
+            raise ConfigError("Loxone control is supported only for Gen. 1 HTTP endpoints")
         requests = _integer(
             limits.get("requests_per_minute", DEFAULT_REQUESTS_PER_MINUTE),
             name="limits.requests_per_minute",
             minimum=1,
             maximum=600,
+        )
+        control_requests = _integer(
+            limits.get("control_requests_per_minute", DEFAULT_CONTROL_REQUESTS_PER_MINUTE),
+            name="limits.control_requests_per_minute",
+            minimum=1,
+            maximum=60,
         )
         parallel = _integer(
             limits.get("max_parallel_calls", DEFAULT_MAX_PARALLEL_CALLS),
@@ -153,7 +167,9 @@ class PluginConfig:
             loxone_endpoint=endpoint,
             connection_timeout=timeout,
             loxone_read_enabled=read_enabled,
+            loxone_control_enabled=control_enabled,
             requests_per_minute=requests,
+            control_requests_per_minute=control_requests,
             max_parallel_calls=parallel,
             _source=copy.deepcopy(root),
         )
@@ -170,7 +186,9 @@ class PluginConfig:
         document["loxone"]["endpoint"] = self.loxone_endpoint
         document["loxone"]["connection_timeout"] = self.connection_timeout
         document["tools"]["loxone_read_enabled"] = self.loxone_read_enabled
+        document["tools"]["loxone_control_enabled"] = self.loxone_control_enabled
         document["limits"]["requests_per_minute"] = self.requests_per_minute
+        document["limits"]["control_requests_per_minute"] = self.control_requests_per_minute
         document["limits"]["max_parallel_calls"] = self.max_parallel_calls
         return document
 

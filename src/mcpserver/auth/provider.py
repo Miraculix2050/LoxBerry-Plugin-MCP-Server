@@ -23,7 +23,11 @@ from pydantic import AnyUrl
 
 from mcpserver.auth.store import AtomicJsonAuthStore, token_digest
 
-SCOPE: Final = "loxone:read"
+READ_SCOPE: Final = "loxone:read"
+CONTROL_SCOPE: Final = "loxone:control"
+# Retained as the Phase 1 source-level alias used by existing integrations.
+SCOPE: Final = READ_SCOPE
+SUPPORTED_SCOPES: Final = (READ_SCOPE, CONTROL_SCOPE)
 _LOGGER = logging.getLogger("mcpserver.auth.provider")
 AUTHORIZATION_CODE_TTL: Final = 5 * 60
 ACCESS_TOKEN_TTL: Final = 10 * 60
@@ -55,6 +59,20 @@ class StoredAccessToken(AccessToken):
 
 def _opaque_token() -> str:
     return secrets.token_urlsafe(32)
+
+
+def normalize_scopes(value: str | None, *, control_enabled: bool) -> tuple[str, ...]:
+    """Return the canonical supported scope set without allowing control alone."""
+    requested = value.split() if value else [READ_SCOPE]
+    if len(requested) != len(set(requested)) or set(requested) - set(SUPPORTED_SCOPES):
+        raise ValueError("unsupported scope")
+    if READ_SCOPE not in requested or (CONTROL_SCOPE in requested and not control_enabled):
+        raise ValueError("unsupported scope")
+    return tuple(scope for scope in SUPPORTED_SCOPES if scope in requested)
+
+
+def scope_text(scopes: tuple[str, ...] | list[str]) -> str:
+    return " ".join(scopes)
 
 
 def redirect_uri_is_allowed(value: str) -> bool:
@@ -97,12 +115,14 @@ class Phase0OAuthProvider(
         resource: str,
         clock: Callable[[], float] = time.time,
         on_family_revoked: Callable[[str], None] | None = None,
+        control_enabled: bool = False,
     ) -> None:
         self.store = store
         self.issuer = issuer
         self.resource = resource
         self._clock = clock
         self._on_family_revoked = on_family_revoked
+        self.control_enabled = control_enabled
 
     def now(self) -> int:
         return int(self._clock())
@@ -119,6 +139,10 @@ class Phase0OAuthProvider(
         return OAuthClientInformationFull.model_validate(record) if record is not None else None
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
+        try:
+            scopes = normalize_scopes(client_info.scope, control_enabled=self.control_enabled)
+        except ValueError:
+            scopes = ()
         if (
             not client_info.client_id
             or client_info.client_secret is not None
@@ -129,11 +153,12 @@ class Phase0OAuthProvider(
             or set(client_info.grant_types) != {"authorization_code", "refresh_token"}
             or len(client_info.grant_types) != 2
             or client_info.response_types != ["code"]
-            or client_info.scope != SCOPE
+            or not scopes
         ):
             raise RegistrationError("invalid_client_metadata", "Unsupported public client metadata")
 
         record = client_info.model_dump(mode="json", exclude_none=True)
+        record["scope"] = scope_text(list(scopes))
 
         def insert(document: dict[str, Any]) -> None:
             self._garbage_collect(document)
@@ -202,10 +227,19 @@ class Phase0OAuthProvider(
         resource: str,
         identity_id: str,
         miniserver_id: str,
+        scopes: tuple[str, ...] = (READ_SCOPE,),
         family_id: str | None = None,
     ) -> str:
         if resource != self.resource:
             raise TokenError("invalid_grant", "Resource mismatch")
+        try:
+            validated_scopes = normalize_scopes(
+                scope_text(list(scopes)), control_enabled=self.control_enabled
+            )
+        except ValueError as exc:
+            raise TokenError("invalid_scope", "Unsupported authorization scope") from exc
+        if validated_scopes != scopes:
+            raise TokenError("invalid_scope", "Authorization scopes must be canonical")
         raw_code = _opaque_token()
         digest = token_digest(raw_code)
         now = self.now()
@@ -215,7 +249,7 @@ class Phase0OAuthProvider(
             "redirect_uri": redirect_uri,
             "code_challenge": code_challenge,
             "resource": resource,
-            "scopes": [SCOPE],
+            "scopes": list(validated_scopes),
             "expires_at": now + AUTHORIZATION_CODE_TTL,
             "family_id": family_id,
             "identity_id": identity_id,
@@ -242,7 +276,7 @@ class Phase0OAuthProvider(
                 "client_id": client_id,
                 "identity_id": identity_id,
                 "miniserver_id": miniserver_id,
-                "scope": SCOPE,
+                "scope": scope_text(list(validated_scopes)),
                 "resource": resource,
                 "expires_at": now + REFRESH_FAMILY_TTL,
                 "revoked": False,
@@ -290,13 +324,14 @@ class Phase0OAuthProvider(
         miniserver_id: str,
         resource: str,
         family_expires_at: int,
+        scopes: list[str],
     ) -> tuple[str, str, dict[str, Any], dict[str, Any]]:
         now = self.now()
         raw_access = _opaque_token()
         raw_refresh = _opaque_token()
         access_record = {
             "client_id": client_id,
-            "scopes": [SCOPE],
+            "scopes": scopes,
             "expires_at": min(now + ACCESS_TOKEN_TTL, family_expires_at),
             "resource": resource,
             "family_id": family_id,
@@ -306,7 +341,7 @@ class Phase0OAuthProvider(
         }
         refresh_record = {
             "client_id": client_id,
-            "scopes": [SCOPE],
+            "scopes": scopes,
             "expires_at": family_expires_at,
             "resource": resource,
             "family_id": family_id,
@@ -348,6 +383,7 @@ class Phase0OAuthProvider(
                 miniserver_id=record["miniserver_id"],
                 resource=record["resource"],
                 family_expires_at=family["expires_at"],
+                scopes=list(record["scopes"]),
             )
             document["access_tokens"][token_digest(raw_access)] = access
             document["refresh_tokens"][token_digest(raw_refresh)] = refresh
@@ -358,7 +394,7 @@ class Phase0OAuthProvider(
             access_token=raw_access,
             token_type="Bearer",
             expires_in=max(0, access_expires_at - self.now()),
-            scope=SCOPE,
+            scope=scope_text(list(authorization_code.scopes)),
             refresh_token=raw_refresh,
         )
 
@@ -427,8 +463,8 @@ class Phase0OAuthProvider(
         refresh_token: StoredRefreshToken,
         scopes: list[str],
     ) -> OAuthToken:
-        if scopes != [SCOPE]:
-            raise TokenError("invalid_scope", "Only loxone:read is supported")
+        if scopes != list(refresh_token.scopes):
+            raise TokenError("invalid_scope", "Refresh cannot change the authorized scopes")
         raw_access = ""
         raw_refresh = ""
         access_expires_at = 0
@@ -457,6 +493,7 @@ class Phase0OAuthProvider(
                 miniserver_id=record["miniserver_id"],
                 resource=record["resource"],
                 family_expires_at=family["expires_at"],
+                scopes=list(record["scopes"]),
             )
             document["access_tokens"][token_digest(raw_access)] = access
             document["refresh_tokens"][token_digest(raw_refresh)] = refresh
@@ -469,7 +506,7 @@ class Phase0OAuthProvider(
             access_token=raw_access,
             token_type="Bearer",
             expires_in=max(0, access_expires_at - self.now()),
-            scope=SCOPE,
+            scope=scope_text(scopes),
             refresh_token=raw_refresh,
         )
 
@@ -525,3 +562,24 @@ class Phase0OAuthProvider(
                     return
 
         self.store.mutate(revoke)
+
+    def revoke_scope_locally(self, scope: str) -> int:
+        """Fail closed for a disabled scope without discarding remote token material."""
+        revoked: list[str] = []
+
+        def revoke(document: dict[str, Any]) -> None:
+            for family_id, family in document["families"].items():
+                if (
+                    family.get("revoked", False)
+                    or scope not in str(family.get("scope", "")).split()
+                ):
+                    continue
+                family["revoked"] = True
+                revoked.append(family_id)
+                for collection in ("codes", "access_tokens", "refresh_tokens"):
+                    for record in document[collection].values():
+                        if record.get("family_id") == family_id:
+                            record["status"] = "revoked"
+
+        self.store.mutate(revoke)
+        return len(revoked)

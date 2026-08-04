@@ -18,12 +18,12 @@ from starlette.types import ASGIApp
 
 from mcpserver import __version__
 from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore
-from mcpserver.auth.provider import SCOPE, Phase0OAuthProvider
+from mcpserver.auth.provider import CONTROL_SCOPE, READ_SCOPE, Phase0OAuthProvider
 from mcpserver.auth.store import AtomicJsonAuthStore
 from mcpserver.auth.web import Phase0OAuthWeb
 from mcpserver.loxone.runtime import LoxoneRuntime
 from mcpserver.settings import ServerSettings
-from mcpserver.tools import register_read_tools
+from mcpserver.tools import register_control_tool, register_read_tools
 
 SERVER_NAME: Final = "LoxBerry MCP Server"
 _TRANSPORT_LOGGER_NAME: Final = "mcp.server.transport_security"
@@ -164,7 +164,13 @@ def create_server(settings: ServerSettings) -> FastMCP:
             issuer=settings.phase0_auth.issuer_url,
             resource=settings.phase0_auth.resource_url,
             on_family_revoked=loxone_store.delete if loxone_store is not None else None,
+            control_enabled=bool(
+                settings.phase0_auth.plugin_config
+                and settings.phase0_auth.plugin_config.loxone_control_enabled
+            ),
         )
+        if not provider.control_enabled:
+            provider.revoke_scope_locally(CONTROL_SCOPE)
         oauth_web = Phase0OAuthWeb(
             provider,
             endpoint=settings.phase0_auth.loxone_endpoint,
@@ -175,7 +181,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
         oauth_auth = AuthSettings(
             issuer_url=AnyHttpUrl(settings.phase0_auth.issuer_url),
             resource_server_url=AnyHttpUrl(settings.phase0_auth.resource_url),
-            required_scopes=[SCOPE],
+            required_scopes=[READ_SCOPE],
         )
         token_verifier = _Phase0TokenVerifier(provider)
         if loxone_store is not None:
@@ -186,6 +192,9 @@ def create_server(settings: ServerSettings) -> FastMCP:
                 timeout_seconds=config.connection_timeout if config is not None else 10.0,
                 requests_per_minute=config.requests_per_minute if config is not None else 60,
                 max_parallel_calls=config.max_parallel_calls if config is not None else 4,
+                control_requests_per_minute=(
+                    config.control_requests_per_minute if config is not None else 10
+                ),
             )
 
     server = _ForwardedHostFastMCP(
@@ -202,7 +211,14 @@ def create_server(settings: ServerSettings) -> FastMCP:
     server.forwarded_allowed_hosts = settings.allowed_hosts
     server.transport_guard = transport_guard
     server.service_enabled = settings.service_enabled
-    register_read_tools(server, runtime)
+    control_enabled = bool(
+        settings.phase0_auth
+        and settings.phase0_auth.plugin_config
+        and settings.phase0_auth.plugin_config.loxone_control_enabled
+    )
+    register_read_tools(server, runtime, control_enabled=control_enabled)
+    if control_enabled:
+        register_control_tool(server, runtime)
 
     if oauth_web is not None:
         server.custom_route("/authorize", methods=["GET", "POST"], include_in_schema=False)(

@@ -129,8 +129,8 @@ def main() -> int:
         for name, version in requirements.items()
         if (name, version.lower()) not in wheel_versions
     }
-    project_wheels = tuple(wheelhouse.glob("loxberry_mcpserver-0.1.0a1-*.whl"))
-    expected_project = [("loxberry-mcpserver", "0.1.0a1")]
+    project_wheels = tuple(wheelhouse.glob("loxberry_mcpserver-0.2.0a1-*.whl"))
+    expected_project = [("loxberry-mcpserver", "0.2.0a1")]
     unexpected = set(runtime_wheels) - expected_runtime
     duplicates = len(runtime_wheels) != len(set(runtime_wheels))
     invalid_wheel = len(wheel_files) != len(wheel_identities)

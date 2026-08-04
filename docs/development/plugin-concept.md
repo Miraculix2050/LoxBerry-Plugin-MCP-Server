@@ -725,11 +725,11 @@ Support-Matrix.
 
 ### Phase 2: Kontrollierte Loxone-Schreibaktionen
 
-- erste getestete Control-Typen
-- `loxone_operate_control`
-- Audit und Rate Limits
-- explizite Aktivierung von `loxone:control`
-- optionaler externer HTTPS-Betrieb nach Sicherheitstest
+- ausschließlich Gen.-1-`Switch` mit explizitem `on` und `off`
+- `loxone_operate_control` mit UUID-Ziel und beobachteter Zustandsbestätigung
+- kompaktes Audit im bestehenden Service-Log und separates Control-Rate-Limit
+- explizite Aktivierung und neuer OAuth-Consent für `loxone:control`
+- kein externer MCP-Betrieb und keine Gen.-2-Schreibfreigabe
 
 ### Phase 3: LoxBerry Read-only
 

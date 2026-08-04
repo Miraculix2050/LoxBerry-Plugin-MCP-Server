@@ -10,6 +10,7 @@
   .mcp-status { padding: .65rem; border-left: .3rem solid #6b7280; background: #f3f4f6; }
   .mcp-status[data-kind="success"] { border-color: #198754; }
   .mcp-status[data-kind="error"] { border-color: #b91c1c; }
+  .mcp-warning { padding: .65rem; border-left: .3rem solid #b45309; background: #fff7ed; }
   .mcp-table-wrap { max-width: 100%; overflow-x: auto; }
   .mcp-table { width: 100%; border-collapse: collapse; }
   .mcp-table th, .mcp-table td { padding: .5rem; text-align: left; border-bottom: 1px solid #ddd; }
@@ -42,9 +43,12 @@
       <div class="mcp-grid">
         <label class="mcp-field"><span><TMPL_VAR SETUP.TIMEOUT></span><input name="connection_timeout" type="number" min="1" max="60" value="<TMPL_VAR CONNECTION_TIMEOUT ESCAPE=HTML>"></label>
         <label class="mcp-field"><span><TMPL_VAR SETUP.RATE></span><input name="requests_per_minute" type="number" min="1" max="600" value="<TMPL_VAR REQUESTS_PER_MINUTE ESCAPE=HTML>"></label>
+        <label class="mcp-field"><span><TMPL_VAR SETUP.CONTROL_RATE></span><input name="control_requests_per_minute" type="number" min="1" max="60" value="<TMPL_VAR CONTROL_REQUESTS_PER_MINUTE ESCAPE=HTML>"></label>
         <label class="mcp-field"><span><TMPL_VAR SETUP.PARALLEL></span><input name="max_parallel_calls" type="number" min="1" max="32" value="<TMPL_VAR MAX_PARALLEL_CALLS ESCAPE=HTML>"></label>
       </div>
       <label><input name="enabled" type="checkbox" value="1" <TMPL_IF ENABLED>checked</TMPL_IF>> <TMPL_VAR SETUP.ENABLED></label>
+      <label><input name="loxone_control_enabled" type="checkbox" value="1" <TMPL_IF LOXONE_CONTROL_ENABLED>checked</TMPL_IF>> <TMPL_VAR SETUP.CONTROL_ENABLED></label>
+      <p class="mcp-warning"><TMPL_VAR SETUP.CONTROL_WARNING></p>
       <div class="mcp-actions">
         <button class="lb-button" type="submit"><TMPL_VAR ACTION.SAVE></button>
       </div>
@@ -66,7 +70,7 @@
 
     <section id="help" class="mcp-card" aria-labelledby="help-title">
       <h2 id="help-title"><TMPL_VAR HELP.TITLE></h2>
-      <p><TMPL_VAR HELP.READ_ONLY></p>
+      <p><TMPL_VAR HELP.TOOL_ACCESS></p>
       <p><code>/plugins/mcpserver/mcp</code></p>
       <p><a href="https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server" target="_blank" rel="noopener"><TMPL_VAR HELP.PROJECT></a></p>
     </section>
@@ -75,8 +79,8 @@
   <section id="sessions" class="mcp-card" aria-labelledby="sessions-title">
     <h2 id="sessions-title"><TMPL_VAR SESSIONS.TITLE></h2>
     <TMPL_IF HAS_SESSIONS>
-      <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.EXPIRES></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody>
-      <TMPL_LOOP SESSIONS><tr><td><code><TMPL_VAR client ESCAPE=HTML></code></td><td><code><TMPL_VAR identity ESCAPE=HTML></code></td><td><TMPL_VAR expires_at ESCAPE=HTML></td><td><form method="post" action="index.cgi" data-ajax="revoke_session"><input type="hidden" name="action" value="revoke_session"><input type="hidden" name="id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form></td></tr></TMPL_LOOP>
+      <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.SCOPES></th><th><TMPL_VAR SESSIONS.EXPIRES></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody>
+      <TMPL_LOOP SESSIONS><tr><td><code><TMPL_VAR client ESCAPE=HTML></code></td><td><code><TMPL_VAR identity ESCAPE=HTML></code></td><td><code><TMPL_VAR scopes ESCAPE=HTML></code></td><td><TMPL_VAR expires_at ESCAPE=HTML></td><td><form method="post" action="index.cgi" data-ajax="revoke_session"><input type="hidden" name="action" value="revoke_session"><input type="hidden" name="id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form></td></tr></TMPL_LOOP>
       </tbody></table></div>
       <form method="post" action="index.cgi" data-ajax="revoke_all"><input type="hidden" name="action" value="revoke_all"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE_ALL></button></form>
     <TMPL_ELSE><p><TMPL_VAR SESSIONS.EMPTY></p></TMPL_IF>
