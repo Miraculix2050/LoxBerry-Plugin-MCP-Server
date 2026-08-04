@@ -122,6 +122,11 @@ Freigabeseite im Browser.
 
 ## Optionale Loxone-Steuerung
 
+> **Experimentell und noch nicht mit Claude abgenommen:** Der folgende Ablauf
+> beschreibt die erwartete Einrichtung, wurde aber noch nicht durch einen
+> vollständigen Claude-Test von Registrierung, Freigabe und Werkzeugaufruf
+> bestätigt. Der dokumentierte und geprüfte Standard bleibt Read-only.
+
 Dieser Abschnitt gilt nur, wenn die kontrollierte Gen.-1-Switch-Steuerung in der
 Plugin-Oberfläche bewusst aktiviert wurde. Für normalen Lesezugriff ist er nicht
 erforderlich.
@@ -169,9 +174,10 @@ den zusätzlichen Scope nicht automatisch.
 
 4. Widerrufe die bisherige Claude-Sitzung in der Plugin-Oberfläche. Beende
    Claude vollständig und starte es neu.
-5. Melde dich erneut an. Auf der Freigabeseite müssen jetzt
+5. Melde dich erneut an. Prüfe, ob auf der Freigabeseite
    `loxone:read loxone:control` erscheinen. Bestätige nur, wenn diese Erweiterung
-   beabsichtigt ist.
+   beabsichtigt ist. Fehlt einer der Scopes, verwende die Steuerung nicht und
+   bleibe bei der geprüften Read-only-Einrichtung.
 
 Wird die Steuerung später im Plugin deaktiviert, werden Sitzungen mit
 `loxone:control` widerrufen. Für erneuten reinen Lesezugriff entfernst du die

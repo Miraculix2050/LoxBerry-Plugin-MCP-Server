@@ -116,6 +116,11 @@ the browser consent page before approving access.
 
 ## Optional Loxone control
 
+> **Experimental and not yet accepted with Claude:** The following workflow
+> describes the expected setup, but a complete Claude test of registration,
+> consent, and tool availability has not yet confirmed it. Read-only remains the
+> documented and tested default.
+
 This section applies only when controlled Gen. 1 Switch operation was
 deliberately enabled in the plugin UI. It is unnecessary for normal read access.
 
@@ -162,8 +167,10 @@ additional scope automatically.
 
 4. Revoke the existing Claude session in the plugin UI. Quit Claude completely
    and start it again.
-5. Sign in again. The consent page must now show
-   `loxone:read loxone:control`. Approve only when this extension is intended.
+5. Sign in again. Check whether the consent page shows
+   `loxone:read loxone:control`. Approve only when this extension is intended. If
+   either scope is missing, do not use control and stay with the tested read-only
+   setup.
 
 If control is later disabled in the plugin, sessions with `loxone:control` are
 revoked. To return to read-only access, remove the two metadata arguments and
