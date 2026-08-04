@@ -1,0 +1,6 @@
+interface:
+  display_name: "Use LoxBerry MCP"
+  short_description: "Safely inspect and operate Loxone controls"
+  default_prompt: "Use $using-loxberry-mcp to inspect or operate my Loxone installation safely."
+policy:
+  allow_implicit_invocation: true

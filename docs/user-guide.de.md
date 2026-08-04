@@ -31,11 +31,45 @@ Für die ChatGPT-/Codex-Desktop-App beschreibt die
 Hinzufügen per URL, die Browser-Authentifizierung und die angeforderten Lese-
 beziehungsweise Schreibrechte. Dafür wird keine lokale Node.js-Bridge benötigt.
 
-Die sechs Lesetools bleiben standardmäßig aktiv. Für die optionale Bedienung
-von Gen.-1-Switches aktiviere zusätzlich **Loxone-Steuerung**. Danach ist eine
+Die sechs lesenden Loxone-Datentools und das lesende Skill-Guide-Tool bleiben
+standardmäßig aktiv. Für die optionale Bedienung von Gen.-1-Switches aktiviere
+zusätzlich **Loxone-Steuerung**. Danach ist eine
 neue OAuth-Freigabe mit `loxone:control` erforderlich. Deaktivieren widerruft
 bestehende Control-Sitzungen; reine Lesesitzungen bleiben gültig. Bei einem
 Gen.-2-/HTTPS-Ziel kann die Steuerung nicht aktiviert werden.
+
+## Agent Skill
+
+Der Server liefert den Agent Skill
+[`using-loxberry-mcp`](../src/mcpserver/skills/using-loxberry-mcp/SKILL.md)
+direkt über MCP aus. Er beschreibt den sicheren Ablauf für Suche, Pagination,
+Zustandsabfragen, mehrdeutige Namen und ausdrücklich angeforderte
+Switch-Aktionen. Die maschinenlesbaren JSON-Schemas bleiben Bestandteil der
+MCP-Tools und werden im Skill nicht dupliziert.
+
+Beim Verbindungsaufbau weist der Server den Client in seinen MCP-Instructions
+auf `skill://using-loxberry-mcp/SKILL.md` hin. Ressourcenfähige Clients können
+die Anleitung dann bei Bedarf laden. Für Clients, die MCP-Ressourcen nicht
+verwenden, steht dasselbe Dokument über das immer lesende Tool
+`loxone_get_skill_guide` bereit. Das ist automatische Bereitstellung und
+Erkennung, aber keine stille Installation oder dauerhafte Prompt-Injektion auf
+dem Client.
+
+Eine lokale Installation ist optional. Sie ermöglicht Codex, Claude Code und
+anderen Agent-Skills-kompatiblen Clients die native, implizite Aktivierung anhand
+der Skill-Beschreibung, auch bevor eine MCP-Verbindung besteht:
+
+```bash
+npx skills add Miraculix2050/LoxBerry-Plugin-MCP-Server --skill using-loxberry-mcp
+```
+
+Alternativ kopiere den Ordner `using-loxberry-mcp` nach
+`~/.agents/skills/using-loxberry-mcp` für Codex oder nach
+`~/.claude/skills/using-loxberry-mcp` für Claude Code. In Claude Desktop und
+Claude.ai kann derselbe Skill-Ordner als ZIP unter **Customize > Skills**
+hochgeladen werden. Nach lokaler Installation wählt der Client den Skill bei
+passenden LoxBerry-/Loxone-Anfragen automatisch aus; mit `$using-loxberry-mcp`
+kann er ausdrücklich aktiviert werden.
 
 Der einheitliche OAuth-Dialog zeigt den erforderlichen Lesezugriff und, falls
 vom Client angefordert und im Plugin aktiviert, die optionale
@@ -53,8 +87,9 @@ aktualisiert.
 
 ## Umfang und Betrieb
 
-Die Alpha veröffentlicht sechs dokumentierte `loxone_*`-Lesetools und optional
-`loxone_operate_control`. Das Schreibtool akzeptiert ausschließlich eine
+Die Alpha veröffentlicht sechs dokumentierte Loxone-Datentools, das lesende
+`loxone_get_skill_guide` und optional `loxone_operate_control`. Das Schreibtool
+akzeptiert ausschließlich eine
 sichtbare Control-UUID vom Typ `Switch` und die Aktion `on` oder `off`. Es bietet
 keine Namens-, Raum-, Bulk- oder freien Kommandos. Historie, LoxBerry-Tools und
 Basic Auth bleiben ausgeschlossen. Ergebnisse und Aktionen entsprechen den

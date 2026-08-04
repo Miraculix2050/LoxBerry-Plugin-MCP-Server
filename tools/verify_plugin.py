@@ -44,6 +44,10 @@ _EXECUTABLES: Final = {
 }
 _TEXT_SUFFIXES: Final = {".cfg", ".cgi", ".conf", ".html", ".ini", ".json", ".lock", ".sh", ".svg"}
 _TEXT_NAMES: Final = {"bin/healthcheck", "bin/mcpserver-admin"}
+_REQUIRED_PROJECT_WHEEL_ENTRIES: Final = {
+    "mcpserver/skills/using-loxberry-mcp/SKILL.md",
+    "mcpserver/skills/using-loxberry-mcp/agents/openai.yaml",
+}
 
 
 class PackageVerificationError(RuntimeError):
@@ -81,6 +85,19 @@ def _verify_checksum(archive: Path, digest: str) -> None:
     fields = sidecar.read_text(encoding="ascii").strip().split()
     if fields != [digest, archive.name]:
         raise PackageVerificationError("checksum sidecar does not match the archive")
+
+
+def _verify_project_wheel(content: bytes) -> None:
+    try:
+        wheel = zipfile.ZipFile(io.BytesIO(content))
+    except zipfile.BadZipFile as exc:
+        raise PackageVerificationError("project wheel is not a valid ZIP") from exc
+    with wheel:
+        missing = _REQUIRED_PROJECT_WHEEL_ENTRIES - set(wheel.namelist())
+        if missing:
+            raise PackageVerificationError(
+                f"required project wheel entry is missing: {min(missing)}"
+            )
 
 
 def verify_archive(archive: Path, *, require_checksum: bool = True) -> str:
@@ -152,6 +169,12 @@ def verify_archive(archive: Path, *, require_checksum: bool = True) -> str:
         ]
         if project_wheels != [expected_project]:
             raise PackageVerificationError("exactly one matching project wheel is required")
+        project_wheel_entry = next(
+            name
+            for name, identity in zip(wheelhouse_entries, wheel_identities, strict=True)
+            if identity == expected_project
+        )
+        _verify_project_wheel(package.read(project_wheel_entry))
         expected_runtime = _locked_requirements(
             package.read("bin/runtime-arm64.lock").decode("utf-8")
         )

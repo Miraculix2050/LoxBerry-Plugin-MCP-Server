@@ -24,7 +24,8 @@ from mcpserver.auth.store import AtomicJsonAuthStore
 from mcpserver.auth.web import Phase0OAuthWeb
 from mcpserver.loxone.runtime import LoxoneRuntime
 from mcpserver.settings import ServerSettings
-from mcpserver.tools import register_control_tool, register_read_tools
+from mcpserver.skill_delivery import SERVER_INSTRUCTIONS, register_skill_resource
+from mcpserver.tools import register_control_tool, register_read_tools, register_skill_tool
 
 SERVER_NAME: Final = "LoxBerry MCP Server"
 _TRANSPORT_LOGGER_NAME: Final = "mcp.server.transport_security"
@@ -214,6 +215,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
 
     server = _ForwardedHostFastMCP(
         SERVER_NAME,
+        instructions=SERVER_INSTRUCTIONS,
         token_verifier=token_verifier,
         host=settings.host,
         port=settings.port,
@@ -232,6 +234,8 @@ def create_server(settings: ServerSettings) -> FastMCP:
         and settings.phase0_auth.plugin_config.loxone_control_enabled
     )
     server.advertised_scopes = (READ_SCOPE,) + ((CONTROL_SCOPE,) if control_enabled else ())
+    register_skill_resource(server)
+    register_skill_tool(server)
     register_read_tools(server, runtime, control_enabled=control_enabled)
     if control_enabled:
         register_control_tool(server, runtime)
