@@ -375,6 +375,7 @@ def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
     assert "issuerUrl.origin !== window.location.origin" in source
     assert "authorizationMetadata[name] !== value" in source
     assert "code_challenge_method: 'S256'" in source
+    assert "width=680,height=900,resizable=yes,scrollbars=yes" in source
     assert "core.refreshTokenFields(state.oauth.clientId" in source
     assert "if (state.oauth) await revokeAndClear()" in source
     assert "core.toolIsMutating(state.selectedTool)" in source

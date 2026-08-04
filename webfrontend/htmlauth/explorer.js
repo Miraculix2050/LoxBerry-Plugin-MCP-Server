@@ -593,7 +593,11 @@
       code_challenge: challenge, code_challenge_method: 'S256', state: oauthState,
       scope, resource: discovered.resourceMetadata.resource,
     }).toString();
-    const popup = window.open(authorizationUrl.href, 'mcp-explorer-oauth', 'popup=yes,width=620,height=760');
+    const popup = window.open(
+      authorizationUrl.href,
+      'mcp-explorer-oauth',
+      'popup=yes,width=680,height=900,resizable=yes,scrollbars=yes',
+    );
     if (!popup) throw new Error(label('popupBlocked'));
     const code = await waitForAuthorization(popup, oauthState);
     if (!code) throw new Error(label('authCancelled'));
