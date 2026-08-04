@@ -89,9 +89,13 @@ if ($action ne '') {
                 endpoint => $q->{endpoint} // '',
                 connection_timeout => 0 + ($q->{connection_timeout} // 10),
             },
-            tools => {loxone_read_enabled => JSON::PP::true},
+            tools => {
+                loxone_read_enabled => JSON::PP::true,
+                loxone_control_enabled => $q->{loxone_control_enabled} ? JSON::PP::true : JSON::PP::false,
+            },
             limits => {
                 requests_per_minute => 0 + ($q->{requests_per_minute} // 60),
+                control_requests_per_minute => 0 + ($q->{control_requests_per_minute} // 10),
                 max_parallel_calls => 0 + ($q->{max_parallel_calls} // 4),
             },
         };
@@ -140,6 +144,7 @@ my $config = $config_result->{ok} ? $config_result->{data}{configuration} : {};
 my $sessions = $sessions_result->{ok} ? $sessions_result->{data}{sessions} : [];
 $config->{server} = {} if ref($config->{server}) ne 'HASH';
 $config->{loxone} = {} if ref($config->{loxone}) ne 'HASH';
+$config->{tools} = {} if ref($config->{tools}) ne 'HASH';
 $config->{limits} = {} if ref($config->{limits}) ne 'HASH';
 
 $template->param(
@@ -148,7 +153,9 @@ $template->param(
     PUBLIC_ORIGIN => $config->{server}{public_origin} // '',
     ENDPOINT => $config->{loxone}{endpoint} // '',
     CONNECTION_TIMEOUT => $config->{loxone}{connection_timeout} // 10,
+    LOXONE_CONTROL_ENABLED => $config->{tools}{loxone_control_enabled} ? 1 : 0,
     REQUESTS_PER_MINUTE => $config->{limits}{requests_per_minute} // 60,
+    CONTROL_REQUESTS_PER_MINUTE => $config->{limits}{control_requests_per_minute} // 10,
     MAX_PARALLEL_CALLS => $config->{limits}{max_parallel_calls} // 4,
     SERVICE_ACTIVE => ($status_result->{ok} && $status_result->{data}{service_active}) ? 1 : 0,
     SESSIONS => $sessions,

@@ -8,8 +8,10 @@ import hmac
 import json
 import logging
 import secrets
+import time
+from collections import OrderedDict
 from datetime import UTC, datetime
-from typing import Any, Final
+from typing import Any, Final, Literal
 from uuid import uuid4
 
 from mcp.server.auth.middleware.auth_context import get_access_token
@@ -17,14 +19,22 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field, JsonValue
 
-from mcpserver.auth.provider import StoredAccessToken
+from mcpserver.auth.provider import CONTROL_SCOPE, StoredAccessToken
 from mcpserver.loxone.models import Control, Freshness, NamedGroup
-from mcpserver.loxone.runtime import LoxoneRuntime, RuntimeSnapshot, RuntimeUnavailable
+from mcpserver.loxone.runtime import (
+    ControlOperationError,
+    LoxoneRuntime,
+    RuntimeSnapshot,
+    RuntimeUnavailable,
+)
 
 DEFAULT_PAGE_SIZE: Final = 50
 MAX_PAGE_SIZE: Final = 100
 MAX_STATE_UUIDS: Final = 100
 _LOGGER = logging.getLogger("mcpserver.tools")
+_AUDIT_SUPPRESSION_SECONDS: Final = 60.0
+_MAX_AUDIT_SUPPRESSION_KEYS: Final = 512
+_AUDIT_LAST: OrderedDict[tuple[str, str], float] = OrderedDict()
 
 
 class ErrorData(BaseModel):
@@ -117,6 +127,18 @@ class StatesEnvelope(ToolEnvelope):
     data: StatesData | ErrorData
 
 
+class ControlOperationData(BaseModel):
+    control_uuid: str
+    action: Literal["on", "off"]
+    accepted: bool
+    confirmed: bool
+    observed_state: Literal["on", "off", "unknown"]
+
+
+class ControlOperationEnvelope(ToolEnvelope):
+    data: ControlOperationData | ErrorData
+
+
 def _now() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
@@ -152,6 +174,65 @@ def _error[EnvelopeT: ToolEnvelope](
     return envelope_type(
         ok=False,
         data={"error": code, "message": message},
+        observed_at=_now(),
+        stale=False,
+        trace_id=trace_id,
+    )
+
+
+def _audit_identity(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
+
+
+def _control_envelope(
+    access: StoredAccessToken | None,
+    control_uuid: str,
+    action: str,
+    *,
+    result: dict[str, Any] | None = None,
+    error: tuple[str, str] | None = None,
+    warnings: list[str] | None = None,
+) -> ControlOperationEnvelope:
+    trace_id = str(uuid4())
+    outcome = (
+        ("accepted_confirmed" if result and result.get("confirmed") else "accepted_unconfirmed")
+        if error is None
+        else error[0]
+    )
+    should_log = True
+    if error is not None:
+        identity = access.identity_id if access is not None else "unauthenticated"
+        key = (_audit_identity(identity), outcome)
+        now = time.monotonic()
+        previous = _AUDIT_LAST.get(key)
+        if previous is not None and previous > now - _AUDIT_SUPPRESSION_SECONDS:
+            should_log = False
+        else:
+            _AUDIT_LAST[key] = now
+            _AUDIT_LAST.move_to_end(key)
+            while len(_AUDIT_LAST) > _MAX_AUDIT_SUPPRESSION_KEYS:
+                _AUDIT_LAST.popitem(last=False)
+    if should_log:
+        log = _LOGGER.info if error is None else _LOGGER.warning
+        log(
+            "component=control_audit trace_id=%s client=%s identity=%s "
+            "target=%s action=%s outcome=%s",
+            trace_id,
+            _audit_identity(str(access.client_id)) if access is not None else "unknown",
+            _audit_identity(access.identity_id) if access is not None else "unknown",
+            json.dumps(control_uuid[:128]),
+            action if action in {"on", "off"} else "invalid",
+            outcome,
+        )
+    data = (
+        ControlOperationData.model_validate(result)
+        if error is None
+        else ErrorData(error=error[0], message=error[1])
+    )
+    return ControlOperationEnvelope(
+        ok=error is None,
+        data=data,
+        warnings=warnings or [],
         observed_at=_now(),
         stale=False,
         trace_id=trace_id,
@@ -249,7 +330,9 @@ async def _snapshot(runtime: LoxoneRuntime | None) -> tuple[StoredAccessToken, R
         return access, await runtime.snapshot(access)
 
 
-def register_read_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> None:
+def register_read_tools(
+    server: FastMCP, runtime: LoxoneRuntime | None, *, control_enabled: bool = False
+) -> None:
     """Publish exactly the six stable Phase 1 read-only tools."""
     annotations = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
     cursors = _CursorCodec()
@@ -391,7 +474,7 @@ def register_read_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> None:
     )
     async def describe_control(control_uuid: str) -> ControlDescriptionEnvelope:
         try:
-            _access_token, snapshot = await _snapshot(runtime)
+            access_token, snapshot = await _snapshot(runtime)
             control = next(
                 (
                     item
@@ -404,7 +487,17 @@ def register_read_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> None:
                 return _error(ControlDescriptionEnvelope, "not_found", "control is not visible")
             value = _control_summary(control, snapshot)
             value["states"] = [{"name": name, "uuid": uuid} for name, uuid in control.state_uuids]
-            value["capabilities"] = {"readable": True, "allowed_actions": []}
+            value["capabilities"] = {
+                "readable": True,
+                "allowed_actions": (
+                    ["on", "off"]
+                    if control_enabled
+                    and CONTROL_SCOPE in access_token.scopes
+                    and control.control_type == "Switch"
+                    and control.action_uuid is not None
+                    else []
+                ),
+            }
             return _result(ControlDescriptionEnvelope, value)
         except PermissionError:
             return _error(
@@ -467,3 +560,61 @@ def register_read_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> None:
             )
         except RuntimeUnavailable as exc:
             return _error(StatesEnvelope, "temporarily_unavailable", str(exc))
+
+
+def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> None:
+    """Publish the single explicitly enabled Phase 2 Switch operation."""
+    annotations = ToolAnnotations(
+        readOnlyHint=False,
+        destructiveHint=True,
+        idempotentHint=True,
+        openWorldHint=False,
+    )
+
+    @server.tool(
+        name="loxone_operate_control",
+        description=(
+            "Switch one visible and operable Loxone Switch control explicitly on or off. "
+            "Requires loxone:control. Never retries an uncertain command."
+        ),
+        annotations=annotations,
+        structured_output=True,
+    )
+    async def operate_control(
+        control_uuid: str, action: Literal["on", "off"]
+    ) -> ControlOperationEnvelope:
+        access: StoredAccessToken | None = None
+        try:
+            access = _access()
+            if runtime is None:
+                raise ControlOperationError(
+                    "temporarily_unavailable", "the service is not configured"
+                )
+            operation = await runtime.operate_switch(access, control_uuid, action)
+            warnings = (
+                []
+                if operation.confirmed
+                else ["The command was accepted but the resulting state was not confirmed."]
+            )
+            return _control_envelope(
+                access,
+                control_uuid,
+                action,
+                result={
+                    "control_uuid": operation.control_uuid,
+                    "action": operation.action,
+                    "accepted": operation.accepted,
+                    "confirmed": operation.confirmed,
+                    "observed_state": operation.observed_state,
+                },
+                warnings=warnings,
+            )
+        except PermissionError:
+            return _control_envelope(
+                access,
+                control_uuid,
+                action,
+                error=("unauthenticated", "Authentication is required"),
+            )
+        except ControlOperationError as exc:
+            return _control_envelope(access, control_uuid, action, error=(exc.code, str(exc)))

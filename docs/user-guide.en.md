@@ -1,9 +1,10 @@
-# LoxBerry MCP Server 0.1.0-alpha.1
+# LoxBerry MCP Server 0.2.0-alpha.1
 
 ## Requirements
 
 - LoxBerry 4.0.0 or newer; the reference target is 4.0.0.14 on Debian 13/arm64.
-- A dedicated Loxone user with the smallest practical read permissions.
+- A dedicated Loxone user with the smallest practical read permissions and,
+  when needed, narrowly assigned Switch permissions.
 - Gen. 1: a private local HTTP address. Gen. 2: a valid HTTPS address with a
   trusted certificate; currently experimental.
 - Never put credentials in URLs. Basic Auth is unsupported.
@@ -21,14 +22,22 @@ all Python wheels for offline installation. Then open **LoxBerry MCP Server**:
 4. Connect Codex CLI or Claude Desktop to
    `https://loxberry.local/plugins/mcpserver/mcp` and complete OAuth login.
 
+The six read tools remain enabled by default. To operate Gen. 1 switches,
+additionally enable **Loxone control**. A new OAuth grant with `loxone:control`
+is then required. Disabling control revokes existing control sessions while
+read-only sessions remain valid. Control cannot be enabled for a Gen. 2/HTTPS
+target.
+
 Save, connection test and session revocation remain usable without JavaScript.
 With JavaScript, status, test and revocation update without a page navigation.
 
 ## Scope and operation
 
-The alpha publishes only the six documented `loxone_*` read tools. It provides
-no controls, history, LoxBerry tools, Basic Auth or generic commands. Results
-are limited to the permissions of the authenticated Loxone user.
+The alpha publishes six documented `loxone_*` read tools and optionally
+`loxone_operate_control`. The control tool accepts only a visible `Switch`
+control UUID and the action `on` or `off`. It provides no name-, room-, bulk- or
+free-form commands. History, LoxBerry tools and Basic Auth remain excluded.
+Results and actions are limited to the authenticated Loxone user's permissions.
 
 The English healthcheck never repairs the system:
 
@@ -40,6 +49,10 @@ Logs appear in the LoxBerry log viewer. Diagnostic export contains only the
 version, service state, transport kind and masked counts. Sessions can be
 revoked individually or together; an available Miniserver also receives a
 best-effort `killtoken`.
+
+Every control attempt creates one compact masked record in the existing service
+log. Repeated identical rejections are limited; no separate audit file is
+created.
 
 ## Rollback
 

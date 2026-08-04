@@ -16,7 +16,13 @@ from starlette.requests import Request
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from mcpserver.auth.provider import SCOPE, Phase0OAuthProvider
+from mcpserver.auth.provider import (
+    CONTROL_SCOPE,
+    READ_SCOPE,
+    SCOPE,
+    Phase0OAuthProvider,
+    normalize_scopes,
+)
 from mcpserver.auth.store import AtomicJsonAuthStore
 from mcpserver.auth.web import LoginTransaction, Phase0OAuthWeb, _limited_body
 from mcpserver.loxone.client import (
@@ -29,6 +35,52 @@ from mcpserver.loxone.events import LoxoneProtocolError
 
 ISSUER = "https://public.example/plugins/mcpserver/oauth"
 RESOURCE = "https://public.example/plugins/mcpserver/mcp"
+
+
+def test_control_scope_is_additive_and_never_granted_alone() -> None:
+    assert normalize_scopes(None, control_enabled=False) == (READ_SCOPE,)
+    assert normalize_scopes(f"{CONTROL_SCOPE} {READ_SCOPE}", control_enabled=True) == (
+        READ_SCOPE,
+        CONTROL_SCOPE,
+    )
+    with pytest.raises(ValueError):
+        normalize_scopes(CONTROL_SCOPE, control_enabled=True)
+    with pytest.raises(ValueError):
+        normalize_scopes(f"{READ_SCOPE} {CONTROL_SCOPE}", control_enabled=False)
+
+
+def test_disabled_control_scope_is_locally_revoked_without_deleting_remote_token(
+    tmp_path: Path,
+) -> None:
+    deleted: list[str] = []
+    store = AtomicJsonAuthStore(tmp_path / "auth" / "sessions.json")
+    provider = Phase0OAuthProvider(
+        store,
+        issuer=ISSUER,
+        resource=RESOURCE,
+        on_family_revoked=deleted.append,
+    )
+
+    def add_control_family(document: dict[str, object]) -> None:
+        families = document["families"]
+        access_tokens = document["access_tokens"]
+        assert isinstance(families, dict)
+        assert isinstance(access_tokens, dict)
+        families["family"] = {
+            "scope": f"{READ_SCOPE} {CONTROL_SCOPE}",
+            "revoked": False,
+        }
+        access_tokens["access"] = {"family_id": "family", "status": "active"}
+
+    store.mutate(add_control_family)
+
+    assert provider.revoke_scope_locally(CONTROL_SCOPE) == 1
+    snapshot = store.snapshot()
+    assert snapshot["families"]["family"]["revoked"] is True
+    assert snapshot["access_tokens"]["access"]["status"] == "revoked"
+    assert deleted == []
+
+
 REDIRECT = "http://127.0.0.1:48765/callback"
 VERIFIER = "v" * 43
 CHALLENGE = (
@@ -64,6 +116,48 @@ async def _client(provider: Phase0OAuthProvider) -> OAuthClientInformationFull:
     )
     await provider.register_client(client)
     return client
+
+
+@pytest.mark.asyncio
+async def test_control_scope_survives_code_exchange_and_refresh(tmp_path: Path) -> None:
+    provider = Phase0OAuthProvider(
+        AtomicJsonAuthStore(tmp_path / "auth" / "sessions.json"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+        clock=Clock(),
+        control_enabled=True,
+    )
+    scopes = (READ_SCOPE, CONTROL_SCOPE)
+    client = OAuthClientInformationFull(
+        client_id="control-client",
+        redirect_uris=[AnyUrl(REDIRECT)],
+        token_endpoint_auth_method="none",
+        grant_types=["authorization_code", "refresh_token"],
+        response_types=["code"],
+        scope=" ".join(scopes),
+    )
+    await provider.register_client(client)
+    raw_code = provider.issue_authorization_code(
+        client_id="control-client",
+        redirect_uri=REDIRECT,
+        code_challenge=CHALLENGE,
+        resource=RESOURCE,
+        identity_id="identity",
+        miniserver_id="miniserver",
+        scopes=scopes,
+    )
+    code = await provider.load_authorization_code(client, raw_code)
+    assert code is not None
+
+    first = await provider.exchange_authorization_code(client, code)
+    access = await provider.load_access_token(first.access_token)
+    refresh = await provider.load_refresh_token(client, first.refresh_token or "")
+    assert access is not None and access.scopes == list(scopes)
+    assert refresh is not None
+
+    rotated = await provider.exchange_refresh_token(client, refresh, list(scopes))
+
+    assert rotated.scope == " ".join(scopes)
 
 
 def _client_info(client_id: str, *, grants: list[str] | None = None) -> OAuthClientInformationFull:

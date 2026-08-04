@@ -51,6 +51,10 @@ class LoxoneConnectionError(RuntimeError):
     """Sanitized error raised when the Miniserver cannot be used securely."""
 
 
+class LoxoneCommandRejected(LoxoneConnectionError):
+    """Raised when an authenticated Miniserver rejects a control command."""
+
+
 class _WebSocketIdleTimeout(TimeoutError):
     """No WebSocket header arrived within the configured idle interval."""
 
@@ -188,7 +192,7 @@ def _response_value(document: Mapping[str, Any]) -> Any:
         raise LoxoneConnectionError("Miniserver returned an invalid response")
     code = wrapper.get("Code", wrapper.get("code"))
     if str(code) != "200":
-        raise LoxoneConnectionError("Miniserver rejected the request")
+        raise LoxoneCommandRejected("Miniserver rejected the request")
     return wrapper.get("value")
 
 
@@ -585,6 +589,15 @@ class LoxoneWebSocketSession:
             # after invalidating the connection token. A normal close is the
             # successful terminal response in that case.
             return
+
+    async def operate_switch(self, action_uuid: str, action: str) -> None:
+        """Execute the only Phase 2 control command through this authenticated session."""
+        if not action_uuid or len(action_uuid) > 128 or action not in {"on", "off"}:
+            raise ValueError("invalid Switch operation")
+        await self._command(
+            f"jdev/sps/io/{quote(action_uuid, safe='')}/{action}",
+            encrypted=not self._secure_transport,
+        )
 
     async def state_events(self) -> AsyncIterator[tuple[StateEvent, ...]]:
         await self._command("jdev/sps/enablebinstatusupdate")

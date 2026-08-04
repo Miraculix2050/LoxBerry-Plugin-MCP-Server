@@ -25,7 +25,7 @@ def test_plugin_identity_and_platform_contract() -> None:
     assert parser["PLUGIN"]["NAME"] == "mcpserver"
     assert parser["PLUGIN"]["FOLDER"] == "mcpserver"
     assert parser["PLUGIN"]["TITLE"] == "LoxBerry MCP Server"
-    assert parser["PLUGIN"]["VERSION"] == "0.1.0-alpha.1"
+    assert parser["PLUGIN"]["VERSION"] == "0.2.0-alpha.1"
     assert parser["SYSTEM"]["LB_MINIMUM"] == "4.0.0"
     assert parser["SYSTEM"]["INTERFACE"] == "2.0"
     for name in ("release.cfg", "prerelease.cfg"):
@@ -214,7 +214,7 @@ def test_plugin_archive_verifier_accepts_builder_output(tmp_path: Path) -> None:
     for name, version in _locked_requirements(ROOT / "requirements" / "runtime-arm64.lock").items():
         wheel_name = name.replace("-", "_")
         (wheelhouse / f"{wheel_name}-{version}-py3-none-any.whl").write_bytes(b"wheel")
-    (wheelhouse / "loxberry_mcpserver-0.1.0a1-py3-none-any.whl").write_bytes(b"project")
+    (wheelhouse / "loxberry_mcpserver-0.2.0a1-py3-none-any.whl").write_bytes(b"project")
     output = tmp_path / "plugin.zip"
 
     subprocess.run(

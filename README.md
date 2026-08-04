@@ -12,10 +12,11 @@ Für jeden Assistenten sollte ein eigener Loxone-Benutzer mit den minimal erford
 
 ## Projektstatus
 
-Phase 1 ist abgeschlossen. `0.1.0-alpha.1` ist das installierbare Read-only-
-Prerelease mit nativem Pluginlayout, Dienst, responsiver Admin-UI, OAuth und
-sechs stabilen lesenden Tools. Die Referenzkombination wurde real auf LoxBerry
-4.0.0.14, Debian 13/aarch64 und einem Gen.-1-Miniserver abgenommen.
+Phase 1 ist abgeschlossen. Phase 2 ergänzt als nächstes optional genau ein
+kontrolliertes Schreibwerkzeug für Gen.-1-Controls vom Typ `Switch`. Es bleibt
+standardmäßig deaktiviert, akzeptiert ausschließlich `on` und `off` und benötigt
+den separat bestätigten Scope `loxone:control`. Die sechs stabilen lesenden
+Tools und bestehende Read-only-Sitzungen bleiben kompatibel.
 
 Bestätigte Kombinationen, Nachweise und bekannte Clientgrenzen stehen in der
 [Support-Matrix](docs/development/support-matrix.md) und im

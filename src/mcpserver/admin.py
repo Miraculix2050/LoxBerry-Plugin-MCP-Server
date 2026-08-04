@@ -14,6 +14,7 @@ from uuid import UUID
 
 from mcpserver import __version__
 from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore, LoxoneTokenStoreError
+from mcpserver.auth.provider import CONTROL_SCOPE
 from mcpserver.auth.store import AtomicJsonAuthStore
 from mcpserver.config import AtomicConfigStore, ConfigError, PluginConfig
 from mcpserver.loxone.client import LoxoneClient, LoxoneConnectionError, MiniserverEndpoint
@@ -85,6 +86,15 @@ def _save(payload: object) -> dict[str, Any]:
     config = PluginConfig.from_document(payload)
     store = _config_store()
     previous = store.load()
+    control_families: list[str] = []
+    if previous.loxone_control_enabled and not config.loxone_control_enabled:
+        document = _auth_store().snapshot()
+        control_families = [
+            family_id
+            for family_id, record in document["families"].items()
+            if CONTROL_SCOPE in str(record.get("scope", "")).split()
+            and not record.get("revoked", False)
+        ]
     store.save(config)
     try:
         _restart_service()
@@ -97,6 +107,12 @@ def _save(payload: object) -> dict[str, Any]:
         raise AdminError(
             "configuration was not applied; previous configuration restored"
         ) from apply_error
+    for family_id in control_families:
+        _revoke(
+            family_id,
+            endpoint=previous.loxone_endpoint,
+            timeout_seconds=previous.connection_timeout,
+        )
     return {"configuration": config.to_document(), "applied": True}
 
 
@@ -126,6 +142,7 @@ def _sessions() -> list[dict[str, Any]]:
                 "id": family_id,
                 "client": str(record.get("client_id", ""))[:12],
                 "identity": str(record.get("identity_id", ""))[:12],
+                "scopes": str(record.get("scope", "loxone:read")),
                 "expires_at": record.get("expires_at"),
                 "revoked": bool(record.get("revoked", False)),
             }
@@ -133,7 +150,12 @@ def _sessions() -> list[dict[str, Any]]:
     return sorted(result, key=lambda item: str(item["id"]))
 
 
-def _revoke(family_id: str | None) -> int:
+def _revoke(
+    family_id: str | None,
+    *,
+    endpoint: str | None = None,
+    timeout_seconds: float | None = None,
+) -> int:
     revoked: list[str] = []
     bindings: list[tuple[str, str, str]] = []
 
@@ -167,11 +189,13 @@ def _revoke(family_id: str | None) -> int:
     except LoxoneTokenStoreError:
         token_store = None
     config = _config_store().load()
-    if config.loxone_endpoint and token_store is not None:
+    selected_endpoint = endpoint if endpoint is not None else config.loxone_endpoint
+    selected_timeout = timeout_seconds if timeout_seconds is not None else config.connection_timeout
+    if selected_endpoint and token_store is not None:
         client = LoxoneClient(
-            MiniserverEndpoint.parse(config.loxone_endpoint),
+            MiniserverEndpoint.parse(selected_endpoint),
             client_uuid=_CLIENT_UUID,
-            timeout_seconds=config.connection_timeout,
+            timeout_seconds=selected_timeout,
         )
 
         async def kill_tokens() -> None:
