@@ -55,21 +55,22 @@ inspect connected MCP servers.
 
 ## Understand read and write access
 
-When Loxone control is enabled in the plugin, authentication immediately shows
-both scopes:
+When Loxone control is enabled in the plugin, the desktop app requests both
+scopes during authentication:
 
 ```text
 loxone:read loxone:control
 ```
 
-After approval, the six read tools and the narrowly limited Switch write tool
-are available. The write tool can only turn permitted, visible Gen. 1 Switches
-on or off. The authenticated Loxone user's permissions further restrict what is
-actually possible.
+The consent dialog shows required **Read access** and optional **Loxone
+control** as a checkbox. Only when control is selected and confirmed are the six
+read tools and the narrowly limited Switch write tool available. The write tool
+can only turn permitted, visible Gen. 1 Switches on or off. The authenticated
+Loxone user's permissions further restrict what is actually possible.
 
-Write access is not silently added later: it must appear on the browser consent
-page and be approved there. For read-only access, disable **Loxone control** in
-the plugin before authentication.
+Write access is not silently added later: it must be selected and approved on
+the browser consent page. For read-only access, leave the optional checkbox
+clear.
 
 If Loxone control is disabled later, the plugin revokes existing control
 sessions. Authenticate the desktop app again to obtain a read-only session.
@@ -82,8 +83,8 @@ sessions. Authenticate the desktop app again to obtain a read-only session.
   certificate warning first. Never disable certificate validation.
 - **Authenticate is missing:** Check that the server is saved and reachable,
   then open its entry again.
-- **Unexpected write access:** Cancel browser consent, disable **Loxone control**
-  in the plugin, and start authentication again.
+- **Unexpected write access:** Revoke the session and authenticate again without
+  selecting the optional control permission.
 - **Connection remains pending:** Restart the desktop app and then inspect the
   server through `/mcp`.
 

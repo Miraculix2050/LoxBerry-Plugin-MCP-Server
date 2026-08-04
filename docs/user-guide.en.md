@@ -36,6 +36,14 @@ additionally enable **Loxone control**. A new OAuth grant with `loxone:control`
 is then required. Disabling control revokes existing control sessions while
 read-only sessions remain valid. Control cannot be enabled for a Gen. 2/HTTPS
 target.
+
+The consistent OAuth dialog shows required read access and, when requested by
+the client and enabled in the plugin, optional Loxone control as a separate
+choice. If control is not selected, only `loxone:read` is granted. After
+confirmation, the LoxBerry hands off to the MCP client's registered callback.
+The final message shown there belongs to the client, such as Claude Code, not
+to the plugin.
+
 Claude users can find the required scope configuration under
 [Optional Loxone control](clients/claude-desktop.en.md#optional-loxone-control).
 

@@ -6,6 +6,8 @@ from pathlib import Path
 import pytest
 from starlette.testclient import TestClient
 
+from mcpserver.auth.provider import CONTROL_SCOPE, READ_SCOPE
+from mcpserver.config import PluginConfig
 from mcpserver.loxone.client import MiniserverEndpoint
 from mcpserver.server import create_server
 from mcpserver.settings import Phase0AuthSettings, ServerSettings
@@ -231,5 +233,34 @@ def test_oauth_routes_and_protected_resource_metadata_are_exact(tmp_path: Path) 
     assert resource.json()["authorization_servers"] == [
         "https://public.example/plugins/mcpserver/oauth"
     ]
+    assert resource.json()["scopes_supported"] == [READ_SCOPE]
     assert unauthenticated.status_code == 401
     assert all(response.status_code == 404 for response in aliases)
+
+
+def test_protected_resource_metadata_advertises_optional_control_scope(tmp_path: Path) -> None:
+    settings = ServerSettings(
+        host="127.0.0.1",
+        port=8765,
+        allowed_hosts=("testserver",),
+        allowed_origins=(),
+        phase0_auth=Phase0AuthSettings(
+            public_origin="https://public.example",
+            store_path=tmp_path / "sessions.json",
+            loxone_endpoint=MiniserverEndpoint.parse_gen1("http://192.168.255.254"),
+            plugin_config=PluginConfig(loxone_control_enabled=True),
+        ),
+    )
+    app = create_server(settings).streamable_http_app()
+    with TestClient(app, base_url="http://testserver") as client:
+        resource = client.get("/.well-known/oauth-protected-resource/plugins/mcpserver/mcp")
+        unauthenticated = client.post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+            headers={"Accept": "application/json, text/event-stream"},
+        )
+
+    assert resource.status_code == 200
+    assert resource.json()["scopes_supported"] == [READ_SCOPE, CONTROL_SCOPE]
+    assert unauthenticated.status_code == 401
+    assert "scope=" not in unauthenticated.headers["www-authenticate"]
