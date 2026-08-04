@@ -36,11 +36,13 @@ program without requiring you to locate its installation directory yourself.
 
    ```powershell
    node --version
-   npm --version
-   npx --version
+   npm.cmd --version
+   npx.cmd --version
    ```
 
-All three commands must print a version. On first use by Claude, `npx` downloads
+The `.cmd` form avoids possible PowerShell execution-policy errors involving the
+also installed `.ps1` launchers. All three commands must print a version. On
+first use by Claude, `npx` downloads
 the pinned `mcp-remote@0.1.38` release once from the npm registry into the local
 npm cache, which is normally reused for later starts.
 The direct Node method described below is intended for deliberately permanent

@@ -37,11 +37,13 @@ solches Programm, ohne dass du dessen Installationsordner selbst suchen musst.
 
    ```powershell
    node --version
-   npm --version
-   npx --version
+   npm.cmd --version
+   npx.cmd --version
    ```
 
-Alle drei Befehle müssen eine Versionsnummer ausgeben. Beim ersten Start durch
+Die `.cmd`-Form vermeidet dabei mögliche PowerShell-Execution-Policy-Fehler mit
+den ebenfalls installierten `.ps1`-Startdateien. Alle drei Befehle müssen eine
+Versionsnummer ausgeben. Beim ersten Start durch
 Claude lädt `npx` die festgelegte Version `mcp-remote@0.1.38` einmalig aus dem
 npm-Register in den lokalen npm-Cache. Danach kann diese Version aus dem Cache
 erneut verwendet werden. Für eine bewusst dauerhaft offline gehaltene
