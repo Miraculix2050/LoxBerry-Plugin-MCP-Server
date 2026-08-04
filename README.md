@@ -36,6 +36,7 @@ Bestätigte Kombinationen, Nachweise und bekannte Clientgrenzen stehen in der
 - [Änderungsgetriebene Teststrategie](docs/development/test-strategy.md)
 - [Entwicklungs- und Testautomatisierung](docs/development/automation.md)
 - [Support-Matrix](docs/development/support-matrix.md)
+- [ADR: Integrierter MCP Tool Explorer](docs/development/adr/0004-integrated-tool-explorer.md)
 - [Recherche-Ergebnisse](docs/research/research-results.md)
 - [Beitragen und Git-Workflow](CONTRIBUTING.md)
 

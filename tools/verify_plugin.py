@@ -27,7 +27,11 @@ _REQUIRED: Final = {
     "config/apache/mcpserver.conf",
     "config/systemd/loxberry-mcpserver.service.in",
     "webfrontend/htmlauth/index.cgi",
+    "webfrontend/htmlauth/explorer.cgi",
+    "webfrontend/htmlauth/explorer_callback.cgi",
+    "webfrontend/htmlauth/explorer.js",
     "templates/index.html",
+    "templates/explorer.html",
     "templates/lang/language_de.ini",
     "templates/lang/language_en.ini",
 }
@@ -41,8 +45,21 @@ _EXECUTABLES: Final = {
     "bin/healthcheck",
     "bin/mcpserver-admin",
     "webfrontend/htmlauth/index.cgi",
+    "webfrontend/htmlauth/explorer.cgi",
+    "webfrontend/htmlauth/explorer_callback.cgi",
 }
-_TEXT_SUFFIXES: Final = {".cfg", ".cgi", ".conf", ".html", ".ini", ".json", ".lock", ".sh", ".svg"}
+_TEXT_SUFFIXES: Final = {
+    ".cfg",
+    ".cgi",
+    ".conf",
+    ".html",
+    ".ini",
+    ".js",
+    ".json",
+    ".lock",
+    ".sh",
+    ".svg",
+}
 _TEXT_NAMES: Final = {"bin/healthcheck", "bin/mcpserver-admin"}
 _REQUIRED_PROJECT_WHEEL_ENTRIES: Final = {
     "mcpserver/skills/using-loxberry-mcp/SKILL.md",

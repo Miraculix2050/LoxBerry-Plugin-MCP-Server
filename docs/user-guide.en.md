@@ -86,6 +86,31 @@ Claude users can find the required scope configuration under
 Save, connection test and session revocation remain usable without JavaScript.
 With JavaScript, status, test and revocation update without a page navigation.
 
+## MCP Tool Explorer
+
+**Open MCP Tool Explorer** opens a separate, admin-only browser page for the
+local MCP endpoint. It signs in with a Loxone user like every other MCP client
+and does not inherit permissions from the LoxBerry admin session.
+
+After sign-in, the explorer lists the currently published tools with their
+description, schema and read/write classification. Arguments can be edited in
+an automatically generated form or its synchronized JSON representation.
+Responses are shown as a selectable tree and raw JSON; a selected value can be
+reused only in a schema-compatible parameter of a new call.
+
+The MCP transcript shows sanitized JSON-RPC messages, status and duration.
+Authorization headers, OAuth values and secret-shaped arguments are never shown.
+Tokens, drafts, results and the history bounded to 50 calls remain in tab memory
+and disappear on reload or close.
+**Disconnect and revoke** also clears them immediately.
+
+The explorer requests only `loxone:read` by default. The control option appears
+only when Loxone control is globally enabled and requires fresh consent for
+`loxone:control`. Every state-changing call displays its tool and arguments
+again and requires confirmation immediately before dispatch. **Disconnect and
+revoke** ends the explorer session; after a browser crash it can still be revoked
+under **Clients and sessions**.
+
 ## Scope and operation
 
 The alpha publishes six documented Loxone data tools, the read-only
