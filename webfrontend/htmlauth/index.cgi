@@ -6,6 +6,7 @@ use CGI;
 use HTML::Template;
 use IPC::Open3;
 use JSON::PP qw(decode_json encode_json);
+use POSIX qw(strftime);
 use Symbol qw(gensym);
 use LoxBerry::System;
 use LoxBerry::Web;
@@ -137,10 +138,28 @@ my $template = HTML::Template->new_scalar_ref(
 );
 my %L = LoxBerry::System::readlanguage($template, 'language.ini');
 
+use constant MAX_EXPIRY_EPOCH => 4_102_444_799;
+
+sub format_expiry {
+    my ($value) = @_;
+    my $raw = defined($value) ? "$value" : '';
+    return $raw if $raw !~ /\A(?:0|[1-9][0-9]*)\z/
+        || length($raw) > 10
+        || 0 + $raw > MAX_EXPIRY_EPOCH;
+    my $formatted = eval {
+        strftime('%Y-%m-%d %H:%M:%S %Z', localtime(0 + $raw));
+    };
+    return defined($formatted) && length($formatted) ? $formatted : $raw;
+}
+
 my $page_result = admin_call('page_state', {});
 my $page_state = $page_result->{ok} ? $page_result->{data} : {};
 my $config = $page_state->{configuration} // {};
 my $sessions = $page_state->{sessions} // [];
+for my $session (@$sessions) {
+    next if ref($session) ne 'HASH';
+    $session->{expires_display} = format_expiry($session->{expires_at});
+}
 $config->{server} = {} if ref($config->{server}) ne 'HASH';
 $config->{loxone} = {} if ref($config->{loxone}) ne 'HASH';
 $config->{tools} = {} if ref($config->{tools}) ne 'HASH';
