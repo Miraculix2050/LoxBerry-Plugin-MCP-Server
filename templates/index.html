@@ -4,7 +4,8 @@
   .mcp-card { min-width: 0; padding: 1rem; border: 1px solid #c9cdd2; border-radius: .4rem; background: #fff; }
   .mcp-form { display: grid; gap: .85rem; }
   .mcp-field { display: grid; gap: .3rem; min-width: 0; }
-  .mcp-field input { box-sizing: border-box; width: 100%; max-width: 100%; min-height: 2.75rem; }
+  .mcp-field input, .mcp-field select { box-sizing: border-box; width: 100%; max-width: 100%; min-height: 2.75rem; }
+  .mcp-help { margin: 0; color: #4b5563; }
   .mcp-actions { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; }
   .mcp-actions button { min-height: 2.75rem; max-width: 100%; }
   .mcp-status { padding: .65rem; border-left: .3rem solid #6b7280; background: #f3f4f6; }
@@ -39,7 +40,9 @@
     <form class="mcp-form" method="post" action="index.cgi" data-ajax="save_config">
       <input type="hidden" name="action" value="save_config">
       <label class="mcp-field"><span><TMPL_VAR SETUP.PUBLIC_ORIGIN></span><input name="public_origin" type="url" value="<TMPL_VAR PUBLIC_ORIGIN ESCAPE=HTML>" placeholder="https://loxberry.local" required></label>
-      <label class="mcp-field"><span><TMPL_VAR SETUP.ENDPOINT></span><input name="endpoint" type="url" value="<TMPL_VAR ENDPOINT ESCAPE=HTML>" placeholder="http://192.168.1.20" required></label>
+      <label class="mcp-field"><span><TMPL_VAR SETUP.MINISERVER_SOURCE></span><select id="miniserver-select" name="miniserver_endpoint"><option value="" <TMPL_IF MANUAL_ENDPOINT>selected</TMPL_IF>><TMPL_VAR SETUP.MANUAL_OPTION></option><TMPL_LOOP MINISERVERS><option value="<TMPL_VAR endpoint ESCAPE=HTML>" <TMPL_IF selected>selected</TMPL_IF>><TMPL_VAR label ESCAPE=HTML></option></TMPL_LOOP></select></label>
+      <label class="mcp-field"><span><TMPL_VAR SETUP.ENDPOINT></span><input id="miniserver-endpoint" name="endpoint" type="url" value="<TMPL_VAR ENDPOINT ESCAPE=HTML>" placeholder="http://192.168.1.20" aria-describedby="endpoint-help"></label>
+      <p id="endpoint-help" class="mcp-help"><TMPL_VAR SETUP.ENDPOINT_HELP></p>
       <div class="mcp-grid">
         <label class="mcp-field"><span><TMPL_VAR SETUP.TIMEOUT></span><input name="connection_timeout" type="number" min="1" max="60" value="<TMPL_VAR CONNECTION_TIMEOUT ESCAPE=HTML>"></label>
         <label class="mcp-field"><span><TMPL_VAR SETUP.RATE></span><input name="requests_per_minute" type="number" min="1" max="600" value="<TMPL_VAR REQUESTS_PER_MINUTE ESCAPE=HTML>"></label>
@@ -99,6 +102,20 @@
 <script>
 (() => {
   const status = document.getElementById('ajax-status');
+  const miniserverSelect = document.getElementById('miniserver-select');
+  const miniserverEndpoint = document.getElementById('miniserver-endpoint');
+  const testEndpoint = document.querySelector('form[data-ajax="test_connection"] input[name="endpoint"]');
+  const syncTestEndpoint = () => { testEndpoint.value = miniserverEndpoint.value; };
+  const syncMiniserverSelection = () => {
+    const selectedEndpoint = miniserverSelect.value;
+    if (selectedEndpoint) miniserverEndpoint.value = selectedEndpoint;
+    miniserverEndpoint.readOnly = Boolean(selectedEndpoint);
+    miniserverEndpoint.required = !selectedEndpoint;
+    syncTestEndpoint();
+  };
+  miniserverSelect.addEventListener('change', syncMiniserverSelection);
+  miniserverEndpoint.addEventListener('input', syncTestEndpoint);
+  syncMiniserverSelection();
   const expiryFormatter = new Intl.DateTimeFormat(document.documentElement.lang || undefined, {
     dateStyle: 'medium',
     timeStyle: 'medium',
@@ -165,7 +182,11 @@
         hideSuccess(status);
         if ('service_active' in result.data) document.getElementById('service-state').textContent = result.data.service_active ? '<TMPL_VAR STATUS.RUNNING ESCAPE=JS>' : '<TMPL_VAR STATUS.STOPPED ESCAPE=JS>';
         if (Array.isArray(result.data.sessions)) updateSessions(result.data.sessions);
-        if (form.dataset.ajax === 'save_config') document.querySelector('form[data-ajax="test_connection"] input[name="endpoint"]').value = result.data.configuration.loxone.endpoint;
+        if (form.dataset.ajax === 'save_config') {
+          const savedEndpoint = result.data.configuration.loxone.endpoint;
+          miniserverEndpoint.value = savedEndpoint;
+          syncTestEndpoint();
+        }
       } catch (error) {
         status.dataset.kind = 'error';
         if (error instanceof DOMException && error.name === 'AbortError') status.textContent = '<TMPL_VAR AJAX.TIMEOUT ESCAPE=JS>';
