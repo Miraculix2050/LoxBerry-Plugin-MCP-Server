@@ -1,14 +1,19 @@
 from __future__ import annotations
 
 import configparser
+import hashlib
+import os
 import shutil
 import subprocess
+import sys
 import zipfile
 from pathlib import Path
 
 import pytest
 
-from tools.build_plugin import _EXECUTABLES, _add
+from tools.build_plugin import _EXECUTABLES, _add, _locked_requirements
+from tools.build_release_candidate import _copy_runtime_wheels, _publish
+from tools.verify_plugin import PackageVerificationError, verify_archive
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -186,3 +191,88 @@ def test_package_builder_emits_unix_executable_modes(tmp_path: Path) -> None:
         assert executable.external_attr >> 16 & 0o777 == 0o755
         assert regular.external_attr >> 16 & 0o777 == 0o644
         assert "bin/healthcheck" in _EXECUTABLES
+
+
+def test_package_builder_normalizes_installed_text_to_lf(tmp_path: Path) -> None:
+    source = tmp_path / "runtime.lock"
+    source.write_bytes(b"first\r\nsecond\r\n")
+    output = tmp_path / "test.zip"
+
+    with zipfile.ZipFile(output, "w") as archive:
+        _add(archive, source, "bin/runtime-arm64.lock")
+
+    with zipfile.ZipFile(output) as archive:
+        assert archive.read("bin/runtime-arm64.lock") == b"first\nsecond\n"
+
+
+def test_plugin_archive_verifier_accepts_builder_output(tmp_path: Path) -> None:
+    wheelhouse = tmp_path / "wheelhouse"
+    wheelhouse.mkdir()
+    for name, version in _locked_requirements(ROOT / "requirements" / "runtime-arm64.lock").items():
+        wheel_name = name.replace("-", "_")
+        (wheelhouse / f"{wheel_name}-{version}-py3-none-any.whl").write_bytes(b"wheel")
+    (wheelhouse / "loxberry_mcpserver-0.1.0a1-py3-none-any.whl").write_bytes(b"project")
+    output = tmp_path / "plugin.zip"
+
+    subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "tools" / "build_plugin.py"),
+            "--wheelhouse",
+            str(wheelhouse),
+            "--output",
+            str(output),
+        ],
+        check=True,
+        cwd=ROOT,
+    )
+
+    assert verify_archive(output) == hashlib.sha256(output.read_bytes()).hexdigest()
+
+
+def test_release_helpers_exclude_stale_project_wheel_and_refuse_overwrite(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source"
+    destination = tmp_path / "destination"
+    source.mkdir()
+    destination.mkdir()
+    (source / "dependency-1.0-py3-none-any.whl").write_bytes(b"dependency")
+    (source / "loxberry_mcpserver-0.1.0a1-py3-none-any.whl").write_bytes(b"stale")
+
+    _copy_runtime_wheels(source, destination)
+
+    assert [item.name for item in destination.iterdir()] == ["dependency-1.0-py3-none-any.whl"]
+    candidate = tmp_path / "candidate.zip"
+    output = tmp_path / "published.zip"
+    candidate.write_bytes(b"new")
+    output.write_bytes(b"old")
+    with pytest.raises(RuntimeError, match="different content"):
+        _publish(candidate, output, hashlib.sha256(candidate.read_bytes()).hexdigest())
+
+
+def test_mcp_client_probe_has_valid_powershell_syntax() -> None:
+    pwsh = shutil.which("pwsh")
+    if pwsh is None:
+        pytest.skip("PowerShell is unavailable")
+    script = ROOT / "tools" / "test_mcp_client.ps1"
+    command = (
+        "$errors=$null; [void][System.Management.Automation.Language.Parser]::"
+        "ParseFile($env:MCPSERVER_POWERSHELL_TEST_SCRIPT,[ref]$null,[ref]$errors); "
+        "if($errors.Count){exit 1}"
+    )
+    subprocess.run(
+        [pwsh, "-NoProfile", "-Command", command],
+        check=True,
+        env={**os.environ, "MCPSERVER_POWERSHELL_TEST_SCRIPT": str(script)},
+    )
+
+
+def test_plugin_archive_verifier_rejects_checksum_mismatch(tmp_path: Path) -> None:
+    archive = tmp_path / "plugin.zip"
+    with zipfile.ZipFile(archive, "w") as package:
+        package.writestr("plugin.cfg", b"invalid")
+    archive.with_suffix(".zip.sha256").write_text(f"{'0' * 64}  {archive.name}\n", encoding="ascii")
+
+    with pytest.raises(PackageVerificationError, match="checksum"):
+        verify_archive(archive)

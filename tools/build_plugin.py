@@ -34,6 +34,20 @@ _EXECUTABLES: Final = {
     "bin/mcpserver-admin",
     "webfrontend/htmlauth/index.cgi",
 }
+_TEXT_SUFFIXES: Final = {
+    ".cfg",
+    ".cgi",
+    ".conf",
+    ".html",
+    ".ini",
+    ".json",
+    ".lock",
+    ".md",
+    ".sh",
+    ".svg",
+    ".txt",
+}
+_TEXT_NAMES: Final = {".gitattributes", "LICENSE", "bin/healthcheck", "bin/mcpserver-admin"}
 
 
 def _locked_requirements(lock: Path) -> dict[str, str]:
@@ -72,7 +86,11 @@ def _add(archive: zipfile.ZipFile, source: Path, target: str) -> None:
     info.compress_type = zipfile.ZIP_DEFLATED
     mode = 0o755 if target.replace("\\", "/") in _EXECUTABLES else 0o644
     info.external_attr = (mode | 0o100000) << 16
-    archive.writestr(info, source.read_bytes())
+    content = source.read_bytes()
+    target_path = Path(target)
+    if target_path.suffix.lower() in _TEXT_SUFFIXES or target.replace("\\", "/") in _TEXT_NAMES:
+        content = content.replace(b"\r\n", b"\n")
+    archive.writestr(info, content)
 
 
 def main() -> int:
