@@ -83,7 +83,11 @@ def test_v4_package_manifest_is_present() -> None:
         "bin/healthcheck",
         "icons/icon.svg",
         "webfrontend/htmlauth/index.cgi",
+        "webfrontend/htmlauth/explorer.cgi",
+        "webfrontend/htmlauth/explorer_callback.cgi",
+        "webfrontend/htmlauth/explorer.js",
         "templates/index.html",
+        "templates/explorer.html",
         "templates/lang/language_de.ini",
         "templates/lang/language_en.ini",
     ]
@@ -172,15 +176,16 @@ def test_perl_admin_cgi_has_valid_syntax() -> None:
     perl = shutil.which("perl")
     if perl is None:
         pytest.skip("perl is unavailable")
-    subprocess.run(
-        [
-            perl,
-            f"-I{ROOT / 'tests' / 'perl_stubs'}",
-            "-c",
-            str(ROOT / "webfrontend/htmlauth/index.cgi"),
-        ],
-        check=True,
-    )
+    for name in ("index.cgi", "explorer.cgi", "explorer_callback.cgi"):
+        subprocess.run(
+            [
+                perl,
+                f"-I{ROOT / 'tests' / 'perl_stubs'}",
+                "-c",
+                str(ROOT / "webfrontend/htmlauth" / name),
+            ],
+            check=True,
+        )
 
 
 def test_language_files_have_matching_contracts() -> None:

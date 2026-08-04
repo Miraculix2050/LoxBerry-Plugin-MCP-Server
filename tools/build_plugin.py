@@ -33,6 +33,8 @@ _EXECUTABLES: Final = {
     "bin/healthcheck",
     "bin/mcpserver-admin",
     "webfrontend/htmlauth/index.cgi",
+    "webfrontend/htmlauth/explorer.cgi",
+    "webfrontend/htmlauth/explorer_callback.cgi",
 }
 _TEXT_SUFFIXES: Final = {
     ".cfg",
@@ -41,6 +43,7 @@ _TEXT_SUFFIXES: Final = {
     ".html",
     ".ini",
     ".json",
+    ".js",
     ".lock",
     ".md",
     ".sh",

@@ -89,6 +89,32 @@ Speichern, Verbindungstest und Sitzungswiderruf funktionieren auch ohne
 JavaScript. Mit JavaScript werden Status, Test und Widerruf ohne Seitenwechsel
 aktualisiert.
 
+## MCP Tool Explorer
+
+Über **MCP Tool Explorer öffnen** startet eine separate, nur administrativ
+zugängliche Browserseite für den lokalen MCP-Endpunkt. Sie meldet sich wie jeder
+andere MCP-Client mit einem Loxone-Benutzer an und übernimmt keine Rechte aus der
+LoxBerry-Admin-Sitzung.
+
+Nach der Anmeldung zeigt der Explorer die aktuell veröffentlichten Tools samt
+Beschreibung, Schema und Read-/Write-Kennzeichnung. Argumente können entweder
+als automatisch erzeugtes Formular oder als synchronisiertes JSON bearbeitet
+werden. Antworten erscheinen als auswählbarer Baum und als Roh-JSON; ausgewählte
+Werte lassen sich nur in schemakompatible Parameter eines neuen Aufrufs übernehmen.
+
+Der MCP-Transkriptbereich zeigt bereinigte JSON-RPC-Nachrichten, Status und Dauer.
+Authorization-Header, OAuth-Werte und als geheim erkannte Argumente werden nicht
+angezeigt. Tokens, Entwürfe, Ergebnisse und der auf 50 Aufrufe begrenzte Verlauf
+bleiben im Speicher des Tabs und verschwinden beim Neuladen oder Schließen.
+**Trennen und widerrufen** löscht sie ebenfalls sofort.
+
+Standardmäßig fordert der Explorer ausschließlich `loxone:read` an. Die Option
+für Steuerung erscheint nur bei global aktivierter Loxone-Steuerung und erfordert
+einen neuen Consent mit `loxone:control`. Jeder verändernde Aufruf zeigt direkt
+vor dem Senden noch einmal Werkzeug und Argumente und muss bestätigt werden.
+**Trennen und widerrufen** beendet die Explorer-Sitzung; nach einem Browserabsturz
+kann sie weiterhin in **Clients und Sitzungen** widerrufen werden.
+
 ## Umfang und Betrieb
 
 Die Alpha veröffentlicht sechs dokumentierte Loxone-Datentools, das lesende

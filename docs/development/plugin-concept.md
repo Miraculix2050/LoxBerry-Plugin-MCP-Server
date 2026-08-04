@@ -151,7 +151,8 @@ mcpserver-Dienst (Benutzer loxberry)
    └── Konfiguration, Sessions und begrenzte Caches
 
 LoxBerry Admin-UI (htmlauth)
-   └── Konfiguration, Scopes, Sessions, Status und Logs
+   ├── Konfiguration, Scopes, Sessions, Status und Logs
+   └── lokaler MCP Tool Explorer als eigenständiger OAuth-Client
 ```
 
 ### Komponenten
@@ -166,7 +167,7 @@ LoxBerry Admin-UI (htmlauth)
 | Control Registry | erlaubte Aktionen und Wertebereiche pro Loxone-Control-Typ |
 | LoxBerry-Adapter | ausschließlich freigegebene, semantische Diagnoseoperationen |
 | Audit | sicherheitsrelevante Ereignisse ohne Secrets oder unnötige Zustandswerte |
-| Admin-UI | lokale Konfiguration und Betriebsdiagnose über LoxBerry `htmlauth` |
+| Admin-UI | lokale Konfiguration, Betriebsdiagnose und ein flüchtiger Tool Explorer für den festen lokalen MCP-Endpunkt über LoxBerry `htmlauth` |
 
 ## 7. Netzwerk und Veröffentlichung
 
