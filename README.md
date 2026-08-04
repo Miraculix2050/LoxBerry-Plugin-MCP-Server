@@ -1,24 +1,25 @@
 # LoxBerry MCP Server
 
-Das McpServer-Plugin betreibt einen [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)-Server direkt auf dem LoxBerry. KI-Assistenten und Agenten können damit den Zustand einer Loxone-Miniserver-Installation abfragen und Befehle an Steuerungen senden. Dabei verwendet das Plugin die vorhandenen Räume, Kategorien und Steuerungsnamen – ohne eigenen Cloud-Dienst.
+Das McpServer-Plugin betreibt einen [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)-Server direkt auf dem LoxBerry. Die aktuelle Alpha erlaubt KI-Assistenten und Agenten ausschließlich, den Zustand einer Loxone-Miniserver-Installation zu lesen. Dabei verwendet das Plugin die vorhandenen Räume, Kategorien und Steuerungsnamen – ohne eigenen Cloud-Dienst.
 
-Zusätzlich stellt der MCP-Server ausgewählte Informationen und Funktionen der lokalen LoxBerry-Installation für KI-Assistenten und Agenten bereit.
+Schreibaktionen und LoxBerry-Werkzeuge sind nicht Bestandteil dieser Version.
 
 ## Sicherheit und Berechtigungen
 
-Der Zugriff auf Loxone-Funktionen ist durch den Loxone-Login geschützt. Ein verbindender Assistent muss sich mit einem Loxone-Benutzerkonto anmelden und kann nur die Elemente sehen und bedienen, für die dieses Konto berechtigt ist.
+Der Zugriff auf Loxone-Funktionen ist durch den Loxone-Login geschützt. Ein verbindender Assistent muss sich mit einem Loxone-Benutzerkonto anmelden und kann nur die Elemente lesen, für die dieses Konto berechtigt ist.
 
 Für jeden Assistenten sollte ein eigener Loxone-Benutzer mit den minimal erforderlichen Rechten angelegt werden. Zugangsdaten und andere Geheimnisse dürfen nicht im Repository gespeichert werden.
 
 ## Projektstatus
 
-Phase 0 ist abgeschlossen. Runtime, Apache-Transport, OAuth-Server sowie die
-Gen.-1-Loxone-/WebSocket-Anbindung sind auf der dokumentierten Referenzplattform
-bestätigt. Der nächste Meilenstein ist Phase 1, die lokale Read-only Alpha mit
-Pluginlayout, Dienst, Admin-UI und den ersten stabilen lesenden Tools.
+Phase 1 ist abgeschlossen. `0.1.0-alpha.1` ist das installierbare Read-only-
+Prerelease mit nativem Pluginlayout, Dienst, responsiver Admin-UI, OAuth und
+sechs stabilen lesenden Tools. Die Referenzkombination wurde real auf LoxBerry
+4.0.0.14, Debian 13/aarch64 und einem Gen.-1-Miniserver abgenommen.
 
-Es gibt noch kein installierbares Testpaket. Die bestätigten Kombinationen und
-bekannten Clientgrenzen stehen in der [Support-Matrix](docs/development/support-matrix.md).
+Bestätigte Kombinationen, Nachweise und bekannte Clientgrenzen stehen in der
+[Support-Matrix](docs/development/support-matrix.md) und im
+[Phase-1-Abnahmebericht](docs/development/phase-1-acceptance.md).
 
 ## Entwicklung
 

@@ -153,6 +153,9 @@ def test_ui_is_nojqm_responsive_and_progressively_enhanced() -> None:
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
 
     assert "'nojqm'" in cgi
+    assert "/\\A(?:de|en)\\z/" in cgi
+    assert "$LoxBerry::System::lang = $q->{lang}" in cgi
+    assert "$LoxBerry::Web::lang = $q->{lang}" in cgi
     assert "ajax-generic.php" not in cgi + template
     assert 'method="post"' in template
     assert "fetch('index.cgi'" in template
