@@ -97,6 +97,8 @@ description, schema and read/write classification. Arguments can be edited in
 an automatically generated form or its synchronized JSON representation.
 Responses are shown as a selectable tree and raw JSON; a selected value can be
 reused only in a schema-compatible parameter of a new call.
+A single state UUID reused with `loxone_get_states` is automatically wrapped in
+a one-item list.
 
 The MCP transcript shows sanitized JSON-RPC messages, status and duration.
 Authorization headers, OAuth values and secret-shaped arguments are never shown.
@@ -104,8 +106,8 @@ Tokens, drafts, results and the history bounded to 50 calls remain in tab memory
 and disappear on reload or close.
 **Disconnect and revoke** also clears them immediately.
 
-The explorer requests only `loxone:read` by default. The control option appears
-only when Loxone control is globally enabled and requires fresh consent for
+The permissions dropdown defaults to **Read only**. **Read and control** is
+selectable only when Loxone control is globally enabled and requires fresh consent for
 `loxone:control`. Every state-changing call displays its tool and arguments
 again and requires confirmation immediately before dispatch. **Disconnect and
 revoke** ends the explorer session; after a browser crash it can still be revoked

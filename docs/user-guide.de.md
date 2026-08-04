@@ -101,6 +101,8 @@ Beschreibung, Schema und Read-/Write-Kennzeichnung. Argumente können entweder
 als automatisch erzeugtes Formular oder als synchronisiertes JSON bearbeitet
 werden. Antworten erscheinen als auswählbarer Baum und als Roh-JSON; ausgewählte
 Werte lassen sich nur in schemakompatible Parameter eines neuen Aufrufs übernehmen.
+Eine einzelne State-UUID wird bei der Übernahme in `loxone_get_states`
+automatisch als Liste mit einem Eintrag eingesetzt.
 
 Der MCP-Transkriptbereich zeigt bereinigte JSON-RPC-Nachrichten, Status und Dauer.
 Authorization-Header, OAuth-Werte und als geheim erkannte Argumente werden nicht
@@ -108,8 +110,8 @@ angezeigt. Tokens, Entwürfe, Ergebnisse und der auf 50 Aufrufe begrenzte Verlau
 bleiben im Speicher des Tabs und verschwinden beim Neuladen oder Schließen.
 **Trennen und widerrufen** löscht sie ebenfalls sofort.
 
-Standardmäßig fordert der Explorer ausschließlich `loxone:read` an. Die Option
-für Steuerung erscheint nur bei global aktivierter Loxone-Steuerung und erfordert
+Im Berechtigungs-Dropdown ist **Nur lesen** vorausgewählt. **Lesen und steuern**
+ist nur bei global aktivierter Loxone-Steuerung auswählbar und erfordert
 einen neuen Consent mit `loxone:control`. Jeder verändernde Aufruf zeigt direkt
 vor dem Senden noch einmal Werkzeug und Argumente und muss bestätigt werden.
 **Trennen und widerrufen** beendet die Explorer-Sitzung; nach einem Browserabsturz

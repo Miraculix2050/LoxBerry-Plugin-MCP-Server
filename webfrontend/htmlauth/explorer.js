@@ -191,10 +191,22 @@
       for (const [name, property] of Object.entries(schema.properties || {})) {
         if (schemaSupportedForReuse(property, schema) && validateValue(value, property, schema).length === 0) {
           result.push({tool: tool.name, field: name});
+        } else {
+          const effective = effectiveSchema(property, schema);
+          if (schemaType(property, schema) === 'array' && effective.items &&
+            schemaSupportedForReuse(effective.items, schema) &&
+            validateValue(value, effective.items, schema).length === 0 &&
+            validateValue([value], property, schema).length === 0) {
+            result.push({tool: tool.name, field: name, mode: 'wrap-array'});
+          }
         }
       }
     }
     return result;
+  }
+
+  function valueForTransfer(value, mode) {
+    return mode === 'wrap-array' ? [clone(value)] : clone(value);
   }
 
   function schemaSupportedForReuse(schema, rootSchema, seen) {
@@ -311,6 +323,13 @@
     return toggleLabel;
   }
 
+  function applyControlAvailability(state, control, controlOption, controlNote, available) {
+    state.controlAvailable = available;
+    controlOption.disabled = !available;
+    if (!available && control.value === 'control') control.value = 'read';
+    controlNote.hidden = available;
+  }
+
   return {
     PROTOCOL_VERSION,
     MAX_CALL_HISTORY,
@@ -327,6 +346,7 @@
     validateArguments,
     redactArguments,
     compatibleTargets,
+    valueForTransfer,
     schemaSupportedForReuse,
     formatPath,
     base64Url,
@@ -340,6 +360,7 @@
     fieldControlId,
     createFieldLabel,
     createOptionalToggle,
+    applyControlAvailability,
   };
 });
 
@@ -355,7 +376,8 @@
     status: document.getElementById('explorer-status'),
     connect: document.getElementById('explorer-connect'),
     disconnect: document.getElementById('explorer-disconnect'),
-    control: document.getElementById('explorer-control-scope'),
+    control: document.getElementById('explorer-access-mode'),
+    controlOption: document.getElementById('explorer-control-option'),
     controlNote: document.getElementById('explorer-control-note'),
     tools: document.getElementById('explorer-tools'),
     history: document.getElementById('explorer-history'),
@@ -414,6 +436,16 @@
   function showError(error, fallback) {
     const message = error instanceof Error && error.message ? error.message : fallback;
     setStatus(message, 'error');
+  }
+
+  function setControlAvailability(available) {
+    core.applyControlAvailability(
+      state,
+      elements.control,
+      elements.controlOption,
+      elements.controlNote,
+      available,
+    );
   }
 
   async function sha256(value) {
@@ -547,9 +579,7 @@
   async function authorize(withControl) {
     const discovered = await discover();
     const supported = new Set(discovered.resourceMetadata.scopes_supported || []);
-    state.controlAvailable = supported.has('loxone:control');
-    elements.control.disabled = !state.controlAvailable;
-    elements.controlNote.hidden = state.controlAvailable;
+    setControlAvailability(supported.has('loxone:control'));
     if (withControl && !state.controlAvailable) throw new Error(label('controlRequired'));
     const scope = withControl ? 'loxone:read loxone:control' : 'loxone:read';
     const redirectUri = new URL('explorer_callback.cgi', window.location.href).href;
@@ -702,7 +732,7 @@
     const connected = Boolean(state.oauth);
     elements.connect.disabled = connected;
     elements.disconnect.disabled = !connected;
-    elements.control.disabled = connected || !state.controlAvailable;
+    elements.control.disabled = connected;
     elements.run.disabled = !connected || !state.selectedTool;
     setStatus(connected ? label('connected') : label('disconnected'), connected ? 'success' : '');
   }
@@ -990,7 +1020,10 @@
     [...new Set(targets.map((item) => item.tool))].forEach((name) => elements.transferTool.append(element('option', {value: name, text: name})));
     const updateFields = () => {
       elements.transferField.replaceChildren();
-      targets.filter((item) => item.tool === elements.transferTool.value).forEach((item) => elements.transferField.append(element('option', {value: item.field, text: item.field})));
+      targets.filter((item) => item.tool === elements.transferTool.value).forEach((item) => {
+        const text = item.mode === 'wrap-array' ? `${item.field} (${label('asList')})` : item.field;
+        elements.transferField.append(element('option', {value: item.field, text, 'data-mode': item.mode || 'direct'}));
+      });
       const empty = !elements.transferField.options.length;
       elements.transferEmpty.hidden = !empty;
       elements.transferApply.disabled = empty;
@@ -1004,7 +1037,11 @@
     const tool = state.tools.find((item) => item.name === elements.transferTool.value);
     if (!tool || !elements.transferField.value) return;
     const draft = core.defaultArguments(tool.inputSchema || {});
-    draft[elements.transferField.value] = core.clone(state.transferValue);
+    const selected = elements.transferField.options[elements.transferField.selectedIndex];
+    draft[elements.transferField.value] = core.valueForTransfer(
+      state.transferValue,
+      selected.dataset.mode,
+    );
     selectTool(tool.name, draft);
     window.scrollTo({top: elements.summary.getBoundingClientRect().top + window.scrollY - 16, behavior: 'smooth'});
   }
@@ -1034,7 +1071,7 @@
     setBusy(true);
     setStatus(label('working'), 'working');
     try {
-      state.oauth = await authorize(elements.control.checked);
+      state.oauth = await authorize(elements.control.value === 'control');
       await initializeMcp();
       renderAll();
       if (state.tools.length) selectTool(state.tools[0].name);
@@ -1070,8 +1107,6 @@
 
   renderAll();
   discover().then(({resourceMetadata}) => {
-    state.controlAvailable = (resourceMetadata.scopes_supported || []).includes('loxone:control');
-    elements.control.disabled = !state.controlAvailable;
-    elements.controlNote.hidden = state.controlAvailable;
-  }).catch(() => { /* Connection action presents the useful error. */ });
+    setControlAvailability((resourceMetadata.scopes_supported || []).includes('loxone:control'));
+  }).catch(() => { setControlAvailability(false); });
 })();

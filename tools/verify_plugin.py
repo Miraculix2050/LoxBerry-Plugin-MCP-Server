@@ -104,12 +104,34 @@ def _verify_checksum(archive: Path, digest: str) -> None:
         raise PackageVerificationError("checksum sidecar does not match the archive")
 
 
-def _verify_project_wheel(content: bytes) -> None:
+def _verify_project_wheel(content: bytes, source_root: Path) -> None:
     try:
         wheel = zipfile.ZipFile(io.BytesIO(content))
     except zipfile.BadZipFile as exc:
-        raise PackageVerificationError("project wheel is not a valid ZIP") from exc
+        raise PackageVerificationError("project wheel is not a valid wheel archive") from exc
     with wheel:
+        sources = {
+            source.relative_to(source_root).as_posix(): source
+            for source in (source_root / "mcpserver").rglob("*.py")
+        }
+        members = [
+            name
+            for name in wheel.namelist()
+            if name.startswith("mcpserver/") and name.endswith(".py")
+        ]
+        if len(members) != len(set(members)) or set(members) != set(sources):
+            raise PackageVerificationError(
+                "project wheel Python source set differs from current source"
+            )
+        for name, source in sources.items():
+            try:
+                packaged = wheel.read(name)
+            except KeyError as exc:
+                raise PackageVerificationError(
+                    f"project wheel is missing current source: {name}"
+                ) from exc
+            if packaged != source.read_bytes():
+                raise PackageVerificationError(f"project wheel contains stale source: {name}")
         missing = _REQUIRED_PROJECT_WHEEL_ENTRIES - set(wheel.namelist())
         if missing:
             raise PackageVerificationError(
@@ -179,19 +201,22 @@ def verify_archive(archive: Path, *, require_checksum: bool = True) -> str:
         ):
             raise PackageVerificationError("wheelhouse contains an invalid entry")
         wheel_identities = [_wheel_identity(name) for name in wheelhouse_entries]
+        project_wheel_entries = [
+            name
+            for name, identity in zip(wheelhouse_entries, wheel_identities, strict=True)
+            if identity is not None and identity[0] == "loxberry-mcpserver"
+        ]
         project_wheels = [
             identity
             for identity in wheel_identities
             if identity is not None and identity[0] == "loxberry-mcpserver"
         ]
-        if project_wheels != [expected_project]:
+        if project_wheels != [expected_project] or len(project_wheel_entries) != 1:
             raise PackageVerificationError("exactly one matching project wheel is required")
-        project_wheel_entry = next(
-            name
-            for name, identity in zip(wheelhouse_entries, wheel_identities, strict=True)
-            if identity == expected_project
+        _verify_project_wheel(
+            package.read(project_wheel_entries[0]),
+            Path(__file__).resolve().parents[1] / "src",
         )
-        _verify_project_wheel(package.read(project_wheel_entry))
         expected_runtime = _locked_requirements(
             package.read("bin/runtime-arm64.lock").decode("utf-8")
         )

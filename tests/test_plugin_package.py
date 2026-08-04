@@ -13,15 +13,45 @@ from pathlib import Path
 
 import pytest
 
-from tools.build_plugin import _EXECUTABLES, _add, _locked_requirements
+from tools.build_plugin import (
+    _EXECUTABLES,
+    _add,
+    _locked_requirements,
+)
+from tools.build_plugin import (
+    _verify_project_wheel as verify_project_wheel_input,
+)
 from tools.build_release_candidate import _copy_runtime_wheels, _publish
-from tools.verify_plugin import PackageVerificationError, verify_archive
+from tools.verify_plugin import (
+    PackageVerificationError,
+    verify_archive,
+)
+from tools.verify_plugin import (
+    _verify_project_wheel as verify_project_wheel_archive,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _write_project_wheel(path: Path, *, include_openai_metadata: bool = True) -> None:
+def _write_project_wheel(
+    path: Path,
+    *,
+    include_openai_metadata: bool = True,
+    stale_file: str | None = None,
+    extra_file: str | None = None,
+    duplicate_file: str | None = None,
+    missing_file: str | None = None,
+) -> None:
     with zipfile.ZipFile(path, "w") as wheel:
+        for source in (ROOT / "src" / "mcpserver").rglob("*.py"):
+            name = source.relative_to(ROOT / "src").as_posix()
+            if name == missing_file:
+                continue
+            wheel.writestr(name, b"stale" if name == stale_file else source.read_bytes())
+            if name == duplicate_file:
+                wheel.writestr(name, source.read_bytes())
+        if extra_file:
+            wheel.writestr(extra_file, b"stale deleted module")
         wheel.writestr("mcpserver/skills/using-loxberry-mcp/SKILL.md", b"skill")
         if include_openai_metadata:
             wheel.writestr(
@@ -54,6 +84,26 @@ def test_mcp_client_smoke_covers_skill_delivery_surfaces() -> None:
     assert "$proxyArguments.Insert($callbackIndex, [string]$CallbackPort)" in script
     assert "$controlAdvertised = $actual -contains 'loxone_operate_control'" in script
     assert "if ($ControlFixturePath -and -not $controlAdvertised)" in script
+
+
+@pytest.mark.parametrize("variant", ["extra", "duplicate", "missing"])
+def test_project_wheel_source_set_must_match_exactly(tmp_path: Path, variant: str) -> None:
+    wheel = tmp_path / "project.whl"
+    arguments = {
+        "extra_file": "mcpserver/deleted.py" if variant == "extra" else None,
+        "duplicate_file": "mcpserver/server.py" if variant == "duplicate" else None,
+        "missing_file": "mcpserver/server.py" if variant == "missing" else None,
+    }
+    if variant == "duplicate":
+        with pytest.warns(UserWarning, match="Duplicate name"):
+            _write_project_wheel(wheel, **arguments)
+    else:
+        _write_project_wheel(wheel, **arguments)
+
+    with pytest.raises(SystemExit, match="Python source set differs"):
+        verify_project_wheel_input(wheel, ROOT / "src")
+    with pytest.raises(PackageVerificationError, match="Python source set differs"):
+        verify_project_wheel_archive(wheel.read_bytes(), ROOT / "src")
 
 
 def test_plugin_identity_and_platform_contract() -> None:
@@ -301,6 +351,40 @@ def test_plugin_archive_verifier_accepts_builder_output(tmp_path: Path) -> None:
     )
     with pytest.raises(PackageVerificationError, match="project wheel entry is missing"):
         verify_archive(missing_skill_metadata)
+
+    _write_project_wheel(project_wheel, stale_file="mcpserver/server.py")
+    stale_source = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "tools" / "build_plugin.py"),
+            "--wheelhouse",
+            str(wheelhouse),
+            "--output",
+            str(tmp_path / "stale-source.zip"),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+    )
+    assert stale_source.returncode != 0
+    assert "project wheel contains stale source: mcpserver/server.py" in stale_source.stderr
+    stale_archive = tmp_path / "stale-project-source.zip"
+    with zipfile.ZipFile(output) as source, zipfile.ZipFile(stale_archive, "w") as destination:
+        for entry in source.infolist():
+            content = (
+                project_wheel.read_bytes()
+                if entry.filename.startswith("bin/wheelhouse/loxberry_mcpserver-")
+                else source.read(entry)
+            )
+            destination.writestr(entry, content)
+    stale_digest = hashlib.sha256(stale_archive.read_bytes()).hexdigest()
+    stale_archive.with_suffix(".zip.sha256").write_text(
+        f"{stale_digest}  {stale_archive.name}\n", encoding="ascii"
+    )
+    with pytest.raises(PackageVerificationError, match="contains stale source"):
+        verify_archive(stale_archive)
+    _write_project_wheel(project_wheel)
 
     with zipfile.ZipFile(output) as source:
         omitted = next(

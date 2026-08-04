@@ -92,6 +92,32 @@ def _wheel_identities(wheelhouse: Path) -> list[tuple[str, str]]:
     return result
 
 
+def _verify_project_wheel(project_wheel: Path, source_root: Path) -> None:
+    try:
+        wheel = zipfile.ZipFile(project_wheel)
+    except zipfile.BadZipFile as exc:
+        raise SystemExit("project wheel is not a valid wheel archive") from exc
+    with wheel:
+        sources = {
+            source.relative_to(source_root).as_posix(): source
+            for source in (source_root / "mcpserver").rglob("*.py")
+        }
+        members = [
+            name
+            for name in wheel.namelist()
+            if name.startswith("mcpserver/") and name.endswith(".py")
+        ]
+        if len(members) != len(set(members)) or set(members) != set(sources):
+            raise SystemExit("project wheel Python source set differs from current source")
+        for name, source in sources.items():
+            try:
+                packaged = wheel.read(name)
+            except KeyError as exc:
+                raise SystemExit(f"project wheel is missing current source: {name}") from exc
+            if packaged != source.read_bytes():
+                raise SystemExit(f"project wheel contains stale source: {name}")
+
+
 def _add(archive: zipfile.ZipFile, source: Path, target: str) -> None:
     info = zipfile.ZipInfo(target.replace("\\", "/"), _TIMESTAMP)
     info.create_system = 3
@@ -156,6 +182,8 @@ def main() -> int:
         if project_identities != expected_project:
             detail = "unexpected project wheel"
         raise SystemExit(f"wheelhouse is incomplete: {detail}")
+
+    _verify_project_wheel(project_wheels[0], root / "src")
 
     entries: list[tuple[Path, str]] = []
     entries.extend((root / name, name) for name in _ROOT_FILES)
