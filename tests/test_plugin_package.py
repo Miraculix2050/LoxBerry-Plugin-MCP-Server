@@ -3,6 +3,7 @@ from __future__ import annotations
 import configparser
 import hashlib
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -112,6 +113,15 @@ def test_postinstall_rewrites_moved_venv_entrypoints() -> None:
     assert 'sed -i "1c\\\\#!$venv/bin/python"' in hook
     assert 'rm -rf -- "$venv"' in hook
     assert 'mv "$old_venv" "$venv"' in hook
+
+
+def test_postinstall_project_pin_matches_plugin_version() -> None:
+    parser = configparser.ConfigParser()
+    parser.read(ROOT / "plugin.cfg", encoding="utf-8")
+    project_version = re.sub(r"(?i)-alpha\.(\d+)$", r"a\1", parser["PLUGIN"]["VERSION"])
+    hook = (ROOT / "postinstall.sh").read_text(encoding="utf-8")
+
+    assert f"loxberry-mcpserver=={project_version}" in hook
 
 
 def test_package_builder_includes_plugin_icon() -> None:
