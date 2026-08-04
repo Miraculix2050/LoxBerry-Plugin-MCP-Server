@@ -173,9 +173,9 @@ additional scope automatically.
    intended. If the option is missing, do not use control and stay with the
    tested read-only setup.
 
-If control is later disabled in the plugin, sessions with `loxone:control` are
-revoked. To return to read-only access, remove the two metadata arguments and
-reconnect Claude.
+If **Read only** is later selected in the plugin, sessions with
+`loxone:control` are revoked. To return to read-only access, remove the two
+metadata arguments and reconnect Claude.
 
 ## Why a prepared configuration may look different
 

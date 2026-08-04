@@ -35,7 +35,7 @@ The six read tools remain enabled by default. Under **Miniserver access through
 the MCP server**, select **Read and switch** to additionally operate Gen. 1
 Switches. A new OAuth grant with `loxone:control` is then required. Switching
 back to **Read only** revokes existing control sessions while read-only sessions
-remain valid. **Read and switch** cannot be selected for a Gen. 2/HTTPS target.
+remain valid. **Read and switch** cannot be enabled for a Gen. 2/HTTPS target.
 
 The consistent OAuth dialog shows required read access and, when requested by
 the client and enabled in the plugin, optional Loxone control as a separate

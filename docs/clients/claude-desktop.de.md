@@ -180,7 +180,7 @@ den zusätzlichen Scope nicht automatisch.
    die Auswahlmöglichkeit, verwende die Steuerung nicht und bleibe bei der
    geprüften Read-only-Einrichtung.
 
-Wird die Steuerung später im Plugin deaktiviert, werden Sitzungen mit
+Wird im Plugin später **Nur lesen** ausgewählt, werden Sitzungen mit
 `loxone:control` widerrufen. Für erneuten reinen Lesezugriff entfernst du die
 beiden Metadatenargumente wieder und verbindest Claude neu.
 
