@@ -67,6 +67,7 @@
   data-token-expired="<TMPL_VAR EXPLORER.TOKEN_EXPIRED ESCAPE=HTML>"
   data-timeout="<TMPL_VAR EXPLORER.TIMEOUT ESCAPE=HTML>"
   data-control-required="<TMPL_VAR EXPLORER.CONTROL_REQUIRED ESCAPE=HTML>"
+  data-as-list="<TMPL_VAR EXPLORER.AS_LIST ESCAPE=HTML>"
   data-optional="<TMPL_VAR EXPLORER.OPTIONAL ESCAPE=HTML>"
   data-array-help="<TMPL_VAR EXPLORER.ARRAY_HELP ESCAPE=HTML>"
   data-object-help="<TMPL_VAR EXPLORER.OBJECT_HELP ESCAPE=HTML>"
@@ -79,7 +80,11 @@
     <h1 id="explorer-title"><TMPL_VAR EXPLORER.TITLE></h1>
     <p><TMPL_VAR EXPLORER.INTRO></p>
     <div class="mcp-explorer-actions">
-      <label><input id="explorer-control-scope" type="checkbox"> <TMPL_VAR EXPLORER.WITH_CONTROL></label>
+      <label for="explorer-access-mode"><TMPL_VAR EXPLORER.ACCESS_MODE></label>
+      <select id="explorer-access-mode">
+        <option value="read"><TMPL_VAR EXPLORER.READ_ONLY></option>
+        <option id="explorer-control-option" value="control" disabled><TMPL_VAR EXPLORER.WITH_CONTROL></option>
+      </select>
       <button id="explorer-connect" class="lb-button" type="button"><TMPL_VAR EXPLORER.CONNECT></button>
       <button id="explorer-disconnect" class="lb-button" type="button" disabled><TMPL_VAR EXPLORER.DISCONNECT></button>
     </div>

@@ -84,11 +84,14 @@ def test_explorer_reuses_only_schema_compatible_values() -> None:
     ]
 
     assert run_core(f"core.compatibleTargets({json.dumps(tools)},'uuid-value')") == [
-        {"tool": "describe", "field": "control_uuid"}
+        {"tool": "describe", "field": "control_uuid"},
+        {"tool": "states", "field": "state_uuids", "mode": "wrap-array"},
     ]
     assert run_core(f"core.compatibleTargets({json.dumps(tools)},['one','two'])") == [
         {"tool": "states", "field": "state_uuids"}
     ]
+    assert run_core("core.valueForTransfer('uuid-value','wrap-array')") == ["uuid-value"]
+    assert run_core("core.valueForTransfer(['one'],'direct')") == ["one"]
 
 
 def test_explorer_reuse_honours_full_nested_schema() -> None:
@@ -319,6 +322,30 @@ def test_explorer_generated_field_ids_are_unique_and_labelled() -> None:
     }
 
 
+def test_explorer_control_option_requires_positive_discovery() -> None:
+    expression = """(() => {
+      const state={controlAvailable:false};
+      const control={value:'control'};
+      const option={disabled:false};
+      const note={hidden:true};
+      core.applyControlAvailability(state,control,option,note,false);
+      const unavailable={state:state.controlAvailable,value:control.value,
+        disabled:option.disabled,noteHidden:note.hidden};
+      core.applyControlAvailability(state,control,option,note,true);
+      return {unavailable,available:{state:state.controlAvailable,
+        disabled:option.disabled,noteHidden:note.hidden}};
+    })()"""
+    assert run_core(expression) == {
+        "unavailable": {
+            "state": False,
+            "value": "read",
+            "disabled": True,
+            "noteHidden": False,
+        },
+        "available": {"state": True, "disabled": False, "noteHidden": True},
+    }
+
+
 def test_explorer_redacts_secret_shaped_arguments() -> None:
     schema = {
         "type": "object",
@@ -367,6 +394,10 @@ def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
     assert ":focus-visible" in template
     assert "<dialog" in template
     assert 'id="explorer-confirm-tool"' in template
+    assert 'id="explorer-access-mode"' in template
+    assert '<option value="read">' in template
+    assert 'id="explorer-control-option" value="control" disabled' in template
+    assert "elements.control.value === 'control'" in source
     assert "Cache_Control => 'no-store'" in callback
     assert "frame-ancestors 'none'" in callback
     assert "window.history.replaceState" in callback
