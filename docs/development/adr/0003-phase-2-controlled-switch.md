@@ -34,7 +34,12 @@ The tool annotations are `readOnlyHint=false`, `destructiveHint=true`,
 
 The supported scope sets are `loxone:read` and `loxone:read loxone:control`.
 Control alone is invalid. Existing sessions remain read-only and refresh never
-adds a scope. The consent page calls out control access explicitly.
+adds a scope. Protected resource metadata advertises control only while it is
+enabled, without making it mandatory for the MCP endpoint. The consent page
+shows required read access and lets the user explicitly add or omit requested
+control access. All server-owned login, consent and error messages use the same
+responsive dialog presentation; the registered client's callback page remains
+client-owned.
 
 Configuration adds `tools.loxone_control_enabled`, default `false`, and
 `limits.control_requests_per_minute`, default `10` with range `1` to `60`,

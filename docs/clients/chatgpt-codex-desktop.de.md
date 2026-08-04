@@ -56,22 +56,24 @@ Desktop-App die verbundenen MCP-Server kontrollieren.
 
 ## Lese- und Schreibrechte verstehen
 
-Wenn die Loxone-Steuerung im Plugin aktiviert ist, erscheinen bei der
-Authentifizierung sofort beide Scopes:
+Wenn die Loxone-Steuerung im Plugin aktiviert ist, fordert die Desktop-App bei
+der Authentifizierung beide Scopes an:
 
 ```text
 loxone:read loxone:control
 ```
 
-Nach der Bestätigung stehen damit die sechs Lesewerkzeuge und das begrenzte
+Der Freigabedialog zeigt **Lesezugriff** verpflichtend und
+**Loxone-Steuerung** als optionale Checkbox. Nur wenn die Steuerung ausgewählt
+und bestätigt wird, stehen die sechs Lesewerkzeuge und das begrenzte
 Switch-Schreibwerkzeug zur Verfügung. Das Schreibwerkzeug kann ausschließlich
 freigegebene, sichtbare Gen.-1-Switches ein- oder ausschalten. Die tatsächlichen
 Möglichkeiten bleiben zusätzlich durch die Rechte des angemeldeten
 Loxone-Benutzers begrenzt.
 
 Die Schreibrechte werden nicht nachträglich still hinzugefügt: Sie müssen auf
-der Browser-Freigabeseite angezeigt und dort bestätigt werden. Möchtest du nur
-lesen, deaktiviere **Loxone-Steuerung** im Plugin vor der Anmeldung.
+der Browser-Freigabeseite ausgewählt und dort bestätigt werden. Für reinen
+Lesezugriff lässt du die optionale Checkbox deaktiviert.
 
 Beim späteren Deaktivieren der Loxone-Steuerung widerruft das Plugin bestehende
 Control-Sitzungen. Authentifiziere die Desktop-App danach erneut, um eine reine
@@ -85,8 +87,8 @@ Read-only-Sitzung zu erhalten.
   die Zertifikatswarnung. Deaktiviere die Zertifikatsprüfung nicht.
 - **Authentifizieren fehlt:** Prüfe, ob der Server gespeichert und erreichbar
   ist. Öffne den Eintrag anschließend erneut.
-- **Unerwartete Schreibrechte:** Brich die Browser-Freigabe ab, deaktiviere
-  **Loxone-Steuerung** im Plugin und starte die Authentifizierung erneut.
+- **Unerwartete Schreibrechte:** Widerrufe die Sitzung und authentifiziere dich
+  erneut, ohne die optionale Steuerungsberechtigung auszuwählen.
 - **Verbindung bleibt ausstehend:** Starte die Desktop-App neu und kontrolliere
   den Server anschließend über `/mcp`.
 

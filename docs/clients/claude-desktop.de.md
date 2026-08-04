@@ -174,10 +174,11 @@ den zusätzlichen Scope nicht automatisch.
 
 4. Widerrufe die bisherige Claude-Sitzung in der Plugin-Oberfläche. Beende
    Claude vollständig und starte es neu.
-5. Melde dich erneut an. Prüfe, ob auf der Freigabeseite
-   `loxone:read loxone:control` erscheinen. Bestätige nur, wenn diese Erweiterung
-   beabsichtigt ist. Fehlt einer der Scopes, verwende die Steuerung nicht und
-   bleibe bei der geprüften Read-only-Einrichtung.
+5. Melde dich erneut an. Die Freigabeseite zeigt den verpflichtenden
+   **Lesezugriff** und zusätzlich die optionale **Loxone-Steuerung**. Aktiviere
+   die Steuerungs-Checkbox nur, wenn diese Erweiterung beabsichtigt ist. Fehlt
+   die Auswahlmöglichkeit, verwende die Steuerung nicht und bleibe bei der
+   geprüften Read-only-Einrichtung.
 
 Wird die Steuerung später im Plugin deaktiviert, werden Sitzungen mit
 `loxone:control` widerrufen. Für erneuten reinen Lesezugriff entfernst du die
@@ -213,8 +214,9 @@ von einem anderen Computer.
 - **Keine Anmeldung oder Verbindung:** Prüfe die MCP-Adresse und den
   Dienststatus in der Plugin-Oberfläche. Veröffentliche Adresse und Logs nur
   maskiert.
-- **Steuerungswerkzeug fehlt:** Prüfe Aktivierung, Metadatendatei, beide Scopes
-  und den Widerruf der alten Read-only-Sitzung.
+- **Steuerungswerkzeug fehlt:** Prüfe Aktivierung, Metadatendatei, die beim
+  OAuth-Dialog ausgewählte Steuerungsberechtigung und den Widerruf der alten
+  Read-only-Sitzung.
 
 Getestete Versionen und bekannte Einschränkungen stehen in der
 [Support-Matrix](../development/support-matrix.md).

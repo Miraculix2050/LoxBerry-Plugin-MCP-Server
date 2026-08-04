@@ -6,6 +6,7 @@ import logging
 from typing import Final
 
 from mcp.server.auth.provider import AccessToken, TokenVerifier
+from mcp.server.auth.routes import create_protected_resource_routes
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecurityMiddleware, TransportSecuritySettings
@@ -111,9 +112,23 @@ class _ForwardedHostFastMCP(FastMCP):
     forwarded_allowed_hosts: tuple[str, ...] = ()
     transport_guard: TransportSecurityMiddleware | None = None
     service_enabled: bool = True
+    advertised_scopes: tuple[str, ...] = ()
 
     def streamable_http_app(self) -> Starlette:
         app = super().streamable_http_app()
+        auth = self.settings.auth
+        if self.advertised_scopes and auth and auth.resource_server_url:
+            metadata_route = create_protected_resource_routes(
+                resource_url=auth.resource_server_url,
+                authorization_servers=[auth.issuer_url],
+                scopes_supported=list(self.advertised_scopes),
+            )[0]
+            for index, route in enumerate(app.routes):
+                if getattr(route, "path", None) == metadata_route.path:
+                    app.routes[index] = metadata_route
+                    break
+            else:  # pragma: no cover - pinned SDK always creates this route
+                raise RuntimeError("OAuth protected resource metadata route is missing")
         app.router.redirect_slashes = False
         if not self.service_enabled:
             app.add_middleware(_DisabledServiceMiddleware)
@@ -216,6 +231,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
         and settings.phase0_auth.plugin_config
         and settings.phase0_auth.plugin_config.loxone_control_enabled
     )
+    server.advertised_scopes = (READ_SCOPE,) + ((CONTROL_SCOPE,) if control_enabled else ())
     register_read_tools(server, runtime, control_enabled=control_enabled)
     if control_enabled:
         register_control_tool(server, runtime)

@@ -167,10 +167,10 @@ additional scope automatically.
 
 4. Revoke the existing Claude session in the plugin UI. Quit Claude completely
    and start it again.
-5. Sign in again. Check whether the consent page shows
-   `loxone:read loxone:control`. Approve only when this extension is intended. If
-   either scope is missing, do not use control and stay with the tested read-only
-   setup.
+5. Sign in again. The consent page shows required **Read access** and optional
+   **Loxone control**. Select the control checkbox only when this extension is
+   intended. If the option is missing, do not use control and stay with the
+   tested read-only setup.
 
 If control is later disabled in the plugin, sessions with `loxone:control` are
 revoked. To return to read-only access, remove the two metadata arguments and
@@ -204,8 +204,9 @@ Never copy user-specific Node, Codex, or project paths from another computer.
   hostname mismatch.
 - **No login or connection:** Check the MCP address and service status in the
   plugin UI. Publish addresses and logs only after masking them.
-- **Control tool is missing:** Check plugin activation, metadata file, both
-  scopes, and revocation of the previous read-only session.
+- **Control tool is missing:** Check plugin activation, the metadata file, the
+  control permission selected in the OAuth dialog, and revocation of the
+  previous read-only session.
 
 Tested versions and known limitations are listed in the
 [support matrix](../development/support-matrix.md).

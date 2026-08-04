@@ -36,6 +36,14 @@ von Gen.-1-Switches aktiviere zusätzlich **Loxone-Steuerung**. Danach ist eine
 neue OAuth-Freigabe mit `loxone:control` erforderlich. Deaktivieren widerruft
 bestehende Control-Sitzungen; reine Lesesitzungen bleiben gültig. Bei einem
 Gen.-2-/HTTPS-Ziel kann die Steuerung nicht aktiviert werden.
+
+Der einheitliche OAuth-Dialog zeigt den erforderlichen Lesezugriff und, falls
+vom Client angefordert und im Plugin aktiviert, die optionale
+Loxone-Steuerung als separate Auswahl. Ohne ausgewählte Steuerung wird nur
+`loxone:read` freigegeben. Nach der Bestätigung übergibt der LoxBerry an den
+registrierten Callback des MCP-Clients. Die dort angezeigte Abschlussmeldung
+stammt vom Client, beispielsweise von Claude Code, und nicht vom Plugin.
+
 Claude-Benutzer finden die dafür notwendige Scope-Konfiguration im Abschnitt
 [Optionale Loxone-Steuerung](clients/claude-desktop.de.md#optionale-loxone-steuerung).
 

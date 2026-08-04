@@ -135,12 +135,28 @@ def _html_page(
 main{{box-sizing:border-box;max-width:34rem;margin:4vh auto;padding:1.4rem;border-radius:.8rem;background:#fff;color:#17202a}}
 label{{display:block;margin:.9rem 0 .25rem}}input{{box-sizing:border-box;width:100%;padding:.75rem;font:inherit}}
 .actions{{display:flex;gap:.7rem;flex-wrap:wrap;margin-top:1.2rem}}button{{padding:.7rem 1rem;font:inherit}}
-.error{{color:#a00000}}dl{{display:grid;grid-template-columns:max-content 1fr;gap:.4rem .8rem}}dt{{font-weight:700}}
+.error{{color:#a00000}}.notice{{padding:.8rem;border-left:.3rem solid #476d91;background:#edf4fa}}
+.scope-list{{margin:1rem 0;padding:0;border:0}}.scope-list legend{{font-weight:700;margin-bottom:.35rem}}
+.scope-option{{display:flex;align-items:flex-start;gap:.7rem;margin:.65rem 0;padding:.8rem;border:1px solid #b6c2cc;border-radius:.5rem}}
+.scope-option input{{width:auto;margin:.2rem 0 0;padding:0;flex:none}}.scope-option span{{display:block}}.scope-option small{{display:block;margin-top:.2rem}}
+dl{{display:grid;grid-template-columns:max-content 1fr;gap:.4rem .8rem}}dt{{font-weight:700}}
 @media(max-width:430px){{main{{margin:0 auto;padding:1rem}}dl{{display:block}}dd{{margin:0 0 .7rem}}button{{flex:1}}}}
 </style></head><body><main>{body}</main></body></html>"""
     return HTMLResponse(
         document, status_code=status, headers=_security_headers(callback_uri=callback_uri)
     )
+
+
+def _message_page(
+    title: str,
+    heading: str,
+    message: str,
+    *,
+    status: int,
+    callback_uri: str | None = None,
+) -> HTMLResponse:
+    body = f'<h1>{html.escape(heading)}</h1><p class="notice">{html.escape(message)}</p>'
+    return _html_page(title, body, status=status, callback_uri=callback_uri)
 
 
 async def _limited_body(request: Request, limit: int) -> bytes | None:
@@ -322,9 +338,10 @@ class Phase0OAuthWeb:
     async def _authorize_start(self, request: Request) -> Response:
         query = self._single_query(request)
         if query is None:
-            return _html_page(
+            return _message_page(
                 "Invalid authorization request",
-                "<h1>Invalid authorization request</h1>",
+                "Invalid authorization request / Ungültige Autorisierungsanfrage",
+                "Restart the connection from your MCP client. / Starten Sie die Verbindung in Ihrem MCP-Client neu.",
                 status=400,
             )
         client_id = query.get("client_id", "")
@@ -335,9 +352,10 @@ class Phase0OAuthWeb:
             or client.redirect_uris is None
             or redirect_uri not in {str(value) for value in client.redirect_uris}
         ):
-            return _html_page(
+            return _message_page(
                 "Invalid authorization request",
-                "<h1>Invalid authorization request</h1>",
+                "Invalid authorization request / Ungültige Autorisierungsanfrage",
+                "Restart the connection from your MCP client. / Starten Sie die Verbindung in Ihrem MCP-Client neu.",
                 status=400,
             )
         try:
@@ -361,9 +379,10 @@ class Phase0OAuthWeb:
                 {"error": "invalid_request", "state": query.get("state", ""), "iss": self.issuer},
             )
         if len(self.transactions) >= _MAX_LOGIN_TRANSACTIONS:
-            return _html_page(
+            return _message_page(
                 "Authorization unavailable",
-                "<h1>Authorization unavailable / Autorisierung nicht verfügbar</h1>",
+                "Authorization unavailable / Autorisierung nicht verfügbar",
+                "Try again later. / Versuchen Sie es später erneut.",
                 status=503,
             )
         transaction = LoginTransaction(
@@ -407,30 +426,32 @@ class Phase0OAuthWeb:
         return _html_page("Connect Loxone", body, callback_uri=transaction.redirect_uri)
 
     def _consent_page(self, transaction: LoginTransaction) -> HTMLResponse:
-        control = CONTROL_SCOPE in transaction.scopes
-        heading = (
-            "Allow Loxone control? / Loxone-Steuerung erlauben?"
-            if control
-            else "Allow read-only access? / Lesezugriff erlauben?"
-        )
-        warning = (
-            '<p class="error"><strong>This client can switch permitted Loxone controls on and off. / Dieser Client darf freigegebene Loxone-Steuerungen ein- und ausschalten.</strong></p>'
-            if control
+        control_requested = CONTROL_SCOPE in transaction.scopes
+        control_option = (
+            """<label class="scope-option" for="grant_control"><input id="grant_control" type="checkbox" name="grant_control" value="true">
+<span><strong>Loxone control / Loxone-Steuerung</strong><small>Optional: switch permitted Loxone controls on and off. / Optional: Freigegebene Loxone-Steuerungen ein- und ausschalten.</small></span></label>"""
+            if control_requested
             else ""
         )
-        body = f"""<h1>{heading}</h1>{warning}<dl>
+        body = f"""<h1>Choose permissions / Berechtigungen auswählen</h1><dl>
 <dt>Client</dt><dd>{html.escape(transaction.client_name)}</dd>
 <dt>Miniserver</dt><dd>{html.escape(transaction.miniserver_name or "")}</dd>
-<dt>Loxone identity / Loxone-Identität</dt><dd>{html.escape(transaction.identity_name or "")}</dd>
-<dt>Scope / Berechtigung</dt><dd>{html.escape(scope_text(list(transaction.scopes)))}</dd></dl>
+<dt>Loxone identity / Loxone-Identität</dt><dd>{html.escape(transaction.identity_name or "")}</dd></dl>
 <form method="post" action="{html.escape(self.issuer)}/authorize">{self._hidden(transaction, "approve")}
-<div class="actions"><button type="submit">Allow / Erlauben</button></div></form>
+<fieldset class="scope-list"><legend>Permissions / Berechtigungen</legend>
+<label class="scope-option"><input type="checkbox" checked disabled><span><strong>Read access / Lesezugriff</strong><small>Required: read permitted Loxone structure and states. / Erforderlich: Freigegebene Loxone-Struktur und Zustände lesen.</small></span></label>
+{control_option}</fieldset>
+<p class="notice">After confirmation, you will be redirected to your MCP client. / Nach der Bestätigung werden Sie zu Ihrem MCP-Client weitergeleitet.</p>
+<div class="actions"><button type="submit">Confirm permissions / Berechtigungen bestätigen</button></div></form>
 <form method="post" action="{html.escape(self.issuer)}/authorize">{self._hidden(transaction, "deny")}
 <div class="actions"><button type="submit">Deny / Ablehnen</button></div></form>"""
         return _html_page("Authorize client", body, callback_uri=transaction.redirect_uri)
 
     async def _authorize_post(self, request: Request) -> Response:
-        form = await _form(request, allowed={"csrf", "action", "username", "password"})
+        form = await _form(
+            request,
+            allowed={"csrf", "action", "username", "password", "grant_control"},
+        )
         transaction_id = request.cookies.get(_COOKIE_NAME, "")
         transaction = self.transactions.get(transaction_id)
         if (
@@ -439,12 +460,20 @@ class Phase0OAuthWeb:
             or not hmac.compare_digest(form.get("csrf", ""), transaction.csrf_token)
             or transaction.created_at + _TRANSACTION_TTL <= int(time.time())
         ):
-            return _html_page("Authorization expired", "<h1>Authorization expired</h1>", status=400)
+            return _message_page(
+                "Authorization expired",
+                "Authorization expired / Autorisierung abgelaufen",
+                "Restart the connection from your MCP client. / Starten Sie die Verbindung in Ihrem MCP-Client neu.",
+                status=400,
+            )
         action = form.get("action")
         async with transaction.lock:
             if self.transactions.get(transaction_id) is not transaction:
-                return _html_page(
-                    "Authorization expired", "<h1>Authorization expired</h1>", status=400
+                return _message_page(
+                    "Authorization expired",
+                    "Authorization expired / Autorisierung abgelaufen",
+                    "Restart the connection from your MCP client. / Starten Sie die Verbindung in Ihrem MCP-Client neu.",
+                    status=400,
                 )
             if action == "login" and transaction.phase == "login":
                 transaction.phase = "login_pending"
@@ -455,25 +484,42 @@ class Phase0OAuthWeb:
                 and transaction.identity_id
                 and transaction.miniserver_id
             ):
+                grant_control = form.get("grant_control")
+                if grant_control not in {None, "true"} or (
+                    grant_control is not None and CONTROL_SCOPE not in transaction.scopes
+                ):
+                    return _message_page(
+                        "Invalid authorization request",
+                        "Invalid authorization request / Ungültige Autorisierungsanfrage",
+                        "Review the requested permissions and try again. / Prüfen Sie die angeforderten Berechtigungen und versuchen Sie es erneut.",
+                        status=400,
+                    )
+                approved_scopes: tuple[str, ...] = (READ_SCOPE,)
+                if grant_control == "true":
+                    approved_scopes = (READ_SCOPE, CONTROL_SCOPE)
                 transaction.phase = "approving"
                 family_id: str | None = None
                 if self.loxone_store is None:
                     if not await self._kill(transaction):
                         transaction.phase = "consent"
-                        return _html_page(
+                        return _message_page(
                             "Authorization unavailable",
-                            "<h1>Authorization unavailable</h1>",
+                            "Authorization unavailable / Autorisierung nicht verfügbar",
+                            "The authorization could not be completed. Try again. / Die Autorisierung konnte nicht abgeschlossen werden. Versuchen Sie es erneut.",
                             status=503,
+                            callback_uri=transaction.redirect_uri,
                         )
                 else:
                     family_id = secrets.token_hex(16)
                     token = transaction.loxone_token
                     if token is None:
                         transaction.phase = "consent"
-                        return _html_page(
+                        return _message_page(
                             "Authorization unavailable",
-                            "<h1>Authorization unavailable</h1>",
+                            "Authorization unavailable / Autorisierung nicht verfügbar",
+                            "The authorization could not be completed. Try again. / Die Autorisierung konnte nicht abgeschlossen werden. Versuchen Sie es erneut.",
                             status=503,
+                            callback_uri=transaction.redirect_uri,
                         )
                     try:
                         self.loxone_store.put(
@@ -484,10 +530,12 @@ class Phase0OAuthWeb:
                         )
                     except Exception:
                         transaction.phase = "consent"
-                        return _html_page(
+                        return _message_page(
                             "Authorization unavailable",
-                            "<h1>Authorization unavailable</h1>",
+                            "Authorization unavailable / Autorisierung nicht verfügbar",
+                            "The authorization could not be completed. Try again. / Die Autorisierung konnte nicht abgeschlossen werden. Versuchen Sie es erneut.",
                             status=503,
+                            callback_uri=transaction.redirect_uri,
                         )
                 try:
                     code = self.provider.issue_authorization_code(
@@ -497,17 +545,19 @@ class Phase0OAuthWeb:
                         resource=transaction.resource,
                         identity_id=transaction.identity_id,
                         miniserver_id=transaction.miniserver_id,
-                        scopes=transaction.scopes,
+                        scopes=approved_scopes,
                         family_id=family_id,
                     )
                 except TokenError:
                     if family_id is not None and self.loxone_store is not None:
                         self.loxone_store.delete(family_id)
                     transaction.phase = "consent"
-                    return _html_page(
+                    return _message_page(
                         "Authorization unavailable",
-                        "<h1>Authorization unavailable</h1>",
+                        "Authorization unavailable / Autorisierung nicht verfügbar",
+                        "The authorization could not be completed. Try again. / Die Autorisierung konnte nicht abgeschlossen werden. Versuchen Sie es erneut.",
                         status=503,
+                        callback_uri=transaction.redirect_uri,
                     )
                 transaction.loxone_token = None
                 transaction.phase = "finished"
@@ -522,10 +572,12 @@ class Phase0OAuthWeb:
                 transaction.phase = "denying"
                 if not await self._kill(transaction):
                     transaction.phase = "consent" if transaction.identity_id else "login"
-                    return _html_page(
+                    return _message_page(
                         "Authorization unavailable",
-                        "<h1>Authorization unavailable</h1>",
+                        "Authorization unavailable / Autorisierung nicht verfügbar",
+                        "The authorization could not be completed. Try again. / Die Autorisierung konnte nicht abgeschlossen werden. Versuchen Sie es erneut.",
                         status=503,
+                        callback_uri=transaction.redirect_uri,
                     )
                 transaction.phase = "finished"
                 self.transactions.pop(transaction_id, None)
@@ -535,8 +587,11 @@ class Phase0OAuthWeb:
                 )
                 response.delete_cookie(_COOKIE_NAME, path="/plugins/mcpserver/oauth/authorize")
                 return response
-        return _html_page(
-            "Invalid authorization request", "<h1>Invalid authorization request</h1>", status=400
+        return _message_page(
+            "Invalid authorization request",
+            "Invalid authorization request / Ungültige Autorisierungsanfrage",
+            "Restart the connection from your MCP client. / Starten Sie die Verbindung in Ihrem MCP-Client neu.",
+            status=400,
         )
 
     async def _login(self, transaction: LoginTransaction, form: Mapping[str, str]) -> Response:
@@ -544,16 +599,22 @@ class Phase0OAuthWeb:
         if transaction.attempts > _MAX_LOGIN_ATTEMPTS:
             self.transactions.pop(transaction.transaction_id, None)
             transaction.phase = "finished"
-            return _html_page("Authorization expired", "<h1>Authorization expired</h1>", status=429)
+            return _message_page(
+                "Authorization expired",
+                "Authorization expired / Autorisierung abgelaufen",
+                "Restart the connection from your MCP client. / Starten Sie die Verbindung in Ihrem MCP-Client neu.",
+                status=429,
+            )
         username = form.get("username", "")
         password = form.get("password", "")
         now = int(time.time())
         rate_keys = self._login_rate_keys(transaction, username)
         if self._login_is_limited(rate_keys, now):
             transaction.phase = "login"
-            return _html_page(
+            return _message_page(
                 "Sign-in temporarily unavailable",
-                "<h1>Sign-in temporarily unavailable / Anmeldung vorübergehend nicht verfügbar</h1>",
+                "Sign-in temporarily unavailable / Anmeldung vorübergehend nicht verfügbar",
+                "Try again later. / Versuchen Sie es später erneut.",
                 status=429,
             )
         if not username or len(username) > 128 or not password or len(password) > 1024:

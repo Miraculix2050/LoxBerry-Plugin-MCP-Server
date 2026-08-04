@@ -5,6 +5,7 @@ import base64
 import hashlib
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.parse import parse_qs, urlsplit
 
 import httpx
 import pytest
@@ -373,6 +374,117 @@ def test_metadata_advertises_only_the_public_contract(tmp_path: Path) -> None:
     assert response.json()["code_challenge_methods_supported"] == ["S256"]
     assert response.headers["cache-control"] == "no-store"
     assert response.headers["referrer-policy"] == "strict-origin"
+
+
+def test_consent_page_uses_one_permission_dialog_for_read_and_control(tmp_path: Path) -> None:
+    web = Phase0OAuthWeb(
+        _provider(tmp_path),
+        endpoint=MiniserverEndpoint.parse_gen1("http://192.168.255.254"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+    )
+    transaction = LoginTransaction(
+        transaction_id="transaction",
+        csrf_token="csrf",
+        client_id="client",
+        client_name="Claude Code",
+        redirect_uri=REDIRECT,
+        state="state",
+        code_challenge=CHALLENGE,
+        resource=RESOURCE,
+        created_at=1_800_000_000,
+        scopes=(READ_SCOPE, CONTROL_SCOPE),
+        identity_name="user",
+        miniserver_name="miniserver",
+    )
+
+    response = web._consent_page(transaction)
+
+    assert response.status_code == 200
+    assert "Choose permissions / Berechtigungen auswählen" in response.body.decode()
+    assert 'type="checkbox" checked disabled' in response.body.decode()
+    assert 'name="grant_control" value="true"' in response.body.decode()
+    assert "Confirm permissions / Berechtigungen bestätigen" in response.body.decode()
+    assert "redirected to your MCP client" in response.body.decode()
+
+
+@pytest.mark.parametrize(
+    ("grant_control", "expected_scopes"),
+    [
+        (False, [READ_SCOPE]),
+        (True, [READ_SCOPE, CONTROL_SCOPE]),
+    ],
+)
+@pytest.mark.asyncio
+async def test_consent_issues_only_the_scopes_selected_by_the_user(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    grant_control: bool,
+    expected_scopes: list[str],
+) -> None:
+    provider = Phase0OAuthProvider(
+        AtomicJsonAuthStore(tmp_path / "auth" / "sessions.json"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+        clock=Clock(),
+        control_enabled=True,
+    )
+    client_info = OAuthClientInformationFull(
+        client_id="control-client",
+        client_name="Claude Code",
+        redirect_uris=[AnyUrl(REDIRECT)],
+        token_endpoint_auth_method="none",
+        grant_types=["authorization_code", "refresh_token"],
+        response_types=["code"],
+        scope=f"{READ_SCOPE} {CONTROL_SCOPE}",
+    )
+    await provider.register_client(client_info)
+    web = Phase0OAuthWeb(
+        provider,
+        endpoint=MiniserverEndpoint.parse_gen1("http://192.168.255.254"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+    )
+    transaction = LoginTransaction(
+        transaction_id="transaction",
+        csrf_token="csrf",
+        client_id="control-client",
+        client_name="Claude Code",
+        redirect_uri=REDIRECT,
+        state="client-state",
+        code_challenge=CHALLENGE,
+        resource=RESOURCE,
+        created_at=provider.now(),
+        scopes=(READ_SCOPE, CONTROL_SCOPE),
+        identity_id="identity",
+        miniserver_id="miniserver",
+        phase="consent",
+    )
+    web.transactions[transaction.transaction_id] = transaction
+
+    async def kill_token(selected: LoginTransaction) -> bool:
+        selected.loxone_token = None
+        return True
+
+    monkeypatch.setattr(web, "_kill", kill_token)
+    app = Starlette(routes=[Route("/authorize", web.authorize, methods=["POST"])])
+    data = {"csrf": "csrf", "action": "approve"}
+    if grant_control:
+        data["grant_control"] = "true"
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="https://public.example",
+        follow_redirects=False,
+        headers={"Cookie": "phase0_oauth_tx=transaction"},
+    ) as client:
+        approved = await client.post("/authorize", data=data)
+
+    code_value = parse_qs(urlsplit(approved.headers["location"]).query)["code"][0]
+    code = await provider.load_authorization_code(client_info, code_value)
+    assert approved.status_code == 302
+    assert code is not None
+    assert code.scopes == expected_scopes
 
 
 @pytest.mark.parametrize(
