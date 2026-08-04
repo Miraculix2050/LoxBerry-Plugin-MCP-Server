@@ -31,12 +31,12 @@
 </style>
 
 <main class="mcp-page">
-  <TMPL_IF NOTICE><div class="mcp-status" role="status"><TMPL_VAR NOTICE ESCAPE=HTML></div></TMPL_IF>
+  <TMPL_IF NOTICE><div id="page-notice" class="mcp-status" role="status" data-kind="<TMPL_VAR NOTICE_KIND ESCAPE=HTML>"><TMPL_VAR NOTICE ESCAPE=HTML></div></TMPL_IF>
   <div id="ajax-status" class="mcp-status" role="status" aria-live="polite" hidden></div>
 
   <section id="setup" class="mcp-card" aria-labelledby="setup-title">
     <h2 id="setup-title"><TMPL_VAR SETUP.TITLE></h2>
-    <form class="mcp-form" method="post" action="index.cgi">
+    <form class="mcp-form" method="post" action="index.cgi" data-ajax="save_config">
       <input type="hidden" name="action" value="save_config">
       <label class="mcp-field"><span><TMPL_VAR SETUP.PUBLIC_ORIGIN></span><input name="public_origin" type="url" value="<TMPL_VAR PUBLIC_ORIGIN ESCAPE=HTML>" placeholder="https://loxberry.local" required></label>
       <label class="mcp-field"><span><TMPL_VAR SETUP.ENDPOINT></span><input name="endpoint" type="url" value="<TMPL_VAR ENDPOINT ESCAPE=HTML>" placeholder="http://192.168.1.20" required></label>
@@ -76,14 +76,16 @@
     </section>
   </div>
 
-  <section id="sessions" class="mcp-card" aria-labelledby="sessions-title">
+  <section id="sessions" class="mcp-card" aria-labelledby="sessions-title" data-empty-label="<TMPL_VAR SESSIONS.EMPTY ESCAPE=HTML>">
     <h2 id="sessions-title"><TMPL_VAR SESSIONS.TITLE></h2>
+    <div id="session-list">
     <TMPL_IF HAS_SESSIONS>
       <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.SCOPES></th><th><TMPL_VAR SESSIONS.EXPIRES></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody>
-      <TMPL_LOOP SESSIONS><tr><td><code><TMPL_VAR client ESCAPE=HTML></code></td><td><code><TMPL_VAR identity ESCAPE=HTML></code></td><td><code><TMPL_VAR scopes ESCAPE=HTML></code></td><td><TMPL_VAR expires_at ESCAPE=HTML></td><td><form method="post" action="index.cgi" data-ajax="revoke_session"><input type="hidden" name="action" value="revoke_session"><input type="hidden" name="id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form></td></tr></TMPL_LOOP>
+      <TMPL_LOOP SESSIONS><tr data-session-id="<TMPL_VAR id ESCAPE=HTML>"><td><code><TMPL_VAR client ESCAPE=HTML></code></td><td><code><TMPL_VAR identity ESCAPE=HTML></code></td><td><code><TMPL_VAR scopes ESCAPE=HTML></code></td><td><TMPL_VAR expires_at ESCAPE=HTML></td><td><form method="post" action="index.cgi" data-ajax="revoke_session"><input type="hidden" name="action" value="revoke_session"><input type="hidden" name="id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form></td></tr></TMPL_LOOP>
       </tbody></table></div>
       <form method="post" action="index.cgi" data-ajax="revoke_all"><input type="hidden" name="action" value="revoke_all"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE_ALL></button></form>
     <TMPL_ELSE><p><TMPL_VAR SESSIONS.EMPTY></p></TMPL_IF>
+    </div>
   </section>
 
   <section id="diagnostics" class="mcp-card" aria-labelledby="diagnostics-title">
@@ -97,12 +99,38 @@
 <script>
 (() => {
   const status = document.getElementById('ajax-status');
-  for (const form of document.querySelectorAll('form[data-ajax]')) {
-    form.addEventListener('submit', async (event) => {
+  const hideStatusTimers = new WeakMap();
+  const hideSuccess = (element) => {
+    window.clearTimeout(hideStatusTimers.get(element));
+    hideStatusTimers.set(element, window.setTimeout(() => { element.hidden = true; }, 4000));
+  };
+  const pageNotice = document.getElementById('page-notice');
+  if (pageNotice) {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('notice');
+    window.history.replaceState(null, '', url);
+    if (pageNotice.dataset.kind === 'success') hideSuccess(pageNotice);
+  }
+  const updateSessions = (sessions) => {
+    const activeIds = new Set(sessions.map((session) => session.id));
+    const list = document.getElementById('session-list');
+    for (const row of list.querySelectorAll('tr[data-session-id]')) {
+      if (!activeIds.has(row.dataset.sessionId)) row.remove();
+    }
+    if (!list.querySelector('tr[data-session-id]')) {
+      const empty = document.createElement('p');
+      empty.textContent = document.getElementById('sessions').dataset.emptyLabel;
+      list.replaceChildren(empty);
+    }
+  };
+  document.addEventListener('submit', async (event) => {
+    const form = event.target.closest('form[data-ajax]');
+    if (!form) return;
       event.preventDefault();
       const button = form.querySelector('button[type="submit"]');
       button.disabled = true;
       button.setAttribute('aria-busy', 'true');
+      window.clearTimeout(hideStatusTimers.get(status));
       status.hidden = false;
       status.dataset.kind = '';
       status.textContent = '<TMPL_VAR AJAX.WORKING ESCAPE=JS>';
@@ -116,8 +144,10 @@
         if (!response.ok || !result.ok) throw new Error(result.error?.message || '<TMPL_VAR AJAX.ERROR ESCAPE=JS>');
         status.dataset.kind = 'success';
         status.textContent = '<TMPL_VAR AJAX.SUCCESS ESCAPE=JS>';
-        if (form.dataset.ajax === 'status') document.getElementById('service-state').textContent = result.data.service_active ? '<TMPL_VAR STATUS.RUNNING ESCAPE=JS>' : '<TMPL_VAR STATUS.STOPPED ESCAPE=JS>';
-        if (form.dataset.ajax.startsWith('revoke')) window.location.reload();
+        hideSuccess(status);
+        if ('service_active' in result.data) document.getElementById('service-state').textContent = result.data.service_active ? '<TMPL_VAR STATUS.RUNNING ESCAPE=JS>' : '<TMPL_VAR STATUS.STOPPED ESCAPE=JS>';
+        if (Array.isArray(result.data.sessions)) updateSessions(result.data.sessions);
+        if (form.dataset.ajax === 'save_config') document.querySelector('form[data-ajax="test_connection"] input[name="endpoint"]').value = result.data.configuration.loxone.endpoint;
       } catch (error) {
         status.dataset.kind = 'error';
         if (error instanceof DOMException && error.name === 'AbortError') status.textContent = '<TMPL_VAR AJAX.TIMEOUT ESCAPE=JS>';
@@ -128,7 +158,6 @@
         button.disabled = false;
         button.removeAttribute('aria-busy');
       }
-    });
-  }
+  });
 })();
 </script>

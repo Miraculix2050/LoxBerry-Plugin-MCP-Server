@@ -9,16 +9,16 @@ import subprocess
 import sys
 from contextlib import suppress
 from pathlib import Path
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 from uuid import UUID
 
 from mcpserver import __version__
-from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore, LoxoneTokenStoreError
-from mcpserver.auth.provider import CONTROL_SCOPE
-from mcpserver.auth.store import AtomicJsonAuthStore
-from mcpserver.config import AtomicConfigStore, ConfigError, PluginConfig
-from mcpserver.loxone.client import LoxoneClient, LoxoneConnectionError, MiniserverEndpoint
-from mcpserver.loxone.events import LoxoneProtocolError
+
+if TYPE_CHECKING:
+    from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore
+    from mcpserver.auth.store import AtomicJsonAuthStore
+    from mcpserver.config import AtomicConfigStore
+    from mcpserver.loxone.client import LoxoneClient, MiniserverEndpoint
 
 _MAX_REQUEST_BYTES: Final = 32 * 1024
 _SERVICE: Final = "loxberry-mcpserver.service"
@@ -38,18 +38,32 @@ def _path(name: str, *, suffix: str | None = None) -> Path:
 
 
 def _config_store() -> AtomicConfigStore:
+    from mcpserver.config import AtomicConfigStore
+
     return AtomicConfigStore(_path("MCPSERVER_CONFIG", suffix=".json"))
 
 
 def _auth_store() -> AtomicJsonAuthStore:
+    from mcpserver.auth.store import AtomicJsonAuthStore
+
     return AtomicJsonAuthStore(_path("MCPSERVER_AUTH_STORE", suffix=".json"))
 
 
 def _token_store() -> EncryptedLoxoneTokenStore:
+    from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore
+
     return EncryptedLoxoneTokenStore(
         _path("MCPSERVER_LOXONE_TOKEN_STORE", suffix=".enc"),
         _path("MCPSERVER_INSTALL_KEY", suffix=".key"),
     )
+
+
+def _loxone_client(
+    endpoint: MiniserverEndpoint, *, client_uuid: UUID, timeout_seconds: float
+) -> LoxoneClient:
+    from mcpserver.loxone.client import LoxoneClient
+
+    return LoxoneClient(endpoint, client_uuid=client_uuid, timeout_seconds=timeout_seconds)
 
 
 def _service_active() -> bool:
@@ -81,6 +95,9 @@ def _restart_service() -> None:
 
 
 def _save(payload: object) -> dict[str, Any]:
+    from mcpserver.auth.provider import CONTROL_SCOPE
+    from mcpserver.config import ConfigError, PluginConfig
+
     if not isinstance(payload, dict):
         raise AdminError("configuration payload is invalid")
     config = PluginConfig.from_document(payload)
@@ -113,15 +130,24 @@ def _save(payload: object) -> dict[str, Any]:
             endpoint=previous.loxone_endpoint,
             timeout_seconds=previous.connection_timeout,
         )
-    return {"configuration": config.to_document(), "applied": True}
+    return {
+        "configuration": config.to_document(),
+        "applied": True,
+        "service_active": _service_active(),
+        "sessions": _sessions(),
+    }
 
 
 async def _test_connection(payload: object) -> dict[str, Any]:
+    from mcpserver.loxone.client import LoxoneConnectionError, MiniserverEndpoint
+
     if not isinstance(payload, dict) or not isinstance(payload.get("endpoint"), str):
         raise AdminError("endpoint is required")
     endpoint = MiniserverEndpoint.parse(payload["endpoint"])
     try:
-        result = await LoxoneClient(endpoint, client_uuid=_CLIENT_UUID, timeout_seconds=10).probe()
+        result = await _loxone_client(
+            endpoint, client_uuid=_CLIENT_UUID, timeout_seconds=10
+        ).probe()
     except LoxoneConnectionError as exc:
         raise AdminError(str(exc)) from None
     return {
@@ -156,6 +182,10 @@ def _revoke(
     endpoint: str | None = None,
     timeout_seconds: float | None = None,
 ) -> int:
+    from mcpserver.auth.loxone_store import LoxoneTokenStoreError
+    from mcpserver.loxone.client import LoxoneConnectionError, MiniserverEndpoint
+    from mcpserver.loxone.events import LoxoneProtocolError
+
     revoked: list[str] = []
     bindings: list[tuple[str, str, str]] = []
 
@@ -192,7 +222,7 @@ def _revoke(
     selected_endpoint = endpoint if endpoint is not None else config.loxone_endpoint
     selected_timeout = timeout_seconds if timeout_seconds is not None else config.connection_timeout
     if selected_endpoint and token_store is not None:
-        client = LoxoneClient(
+        client = _loxone_client(
             MiniserverEndpoint.parse(selected_endpoint),
             client_uuid=_CLIENT_UUID,
             timeout_seconds=selected_timeout,
@@ -217,6 +247,8 @@ def _revoke(
 
 
 def _diagnostic() -> dict[str, Any]:
+    from mcpserver.loxone.client import MiniserverEndpoint
+
     config = _config_store().load()
     endpoint = MiniserverEndpoint.parse(config.loxone_endpoint) if config.loxone_endpoint else None
     return {
@@ -236,6 +268,13 @@ def dispatch(request: object) -> dict[str, Any]:
         raise AdminError("request is invalid")
     action = request["action"]
     payload = request.get("payload", {})
+    if action == "page_state":
+        return {
+            "configuration": _config_store().load().to_document(),
+            "version": __version__,
+            "service_active": _service_active(),
+            "sessions": _sessions(),
+        }
     if action == "get_config":
         return {"configuration": _config_store().load().to_document()}
     if action == "save_config":
@@ -250,9 +289,9 @@ def dispatch(request: object) -> dict[str, Any]:
         family_id = payload.get("id") if isinstance(payload, dict) else None
         if not isinstance(family_id, str) or len(family_id) > 128:
             raise AdminError("session identifier is invalid")
-        return {"revoked": _revoke(family_id)}
+        return {"revoked": _revoke(family_id), "sessions": _sessions()}
     if action == "revoke_all":
-        return {"revoked": _revoke(None)}
+        return {"revoked": _revoke(None), "sessions": _sessions()}
     if action == "diagnostic":
         return _diagnostic()
     raise AdminError("action is not supported")
@@ -264,7 +303,7 @@ def main() -> None:
         if len(raw) > _MAX_REQUEST_BYTES:
             raise AdminError("request is too large")
         response = {"ok": True, "data": dispatch(json.loads(raw))}
-    except (AdminError, ConfigError, ValueError, json.JSONDecodeError) as exc:
+    except (AdminError, ValueError, json.JSONDecodeError) as exc:
         response = {"ok": False, "error": {"code": "invalid_request", "message": str(exc)}}
     except Exception:
         response = {
