@@ -78,7 +78,13 @@ function Read-JsonRpc([int]$Id) {
     throw "Timed out waiting for MCP response $Id."
 }
 
-function Invoke-ReadTool([int]$Id, [string]$Name, [hashtable]$Arguments) {
+function Get-NextId {
+    $value = $script:nextId
+    $script:nextId += 1
+    return $value
+}
+
+function Invoke-ToolEnvelope([int]$Id, [string]$Name, [hashtable]$Arguments) {
     Send-JsonRpc @{
         jsonrpc = '2.0'
         id = $Id
@@ -91,9 +97,13 @@ function Invoke-ReadTool([int]$Id, [string]$Name, [hashtable]$Arguments) {
     if (-not $envelope -and $response.result.content[0].text) {
         $envelope = $response.result.content[0].text | ConvertFrom-Json
     }
-    if (-not $envelope -or -not $envelope.ok) {
-        throw "Read-only tool $Name returned an invalid envelope."
-    }
+    if (-not $envelope) { throw "Read-only tool $Name returned no envelope." }
+    return $envelope
+}
+
+function Invoke-ReadTool([int]$Id, [string]$Name, [hashtable]$Arguments) {
+    $envelope = Invoke-ToolEnvelope $Id $Name $Arguments
+    if (-not $envelope.ok) { throw "Read-only tool $Name returned an error envelope." }
     return $envelope
 }
 
@@ -128,29 +138,68 @@ try {
         }
     }
 
-    [void](Invoke-ReadTool 2 'loxone_get_system_status' @{})
-    [void](Invoke-ReadTool 3 'loxone_list_rooms' @{ limit = 100 })
-    [void](Invoke-ReadTool 4 'loxone_list_categories' @{ limit = 100 })
-    $controls = Invoke-ReadTool 5 'loxone_find_controls' @{ limit = 100 }
-    $visibleUuid = @($controls.data.items | ForEach-Object { $_.uuid }) | Select-Object -First 1
+    $script:nextId = 2
+    [void](Invoke-ReadTool (Get-NextId) 'loxone_get_system_status' @{})
+    [void](Invoke-ReadTool (Get-NextId) 'loxone_list_rooms' @{ limit = 100 })
+    [void](Invoke-ReadTool (Get-NextId) 'loxone_list_categories' @{ limit = 100 })
+
+    $allControls = [System.Collections.Generic.List[object]]::new()
+    $cursor = $null
+    $pageCount = 0
+    do {
+        $arguments = @{ limit = 100 }
+        if ($cursor) { $arguments.cursor = $cursor }
+        $page = Invoke-ReadTool (Get-NextId) 'loxone_find_controls' $arguments
+        foreach ($control in $page.data.items) { $allControls.Add($control) }
+        $cursor = $page.data.next_cursor
+        $pageCount += 1
+        if ($pageCount -gt 50) { throw 'Control pagination exceeded the safe test bound.' }
+    } while ($cursor)
+
+    $visibleUuid = @($allControls | ForEach-Object { $_.uuid }) | Select-Object -First 1
     $hiddenUuid = $null
+    $description = $null
     if ($VisibilityFixturePath) {
         $fixture = Get-Content -LiteralPath $VisibilityFixturePath -Raw | ConvertFrom-Json
         $visibleUuid = [string]$fixture.visible_control_uuid
         $hiddenUuid = [string]$fixture.hidden_control_uuid
-        $controlUuids = @($controls.data.items | ForEach-Object { $_.uuid })
+        $controlUuids = @($allControls | ForEach-Object { $_.uuid })
         if (-not $visibleUuid -or $visibleUuid -notin $controlUuids) {
             throw 'Expected visible control is absent.'
         }
         if ($hiddenUuid -and $hiddenUuid -in $controlUuids) {
             throw 'Expected hidden control leaked into the result.'
         }
+        if ($hiddenUuid) {
+            $hidden = Invoke-ToolEnvelope (Get-NextId) 'loxone_describe_control' @{
+                control_uuid = $hiddenUuid
+            }
+            if ($hidden.ok -or $hidden.data.error -ne 'not_found') {
+                throw 'Expected hidden control is directly describable.'
+            }
+        }
+        $description = Invoke-ReadTool (Get-NextId) 'loxone_describe_control' @{
+            control_uuid = $visibleUuid
+        }
+    } else {
+        $describeBudget = [Math]::Max(0, 50 - $pageCount)
+        foreach ($control in @($allControls | Select-Object -First $describeBudget)) {
+            $candidate = Invoke-ReadTool (Get-NextId) 'loxone_describe_control' @{
+                control_uuid = $control.uuid
+            }
+            if (@($candidate.data.states).Count -gt 0) {
+                $visibleUuid = $control.uuid
+                $description = $candidate
+                break
+            }
+        }
     }
-    if (-not $visibleUuid) { throw 'No visible control is available for the read-only probe.' }
-    $description = Invoke-ReadTool 6 'loxone_describe_control' @{ control_uuid = $visibleUuid }
+    if (-not $visibleUuid -or -not $description) {
+        throw 'No visible control with a readable state is available within the safe call budget.'
+    }
     $stateUuid = @($description.data.states | ForEach-Object { $_.uuid }) | Select-Object -First 1
     if (-not $stateUuid) { throw 'The selected visible control has no readable state.' }
-    [void](Invoke-ReadTool 7 'loxone_get_states' @{ state_uuids = @($stateUuid) })
+    [void](Invoke-ReadTool (Get-NextId) 'loxone_get_states' @{ state_uuids = @($stateUuid) })
 
     $visibleUuid = $null
     $hiddenUuid = $null

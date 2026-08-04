@@ -229,6 +229,40 @@ def test_plugin_archive_verifier_accepts_builder_output(tmp_path: Path) -> None:
 
     assert verify_archive(output) == hashlib.sha256(output.read_bytes()).hexdigest()
 
+    with zipfile.ZipFile(output) as source:
+        omitted = next(
+            name
+            for name in source.namelist()
+            if name.startswith("bin/wheelhouse/")
+            and not name.startswith("bin/wheelhouse/loxberry_mcpserver-")
+        )
+        tampered = tmp_path / "tampered.zip"
+        with zipfile.ZipFile(tampered, "w") as destination:
+            for entry in source.infolist():
+                if entry.filename != omitted:
+                    destination.writestr(entry, source.read(entry))
+    tampered_digest = hashlib.sha256(tampered.read_bytes()).hexdigest()
+    tampered.with_suffix(".zip.sha256").write_text(
+        f"{tampered_digest}  {tampered.name}\n", encoding="ascii"
+    )
+    with pytest.raises(PackageVerificationError, match="does not match its lock"):
+        verify_archive(tampered)
+
+    (wheelhouse / "foreign_package-9.9-py3-none-any.whl").write_bytes(b"foreign")
+    rejected = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "tools" / "build_plugin.py"),
+            "--wheelhouse",
+            str(wheelhouse),
+            "--output",
+            str(tmp_path / "rejected.zip"),
+        ],
+        check=False,
+        cwd=ROOT,
+    )
+    assert rejected.returncode != 0
+
 
 def test_release_helpers_exclude_stale_project_wheel_and_refuse_overwrite(
     tmp_path: Path,
@@ -238,9 +272,11 @@ def test_release_helpers_exclude_stale_project_wheel_and_refuse_overwrite(
     source.mkdir()
     destination.mkdir()
     (source / "dependency-1.0-py3-none-any.whl").write_bytes(b"dependency")
+    (source / "dependency-0.9-py3-none-any.whl").write_bytes(b"stale dependency")
+    (source / "foreign-1.0-py3-none-any.whl").write_bytes(b"foreign")
     (source / "loxberry_mcpserver-0.1.0a1-py3-none-any.whl").write_bytes(b"stale")
 
-    _copy_runtime_wheels(source, destination)
+    _copy_runtime_wheels(source, destination, {"dependency": "1.0"})
 
     assert [item.name for item in destination.iterdir()] == ["dependency-1.0-py3-none-any.whl"]
     candidate = tmp_path / "candidate.zip"
@@ -249,6 +285,18 @@ def test_release_helpers_exclude_stale_project_wheel_and_refuse_overwrite(
     output.write_bytes(b"old")
     with pytest.raises(RuntimeError, match="different content"):
         _publish(candidate, output, hashlib.sha256(candidate.read_bytes()).hexdigest())
+
+
+@pytest.mark.parametrize("script", ["tools/verify_plugin.py", "tools/build_release_candidate.py"])
+def test_documented_python_automation_clis_start_without_pythonpath(script: str) -> None:
+    result = subprocess.run(
+        [sys.executable, script, "--help"],
+        check=False,
+        cwd=ROOT,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    assert result.returncode == 0
 
 
 def test_mcp_client_probe_has_valid_powershell_syntax() -> None:

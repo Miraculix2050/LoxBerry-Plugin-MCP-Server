@@ -80,6 +80,15 @@ def _wheel_versions(wheelhouse: Path) -> set[tuple[str, str]]:
     return result
 
 
+def _wheel_identities(wheelhouse: Path) -> list[tuple[str, str]]:
+    result: list[tuple[str, str]] = []
+    for item in wheelhouse.glob("*.whl"):
+        parts = item.name.removesuffix(".whl").split("-")
+        if len(parts) >= 5:
+            result.append((re.sub(r"[-_.]+", "-", parts[0]).lower(), parts[1].lower()))
+    return result
+
+
 def _add(archive: zipfile.ZipFile, source: Path, target: str) -> None:
     info = zipfile.ZipInfo(target.replace("\\", "/"), _TIMESTAMP)
     info.create_system = 3
@@ -105,6 +114,12 @@ def main() -> int:
 
     requirements = _locked_requirements(lock)
     wheel_versions = _wheel_versions(wheelhouse)
+    runtime_wheels = [
+        identity
+        for identity in _wheel_identities(wheelhouse)
+        if identity[0] != "loxberry-mcpserver"
+    ]
+    expected_runtime = {(name, version.lower()) for name, version in requirements.items()}
     missing = set(requirements) - _wheel_names(wheelhouse)
     mismatched = {
         name
@@ -112,8 +127,14 @@ def main() -> int:
         if (name, version.lower()) not in wheel_versions
     }
     project_wheels = tuple(wheelhouse.glob("loxberry_mcpserver-0.1.0a1-*.whl"))
-    if missing or mismatched or len(project_wheels) != 1:
+    unexpected = set(runtime_wheels) - expected_runtime
+    duplicates = len(runtime_wheels) != len(set(runtime_wheels))
+    if missing or mismatched or unexpected or duplicates or len(project_wheels) != 1:
         detail = ", ".join(sorted(missing | mismatched)) or "project wheel"
+        if unexpected:
+            detail = ", ".join(sorted(name for name, _version in unexpected))
+        if duplicates:
+            detail = "duplicate runtime wheel"
         raise SystemExit(f"wheelhouse is incomplete: {detail}")
 
     entries: list[tuple[Path, str]] = []

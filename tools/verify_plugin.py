@@ -12,8 +12,6 @@ import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Final
 
-from tools.build_plugin import _EXECUTABLES
-
 _REQUIRED: Final = {
     "plugin.cfg",
     "preinstall.sh",
@@ -33,12 +31,43 @@ _REQUIRED: Final = {
     "templates/lang/language_de.ini",
     "templates/lang/language_en.ini",
 }
+_EXECUTABLES: Final = {
+    "preinstall.sh",
+    "preupgrade.sh",
+    "postinstall.sh",
+    "postroot.sh",
+    "postupgrade.sh",
+    "uninstall/uninstall.sh",
+    "bin/healthcheck",
+    "bin/mcpserver-admin",
+    "webfrontend/htmlauth/index.cgi",
+}
 _TEXT_SUFFIXES: Final = {".cfg", ".cgi", ".conf", ".html", ".ini", ".json", ".lock", ".sh", ".svg"}
 _TEXT_NAMES: Final = {"bin/healthcheck", "bin/mcpserver-admin"}
 
 
 class PackageVerificationError(RuntimeError):
     """The archive violates the Phase 1 package contract."""
+
+
+def _normalized_name(value: str) -> str:
+    return re.sub(r"[-_.]+", "-", value).lower()
+
+
+def _locked_requirements(content: str) -> dict[str, str]:
+    requirements: dict[str, str] = {}
+    for line in content.splitlines():
+        match = re.fullmatch(r"([A-Za-z0-9_.-]+)==([A-Za-z0-9_.+-]+)", line)
+        if match:
+            requirements[_normalized_name(match.group(1))] = match.group(2).lower()
+    return requirements
+
+
+def _wheel_identity(filename: str) -> tuple[str, str] | None:
+    parts = PurePosixPath(filename).name.removesuffix(".whl").split("-")
+    if len(parts) < 5:
+        return None
+    return _normalized_name(parts[0]), parts[1].lower()
 
 
 def _expected_project_version(plugin_version: str) -> str:
@@ -110,9 +139,20 @@ def verify_archive(archive: Path, *, require_checksum: bool = True) -> str:
         project_wheels = [name for name in names if name.startswith(expected_wheel)]
         if len(project_wheels) != 1:
             raise PackageVerificationError("exactly one matching project wheel is required")
-        runtime_wheels = [name for name in names if name.startswith("bin/wheelhouse/")]
-        if len(runtime_wheels) < 2:
-            raise PackageVerificationError("offline runtime wheelhouse is incomplete")
+        expected_runtime = _locked_requirements(
+            package.read("bin/runtime-arm64.lock").decode("utf-8")
+        )
+        runtime_wheels = [
+            identity
+            for name in names
+            if name.startswith("bin/wheelhouse/")
+            and not name.startswith("bin/wheelhouse/loxberry_mcpserver-")
+            if (identity := _wheel_identity(name)) is not None
+        ]
+        if len(runtime_wheels) != len(set(runtime_wheels)):
+            raise PackageVerificationError("offline runtime wheelhouse contains duplicates")
+        if set(runtime_wheels) != set(expected_runtime.items()):
+            raise PackageVerificationError("offline runtime wheelhouse does not match its lock")
 
     return digest
 

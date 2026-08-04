@@ -12,8 +12,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-from tools.verify_plugin import verify_archive
-
 
 def _run(*arguments: str, root: Path, environment: dict[str, str] | None = None) -> None:
     subprocess.run(arguments, check=True, cwd=root, env=environment)
@@ -25,12 +23,41 @@ def _version(root: Path) -> str:
     return parser["PLUGIN"]["VERSION"]
 
 
-def _copy_runtime_wheels(source: Path, destination: Path) -> None:
+def _normalized_name(value: str) -> str:
+    import re
+
+    return re.sub(r"[-_.]+", "-", value).lower()
+
+
+def _locked_requirements(path: Path) -> dict[str, str]:
+    import re
+
+    requirements: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        match = re.fullmatch(r"([A-Za-z0-9_.-]+)==([A-Za-z0-9_.+-]+)", line)
+        if match:
+            requirements[_normalized_name(match.group(1))] = match.group(2).lower()
+    return requirements
+
+
+def _wheel_identity(path: Path) -> tuple[str, str] | None:
+    parts = path.name.removesuffix(".whl").split("-")
+    if len(parts) < 5:
+        return None
+    return _normalized_name(parts[0]), parts[1].lower()
+
+
+def _copy_runtime_wheels(source: Path, destination: Path, requirements: dict[str, str]) -> None:
     if not source.is_dir():
         raise RuntimeError("runtime wheelhouse does not exist")
+    copied: list[tuple[str, str]] = []
     for wheel in source.glob("*.whl"):
-        if not wheel.name.startswith("loxberry_mcpserver-"):
+        identity = _wheel_identity(wheel)
+        if identity is not None and identity in requirements.items():
             shutil.copy2(wheel, destination / wheel.name)
+            copied.append(identity)
+    if len(copied) != len(set(copied)) or set(copied) != set(requirements.items()):
+        raise RuntimeError("runtime wheelhouse does not exactly satisfy the lock")
 
 
 def _build_project_wheel(root: Path, wheelhouse: Path, environment: dict[str, str]) -> None:
@@ -96,7 +123,8 @@ def main() -> int:
                 environment=environment,
             )
         else:
-            _copy_runtime_wheels(args.runtime_wheelhouse.resolve(), wheelhouse)
+            requirements = _locked_requirements(root / "requirements" / "runtime-arm64.lock")
+            _copy_runtime_wheels(args.runtime_wheelhouse.resolve(), wheelhouse, requirements)
             _build_project_wheel(root, wheelhouse, environment)
 
         first = work / "candidate-a.zip"
@@ -119,7 +147,13 @@ def main() -> int:
 
         output = output_dir / f"LoxBerry-MCP-Server-{_version(root)}.zip"
         _publish(first, output, first_digest)
-        verify_archive(output)
+        _run(
+            sys.executable,
+            "tools/verify_plugin.py",
+            str(output),
+            root=root,
+            environment=environment,
+        )
 
     print(f"RELEASE_CANDIDATE=pass path={output}")
     print(f"SHA256={first_digest}")
