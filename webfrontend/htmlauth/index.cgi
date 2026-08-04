@@ -137,11 +137,10 @@ my $template = HTML::Template->new_scalar_ref(
 );
 my %L = LoxBerry::System::readlanguage($template, 'language.ini');
 
-my $config_result = admin_call('get_config', {});
-my $status_result = admin_call('status', {});
-my $sessions_result = admin_call('list_sessions', {});
-my $config = $config_result->{ok} ? $config_result->{data}{configuration} : {};
-my $sessions = $sessions_result->{ok} ? $sessions_result->{data}{sessions} : [];
+my $page_result = admin_call('page_state', {});
+my $page_state = $page_result->{ok} ? $page_result->{data} : {};
+my $config = $page_state->{configuration} // {};
+my $sessions = $page_state->{sessions} // [];
 $config->{server} = {} if ref($config->{server}) ne 'HASH';
 $config->{loxone} = {} if ref($config->{loxone}) ne 'HASH';
 $config->{tools} = {} if ref($config->{tools}) ne 'HASH';
@@ -157,10 +156,12 @@ $template->param(
     REQUESTS_PER_MINUTE => $config->{limits}{requests_per_minute} // 60,
     CONTROL_REQUESTS_PER_MINUTE => $config->{limits}{control_requests_per_minute} // 10,
     MAX_PARALLEL_CALLS => $config->{limits}{max_parallel_calls} // 4,
-    SERVICE_ACTIVE => ($status_result->{ok} && $status_result->{data}{service_active}) ? 1 : 0,
+    SERVICE_ACTIVE => $page_state->{service_active} ? 1 : 0,
     SESSIONS => $sessions,
     HAS_SESSIONS => scalar(@$sessions) ? 1 : 0,
-    NOTICE => $q->{notice} // '',
+    NOTICE => ($q->{notice} // '') eq 'success' ? $L{'AJAX.SUCCESS'} :
+        (($q->{notice} // '') ne '' ? $L{'AJAX.ERROR'} : ''),
+    NOTICE_KIND => ($q->{notice} // '') eq 'success' ? 'success' : 'error',
     LOGLIST => LoxBerry::Web::loglist_html(),
 );
 

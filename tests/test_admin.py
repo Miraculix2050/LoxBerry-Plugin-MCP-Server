@@ -49,6 +49,27 @@ def test_admin_rejects_unknown_actions() -> None:
         dispatch({"action": "delete_everything"})
 
 
+def test_page_state_aggregates_initial_admin_ui_data(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = PluginConfig.defaults()
+
+    class ConfigStore:
+        def load(self) -> PluginConfig:
+            return config
+
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: ConfigStore())
+    monkeypatch.setattr("mcpserver.admin._service_active", lambda: True)
+    monkeypatch.setattr("mcpserver.admin._sessions", lambda: [{"id": "family"}])
+
+    result = dispatch({"action": "page_state"})
+
+    assert result == {
+        "configuration": config.to_document(),
+        "version": result["version"],
+        "service_active": True,
+        "sessions": [{"id": "family"}],
+    }
+
+
 def test_failed_config_apply_restores_previous_configuration(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -153,6 +174,15 @@ def test_session_list_excludes_revoked_families(
     result = dispatch({"action": "list_sessions"})
 
     assert [session["id"] for session in result["sessions"]] == ["active-family"]
+
+
+def test_revoke_response_contains_updated_sessions(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("mcpserver.admin._revoke", lambda family_id: 1)
+    monkeypatch.setattr("mcpserver.admin._sessions", lambda: [])
+
+    result = dispatch({"action": "revoke_session", "payload": {"id": "family"}})
+
+    assert result == {"revoked": 1, "sessions": []}
 
 
 def test_revoke_survives_unreadable_encrypted_token(
@@ -274,7 +304,7 @@ def test_revoke_deletes_local_token_after_remote_protocol_error(
 
     monkeypatch.setenv("MCPSERVER_AUTH_STORE", str(auth_path))
     monkeypatch.setattr("mcpserver.admin._token_store", lambda: TrackingTokenStore())
-    monkeypatch.setattr("mcpserver.admin.LoxoneClient", ProtocolFailingClient)
+    monkeypatch.setattr("mcpserver.admin._loxone_client", ProtocolFailingClient)
     monkeypatch.setattr(
         "mcpserver.admin._config_store",
         lambda: type(
