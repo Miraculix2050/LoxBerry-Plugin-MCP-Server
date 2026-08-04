@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -30,7 +32,7 @@ def test_session_expiry_is_rendered_as_a_local_date_and_time() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
 
-    assert "strftime('%Y-%m-%d %H:%M:%S %Z', localtime(0 + $value))" in cgi
+    assert "strftime('%Y-%m-%d %H:%M:%S %Z', localtime(0 + $raw))" in cgi
     assert "$session->{expires_display} = format_expiry($session->{expires_at})" in cgi
     assert 'class="mcp-expiry"' in template
     assert 'data-expires-at="<TMPL_VAR expires_at ESCAPE=HTML>"' in template
@@ -38,3 +40,74 @@ def test_session_expiry_is_rendered_as_a_local_date_and_time() -> None:
     assert "new Intl.DateTimeFormat(document.documentElement.lang || undefined" in template
     assert "element.textContent = expiryFormatter.format(date)" in template
     assert "<td><TMPL_VAR expires_at ESCAPE=HTML></td>" not in template
+
+
+def test_perl_expiry_formatter_rejects_out_of_range_values_safely() -> None:
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    constant = re.search(r"use constant MAX_EXPIRY_EPOCH => [^;]+;", cgi)
+    formatter = re.search(r"sub format_expiry \{.*?^\}", cgi, re.MULTILINE | re.DOTALL)
+
+    assert constant is not None
+    assert formatter is not None
+    script = f"""
+use POSIX qw(strftime);
+{constant.group(0)}
+{formatter.group(0)}
+for my $value (@ARGV) {{ print format_expiry($value), "\\n"; }}
+print format_expiry(undef), "\\n";
+"""
+    values = [
+        "1900000000",
+        "4102444799",
+        "4102444800",
+        "999999999999999999",
+        "-1",
+        "1.5",
+        " 1",
+        "01",
+    ]
+    result = subprocess.run(
+        ["perl", "-e", script, *values],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    output = result.stdout.splitlines()
+
+    assert output[0] != values[0]
+    assert output[1] != values[1]
+    assert output[2:] == [*values[2:], ""]
+
+
+def test_browser_expiry_parser_uses_the_same_bounds() -> None:
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    parser = re.search(
+        r"const MAX_EXPIRY_EPOCH = .*?^  \};",
+        template,
+        re.MULTILINE | re.DOTALL,
+    )
+
+    assert parser is not None
+    values = [
+        "1900000000",
+        "4102444799",
+        "4102444800",
+        "999999999999999999",
+        "-1",
+        "1.5",
+        " 1",
+        "01",
+        "",
+    ]
+    script = f"""
+{parser.group(0)}
+console.log(JSON.stringify(process.argv.slice(1).map(parseExpiry)));
+"""
+    result = subprocess.run(
+        ["node", "-e", script, *values],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.stdout.strip() == "[1900000000,4102444799,null,null,null,null,null,null,null]"

@@ -138,10 +138,18 @@ my $template = HTML::Template->new_scalar_ref(
 );
 my %L = LoxBerry::System::readlanguage($template, 'language.ini');
 
+use constant MAX_EXPIRY_EPOCH => 4_102_444_799;
+
 sub format_expiry {
     my ($value) = @_;
-    return '' if !defined($value) || "$value" !~ /\A\d+\z/;
-    return strftime('%Y-%m-%d %H:%M:%S %Z', localtime(0 + $value));
+    my $raw = defined($value) ? "$value" : '';
+    return $raw if $raw !~ /\A(?:0|[1-9]\d*)\z/
+        || length($raw) > 12
+        || 0 + $raw > MAX_EXPIRY_EPOCH;
+    my $formatted = eval {
+        strftime('%Y-%m-%d %H:%M:%S %Z', localtime(0 + $raw));
+    };
+    return defined($formatted) && length($formatted) ? $formatted : $raw;
 }
 
 my $page_result = admin_call('page_state', {});

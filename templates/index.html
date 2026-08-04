@@ -103,10 +103,16 @@
     dateStyle: 'medium',
     timeStyle: 'medium',
   });
+  const MAX_EXPIRY_EPOCH = 4102444799;
+  const parseExpiry = (raw) => {
+    if (!/^(?:0|[1-9]\d*)$/.test(raw) || raw.length > 12) return null;
+    const value = Number(raw);
+    return Number.isSafeInteger(value) && value <= MAX_EXPIRY_EPOCH ? value : null;
+  };
   for (const element of document.querySelectorAll('time.mcp-expiry')) {
-    const expiresAt = Number(element.dataset.expiresAt);
-    const date = new Date(expiresAt * 1000);
-    if (Number.isFinite(expiresAt) && !Number.isNaN(date.getTime())) {
+    const expiresAt = parseExpiry(element.dataset.expiresAt);
+    if (expiresAt !== null) {
+      const date = new Date(expiresAt * 1000);
       element.dateTime = date.toISOString();
       element.textContent = expiryFormatter.format(date);
     }
