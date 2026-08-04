@@ -6,7 +6,6 @@ use CGI;
 use HTML::Template;
 use IPC::Open3;
 use JSON::PP qw(decode_json encode_json);
-use POSIX qw(strftime);
 use Symbol qw(gensym);
 use LoxBerry::System;
 use LoxBerry::Web;
@@ -138,20 +137,10 @@ my $template = HTML::Template->new_scalar_ref(
 );
 my %L = LoxBerry::System::readlanguage($template, 'language.ini');
 
-sub format_expiry {
-    my ($value) = @_;
-    return '' if !defined($value) || "$value" !~ /\A\d+\z/;
-    return strftime('%Y-%m-%d %H:%M:%S %Z', localtime(0 + $value));
-}
-
 my $page_result = admin_call('page_state', {});
 my $page_state = $page_result->{ok} ? $page_result->{data} : {};
 my $config = $page_state->{configuration} // {};
 my $sessions = $page_state->{sessions} // [];
-for my $session (@$sessions) {
-    next if ref($session) ne 'HASH';
-    $session->{expires_display} = format_expiry($session->{expires_at});
-}
 $config->{server} = {} if ref($config->{server}) ne 'HASH';
 $config->{loxone} = {} if ref($config->{loxone}) ne 'HASH';
 $config->{tools} = {} if ref($config->{tools}) ne 'HASH';
