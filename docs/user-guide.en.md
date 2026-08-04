@@ -31,6 +31,8 @@ additionally enable **Loxone control**. A new OAuth grant with `loxone:control`
 is then required. Disabling control revokes existing control sessions while
 read-only sessions remain valid. Control cannot be enabled for a Gen. 2/HTTPS
 target.
+Claude users can find the required scope configuration under
+[Optional Loxone control](clients/claude-desktop.en.md#optional-loxone-control).
 
 Save, connection test and session revocation remain usable without JavaScript.
 With JavaScript, status, test and revocation update without a page navigation.

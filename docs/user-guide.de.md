@@ -31,6 +31,8 @@ von Gen.-1-Switches aktiviere zusätzlich **Loxone-Steuerung**. Danach ist eine
 neue OAuth-Freigabe mit `loxone:control` erforderlich. Deaktivieren widerruft
 bestehende Control-Sitzungen; reine Lesesitzungen bleiben gültig. Bei einem
 Gen.-2-/HTTPS-Ziel kann die Steuerung nicht aktiviert werden.
+Claude-Benutzer finden die dafür notwendige Scope-Konfiguration im Abschnitt
+[Optionale Loxone-Steuerung](clients/claude-desktop.de.md#optionale-loxone-steuerung).
 
 Speichern, Verbindungstest und Sitzungswiderruf funktionieren auch ohne
 JavaScript. Mit JavaScript werden Status, Test und Widerruf ohne Seitenwechsel
