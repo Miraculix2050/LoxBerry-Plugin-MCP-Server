@@ -26,6 +26,11 @@ Für Claude Desktop steht eine kurze
 [Schritt-für-Schritt-Anleitung](clients/claude-desktop.de.md) mit fertigem
 Konfigurationsbeispiel und Fehlerhilfe bereit.
 
+Für die ChatGPT-/Codex-Desktop-App beschreibt die
+[direkte Streamable-HTTP-Einrichtung](clients/chatgpt-codex-desktop.de.md) das
+Hinzufügen per URL, die Browser-Authentifizierung und die angeforderten Lese-
+beziehungsweise Schreibrechte. Dafür wird keine lokale Node.js-Bridge benötigt.
+
 Die sechs Lesetools bleiben standardmäßig aktiv. Für die optionale Bedienung
 von Gen.-1-Switches aktiviere zusätzlich **Loxone-Steuerung**. Danach ist eine
 neue OAuth-Freigabe mit `loxone:control` erforderlich. Deaktivieren widerruft
