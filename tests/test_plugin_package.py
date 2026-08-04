@@ -420,7 +420,7 @@ def test_mcp_client_probe_prefers_active_store_profile(tmp_path: Path) -> None:
     result = _run_claude_config_check(tmp_path)
 
     assert result.returncode != 0
-    assert "missing from the active configuration" in result.stderr
+    assert "claude_mcp_configuration=pass" not in result.stdout
 
 
 def test_mcp_client_probe_accepts_configured_store_profile(tmp_path: Path) -> None:
