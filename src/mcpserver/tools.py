@@ -11,7 +11,7 @@ import secrets
 import time
 from collections import OrderedDict
 from datetime import UTC, datetime
-from typing import Any, Final, Literal
+from typing import Annotated, Any, Final, Literal
 from uuid import uuid4
 
 from mcp.server.auth.middleware.auth_context import get_access_token
@@ -42,6 +42,23 @@ _AUDIT_SUPPRESSION_SECONDS: Final = 60.0
 _MAX_AUDIT_SUPPRESSION_KEYS: Final = 512
 _AUDIT_LAST: OrderedDict[tuple[str, str], float] = OrderedDict()
 
+CursorArgument = Annotated[
+    str | None,
+    Field(
+        description=(
+            "Opaque continuation cursor returned as next_cursor by the same tool. "
+            "Leave empty for the first page and keep all other filters unchanged."
+        )
+    ),
+]
+LimitArgument = Annotated[
+    int,
+    Field(
+        description="Maximum number of results to return on this page, from 1 to 100.",
+        json_schema_extra={"minimum": 1, "maximum": MAX_PAGE_SIZE},
+    ),
+]
+
 
 class ErrorData(BaseModel):
     error: str
@@ -55,7 +72,12 @@ class NamedGroupData(BaseModel):
 
 class NamedGroupPageData(BaseModel):
     items: list[NamedGroupData]
-    next_cursor: str | None
+    next_cursor: str | None = Field(
+        description=(
+            "Cursor for the next page. Pass it unchanged as cursor to the same tool with "
+            "the same filters, or stop when it is null."
+        )
+    )
 
 
 class ControlSummaryData(BaseModel):
@@ -68,7 +90,12 @@ class ControlSummaryData(BaseModel):
 
 class ControlPageData(BaseModel):
     items: list[ControlSummaryData]
-    next_cursor: str | None
+    next_cursor: str | None = Field(
+        description=(
+            "Cursor for the next page. Pass it unchanged as cursor to the same tool with "
+            "the same filters, or stop when it is null."
+        )
+    )
 
 
 class StateReferenceData(BaseModel):
@@ -391,7 +418,7 @@ def register_read_tools(
         structured_output=True,
     )
     async def list_rooms(
-        cursor: str | None = None, limit: int = DEFAULT_PAGE_SIZE
+        cursor: CursorArgument = None, limit: LimitArgument = DEFAULT_PAGE_SIZE
     ) -> NamedGroupPageEnvelope:
         try:
             _access_token, snapshot = await _snapshot(runtime)
@@ -417,7 +444,7 @@ def register_read_tools(
         structured_output=True,
     )
     async def list_categories(
-        cursor: str | None = None, limit: int = DEFAULT_PAGE_SIZE
+        cursor: CursorArgument = None, limit: LimitArgument = DEFAULT_PAGE_SIZE
     ) -> NamedGroupPageEnvelope:
         try:
             _access_token, snapshot = await _snapshot(runtime)
@@ -443,12 +470,27 @@ def register_read_tools(
         structured_output=True,
     )
     async def find_controls(
-        query: str | None = None,
-        room_uuid: str | None = None,
-        category_uuid: str | None = None,
-        control_type: str | None = None,
-        cursor: str | None = None,
-        limit: int = DEFAULT_PAGE_SIZE,
+        query: Annotated[
+            str | None,
+            Field(
+                description="Case-insensitive text contained in the visible control name.",
+                json_schema_extra={"maxLength": 200},
+            ),
+        ] = None,
+        room_uuid: Annotated[
+            str | None,
+            Field(description="Exact room UUID returned by loxone_list_rooms."),
+        ] = None,
+        category_uuid: Annotated[
+            str | None,
+            Field(description="Exact category UUID returned by loxone_list_categories."),
+        ] = None,
+        control_type: Annotated[
+            str | None,
+            Field(description=("Case-insensitive exact Loxone control type, for example Switch.")),
+        ] = None,
+        cursor: CursorArgument = None,
+        limit: LimitArgument = DEFAULT_PAGE_SIZE,
     ) -> ControlPageEnvelope:
         if query is not None and len(query) > 200:
             return _error(ControlPageEnvelope, "invalid_input", "query is too long")
@@ -456,16 +498,20 @@ def register_read_tools(
             _access_token, snapshot = await _snapshot(runtime)
             controls = _flatten(snapshot.structure.controls)
             normalized = query.casefold().strip() if query else None
+            normalized_control_type = control_type.casefold().strip() if control_type else None
             matches = [
                 item
                 for item in controls
                 if (normalized is None or normalized in item.name.casefold())
                 and (room_uuid is None or item.room_uuid == room_uuid)
                 and (category_uuid is None or item.category_uuid == category_uuid)
-                and (control_type is None or item.control_type == control_type)
+                and (
+                    normalized_control_type is None
+                    or item.control_type.casefold() == normalized_control_type
+                )
             ]
             scope = hashlib.sha256(
-                json.dumps([normalized, room_uuid, category_uuid, control_type]).encode()
+                json.dumps([normalized, room_uuid, category_uuid, normalized_control_type]).encode()
             ).hexdigest()
             values = [_control_summary(item, snapshot) for item in matches]
             return _result(
@@ -489,7 +535,12 @@ def register_read_tools(
         annotations=annotations,
         structured_output=True,
     )
-    async def describe_control(control_uuid: str) -> ControlDescriptionEnvelope:
+    async def describe_control(
+        control_uuid: Annotated[
+            str,
+            Field(description="Exact visible control UUID returned by loxone_find_controls."),
+        ],
+    ) -> ControlDescriptionEnvelope:
         try:
             access_token, snapshot = await _snapshot(runtime)
             control = next(
@@ -531,7 +582,17 @@ def register_read_tools(
         annotations=annotations,
         structured_output=True,
     )
-    async def get_states(state_uuids: list[str]) -> StatesEnvelope:
+    async def get_states(
+        state_uuids: Annotated[
+            list[str],
+            Field(
+                description=(
+                    "One to 100 unique visible state UUIDs returned by loxone_describe_control."
+                ),
+                json_schema_extra={"minItems": 1, "maxItems": MAX_STATE_UUIDS},
+            ),
+        ],
+    ) -> StatesEnvelope:
         if (
             not state_uuids
             or len(state_uuids) > MAX_STATE_UUIDS
@@ -623,7 +684,14 @@ def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> Non
         structured_output=True,
     )
     async def operate_control(
-        control_uuid: str, action: Literal["on", "off"]
+        control_uuid: Annotated[
+            str,
+            Field(description="Exact operable Switch UUID returned by loxone_find_controls."),
+        ],
+        action: Annotated[
+            Literal["on", "off"],
+            Field(description="Explicit Switch action: on or off."),
+        ],
     ) -> ControlOperationEnvelope:
         access: StoredAccessToken | None = None
         try:

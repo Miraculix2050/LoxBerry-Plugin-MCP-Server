@@ -184,29 +184,70 @@
     return visit(value, schema || {}, schema || {}, '');
   }
 
-  function compatibleTargets(tools, value) {
+  function preferredTargetField(sourcePath) {
+    const leaf = Array.isArray(sourcePath) && sourcePath.length
+      ? String(sourcePath[sourcePath.length - 1]).toLowerCase()
+      : '';
+    return leaf.startsWith('next_') ? leaf.slice(5) : leaf;
+  }
+
+  function compatibleTargets(tools, value, context) {
     const result = [];
+    const preferredField = preferredTargetField(context && context.sourcePath);
+    let order = 0;
     for (const tool of tools || []) {
       const schema = tool.inputSchema || {type: 'object'};
       for (const [name, property] of Object.entries(schema.properties || {})) {
+        let target = null;
         if (schemaSupportedForReuse(property, schema) && validateValue(value, property, schema).length === 0) {
-          result.push({tool: tool.name, field: name});
+          target = {tool: tool.name, field: name};
         } else {
           const effective = effectiveSchema(property, schema);
           if (schemaType(property, schema) === 'array' && effective.items &&
             schemaSupportedForReuse(effective.items, schema) &&
             validateValue(value, effective.items, schema).length === 0 &&
             validateValue([value], property, schema).length === 0) {
-            result.push({tool: tool.name, field: name, mode: 'wrap-array'});
+            target = {tool: tool.name, field: name, mode: 'wrap-array'};
           }
+        }
+        if (target) {
+          target.semanticRank = preferredField && name.toLowerCase() === preferredField ? 0 : 1;
+          target.toolRank = context && tool.name === context.sourceTool ? 0 : 1;
+          target.order = order++;
+          result.push(target);
         }
       }
     }
-    return result;
+    result.sort((left, right) =>
+      left.semanticRank - right.semanticRank || left.toolRank - right.toolRank || left.order - right.order);
+    return result.map(({semanticRank: _semanticRank, toolRank: _toolRank, order: _order, ...target}) => target);
   }
 
   function valueForTransfer(value, mode) {
     return mode === 'wrap-array' ? [clone(value)] : clone(value);
+  }
+
+  function transferArguments(tool, field, value, mode, sourceContext) {
+    const draft = sourceContext && sourceContext.tool === tool.name && sourceContext.arguments &&
+      typeof sourceContext.arguments === 'object' && !Array.isArray(sourceContext.arguments)
+      ? clone(sourceContext.arguments)
+      : defaultArguments(tool.inputSchema || {});
+    if (field !== 'cursor') delete draft.cursor;
+    draft[field] = valueForTransfer(value, mode);
+    return draft;
+  }
+
+  function nextPageArguments(tool, previousArguments, displayedResult) {
+    if (!tool || toolIsMutating(tool) || !previousArguments ||
+      typeof previousArguments !== 'object' || Array.isArray(previousArguments)) return null;
+    const cursor = displayedResult && displayedResult.data && displayedResult.data.next_cursor;
+    if (typeof cursor !== 'string' || cursor.length === 0) return null;
+    const schema = tool.inputSchema || {type: 'object'};
+    const cursorSchema = (schema.properties || {}).cursor;
+    if (!cursorSchema || validateValue(cursor, cursorSchema, schema).length) return null;
+    const draft = clone(previousArguments);
+    draft.cursor = cursor;
+    return validateArguments(draft, schema).length ? null : draft;
   }
 
   function schemaSupportedForReuse(schema, rootSchema, seen) {
@@ -278,6 +319,8 @@
     state.history = [];
     state.transcript = [];
     state.lastResult = null;
+    state.lastResultContext = null;
+    state.nextPageRequest = null;
     state.transferValue = undefined;
     state.transferPath = '';
   }
@@ -347,6 +390,8 @@
     redactArguments,
     compatibleTargets,
     valueForTransfer,
+    transferArguments,
+    nextPageArguments,
     schemaSupportedForReuse,
     formatPath,
     base64Url,
@@ -392,6 +437,7 @@
     validation: document.getElementById('explorer-validation'),
     run: document.getElementById('explorer-run'),
     copy: document.getElementById('explorer-copy'),
+    nextPage: document.getElementById('explorer-next-page'),
     resultTree: document.getElementById('explorer-result-tree'),
     resultRaw: document.getElementById('explorer-result-raw'),
     transcript: document.getElementById('explorer-transcript'),
@@ -415,10 +461,13 @@
     history: [],
     transcript: [],
     lastResult: null,
+    lastResultContext: null,
+    nextPageRequest: null,
     transferValue: undefined,
     transferPath: '',
     nextId: 1,
     controlAvailable: false,
+    busy: false,
   };
 
   function setStatus(text, kind) {
@@ -427,9 +476,11 @@
   }
 
   function setBusy(busy) {
+    state.busy = busy;
     elements.connect.disabled = busy || Boolean(state.oauth);
     elements.disconnect.disabled = busy || !state.oauth;
     elements.run.disabled = busy || !state.oauth || !state.selectedTool;
+    elements.nextPage.disabled = busy || !state.nextPageRequest;
     elements.connect.setAttribute('aria-busy', busy ? 'true' : 'false');
   }
 
@@ -838,7 +889,13 @@
     const fieldLabel = core.createFieldLabel(document, name, input, fieldIndex);
     input.disabled = !included;
     wrapper.append(fieldLabel);
-    if (effective.description) wrapper.append(element('span', {className: 'mcp-explorer-muted', text: effective.description}));
+    const helpKey = {
+      cursor: 'helpCursor', limit: 'helpLimit', query: 'helpQuery', room_uuid: 'helpRoomUuid',
+      category_uuid: 'helpCategoryUuid', control_type: 'helpControlType',
+      control_uuid: 'helpControlUuid', state_uuids: 'helpStateUuids', action: 'helpAction',
+    }[name];
+    const description = helpKey ? label(helpKey) : effective.description;
+    if (description) wrapper.append(element('span', {className: 'mcp-explorer-muted', text: description}));
     wrapper.append(input);
     if (include) include.addEventListener('change', () => {
       input.disabled = !include.checked;
@@ -939,10 +996,19 @@
     return list;
   }
 
-  function renderResult(result) {
+  function renderResult(result, context) {
     state.lastResult = result;
+    state.lastResultContext = context ? core.clone(context) : null;
+    const displayed = displayValue(result);
+    const sourceTool = context && state.tools.find((tool) => tool.name === context.tool);
+    const nextArguments = sourceTool
+      ? core.nextPageArguments(sourceTool, context.arguments, displayed)
+      : null;
+    state.nextPageRequest = nextArguments ? {tool: sourceTool.name, arguments: nextArguments} : null;
+    elements.nextPage.hidden = !state.nextPageRequest;
+    elements.nextPage.disabled = state.busy || !state.nextPageRequest;
     elements.resultRaw.textContent = JSON.stringify(result, null, 2);
-    elements.resultTree.replaceChildren(renderTreeNode(displayValue(result), []));
+    elements.resultTree.replaceChildren(renderTreeNode(displayed, []));
     elements.copy.disabled = false;
   }
 
@@ -970,7 +1036,7 @@
       const button = element('button', {type: 'button', text: `${entry.tool} — ${entry.duration} ms — ${entry.ok ? 'OK' : 'ERROR'}`});
       button.addEventListener('click', () => {
         selectTool(entry.tool, entry.arguments);
-        renderResult(entry.result);
+        renderResult(entry.result, {tool: entry.tool, arguments: entry.arguments});
       });
       elements.history.append(button);
     });
@@ -993,7 +1059,7 @@
     try {
       result = await mcpRequest('tools/call', {name: tool.name, arguments: args}, false);
       ok = !(result && result.isError);
-      renderResult(result);
+      renderResult(result, {tool: tool.name, arguments: args});
       const outputErrors = result && result.structuredContent !== undefined && tool.outputSchema
         ? core.validateArguments(result.structuredContent, tool.outputSchema)
         : [];
@@ -1005,7 +1071,7 @@
       setStatus(ok ? label('ready') : label('error'), ok ? 'success' : 'error');
     } catch (error) {
       result = {error: error instanceof Error ? error.message : label('error')};
-      renderResult(result);
+      renderResult(result, {tool: tool.name, arguments: args});
       showError(error, label('error'));
     } finally {
       state.history.push({tool: tool.name, arguments: args, result, ok, duration: Math.round(performance.now() - started)});
@@ -1019,7 +1085,10 @@
     state.transferValue = core.clone(value);
     state.transferPath = core.formatPath(path);
     elements.transferSource.textContent = `${state.transferPath} = ${JSON.stringify(value)}`;
-    const targets = core.compatibleTargets(state.tools, value);
+    const targets = core.compatibleTargets(state.tools, value, {
+      sourcePath: path,
+      sourceTool: state.lastResultContext && state.lastResultContext.tool,
+    });
     elements.transferTool.replaceChildren();
     [...new Set(targets.map((item) => item.tool))].forEach((name) => elements.transferTool.append(element('option', {value: name, text: name})));
     const updateFields = () => {
@@ -1040,11 +1109,13 @@
   function applyTransfer() {
     const tool = state.tools.find((item) => item.name === elements.transferTool.value);
     if (!tool || !elements.transferField.value) return;
-    const draft = core.defaultArguments(tool.inputSchema || {});
     const selected = elements.transferField.options[elements.transferField.selectedIndex];
-    draft[elements.transferField.value] = core.valueForTransfer(
+    const draft = core.transferArguments(
+      tool,
+      elements.transferField.value,
       state.transferValue,
       selected.dataset.mode,
+      state.lastResultContext,
     );
     selectTool(tool.name, draft);
     window.scrollTo({top: elements.summary.getBoundingClientRect().top + window.scrollY - 16, behavior: 'smooth'});
@@ -1060,6 +1131,8 @@
       elements.resultTree.replaceChildren(element('p', {className: 'mcp-explorer-muted', text: label('emptyResult')}));
       elements.resultRaw.textContent = '{}';
       elements.copy.disabled = true;
+      elements.nextPage.hidden = true;
+      elements.nextPage.disabled = true;
     }
   }
 
@@ -1100,6 +1173,12 @@
   elements.copy.addEventListener('click', async () => {
     try { await navigator.clipboard.writeText(JSON.stringify(state.lastResult, null, 2)); setStatus(label('copied'), 'success'); }
     catch (error) { showError(error, label('error')); }
+  });
+  elements.nextPage.addEventListener('click', async () => {
+    if (!state.nextPageRequest) return;
+    const request = core.clone(state.nextPageRequest);
+    selectTool(request.tool, request.arguments);
+    await runSelectedTool();
   });
   elements.transfer.addEventListener('close', () => { if (elements.transfer.returnValue === 'apply') applyTransfer(); });
   window.addEventListener('pagehide', () => {

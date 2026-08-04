@@ -100,6 +100,15 @@ reused only in a schema-compatible parameter of a new call.
 A single state UUID reused with `loxone_get_states` is automatically wrapped in
 a one-item list.
 
+Lists return at most the number of entries requested by `limit`. A non-empty
+`next_cursor` indicates another page. **Fetch next page** requests it directly
+with the same filters and limit. Alternatively, **Reuse value** prioritizes
+mapping `next_cursor` to the same tool's `cursor` field and preserves the
+previous arguments. A cursor is an opaque continuation value that must not be
+edited and is valid only for the same tool and filters. The `control_type`
+filter compares the complete Loxone type case-insensitively, so `Switch` and
+`switch` are equivalent.
+
 The MCP transcript shows sanitized JSON-RPC messages, status and duration.
 Authorization headers, OAuth values and secret-shaped arguments are never shown.
 Tokens, drafts, results and the history bounded to 50 calls remain in tab memory
