@@ -1,0 +1,47 @@
+name: Gen. 2 read-only beta report
+description: Report a complete, sanitized experimental Gen. 2 test
+title: "[Gen2 beta] "
+labels: ["gen2-beta"]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include credentials, tokens, private addresses, full structures, or unmasked states.
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Plugin, LoxBerry, architecture, Miniserver firmware, MCP client and version
+    validations:
+      required: true
+  - type: checkboxes
+    id: tls
+    attributes:
+      label: TLS negative cases
+      options:
+        - label: Valid HTTPS/WSS hostname and trusted certificate worked
+          required: true
+        - label: Hostname mismatch failed without cleartext fallback
+          required: true
+        - label: Untrusted or expired certificate failed without cleartext fallback
+          required: true
+  - type: textarea
+    id: tools
+    attributes:
+      label: Six read-only tools and permission filtering
+      description: List expected and observed outcomes for every tool, without sensitive values
+    validations:
+      required: true
+  - type: textarea
+    id: lifecycle
+    attributes:
+      label: Snapshot, deltas, reconnect and revocation
+      description: Describe expected and observed results
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Masked diagnostics
+      description: Paste only the plugin-generated masked diagnostic and sanitized log excerpts
+    validations:
+      required: true

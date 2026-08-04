@@ -6,6 +6,7 @@ import asyncio
 import ipaddress
 import json
 import logging
+import re
 from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Final
@@ -62,11 +63,60 @@ def _loxone_uuid(value: UUID) -> str:
 
 @dataclass(frozen=True, slots=True)
 class MiniserverEndpoint:
-    """A literal private Gen. 1 HTTP endpoint without path or credentials."""
+    """A canonical generation-aware Miniserver origin without credentials."""
 
     origin: str
     host: str
     port: int
+    secure: bool = False
+
+    @classmethod
+    def parse(cls, value: str) -> MiniserverEndpoint:
+        parsed = urlsplit(value)
+        if parsed.scheme == "http":
+            return cls.parse_gen1(value)
+        if (
+            parsed.scheme != "https"
+            or parsed.hostname is None
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path not in {"", "/"}
+            or parsed.query
+            or parsed.fragment
+            or "%" in parsed.netloc
+            or "\\" in parsed.netloc
+        ):
+            raise ValueError("Gen. 2 endpoint must be an HTTPS origin without credentials")
+        host = parsed.hostname.lower()
+        try:
+            address = ipaddress.ip_address(host)
+            canonical_host = f"[{address}]" if address.version == 6 else str(address)
+            host = str(address)
+        except ValueError:
+            if (
+                len(host) > 253
+                or host.endswith(".")
+                or any(
+                    not label
+                    or len(label) > 63
+                    or label.startswith("-")
+                    or label.endswith("-")
+                    or re.fullmatch(r"[a-z0-9-]+", label) is None
+                    for label in host.split(".")
+                )
+            ):
+                raise ValueError("Gen. 2 endpoint contains an invalid hostname") from None
+            canonical_host = host
+        try:
+            port = parsed.port or 443
+        except ValueError as exc:
+            raise ValueError("Gen. 2 endpoint contains an invalid port") from exc
+        if not 1 <= port <= 65535:
+            raise ValueError("Gen. 2 endpoint contains an invalid port")
+        origin = f"https://{canonical_host}" if port == 443 else f"https://{canonical_host}:{port}"
+        if value.rstrip("/") != origin:
+            raise ValueError("Gen. 2 endpoint must use a canonical HTTPS origin")
+        return cls(origin=origin, host=host, port=port, secure=True)
 
     @classmethod
     def parse_gen1(cls, value: str) -> MiniserverEndpoint:
@@ -97,13 +147,15 @@ class MiniserverEndpoint:
         origin = f"http://{host}" if port == 80 else f"http://{host}:{port}"
         if value.rstrip("/") != origin:
             raise ValueError("Gen. 1 endpoint must use a canonical origin")
-        return cls(origin=origin, host=str(address), port=port)
+        return cls(origin=origin, host=str(address), port=port, secure=False)
 
     @property
     def websocket_url(self) -> str:
         host = f"[{self.host}]" if ":" in self.host else self.host
-        authority = host if self.port == 80 else f"{host}:{self.port}"
-        return f"ws://{authority}/ws/rfc6455"
+        default_port = 443 if self.secure else 80
+        authority = host if self.port == default_port else f"{host}:{self.port}"
+        scheme = "wss" if self.secure else "ws"
+        return f"{scheme}://{authority}/ws/rfc6455"
 
 
 @dataclass(frozen=True, slots=True)
@@ -287,8 +339,10 @@ class LoxoneClient:
         if not isinstance(value, Mapping):
             raise LoxoneConnectionError("Miniserver probe returned an invalid value")
         https_status = value.get("httpsStatus")
-        if https_status not in {None, 0, "0"}:
+        if not self.endpoint.secure and https_status not in {None, 0, "0"}:
             raise LoxoneConnectionError("TLS-capable Miniservers require the Gen. 2 HTTPS adapter")
+        if self.endpoint.secure and https_status in {None, 0, "0"}:
+            raise LoxoneConnectionError("Gen. 2 endpoint did not confirm TLS support")
         firmware = value.get("version", value.get("versionStr"))
         serial = value.get("snr", value.get("serialNr"))
         if not isinstance(firmware, str) or not isinstance(serial, str):
@@ -337,25 +391,26 @@ class LoxoneClient:
             raise LoxoneConnectionError("Miniserver WebSocket connection failed") from exc
 
     async def acquire_token(self, username: str, password: str) -> LoxoneToken:
-        public_key = await self.websocket_public_key()
         escaped_user = quote(username, safe="")
         websocket = await self._connect_websocket()
         encryptor = CommandEncryptor.generate()
         try:
-            session_key = encryptor.encrypted_session_key(public_key)
-            await _websocket_command(
-                websocket,
-                encryptor,
-                f"jdev/sys/keyexchange/{session_key}",
-                encrypted=False,
-                timeout_seconds=self.timeout_seconds,
-                max_payload_bytes=self.max_response_bytes,
-            )
+            if not self.endpoint.secure:
+                public_key = await self.websocket_public_key()
+                session_key = encryptor.encrypted_session_key(public_key)
+                await _websocket_command(
+                    websocket,
+                    encryptor,
+                    f"jdev/sys/keyexchange/{session_key}",
+                    encrypted=False,
+                    timeout_seconds=self.timeout_seconds,
+                    max_payload_bytes=self.max_response_bytes,
+                )
             key_value = await _websocket_command(
                 websocket,
                 encryptor,
                 f"jdev/sys/getkey2/{escaped_user}",
-                encrypted=True,
+                encrypted=not self.endpoint.secure,
                 timeout_seconds=self.timeout_seconds,
                 max_payload_bytes=self.max_response_bytes,
             )
@@ -380,7 +435,7 @@ class LoxoneClient:
                 websocket,
                 encryptor,
                 command,
-                encrypted=True,
+                encrypted=not self.endpoint.secure,
                 timeout_seconds=self.timeout_seconds,
                 max_payload_bytes=self.max_response_bytes,
             )
@@ -412,7 +467,9 @@ class LoxoneClient:
     async def open_session(self, token: LoxoneToken) -> LoxoneWebSocketSession:
         if not token.value:
             raise LoxoneConnectionError("Loxone token is no longer available")
-        public_key = await self.websocket_public_key()
+        public_key = ""
+        if not self.endpoint.secure:
+            public_key = await self.websocket_public_key()
         websocket = await self._connect_websocket()
         session = LoxoneWebSocketSession(
             websocket,
@@ -420,6 +477,7 @@ class LoxoneClient:
             token=token,
             timeout_seconds=self.timeout_seconds,
             max_payload_bytes=self.max_response_bytes,
+            secure_transport=self.endpoint.secure,
         )
         try:
             await session.authenticate()
@@ -440,12 +498,14 @@ class LoxoneWebSocketSession:
         token: LoxoneToken,
         timeout_seconds: float,
         max_payload_bytes: int,
+        secure_transport: bool = False,
     ) -> None:
         self._websocket = websocket
         self._public_key = public_key
         self._token = token
         self._timeout = timeout_seconds
         self._max_payload = max_payload_bytes
+        self._secure_transport = secure_transport
         self._encryptor = CommandEncryptor.generate()
 
     async def _receive(self) -> tuple[MessageHeader, str | bytes | None]:
@@ -466,16 +526,17 @@ class LoxoneWebSocketSession:
         )
 
     async def authenticate(self) -> None:
-        session_key = self._encryptor.encrypted_session_key(self._public_key)
-        await self._command(f"jdev/sys/keyexchange/{session_key}")
+        if not self._secure_transport:
+            session_key = self._encryptor.encrypted_session_key(self._public_key)
+            await self._command(f"jdev/sys/keyexchange/{session_key}")
         digest = await self._fresh_token_digest()
         await self._command(
             f"authwithtoken/{digest}/{quote(self._token.username, safe='')}",
-            encrypted=True,
+            encrypted=not self._secure_transport,
         )
 
     async def _fresh_token_digest(self) -> str:
-        key = await self._command("jdev/sys/getkey", encrypted=True)
+        key = await self._command("jdev/sys/getkey", encrypted=not self._secure_transport)
         if not isinstance(key, str):
             raise LoxoneConnectionError("Miniserver returned an invalid token hashing key")
         return token_hmac(self._token.value, key, self._token.hash_algorithm)
@@ -499,7 +560,9 @@ class LoxoneWebSocketSession:
         """Rotate the in-memory JWT over the authenticated encrypted WebSocket."""
         digest = await self._fresh_token_digest()
         user = quote(self._token.username, safe="")
-        value = await self._command(f"jdev/sys/refreshjwt/{digest}/{user}", encrypted=True)
+        value = await self._command(
+            f"jdev/sys/refreshjwt/{digest}/{user}", encrypted=not self._secure_transport
+        )
         if not isinstance(value, Mapping):
             raise LoxoneConnectionError("Miniserver returned an invalid refreshed token")
         refreshed = value.get("token")
@@ -514,7 +577,9 @@ class LoxoneWebSocketSession:
         digest = await self._fresh_token_digest()
         user = quote(self._token.username, safe="")
         try:
-            await self._command(f"jdev/sys/killtoken/{digest}/{user}", encrypted=True)
+            await self._command(
+                f"jdev/sys/killtoken/{digest}/{user}", encrypted=not self._secure_transport
+            )
         except ConnectionClosedOK:
             # A Miniserver may close the authenticated connection immediately
             # after invalidating the connection token. A normal close is the

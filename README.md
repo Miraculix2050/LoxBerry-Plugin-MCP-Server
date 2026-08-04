@@ -25,6 +25,7 @@ bekannten Clientgrenzen stehen in der [Support-Matrix](docs/development/support-
 - [Implementierungsrichtlinien](docs/development/implementation-guidelines.md)
 - [Plugin-Konzept](docs/development/plugin-concept.md)
 - [Änderungsgetriebene Teststrategie](docs/development/test-strategy.md)
+- [Entwicklungs- und Testautomatisierung](docs/development/automation.md)
 - [Support-Matrix](docs/development/support-matrix.md)
 - [Recherche-Ergebnisse](docs/research/research-results.md)
 - [Beitragen und Git-Workflow](CONTRIBUTING.md)

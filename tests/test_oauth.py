@@ -18,8 +18,14 @@ from starlette.testclient import TestClient
 
 from mcpserver.auth.provider import SCOPE, Phase0OAuthProvider
 from mcpserver.auth.store import AtomicJsonAuthStore
-from mcpserver.auth.web import Phase0OAuthWeb, _limited_body
-from mcpserver.loxone.client import LoxoneToken, MiniserverEndpoint, ProbeResult
+from mcpserver.auth.web import LoginTransaction, Phase0OAuthWeb, _limited_body
+from mcpserver.loxone.client import (
+    LoxoneConnectionError,
+    LoxoneToken,
+    MiniserverEndpoint,
+    ProbeResult,
+)
+from mcpserver.loxone.events import LoxoneProtocolError
 
 ISSUER = "https://public.example/plugins/mcpserver/oauth"
 RESOURCE = "https://public.example/plugins/mcpserver/mcp"
@@ -534,6 +540,83 @@ async def test_parallel_login_posts_acquire_only_one_loxone_token(
     assert sorted(response.status_code for response in responses) == [200, 400]
     assert len(acquired) == 1
     await web._kill(transaction)
+
+
+@pytest.mark.parametrize("failure_type", [LoxoneConnectionError, LoxoneProtocolError])
+@pytest.mark.asyncio
+async def test_expired_login_transaction_is_removed_when_remote_kill_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_type: type[Exception],
+) -> None:
+    provider = _provider(tmp_path)
+    web = Phase0OAuthWeb(
+        provider,
+        endpoint=MiniserverEndpoint.parse_gen1("http://192.168.255.254"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+    )
+    token = LoxoneToken("sensitive-jwt", "user", "key", "SHA256", 1)
+    transaction = LoginTransaction(
+        transaction_id="expired",
+        client_id="client",
+        client_name="Client",
+        redirect_uri=REDIRECT,
+        state="state",
+        code_challenge=CHALLENGE,
+        resource=RESOURCE,
+        csrf_token="csrf",
+        created_at=0,
+        loxone_token=token,
+    )
+    web.transactions[transaction.transaction_id] = transaction
+
+    class FailingLoxoneClient:
+        def __init__(self, endpoint: object, *, client_uuid: object) -> None:
+            pass
+
+        async def kill_token(self, value: LoxoneToken) -> None:
+            raise failure_type("remote unavailable")
+
+    monkeypatch.setattr("mcpserver.auth.web.LoxoneClient", FailingLoxoneClient)
+    await web._cleanup()
+
+    assert web.transactions == {}
+    assert transaction.loxone_token is None
+    assert token.value == ""
+
+
+@pytest.mark.asyncio
+async def test_refresh_replay_revocation_survives_token_cleanup_failure(tmp_path: Path) -> None:
+    def fail_cleanup(family_id: str) -> None:
+        raise RuntimeError("simulated encrypted-store failure")
+
+    provider = Phase0OAuthProvider(
+        AtomicJsonAuthStore(tmp_path / "auth" / "sessions.json"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+        clock=Clock(),
+        on_family_revoked=fail_cleanup,
+    )
+    client = await _client(provider)
+    raw_code = provider.issue_authorization_code(
+        client_id=client.client_id or "",
+        redirect_uri=REDIRECT,
+        code_challenge=CHALLENGE,
+        resource=RESOURCE,
+        identity_id="identity",
+        miniserver_id="miniserver",
+    )
+    code = await provider.load_authorization_code(client, raw_code)
+    assert code is not None
+    issued = await provider.exchange_authorization_code(client, code)
+    refresh = await provider.load_refresh_token(client, issued.refresh_token or "")
+    assert refresh is not None
+    await provider.exchange_refresh_token(client, refresh, [SCOPE])
+
+    assert await provider.load_refresh_token(client, issued.refresh_token or "") is None
+    document = provider.store.snapshot()
+    assert document["families"][refresh.family_id]["revoked"] is True
 
 
 @pytest.mark.asyncio

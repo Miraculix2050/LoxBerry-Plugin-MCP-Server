@@ -1,4 +1,4 @@
-"""MCP transport foundation with no released domain tools."""
+"""Loopback MCP transport with the Phase 1 read-only tool surface."""
 
 from __future__ import annotations
 
@@ -17,10 +17,13 @@ from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
 
 from mcpserver import __version__
+from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore
 from mcpserver.auth.provider import SCOPE, Phase0OAuthProvider
 from mcpserver.auth.store import AtomicJsonAuthStore
 from mcpserver.auth.web import Phase0OAuthWeb
+from mcpserver.loxone.runtime import LoxoneRuntime
 from mcpserver.settings import ServerSettings
+from mcpserver.tools import register_read_tools
 
 SERVER_NAME: Final = "LoxBerry MCP Server"
 _TRANSPORT_LOGGER_NAME: Final = "mcp.server.transport_security"
@@ -90,15 +93,30 @@ class _TransportValidationMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+class _DisabledServiceMiddleware(BaseHTTPMiddleware):
+    """Keep health available while failing closed for all public protocol routes."""
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        if request.url.path != "/healthz":
+            return JSONResponse(
+                {"ok": False, "error": "service_disabled"},
+                status_code=503,
+            )
+        return await call_next(request)
+
+
 class _ForwardedHostFastMCP(FastMCP):
     """FastMCP application that also validates Apache's original Host header."""
 
     forwarded_allowed_hosts: tuple[str, ...] = ()
     transport_guard: TransportSecurityMiddleware | None = None
+    service_enabled: bool = True
 
     def streamable_http_app(self) -> Starlette:
         app = super().streamable_http_app()
         app.router.redirect_slashes = False
+        if not self.service_enabled:
+            app.add_middleware(_DisabledServiceMiddleware)
         app.add_middleware(
             _ForwardedHostValidationMiddleware,
             allowed_hosts=self.forwarded_allowed_hosts,
@@ -129,18 +147,30 @@ def create_server(settings: ServerSettings) -> FastMCP:
     oauth_web: Phase0OAuthWeb | None = None
     oauth_auth: AuthSettings | None = None
     token_verifier: _Phase0TokenVerifier | None = None
+    runtime: LoxoneRuntime | None = None
     if settings.phase0_auth is not None:
         auth_store = AtomicJsonAuthStore(settings.phase0_auth.store_path)
+        loxone_store: EncryptedLoxoneTokenStore | None = None
+        if (
+            settings.phase0_auth.loxone_store_path is not None
+            and settings.phase0_auth.install_key_path is not None
+        ):
+            loxone_store = EncryptedLoxoneTokenStore(
+                settings.phase0_auth.loxone_store_path,
+                settings.phase0_auth.install_key_path,
+            )
         provider = Phase0OAuthProvider(
             auth_store,
             issuer=settings.phase0_auth.issuer_url,
             resource=settings.phase0_auth.resource_url,
+            on_family_revoked=loxone_store.delete if loxone_store is not None else None,
         )
         oauth_web = Phase0OAuthWeb(
             provider,
             endpoint=settings.phase0_auth.loxone_endpoint,
             issuer=settings.phase0_auth.issuer_url,
             resource=settings.phase0_auth.resource_url,
+            loxone_store=loxone_store,
         )
         oauth_auth = AuthSettings(
             issuer_url=AnyHttpUrl(settings.phase0_auth.issuer_url),
@@ -148,6 +178,15 @@ def create_server(settings: ServerSettings) -> FastMCP:
             required_scopes=[SCOPE],
         )
         token_verifier = _Phase0TokenVerifier(provider)
+        if loxone_store is not None:
+            config = settings.phase0_auth.plugin_config
+            runtime = LoxoneRuntime(
+                settings.phase0_auth.loxone_endpoint,
+                loxone_store,
+                timeout_seconds=config.connection_timeout if config is not None else 10.0,
+                requests_per_minute=config.requests_per_minute if config is not None else 60,
+                max_parallel_calls=config.max_parallel_calls if config is not None else 4,
+            )
 
     server = _ForwardedHostFastMCP(
         SERVER_NAME,
@@ -162,6 +201,8 @@ def create_server(settings: ServerSettings) -> FastMCP:
     )
     server.forwarded_allowed_hosts = settings.allowed_hosts
     server.transport_guard = transport_guard
+    server.service_enabled = settings.service_enabled
+    register_read_tools(server, runtime)
 
     if oauth_web is not None:
         server.custom_route("/authorize", methods=["GET", "POST"], include_in_schema=False)(
@@ -195,6 +236,10 @@ def create_server(settings: ServerSettings) -> FastMCP:
 
 def main() -> None:
     """Run Streamable HTTP on the configured loopback port."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s component=%(name)s severity=%(levelname)s %(message)s",
+    )
     settings = ServerSettings.from_environment()
     create_server(settings).run(transport="streamable-http")
 

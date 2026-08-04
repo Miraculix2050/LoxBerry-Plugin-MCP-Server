@@ -1,0 +1,18 @@
+{
+  "limits": {
+    "max_parallel_calls": 4,
+    "requests_per_minute": 60
+  },
+  "loxone": {
+    "connection_timeout": 10,
+    "endpoint": ""
+  },
+  "schema_version": 1,
+  "server": {
+    "enabled": false,
+    "public_origin": ""
+  },
+  "tools": {
+    "loxone_read_enabled": true
+  }
+}

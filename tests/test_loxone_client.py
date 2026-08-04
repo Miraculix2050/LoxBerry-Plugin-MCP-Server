@@ -265,6 +265,38 @@ async def test_probe_rejects_tls_capable_miniserver(monkeypatch: pytest.MonkeyPa
         await client.probe()
 
 
+def test_gen2_endpoint_requires_canonical_https_and_uses_wss() -> None:
+    endpoint = MiniserverEndpoint.parse("https://miniserver.example")
+
+    assert endpoint.secure is True
+    assert endpoint.websocket_url == "wss://miniserver.example/ws/rfc6455"
+    with pytest.raises(ValueError, match="HTTPS"):
+        MiniserverEndpoint.parse("ftp://miniserver.example")
+    with pytest.raises(ValueError, match="canonical"):
+        MiniserverEndpoint.parse("https://MINISERVER.example")
+
+
+@pytest.mark.asyncio
+async def test_gen2_probe_requires_confirmed_tls(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = LoxoneClient(
+        MiniserverEndpoint.parse("https://miniserver.example"),
+        client_uuid=UUID("098802e1-02b4-603c-ffff-eee000d80cfd"),
+    )
+
+    async def fake_get_json(path: str) -> dict[str, object]:
+        assert path == "/jdev/cfg/apiKey"
+        return {
+            "LL": {
+                "Code": "200",
+                "value": {"version": "15.0", "snr": "000000000000", "httpsStatus": 0},
+            }
+        }
+
+    monkeypatch.setattr(client, "_get_json", fake_get_json)
+    with pytest.raises(LoxoneConnectionError, match="confirm TLS"):
+        await client.probe()
+
+
 @pytest.mark.asyncio
 async def test_token_acquisition_encrypts_credentials_and_retains_hash_algorithm(
     monkeypatch: pytest.MonkeyPatch,

@@ -1,0 +1,28 @@
+#!/bin/bash
+set -u
+
+failed=0
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P) || exit 1
+actual_folder=$(basename -- "$script_dir")
+plugin_config="${LBPCONFIG:?}/$actual_folder"
+plugin_data="${LBPDATA:?}/$actual_folder"
+check() {
+    if "$@"; then
+        echo "OK: $*"
+    else
+        echo "FAIL: $*"
+        failed=1
+    fi
+}
+
+check systemctl is-active --quiet loxberry-mcpserver.service
+check curl --fail --silent --show-error --max-time 3 http://127.0.0.1:8765/healthz
+check test -r "$plugin_config/mcpserver.json"
+check test -d "$plugin_data/auth"
+check test -w "$plugin_data/auth"
+
+if [ "$failed" -ne 0 ]; then
+    echo "Health check failed. No repair was attempted."
+    exit 1
+fi
+echo "LoxBerry MCP Server health check passed."

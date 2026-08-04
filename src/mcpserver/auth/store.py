@@ -19,6 +19,7 @@ from typing import Any, BinaryIO, Final, Protocol, TypeVar, cast
 
 _SCHEMA_VERSION: Final = 1
 _COLLECTIONS: Final = ("clients", "codes", "access_tokens", "refresh_tokens", "families")
+_MAX_STORE_BYTES: Final = 4 * 1024 * 1024
 T = TypeVar("T")
 
 
@@ -149,6 +150,8 @@ class AtomicJsonAuthStore:
 
     def _read_unlocked(self) -> dict[str, Any]:
         try:
+            if self.path.stat().st_size > _MAX_STORE_BYTES:
+                raise AuthStoreError("Auth store exceeds its size limit")
             raw = self.path.read_text(encoding="utf-8")
             return self._validate(json.loads(raw))
         except AuthStoreError:
@@ -158,17 +161,19 @@ class AtomicJsonAuthStore:
 
     def _write_unlocked(self, document: dict[str, Any]) -> None:
         self._validate(document)
+        serialized = json.dumps(
+            document,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        if len(serialized.encode("utf-8")) + 1 > _MAX_STORE_BYTES:
+            raise AuthStoreError("Auth store exceeds its size limit")
         temporary = self.path.with_name(f".{self.path.name}.{secrets.token_hex(8)}.tmp")
         try:
             descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
-                json.dump(
-                    document,
-                    handle,
-                    ensure_ascii=True,
-                    separators=(",", ":"),
-                    sort_keys=True,
-                )
+                handle.write(serialized)
                 handle.write("\n")
                 handle.flush()
                 os.fsync(handle.fileno())

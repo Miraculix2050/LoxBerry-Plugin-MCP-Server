@@ -31,6 +31,32 @@ def test_health_is_small_and_contains_no_configuration() -> None:
     assert set(response.json()) == {"ok", "service", "version"}
 
 
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("post", "/mcp"),
+        ("get", "/.well-known/oauth-protected-resource/plugins/mcpserver/mcp"),
+        ("get", "/authorize"),
+    ],
+)
+def test_disabled_service_exposes_only_health(method: str, path: str) -> None:
+    settings = ServerSettings(
+        host="127.0.0.1",
+        port=8765,
+        allowed_hosts=("testserver",),
+        allowed_origins=(),
+        service_enabled=False,
+    )
+    app = create_server(settings).streamable_http_app()
+    with TestClient(app, base_url="http://testserver") as client:
+        health = client.get("/healthz")
+        response = client.request(method, path)
+
+    assert health.status_code == 200
+    assert response.status_code == 503
+    assert response.json() == {"ok": False, "error": "service_disabled"}
+
+
 def test_health_rejects_unknown_host() -> None:
     app = create_server(_settings()).streamable_http_app()
     with TestClient(app, base_url="http://untrusted.example") as client:
@@ -137,7 +163,7 @@ def test_mcp_initialize_uses_expected_protocol() -> None:
     assert response.json()["result"]["serverInfo"]["name"] == "LoxBerry MCP Server"
 
 
-def test_no_unreleased_domain_tools_are_published() -> None:
+def test_exact_phase1_read_only_tools_are_published() -> None:
     app = create_server(_settings()).streamable_http_app()
     request = {
         "jsonrpc": "2.0",
@@ -154,7 +180,19 @@ def test_no_unreleased_domain_tools_are_published() -> None:
         response = client.post("/mcp", json=request, headers=headers)
 
     assert response.status_code == 200
-    assert response.json()["result"]["tools"] == []
+    tools = response.json()["result"]["tools"]
+    assert [tool["name"] for tool in tools] == [
+        "loxone_get_system_status",
+        "loxone_list_rooms",
+        "loxone_list_categories",
+        "loxone_find_controls",
+        "loxone_describe_control",
+        "loxone_get_states",
+    ]
+    assert all(tool["annotations"]["readOnlyHint"] is True for tool in tools)
+    assert all(tool["annotations"]["destructiveHint"] is False for tool in tools)
+    assert all(tool["outputSchema"]["properties"]["data"].get("anyOf") for tool in tools)
+    assert all(tool["outputSchema"].get("$defs") for tool in tools)
 
 
 def test_oauth_routes_and_protected_resource_metadata_are_exact(tmp_path: Path) -> None:

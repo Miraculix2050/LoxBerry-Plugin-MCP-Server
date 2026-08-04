@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title id="title">LoxBerry MCP Server</title>
+  <rect width="128" height="128" rx="24" fill="#2f7d32"/>
+  <path d="M37 30v19H25v30h12v19h18V79h18v19h18V79h12V49H91V30H73v19H55V30H37zm6 31h42v6H43v-6z" fill="#fff"/>
+  <circle cx="43" cy="64" r="4" fill="#2f7d32"/>
+  <circle cx="85" cy="64" r="4" fill="#2f7d32"/>
+</svg>
