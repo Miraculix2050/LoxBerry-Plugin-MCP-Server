@@ -117,17 +117,61 @@ sub miniserver_endpoint {
     return "$transport://$host" . ($port == $default_port ? '' : ":$port");
 }
 
-sub configured_miniservers {
-    my ($selected_endpoint) = @_;
-    my %servers = eval { LoxBerry::System::get_miniservers() };
-    if ($@) {
-        LOGWARN('Could not read configured Miniservers');
-        return [];
+sub enabled_value {
+    my ($value) = @_;
+    return defined($value) && "$value" =~ /\A(?:1|true|yes|on)\z/i ? 1 : 0;
+}
+
+sub stored_miniservers {
+    my $path = "$lbhomedir/config/system/general.json";
+    if (!-f $path || !-r $path) {
+        LOGWARN('Could not read stored Miniserver configuration');
+        return {};
     }
 
+    open my $handle, '<:raw', $path or do {
+        LOGWARN('Could not open stored Miniserver configuration');
+        return {};
+    };
+    local $/;
+    my $raw = <$handle> // '';
+    close $handle;
+    if (length($raw) > 1024 * 1024) {
+        LOGWARN('Stored Miniserver configuration is unexpectedly large');
+        return {};
+    }
+
+    my $document = eval { decode_json($raw) };
+    if ($@ || ref($document) ne 'HASH' || ref($document->{Miniserver}) ne 'HASH') {
+        LOGWARN('Stored Miniserver configuration is invalid');
+        return {};
+    }
+
+    my %servers;
+    for my $key (keys %{$document->{Miniserver}}) {
+        my $stored = $document->{Miniserver}{$key};
+        next if ref($stored) ne 'HASH';
+        # get_miniservers() resolves CloudDNS here. Rendering the page must stay local.
+        next if enabled_value($stored->{Useclouddns});
+        my $prefer_https = enabled_value($stored->{Preferhttps});
+        $servers{$key} = {
+            Name => $stored->{Name},
+            IPAddress => $stored->{Ipaddress},
+            Transport => $prefer_https ? 'https' : 'http',
+            Port => $stored->{Port},
+            PortHttps => $stored->{Porthttps},
+        };
+    }
+    return \%servers;
+}
+
+sub configured_miniservers {
+    my ($selected_endpoint) = @_;
+    my $servers = stored_miniservers();
+
     my @options;
-    for my $key (sort keys %servers) {
-        my $server = $servers{$key};
+    for my $key (sort keys %$servers) {
+        my $server = $servers->{$key};
         my $endpoint = miniserver_endpoint($server);
         next if !defined $endpoint;
         my $name = $server->{Name} // '';

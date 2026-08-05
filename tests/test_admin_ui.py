@@ -29,11 +29,15 @@ def test_common_actions_update_the_page_without_a_reload() -> None:
     assert "url.searchParams.delete('notice')" in template
 
 
-def test_miniserver_selection_uses_sanitized_loxberry_metadata() -> None:
+def test_miniserver_selection_uses_local_sanitized_loxberry_metadata() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
 
-    assert "LoxBerry::System::get_miniservers()" in cgi
+    assert '"$lbhomedir/config/system/general.json"' in cgi
+    assert "LoxBerry::System::get_miniservers()" not in cgi
+    assert "next if enabled_value($stored->{Useclouddns})" in cgi
+    assert "IPAddress => $stored->{Ipaddress}" in cgi
+    assert "PortHttps => $stored->{Porthttps}" in cgi
     assert "miniserver_endpoint($server)" in cgi
     assert "FullURI" not in cgi + template
     assert "Credentials" not in cgi + template
