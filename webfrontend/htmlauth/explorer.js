@@ -1411,14 +1411,17 @@
       setStatus(label('connected'), 'success');
     } catch (_error) {
       const refreshFailed = Boolean(state.oauth) && !refreshed;
+      const canonicalOriginMismatch = _error instanceof Error
+        && typeof _error.canonicalUrl === 'string';
       if (refreshFailed) {
         await revokeAndClear();
       } else {
+        if (canonicalOriginMismatch && stored) clearStoredSession();
         core.clearSensitiveState(state);
         releaseSessionOwnership();
       }
       renderAll();
-      if (_error instanceof Error && typeof _error.canonicalUrl === 'string') {
+      if (canonicalOriginMismatch) {
         setControlAvailability(false);
         showConnectionError(_error, label('error'));
       } else if (stored) {
