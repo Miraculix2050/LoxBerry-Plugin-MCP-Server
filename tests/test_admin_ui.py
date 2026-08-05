@@ -43,9 +43,13 @@ def test_miniserver_selection_uses_local_sanitized_loxberry_metadata() -> None:
     assert "Credentials" not in cgi + template
     assert 'id="miniserver-select"' in template
     assert "<TMPL_LOOP MINISERVERS>" in template
+    assert 'id="manual-endpoint-fields"' in template
+    assert "<TMPL_UNLESS MANUAL_ENDPOINT>hidden</TMPL_UNLESS>" in template
     assert 'id="miniserver-endpoint"' in template
+    assert "<TMPL_IF MANUAL_ENDPOINT>required<TMPL_ELSE>readonly</TMPL_IF>" in template
     assert "miniserverEndpoint.readOnly = Boolean(selectedEndpoint)" in template
     assert "miniserverEndpoint.required = !selectedEndpoint" in template
+    assert "manualEndpointFields.hidden = Boolean(selectedEndpoint)" in template
     assert "miniserverEndpoint.addEventListener('input', syncTestEndpoint)" in template
 
 

@@ -5,6 +5,7 @@
   .mcp-form { display: grid; gap: .85rem; }
   .mcp-field { display: grid; gap: .3rem; min-width: 0; }
   .mcp-field input, .mcp-field select { box-sizing: border-box; width: 100%; max-width: 100%; min-height: 2.75rem; }
+  .mcp-manual-endpoint[hidden] { display: none; }
   .mcp-help { margin: 0; color: #4b5563; }
   .mcp-actions { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; }
   .mcp-actions button { min-height: 2.75rem; max-width: 100%; }
@@ -41,8 +42,10 @@
       <input type="hidden" name="action" value="save_config">
       <label class="mcp-field"><span><TMPL_VAR SETUP.PUBLIC_ORIGIN></span><input name="public_origin" type="url" value="<TMPL_VAR PUBLIC_ORIGIN ESCAPE=HTML>" placeholder="https://loxberry.local" required></label>
       <label class="mcp-field"><span><TMPL_VAR SETUP.MINISERVER_SOURCE></span><select id="miniserver-select" name="miniserver_endpoint"><option value="" <TMPL_IF MANUAL_ENDPOINT>selected</TMPL_IF>><TMPL_VAR SETUP.MANUAL_OPTION></option><TMPL_LOOP MINISERVERS><option value="<TMPL_VAR endpoint ESCAPE=HTML>" <TMPL_IF selected>selected</TMPL_IF>><TMPL_VAR label ESCAPE=HTML></option></TMPL_LOOP></select></label>
-      <label class="mcp-field"><span><TMPL_VAR SETUP.ENDPOINT></span><input id="miniserver-endpoint" name="endpoint" type="url" value="<TMPL_VAR ENDPOINT ESCAPE=HTML>" placeholder="http://192.168.1.20" aria-describedby="endpoint-help"></label>
-      <p id="endpoint-help" class="mcp-help"><TMPL_VAR SETUP.ENDPOINT_HELP></p>
+      <div id="manual-endpoint-fields" class="mcp-manual-endpoint" <TMPL_UNLESS MANUAL_ENDPOINT>hidden</TMPL_UNLESS>>
+        <label class="mcp-field"><span><TMPL_VAR SETUP.ENDPOINT></span><input id="miniserver-endpoint" name="endpoint" type="url" value="<TMPL_VAR ENDPOINT ESCAPE=HTML>" placeholder="http://192.168.1.20" aria-describedby="endpoint-help" <TMPL_IF MANUAL_ENDPOINT>required<TMPL_ELSE>readonly</TMPL_IF>></label>
+        <p id="endpoint-help" class="mcp-help"><TMPL_VAR SETUP.ENDPOINT_HELP></p>
+      </div>
       <div class="mcp-grid">
         <label class="mcp-field"><span><TMPL_VAR SETUP.TIMEOUT></span><input name="connection_timeout" type="number" min="1" max="60" value="<TMPL_VAR CONNECTION_TIMEOUT ESCAPE=HTML>"></label>
         <label class="mcp-field"><span><TMPL_VAR SETUP.RATE></span><input name="requests_per_minute" type="number" min="1" max="600" value="<TMPL_VAR REQUESTS_PER_MINUTE ESCAPE=HTML>"></label>
@@ -103,6 +106,7 @@
 (() => {
   const status = document.getElementById('ajax-status');
   const miniserverSelect = document.getElementById('miniserver-select');
+  const manualEndpointFields = document.getElementById('manual-endpoint-fields');
   const miniserverEndpoint = document.getElementById('miniserver-endpoint');
   const testEndpoint = document.querySelector('form[data-ajax="test_connection"] input[name="endpoint"]');
   const syncTestEndpoint = () => { testEndpoint.value = miniserverEndpoint.value; };
@@ -111,6 +115,7 @@
     if (selectedEndpoint) miniserverEndpoint.value = selectedEndpoint;
     miniserverEndpoint.readOnly = Boolean(selectedEndpoint);
     miniserverEndpoint.required = !selectedEndpoint;
+    manualEndpointFields.hidden = Boolean(selectedEndpoint);
     syncTestEndpoint();
   };
   miniserverSelect.addEventListener('change', syncMiniserverSelection);

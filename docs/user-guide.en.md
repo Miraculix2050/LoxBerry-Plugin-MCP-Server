@@ -16,9 +16,10 @@ all Python wheels for offline installation. Then open **LoxBerry MCP Server**:
 
 1. Enter the LoxBerry's local HTTPS origin, for example
    `https://loxberry.local`.
-2. Select one of the Miniservers configured in LoxBerry. Alternatively, enter
-   its canonical endpoint manually: for example `http://192.168.1.20` for
-   Gen. 1, or HTTPS only for Gen. 2. The selection does not copy credentials
+2. Select one of the Miniservers configured in LoxBerry. Alternatively, select
+   “Enter endpoint manually”; the canonical endpoint field is shown only in
+   that mode. Use `http://192.168.1.20` for Gen. 1, or HTTPS only for Gen. 2.
+   The selection does not copy credentials
    stored by LoxBerry.
 3. Test the connection, enable the service and save.
 4. Connect Codex CLI or Claude Desktop to

@@ -17,7 +17,8 @@ alle Python-Wheels offline mit. Öffne danach **LoxBerry MCP Server**:
 1. Trage die lokale HTTPS-Origin des LoxBerry ein, z. B.
    `https://loxberry.local`.
 2. Wähle einen der in LoxBerry konfigurierten Miniserver. Alternativ kannst du
-   den kanonischen Endpunkt manuell eintragen: Gen. 1 beispielsweise
+   „Endpunkt manuell eingeben“ wählen; nur dann wird das Feld für den
+   kanonischen Endpunkt angezeigt. Gen. 1 verwendet beispielsweise
    `http://192.168.1.20`, Gen. 2 ausschließlich `https://miniserver.example`.
    Die Auswahl übernimmt keine in LoxBerry gespeicherten Zugangsdaten.
 3. Prüfe die Verbindung, aktiviere den Dienst und speichere.
