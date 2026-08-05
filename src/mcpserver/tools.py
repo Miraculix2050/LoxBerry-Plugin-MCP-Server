@@ -27,6 +27,12 @@ from mcpserver.loxone.runtime import (
     RuntimeSnapshot,
     RuntimeUnavailable,
 )
+from mcpserver.skill_delivery import (
+    SKILL_MIME_TYPE,
+    SKILL_NAME,
+    SKILL_REVISION,
+    read_skill_markdown,
+)
 
 DEFAULT_PAGE_SIZE: Final = 50
 MAX_PAGE_SIZE: Final = 100
@@ -91,6 +97,13 @@ class StatesData(BaseModel):
     states: list[StateData]
 
 
+class SkillGuideData(BaseModel):
+    name: str
+    revision: int
+    media_type: str
+    content: str
+
+
 class SystemStatusData(BaseModel):
     reachable: bool
     miniserver_serial: str
@@ -125,6 +138,10 @@ class ControlDescriptionEnvelope(ToolEnvelope):
 
 class StatesEnvelope(ToolEnvelope):
     data: StatesData | ErrorData
+
+
+class SkillGuideEnvelope(ToolEnvelope):
+    data: SkillGuideData | ErrorData
 
 
 class ControlOperationData(BaseModel):
@@ -560,6 +577,31 @@ def register_read_tools(
             )
         except RuntimeUnavailable as exc:
             return _error(StatesEnvelope, "temporarily_unavailable", str(exc))
+
+
+def register_skill_tool(server: FastMCP) -> None:
+    """Publish a tool fallback for clients that do not consume MCP resources."""
+    annotations = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
+
+    @server.tool(
+        name="loxone_get_skill_guide",
+        description=(
+            "Get the bundled agent workflow for safe Loxone discovery, state reads, and "
+            "explicit control operations. Use when MCP resources are unavailable."
+        ),
+        annotations=annotations,
+        structured_output=True,
+    )
+    def get_skill_guide() -> SkillGuideEnvelope:
+        return _result(
+            SkillGuideEnvelope,
+            {
+                "name": SKILL_NAME,
+                "revision": SKILL_REVISION,
+                "media_type": SKILL_MIME_TYPE,
+                "content": read_skill_markdown(),
+            },
+        )
 
 
 def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> None:

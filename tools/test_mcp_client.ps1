@@ -3,6 +3,7 @@ param(
     [string]$ServerName = 'loxberry-mcp',
     [string]$VisibilityFixturePath,
     [string]$ControlFixturePath,
+    [int]$CallbackPort,
     [int]$TimeoutSeconds = 120,
     [switch]$CheckConfigurationOnly
 )
@@ -57,8 +58,31 @@ if ($CheckConfigurationOnly) {
 
 $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
 $startInfo.FileName = [string]$server.command
-foreach ($argument in $server.args) {
-    [void]$startInfo.ArgumentList.Add([string]$argument)
+$proxyArguments = [System.Collections.Generic.List[string]]::new()
+foreach ($argument in @($server.args)) {
+    $proxyArguments.Add([string]$argument)
+}
+if ($CallbackPort) {
+    $serverUrlIndex = -1
+    for ($index = 0; $index -lt $proxyArguments.Count; $index += 1) {
+        if ($proxyArguments[$index] -match '^https?://') {
+            $serverUrlIndex = $index
+            break
+        }
+    }
+    if ($serverUrlIndex -lt 0) {
+        throw 'CallbackPort requires an HTTP(S) server URL in the proxy arguments.'
+    }
+    $callbackIndex = $serverUrlIndex + 1
+    if ($callbackIndex -lt $proxyArguments.Count -and
+        $proxyArguments[$callbackIndex] -match '^\d+$') {
+        $proxyArguments[$callbackIndex] = [string]$CallbackPort
+    } else {
+        $proxyArguments.Insert($callbackIndex, [string]$CallbackPort)
+    }
+}
+foreach ($argument in $proxyArguments) {
+    [void]$startInfo.ArgumentList.Add($argument)
 }
 if ($server.env) {
     foreach ($property in $server.env.PSObject.Properties) {
@@ -158,7 +182,12 @@ try {
             clientInfo = @{ name = 'phase1-readonly-probe'; version = '0.1.0' }
         }
     }
-    if ((Read-JsonRpc 0).error) { throw 'MCP initialize failed.' }
+    $initializeResponse = Read-JsonRpc 0
+    if ($initializeResponse.error) { throw 'MCP initialize failed.' }
+    if ($initializeResponse.result.instructions -notlike '*skill://using-loxberry-mcp/SKILL.md*' -or
+        $initializeResponse.result.instructions -notlike '*loxone_get_skill_guide*') {
+        throw 'MCP initialize did not advertise the bundled skill.'
+    }
     Send-JsonRpc @{ jsonrpc = '2.0'; method = 'notifications/initialized'; params = @{} }
     Send-JsonRpc @{ jsonrpc = '2.0'; id = 1; method = 'tools/list'; params = @{} }
     $toolsResponse = Read-JsonRpc 1
@@ -166,10 +195,15 @@ try {
 
     $expected = @(
         'loxone_get_system_status', 'loxone_list_rooms', 'loxone_list_categories',
-        'loxone_find_controls', 'loxone_describe_control', 'loxone_get_states'
+        'loxone_find_controls', 'loxone_describe_control', 'loxone_get_states',
+        'loxone_get_skill_guide'
     )
-    if ($ControlFixturePath) { $expected += 'loxone_operate_control' }
     $actual = @($toolsResponse.result.tools | ForEach-Object { $_.name } | Sort-Object)
+    $controlAdvertised = $actual -contains 'loxone_operate_control'
+    if ($controlAdvertised) { $expected += 'loxone_operate_control' }
+    if ($ControlFixturePath -and -not $controlAdvertised) {
+        throw 'ControlFixturePath requires the enabled loxone_operate_control tool.'
+    }
     if (($actual -join "`n") -ne (($expected | Sort-Object) -join "`n")) {
         throw 'MCP tool inventory differs from the expected enabled contract.'
     }
@@ -188,7 +222,34 @@ try {
         }
     }
 
-    $script:nextId = 2
+    Send-JsonRpc @{ jsonrpc = '2.0'; id = 2; method = 'resources/list'; params = @{} }
+    $resourcesResponse = Read-JsonRpc 2
+    if ($resourcesResponse.error -or @($resourcesResponse.result.resources).Count -ne 1 -or
+        [string]$resourcesResponse.result.resources[0].uri -ne
+            'skill://using-loxberry-mcp/SKILL.md' -or
+        $resourcesResponse.result.resources[0].mimeType -ne 'text/markdown') {
+        throw 'MCP skill resource inventory differs from the expected contract.'
+    }
+    Send-JsonRpc @{
+        jsonrpc = '2.0'; id = 3; method = 'resources/read'
+        params = @{ uri = 'skill://using-loxberry-mcp/SKILL.md' }
+    }
+    $resourceResponse = Read-JsonRpc 3
+    $skillMarkdown = [string]$resourceResponse.result.contents[0].text
+    if ($resourceResponse.error -or
+        $resourceResponse.result.contents[0].mimeType -ne 'text/markdown' -or
+        $skillMarkdown -notlike "---`nname: using-loxberry-mcp`n*") {
+        throw 'MCP skill resource content differs from the expected contract.'
+    }
+
+    $script:nextId = 4
+    $skillGuide = Invoke-ReadTool (Get-NextId) 'loxone_get_skill_guide' @{}
+    if ($skillGuide.data.name -ne 'using-loxberry-mcp' -or
+        $skillGuide.data.revision -ne 1 -or
+        $skillGuide.data.media_type -ne 'text/markdown' -or
+        $skillGuide.data.content -ne $skillMarkdown) {
+        throw 'MCP skill guide tool differs from the canonical resource.'
+    }
     [void](Invoke-ReadTool (Get-NextId) 'loxone_get_system_status' @{})
     [void](Invoke-ReadTool (Get-NextId) 'loxone_list_rooms' @{ limit = 100 })
     [void](Invoke-ReadTool (Get-NextId) 'loxone_list_categories' @{ limit = 100 })
@@ -288,8 +349,9 @@ try {
     $hiddenUuid = $null
     $stateUuid = $null
     'mcp_tool_contract=pass'
-    if ($ControlFixturePath) { 'mcp_six_read_tools_plus_control=pass' }
-    else { 'mcp_six_read_tools=pass' }
+    'mcp_skill_delivery=pass'
+    if ($ControlFixturePath) { 'mcp_six_data_tools_plus_skill_guide_and_control=pass' }
+    else { 'mcp_six_data_tools_plus_skill_guide=pass' }
     if ($VisibilityFixturePath) { 'mcp_visibility_filter=pass' }
 } finally {
     try { $process.StandardInput.Close() } catch {}

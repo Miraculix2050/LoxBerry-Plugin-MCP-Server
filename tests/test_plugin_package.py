@@ -20,6 +20,42 @@ from tools.verify_plugin import PackageVerificationError, verify_archive
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _write_project_wheel(path: Path, *, include_openai_metadata: bool = True) -> None:
+    with zipfile.ZipFile(path, "w") as wheel:
+        wheel.writestr("mcpserver/skills/using-loxberry-mcp/SKILL.md", b"skill")
+        if include_openai_metadata:
+            wheel.writestr(
+                "mcpserver/skills/using-loxberry-mcp/agents/openai.yaml",
+                b"interface: {}\n",
+            )
+
+
+def test_agent_skill_is_declared_as_wheel_package_data() -> None:
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    skill = ROOT / "src" / "mcpserver" / "skills" / "using-loxberry-mcp"
+
+    assert (skill / "SKILL.md").is_file()
+    assert (skill / "agents" / "openai.yaml").is_file()
+    assert '"skills/using-loxberry-mcp/SKILL.md"' in pyproject
+    assert '"skills/using-loxberry-mcp/agents/openai.yaml"' in pyproject
+
+
+def test_mcp_client_smoke_covers_skill_delivery_surfaces() -> None:
+    script = (ROOT / "tools" / "test_mcp_client.ps1").read_text(encoding="utf-8")
+
+    assert "skill://using-loxberry-mcp/SKILL.md" in script
+    assert "loxone_get_skill_guide" in script
+    assert "method = 'resources/list'" in script
+    assert "method = 'resources/read'" in script
+    assert "mcp_skill_delivery=pass" in script
+    assert "[int]$CallbackPort" in script
+    assert "if ($proxyArguments[$index] -match '^https?://')" in script
+    assert "$callbackIndex = $serverUrlIndex + 1" in script
+    assert "$proxyArguments.Insert($callbackIndex, [string]$CallbackPort)" in script
+    assert "$controlAdvertised = $actual -contains 'loxone_operate_control'" in script
+    assert "if ($ControlFixturePath -and -not $controlAdvertised)" in script
+
+
 def test_plugin_identity_and_platform_contract() -> None:
     parser = configparser.ConfigParser()
     parser.read(ROOT / "plugin.cfg", encoding="utf-8")
@@ -225,7 +261,8 @@ def test_plugin_archive_verifier_accepts_builder_output(tmp_path: Path) -> None:
     for name, version in _locked_requirements(ROOT / "requirements" / "runtime-arm64.lock").items():
         wheel_name = name.replace("-", "_")
         (wheelhouse / f"{wheel_name}-{version}-py3-none-any.whl").write_bytes(b"wheel")
-    (wheelhouse / "loxberry_mcpserver-0.2.0a1-py3-none-any.whl").write_bytes(b"project")
+    project_wheel = wheelhouse / "loxberry_mcpserver-0.2.0a1-py3-none-any.whl"
+    _write_project_wheel(project_wheel)
     output = tmp_path / "plugin.zip"
 
     subprocess.run(
@@ -242,6 +279,23 @@ def test_plugin_archive_verifier_accepts_builder_output(tmp_path: Path) -> None:
     )
 
     assert verify_archive(output) == hashlib.sha256(output.read_bytes()).hexdigest()
+
+    _write_project_wheel(project_wheel, include_openai_metadata=False)
+    missing_skill_metadata = tmp_path / "missing-skill-metadata.zip"
+    subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "tools" / "build_plugin.py"),
+            "--wheelhouse",
+            str(wheelhouse),
+            "--output",
+            str(missing_skill_metadata),
+        ],
+        check=True,
+        cwd=ROOT,
+    )
+    with pytest.raises(PackageVerificationError, match="project wheel entry is missing"):
+        verify_archive(missing_skill_metadata)
 
     with zipfile.ZipFile(output) as source:
         omitted = next(
