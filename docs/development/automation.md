@@ -42,9 +42,6 @@ boundaries around state-changing operations:
 2. Compare local and remote SHA-256 before installation.
 3. Prefer the native LoxBerry Plugin Manager or its exact installer command for install,
    upgrade, and uninstall.
-   For an upgrade, verify that the bundled virtual environment was rebuilt through the
-   atomic installation path; an updated wheelhouse alone does not prove that changed
-   server code is active.
 4. Read the SecurePIN only from an approved external file or interactive input. Never
    place it in arguments, logs, repository files, or generated evidence.
 5. Run health, service, Apache, ownership, configuration-schema, and MCP read-only

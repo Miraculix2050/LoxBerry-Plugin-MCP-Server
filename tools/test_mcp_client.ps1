@@ -58,13 +58,31 @@ if ($CheckConfigurationOnly) {
 
 $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
 $startInfo.FileName = [string]$server.command
-$argumentIndex = 0
-foreach ($argument in $server.args) {
-    [void]$startInfo.ArgumentList.Add([string]$argument)
-    if ($CallbackPort -and $argumentIndex -eq 1) {
-        [void]$startInfo.ArgumentList.Add([string]$CallbackPort)
+$proxyArguments = [System.Collections.Generic.List[string]]::new()
+foreach ($argument in @($server.args)) {
+    $proxyArguments.Add([string]$argument)
+}
+if ($CallbackPort) {
+    $serverUrlIndex = -1
+    for ($index = 0; $index -lt $proxyArguments.Count; $index += 1) {
+        if ($proxyArguments[$index] -match '^https?://') {
+            $serverUrlIndex = $index
+            break
+        }
     }
-    $argumentIndex += 1
+    if ($serverUrlIndex -lt 0) {
+        throw 'CallbackPort requires an HTTP(S) server URL in the proxy arguments.'
+    }
+    $callbackIndex = $serverUrlIndex + 1
+    if ($callbackIndex -lt $proxyArguments.Count -and
+        $proxyArguments[$callbackIndex] -match '^\d+$') {
+        $proxyArguments[$callbackIndex] = [string]$CallbackPort
+    } else {
+        $proxyArguments.Insert($callbackIndex, [string]$CallbackPort)
+    }
+}
+foreach ($argument in $proxyArguments) {
+    [void]$startInfo.ArgumentList.Add($argument)
 }
 if ($server.env) {
     foreach ($property in $server.env.PSObject.Properties) {
