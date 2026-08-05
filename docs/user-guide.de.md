@@ -16,8 +16,10 @@ alle Python-Wheels offline mit. Öffne danach **LoxBerry MCP Server**:
 
 1. Trage die lokale HTTPS-Origin des LoxBerry ein, z. B.
    `https://loxberry.local`.
-2. Trage den kanonischen Miniserver-Endpunkt ein: Gen. 1 beispielsweise
+2. Wähle einen der in LoxBerry konfigurierten Miniserver. Alternativ kannst du
+   den kanonischen Endpunkt manuell eintragen: Gen. 1 beispielsweise
    `http://192.168.1.20`, Gen. 2 ausschließlich `https://miniserver.example`.
+   Die Auswahl übernimmt keine in LoxBerry gespeicherten Zugangsdaten.
 3. Prüfe die Verbindung, aktiviere den Dienst und speichere.
 4. Verbinde Codex CLI oder Claude Desktop mit
    `https://loxberry.local/plugins/mcpserver/mcp` und folge dem OAuth-Login.
