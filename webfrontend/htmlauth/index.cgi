@@ -297,11 +297,20 @@ my ($selected_miniserver) = grep { $_->{selected} } @$miniservers;
 my $display_endpoint = $config->{loxone}{endpoint} // '';
 $display_endpoint = $selected_miniserver->{endpoint}
     if $display_endpoint eq '' && $selected_miniserver;
+my $public_origin = $config->{server}{public_origin} // '';
+my $explorer_url = 'explorer.cgi';
+if (
+    $public_origin =~ m{\Ahttps://[^/?#\s\@\\]+\z}
+    && $lbpplugindir =~ /\A[A-Za-z0-9_-]+\z/
+) {
+    $explorer_url = "$public_origin/admin/plugins/$lbpplugindir/explorer.cgi";
+}
 
 $template->param(
     VERSION => $version,
     ENABLED => $config->{server}{enabled} ? 1 : 0,
-    PUBLIC_ORIGIN => $config->{server}{public_origin} // '',
+    PUBLIC_ORIGIN => $public_origin,
+    EXPLORER_URL => $explorer_url,
     ENDPOINT => $display_endpoint,
     MINISERVERS => $miniservers,
     MANUAL_ENDPOINT => $has_selected_miniserver ? 0 : 1,

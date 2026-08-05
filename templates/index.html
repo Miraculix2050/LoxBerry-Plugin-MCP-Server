@@ -85,7 +85,7 @@
       <h2 id="help-title"><TMPL_VAR HELP.TITLE></h2>
       <p><TMPL_VAR HELP.TOOL_ACCESS></p>
       <p><code>/plugins/mcpserver/mcp</code></p>
-      <p><a class="lb-button" href="explorer.cgi" target="_blank" rel="noopener"><TMPL_VAR ACTION.EXPLORER></a></p>
+      <p><a id="explorer-link" class="lb-button" href="<TMPL_VAR EXPLORER_URL ESCAPE=HTML>" target="_blank" rel="noopener"><TMPL_VAR ACTION.EXPLORER></a></p>
       <p><a href="https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server" target="_blank" rel="noopener"><TMPL_VAR HELP.PROJECT></a></p>
     </section>
   </div>
@@ -117,6 +117,7 @@
   const manualEndpointFields = document.getElementById('manual-endpoint-fields');
   const miniserverEndpoint = document.getElementById('miniserver-endpoint');
   const testEndpoint = document.querySelector('form[data-ajax="test_connection"] input[name="endpoint"]');
+  const explorerLink = document.getElementById('explorer-link');
   const syncTestEndpoint = () => { testEndpoint.value = miniserverEndpoint.value; };
   const syncMiniserverSelection = () => {
     const selectedEndpoint = miniserverSelect.value;
@@ -197,7 +198,9 @@
         if (Array.isArray(result.data.sessions)) updateSessions(result.data.sessions);
         if (form.dataset.ajax === 'save_config') {
           const savedEndpoint = result.data.configuration.loxone.endpoint;
+          const savedOrigin = result.data.configuration.server.public_origin;
           miniserverEndpoint.value = savedEndpoint;
+          explorerLink.href = `${savedOrigin}/admin/plugins/mcpserver/explorer.cgi`;
           syncTestEndpoint();
         }
       } catch (error) {
