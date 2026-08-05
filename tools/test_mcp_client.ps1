@@ -198,8 +198,12 @@ try {
         'loxone_find_controls', 'loxone_describe_control', 'loxone_get_states',
         'loxone_get_skill_guide'
     )
-    if ($ControlFixturePath) { $expected += 'loxone_operate_control' }
     $actual = @($toolsResponse.result.tools | ForEach-Object { $_.name } | Sort-Object)
+    $controlAdvertised = $actual -contains 'loxone_operate_control'
+    if ($controlAdvertised) { $expected += 'loxone_operate_control' }
+    if ($ControlFixturePath -and -not $controlAdvertised) {
+        throw 'ControlFixturePath requires the enabled loxone_operate_control tool.'
+    }
     if (($actual -join "`n") -ne (($expected | Sort-Object) -join "`n")) {
         throw 'MCP tool inventory differs from the expected enabled contract.'
     }

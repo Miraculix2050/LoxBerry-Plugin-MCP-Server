@@ -52,6 +52,8 @@ def test_mcp_client_smoke_covers_skill_delivery_surfaces() -> None:
     assert "if ($proxyArguments[$index] -match '^https?://')" in script
     assert "$callbackIndex = $serverUrlIndex + 1" in script
     assert "$proxyArguments.Insert($callbackIndex, [string]$CallbackPort)" in script
+    assert "$controlAdvertised = $actual -contains 'loxone_operate_control'" in script
+    assert "if ($ControlFixturePath -and -not $controlAdvertised)" in script
 
 
 def test_plugin_identity_and_platform_contract() -> None:
