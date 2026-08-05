@@ -40,6 +40,17 @@ def test_agent_skill_is_declared_as_wheel_package_data() -> None:
     assert '"skills/using-loxberry-mcp/agents/openai.yaml"' in pyproject
 
 
+def test_mcp_client_smoke_covers_skill_delivery_surfaces() -> None:
+    script = (ROOT / "tools" / "test_mcp_client.ps1").read_text(encoding="utf-8")
+
+    assert "skill://using-loxberry-mcp/SKILL.md" in script
+    assert "loxone_get_skill_guide" in script
+    assert "method = 'resources/list'" in script
+    assert "method = 'resources/read'" in script
+    assert "mcp_skill_delivery=pass" in script
+    assert "[int]$CallbackPort" in script
+
+
 def test_plugin_identity_and_platform_contract() -> None:
     parser = configparser.ConfigParser()
     parser.read(ROOT / "plugin.cfg", encoding="utf-8")
@@ -134,6 +145,14 @@ def test_postinstall_rewrites_moved_venv_entrypoints() -> None:
     assert 'sed -i "1c\\\\#!$venv/bin/python"' in hook
     assert 'rm -rf -- "$venv"' in hook
     assert 'mv "$old_venv" "$venv"' in hook
+
+
+def test_postupgrade_rebuilds_runtime_through_postinstall() -> None:
+    hook = (ROOT / "postupgrade.sh").read_text(encoding="utf-8")
+
+    assert 'postinstall_hook="$hook_dir/postinstall.sh"' in hook
+    assert '[ ! -f "$postinstall_hook" ] || [ -L "$postinstall_hook" ]' in hook
+    assert 'exec /bin/bash "$postinstall_hook" "$@"' in hook
 
 
 def test_postinstall_project_pin_matches_plugin_version() -> None:
