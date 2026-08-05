@@ -35,11 +35,11 @@ setup, browser authentication, and the requested read or write permissions. It
 does not require a local Node.js bridge.
 
 The six read-only Loxone data tools and the read-only skill-guide tool remain
-enabled by default. To operate Gen. 1 switches, additionally enable
-**Loxone control**. A new OAuth grant with `loxone:control`
-is then required. Disabling control revokes existing control sessions while
-read-only sessions remain valid. Control cannot be enabled for a Gen. 2/HTTPS
-target.
+enabled by default. Under **Miniserver access through the MCP server**, select
+**Read and switch** to additionally operate Gen. 1 Switches. A new OAuth grant
+with `loxone:control` is then required. Switching back to **Read only** revokes
+existing control sessions while read-only sessions remain valid. **Read and
+switch** cannot be enabled for a Gen. 2/HTTPS target.
 
 ## Agent Skill
 

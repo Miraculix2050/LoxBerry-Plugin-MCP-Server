@@ -35,11 +35,12 @@ Hinzufügen per URL, die Browser-Authentifizierung und die angeforderten Lese-
 beziehungsweise Schreibrechte. Dafür wird keine lokale Node.js-Bridge benötigt.
 
 Die sechs lesenden Loxone-Datentools und das lesende Skill-Guide-Tool bleiben
-standardmäßig aktiv. Für die optionale Bedienung von Gen.-1-Switches aktiviere
-zusätzlich **Loxone-Steuerung**. Danach ist eine
-neue OAuth-Freigabe mit `loxone:control` erforderlich. Deaktivieren widerruft
-bestehende Control-Sitzungen; reine Lesesitzungen bleiben gültig. Bei einem
-Gen.-2-/HTTPS-Ziel kann die Steuerung nicht aktiviert werden.
+standardmäßig aktiv. Wähle unter **Zugriff auf den Miniserver über den MCP
+Server** die Option **Lesen und schalten**, um zusätzlich Gen.-1-Switches
+bedienen zu können. Danach ist eine neue OAuth-Freigabe mit `loxone:control`
+erforderlich. Beim Zurückwechseln auf **Nur lesen** werden bestehende
+Control-Sitzungen widerrufen; reine Lesesitzungen bleiben gültig. Bei einem
+Gen.-2-/HTTPS-Ziel kann **Lesen und schalten** nicht aktiviert werden.
 
 ## Agent Skill
 

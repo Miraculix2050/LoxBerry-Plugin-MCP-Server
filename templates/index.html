@@ -4,7 +4,8 @@
   .mcp-card { min-width: 0; padding: 1rem; border: 1px solid #c9cdd2; border-radius: .4rem; background: #fff; }
   .mcp-form { display: grid; gap: .85rem; }
   .mcp-field { display: grid; gap: .3rem; min-width: 0; }
-  .mcp-field input, .mcp-field select { box-sizing: border-box; width: 100%; max-width: 100%; min-height: 2.75rem; }
+  .mcp-field input,
+  .mcp-field select { box-sizing: border-box; width: 100%; max-width: 100%; min-height: 2.75rem; }
   .mcp-manual-endpoint[hidden] { display: none; }
   .mcp-help { margin: 0; color: #4b5563; }
   .mcp-actions { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; }
@@ -53,7 +54,13 @@
         <label class="mcp-field"><span><TMPL_VAR SETUP.PARALLEL></span><input name="max_parallel_calls" type="number" min="1" max="32" value="<TMPL_VAR MAX_PARALLEL_CALLS ESCAPE=HTML>"></label>
       </div>
       <label><input name="enabled" type="checkbox" value="1" <TMPL_IF ENABLED>checked</TMPL_IF>> <TMPL_VAR SETUP.ENABLED></label>
-      <label><input name="loxone_control_enabled" type="checkbox" value="1" <TMPL_IF LOXONE_CONTROL_ENABLED>checked</TMPL_IF>> <TMPL_VAR SETUP.CONTROL_ENABLED></label>
+      <label class="mcp-field">
+        <span><TMPL_VAR SETUP.CONTROL_MODE></span>
+        <select name="loxone_control_enabled">
+          <option value="0" <TMPL_UNLESS LOXONE_CONTROL_ENABLED>selected</TMPL_UNLESS>><TMPL_VAR SETUP.CONTROL_READ_ONLY></option>
+          <option value="1" <TMPL_IF LOXONE_CONTROL_ENABLED>selected</TMPL_IF>><TMPL_VAR SETUP.CONTROL_READ_SWITCH></option>
+        </select>
+      </label>
       <p class="mcp-warning"><TMPL_VAR SETUP.CONTROL_WARNING></p>
       <div class="mcp-actions">
         <button class="lb-button" type="submit"><TMPL_VAR ACTION.SAVE></button>
