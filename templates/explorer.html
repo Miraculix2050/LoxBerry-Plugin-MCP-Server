@@ -65,6 +65,9 @@
   data-popup-blocked="<TMPL_VAR EXPLORER.POPUP_BLOCKED ESCAPE=HTML>"
   data-auth-cancelled="<TMPL_VAR EXPLORER.AUTH_CANCELLED ESCAPE=HTML>"
   data-token-expired="<TMPL_VAR EXPLORER.TOKEN_EXPIRED ESCAPE=HTML>"
+  data-restoring-session="<TMPL_VAR EXPLORER.RESTORING_SESSION ESCAPE=HTML>"
+  data-restore-failed="<TMPL_VAR EXPLORER.RESTORE_FAILED ESCAPE=HTML>"
+  data-session-other-tab="<TMPL_VAR EXPLORER.SESSION_OTHER_TAB ESCAPE=HTML>"
   data-timeout="<TMPL_VAR EXPLORER.TIMEOUT ESCAPE=HTML>"
   data-control-required="<TMPL_VAR EXPLORER.CONTROL_REQUIRED ESCAPE=HTML>"
   data-as-list="<TMPL_VAR EXPLORER.AS_LIST ESCAPE=HTML>"
@@ -99,6 +102,8 @@
     </div>
     <p id="explorer-control-note" class="mcp-explorer-warning" hidden><TMPL_VAR EXPLORER.CONTROL_UNAVAILABLE></p>
     <div id="explorer-status" class="mcp-explorer-status" role="status" aria-live="polite"><TMPL_VAR EXPLORER.DISCONNECTED></div>
+    <p class="mcp-explorer-muted"><TMPL_VAR EXPLORER.SESSION_POLICY></p>
+    <p id="explorer-session-expiry" hidden><strong><TMPL_VAR EXPLORER.SESSION_EXPIRES></strong> <time id="explorer-session-expiry-time"></time></p>
   </section>
 
   <div class="mcp-explorer-grid">
