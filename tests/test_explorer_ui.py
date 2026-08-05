@@ -364,6 +364,88 @@ def test_explorer_revocation_request_uses_bounded_timeout() -> None:
     }
 
 
+def test_session_clear_prevents_call_artifacts_from_being_recreated() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+
+    assert "error.sessionCleared = true" in source
+    assert "!(error && error.sessionCleared === true)" in source
+    assert "sessionCleared = Boolean(error && error.sessionCleared === true)" in source
+    assert source.count("if (!sessionCleared) {") >= 2
+
+
+def test_explorer_resume_record_contains_only_valid_tab_scoped_refresh_data() -> None:
+    token = "a" * 43
+    resource = "https://local/plugins/mcpserver/mcp"
+    oauth = {
+        "metadata": {"token_endpoint": "https://local/token"},
+        "clientId": token,
+        "sessionId": token,
+        "scope": "loxone:read",
+        "accessToken": "must-not-be-stored",
+        "refreshToken": token,
+        "resource": resource,
+        "expiresAt": 123,
+        "resumeUntil": 1_000_000,
+    }
+    record = run_core(f"core.resumableSession({json.dumps(oauth)})")
+
+    assert record == {
+        "version": 1,
+        "sessionId": token,
+        "clientId": token,
+        "scope": "loxone:read",
+        "refreshToken": token,
+        "resource": resource,
+        "resumeUntil": 1_000_000,
+    }
+    encoded = json.dumps(record)
+    assert (
+        run_core(f"core.validateResumableSession({encoded},{json.dumps(resource)},999999)")
+        == record
+    )
+    assert (
+        run_core(f"core.validateResumableSession({encoded},{json.dumps(resource)},1000000)") is None
+    )
+    assert (
+        run_core(
+            f"core.validateResumableSession({encoded},'https://other/plugins/mcpserver/mcp',999999)"
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize("exchange_fails", [False, True])
+def test_explorer_refresh_removes_replayable_state_before_rotation(
+    exchange_fails: bool,
+) -> None:
+    exchange = (
+        "async()=>{events.push('exchange');throw new Error('offline')}"
+        if exchange_fails
+        else "async()=>{events.push('exchange');return {access_token:'new-access',"
+        "refresh_token:'new-refresh',expires_in:600,scope:'loxone:read'}}"
+    )
+    expression = f"""(async()=>{{
+      const events=[];
+      const oauth={{resumeEnabled:true,clientId:'client',refreshToken:'old-refresh',
+        resource:'https://local/mcp',scope:'loxone:read'}};
+      try {{
+        const saved=await core.rotateRefreshToken(oauth,{exchange},
+          ()=>events.push('clear'),()=>{{events.push('save');return true}},1000);
+        return {{events,saved,refreshToken:oauth.refreshToken}};
+      }} catch (_error) {{ return {{events,refreshToken:oauth.refreshToken}}; }}
+    }})()"""
+
+    actual = run_core_async(expression)
+    if exchange_fails:
+        assert actual == {"events": ["clear", "exchange"], "refreshToken": "old-refresh"}
+    else:
+        assert actual == {
+            "events": ["clear", "exchange", "save"],
+            "saved": True,
+            "refreshToken": "new-refresh",
+        }
+
+
 def test_explorer_generated_field_ids_are_unique_and_labelled() -> None:
     assert run_core("[core.fieldControlId(0),core.fieldControlId(1)]") == [
         "explorer-field-0",
@@ -447,7 +529,7 @@ def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
     assert "authorizationMetadata[name] !== value" in source
     assert "code_challenge_method: 'S256'" in source
     assert "width=680,height=900,resizable=yes,scrollbars=yes" in source
-    assert "core.refreshTokenFields(state.oauth.clientId" in source
+    assert "core.rotateRefreshToken(" in source
     assert "if (state.oauth) await revokeAndClear()" in source
     assert "core.toolIsMutating(state.selectedTool)" in source
     assert "state.history.length > core.MAX_CALL_HISTORY" in source
@@ -461,6 +543,13 @@ def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
             source.index("localStorage.setItem") - 100 : source.index("localStorage.setItem") + 200
         ]
     )
+    assert "sessionStorage.setItem" in source
+    assert "core.validateResumableSession" in source
+    assert "navigator.locks.request" in source
+    assert "ifAvailable: true" in source
+    assert "await refreshAccessToken();" in source
+    assert "window.addEventListener('pagehide'" not in source
+    assert "navigator.sendBeacon" not in source
     assert 'target="_blank"' in (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
     assert "@media (max-width: 52rem)" in template
     assert ":focus-visible" in template
@@ -472,6 +561,7 @@ def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
     assert 'id="explorer-access-mode"' in template
     assert '<option value="read">' in template
     assert 'id="explorer-control-option" value="control" disabled' in template
+    assert 'id="explorer-session-expiry" hidden' in template
     assert "elements.control.value === 'control'" in source
     assert "Cache_Control => 'no-store'" in callback
     assert "frame-ancestors 'none'" in callback

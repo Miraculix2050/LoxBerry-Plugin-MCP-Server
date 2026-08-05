@@ -116,16 +116,25 @@ Loxone-Typ ohne Beachtung der Groß-/Kleinschreibung, beispielsweise `Switch` od
 
 Der MCP-Transkriptbereich zeigt bereinigte JSON-RPC-Nachrichten, Status und Dauer.
 Authorization-Header, OAuth-Werte und als geheim erkannte Argumente werden nicht
-angezeigt. Tokens, Entwürfe, Ergebnisse und der auf 50 Aufrufe begrenzte Verlauf
-bleiben im Speicher des Tabs und verschwinden beim Neuladen oder Schließen.
-**Trennen und widerrufen** löscht sie ebenfalls sofort.
+angezeigt. Access-Token, Entwürfe, Ergebnisse und der auf 50 Aufrufe begrenzte
+Verlauf bleiben nur im Speicher des Tabs. Das Refresh-Token wird im
+`sessionStorage` desselben Tabs gehalten, damit ein Neuladen die Anmeldung
+wiederherstellen und das Token sofort rotieren kann. Eine Browser-Tab-Sperre
+verhindert die automatische Wiederverwendung in einem duplizierten Tab. Andere
+Seiten derselben LoxBerry-Admin-Origin sind keine Sicherheitsgrenze und müssen
+aus vertrauenswürdigen Plugins stammen. Beim Schließen des Tabs
+verwirft der Browser diesen lokalen Wert normalerweise, kann die Serversitzung
+aber nicht zuverlässig sofort widerrufen. Explorer-Sitzungen laufen deshalb
+spätestens nach acht Stunden ab. **Trennen und widerrufen** beendet sie sofort
+und bleibt vor dem Schließen der zuverlässige Abmeldeweg.
 
 Im Berechtigungs-Dropdown ist **Nur lesen** vorausgewählt. **Lesen und steuern**
 ist nur bei global aktivierter Loxone-Steuerung auswählbar und erfordert
 einen neuen Consent mit `loxone:control`. Jeder verändernde Aufruf zeigt direkt
 vor dem Senden noch einmal Werkzeug und Argumente und muss bestätigt werden.
 **Trennen und widerrufen** beendet die Explorer-Sitzung; nach einem Browserabsturz
-kann sie weiterhin in **Clients und Sitzungen** widerrufen werden.
+oder Schließen ohne Widerruf kann sie weiterhin in **Clients und Sitzungen**
+widerrufen werden.
 
 ## Umfang und Betrieb
 

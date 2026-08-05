@@ -111,16 +111,23 @@ filter compares the complete Loxone type case-insensitively, so `Switch` and
 
 The MCP transcript shows sanitized JSON-RPC messages, status and duration.
 Authorization headers, OAuth values and secret-shaped arguments are never shown.
-Tokens, drafts, results and the history bounded to 50 calls remain in tab memory
-and disappear on reload or close.
-**Disconnect and revoke** also clears them immediately.
+Access tokens, drafts, results and the history bounded to 50 calls remain only in
+tab memory. The refresh token is kept in that tab's `sessionStorage` so a reload
+can restore the sign-in and rotate the token immediately. A browser tab lock
+prevents automatic reuse in a duplicated tab. Other pages on the same LoxBerry
+admin origin are not a security boundary and must come from trusted plugins.
+Closing the tab normally
+discards that local value, but the browser cannot reliably revoke the server
+session immediately. Explorer sessions therefore expire after eight hours at the
+latest. **Disconnect and revoke** ends the session immediately and remains the
+reliable sign-out path before closing the tab.
 
 The permissions dropdown defaults to **Read only**. **Read and control** is
 selectable only when Loxone control is globally enabled and requires fresh consent for
 `loxone:control`. Every state-changing call displays its tool and arguments
 again and requires confirmation immediately before dispatch. **Disconnect and
-revoke** ends the explorer session; after a browser crash it can still be revoked
-under **Clients and sessions**.
+revoke** ends the explorer session; after a browser crash or closing without
+revocation it can still be revoked under **Clients and sessions**.
 
 ## Scope and operation
 

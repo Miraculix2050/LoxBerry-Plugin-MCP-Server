@@ -1,4 +1,4 @@
-/* LoxBerry MCP Tool Explorer. Tokens and call history intentionally stay in memory. */
+/* LoxBerry MCP Tool Explorer. Refresh credentials may resume only within the same tab. */
 (function (root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
@@ -10,6 +10,9 @@
   const MAX_CALL_HISTORY = 50;
   const MAX_TRANSCRIPT = 100;
   const REVOCATION_TIMEOUT_MS = 5000;
+  const EXPLORER_SESSION_MS = 8 * 60 * 60 * 1000;
+  const OPAQUE_VALUE = /^[A-Za-z0-9_-]{32,512}$/;
+  const EXPLORER_SCOPES = new Set(['loxone:read', 'loxone:read loxone:control']);
   const SECRET_NAME = /(?:password|passwd|secret|token|api[_-]?key|private[_-]?key)/i;
   const JSON_TYPES = new Set(['null', 'boolean', 'object', 'array', 'number', 'string', 'integer']);
   const REUSE_SCHEMA_KEYS = new Set([
@@ -311,6 +314,39 @@
     };
   }
 
+  function resumableSession(oauth) {
+    return {
+      version: 1,
+      sessionId: oauth.sessionId,
+      clientId: oauth.clientId,
+      scope: oauth.scope,
+      refreshToken: oauth.refreshToken,
+      resource: oauth.resource,
+      resumeUntil: oauth.resumeUntil,
+    };
+  }
+
+  function validateResumableSession(value, expectedResource, now) {
+    if (!value || typeof value !== 'object' || Array.isArray(value) || value.version !== 1) return null;
+    if (!OPAQUE_VALUE.test(value.sessionId || '') || !OPAQUE_VALUE.test(value.clientId || '') ||
+      !OPAQUE_VALUE.test(value.refreshToken || '')) return null;
+    if (!EXPLORER_SCOPES.has(value.scope) || value.resource !== expectedResource) return null;
+    if (!Number.isSafeInteger(value.resumeUntil) || value.resumeUntil <= now ||
+      value.resumeUntil > now + EXPLORER_SESSION_MS) return null;
+    return resumableSession(value);
+  }
+
+  async function rotateRefreshToken(oauth, exchange, clearResume, saveResume, now) {
+    if (oauth.resumeEnabled) clearResume();
+    const token = await exchange(refreshTokenFields(oauth.clientId, oauth.refreshToken, oauth.resource));
+    if (!token.access_token || !token.refresh_token) throw new Error('OAuth token response is incomplete');
+    oauth.accessToken = token.access_token;
+    oauth.refreshToken = token.refresh_token;
+    oauth.scope = token.scope || oauth.scope;
+    oauth.expiresAt = now + Math.max(0, Number(token.expires_in || 0) - 15) * 1000;
+    return !oauth.resumeEnabled || saveResume(oauth);
+  }
+
   function clearSensitiveState(state) {
     state.oauth = null;
     state.tools = [];
@@ -378,6 +414,7 @@
     MAX_CALL_HISTORY,
     MAX_TRANSCRIPT,
     REVOCATION_TIMEOUT_MS,
+    EXPLORER_SESSION_MS,
     clone,
     resolveRef,
     effectiveSchema,
@@ -399,6 +436,9 @@
     acceptOAuthMessage,
     authorizationCodeTokenFields,
     refreshTokenFields,
+    resumableSession,
+    validateResumableSession,
+    rotateRefreshToken,
     clearSensitiveState,
     revokeThenClear,
     revokeOAuthGrant,
@@ -424,6 +464,8 @@
     control: document.getElementById('explorer-access-mode'),
     controlOption: document.getElementById('explorer-control-option'),
     controlNote: document.getElementById('explorer-control-note'),
+    sessionExpiry: document.getElementById('explorer-session-expiry'),
+    sessionExpiryTime: document.getElementById('explorer-session-expiry-time'),
     tools: document.getElementById('explorer-tools'),
     history: document.getElementById('explorer-history'),
     summary: document.getElementById('explorer-tool-summary'),
@@ -468,6 +510,8 @@
     nextId: 1,
     controlAvailable: false,
     busy: false,
+    sessionLockId: null,
+    releaseSessionLock: null,
   };
 
   function setStatus(text, kind) {
@@ -534,6 +578,75 @@
 
   function clientStorageKey(scope) {
     return `mcp-explorer-client:${window.location.origin}:${scope}`;
+  }
+
+  function sessionStorageKey() {
+    return `mcp-explorer-session:${window.location.origin}`;
+  }
+
+  function clearStoredSession() {
+    try { window.sessionStorage.removeItem(sessionStorageKey()); } catch (_error) { /* optional */ }
+  }
+
+  function readStoredSession() {
+    try {
+      const serialized = window.sessionStorage.getItem(sessionStorageKey());
+      if (!serialized) return null;
+      const session = core.validateResumableSession(
+        JSON.parse(serialized),
+        `${window.location.origin}/plugins/mcpserver/mcp`,
+        Date.now(),
+      );
+      if (!session) clearStoredSession();
+      return session;
+    } catch (_error) {
+      clearStoredSession();
+      return null;
+    }
+  }
+
+  function saveStoredSession(oauth) {
+    try {
+      window.sessionStorage.setItem(
+        sessionStorageKey(),
+        JSON.stringify(core.resumableSession(oauth)),
+      );
+      return true;
+    } catch (_error) {
+      // Never leave a rotated, replay-invalid refresh token behind.
+      clearStoredSession();
+      return false;
+    }
+  }
+
+  async function acquireSessionOwnership(sessionId) {
+    if (state.sessionLockId === sessionId) return true;
+    if (!navigator.locks || typeof navigator.locks.request !== 'function') return false;
+    return new Promise((resolve) => {
+      navigator.locks.request(
+        `mcp-explorer-session:${sessionId}`,
+        {mode: 'exclusive', ifAvailable: true},
+        (lock) => {
+          if (!lock) {
+            resolve(false);
+            return undefined;
+          }
+          state.sessionLockId = sessionId;
+          return new Promise((release) => {
+            state.releaseSessionLock = () => {
+              state.sessionLockId = null;
+              state.releaseSessionLock = null;
+              release();
+            };
+            resolve(true);
+          });
+        },
+      ).catch(() => resolve(false));
+    });
+  }
+
+  function releaseSessionOwnership() {
+    if (state.releaseSessionLock) state.releaseSessionLock();
   }
 
   function readClientId(scope) {
@@ -628,6 +741,7 @@
   }
 
   async function authorize(withControl) {
+    const resumeUntil = Date.now() + core.EXPLORER_SESSION_MS;
     const discovered = await discover();
     const supported = new Set(discovered.resourceMetadata.scopes_supported || []);
     setControlAvailability(supported.has('loxone:control'));
@@ -656,27 +770,34 @@
       discovered.authorizationMetadata,
       core.authorizationCodeTokenFields(clientId, code, redirectUri, verifier, discovered.resourceMetadata.resource),
     );
+    if (!token.access_token || !token.refresh_token) throw new Error('OAuth token response is incomplete');
     return {
       metadata: discovered.authorizationMetadata,
       resource: discovered.resourceMetadata.resource,
+      sessionId: randomUrlSafe(32),
       clientId,
       scope: token.scope || scope,
       accessToken: token.access_token,
       refreshToken: token.refresh_token,
       expiresAt: Date.now() + Math.max(0, Number(token.expires_in || 0) - 15) * 1000,
+      resumeUntil,
+      resumeEnabled: false,
     };
   }
 
   async function refreshAccessToken() {
     if (!state.oauth || !state.oauth.refreshToken) throw new Error(label('tokenExpired'));
-    const token = await exchangeToken(
-      state.oauth.metadata,
-      core.refreshTokenFields(state.oauth.clientId, state.oauth.refreshToken, state.oauth.resource),
+    const saved = await core.rotateRefreshToken(
+      state.oauth,
+      (fields) => exchangeToken(state.oauth.metadata, fields),
+      clearStoredSession,
+      saveStoredSession,
+      Date.now(),
     );
-    state.oauth.accessToken = token.access_token;
-    state.oauth.refreshToken = token.refresh_token || state.oauth.refreshToken;
-    state.oauth.scope = token.scope || state.oauth.scope;
-    state.oauth.expiresAt = Date.now() + Math.max(0, Number(token.expires_in || 0) - 15) * 1000;
+    if (!saved) {
+      state.oauth.resumeEnabled = false;
+      releaseSessionOwnership();
+    }
   }
 
   async function accessToken() {
@@ -684,7 +805,9 @@
     if (Date.now() >= state.oauth.expiresAt) {
       try { await refreshAccessToken(); } catch (_error) {
         await revokeAndClear();
-        throw new Error(label('tokenExpired'));
+        const error = new Error(label('tokenExpired'));
+        error.sessionCleared = true;
+        throw error;
       }
     }
     return state.oauth.accessToken;
@@ -745,7 +868,8 @@
       if (response && response.error) throw new Error(response.error.message || 'MCP protocol error');
       return response ? response.result : null;
     } catch (error) {
-      if (!state.transcript.length || state.transcript[state.transcript.length - 1].request !== safeRequest) {
+      if (!(error && error.sessionCleared === true) &&
+        (!state.transcript.length || state.transcript[state.transcript.length - 1].request !== safeRequest)) {
         addTranscript(method, safeRequest, response || {error: error instanceof Error ? error.message : 'request failed'}, status, Math.round(performance.now() - started));
       }
       throw error;
@@ -769,6 +893,8 @@
     await core.revokeThenClear(oauth, async (current) => {
       await core.revokeOAuthGrant(fetchWithTimeout, current, core.REVOCATION_TIMEOUT_MS);
     }, () => {
+      clearStoredSession();
+      releaseSessionOwnership();
       core.clearSensitiveState(state);
       elements.json.value = '{}';
       elements.confirmTool.textContent = '';
@@ -789,6 +915,15 @@
     elements.disconnect.disabled = !connected;
     elements.control.disabled = connected;
     elements.run.disabled = !connected || !state.selectedTool;
+    elements.sessionExpiry.hidden = !connected;
+    if (connected) {
+      const expiry = new Date(state.oauth.resumeUntil);
+      elements.sessionExpiryTime.dateTime = expiry.toISOString();
+      elements.sessionExpiryTime.textContent = expiry.toLocaleString();
+    } else {
+      elements.sessionExpiryTime.removeAttribute('datetime');
+      elements.sessionExpiryTime.textContent = '';
+    }
     setStatus(connected ? label('connected') : label('disconnected'), connected ? 'success' : '');
   }
 
@@ -1056,6 +1191,7 @@
     const started = performance.now();
     let result;
     let ok = false;
+    let sessionCleared = false;
     try {
       result = await mcpRequest('tools/call', {name: tool.name, arguments: args}, false);
       ok = !(result && result.isError);
@@ -1070,13 +1206,18 @@
       }
       setStatus(ok ? label('ready') : label('error'), ok ? 'success' : 'error');
     } catch (error) {
-      result = {error: error instanceof Error ? error.message : label('error')};
-      renderResult(result, {tool: tool.name, arguments: args});
+      sessionCleared = Boolean(error && error.sessionCleared === true);
+      if (!sessionCleared) {
+        result = {error: error instanceof Error ? error.message : label('error')};
+        renderResult(result, {tool: tool.name, arguments: args});
+      }
       showError(error, label('error'));
     } finally {
-      state.history.push({tool: tool.name, arguments: args, result, ok, duration: Math.round(performance.now() - started)});
-      if (state.history.length > core.MAX_CALL_HISTORY) state.history.splice(0, state.history.length - core.MAX_CALL_HISTORY);
-      renderHistory();
+      if (!sessionCleared) {
+        state.history.push({tool: tool.name, arguments: args, result, ok, duration: Math.round(performance.now() - started)});
+        if (state.history.length > core.MAX_CALL_HISTORY) state.history.splice(0, state.history.length - core.MAX_CALL_HISTORY);
+        renderHistory();
+      }
       setBusy(false);
     }
   }
@@ -1149,6 +1290,11 @@
     setStatus(label('working'), 'working');
     try {
       state.oauth = await authorize(elements.control.value === 'control');
+      state.oauth.resumeEnabled = await acquireSessionOwnership(state.oauth.sessionId);
+      if (state.oauth.resumeEnabled && !saveStoredSession(state.oauth)) {
+        state.oauth.resumeEnabled = false;
+        releaseSessionOwnership();
+      }
       await initializeMcp();
       renderAll();
       if (state.tools.length) selectTool(state.tools[0].name);
@@ -1181,15 +1327,60 @@
     await runSelectedTool();
   });
   elements.transfer.addEventListener('close', () => { if (elements.transfer.returnValue === 'apply') applyTransfer(); });
-  window.addEventListener('pagehide', () => {
-    const oauth = state.oauth;
-    if (!oauth || !oauth.refreshToken || !navigator.sendBeacon) return;
-    navigator.sendBeacon(oauth.metadata.revocation_endpoint, new URLSearchParams({token: oauth.refreshToken, token_type_hint: 'refresh_token', client_id: oauth.clientId}));
-    state.oauth = null;
-  });
 
   renderAll();
-  discover().then(({resourceMetadata}) => {
-    setControlAvailability((resourceMetadata.scopes_supported || []).includes('loxone:control'));
-  }).catch(() => { setControlAvailability(false); });
+  (async () => {
+    let stored = readStoredSession();
+    let ownershipConflict = false;
+    let refreshed = false;
+    if (stored) {
+      setBusy(true);
+      setStatus(label('restoringSession'), 'working');
+      if (!(await acquireSessionOwnership(stored.sessionId))) {
+        clearStoredSession();
+        stored = null;
+        ownershipConflict = true;
+      }
+    }
+    try {
+      const discovered = await discover();
+      setControlAvailability(
+        (discovered.resourceMetadata.scopes_supported || []).includes('loxone:control'),
+      );
+      if (!stored) return;
+      state.oauth = {
+        ...stored,
+        metadata: discovered.authorizationMetadata,
+        accessToken: '',
+        expiresAt: 0,
+        resumeEnabled: true,
+      };
+      elements.control.value = stored.scope.includes('loxone:control') ? 'control' : 'read';
+      await refreshAccessToken();
+      refreshed = true;
+      await initializeMcp();
+      renderAll();
+      if (state.tools.length) selectTool(state.tools[0].name);
+      setStatus(label('connected'), 'success');
+    } catch (_error) {
+      const refreshFailed = Boolean(state.oauth) && !refreshed;
+      if (refreshFailed) {
+        await revokeAndClear();
+      } else {
+        core.clearSensitiveState(state);
+        releaseSessionOwnership();
+      }
+      renderAll();
+      if (stored) {
+        showError(
+          new Error(refreshFailed ? label('tokenExpired') : label('restoreFailed')),
+          label('error'),
+        );
+      }
+      else setControlAvailability(false);
+    } finally {
+      setBusy(false);
+      if (ownershipConflict) showError(new Error(label('sessionOtherTab')), label('error'));
+    }
+  })();
 })();

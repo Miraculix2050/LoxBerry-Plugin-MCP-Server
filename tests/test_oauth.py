@@ -5,6 +5,7 @@ import base64
 import hashlib
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
@@ -19,7 +20,10 @@ from starlette.testclient import TestClient
 
 from mcpserver.auth.provider import (
     CONTROL_SCOPE,
+    EXPLORER_CLIENT_NAME,
+    EXPLORER_REFRESH_FAMILY_TTL,
     READ_SCOPE,
+    REFRESH_FAMILY_TTL,
     SCOPE,
     Phase0OAuthProvider,
     normalize_scopes,
@@ -83,6 +87,7 @@ def test_disabled_control_scope_is_locally_revoked_without_deleting_remote_token
 
 
 REDIRECT = "http://127.0.0.1:48765/callback"
+EXPLORER_REDIRECT = "https://public.example/admin/plugins/mcpserver/explorer_callback.cgi"
 VERIFIER = "v" * 43
 CHALLENGE = (
     base64.urlsafe_b64encode(hashlib.sha256(VERIFIER.encode()).digest()).rstrip(b"=").decode()
@@ -161,15 +166,75 @@ async def test_control_scope_survives_code_exchange_and_refresh(tmp_path: Path) 
     assert rotated.scope == " ".join(scopes)
 
 
-def _client_info(client_id: str, *, grants: list[str] | None = None) -> OAuthClientInformationFull:
+def _client_info(
+    client_id: str,
+    *,
+    grants: list[str] | None = None,
+    client_name: str | None = None,
+    redirect_uri: str = REDIRECT,
+) -> OAuthClientInformationFull:
     return OAuthClientInformationFull(
         client_id=client_id,
         client_id_issued_at=1_800_000_000,
-        redirect_uris=[AnyUrl(REDIRECT)],
+        client_name=client_name,
+        redirect_uris=[AnyUrl(redirect_uri)],
         token_endpoint_auth_method="none",
         grant_types=grants or ["authorization_code", "refresh_token"],
         response_types=["code"],
         scope=SCOPE,
+    )
+
+
+@pytest.mark.asyncio
+async def test_explorer_client_gets_shorter_refresh_family_lifetime(tmp_path: Path) -> None:
+    clock = Clock()
+    provider = _provider(tmp_path, clock)
+    explorer = _client_info(
+        "explorer-client",
+        client_name=EXPLORER_CLIENT_NAME,
+        redirect_uri=EXPLORER_REDIRECT,
+    )
+    regular = _client_info("regular-client", client_name=EXPLORER_CLIENT_NAME)
+    await provider.register_client(explorer)
+    await provider.register_client(regular)
+
+    common = {
+        "code_challenge": CHALLENGE,
+        "resource": RESOURCE,
+        "identity_id": "identity",
+        "miniserver_id": "miniserver",
+    }
+    provider.issue_authorization_code(
+        client_id="explorer-client",
+        family_id="explorer-family",
+        redirect_uri=EXPLORER_REDIRECT,
+        **common,
+    )
+    provider.issue_authorization_code(
+        client_id="regular-client",
+        family_id="regular-family",
+        redirect_uri=REDIRECT,
+        **common,
+    )
+
+    families = provider.store.snapshot()["families"]
+    assert families["explorer-family"]["expires_at"] == clock.value + EXPLORER_REFRESH_FAMILY_TTL
+    assert families["regular-family"]["expires_at"] == clock.value + REFRESH_FAMILY_TTL
+
+    def restore_legacy_lifetime(document: dict[str, Any]) -> None:
+        document["families"]["explorer-family"]["expires_at"] = clock.value + REFRESH_FAMILY_TTL
+        document["families"]["explorer-family"].pop("client_kind")
+
+    provider.store.mutate(restore_legacy_lifetime)
+    Phase0OAuthProvider(
+        provider.store,
+        issuer=ISSUER,
+        resource=RESOURCE,
+        clock=clock,
+    )
+    assert (
+        provider.store.snapshot()["families"]["explorer-family"]["expires_at"]
+        == clock.value + EXPLORER_REFRESH_FAMILY_TTL
     )
 
 

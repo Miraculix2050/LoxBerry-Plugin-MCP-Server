@@ -32,6 +32,9 @@ _LOGGER = logging.getLogger("mcpserver.auth.provider")
 AUTHORIZATION_CODE_TTL: Final = 5 * 60
 ACCESS_TOKEN_TTL: Final = 10 * 60
 REFRESH_FAMILY_TTL: Final = 30 * 24 * 60 * 60
+EXPLORER_CLIENT_NAME: Final = "LoxBerry MCP Tool Explorer"
+EXPLORER_REFRESH_FAMILY_TTL: Final = 8 * 60 * 60
+_EXPLORER_CALLBACK_PATH: Final = "/admin/plugins/mcpserver/explorer_callback.cgi"
 _MAX_REGISTERED_CLIENTS: Final = 256
 _MAX_ACTIVE_FAMILIES: Final = 256
 _MAX_FAMILIES_PER_CLIENT: Final = 16
@@ -123,6 +126,7 @@ class Phase0OAuthProvider(
         self._clock = clock
         self._on_family_revoked = on_family_revoked
         self.control_enabled = control_enabled
+        self.store.mutate(self._garbage_collect)
 
     def now(self) -> int:
         return int(self._clock())
@@ -176,6 +180,13 @@ class Phase0OAuthProvider(
 
     def _garbage_collect(self, document: dict[str, Any]) -> None:
         now = self.now()
+        for family in document["families"].values():
+            client = document["clients"].get(family.get("client_id"), {})
+            if family.get("client_kind") == "tool_explorer" or self._is_explorer_client(client):
+                family["client_kind"] = "tool_explorer"
+                family["expires_at"] = min(
+                    int(family.get("expires_at", 0)), now + EXPLORER_REFRESH_FAMILY_TTL
+                )
         expired_families = {
             family_id
             for family_id, record in document["families"].items()
@@ -212,6 +223,13 @@ class Phase0OAuthProvider(
             if client_id in referenced_clients
             or int(record.get("client_id_issued_at", now)) + _UNUSED_CLIENT_TTL > now
         }
+
+    def _is_explorer_client(self, client: dict[str, Any]) -> bool:
+        issuer = urlsplit(self.issuer)
+        expected_redirect = f"{issuer.scheme}://{issuer.netloc}{_EXPLORER_CALLBACK_PATH}"
+        return client.get("client_name") == EXPLORER_CLIENT_NAME and client.get(
+            "redirect_uris"
+        ) == [expected_redirect]
 
     async def authorize(
         self, client: OAuthClientInformationFull, params: AuthorizationParams
@@ -259,7 +277,8 @@ class Phase0OAuthProvider(
 
         def insert(document: dict[str, Any]) -> None:
             self._garbage_collect(document)
-            if client_id not in document["clients"]:
+            client_record = document["clients"].get(client_id)
+            if client_record is None:
                 raise TokenError("invalid_client", "Client registration is unavailable")
             active_families = [
                 item for item in document["families"].values() if not item.get("revoked", False)
@@ -272,14 +291,17 @@ class Phase0OAuthProvider(
             ):
                 raise TokenError("invalid_request", "Client session capacity reached")
             document["codes"][digest] = record
+            is_explorer = self._is_explorer_client(client_record)
+            family_ttl = EXPLORER_REFRESH_FAMILY_TTL if is_explorer else REFRESH_FAMILY_TTL
             document["families"][family_id] = {
                 "client_id": client_id,
                 "identity_id": identity_id,
                 "miniserver_id": miniserver_id,
                 "scope": scope_text(list(validated_scopes)),
                 "resource": resource,
-                "expires_at": now + REFRESH_FAMILY_TTL,
+                "expires_at": now + family_ttl,
                 "revoked": False,
+                **({"client_kind": "tool_explorer"} if is_explorer else {}),
             }
 
         self.store.mutate(insert)

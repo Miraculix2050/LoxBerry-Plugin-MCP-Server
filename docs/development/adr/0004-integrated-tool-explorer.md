@@ -22,11 +22,32 @@ Code with PKCE, Streamable HTTP initialization, `tools/list` and `tools/call`.
 It cannot connect to arbitrary URLs and does not add a proxy or server-side token
 store.
 
-Access and refresh tokens, arguments, results and call history exist only in the
-open browser tab. The non-secret public `client_id` may be retained by origin and
-scope to avoid consuming a new dynamic registration on each visit. Disconnect
-and page unload attempt RFC 7009 revocation; the existing session UI remains the
-reliable recovery path after a browser crash.
+Access tokens, arguments, results and call history exist only in memory in the
+open browser tab. A strictly validated refresh token and its minimal binding data
+may additionally exist in that tab's `sessionStorage`. This allows a reload to
+rotate the refresh token immediately and restore the MCP connection without
+persisting the credential as normal local browser data after the tab is closed.
+A Web Lock tied to a random session identifier prevents a duplicated tab from
+automatically replaying the same single-use refresh token. The resumable record
+is removed before every rotation, so a reload that interrupts an in-flight
+rotation fails closed instead of replaying a possibly consumed token. The
+non-secret public `client_id` may be retained by origin and scope to avoid
+consuming a new dynamic registration on each visit.
+
+`sessionStorage` is isolated by origin and top-level browsing context, not by URL
+path. The LoxBerry admin origin is therefore part of the Explorer trust boundary:
+other same-origin code running in the same tab could read the refresh credential.
+This design does not claim isolation from a malicious or compromised same-origin
+plugin. Operators must install only trusted admin plugins; stronger isolation
+would require a separate origin or a server-side browser-session architecture.
+
+Browsers cannot reliably distinguish reload from tab close or guarantee an
+unload request. The explorer therefore does not claim automatic revocation on
+page unload. Explicit disconnect performs RFC 7009 revocation, Explorer OAuth
+families identified by both their fixed name and exact local callback expire
+after at most eight hours instead of the normal 30 days, and the existing session
+UI remains the reliable recovery path after a crash or close. Startup garbage
+collection also caps matching families created before this rule was installed.
 
 Input schemas produce a small accessible form for the schema subset used by the
 published tools. A synchronized raw JSON editor remains authoritative for shapes
@@ -50,8 +71,9 @@ remain authoritative.
 
 - No new production dependency, service, port, configuration key or MCP contract
   is introduced.
-- Disconnecting, reloading or closing the page deliberately loses drafts,
-  results, history and transcript data.
+- Reloading preserves only the Explorer sign-in. Reloading or closing still loses
+  drafts, results, history and transcript data; closing also normally discards the
+  tab-scoped refresh credential.
 - Resources, prompts, sampling, arbitrary-server connections and protocol
   conformance suites remain responsibilities of external tools such as the
   official MCP Inspector.
