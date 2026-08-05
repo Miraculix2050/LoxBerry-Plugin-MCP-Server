@@ -163,9 +163,12 @@ def test_mcp_initialize_uses_expected_protocol() -> None:
     assert response.status_code == 200
     assert response.json()["result"]["protocolVersion"] == "2025-11-25"
     assert response.json()["result"]["serverInfo"]["name"] == "LoxBerry MCP Server"
+    instructions = response.json()["result"]["instructions"]
+    assert "skill://using-loxberry-mcp/SKILL.md" in instructions
+    assert "loxone_get_skill_guide" in instructions
 
 
-def test_exact_phase1_read_only_tools_are_published() -> None:
+def test_exact_default_read_only_tools_are_published() -> None:
     app = create_server(_settings()).streamable_http_app()
     request = {
         "jsonrpc": "2.0",
@@ -184,6 +187,7 @@ def test_exact_phase1_read_only_tools_are_published() -> None:
     assert response.status_code == 200
     tools = response.json()["result"]["tools"]
     assert [tool["name"] for tool in tools] == [
+        "loxone_get_skill_guide",
         "loxone_get_system_status",
         "loxone_list_rooms",
         "loxone_list_categories",
@@ -195,6 +199,22 @@ def test_exact_phase1_read_only_tools_are_published() -> None:
     assert all(tool["annotations"]["destructiveHint"] is False for tool in tools)
     assert all(tool["outputSchema"]["properties"]["data"].get("anyOf") for tool in tools)
     assert all(tool["outputSchema"].get("$defs") for tool in tools)
+
+
+@pytest.mark.asyncio
+async def test_bundled_skill_is_published_as_an_mcp_resource() -> None:
+    server = create_server(_settings())
+
+    resources = await server.list_resources()
+    assert [(str(item.uri), item.mimeType) for item in resources] == [
+        ("skill://using-loxberry-mcp/SKILL.md", "text/markdown")
+    ]
+
+    contents = await server.read_resource("skill://using-loxberry-mcp/SKILL.md")
+    assert len(contents) == 1
+    assert contents[0].mime_type == "text/markdown"
+    assert contents[0].content.startswith("---\nname: using-loxberry-mcp\n")
+    assert "Never automatically retry an uncertain or failed write" in contents[0].content
 
 
 def test_oauth_routes_and_protected_resource_metadata_are_exact(tmp_path: Path) -> None:

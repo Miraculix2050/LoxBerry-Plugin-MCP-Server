@@ -16,8 +16,11 @@ all Python wheels for offline installation. Then open **LoxBerry MCP Server**:
 
 1. Enter the LoxBerry's local HTTPS origin, for example
    `https://loxberry.local`.
-2. Enter the canonical Miniserver endpoint: for example
-   `http://192.168.1.20` for Gen. 1, or HTTPS only for Gen. 2.
+2. Select one of the Miniservers configured in LoxBerry. Alternatively, select
+   “Enter endpoint manually”; the canonical endpoint field is shown only in
+   that mode. Use `http://192.168.1.20` for Gen. 1, or HTTPS only for Gen. 2.
+   The selection does not copy credentials
+   stored by LoxBerry.
 3. Test the connection, enable the service and save.
 4. Connect Codex CLI or Claude Desktop to
    `https://loxberry.local/plugins/mcpserver/mcp` and complete OAuth login.
@@ -31,11 +34,44 @@ For the ChatGPT/Codex desktop app, the
 setup, browser authentication, and the requested read or write permissions. It
 does not require a local Node.js bridge.
 
-The six read tools remain enabled by default. Under **Miniserver access through
-the MCP server**, select **Read and switch** to additionally operate Gen. 1
-Switches. A new OAuth grant with `loxone:control` is then required. Switching
-back to **Read only** revokes existing control sessions while read-only sessions
-remain valid. **Read and switch** cannot be enabled for a Gen. 2/HTTPS target.
+The six read-only Loxone data tools and the read-only skill-guide tool remain
+enabled by default. Under **Miniserver access through the MCP server**, select
+**Read and switch** to additionally operate Gen. 1 Switches. A new OAuth grant
+with `loxone:control` is then required. Switching back to **Read only** revokes
+existing control sessions while read-only sessions remain valid. **Read and
+switch** cannot be enabled for a Gen. 2/HTTPS target.
+
+## Agent Skill
+
+The server delivers the
+[`using-loxberry-mcp`](../src/mcpserver/skills/using-loxberry-mcp/SKILL.md)
+Agent Skill directly through MCP. It describes the safe workflow for discovery,
+pagination, state reads, ambiguous names and explicitly requested Switch
+operations. Machine-readable JSON schemas remain part of the MCP tools and are
+not duplicated in the skill.
+
+During connection setup, the server's MCP instructions point the client to
+`skill://using-loxberry-mcp/SKILL.md`. Resource-capable clients can retrieve the
+guide on demand. Clients that do not consume MCP resources can retrieve the same
+document through the always-read-only `loxone_get_skill_guide` tool. This is
+automatic delivery and discovery, not a silent client-side installation or
+permanent prompt injection.
+
+Local installation is optional. It lets Codex, Claude Code and other
+Agent-Skills-compatible clients activate the skill natively from its
+description, even before an MCP connection exists:
+
+```bash
+npx skills add Miraculix2050/LoxBerry-Plugin-MCP-Server --skill using-loxberry-mcp
+```
+
+Alternatively, copy the `using-loxberry-mcp` folder to
+`~/.agents/skills/using-loxberry-mcp` for Codex or
+`~/.claude/skills/using-loxberry-mcp` for Claude Code. In Claude Desktop and
+Claude.ai, upload the same skill folder as a ZIP under **Customize > Skills**.
+After local installation, the client automatically selects the skill for
+matching LoxBerry or Loxone requests; `$using-loxberry-mcp` activates it
+explicitly.
 
 The consistent OAuth dialog shows required read access and, when requested by
 the client and enabled in the plugin, optional Loxone control as a separate
@@ -52,8 +88,9 @@ With JavaScript, status, test and revocation update without a page navigation.
 
 ## Scope and operation
 
-The alpha publishes six documented `loxone_*` read tools and optionally
-`loxone_operate_control`. The control tool accepts only a visible `Switch`
+The alpha publishes six documented Loxone data tools, the read-only
+`loxone_get_skill_guide`, and optionally `loxone_operate_control`. The control
+tool accepts only a visible `Switch`
 control UUID and the action `on` or `off`. It provides no name-, room-, bulk- or
 free-form commands. History, LoxBerry tools and Basic Auth remain excluded.
 Results and actions are limited to the authenticated Loxone user's permissions.

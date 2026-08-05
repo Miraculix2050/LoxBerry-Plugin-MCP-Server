@@ -40,6 +40,76 @@ def test_miniserver_access_mode_is_an_explicit_read_or_switch_selection() -> Non
     assert "($q->{loxone_control_enabled} // '') eq '1'" in cgi
 
 
+def test_miniserver_selection_uses_local_sanitized_loxberry_metadata() -> None:
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+
+    assert '"$lbhomedir/config/system/general.json"' in cgi
+    assert "LoxBerry::System::get_miniservers()" not in cgi
+    assert "next if enabled_value($stored->{Useclouddns})" in cgi
+    assert "IPAddress => $stored->{Ipaddress}" in cgi
+    assert "PortHttps => $stored->{Porthttps}" in cgi
+    assert "miniserver_endpoint($server)" in cgi
+    assert "FullURI" not in cgi + template
+    assert "Credentials" not in cgi + template
+    assert 'id="miniserver-select"' in template
+    assert "<TMPL_LOOP MINISERVERS>" in template
+    assert 'id="manual-endpoint-fields"' in template
+    assert "<TMPL_UNLESS MANUAL_ENDPOINT>hidden</TMPL_UNLESS>" in template
+    assert 'id="miniserver-endpoint"' in template
+    assert "<TMPL_IF MANUAL_ENDPOINT>required<TMPL_ELSE>readonly</TMPL_IF>" in template
+    assert "miniserverEndpoint.readOnly = Boolean(selectedEndpoint)" in template
+    assert "miniserverEndpoint.required = !selectedEndpoint" in template
+    assert "manualEndpointFields.hidden = Boolean(selectedEndpoint)" in template
+    assert "miniserverEndpoint.addEventListener('input', syncTestEndpoint)" in template
+
+
+def test_miniserver_endpoint_builder_rejects_unsafe_metadata() -> None:
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    builder = re.search(r"sub miniserver_endpoint \{.*?^\}", cgi, re.MULTILINE | re.DOTALL)
+
+    assert builder is not None
+    perl = shutil.which("perl")
+    assert perl is not None, "Perl is required for the complete deterministic gate"
+    script = f"""
+use Socket qw(AF_INET AF_INET6 inet_ntop inet_pton);
+{builder.group(0)}
+my @cases = (
+    {{Transport => 'http', IPAddress => '192.168.1.20', Port => 80}},
+    {{Transport => 'http', IPAddress => '192.168.1.20', Port => 8080}},
+    {{Transport => 'https', IPAddress => 'miniserver.example', PortHttps => 443}},
+    {{Transport => 'https', IPAddress => '2001:db8::1', PortHttps => 8443}},
+    {{Transport => 'http', IPAddress => 'fc00:0:0:0:0:0:0:1', Port => 80}},
+    {{Transport => 'http', IPAddress => '8.8.8.8', Port => 80}},
+    {{Transport => 'http', IPAddress => '999.999.999.999', Port => 80}},
+    {{Transport => 'http', IPAddress => '2001:db8::1', Port => 80}},
+    {{Transport => 'http', IPAddress => 'host.example', Port => 80}},
+    {{Transport => 'https', IPAddress => 'user@host.example', PortHttps => 443}},
+    {{Transport => 'https', IPAddress => 'host.example/path', PortHttps => 443}},
+    {{Transport => 'https', IPAddress => '2001:::1', PortHttps => 443}},
+    {{Transport => 'https', IPAddress => 'host.example', PortHttps => 0}},
+);
+for my $case (@cases) {{ print((miniserver_endpoint($case) // 'rejected') . "\\n"); }}
+"""
+    result = subprocess.run([perl, "-e", script], check=True, capture_output=True, text=True)
+
+    assert result.stdout.splitlines() == [
+        "http://192.168.1.20",
+        "http://192.168.1.20:8080",
+        "https://miniserver.example",
+        "https://[2001:db8::1]:8443",
+        "http://[fc00::1]",
+        "rejected",
+        "rejected",
+        "rejected",
+        "rejected",
+        "rejected",
+        "rejected",
+        "rejected",
+        "rejected",
+    ]
+
+
 def test_session_expiry_is_rendered_as_a_local_date_and_time() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")

@@ -7,7 +7,14 @@ import mcpserver.tools as tools_module
 from mcpserver.auth.provider import CONTROL_SCOPE, READ_SCOPE, StoredAccessToken
 from mcpserver.loxone.models import Control, LoxoneIdentity, LoxoneStructure
 from mcpserver.loxone.runtime import RuntimeSnapshot
-from mcpserver.tools import _CursorCodec, _page, register_control_tool, register_read_tools
+from mcpserver.skill_delivery import read_skill_markdown
+from mcpserver.tools import (
+    _CursorCodec,
+    _page,
+    register_control_tool,
+    register_read_tools,
+    register_skill_tool,
+)
 
 
 def test_opaque_cursor_paginates_without_exposing_offset() -> None:
@@ -49,6 +56,29 @@ def test_control_tool_contract_is_explicitly_mutating_and_idempotent() -> None:
     assert tool.annotations.destructiveHint is True
     assert tool.annotations.idempotentHint is True
     assert set(tool.parameters["properties"]["action"]["enum"]) == {"on", "off"}
+
+
+def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
+    server = FastMCP("skill-contract")
+    register_skill_tool(server)
+
+    tool = server._tool_manager.list_tools()[0]
+    result = tool.fn()
+
+    assert tool.name == "loxone_get_skill_guide"
+    assert tool.parameters == {
+        "properties": {},
+        "title": "get_skill_guideArguments",
+        "type": "object",
+    }
+    assert tool.annotations is not None
+    assert tool.annotations.readOnlyHint is True
+    assert tool.annotations.destructiveHint is False
+    assert tool.annotations.openWorldHint is False
+    assert result.data.name == "using-loxberry-mcp"  # type: ignore[union-attr]
+    assert result.data.revision == 1  # type: ignore[union-attr]
+    assert result.data.media_type == "text/markdown"  # type: ignore[union-attr]
+    assert result.data.content == read_skill_markdown()  # type: ignore[union-attr]
 
 
 @pytest.mark.asyncio

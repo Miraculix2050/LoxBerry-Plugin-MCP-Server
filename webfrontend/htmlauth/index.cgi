@@ -7,6 +7,7 @@ use HTML::Template;
 use IPC::Open3;
 use JSON::PP qw(decode_json encode_json);
 use POSIX qw(strftime);
+use Socket qw(AF_INET AF_INET6 inet_ntop inet_pton);
 use Symbol qw(gensym);
 use LoxBerry::System;
 use LoxBerry::Web;
@@ -69,6 +70,131 @@ sub json_reply {
     exit;
 }
 
+sub miniserver_endpoint {
+    my ($server) = @_;
+    return if ref($server) ne 'HASH';
+
+    my $transport = lc($server->{Transport} // '');
+    return if $transport ne 'http' && $transport ne 'https';
+
+    my $host = $server->{IPAddress} // '';
+    $host =~ s/\A\s+|\s+\z//g;
+    $host = lc($host);
+    return if $host eq '';
+    if ($host =~ /:/) {
+        my $packed = inet_pton(AF_INET6, $host);
+        return if !defined $packed;
+        return if $transport eq 'http' && (unpack('C', $packed) & 0xfe) != 0xfc;
+        $host = '[' . lc(inet_ntop(AF_INET6, $packed)) . ']';
+    } else {
+        my $packed = inet_pton(AF_INET, $host);
+        if (defined $packed) {
+            my @octets = unpack('C4', $packed);
+            my $private = $octets[0] == 10
+                || ($octets[0] == 172 && $octets[1] >= 16 && $octets[1] <= 31)
+                || ($octets[0] == 192 && $octets[1] == 168);
+            return if $transport eq 'http' && !$private;
+            $host = inet_ntop(AF_INET, $packed);
+        } else {
+            return if $transport eq 'http'
+                || length($host) > 253
+                || $host =~ /\.\z/;
+            my @labels = split(/\./, $host, -1);
+            return if grep {
+                $_ eq ''
+                    || length($_) > 63
+                    || $_ =~ /\A-/
+                    || $_ =~ /-\z/
+                    || $_ !~ /\A[a-z0-9-]+\z/
+            } @labels;
+        }
+    }
+
+    my $port = $transport eq 'https' ? $server->{PortHttps} : $server->{Port};
+    $port = $transport eq 'https' ? 443 : 80 if !defined($port) || $port eq '';
+    return if "$port" !~ /\A[0-9]{1,5}\z/ || $port < 1 || $port > 65535;
+    my $default_port = $transport eq 'https' ? 443 : 80;
+    return "$transport://$host" . ($port == $default_port ? '' : ":$port");
+}
+
+sub enabled_value {
+    my ($value) = @_;
+    return defined($value) && "$value" =~ /\A(?:1|true|yes|on)\z/i ? 1 : 0;
+}
+
+sub stored_miniservers {
+    my $path = "$lbhomedir/config/system/general.json";
+    if (!-f $path || !-r $path) {
+        LOGWARN('Could not read stored Miniserver configuration');
+        return {};
+    }
+
+    open my $handle, '<:raw', $path or do {
+        LOGWARN('Could not open stored Miniserver configuration');
+        return {};
+    };
+    local $/;
+    my $raw = <$handle> // '';
+    close $handle;
+    if (length($raw) > 1024 * 1024) {
+        LOGWARN('Stored Miniserver configuration is unexpectedly large');
+        return {};
+    }
+
+    my $document = eval { decode_json($raw) };
+    if ($@ || ref($document) ne 'HASH' || ref($document->{Miniserver}) ne 'HASH') {
+        LOGWARN('Stored Miniserver configuration is invalid');
+        return {};
+    }
+
+    my %servers;
+    for my $key (keys %{$document->{Miniserver}}) {
+        my $stored = $document->{Miniserver}{$key};
+        next if ref($stored) ne 'HASH';
+        # get_miniservers() resolves CloudDNS here. Rendering the page must stay local.
+        next if enabled_value($stored->{Useclouddns});
+        my $prefer_https = enabled_value($stored->{Preferhttps});
+        $servers{$key} = {
+            Name => $stored->{Name},
+            IPAddress => $stored->{Ipaddress},
+            Transport => $prefer_https ? 'https' : 'http',
+            Port => $stored->{Port},
+            PortHttps => $stored->{Porthttps},
+        };
+    }
+    return \%servers;
+}
+
+sub configured_miniservers {
+    my ($selected_endpoint) = @_;
+    my $servers = stored_miniservers();
+
+    my @options;
+    for my $key (sort keys %$servers) {
+        my $server = $servers->{$key};
+        my $endpoint = miniserver_endpoint($server);
+        next if !defined $endpoint;
+        my $name = $server->{Name} // '';
+        $name =~ s/\A\s+|\s+\z//g;
+        $name = "Miniserver $key" if $name eq '';
+        push @options, {
+            endpoint => $endpoint,
+            label => "$name - $endpoint",
+            selected => $endpoint eq ($selected_endpoint // '') ? 1 : 0,
+        };
+    }
+    if (($selected_endpoint // '') eq '' && @options == 1) {
+        $options[0]{selected} = 1;
+    }
+    return \@options;
+}
+
+sub requested_endpoint {
+    my ($query) = @_;
+    my $selection = $query->{miniserver_endpoint} // '';
+    return $selection ne '' ? $selection : ($query->{endpoint} // '');
+}
+
 my $action = $q->{action} // '';
 if ($action ne '') {
     if (!same_origin_post()) {
@@ -87,7 +213,7 @@ if ($action ne '') {
                 public_origin => $q->{public_origin} // '',
             },
             loxone => {
-                endpoint => $q->{endpoint} // '',
+                endpoint => requested_endpoint($q),
                 connection_timeout => 0 + ($q->{connection_timeout} // 10),
             },
             tools => {
@@ -103,7 +229,7 @@ if ($action ne '') {
         };
         $result = admin_call('save_config', $document);
     } elsif ($action eq 'test_connection') {
-        $result = admin_call('test_connection', {endpoint => ($q->{endpoint} // '')});
+        $result = admin_call('test_connection', {endpoint => requested_endpoint($q)});
     } elsif ($action eq 'revoke_session') {
         $result = admin_call('revoke_session', {id => ($q->{id} // '')});
     } elsif ($action eq 'revoke_all') {
@@ -165,12 +291,20 @@ $config->{server} = {} if ref($config->{server}) ne 'HASH';
 $config->{loxone} = {} if ref($config->{loxone}) ne 'HASH';
 $config->{tools} = {} if ref($config->{tools}) ne 'HASH';
 $config->{limits} = {} if ref($config->{limits}) ne 'HASH';
+my $miniservers = configured_miniservers($config->{loxone}{endpoint});
+my $has_selected_miniserver = grep { $_->{selected} } @$miniservers;
+my ($selected_miniserver) = grep { $_->{selected} } @$miniservers;
+my $display_endpoint = $config->{loxone}{endpoint} // '';
+$display_endpoint = $selected_miniserver->{endpoint}
+    if $display_endpoint eq '' && $selected_miniserver;
 
 $template->param(
     VERSION => $version,
     ENABLED => $config->{server}{enabled} ? 1 : 0,
     PUBLIC_ORIGIN => $config->{server}{public_origin} // '',
-    ENDPOINT => $config->{loxone}{endpoint} // '',
+    ENDPOINT => $display_endpoint,
+    MINISERVERS => $miniservers,
+    MANUAL_ENDPOINT => $has_selected_miniserver ? 0 : 1,
     CONNECTION_TIMEOUT => $config->{loxone}{connection_timeout} // 10,
     LOXONE_CONTROL_ENABLED => $config->{tools}{loxone_control_enabled} ? 1 : 0,
     REQUESTS_PER_MINUTE => $config->{limits}{requests_per_minute} // 60,

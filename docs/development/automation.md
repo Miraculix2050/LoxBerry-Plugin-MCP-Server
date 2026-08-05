@@ -17,9 +17,12 @@ authorization, connection profiles, credentials, and private test fixtures outsi
   extracting or installing the archive.
 - `pwsh -File tools/test_mcp_client.ps1` detects the active Microsoft Store or
   classic Claude profile, starts its configured MCP proxy, and
-  exercises all six read-only tools. Use `-VisibilityFixturePath <private-json>` to add
-  a real visible/hidden-control boundary test. The private JSON contains only
+  exercises the six read-only Loxone data tools plus both skill-delivery surfaces
+  (MCP resource and fallback tool). Use `-VisibilityFixturePath <private-json>` to
+  add a real visible/hidden-control boundary test. The private JSON contains only
   `visible_control_uuid` and `hidden_control_uuid` and remains outside Git.
+- Use `-CallbackPort <unused-port>` when another running MCP proxy already owns
+  the callback port stored in the local OAuth client registration.
 - `-ControlFixturePath <private-json>` is a separate explicit opt-in for the Phase 2
   target smoke. It expects only `control_uuid` and `initial_state` (`on` or `off`),
   switches once to the opposite state and restores the recorded initial state. Use it

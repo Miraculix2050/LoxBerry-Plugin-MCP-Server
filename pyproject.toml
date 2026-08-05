@@ -33,6 +33,12 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+mcpserver = [
+    "skills/using-loxberry-mcp/SKILL.md",
+    "skills/using-loxberry-mcp/agents/openai.yaml",
+]
+
 [tool.pytest.ini_options]
 addopts = "-ra"
 testpaths = ["tests"]
