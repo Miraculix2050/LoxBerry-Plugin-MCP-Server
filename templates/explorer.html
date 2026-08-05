@@ -86,7 +86,8 @@
   data-request="<TMPL_VAR EXPLORER.REQUEST ESCAPE=HTML>"
   data-response="<TMPL_VAR EXPLORER.RESPONSE ESCAPE=HTML>"
   data-duration="<TMPL_VAR EXPLORER.DURATION ESCAPE=HTML>"
-  data-status="<TMPL_VAR EXPLORER.STATUS ESCAPE=HTML>">
+  data-status="<TMPL_VAR EXPLORER.STATUS ESCAPE=HTML>"
+  data-origin-mismatch="<TMPL_VAR EXPLORER.ORIGIN_MISMATCH ESCAPE=HTML>">
 
   <section class="mcp-explorer-card" aria-labelledby="explorer-title">
     <h1 id="explorer-title"><TMPL_VAR EXPLORER.TITLE></h1>
@@ -101,6 +102,10 @@
       <button id="explorer-disconnect" class="lb-button" type="button" disabled><TMPL_VAR EXPLORER.DISCONNECT></button>
     </div>
     <p id="explorer-control-note" class="mcp-explorer-warning" hidden><TMPL_VAR EXPLORER.CONTROL_UNAVAILABLE></p>
+    <p id="explorer-origin-warning" class="mcp-explorer-warning" hidden>
+      <TMPL_VAR EXPLORER.ORIGIN_MISMATCH>
+      <a id="explorer-origin-link" class="lb-button" rel="noopener"><TMPL_VAR EXPLORER.OPEN_CANONICAL></a>
+    </p>
     <div id="explorer-status" class="mcp-explorer-status" role="status" aria-live="polite"><TMPL_VAR EXPLORER.DISCONNECTED></div>
     <p class="mcp-explorer-muted"><TMPL_VAR EXPLORER.SESSION_POLICY></p>
     <p id="explorer-session-expiry" hidden><strong><TMPL_VAR EXPLORER.SESSION_EXPIRES></strong> <time id="explorer-session-expiry-time"></time></p>

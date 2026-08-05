@@ -11,6 +11,8 @@
   const MAX_TRANSCRIPT = 100;
   const REVOCATION_TIMEOUT_MS = 5000;
   const EXPLORER_SESSION_MS = 8 * 60 * 60 * 1000;
+  const MCP_RESOURCE_PATH = '/plugins/mcpserver/mcp';
+  const EXPLORER_PATH = '/admin/plugins/mcpserver/explorer.cgi';
   const OPAQUE_VALUE = /^[A-Za-z0-9_-]{32,512}$/;
   const EXPLORER_SCOPES = new Set(['loxone:read', 'loxone:read loxone:control']);
   const SECRET_NAME = /(?:password|passwd|secret|token|api[_-]?key|private[_-]?key)/i;
@@ -24,6 +26,24 @@
 
   function clone(value) {
     return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+  }
+
+  function canonicalExplorerUrl(resource, currentOrigin) {
+    if (typeof resource !== 'string' || typeof currentOrigin !== 'string') return null;
+    try {
+      const resourceUrl = new URL(resource);
+      if (
+        resourceUrl.protocol !== 'https:'
+        || resourceUrl.username
+        || resourceUrl.password
+        || resourceUrl.pathname !== MCP_RESOURCE_PATH
+        || resourceUrl.search
+        || resourceUrl.hash
+      ) return null;
+      return resourceUrl.origin === currentOrigin ? '' : `${resourceUrl.origin}${EXPLORER_PATH}`;
+    } catch (_error) {
+      return null;
+    }
   }
 
   function resolveRef(schema, rootSchema) {
@@ -443,6 +463,7 @@
     revokeThenClear,
     revokeOAuthGrant,
     fieldControlId,
+    canonicalExplorerUrl,
     createFieldLabel,
     createOptionalToggle,
     applyControlAvailability,
@@ -464,6 +485,8 @@
     control: document.getElementById('explorer-access-mode'),
     controlOption: document.getElementById('explorer-control-option'),
     controlNote: document.getElementById('explorer-control-note'),
+    originWarning: document.getElementById('explorer-origin-warning'),
+    originLink: document.getElementById('explorer-origin-link'),
     sessionExpiry: document.getElementById('explorer-session-expiry'),
     sessionExpiryTime: document.getElementById('explorer-session-expiry-time'),
     tools: document.getElementById('explorer-tools'),
@@ -531,6 +554,22 @@
   function showError(error, fallback) {
     const message = error instanceof Error && error.message ? error.message : fallback;
     setStatus(message, 'error');
+  }
+
+  function clearOriginWarning() {
+    elements.originWarning.hidden = true;
+    elements.originLink.removeAttribute('href');
+  }
+
+  function showConnectionError(error, fallback) {
+    if (error instanceof Error && typeof error.canonicalUrl === 'string') {
+      elements.originLink.href = error.canonicalUrl;
+      elements.originWarning.hidden = false;
+      setStatus(label('originMismatch'), 'error');
+      return;
+    }
+    clearOriginWarning();
+    showError(error, fallback);
   }
 
   function setControlAvailability(available) {
@@ -665,7 +704,14 @@
   async function discover() {
     const resourceMetadata = await fetchJson('/.well-known/oauth-protected-resource/plugins/mcpserver/mcp', {cache: 'no-store'});
     const issuer = Array.isArray(resourceMetadata.authorization_servers) ? resourceMetadata.authorization_servers[0] : null;
-    if (!issuer || resourceMetadata.resource !== `${window.location.origin}/plugins/mcpserver/mcp`) throw new Error('OAuth resource metadata does not match this origin');
+    const canonicalUrl = core.canonicalExplorerUrl(resourceMetadata.resource, window.location.origin);
+    if (canonicalUrl === null) throw new Error('OAuth resource metadata is invalid');
+    if (canonicalUrl) {
+      const error = new Error(label('originMismatch'));
+      error.canonicalUrl = canonicalUrl;
+      throw error;
+    }
+    if (!issuer) throw new Error('OAuth resource metadata has no authorization server');
     const issuerUrl = new URL(issuer);
     if (issuerUrl.origin !== window.location.origin || issuerUrl.pathname !== '/plugins/mcpserver/oauth') throw new Error('OAuth issuer is not the local plugin issuer');
     const metadataPath = `/.well-known/oauth-authorization-server${issuerUrl.pathname}`;
@@ -680,6 +726,7 @@
     for (const [name, value] of Object.entries(expectedEndpoints)) {
       if (authorizationMetadata[name] !== value) throw new Error(`OAuth ${name} does not match the local plugin endpoint`);
     }
+    clearOriginWarning();
     return {resourceMetadata, authorizationMetadata};
   }
 
@@ -1302,7 +1349,7 @@
     } catch (error) {
       if (state.oauth) await revokeAndClear();
       else core.clearSensitiveState(state);
-      showError(error, label('error'));
+      showConnectionError(error, label('error'));
       renderAll();
     } finally { setBusy(false); }
   });
@@ -1371,13 +1418,19 @@
         releaseSessionOwnership();
       }
       renderAll();
-      if (stored) {
+      if (_error instanceof Error && typeof _error.canonicalUrl === 'string') {
+        setControlAvailability(false);
+        showConnectionError(_error, label('error'));
+      } else if (stored) {
         showError(
           new Error(refreshFailed ? label('tokenExpired') : label('restoreFailed')),
           label('error'),
         );
       }
-      else setControlAvailability(false);
+      else {
+        setControlAvailability(false);
+        showConnectionError(_error, label('error'));
+      }
     } finally {
       setBusy(false);
       if (ownershipConflict) showError(new Error(label('sessionOtherTab')), label('error'));

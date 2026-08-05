@@ -65,6 +65,33 @@ def test_explorer_defaults_and_validation_follow_tool_schema() -> None:
     assert any("unknown" in error for error in errors)
 
 
+def test_explorer_requires_and_links_to_the_canonical_https_origin() -> None:
+    resource = "https://loxberry.example/plugins/mcpserver/mcp"
+
+    assert (
+        run_core(f"core.canonicalExplorerUrl({json.dumps(resource)},'https://loxberry.example')")
+        == ""
+    )
+    assert (
+        run_core(f"core.canonicalExplorerUrl({json.dumps(resource)},'http://loxberry.example')")
+        == "https://loxberry.example/admin/plugins/mcpserver/explorer.cgi"
+    )
+    assert (
+        run_core(
+            "core.canonicalExplorerUrl('http://loxberry.example/plugins/mcpserver/mcp',"
+            "'http://loxberry.example')"
+        )
+        is None
+    )
+    assert (
+        run_core(
+            "core.canonicalExplorerUrl('https://loxberry.example/another-path',"
+            "'https://loxberry.example')"
+        )
+        is None
+    )
+
+
 def test_explorer_reuses_only_schema_compatible_values() -> None:
     tools = [
         {
@@ -551,6 +578,16 @@ def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
     assert "window.addEventListener('pagehide'" not in source
     assert "navigator.sendBeacon" not in source
     assert 'target="_blank"' in (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+    index_template = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+    index_cgi = (ROOT / "webfrontend" / "htmlauth" / "index.cgi").read_text(encoding="utf-8")
+    assert 'id="explorer-link"' in index_template
+    assert 'href="<TMPL_VAR EXPLORER_URL ESCAPE=HTML>"' in index_template
+    assert (
+        "explorerLink.href = `${savedOrigin}/admin/plugins/mcpserver/explorer.cgi`"
+        in index_template
+    )
+    assert "EXPLORER_URL => $explorer_url" in index_cgi
+    assert "m{\\Ahttps://[^/?#\\s\\@\\\\]+\\z}" in index_cgi
     assert "@media (max-width: 52rem)" in template
     assert ":focus-visible" in template
     assert "<dialog" in template
@@ -561,6 +598,10 @@ def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
     assert 'id="explorer-access-mode"' in template
     assert '<option value="read">' in template
     assert 'id="explorer-control-option" value="control" disabled' in template
+    assert 'id="explorer-origin-warning"' in template
+    assert 'id="explorer-origin-link"' in template
+    assert "core.canonicalExplorerUrl(resourceMetadata.resource, window.location.origin)" in source
+    assert "showConnectionError(_error, label('error'))" in source
     assert 'id="explorer-session-expiry" hidden' in template
     assert "elements.control.value === 'control'" in source
     assert "Cache_Control => 'no-store'" in callback
