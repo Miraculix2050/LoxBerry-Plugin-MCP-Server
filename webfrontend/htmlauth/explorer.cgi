@@ -36,7 +36,7 @@ print "Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-in
 print "Referrer-Policy: no-referrer\n";
 print "X-Content-Type-Options: nosniff\n";
 print "X-Frame-Options: DENY\n";
-LoxBerry::Web::lbheader($L{'EXPLORER.TITLE'} . " V$version", '', '', 'nojqm');
+LoxBerry::Web::lbheader($L{'EXPLORER.TITLE'} . " V$version", 'nopanels', '', 'nojqm');
 print $template->output();
 LoxBerry::Web::lbfooter();
 exit;

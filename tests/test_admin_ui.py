@@ -27,6 +27,19 @@ def test_common_actions_update_the_page_without_a_reload() -> None:
     assert "window.setTimeout(() => { element.hidden = true; }, 4000)" in template
     assert "window.clearTimeout(hideStatusTimers.get(status))" in template
     assert "url.searchParams.delete('notice')" in template
+    assert "postAjax(body, actionTimeout(form.dataset.ajax))" in template
+    assert "save_config: 90000" in template
+    assert "revoke_all: 75000" in template
+    assert "postAjax(body, 5000)" in template
+    assert "if (result.data.certificate) updateCertificate" in template
+    assert 'id="session-table-template"' in template
+    assert "sessionList.replaceChildren(fragment)" in template
+
+
+def test_admin_cards_use_consistent_vertical_spacing() -> None:
+    template = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+
+    assert ".mcp-page { display: grid; gap: 1rem;" in template
 
 
 def test_miniserver_access_mode_is_an_explicit_read_or_switch_selection() -> None:
