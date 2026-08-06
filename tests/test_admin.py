@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import subprocess
 from pathlib import Path
@@ -73,6 +74,25 @@ def test_page_state_aggregates_initial_admin_ui_data(monkeypatch: pytest.MonkeyP
         "service_active": True,
         "sessions": [{"id": "family"}],
         "certificate": {"available": True, "renewal_supported": False},
+    }
+
+
+def test_status_refresh_returns_all_dynamic_admin_ui_data(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sessions = [{"id": "family"}]
+    certificate = {"available": True, "renewal": {"state": "idle"}}
+    monkeypatch.setattr("mcpserver.admin._service_active", lambda: True)
+    monkeypatch.setattr("mcpserver.admin._sessions", lambda: sessions)
+    monkeypatch.setattr("mcpserver.admin._certificate_status", lambda: certificate)
+
+    result = dispatch({"action": "status"})
+
+    assert result == {
+        "version": result["version"],
+        "service_active": True,
+        "sessions": sessions,
+        "certificate": certificate,
     }
 
 
@@ -183,7 +203,7 @@ def test_disabling_control_revokes_control_sessions_after_successful_restart(
     next_document["tools"]["loxone_control_enabled"] = False
     next_document["loxone"]["endpoint"] = "http://192.168.10.30"
     events: list[str] = []
-    revocations: list[tuple[str, str | None, float | None]] = []
+    revocations: list[tuple[list[str], str | None, float | None]] = []
 
     class AuthStore:
         def snapshot(self) -> dict[str, object]:
@@ -201,19 +221,24 @@ def test_disabling_control_revokes_control_sessions_after_successful_restart(
     monkeypatch.setattr("mcpserver.admin._auth_store", lambda: AuthStore())
     monkeypatch.setattr("mcpserver.admin._restart_service", lambda: events.append("restart"))
 
-    def revoke(
-        family_id: str, *, endpoint: str | None = None, timeout_seconds: float | None = None
+    def revoke_many(
+        family_ids: list[str],
+        *,
+        endpoint: str | None = None,
+        timeout_seconds: float | None = None,
     ) -> int:
-        events.append(f"revoke:{family_id}")
-        revocations.append((family_id, endpoint, timeout_seconds))
-        return 1
+        events.append(f"revoke:{','.join(family_ids)}")
+        revocations.append((family_ids, endpoint, timeout_seconds))
+        return len(family_ids)
 
-    monkeypatch.setattr("mcpserver.admin._revoke", revoke)
+    monkeypatch.setattr("mcpserver.admin._revoke_many", revoke_many)
 
     _save(next_document)
 
     assert events == ["restart", "revoke:control-family"]
-    assert revocations == [("control-family", "http://192.168.10.20", previous.connection_timeout)]
+    assert revocations == [
+        (["control-family"], "http://192.168.10.20", previous.connection_timeout)
+    ]
 
 
 def test_session_list_excludes_revoked_families(
@@ -424,3 +449,67 @@ def test_revoke_deletes_local_token_after_remote_protocol_error(
     assert _revoke("family") == 1
     assert deleted == ["family"]
     assert store.snapshot()["families"]["family"]["revoked"] is True
+
+
+def test_revoke_kills_remote_tokens_concurrently(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    auth_path = (tmp_path / "data" / "auth" / "sessions.json").resolve()
+    store = AtomicJsonAuthStore(auth_path)
+
+    def add_families(document: dict[str, object]) -> None:
+        families = document["families"]
+        assert isinstance(families, dict)
+        for number in range(2):
+            families[f"family-{number}"] = {
+                "client_id": f"client-{number}",
+                "identity_id": f"identity-{number}",
+                "miniserver_id": "miniserver",
+                "revoked": False,
+            }
+
+    store.mutate(add_families)
+    active = 0
+    maximum_active = 0
+    deleted: list[str] = []
+
+    class TokenStore:
+        def get(self, family_id: str, miniserver_id: str, identity_id: str) -> LoxoneToken:
+            return LoxoneToken(family_id, identity_id, "key", "SHA256", 1)
+
+        def delete(self, family_id: str) -> None:
+            deleted.append(family_id)
+
+    class ConcurrentClient:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        async def kill_token(self, token: LoxoneToken) -> None:
+            nonlocal active, maximum_active
+            active += 1
+            maximum_active = max(maximum_active, active)
+            await asyncio.sleep(0)
+            active -= 1
+
+    monkeypatch.setenv("MCPSERVER_AUTH_STORE", str(auth_path))
+    monkeypatch.setattr("mcpserver.admin._token_store", lambda: TokenStore())
+    monkeypatch.setattr("mcpserver.admin._loxone_client", ConcurrentClient)
+    monkeypatch.setattr(
+        "mcpserver.admin._config_store",
+        lambda: type(
+            "ConfigStore",
+            (),
+            {
+                "load": lambda self: PluginConfig.from_document(
+                    {
+                        "schema_version": 1,
+                        "loxone": {"endpoint": "http://192.168.10.20"},
+                    }
+                )
+            },
+        )(),
+    )
+
+    assert _revoke(None) == 2
+    assert maximum_active == 2
+    assert sorted(deleted) == ["family-0", "family-1"]

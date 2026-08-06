@@ -1,5 +1,5 @@
 <style>
-  .mcp-page { max-width: 76rem; margin: 0 auto; padding: .5rem; overflow-wrap: anywhere; }
+  .mcp-page { display: grid; gap: 1rem; max-width: 76rem; margin: 0 auto; padding: .5rem; overflow-wrap: anywhere; }
   .mcp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: 1rem; }
   .mcp-card { min-width: 0; padding: 1rem; border: 1px solid #c9cdd2; border-radius: .4rem; background: #fff; }
   .mcp-form { display: grid; gap: .85rem; }
@@ -130,7 +130,9 @@
     <TMPL_ELSE><p class="mcp-status" data-kind="error"><TMPL_VAR CERTIFICATE.UNAVAILABLE></p></TMPL_IF>
   </section>
 
-  <section id="sessions" class="mcp-card" aria-labelledby="sessions-title" data-empty-label="<TMPL_VAR SESSIONS.EMPTY ESCAPE=HTML>">
+  <section id="sessions" class="mcp-card" aria-labelledby="sessions-title"
+    data-empty-label="<TMPL_VAR SESSIONS.EMPTY ESCAPE=HTML>"
+    data-unnamed-label="<TMPL_VAR SESSIONS.UNNAMED ESCAPE=HTML>">
     <h2 id="sessions-title"><TMPL_VAR SESSIONS.TITLE></h2>
     <div id="session-list">
     <TMPL_IF HAS_SESSIONS>
@@ -140,6 +142,10 @@
       <form method="post" action="index.cgi" data-ajax="revoke_all"><input type="hidden" name="action" value="revoke_all"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE_ALL></button></form>
     <TMPL_ELSE><p><TMPL_VAR SESSIONS.EMPTY></p></TMPL_IF>
     </div>
+    <template id="session-table-template">
+      <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.SCOPES></th><th><TMPL_VAR SESSIONS.EXPIRES></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody></tbody></table></div>
+      <form method="post" action="index.cgi" data-ajax="revoke_all"><input type="hidden" name="action" value="revoke_all"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE_ALL></button></form>
+    </template>
   </section>
 
   <section id="diagnostics" class="mcp-card" aria-labelledby="diagnostics-title">
@@ -168,6 +174,9 @@
   const certificateOriginMatch = document.getElementById('certificate-origin-match');
   const certificateHostnameMatch = document.getElementById('certificate-hostname-match');
   const certificateWarning = document.getElementById('certificate-warning');
+  const sessionsSection = document.getElementById('sessions');
+  const sessionList = document.getElementById('session-list');
+  const sessionTableTemplate = document.getElementById('session-table-template');
   const syncTestEndpoint = () => { testEndpoint.value = miniserverEndpoint.value; };
   const syncMiniserverSelection = () => {
     const selectedEndpoint = miniserverSelect.value;
@@ -190,13 +199,20 @@
     const value = Number(raw);
     return Number.isSafeInteger(value) && value <= MAX_EXPIRY_EPOCH ? value : null;
   };
-  for (const element of document.querySelectorAll('time.mcp-expiry')) {
+  const updateExpiry = (element, raw) => {
+    element.dataset.expiresAt = String(raw ?? '');
     const expiresAt = parseExpiry(element.dataset.expiresAt);
     if (expiresAt !== null) {
       const date = new Date(expiresAt * 1000);
       element.dateTime = date.toISOString();
       element.textContent = expiryFormatter.format(date);
+    } else {
+      element.removeAttribute('datetime');
+      element.textContent = String(raw ?? '');
     }
+  };
+  for (const element of document.querySelectorAll('time.mcp-expiry')) {
+    updateExpiry(element, element.dataset.expiresAt);
   }
   const hideStatusTimers = new WeakMap();
   const hideSuccess = (element) => {
@@ -250,50 +266,103 @@
       certificateExpiry.textContent = expiryFormatter.format(date);
     }
   };
-  const pollCertificateRenewal = async (button, attempt = 0) => {
-    if (!certificateRenewalState || attempt >= 30) {
+  const postAjax = async (body, timeoutMs) => {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch('index.cgi', {
+        method: 'POST',
+        body,
+        signal: controller.signal,
+        headers: {'X-Requested-With': 'XMLHttpRequest'},
+      });
+      const result = await response.json();
+      if (!response.ok || !result.ok) throw new Error(result.error?.message || '<TMPL_VAR AJAX.ERROR ESCAPE=JS>');
+      return result;
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  };
+  const pollCertificateRenewal = async (button) => {
+    const deadline = Date.now() + 75000;
+    try {
+      while (certificateRenewalState && Date.now() < deadline) {
+        await new Promise((resolve) => window.setTimeout(resolve, 2000));
+        try {
+          const body = new FormData();
+          body.set('action', 'certificate_status');
+          body.set('ajax', '1');
+          const result = await postAjax(body, 5000);
+          const state = result.data.certificate?.renewal?.state || 'error';
+          certificateRenewalState.textContent = certificateStateLabels[state] || certificateStateLabels.error;
+          if (state === 'success') updateCertificate(result.data.certificate);
+          if (state === 'success' || state === 'error' || state === 'idle') return;
+        } catch {
+          // Apache restarts while the LoxBerry Core installs the new certificate.
+        }
+      }
+      if (certificateRenewalState) certificateRenewalState.textContent = certificateStateLabels.error;
+    } finally {
       button.disabled = false;
       button.removeAttribute('aria-busy');
-      return;
     }
-    await new Promise((resolve) => window.setTimeout(resolve, 2000));
-    try {
-      const body = new FormData();
-      body.set('action', 'certificate_status');
-      body.set('ajax', '1');
-      const response = await fetch('index.cgi', {method: 'POST', body, headers: {'X-Requested-With': 'XMLHttpRequest'}});
-      const result = await response.json();
-      if (!response.ok || !result.ok) throw new Error('status');
-      const state = result.data.certificate?.renewal?.state || 'error';
-      certificateRenewalState.textContent = certificateStateLabels[state] || certificateStateLabels.error;
-      if (state === 'success') {
-        updateCertificate(result.data.certificate);
-        button.disabled = false;
-        button.removeAttribute('aria-busy');
-        return;
-      }
-      if (state === 'error' || state === 'idle') {
-        button.disabled = false;
-        button.removeAttribute('aria-busy');
-        return;
-      }
-    } catch {
-      // Apache restarts while the LoxBerry Core installs the new certificate.
-    }
-    pollCertificateRenewal(button, attempt + 1);
   };
   const updateSessions = (sessions) => {
-    const activeIds = new Set(sessions.map((session) => session.id));
-    const list = document.getElementById('session-list');
-    for (const row of list.querySelectorAll('tr[data-session-id]')) {
-      if (!activeIds.has(row.dataset.sessionId)) row.remove();
-    }
-    if (!list.querySelector('tr[data-session-id]')) {
+    if (!sessions.length) {
       const empty = document.createElement('p');
-      empty.textContent = document.getElementById('sessions').dataset.emptyLabel;
-      list.replaceChildren(empty);
+      empty.textContent = sessionsSection.dataset.emptyLabel;
+      sessionList.replaceChildren(empty);
+      return;
     }
+    const fragment = sessionTableTemplate.content.cloneNode(true);
+    const body = fragment.querySelector('tbody');
+    for (const session of sessions) {
+      const row = document.createElement('tr');
+      row.dataset.sessionId = String(session.id);
+      const values = [session.client_name || sessionsSection.dataset.unnamedLabel, session.client, session.identity, session.scopes];
+      values.forEach((value, index) => {
+        const cell = document.createElement('td');
+        const content = index === 0 ? document.createTextNode(String(value ?? '')) : document.createElement('code');
+        if (index !== 0) content.textContent = String(value ?? '');
+        cell.append(content);
+        row.append(cell);
+      });
+      const expiryCell = document.createElement('td');
+      const expiry = document.createElement('time');
+      expiry.className = 'mcp-expiry';
+      updateExpiry(expiry, session.expires_at);
+      expiryCell.append(expiry);
+      row.append(expiryCell);
+      const actionCell = document.createElement('td');
+      const revokeForm = document.createElement('form');
+      revokeForm.method = 'post';
+      revokeForm.action = 'index.cgi';
+      revokeForm.dataset.ajax = 'revoke_session';
+      const action = document.createElement('input');
+      action.type = 'hidden';
+      action.name = 'action';
+      action.value = 'revoke_session';
+      const id = document.createElement('input');
+      id.type = 'hidden';
+      id.name = 'id';
+      id.value = String(session.id);
+      const button = document.createElement('button');
+      button.className = 'lb-button';
+      button.type = 'submit';
+      button.textContent = '<TMPL_VAR ACTION.REVOKE ESCAPE=JS>';
+      revokeForm.append(action, id, button);
+      actionCell.append(revokeForm);
+      row.append(actionCell);
+      body.append(row);
+    }
+    sessionList.replaceChildren(fragment);
   };
+  const actionTimeout = (action) => ({
+    save_config: 90000,
+    revoke_session: 75000,
+    revoke_all: 75000,
+    renew_certificate: 30000,
+  })[action] || 15000;
   document.addEventListener('submit', async (event) => {
     const form = event.target.closest('form[data-ajax]');
     if (!form) return;
@@ -308,17 +377,14 @@
       status.textContent = '<TMPL_VAR AJAX.WORKING ESCAPE=JS>';
       const body = new FormData(form);
       body.set('ajax', '1');
-      const controller = new AbortController();
-      const timeout = window.setTimeout(() => controller.abort(), 15000);
       try {
-        const response = await fetch('index.cgi', {method: 'POST', body, signal: controller.signal, headers: {'X-Requested-With': 'XMLHttpRequest'}});
-        const result = await response.json();
-        if (!response.ok || !result.ok) throw new Error(result.error?.message || '<TMPL_VAR AJAX.ERROR ESCAPE=JS>');
+        const result = await postAjax(body, actionTimeout(form.dataset.ajax));
         status.dataset.kind = 'success';
         status.textContent = '<TMPL_VAR AJAX.SUCCESS ESCAPE=JS>';
         hideSuccess(status);
         if ('service_active' in result.data) document.getElementById('service-state').textContent = result.data.service_active ? '<TMPL_VAR STATUS.RUNNING ESCAPE=JS>' : '<TMPL_VAR STATUS.STOPPED ESCAPE=JS>';
         if (Array.isArray(result.data.sessions)) updateSessions(result.data.sessions);
+        if (result.data.certificate) updateCertificate(result.data.certificate);
         if (form.dataset.ajax === 'save_config') {
           const savedEndpoint = result.data.configuration.loxone.endpoint;
           miniserverEndpoint.value = savedEndpoint;
@@ -337,7 +403,6 @@
         else if (error instanceof TypeError) status.textContent = '<TMPL_VAR AJAX.NETWORK ESCAPE=JS>';
         else status.textContent = error instanceof Error ? error.message : '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
       } finally {
-        window.clearTimeout(timeout);
         if (!keepButtonDisabled) {
           button.disabled = false;
           button.removeAttribute('aria-busy');

@@ -567,6 +567,36 @@ def test_explorer_generated_field_ids_are_unique_and_labelled() -> None:
     }
 
 
+def test_explorer_transcript_is_incremental_and_details_are_lazy() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+
+    add_transcript = source[
+        source.index("function addTranscript") : source.index("function safeMcpResponse")
+    ]
+    transcript_entry = source[
+        source.index("function transcriptEntry") : source.index("function renderTranscript")
+    ]
+
+    assert "renderTranscript()" not in add_transcript
+    assert "elements.transcript.append(transcriptEntry(entry))" in add_transcript
+    assert "firstElementChild?.remove()" in add_transcript
+    assert "details.addEventListener('toggle'" in transcript_entry
+    assert "{once: true}" in transcript_entry
+
+
+def test_explorer_tabs_support_roving_focus_and_arrow_keys() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+
+    assert "elements.formTab.tabIndex = jsonMode ? -1 : 0" in source
+    assert "elements.jsonTab.tabIndex = jsonMode ? 0 : -1" in source
+    assert "if (event.key === 'ArrowLeft')" in source
+    assert "if (event.key === 'ArrowRight')" in source
+    assert "if (event.key === 'Home')" in source
+    assert "if (event.key === 'End')" in source
+    assert "elements.formTab.addEventListener('keydown', handleTabKey)" in source
+    assert "elements.jsonTab.addEventListener('keydown', handleTabKey)" in source
+
+
 def test_explorer_control_option_requires_positive_discovery() -> None:
     expression = """(() => {
       const state={controlAvailable:false};
@@ -668,6 +698,15 @@ def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
     assert "Cache_Control => 'no-store'" in callback
     assert "frame-ancestors 'none'" in callback
     assert "window.history.replaceState" in callback
+
+
+def test_explorer_uses_csp_compatible_panel_free_loxberry_header() -> None:
+    cgi = (ROOT / "webfrontend" / "htmlauth" / "explorer.cgi").read_text(encoding="utf-8")
+    template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
+
+    assert "lbheader($L{'EXPLORER.TITLE'} . \" V$version\", 'nopanels'" in cgi
+    assert "'unsafe-eval'" not in cgi
+    assert '<a class="lb-button" href="index.cgi"><TMPL_VAR EXPLORER.BACK></a>' in template
 
 
 def test_explorer_transcript_never_records_authorization_headers() -> None:

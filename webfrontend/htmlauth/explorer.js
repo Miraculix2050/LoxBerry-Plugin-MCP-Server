@@ -944,9 +944,13 @@
   }
 
   function addTranscript(method, request, response, status, duration) {
-    state.transcript.push({method, request, response, status, duration, at: new Date().toISOString()});
-    if (state.transcript.length > core.MAX_TRANSCRIPT) state.transcript.splice(0, state.transcript.length - core.MAX_TRANSCRIPT);
-    renderTranscript();
+    const entry = {method, request, response, status, duration, at: new Date().toISOString()};
+    state.transcript.push(entry);
+    if (state.transcript.length > core.MAX_TRANSCRIPT) {
+      state.transcript.splice(0, state.transcript.length - core.MAX_TRANSCRIPT);
+      elements.transcript.firstElementChild?.remove();
+    }
+    elements.transcript.append(transcriptEntry(entry));
   }
 
   function safeMcpResponse(response, tool) {
@@ -1268,18 +1272,24 @@
     elements.copy.disabled = false;
   }
 
-  function renderTranscript() {
-    elements.transcript.replaceChildren();
-    state.transcript.forEach((entry) => {
-      const details = element('details');
-      details.append(element('summary', {text: `${entry.method} — ${entry.status} — ${entry.duration} ms`}));
+  function transcriptEntry(entry) {
+    const details = element('details');
+    details.append(element('summary', {text: `${entry.method} — ${entry.status} — ${entry.duration} ms`}));
+    details.addEventListener('toggle', () => {
+      if (!details.open) return;
       details.append(element('p', {text: `${label('status')}: ${entry.status}; ${label('duration')}: ${entry.duration} ms`}));
       details.append(element('strong', {text: label('request')}));
       details.append(element('pre', {className: 'mcp-explorer-pre', text: JSON.stringify(entry.request, null, 2)}));
       details.append(element('strong', {text: label('response')}));
       details.append(element('pre', {className: 'mcp-explorer-pre', text: JSON.stringify(entry.response, null, 2)}));
-      elements.transcript.append(details);
-    });
+    }, {once: true});
+    return details;
+  }
+
+  function renderTranscript() {
+    const fragment = document.createDocumentFragment();
+    state.transcript.forEach((entry) => fragment.append(transcriptEntry(entry)));
+    elements.transcript.replaceChildren(fragment);
   }
 
   function renderHistory() {
@@ -1398,12 +1408,28 @@
     }
   }
 
-  function selectTab(jsonMode) {
+  function selectTab(jsonMode, focusPanel = true) {
     elements.formTab.setAttribute('aria-selected', String(!jsonMode));
     elements.jsonTab.setAttribute('aria-selected', String(jsonMode));
+    elements.formTab.tabIndex = jsonMode ? -1 : 0;
+    elements.jsonTab.tabIndex = jsonMode ? 0 : -1;
     elements.formPanel.hidden = jsonMode;
     elements.jsonPanel.hidden = !jsonMode;
-    (jsonMode ? elements.json : elements.form.querySelector('input,select,textarea'))?.focus();
+    if (focusPanel) (jsonMode ? elements.json : elements.form.querySelector('input,select,textarea'))?.focus();
+  }
+
+  function handleTabKey(event) {
+    const tabs = [elements.formTab, elements.jsonTab];
+    const current = tabs.indexOf(event.currentTarget);
+    let target = null;
+    if (event.key === 'ArrowLeft') target = tabs[(current - 1 + tabs.length) % tabs.length];
+    if (event.key === 'ArrowRight') target = tabs[(current + 1) % tabs.length];
+    if (event.key === 'Home') target = tabs[0];
+    if (event.key === 'End') target = tabs[tabs.length - 1];
+    if (!target) return;
+    event.preventDefault();
+    selectTab(target === elements.jsonTab, false);
+    target.focus();
   }
 
   elements.connect.addEventListener('click', async () => {
@@ -1436,6 +1462,8 @@
   elements.run.addEventListener('click', runSelectedTool);
   elements.formTab.addEventListener('click', () => selectTab(false));
   elements.jsonTab.addEventListener('click', () => selectTab(true));
+  elements.formTab.addEventListener('keydown', handleTabKey);
+  elements.jsonTab.addEventListener('keydown', handleTabKey);
   elements.json.addEventListener('change', () => { if (validateDraft(true)) renderSelectedTool(); });
   elements.copy.addEventListener('click', async () => {
     try { await navigator.clipboard.writeText(JSON.stringify(state.lastResult, null, 2)); setStatus(label('copied'), 'success'); }
@@ -1449,6 +1477,7 @@
   });
   elements.transfer.addEventListener('close', () => { if (elements.transfer.returnValue === 'apply') applyTransfer(); });
 
+  selectTab(false, false);
   renderAll();
   (async () => {
     let stored = null;

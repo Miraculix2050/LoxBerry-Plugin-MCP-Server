@@ -207,9 +207,9 @@ def _save(payload: object) -> dict[str, Any]:
         raise AdminError(
             "configuration was not applied; previous configuration restored"
         ) from apply_error
-    for family_id in control_families:
-        _revoke(
-            family_id,
+    if control_families:
+        _revoke_many(
+            control_families,
             endpoint=previous.loxone_endpoint,
             timeout_seconds=previous.connection_timeout,
         )
@@ -274,6 +274,19 @@ def _revoke(
     endpoint: str | None = None,
     timeout_seconds: float | None = None,
 ) -> int:
+    return _revoke_many(
+        None if family_id is None else [family_id],
+        endpoint=endpoint,
+        timeout_seconds=timeout_seconds,
+    )
+
+
+def _revoke_many(
+    family_ids: list[str] | None,
+    *,
+    endpoint: str | None = None,
+    timeout_seconds: float | None = None,
+) -> int:
     from mcpserver.auth.loxone_store import LoxoneTokenStoreError
     from mcpserver.loxone.client import LoxoneConnectionError, MiniserverEndpoint
     from mcpserver.loxone.events import LoxoneProtocolError
@@ -283,8 +296,8 @@ def _revoke(
 
     def mutate(document: dict[str, Any]) -> None:
         targets = (
-            [family_id]
-            if family_id is not None
+            family_ids
+            if family_ids is not None
             else [key for key, item in document["families"].items() if not item.get("revoked")]
         )
         for target in targets:
@@ -320,15 +333,27 @@ def _revoke(
             timeout_seconds=selected_timeout,
         )
 
+        async def kill_token(binding: tuple[str, str, str]) -> None:
+            target, miniserver_id, identity_id = binding
+            try:
+                token = token_store.get(target, miniserver_id, identity_id)
+            except LoxoneTokenStoreError:
+                token = None
+            if token is not None:
+                with suppress(
+                    TimeoutError,
+                    LoxoneConnectionError,
+                    LoxoneProtocolError,
+                ):
+                    await asyncio.wait_for(
+                        client.kill_token(token),
+                        timeout=selected_timeout + 5,
+                    )
+
         async def kill_tokens() -> None:
-            for target, miniserver_id, identity_id in bindings:
-                try:
-                    token = token_store.get(target, miniserver_id, identity_id)
-                except LoxoneTokenStoreError:
-                    token = None
-                if token is not None:
-                    with suppress(LoxoneConnectionError, LoxoneProtocolError):
-                        await client.kill_token(token)
+            async with asyncio.TaskGroup() as group:
+                for binding in bindings:
+                    group.create_task(kill_token(binding))
 
         asyncio.run(kill_tokens())
     if token_store is not None:
@@ -373,7 +398,12 @@ def dispatch(request: object) -> dict[str, Any]:
     if action == "save_config":
         return _save(payload)
     if action == "status":
-        return {"version": __version__, "service_active": _service_active()}
+        return {
+            "version": __version__,
+            "service_active": _service_active(),
+            "sessions": _sessions(),
+            "certificate": _certificate_status(),
+        }
     if action == "test_connection":
         return asyncio.run(_test_connection(payload))
     if action == "list_sessions":
