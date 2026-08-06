@@ -23,8 +23,20 @@ if (($q->{lang} // '') =~ /\A(?:de|en)\z/) {
     $LoxBerry::Web::lang = $q->{lang};
 }
 my $version = LoxBerry::System::pluginversion();
-my $log = LoxBerry::Log->new(name => 'admin-ui', package => $lbpplugindir, addtime => 1);
-$log->LOGSTART('index.cgi called');
+my $admin_log;
+
+sub admin_logger {
+    return $admin_log if $admin_log;
+    $admin_log = LoxBerry::Log->new(
+        name => 'admin-ui', package => $lbpplugindir, addtime => 1, loglevel => 7,
+    );
+    $admin_log->LOGSTART('Administrative action');
+    return $admin_log;
+}
+
+END {
+    $admin_log->LOGEND('Administrative action finished') if $admin_log;
+}
 
 $ENV{LBPDATA} = $lbpdatadir;
 $ENV{MCPSERVER_CONFIG} = "$lbpconfigdir/mcpserver.json";
@@ -260,6 +272,7 @@ sub localize_admin_error {
         certificate_busy => $L{'CERTIFICATE.ERROR_BUSY'},
         certificate_unsupported => $L{'CERTIFICATE.ERROR_UNSUPPORTED'},
         certificate_failed => $L{'CERTIFICATE.ERROR_FAILED'},
+        service_action_failed => $L{'STATUS.ERROR_ACTION'},
     );
     my $code = $result->{error}{code} // '';
     $result->{error}{message} = $messages{$code} if exists $messages{$code};
@@ -302,10 +315,26 @@ if ($action ne '') {
         $result = admin_call('test_connection', {endpoint => requested_endpoint($q)});
     } elsif ($action eq 'revoke_session') {
         $result = admin_call('revoke_session', {id => ($q->{id} // '')});
+    } elsif ($action eq 'list_sessions') {
+        $result = admin_call('list_sessions', {});
     } elsif ($action eq 'revoke_all') {
         $result = admin_call('revoke_all', {});
     } elsif ($action eq 'status') {
         $result = admin_call('status', {});
+    } elsif ($action eq 'service_status') {
+        $result = admin_call('service_status', {});
+    } elsif ($action eq 'service_action') {
+        my $command = $q->{command} // '';
+        if ($command =~ /\A(?:start|stop|restart)\z/) {
+            $result = admin_call('service_action', {command => $command});
+            if ($result->{ok}) {
+                admin_logger()->INF("service-action=$command result=completed");
+            } else {
+                admin_logger()->ERR("service-action=$command result=failed");
+            }
+        } else {
+            $result = {ok => JSON::PP::false, error => {code => 'invalid_request', message => 'Unsupported service action'}};
+        }
     } elsif ($action eq 'diagnostic') {
         $result = admin_call('diagnostic', {});
     } elsif ($action eq 'certificate_status') {
@@ -316,7 +345,7 @@ if ($action ne '') {
             confirmation => ($q->{renew_confirmation} // ''),
         });
         $q->{securepin} = '';
-        LOGINF('Web certificate renewal scheduled') if $result->{ok};
+        admin_logger()->INF('certificate-renewal result=scheduled') if $result->{ok};
     } else {
         $result = {ok => JSON::PP::false, error => {code => 'invalid_request', message => 'Unsupported action'}};
     }
@@ -373,6 +402,8 @@ $display_endpoint = $selected_miniserver->{endpoint}
 my $public_origin = $config->{server}{public_origin} // '';
 my $certificate = ref($page_state->{certificate}) eq 'HASH'
     ? $page_state->{certificate} : {};
+my $service = ref($page_state->{service}) eq 'HASH'
+    ? $page_state->{service} : {};
 my $renewal = ref($certificate->{renewal}) eq 'HASH' ? $certificate->{renewal} : {};
 my $general_config = stored_general_config();
 my $sslport = ref($general_config->{Webserver}) eq 'HASH'
@@ -409,6 +440,14 @@ $template->param(
     CONTROL_REQUESTS_PER_MINUTE => $config->{limits}{control_requests_per_minute} // 10,
     MAX_PARALLEL_CALLS => $config->{limits}{max_parallel_calls} // 4,
     SERVICE_ACTIVE => $page_state->{service_active} ? 1 : 0,
+    SERVICE_INSTALLED => $service->{installed} ? 1 : 0,
+    SERVICE_FAILED => ($service->{active_state} // '') eq 'failed' ? 1 : 0,
+    SERVICE_KNOWN => ($service->{active_state} // 'unknown') ne 'unknown' ? 1 : 0,
+    SERVICE_ACTIVE_STATE => $service->{active_state} // 'unknown',
+    SERVICE_SUB_STATE => $service->{sub_state} // 'unknown',
+    SERVICE_PID => $service->{pid} // '-',
+    SERVICE_NAME => $service->{name} // 'loxberry-mcpserver.service',
+    SERVICE_LOG_URL => "/admin/system/tools/logfile.cgi?logfile=plugins/$lbpplugindir/service.log&header=html&format=template",
     CERTIFICATE_AVAILABLE => $certificate->{available} ? 1 : 0,
     CERTIFICATE_SOURCE_LOXBERRY => ($certificate->{source} // '') eq 'loxberry_ca' ? 1 : 0,
     CERTIFICATE_EXPIRES_AT => $certificate->{expires_at} // '',
@@ -431,10 +470,10 @@ $template->param(
 );
 
 our %navbar;
-$navbar{10}{Name} = $L{'NAV.SETUP'};
-$navbar{10}{URL} = '#setup';
-$navbar{20}{Name} = $L{'NAV.STATUS'};
-$navbar{20}{URL} = '#status';
+$navbar{10}{Name} = $L{'NAV.STATUS'};
+$navbar{10}{URL} = '#status';
+$navbar{20}{Name} = $L{'NAV.SETUP'};
+$navbar{20}{URL} = '#setup';
 $navbar{30}{Name} = $L{'NAV.SESSIONS'};
 $navbar{30}{URL} = '#sessions';
 $navbar{40}{Name} = $L{'NAV.DIAGNOSTICS'};

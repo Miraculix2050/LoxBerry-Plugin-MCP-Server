@@ -2,8 +2,20 @@
   .mcp-page { display: grid; gap: 1rem; max-width: 76rem; margin: 0 auto; padding: .5rem; overflow-wrap: anywhere; }
   .mcp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: 1rem; }
   .mcp-card { min-width: 0; padding: 1rem; border: 1px solid #c9cdd2; border-radius: .4rem; background: #fff; }
+  details.mcp-card { padding: 0; }
+  details.mcp-card > summary { padding: 1rem; cursor: pointer; font-size: 1.25rem; font-weight: 600; }
+  details.mcp-card[open] > summary { border-bottom: 1px solid #d7dadd; }
+  .mcp-collapsible-content { min-width: 0; padding: 1rem; }
+  .mcp-service-summary { display: inline-flex; flex-wrap: wrap; gap: .75rem; align-items: center; }
+  .mcp-service-badge { display: inline-block; padding: .2rem .55rem; border-radius: 999px; background: #6b7280; color: #fff; font-size: .9rem; }
+  .mcp-service-badge[data-kind="success"] { background: #198754; }
+  .mcp-service-badge[data-kind="error"] { background: #b91c1c; }
+  .mcp-service-badge[data-kind="inactive"] { background: #6b7280; }
+  .mcp-service-details { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: .5rem 1rem; }
+  .mcp-service-details p { margin: 0; }
   .mcp-form { display: grid; gap: .85rem; }
   .mcp-field { display: grid; gap: .3rem; min-width: 0; }
+  .mcp-field-stack { display: grid; gap: .85rem; }
   .mcp-field input,
   .mcp-field select { box-sizing: border-box; width: 100%; max-width: 100%; min-height: 2.75rem; }
   .mcp-manual-endpoint[hidden] { display: none; }
@@ -21,8 +33,11 @@
   .mcp-table { width: 100%; border-collapse: collapse; }
   .mcp-table th, .mcp-table td { padding: .5rem; text-align: left; border-bottom: 1px solid #ddd; }
   .mcp-page :focus-visible { outline: 3px solid #1261a0; outline-offset: 2px; }
+  .mcp-dialog { width: min(32rem, calc(100% - 2rem)); border: 0; border-radius: .5rem; padding: 1rem; }
+  .mcp-dialog::backdrop { background: rgb(0 0 0 / 55%); }
   @media (max-width: 30rem) {
-    .mcp-card { padding: .75rem; }
+    .mcp-card:not(details) { padding: .75rem; }
+    details.mcp-card > summary, .mcp-collapsible-content { padding: .75rem; }
     .mcp-actions > * { width: 100%; }
     .mcp-copy-row { grid-template-columns: minmax(0, 1fr); }
     .mcp-copy-row button { width: 100%; }
@@ -42,8 +57,41 @@
   <TMPL_IF NOTICE><div id="page-notice" class="mcp-status" role="status" data-kind="<TMPL_VAR NOTICE_KIND ESCAPE=HTML>"><TMPL_VAR NOTICE ESCAPE=HTML></div></TMPL_IF>
   <div id="ajax-status" class="mcp-status" role="status" aria-live="polite" hidden></div>
 
-  <section id="setup" class="mcp-card" aria-labelledby="setup-title">
-    <h2 id="setup-title"><TMPL_VAR SETUP.TITLE></h2>
+  <details id="status" class="mcp-card" data-persist-collapse open
+    data-state-active="<TMPL_VAR STATUS.ACTIVE ESCAPE=HTML>"
+    data-state-inactive="<TMPL_VAR STATUS.INACTIVE ESCAPE=HTML>"
+    data-state-failed="<TMPL_VAR STATUS.FAILED ESCAPE=HTML>"
+    data-state-unknown="<TMPL_VAR STATUS.UNKNOWN ESCAPE=HTML>"
+    data-yes="<TMPL_VAR STATUS.YES ESCAPE=HTML>"
+    data-no="<TMPL_VAR STATUS.NO ESCAPE=HTML>"
+    data-service-installed="<TMPL_IF SERVICE_INSTALLED>1<TMPL_ELSE>0</TMPL_IF>"
+    data-service-active="<TMPL_IF SERVICE_ACTIVE>1<TMPL_ELSE>0</TMPL_IF>"
+    data-service-active-state="<TMPL_VAR SERVICE_ACTIVE_STATE ESCAPE=HTML>"
+    data-service-sub-state="<TMPL_VAR SERVICE_SUB_STATE ESCAPE=HTML>"
+    data-service-pid="<TMPL_VAR SERVICE_PID ESCAPE=HTML>"
+    data-service-name="<TMPL_VAR SERVICE_NAME ESCAPE=HTML>">
+    <summary><span class="mcp-service-summary"><span><TMPL_VAR STATUS.TITLE></span><span id="service-state" class="mcp-service-badge" data-kind="<TMPL_IF SERVICE_ACTIVE>success<TMPL_ELSE><TMPL_IF SERVICE_FAILED>error<TMPL_ELSE>inactive</TMPL_IF></TMPL_IF>"><TMPL_IF SERVICE_ACTIVE><TMPL_VAR STATUS.ACTIVE><TMPL_ELSE><TMPL_IF SERVICE_FAILED><TMPL_VAR STATUS.FAILED><TMPL_ELSE><TMPL_IF SERVICE_KNOWN><TMPL_VAR STATUS.INACTIVE><TMPL_ELSE><TMPL_VAR STATUS.UNKNOWN></TMPL_IF></TMPL_IF></TMPL_IF></span></span></summary>
+    <div class="mcp-collapsible-content mcp-form">
+      <div class="mcp-service-details">
+        <p><TMPL_VAR STATUS.VERSION>: <code><TMPL_VAR VERSION ESCAPE=HTML></code></p>
+        <p><TMPL_VAR STATUS.SYSTEMD_STATE>: <strong id="service-active-state"><TMPL_VAR SERVICE_ACTIVE_STATE ESCAPE=HTML></strong></p>
+        <p><TMPL_VAR STATUS.SUB_STATE>: <strong id="service-sub-state"><TMPL_VAR SERVICE_SUB_STATE ESCAPE=HTML></strong></p>
+        <p><TMPL_VAR STATUS.PID>: <code id="service-pid"><TMPL_VAR SERVICE_PID ESCAPE=HTML></code></p>
+        <p><TMPL_VAR STATUS.UNIT>: <code id="service-name"><TMPL_VAR SERVICE_NAME ESCAPE=HTML></code></p>
+        <p><TMPL_VAR STATUS.INSTALLED>: <strong id="service-installed"><TMPL_IF SERVICE_INSTALLED><TMPL_VAR STATUS.YES><TMPL_ELSE><TMPL_VAR STATUS.NO></TMPL_IF></strong></p>
+      </div>
+      <div class="mcp-actions" id="service-actions">
+        <form method="post" action="index.cgi" data-ajax="service_action" data-service-command="start" <TMPL_IF SERVICE_ACTIVE>hidden</TMPL_IF>><input type="hidden" name="action" value="service_action"><input type="hidden" name="command" value="start"><button class="lb-button" type="submit"><TMPL_VAR ACTION.START></button></form>
+        <form method="post" action="index.cgi" data-ajax="service_action" data-service-command="stop" <TMPL_UNLESS SERVICE_ACTIVE>hidden</TMPL_UNLESS>><input type="hidden" name="action" value="service_action"><input type="hidden" name="command" value="stop"><button class="lb-button" type="submit"><TMPL_VAR ACTION.STOP></button></form>
+        <form method="post" action="index.cgi" data-ajax="service_action" data-service-command="restart" <TMPL_UNLESS SERVICE_ACTIVE>hidden</TMPL_UNLESS>><input type="hidden" name="action" value="service_action"><input type="hidden" name="command" value="restart"><button class="lb-button" type="submit"><TMPL_VAR ACTION.RESTART></button></form>
+        <a class="lb-button" href="<TMPL_VAR SERVICE_LOG_URL ESCAPE=HTML>" target="_blank" rel="noopener"><TMPL_VAR STATUS.SHOW_LOG></a>
+      </div>
+    </div>
+  </details>
+
+  <details id="setup" class="mcp-card" data-persist-collapse open>
+    <summary><TMPL_VAR SETUP.TITLE></summary>
+    <div class="mcp-collapsible-content">
     <form class="mcp-form" method="post" action="index.cgi" data-ajax="save_config">
       <input type="hidden" name="action" value="save_config">
       <label class="mcp-field"><span><TMPL_VAR SETUP.PUBLIC_ORIGIN></span><input name="public_origin" type="url" value="<TMPL_VAR PUBLIC_ORIGIN ESCAPE=HTML>" placeholder="https://loxberry.local" required></label>
@@ -76,28 +124,24 @@
       <input type="hidden" name="endpoint" value="<TMPL_VAR ENDPOINT ESCAPE=HTML>">
       <button class="lb-button" type="submit"><TMPL_VAR ACTION.TEST></button>
     </form>
-  </section>
+    </div>
+  </details>
 
-  <div class="mcp-grid">
-    <section id="status" class="mcp-card" aria-labelledby="status-title">
-      <h2 id="status-title"><TMPL_VAR STATUS.TITLE></h2>
-      <p><TMPL_VAR STATUS.VERSION>: <code><TMPL_VAR VERSION ESCAPE=HTML></code></p>
-      <p><TMPL_VAR STATUS.SERVICE>: <strong id="service-state"><TMPL_IF SERVICE_ACTIVE><TMPL_VAR STATUS.RUNNING><TMPL_ELSE><TMPL_VAR STATUS.STOPPED></TMPL_IF></strong></p>
-      <form method="post" action="index.cgi" data-ajax="status"><input type="hidden" name="action" value="status"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REFRESH></button></form>
-    </section>
-
-    <section id="help" class="mcp-card" aria-labelledby="help-title">
-      <h2 id="help-title"><TMPL_VAR HELP.TITLE></h2>
+  <details id="help" class="mcp-card" data-persist-collapse>
+    <summary><TMPL_VAR HELP.TITLE></summary>
+    <div class="mcp-collapsible-content">
       <p><TMPL_VAR HELP.TOOL_ACCESS></p>
-      <label class="mcp-field"><span><TMPL_VAR HELP.MCP_HOSTNAME></span><span class="mcp-copy-row"><input id="mcp-url-hostname" type="text" readonly value="<TMPL_VAR HOSTNAME_MCP_URL ESCAPE=HTML>"><button class="lb-button" type="button" data-copy-target="mcp-url-hostname"><TMPL_VAR ACTION.COPY></button></span></label>
-      <label class="mcp-field"><span><TMPL_VAR HELP.MCP_IP></span><span class="mcp-copy-row"><input id="mcp-url-ip" type="text" readonly value="<TMPL_VAR IP_MCP_URL ESCAPE=HTML>"><button class="lb-button" type="button" data-copy-target="mcp-url-ip"><TMPL_VAR ACTION.COPY></button></span></label>
+      <div class="mcp-field-stack">
+        <label class="mcp-field"><span><TMPL_VAR HELP.MCP_HOSTNAME></span><span class="mcp-copy-row"><input id="mcp-url-hostname" type="text" readonly value="<TMPL_VAR HOSTNAME_MCP_URL ESCAPE=HTML>"><button class="lb-button" type="button" data-copy-target="mcp-url-hostname"><TMPL_VAR ACTION.COPY></button></span></label>
+        <label class="mcp-field"><span><TMPL_VAR HELP.MCP_IP></span><span class="mcp-copy-row"><input id="mcp-url-ip" type="text" readonly value="<TMPL_VAR IP_MCP_URL ESCAPE=HTML>"><button class="lb-button" type="button" data-copy-target="mcp-url-ip"><TMPL_VAR ACTION.COPY></button></span></label>
+      </div>
       <p class="mcp-help"><TMPL_VAR HELP.MCP_CERTIFICATE_HINT></p>
       <p><a id="explorer-link" class="lb-button" href="<TMPL_VAR EXPLORER_URL ESCAPE=HTML>" target="_blank" rel="noopener"><TMPL_VAR ACTION.EXPLORER></a></p>
       <p><a href="https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server" target="_blank" rel="noopener"><TMPL_VAR HELP.PROJECT></a></p>
-    </section>
-  </div>
+    </div>
+  </details>
 
-  <section id="certificate" class="mcp-card" aria-labelledby="certificate-title"
+  <details id="certificate" class="mcp-card" data-persist-collapse
     data-state-scheduled="<TMPL_VAR CERTIFICATE.STATE_SCHEDULED ESCAPE=HTML>"
     data-state-running="<TMPL_VAR CERTIFICATE.STATE_RUNNING ESCAPE=HTML>"
     data-state-success="<TMPL_VAR CERTIFICATE.STATE_SUCCESS ESCAPE=HTML>"
@@ -105,7 +149,8 @@
     data-yes="<TMPL_VAR CERTIFICATE.YES ESCAPE=HTML>"
     data-no="<TMPL_VAR CERTIFICATE.NO ESCAPE=HTML>"
     data-not-configured="<TMPL_VAR CERTIFICATE.NOT_CONFIGURED ESCAPE=HTML>">
-    <h2 id="certificate-title"><TMPL_VAR CERTIFICATE.TITLE></h2>
+    <summary><TMPL_VAR CERTIFICATE.TITLE></summary>
+    <div class="mcp-collapsible-content">
     <p><TMPL_VAR CERTIFICATE.TEXT></p>
     <TMPL_IF CERTIFICATE_AVAILABLE>
       <div class="mcp-grid">
@@ -128,12 +173,14 @@
         </form>
       <TMPL_ELSE><p class="mcp-help"><TMPL_VAR CERTIFICATE.UNSUPPORTED></p></TMPL_IF>
     <TMPL_ELSE><p class="mcp-status" data-kind="error"><TMPL_VAR CERTIFICATE.UNAVAILABLE></p></TMPL_IF>
-  </section>
+    </div>
+  </details>
 
-  <section id="sessions" class="mcp-card" aria-labelledby="sessions-title"
+  <details id="sessions" class="mcp-card" data-persist-collapse
     data-empty-label="<TMPL_VAR SESSIONS.EMPTY ESCAPE=HTML>"
     data-unnamed-label="<TMPL_VAR SESSIONS.UNNAMED ESCAPE=HTML>">
-    <h2 id="sessions-title"><TMPL_VAR SESSIONS.TITLE></h2>
+    <summary><TMPL_VAR SESSIONS.TITLE></summary>
+    <div class="mcp-collapsible-content">
     <div id="session-list">
     <TMPL_IF HAS_SESSIONS>
       <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.SCOPES></th><th><TMPL_VAR SESSIONS.EXPIRES></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody>
@@ -146,19 +193,58 @@
       <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.SCOPES></th><th><TMPL_VAR SESSIONS.EXPIRES></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody></tbody></table></div>
       <form method="post" action="index.cgi" data-ajax="revoke_all"><input type="hidden" name="action" value="revoke_all"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE_ALL></button></form>
     </template>
-  </section>
+    </div>
+  </details>
 
-  <section id="diagnostics" class="mcp-card" aria-labelledby="diagnostics-title">
-    <h2 id="diagnostics-title"><TMPL_VAR DIAGNOSTICS.TITLE></h2>
+  <details id="diagnostics" class="mcp-card" data-persist-collapse>
+    <summary><TMPL_VAR DIAGNOSTICS.TITLE></summary>
+    <div class="mcp-collapsible-content">
     <p><TMPL_VAR DIAGNOSTICS.TEXT></p>
     <form method="post" action="index.cgi"><input type="hidden" name="action" value="diagnostic"><button class="lb-button" type="submit"><TMPL_VAR ACTION.DIAGNOSTIC></button></form>
     <TMPL_VAR LOGLIST>
-  </section>
+    </div>
+  </details>
 </main>
+
+<dialog id="service-confirm" class="mcp-dialog" aria-labelledby="service-confirm-title">
+  <form method="dialog" class="mcp-form">
+    <h2 id="service-confirm-title"><TMPL_VAR STATUS.CONFIRM_TITLE></h2>
+    <p id="service-confirm-message"></p>
+    <div class="mcp-actions">
+      <button class="lb-button" type="submit" value="cancel"><TMPL_VAR STATUS.CANCEL></button>
+      <button id="service-confirm-submit" class="lb-button" type="submit" value="confirm"><TMPL_VAR STATUS.CONFIRM_ACTION></button>
+    </div>
+  </form>
+</dialog>
 
 <script>
 (() => {
   const status = document.getElementById('ajax-status');
+  const collapseStorageKey = 'mcpserver.admin.sections.v1';
+  const collapsibles = [...document.querySelectorAll('details[data-persist-collapse]')];
+  let storedCollapseState = {};
+  try {
+    storedCollapseState = JSON.parse(window.localStorage.getItem(collapseStorageKey) || '{}');
+  } catch {
+    storedCollapseState = {};
+  }
+  const persistCollapsibles = () => {
+    const state = Object.fromEntries(collapsibles.map((element) => [element.id, element.open]));
+    try { window.localStorage.setItem(collapseStorageKey, JSON.stringify(state)); } catch { /* Defaults remain usable. */ }
+  };
+  for (const element of collapsibles) {
+    if (typeof storedCollapseState[element.id] === 'boolean') element.open = storedCollapseState[element.id];
+    element.addEventListener('toggle', persistCollapsibles);
+  }
+  const openHashSection = () => {
+    const target = document.getElementById(window.location.hash.slice(1));
+    if (target instanceof HTMLDetailsElement && !target.open) {
+      target.open = true;
+      persistCollapsibles();
+    }
+  };
+  window.addEventListener('hashchange', openHashSection);
+  openHashSection();
   const miniserverSelect = document.getElementById('miniserver-select');
   const manualEndpointFields = document.getElementById('manual-endpoint-fields');
   const miniserverEndpoint = document.getElementById('miniserver-endpoint');
@@ -177,6 +263,23 @@
   const sessionsSection = document.getElementById('sessions');
   const sessionList = document.getElementById('session-list');
   const sessionTableTemplate = document.getElementById('session-table-template');
+  const serviceSection = document.getElementById('status');
+  const serviceState = document.getElementById('service-state');
+  const serviceActiveState = document.getElementById('service-active-state');
+  const serviceSubState = document.getElementById('service-sub-state');
+  const servicePid = document.getElementById('service-pid');
+  const serviceName = document.getElementById('service-name');
+  const serviceInstalled = document.getElementById('service-installed');
+  const serviceConfirm = document.getElementById('service-confirm');
+  const serviceConfirmMessage = document.getElementById('service-confirm-message');
+  let pendingServiceForm = null;
+  let serviceActionRunning = false;
+  let servicePollInFlight = false;
+  let servicePollTimer = null;
+  let sessionActionRunning = false;
+  let sessionPollInFlight = false;
+  let sessionPollTimer = null;
+  let lastService = null;
   const syncTestEndpoint = () => { testEndpoint.value = miniserverEndpoint.value; };
   const syncMiniserverSelection = () => {
     const selectedEndpoint = miniserverSelect.value;
@@ -283,6 +386,102 @@
       window.clearTimeout(timeout);
     }
   };
+  const renderService = (service) => {
+    if (!service || typeof service !== 'object') return;
+    lastService = service;
+    const installed = Boolean(service.installed);
+    const active = Boolean(service.active);
+    const activeState = String(service.active_state || 'unknown');
+    const subState = String(service.sub_state || 'unknown');
+    const pid = Number.isInteger(service.pid) && service.pid > 0 ? String(service.pid) : '-';
+    let label = serviceSection.dataset.stateUnknown;
+    let kind = '';
+    if (installed && active) {
+      label = serviceSection.dataset.stateActive;
+      kind = 'success';
+    } else if (installed && activeState === 'failed') {
+      label = serviceSection.dataset.stateFailed;
+      kind = 'error';
+    } else if (installed && ['inactive', 'activating', 'deactivating'].includes(activeState)) {
+      label = serviceSection.dataset.stateInactive;
+      kind = 'inactive';
+    }
+    serviceState.textContent = label;
+    serviceState.dataset.kind = kind;
+    serviceActiveState.textContent = activeState;
+    serviceSubState.textContent = subState;
+    servicePid.textContent = pid;
+    serviceName.textContent = String(service.name || 'loxberry-mcpserver.service');
+    serviceInstalled.textContent = installed ? serviceSection.dataset.yes : serviceSection.dataset.no;
+    for (const form of document.querySelectorAll('form[data-service-command]')) {
+      const command = form.dataset.serviceCommand;
+      const available = command === 'start'
+        ? installed && !active && ['inactive', 'failed'].includes(activeState)
+        : installed && active;
+      form.hidden = !available;
+      const button = form.querySelector('button[type="submit"]');
+      button.disabled = serviceActionRunning || !available;
+      if (serviceActionRunning) button.setAttribute('aria-busy', 'true');
+      else button.removeAttribute('aria-busy');
+    }
+  };
+  renderService({
+    installed: serviceSection.dataset.serviceInstalled === '1',
+    active: serviceSection.dataset.serviceActive === '1',
+    active_state: serviceSection.dataset.serviceActiveState,
+    sub_state: serviceSection.dataset.serviceSubState,
+    pid: Number(serviceSection.dataset.servicePid),
+    name: serviceSection.dataset.serviceName,
+  });
+  const serviceConfirmMessages = {
+    stop: '<TMPL_VAR STATUS.CONFIRM_STOP ESCAPE=JS>',
+    restart: '<TMPL_VAR STATUS.CONFIRM_RESTART ESCAPE=JS>',
+  };
+  serviceConfirm.addEventListener('close', () => {
+    const form = pendingServiceForm;
+    pendingServiceForm = null;
+    if (serviceConfirm.returnValue !== 'confirm' || !form) return;
+    form.dataset.confirmed = 'true';
+    form.requestSubmit();
+  });
+  const scheduleServicePoll = (delay = 10000) => {
+    window.clearTimeout(servicePollTimer);
+    servicePollTimer = null;
+    if (!document.hidden && !serviceActionRunning) {
+      servicePollTimer = window.setTimeout(pollServiceStatus, delay);
+    }
+  };
+  const pollServiceStatus = async () => {
+    if (document.hidden || serviceActionRunning || servicePollInFlight) {
+      scheduleServicePoll();
+      return;
+    }
+    servicePollInFlight = true;
+    try {
+      const body = new FormData();
+      body.set('action', 'service_status');
+      body.set('ajax', '1');
+      const result = await postAjax(body, 7000);
+      renderService(result.data.service);
+    } catch {
+      // Keep the last known state; the next visible-page poll retries.
+    } finally {
+      servicePollInFlight = false;
+      scheduleServicePoll();
+    }
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      window.clearTimeout(servicePollTimer);
+      servicePollTimer = null;
+      window.clearTimeout(sessionPollTimer);
+      sessionPollTimer = null;
+    } else {
+      scheduleServicePoll(0);
+      scheduleSessionPoll(0);
+    }
+  });
+  scheduleServicePoll();
   const pollCertificateRenewal = async (button) => {
     const deadline = Date.now() + 75000;
     try {
@@ -307,6 +506,50 @@
       button.removeAttribute('aria-busy');
     }
   };
+  const sessionFingerprint = (session) => JSON.stringify([
+    session.client_name || '', session.client || '', session.identity || '',
+    session.scopes || '', String(session.expires_at ?? ''),
+  ]);
+  const createSessionRow = (session) => {
+    const row = document.createElement('tr');
+    row.dataset.sessionId = String(session.id);
+    row.dataset.fingerprint = sessionFingerprint(session);
+    const values = [session.client_name || sessionsSection.dataset.unnamedLabel, session.client, session.identity, session.scopes];
+    values.forEach((value, index) => {
+      const cell = document.createElement('td');
+      const content = index === 0 ? document.createTextNode(String(value ?? '')) : document.createElement('code');
+      if (index !== 0) content.textContent = String(value ?? '');
+      cell.append(content);
+      row.append(cell);
+    });
+    const expiryCell = document.createElement('td');
+    const expiry = document.createElement('time');
+    expiry.className = 'mcp-expiry';
+    updateExpiry(expiry, session.expires_at);
+    expiryCell.append(expiry);
+    row.append(expiryCell);
+    const actionCell = document.createElement('td');
+    const revokeForm = document.createElement('form');
+    revokeForm.method = 'post';
+    revokeForm.action = 'index.cgi';
+    revokeForm.dataset.ajax = 'revoke_session';
+    const action = document.createElement('input');
+    action.type = 'hidden';
+    action.name = 'action';
+    action.value = 'revoke_session';
+    const id = document.createElement('input');
+    id.type = 'hidden';
+    id.name = 'id';
+    id.value = String(session.id);
+    const button = document.createElement('button');
+    button.className = 'lb-button';
+    button.type = 'submit';
+    button.textContent = '<TMPL_VAR ACTION.REVOKE ESCAPE=JS>';
+    revokeForm.append(action, id, button);
+    actionCell.append(revokeForm);
+    row.append(actionCell);
+    return row;
+  };
   const updateSessions = (sessions) => {
     if (!sessions.length) {
       const empty = document.createElement('p');
@@ -314,67 +557,99 @@
       sessionList.replaceChildren(empty);
       return;
     }
-    const fragment = sessionTableTemplate.content.cloneNode(true);
-    const body = fragment.querySelector('tbody');
-    for (const session of sessions) {
-      const row = document.createElement('tr');
-      row.dataset.sessionId = String(session.id);
-      const values = [session.client_name || sessionsSection.dataset.unnamedLabel, session.client, session.identity, session.scopes];
-      values.forEach((value, index) => {
-        const cell = document.createElement('td');
-        const content = index === 0 ? document.createTextNode(String(value ?? '')) : document.createElement('code');
-        if (index !== 0) content.textContent = String(value ?? '');
-        cell.append(content);
-        row.append(cell);
-      });
-      const expiryCell = document.createElement('td');
-      const expiry = document.createElement('time');
-      expiry.className = 'mcp-expiry';
-      updateExpiry(expiry, session.expires_at);
-      expiryCell.append(expiry);
-      row.append(expiryCell);
-      const actionCell = document.createElement('td');
-      const revokeForm = document.createElement('form');
-      revokeForm.method = 'post';
-      revokeForm.action = 'index.cgi';
-      revokeForm.dataset.ajax = 'revoke_session';
-      const action = document.createElement('input');
-      action.type = 'hidden';
-      action.name = 'action';
-      action.value = 'revoke_session';
-      const id = document.createElement('input');
-      id.type = 'hidden';
-      id.name = 'id';
-      id.value = String(session.id);
-      const button = document.createElement('button');
-      button.className = 'lb-button';
-      button.type = 'submit';
-      button.textContent = '<TMPL_VAR ACTION.REVOKE ESCAPE=JS>';
-      revokeForm.append(action, id, button);
-      actionCell.append(revokeForm);
-      row.append(actionCell);
-      body.append(row);
+    let body = sessionList.querySelector('tbody');
+    if (!body) {
+      const fragment = sessionTableTemplate.content.cloneNode(true);
+      sessionList.replaceChildren(fragment);
+      body = sessionList.querySelector('tbody');
     }
-    sessionList.replaceChildren(fragment);
+    const existing = new Map([...body.querySelectorAll('tr[data-session-id]')]
+      .map((row) => [row.dataset.sessionId, row]));
+    for (const session of sessions) {
+      const key = String(session.id);
+      let row = existing.get(key);
+      if (!row || row.dataset.fingerprint !== sessionFingerprint(session)) {
+        const replacement = createSessionRow(session);
+        if (row) row.replaceWith(replacement);
+        row = replacement;
+      }
+      body.append(row);
+      existing.delete(key);
+    }
+    for (const row of existing.values()) row.remove();
   };
+  const scheduleSessionPoll = (delay = 10000) => {
+    window.clearTimeout(sessionPollTimer);
+    sessionPollTimer = null;
+    if (!document.hidden && sessionsSection.open && !sessionActionRunning) {
+      sessionPollTimer = window.setTimeout(pollSessions, delay);
+    }
+  };
+  const pollSessions = async () => {
+    if (document.hidden || !sessionsSection.open || sessionActionRunning || sessionPollInFlight) {
+      scheduleSessionPoll();
+      return;
+    }
+    sessionPollInFlight = true;
+    try {
+      const body = new FormData();
+      body.set('action', 'list_sessions');
+      body.set('ajax', '1');
+      const result = await postAjax(body, 7000);
+      if (Array.isArray(result.data.sessions)) updateSessions(result.data.sessions);
+    } catch {
+      // Keep the last known table; the next visible and open-section poll retries.
+    } finally {
+      sessionPollInFlight = false;
+      scheduleSessionPoll();
+    }
+  };
+  sessionsSection.addEventListener('toggle', () => scheduleSessionPoll(sessionsSection.open ? 0 : 10000));
+  scheduleSessionPoll();
   const actionTimeout = (action) => ({
     save_config: 90000,
     revoke_session: 75000,
     revoke_all: 75000,
     renew_certificate: 30000,
+    service_action: 35000,
+    service_status: 7000,
   })[action] || 15000;
   document.addEventListener('submit', async (event) => {
     const form = event.target.closest('form[data-ajax]');
     if (!form) return;
       event.preventDefault();
+      const serviceCommand = form.dataset.serviceCommand;
+      if (form.dataset.ajax === 'service_action'
+          && serviceConfirmMessages[serviceCommand]
+          && form.dataset.confirmed !== 'true') {
+        pendingServiceForm = form;
+        serviceConfirmMessage.textContent = serviceConfirmMessages[serviceCommand];
+        serviceConfirm.returnValue = '';
+        serviceConfirm.showModal();
+        return;
+      }
+      delete form.dataset.confirmed;
       const button = form.querySelector('button[type="submit"]');
       let keepButtonDisabled = false;
+      if (form.dataset.ajax === 'service_action') {
+        serviceActionRunning = true;
+        window.clearTimeout(servicePollTimer);
+        servicePollTimer = null;
+        renderService(lastService);
+      }
+      if (form.dataset.ajax === 'revoke_session' || form.dataset.ajax === 'revoke_all') {
+        sessionActionRunning = true;
+        window.clearTimeout(sessionPollTimer);
+        sessionPollTimer = null;
+      }
       button.disabled = true;
       button.setAttribute('aria-busy', 'true');
       window.clearTimeout(hideStatusTimers.get(status));
       status.hidden = false;
       status.dataset.kind = '';
-      status.textContent = '<TMPL_VAR AJAX.WORKING ESCAPE=JS>';
+      status.textContent = form.dataset.ajax === 'service_action'
+        ? '<TMPL_VAR STATUS.ACTION_RUNNING ESCAPE=JS>'
+        : '<TMPL_VAR AJAX.WORKING ESCAPE=JS>';
       const body = new FormData(form);
       body.set('ajax', '1');
       try {
@@ -382,7 +657,7 @@
         status.dataset.kind = 'success';
         status.textContent = '<TMPL_VAR AJAX.SUCCESS ESCAPE=JS>';
         hideSuccess(status);
-        if ('service_active' in result.data) document.getElementById('service-state').textContent = result.data.service_active ? '<TMPL_VAR STATUS.RUNNING ESCAPE=JS>' : '<TMPL_VAR STATUS.STOPPED ESCAPE=JS>';
+        if (result.data.service) renderService(result.data.service);
         if (Array.isArray(result.data.sessions)) updateSessions(result.data.sessions);
         if (result.data.certificate) updateCertificate(result.data.certificate);
         if (form.dataset.ajax === 'save_config') {
@@ -403,6 +678,15 @@
         else if (error instanceof TypeError) status.textContent = '<TMPL_VAR AJAX.NETWORK ESCAPE=JS>';
         else status.textContent = error instanceof Error ? error.message : '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
       } finally {
+        if (form.dataset.ajax === 'service_action') {
+          serviceActionRunning = false;
+          renderService(lastService);
+          scheduleServicePoll(0);
+        }
+        if (form.dataset.ajax === 'revoke_session' || form.dataset.ajax === 'revoke_all') {
+          sessionActionRunning = false;
+          scheduleSessionPoll();
+        }
         if (!keepButtonDisabled) {
           button.disabled = false;
           button.removeAttribute('aria-busy');

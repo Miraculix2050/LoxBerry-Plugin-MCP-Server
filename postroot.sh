@@ -15,6 +15,7 @@ fi
 plugin_config="$LBPCONFIG/$actual_folder"
 plugin_data="$LBPDATA/$actual_folder"
 plugin_log="$LBPLOG/$actual_folder"
+service_log="$plugin_log/service.log"
 
 for target in "$unit" "$apache" "$sudoers" "$certificate_helper"; do
     if [ -e "$target" ] && ! grep -Fqx "$marker" "$target"; then
@@ -43,6 +44,17 @@ if [ ! -f "$key" ]; then
 fi
 chown root:loxberry "$key"
 chmod 640 "$key"
+
+if [ -L "$service_log" ] || { [ -e "$service_log" ] && [ ! -f "$service_log" ]; }; then
+    echo "<ERROR> Refusing unsafe service log path."
+    exit 2
+fi
+if [ ! -e "$service_log" ]; then
+    install -o loxberry -g loxberry -m 640 /dev/null "$service_log" || exit 2
+else
+    chown loxberry:loxberry "$service_log"
+    chmod 640 "$service_log"
+fi
 
 host=$(hostname -f 2>/dev/null || hostname)
 case "$host" in
@@ -79,6 +91,8 @@ install -o root -g root -m 755 \
     "$LBPBIN/$actual_folder/renew-web-certificate" "$certificate_helper" || exit 2
 {
     echo "$marker"
+    echo 'loxberry ALL=(root) NOPASSWD: /bin/systemctl start loxberry-mcpserver.service'
+    echo 'loxberry ALL=(root) NOPASSWD: /bin/systemctl stop loxberry-mcpserver.service'
     echo 'loxberry ALL=(root) NOPASSWD: /bin/systemctl restart loxberry-mcpserver.service'
     echo 'loxberry ALL=(root) NOPASSWD: /bin/systemctl is-active --quiet loxberry-mcpserver.service'
     echo 'loxberry ALL=(root) NOPASSWD: /usr/local/sbin/loxberry-mcpserver-renew-web-certificate ""'
@@ -91,7 +105,19 @@ a2enconf loxberry-mcpserver >/dev/null || exit 2
 apache2ctl configtest >/dev/null || { a2disconf loxberry-mcpserver >/dev/null; exit 2; }
 systemctl daemon-reload
 systemctl enable loxberry-mcpserver.service >/dev/null
-systemctl restart loxberry-mcpserver.service
+systemctl restart loxberry-mcpserver.service || exit 2
+service_ready=0
+for _ in {1..30}; do
+    if curl --fail --silent --max-time 2 http://127.0.0.1:8765/healthz >/dev/null; then
+        service_ready=1
+        break
+    fi
+    sleep 1
+done
+if [ "$service_ready" -ne 1 ]; then
+    echo "<ERROR> Service did not become healthy after installation."
+    exit 2
+fi
 systemctl reload apache2
 echo "<OK> Service and Apache proxy installed."
 exit 0

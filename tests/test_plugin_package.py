@@ -198,12 +198,27 @@ def test_postroot_keeps_installer_alive_during_apache_activation() -> None:
     assert hook.index("systemctl restart loxberry-mcpserver.service") < hook.index(
         "systemctl reload apache2"
     )
+    assert "systemctl restart loxberry-mcpserver.service || exit 2" in hook
+    assert "for _ in {1..30}" in hook
+    assert "curl --fail --silent --max-time 2 http://127.0.0.1:8765/healthz" in hook
+    assert 'if [ "$service_ready" -ne 1 ]' in hook
     assert '(umask 0137 && openssl rand 32 > "$key")' in hook
     assert 'chmod 644 "$unit" "$apache"' in hook
     assert "install -o root -g root -m 755" in hook
     assert "/usr/local/sbin/loxberry-mcpserver-renew-web-certificate" in hook
     assert 'NOPASSWD: /usr/local/sbin/loxberry-mcpserver-renew-web-certificate ""' in hook
     assert "renew-web-certificate *" not in hook
+    for action in ("start", "stop", "restart"):
+        assert f"NOPASSWD: /bin/systemctl {action} loxberry-mcpserver.service" in hook
+    assert "NOPASSWD: /bin/systemctl * loxberry-mcpserver.service" not in hook
+    assert "NOPASSWD: /bin/systemctl start *" not in hook
+    assert "NOPASSWD: /bin/systemctl stop *" not in hook
+    assert 'service_log="$plugin_log/service.log"' in hook
+    assert '[ -L "$service_log" ]' in hook
+    assert 'install -o loxberry -g loxberry -m 640 /dev/null "$service_log"' in hook
+    assert 'chown loxberry:loxberry "$service_log"' in hook
+    assert 'chmod 640 "$service_log"' in hook
+    assert 'install -m 640 "$service_log"' not in hook
     assert "LoxBerry::System::get_localip()" in hook
     unit = (ROOT / "config/systemd/loxberry-mcpserver.service.in").read_text(encoding="utf-8")
     assert "@LOCAL_IP_HOST@" in unit
