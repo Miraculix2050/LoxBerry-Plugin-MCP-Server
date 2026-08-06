@@ -124,6 +124,22 @@ def test_session_expiry_is_rendered_as_a_local_date_and_time() -> None:
     assert "<td><TMPL_VAR expires_at ESCAPE=HTML></td>" not in template
 
 
+def test_sessions_show_client_name_before_the_stable_instance_identifier() -> None:
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    german = (ROOT / "templates/lang/language_de.ini").read_text(encoding="utf-8")
+    english = (ROOT / "templates/lang/language_en.ini").read_text(encoding="utf-8")
+
+    assert template.index("<TMPL_VAR SESSIONS.CLIENT>") < template.index(
+        "<TMPL_VAR SESSIONS.INSTANCE>"
+    )
+    assert "<TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML>" in template
+    assert "<TMPL_ELSE><TMPL_VAR SESSIONS.UNNAMED>" in template
+    assert "INSTANCE=Client-Instanz" in german
+    assert "UNNAMED=Unbenannter OAuth-Client" in german
+    assert "INSTANCE=Client instance" in english
+    assert "UNNAMED=Unnamed OAuth client" in english
+
+
 def test_perl_expiry_formatter_rejects_out_of_range_values_safely() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     constant = re.search(r"use constant MAX_EXPIRY_EPOCH => [^;]+;", cgi)

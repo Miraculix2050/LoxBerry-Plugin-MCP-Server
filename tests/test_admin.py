@@ -153,8 +153,11 @@ def test_session_list_excludes_revoked_families(
     store = AtomicJsonAuthStore(auth_path)
 
     def add_families(document: dict[str, object]) -> None:
+        clients = document["clients"]
         families = document["families"]
+        assert isinstance(clients, dict)
         assert isinstance(families, dict)
+        clients["active-client"] = {"client_name": "Claude Desktop"}
         families["active-family"] = {
             "client_id": "active-client",
             "identity_id": "active-identity",
@@ -174,6 +177,33 @@ def test_session_list_excludes_revoked_families(
     result = dispatch({"action": "list_sessions"})
 
     assert [session["id"] for session in result["sessions"]] == ["active-family"]
+    assert result["sessions"][0]["client_name"] == "Claude Desktop"
+    assert result["sessions"][0]["client"] == "active-clien"
+
+
+def test_session_list_uses_empty_name_for_missing_or_invalid_client_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    auth_path = (tmp_path / "data" / "auth" / "sessions.json").resolve()
+    store = AtomicJsonAuthStore(auth_path)
+
+    def add_records(document: dict[str, object]) -> None:
+        clients = document["clients"]
+        families = document["families"]
+        assert isinstance(clients, dict)
+        assert isinstance(families, dict)
+        clients["invalid-client"] = {"client_name": 42}
+        clients["blank-client"] = {"client_name": "   "}
+        families["invalid-family"] = {"client_id": "invalid-client", "revoked": False}
+        families["blank-family"] = {"client_id": "blank-client", "revoked": False}
+        families["missing-family"] = {"client_id": "missing-client", "revoked": False}
+
+    store.mutate(add_records)
+    monkeypatch.setenv("MCPSERVER_AUTH_STORE", str(auth_path))
+
+    sessions = dispatch({"action": "list_sessions"})["sessions"]
+
+    assert {session["client_name"] for session in sessions} == {""}
 
 
 def test_revoke_response_contains_updated_sessions(monkeypatch: pytest.MonkeyPatch) -> None:
