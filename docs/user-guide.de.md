@@ -82,6 +82,13 @@ Loxone-Steuerung als separate Auswahl. Ohne ausgewählte Steuerung wird nur
 registrierten Callback des MCP-Clients. Die dort angezeigte Abschlussmeldung
 stammt vom Client, beispielsweise von Claude Code, und nicht vom Plugin.
 
+Unter **Clients und Sitzungen** stehen der vom Client angegebene Anwendungsname
+und eine kurze Client-Instanzkennung. So lassen sich beispielsweise Codex,
+Claude und der MCP Tool Explorer sowie mehrere Registrierungen derselben
+Anwendung unterscheiden. Der Anwendungsname ist eine reine Anzeigeangabe des
+Clients; für die technische Zuordnung und Autorisierung bleibt die Client-ID
+maßgeblich.
+
 Claude-Benutzer finden die dafür notwendige Scope-Konfiguration im Abschnitt
 [Optionale Loxone-Steuerung](clients/claude-desktop.de.md#optionale-loxone-steuerung).
 

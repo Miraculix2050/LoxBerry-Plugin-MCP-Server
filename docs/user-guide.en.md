@@ -80,6 +80,13 @@ confirmation, the LoxBerry hands off to the MCP client's registered callback.
 The final message shown there belongs to the client, such as Claude Code, not
 to the plugin.
 
+Under **Clients and sessions**, the application name supplied by the client is
+shown together with a short client instance identifier. This makes Codex,
+Claude and the MCP Tool Explorer as well as multiple registrations of the same
+application distinguishable. The application name is display-only metadata
+supplied by the client; the client ID remains authoritative for technical
+association and authorization.
+
 Claude users can find the required scope configuration under
 [Optional Loxone control](clients/claude-desktop.en.md#optional-loxone-control).
 

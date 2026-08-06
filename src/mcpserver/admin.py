@@ -159,14 +159,23 @@ async def _test_connection(payload: object) -> dict[str, Any]:
 
 def _sessions() -> list[dict[str, Any]]:
     document = _auth_store().snapshot()
+    clients = document.get("clients", {})
+    if not isinstance(clients, dict):
+        clients = {}
     result = []
     for family_id, record in document["families"].items():
         if record.get("revoked"):
             continue
+        client_id = str(record.get("client_id", ""))
+        client = clients.get(client_id, {})
+        client_name = client.get("client_name", "") if isinstance(client, dict) else ""
         result.append(
             {
                 "id": family_id,
-                "client": str(record.get("client_id", ""))[:12],
+                "client": client_id[:12],
+                "client_name": (
+                    client_name if isinstance(client_name, str) and client_name.strip() else ""
+                ),
                 "identity": str(record.get("identity_id", ""))[:12],
                 "scopes": str(record.get("scope", "loxone:read")),
                 "expires_at": record.get("expires_at"),
