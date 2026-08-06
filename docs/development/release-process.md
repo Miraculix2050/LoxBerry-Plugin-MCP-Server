@@ -20,12 +20,14 @@ are repository snapshots and are not installable LoxBerry plugin packages.
    confirmation, and start the run.
 4. Check the completed run and the ZIP plus `.sha256` assets on the release.
 
-The workflow accepts only the repository owner's GitHub actor. It validates
-master, metadata and changelog, builds and verifies the deterministic package,
+The workflow accepts only the repository owner as both the original actor and
+the actor requesting a rerun. It checks out the immutable dispatch commit rather
+than a later `master` head, validates metadata and changelog, and builds and
+verifies the deterministic package,
 creates an annotated `v<version>` tag, uploads to a draft release, downloads and
 hash-checks both assets, and only then publishes the chosen channel. A compatible
-orphaned tag or draft can be resumed; published or mismatching state is never
-overwritten.
+orphaned tag or draft can be resumed only when its title, notes, and assets match
+the verified build; published or mismatching state is never overwritten.
 
 AI agents use this same path after the preparation PR is merged:
 

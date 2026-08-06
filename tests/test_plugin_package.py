@@ -759,8 +759,10 @@ def test_release_workflow_is_manual_owner_only_and_separates_permissions() -> No
 
     assert "workflow_dispatch:" in workflow
     assert "github.actor" in workflow
+    assert "github.triggering_actor" in workflow
     assert "github.repository_owner" in workflow
     assert "REF_NAME: ${{ github.ref_name }}" in workflow
+    assert "ref: ${{ github.sha }}" in workflow
     assert "confirm_release:" in workflow
     assert "contents: read" in workflow
     assert "contents: write" in workflow
@@ -774,6 +776,12 @@ def test_release_workflow_is_manual_owner_only_and_separates_permissions() -> No
         "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093",
     ):
         assert action in workflow
+
+    publisher = (ROOT / "tools/publish_github_release.sh").read_text(encoding="utf-8")
+    assert 'git config user.name "github-actions[bot]"' in publisher
+    assert "actual_title=" in publisher
+    assert "actual_body=" in publisher
+    assert "title or notes do not match" in publisher
 
 
 def test_package_contract_excludes_update_and_development_files() -> None:

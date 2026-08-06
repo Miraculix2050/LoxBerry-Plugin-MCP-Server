@@ -34,13 +34,15 @@ jobs:
       - name: Enforce owner, master and confirmation
         env:
           ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
           OWNER: ${{ github.repository_owner }}
           REF_NAME: ${{ github.ref_name }}
           CONFIRMED: ${{ inputs.confirm_release }}
           VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          [[ "$ACTOR" == "$OWNER" ]] || { echo "Only the repository owner may publish." >&2; exit 1; }
+          [[ "$ACTOR" == "$OWNER" && "$TRIGGERING_ACTOR" == "$OWNER" ]] ||
+            { echo "Only the repository owner may start or rerun publication." >&2; exit 1; }
           [[ "$REF_NAME" == "master" ]] || { echo "Official releases must run from master." >&2; exit 1; }
           [[ "$CONFIRMED" == "true" ]] || { echo "Release confirmation is required." >&2; exit 1; }
           [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-alpha\.[0-9]+)?$ ]] ||
@@ -57,7 +59,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: master
+          ref: ${{ github.sha }}
           fetch-depth: 0
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
