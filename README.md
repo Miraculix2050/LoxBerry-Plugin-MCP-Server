@@ -18,7 +18,7 @@ kontrolliertes Schreibwerkzeug für Gen.-1-Controls vom Typ `Switch`. Es bleibt
 standardmäßig deaktiviert, akzeptiert ausschließlich `on` und `off` und benötigt
 den separat bestätigten Scope `loxone:control`. Die sechs stabilen lesenden
 Tools und bestehende Read-only-Sitzungen bleiben kompatibel. Der zugehörige
-Releasekandidat `0.2.0-alpha.1` ist noch nicht veröffentlicht.
+Pre-Release ist `0.2.0-alpha.1`.
 
 Bestätigte Kombinationen, Nachweise und bekannte Clientgrenzen stehen in der
 [Support-Matrix](docs/development/support-matrix.md), im

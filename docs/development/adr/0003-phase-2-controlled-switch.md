@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-08-04
 - **Accepted:** 2026-08-06
-- **Release candidate:** `0.2.0-alpha.1`
+- **Release:** `0.2.0-alpha.1`
 
 ## Context
 
