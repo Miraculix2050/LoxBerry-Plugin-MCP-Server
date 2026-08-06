@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Final
 
 from mcp.server.auth.provider import AccessToken, TokenVerifier
@@ -273,10 +274,17 @@ def create_server(settings: ServerSettings) -> FastMCP:
 
 def main() -> None:
     """Run Streamable HTTP on the configured loopback port."""
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s component=%(name)s severity=%(levelname)s %(message)s",
-    )
+    log_file = os.environ.get("MCPSERVER_LOG_FILE")
+    log_format = "%(asctime)s component=%(name)s severity=%(levelname)s %(message)s"
+    if log_file:
+        logging.basicConfig(
+            level=logging.INFO,
+            format=log_format,
+            filename=log_file,
+            encoding="utf-8",
+        )
+    else:
+        logging.basicConfig(level=logging.INFO, format=log_format)
     settings = ServerSettings.from_environment()
     create_server(settings).run(transport="streamable-http")
 

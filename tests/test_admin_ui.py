@@ -33,13 +33,92 @@ def test_common_actions_update_the_page_without_a_reload() -> None:
     assert "postAjax(body, 5000)" in template
     assert "if (result.data.certificate) updateCertificate" in template
     assert 'id="session-table-template"' in template
-    assert "sessionList.replaceChildren(fragment)" in template
+    assert "row.dataset.fingerprint !== sessionFingerprint(session)" in template
+    assert "for (const row of existing.values()) row.remove()" in template
 
 
 def test_admin_cards_use_consistent_vertical_spacing() -> None:
     template = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
 
     assert ".mcp-page { display: grid; gap: 1rem;" in template
+    assert ".mcp-field-stack { display: grid; gap: .85rem; }" in template
+    assert '<div class="mcp-field-stack">' in template
+
+
+def test_service_status_is_first_and_uses_a_lightweight_ajax_contract() -> None:
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+
+    assert template.index('id="status"') < template.index('id="setup"')
+    assert 'data-ajax="service_status"' not in template
+    assert 'data-service-command="start"' in template
+    assert 'data-service-command="stop"' in template
+    assert 'data-service-command="restart"' in template
+    assert "body.set('action', 'service_status')" in template
+    assert "window.setTimeout(pollServiceStatus, delay)" in template
+    assert "document.hidden || serviceActionRunning || servicePollInFlight" in template
+    assert "document.addEventListener('visibilitychange'" in template
+    assert "admin_call('service_status', {})" in cgi
+    assert "admin_call('service_action', {command => $command})" in cgi
+    assert "$command =~ /\\A(?:start|stop|restart)\\z/" in cgi
+    assert "service.log&header=html&format=template" in cgi
+
+
+def test_sessions_poll_only_while_visible_and_open_and_patch_changed_rows() -> None:
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+
+    assert "admin_call('list_sessions', {})" in cgi
+    assert "body.set('action', 'list_sessions')" in template
+    assert "window.setTimeout(pollSessions, delay)" in template
+    assert (
+        "document.hidden || !sessionsSection.open || sessionActionRunning || sessionPollInFlight"
+        in template
+    )
+    assert "sessionsSection.addEventListener('toggle'" in template
+    assert "row.dataset.fingerprint !== sessionFingerprint(session)" in template
+    assert "sessionList.replaceChildren(fragment)" in template
+
+
+def test_read_only_ajax_polling_does_not_create_admin_log_files() -> None:
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+
+    assert "sub admin_logger" in cgi
+    assert cgi.index("sub admin_logger") < cgi.index("LoxBerry::Log->new")
+    assert "LOGSTART('index.cgi called')" not in cgi
+    assert "loglevel => 7" in cgi
+    assert 'admin_logger()->INF("service-action=$command result=completed")' in cgi
+    assert 'admin_logger()->ERR("service-action=$command result=failed")' in cgi
+
+
+def test_service_actions_use_an_accessible_confirmation_and_dynamic_controls() -> None:
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+
+    assert '<dialog id="service-confirm"' in template
+    assert 'aria-labelledby="service-confirm-title"' in template
+    assert "serviceConfirmMessages[serviceCommand]" in template
+    assert "form.dataset.confirmed = 'true'" in template
+    assert "form.requestSubmit()" in template
+    assert "command === 'start'" in template
+    assert "installed && active" in template
+    assert "serviceState.dataset.kind = kind" in template
+    assert "serviceActionRunning = true" in template
+    assert "service_action: 75000" in template
+
+
+def test_admin_sections_are_native_persistent_collapsibles() -> None:
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+
+    for section in ("status", "setup", "help", "certificate", "sessions", "diagnostics"):
+        assert f'<details id="{section}" class="mcp-card" data-persist-collapse' in template
+    assert '<details id="status" class="mcp-card" data-persist-collapse open' in template
+    assert '<details id="setup" class="mcp-card" data-persist-collapse open' in template
+    assert "mcpserver.admin.sections.v1" in template
+    assert "window.localStorage.getItem(collapseStorageKey)" in template
+    assert "window.localStorage.setItem(collapseStorageKey" in template
+    assert "element.addEventListener('toggle', persistCollapsibles)" in template
+    assert "window.addEventListener('hashchange', openHashSection)" in template
+    assert "target instanceof HTMLDetailsElement" in template
 
 
 def test_miniserver_access_mode_is_an_explicit_read_or_switch_selection() -> None:

@@ -15,6 +15,7 @@ fi
 plugin_config="$LBPCONFIG/$actual_folder"
 plugin_data="$LBPDATA/$actual_folder"
 plugin_log="$LBPLOG/$actual_folder"
+service_log="$plugin_log/service.log"
 
 for target in "$unit" "$apache" "$sudoers" "$certificate_helper"; do
     if [ -e "$target" ] && ! grep -Fqx "$marker" "$target"; then
@@ -79,6 +80,8 @@ install -o root -g root -m 755 \
     "$LBPBIN/$actual_folder/renew-web-certificate" "$certificate_helper" || exit 2
 {
     echo "$marker"
+    echo 'loxberry ALL=(root) NOPASSWD: /bin/systemctl start loxberry-mcpserver.service'
+    echo 'loxberry ALL=(root) NOPASSWD: /bin/systemctl stop loxberry-mcpserver.service'
     echo 'loxberry ALL=(root) NOPASSWD: /bin/systemctl restart loxberry-mcpserver.service'
     echo 'loxberry ALL=(root) NOPASSWD: /bin/systemctl is-active --quiet loxberry-mcpserver.service'
     echo 'loxberry ALL=(root) NOPASSWD: /usr/local/sbin/loxberry-mcpserver-renew-web-certificate ""'
@@ -89,9 +92,48 @@ visudo -cf "$sudoers" >/dev/null || { rm -f "$sudoers"; exit 2; }
 a2enmod proxy proxy_http >/dev/null || exit 2
 a2enconf loxberry-mcpserver >/dev/null || exit 2
 apache2ctl configtest >/dev/null || { a2disconf loxberry-mcpserver >/dev/null; exit 2; }
+
+if systemctl is-active --quiet loxberry-mcpserver.service; then
+    systemctl stop loxberry-mcpserver.service || exit 2
+fi
+python3 - "$service_log" <<'PY' || exit 2
+import grp
+import os
+import pwd
+import stat
+import sys
+
+path = sys.argv[1]
+flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_CLOEXEC | os.O_NOFOLLOW
+fd = os.open(path, flags, 0o640)
+try:
+    opened = os.fstat(fd)
+    if not stat.S_ISREG(opened.st_mode):
+        raise RuntimeError("service log is not a regular file")
+    os.fchown(fd, pwd.getpwnam("loxberry").pw_uid, grp.getgrnam("loxberry").gr_gid)
+    os.fchmod(fd, 0o640)
+    current = os.lstat(path)
+    if not stat.S_ISREG(current.st_mode) or (current.st_dev, current.st_ino) != (opened.st_dev, opened.st_ino):
+        raise RuntimeError("service log path changed during preparation")
+finally:
+    os.close(fd)
+PY
+
 systemctl daemon-reload
 systemctl enable loxberry-mcpserver.service >/dev/null
-systemctl restart loxberry-mcpserver.service
+systemctl restart loxberry-mcpserver.service || exit 2
+service_ready=0
+for _ in {1..30}; do
+    if curl --fail --silent --max-time 2 http://127.0.0.1:8765/healthz >/dev/null; then
+        service_ready=1
+        break
+    fi
+    sleep 1
+done
+if [ "$service_ready" -ne 1 ]; then
+    echo "<ERROR> Service did not become healthy after installation."
+    exit 2
+fi
 systemctl reload apache2
 echo "<OK> Service and Apache proxy installed."
 exit 0

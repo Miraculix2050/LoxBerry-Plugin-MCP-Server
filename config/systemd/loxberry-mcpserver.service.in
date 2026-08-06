@@ -16,11 +16,12 @@ Environment=MCPSERVER_CONFIG=@CONFIG@
 Environment=MCPSERVER_AUTH_STORE=@SESSIONS@
 Environment=MCPSERVER_LOXONE_TOKEN_STORE=@TOKENS@
 Environment=MCPSERVER_INSTALL_KEY=@KEY@
+Environment=MCPSERVER_LOG_FILE=@LOG_DIR@/service.log
 Environment=MCPSERVER_ALLOWED_HOSTS=127.0.0.1:8765,localhost:8765,@HOST@,@HOST@:*,@LOCAL_IP_HOST@,@LOCAL_IP_HOST@:*
 Environment=MCPSERVER_ALLOWED_ORIGINS=https://@HOST@,https://@LOCAL_IP_HOST@
 ExecStart=@VENV@/bin/mcpserver
-StandardOutput=append:@LOG_DIR@/service.log
-StandardError=append:@LOG_DIR@/service.log
+StandardOutput=journal
+StandardError=journal
 Restart=on-failure
 RestartSec=5s
 TimeoutStartSec=30s

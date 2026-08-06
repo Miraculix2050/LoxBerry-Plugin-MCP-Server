@@ -7,7 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from mcpserver.admin import AdminError, _renew_certificate, _revoke, _save, dispatch
+from mcpserver.admin import (
+    AdminError,
+    _renew_certificate,
+    _revoke,
+    _save,
+    _service_status,
+    dispatch,
+)
 from mcpserver.auth.loxone_store import LoxoneTokenStoreError
 from mcpserver.auth.store import AtomicJsonAuthStore
 from mcpserver.config import AtomicConfigStore, PluginConfig
@@ -59,7 +66,15 @@ def test_page_state_aggregates_initial_admin_ui_data(monkeypatch: pytest.MonkeyP
             return config
 
     monkeypatch.setattr("mcpserver.admin._config_store", lambda: ConfigStore())
-    monkeypatch.setattr("mcpserver.admin._service_active", lambda: True)
+    service = {
+        "name": "loxberry-mcpserver.service",
+        "installed": True,
+        "active_state": "active",
+        "sub_state": "running",
+        "pid": 123,
+        "active": True,
+    }
+    monkeypatch.setattr("mcpserver.admin._service_status", lambda: service)
     monkeypatch.setattr("mcpserver.admin._sessions", lambda: [{"id": "family"}])
     monkeypatch.setattr(
         "mcpserver.admin._certificate_status",
@@ -72,6 +87,7 @@ def test_page_state_aggregates_initial_admin_ui_data(monkeypatch: pytest.MonkeyP
         "configuration": config.to_document(),
         "version": result["version"],
         "service_active": True,
+        "service": service,
         "sessions": [{"id": "family"}],
         "certificate": {"available": True, "renewal_supported": False},
     }
@@ -82,7 +98,15 @@ def test_status_refresh_returns_all_dynamic_admin_ui_data(
 ) -> None:
     sessions = [{"id": "family"}]
     certificate = {"available": True, "renewal": {"state": "idle"}}
-    monkeypatch.setattr("mcpserver.admin._service_active", lambda: True)
+    service = {
+        "name": "loxberry-mcpserver.service",
+        "installed": True,
+        "active_state": "active",
+        "sub_state": "running",
+        "pid": 456,
+        "active": True,
+    }
+    monkeypatch.setattr("mcpserver.admin._service_status", lambda: service)
     monkeypatch.setattr("mcpserver.admin._sessions", lambda: sessions)
     monkeypatch.setattr("mcpserver.admin._certificate_status", lambda: certificate)
 
@@ -91,9 +115,138 @@ def test_status_refresh_returns_all_dynamic_admin_ui_data(
     assert result == {
         "version": result["version"],
         "service_active": True,
+        "service": service,
         "sessions": sessions,
         "certificate": certificate,
     }
+
+
+@pytest.mark.parametrize(
+    ("active_state", "sub_state", "raw_pid", "expected_pid", "active"),
+    [
+        ("active", "running", "1234", 1234, True),
+        ("inactive", "dead", "0", None, False),
+        ("failed", "failed", "", None, False),
+    ],
+)
+def test_service_status_reads_bounded_systemd_properties(
+    active_state: str,
+    sub_state: str,
+    raw_pid: str,
+    expected_pid: int | None,
+    active: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: list[str] = []
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        captured.extend(command)
+        output = (
+            "LoadState=loaded\n"
+            f"ActiveState={active_state}\n"
+            f"SubState={sub_state}\n"
+            f"MainPID={raw_pid}\n"
+        )
+        return subprocess.CompletedProcess(command, 0, output, "")
+
+    monkeypatch.setattr("mcpserver.admin.subprocess.run", run)
+
+    result = _service_status()
+
+    assert captured == [
+        "/bin/systemctl",
+        "show",
+        "--property=LoadState",
+        "--property=ActiveState",
+        "--property=SubState",
+        "--property=MainPID",
+        "--no-pager",
+        "loxberry-mcpserver.service",
+    ]
+    assert result == {
+        "name": "loxberry-mcpserver.service",
+        "installed": True,
+        "active_state": active_state,
+        "sub_state": sub_state,
+        "pid": expected_pid,
+        "active": active,
+    }
+
+
+def test_service_status_fails_closed_when_systemctl_times_out(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "mcpserver.admin.subprocess.run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(subprocess.TimeoutExpired(args[0], 5)),
+    )
+
+    assert _service_status() == {
+        "name": "loxberry-mcpserver.service",
+        "installed": False,
+        "active_state": "unknown",
+        "sub_state": "unknown",
+        "pid": None,
+        "active": False,
+    }
+
+
+@pytest.mark.parametrize("command", ["start", "stop", "restart"])
+def test_service_action_uses_only_the_fixed_unit(
+    command: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: list[tuple[list[str], dict[str, object]]] = []
+    service = {
+        "name": "loxberry-mcpserver.service",
+        "installed": True,
+        "active_state": "active",
+        "sub_state": "running",
+        "pid": 987,
+        "active": True,
+    }
+
+    def run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        captured.append((argv, kwargs))
+        return subprocess.CompletedProcess(argv, 0, b"", b"")
+
+    monkeypatch.setattr("mcpserver.admin.subprocess.run", run)
+    monkeypatch.setattr("mcpserver.admin._service_status", lambda: service)
+
+    result = dispatch({"action": "service_action", "payload": {"command": command}})
+
+    assert len(captured) == 1
+    argv, kwargs = captured[0]
+    assert argv == ["sudo", "-n", "/bin/systemctl", command, "loxberry-mcpserver.service"]
+    assert kwargs["timeout"] == 65
+    assert result == {"service_active": True, "service": service}
+
+
+def test_service_action_rejects_arbitrary_commands(monkeypatch: pytest.MonkeyPatch) -> None:
+    called = False
+
+    def run(*args: object, **kwargs: object) -> None:
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr("mcpserver.admin.subprocess.run", run)
+
+    with pytest.raises(AdminError, match="invalid"):
+        dispatch({"action": "service_action", "payload": {"command": "disable"}})
+    assert called is False
+
+
+def test_service_action_maps_timeout_to_sanitized_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "mcpserver.admin.subprocess.run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(subprocess.TimeoutExpired(args[0], 65)),
+    )
+
+    with pytest.raises(AdminError) as failure:
+        dispatch({"action": "service_action", "payload": {"command": "start"}})
+    assert failure.value.code == "service_action_failed"
+    assert str(failure.value) == "the service action failed"
 
 
 def test_certificate_reissue_passes_securepin_only_over_stdin(

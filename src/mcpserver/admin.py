@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 
 _MAX_REQUEST_BYTES: Final = 32 * 1024
 _SERVICE: Final = "loxberry-mcpserver.service"
+_SERVICE_ACTIONS: Final = frozenset({"start", "stop", "restart"})
 _CLIENT_UUID: Final = UUID("3f52f6fe-3af0-4d30-a8bb-f429b9da4465")
 
 
@@ -72,32 +73,94 @@ def _loxone_client(
     return LoxoneClient(endpoint, client_uuid=client_uuid, timeout_seconds=timeout_seconds)
 
 
-def _service_active() -> bool:
-    result = subprocess.run(
-        ["sudo", "-n", "/bin/systemctl", "is-active", "--quiet", _SERVICE],
-        check=False,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        timeout=5,
-    )
-    return result.returncode == 0
-
-
-def _restart_service() -> None:
+def _service_status() -> dict[str, Any]:
+    status: dict[str, Any] = {
+        "name": _SERVICE,
+        "installed": False,
+        "active_state": "unknown",
+        "sub_state": "unknown",
+        "pid": None,
+        "active": False,
+    }
     try:
         result = subprocess.run(
-            ["sudo", "-n", "/bin/systemctl", "restart", _SERVICE],
+            [
+                "/bin/systemctl",
+                "show",
+                "--property=LoadState",
+                "--property=ActiveState",
+                "--property=SubState",
+                "--property=MainPID",
+                "--no-pager",
+                _SERVICE,
+            ],
+            check=False,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return status
+    if result.returncode != 0:
+        return status
+    properties = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
+    load_state = properties.get("LoadState", "unknown")
+    active_state = properties.get("ActiveState", "unknown")
+    sub_state = properties.get("SubState", "unknown")
+    raw_pid = properties.get("MainPID", "")
+    pid = int(raw_pid) if raw_pid.isdecimal() and int(raw_pid) > 0 else None
+    status.update(
+        installed=load_state not in {"not-found", "unknown", ""},
+        active_state=active_state or "unknown",
+        sub_state=sub_state or "unknown",
+        pid=pid,
+        active=active_state == "active",
+    )
+    return status
+
+
+def _service_active() -> bool:
+    return bool(_service_status()["active"])
+
+
+def _run_service_command(command: str) -> None:
+    if command not in _SERVICE_ACTIONS:
+        raise AdminError("service action is invalid")
+    try:
+        result = subprocess.run(
+            ["sudo", "-n", "/bin/systemctl", command, _SERVICE],
             check=False,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            timeout=15,
+            timeout=65,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        raise AdminError("the service could not be restarted") from exc
+        raise AdminError("the service action failed", code="service_action_failed") from exc
     if result.returncode != 0:
-        raise AdminError("the service could not be restarted")
+        raise AdminError("the service action failed", code="service_action_failed")
+
+
+def _service_response() -> dict[str, Any]:
+    service = _service_status()
+    return {"service_active": service["active"], "service": service}
+
+
+def _service_action(payload: object) -> dict[str, Any]:
+    command = payload.get("command") if isinstance(payload, dict) else None
+    if not isinstance(command, str) or command not in _SERVICE_ACTIONS:
+        raise AdminError("service action is invalid")
+    _run_service_command(command)
+    return _service_response()
+
+
+def _restart_service() -> None:
+    try:
+        _run_service_command("restart")
+    except AdminError as exc:
+        raise AdminError("the service could not be restarted") from exc
 
 
 def _optional_path(name: str) -> Path | None:
@@ -216,9 +279,8 @@ def _save(payload: object) -> dict[str, Any]:
     return {
         "configuration": config.to_document(),
         "applied": True,
-        "service_active": _service_active(),
         "sessions": _sessions(),
-    }
+    } | _service_response()
 
 
 async def _test_connection(payload: object) -> dict[str, Any]:
@@ -389,10 +451,9 @@ def dispatch(request: object) -> dict[str, Any]:
         return {
             "configuration": _config_store().load().to_document(),
             "version": __version__,
-            "service_active": _service_active(),
             "sessions": _sessions(),
             "certificate": _certificate_status(),
-        }
+        } | _service_response()
     if action == "get_config":
         return {"configuration": _config_store().load().to_document()}
     if action == "save_config":
@@ -400,10 +461,13 @@ def dispatch(request: object) -> dict[str, Any]:
     if action == "status":
         return {
             "version": __version__,
-            "service_active": _service_active(),
             "sessions": _sessions(),
             "certificate": _certificate_status(),
-        }
+        } | _service_response()
+    if action == "service_status":
+        return _service_response()
+    if action == "service_action":
+        return _service_action(payload)
     if action == "test_connection":
         return asyncio.run(_test_connection(payload))
     if action == "list_sessions":
