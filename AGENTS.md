@@ -1,10 +1,14 @@
 # Project Instructions
 
-This repository contains the LoxBerry MCP Server plugin. Read the normative
-engineering rules in `docs/development/implementation-guidelines.md` and select
-verification from `docs/development/test-strategy.md` before changing code,
-configuration, MCP tools, authentication, authorization, lifecycle behavior, or
-the browser UI.
+This repository contains the LoxBerry MCP Server plugin. Apply the mandatory
+rules below to every change. Before implementation, read only the relevant
+sections of `docs/development/implementation-guidelines.md`: sections 3-6 for
+architecture, MCP contracts, security, or configuration; section 7 for UI;
+section 8 for lifecycle; section 9 for logging; and sections 10-11 for tests,
+documentation, or releases. Read the whole document only for cross-cutting or
+unclear changes. Select verification from
+`docs/development/test-strategy.md`; do not reread unchanged sections during the
+same task.
 
 ## Working rules
 
@@ -23,6 +27,9 @@ the browser UI.
   permissions, dependencies, compatibility, or upgrade changes.
 - Use change-driven tests. Documentation-only changes do not require device or
   browser acceptance unless they change generated or rendered behavior.
+- During iteration use `python tools/test.py --profile changed`; inspect the
+  selection first with `--plan` when scope is unclear. Reserve the Full profile
+  for the final revision, cross-cutting fallback, CI, and release packaging.
 - Do not claim platform, browser, device, or Miniserver compatibility without
   matching evidence.
 - Preserve unrelated worktree changes and inspect `git status --short` before

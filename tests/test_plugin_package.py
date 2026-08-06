@@ -23,6 +23,8 @@ from tools.build_plugin import (
     _verify_project_wheel as verify_project_wheel_input,
 )
 from tools.build_release_candidate import _copy_runtime_wheels, _publish
+from tools.build_release_candidate import main as build_release_candidate
+from tools.prepare_wheelhouse import main as prepare_wheelhouse
 from tools.verify_plugin import (
     PackageVerificationError,
     verify_archive,
@@ -521,7 +523,58 @@ def test_release_helpers_exclude_stale_project_wheel_and_refuse_overwrite(
         _publish(candidate, output, hashlib.sha256(candidate.read_bytes()).hexdigest())
 
 
-@pytest.mark.parametrize("script", ["tools/verify_plugin.py", "tools/build_release_candidate.py"])
+def test_release_candidate_builds_plugin_archive_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    build_calls: list[tuple[str, ...]] = []
+
+    def run(*arguments: str, root: Path, environment: dict[str, str] | None = None) -> None:
+        del root, environment
+        if "tools/build_plugin.py" in arguments:
+            build_calls.append(arguments)
+            output = Path(arguments[arguments.index("--output") + 1])
+            output.write_bytes(b"candidate")
+
+    monkeypatch.setattr("tools.build_release_candidate._run", run)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["build_release_candidate.py", "--output-dir", str(tmp_path)],
+    )
+
+    assert build_release_candidate() == 0
+    assert len(build_calls) == 1
+
+
+def test_prepare_runtime_wheelhouse_skips_project_wheel(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    commands: list[list[str]] = []
+
+    def run(arguments: list[str], **_kwargs: object) -> None:
+        commands.append(arguments)
+
+    monkeypatch.setattr("tools.prepare_wheelhouse.subprocess.run", run)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["prepare_wheelhouse.py", "--runtime-only", str(tmp_path)],
+    )
+
+    assert prepare_wheelhouse() == 0
+    assert len(commands) == 1
+    assert commands[0][2:4] == ["pip", "download"]
+    assert (tmp_path / "runtime-arm64.lock").is_file()
+
+
+@pytest.mark.parametrize(
+    "script",
+    [
+        "tools/verify_plugin.py",
+        "tools/build_release_candidate.py",
+        "tools/prepare_wheelhouse.py",
+    ],
+)
 def test_documented_python_automation_clis_start_without_pythonpath(script: str) -> None:
     result = subprocess.run(
         [sys.executable, script, "--help"],

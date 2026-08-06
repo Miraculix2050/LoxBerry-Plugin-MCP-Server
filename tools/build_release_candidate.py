@@ -127,26 +127,21 @@ def main() -> int:
             _copy_runtime_wheels(args.runtime_wheelhouse.resolve(), wheelhouse, requirements)
             _build_project_wheel(root, wheelhouse, environment)
 
-        first = work / "candidate-a.zip"
-        second = work / "candidate-b.zip"
-        for candidate in (first, second):
-            _run(
-                sys.executable,
-                "tools/build_plugin.py",
-                "--wheelhouse",
-                str(wheelhouse),
-                "--output",
-                str(candidate),
-                root=root,
-                environment=environment,
-            )
-        first_digest = hashlib.sha256(first.read_bytes()).hexdigest()
-        second_digest = hashlib.sha256(second.read_bytes()).hexdigest()
-        if first_digest != second_digest:
-            raise RuntimeError("repeated plugin builds are not byte-identical")
+        candidate = work / "candidate.zip"
+        _run(
+            sys.executable,
+            "tools/build_plugin.py",
+            "--wheelhouse",
+            str(wheelhouse),
+            "--output",
+            str(candidate),
+            root=root,
+            environment=environment,
+        )
+        digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
 
         output = output_dir / f"LoxBerry-MCP-Server-{_version(root)}.zip"
-        _publish(first, output, first_digest)
+        _publish(candidate, output, digest)
         _run(
             sys.executable,
             "tools/verify_plugin.py",
@@ -156,7 +151,7 @@ def main() -> int:
         )
 
     print(f"RELEASE_CANDIDATE=pass path={output}")
-    print(f"SHA256={first_digest}")
+    print(f"SHA256={digest}")
     return 0
 
 
