@@ -110,6 +110,40 @@ for my $case (@cases) {{ print((miniserver_endpoint($case) // 'rejected') . "\\n
     ]
 
 
+def test_local_mcp_url_builder_handles_hostname_ip_port_and_unsafe_values() -> None:
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    builder = re.search(r"sub local_mcp_url \{.*?^\}", cgi, re.MULTILINE | re.DOTALL)
+
+    assert builder is not None
+    perl = shutil.which("perl")
+    assert perl is not None, "Perl is required for the complete deterministic gate"
+    script = f"""
+use Socket qw(AF_INET AF_INET6 inet_ntop inet_pton);
+{builder.group(0)}
+my @cases = (
+    ['loxberry-test', 443],
+    ['loxberry-test', 8443],
+    ['192.0.2.10', 443],
+    ['2001:db8::1', 8443],
+    ['user@host', 443],
+    ['host/path', 443],
+    ['', 443],
+);
+for my $case (@cases) {{ print((local_mcp_url(@$case) // '') . "\n"); }}
+"""
+    result = subprocess.run([perl, "-e", script], check=True, capture_output=True, text=True)
+
+    assert result.stdout.splitlines() == [
+        "https://loxberry-test/plugins/mcpserver/mcp",
+        "https://loxberry-test:8443/plugins/mcpserver/mcp",
+        "https://192.0.2.10/plugins/mcpserver/mcp",
+        "https://[2001:db8::1]:8443/plugins/mcpserver/mcp",
+        "",
+        "",
+        "",
+    ]
+
+
 def test_session_expiry_is_rendered_as_a_local_date_and_time() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")

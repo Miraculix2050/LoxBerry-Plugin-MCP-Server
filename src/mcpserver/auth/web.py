@@ -419,7 +419,7 @@ class Phase0OAuthWeb:
     def _login_page(self, transaction: LoginTransaction, error: str = "") -> HTMLResponse:
         error_html = f'<p class="error">{html.escape(error)}</p>' if error else ""
         body = f"""<h1>Connect Loxone / Loxone verbinden</h1><p>Sign in with the dedicated Loxone user for <strong>{html.escape(transaction.client_name)}</strong>. / Melden Sie sich mit dem dedizierten Loxone-Benutzer an.</p>
-{error_html}<form method="post" action="{html.escape(self.issuer)}/authorize">{self._hidden(transaction, "login")}
+{error_html}<form method="post" action="/plugins/mcpserver/oauth/authorize">{self._hidden(transaction, "login")}
 <label for="username">Loxone user / Loxone-Benutzer</label><input id="username" name="username" autocomplete="username" maxlength="128" required>
 <label for="password">Password / Passwort</label><input id="password" type="password" name="password" autocomplete="current-password" maxlength="1024" required>
 <div class="actions"><button type="submit">Continue / Weiter</button></div></form>"""
@@ -437,13 +437,13 @@ class Phase0OAuthWeb:
 <dt>Client</dt><dd>{html.escape(transaction.client_name)}</dd>
 <dt>Miniserver</dt><dd>{html.escape(transaction.miniserver_name or "")}</dd>
 <dt>Loxone identity / Loxone-Identität</dt><dd>{html.escape(transaction.identity_name or "")}</dd></dl>
-<form method="post" action="{html.escape(self.issuer)}/authorize">{self._hidden(transaction, "approve")}
+<form method="post" action="/plugins/mcpserver/oauth/authorize">{self._hidden(transaction, "approve")}
 <fieldset class="scope-list"><legend>Permissions / Berechtigungen</legend>
 <label class="scope-option"><input type="checkbox" checked disabled><span><strong>Read access / Lesezugriff</strong><small>Required: read permitted Loxone structure and states. / Erforderlich: Freigegebene Loxone-Struktur und Zustände lesen.</small></span></label>
 {control_option}</fieldset>
 <p class="notice">After confirmation, you will be redirected to your MCP client. / Nach der Bestätigung werden Sie zu Ihrem MCP-Client weitergeleitet.</p>
 <div class="actions"><button type="submit">Confirm permissions / Berechtigungen bestätigen</button></div></form>
-<form method="post" action="{html.escape(self.issuer)}/authorize">{self._hidden(transaction, "deny")}
+<form method="post" action="/plugins/mcpserver/oauth/authorize">{self._hidden(transaction, "deny")}
 <div class="actions"><button type="submit">Deny / Ablehnen</button></div></form>"""
         return _html_page("Authorize client", body, callback_uri=transaction.redirect_uri)
 

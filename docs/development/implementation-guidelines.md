@@ -53,6 +53,12 @@ müssen ein eigenständiges Autorisierungsmodell, eine enge Befehls-Allowlist,
 Audit-Logging und Wiederherstellungswege feststehen. Ein Loxone-Login erteilt
 niemals automatisch administrative Rechte auf dem LoxBerry.
 
+Die lokale, SecurePIN-geschützte Neuausstellung des systemweiten
+LoxBerry-Webserver-Zertifikats ist die erste ausdrücklich abgegrenzte
+LoxBerry-Systemaktion. Sie bleibt auf die Admin-UI beschränkt und folgt
+[ADR 0005](adr/0005-loxberry-web-certificate-reissue.md); sie wird nicht über MCP
+veröffentlicht.
+
 ## 3. Architektur und Zuständigkeiten
 
 - MCP-Transport, Tool-Definitionen, Loxone-Anbindung, LoxBerry-Anbindung,

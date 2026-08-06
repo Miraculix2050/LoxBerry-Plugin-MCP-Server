@@ -1,0 +1,144 @@
+#!/usr/bin/perl
+# Managed by the LoxBerry MCP Server plugin.
+
+use strict;
+use warnings;
+BEGIN {
+    $ENV{LBHOMEDIR} = '/opt/loxberry';
+    $ENV{PERL5LIB} = '/opt/loxberry/libs/perllib';
+}
+use lib '/opt/loxberry/libs/perllib';
+use Fcntl qw(:DEFAULT :flock O_NOFOLLOW);
+use JSON::PP qw(encode_json);
+use Sys::Hostname qw(hostname);
+use LoxBerry::System;
+
+my $home = '/opt/loxberry';
+my $plugin = 'mcpserver';
+my $status_file = "$home/data/plugins/$plugin/certificate-renewal.json";
+my $lock_file = "/run/lock/loxberry-$plugin-certificate-renewal.lock";
+my $unit = 'loxberry-mcpserver-certificate-renew';
+my $self = '/usr/local/sbin/loxberry-mcpserver-renew-web-certificate';
+my $revoke = "$home/sbin/revokewwwcert.sh";
+my $renew = "$home/sbin/makewwwcert.sh";
+my $certificate = "$home/data/system/LoxBerryCA/certs/wwwcert.pem";
+my $authority = "$home/data/system/LoxBerryCA/cacert.pem";
+
+sub audit_event {
+    my ($message) = @_;
+    system { '/usr/bin/logger' } '/usr/bin/logger', '-p', 'authpriv.notice', '-t',
+        'loxberry-mcpserver', $message;
+}
+
+sub write_status {
+    my ($state, $code) = @_;
+    my $temporary = "$status_file.$$";
+    my %document = (state => $state, updated_at => time());
+    $document{code} = $code if defined $code;
+    sysopen(my $handle, $temporary, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0644)
+        or return 0;
+    binmode $handle, ':raw';
+    print {$handle} encode_json(\%document), "\n";
+    close $handle or return 0;
+    return rename $temporary, $status_file;
+}
+
+sub core_available {
+    my $loxberry_uid = getpwnam('loxberry');
+    return 0 if !defined $loxberry_uid;
+    for my $path ($revoke, $renew) {
+        return 0 if !-f $path || -l $path;
+        my @metadata = stat($path);
+        return 0 if !@metadata
+            || $metadata[4] != 0 || ($metadata[2] & 0022) != 0 || !-x $path;
+    }
+    for my $path ($certificate, $authority) {
+        return 0 if !-f $path || -l $path;
+        my @metadata = stat($path);
+        return 0 if !@metadata
+            || ($metadata[4] != 0 && $metadata[4] != $loxberry_uid)
+            || ($metadata[2] & 0022) != 0;
+    }
+    return 1;
+}
+
+sub run_worker {
+    sysopen(my $lock, $lock_file, O_RDWR | O_CREAT | O_NOFOLLOW, 0600) or exit 20;
+    my @lock_stat = stat($lock);
+    exit 20 if !@lock_stat || $lock_stat[4] != 0 || !-f $lock;
+    flock($lock, LOCK_EX | LOCK_NB) or exit 21;
+    if (!core_available()) {
+        write_status('error', 'core_unavailable');
+        audit_event('web certificate renewal failed: LoxBerry core unavailable');
+        exit 22;
+    }
+    write_status('running', undef);
+    audit_event('web certificate renewal started');
+    sleep 3;
+    $ENV{LBHOMEDIR} = $home;
+    if (system({ $revoke } $revoke) != 0 || system({ $renew } $renew) != 0) {
+        write_status('error', 'renew_failed');
+        audit_event('web certificate renewal failed');
+        exit 23;
+    }
+    my $hostname = hostname();
+    my $verified = system(
+        { '/usr/bin/openssl' } '/usr/bin/openssl', 'verify', '-CAfile', $authority, $certificate
+    ) == 0;
+    $verified &&= system(
+        { '/usr/bin/openssl' } '/usr/bin/openssl', 'x509', '-in', $certificate,
+        '-noout', '-checkhost', $hostname
+    ) == 0;
+    if (!$verified) {
+        write_status('error', 'verification_failed');
+        audit_event('web certificate renewal verification failed');
+        exit 24;
+    }
+    write_status('success', undef);
+    audit_event('web certificate renewal completed');
+    exit 0;
+}
+
+exit 30 if $> != 0;
+if (@ARGV == 1 && $ARGV[0] eq '--worker') {
+    run_worker();
+}
+exit 31 if @ARGV;
+
+my $securepin = <STDIN>;
+exit 12 if !defined $securepin || length($securepin) > 16;
+chomp $securepin;
+exit 12 if $securepin !~ /\A[0-9]{4}\z/;
+my $root_euid = $>;
+my $loxberry_uid = getpwnam('loxberry');
+exit 12 if !defined $loxberry_uid;
+$> = $loxberry_uid;
+exit 12 if $> != $loxberry_uid;
+my $pin_result = LoxBerry::System::check_securepin($securepin);
+$> = $root_euid;
+exit 12 if $> != 0;
+$securepin = '';
+exit 11 if defined($pin_result) && $pin_result == 3;
+exit 10 if defined($pin_result) && $pin_result == 1;
+exit 12 if defined $pin_result;
+exit 13 if system('/bin/systemctl', 'is-active', '--quiet', "$unit.service") == 0;
+exit 14 if !core_available();
+
+write_status('scheduled', undef) or exit 15;
+my @command = (
+    '/usr/bin/systemd-run',
+    '--quiet',
+    '--collect',
+    "--unit=$unit",
+    '--property=Type=oneshot',
+    '--property=User=root',
+    $self,
+    '--worker',
+);
+if (system({ $command[0] } @command) != 0) {
+    write_status('error', 'core_unavailable');
+    exit 16;
+}
+audit_event('web certificate renewal authorized and scheduled');
+print "scheduled\n";
+exit 0;

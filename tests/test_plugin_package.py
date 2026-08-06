@@ -131,6 +131,7 @@ def test_v4_package_manifest_is_present() -> None:
         "postupgrade.sh",
         "uninstall/uninstall.sh",
         "bin/healthcheck",
+        "bin/renew-web-certificate",
         "icons/icon.svg",
         "webfrontend/htmlauth/index.cgi",
         "webfrontend/htmlauth/explorer.cgi",
@@ -195,6 +196,14 @@ def test_postroot_keeps_installer_alive_during_apache_activation() -> None:
     )
     assert '(umask 0137 && openssl rand 32 > "$key")' in hook
     assert 'chmod 644 "$unit" "$apache"' in hook
+    assert "install -o root -g root -m 755" in hook
+    assert "/usr/local/sbin/loxberry-mcpserver-renew-web-certificate" in hook
+    assert 'NOPASSWD: /usr/local/sbin/loxberry-mcpserver-renew-web-certificate ""' in hook
+    assert "renew-web-certificate *" not in hook
+    assert "LoxBerry::System::get_localip()" in hook
+    unit = (ROOT / "config/systemd/loxberry-mcpserver.service.in").read_text(encoding="utf-8")
+    assert "@LOCAL_IP_HOST@" in unit
+    assert "https://@LOCAL_IP_HOST@" in unit
 
 
 def test_postinstall_rewrites_moved_venv_entrypoints() -> None:
@@ -236,6 +245,29 @@ def test_perl_admin_cgi_has_valid_syntax() -> None:
             ],
             check=True,
         )
+    subprocess.run(
+        [
+            perl,
+            f"-I{ROOT / 'tests' / 'perl_stubs'}",
+            "-c",
+            str(ROOT / "bin" / "renew-web-certificate"),
+        ],
+        check=True,
+    )
+
+
+def test_certificate_helper_keeps_pin_off_argv_and_uses_fixed_core_actions() -> None:
+    helper = (ROOT / "bin" / "renew-web-certificate").read_text(encoding="utf-8")
+
+    assert "my $securepin = <STDIN>;" in helper
+    assert "check_securepin($securepin)" in helper
+    assert "revokewwwcert.sh" in helper
+    assert "makewwwcert.sh" in helper
+    assert "$ENV{PERL5LIB} = '/opt/loxberry/libs/perllib';" in helper
+    assert "systemd-run" in helper
+    assert "--unit=$unit" in helper
+    assert "@ARGV == 1 && $ARGV[0] eq '--worker'" in helper
+    assert "checksecurepin '$securepin'" not in helper
 
 
 def test_language_files_have_matching_contracts() -> None:
@@ -265,6 +297,13 @@ def test_ui_is_nojqm_responsive_and_progressively_enhanced() -> None:
     assert "@media (max-width: 30rem)" in template
     assert "#diagnostics .lb-table-scroll { overflow-x: visible; }" in template
     assert ":focus-visible" in template
+    assert 'type="password"' in template
+    assert 'name="renew_confirmation"' in template
+    assert 'data-ajax="renew_certificate"' in template
+    assert 'data-copy-target="mcp-url-hostname"' in template
+    assert 'data-copy-target="mcp-url-ip"' in template
+    assert "LoxBerry::System::check_securepin" not in cgi
+    assert "MCPSERVER_CERT_HELPER" in cgi
 
 
 def test_installed_text_files_use_lf_only() -> None:

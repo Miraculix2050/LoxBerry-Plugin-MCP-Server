@@ -25,6 +25,13 @@ alle Python-Wheels offline mit. Öffne danach **LoxBerry MCP Server**:
 4. Verbinde Codex CLI oder Claude Desktop mit
    `https://loxberry.local/plugins/mcpserver/mcp` und folge dem OAuth-Login.
 
+Die Hilfe der Plugin-Oberfläche zeigt die vollständige MCP-Adresse einmal mit
+dem aktuellen LoxBerry-Hostnamen und einmal mit der lokalen IP-Adresse. Beide
+lassen sich direkt kopieren. Die Hostname-Adresse ist die empfohlene Variante,
+weil manche MCP-Clients eine private IP-Adresse nicht als OAuth-Server
+akzeptieren. In jedem Fall muss das Webserver-Zertifikat genau zu der verwendeten
+Adresse passen.
+
 Für Claude Desktop steht eine kurze
 [Schritt-für-Schritt-Anleitung](clients/claude-desktop.de.md) mit fertigem
 Konfigurationsbeispiel und Fehlerhilfe bereit.
@@ -96,6 +103,31 @@ Speichern, Verbindungstest und Sitzungswiderruf funktionieren auch ohne
 JavaScript. Mit JavaScript werden Status, Test und Widerruf ohne Seitenwechsel
 aktualisiert.
 
+## Webserver-Zertifikat
+
+Die Zertifikatsdiagnose liest ausschließlich das systemweite HTTPS-Zertifikat
+des LoxBerry. Sie zeigt Aussteller, Ablauf, Anzahl der DNS- und IP-SANs sowie die
+Prüfergebnisse für die konfigurierte MCP-Origin und den aktuellen
+LoxBerry-Hostnamen. Die einzelnen SAN-Namen und privaten Adressen werden nicht
+in Diagnoseexport oder Logs übernommen.
+
+Ist das Zertifikat von der lokalen LoxBerry-CA ausgestellt und der installierte
+Core unterstützt die benötigten Skripte, kann es über **Webserver-Zertifikat neu
+ausstellen** erneuert werden. Die Aktion benötigt den SecurePIN und eine
+zusätzliche Bestätigung. Sie übergibt keine frei wählbaren SANs, sondern lässt
+den LoxBerry-Core das Zertifikat mit aktuellem Hostnamen, Reverse-DNS-Namen,
+lokaler IP und den vorgesehenen Loopback-Einträgen neu erzeugen. Die bestehende
+LoxBerry-CA bleibt erhalten; das bereits importierte `cacert.cer` bleibt deshalb
+gültig. Apache wird kurz neu gestartet und bestehende HTTPS-Verbindungen werden
+unterbrochen.
+
+Für ein extern ausgestelltes Zertifikat bleibt die Aktion deaktiviert. Ein
+Fehler oder Erfolg wird ohne SecurePIN, private Schlüssel oder SAN-Werte im
+LoxBerry-Systemlog protokolliert. Die automatische Core-Prüfung erneuert ein
+Zertifikat bei Ablauf oder geänderter lokaler IP, erkennt eine reine
+Hostnamenänderung derzeit jedoch nicht; dafür ist die manuelle Neuausstellung
+vorgesehen.
+
 ## MCP Tool Explorer
 
 Über **MCP Tool Explorer öffnen** startet eine separate, nur administrativ
@@ -139,10 +171,12 @@ Im Berechtigungs-Dropdown ist **Nur lesen** vorausgewählt. **Lesen und steuern*
 ist nur bei global aktivierter Loxone-Steuerung auswählbar und erfordert
 einen neuen Consent mit `loxone:control`. Jeder verändernde Aufruf zeigt direkt
 vor dem Senden noch einmal Werkzeug und Argumente und muss bestätigt werden.
-Der Link auf der Plugin-Hauptseite öffnet den Explorer immer über die konfigurierte
-öffentliche HTTPS-Adresse. Wird die Seite direkt über HTTP oder einen anderen
-Hostnamen geöffnet, bleibt die Origin-Prüfung geschlossen und bietet einen Link
-zur korrekten HTTPS-Adresse an.
+Der Link auf der Plugin-Hauptseite verwendet dieselbe Adresse, über die auch die
+Plugin-Seite geöffnet wurde. Sowohl über die lokale IP-Adresse als auch über den
+LoxBerry-Hostnamen verwendet der gesamte Explorer-Ablauf genau diese aktuelle
+HTTPS-Adresse. Nur HTTP und nicht lokal
+freigegebene Hosts bleiben geschlossen und bieten einen Link zur konfigurierten
+HTTPS-Adresse an.
 
 **Trennen und widerrufen** beendet die Explorer-Sitzung; nach einem Browserabsturz
 oder Schließen ohne Widerruf kann sie weiterhin in **Clients und Sitzungen**

@@ -10,6 +10,9 @@
   .mcp-help { margin: 0; color: #4b5563; }
   .mcp-actions { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; }
   .mcp-actions button { min-height: 2.75rem; max-width: 100%; }
+  .mcp-copy-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem; align-items: end; }
+  .mcp-copy-row input { box-sizing: border-box; width: 100%; min-height: 2.75rem; font-family: monospace; }
+  .mcp-copy-row button { min-height: 2.75rem; }
   .mcp-status { padding: .65rem; border-left: .3rem solid #6b7280; background: #f3f4f6; }
   .mcp-status[data-kind="success"] { border-color: #198754; }
   .mcp-status[data-kind="error"] { border-color: #b91c1c; }
@@ -21,6 +24,8 @@
   @media (max-width: 30rem) {
     .mcp-card { padding: .75rem; }
     .mcp-actions > * { width: 100%; }
+    .mcp-copy-row { grid-template-columns: minmax(0, 1fr); }
+    .mcp-copy-row button { width: 100%; }
     #diagnostics .lb-table-scroll { overflow-x: visible; }
     #diagnostics .lb-table,
     #diagnostics .lb-table tbody,
@@ -84,11 +89,46 @@
     <section id="help" class="mcp-card" aria-labelledby="help-title">
       <h2 id="help-title"><TMPL_VAR HELP.TITLE></h2>
       <p><TMPL_VAR HELP.TOOL_ACCESS></p>
-      <p><code>/plugins/mcpserver/mcp</code></p>
+      <label class="mcp-field"><span><TMPL_VAR HELP.MCP_HOSTNAME></span><span class="mcp-copy-row"><input id="mcp-url-hostname" type="text" readonly value="<TMPL_VAR HOSTNAME_MCP_URL ESCAPE=HTML>"><button class="lb-button" type="button" data-copy-target="mcp-url-hostname"><TMPL_VAR ACTION.COPY></button></span></label>
+      <label class="mcp-field"><span><TMPL_VAR HELP.MCP_IP></span><span class="mcp-copy-row"><input id="mcp-url-ip" type="text" readonly value="<TMPL_VAR IP_MCP_URL ESCAPE=HTML>"><button class="lb-button" type="button" data-copy-target="mcp-url-ip"><TMPL_VAR ACTION.COPY></button></span></label>
+      <p class="mcp-help"><TMPL_VAR HELP.MCP_CERTIFICATE_HINT></p>
       <p><a id="explorer-link" class="lb-button" href="<TMPL_VAR EXPLORER_URL ESCAPE=HTML>" target="_blank" rel="noopener"><TMPL_VAR ACTION.EXPLORER></a></p>
       <p><a href="https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server" target="_blank" rel="noopener"><TMPL_VAR HELP.PROJECT></a></p>
     </section>
   </div>
+
+  <section id="certificate" class="mcp-card" aria-labelledby="certificate-title"
+    data-state-scheduled="<TMPL_VAR CERTIFICATE.STATE_SCHEDULED ESCAPE=HTML>"
+    data-state-running="<TMPL_VAR CERTIFICATE.STATE_RUNNING ESCAPE=HTML>"
+    data-state-success="<TMPL_VAR CERTIFICATE.STATE_SUCCESS ESCAPE=HTML>"
+    data-state-error="<TMPL_VAR CERTIFICATE.STATE_ERROR ESCAPE=HTML>"
+    data-yes="<TMPL_VAR CERTIFICATE.YES ESCAPE=HTML>"
+    data-no="<TMPL_VAR CERTIFICATE.NO ESCAPE=HTML>"
+    data-not-configured="<TMPL_VAR CERTIFICATE.NOT_CONFIGURED ESCAPE=HTML>">
+    <h2 id="certificate-title"><TMPL_VAR CERTIFICATE.TITLE></h2>
+    <p><TMPL_VAR CERTIFICATE.TEXT></p>
+    <TMPL_IF CERTIFICATE_AVAILABLE>
+      <div class="mcp-grid">
+        <p><TMPL_VAR CERTIFICATE.SOURCE>: <strong><TMPL_IF CERTIFICATE_SOURCE_LOXBERRY><TMPL_VAR CERTIFICATE.SOURCE_LOXBERRY><TMPL_ELSE><TMPL_VAR CERTIFICATE.SOURCE_EXTERNAL></TMPL_IF></strong></p>
+        <p><TMPL_VAR CERTIFICATE.EXPIRES>: <time id="certificate-expiry" class="mcp-expiry" data-expires-at="<TMPL_VAR CERTIFICATE_EXPIRES_AT ESCAPE=HTML>"><TMPL_VAR CERTIFICATE_EXPIRES ESCAPE=HTML></time></p>
+        <p><TMPL_VAR CERTIFICATE.DNS_SANS>: <strong id="certificate-dns-count"><TMPL_VAR CERTIFICATE_DNS_COUNT ESCAPE=HTML></strong></p>
+        <p><TMPL_VAR CERTIFICATE.IP_SANS>: <strong id="certificate-ip-count"><TMPL_VAR CERTIFICATE_IP_COUNT ESCAPE=HTML></strong></p>
+        <p><TMPL_VAR CERTIFICATE.ORIGIN_MATCH>: <strong id="certificate-origin-match"><TMPL_IF CERTIFICATE_ORIGIN_CONFIGURED><TMPL_IF CERTIFICATE_ORIGIN_MATCHES><TMPL_VAR CERTIFICATE.YES><TMPL_ELSE><TMPL_VAR CERTIFICATE.NO></TMPL_IF><TMPL_ELSE><TMPL_VAR CERTIFICATE.NOT_CONFIGURED></TMPL_IF></strong></p>
+        <p><TMPL_VAR CERTIFICATE.HOSTNAME_MATCH>: <strong id="certificate-hostname-match"><TMPL_IF CERTIFICATE_HOSTNAME_MATCHES><TMPL_VAR CERTIFICATE.YES><TMPL_ELSE><TMPL_VAR CERTIFICATE.NO></TMPL_IF></strong></p>
+      </div>
+      <p id="certificate-warning" class="mcp-warning" <TMPL_UNLESS CERTIFICATE_WARNING>hidden</TMPL_UNLESS>><TMPL_VAR CERTIFICATE.WARNING></p>
+      <p><TMPL_VAR CERTIFICATE.RENEWAL_STATE>: <strong id="certificate-renewal-state"><TMPL_VAR CERTIFICATE_RENEWAL_STATE ESCAPE=HTML></strong></p>
+      <TMPL_IF CERTIFICATE_RENEWAL_SUPPORTED>
+        <form class="mcp-form" method="post" action="index.cgi" data-ajax="renew_certificate" data-certificate-renewal>
+          <input type="hidden" name="action" value="renew_certificate">
+          <p class="mcp-warning"><TMPL_VAR CERTIFICATE.RENEW_TEXT></p>
+          <label class="mcp-field"><span><TMPL_VAR CERTIFICATE.PIN></span><input name="securepin" type="password" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" autocomplete="off" required></label>
+          <label><input name="renew_confirmation" type="checkbox" value="renew" required> <TMPL_VAR CERTIFICATE.CONFIRM></label>
+          <div class="mcp-actions"><button class="lb-button" type="submit"><TMPL_VAR ACTION.RENEW_CERTIFICATE></button></div>
+        </form>
+      <TMPL_ELSE><p class="mcp-help"><TMPL_VAR CERTIFICATE.UNSUPPORTED></p></TMPL_IF>
+    <TMPL_ELSE><p class="mcp-status" data-kind="error"><TMPL_VAR CERTIFICATE.UNAVAILABLE></p></TMPL_IF>
+  </section>
 
   <section id="sessions" class="mcp-card" aria-labelledby="sessions-title" data-empty-label="<TMPL_VAR SESSIONS.EMPTY ESCAPE=HTML>">
     <h2 id="sessions-title"><TMPL_VAR SESSIONS.TITLE></h2>
@@ -118,6 +158,16 @@
   const miniserverEndpoint = document.getElementById('miniserver-endpoint');
   const testEndpoint = document.querySelector('form[data-ajax="test_connection"] input[name="endpoint"]');
   const explorerLink = document.getElementById('explorer-link');
+  const explorerPath = '/admin/plugins/mcpserver/explorer.cgi';
+  explorerLink.href = `${window.location.origin}${explorerPath}`;
+  const certificateSection = document.getElementById('certificate');
+  const certificateRenewalState = document.getElementById('certificate-renewal-state');
+  const certificateExpiry = document.getElementById('certificate-expiry');
+  const certificateDnsCount = document.getElementById('certificate-dns-count');
+  const certificateIpCount = document.getElementById('certificate-ip-count');
+  const certificateOriginMatch = document.getElementById('certificate-origin-match');
+  const certificateHostnameMatch = document.getElementById('certificate-hostname-match');
+  const certificateWarning = document.getElementById('certificate-warning');
   const syncTestEndpoint = () => { testEndpoint.value = miniserverEndpoint.value; };
   const syncMiniserverSelection = () => {
     const selectedEndpoint = miniserverSelect.value;
@@ -160,6 +210,78 @@
     window.history.replaceState(null, '', url);
     if (pageNotice.dataset.kind === 'success') hideSuccess(pageNotice);
   }
+  for (const button of document.querySelectorAll('button[data-copy-target]')) {
+    button.addEventListener('click', async () => {
+      const input = document.getElementById(button.dataset.copyTarget);
+      if (!input) return;
+      try {
+        await navigator.clipboard.writeText(input.value);
+      } catch {
+        input.focus();
+        input.select();
+        document.execCommand('copy');
+      }
+      const previous = button.textContent;
+      button.textContent = '<TMPL_VAR ACTION.COPIED ESCAPE=JS>';
+      window.setTimeout(() => { button.textContent = previous; }, 2000);
+    });
+  }
+  const certificateStateLabels = certificateSection ? {
+    scheduled: certificateSection.dataset.stateScheduled,
+    running: certificateSection.dataset.stateRunning,
+    success: certificateSection.dataset.stateSuccess,
+    error: certificateSection.dataset.stateError,
+  } : {};
+  const updateCertificate = (certificate) => {
+    if (!certificate?.available) return;
+    if (certificateDnsCount) certificateDnsCount.textContent = String(certificate.dns_san_count);
+    if (certificateIpCount) certificateIpCount.textContent = String(certificate.ip_san_count);
+    if (certificateOriginMatch) certificateOriginMatch.textContent = certificate.origin_configured
+      ? (certificate.origin_matches ? certificateSection.dataset.yes : certificateSection.dataset.no)
+      : certificateSection.dataset.notConfigured;
+    if (certificateHostnameMatch) certificateHostnameMatch.textContent = certificate.hostname_matches
+      ? certificateSection.dataset.yes : certificateSection.dataset.no;
+    if (certificateWarning) certificateWarning.hidden = certificate.origin_matches && certificate.hostname_matches;
+    const expiresAt = parseExpiry(String(certificate.expires_at));
+    if (certificateExpiry && expiresAt !== null) {
+      const date = new Date(expiresAt * 1000);
+      certificateExpiry.dataset.expiresAt = String(expiresAt);
+      certificateExpiry.dateTime = date.toISOString();
+      certificateExpiry.textContent = expiryFormatter.format(date);
+    }
+  };
+  const pollCertificateRenewal = async (button, attempt = 0) => {
+    if (!certificateRenewalState || attempt >= 30) {
+      button.disabled = false;
+      button.removeAttribute('aria-busy');
+      return;
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 2000));
+    try {
+      const body = new FormData();
+      body.set('action', 'certificate_status');
+      body.set('ajax', '1');
+      const response = await fetch('index.cgi', {method: 'POST', body, headers: {'X-Requested-With': 'XMLHttpRequest'}});
+      const result = await response.json();
+      if (!response.ok || !result.ok) throw new Error('status');
+      const state = result.data.certificate?.renewal?.state || 'error';
+      certificateRenewalState.textContent = certificateStateLabels[state] || certificateStateLabels.error;
+      if (state === 'success') {
+        updateCertificate(result.data.certificate);
+        button.disabled = false;
+        button.removeAttribute('aria-busy');
+        return;
+      }
+      if (state === 'error' || state === 'idle') {
+        button.disabled = false;
+        button.removeAttribute('aria-busy');
+        return;
+      }
+    } catch {
+      // Apache restarts while the LoxBerry Core installs the new certificate.
+    }
+    pollCertificateRenewal(button, attempt + 1);
+  };
   const updateSessions = (sessions) => {
     const activeIds = new Set(sessions.map((session) => session.id));
     const list = document.getElementById('session-list');
@@ -177,6 +299,7 @@
     if (!form) return;
       event.preventDefault();
       const button = form.querySelector('button[type="submit"]');
+      let keepButtonDisabled = false;
       button.disabled = true;
       button.setAttribute('aria-busy', 'true');
       window.clearTimeout(hideStatusTimers.get(status));
@@ -198,10 +321,15 @@
         if (Array.isArray(result.data.sessions)) updateSessions(result.data.sessions);
         if (form.dataset.ajax === 'save_config') {
           const savedEndpoint = result.data.configuration.loxone.endpoint;
-          const savedOrigin = result.data.configuration.server.public_origin;
           miniserverEndpoint.value = savedEndpoint;
-          explorerLink.href = `${savedOrigin}/admin/plugins/mcpserver/explorer.cgi`;
+          explorerLink.href = `${window.location.origin}${explorerPath}`;
           syncTestEndpoint();
+        }
+        if (form.dataset.ajax === 'renew_certificate') {
+          keepButtonDisabled = true;
+          form.querySelector('input[name="securepin"]').value = '';
+          certificateRenewalState.textContent = certificateStateLabels.scheduled;
+          pollCertificateRenewal(button);
         }
       } catch (error) {
         status.dataset.kind = 'error';
@@ -210,8 +338,10 @@
         else status.textContent = error instanceof Error ? error.message : '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
       } finally {
         window.clearTimeout(timeout);
-        button.disabled = false;
-        button.removeAttribute('aria-busy');
+        if (!keepButtonDisabled) {
+          button.disabled = false;
+          button.removeAttribute('aria-busy');
+        }
       }
   });
 })();

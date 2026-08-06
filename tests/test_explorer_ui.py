@@ -77,10 +77,43 @@ def test_explorer_requires_and_links_to_the_canonical_https_origin() -> None:
         == "https://loxberry.example/admin/plugins/mcpserver/explorer.cgi"
     )
     assert (
+        run_core(f"core.canonicalExplorerUrl({json.dumps(resource)},'https://loxberry-alias',true)")
+        == ""
+    )
+    assert (
         run_core(
             "core.canonicalExplorerUrl('http://loxberry.example/plugins/mcpserver/mcp',"
             "'http://loxberry.example')"
         )
+        is None
+    )
+
+
+def test_explorer_uses_current_https_origin_for_validated_oauth_endpoints() -> None:
+    metadata = {
+        "issuer": "https://192.0.2.10/plugins/mcpserver/oauth",
+        "authorization_endpoint": "https://192.0.2.10/plugins/mcpserver/oauth/authorize",
+        "token_endpoint": "https://192.0.2.10/plugins/mcpserver/oauth/token",
+        "registration_endpoint": "https://192.0.2.10/plugins/mcpserver/oauth/register",
+        "revocation_endpoint": "https://192.0.2.10/plugins/mcpserver/oauth/revoke",
+    }
+
+    assert run_core(
+        f"core.localAuthorizationMetadata({json.dumps(metadata)},'https://loxberry-test')"
+    ) == {
+        "authorization_endpoint": "https://loxberry-test/plugins/mcpserver/oauth/authorize",
+        "token_endpoint": "https://loxberry-test/plugins/mcpserver/oauth/token",
+        "registration_endpoint": "https://loxberry-test/plugins/mcpserver/oauth/register",
+        "revocation_endpoint": "https://loxberry-test/plugins/mcpserver/oauth/revoke",
+    }
+    tampered = dict(metadata)
+    tampered["token_endpoint"] = "https://other.example/token"
+    assert (
+        run_core(f"core.localAuthorizationMetadata({json.dumps(tampered)},'https://loxberry-test')")
+        is None
+    )
+    assert (
+        run_core(f"core.localAuthorizationMetadata({json.dumps(metadata)},'http://loxberry-test')")
         is None
     )
     assert (
@@ -552,8 +585,9 @@ def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
 
     assert "fetchWithTimeout('/plugins/mcpserver/mcp'" in source
     assert "oauth-protected-resource/plugins/mcpserver/mcp" in source
-    assert "issuerUrl.origin !== window.location.origin" in source
-    assert "authorizationMetadata[name] !== value" in source
+    assert "core.localAuthorizationMetadata(" in source
+    assert "trustedLocalAlias && pageOrigin.protocol === 'https:'" in source
+    assert "issuerUrl.origin !== resourceUrl.origin" in source
     assert "code_challenge_method: 'S256'" in source
     assert "width=680,height=900,resizable=yes,scrollbars=yes" in source
     assert "core.rotateRefreshToken(" in source
@@ -572,6 +606,7 @@ def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
     )
     assert "sessionStorage.setItem" in source
     assert "core.validateResumableSession" in source
+    assert "readStoredSession(discovered.resourceMetadata.resource)" in source
     assert "navigator.locks.request" in source
     assert "ifAvailable: true" in source
     assert "await refreshAccessToken();" in source
@@ -582,12 +617,9 @@ def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
     index_cgi = (ROOT / "webfrontend" / "htmlauth" / "index.cgi").read_text(encoding="utf-8")
     assert 'id="explorer-link"' in index_template
     assert 'href="<TMPL_VAR EXPLORER_URL ESCAPE=HTML>"' in index_template
-    assert (
-        "explorerLink.href = `${savedOrigin}/admin/plugins/mcpserver/explorer.cgi`"
-        in index_template
-    )
-    assert "EXPLORER_URL => $explorer_url" in index_cgi
-    assert "m{\\Ahttps://[^/?#\\s\\@\\\\]+\\z}" in index_cgi
+    assert "explorerLink.href = `${window.location.origin}${explorerPath}`" in index_template
+    assert "EXPLORER_URL => 'explorer.cgi'" in index_cgi
+    assert "savedOrigin" not in index_template
     assert "@media (max-width: 52rem)" in template
     assert ":focus-visible" in template
     assert "<dialog" in template
@@ -600,7 +632,7 @@ def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
     assert 'id="explorer-control-option" value="control" disabled' in template
     assert 'id="explorer-origin-warning"' in template
     assert 'id="explorer-origin-link"' in template
-    assert "core.canonicalExplorerUrl(resourceMetadata.resource, window.location.origin)" in source
+    assert "const canonicalUrl = core.canonicalExplorerUrl(" in source
     assert "showConnectionError(_error, label('error'))" in source
     assert "if (canonicalOriginMismatch && stored) clearStoredSession()" in source
     assert 'id="explorer-session-expiry" hidden' in template

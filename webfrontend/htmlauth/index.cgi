@@ -31,6 +31,10 @@ $ENV{MCPSERVER_CONFIG} = "$lbpconfigdir/mcpserver.json";
 $ENV{MCPSERVER_AUTH_STORE} = "$lbpdatadir/auth/sessions.json";
 $ENV{MCPSERVER_LOXONE_TOKEN_STORE} = "$lbpdatadir/auth/loxone-tokens.json.enc";
 $ENV{MCPSERVER_INSTALL_KEY} = "$lbpdatadir/auth/install.key";
+$ENV{MCPSERVER_WEB_CERT} = "$lbhomedir/data/system/LoxBerryCA/certs/wwwcert.pem";
+$ENV{MCPSERVER_CA_CERT} = "$lbhomedir/data/system/LoxBerryCA/cacert.pem";
+$ENV{MCPSERVER_CERT_HELPER} = '/usr/local/sbin/loxberry-mcpserver-renew-web-certificate';
+$ENV{MCPSERVER_CERT_STATUS} = "$lbpdatadir/certificate-renewal.json";
 
 sub admin_call {
     my ($action, $payload) = @_;
@@ -122,27 +126,44 @@ sub enabled_value {
     return defined($value) && "$value" =~ /\A(?:1|true|yes|on)\z/i ? 1 : 0;
 }
 
-sub stored_miniservers {
+my $general_config_cache;
+my $general_config_loaded = 0;
+
+sub stored_general_config {
+    return $general_config_cache if $general_config_loaded;
+    $general_config_loaded = 1;
     my $path = "$lbhomedir/config/system/general.json";
     if (!-f $path || !-r $path) {
-        LOGWARN('Could not read stored Miniserver configuration');
-        return {};
+        LOGWARN('Could not read stored LoxBerry configuration');
+        $general_config_cache = {};
+        return $general_config_cache;
     }
-
     open my $handle, '<:raw', $path or do {
-        LOGWARN('Could not open stored Miniserver configuration');
-        return {};
+        LOGWARN('Could not open stored LoxBerry configuration');
+        $general_config_cache = {};
+        return $general_config_cache;
     };
     local $/;
     my $raw = <$handle> // '';
     close $handle;
     if (length($raw) > 1024 * 1024) {
-        LOGWARN('Stored Miniserver configuration is unexpectedly large');
-        return {};
+        LOGWARN('Stored LoxBerry configuration is unexpectedly large');
+        $general_config_cache = {};
+        return $general_config_cache;
     }
-
     my $document = eval { decode_json($raw) };
-    if ($@ || ref($document) ne 'HASH' || ref($document->{Miniserver}) ne 'HASH') {
+    if ($@ || ref($document) ne 'HASH') {
+        LOGWARN('Stored LoxBerry configuration is invalid');
+        $general_config_cache = {};
+        return $general_config_cache;
+    }
+    $general_config_cache = $document;
+    return $general_config_cache;
+}
+
+sub stored_miniservers {
+    my $document = stored_general_config();
+    if (ref($document->{Miniserver}) ne 'HASH') {
         LOGWARN('Stored Miniserver configuration is invalid');
         return {};
     }
@@ -163,6 +184,29 @@ sub stored_miniservers {
         };
     }
     return \%servers;
+}
+
+sub local_mcp_url {
+    my ($host, $sslport) = @_;
+    $host //= '';
+    $host =~ s/\A\s+|\s+\z//g;
+    return '' if $host eq '';
+    my $packed6 = inet_pton(AF_INET6, $host);
+    if (defined $packed6) {
+        $host = '[' . lc(inet_ntop(AF_INET6, $packed6)) . ']';
+    } else {
+        my $packed4 = inet_pton(AF_INET, $host);
+        if (defined $packed4) {
+            $host = inet_ntop(AF_INET, $packed4);
+        } else {
+            $host = lc($host);
+            return '' if length($host) > 253 || $host !~ /\A[A-Za-z0-9.-]+\z/;
+        }
+    }
+    $sslport = 443 if !defined($sslport) || "$sslport" !~ /\A[0-9]{1,5}\z/
+        || $sslport < 1 || $sslport > 65535;
+    my $authority = $host . ($sslport == 443 ? '' : ":$sslport");
+    return "https://$authority/plugins/mcpserver/mcp";
 }
 
 sub configured_miniservers {
@@ -193,6 +237,32 @@ sub requested_endpoint {
     my ($query) = @_;
     my $selection = $query->{miniserver_endpoint} // '';
     return $selection ne '' ? $selection : ($query->{endpoint} // '');
+}
+
+my $template_text = LoxBerry::System::read_file("$lbptemplatedir/index.html");
+my $template = HTML::Template->new_scalar_ref(
+    \$template_text,
+    global_vars => 1,
+    loop_context_vars => 1,
+    die_on_bad_params => 0,
+);
+my %L = LoxBerry::System::readlanguage($template, 'language.ini');
+
+sub localize_admin_error {
+    my ($result) = @_;
+    return if $result->{ok} || ref($result->{error}) ne 'HASH';
+    my %messages = (
+        securepin_invalid => $L{'CERTIFICATE.ERROR_PIN_INVALID'},
+        securepin_wrong => $L{'CERTIFICATE.ERROR_PIN_WRONG'},
+        securepin_locked => $L{'CERTIFICATE.ERROR_PIN_LOCKED'},
+        securepin_unavailable => $L{'CERTIFICATE.ERROR_PIN_UNAVAILABLE'},
+        confirmation_required => $L{'CERTIFICATE.ERROR_CONFIRMATION'},
+        certificate_busy => $L{'CERTIFICATE.ERROR_BUSY'},
+        certificate_unsupported => $L{'CERTIFICATE.ERROR_UNSUPPORTED'},
+        certificate_failed => $L{'CERTIFICATE.ERROR_FAILED'},
+    );
+    my $code = $result->{error}{code} // '';
+    $result->{error}{message} = $messages{$code} if exists $messages{$code};
 }
 
 my $action = $q->{action} // '';
@@ -238,9 +308,19 @@ if ($action ne '') {
         $result = admin_call('status', {});
     } elsif ($action eq 'diagnostic') {
         $result = admin_call('diagnostic', {});
+    } elsif ($action eq 'certificate_status') {
+        $result = admin_call('certificate_status', {});
+    } elsif ($action eq 'renew_certificate') {
+        $result = admin_call('renew_certificate', {
+            securepin => ($q->{securepin} // ''),
+            confirmation => ($q->{renew_confirmation} // ''),
+        });
+        $q->{securepin} = '';
+        LOGINF('Web certificate renewal scheduled') if $result->{ok};
     } else {
         $result = {ok => JSON::PP::false, error => {code => 'invalid_request', message => 'Unsupported action'}};
     }
+    localize_admin_error($result);
     if ($action eq 'diagnostic' && $result->{ok}) {
         print $cgi->header(
             -type => 'application/json',
@@ -251,19 +331,12 @@ if ($action ne '') {
         exit;
     }
     json_reply($result, $result->{ok} ? 200 : 400) if $q->{ajax};
-    my $notice = $result->{ok} ? 'success' : 'error';
+    my $notice = $result->{ok}
+        ? ($action eq 'renew_certificate' ? 'certificate_scheduled' : 'success')
+        : 'error';
     print $cgi->redirect("index.cgi?notice=$notice");
     exit;
 }
-
-my $template_text = LoxBerry::System::read_file("$lbptemplatedir/index.html");
-my $template = HTML::Template->new_scalar_ref(
-    \$template_text,
-    global_vars => 1,
-    loop_context_vars => 1,
-    die_on_bad_params => 0,
-);
-my %L = LoxBerry::System::readlanguage($template, 'language.ini');
 
 use constant MAX_EXPIRY_EPOCH => 4_102_444_799;
 
@@ -298,19 +371,35 @@ my $display_endpoint = $config->{loxone}{endpoint} // '';
 $display_endpoint = $selected_miniserver->{endpoint}
     if $display_endpoint eq '' && $selected_miniserver;
 my $public_origin = $config->{server}{public_origin} // '';
-my $explorer_url = 'explorer.cgi';
-if (
-    $public_origin =~ m{\Ahttps://[^/?#\s\@\\]+\z}
-    && $lbpplugindir =~ /\A[A-Za-z0-9_-]+\z/
-) {
-    $explorer_url = "$public_origin/admin/plugins/$lbpplugindir/explorer.cgi";
-}
-
+my $certificate = ref($page_state->{certificate}) eq 'HASH'
+    ? $page_state->{certificate} : {};
+my $renewal = ref($certificate->{renewal}) eq 'HASH' ? $certificate->{renewal} : {};
+my $general_config = stored_general_config();
+my $sslport = ref($general_config->{Webserver}) eq 'HASH'
+    ? $general_config->{Webserver}{Sslport} : 443;
+my $hostname_mcp_url = local_mcp_url(LoxBerry::System::lbhostname(), $sslport);
+my $ip_mcp_url = local_mcp_url(LoxBerry::System::get_localip(), $sslport);
+my %renewal_labels = (
+    idle => $L{'CERTIFICATE.STATE_IDLE'},
+    scheduled => $L{'CERTIFICATE.STATE_SCHEDULED'},
+    running => $L{'CERTIFICATE.STATE_RUNNING'},
+    success => $L{'CERTIFICATE.STATE_SUCCESS'},
+    error => $L{'CERTIFICATE.STATE_ERROR'},
+);
+my $renewal_state = $renewal->{state} // 'idle';
+my $notice_value = $q->{notice} // '';
+my $notice_text = $notice_value eq 'success' ? $L{'AJAX.SUCCESS'}
+    : $notice_value eq 'certificate_scheduled' ? $L{'CERTIFICATE.STATE_SCHEDULED'}
+    : $notice_value ne '' ? $L{'AJAX.ERROR'} : '';
+my $notice_kind = $notice_value eq 'success' || $notice_value eq 'certificate_scheduled'
+    ? 'success' : 'error';
 $template->param(
     VERSION => $version,
     ENABLED => $config->{server}{enabled} ? 1 : 0,
     PUBLIC_ORIGIN => $public_origin,
-    EXPLORER_URL => $explorer_url,
+    HOSTNAME_MCP_URL => $hostname_mcp_url,
+    IP_MCP_URL => $ip_mcp_url,
+    EXPLORER_URL => 'explorer.cgi',
     ENDPOINT => $display_endpoint,
     MINISERVERS => $miniservers,
     MANUAL_ENDPOINT => $has_selected_miniserver ? 0 : 1,
@@ -320,11 +409,24 @@ $template->param(
     CONTROL_REQUESTS_PER_MINUTE => $config->{limits}{control_requests_per_minute} // 10,
     MAX_PARALLEL_CALLS => $config->{limits}{max_parallel_calls} // 4,
     SERVICE_ACTIVE => $page_state->{service_active} ? 1 : 0,
+    CERTIFICATE_AVAILABLE => $certificate->{available} ? 1 : 0,
+    CERTIFICATE_SOURCE_LOXBERRY => ($certificate->{source} // '') eq 'loxberry_ca' ? 1 : 0,
+    CERTIFICATE_EXPIRES_AT => $certificate->{expires_at} // '',
+    CERTIFICATE_EXPIRES => format_expiry($certificate->{expires_at}),
+    CERTIFICATE_DNS_COUNT => $certificate->{dns_san_count} // 0,
+    CERTIFICATE_IP_COUNT => $certificate->{ip_san_count} // 0,
+    CERTIFICATE_ORIGIN_CONFIGURED => $certificate->{origin_configured} ? 1 : 0,
+    CERTIFICATE_ORIGIN_MATCHES => $certificate->{origin_matches} ? 1 : 0,
+    CERTIFICATE_HOSTNAME_MATCHES => $certificate->{hostname_matches} ? 1 : 0,
+    CERTIFICATE_WARNING => $certificate->{available}
+        && (!$certificate->{origin_matches} || !$certificate->{hostname_matches}) ? 1 : 0,
+    CERTIFICATE_RENEWAL_SUPPORTED => $certificate->{renewal_supported} ? 1 : 0,
+    CERTIFICATE_RENEWAL_STATE => $renewal_labels{$renewal_state}
+        // $L{'CERTIFICATE.STATE_ERROR'},
     SESSIONS => $sessions,
     HAS_SESSIONS => scalar(@$sessions) ? 1 : 0,
-    NOTICE => ($q->{notice} // '') eq 'success' ? $L{'AJAX.SUCCESS'} :
-        (($q->{notice} // '') ne '' ? $L{'AJAX.ERROR'} : ''),
-    NOTICE_KIND => ($q->{notice} // '') eq 'success' ? 'success' : 'error',
+    NOTICE => $notice_text,
+    NOTICE_KIND => $notice_kind,
     LOGLIST => LoxBerry::Web::loglist_html(),
 );
 
@@ -337,6 +439,8 @@ $navbar{30}{Name} = $L{'NAV.SESSIONS'};
 $navbar{30}{URL} = '#sessions';
 $navbar{40}{Name} = $L{'NAV.DIAGNOSTICS'};
 $navbar{40}{URL} = '#diagnostics';
+$navbar{45}{Name} = $L{'NAV.CERTIFICATE'};
+$navbar{45}{URL} = '#certificate';
 $navbar{50}{Name} = $L{'NAV.HELP'};
 $navbar{50}{URL} = '#help';
 
