@@ -25,6 +25,7 @@ from tools.build_plugin import (
 from tools.build_release_candidate import _copy_runtime_wheels, _publish
 from tools.build_release_candidate import main as build_release_candidate
 from tools.prepare_wheelhouse import main as prepare_wheelhouse
+from tools.validate_release_metadata import validate as validate_release_metadata
 from tools.verify_plugin import (
     PackageVerificationError,
     verify_archive,
@@ -361,6 +362,15 @@ def test_plugin_archive_verifier_accepts_builder_output(tmp_path: Path) -> None:
         (wheelhouse / f"{wheel_name}-{version}-py3-none-any.whl").write_bytes(b"wheel")
     project_wheel = wheelhouse / "loxberry_mcpserver-0.2.0a1-py3-none-any.whl"
     _write_project_wheel(project_wheel)
+    hash_lock = tmp_path / "runtime-arm64.sha256"
+    hash_lock.write_text(
+        "".join(
+            f"{hashlib.sha256(wheel.read_bytes()).hexdigest()}  {wheel.name}\n"
+            for wheel in sorted(wheelhouse.glob("*.whl"))
+            if not wheel.name.startswith("loxberry_mcpserver-")
+        ),
+        encoding="ascii",
+    )
     output = tmp_path / "plugin.zip"
 
     subprocess.run(
@@ -371,6 +381,8 @@ def test_plugin_archive_verifier_accepts_builder_output(tmp_path: Path) -> None:
             str(wheelhouse),
             "--output",
             str(output),
+            "--runtime-hash-lock",
+            str(hash_lock),
         ],
         check=True,
         cwd=ROOT,
@@ -388,6 +400,8 @@ def test_plugin_archive_verifier_accepts_builder_output(tmp_path: Path) -> None:
             str(wheelhouse),
             "--output",
             str(missing_skill_metadata),
+            "--runtime-hash-lock",
+            str(hash_lock),
         ],
         check=True,
         cwd=ROOT,
@@ -404,6 +418,8 @@ def test_plugin_archive_verifier_accepts_builder_output(tmp_path: Path) -> None:
             str(wheelhouse),
             "--output",
             str(tmp_path / "stale-source.zip"),
+            "--runtime-hash-lock",
+            str(hash_lock),
         ],
         check=False,
         capture_output=True,
@@ -457,6 +473,8 @@ def test_plugin_archive_verifier_accepts_builder_output(tmp_path: Path) -> None:
             str(wheelhouse),
             "--output",
             str(tmp_path / "rejected.zip"),
+            "--runtime-hash-lock",
+            str(hash_lock),
         ],
         check=False,
         cwd=ROOT,
@@ -472,6 +490,8 @@ def test_plugin_archive_verifier_accepts_builder_output(tmp_path: Path) -> None:
             str(wheelhouse),
             "--output",
             str(tmp_path / "stale-project.zip"),
+            "--runtime-hash-lock",
+            str(hash_lock),
         ],
         check=False,
         cwd=ROOT,
@@ -512,7 +532,13 @@ def test_release_helpers_exclude_stale_project_wheel_and_refuse_overwrite(
     (source / "foreign-1.0-py3-none-any.whl").write_bytes(b"foreign")
     (source / "loxberry_mcpserver-0.1.0a1-py3-none-any.whl").write_bytes(b"stale")
 
-    _copy_runtime_wheels(source, destination, {"dependency": "1.0"})
+    dependency = source / "dependency-1.0-py3-none-any.whl"
+    _copy_runtime_wheels(
+        source,
+        destination,
+        {"dependency": "1.0"},
+        {dependency.name: hashlib.sha256(dependency.read_bytes()).hexdigest()},
+    )
 
     assert [item.name for item in destination.iterdir()] == ["dependency-1.0-py3-none-any.whl"]
     candidate = tmp_path / "candidate.zip"
@@ -556,6 +582,10 @@ def test_prepare_runtime_wheelhouse_skips_project_wheel(
 
     monkeypatch.setattr("tools.prepare_wheelhouse.subprocess.run", run)
     monkeypatch.setattr(
+        "tools.prepare_wheelhouse._verify_runtime_wheels",
+        lambda *_arguments: None,
+    )
+    monkeypatch.setattr(
         sys,
         "argv",
         ["prepare_wheelhouse.py", "--runtime-only", str(tmp_path)],
@@ -565,6 +595,7 @@ def test_prepare_runtime_wheelhouse_skips_project_wheel(
     assert len(commands) == 1
     assert commands[0][2:4] == ["pip", "download"]
     assert (tmp_path / "runtime-arm64.lock").is_file()
+    assert (tmp_path / "runtime-arm64.sha256").is_file()
 
 
 @pytest.mark.parametrize(
@@ -711,3 +742,50 @@ def test_plugin_archive_verifier_rejects_checksum_mismatch(tmp_path: Path) -> No
 
     with pytest.raises(PackageVerificationError, match="checksum"):
         verify_archive(archive)
+
+
+def test_release_metadata_and_changelog_match_current_prerelease() -> None:
+    notes = validate_release_metadata(ROOT, "0.2.0-alpha.1", "prerelease")
+
+    assert "Tool Explorer" in notes
+    with pytest.raises(ValueError, match="stable releases"):
+        validate_release_metadata(ROOT, "0.2.0-alpha.1", "stable")
+    with pytest.raises(ValueError, match="versions do not match"):
+        validate_release_metadata(ROOT, "0.2.0-alpha.2", "prerelease")
+
+
+def test_release_workflow_is_manual_owner_only_and_separates_permissions() -> None:
+    workflow = (ROOT / ".github/workflows/publish-plugin-release.yml").read_text(encoding="utf-8")
+
+    assert "workflow_dispatch:" in workflow
+    assert "github.actor" in workflow
+    assert "github.repository_owner" in workflow
+    assert "REF_NAME: ${{ github.ref_name }}" in workflow
+    assert "confirm_release:" in workflow
+    assert "contents: read" in workflow
+    assert "contents: write" in workflow
+    assert "pull_request_target" not in workflow
+    assert "release.published" not in workflow
+    assert "\n  push:" not in workflow
+    for action in (
+        "actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+        "actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065",
+        "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+        "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093",
+    ):
+        assert action in workflow
+
+
+def test_package_contract_excludes_update_and_development_files() -> None:
+    source = (ROOT / "tools/build_plugin.py").read_text(encoding="utf-8")
+    root_manifest = source.split("_ROOT_FILES", 1)[1].split(")", 1)[0]
+
+    for forbidden in (
+        '".gitattributes"',
+        '"release.cfg"',
+        '"prerelease.cfg"',
+        '"AGENTS.md"',
+        '"tests"',
+        '"tools"',
+    ):
+        assert forbidden not in root_manifest

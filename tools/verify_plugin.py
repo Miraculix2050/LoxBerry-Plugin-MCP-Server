@@ -12,6 +12,11 @@ import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Final
 
+try:
+    from tools.build_plugin import _TIMESTAMP, expected_source_entries
+except ModuleNotFoundError:  # Direct documented CLI execution from repository root.
+    from build_plugin import _TIMESTAMP, expected_source_entries
+
 _REQUIRED: Final = {
     "plugin.cfg",
     "preinstall.sh",
@@ -132,7 +137,7 @@ def _verify_project_wheel(content: bytes, source_root: Path) -> None:
                 raise PackageVerificationError(
                     f"project wheel is missing current source: {name}"
                 ) from exc
-            if packaged != source.read_bytes():
+            if packaged != source.read_bytes().replace(b"\r\n", b"\n"):
                 raise PackageVerificationError(f"project wheel contains stale source: {name}")
         missing = _REQUIRED_PROJECT_WHEEL_ENTRIES - set(wheel.namelist())
         if missing:
@@ -176,6 +181,8 @@ def verify_archive(archive: Path, *, require_checksum: bool = True) -> str:
             expected_mode = 0o755 if entry.filename in _EXECUTABLES else 0o644
             if stat.S_IMODE(mode) != expected_mode:
                 raise PackageVerificationError(f"unexpected file mode for {entry.filename}")
+            if entry.date_time != _TIMESTAMP or entry.compress_type != zipfile.ZIP_STORED:
+                raise PackageVerificationError(f"non-canonical ZIP metadata for {entry.filename}")
             if (
                 path.suffix.lower() in _TEXT_SUFFIXES or entry.filename in _TEXT_NAMES
             ) and b"\r\n" in package.read(entry):
@@ -195,6 +202,14 @@ def verify_archive(archive: Path, *, require_checksum: bool = True) -> str:
         version = parser["PLUGIN"].get("VERSION", "")
         expected_project = ("loxberry-mcpserver", _expected_project_version(version).lower())
         wheelhouse_entries = [name for name in names if name.startswith("bin/wheelhouse/")]
+        expected_names = expected_source_entries(Path(__file__).resolve().parents[1]) | set(
+            wheelhouse_entries
+        )
+        if set(names) != expected_names:
+            extra = set(names) - expected_names
+            missing_exact = expected_names - set(names)
+            detail = min(extra or missing_exact)
+            raise PackageVerificationError(f"plugin archive violates exact manifest: {detail}")
         if any(
             PurePosixPath(name).parent != PurePosixPath("bin/wheelhouse")
             or PurePosixPath(name).suffix != ".whl"
@@ -231,6 +246,19 @@ def verify_archive(archive: Path, *, require_checksum: bool = True) -> str:
             raise PackageVerificationError("offline runtime wheelhouse contains duplicates")
         if set(runtime_wheels) != set(expected_runtime.items()):
             raise PackageVerificationError("offline runtime wheelhouse does not match its lock")
+        locked_hashes = {}
+        for line in package.read("bin/runtime-arm64.sha256").decode("ascii").splitlines():
+            match = re.fullmatch(r"([0-9a-f]{64})  ([A-Za-z0-9_.+-]+\.whl)", line)
+            if match is None:
+                raise PackageVerificationError("runtime wheel hash lock is invalid")
+            locked_hashes[match.group(2)] = match.group(1)
+        actual_hashes = {
+            PurePosixPath(name).name: hashlib.sha256(package.read(name)).hexdigest()
+            for name, identity in zip(wheelhouse_entries, wheel_identities, strict=True)
+            if identity is not None and identity[0] != "loxberry-mcpserver"
+        }
+        if actual_hashes != locked_hashes:
+            raise PackageVerificationError("runtime wheel hash lock mismatch")
 
     return digest
 
