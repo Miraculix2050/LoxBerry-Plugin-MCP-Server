@@ -5,6 +5,7 @@ marker="# Managed by the LoxBerry MCP Server plugin."
 unit=/etc/systemd/system/loxberry-mcpserver.service
 apache=/etc/apache2/conf-available/loxberry-mcpserver.conf
 sudoers=/etc/sudoers.d/loxberry-mcpserver
+certificate_helper=/usr/local/sbin/loxberry-mcpserver-renew-web-certificate
 
 actual_folder=$3
 if [ -z "$actual_folder" ] || [ -z "${LBPBIN:-}" ] || [ -z "${LBPCONFIG:-}" ] || [ -z "${LBPDATA:-}" ] || [ -z "${LBPLOG:-}" ]; then
@@ -15,12 +16,16 @@ plugin_config="$LBPCONFIG/$actual_folder"
 plugin_data="$LBPDATA/$actual_folder"
 plugin_log="$LBPLOG/$actual_folder"
 
-for target in "$unit" "$apache" "$sudoers"; do
+for target in "$unit" "$apache" "$sudoers" "$certificate_helper"; do
     if [ -e "$target" ] && ! grep -Fqx "$marker" "$target"; then
         echo "<ERROR> Refusing to overwrite foreign file $target."
         exit 2
     fi
 done
+
+case "$actual_folder" in
+    *[!A-Za-z0-9_-]*|'') echo "<ERROR> Invalid plugin folder."; exit 2 ;;
+esac
 
 if ss -H -ltn 'sport = :8765' | grep -q . && ! systemctl is-active --quiet loxberry-mcpserver.service; then
     echo "<ERROR> TCP port 8765 is already owned by another service."
@@ -59,10 +64,13 @@ sed \
 cp "$plugin_config/apache/mcpserver.conf" "$apache" || exit 2
 chown root:root "$unit" "$apache"
 chmod 644 "$unit" "$apache"
+install -o root -g root -m 755 \
+    "$LBPBIN/$actual_folder/renew-web-certificate" "$certificate_helper" || exit 2
 {
     echo "$marker"
     echo 'loxberry ALL=(root) NOPASSWD: /bin/systemctl restart loxberry-mcpserver.service'
     echo 'loxberry ALL=(root) NOPASSWD: /bin/systemctl is-active --quiet loxberry-mcpserver.service'
+    echo 'loxberry ALL=(root) NOPASSWD: /usr/local/sbin/loxberry-mcpserver-renew-web-certificate ""'
 } > "$sudoers"
 chmod 440 "$sudoers"
 visudo -cf "$sudoers" >/dev/null || { rm -f "$sudoers"; exit 2; }

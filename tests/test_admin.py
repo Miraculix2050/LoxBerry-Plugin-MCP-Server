@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
 
-from mcpserver.admin import AdminError, _revoke, _save, dispatch
+from mcpserver.admin import AdminError, _renew_certificate, _revoke, _save, dispatch
 from mcpserver.auth.loxone_store import LoxoneTokenStoreError
 from mcpserver.auth.store import AtomicJsonAuthStore
 from mcpserver.config import AtomicConfigStore, PluginConfig
@@ -59,6 +60,10 @@ def test_page_state_aggregates_initial_admin_ui_data(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr("mcpserver.admin._config_store", lambda: ConfigStore())
     monkeypatch.setattr("mcpserver.admin._service_active", lambda: True)
     monkeypatch.setattr("mcpserver.admin._sessions", lambda: [{"id": "family"}])
+    monkeypatch.setattr(
+        "mcpserver.admin._certificate_status",
+        lambda: {"available": True, "renewal_supported": False},
+    )
 
     result = dispatch({"action": "page_state"})
 
@@ -67,7 +72,72 @@ def test_page_state_aggregates_initial_admin_ui_data(monkeypatch: pytest.MonkeyP
         "version": result["version"],
         "service_active": True,
         "sessions": [{"id": "family"}],
+        "certificate": {"available": True, "renewal_supported": False},
     }
+
+
+def test_certificate_reissue_passes_securepin_only_over_stdin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    helper = tmp_path / "renew-web-certificate"
+    helper.write_text("helper", encoding="utf-8")
+    helper.chmod(0o755)
+    monkeypatch.setenv("MCPSERVER_CERT_HELPER", str(helper.resolve()))
+    monkeypatch.setattr(
+        "mcpserver.admin._certificate_status",
+        lambda: {"available": True, "renewal_supported": True},
+    )
+    captured: dict[str, object] = {}
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        captured["command"] = command
+        captured["input"] = kwargs["input"]
+        return subprocess.CompletedProcess(command, 0, b"scheduled\n", b"")
+
+    monkeypatch.setattr("mcpserver.admin.subprocess.run", run)
+
+    result = _renew_certificate({"securepin": "1234", "confirmation": "renew"})
+
+    assert result == {"renewal": {"state": "scheduled"}}
+    assert captured["command"] == ["sudo", "-n", str(helper.resolve())]
+    assert captured["input"] == b"1234\n"
+    assert "1234" not in " ".join(captured["command"])
+
+
+@pytest.mark.parametrize(
+    ("payload", "code"),
+    [
+        ({"securepin": "123", "confirmation": "renew"}, "securepin_invalid"),
+        ({"securepin": "1234", "confirmation": ""}, "confirmation_required"),
+    ],
+)
+def test_certificate_reissue_requires_pin_and_confirmation(
+    payload: dict[str, str], code: str
+) -> None:
+    with pytest.raises(AdminError) as failure:
+        _renew_certificate(payload)
+    assert failure.value.code == code
+
+
+def test_certificate_reissue_maps_securepin_lockout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    helper = tmp_path / "renew-web-certificate"
+    helper.write_text("helper", encoding="utf-8")
+    helper.chmod(0o755)
+    monkeypatch.setenv("MCPSERVER_CERT_HELPER", str(helper.resolve()))
+    monkeypatch.setattr(
+        "mcpserver.admin._certificate_status",
+        lambda: {"available": True, "renewal_supported": True},
+    )
+    monkeypatch.setattr(
+        "mcpserver.admin.subprocess.run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 11, b"", b""),
+    )
+
+    with pytest.raises(AdminError) as failure:
+        _renew_certificate({"securepin": "1234", "confirmation": "renew"})
+    assert failure.value.code == "securepin_locked"
 
 
 def test_failed_config_apply_restores_previous_configuration(

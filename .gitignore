@@ -16,6 +16,7 @@ secrets/
 dist/
 build/
 tmp/
+.tmp/
 temp/
 
 # Logs

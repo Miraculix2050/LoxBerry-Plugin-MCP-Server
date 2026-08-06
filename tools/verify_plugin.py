@@ -22,6 +22,7 @@ _REQUIRED: Final = {
     "uninstall/uninstall.sh",
     "bin/healthcheck",
     "bin/mcpserver-admin",
+    "bin/renew-web-certificate",
     "bin/runtime-arm64.lock",
     "config/default-config.json",
     "config/apache/mcpserver.conf",
@@ -44,6 +45,7 @@ _EXECUTABLES: Final = {
     "uninstall/uninstall.sh",
     "bin/healthcheck",
     "bin/mcpserver-admin",
+    "bin/renew-web-certificate",
     "webfrontend/htmlauth/index.cgi",
     "webfrontend/htmlauth/explorer.cgi",
     "webfrontend/htmlauth/explorer_callback.cgi",
@@ -60,7 +62,7 @@ _TEXT_SUFFIXES: Final = {
     ".sh",
     ".svg",
 }
-_TEXT_NAMES: Final = {"bin/healthcheck", "bin/mcpserver-admin"}
+_TEXT_NAMES: Final = {"bin/healthcheck", "bin/mcpserver-admin", "bin/renew-web-certificate"}
 _REQUIRED_PROJECT_WHEEL_ENTRIES: Final = {
     "mcpserver/skills/using-loxberry-mcp/SKILL.md",
     "mcpserver/skills/using-loxberry-mcp/agents/openai.yaml",

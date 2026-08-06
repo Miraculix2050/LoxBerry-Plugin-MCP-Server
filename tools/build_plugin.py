@@ -32,6 +32,7 @@ _EXECUTABLES: Final = {
     "uninstall/uninstall.sh",
     "bin/healthcheck",
     "bin/mcpserver-admin",
+    "bin/renew-web-certificate",
     "webfrontend/htmlauth/index.cgi",
     "webfrontend/htmlauth/explorer.cgi",
     "webfrontend/htmlauth/explorer_callback.cgi",
@@ -50,7 +51,13 @@ _TEXT_SUFFIXES: Final = {
     ".svg",
     ".txt",
 }
-_TEXT_NAMES: Final = {".gitattributes", "LICENSE", "bin/healthcheck", "bin/mcpserver-admin"}
+_TEXT_NAMES: Final = {
+    ".gitattributes",
+    "LICENSE",
+    "bin/healthcheck",
+    "bin/mcpserver-admin",
+    "bin/renew-web-certificate",
+}
 
 
 def _locked_requirements(lock: Path) -> dict[str, str]:
@@ -197,6 +204,7 @@ def main() -> int:
         [
             (root / "bin" / "healthcheck", "bin/healthcheck"),
             (root / "bin" / "mcpserver-admin", "bin/mcpserver-admin"),
+            (root / "bin" / "renew-web-certificate", "bin/renew-web-certificate"),
             (lock, "bin/runtime-arm64.lock"),
         ]
     )

@@ -25,6 +25,12 @@ all Python wheels for offline installation. Then open **LoxBerry MCP Server**:
 4. Connect Codex CLI or Claude Desktop to
    `https://loxberry.local/plugins/mcpserver/mcp` and complete OAuth login.
 
+The plugin UI help shows the complete MCP address once with the current
+LoxBerry hostname and once with its local IP address. Both can be copied
+directly. The hostname address is recommended because some MCP clients do not
+accept a private IP address as an OAuth server. In every case, the web server
+certificate must exactly match the address in use.
+
 For Claude Desktop, follow the short
 [step-by-step guide](clients/claude-desktop.en.md), which includes a ready-to-use
 configuration example and troubleshooting help.
@@ -92,6 +98,28 @@ Claude users can find the required scope configuration under
 
 Save, connection test and session revocation remain usable without JavaScript.
 With JavaScript, status, test and revocation update without a page navigation.
+
+## Web server certificate
+
+The certificate diagnostic only reads the system-wide LoxBerry HTTPS
+certificate. It shows the issuer, expiry, DNS and IP SAN counts, and match
+results for the configured MCP origin and current LoxBerry hostname. Individual
+SAN names and private addresses are not included in the diagnostic export or
+logs.
+
+When the certificate was issued by the local LoxBerry CA and the installed Core
+supports the required scripts, **Reissue web server certificate** can renew it.
+The action requires the SecurePIN and a separate confirmation. It accepts no
+free-form SANs; instead, LoxBerry Core creates the certificate from the current
+hostname, reverse-DNS name, local IP and its standard loopback entries. The
+existing LoxBerry CA is retained, so an already imported `cacert.cer` remains
+valid. Apache restarts briefly and interrupts existing HTTPS connections.
+
+The action remains disabled for an externally issued certificate. Success or
+failure is recorded in the LoxBerry system log without the SecurePIN, private
+keys or SAN values. The automatic Core check renews a certificate when it
+expires or the local IP changes, but currently does not detect a hostname-only
+change; the manual reissue covers that case.
 
 ## MCP Tool Explorer
 

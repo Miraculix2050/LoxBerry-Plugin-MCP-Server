@@ -5,10 +5,11 @@ marker="# Managed by the LoxBerry MCP Server plugin."
 unit=/etc/systemd/system/loxberry-mcpserver.service
 apache=/etc/apache2/conf-available/loxberry-mcpserver.conf
 sudoers=/etc/sudoers.d/loxberry-mcpserver
+certificate_helper=/usr/local/sbin/loxberry-mcpserver-renew-web-certificate
 
 systemctl disable --now loxberry-mcpserver.service >/dev/null 2>&1 || true
 a2disconf loxberry-mcpserver >/dev/null 2>&1 || true
-for target in "$unit" "$apache" "$sudoers"; do
+for target in "$unit" "$apache" "$sudoers" "$certificate_helper"; do
     if [ -f "$target" ] && grep -Fqx "$marker" "$target"; then
         rm -f -- "$target"
     fi

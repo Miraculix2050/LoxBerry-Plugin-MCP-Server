@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
+import socket
 import subprocess
 import sys
 from contextlib import suppress
@@ -27,6 +29,10 @@ _CLIENT_UUID: Final = UUID("3f52f6fe-3af0-4d30-a8bb-f429b9da4465")
 
 class AdminError(RuntimeError):
     """A sanitized, user-actionable administrative error."""
+
+    def __init__(self, message: str, *, code: str = "invalid_request") -> None:
+        super().__init__(message)
+        self.code = code
 
 
 def _path(name: str, *, suffix: str | None = None) -> Path:
@@ -92,6 +98,83 @@ def _restart_service() -> None:
         raise AdminError("the service could not be restarted") from exc
     if result.returncode != 0:
         raise AdminError("the service could not be restarted")
+
+
+def _optional_path(name: str) -> Path | None:
+    value = os.getenv(name, "").strip()
+    if not value:
+        return None
+    path = Path(value)
+    return path if path.is_absolute() else None
+
+
+def _certificate_status() -> dict[str, Any]:
+    from mcpserver.certificates import inspect_certificate
+
+    certificate = _optional_path("MCPSERVER_WEB_CERT")
+    authority = _optional_path("MCPSERVER_CA_CERT")
+    helper = _optional_path("MCPSERVER_CERT_HELPER")
+    status = _optional_path("MCPSERVER_CERT_STATUS")
+    if certificate is None or authority is None:
+        return {
+            "available": False,
+            "renewal_supported": False,
+            "renewal": {"state": "idle"},
+        }
+    config = _config_store().load()
+    return inspect_certificate(
+        certificate,
+        authority,
+        public_origin=config.public_origin,
+        system_hostname=socket.gethostname(),
+        helper_available=helper is not None
+        and helper.is_file()
+        and not helper.is_symlink()
+        and os.access(helper, os.X_OK),
+        status_path=status,
+    )
+
+
+def _renew_certificate(payload: object) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise AdminError("certificate renewal payload is invalid")
+    securepin = payload.get("securepin")
+    if not isinstance(securepin, str) or re.fullmatch(r"[0-9]{4}", securepin) is None:
+        raise AdminError("SecurePIN is invalid", code="securepin_invalid")
+    if payload.get("confirmation") != "renew":
+        raise AdminError("certificate renewal was not confirmed", code="confirmation_required")
+    status = _certificate_status()
+    if not status.get("renewal_supported", False):
+        raise AdminError("certificate renewal is unavailable", code="certificate_unsupported")
+    helper = _optional_path("MCPSERVER_CERT_HELPER")
+    if helper is None:
+        raise AdminError("certificate renewal is unavailable", code="certificate_unsupported")
+    try:
+        result = subprocess.run(
+            ["sudo", "-n", str(helper)],
+            input=(securepin + "\n").encode("ascii"),
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise AdminError(
+            "certificate renewal could not be started", code="certificate_failed"
+        ) from exc
+    error_codes = {
+        10: ("SecurePIN is incorrect", "securepin_wrong"),
+        11: ("SecurePIN is locked", "securepin_locked"),
+        12: ("SecurePIN could not be checked", "securepin_unavailable"),
+        13: ("certificate renewal is already running", "certificate_busy"),
+        14: ("certificate renewal is unavailable", "certificate_unsupported"),
+    }
+    if result.returncode in error_codes:
+        message, code = error_codes[result.returncode]
+        raise AdminError(message, code=code)
+    if result.returncode != 0 or result.stdout != b"scheduled\n":
+        raise AdminError("certificate renewal could not be started", code="certificate_failed")
+    return {"renewal": {"state": "scheduled"}}
 
 
 def _save(payload: object) -> dict[str, Any]:
@@ -283,6 +366,7 @@ def dispatch(request: object) -> dict[str, Any]:
             "version": __version__,
             "service_active": _service_active(),
             "sessions": _sessions(),
+            "certificate": _certificate_status(),
         }
     if action == "get_config":
         return {"configuration": _config_store().load().to_document()}
@@ -303,6 +387,10 @@ def dispatch(request: object) -> dict[str, Any]:
         return {"revoked": _revoke(None), "sessions": _sessions()}
     if action == "diagnostic":
         return _diagnostic()
+    if action == "certificate_status":
+        return {"certificate": _certificate_status()}
+    if action == "renew_certificate":
+        return _renew_certificate(payload)
     raise AdminError("action is not supported")
 
 
@@ -312,7 +400,9 @@ def main() -> None:
         if len(raw) > _MAX_REQUEST_BYTES:
             raise AdminError("request is too large")
         response = {"ok": True, "data": dispatch(json.loads(raw))}
-    except (AdminError, ValueError, json.JSONDecodeError) as exc:
+    except AdminError as exc:
+        response = {"ok": False, "error": {"code": exc.code, "message": str(exc)}}
+    except (ValueError, json.JSONDecodeError) as exc:
         response = {"ok": False, "error": {"code": "invalid_request", "message": str(exc)}}
     except Exception:
         response = {

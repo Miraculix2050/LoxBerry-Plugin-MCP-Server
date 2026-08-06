@@ -9,7 +9,7 @@ if [ "$(dpkg --print-architecture 2>/dev/null)" != "arm64" ]; then
     echo "<ERROR> This alpha package contains arm64 runtime wheels only."
     exit 2
 fi
-for command in openssl systemctl apache2ctl; do
+for command in openssl systemctl systemd-run apache2ctl; do
     if ! command -v "$command" >/dev/null 2>&1; then
         echo "<ERROR> Required command $command is unavailable."
         exit 2
