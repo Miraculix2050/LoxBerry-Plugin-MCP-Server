@@ -55,7 +55,21 @@ def test_control_tool_contract_is_explicitly_mutating_and_idempotent() -> None:
     assert tool.annotations.readOnlyHint is False
     assert tool.annotations.destructiveHint is True
     assert tool.annotations.idempotentHint is True
-    assert set(tool.parameters["properties"]["action"]["enum"]) == {"on", "off"}
+    assert set(tool.parameters["properties"]["action"]["enum"]) == {
+        "on",
+        "off",
+        "set_level",
+        "set_mood",
+        "open",
+        "close",
+        "shade",
+        "stop",
+        "enable_auto",
+        "disable_auto",
+        "set_position",
+        "set_slat_position",
+        "set_position_and_slats",
+    }
 
 
 def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
@@ -76,7 +90,7 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert tool.annotations.destructiveHint is False
     assert tool.annotations.openWorldHint is False
     assert result.data.name == "using-loxberry-mcp"  # type: ignore[union-attr]
-    assert result.data.revision == 1  # type: ignore[union-attr]
+    assert result.data.revision == 2  # type: ignore[union-attr]
     assert result.data.media_type == "text/markdown"  # type: ignore[union-attr]
     assert result.data.content == read_skill_markdown()  # type: ignore[union-attr]
 
@@ -100,7 +114,14 @@ def test_tool_input_schemas_explain_every_argument() -> None:
         },
         "loxone_describe_control": {"control_uuid"},
         "loxone_get_states": {"state_uuids"},
-        "loxone_operate_control": {"control_uuid", "action"},
+        "loxone_operate_control": {
+            "control_uuid",
+            "action",
+            "level",
+            "mood_id",
+            "position",
+            "slat_position",
+        },
     }
     for tool_name, field_names in expected_fields.items():
         properties = published[tool_name].parameters["properties"]
@@ -114,6 +135,10 @@ def test_tool_input_schemas_explain_every_argument() -> None:
     state_uuids = published["loxone_get_states"].parameters["properties"]["state_uuids"]
     assert state_uuids["minItems"] == 1
     assert state_uuids["maxItems"] == 100
+    operation = published["loxone_operate_control"].parameters["properties"]
+    for name in ("level", "position", "slat_position"):
+        assert operation[name]["minimum"] == 0
+        assert operation[name]["maximum"] == 100
 
 
 @pytest.mark.asyncio

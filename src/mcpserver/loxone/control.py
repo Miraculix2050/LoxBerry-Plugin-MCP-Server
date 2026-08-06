@@ -1,0 +1,160 @@
+"""Officially documented, narrowly allowlisted Loxone control commands."""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from decimal import Decimal
+
+from mcpserver.loxone.models import Control
+
+SUPPORTED_CONTROL_TYPES = frozenset(
+    {"Switch", "Dimmer", "LightController", "LightControllerV2", "Jalousie"}
+)
+_MOOD_ID = re.compile(r"(?:0|ID(?:[1-9]|[1-9][0-9]))\Z")
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedControlCommand:
+    command: str
+    expected_states: tuple[tuple[str, float | str], ...] = ()
+
+
+def allowed_actions(control: Control) -> list[str]:
+    """Return actions whose command contracts are documented for this control."""
+    if control.action_uuid is None or not 1 <= len(control.action_uuid) <= 128 or control.read_only:
+        return []
+    match control.control_type:
+        case "Switch":
+            return ["on", "off"]
+        case "Dimmer":
+            return ["on", "off", "set_level"]
+        case "LightController":
+            return ["on", "off", "set_mood"]
+        case "LightControllerV2":
+            return ["off", "set_mood"]
+        case "Jalousie":
+            actions = [
+                "open",
+                "close",
+                "shade",
+                "stop",
+                "set_position",
+                "set_slat_position",
+                "set_position_and_slats",
+            ]
+            if control.is_automatic:
+                actions.extend(["enable_auto", "disable_auto"])
+            return actions
+        case _:
+            return []
+
+
+def _percentage(value: float | None, name: str) -> float:
+    if value is None or isinstance(value, bool) or not 0 <= value <= 100:
+        raise ValueError(f"{name} must be a number from 0 to 100")
+    return float(value)
+
+
+def _number(value: float) -> str:
+    formatted = format(Decimal(str(value)), "f")
+    return formatted.rstrip("0").rstrip(".") if "." in formatted else formatted
+
+
+def prepare_control_command(
+    control: Control,
+    action: str,
+    *,
+    level: float | None = None,
+    mood_id: str | None = None,
+    position: float | None = None,
+    slat_position: float | None = None,
+) -> PreparedControlCommand:
+    """Validate one exact action/parameter combination and build its Loxone command."""
+    provided = {
+        "level": level,
+        "mood_id": mood_id,
+        "position": position,
+        "slat_position": slat_position,
+    }
+
+    def require_only(*names: str) -> None:
+        unexpected = [
+            name for name, value in provided.items() if value is not None and name not in names
+        ]
+        missing = [name for name in names if provided[name] is None]
+        if unexpected or missing:
+            expected = ", ".join(names) if names else "no parameters"
+            raise ValueError(f"action {action} requires {expected}")
+
+    if action not in allowed_actions(control):
+        raise ValueError(f"action {action} is not supported for {control.control_type}")
+
+    if control.control_type == "Switch":
+        require_only()
+        return PreparedControlCommand(action, (("active", 1.0 if action == "on" else 0.0),))
+
+    if control.control_type == "Dimmer":
+        if action in {"on", "off"}:
+            require_only()
+            expected = (("position", "__positive__"),) if action == "on" else (("position", 0.0),)
+            return PreparedControlCommand(action, expected)
+        require_only("level")
+        target = _percentage(level, "level")
+        return PreparedControlCommand(_number(target), (("position", target),))
+
+    if control.control_type == "LightController":
+        if action in {"on", "off"}:
+            require_only()
+            target = 9.0 if action == "on" else 0.0
+            return PreparedControlCommand(action, (("activeScene", target),))
+        require_only("mood_id")
+        if mood_id is None or not mood_id.isdecimal() or not 0 <= int(mood_id) <= 99:
+            raise ValueError("mood_id must be a decimal scene number from 0 to 99")
+        return PreparedControlCommand(mood_id, (("activeScene", float(mood_id)),))
+
+    if control.control_type == "LightControllerV2":
+        if action == "off":
+            require_only()
+            return PreparedControlCommand("changeTo/0", (("activeMoods", "0"),))
+        require_only("mood_id")
+        if mood_id is None or not _MOOD_ID.fullmatch(mood_id):
+            raise ValueError("mood_id must be 0 or an official ID from ID1 to ID99")
+        return PreparedControlCommand(f"changeTo/{mood_id}", (("activeMoods", mood_id),))
+
+    if action in {"open", "close", "shade", "stop", "enable_auto", "disable_auto"}:
+        require_only()
+        commands = {
+            "open": "FullUp",
+            "close": "FullDown",
+            "shade": "shade",
+            "stop": "stop",
+            "enable_auto": "auto",
+            "disable_auto": "NoAuto",
+        }
+        expected_by_action: dict[str, tuple[tuple[str, float | str], ...]] = {
+            "open": (("targetPosition", 0.0),),
+            "close": (("targetPosition", 1.0),),
+            "enable_auto": (("autoActive", 1.0),),
+            "disable_auto": (("autoActive", 0.0),),
+        }
+        return PreparedControlCommand(commands[action], expected_by_action.get(action, ()))
+    if action == "set_position":
+        require_only("position")
+        target = _percentage(position, "position")
+        return PreparedControlCommand(
+            f"manualPosition/{_number(target)}", (("targetPosition", target / 100),)
+        )
+    if action == "set_slat_position":
+        require_only("slat_position")
+        target = _percentage(slat_position, "slat_position")
+        return PreparedControlCommand(
+            f"manualLamelle/{_number(target)}", (("targetPositionLamelle", target / 100),)
+        )
+    require_only("position", "slat_position")
+    target = _percentage(position, "position")
+    slats = _percentage(slat_position, "slat_position")
+    return PreparedControlCommand(
+        f"manualPosBlind/{_number(target)}/{_number(slats)}",
+        (("targetPosition", target / 100), ("targetPositionLamelle", slats / 100)),
+    )

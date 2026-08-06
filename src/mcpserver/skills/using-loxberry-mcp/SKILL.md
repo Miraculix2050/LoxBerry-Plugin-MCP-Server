@@ -1,6 +1,6 @@
 ---
 name: using-loxberry-mcp
-description: Guides safe use of the LoxBerry MCP Server to find Loxone rooms, categories, controls, read current states, diagnose connectivity, and explicitly operate supported switches. Use when a user asks about or requests control of a Loxone installation through the LoxBerry MCP Server, including ambiguous control names, stale state, pagination, or unconfirmed operations.
+description: Guides safe use of the LoxBerry MCP Server to find Loxone rooms, categories, controls, read current states, diagnose connectivity, and explicitly operate supported switches, dimmers, lighting controllers, and blinds. Use when a user asks about or requests control of a Loxone installation through the LoxBerry MCP Server, including ambiguous control names, stale state, pagination, or unconfirmed operations.
 ---
 
 # Using LoxBerry MCP
@@ -25,7 +25,7 @@ Check the complete result envelope. Do not treat a response as successful when
 `ok` is false. Surface relevant `warnings`, and qualify answers when `stale` is
 true or a state has an old or missing `observed_at` value.
 
-## Operate a switch
+## Operate a supported control
 
 Only operate a control when the user has explicitly requested one unambiguous
 action on one identified target.
@@ -35,11 +35,16 @@ action on one identified target.
 2. Call `loxone_describe_control` immediately before the operation.
 3. Continue only when `capabilities.allowed_actions` contains the requested
    action exactly.
-4. Call `loxone_operate_control` once with that control UUID and `on` or `off`.
+4. Call `loxone_operate_control` once with that control UUID, the advertised
+   action and only its required parameters. Switches use `on` or `off`; dimmers
+   use `set_level` with `level`; lighting controllers use `set_mood` with
+   `mood_id`; blinds use the advertised explicit target action and, when
+   required, `position` and/or `slat_position`.
 5. Never automatically retry an uncertain or failed write. Ask the user before
    any new attempt.
 
-Report `accepted`, `confirmed`, and `observed_state` separately. `accepted=true`
+Report `accepted`, `confirmed`, `observed_state`, and relevant
+`observed_values` separately. `accepted=true`
 means the command was accepted, not that the resulting physical state was
 confirmed. When `confirmed=false`, state the uncertainty and do not claim that
 the requested state was reached.

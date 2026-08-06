@@ -4,7 +4,7 @@
 
 - LoxBerry 4.0.0 or newer; the reference target is 4.0.0.14 on Debian 13/arm64.
 - A dedicated Loxone user with the smallest practical read permissions and,
-  when needed, narrowly assigned Switch permissions.
+  when needed, narrowly assigned permissions for the supported controls.
 - Gen. 1: a private local HTTP address. Gen. 2: a valid HTTPS address with a
   trusted certificate; currently experimental.
 - Never put credentials in URLs. Basic Auth is unsupported.
@@ -42,8 +42,8 @@ does not require a local Node.js bridge.
 
 The six read-only Loxone data tools and the read-only skill-guide tool remain
 enabled by default. Under **Miniserver access through the MCP server**, select
-**Read and switch** to additionally operate Gen. 1 Switches. A new OAuth grant
-with `loxone:control` is then required. Switching back to **Read only** revokes
+**Read and switch** to additionally operate supported Gen. 1 controls. A new
+OAuth grant with `loxone:control` is then required. Switching back to **Read only** revokes
 existing control sessions while read-only sessions remain valid. **Read and
 switch** cannot be enabled for a Gen. 2/HTTPS target.
 
@@ -52,7 +52,7 @@ switch** cannot be enabled for a Gen. 2/HTTPS target.
 The server delivers the
 [`using-loxberry-mcp`](../src/mcpserver/skills/using-loxberry-mcp/SKILL.md)
 Agent Skill directly through MCP. It describes the safe workflow for discovery,
-pagination, state reads, ambiguous names and explicitly requested Switch
+pagination, state reads, ambiguous names and explicitly requested control
 operations. Machine-readable JSON schemas remain part of the MCP tools and are
 not duplicated in the skill.
 
@@ -174,9 +174,13 @@ revocation it can still be revoked under **Clients and sessions**.
 
 The alpha publishes six documented Loxone data tools, the read-only
 `loxone_get_skill_guide`, and optionally `loxone_operate_control`. The control
-tool accepts only a visible `Switch`
-control UUID and the action `on` or `off`. It provides no name-, room-, bulk- or
-free-form commands. History, LoxBerry tools and Basic Auth remain excluded.
+tool accepts only a visible control UUID and an action explicitly advertised by
+`loxone_describe_control`. Supported types are `Switch`, `Dimmer`,
+`LightController`, `LightControllerV2`, and `Jalousie`; automatic blind actions
+are offered only when `details.isAutomatic=true`. Percentages are limited to 0
+through 100, and lighting moods to documented scene or mood IDs. The server
+provides no name-, room-, bulk-, free-form, learning, renaming, or expert
+commands. History, LoxBerry tools and Basic Auth remain excluded.
 Results and actions are limited to the authenticated Loxone user's permissions.
 
 The English healthcheck never repairs the system:

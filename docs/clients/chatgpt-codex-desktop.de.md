@@ -66,8 +66,9 @@ loxone:read loxone:control
 Der Freigabedialog zeigt **Lesezugriff** verpflichtend und
 **Loxone-Steuerung** als optionale Checkbox. Nur wenn die Steuerung ausgewählt
 und bestätigt wird, stehen die sechs Lesewerkzeuge und das begrenzte
-Switch-Schreibwerkzeug zur Verfügung. Das Schreibwerkzeug kann ausschließlich
-freigegebene, sichtbare Gen.-1-Switches ein- oder ausschalten. Die tatsächlichen
+Control-Schreibwerkzeug zur Verfügung. Das Schreibwerkzeug kann ausschließlich
+freigegebene, sichtbare Gen.-1-Controls mit den von
+`loxone_describe_control` angebotenen Aktionen bedienen. Die tatsächlichen
 Möglichkeiten bleiben zusätzlich durch die Rechte des angemeldeten
 Loxone-Benutzers begrenzt.
 

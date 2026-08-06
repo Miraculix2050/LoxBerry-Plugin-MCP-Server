@@ -726,7 +726,8 @@ Support-Matrix.
 
 ### Phase 2: Kontrollierte Loxone-Schreibaktionen
 
-- ausschließlich Gen.-1-`Switch` mit explizitem `on` und `off`
+- ausschließlich eng dokumentierte Aktionen für Gen.-1-`Switch`, `Dimmer`,
+  `LightController`, `LightControllerV2` und `Jalousie` gemäß ADR 0005
 - `loxone_operate_control` mit UUID-Ziel und beobachteter Zustandsbestätigung
 - kompaktes Audit im bestehenden Service-Log und separates Control-Rate-Limit
 - explizite Aktivierung und neuer OAuth-Consent für `loxone:control`
@@ -774,7 +775,7 @@ Support-Matrix.
 | 4 | öffentlicher Pluginpfad/Apache | exakte MCP-, OAuth- und Well-known-Pfade mit Apache 2.4.68 real bestätigt |
 | 5 | MCP-OAuth-Clientregistrierung und Sessionpersistenz | implementiert und automatisiert bestätigt: öffentliche Registrierung, PKCE S256, audience-gebundene opaque Tokens, Replay-Widerruf und atomare dateibasierte Persistenz; Claude Desktop vollständig real bestätigt; Codex Login und authentifizierter Aufruf bestätigt, Refresh und Revoke als dokumentierte Client-Limitierungen akzeptiert |
 | 6 | Miniserver-Firmware | Gen. 1 mindestens `17.1.7.27`; Gen.-2-Stände werden durch die öffentliche Beta bestätigt |
-| 7 | erste unterstützte Control-Typen | festgelegt für Phase 2: `Switch` mit explizitem `on` und `off` |
+| 7 | erste unterstützte Control-Typen | festgelegt für Phase 2: `Switch`, `Dimmer`, `LightController`, `LightControllerV2` und `Jalousie` mit den engen Aktionen aus ADR 0005 |
 | 8 | Zeitpunkt und Umfang von `loxberry:read` | festgelegt: erst Phase 3 mit eigener lokaler Freigabe |
 | 9 | externer HTTPS-Zugriff im ersten Test | festgelegt: nicht enthalten, erster Test nur lokal/LAN |
 

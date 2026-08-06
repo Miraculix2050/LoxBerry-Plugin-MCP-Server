@@ -4,7 +4,7 @@
 
 - LoxBerry 4.0.0 oder neuer; Referenzsystem ist 4.0.0.14 auf Debian 13/arm64.
 - Ein eigener Loxone-Benutzer mit möglichst kleinen Lese- und, falls benötigt,
-  gezielt vergebenen Switch-Rechten.
+  gezielt vergebenen Rechten für die unterstützten Controls.
 - Gen. 1: private lokale HTTP-Adresse. Gen. 2: gültige HTTPS-Adresse mit
   vertrauenswürdigem Zertifikat; derzeit experimentell.
 - Keine Zugangsdaten in URLs. Basic Auth wird nicht unterstützt.
@@ -43,8 +43,8 @@ beziehungsweise Schreibrechte. Dafür wird keine lokale Node.js-Bridge benötigt
 
 Die sechs lesenden Loxone-Datentools und das lesende Skill-Guide-Tool bleiben
 standardmäßig aktiv. Wähle unter **Zugriff auf den Miniserver über den MCP
-Server** die Option **Lesen und schalten**, um zusätzlich Gen.-1-Switches
-bedienen zu können. Danach ist eine neue OAuth-Freigabe mit `loxone:control`
+Server** die Option **Lesen und schalten**, um zusätzlich unterstützte
+Gen.-1-Controls bedienen zu können. Danach ist eine neue OAuth-Freigabe mit `loxone:control`
 erforderlich. Beim Zurückwechseln auf **Nur lesen** werden bestehende
 Control-Sitzungen widerrufen; reine Lesesitzungen bleiben gültig. Bei einem
 Gen.-2-/HTTPS-Ziel kann **Lesen und schalten** nicht aktiviert werden.
@@ -55,7 +55,7 @@ Der Server liefert den Agent Skill
 [`using-loxberry-mcp`](../src/mcpserver/skills/using-loxberry-mcp/SKILL.md)
 direkt über MCP aus. Er beschreibt den sicheren Ablauf für Suche, Pagination,
 Zustandsabfragen, mehrdeutige Namen und ausdrücklich angeforderte
-Switch-Aktionen. Die maschinenlesbaren JSON-Schemas bleiben Bestandteil der
+Control-Aktionen. Die maschinenlesbaren JSON-Schemas bleiben Bestandteil der
 MCP-Tools und werden im Skill nicht dupliziert.
 
 Beim Verbindungsaufbau weist der Server den Client in seinen MCP-Instructions
@@ -186,9 +186,14 @@ widerrufen werden.
 
 Die Alpha veröffentlicht sechs dokumentierte Loxone-Datentools, das lesende
 `loxone_get_skill_guide` und optional `loxone_operate_control`. Das Schreibtool
-akzeptiert ausschließlich eine
-sichtbare Control-UUID vom Typ `Switch` und die Aktion `on` oder `off`. Es bietet
-keine Namens-, Raum-, Bulk- oder freien Kommandos. Historie, LoxBerry-Tools und
+akzeptiert ausschließlich eine sichtbare Control-UUID und eine von
+`loxone_describe_control` ausdrücklich angebotene Aktion. Unterstützt werden
+`Switch`, `Dimmer`, `LightController`, `LightControllerV2` und `Jalousie`;
+Automatikaktionen einer Jalousie werden nur bei `details.isAutomatic=true`
+angeboten. Prozentwerte sind auf 0 bis 100 begrenzt, Lichtstimmungen auf
+dokumentierte Szenen- beziehungsweise Mood-IDs. Es gibt keine Namens-, Raum-,
+Bulk- oder freien Kommandos und keine Lern-, Umbenennungs- oder Expertenbefehle.
+Historie, LoxBerry-Tools und
 Basic Auth bleiben ausgeschlossen. Ergebnisse und Aktionen entsprechen den
 Rechten des angemeldeten Loxone-Benutzers.
 

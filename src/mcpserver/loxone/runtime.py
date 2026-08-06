@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from collections import defaultdict, deque
 from collections.abc import AsyncIterator
@@ -20,6 +21,7 @@ from mcpserver.loxone.client import (
     LoxoneToken,
     LoxoneWebSocketSession,
 )
+from mcpserver.loxone.control import SUPPORTED_CONTROL_TYPES, prepare_control_command
 from mcpserver.loxone.events import LoxoneProtocolError
 from mcpserver.loxone.models import Control, Freshness, LoxoneStructure, StateRecord
 
@@ -42,10 +44,12 @@ class ControlOperationError(RuntimeError):
 @dataclass(frozen=True, slots=True)
 class ControlOperation:
     control_uuid: str
+    control_type: str
     action: str
     accepted: bool
     confirmed: bool
     observed_state: str
+    observed_values: tuple[tuple[str, object], ...] = ()
 
 
 def _state_uuids(controls: tuple[Control, ...]) -> frozenset[str]:
@@ -141,14 +145,41 @@ class LoxoneRuntime:
             pending.extend(control.subcontrols)
         return None
 
-    async def operate_switch(
-        self, access: StoredAccessToken, control_uuid: str, action: str
+    @staticmethod
+    def _state_matches(value: object, target: float | str) -> bool:
+        if target == "__positive__":
+            return isinstance(value, int | float) and not isinstance(value, bool) and value > 0
+        if isinstance(target, float):
+            return (
+                isinstance(value, int | float)
+                and not isinstance(value, bool)
+                and abs(float(value) - target) <= 0.001
+            )
+        if target == "0" and isinstance(value, str) and value in {"[]", "[0]", '["0"]'}:
+            return True
+        if isinstance(value, str):
+            with suppress(json.JSONDecodeError):
+                value = json.loads(value)
+        if isinstance(value, list | tuple):
+            return target in {str(item) for item in value}
+        return str(value) == target
+
+    async def operate_control(
+        self,
+        access: StoredAccessToken,
+        control_uuid: str,
+        action: str,
+        *,
+        level: float | None = None,
+        mood_id: str | None = None,
+        position: float | None = None,
+        slat_position: float | None = None,
     ) -> ControlOperation:
-        """Execute a bounded Switch operation for the immutable OAuth identity."""
+        """Execute one bounded documented operation for the immutable OAuth identity."""
         if READ_SCOPE not in access.scopes or CONTROL_SCOPE not in access.scopes:
             raise ControlOperationError("permission_denied", "loxone:control is required")
-        if not control_uuid or len(control_uuid) > 128 or action not in {"on", "off"}:
-            raise ControlOperationError("invalid_input", "invalid Switch operation")
+        if not control_uuid or len(control_uuid) > 128 or not action or len(action) > 64:
+            raise ControlOperationError("invalid_input", "invalid control operation")
 
         now = time.monotonic()
         if not self._consume_rate(self._rate[access.family_id], self._rate_limit, now):
@@ -192,25 +223,42 @@ class LoxoneRuntime:
                 control = self._control(structure, control_uuid)
                 if control is None:
                     raise ControlOperationError("not_found", "control is not visible")
-                if control.control_type != "Switch":
-                    raise ControlOperationError(
-                        "unsupported_control", "only Switch controls are supported"
-                    )
-                if control.action_uuid is None:
+                if control.action_uuid is None or control.read_only:
                     raise ControlOperationError(
                         "permission_denied", "control is not operable for this identity"
                     )
                 if not 1 <= len(control.action_uuid) <= 128:
                     raise ControlOperationError(
-                        "unsupported_control", "Switch control has an invalid action target"
+                        "unsupported_control", "control has an invalid action target"
                     )
-                active_uuid = dict(control.state_uuids).get("active")
-                if active_uuid is None:
+                if control.control_type not in SUPPORTED_CONTROL_TYPES:
                     raise ControlOperationError(
-                        "unsupported_control", "Switch control has no active state"
+                        "unsupported_control", "control type is not supported"
                     )
-                before = self.cache.get(snapshot.subject, active_uuid).observed_at
-                await command_session.operate_switch(control.action_uuid, action)
+                try:
+                    prepared = prepare_control_command(
+                        control,
+                        action,
+                        level=level,
+                        mood_id=mood_id,
+                        position=position,
+                        slat_position=slat_position,
+                    )
+                except ValueError as exc:
+                    raise ControlOperationError("invalid_input", str(exc)) from exc
+                state_uuids = dict(control.state_uuids)
+                missing = [
+                    name for name, _target in prepared.expected_states if name not in state_uuids
+                ]
+                if missing:
+                    raise ControlOperationError(
+                        "unsupported_control", "control lacks a state required for confirmation"
+                    )
+                before = {
+                    name: self.cache.get(snapshot.subject, state_uuids[name]).observed_at
+                    for name, _target in prepared.expected_states
+                }
+                await command_session.operate_control(control.action_uuid, prepared.command)
             except ControlOperationError:
                 raise
             except LoxoneCommandRejected as exc:
@@ -225,23 +273,53 @@ class LoxoneRuntime:
             finally:
                 await command_session.close()
 
-            target = 1.0 if action == "on" else 0.0
+            if not prepared.expected_states:
+                return ControlOperation(
+                    control_uuid, control.control_type, action, True, False, "unknown"
+                )
             deadline = time.monotonic() + self._control_confirmation_seconds
-            observed = self.cache.get(snapshot.subject, active_uuid)
+            observed_values: dict[str, object] = {}
             while time.monotonic() < deadline:
-                observed = self.cache.get(snapshot.subject, active_uuid)
-                if (
-                    observed.freshness is Freshness.CURRENT
-                    and observed.observed_at is not None
-                    and (before is None or observed.observed_at > before)
-                    and observed.value == target
-                ):
-                    return ControlOperation(control_uuid, action, True, True, action)
+                confirmed = True
+                for name, target in prepared.expected_states:
+                    observed = self.cache.get(snapshot.subject, state_uuids[name])
+                    previous_observed_at = before[name]
+                    if observed.value is not None:
+                        observed_values[name] = observed.value
+                    if not (
+                        observed.freshness is Freshness.CURRENT
+                        and observed.observed_at is not None
+                        and (
+                            previous_observed_at is None
+                            or observed.observed_at > previous_observed_at
+                        )
+                        and self._state_matches(observed.value, target)
+                    ):
+                        confirmed = False
+                if confirmed:
+                    state = action if control.control_type == "Switch" else "confirmed"
+                    return ControlOperation(
+                        control_uuid,
+                        control.control_type,
+                        action,
+                        True,
+                        True,
+                        state,
+                        tuple(observed_values.items()),
+                    )
                 await asyncio.sleep(0.05)
             state = "unknown"
-            if observed.freshness is Freshness.CURRENT and observed.value in {0.0, 1.0}:
-                state = "on" if observed.value == 1.0 else "off"
-            return ControlOperation(control_uuid, action, True, False, state)
+            if control.control_type == "Switch" and observed_values.get("active") in {0.0, 1.0}:
+                state = "on" if observed_values["active"] == 1.0 else "off"
+            return ControlOperation(
+                control_uuid,
+                control.control_type,
+                action,
+                True,
+                False,
+                state,
+                tuple(observed_values.items()),
+            )
 
     async def snapshot(self, access: StoredAccessToken) -> RuntimeSnapshot:
         subject = access.family_id

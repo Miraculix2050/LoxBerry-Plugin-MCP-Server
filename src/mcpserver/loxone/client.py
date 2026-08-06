@@ -41,6 +41,13 @@ _LOGGER = logging.getLogger(__name__)
 _MAX_RESPONSE_BYTES: Final = 8 * 1024 * 1024
 _DEFAULT_TIMEOUT_SECONDS: Final = 10.0
 _APP_PERMISSION: Final = 4
+_PERCENT_COMMAND = r"(?:100(?:\.0+)?|(?:[0-9]|[1-9][0-9])(?:\.[0-9]+)?)"
+_CONTROL_COMMAND = re.compile(
+    rf"(?:on|off|FullUp|FullDown|shade|stop|auto|NoAuto|"
+    rf"changeTo/(?:0|ID(?:[1-9]|[1-9][0-9]))|"
+    rf"manualPosition/{_PERCENT_COMMAND}|manualLamelle/{_PERCENT_COMMAND}|"
+    rf"manualPosBlind/{_PERCENT_COMMAND}/{_PERCENT_COMMAND}|{_PERCENT_COMMAND})\Z"
+)
 _GEN1_IPV4_NETWORKS: Final = tuple(
     ipaddress.ip_network(value) for value in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
 )
@@ -590,12 +597,18 @@ class LoxoneWebSocketSession:
             # successful terminal response in that case.
             return
 
-    async def operate_switch(self, action_uuid: str, action: str) -> None:
-        """Execute the only Phase 2 control command through this authenticated session."""
-        if not action_uuid or len(action_uuid) > 128 or action not in {"on", "off"}:
-            raise ValueError("invalid Switch operation")
+    async def operate_control(self, action_uuid: str, command: str) -> None:
+        """Execute one command prepared by the bounded control contract."""
+        if (
+            not action_uuid
+            or len(action_uuid) > 128
+            or not command
+            or len(command) > 128
+            or _CONTROL_COMMAND.fullmatch(command) is None
+        ):
+            raise ValueError("invalid control operation")
         await self._command(
-            f"jdev/sps/io/{quote(action_uuid, safe='')}/{action}",
+            f"jdev/sps/io/{quote(action_uuid, safe='')}/{quote(command, safe='/')}",
             encrypted=not self._secure_transport,
         )
 
