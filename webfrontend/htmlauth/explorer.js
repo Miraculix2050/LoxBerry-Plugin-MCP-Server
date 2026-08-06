@@ -11,6 +11,7 @@
   const MAX_TRANSCRIPT = 100;
   const REVOCATION_TIMEOUT_MS = 5000;
   const EXPLORER_SESSION_MS = 8 * 60 * 60 * 1000;
+  const EXPLORER_CLIENT_REGISTRATION_MS = EXPLORER_SESSION_MS;
   const MCP_RESOURCE_PATH = '/plugins/mcpserver/mcp';
   const EXPLORER_PATH = '/admin/plugins/mcpserver/explorer.cgi';
   const OPAQUE_VALUE = /^[A-Za-z0-9_-]{32,512}$/;
@@ -393,6 +394,18 @@
     return resumableSession(value);
   }
 
+  function clientRegistration(clientId, registeredAt) {
+    return {version: 1, clientId, registeredAt};
+  }
+
+  function validateClientRegistration(value, now) {
+    if (!value || typeof value !== 'object' || Array.isArray(value) || value.version !== 1) return null;
+    if (!/^[A-Za-z0-9_-]{43}$/.test(value.clientId || '')) return null;
+    if (!Number.isSafeInteger(value.registeredAt) || value.registeredAt > now ||
+      value.registeredAt <= now - EXPLORER_CLIENT_REGISTRATION_MS) return null;
+    return clientRegistration(value.clientId, value.registeredAt);
+  }
+
   async function rotateRefreshToken(oauth, exchange, clearResume, saveResume, now) {
     if (oauth.resumeEnabled) clearResume();
     const token = await exchange(refreshTokenFields(oauth.clientId, oauth.refreshToken, oauth.resource));
@@ -472,6 +485,7 @@
     MAX_TRANSCRIPT,
     REVOCATION_TIMEOUT_MS,
     EXPLORER_SESSION_MS,
+    EXPLORER_CLIENT_REGISTRATION_MS,
     clone,
     resolveRef,
     effectiveSchema,
@@ -495,6 +509,8 @@
     refreshTokenFields,
     resumableSession,
     validateResumableSession,
+    clientRegistration,
+    validateClientRegistration,
     rotateRefreshToken,
     clearSensitiveState,
     revokeThenClear,
@@ -727,16 +743,28 @@
   }
 
   function readClientId(scope) {
+    const key = clientStorageKey(scope);
+    // Older releases retained this identifier beyond the server-side DCR lifetime.
+    try { window.localStorage.removeItem(key); } catch (_error) { /* migration only */ }
     try {
-      const value = window.localStorage.getItem(clientStorageKey(scope));
-      if (value && /^[A-Za-z0-9_-]{43}$/.test(value)) return value;
-      if (value) window.localStorage.removeItem(clientStorageKey(scope));
-      return null;
-    } catch (_error) { return null; }
+      const serialized = window.sessionStorage.getItem(key);
+      if (!serialized) return null;
+      const registration = core.validateClientRegistration(JSON.parse(serialized), Date.now());
+      if (registration) return registration.clientId;
+      window.sessionStorage.removeItem(key);
+    } catch (_error) {
+      try { window.sessionStorage.removeItem(key); } catch (_ignored) { /* optional */ }
+    }
+    return null;
   }
 
   function saveClientId(scope, clientId) {
-    try { window.localStorage.setItem(clientStorageKey(scope), clientId); } catch (_error) { /* optional */ }
+    try {
+      window.sessionStorage.setItem(
+        clientStorageKey(scope),
+        JSON.stringify(core.clientRegistration(clientId, Date.now())),
+      );
+    } catch (_error) { /* optional */ }
   }
 
   async function discover() {

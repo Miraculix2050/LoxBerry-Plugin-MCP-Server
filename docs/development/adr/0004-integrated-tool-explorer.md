@@ -38,8 +38,10 @@ A Web Lock tied to a random session identifier prevents a duplicated tab from
 automatically replaying the same single-use refresh token. The resumable record
 is removed before every rotation, so a reload that interrupts an in-flight
 rotation fails closed instead of replaying a possibly consumed token. The
-non-secret public `client_id` may be retained by origin and scope to avoid
-consuming a new dynamic registration on each visit.
+non-secret public `client_id` is retained only in that tab's `sessionStorage`
+and for at most eight hours. Older persistent `localStorage` registrations are
+discarded so a browser cannot reuse an identifier after the server has removed
+the corresponding dynamic client registration.
 
 `sessionStorage` is isolated by origin and top-level browsing context, not by URL
 path. The LoxBerry admin origin is therefore part of the Explorer trust boundary:

@@ -166,6 +166,9 @@ verwirft der Browser diesen lokalen Wert normalerweise, kann die Serversitzung
 aber nicht zuverlässig sofort widerrufen. Explorer-Sitzungen laufen deshalb
 spätestens nach acht Stunden ab. **Trennen und widerrufen** beendet sie sofort
 und bleibt vor dem Schließen der zuverlässige Abmeldeweg.
+Auch die öffentliche OAuth-Clientregistrierung ist auf den Tab und höchstens
+acht Stunden begrenzt; veraltete Registrierungen früherer Plugin-Versionen
+werden automatisch verworfen und neu angelegt.
 
 Im Berechtigungs-Dropdown ist **Nur lesen** vorausgewählt. **Lesen und steuern**
 ist nur bei global aktivierter Loxone-Steuerung auswählbar und erfordert
