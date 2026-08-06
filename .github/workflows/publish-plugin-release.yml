@@ -1,0 +1,145 @@
+name: Publish plugin release
+run-name: Publish MCP ${{ inputs.version }} (${{ inputs.channel }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version from plugin.cfg
+        required: true
+        type: string
+      channel:
+        description: Release channel
+        required: true
+        type: choice
+        options:
+          - prerelease
+          - stable
+      confirm_release:
+        description: I confirm that master is prepared for publication
+        required: true
+        type: boolean
+
+concurrency:
+  group: official-release-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  authorize:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Enforce owner, master and confirmation
+        env:
+          ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          OWNER: ${{ github.repository_owner }}
+          REF_NAME: ${{ github.ref_name }}
+          CONFIRMED: ${{ inputs.confirm_release }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          [[ "$ACTOR" == "$OWNER" && "$TRIGGERING_ACTOR" == "$OWNER" ]] ||
+            { echo "Only the repository owner may start or rerun publication." >&2; exit 1; }
+          [[ "$REF_NAME" == "master" ]] || { echo "Official releases must run from master." >&2; exit 1; }
+          [[ "$CONFIRMED" == "true" ]] || { echo "Release confirmation is required." >&2; exit 1; }
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-alpha\.[0-9]+)?$ ]] ||
+            { echo "Invalid release version." >&2; exit 1; }
+
+  build:
+    needs: authorize
+    runs-on: ubuntu-24.04
+    outputs:
+      archive: ${{ steps.meta.outputs.archive }}
+      sidecar: ${{ steps.meta.outputs.sidecar }}
+      tag: ${{ steps.meta.outputs.tag }}
+      commit: ${{ steps.meta.outputs.commit }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install test dependencies
+        run: |
+          python -m pip install --disable-pip-version-check \
+            -r requirements/runtime-arm64.lock -r requirements/dev.lock
+          python -m pip install --disable-pip-version-check --no-deps -e .
+      - name: Run full gate and validate metadata
+        env:
+          VERSION: ${{ inputs.version }}
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          python tools/test.py --profile full
+          python tools/validate_release_metadata.py \
+            --version "$VERSION" --channel "$CHANNEL" \
+            --notes-output dist/release-notes.md
+      - name: Prepare locked arm64 wheelhouse
+        run: python tools/prepare_wheelhouse.py --runtime-only wheelhouse
+      - name: Build and verify official package
+        run: |
+          python tools/build_release_candidate.py --official \
+            --skip-tests --runtime-wheelhouse wheelhouse --output-dir dist
+      - name: Record artifact contract
+        id: meta
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          archive="LoxBerry-MCP-Server-$VERSION.zip"
+          test -f "dist/$archive"
+          test -f "dist/$archive.sha256"
+          {
+            echo "archive=$archive"
+            echo "sidecar=$archive.sha256"
+            echo "tag=v$VERSION"
+            echo "commit=$(git rev-parse HEAD)"
+          } >>"$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: verified-release
+          path: |
+            dist/LoxBerry-MCP-Server-*.zip
+            dist/LoxBerry-MCP-Server-*.zip.sha256
+            dist/release-notes.md
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.build.outputs.commit }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: verified-release
+          path: dist
+      - name: Reverify downloaded artifact
+        env:
+          VERSION: ${{ inputs.version }}
+          CHANNEL: ${{ inputs.channel }}
+          ARCHIVE: dist/${{ needs.build.outputs.archive }}
+        run: |
+          python tools/validate_release_metadata.py --version "$VERSION" --channel "$CHANNEL"
+          python tools/verify_plugin.py "$ARCHIVE"
+      - name: Create or resume draft, verify assets, publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.build.outputs.tag }}
+          VERSION: ${{ inputs.version }}
+          CHANNEL: ${{ inputs.channel }}
+          ARCHIVE: dist/${{ needs.build.outputs.archive }}
+          SIDECAR: dist/${{ needs.build.outputs.sidecar }}
+          NOTES: dist/release-notes.md
+          REPOSITORY: ${{ github.repository }}
+          COMMIT: ${{ needs.build.outputs.commit }}
+        run: bash tools/publish_github_release.sh

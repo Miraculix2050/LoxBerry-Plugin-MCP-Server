@@ -11,13 +11,10 @@ from typing import Final
 
 _TIMESTAMP: Final = (2026, 1, 1, 0, 0, 0)
 _ROOT_FILES: Final = (
-    ".gitattributes",
     "LICENSE",
     "plugin.cfg",
     "preinstall.sh",
     "preupgrade.sh",
-    "release.cfg",
-    "prerelease.cfg",
     "postinstall.sh",
     "postroot.sh",
     "postupgrade.sh",
@@ -52,12 +49,44 @@ _TEXT_SUFFIXES: Final = {
     ".txt",
 }
 _TEXT_NAMES: Final = {
-    ".gitattributes",
     "LICENSE",
     "bin/healthcheck",
     "bin/mcpserver-admin",
     "bin/renew-web-certificate",
 }
+
+
+def _runtime_hashes(path: Path) -> dict[str, str]:
+    hashes: dict[str, str] = {}
+    for line in path.read_text(encoding="ascii").splitlines():
+        match = re.fullmatch(r"([0-9a-f]{64})  ([A-Za-z0-9_.+-]+\.whl)", line)
+        if match is None or match.group(2) in hashes:
+            raise SystemExit("runtime wheel hash lock is invalid")
+        hashes[match.group(2)] = match.group(1)
+    if not hashes:
+        raise SystemExit("runtime wheel hash lock is empty")
+    return hashes
+
+
+def expected_source_entries(root: Path) -> set[str]:
+    """Return the exact non-wheel installable package contract."""
+    entries = set(_ROOT_FILES)
+    entries.update(
+        item.relative_to(root).as_posix()
+        for directory in _DIRECTORIES
+        for item in (root / directory).rglob("*")
+        if item.is_file()
+    )
+    entries.update(
+        {
+            "bin/healthcheck",
+            "bin/mcpserver-admin",
+            "bin/renew-web-certificate",
+            "bin/runtime-arm64.lock",
+            "bin/runtime-arm64.sha256",
+        }
+    )
+    return entries
 
 
 def _locked_requirements(lock: Path) -> dict[str, str]:
@@ -121,14 +150,14 @@ def _verify_project_wheel(project_wheel: Path, source_root: Path) -> None:
                 packaged = wheel.read(name)
             except KeyError as exc:
                 raise SystemExit(f"project wheel is missing current source: {name}") from exc
-            if packaged != source.read_bytes():
+            if packaged != source.read_bytes().replace(b"\r\n", b"\n"):
                 raise SystemExit(f"project wheel contains stale source: {name}")
 
 
 def _add(archive: zipfile.ZipFile, source: Path, target: str) -> None:
     info = zipfile.ZipInfo(target.replace("\\", "/"), _TIMESTAMP)
     info.create_system = 3
-    info.compress_type = zipfile.ZIP_DEFLATED
+    info.compress_type = zipfile.ZIP_STORED
     mode = 0o755 if target.replace("\\", "/") in _EXECUTABLES else 0o644
     info.external_attr = (mode | 0o100000) << 16
     content = source.read_bytes()
@@ -142,13 +171,24 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--wheelhouse", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument(
+        "--runtime-hash-lock",
+        type=Path,
+        help=argparse.SUPPRESS,
+    )
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     wheelhouse = args.wheelhouse.resolve()
     output = args.output.resolve()
     lock = root / "requirements" / "runtime-arm64.lock"
+    hash_lock = (
+        args.runtime_hash_lock.resolve()
+        if args.runtime_hash_lock
+        else root / "requirements" / "runtime-arm64.sha256"
+    )
 
     requirements = _locked_requirements(lock)
+    runtime_hashes = _runtime_hashes(hash_lock)
     wheel_files = list(wheelhouse.glob("*.whl"))
     wheel_identities = _wheel_identities(wheelhouse)
     wheel_versions = set(wheel_identities)
@@ -159,6 +199,11 @@ def main() -> int:
         identity for identity in wheel_identities if identity[0] != "loxberry-mcpserver"
     ]
     expected_runtime = {(name, version.lower()) for name, version in requirements.items()}
+    actual_runtime_files = {
+        item.name: hashlib.sha256(item.read_bytes()).hexdigest()
+        for item in wheel_files
+        if not item.name.startswith("loxberry_mcpserver-")
+    }
     missing = set(requirements) - _wheel_names(wheelhouse)
     mismatched = {
         name
@@ -178,6 +223,7 @@ def main() -> int:
         or invalid_wheel
         or len(project_wheels) != 1
         or project_identities != expected_project
+        or actual_runtime_files != runtime_hashes
     ):
         detail = ", ".join(sorted(missing | mismatched)) or "project wheel"
         if unexpected:
@@ -188,6 +234,8 @@ def main() -> int:
             detail = "invalid wheel filename"
         if project_identities != expected_project:
             detail = "unexpected project wheel"
+        if actual_runtime_files != runtime_hashes:
+            detail = "runtime wheel hash lock mismatch"
         raise SystemExit(f"wheelhouse is incomplete: {detail}")
 
     _verify_project_wheel(project_wheels[0], root / "src")
@@ -206,6 +254,7 @@ def main() -> int:
             (root / "bin" / "mcpserver-admin", "bin/mcpserver-admin"),
             (root / "bin" / "renew-web-certificate", "bin/renew-web-certificate"),
             (lock, "bin/runtime-arm64.lock"),
+            (hash_lock, "bin/runtime-arm64.sha256"),
         ]
     )
     entries.extend((item, f"bin/wheelhouse/{item.name}") for item in wheelhouse.glob("*.whl"))

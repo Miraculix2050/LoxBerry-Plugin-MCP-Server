@@ -1,5 +1,9 @@
 # LoxBerry MCP Server
 
+> Install the ZIP asset from a project GitHub Release. GitHub's automatic
+> **Source code** archives are not LoxBerry plugin packages. Local packages
+> containing `-local-` are intended only for testing.
+
 Das McpServer-Plugin betreibt einen [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)-Server direkt auf dem LoxBerry. Die aktuelle Alpha erlaubt KI-Assistenten und Agenten standardmäßig ausschließlich, den Zustand einer Loxone-Miniserver-Installation zu lesen. Optional kann ein eng begrenztes Loxone-Schreibwerkzeug aktiviert werden. Dabei verwendet das Plugin die vorhandenen Räume, Kategorien und Steuerungsnamen – ohne eigenen Cloud-Dienst. LoxBerry-Werkzeuge sind nicht Bestandteil dieser Version.
 
 ## Sicherheit und Berechtigungen

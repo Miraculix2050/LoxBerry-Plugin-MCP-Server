@@ -34,6 +34,11 @@ same task.
   matching evidence.
 - Preserve unrelated worktree changes and inspect `git status --short` before
   committing.
+- Prepare release metadata and `CHANGELOG.md` through a reviewed PR. Official
+  stable and prerelease packages, tags, and GitHub Releases must be created only
+  from prepared `master` with the owner-triggered `Publish plugin release`
+  workflow. AI agents invoke that same workflow with `gh workflow run`; local
+  `-local-...` ZIPs are test artifacts only.
 
 ## Git workflow
 

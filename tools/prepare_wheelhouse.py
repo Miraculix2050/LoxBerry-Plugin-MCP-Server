@@ -3,11 +3,24 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+
+def _verify_runtime_wheels(output: Path, hash_lock: Path) -> None:
+    expected = {}
+    for line in hash_lock.read_text(encoding="ascii").splitlines():
+        digest, filename = line.split("  ", 1)
+        expected[filename] = digest
+    actual = {
+        wheel.name: hashlib.sha256(wheel.read_bytes()).hexdigest() for wheel in output.glob("*.whl")
+    }
+    if actual != expected:
+        raise RuntimeError("downloaded runtime wheels do not match runtime-arm64.sha256")
 
 
 def main() -> int:
@@ -52,6 +65,7 @@ def main() -> int:
         cwd=root,
         env=build_environment,
     )
+    _verify_runtime_wheels(output, root / "requirements" / "runtime-arm64.sha256")
     if not args.runtime_only:
         subprocess.run(
             [
@@ -71,6 +85,10 @@ def main() -> int:
             env=build_environment,
         )
     shutil.copy2(root / "requirements" / "runtime-arm64.lock", output / "runtime-arm64.lock")
+    shutil.copy2(
+        root / "requirements" / "runtime-arm64.sha256",
+        output / "runtime-arm64.sha256",
+    )
     return 0
 
 
