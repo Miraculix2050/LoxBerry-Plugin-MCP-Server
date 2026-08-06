@@ -5,6 +5,7 @@ use strict;
 use warnings;
 BEGIN {
     $ENV{LBHOMEDIR} = '/opt/loxberry';
+    $ENV{PERL5LIB} = '/opt/loxberry/libs/perllib';
 }
 use lib '/opt/loxberry/libs/perllib';
 use Fcntl qw(:DEFAULT :flock O_NOFOLLOW);

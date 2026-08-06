@@ -259,6 +259,7 @@ def test_certificate_helper_keeps_pin_off_argv_and_uses_fixed_core_actions() -> 
     assert "check_securepin($securepin)" in helper
     assert "revokewwwcert.sh" in helper
     assert "makewwwcert.sh" in helper
+    assert "$ENV{PERL5LIB} = '/opt/loxberry/libs/perllib';" in helper
     assert "systemd-run" in helper
     assert "--unit=$unit" in helper
     assert "@ARGV == 1 && $ARGV[0] eq '--worker'" in helper
