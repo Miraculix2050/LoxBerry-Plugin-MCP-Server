@@ -156,6 +156,9 @@ discards that local value, but the browser cannot reliably revoke the server
 session immediately. Explorer sessions therefore expire after eight hours at the
 latest. **Disconnect and revoke** ends the session immediately and remains the
 reliable sign-out path before closing the tab.
+The public OAuth client registration is likewise limited to the tab and at most
+eight hours; stale registrations from earlier plugin versions are discarded and
+registered again automatically.
 
 The permissions dropdown defaults to **Read only**. **Read and control** is
 selectable only when Loxone control is globally enabled and requires fresh consent for

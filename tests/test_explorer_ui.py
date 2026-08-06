@@ -474,6 +474,38 @@ def test_explorer_resume_record_contains_only_valid_tab_scoped_refresh_data() ->
     )
 
 
+def test_explorer_client_registration_is_tab_scoped_and_expires_before_server_cleanup() -> None:
+    client_id = "a" * 43
+    registered_at = 1_000_000
+    record = run_core(f"core.clientRegistration('{client_id}',{registered_at})")
+
+    assert record == {"version": 1, "clientId": client_id, "registeredAt": registered_at}
+    encoded = json.dumps(record)
+    assert run_core(f"core.validateClientRegistration({encoded},{registered_at})") == record
+    assert (
+        run_core(
+            f"core.validateClientRegistration({encoded},"
+            f"{registered_at}+core.EXPLORER_CLIENT_REGISTRATION_MS-1)"
+        )
+        == record
+    )
+    assert (
+        run_core(
+            f"core.validateClientRegistration({encoded},"
+            f"{registered_at}+core.EXPLORER_CLIENT_REGISTRATION_MS)"
+        )
+        is None
+    )
+    assert (
+        run_core(
+            f"core.validateClientRegistration("
+            f"{json.dumps({'version': 1, 'clientId': 'invalid', 'registeredAt': registered_at})},"
+            f"{registered_at})"
+        )
+        is None
+    )
+
+
 @pytest.mark.parametrize("exchange_fails", [False, True])
 def test_explorer_refresh_removes_replayable_state_before_rotation(
     exchange_fails: bool,
@@ -596,14 +628,10 @@ def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
     assert "state.history.length > core.MAX_CALL_HISTORY" in source
     assert "fetchWithTimeout('/plugins/mcpserver/mcp'" in source
     assert "}, 70000)" in source
-    assert "localStorage.setItem" in source
-    assert "/^[A-Za-z0-9_-]{43}$/" in source
-    assert (
-        "accessToken"
-        not in source[
-            source.index("localStorage.setItem") - 100 : source.index("localStorage.setItem") + 200
-        ]
-    )
+    assert "localStorage.setItem" not in source
+    assert "window.localStorage.removeItem(key)" in source
+    assert "core.validateClientRegistration" in source
+    assert "JSON.stringify(core.clientRegistration(clientId, Date.now()))" in source
     assert "sessionStorage.setItem" in source
     assert "core.validateResumableSession" in source
     assert "readStoredSession(discovered.resourceMetadata.resource)" in source
