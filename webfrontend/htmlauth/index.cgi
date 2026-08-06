@@ -393,21 +393,13 @@ my $notice_text = $notice_value eq 'success' ? $L{'AJAX.SUCCESS'}
     : $notice_value ne '' ? $L{'AJAX.ERROR'} : '';
 my $notice_kind = $notice_value eq 'success' || $notice_value eq 'certificate_scheduled'
     ? 'success' : 'error';
-my $explorer_url = 'explorer.cgi';
-if (
-    $public_origin =~ m{\Ahttps://[^/?#\s\@\\]+\z}
-    && $lbpplugindir =~ /\A[A-Za-z0-9_-]+\z/
-) {
-    $explorer_url = "$public_origin/admin/plugins/$lbpplugindir/explorer.cgi";
-}
-
 $template->param(
     VERSION => $version,
     ENABLED => $config->{server}{enabled} ? 1 : 0,
     PUBLIC_ORIGIN => $public_origin,
     HOSTNAME_MCP_URL => $hostname_mcp_url,
     IP_MCP_URL => $ip_mcp_url,
-    EXPLORER_URL => $explorer_url,
+    EXPLORER_URL => 'explorer.cgi',
     ENDPOINT => $display_endpoint,
     MINISERVERS => $miniservers,
     MANUAL_ENDPOINT => $has_selected_miniserver ? 0 : 1,

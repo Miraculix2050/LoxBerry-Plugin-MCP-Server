@@ -617,12 +617,9 @@ def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
     index_cgi = (ROOT / "webfrontend" / "htmlauth" / "index.cgi").read_text(encoding="utf-8")
     assert 'id="explorer-link"' in index_template
     assert 'href="<TMPL_VAR EXPLORER_URL ESCAPE=HTML>"' in index_template
-    assert (
-        "explorerLink.href = `${savedOrigin}/admin/plugins/mcpserver/explorer.cgi`"
-        in index_template
-    )
-    assert "EXPLORER_URL => $explorer_url" in index_cgi
-    assert "m{\\Ahttps://[^/?#\\s\\@\\\\]+\\z}" in index_cgi
+    assert "explorerLink.href = `${window.location.origin}${explorerPath}`" in index_template
+    assert "EXPLORER_URL => 'explorer.cgi'" in index_cgi
+    assert "savedOrigin" not in index_template
     assert "@media (max-width: 52rem)" in template
     assert ":focus-visible" in template
     assert "<dialog" in template

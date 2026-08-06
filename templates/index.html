@@ -158,6 +158,8 @@
   const miniserverEndpoint = document.getElementById('miniserver-endpoint');
   const testEndpoint = document.querySelector('form[data-ajax="test_connection"] input[name="endpoint"]');
   const explorerLink = document.getElementById('explorer-link');
+  const explorerPath = '/admin/plugins/mcpserver/explorer.cgi';
+  explorerLink.href = `${window.location.origin}${explorerPath}`;
   const certificateSection = document.getElementById('certificate');
   const certificateRenewalState = document.getElementById('certificate-renewal-state');
   const certificateExpiry = document.getElementById('certificate-expiry');
@@ -319,9 +321,8 @@
         if (Array.isArray(result.data.sessions)) updateSessions(result.data.sessions);
         if (form.dataset.ajax === 'save_config') {
           const savedEndpoint = result.data.configuration.loxone.endpoint;
-          const savedOrigin = result.data.configuration.server.public_origin;
           miniserverEndpoint.value = savedEndpoint;
-          explorerLink.href = `${savedOrigin}/admin/plugins/mcpserver/explorer.cgi`;
+          explorerLink.href = `${window.location.origin}${explorerPath}`;
           syncTestEndpoint();
         }
         if (form.dataset.ajax === 'renew_certificate') {
