@@ -45,17 +45,6 @@ fi
 chown root:loxberry "$key"
 chmod 640 "$key"
 
-if [ -L "$service_log" ] || { [ -e "$service_log" ] && [ ! -f "$service_log" ]; }; then
-    echo "<ERROR> Refusing unsafe service log path."
-    exit 2
-fi
-if [ ! -e "$service_log" ]; then
-    install -o loxberry -g loxberry -m 640 /dev/null "$service_log" || exit 2
-else
-    chown loxberry:loxberry "$service_log"
-    chmod 640 "$service_log"
-fi
-
 host=$(hostname -f 2>/dev/null || hostname)
 case "$host" in
     *[!A-Za-z0-9.-]*|'') echo "<ERROR> Invalid local hostname."; exit 2 ;;
@@ -103,6 +92,33 @@ visudo -cf "$sudoers" >/dev/null || { rm -f "$sudoers"; exit 2; }
 a2enmod proxy proxy_http >/dev/null || exit 2
 a2enconf loxberry-mcpserver >/dev/null || exit 2
 apache2ctl configtest >/dev/null || { a2disconf loxberry-mcpserver >/dev/null; exit 2; }
+
+if systemctl is-active --quiet loxberry-mcpserver.service; then
+    systemctl stop loxberry-mcpserver.service || exit 2
+fi
+python3 - "$service_log" <<'PY' || exit 2
+import grp
+import os
+import pwd
+import stat
+import sys
+
+path = sys.argv[1]
+flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_CLOEXEC | os.O_NOFOLLOW
+fd = os.open(path, flags, 0o640)
+try:
+    opened = os.fstat(fd)
+    if not stat.S_ISREG(opened.st_mode):
+        raise RuntimeError("service log is not a regular file")
+    os.fchown(fd, pwd.getpwnam("loxberry").pw_uid, grp.getgrnam("loxberry").gr_gid)
+    os.fchmod(fd, 0o640)
+    current = os.lstat(path)
+    if not stat.S_ISREG(current.st_mode) or (current.st_dev, current.st_ino) != (opened.st_dev, opened.st_ino):
+        raise RuntimeError("service log path changed during preparation")
+finally:
+    os.close(fd)
+PY
+
 systemctl daemon-reload
 systemctl enable loxberry-mcpserver.service >/dev/null
 systemctl restart loxberry-mcpserver.service || exit 2

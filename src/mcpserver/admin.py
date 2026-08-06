@@ -135,7 +135,7 @@ def _run_service_command(command: str) -> None:
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            timeout=25,
+            timeout=65,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise AdminError("the service action failed", code="service_action_failed") from exc

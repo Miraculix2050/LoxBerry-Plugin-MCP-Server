@@ -214,15 +214,38 @@ def test_postroot_keeps_installer_alive_during_apache_activation() -> None:
     assert "NOPASSWD: /bin/systemctl start *" not in hook
     assert "NOPASSWD: /bin/systemctl stop *" not in hook
     assert 'service_log="$plugin_log/service.log"' in hook
-    assert '[ -L "$service_log" ]' in hook
-    assert 'install -o loxberry -g loxberry -m 640 /dev/null "$service_log"' in hook
-    assert 'chown loxberry:loxberry "$service_log"' in hook
-    assert 'chmod 640 "$service_log"' in hook
-    assert 'install -m 640 "$service_log"' not in hook
+    assert "systemctl stop loxberry-mcpserver.service || exit 2" in hook
+    assert hook.index("systemctl stop loxberry-mcpserver.service || exit 2") < hook.index(
+        'python3 - "$service_log"'
+    )
+    assert "os.O_NOFOLLOW" in hook
+    assert "os.fchown(fd" in hook
+    assert "os.fchmod(fd, 0o640)" in hook
+    assert "os.lstat(path)" in hook
+    assert 'chown loxberry:loxberry "$service_log"' not in hook
+    assert 'chmod 640 "$service_log"' not in hook
     assert "LoxBerry::System::get_localip()" in hook
     unit = (ROOT / "config/systemd/loxberry-mcpserver.service.in").read_text(encoding="utf-8")
     assert "@LOCAL_IP_HOST@" in unit
     assert "https://@LOCAL_IP_HOST@" in unit
+    assert "Environment=MCPSERVER_LOG_FILE=@LOG_DIR@/service.log" in unit
+    assert "StandardOutput=journal" in unit
+    assert "StandardError=journal" in unit
+    assert "StandardOutput=append:@LOG_DIR@/service.log" not in unit
+
+
+def test_user_guides_document_the_fixed_privileged_service_controls() -> None:
+    german = (ROOT / "docs/user-guide.de.md").read_text(encoding="utf-8")
+    english = (ROOT / "docs/user-guide.en.md").read_text(encoding="utf-8")
+
+    for guide in (german, english):
+        assert "loxberry-mcpserver.service" in guide
+        assert "systemctl start" in guide
+        assert "systemctl stop" in guide
+        assert "systemctl restart" in guide
+        assert "sudoers" in guide
+    assert "aktive MCP-Verbindungen" in " ".join(german.split())
+    assert "active MCP connections" in " ".join(english.split())
 
 
 def test_postinstall_rewrites_moved_venv_entrypoints() -> None:

@@ -103,7 +103,7 @@ def test_service_actions_use_an_accessible_confirmation_and_dynamic_controls() -
     assert "installed && active" in template
     assert "serviceState.dataset.kind = kind" in template
     assert "serviceActionRunning = true" in template
-    assert "service_action: 35000" in template
+    assert "service_action: 75000" in template
 
 
 def test_admin_sections_are_native_persistent_collapsibles() -> None:

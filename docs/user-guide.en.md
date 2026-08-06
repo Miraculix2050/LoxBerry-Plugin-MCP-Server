@@ -198,13 +198,27 @@ version, service state, transport kind and masked counts. Sessions can be
 revoked individually or together; an available Miniserver also receives a
 best-effort `killtoken`.
 
+The admin status card refreshes the service state and PID automatically. An
+inactive service offers **Start**; an active service offers **Stop** and
+**Restart**. Stop and restart require confirmation and interrupt active MCP
+connections. These actions change neither the stored plugin configuration nor
+systemd auto-start. They control only the fixed
+`loxberry-mcpserver.service` unit.
+
+Service control is an administrative LoxBerry function and grants no Loxone or
+MCP permissions. The sudoers file permits the `loxberry` user only the complete
+`systemctl start`, `systemctl stop`, and `systemctl restart` commands for that
+fixed unit; arbitrary subcommands, arguments, and other units are not allowed.
+The action and result are recorded in the admin log without raw `systemctl`
+output.
+
 Every control attempt creates one compact masked record in the existing service
 log. Repeated identical rejections are limited; no separate audit file is
 created.
 
 ## Rollback
 
-Disable the service in the UI first. If a prerelease is faulty, reinstall the
+Stop the service in the UI first. If a prerelease is faulty, reinstall the
 previous plugin ZIP through Plugin Manager. Configuration and sessions survive
 upgrades together with encrypted Loxone tokens and the local installation key,
 so a still-valid session can continue without another login. Uninstall removes

@@ -212,13 +212,27 @@ Dienststatus, Transportart und maskierte Zähler. Sitzungen können einzeln oder
 gemeinsam widerrufen werden; ein erreichbarer Miniserver erhält zusätzlich
 best effort `killtoken`.
 
+Die Statuskarte der Adminseite aktualisiert Zustand und PID automatisch. Bei
+inaktivem Dienst steht **Starten** bereit; bei aktivem Dienst stehen **Stoppen**
+und **Neu starten** bereit. Stoppen und Neustarten müssen bestätigt werden und
+unterbrechen aktive MCP-Verbindungen. Diese Aktionen ändern weder die gespeicherte
+Plugin-Konfiguration noch den systemd-Autostart. Sie steuern ausschließlich die
+feste Unit `loxberry-mcpserver.service`.
+
+Die Dienststeuerung ist eine administrative LoxBerry-Funktion und verleiht weder
+Loxone- noch MCP-Berechtigungen. Die sudoers-Datei erlaubt dem Benutzer
+`loxberry` ausschließlich die vollständigen `systemctl start`, `systemctl stop`
+und `systemctl restart`-Befehle für diese feste Unit; freie Unterbefehle,
+Argumente oder andere Units sind nicht erlaubt. Aktion und Ergebnis werden ohne
+rohe `systemctl`-Ausgabe im Adminlog protokolliert.
+
 Jeder Schreibversuch erzeugt einen kompakten maskierten Eintrag im bestehenden
 Service-Log. Wiederholte identische Ablehnungen werden gedrosselt; eine separate
 Auditdatei wird nicht angelegt.
 
 ## Rücksetzen
 
-Deaktiviere zuerst den Dienst in der UI. Bei einer fehlerhaften Vorabversion
+Stoppe zuerst den Dienst in der UI. Bei einer fehlerhaften Vorabversion
 kann das vorherige Plugin-ZIP über den Plugin Manager erneut installiert
 werden. Konfiguration, Sitzungen, verschlüsselte Loxone-Tokens und der lokale
 Installationsschlüssel bleiben beim Upgrade gemeinsam erhalten, sodass eine

@@ -195,7 +195,7 @@ def test_service_status_fails_closed_when_systemctl_times_out(
 def test_service_action_uses_only_the_fixed_unit(
     command: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    captured: list[list[str]] = []
+    captured: list[tuple[list[str], dict[str, object]]] = []
     service = {
         "name": "loxberry-mcpserver.service",
         "installed": True,
@@ -206,7 +206,7 @@ def test_service_action_uses_only_the_fixed_unit(
     }
 
     def run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
-        captured.append(argv)
+        captured.append((argv, kwargs))
         return subprocess.CompletedProcess(argv, 0, b"", b"")
 
     monkeypatch.setattr("mcpserver.admin.subprocess.run", run)
@@ -214,7 +214,10 @@ def test_service_action_uses_only_the_fixed_unit(
 
     result = dispatch({"action": "service_action", "payload": {"command": command}})
 
-    assert captured == [["sudo", "-n", "/bin/systemctl", command, "loxberry-mcpserver.service"]]
+    assert len(captured) == 1
+    argv, kwargs = captured[0]
+    assert argv == ["sudo", "-n", "/bin/systemctl", command, "loxberry-mcpserver.service"]
+    assert kwargs["timeout"] == 65
     assert result == {"service_active": True, "service": service}
 
 
@@ -237,7 +240,7 @@ def test_service_action_maps_timeout_to_sanitized_error(
 ) -> None:
     monkeypatch.setattr(
         "mcpserver.admin.subprocess.run",
-        lambda *args, **kwargs: (_ for _ in ()).throw(subprocess.TimeoutExpired(args[0], 25)),
+        lambda *args, **kwargs: (_ for _ in ()).throw(subprocess.TimeoutExpired(args[0], 65)),
     )
 
     with pytest.raises(AdminError) as failure:

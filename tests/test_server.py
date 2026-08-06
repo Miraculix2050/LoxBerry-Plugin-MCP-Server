@@ -9,7 +9,7 @@ from starlette.testclient import TestClient
 from mcpserver.auth.provider import CONTROL_SCOPE, READ_SCOPE
 from mcpserver.config import PluginConfig
 from mcpserver.loxone.client import MiniserverEndpoint
-from mcpserver.server import create_server
+from mcpserver.server import create_server, main
 from mcpserver.settings import Phase0AuthSettings, ServerSettings
 
 
@@ -20,6 +20,31 @@ def _settings() -> ServerSettings:
         allowed_hosts=("testserver",),
         allowed_origins=("https://client.example",),
     )
+
+
+def test_main_opens_the_configured_log_as_the_service_user(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log_file = tmp_path / "service.log"
+    logging_options: dict[str, object] = {}
+    run_options: dict[str, object] = {}
+
+    class Server:
+        def run(self, **kwargs: object) -> None:
+            run_options.update(kwargs)
+
+    monkeypatch.setenv("MCPSERVER_LOG_FILE", str(log_file))
+    monkeypatch.setattr(
+        "mcpserver.server.logging.basicConfig", lambda **kwargs: logging_options.update(kwargs)
+    )
+    monkeypatch.setattr(ServerSettings, "from_environment", staticmethod(_settings))
+    monkeypatch.setattr("mcpserver.server.create_server", lambda settings: Server())
+
+    main()
+
+    assert logging_options["filename"] == str(log_file)
+    assert logging_options["encoding"] == "utf-8"
+    assert run_options == {"transport": "streamable-http"}
 
 
 def test_health_is_small_and_contains_no_configuration() -> None:
