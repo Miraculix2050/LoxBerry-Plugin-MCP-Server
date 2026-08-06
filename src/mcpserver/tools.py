@@ -718,10 +718,10 @@ def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> Non
             str | None,
             Field(
                 description=(
-                    "Legacy scene number 0 to 99 or LightControllerV2 mood ID such as ID1; "
-                    "required only for set_mood."
+                    "Legacy scene number 0 to 99 or decimal LightControllerV2 mood ID "
+                    "returned by its visible moodList; required only for set_mood."
                 ),
-                json_schema_extra={"maxLength": 4},
+                json_schema_extra={"maxLength": 10},
             ),
         ] = None,
         position: Annotated[

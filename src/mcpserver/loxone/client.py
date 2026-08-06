@@ -44,7 +44,7 @@ _APP_PERMISSION: Final = 4
 _PERCENT_COMMAND = r"(?:100(?:\.0+)?|(?:[0-9]|[1-9][0-9])(?:\.[0-9]+)?)"
 _CONTROL_COMMAND = re.compile(
     rf"(?:on|off|FullUp|FullDown|shade|stop|auto|NoAuto|"
-    rf"changeTo/(?:0|ID(?:[1-9]|[1-9][0-9]))|"
+    rf"changeTo/(?:0|[1-9][0-9]{{0,9}})|"
     rf"manualPosition/{_PERCENT_COMMAND}|manualLamelle/{_PERCENT_COMMAND}|"
     rf"manualPosBlind/{_PERCENT_COMMAND}/{_PERCENT_COMMAND}|{_PERCENT_COMMAND})\Z"
 )

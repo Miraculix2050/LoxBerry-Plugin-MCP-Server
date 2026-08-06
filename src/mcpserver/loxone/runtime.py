@@ -21,7 +21,11 @@ from mcpserver.loxone.client import (
     LoxoneToken,
     LoxoneWebSocketSession,
 )
-from mcpserver.loxone.control import SUPPORTED_CONTROL_TYPES, prepare_control_command
+from mcpserver.loxone.control import (
+    SUPPORTED_CONTROL_TYPES,
+    prepare_control_command,
+    visible_mood_ids,
+)
 from mcpserver.loxone.events import LoxoneProtocolError
 from mcpserver.loxone.models import Control, Freshness, LoxoneStructure, StateRecord
 
@@ -247,6 +251,30 @@ class LoxoneRuntime:
                 except ValueError as exc:
                     raise ControlOperationError("invalid_input", str(exc)) from exc
                 state_uuids = dict(control.state_uuids)
+                if (
+                    control.control_type == "LightControllerV2"
+                    and action == "set_mood"
+                    and mood_id != "0"
+                ):
+                    mood_list_uuid = state_uuids.get("moodList")
+                    if mood_list_uuid is None:
+                        raise ControlOperationError(
+                            "unsupported_control", "control has no visible moodList state"
+                        )
+                    mood_list = self.cache.get(snapshot.subject, mood_list_uuid)
+                    if mood_list.freshness is not Freshness.CURRENT:
+                        raise ControlOperationError(
+                            "temporarily_unavailable", "visible moodList is not current"
+                        )
+                    available_moods = visible_mood_ids(mood_list.value)
+                    if available_moods is None:
+                        raise ControlOperationError(
+                            "unsupported_control", "visible moodList has an invalid format"
+                        )
+                    if mood_id not in available_moods:
+                        raise ControlOperationError(
+                            "invalid_input", "mood_id is not present in the visible moodList"
+                        )
                 missing = [
                     name for name, _target in prepared.expected_states if name not in state_uuids
                 ]

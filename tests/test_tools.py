@@ -132,6 +132,9 @@ def test_tool_input_schemas_explain_every_argument() -> None:
     assert find_properties["query"]["maxLength"] == 200
     assert find_properties["limit"]["minimum"] == 1
     assert find_properties["limit"]["maximum"] == 100
+    assert (
+        published["loxone_operate_control"].parameters["properties"]["mood_id"]["maxLength"] == 10
+    )
     state_uuids = published["loxone_get_states"].parameters["properties"]["state_uuids"]
     assert state_uuids["minItems"] == 1
     assert state_uuids["maxItems"] == 100

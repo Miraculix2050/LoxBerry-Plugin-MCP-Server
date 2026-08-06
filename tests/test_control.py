@@ -174,10 +174,10 @@ async def test_transport_failure_after_dispatch_has_unknown_outcome(
         (
             "LightControllerV2",
             "set_mood",
-            {"mood_id": "ID12"},
-            "changeTo/ID12",
+            {"mood_id": "314"},
+            "changeTo/314",
             "activeMoods",
-            '["ID12"]',
+            "[314]",
         ),
         (
             "Jalousie",
@@ -205,11 +205,20 @@ async def test_supported_control_operation_is_bounded_and_confirmed(
         control_confirmation_seconds=0.2,
     )
     runtime.cache.begin_connection("family")
+    states = ((state_name, "state-1"),)
+    if control_type == "LightControllerV2":
+        states += (("moodList", "state-2"),)
     structure = _structure(
         control_type,
-        states=((state_name, "state-1"),),
+        states=states,
         automatic=action == "enable_auto",
     )
+    if control_type == "LightControllerV2":
+        runtime.cache.apply(
+            "family",
+            [StateEvent("state-2", '[{"name":"Synthetic Mood","id":314}]')],
+            allowed_uuids={"state-1", "state-2"},
+        )
 
     async def snapshot(_access: StoredAccessToken) -> RuntimeSnapshot:
         return RuntimeSnapshot("family", structure, True)
@@ -244,6 +253,52 @@ async def test_supported_control_operation_is_bounded_and_confirmed(
     assert result.control_type == control_type
     assert result.confirmed is True
     assert dict(result.observed_values)[state_name] == state_value
+
+
+@pytest.mark.asyncio
+async def test_light_controller_v2_rejects_mood_not_in_visible_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = LoxoneRuntime(
+        MiniserverEndpoint.parse_gen1("http://192.168.1.10"),
+        _TokenStore(),  # type: ignore[arg-type]
+    )
+    runtime.cache.begin_connection("family")
+    structure = _structure(
+        "LightControllerV2",
+        states=(("activeMoods", "state-1"), ("moodList", "state-2")),
+    )
+    runtime.cache.apply(
+        "family",
+        [StateEvent("state-2", '[{"name":"Allowed Test Mood","id":314}]')],
+        allowed_uuids={"state-1", "state-2"},
+    )
+
+    async def snapshot(_access: StoredAccessToken) -> RuntimeSnapshot:
+        return RuntimeSnapshot("family", structure, True)
+
+    class Session:
+        async def load_structure(self) -> LoxoneStructure:
+            return structure
+
+        async def close(self) -> None:
+            return None
+
+    class Client:
+        async def open_session(self, _token: LoxoneToken) -> Session:
+            return Session()
+
+    monkeypatch.setattr(runtime, "snapshot", snapshot)
+    runtime.client = Client()  # type: ignore[assignment]
+
+    with pytest.raises(ControlOperationError) as captured:
+        await runtime.operate_control(
+            _access(READ_SCOPE, CONTROL_SCOPE),
+            "control-1",
+            "set_mood",
+            mood_id="315",
+        )
+    assert captured.value.code == "invalid_input"
 
 
 @pytest.mark.asyncio

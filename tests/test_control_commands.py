@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from mcpserver.loxone.control import allowed_actions, prepare_control_command
+from mcpserver.loxone.control import allowed_actions, prepare_control_command, visible_mood_ids
 from mcpserver.loxone.models import Control
 
 
@@ -27,7 +27,7 @@ def _control(control_type: str, *, automatic: bool = False, read_only: bool = Fa
         ("Dimmer", "set_level", {"level": 42.5}, "42.5"),
         ("LightController", "set_mood", {"mood_id": "7"}, "7"),
         ("LightControllerV2", "off", {}, "changeTo/0"),
-        ("LightControllerV2", "set_mood", {"mood_id": "ID12"}, "changeTo/ID12"),
+        ("LightControllerV2", "set_mood", {"mood_id": "314"}, "changeTo/314"),
         ("Jalousie", "open", {}, "FullUp"),
         ("Jalousie", "close", {}, "FullDown"),
         ("Jalousie", "set_position", {"position": 25}, "manualPosition/25"),
@@ -60,6 +60,7 @@ def test_automatic_actions_are_advertised_only_for_automatic_jalousie() -> None:
         (_control("Dimmer"), "set_level", {"level": 101}),
         (_control("Dimmer"), "set_level", {"level": -1}),
         (_control("LightController"), "set_mood", {"mood_id": "ID1"}),
+        (_control("LightControllerV2"), "set_mood", {"mood_id": "ID1"}),
         (_control("LightControllerV2"), "set_mood", {"mood_id": "../../on"}),
         (_control("Jalousie"), "set_position", {}),
         (_control("Jalousie"), "open", {"position": 10}),
@@ -71,3 +72,10 @@ def test_invalid_or_mismatched_parameters_are_rejected(
 ) -> None:
     with pytest.raises(ValueError):
         prepare_control_command(control, action, **kwargs)  # type: ignore[arg-type]
+
+
+def test_visible_mood_ids_accepts_numeric_target_data() -> None:
+    value = '[{"name":"Synthetic A","id":314},{"name":"Synthetic B","id":999}]'
+
+    assert visible_mood_ids(value) == frozenset({"314", "999"})
+    assert visible_mood_ids('[{"name":"Unsafe","id":"../../on"}]') is None

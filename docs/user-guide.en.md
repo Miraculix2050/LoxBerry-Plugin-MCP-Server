@@ -178,7 +178,8 @@ tool accepts only a visible control UUID and an action explicitly advertised by
 `loxone_describe_control`. Supported types are `Switch`, `Dimmer`,
 `LightController`, `LightControllerV2`, and `Jalousie`; automatic blind actions
 are offered only when `details.isAutomatic=true`. Percentages are limited to 0
-through 100, and lighting moods to documented scene or mood IDs. The server
+through 100, and lighting moods to documented scene IDs or currently visible
+numeric `moodList` IDs. The server
 provides no name-, room-, bulk-, free-form, learning, renaming, or expert
 commands. History, LoxBerry tools and Basic Auth remain excluded.
 Results and actions are limited to the authenticated Loxone user's permissions.

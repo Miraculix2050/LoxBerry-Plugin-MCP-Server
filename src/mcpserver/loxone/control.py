@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 
@@ -11,13 +13,36 @@ from mcpserver.loxone.models import Control
 SUPPORTED_CONTROL_TYPES = frozenset(
     {"Switch", "Dimmer", "LightController", "LightControllerV2", "Jalousie"}
 )
-_MOOD_ID = re.compile(r"(?:0|ID(?:[1-9]|[1-9][0-9]))\Z")
+_MOOD_ID = re.compile(r"(?:0|[1-9][0-9]{0,9})\Z")
 
 
 @dataclass(frozen=True, slots=True)
 class PreparedControlCommand:
     command: str
     expected_states: tuple[tuple[str, float | str], ...] = ()
+
+
+def visible_mood_ids(value: object) -> frozenset[str] | None:
+    """Return bounded decimal IDs from one visible LightControllerV2 moodList state."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(value, list) or len(value) > 1000:
+        return None
+    result: set[str] = set()
+    for item in value:
+        if not isinstance(item, Mapping):
+            return None
+        mood_id = item.get("id")
+        if isinstance(mood_id, bool):
+            return None
+        normalized = str(mood_id) if isinstance(mood_id, int | str) else ""
+        if not _MOOD_ID.fullmatch(normalized):
+            return None
+        result.add(normalized)
+    return frozenset(result)
 
 
 def allowed_actions(control: Control) -> list[str]:
@@ -119,7 +144,7 @@ def prepare_control_command(
             return PreparedControlCommand("changeTo/0", (("activeMoods", "0"),))
         require_only("mood_id")
         if mood_id is None or not _MOOD_ID.fullmatch(mood_id):
-            raise ValueError("mood_id must be 0 or an official ID from ID1 to ID99")
+            raise ValueError("mood_id must be a decimal ID from the visible moodList")
         return PreparedControlCommand(f"changeTo/{mood_id}", (("activeMoods", mood_id),))
 
     if action in {"open", "close", "shade", "stop", "enable_auto", "disable_auto"}:

@@ -191,7 +191,8 @@ akzeptiert ausschließlich eine sichtbare Control-UUID und eine von
 `Switch`, `Dimmer`, `LightController`, `LightControllerV2` und `Jalousie`;
 Automatikaktionen einer Jalousie werden nur bei `details.isAutomatic=true`
 angeboten. Prozentwerte sind auf 0 bis 100 begrenzt, Lichtstimmungen auf
-dokumentierte Szenen- beziehungsweise Mood-IDs. Es gibt keine Namens-, Raum-,
+dokumentierte Szenen- beziehungsweise die aktuell sichtbaren numerischen
+`moodList`-IDs. Es gibt keine Namens-, Raum-,
 Bulk- oder freien Kommandos und keine Lern-, Umbenennungs- oder Expertenbefehle.
 Historie, LoxBerry-Tools und
 Basic Auth bleiben ausgeschlossen. Ergebnisse und Aktionen entsprechen den

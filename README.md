@@ -14,7 +14,7 @@ Phase 1 und die ursprüngliche Phase 2 sind abgenommen. Der zugehörige
 Pre-Release `0.2.0-alpha.1` begrenzt das optionale Schreibwerkzeug noch auf
 `Switch`. Der aktuelle, noch nicht als Folgerelease veröffentlichte Stand
 erweitert dieses Werkzeug auf Gen.-1-Controls vom Typ `Switch`, `Dimmer`,
-`LightController`, `LightControllerV2` und `Jalousie` bereit. Es bleibt
+`LightController`, `LightControllerV2` und `Jalousie`. Es bleibt
 standardmäßig deaktiviert, akzeptiert ausschließlich typabhängige dokumentierte
 Aktionen und benötigt den separat bestätigten Scope `loxone:control`. Freie
 Kommandos, Namens- und Sammelziele sind ausgeschlossen. Die sechs stabilen

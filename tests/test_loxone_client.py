@@ -88,6 +88,30 @@ async def test_control_operation_rejects_unprepared_command() -> None:
 
 
 @pytest.mark.asyncio
+async def test_control_operation_accepts_bounded_numeric_mood_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = LoxoneWebSocketSession(
+        cast(Any, object()),
+        public_key="",
+        token=LoxoneToken("jwt", "user", "key", "SHA256", 1),
+        timeout_seconds=1,
+        max_payload_bytes=1024,
+    )
+    commands: list[tuple[str, bool]] = []
+
+    async def command(value: str, *, encrypted: bool = False) -> object:
+        commands.append((value, encrypted))
+        return None
+
+    monkeypatch.setattr(session, "_command", command)
+
+    await session.operate_control("action-1", "changeTo/314")
+
+    assert commands == [("jdev/sps/io/action-1/changeTo/314", True)]
+
+
+@pytest.mark.asyncio
 async def test_websocket_receive_returns_complete_payload_without_waiting_again() -> None:
     class FakeWebSocket:
         def __init__(self) -> None:

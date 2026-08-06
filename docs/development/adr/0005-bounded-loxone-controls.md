@@ -1,7 +1,8 @@
 # ADR 0005: Bounded Loxone Control Types
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-06
+- **Accepted:** 2026-08-06
 - **Supersedes:** ADR 0003
 
 ## Context
@@ -48,7 +49,10 @@ control type and identity:
 | automatic `Jalousie` | plus `enable_auto`, `disable_auto` | `auto`, `NoAuto` |
 
 Percentages are finite values from 0 through 100. Legacy scenes are decimal
-numbers from 0 through 99. V2 mood IDs are `0` or `ID1` through `ID99`.
+numbers from 0 through 99. V2 mood IDs are bounded decimal values returned by
+the control's current visible `moodList`; `0` remains the documented off target.
+The server validates nonzero V2 targets against that current list immediately
+before dispatch and rejects missing, stale, malformed, or unlisted mood targets.
 Parameters must match the selected action exactly; extra and missing parameters
 are rejected. Relative-motion pairs, scene/mood mutation, naming, presence,
 end-position adjustment, expert operations, arbitrary paths, name targets, and
