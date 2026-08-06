@@ -19,6 +19,11 @@ tmp/
 .tmp/
 temp/
 
+# Local research notes
+/docs/research/Loxberry Plugin Konzept.md
+/docs/research/Loxone eigener MCP-Server.md
+/docs/research/Projekte mit Loxone MCP-Server.md
+
 # Logs
 *.log
 __pycache__/
