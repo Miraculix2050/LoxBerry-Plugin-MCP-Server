@@ -209,6 +209,9 @@ Die verbindliche Auswahl steht in der [Teststrategie](test-strategy.md).
 Grundsätzlich gilt:
 
 - Tests werden durch tatsächliche Änderungen ausgelöst, nicht periodisch.
+- Während der Implementierung wird die Changed-Auswahl verwendet und nur nach
+  relevanten weiteren Änderungen wiederholt. Full läuft einmal auf der finalen
+  Revision oder als gleichwertiges CI-Gate desselben Commits.
 - Deterministische Logik wird lokal und in CI ohne echten Miniserver oder
   LoxBerry getestet.
 - MCP-Schemas, Berechtigungsgrenzen, Konfigurationsmigrationen und Fehlerpfade

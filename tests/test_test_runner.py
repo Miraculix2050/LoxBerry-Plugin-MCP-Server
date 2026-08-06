@@ -1,0 +1,126 @@
+from __future__ import annotations
+
+import subprocess
+import sys
+
+import pytest
+
+from tools.test import TestPlan as RunnerPlan
+from tools.test import create_plan, discover_changed_files, main
+
+
+def _pytest_targets(plan: RunnerPlan) -> set[str]:
+    for command in plan.commands:
+        if command[1:4] == ("-m", "pytest", "-q"):
+            return set(command[4:])
+    return set()
+
+
+def test_changed_packaging_selects_package_contract_tests() -> None:
+    plan = create_plan("changed", ("tools/build_release_candidate.py",))
+
+    assert plan.effective_profile == "changed"
+    assert _pytest_targets(plan) == {
+        "tests/test_apache_config.py",
+        "tests/test_plugin_package.py",
+    }
+
+
+def test_changed_ui_selects_only_affected_ui_groups() -> None:
+    plan = create_plan("changed", ("webfrontend/htmlauth/explorer.js",))
+
+    assert plan.effective_profile == "changed"
+    assert _pytest_targets(plan) == {
+        "tests/test_explorer_ui.py",
+        "tests/test_oauth.py",
+    }
+
+
+def test_shared_language_files_select_both_ui_groups() -> None:
+    plan = create_plan("changed", ("templates/lang/language_de.ini",))
+
+    assert plan.effective_profile == "changed"
+    assert _pytest_targets(plan) == {
+        "tests/test_admin.py",
+        "tests/test_admin_ui.py",
+        "tests/test_apache_config.py",
+        "tests/test_explorer_ui.py",
+        "tests/test_oauth.py",
+    }
+
+
+def test_changed_documentation_uses_only_diff_check() -> None:
+    plan = create_plan("changed", ("docs/development/automation.md",))
+
+    assert plan.effective_profile == "changed"
+    assert plan.commands == (("git", "diff", "--check"),)
+
+
+def test_packaged_skill_markdown_selects_contract_tests() -> None:
+    plan = create_plan("changed", ("src/mcpserver/skills/using-loxberry-mcp/SKILL.md",))
+
+    assert plan.effective_profile == "changed"
+    assert _pytest_targets(plan) == {
+        "tests/test_plugin_package.py",
+        "tests/test_tools.py",
+    }
+
+
+def test_unknown_runtime_path_falls_back_to_full() -> None:
+    plan = create_plan("changed", ("src/mcpserver/future_module.py",))
+
+    assert plan.effective_profile == "full"
+    assert plan.reason == "unmapped or cross-cutting paths: src/mcpserver/future_module.py"
+    assert any(command[1:4] == ("-m", "pytest", "-q") for command in plan.commands)
+
+
+def test_changed_explicit_plan_cli_does_not_run_commands(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "test.py",
+            "--profile",
+            "changed",
+            "--files",
+            "tools/test.py",
+            "--plan",
+        ],
+    )
+
+    assert main() == 0
+    output = capsys.readouterr().out
+    assert "requested=changed effective=changed" in output
+    assert "tests/test_test_runner.py" in output
+
+
+def test_full_profile_keeps_ci_commands_quiet() -> None:
+    plan = create_plan("full")
+
+    assert plan.commands[-1][1:] == ("-m", "pytest", "-q")
+    assert plan.commands[0] == ("git", "diff", "--check")
+
+
+def test_invalid_explicit_base_ref_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def failed_run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess([], 1, "", "unknown revision")
+
+    monkeypatch.setattr("tools.test.subprocess.run", failed_run)
+
+    with pytest.raises(RuntimeError, match="invalid base ref"):
+        discover_changed_files("missing-ref", explicit=True)
+
+
+def test_documented_test_cli_starts_without_pythonpath() -> None:
+    result = subprocess.run(
+        [sys.executable, "tools/test.py", "--help"],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+    assert result.returncode == 0

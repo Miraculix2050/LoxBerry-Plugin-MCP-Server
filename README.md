@@ -53,11 +53,15 @@ Abhängigkeitsauflösung eingebunden:
 ```text
 python -m pip install -r requirements/runtime-arm64.lock -r requirements/dev.lock
 python -m pip install --no-deps -e .
-python tools/test.py
+python tools/test.py --profile changed --plan
+python tools/test.py --profile changed
 ```
 
-`python tools/test.py` ist der einheitliche lokale und CI-Testbefehl. Er führt
-Formatprüfung, Lint, strikte Typprüfung und die deterministischen Tests aus.
+Das Changed-Profil wählt während der Entwicklung nur betroffene Prüfungen aus.
+`python tools/test.py --profile full` beziehungsweise der rückwärtskompatible
+Aufruf `python tools/test.py` führt das vollständige Python-3.13-Gate für CI und
+finale Revisionen aus. Details stehen in der
+[Teststrategie](docs/development/test-strategy.md).
 
 ## Lizenz
 

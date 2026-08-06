@@ -1,4 +1,4 @@
-"""Build the project wheel and download exact Debian 13 arm64 runtime wheels."""
+"""Prepare exact Debian 13 arm64 wheels for packaging or a runtime cache."""
 
 from __future__ import annotations
 
@@ -13,6 +13,11 @@ from pathlib import Path
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("output", type=Path)
+    parser.add_argument(
+        "--runtime-only",
+        action="store_true",
+        help="Download only the pinned arm64 runtime wheels for a reusable cache.",
+    )
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     output = args.output.resolve()
@@ -47,23 +52,24 @@ def main() -> int:
         cwd=root,
         env=build_environment,
     )
-    subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "pip",
-            "wheel",
-            "--ignore-requires-python",
-            "--no-deps",
-            "--no-cache-dir",
-            "--wheel-dir",
-            str(output),
-            ".",
-        ],
-        check=True,
-        cwd=root,
-        env=build_environment,
-    )
+    if not args.runtime_only:
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "wheel",
+                "--ignore-requires-python",
+                "--no-deps",
+                "--no-cache-dir",
+                "--wheel-dir",
+                str(output),
+                ".",
+            ],
+            check=True,
+            cwd=root,
+            env=build_environment,
+        )
     shutil.copy2(root / "requirements" / "runtime-arm64.lock", output / "runtime-arm64.lock")
     return 0
 
