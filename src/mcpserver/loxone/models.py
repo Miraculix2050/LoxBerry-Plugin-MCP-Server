@@ -38,6 +38,9 @@ class Control:
     category_uuid: str | None
     action_uuid: str | None
     state_uuids: tuple[tuple[str, str], ...]
+    restrictions: int = 0
+    read_only: bool = False
+    is_automatic: bool = False
     subcontrols: tuple[Control, ...] = ()
 
 

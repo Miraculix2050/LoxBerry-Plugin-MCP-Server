@@ -8,6 +8,9 @@ from typing import Any
 from mcpserver.loxone.models import Control, LoxoneIdentity, LoxoneStructure, NamedGroup
 
 _REFERENCED_ONLY_INTERNAL = 1 << 0
+_READ_ONLY_INTERNAL = 1 << 1
+_READ_ONLY_EXTERNAL = 1 << 5
+_READ_ONLY = _READ_ONLY_INTERNAL | _READ_ONLY_EXTERNAL
 
 
 class LoxoneStructureError(ValueError):
@@ -58,6 +61,12 @@ def _controls(value: object, *, referenced: bool = False) -> tuple[Control, ...]
             if isinstance(name, str) and isinstance(state_uuid, str)
         )
         subcontrols_value = item.get("subControls", {})
+        details = item.get("details", {})
+        if not isinstance(details, Mapping):
+            raise LoxoneStructureError("Control details must be an object")
+        is_automatic = details.get("isAutomatic", False)
+        if not isinstance(is_automatic, bool):
+            raise LoxoneStructureError("Control details.isAutomatic must be boolean")
         controls.append(
             Control(
                 uuid=uuid,
@@ -65,8 +74,11 @@ def _controls(value: object, *, referenced: bool = False) -> tuple[Control, ...]
                 control_type=_text(item.get("type"), field="controls.type"),
                 room_uuid=_optional_uuid(item.get("room")),
                 category_uuid=_optional_uuid(item.get("cat")),
-                action_uuid=_optional_uuid(item.get("action")),
+                action_uuid=_optional_uuid(item.get("uuidAction")),
                 state_uuids=states,
+                restrictions=restrictions,
+                read_only=bool(restrictions & _READ_ONLY),
+                is_automatic=is_automatic,
                 subcontrols=(
                     _controls(subcontrols_value, referenced=True) if subcontrols_value else ()
                 ),

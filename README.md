@@ -1,9 +1,6 @@
 # LoxBerry MCP Server
 
-Das McpServer-Plugin betreibt einen [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)-Server direkt auf dem LoxBerry. Die aktuelle Alpha erlaubt KI-Assistenten und Agenten, den Zustand einer Loxone-Miniserver-Installation zu lesen. Optional kann sie genau ein kontrolliertes Schreibwerkzeug für Gen.-1-Steuerungen vom Typ `Switch` bereitstellen. Dabei verwendet das Plugin die vorhandenen Räume, Kategorien und Steuerungsnamen – ohne eigenen Cloud-Dienst.
-
-Die Steuerung bleibt standardmäßig deaktiviert. Weitere Control-Typen und
-LoxBerry-Werkzeuge sind nicht Bestandteil dieser Version.
+Das McpServer-Plugin betreibt einen [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)-Server direkt auf dem LoxBerry. Die aktuelle Alpha erlaubt KI-Assistenten und Agenten standardmäßig ausschließlich, den Zustand einer Loxone-Miniserver-Installation zu lesen. Optional kann ein eng begrenztes Loxone-Schreibwerkzeug aktiviert werden. Dabei verwendet das Plugin die vorhandenen Räume, Kategorien und Steuerungsnamen – ohne eigenen Cloud-Dienst. LoxBerry-Werkzeuge sind nicht Bestandteil dieser Version.
 
 ## Sicherheit und Berechtigungen
 
@@ -13,12 +10,15 @@ Für jeden Assistenten sollte ein eigener Loxone-Benutzer mit den minimal erford
 
 ## Projektstatus
 
-Phase 1 und Phase 2 sind abgenommen. Phase 2 ergänzt optional genau ein
-kontrolliertes Schreibwerkzeug für Gen.-1-Controls vom Typ `Switch`. Es bleibt
-standardmäßig deaktiviert, akzeptiert ausschließlich `on` und `off` und benötigt
-den separat bestätigten Scope `loxone:control`. Die sechs stabilen lesenden
-Tools und bestehende Read-only-Sitzungen bleiben kompatibel. Der zugehörige
-Pre-Release ist `0.2.0-alpha.1`.
+Phase 1 und die ursprüngliche Phase 2 sind abgenommen. Der zugehörige
+Pre-Release `0.2.0-alpha.1` begrenzt das optionale Schreibwerkzeug noch auf
+`Switch`. Der aktuelle, noch nicht als Folgerelease veröffentlichte Stand
+erweitert dieses Werkzeug auf Gen.-1-Controls vom Typ `Switch`, `Dimmer`,
+`LightController`, `LightControllerV2` und `Jalousie`. Es bleibt
+standardmäßig deaktiviert, akzeptiert ausschließlich typabhängige dokumentierte
+Aktionen und benötigt den separat bestätigten Scope `loxone:control`. Freie
+Kommandos, Namens- und Sammelziele sind ausgeschlossen. Die sechs stabilen
+lesenden Tools und bestehende Read-only-Sitzungen bleiben kompatibel.
 
 Bestätigte Kombinationen, Nachweise und bekannte Clientgrenzen stehen in der
 [Support-Matrix](docs/development/support-matrix.md), im

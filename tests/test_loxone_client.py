@@ -50,7 +50,7 @@ async def test_websocket_close_is_bounded() -> None:
 
 
 @pytest.mark.asyncio
-async def test_switch_operation_uses_encrypted_explicit_command(
+async def test_control_operation_uses_encrypted_explicit_command(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     session = LoxoneWebSocketSession(
@@ -68,9 +68,47 @@ async def test_switch_operation_uses_encrypted_explicit_command(
 
     monkeypatch.setattr(session, "_command", command)
 
-    await session.operate_switch("action-1", "off")
+    await session.operate_control("action-1", "manualPosition/40")
 
-    assert commands == [("jdev/sps/io/action-1/off", True)]
+    assert commands == [("jdev/sps/io/action-1/manualPosition/40", True)]
+
+
+@pytest.mark.asyncio
+async def test_control_operation_rejects_unprepared_command() -> None:
+    session = LoxoneWebSocketSession(
+        cast(Any, object()),
+        public_key="",
+        token=LoxoneToken("jwt", "user", "key", "SHA256", 1),
+        timeout_seconds=1,
+        max_payload_bytes=1024,
+    )
+
+    with pytest.raises(ValueError, match="invalid control operation"):
+        await session.operate_control("action-1", "99/delete")
+
+
+@pytest.mark.asyncio
+async def test_control_operation_accepts_bounded_numeric_mood_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = LoxoneWebSocketSession(
+        cast(Any, object()),
+        public_key="",
+        token=LoxoneToken("jwt", "user", "key", "SHA256", 1),
+        timeout_seconds=1,
+        max_payload_bytes=1024,
+    )
+    commands: list[tuple[str, bool]] = []
+
+    async def command(value: str, *, encrypted: bool = False) -> object:
+        commands.append((value, encrypted))
+        return None
+
+    monkeypatch.setattr(session, "_command", command)
+
+    await session.operate_control("action-1", "changeTo/314")
+
+    assert commands == [("jdev/sps/io/action-1/changeTo/314", True)]
 
 
 @pytest.mark.asyncio

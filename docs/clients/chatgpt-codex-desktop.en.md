@@ -64,8 +64,9 @@ loxone:read loxone:control
 
 The consent dialog shows required **Read access** and optional **Loxone
 control** as a checkbox. Only when control is selected and confirmed are the six
-read tools and the narrowly limited Switch write tool available. The write tool
-can only turn permitted, visible Gen. 1 Switches on or off. The authenticated
+read tools and the narrowly limited control tool available. The write tool can
+only operate permitted, visible Gen. 1 controls with actions advertised by
+`loxone_describe_control`. The authenticated
 Loxone user's permissions further restrict what is actually possible.
 
 Write access is not silently added later: it must be selected and approved on

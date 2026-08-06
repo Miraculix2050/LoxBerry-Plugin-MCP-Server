@@ -1,8 +1,9 @@
 # Support-Matrix
 
-- **Stand:** Abnahmestand Phase 2, 2026-08-06
+- **Stand:** Erweiterter Phase-2-Implementierungsstand, 2026-08-06
 - **Aktueller Pre-Release:** `0.2.0-alpha.1`
-- **Nächster Meilenstein:** Phase 3 mit LoxBerry Read-only
+- **Nächster Meilenstein:** gezielte reale Abnahme der erweiterten
+  Gen.-1-Schreibaktionen und ein Folgerelease
 
 Diese Matrix unterscheidet reale Nachweise von implementierten, aber noch nicht
 real bestätigten Kombinationen. Phase 1 und Phase 2 sind abgenommen;
@@ -85,6 +86,9 @@ Der vollständige maskierte Nachweis steht im
 - Codex CLI wurde im finalen Abschlusslauf wegen der lokalen
   Windows-Ausführungsstörung nicht erneut abgenommen; der bekannte Clientfehler
   ist für den Server- und Claude-Nachweis nicht blockierend.
-- Phase 2 unterstützt ausschließlich Gen.-1-`Switch` mit `on` und `off`.
-  Weitere Control-Typen und Gen.-2-Schreibzugriff bleiben unbestätigt und sind
-  nicht freigegeben.
+- Phase 2 implementiert die in ADR 0005 begrenzten Aktionen für `Switch`,
+  `Dimmer`, `LightController`, `LightControllerV2` und `Jalousie`. Befehlspfad,
+  Validierung und Bestätigungslogik sind mit lokalen Testdoubles geprüft. In
+  diesem Lauf wird auf dem Zielsystem ausschließlich gelesen; die erweiterten
+  Schreibaktionen sind daher noch nicht als reale Hardwarekompatibilität
+  bestätigt.

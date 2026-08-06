@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from mcpserver.skill_delivery import SKILL_REVISION
 from tools.build_plugin import (
     _EXECUTABLES,
     _add,
@@ -78,6 +79,7 @@ def test_mcp_client_smoke_covers_skill_delivery_surfaces() -> None:
     assert "method = 'resources/list'" in script
     assert "method = 'resources/read'" in script
     assert "mcp_skill_delivery=pass" in script
+    assert f"$skillGuide.data.revision -ne {SKILL_REVISION}" in script
     assert "[int]$CallbackPort" in script
     assert "if ($proxyArguments[$index] -match '^https?://')" in script
     assert "$callbackIndex = $serverUrlIndex + 1" in script

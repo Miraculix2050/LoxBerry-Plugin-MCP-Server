@@ -20,6 +20,7 @@ from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field, JsonValue
 
 from mcpserver.auth.provider import CONTROL_SCOPE, StoredAccessToken
+from mcpserver.loxone.control import allowed_actions
 from mcpserver.loxone.models import Control, Freshness, NamedGroup
 from mcpserver.loxone.runtime import (
     ControlOperationError,
@@ -173,10 +174,12 @@ class SkillGuideEnvelope(ToolEnvelope):
 
 class ControlOperationData(BaseModel):
     control_uuid: str
-    action: Literal["on", "off"]
+    control_type: str
+    action: str
     accepted: bool
     confirmed: bool
-    observed_state: Literal["on", "off", "unknown"]
+    observed_state: str
+    observed_values: dict[str, JsonValue] = Field(default_factory=dict)
 
 
 class ControlOperationEnvelope(ToolEnvelope):
@@ -265,7 +268,7 @@ def _control_envelope(
             _audit_identity(str(access.client_id)) if access is not None else "unknown",
             _audit_identity(access.identity_id) if access is not None else "unknown",
             json.dumps(control_uuid[:128]),
-            action if action in {"on", "off"} else "invalid",
+            action[:64] if action else "invalid",
             outcome,
         )
     data = (
@@ -558,11 +561,8 @@ def register_read_tools(
             value["capabilities"] = {
                 "readable": True,
                 "allowed_actions": (
-                    ["on", "off"]
-                    if control_enabled
-                    and CONTROL_SCOPE in access_token.scopes
-                    and control.control_type == "Switch"
-                    and control.action_uuid is not None
+                    allowed_actions(control)
+                    if control_enabled and CONTROL_SCOPE in access_token.scopes
                     else []
                 ),
             }
@@ -666,7 +666,7 @@ def register_skill_tool(server: FastMCP) -> None:
 
 
 def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> None:
-    """Publish the single explicitly enabled Phase 2 Switch operation."""
+    """Publish the single explicitly enabled bounded control operation."""
     annotations = ToolAnnotations(
         readOnlyHint=False,
         destructiveHint=True,
@@ -677,7 +677,8 @@ def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> Non
     @server.tool(
         name="loxone_operate_control",
         description=(
-            "Switch one visible and operable Loxone Switch control explicitly on or off. "
+            "Operate one visible and operable Switch, Dimmer, LightController, "
+            "LightControllerV2, or Jalousie with an explicit documented action. "
             "Requires loxone:control. Never retries an uncertain command."
         ),
         annotations=annotations,
@@ -686,12 +687,63 @@ def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> Non
     async def operate_control(
         control_uuid: Annotated[
             str,
-            Field(description="Exact operable Switch UUID returned by loxone_find_controls."),
+            Field(description="Exact operable control UUID returned by loxone_find_controls."),
         ],
         action: Annotated[
-            Literal["on", "off"],
-            Field(description="Explicit Switch action: on or off."),
+            Literal[
+                "on",
+                "off",
+                "set_level",
+                "set_mood",
+                "open",
+                "close",
+                "shade",
+                "stop",
+                "enable_auto",
+                "disable_auto",
+                "set_position",
+                "set_slat_position",
+                "set_position_and_slats",
+            ],
+            Field(description="Explicit action advertised by loxone_describe_control."),
         ],
+        level: Annotated[
+            float | None,
+            Field(
+                description="Dimmer level from 0 to 100; required only for set_level.",
+                json_schema_extra={"minimum": 0, "maximum": 100},
+            ),
+        ] = None,
+        mood_id: Annotated[
+            str | None,
+            Field(
+                description=(
+                    "Legacy scene number 0 to 99 or decimal LightControllerV2 mood ID "
+                    "returned by its visible moodList; required only for set_mood."
+                ),
+                json_schema_extra={"maxLength": 10},
+            ),
+        ] = None,
+        position: Annotated[
+            float | None,
+            Field(
+                description=(
+                    "Jalousie target from 0 (fully open) to 100 (fully closed); required "
+                    "for set_position and set_position_and_slats."
+                ),
+                json_schema_extra={"minimum": 0, "maximum": 100},
+            ),
+        ] = None,
+        slat_position: Annotated[
+            float | None,
+            Field(
+                description=(
+                    "Jalousie slat target from 0 (horizontal) to 100 (vertical); required "
+                    "for set_slat_position and set_position_and_slats."
+                ),
+                json_schema_extra={"minimum": 0, "maximum": 100},
+            ),
+        ] = None,
     ) -> ControlOperationEnvelope:
         access: StoredAccessToken | None = None
         try:
@@ -700,7 +752,15 @@ def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> Non
                 raise ControlOperationError(
                     "temporarily_unavailable", "the service is not configured"
                 )
-            operation = await runtime.operate_switch(access, control_uuid, action)
+            operation = await runtime.operate_control(
+                access,
+                control_uuid,
+                action,
+                level=level,
+                mood_id=mood_id,
+                position=position,
+                slat_position=slat_position,
+            )
             warnings = (
                 []
                 if operation.confirmed
@@ -712,10 +772,12 @@ def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> Non
                 action,
                 result={
                     "control_uuid": operation.control_uuid,
+                    "control_type": operation.control_type,
                     "action": operation.action,
                     "accepted": operation.accepted,
                     "confirmed": operation.confirmed,
                     "observed_state": operation.observed_state,
+                    "observed_values": dict(operation.observed_values),
                 },
                 warnings=warnings,
             )

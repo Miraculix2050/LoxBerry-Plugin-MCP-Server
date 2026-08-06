@@ -1,6 +1,6 @@
 # ADR 0003: Phase-2 Controlled Switch Operations
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR 0005
 - **Date:** 2026-08-04
 - **Accepted:** 2026-08-06
 - **Release:** `0.2.0-alpha.1`
