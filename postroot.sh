@@ -48,6 +48,16 @@ host=$(hostname -f 2>/dev/null || hostname)
 case "$host" in
     *[!A-Za-z0-9.-]*|'') echo "<ERROR> Invalid local hostname."; exit 2 ;;
 esac
+local_ip=$(perl -I"${LBHOMEDIR:-/opt/loxberry}/libs/perllib" -MLoxBerry::System -e \
+    'print LoxBerry::System::get_localip()' 2>/dev/null)
+case "$local_ip" in
+    *[!0-9A-Fa-f:.]*|'') echo "<ERROR> Invalid local IP address."; exit 2 ;;
+esac
+if [[ "$local_ip" == *:* ]]; then
+    local_ip_host="[$local_ip]"
+else
+    local_ip_host="$local_ip"
+fi
 
 sed \
     -e "s|@CONFIG@|$plugin_config/mcpserver.json|g" \
@@ -55,6 +65,7 @@ sed \
     -e "s|@TOKENS@|$plugin_data/auth/loxone-tokens.json.enc|g" \
     -e "s|@KEY@|$key|g" \
     -e "s|@HOST@|$host|g" \
+    -e "s|@LOCAL_IP_HOST@|$local_ip_host|g" \
     -e "s|@VENV@|$plugin_data/venv|g" \
     -e "s|@CONFIG_DIR@|$plugin_config|g" \
     -e "s|@DATA_DIR@|$plugin_data|g" \

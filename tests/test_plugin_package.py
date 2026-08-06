@@ -200,6 +200,10 @@ def test_postroot_keeps_installer_alive_during_apache_activation() -> None:
     assert "/usr/local/sbin/loxberry-mcpserver-renew-web-certificate" in hook
     assert 'NOPASSWD: /usr/local/sbin/loxberry-mcpserver-renew-web-certificate ""' in hook
     assert "renew-web-certificate *" not in hook
+    assert "LoxBerry::System::get_localip()" in hook
+    unit = (ROOT / "config/systemd/loxberry-mcpserver.service.in").read_text(encoding="utf-8")
+    assert "@LOCAL_IP_HOST@" in unit
+    assert "https://@LOCAL_IP_HOST@" in unit
 
 
 def test_postinstall_rewrites_moved_venv_entrypoints() -> None:

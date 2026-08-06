@@ -102,12 +102,18 @@ class Clock:
         return float(self.value)
 
 
-def _provider(tmp_path: Path, clock: Clock | None = None) -> Phase0OAuthProvider:
+def _provider(
+    tmp_path: Path,
+    clock: Clock | None = None,
+    *,
+    explorer_origins: tuple[str, ...] = (),
+) -> Phase0OAuthProvider:
     return Phase0OAuthProvider(
         AtomicJsonAuthStore(tmp_path / "auth" / "sessions.json"),
         issuer=ISSUER,
         resource=RESOURCE,
         clock=clock or Clock(),
+        explorer_origins=explorer_origins,
     )
 
 
@@ -188,15 +194,22 @@ def _client_info(
 @pytest.mark.asyncio
 async def test_explorer_client_gets_shorter_refresh_family_lifetime(tmp_path: Path) -> None:
     clock = Clock()
-    provider = _provider(tmp_path, clock)
+    provider = _provider(tmp_path, clock, explorer_origins=("https://loxberry-alias",))
     explorer = _client_info(
         "explorer-client",
         client_name=EXPLORER_CLIENT_NAME,
         redirect_uri=EXPLORER_REDIRECT,
     )
     regular = _client_info("regular-client", client_name=EXPLORER_CLIENT_NAME)
+    alias_redirect = "https://loxberry-alias/admin/plugins/mcpserver/explorer_callback.cgi"
+    alias = _client_info(
+        "alias-explorer-client",
+        client_name=EXPLORER_CLIENT_NAME,
+        redirect_uri=alias_redirect,
+    )
     await provider.register_client(explorer)
     await provider.register_client(regular)
+    await provider.register_client(alias)
 
     common = {
         "code_challenge": CHALLENGE,
@@ -216,10 +229,19 @@ async def test_explorer_client_gets_shorter_refresh_family_lifetime(tmp_path: Pa
         redirect_uri=REDIRECT,
         **common,
     )
+    provider.issue_authorization_code(
+        client_id="alias-explorer-client",
+        family_id="alias-explorer-family",
+        redirect_uri=alias_redirect,
+        **common,
+    )
 
     families = provider.store.snapshot()["families"]
     assert families["explorer-family"]["expires_at"] == clock.value + EXPLORER_REFRESH_FAMILY_TTL
     assert families["regular-family"]["expires_at"] == clock.value + REFRESH_FAMILY_TTL
+    assert (
+        families["alias-explorer-family"]["expires_at"] == clock.value + EXPLORER_REFRESH_FAMILY_TTL
+    )
 
     def restore_legacy_lifetime(document: dict[str, Any]) -> None:
         document["families"]["explorer-family"]["expires_at"] = clock.value + REFRESH_FAMILY_TTL

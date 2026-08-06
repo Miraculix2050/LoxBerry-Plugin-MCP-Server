@@ -22,6 +22,13 @@ Code with PKCE, Streamable HTTP initialization, `tools/list` and `tools/call`.
 It cannot connect to arbitrary URLs and does not add a proxy or server-side token
 store.
 
+The Explorer uses the HTTPS origin from which its page was opened for browser
+requests. The configured OAuth issuer and resource remain canonical protocol
+identifiers, while the LoxBerry hostname and its local IP address are accepted as
+finite network aliases after the backend Host allowlist has validated them. This
+keeps links, callbacks and permission selection on the address chosen by the
+operator without allowing arbitrary origins.
+
 Access tokens, arguments, results and call history exist only in memory in the
 open browser tab. A strictly validated refresh token and its minimal binding data
 may additionally exist in that tab's `sessionStorage`. This allows a reload to

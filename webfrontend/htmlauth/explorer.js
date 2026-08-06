@@ -28,10 +28,11 @@
     return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
   }
 
-  function canonicalExplorerUrl(resource, currentOrigin) {
+  function canonicalExplorerUrl(resource, currentOrigin, trustedLocalAlias) {
     if (typeof resource !== 'string' || typeof currentOrigin !== 'string') return null;
     try {
       const resourceUrl = new URL(resource);
+      const pageOrigin = new URL(currentOrigin);
       if (
         resourceUrl.protocol !== 'https:'
         || resourceUrl.username
@@ -39,11 +40,47 @@
         || resourceUrl.pathname !== MCP_RESOURCE_PATH
         || resourceUrl.search
         || resourceUrl.hash
+        || pageOrigin.origin !== currentOrigin
       ) return null;
-      return resourceUrl.origin === currentOrigin ? '' : `${resourceUrl.origin}${EXPLORER_PATH}`;
+      if (resourceUrl.origin === currentOrigin) return '';
+      // The metadata request reached this point only after the backend validated
+      // the same-origin Host against its finite hostname/IP allowlist.
+      if (trustedLocalAlias && pageOrigin.protocol === 'https:') return '';
+      return `${resourceUrl.origin}${EXPLORER_PATH}`;
     } catch (_error) {
       return null;
     }
+  }
+
+  function localAuthorizationMetadata(metadata, currentOrigin) {
+    let issuer;
+    let local;
+    try {
+      issuer = new URL(metadata.issuer);
+      local = new URL(currentOrigin);
+    } catch (_error) {
+      return null;
+    }
+    if (
+      issuer.protocol !== 'https:'
+      || issuer.pathname !== '/plugins/mcpserver/oauth'
+      || issuer.search
+      || issuer.hash
+      || local.protocol !== 'https:'
+      || local.origin !== currentOrigin
+    ) return null;
+    const endpoints = {
+      authorization_endpoint: '/plugins/mcpserver/oauth/authorize',
+      token_endpoint: '/plugins/mcpserver/oauth/token',
+      registration_endpoint: '/plugins/mcpserver/oauth/register',
+      revocation_endpoint: '/plugins/mcpserver/oauth/revoke',
+    };
+    for (const [name, path] of Object.entries(endpoints)) {
+      if (metadata[name] !== `${issuer.origin}${path}`) return null;
+    }
+    return Object.fromEntries(
+      Object.entries(endpoints).map(([name, path]) => [name, `${local.origin}${path}`]),
+    );
   }
 
   function resolveRef(schema, rootSchema) {
@@ -464,6 +501,7 @@
     revokeOAuthGrant,
     fieldControlId,
     canonicalExplorerUrl,
+    localAuthorizationMetadata,
     createFieldLabel,
     createOptionalToggle,
     applyControlAvailability,
@@ -565,7 +603,7 @@
     if (error instanceof Error && typeof error.canonicalUrl === 'string') {
       elements.originLink.href = error.canonicalUrl;
       elements.originWarning.hidden = false;
-      setStatus(label('originMismatch'), 'error');
+      setStatus(fallback, 'error');
       return;
     }
     clearOriginWarning();
@@ -627,13 +665,13 @@
     try { window.sessionStorage.removeItem(sessionStorageKey()); } catch (_error) { /* optional */ }
   }
 
-  function readStoredSession() {
+  function readStoredSession(expectedResource) {
     try {
       const serialized = window.sessionStorage.getItem(sessionStorageKey());
       if (!serialized) return null;
       const session = core.validateResumableSession(
         JSON.parse(serialized),
-        `${window.location.origin}/plugins/mcpserver/mcp`,
+        expectedResource,
         Date.now(),
       );
       if (!session) clearStoredSession();
@@ -704,7 +742,11 @@
   async function discover() {
     const resourceMetadata = await fetchJson('/.well-known/oauth-protected-resource/plugins/mcpserver/mcp', {cache: 'no-store'});
     const issuer = Array.isArray(resourceMetadata.authorization_servers) ? resourceMetadata.authorization_servers[0] : null;
-    const canonicalUrl = core.canonicalExplorerUrl(resourceMetadata.resource, window.location.origin);
+    const canonicalUrl = core.canonicalExplorerUrl(
+      resourceMetadata.resource,
+      window.location.origin,
+      true,
+    );
     if (canonicalUrl === null) throw new Error('OAuth resource metadata is invalid');
     if (canonicalUrl) {
       const error = new Error(label('originMismatch'));
@@ -713,21 +755,25 @@
     }
     if (!issuer) throw new Error('OAuth resource metadata has no authorization server');
     const issuerUrl = new URL(issuer);
-    if (issuerUrl.origin !== window.location.origin || issuerUrl.pathname !== '/plugins/mcpserver/oauth') throw new Error('OAuth issuer is not the local plugin issuer');
+    const resourceUrl = new URL(resourceMetadata.resource);
+    if (
+      issuerUrl.protocol !== 'https:'
+      || issuerUrl.origin !== resourceUrl.origin
+      || issuerUrl.pathname !== '/plugins/mcpserver/oauth'
+    ) throw new Error('OAuth issuer is not the local plugin issuer');
     const metadataPath = `/.well-known/oauth-authorization-server${issuerUrl.pathname}`;
     const authorizationMetadata = await fetchJson(metadataPath, {cache: 'no-store'});
     if (authorizationMetadata.issuer !== issuer) throw new Error('OAuth issuer metadata does not match');
-    const expectedEndpoints = {
-      authorization_endpoint: `${issuer}/authorize`,
-      token_endpoint: `${issuer}/token`,
-      registration_endpoint: `${issuer}/register`,
-      revocation_endpoint: `${issuer}/revoke`,
-    };
-    for (const [name, value] of Object.entries(expectedEndpoints)) {
-      if (authorizationMetadata[name] !== value) throw new Error(`OAuth ${name} does not match the local plugin endpoint`);
-    }
+    const localEndpoints = core.localAuthorizationMetadata(
+      authorizationMetadata,
+      window.location.origin,
+    );
+    if (!localEndpoints) throw new Error('OAuth endpoints do not match the local plugin endpoint');
     clearOriginWarning();
-    return {resourceMetadata, authorizationMetadata};
+    return {
+      resourceMetadata,
+      authorizationMetadata: {...authorizationMetadata, ...localEndpoints},
+    };
   }
 
   async function registerClient(metadata, scope, redirectUri) {
@@ -1377,23 +1423,24 @@
 
   renderAll();
   (async () => {
-    let stored = readStoredSession();
+    let stored = null;
     let ownershipConflict = false;
     let refreshed = false;
-    if (stored) {
-      setBusy(true);
-      setStatus(label('restoringSession'), 'working');
-      if (!(await acquireSessionOwnership(stored.sessionId))) {
-        clearStoredSession();
-        stored = null;
-        ownershipConflict = true;
-      }
-    }
     try {
       const discovered = await discover();
       setControlAvailability(
         (discovered.resourceMetadata.scopes_supported || []).includes('loxone:control'),
       );
+      stored = readStoredSession(discovered.resourceMetadata.resource);
+      if (stored) {
+        setBusy(true);
+        setStatus(label('restoringSession'), 'working');
+        if (!(await acquireSessionOwnership(stored.sessionId))) {
+          clearStoredSession();
+          stored = null;
+          ownershipConflict = true;
+        }
+      }
       if (!stored) return;
       state.oauth = {
         ...stored,

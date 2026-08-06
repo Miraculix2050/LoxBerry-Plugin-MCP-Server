@@ -171,10 +171,12 @@ Im Berechtigungs-Dropdown ist **Nur lesen** vorausgewählt. **Lesen und steuern*
 ist nur bei global aktivierter Loxone-Steuerung auswählbar und erfordert
 einen neuen Consent mit `loxone:control`. Jeder verändernde Aufruf zeigt direkt
 vor dem Senden noch einmal Werkzeug und Argumente und muss bestätigt werden.
-Der Link auf der Plugin-Hauptseite öffnet den Explorer immer über die konfigurierte
-öffentliche HTTPS-Adresse. Wird die Seite direkt über HTTP oder einen anderen
-Hostnamen geöffnet, bleibt die Origin-Prüfung geschlossen und bietet einen Link
-zur korrekten HTTPS-Adresse an.
+Der Link auf der Plugin-Hauptseite öffnet den Explorer über die konfigurierte
+öffentliche HTTPS-Adresse. Wird die Seite stattdessen direkt über die lokale
+IP-Adresse oder den LoxBerry-Hostnamen geöffnet, verwendet der gesamte
+Explorer-Ablauf genau diese aktuelle HTTPS-Adresse. Nur HTTP und nicht lokal
+freigegebene Hosts bleiben geschlossen und bieten einen Link zur konfigurierten
+HTTPS-Adresse an.
 
 **Trennen und widerrufen** beendet die Explorer-Sitzung; nach einem Browserabsturz
 oder Schließen ohne Widerruf kann sie weiterhin in **Clients und Sitzungen**

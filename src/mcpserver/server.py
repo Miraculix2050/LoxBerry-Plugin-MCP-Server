@@ -184,6 +184,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
                 settings.phase0_auth.plugin_config
                 and settings.phase0_auth.plugin_config.loxone_control_enabled
             ),
+            explorer_origins=settings.allowed_origins,
         )
         if not provider.control_enabled:
             provider.revoke_scope_locally(CONTROL_SCOPE)

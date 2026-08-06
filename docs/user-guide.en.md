@@ -161,10 +161,11 @@ The permissions dropdown defaults to **Read only**. **Read and control** is
 selectable only when Loxone control is globally enabled and requires fresh consent for
 `loxone:control`. Every state-changing call displays its tool and arguments
 again and requires confirmation immediately before dispatch.
-The link on the plugin main page always opens the explorer through the configured
-public HTTPS address. If the page is opened directly over HTTP or another host
-name, the origin check remains fail-closed and offers a link to the correct HTTPS
-address.
+The link on the plugin main page opens the explorer through the configured public
+HTTPS address. If the page is opened directly through the local IP address or the
+LoxBerry hostname instead, the complete explorer flow uses that current HTTPS
+address. HTTP and hosts that are not locally allowlisted remain fail-closed and
+offer a link to the configured HTTPS address.
 
 **Disconnect and revoke** ends the explorer session; after a browser crash or closing without
 revocation it can still be revoked under **Clients and sessions**.

@@ -119,6 +119,7 @@ class Phase0OAuthProvider(
         clock: Callable[[], float] = time.time,
         on_family_revoked: Callable[[str], None] | None = None,
         control_enabled: bool = False,
+        explorer_origins: tuple[str, ...] = (),
     ) -> None:
         self.store = store
         self.issuer = issuer
@@ -126,6 +127,8 @@ class Phase0OAuthProvider(
         self._clock = clock
         self._on_family_revoked = on_family_revoked
         self.control_enabled = control_enabled
+        canonical_origin = issuer.rsplit("/plugins/mcpserver/oauth", 1)[0]
+        self.explorer_origins = frozenset((canonical_origin, *explorer_origins))
         self.store.mutate(self._garbage_collect)
 
     def now(self) -> int:
@@ -225,11 +228,19 @@ class Phase0OAuthProvider(
         }
 
     def _is_explorer_client(self, client: dict[str, Any]) -> bool:
-        issuer = urlsplit(self.issuer)
-        expected_redirect = f"{issuer.scheme}://{issuer.netloc}{_EXPLORER_CALLBACK_PATH}"
-        return client.get("client_name") == EXPLORER_CLIENT_NAME and client.get(
-            "redirect_uris"
-        ) == [expected_redirect]
+        redirects = client.get("redirect_uris")
+        if client.get("client_name") != EXPLORER_CLIENT_NAME or not isinstance(redirects, list):
+            return False
+        if len(redirects) != 1 or not isinstance(redirects[0], str):
+            return False
+        redirect = urlsplit(redirects[0])
+        origin = f"{redirect.scheme}://{redirect.netloc}"
+        return (
+            redirect.path == _EXPLORER_CALLBACK_PATH
+            and not redirect.query
+            and not redirect.fragment
+            and origin in self.explorer_origins
+        )
 
     async def authorize(
         self, client: OAuthClientInformationFull, params: AuthorizationParams
