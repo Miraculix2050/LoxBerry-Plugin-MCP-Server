@@ -1,11 +1,12 @@
 # Support-Matrix
 
 - **Stand:** Abnahmestand Phase 2, 2026-08-06
-- **Nächster Meilenstein:** Veröffentlichung von `0.2.0-alpha.1`
+- **Aktueller Pre-Release:** `0.2.0-alpha.1`
+- **Nächster Meilenstein:** Phase 3 mit LoxBerry Read-only
 
 Diese Matrix unterscheidet reale Nachweise von implementierten, aber noch nicht
-real bestätigten Kombinationen. Phase 1 und Phase 2 sind abgenommen; der
-Releasekandidat `0.2.0-alpha.1` ist noch nicht veröffentlicht.
+real bestätigten Kombinationen. Phase 1 und Phase 2 sind abgenommen;
+`0.2.0-alpha.1` bleibt wegen seines Vorabversionsstatus ein Pre-Release.
 
 ## Plattformen und Geräte
 

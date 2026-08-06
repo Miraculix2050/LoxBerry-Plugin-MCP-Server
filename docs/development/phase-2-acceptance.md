@@ -1,9 +1,9 @@
 # Phase-2-Abnahmenachweis
 
 - **Stand:** 2026-08-06
-- **Releasekandidat:** `0.2.0-alpha.1`
+- **Release:** `0.2.0-alpha.1`
+- **SHA-256:** `3b746201c71dcdffbe5dd600b347979ea6a849842790521f133ecefdc5db3b3b`
 - **Ergebnis:** Phase 2 abgenommen
-- **Release:** noch nicht veröffentlicht
 
 Dieser Nachweis dokumentiert die bestätigten Realtests für die kontrollierte
 Gen.-1-`Switch`-Steuerung. Er enthält keine Zugangsdaten, internen Adressen,
@@ -60,7 +60,6 @@ ausdrücklich freigegebenen Switch-Test begrenzt.
 
 ## Verbleibende Grenzen
 
-- Der Releasekandidat `0.2.0-alpha.1` ist noch nicht auf GitHub veröffentlicht.
 - Dimmer, Lichtsteuerungen, Jalousien und weitere Control-Typen sind nicht Teil
   dieser Phase-2-Abnahme.
 - Gen. 2/Compact bleibt für Schreibzugriffe nicht freigegeben.
