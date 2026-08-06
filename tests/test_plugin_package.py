@@ -205,7 +205,10 @@ def test_postroot_keeps_installer_alive_during_apache_activation() -> None:
     assert 'if [ "$service_ready" -ne 1 ]' in hook
     assert '(umask 0137 && openssl rand 32 > "$key")' in hook
     assert 'chmod 644 "$unit" "$apache"' in hook
-    assert "install -o root -g root -m 755" in hook
+    assert 'loxberry_home=$(realpath -e -- "$LBHOMEDIR")' in hook
+    assert 'sed "s|@LBHOMEDIR@|$loxberry_home|g"' in hook
+    assert 'chmod 755 "$certificate_helper_tmp"' in hook
+    assert 'mv -f "$certificate_helper_tmp" "$certificate_helper"' in hook
     assert "/usr/local/sbin/loxberry-mcpserver-renew-web-certificate" in hook
     assert 'NOPASSWD: /usr/local/sbin/loxberry-mcpserver-renew-web-certificate ""' in hook
     assert "renew-web-certificate *" not in hook
@@ -306,7 +309,9 @@ def test_certificate_helper_keeps_pin_off_argv_and_uses_fixed_core_actions() -> 
     assert "check_securepin($securepin)" in helper
     assert "revokewwwcert.sh" in helper
     assert "makewwwcert.sh" in helper
-    assert "$ENV{PERL5LIB} = '/opt/loxberry/libs/perllib';" in helper
+    assert "@LBHOMEDIR@" in helper
+    assert '$ENV{PERL5LIB} = "$loxberry_home/libs/perllib";' in helper
+    assert "/opt/loxberry" not in helper
     assert "systemd-run" in helper
     assert "--unit=$unit" in helper
     assert "@ARGV == 1 && $ARGV[0] eq '--worker'" in helper
