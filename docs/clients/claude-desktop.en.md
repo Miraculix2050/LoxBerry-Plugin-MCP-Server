@@ -116,10 +116,10 @@ the browser consent page before approving access.
 
 ## Optional Loxone control
 
-> **Experimental and not yet accepted with Claude:** The following workflow
-> describes the expected setup, but a complete Claude test of registration,
-> consent, and tool availability has not yet confirmed it. Read-only remains the
-> documented and tested default.
+> **Accepted with Claude:** Registration, consent with `loxone:control`, tool
+> visibility, and a real invocation were fully confirmed. Read-only remains the
+> safe default. The evidence is recorded in the
+> [Phase-2 acceptance report](../development/phase-2-acceptance.md).
 
 This section applies only when **Read and switch** was deliberately selected
 under **Miniserver access through the MCP server** in the plugin UI. It is

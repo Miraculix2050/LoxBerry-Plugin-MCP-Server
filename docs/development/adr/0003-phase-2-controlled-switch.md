@@ -1,7 +1,8 @@
 # ADR 0003: Phase-2 Controlled Switch Operations
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-04
+- **Accepted:** 2026-08-06
 - **Release candidate:** `0.2.0-alpha.1`
 
 ## Context
@@ -79,3 +80,7 @@ mobile viewports plus one native upgrade and one approved non-critical Gen. 1
 Switch toggled on and off, restoring its initial state. Gen. 2, external access,
 fresh installation, uninstall and exhaustive negative paths are outside this
 acceptance run.
+
+The required real Switch operation and the complete control-client flow were
+confirmed on 2026-08-06. The sanitized evidence and remaining boundaries are
+recorded in the [Phase-2 acceptance report](../phase-2-acceptance.md).

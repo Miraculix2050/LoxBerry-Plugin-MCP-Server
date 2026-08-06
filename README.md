@@ -1,26 +1,29 @@
 # LoxBerry MCP Server
 
-Das McpServer-Plugin betreibt einen [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)-Server direkt auf dem LoxBerry. Die aktuelle Alpha erlaubt KI-Assistenten und Agenten ausschließlich, den Zustand einer Loxone-Miniserver-Installation zu lesen. Dabei verwendet das Plugin die vorhandenen Räume, Kategorien und Steuerungsnamen – ohne eigenen Cloud-Dienst.
+Das McpServer-Plugin betreibt einen [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)-Server direkt auf dem LoxBerry. Die aktuelle Alpha erlaubt KI-Assistenten und Agenten, den Zustand einer Loxone-Miniserver-Installation zu lesen. Optional kann sie genau ein kontrolliertes Schreibwerkzeug für Gen.-1-Steuerungen vom Typ `Switch` bereitstellen. Dabei verwendet das Plugin die vorhandenen Räume, Kategorien und Steuerungsnamen – ohne eigenen Cloud-Dienst.
 
-Schreibaktionen und LoxBerry-Werkzeuge sind nicht Bestandteil dieser Version.
+Die Steuerung bleibt standardmäßig deaktiviert. Weitere Control-Typen und
+LoxBerry-Werkzeuge sind nicht Bestandteil dieser Version.
 
 ## Sicherheit und Berechtigungen
 
-Der Zugriff auf Loxone-Funktionen ist durch den Loxone-Login geschützt. Ein verbindender Assistent muss sich mit einem Loxone-Benutzerkonto anmelden und kann nur die Elemente lesen, für die dieses Konto berechtigt ist.
+Der Zugriff auf Loxone-Funktionen ist durch den Loxone-Login geschützt. Ein verbindender Assistent muss sich mit einem Loxone-Benutzerkonto anmelden und kann nur die Elemente lesen oder bedienen, für die dieses Konto berechtigt ist. Steuerzugriff benötigt zusätzlich die bewusste Aktivierung im Plugin und den separat bestätigten Scope `loxone:control`.
 
 Für jeden Assistenten sollte ein eigener Loxone-Benutzer mit den minimal erforderlichen Rechten angelegt werden. Zugangsdaten und andere Geheimnisse dürfen nicht im Repository gespeichert werden.
 
 ## Projektstatus
 
-Phase 1 ist abgeschlossen. Phase 2 ergänzt als nächstes optional genau ein
+Phase 1 und Phase 2 sind abgenommen. Phase 2 ergänzt optional genau ein
 kontrolliertes Schreibwerkzeug für Gen.-1-Controls vom Typ `Switch`. Es bleibt
 standardmäßig deaktiviert, akzeptiert ausschließlich `on` und `off` und benötigt
 den separat bestätigten Scope `loxone:control`. Die sechs stabilen lesenden
-Tools und bestehende Read-only-Sitzungen bleiben kompatibel.
+Tools und bestehende Read-only-Sitzungen bleiben kompatibel. Der zugehörige
+Releasekandidat `0.2.0-alpha.1` ist noch nicht veröffentlicht.
 
 Bestätigte Kombinationen, Nachweise und bekannte Clientgrenzen stehen in der
-[Support-Matrix](docs/development/support-matrix.md) und im
-[Phase-1-Abnahmebericht](docs/development/phase-1-acceptance.md).
+[Support-Matrix](docs/development/support-matrix.md), im
+[Phase-1-Abnahmebericht](docs/development/phase-1-acceptance.md) und im
+[Phase-2-Abnahmebericht](docs/development/phase-2-acceptance.md).
 
 ## Nutzung
 

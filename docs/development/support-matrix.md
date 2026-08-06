@@ -1,12 +1,11 @@
 # Support-Matrix
 
-- **Stand:** Abnahmestand Phase 1, 2026-08-04
-- **Nächster Meilenstein:** Phase 2 nur nach separater Freigabe; bis dahin Pflege
-  der Read-only Alpha
+- **Stand:** Abnahmestand Phase 2, 2026-08-06
+- **Nächster Meilenstein:** Veröffentlichung von `0.2.0-alpha.1`
 
 Diese Matrix unterscheidet reale Nachweise von implementierten, aber noch nicht
-real bestätigten Kombinationen. Phase 1 ist abgenommen; das Alpha-Paket bleibt
-wegen seines Vorabversionsstatus ein Prerelease.
+real bestätigten Kombinationen. Phase 1 und Phase 2 sind abgenommen; der
+Releasekandidat `0.2.0-alpha.1` ist noch nicht veröffentlicht.
 
 ## Plattformen und Geräte
 
@@ -24,9 +23,9 @@ abgeleitet.
 
 ## MCP-Clients
 
-| Client | Getesteter Stand | Phase-0-Ergebnis | Bekannte Grenze |
+| Client | Getesteter Stand | Ergebnis | Bekannte Grenze |
 | --- | --- | --- | --- |
-| Claude Desktop mit `mcp-remote` | Desktop `1.24012.9`, Bridge `0.1.38` | [Login, MCP-Initialisierung, authentifizierter Aufruf, Refresh und RFC-7009-Widerruf erfolgreich](phase-0-oauth-test.md#reale-clientabnahme) | lokale Bridge mit `http-only`; kein Nachweis für den cloudbasierten Connector |
+| Claude Desktop mit `mcp-remote` | Desktop `1.24012.9`, Bridge `0.1.38` | [Read-only-Ablauf sowie Registrierung, Consent, Werkzeugsichtbarkeit und realer Phase-2-Control-Aufruf bestätigt](phase-2-acceptance.md#vollständiger-control-client-ablauf) | lokale Bridge mit `http-only`; kein Nachweis für den cloudbasierten Connector |
 | Codex CLI | `0.146.0` | [Login, MCP-Initialisierung und authentifizierter Aufruf erfolgreich](phase-0-oauth-test.md#reale-clientabnahme) | Refresh sendet keinen verpflichtenden RFC-8707-Parameter `resource`; Logout löscht nur lokale Credentials und ruft `/revoke` nicht auf |
 
 Die Codex-Grenzen sind bestätigtes Clientverhalten und werden für den Abschluss
@@ -63,6 +62,19 @@ Der vollständige maskierte Nachweis steht im
   Speichern, Status, Verbindungstest, Widerruf und Diagnose bestätigten den
   funktionalen No-JavaScript-Fallback.
 
+## Phase-2-Abnahmenachweis
+
+Der vollständige maskierte Nachweis steht im
+[Phase-2-Abnahmebericht](phase-2-acceptance.md).
+
+- Ein ausdrücklich freigegebener, unkritischer Gen.-1-`Switch` wurde real mit
+  `on` und `off` bedient; der Ausgangszustand wurde wiederhergestellt.
+- Der vollständige Control-Client-Ablauf mit Registrierung, Consent für
+  `loxone:read loxone:control`, Werkzeugsichtbarkeit und realem Aufruf wurde
+  bestätigt.
+- Steuerung bleibt standardmäßig deaktiviert und auf sichtbare, bedienbare
+  Gen.-1-Controls vom Typ `Switch` sowie die Aktionen `on` und `off` begrenzt.
+
 ## Verbleibende Grenzen
 
 - Die globale JavaScript-Berechtigung von Chrome durfte die Browserautomation
@@ -72,4 +84,6 @@ Der vollständige maskierte Nachweis steht im
 - Codex CLI wurde im finalen Abschlusslauf wegen der lokalen
   Windows-Ausführungsstörung nicht erneut abgenommen; der bekannte Clientfehler
   ist für den Server- und Claude-Nachweis nicht blockierend.
-- Schreibende MCP-Tools sind nicht Bestandteil von Phase 0 oder Phase 1.
+- Phase 2 unterstützt ausschließlich Gen.-1-`Switch` mit `on` und `off`.
+  Weitere Control-Typen und Gen.-2-Schreibzugriff bleiben unbestätigt und sind
+  nicht freigegeben.

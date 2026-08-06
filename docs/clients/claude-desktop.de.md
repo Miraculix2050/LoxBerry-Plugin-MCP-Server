@@ -122,10 +122,10 @@ Freigabeseite im Browser.
 
 ## Optionale Loxone-Steuerung
 
-> **Experimentell und noch nicht mit Claude abgenommen:** Der folgende Ablauf
-> beschreibt die erwartete Einrichtung, wurde aber noch nicht durch einen
-> vollständigen Claude-Test von Registrierung, Freigabe und Werkzeugaufruf
-> bestätigt. Der dokumentierte und geprüfte Standard bleibt Read-only.
+> **Mit Claude abgenommen:** Registrierung, Freigabe mit `loxone:control`,
+> Werkzeugsichtbarkeit und ein realer Aufruf wurden vollständig bestätigt. Der
+> sichere Standard bleibt Read-only. Der Nachweis steht im
+> [Phase-2-Abnahmebericht](../development/phase-2-acceptance.md).
 
 Dieser Abschnitt gilt nur, wenn in der Plugin-Oberfläche unter **Zugriff auf den
 Miniserver über den MCP Server** bewusst **Lesen und schalten** gewählt wurde.
