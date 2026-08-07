@@ -863,7 +863,7 @@ def test_release_workflow_is_manual_owner_only_and_separates_permissions() -> No
     assert "actual_body=" in publisher
     assert "title or notes do not match" in publisher
     assert 'gh release view "$TAG" --repo "$REPOSITORY"' in publisher
-    assert 'releases/tags/$TAG' not in publisher
+    assert "releases/tags/$TAG" not in publisher
 
 
 def test_package_contract_excludes_update_and_development_files() -> None:
