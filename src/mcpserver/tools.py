@@ -235,16 +235,23 @@ class LoxBerryServiceHealthData(BaseModel):
     healthy: bool
 
 
+class LoxBerryErrorData(ErrorData):
+    model_config = ConfigDict(extra="forbid")
+
+
 class LoxBerrySystemStatusEnvelope(ToolEnvelope):
-    data: LoxBerrySystemStatusData | ErrorData
+    model_config = ConfigDict(extra="forbid")
+    data: LoxBerrySystemStatusData | LoxBerryErrorData
 
 
 class LoxBerryPluginStatusEnvelope(ToolEnvelope):
-    data: LoxBerryPluginStatusData | ErrorData
+    model_config = ConfigDict(extra="forbid")
+    data: LoxBerryPluginStatusData | LoxBerryErrorData
 
 
 class LoxBerryServiceHealthEnvelope(ToolEnvelope):
-    data: LoxBerryServiceHealthData | ErrorData
+    model_config = ConfigDict(extra="forbid")
+    data: LoxBerryServiceHealthData | LoxBerryErrorData
 
 
 def _now() -> str:

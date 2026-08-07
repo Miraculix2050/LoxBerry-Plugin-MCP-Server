@@ -107,13 +107,15 @@ def test_loxberry_tool_contracts_have_closed_output_schemas() -> None:
         assert tool.annotations.readOnlyHint is True
         assert tool.annotations.destructiveHint is False
         assert tool.annotations.openWorldHint is False
-        data_schema = next(
-            item
+        assert tool.output_schema["additionalProperties"] is False
+        data_names = {
+            item["$ref"].rsplit("/", 1)[-1]
             for item in tool.output_schema["properties"]["data"]["anyOf"]
-            if item["$ref"].endswith("Data") and not item["$ref"].endswith("ErrorData")
+        }
+        assert all(
+            tool.output_schema["$defs"][name]["additionalProperties"] is False
+            for name in data_names
         )
-        data_name = data_schema["$ref"].rsplit("/", 1)[-1]
-        assert tool.output_schema["$defs"][data_name]["additionalProperties"] is False
 
 
 def test_read_results_and_expected_errors_are_debug_only(
