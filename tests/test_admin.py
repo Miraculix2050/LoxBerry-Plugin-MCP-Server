@@ -13,6 +13,7 @@ from mcpserver.admin import (
     _revoke,
     _save,
     _service_status,
+    _set_logging,
     dispatch,
 )
 from mcpserver.auth.loxone_store import LoxoneTokenStoreError
@@ -341,6 +342,89 @@ def test_failed_config_apply_restores_previous_configuration(
 
     assert restarts == 2
     assert store.load().to_document() == previous.to_document()
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected_level", "expected_until"),
+    [
+        ("error", "error", 0),
+        ("warning", "warning", 0),
+        ("info", "info", 0),
+        ("debug_15", "warning", 1_900),
+        ("debug_60", "warning", 4_600),
+        ("stop_debug", "warning", 0),
+    ],
+)
+def test_logging_mode_is_validated_persisted_and_applied(
+    mode: str,
+    expected_level: str,
+    expected_until: int,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    store.save(PluginConfig.defaults())
+    restarts: list[str] = []
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._restart_service", lambda: restarts.append("restart"))
+    monkeypatch.setattr("mcpserver.admin.time.time", lambda: 1_000)
+
+    result = _set_logging({"mode": mode})
+
+    assert store.load().log_level == expected_level
+    assert store.load().debug_until == expected_until
+    assert result["configuration"]["logging"] == {
+        "level": expected_level,
+        "debug_until": expected_until,
+    }
+    assert restarts == ["restart"]
+
+
+def test_invalid_logging_mode_is_rejected_before_writing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    store.save(PluginConfig.defaults())
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+
+    with pytest.raises(AdminError, match="logging mode is invalid"):
+        _set_logging({"mode": "unlimited_debug"})
+
+    assert store.load().to_document() == PluginConfig.defaults().to_document()
+
+
+def test_base_level_change_keeps_an_active_debug_window(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    store.save(PluginConfig(log_level="warning", debug_until=2_000, _source={}))
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._restart_service", lambda: None)
+
+    _set_logging({"mode": "info"})
+
+    assert store.load().log_level == "info"
+    assert store.load().debug_until == 2_000
+
+
+def test_main_config_save_preserves_separately_managed_logging(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    previous = PluginConfig(log_level="info", debug_until=1234, _source={})
+    store.save(previous)
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._restart_service", lambda: None)
+    monkeypatch.setattr("mcpserver.admin._sessions", lambda: [])
+    monkeypatch.setattr(
+        "mcpserver.admin._service_response",
+        lambda: {"service_active": True, "service": {"active": True}},
+    )
+
+    _save({"schema_version": 1, "server": {"enabled": False}})
+
+    assert store.load().log_level == "info"
+    assert store.load().debug_until == 1234
 
 
 def test_disabling_control_revokes_control_sessions_after_successful_restart(

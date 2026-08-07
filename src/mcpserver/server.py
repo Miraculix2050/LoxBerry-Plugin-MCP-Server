@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import logging
 import os
+import time
+from collections.abc import Callable
+from logging.handlers import RotatingFileHandler
 from typing import Final
 
 from mcp.server.auth.provider import AccessToken, TokenVerifier
@@ -23,18 +26,74 @@ from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore
 from mcpserver.auth.provider import CONTROL_SCOPE, READ_SCOPE, Phase0OAuthProvider
 from mcpserver.auth.store import AtomicJsonAuthStore
 from mcpserver.auth.web import Phase0OAuthWeb
+from mcpserver.config import DEFAULT_LOG_LEVEL
 from mcpserver.loxone.runtime import LoxoneRuntime
 from mcpserver.settings import ServerSettings
 from mcpserver.skill_delivery import SERVER_INSTRUCTIONS, register_skill_resource
 from mcpserver.tools import register_control_tool, register_read_tools, register_skill_tool
 
 SERVER_NAME: Final = "LoxBerry MCP Server"
+LOG_MAX_BYTES: Final = 512 * 1024
+LOG_BACKUP_COUNT: Final = 2
+_LOG_LEVELS: Final = {
+    "error": logging.ERROR,
+    "warning": logging.WARNING,
+    "info": logging.INFO,
+}
 _TRANSPORT_LOGGER_NAME: Final = "mcp.server.transport_security"
 _SENSITIVE_REJECTION_PREFIXES: Final = (
     "Invalid Host header:",
     "Invalid Origin header:",
     "Invalid Content-Type header:",
 )
+
+
+class TimedLevelFilter(logging.Filter):
+    """Keep audits while lowering operational verbosity after debug expires."""
+
+    def __init__(
+        self,
+        level: str = DEFAULT_LOG_LEVEL,
+        *,
+        debug_until: int = 0,
+        clock: Callable[[], float] = time.time,
+    ) -> None:
+        super().__init__()
+        self._level = _LOG_LEVELS[level]
+        self._debug_until = debug_until
+        self._clock = clock
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if getattr(record, "mcp_audit", False):
+            return True
+        threshold = logging.DEBUG if self._clock() < self._debug_until else self._level
+        return record.levelno >= threshold
+
+
+def configure_service_logging(
+    *,
+    level: str,
+    debug_until: int,
+    log_file: str | None,
+) -> logging.Handler:
+    """Configure one bounded handler and return it for deterministic verification."""
+    if log_file:
+        handler: logging.Handler = RotatingFileHandler(
+            log_file,
+            maxBytes=LOG_MAX_BYTES,
+            backupCount=LOG_BACKUP_COUNT,
+            encoding="utf-8",
+        )
+    else:
+        handler = logging.StreamHandler()
+    handler.addFilter(TimedLevelFilter(level, debug_until=debug_until))
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s component=%(name)s severity=%(levelname)s %(message)s",
+        handlers=[handler],
+        force=True,
+    )
+    return handler
 
 
 class _RedactRejectedTransportHeader(logging.Filter):
@@ -110,6 +169,20 @@ class _DisabledServiceMiddleware(BaseHTTPMiddleware):
 
 class _ForwardedHostFastMCP(FastMCP):
     """FastMCP application that also validates Apache's original Host header."""
+
+    async def run_streamable_http_async(self) -> None:  # pragma: no cover - process boundary
+        """Run Uvicorn through the bounded root logger without request access logs."""
+        import uvicorn
+
+        config = uvicorn.Config(
+            self.streamable_http_app(),
+            host=self.settings.host,
+            port=self.settings.port,
+            log_config=None,
+            log_level="debug",
+            access_log=False,
+        )
+        await uvicorn.Server(config).serve()
 
     forwarded_allowed_hosts: tuple[str, ...] = ()
     transport_guard: TransportSecurityMiddleware | None = None
@@ -274,18 +347,12 @@ def create_server(settings: ServerSettings) -> FastMCP:
 
 def main() -> None:
     """Run Streamable HTTP on the configured loopback port."""
-    log_file = os.environ.get("MCPSERVER_LOG_FILE")
-    log_format = "%(asctime)s component=%(name)s severity=%(levelname)s %(message)s"
-    if log_file:
-        logging.basicConfig(
-            level=logging.INFO,
-            format=log_format,
-            filename=log_file,
-            encoding="utf-8",
-        )
-    else:
-        logging.basicConfig(level=logging.INFO, format=log_format)
     settings = ServerSettings.from_environment()
+    configure_service_logging(
+        level=settings.log_level,
+        debug_until=settings.debug_until,
+        log_file=os.environ.get("MCPSERVER_LOG_FILE"),
+    )
     create_server(settings).run(transport="streamable-http")
 
 

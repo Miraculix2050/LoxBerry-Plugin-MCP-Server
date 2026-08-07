@@ -36,19 +36,27 @@ def test_secure_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.allowed_origins == ()
     assert settings.phase0_auth is None
     assert settings.service_enabled is True
+    assert settings.log_level == "warning"
+    assert settings.debug_until == 0
 
 
 def test_disabled_phase1_configuration_fails_closed(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     config = tmp_path / "mcpserver.json"
-    config.write_text('{"schema_version":1,"server":{"enabled":false}}', encoding="utf-8")
+    config.write_text(
+        '{"schema_version":1,"server":{"enabled":false},'
+        '"logging":{"level":"info","debug_until":1234}}',
+        encoding="utf-8",
+    )
     monkeypatch.setenv("MCPSERVER_CONFIG", str(config))
 
     settings = ServerSettings.from_environment()
 
     assert settings.phase0_auth is None
     assert settings.service_enabled is False
+    assert settings.log_level == "info"
+    assert settings.debug_until == 1234
 
 
 def test_enabled_phase1_configuration_supplies_endpoint_and_public_origin(

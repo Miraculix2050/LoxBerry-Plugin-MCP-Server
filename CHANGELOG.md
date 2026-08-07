@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Bound the service log to three 512 KiB files, default operational logging to
+  warnings, and add temporary 15- or 60-minute debug logging in the admin UI.
+- Avoid routine admin-page and HTTP access-log writes while retaining masked,
+  unsuppressible audit records for control attempts.
 - Build official packages only through the owner-triggered GitHub workflow, with
   canonical ZIP and wheel output, locked runtime-wheel hashes, exact manifests,
   verified draft uploads, and separate read/write job permissions.

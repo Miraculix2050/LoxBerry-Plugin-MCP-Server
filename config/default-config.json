@@ -8,6 +8,10 @@
     "connection_timeout": 10,
     "endpoint": ""
   },
+  "logging": {
+    "debug_until": 0,
+    "level": "warning"
+  },
   "schema_version": 1,
   "server": {
     "enabled": false,

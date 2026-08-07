@@ -89,6 +89,23 @@ def test_read_only_ajax_polling_does_not_create_admin_log_files() -> None:
     assert "loglevel => 7" in cgi
     assert 'admin_logger()->INF("service-action=$command result=completed")' in cgi
     assert 'admin_logger()->ERR("service-action=$command result=failed")' in cgi
+    assert "LOGSTART('index.cgi called')" not in cgi
+    assert 'admin_logger()->ERR("admin helper failed")' in cgi
+    assert "admin_logger()->WARN('Stored Miniserver configuration is invalid')" in cgi
+
+
+def test_diagnostics_offer_bounded_temporary_logging_controls() -> None:
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+
+    assert "admin_call('set_logging', {mode => ($q->{mode} // '')})" in cgi
+    assert 'data-ajax="set_logging"' in template
+    assert 'value="debug_15"' in template
+    assert 'value="debug_60"' in template
+    assert 'value="stop_debug"' in template
+    assert "set_logging: 75000" in template
+    assert "renderLogging(result.data.configuration)" in template
+    assert "window.location.reload" not in template
 
 
 def test_service_actions_use_an_accessible_confirmation_and_dynamic_controls() -> None:

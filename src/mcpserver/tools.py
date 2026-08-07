@@ -42,6 +42,8 @@ _LOGGER = logging.getLogger("mcpserver.tools")
 _AUDIT_SUPPRESSION_SECONDS: Final = 60.0
 _MAX_AUDIT_SUPPRESSION_KEYS: Final = 512
 _AUDIT_LAST: OrderedDict[tuple[str, str], float] = OrderedDict()
+_ERROR_SUPPRESSION_SECONDS: Final = 60.0
+_ERROR_LAST: dict[str, float] = {}
 
 CursorArgument = Annotated[
     str | None,
@@ -198,7 +200,7 @@ def _result[EnvelopeT: ToolEnvelope](
     warnings: list[str] | None = None,
 ) -> EnvelopeT:
     trace_id = str(uuid4())
-    _LOGGER.info("component=tools severity=INFO trace_id=%s outcome=ok", trace_id)
+    _LOGGER.debug("component=tools severity=DEBUG trace_id=%s outcome=ok", trace_id)
     return envelope_type(
         ok=True,
         data=data,
@@ -213,11 +215,22 @@ def _error[EnvelopeT: ToolEnvelope](
     envelope_type: type[EnvelopeT], code: str, message: str
 ) -> EnvelopeT:
     trace_id = str(uuid4())
-    _LOGGER.warning(
-        "component=tools severity=WARNING trace_id=%s outcome=error code=%s",
-        trace_id,
-        code,
-    )
+    if code == "temporarily_unavailable":
+        now = time.monotonic()
+        previous = _ERROR_LAST.get(code)
+        if previous is None or previous <= now - _ERROR_SUPPRESSION_SECONDS:
+            _ERROR_LAST[code] = now
+            _LOGGER.warning(
+                "component=tools severity=WARNING trace_id=%s outcome=error code=%s",
+                trace_id,
+                code,
+            )
+    else:
+        _LOGGER.debug(
+            "component=tools severity=DEBUG trace_id=%s outcome=error code=%s",
+            trace_id,
+            code,
+        )
     return envelope_type(
         ok=False,
         data={"error": code, "message": message},
@@ -270,6 +283,7 @@ def _control_envelope(
             json.dumps(control_uuid[:128]),
             action[:64] if action else "invalid",
             outcome,
+            extra={"mcp_audit": True},
         )
     data = (
         ControlOperationData.model_validate(result)

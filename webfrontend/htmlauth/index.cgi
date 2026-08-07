@@ -60,12 +60,12 @@ sub admin_call {
     my $stderr = <$child_err> // '';
     waitpid($pid, 0);
     if ($? != 0 || $stdout eq '') {
-        LOGERR("admin helper failed");
+        admin_logger()->ERR("admin helper failed");
         return {ok => JSON::PP::false, error => {code => 'internal_error', message => 'Administrative action failed'}};
     }
     my $result = eval { decode_json($stdout) };
     if (!$result || ref($result) ne 'HASH') {
-        LOGERR("admin helper returned invalid JSON");
+        admin_logger()->ERR("admin helper returned invalid JSON");
         return {ok => JSON::PP::false, error => {code => 'internal_error', message => 'Administrative action failed'}};
     }
     return $result;
@@ -146,12 +146,12 @@ sub stored_general_config {
     $general_config_loaded = 1;
     my $path = "$lbhomedir/config/system/general.json";
     if (!-f $path || !-r $path) {
-        LOGWARN('Could not read stored LoxBerry configuration');
+        admin_logger()->WARN('Could not read stored LoxBerry configuration');
         $general_config_cache = {};
         return $general_config_cache;
     }
     open my $handle, '<:raw', $path or do {
-        LOGWARN('Could not open stored LoxBerry configuration');
+        admin_logger()->WARN('Could not open stored LoxBerry configuration');
         $general_config_cache = {};
         return $general_config_cache;
     };
@@ -159,13 +159,13 @@ sub stored_general_config {
     my $raw = <$handle> // '';
     close $handle;
     if (length($raw) > 1024 * 1024) {
-        LOGWARN('Stored LoxBerry configuration is unexpectedly large');
+        admin_logger()->WARN('Stored LoxBerry configuration is unexpectedly large');
         $general_config_cache = {};
         return $general_config_cache;
     }
     my $document = eval { decode_json($raw) };
     if ($@ || ref($document) ne 'HASH') {
-        LOGWARN('Stored LoxBerry configuration is invalid');
+        admin_logger()->WARN('Stored LoxBerry configuration is invalid');
         $general_config_cache = {};
         return $general_config_cache;
     }
@@ -176,7 +176,7 @@ sub stored_general_config {
 sub stored_miniservers {
     my $document = stored_general_config();
     if (ref($document->{Miniserver}) ne 'HASH') {
-        LOGWARN('Stored Miniserver configuration is invalid');
+        admin_logger()->WARN('Stored Miniserver configuration is invalid');
         return {};
     }
 
@@ -311,6 +311,8 @@ if ($action ne '') {
             },
         };
         $result = admin_call('save_config', $document);
+    } elsif ($action eq 'set_logging') {
+        $result = admin_call('set_logging', {mode => ($q->{mode} // '')});
     } elsif ($action eq 'test_connection') {
         $result = admin_call('test_connection', {endpoint => requested_endpoint($q)});
     } elsif ($action eq 'revoke_session') {
@@ -393,6 +395,7 @@ $config->{server} = {} if ref($config->{server}) ne 'HASH';
 $config->{loxone} = {} if ref($config->{loxone}) ne 'HASH';
 $config->{tools} = {} if ref($config->{tools}) ne 'HASH';
 $config->{limits} = {} if ref($config->{limits}) ne 'HASH';
+$config->{logging} = {} if ref($config->{logging}) ne 'HASH';
 my $miniservers = configured_miniservers($config->{loxone}{endpoint});
 my $has_selected_miniserver = grep { $_->{selected} } @$miniservers;
 my ($selected_miniserver) = grep { $_->{selected} } @$miniservers;
@@ -418,6 +421,8 @@ my %renewal_labels = (
     error => $L{'CERTIFICATE.STATE_ERROR'},
 );
 my $renewal_state = $renewal->{state} // 'idle';
+my $debug_until = $config->{logging}{debug_until} // 0;
+my $debug_active = $debug_until =~ /\A(?:0|[1-9][0-9]*)\z/ && $debug_until > time ? 1 : 0;
 my $notice_value = $q->{notice} // '';
 my $notice_text = $notice_value eq 'success' ? $L{'AJAX.SUCCESS'}
     : $notice_value eq 'certificate_scheduled' ? $L{'CERTIFICATE.STATE_SCHEDULED'}
@@ -439,6 +444,13 @@ $template->param(
     REQUESTS_PER_MINUTE => $config->{limits}{requests_per_minute} // 60,
     CONTROL_REQUESTS_PER_MINUTE => $config->{limits}{control_requests_per_minute} // 10,
     MAX_PARALLEL_CALLS => $config->{limits}{max_parallel_calls} // 4,
+    LOG_LEVEL => $config->{logging}{level} // 'warning',
+    LOG_LEVEL_ERROR => ($config->{logging}{level} // 'warning') eq 'error' ? 1 : 0,
+    LOG_LEVEL_WARNING => ($config->{logging}{level} // 'warning') eq 'warning' ? 1 : 0,
+    LOG_LEVEL_INFO => ($config->{logging}{level} // 'warning') eq 'info' ? 1 : 0,
+    DEBUG_ACTIVE => $debug_active,
+    DEBUG_UNTIL => $debug_until,
+    DEBUG_UNTIL_DISPLAY => $debug_active ? format_expiry($debug_until) : '',
     SERVICE_ACTIVE => $page_state->{service_active} ? 1 : 0,
     SERVICE_INSTALLED => $service->{installed} ? 1 : 0,
     SERVICE_FAILED => ($service->{active_state} // '') eq 'failed' ? 1 : 0,

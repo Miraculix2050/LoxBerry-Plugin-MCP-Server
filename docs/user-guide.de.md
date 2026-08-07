@@ -207,7 +207,16 @@ Der englische Healthcheck führt keine Reparatur aus:
 LBPCONFIG=/actual/config/path LBPDATA=/actual/data/path /actual/bin/healthcheck
 ```
 
-Logs erscheinen im LoxBerry-Logviewer. Der Diagnoseexport enthält nur Version,
+Das Dienstlog kann direkt aus der Statuskarte im LoxBerry-Logviewer geöffnet
+werden. Es ist auf die aktive Datei und zwei Rotationen mit jeweils 512 KiB,
+also insgesamt ungefähr 1,5 MB, begrenzt. Unter **Diagnose und Logs** ist
+**Warnungen** voreingestellt; **Fehler** und **Informationen** sind dauerhaft
+wählbar. **Debug** kann für 15 oder 60 Minuten aktiviert werden und fällt danach
+ohne weiteren Neustart automatisch auf den gewählten Log-Level zurück. Normale
+HTTP-Zugriffe und erfolgreiche lesende MCP-Aufrufe werden außerhalb von Debug
+nicht einzeln protokolliert.
+
+Der Diagnoseexport enthält nur Version,
 Dienststatus, Transportart und maskierte Zähler. Sitzungen können einzeln oder
 gemeinsam widerrufen werden; ein erreichbarer Miniserver erhält zusätzlich
 best effort `killtoken`.
