@@ -3,17 +3,19 @@
 
 use strict;
 use warnings;
+our $loxberry_home;
 BEGIN {
-    $ENV{LBHOMEDIR} = '/opt/loxberry';
-    $ENV{PERL5LIB} = '/opt/loxberry/libs/perllib';
+    $loxberry_home = '@LBHOMEDIR@';
+    $ENV{LBHOMEDIR} = $loxberry_home;
+    $ENV{PERL5LIB} = "$loxberry_home/libs/perllib";
+    unshift @INC, "$loxberry_home/libs/perllib";
 }
-use lib '/opt/loxberry/libs/perllib';
 use Fcntl qw(:DEFAULT :flock O_NOFOLLOW);
 use JSON::PP qw(encode_json);
 use Sys::Hostname qw(hostname);
 use LoxBerry::System;
 
-my $home = '/opt/loxberry';
+my $home = $loxberry_home;
 my $plugin = 'mcpserver';
 my $status_file = "$home/data/plugins/$plugin/certificate-renewal.json";
 my $lock_file = "/run/lock/loxberry-$plugin-certificate-renewal.lock";

@@ -8,8 +8,23 @@ sudoers=/etc/sudoers.d/loxberry-mcpserver
 certificate_helper=/usr/local/sbin/loxberry-mcpserver-renew-web-certificate
 
 actual_folder=$3
-if [ -z "$actual_folder" ] || [ -z "${LBPBIN:-}" ] || [ -z "${LBPCONFIG:-}" ] || [ -z "${LBPDATA:-}" ] || [ -z "${LBPLOG:-}" ]; then
+if [ -z "$actual_folder" ] || [ -z "${LBHOMEDIR:-}" ] || [ -z "${LBPBIN:-}" ] || [ -z "${LBPCONFIG:-}" ] || [ -z "${LBPDATA:-}" ] || [ -z "${LBPLOG:-}" ]; then
     echo "<ERROR> LoxBerry plugin paths are unavailable."
+    exit 2
+fi
+case "$LBHOMEDIR" in
+    /*) ;;
+    *) echo "<ERROR> Invalid LoxBerry home directory."; exit 2 ;;
+esac
+case "$LBHOMEDIR" in
+    *[!A-Za-z0-9_./-]*) echo "<ERROR> Invalid LoxBerry home directory."; exit 2 ;;
+esac
+loxberry_home=$(realpath -e -- "$LBHOMEDIR") || { echo "<ERROR> Invalid LoxBerry home directory."; exit 2; }
+case "$loxberry_home" in
+    /|*[!A-Za-z0-9_./-]*) echo "<ERROR> Invalid LoxBerry home directory."; exit 2 ;;
+esac
+if [ ! -d "$loxberry_home/libs/perllib" ]; then
+    echo "<ERROR> LoxBerry Perl libraries are unavailable."
     exit 2
 fi
 plugin_config="$LBPCONFIG/$actual_folder"
@@ -49,7 +64,7 @@ host=$(hostname -f 2>/dev/null || hostname)
 case "$host" in
     *[!A-Za-z0-9.-]*|'') echo "<ERROR> Invalid local hostname."; exit 2 ;;
 esac
-local_ip=$(perl -I"${LBHOMEDIR:-/opt/loxberry}/libs/perllib" -MLoxBerry::System -e \
+local_ip=$(perl -I"$loxberry_home/libs/perllib" -MLoxBerry::System -e \
     'print LoxBerry::System::get_localip()' 2>/dev/null)
 case "$local_ip" in
     *[!0-9A-Fa-f:.]*|'') echo "<ERROR> Invalid local IP address."; exit 2 ;;
@@ -76,8 +91,15 @@ sed \
 cp "$plugin_config/apache/mcpserver.conf" "$apache" || exit 2
 chown root:root "$unit" "$apache"
 chmod 644 "$unit" "$apache"
-install -o root -g root -m 755 \
-    "$LBPBIN/$actual_folder/renew-web-certificate" "$certificate_helper" || exit 2
+certificate_helper_tmp=$(mktemp "${certificate_helper}.tmp.XXXXXX") || exit 2
+if ! sed "s|@LBHOMEDIR@|$loxberry_home|g" \
+    "$LBPBIN/$actual_folder/renew-web-certificate" > "$certificate_helper_tmp" \
+    || ! chown root:root "$certificate_helper_tmp" \
+    || ! chmod 755 "$certificate_helper_tmp" \
+    || ! mv -f "$certificate_helper_tmp" "$certificate_helper"; then
+    rm -f "$certificate_helper_tmp"
+    exit 2
+fi
 {
     echo "$marker"
     echo 'loxberry ALL=(root) NOPASSWD: /bin/systemctl start loxberry-mcpserver.service'
