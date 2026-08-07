@@ -85,6 +85,25 @@ def test_loxberry_approval_rejects_control_scoped_session(
         _allow_loxberry_read({"session_id": "control-family"})
 
 
+def test_loxberry_approval_rejects_expired_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = (tmp_path / "config" / "mcpserver.json").resolve()
+    auth_path = (tmp_path / "data" / "auth" / "sessions.json").resolve()
+    AtomicConfigStore(config_path).save(PluginConfig.defaults())
+    auth_store = AtomicJsonAuthStore(auth_path)
+    auth_store.mutate(
+        lambda document: document["families"].update(
+            {"expired-family": {"scope": "loxone:read", "expires_at": 1, "revoked": False}}
+        )
+    )
+    monkeypatch.setenv("MCPSERVER_CONFIG", str(config_path))
+    monkeypatch.setenv("MCPSERVER_AUTH_STORE", str(auth_path))
+
+    with pytest.raises(AdminError, match="read-only session"):
+        _allow_loxberry_read({"session_id": "expired-family"})
+
+
 def test_page_state_aggregates_initial_admin_ui_data(monkeypatch: pytest.MonkeyPatch) -> None:
     config = PluginConfig.defaults()
 

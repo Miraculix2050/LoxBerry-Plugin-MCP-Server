@@ -6,11 +6,18 @@ import pytest
 from mcp.server.fastmcp import FastMCP
 
 import mcpserver.tools as tools_module
-from mcpserver.auth.provider import CONTROL_SCOPE, READ_SCOPE, StoredAccessToken
+from mcpserver.auth.provider import (
+    CONTROL_SCOPE,
+    LOXBERRY_READ_SCOPE,
+    READ_SCOPE,
+    StoredAccessToken,
+)
+from mcpserver.config import PluginConfig
 from mcpserver.loxone.models import Control, LoxoneIdentity, LoxoneStructure
 from mcpserver.loxone.runtime import RuntimeSnapshot
 from mcpserver.skill_delivery import read_skill_markdown
 from mcpserver.tools import (
+    LoxBerryReadRuntime,
     SystemStatusEnvelope,
     _CursorCodec,
     _error,
@@ -21,6 +28,57 @@ from mcpserver.tools import (
     register_read_tools,
     register_skill_tool,
 )
+
+
+def _loxberry_access(*scopes: str) -> StoredAccessToken:
+    return StoredAccessToken(
+        token="opaque",
+        client_id="client",
+        scopes=list(scopes),
+        expires_at=2_000_000_000,
+        resource="https://loxberry.local/plugins/mcpserver/mcp",
+        subject="identity",
+        claims={},
+        family_id="family",
+        identity_id="identity",
+        miniserver_id="miniserver",
+    )
+
+
+def test_loxberry_runtime_requires_live_binding_and_enforces_rate_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ConfigStore:
+        config = PluginConfig(loxberry_read_enabled=True, loxberry_requests_per_minute=1)
+
+        def load(self) -> PluginConfig:
+            return self.config
+
+    class AuthStore:
+        def pseudonym(self, *parts: str) -> str:
+            assert parts[0] == "loxberry-read-binding-v1"
+            return "binding"
+
+    config_store = ConfigStore()
+    config_store.config = PluginConfig(
+        loxberry_read_enabled=True,
+        loxberry_requests_per_minute=1,
+        loxberry_read_bindings=("binding",),
+    )
+    runtime = LoxBerryReadRuntime(object(), config_store, AuthStore())  # type: ignore[arg-type]
+    access = _loxberry_access(READ_SCOPE, LOXBERRY_READ_SCOPE)
+    monkeypatch.setattr(tools_module.time, "monotonic", lambda: 100.0)
+
+    assert runtime._allowed(access).loxberry_read_enabled is True
+    with pytest.raises(tools_module.DiagnosticsUnavailable):
+        runtime._allowed(access)
+    with pytest.raises(PermissionError):
+        runtime._allowed(_loxberry_access(READ_SCOPE))
+    config_store.config = PluginConfig(
+        loxberry_read_enabled=False, loxberry_read_bindings=("binding",)
+    )
+    with pytest.raises(PermissionError):
+        runtime._allowed(access)
 
 
 def test_loxberry_tool_contracts_have_closed_output_schemas() -> None:

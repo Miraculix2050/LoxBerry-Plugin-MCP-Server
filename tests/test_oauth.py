@@ -70,6 +70,48 @@ def test_loxberry_scope_is_additive_and_disabled_by_default() -> None:
         normalize_scopes(LOXBERRY_READ_SCOPE, control_enabled=False, loxberry_read_enabled=True)
 
 
+@pytest.mark.asyncio
+async def test_loxberry_authorization_code_requires_local_binding(tmp_path: Path) -> None:
+    allowed = False
+    provider = Phase0OAuthProvider(
+        AtomicJsonAuthStore(tmp_path / "auth" / "sessions.json"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+        clock=Clock(),
+        loxberry_read_enabled=True,
+        loxberry_read_allowed=lambda client, identity, miniserver: allowed,
+    )
+    client = OAuthClientInformationFull(
+        client_id="diagnostic-client",
+        redirect_uris=[AnyUrl(REDIRECT)],
+        token_endpoint_auth_method="none",
+        grant_types=["authorization_code", "refresh_token"],
+        response_types=["code"],
+        scope=f"{READ_SCOPE} {LOXBERRY_READ_SCOPE}",
+    )
+    await provider.register_client(client)
+    with pytest.raises(TokenError, match="local approval"):
+        provider.issue_authorization_code(
+            client_id="diagnostic-client",
+            redirect_uri=REDIRECT,
+            code_challenge=CHALLENGE,
+            resource=RESOURCE,
+            identity_id="identity",
+            miniserver_id="miniserver",
+            scopes=(READ_SCOPE, LOXBERRY_READ_SCOPE),
+        )
+    allowed = True
+    assert provider.issue_authorization_code(
+        client_id="diagnostic-client",
+        redirect_uri=REDIRECT,
+        code_challenge=CHALLENGE,
+        resource=RESOURCE,
+        identity_id="identity",
+        miniserver_id="miniserver",
+        scopes=(READ_SCOPE, LOXBERRY_READ_SCOPE),
+    )
+
+
 def test_disabled_control_scope_is_locally_revoked_without_deleting_remote_token(
     tmp_path: Path,
 ) -> None:

@@ -9,6 +9,7 @@ import re
 import socket
 import subprocess
 import sys
+import time
 from contextlib import suppress
 from dataclasses import replace
 from pathlib import Path
@@ -362,11 +363,16 @@ def _sessions() -> list[dict[str, Any]]:
         bindings = ()
     result = []
     for family_id, record in document["families"].items():
+        expires_at = record.get("expires_at")
         if record.get("revoked"):
             continue
         client_id = str(record.get("client_id", ""))
         scopes = str(record.get("scope", "loxone:read"))
-        read_only = scopes.split() == ["loxone:read"]
+        read_only = (
+            scopes.split() == ["loxone:read"]
+            and isinstance(expires_at, int | float)
+            and expires_at > time.time()
+        )
         client = clients.get(client_id, {})
         client_name = client.get("client_name", "") if isinstance(client, dict) else ""
         result.append(
@@ -426,6 +432,8 @@ def _allow_loxberry_read(payload: object) -> dict[str, Any]:
     if (
         not isinstance(record, dict)
         or record.get("revoked", False)
+        or not isinstance(record.get("expires_at"), int | float)
+        or record["expires_at"] <= time.time()
         or str(record.get("scope", "loxone:read")).split() != ["loxone:read"]
     ):
         raise AdminError("read-only session is unavailable")
