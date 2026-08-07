@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 import pytest
 from mcp.server.fastmcp import FastMCP
 
@@ -9,12 +11,47 @@ from mcpserver.loxone.models import Control, LoxoneIdentity, LoxoneStructure
 from mcpserver.loxone.runtime import RuntimeSnapshot
 from mcpserver.skill_delivery import read_skill_markdown
 from mcpserver.tools import (
+    SystemStatusEnvelope,
     _CursorCodec,
+    _error,
     _page,
+    _result,
     register_control_tool,
     register_read_tools,
     register_skill_tool,
 )
+
+
+def test_read_results_and_expected_errors_are_debug_only(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG, logger="mcpserver.tools")
+
+    _result(
+        SystemStatusEnvelope,
+        {
+            "reachable": True,
+            "miniserver_serial": "masked",
+            "structure_last_modified": "",
+            "cache_freshness": "current",
+        },
+    )
+    _error(SystemStatusEnvelope, "invalid_input", "invalid")
+
+    assert [record.levelno for record in caplog.records] == [logging.DEBUG, logging.DEBUG]
+
+
+def test_repeated_runtime_warning_is_suppressed(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tools_module._ERROR_LAST.clear()
+    monkeypatch.setattr(tools_module.time, "monotonic", lambda: 100.0)
+    caplog.set_level(logging.WARNING, logger="mcpserver.tools")
+
+    _error(SystemStatusEnvelope, "temporarily_unavailable", "unavailable")
+    _error(SystemStatusEnvelope, "temporarily_unavailable", "unavailable")
+
+    assert len(caplog.records) == 1
 
 
 def test_opaque_cursor_paginates_without_exposing_offset() -> None:

@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 
 import idna
 
-from mcpserver.config import AtomicConfigStore, PluginConfig
+from mcpserver.config import DEFAULT_LOG_LEVEL, AtomicConfigStore, PluginConfig
 from mcpserver.loxone.client import MiniserverEndpoint
 
 SERVER_PORT: Final = 8765
@@ -210,20 +210,15 @@ def _phase0_auth_from_environment() -> Phase0AuthSettings | None:
 
 def _phase1_auth_from_environment(
     base: Phase0AuthSettings | None,
+    config: PluginConfig | None,
 ) -> tuple[Phase0AuthSettings | None, bool]:
-    config_value = os.getenv("MCPSERVER_CONFIG", "").strip()
     token_value = os.getenv("MCPSERVER_LOXONE_TOKEN_STORE", "").strip()
     key_value = os.getenv("MCPSERVER_INSTALL_KEY", "").strip()
     if bool(token_value) != bool(key_value):
         raise ValueError(
             "MCPSERVER_LOXONE_TOKEN_STORE and MCPSERVER_INSTALL_KEY are required together"
         )
-    config: PluginConfig | None = None
-    if config_value:
-        config_path = Path(config_value)
-        if not config_path.is_absolute():
-            raise ValueError("MCPSERVER_CONFIG must be an absolute path")
-        config = AtomicConfigStore(config_path).load()
+    if config is not None:
         if not config.enabled:
             return None, False
         if base is None:
@@ -269,6 +264,8 @@ class ServerSettings:
     allowed_origins: tuple[str, ...]
     phase0_auth: Phase0AuthSettings | None = None
     service_enabled: bool = True
+    log_level: str = DEFAULT_LOG_LEVEL
+    debug_until: int = 0
 
     @classmethod
     def from_environment(cls) -> ServerSettings:
@@ -293,8 +290,15 @@ class ServerSettings:
                 setting="MCPSERVER_ALLOWED_ORIGINS",
             )
         )
+        config_value = os.getenv("MCPSERVER_CONFIG", "").strip()
+        plugin_config: PluginConfig | None = None
+        if config_value:
+            config_path = Path(config_value)
+            if not config_path.is_absolute():
+                raise ValueError("MCPSERVER_CONFIG must be an absolute path")
+            plugin_config = AtomicConfigStore(config_path).load()
         phase_auth, service_enabled = _phase1_auth_from_environment(
-            None if os.getenv("MCPSERVER_CONFIG", "").strip() else _phase0_auth_from_environment()
+            None if config_value else _phase0_auth_from_environment(), plugin_config
         )
         if phase_auth is not None and phase_auth.plugin_config is not None:
             public = urlsplit(phase_auth.public_origin)
@@ -314,4 +318,6 @@ class ServerSettings:
             allowed_origins=allowed_origins,
             phase0_auth=phase_auth,
             service_enabled=service_enabled,
+            log_level=plugin_config.log_level if plugin_config is not None else DEFAULT_LOG_LEVEL,
+            debug_until=plugin_config.debug_until if plugin_config is not None else 0,
         )

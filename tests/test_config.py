@@ -19,6 +19,8 @@ def test_defaults_are_disabled_and_bounded() -> None:
     assert config.requests_per_minute == 60
     assert config.control_requests_per_minute == 10
     assert config.max_parallel_calls == 4
+    assert config.log_level == "warning"
+    assert config.debug_until == 0
 
 
 def test_configuration_round_trip_preserves_unknown_keys(tmp_path: Path) -> None:
@@ -56,6 +58,8 @@ def test_configuration_round_trip_preserves_unknown_keys(tmp_path: Path) -> None
             "server": {"enabled": False},
             "loxone": {"endpoint": "http://public.example"},
         },
+        {"schema_version": 1, "logging": {"level": "debug"}},
+        {"schema_version": 1, "logging": {"debug_until": -1}},
     ],
 )
 def test_invalid_configuration_is_rejected(document: object) -> None:

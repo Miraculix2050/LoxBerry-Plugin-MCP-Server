@@ -35,16 +35,50 @@ def test_main_opens_the_configured_log_as_the_service_user(
 
     monkeypatch.setenv("MCPSERVER_LOG_FILE", str(log_file))
     monkeypatch.setattr(
-        "mcpserver.server.logging.basicConfig", lambda **kwargs: logging_options.update(kwargs)
+        "mcpserver.server.configure_service_logging",
+        lambda **kwargs: logging_options.update(kwargs),
     )
     monkeypatch.setattr(ServerSettings, "from_environment", staticmethod(_settings))
     monkeypatch.setattr("mcpserver.server.create_server", lambda settings: Server())
 
     main()
 
-    assert logging_options["filename"] == str(log_file)
-    assert logging_options["encoding"] == "utf-8"
+    assert logging_options == {
+        "level": "warning",
+        "debug_until": 0,
+        "log_file": str(log_file),
+    }
     assert run_options == {"transport": "streamable-http"}
+
+
+@pytest.mark.asyncio
+async def test_http_runtime_uses_root_logging_without_access_log(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    server = create_server(_settings())
+    options: dict[str, object] = {}
+    served: list[object] = []
+
+    def config(app: object, **kwargs: object) -> object:
+        options.update(kwargs)
+        return app
+
+    class UvicornServer:
+        def __init__(self, config: object) -> None:
+            self.config = config
+
+        async def serve(self) -> None:
+            served.append(self.config)
+
+    monkeypatch.setattr("uvicorn.Config", config)
+    monkeypatch.setattr("uvicorn.Server", UvicornServer)
+
+    await server.run_streamable_http_async()
+
+    assert options["log_config"] is None
+    assert options["log_level"] == "debug"
+    assert options["access_log"] is False
+    assert len(served) == 1
 
 
 def test_health_is_small_and_contains_no_configuration() -> None:

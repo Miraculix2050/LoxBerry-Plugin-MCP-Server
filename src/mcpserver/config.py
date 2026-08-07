@@ -22,6 +22,9 @@ DEFAULT_CONNECTION_TIMEOUT: Final = 10.0
 DEFAULT_REQUESTS_PER_MINUTE: Final = 60
 DEFAULT_MAX_PARALLEL_CALLS: Final = 4
 DEFAULT_CONTROL_REQUESTS_PER_MINUTE: Final = 10
+DEFAULT_LOG_LEVEL: Final = "warning"
+SUPPORTED_LOG_LEVELS: Final = frozenset({"error", "warning", "info"})
+MAX_DEBUG_UNTIL: Final = 4_102_444_799
 
 
 class ConfigError(ValueError):
@@ -55,6 +58,12 @@ def _integer(value: object, *, name: str, minimum: int, maximum: int) -> int:
     return value
 
 
+def _log_level(value: object) -> str:
+    if not isinstance(value, str) or value not in SUPPORTED_LOG_LEVELS:
+        raise ConfigError("logging.level is unsupported")
+    return value
+
+
 @dataclass(frozen=True, slots=True)
 class PluginConfig:
     """The small public Phase 1 configuration contract."""
@@ -68,6 +77,8 @@ class PluginConfig:
     requests_per_minute: int = DEFAULT_REQUESTS_PER_MINUTE
     control_requests_per_minute: int = DEFAULT_CONTROL_REQUESTS_PER_MINUTE
     max_parallel_calls: int = DEFAULT_MAX_PARALLEL_CALLS
+    log_level: str = DEFAULT_LOG_LEVEL
+    debug_until: int = 0
     _source: dict[str, Any] | None = None
 
     @classmethod
@@ -83,6 +94,7 @@ class PluginConfig:
         loxone = _mapping(root.get("loxone", {}), name="loxone")
         tools = _mapping(root.get("tools", {}), name="tools")
         limits = _mapping(root.get("limits", {}), name="limits")
+        logging_config = _mapping(root.get("logging", {}), name="logging")
 
         enabled = _boolean(server.get("enabled", False), name="server.enabled")
         public_origin_value = server.get("public_origin", "")
@@ -161,6 +173,13 @@ class PluginConfig:
             minimum=1,
             maximum=32,
         )
+        log_level = _log_level(logging_config.get("level", DEFAULT_LOG_LEVEL))
+        debug_until = _integer(
+            logging_config.get("debug_until", 0),
+            name="logging.debug_until",
+            minimum=0,
+            maximum=MAX_DEBUG_UNTIL,
+        )
         return cls(
             enabled=enabled,
             public_origin=public_origin,
@@ -171,13 +190,15 @@ class PluginConfig:
             requests_per_minute=requests,
             control_requests_per_minute=control_requests,
             max_parallel_calls=parallel,
+            log_level=log_level,
+            debug_until=debug_until,
             _source=copy.deepcopy(root),
         )
 
     def to_document(self) -> dict[str, Any]:
         document = copy.deepcopy(self._source) if self._source is not None else {}
         document["schema_version"] = SCHEMA_VERSION
-        for key in ("server", "loxone", "tools", "limits"):
+        for key in ("server", "loxone", "tools", "limits", "logging"):
             current = document.get(key)
             if not isinstance(current, dict):
                 document[key] = {}
@@ -190,6 +211,8 @@ class PluginConfig:
         document["limits"]["requests_per_minute"] = self.requests_per_minute
         document["limits"]["control_requests_per_minute"] = self.control_requests_per_minute
         document["limits"]["max_parallel_calls"] = self.max_parallel_calls
+        document["logging"]["level"] = self.log_level
+        document["logging"]["debug_until"] = self.debug_until
         return document
 
 
