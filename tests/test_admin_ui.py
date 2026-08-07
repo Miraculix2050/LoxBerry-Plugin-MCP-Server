@@ -121,6 +121,15 @@ def test_diagnostics_offer_dedicated_persistent_service_logging_controls() -> No
     assert "DIAGNOSTICS.PLUGIN_SECTION" in template
     assert template.count('class="mcp-log-section"') == 2
     assert template.index('id="service-log-heading"') < template.index('id="plugin-log-heading"')
+    service_log_section = template[
+        template.index('id="service-log-heading"') : template.index('id="plugin-log-heading"')
+    ]
+    assert 'class="mcp-log-files"' in service_log_section
+    assert "TMPL_LOOP SERVICE_LOGS" in service_log_section
+    assert 'href="<TMPL_VAR url ESCAPE=HTML>"' in service_log_section
+    assert "DIAGNOSTICS.SERVICE_LOG_FILES" in service_log_section
+    assert "SERVICE_LOGS => \\@service_logs" in cgi
+    assert "for my $suffix ('', '.1', '.2')" in cgi
     assert "set_logging: 75000" in template
     assert "renderLogging(result.data.configuration)" in template
     assert "window.location.reload" not in template
