@@ -79,6 +79,7 @@ class LoginTransaction:
     identity_id: str | None = None
     miniserver_id: str | None = None
     miniserver_name: str | None = None
+    loxberry_read_locally_approved: bool = False
     phase: str = "login"
     lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
 
@@ -438,7 +439,10 @@ class Phase0OAuthWeb:
         )
         loxberry_requested = LOXBERRY_READ_SCOPE in transaction.scopes
         loxberry_option = (
-            """<label class="scope-option" for="grant_loxberry"><input id="grant_loxberry" type="checkbox" name="grant_loxberry" value="true">
+            """<label class=\"scope-option\"><input type=\"checkbox\" checked disabled>
+<span><strong>LoxBerry diagnostics / LoxBerry-Diagnose</strong><small>Approved locally for this client, identity and Miniserver. / Lokal für diesen Client, diese Identität und diesen Miniserver freigegeben.</small></span></label>"""
+            if transaction.loxberry_read_locally_approved
+            else """<label class="scope-option" for="grant_loxberry"><input id="grant_loxberry" type="checkbox" name="grant_loxberry" value="true">
 <span><strong>LoxBerry diagnostics / LoxBerry-Diagnose</strong><small>Optional: read the approved LoxBerry system, plugin and service status. / Optional: Den freigegebenen LoxBerry-System-, Plugin- und Dienststatus lesen.</small></span></label>"""
             if loxberry_requested
             else ""
@@ -507,6 +511,7 @@ class Phase0OAuthWeb:
                     grant_control not in {None, "true"}
                     or (grant_control is not None and CONTROL_SCOPE not in transaction.scopes)
                     or grant_loxberry not in {None, "true"}
+                    or (transaction.loxberry_read_locally_approved and grant_loxberry is not None)
                     or (
                         grant_loxberry is not None and LOXBERRY_READ_SCOPE not in transaction.scopes
                     )
@@ -520,7 +525,10 @@ class Phase0OAuthWeb:
                 approved_scopes: tuple[str, ...] = (READ_SCOPE,)
                 if grant_control == "true":
                     approved_scopes = (READ_SCOPE, CONTROL_SCOPE)
-                if grant_loxberry == "true":
+                pending_loxberry_read = (
+                    grant_loxberry == "true" and not transaction.loxberry_read_locally_approved
+                )
+                if grant_loxberry == "true" or transaction.loxberry_read_locally_approved:
                     approved_scopes = (*approved_scopes, LOXBERRY_READ_SCOPE)
                 transaction.phase = "approving"
                 family_id: str | None = None
@@ -572,6 +580,7 @@ class Phase0OAuthWeb:
                         miniserver_id=transaction.miniserver_id,
                         scopes=approved_scopes,
                         family_id=family_id,
+                        pending_loxberry_read=pending_loxberry_read,
                     )
                 except TokenError:
                     if family_id is not None and self.loxone_store is not None:
@@ -676,23 +685,12 @@ class Phase0OAuthWeb:
         transaction.miniserver_id = miniserver_id
         transaction.identity_id = identity_id
         self._clear_identity_failures(rate_keys)
-        if LOXBERRY_READ_SCOPE in transaction.scopes and not self.provider.loxberry_read_allowed(
-            transaction.client_id, identity_id, miniserver_id
-        ):
-            await self._kill(transaction)
-            self.transactions.pop(transaction.transaction_id, None)
-            transaction.phase = "finished"
-            response = _redirect(
-                transaction.redirect_uri,
-                {
-                    "error": "access_denied",
-                    "error_description": "Local LoxBerry read-only approval is required / Lokale LoxBerry-Lesefreigabe ist erforderlich",
-                    "state": transaction.state,
-                    "iss": self.issuer,
-                },
+        transaction.loxberry_read_locally_approved = (
+            LOXBERRY_READ_SCOPE in transaction.scopes
+            and self.provider.loxberry_read_allowed(
+                transaction.client_id, identity_id, miniserver_id
             )
-            response.delete_cookie(_COOKIE_NAME, path="/plugins/mcpserver/oauth/authorize")
-            return response
+        )
         transaction.phase = "consent"
         return self._consent_page(transaction)
 

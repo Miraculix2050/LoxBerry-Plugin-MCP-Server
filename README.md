@@ -4,7 +4,7 @@
 > **Source code** archives are not LoxBerry plugin packages. Local packages
 > containing `-local-` are intended only for testing.
 
-Das McpServer-Plugin betreibt einen [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)-Server direkt auf dem LoxBerry. Die aktuelle Alpha erlaubt KI-Assistenten und Agenten standardmäßig ausschließlich, den Zustand einer Loxone-Miniserver-Installation zu lesen. Optional kann ein eng begrenztes Loxone-Schreibwerkzeug aktiviert werden. Dabei verwendet das Plugin die vorhandenen Räume, Kategorien und Steuerungsnamen – ohne eigenen Cloud-Dienst. LoxBerry-Werkzeuge sind nicht Bestandteil dieser Version.
+Das McpServer-Plugin betreibt einen [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)-Server direkt auf dem LoxBerry. Die aktuelle Alpha erlaubt KI-Assistenten und Agenten standardmäßig ausschließlich, den Zustand einer Loxone-Miniserver-Installation zu lesen. Optional kann ein eng begrenztes Loxone-Schreibwerkzeug aktiviert werden. Dabei verwendet das Plugin die vorhandenen Räume, Kategorien und Steuerungsnamen – ohne eigenen Cloud-Dienst. Optional stehen ausschließlich lesende, maskierte LoxBerry-Diagnosen bereit.
 
 ## Sicherheit und Berechtigungen
 
@@ -12,8 +12,9 @@ Der Zugriff auf Loxone-Funktionen ist durch den Loxone-Login geschützt. Ein ver
 
 Die optionale LoxBerry-Diagnose ist standardmäßig deaktiviert. Sie zeigt nur
 maskierte System-, Plugin- und Dienststatusdaten. `loxberry:read` benötigt eine
-lokale Administratorfreigabe für exakt Client, Loxone-Identität und Miniserver
-sowie eine erneute OAuth-Anmeldung mit separatem Consent; sie erlaubt keine
+lokale Administratorfreigabe für exakt Client, Loxone-Identität und Miniserver.
+Ein Client kann sie zusammen mit den Loxone-Scopes anfordern; bis zur Freigabe
+bleibt die Diagnose ausstehend. Sie erlaubt keine
 Reparatur, Neustarts oder andere LoxBerry-Aktionen.
 
 Für jeden Assistenten sollte ein eigener Loxone-Benutzer mit den minimal erforderlichen Rechten angelegt werden. Zugangsdaten und andere Geheimnisse dürfen nicht im Repository gespeichert werden.

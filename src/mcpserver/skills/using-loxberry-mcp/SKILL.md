@@ -30,8 +30,10 @@ true or a state has an old or missing `observed_at` value.
 Use the available `loxberry_*` tools only for the requested LoxBerry system,
 plugin, or MCP service status. Query `tools/list` first; it is authoritative
 for availability and schemas. `loxberry:read` requires a local administrator
-approval for this client, Loxone identity, and Miniserver, followed by a new
-OAuth sign-in and optional consent. If it is unavailable or denied, explain the
+approval for this client, Loxone identity, and Miniserver. A client may request
+it together with read and control scopes; until approval the diagnostic tools
+return `permission_denied`. After approval, the same connection can use them. If it is
+unavailable or denied, explain the
 required approval; do not recommend repair, restart, or a permission bypass.
 
 The MCP service can report its own health only while it is reachable. A fully

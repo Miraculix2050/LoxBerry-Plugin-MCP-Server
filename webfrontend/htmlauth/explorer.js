@@ -1510,6 +1510,9 @@
       setControlAvailability(
         (discovered.resourceMetadata.scopes_supported || []).includes('loxone:control'),
       );
+      setLoxberryAvailability(
+        (discovered.resourceMetadata.scopes_supported || []).includes('loxberry:read'),
+      );
       stored = readStoredSession(discovered.resourceMetadata.resource);
       if (stored) {
         setBusy(true);

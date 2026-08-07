@@ -353,6 +353,8 @@ async def _test_connection(payload: object) -> dict[str, Any]:
 
 
 def _sessions() -> list[dict[str, Any]]:
+    from mcpserver.auth.provider import READ_SCOPE
+
     document = _auth_store().snapshot()
     clients = document.get("clients", {})
     if not isinstance(clients, dict):
@@ -368,8 +370,9 @@ def _sessions() -> list[dict[str, Any]]:
             continue
         client_id = str(record.get("client_id", ""))
         scopes = str(record.get("scope", "loxone:read"))
-        read_only = (
-            scopes.split() == ["loxone:read"]
+        pending_loxberry_read = (
+            bool(record.get("pending_loxberry_read", False))
+            and READ_SCOPE in scopes.split()
             and isinstance(expires_at, int | float)
             and expires_at > time.time()
         )
@@ -386,8 +389,8 @@ def _sessions() -> list[dict[str, Any]]:
                 "scopes": scopes,
                 "expires_at": record.get("expires_at"),
                 "revoked": bool(record.get("revoked", False)),
-                "loxberry_read_eligible": read_only,
-                "loxberry_read_approved": read_only
+                "loxberry_read_eligible": pending_loxberry_read,
+                "loxberry_read_approved": pending_loxberry_read
                 and bool(bindings)
                 and _loxberry_binding(record) in bindings,
             }
@@ -405,6 +408,8 @@ def _loxberry_binding(record: dict[str, Any]) -> str:
 
 
 def _loxberry_bindings() -> list[dict[str, Any]]:
+    from mcpserver.auth.provider import LOXBERRY_READ_SCOPE
+
     try:
         bindings = _config_store().load().loxberry_read_bindings
     except AdminError:
@@ -412,18 +417,48 @@ def _loxberry_bindings() -> list[dict[str, Any]]:
     if not bindings:
         return []
     document = _auth_store().snapshot()
-    active = {
-        _loxberry_binding(record)
-        for record in document.get("families", {}).values()
-        if isinstance(record, dict) and not record.get("revoked", False)
-    }
+    clients = document.get("clients", {})
+    if not isinstance(clients, dict):
+        clients = {}
+    related: dict[str, list[dict[str, str]]] = {binding: [] for binding in bindings}
+    now = time.time()
+    for record in document.get("families", {}).values():
+        if not isinstance(record, dict) or record.get("revoked", False):
+            continue
+        expires_at = record.get("expires_at")
+        if not isinstance(expires_at, int | float) or expires_at <= now:
+            continue
+        if LOXBERRY_READ_SCOPE not in str(record.get("scope", "")).split():
+            continue
+        binding = _loxberry_binding(record)
+        if binding not in related:
+            continue
+        client_id = str(record.get("client_id", ""))
+        client = clients.get(client_id, {})
+        client_name = client.get("client_name", "") if isinstance(client, dict) else ""
+        related[binding].append(
+            {
+                "client": client_id[:12],
+                "client_name": client_name
+                if isinstance(client_name, str) and client_name.strip()
+                else "",
+                "scopes": str(record.get("scope", "")),
+            }
+        )
     return [
-        {"id": binding, "fingerprint": binding[:12], "active": binding in active}
+        {
+            "id": binding,
+            "fingerprint": binding[:12],
+            "active": bool(related[binding]),
+            "sessions": related[binding],
+        }
         for binding in bindings
     ]
 
 
 def _allow_loxberry_read(payload: object) -> dict[str, Any]:
+    from mcpserver.auth.provider import READ_SCOPE
+
     session_id = payload.get("session_id") if isinstance(payload, dict) else None
     if not isinstance(session_id, str) or len(session_id) > 128:
         raise AdminError("session identifier is invalid")
@@ -434,9 +469,10 @@ def _allow_loxberry_read(payload: object) -> dict[str, Any]:
         or record.get("revoked", False)
         or not isinstance(record.get("expires_at"), int | float)
         or record["expires_at"] <= time.time()
-        or str(record.get("scope", "loxone:read")).split() != ["loxone:read"]
+        or not bool(record.get("pending_loxberry_read", False))
+        or READ_SCOPE not in str(record.get("scope", "")).split()
     ):
-        raise AdminError("read-only session is unavailable")
+        raise AdminError("pending diagnostic session is unavailable")
     binding = _loxberry_binding(record)
     store = _config_store()
     previous = store.load()
@@ -449,7 +485,7 @@ def _allow_loxberry_read(payload: object) -> dict[str, Any]:
                 loxberry_read_bindings=(*previous.loxberry_read_bindings, binding),
             )
         )
-    return {"bindings": _loxberry_bindings(), "sessions": _sessions()}
+    return {"loxberry_bindings": _loxberry_bindings(), "sessions": _sessions()}
 
 
 def _revoke_loxberry_read(payload: object) -> dict[str, Any]:
@@ -476,7 +512,7 @@ def _revoke_loxberry_read(payload: object) -> dict[str, Any]:
             endpoint=previous.loxone_endpoint,
             timeout_seconds=previous.connection_timeout,
         )
-    return {"bindings": _loxberry_bindings(), "sessions": _sessions()}
+    return {"loxberry_bindings": _loxberry_bindings(), "sessions": _sessions()}
 
 
 def _revoke(

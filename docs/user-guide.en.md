@@ -48,10 +48,11 @@ existing control sessions while read-only sessions remain valid. **Read and
 switch** cannot be enabled for a Gen. 2/HTTPS target.
 
 **LoxBerry diagnostics through MCP** is disabled by default. When enabled, an
-administrator must approve an existing read-only session; the approval is bound
-to that exact OAuth client, Loxone identity and Miniserver. Reconnect with the
-same client and request `loxberry:read`, then confirm its separate optional
-consent. The three diagnostics are read-only and never repair, restart, expose
+client may request `loxberry:read` together with `loxone:read` and optional
+`loxone:control`. Until an administrator approves the pending diagnostics request,
+the client keeps its confirmed scope, but diagnostic tools continue to return
+`permission_denied`. The approval is bound to that exact OAuth client, Loxone identity
+and Miniserver. Once approved, diagnostics work in that same connection. The three diagnostics are read-only and never repair, restart, expose
 logs, or access arbitrary files. Revoking the approval ends matching sessions.
 
 ## Agent Skill

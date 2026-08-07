@@ -205,13 +205,13 @@
       <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.SCOPES></th><th><TMPL_VAR SESSIONS.EXPIRES></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody></tbody></table></div>
       <form method="post" action="index.cgi" data-ajax="revoke_all"><input type="hidden" name="action" value="revoke_all"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE_ALL></button></form>
     </template>
-    <TMPL_IF LOXBERRY_BINDINGS>
+    <section id="loxberry-binding-section" data-active-label="<TMPL_VAR SESSIONS.ACTIVE ESCAPE=HTML>" data-inactive-label="<TMPL_VAR SESSIONS.INACTIVE ESCAPE=HTML>" <TMPL_UNLESS LOXBERRY_BINDINGS>hidden</TMPL_UNLESS>>
       <h3><TMPL_VAR SESSIONS.LOXBERRY_APPROVALS></h3>
-      <ul class="mcp-list"><TMPL_LOOP LOXBERRY_BINDINGS><li><code><TMPL_VAR fingerprint ESCAPE=HTML></code> <TMPL_IF active><TMPL_VAR SESSIONS.ACTIVE><TMPL_ELSE><TMPL_VAR SESSIONS.INACTIVE></TMPL_IF>
+      <ul id="loxberry-binding-list" class="mcp-list"><TMPL_LOOP LOXBERRY_BINDINGS><li><code><TMPL_VAR fingerprint ESCAPE=HTML></code> <TMPL_IF active><TMPL_VAR SESSIONS.ACTIVE><TMPL_ELSE><TMPL_VAR SESSIONS.INACTIVE></TMPL_IF><TMPL_IF sessions><ul><TMPL_LOOP sessions><li><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML><TMPL_ELSE><TMPL_VAR SESSIONS.UNNAMED></TMPL_IF> <code><TMPL_VAR client ESCAPE=HTML></code> <code><TMPL_VAR scopes ESCAPE=HTML></code></li></TMPL_LOOP></ul></TMPL_IF>
         <form method="post" action="index.cgi" data-ajax="revoke_loxberry_read"><input type="hidden" name="action" value="revoke_loxberry_read"><input type="hidden" name="binding_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form>
       </li></TMPL_LOOP></ul>
       <p class="mcp-help"><TMPL_VAR SESSIONS.LOXBERRY_REVOKE_HINT></p>
-    </TMPL_IF>
+    </section>
     </div>
   </details>
 
@@ -305,6 +305,8 @@
   const sessionsSection = document.getElementById('sessions');
   const sessionList = document.getElementById('session-list');
   const sessionTableTemplate = document.getElementById('session-table-template');
+  const loxberryBindingSection = document.getElementById('loxberry-binding-section');
+  const loxberryBindingList = document.getElementById('loxberry-binding-list');
   const serviceSection = document.getElementById('status');
   const serviceState = document.getElementById('service-state');
   const serviceActiveState = document.getElementById('service-active-state');
@@ -563,6 +565,7 @@
   const sessionFingerprint = (session) => JSON.stringify([
     session.client_name || '', session.client || '', session.identity || '',
     session.scopes || '', String(session.expires_at ?? ''),
+    Boolean(session.loxberry_read_eligible), Boolean(session.loxberry_read_approved),
   ]);
   const createSessionRow = (session) => {
     const row = document.createElement('tr');
@@ -583,6 +586,26 @@
     expiryCell.append(expiry);
     row.append(expiryCell);
     const actionCell = document.createElement('td');
+    if (session.loxberry_read_eligible && !session.loxberry_read_approved) {
+      const allowForm = document.createElement('form');
+      allowForm.method = 'post';
+      allowForm.action = 'index.cgi';
+      allowForm.dataset.ajax = 'allow_loxberry_read';
+      const allowAction = document.createElement('input');
+      allowAction.type = 'hidden';
+      allowAction.name = 'action';
+      allowAction.value = 'allow_loxberry_read';
+      const allowId = document.createElement('input');
+      allowId.type = 'hidden';
+      allowId.name = 'session_id';
+      allowId.value = String(session.id);
+      const allowButton = document.createElement('button');
+      allowButton.className = 'lb-button';
+      allowButton.type = 'submit';
+      allowButton.textContent = '<TMPL_VAR ACTION.ALLOW_LOXBERRY_READ ESCAPE=JS>';
+      allowForm.append(allowAction, allowId, allowButton);
+      actionCell.append(allowForm);
+    }
     const revokeForm = document.createElement('form');
     revokeForm.method = 'post';
     revokeForm.action = 'index.cgi';
@@ -632,6 +655,52 @@
     }
     for (const row of existing.values()) row.remove();
   };
+  const updateLoxberryBindings = (bindings) => {
+    loxberryBindingSection.hidden = bindings.length === 0;
+    const entries = bindings.map((binding) => {
+      const entry = document.createElement('li');
+      const fingerprint = document.createElement('code');
+      fingerprint.textContent = String(binding.fingerprint || '');
+      entry.append(fingerprint, document.createTextNode(` ${binding.active
+        ? loxberryBindingSection.dataset.activeLabel
+        : loxberryBindingSection.dataset.inactiveLabel}`));
+      if (Array.isArray(binding.sessions) && binding.sessions.length) {
+        const related = document.createElement('ul');
+        for (const session of binding.sessions) {
+          const item = document.createElement('li');
+          item.append(document.createTextNode(String(session.client_name
+            || sessionsSection.dataset.unnamedLabel)));
+          for (const value of [session.client, session.scopes]) {
+            const code = document.createElement('code');
+            code.textContent = String(value || '');
+            item.append(document.createTextNode(' '), code);
+          }
+          related.append(item);
+        }
+        entry.append(related);
+      }
+      const revokeForm = document.createElement('form');
+      revokeForm.method = 'post';
+      revokeForm.action = 'index.cgi';
+      revokeForm.dataset.ajax = 'revoke_loxberry_read';
+      const action = document.createElement('input');
+      action.type = 'hidden';
+      action.name = 'action';
+      action.value = 'revoke_loxberry_read';
+      const bindingId = document.createElement('input');
+      bindingId.type = 'hidden';
+      bindingId.name = 'binding_id';
+      bindingId.value = String(binding.id || '');
+      const button = document.createElement('button');
+      button.className = 'lb-button';
+      button.type = 'submit';
+      button.textContent = '<TMPL_VAR ACTION.REVOKE ESCAPE=JS>';
+      revokeForm.append(action, bindingId, button);
+      entry.append(revokeForm);
+      return entry;
+    });
+    loxberryBindingList.replaceChildren(...entries);
+  };
   const scheduleSessionPoll = (delay = 10000) => {
     window.clearTimeout(sessionPollTimer);
     sessionPollTimer = null;
@@ -651,6 +720,9 @@
       body.set('ajax', '1');
       const result = await postAjax(body, 7000);
       if (Array.isArray(result.data.sessions)) updateSessions(result.data.sessions);
+      if (Array.isArray(result.data.loxberry_bindings)) {
+        updateLoxberryBindings(result.data.loxberry_bindings);
+      }
     } catch {
       // Keep the last known table; the next visible and open-section poll retries.
     } finally {
@@ -692,7 +764,7 @@
         servicePollTimer = null;
         renderService(lastService);
       }
-      if (form.dataset.ajax === 'revoke_session' || form.dataset.ajax === 'revoke_all') {
+      if (['revoke_session', 'revoke_all', 'allow_loxberry_read', 'revoke_loxberry_read'].includes(form.dataset.ajax)) {
         sessionActionRunning = true;
         window.clearTimeout(sessionPollTimer);
         sessionPollTimer = null;
@@ -714,6 +786,9 @@
         hideSuccess(status);
         if (result.data.service) renderService(result.data.service);
         if (Array.isArray(result.data.sessions)) updateSessions(result.data.sessions);
+        if (Array.isArray(result.data.loxberry_bindings)) {
+          updateLoxberryBindings(result.data.loxberry_bindings);
+        }
         if (result.data.certificate) updateCertificate(result.data.certificate);
         if (form.dataset.ajax === 'save_config') {
           const savedEndpoint = result.data.configuration.loxone.endpoint;
@@ -739,7 +814,7 @@
           renderService(lastService);
           scheduleServicePoll(0);
         }
-        if (form.dataset.ajax === 'revoke_session' || form.dataset.ajax === 'revoke_all') {
+        if (['revoke_session', 'revoke_all', 'allow_loxberry_read', 'revoke_loxberry_read'].includes(form.dataset.ajax)) {
           sessionActionRunning = false;
           scheduleSessionPoll();
         }

@@ -281,6 +281,7 @@ class Phase0OAuthProvider(
         miniserver_id: str,
         scopes: tuple[str, ...] = (READ_SCOPE,),
         family_id: str | None = None,
+        pending_loxberry_read: bool = False,
     ) -> str:
         if resource != self.resource:
             raise TokenError("invalid_grant", "Resource mismatch")
@@ -294,8 +295,12 @@ class Phase0OAuthProvider(
             raise TokenError("invalid_scope", "Unsupported authorization scope") from exc
         if validated_scopes != scopes:
             raise TokenError("invalid_scope", "Authorization scopes must be canonical")
-        if LOXBERRY_READ_SCOPE in scopes and not self.loxberry_read_allowed(
-            client_id, identity_id, miniserver_id
+        if pending_loxberry_read and LOXBERRY_READ_SCOPE not in scopes:
+            raise TokenError("invalid_scope", "Pending diagnostics require their scope")
+        if (
+            LOXBERRY_READ_SCOPE in scopes
+            and not pending_loxberry_read
+            and not self.loxberry_read_allowed(client_id, identity_id, miniserver_id)
         ):
             raise TokenError("invalid_scope", "LoxBerry diagnostics require local approval")
         raw_code = _opaque_token()
@@ -341,6 +346,7 @@ class Phase0OAuthProvider(
                 "resource": resource,
                 "expires_at": now + family_ttl,
                 "revoked": False,
+                "pending_loxberry_read": pending_loxberry_read,
                 **({"client_kind": "tool_explorer"} if is_explorer else {}),
             }
 

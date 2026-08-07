@@ -16,12 +16,15 @@ read-only, non-destructive and closed-world. Public errors are limited to
 required. The canonical scope order is `loxone:read`, `loxone:control`, then
 `loxberry:read`; refresh tokens preserve, never extend, their scopes.
 
-An administrator approves an existing read-only OAuth family. The approval is
+An administrator approves a pending OAuth family that includes `loxone:read` and
+may also include `loxone:control`. The approval is
 the installation-bound HMAC pseudonym of exact client, identity, and
 Miniserver identifiers. It is stored in `policies.loxberry_read_bindings`, not
-as raw identifiers. A new authorization request for `loxberry:read` succeeds
-only after that approval and after separate optional user consent. Missing
-approval returns OAuth `access_denied`. Every tool call rechecks scope and the
+as raw identifiers. A client may request `loxberry:read` before local approval.
+After the user confirms it, the server records a pending request and issues the
+confirmed diagnostic scope. Until local approval, every diagnostic tool call is
+denied; the same connection gains access once the binding is approved. Refresh
+never extends scopes. Every tool call rechecks scope and the
 live binding. Revoking a binding ends every matching OAuth family; global
 disable ends diagnostic-scoped families but retains approvals.
 
@@ -35,7 +38,8 @@ MCP.
 ## Consequences
 
 The admin UI exposes global activation, the diagnostic rate limit, approved
-pseudonym fingerprints, approval from active read-only sessions, and revocation.
+pseudonym fingerprints, the related client name and connection fingerprint,
+approval from pending sessions (including control sessions), and revocation.
 The Tool Explorer retains one tab-and-origin client registration across scope
-changes. Documentation and the `using-loxberry-mcp` skill describe the two-step
+changes. Documentation and the `using-loxberry-mcp` skill describe the local
 approval flow and never recommend repair, restart, or permission bypass.
