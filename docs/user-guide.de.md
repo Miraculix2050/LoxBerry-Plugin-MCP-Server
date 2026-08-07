@@ -207,8 +207,10 @@ Der englische Healthcheck führt keine Reparatur aus:
 LBPCONFIG=/actual/config/path LBPDATA=/actual/data/path /actual/bin/healthcheck
 ```
 
-Das Dienstlog kann direkt aus der Statuskarte im LoxBerry-Logviewer geöffnet
-werden. Es ist auf die aktive Datei und zwei Rotationen mit jeweils 512 KiB,
+Das Dienstlog kann direkt aus der Statuskarte oder als Liste der aktiven Datei
+und vorhandenen Backups im Unterabschnitt **Dienst-Log (service.log)** im
+LoxBerry-Logviewer geöffnet werden. Es ist auf die aktive Datei und zwei
+Rotationen mit jeweils 512 KiB,
 also insgesamt ungefähr 1,5 MB, begrenzt. Einzelne Einträge sind auf 8 KiB
 begrenzt. Unter **Diagnose und Logs** kann der ausschließlich für `service.log`
 geltende Level dauerhaft auf **Aus**, **Fehler**, **Warnungen**,

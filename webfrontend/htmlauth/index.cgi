@@ -490,6 +490,15 @@ my $notice_text = $notice_value eq 'success' ? $L{'AJAX.SUCCESS'}
     : $notice_value ne '' ? $L{'AJAX.ERROR'} : '';
 my $notice_kind = $notice_value eq 'success' || $notice_value eq 'certificate_scheduled'
     ? 'success' : 'error';
+my @service_logs;
+for my $suffix ('', '.1', '.2') {
+    my $filename = "service.log$suffix";
+    next if $suffix ne '' && !-f "$lbplogdir/$filename";
+    push @service_logs, {
+        filename => $filename,
+        url => "/admin/system/tools/logfile.cgi?logfile=plugins/$lbpplugindir/$filename&header=html&format=template",
+    };
+}
 $template->param(
     VERSION => $version,
     ENABLED => $config->{server}{enabled} ? 1 : 0,
@@ -520,6 +529,7 @@ $template->param(
     SERVICE_PID => $service->{pid} // '-',
     SERVICE_NAME => $service->{name} // 'loxberry-mcpserver.service',
     SERVICE_LOG_URL => "/admin/system/tools/logfile.cgi?logfile=plugins/$lbpplugindir/service.log&header=html&format=template",
+    SERVICE_LOGS => \@service_logs,
     CERTIFICATE_AVAILABLE => $certificate->{available} ? 1 : 0,
     CERTIFICATE_SOURCE_LOXBERRY => ($certificate->{source} // '') eq 'loxberry_ca' ? 1 : 0,
     CERTIFICATE_EXPIRES_AT => $certificate->{expires_at} // '',

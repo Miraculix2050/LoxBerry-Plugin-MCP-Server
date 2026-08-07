@@ -22,6 +22,7 @@
   .mcp-help { margin: 0; color: #4b5563; }
   .mcp-log-section { display: grid; gap: .85rem; min-width: 0; padding: 1rem; border: 1px solid #d7dadd; border-radius: .4rem; }
   .mcp-log-section h3 { margin: 0; font-size: 1.1rem; }
+  .mcp-log-files { display: grid; gap: .35rem; margin: 0; padding-left: 1.25rem; }
   .mcp-actions { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; }
   .mcp-actions button { min-height: 2.75rem; max-width: 100%; }
   .mcp-copy-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem; align-items: end; }
@@ -205,6 +206,8 @@
     <form method="post" action="index.cgi"><input type="hidden" name="action" value="diagnostic"><button class="lb-button" type="submit"><TMPL_VAR ACTION.DIAGNOSTIC></button></form>
     <section class="mcp-log-section" aria-labelledby="service-log-heading">
     <h3 id="service-log-heading"><TMPL_VAR DIAGNOSTICS.SERVICE_SECTION></h3>
+    <p class="mcp-help"><TMPL_VAR DIAGNOSTICS.SERVICE_LOG_FILES></p>
+    <ul class="mcp-log-files"><TMPL_LOOP SERVICE_LOGS><li><a href="<TMPL_VAR url ESCAPE=HTML>" target="_blank" rel="noopener"><TMPL_VAR filename ESCAPE=HTML></a></li></TMPL_LOOP></ul>
     <div id="logging-controls" class="mcp-form"
       data-level-off="<TMPL_VAR DIAGNOSTICS.LEVEL_OFF ESCAPE=HTML>"
       data-level-error="<TMPL_VAR DIAGNOSTICS.LEVEL_ERROR ESCAPE=HTML>"
