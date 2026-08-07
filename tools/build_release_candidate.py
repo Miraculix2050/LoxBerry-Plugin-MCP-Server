@@ -6,6 +6,7 @@ import argparse
 import configparser
 import hashlib
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -160,7 +161,14 @@ def main() -> int:
     }
 
     if not args.skip_tests:
-        _run(sys.executable, "tools/test.py", root=root, environment=environment)
+        with tempfile.TemporaryDirectory(prefix="mcpserver-tests-", dir=output_dir) as test_temp:
+            test_environment = {
+                **environment,
+                "PYTEST_ADDOPTS": shlex.join(
+                    [f"--basetemp={Path(test_temp).as_posix()}", "-p", "no:cacheprovider"]
+                ),
+            }
+            _run(sys.executable, "tools/test.py", root=root, environment=test_environment)
     with tempfile.TemporaryDirectory(prefix="mcpserver-release-", dir=output_dir) as temporary:
         work = Path(temporary)
         wheelhouse = work / "wheelhouse"
