@@ -45,7 +45,6 @@ def test_main_opens_the_configured_log_as_the_service_user(
 
     assert logging_options == {
         "level": "warning",
-        "debug_until": 0,
         "log_file": str(log_file),
     }
     assert run_options == {"transport": "streamable-http"}

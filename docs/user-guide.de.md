@@ -209,12 +209,21 @@ LBPCONFIG=/actual/config/path LBPDATA=/actual/data/path /actual/bin/healthcheck
 
 Das Dienstlog kann direkt aus der Statuskarte im LoxBerry-Logviewer geöffnet
 werden. Es ist auf die aktive Datei und zwei Rotationen mit jeweils 512 KiB,
-also insgesamt ungefähr 1,5 MB, begrenzt. Unter **Diagnose und Logs** ist
-**Warnungen** voreingestellt; **Fehler** und **Informationen** sind dauerhaft
-wählbar. **Debug** kann für 15 oder 60 Minuten aktiviert werden und fällt danach
-ohne weiteren Neustart automatisch auf den gewählten Log-Level zurück. Normale
-HTTP-Zugriffe und erfolgreiche lesende MCP-Aufrufe werden außerhalb von Debug
-nicht einzeln protokolliert.
+also insgesamt ungefähr 1,5 MB, begrenzt. Einzelne Einträge sind auf 8 KiB
+begrenzt. Unter **Diagnose und Logs** kann der ausschließlich für `service.log`
+geltende Level dauerhaft auf **Aus**, **Fehler**, **Warnungen**,
+**Informationen** oder **Debug** gestellt werden; voreingestellt sind
+**Warnungen**. Normale HTTP-Zugriffe werden auch bei Debug nicht als Access-Log
+geschrieben. Sicherheits-Audits für Steueraktionen bleiben selbst bei **Aus**
+aktiv. Die Oberfläche fasst diese Einstellung im Unterabschnitt
+**Dienst-Log (service.log)** zusammen.
+
+Der darunter angezeigte native LoxBerry-Log-Level steuert getrennt davon
+`admin-ui.log` und weitere Plugin-Logs. `admin-ui.log` wird nur bei relevanten
+administrativen Aktionen oder Fehlern erweitert und erzeugt keine Datei pro
+Seitenaufruf oder Aktion. Auch dieses Log ist auf die aktive Datei und zwei
+Backups mit jeweils 512 KiB begrenzt. Diese Einstellungen stehen getrennt im
+Unterabschnitt **Plugin-Logs (LoxBerry LogManager)**.
 
 Der Diagnoseexport enthält nur Version,
 Dienststatus, Transportart und maskierte Zähler. Sitzungen können einzeln oder
@@ -233,7 +242,7 @@ Loxone- noch MCP-Berechtigungen. Die sudoers-Datei erlaubt dem Benutzer
 `loxberry` ausschließlich die vollständigen `systemctl start`, `systemctl stop`
 und `systemctl restart`-Befehle für diese feste Unit; freie Unterbefehle,
 Argumente oder andere Units sind nicht erlaubt. Aktion und Ergebnis werden ohne
-rohe `systemctl`-Ausgabe im Adminlog protokolliert.
+rohe `systemctl`-Ausgabe in der fortlaufenden `admin-ui.log` protokolliert.
 
 Jeder Schreibversuch erzeugt einen kompakten maskierten Eintrag im bestehenden
 Service-Log. Wiederholte identische Ablehnungen werden gedrosselt; eine separate

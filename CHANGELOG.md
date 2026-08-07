@@ -5,10 +5,12 @@ extracted from the matching version heading.
 
 ## Unreleased
 
-- Bound the service log to three 512 KiB files, default operational logging to
-  warnings, and add temporary 15- or 60-minute debug logging in the admin UI.
-- Avoid routine admin-page and HTTP access-log writes while retaining masked,
-  unsuppressible audit records for control attempts.
+- Give `service.log` a dedicated persistent Off/Error/Warning/Information/Debug
+  level while retaining masked, unsuppressible audit records for control attempts.
+- Enable the native LoxBerry Log Manager level for plugin logs and consolidate
+  admin actions into one rotating `admin-ui.log` instead of one file per action.
+- Bound both active logs to 512 KiB plus two backups and individual records to
+  8 KiB while avoiding routine admin-page and HTTP access-log writes.
 - Build official packages only through the owner-triggered GitHub workflow, with
   canonical ZIP and wheel output, locked runtime-wheel hashes, exact manifests,
   verified draft uploads, and separate read/write job permissions.

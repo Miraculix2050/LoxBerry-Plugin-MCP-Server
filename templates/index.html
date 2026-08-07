@@ -20,6 +20,8 @@
   .mcp-field select { box-sizing: border-box; width: 100%; max-width: 100%; min-height: 2.75rem; }
   .mcp-manual-endpoint[hidden] { display: none; }
   .mcp-help { margin: 0; color: #4b5563; }
+  .mcp-log-section { display: grid; gap: .85rem; min-width: 0; padding: 1rem; border: 1px solid #d7dadd; border-radius: .4rem; }
+  .mcp-log-section h3 { margin: 0; font-size: 1.1rem; }
   .mcp-actions { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; }
   .mcp-actions button { min-height: 2.75rem; max-width: 100%; }
   .mcp-copy-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem; align-items: end; }
@@ -198,28 +200,31 @@
 
   <details id="diagnostics" class="mcp-card" data-persist-collapse>
     <summary><TMPL_VAR DIAGNOSTICS.TITLE></summary>
-    <div class="mcp-collapsible-content">
+    <div class="mcp-collapsible-content mcp-form">
     <p><TMPL_VAR DIAGNOSTICS.TEXT></p>
+    <form method="post" action="index.cgi"><input type="hidden" name="action" value="diagnostic"><button class="lb-button" type="submit"><TMPL_VAR ACTION.DIAGNOSTIC></button></form>
+    <section class="mcp-log-section" aria-labelledby="service-log-heading">
+    <h3 id="service-log-heading"><TMPL_VAR DIAGNOSTICS.SERVICE_SECTION></h3>
     <div id="logging-controls" class="mcp-form"
+      data-level-off="<TMPL_VAR DIAGNOSTICS.LEVEL_OFF ESCAPE=HTML>"
       data-level-error="<TMPL_VAR DIAGNOSTICS.LEVEL_ERROR ESCAPE=HTML>"
       data-level-warning="<TMPL_VAR DIAGNOSTICS.LEVEL_WARNING ESCAPE=HTML>"
       data-level-info="<TMPL_VAR DIAGNOSTICS.LEVEL_INFO ESCAPE=HTML>"
       data-level-debug="<TMPL_VAR DIAGNOSTICS.LEVEL_DEBUG ESCAPE=HTML>">
-      <p><TMPL_VAR DIAGNOSTICS.CURRENT_LEVEL>: <strong id="logging-current"><TMPL_IF DEBUG_ACTIVE><TMPL_VAR DIAGNOSTICS.LEVEL_DEBUG> <TMPL_VAR DEBUG_UNTIL_DISPLAY ESCAPE=HTML><TMPL_ELSE><TMPL_IF LOG_LEVEL_ERROR><TMPL_VAR DIAGNOSTICS.LEVEL_ERROR><TMPL_ELSE><TMPL_IF LOG_LEVEL_INFO><TMPL_VAR DIAGNOSTICS.LEVEL_INFO><TMPL_ELSE><TMPL_VAR DIAGNOSTICS.LEVEL_WARNING></TMPL_IF></TMPL_IF></TMPL_IF></strong></p>
+      <p><TMPL_VAR DIAGNOSTICS.CURRENT_LEVEL>: <strong id="logging-current"><TMPL_IF LOG_LEVEL_OFF><TMPL_VAR DIAGNOSTICS.LEVEL_OFF><TMPL_ELSE><TMPL_IF LOG_LEVEL_ERROR><TMPL_VAR DIAGNOSTICS.LEVEL_ERROR><TMPL_ELSE><TMPL_IF LOG_LEVEL_INFO><TMPL_VAR DIAGNOSTICS.LEVEL_INFO><TMPL_ELSE><TMPL_IF LOG_LEVEL_DEBUG><TMPL_VAR DIAGNOSTICS.LEVEL_DEBUG><TMPL_ELSE><TMPL_VAR DIAGNOSTICS.LEVEL_WARNING></TMPL_IF></TMPL_IF></TMPL_IF></TMPL_IF></strong></p>
       <form method="post" action="index.cgi" data-ajax="set_logging" class="mcp-form">
         <input type="hidden" name="action" value="set_logging">
-        <label class="mcp-field"><span><TMPL_VAR DIAGNOSTICS.BASE_LEVEL></span><select id="logging-level" name="mode"><option value="error" <TMPL_IF LOG_LEVEL_ERROR>selected</TMPL_IF>><TMPL_VAR DIAGNOSTICS.LEVEL_ERROR></option><option value="warning" <TMPL_IF LOG_LEVEL_WARNING>selected</TMPL_IF>><TMPL_VAR DIAGNOSTICS.LEVEL_WARNING></option><option value="info" <TMPL_IF LOG_LEVEL_INFO>selected</TMPL_IF>><TMPL_VAR DIAGNOSTICS.LEVEL_INFO></option></select></label>
+        <label class="mcp-field"><span><TMPL_VAR DIAGNOSTICS.SERVICE_LEVEL></span><select id="logging-level" name="mode"><option value="off" <TMPL_IF LOG_LEVEL_OFF>selected</TMPL_IF>><TMPL_VAR DIAGNOSTICS.LEVEL_OFF></option><option value="error" <TMPL_IF LOG_LEVEL_ERROR>selected</TMPL_IF>><TMPL_VAR DIAGNOSTICS.LEVEL_ERROR></option><option value="warning" <TMPL_IF LOG_LEVEL_WARNING>selected</TMPL_IF>><TMPL_VAR DIAGNOSTICS.LEVEL_WARNING></option><option value="info" <TMPL_IF LOG_LEVEL_INFO>selected</TMPL_IF>><TMPL_VAR DIAGNOSTICS.LEVEL_INFO></option><option value="debug" <TMPL_IF LOG_LEVEL_DEBUG>selected</TMPL_IF>><TMPL_VAR DIAGNOSTICS.LEVEL_DEBUG></option></select></label>
         <button class="lb-button" type="submit"><TMPL_VAR ACTION.SAVE_LOG_LEVEL></button>
       </form>
-      <div class="mcp-actions">
-        <form method="post" action="index.cgi" data-ajax="set_logging"><input type="hidden" name="action" value="set_logging"><input type="hidden" name="mode" value="debug_15"><button class="lb-button" type="submit"><TMPL_VAR ACTION.DEBUG_15></button></form>
-        <form method="post" action="index.cgi" data-ajax="set_logging"><input type="hidden" name="action" value="set_logging"><input type="hidden" name="mode" value="debug_60"><button class="lb-button" type="submit"><TMPL_VAR ACTION.DEBUG_60></button></form>
-        <form id="stop-debug-form" method="post" action="index.cgi" data-ajax="set_logging" <TMPL_UNLESS DEBUG_ACTIVE>hidden</TMPL_UNLESS>><input type="hidden" name="action" value="set_logging"><input type="hidden" name="mode" value="stop_debug"><button class="lb-button" type="submit"><TMPL_VAR ACTION.DEBUG_STOP></button></form>
-      </div>
       <p class="mcp-help"><TMPL_VAR DIAGNOSTICS.LOGGING_HELP></p>
     </div>
-    <form method="post" action="index.cgi"><input type="hidden" name="action" value="diagnostic"><button class="lb-button" type="submit"><TMPL_VAR ACTION.DIAGNOSTIC></button></form>
+    </section>
+    <section class="mcp-log-section" aria-labelledby="plugin-log-heading">
+    <h3 id="plugin-log-heading"><TMPL_VAR DIAGNOSTICS.PLUGIN_SECTION></h3>
+    <p class="mcp-help"><TMPL_VAR DIAGNOSTICS.LOGMANAGER_HELP></p>
     <TMPL_VAR LOGLIST>
+    </section>
     </div>
   </details>
 </main>
@@ -293,7 +298,6 @@
   const loggingControls = document.getElementById('logging-controls');
   const loggingCurrent = document.getElementById('logging-current');
   const loggingLevel = document.getElementById('logging-level');
-  const stopDebugForm = document.getElementById('stop-debug-form');
   let pendingServiceForm = null;
   let serviceActionRunning = false;
   let servicePollInFlight = false;
@@ -304,14 +308,12 @@
   let lastService = null;
   const renderLogging = (configuration) => {
     const configured = configuration && configuration.logging ? configuration.logging : {};
-    const level = ['error', 'warning', 'info'].includes(configured.level) ? configured.level : 'warning';
-    const debugUntil = Number(configured.debug_until) || 0;
-    const debugActive = debugUntil > Date.now() / 1000;
+    const level = ['off', 'error', 'warning', 'info', 'debug'].includes(configured.level)
+      ? configured.level : 'warning';
     loggingLevel.value = level;
-    loggingCurrent.textContent = debugActive
-      ? `${loggingControls.dataset.levelDebug} ${new Date(debugUntil * 1000).toLocaleString()}`
-      : loggingControls.dataset[`level${level[0].toUpperCase()}${level.slice(1)}`];
-    stopDebugForm.hidden = !debugActive;
+    loggingCurrent.textContent = loggingControls.dataset[
+      `level${level[0].toUpperCase()}${level.slice(1)}`
+    ];
   };
   const syncTestEndpoint = () => { testEndpoint.value = miniserverEndpoint.value; };
   const syncMiniserverSelection = () => {

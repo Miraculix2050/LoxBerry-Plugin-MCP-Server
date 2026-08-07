@@ -37,7 +37,6 @@ def test_secure_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.phase0_auth is None
     assert settings.service_enabled is True
     assert settings.log_level == "warning"
-    assert settings.debug_until == 0
 
 
 def test_disabled_phase1_configuration_fails_closed(
@@ -56,7 +55,6 @@ def test_disabled_phase1_configuration_fails_closed(
     assert settings.phase0_auth is None
     assert settings.service_enabled is False
     assert settings.log_level == "info"
-    assert settings.debug_until == 1234
 
 
 def test_enabled_phase1_configuration_supplies_endpoint_and_public_origin(

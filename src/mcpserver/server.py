@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import logging
 import os
-import time
-from collections.abc import Callable
+from contextlib import suppress
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from typing import Final
 
 from mcp.server.auth.provider import AccessToken, TokenVerifier
@@ -35,10 +35,14 @@ from mcpserver.tools import register_control_tool, register_read_tools, register
 SERVER_NAME: Final = "LoxBerry MCP Server"
 LOG_MAX_BYTES: Final = 512 * 1024
 LOG_BACKUP_COUNT: Final = 2
+LOG_MAX_RECORD_BYTES: Final = 8 * 1024
+LOG_TRUNCATION_SUFFIX: Final = " ... [truncated]"
 _LOG_LEVELS: Final = {
+    "off": None,
     "error": logging.ERROR,
     "warning": logging.WARNING,
     "info": logging.INFO,
+    "debug": logging.DEBUG,
 }
 _TRANSPORT_LOGGER_NAME: Final = "mcp.server.transport_security"
 _SENSITIVE_REJECTION_PREFIXES: Final = (
@@ -48,36 +52,53 @@ _SENSITIVE_REJECTION_PREFIXES: Final = (
 )
 
 
-class TimedLevelFilter(logging.Filter):
-    """Keep audits while lowering operational verbosity after debug expires."""
+class ServiceLevelFilter(logging.Filter):
+    """Apply the persistent service level while always retaining control audits."""
 
-    def __init__(
-        self,
-        level: str = DEFAULT_LOG_LEVEL,
-        *,
-        debug_until: int = 0,
-        clock: Callable[[], float] = time.time,
-    ) -> None:
+    def __init__(self, level: str = DEFAULT_LOG_LEVEL) -> None:
         super().__init__()
         self._level = _LOG_LEVELS[level]
-        self._debug_until = debug_until
-        self._clock = clock
 
     def filter(self, record: logging.LogRecord) -> bool:
         if getattr(record, "mcp_audit", False):
             return True
-        threshold = logging.DEBUG if self._clock() < self._debug_until else self._level
-        return record.levelno >= threshold
+        return self._level is not None and record.levelno >= self._level
+
+
+class BoundedLogFormatter(logging.Formatter):
+    """Keep one rendered record within the configured UTF-8 byte budget."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        rendered = super().format(record)
+        encoded = rendered.encode("utf-8")
+        if len(encoded) <= LOG_MAX_RECORD_BYTES:
+            return rendered
+        suffix = LOG_TRUNCATION_SUFFIX.encode("utf-8")
+        prefix = encoded[: LOG_MAX_RECORD_BYTES - len(suffix)].decode("utf-8", "ignore")
+        return prefix + LOG_TRUNCATION_SUFFIX
+
+
+def _remove_stale_log_backups(log_file: str) -> None:
+    path = Path(log_file)
+    for candidate in path.parent.glob(f"{path.name}.*"):
+        suffix = candidate.name.removeprefix(f"{path.name}.")
+        try:
+            oversized = candidate.stat().st_size > LOG_MAX_BYTES
+        except OSError:
+            continue
+        if suffix.isdecimal() and (int(suffix) > LOG_BACKUP_COUNT or oversized):
+            with suppress(OSError):
+                candidate.unlink()
 
 
 def configure_service_logging(
     *,
     level: str,
-    debug_until: int,
     log_file: str | None,
 ) -> logging.Handler:
     """Configure one bounded handler and return it for deterministic verification."""
     if log_file:
+        _remove_stale_log_backups(log_file)
         handler: logging.Handler = RotatingFileHandler(
             log_file,
             maxBytes=LOG_MAX_BYTES,
@@ -86,10 +107,12 @@ def configure_service_logging(
         )
     else:
         handler = logging.StreamHandler()
-    handler.addFilter(TimedLevelFilter(level, debug_until=debug_until))
+    handler.addFilter(ServiceLevelFilter(level))
+    handler.setFormatter(
+        BoundedLogFormatter("%(asctime)s component=%(name)s severity=%(levelname)s %(message)s")
+    )
     logging.basicConfig(
         level=logging.DEBUG,
-        format="%(asctime)s component=%(name)s severity=%(levelname)s %(message)s",
         handlers=[handler],
         force=True,
     )
@@ -350,8 +373,12 @@ def main() -> None:
     settings = ServerSettings.from_environment()
     configure_service_logging(
         level=settings.log_level,
-        debug_until=settings.debug_until,
         log_file=os.environ.get("MCPSERVER_LOG_FILE"),
+    )
+    logging.getLogger("mcpserver.service").info(
+        "event=service_start version=%s configured_level=%s",
+        __version__,
+        settings.log_level,
     )
     create_server(settings).run(transport="streamable-http")
 

@@ -3,6 +3,8 @@
 use strict;
 use warnings;
 use CGI;
+use Encode qw(decode encode FB_DEFAULT);
+use Fcntl qw(:flock);
 use HTML::Template;
 use IPC::Open3;
 use JSON::PP qw(decode_json encode_json);
@@ -24,18 +26,70 @@ if (($q->{lang} // '') =~ /\A(?:de|en)\z/) {
 }
 my $version = LoxBerry::System::pluginversion();
 my $admin_log;
+use constant ADMIN_LOG_MAX_BYTES => 512 * 1024;
+use constant ADMIN_LOG_BACKUP_COUNT => 2;
+use constant ADMIN_LOG_MESSAGE_BYTES => 8 * 1024;
+use constant ADMIN_LOG_TRUNCATION_SUFFIX => ' ... [truncated]';
 
-sub admin_logger {
-    return $admin_log if $admin_log;
-    $admin_log = LoxBerry::Log->new(
-        name => 'admin-ui', package => $lbpplugindir, addtime => 1, loglevel => 7,
-    );
-    $admin_log->LOGSTART('Administrative action');
-    return $admin_log;
+sub bounded_admin_message {
+    my ($message) = @_;
+    $message = '' if !defined($message) || ref($message);
+    $message =~ s/[\r\n]+/ /g;
+    my $encoded = encode('UTF-8', $message);
+    my $suffix = encode('UTF-8', ADMIN_LOG_TRUNCATION_SUFFIX);
+    return $message if length($encoded) <= ADMIN_LOG_MESSAGE_BYTES;
+    my $prefix = substr($encoded, 0, ADMIN_LOG_MESSAGE_BYTES - length($suffix));
+    return decode('UTF-8', $prefix, FB_DEFAULT) . ADMIN_LOG_TRUNCATION_SUFFIX;
 }
 
-END {
-    $admin_log->LOGEND('Administrative action finished') if $admin_log;
+sub rotate_admin_log_locked {
+    my ($filename, $next_bytes) = @_;
+    for my $candidate (glob("$filename.*")) {
+        next if $candidate !~ /\.([0-9]+)\z/ || $1 <= ADMIN_LOG_BACKUP_COUNT;
+        unlink $candidate;
+    }
+    my $current_bytes = -f $filename ? (-s $filename // 0) : 0;
+    return 1 if $current_bytes + $next_bytes <= ADMIN_LOG_MAX_BYTES;
+    my $oldest = "$filename." . ADMIN_LOG_BACKUP_COUNT;
+    unlink $oldest if -e $oldest;
+    for (my $index = ADMIN_LOG_BACKUP_COUNT - 1; $index >= 1; $index--) {
+        my $source = "$filename.$index";
+        my $target = "$filename." . ($index + 1);
+        return 0 if -e $source && !rename($source, $target);
+    }
+    return 0 if -e $filename && !rename($filename, "$filename.1");
+    return 1;
+}
+
+sub admin_log {
+    my ($severity, $message) = @_;
+    my %threshold = (error => 3, warning => 4, info => 6, debug => 7);
+    my %method = (error => 'ERR', warning => 'WARN', info => 'INF', debug => 'DEB');
+    return if !exists $threshold{$severity // ''};
+    my $plugin_level = LoxBerry::System::pluginloglevel($lbpplugindir);
+    $plugin_level = 3 if !defined($plugin_level) || $plugin_level !~ /\A[0-7]\z/;
+    return if $plugin_level == 0 || $threshold{$severity} > $plugin_level;
+
+    $message = bounded_admin_message($message);
+    my $filename = "$lbplogdir/admin-ui.log";
+    open my $lock, '>>', "$filename.lock" or return;
+    flock($lock, LOCK_EX) or return;
+    my $next_bytes = length(encode('UTF-8', $message)) + 256;
+    $admin_log->close() if $admin_log;
+    if (rotate_admin_log_locked($filename, $next_bytes)) {
+        $admin_log //= LoxBerry::Log->new(
+            name => 'admin-ui',
+            package => $lbpplugindir,
+            filename => $filename,
+            append => 1,
+            nosession => 1,
+            addtime => 1,
+        );
+        my $log_method = $method{$severity};
+        $admin_log->$log_method($message) if $admin_log;
+    }
+    flock($lock, LOCK_UN);
+    close $lock;
 }
 
 $ENV{LBPDATA} = $lbpdatadir;
@@ -60,12 +114,12 @@ sub admin_call {
     my $stderr = <$child_err> // '';
     waitpid($pid, 0);
     if ($? != 0 || $stdout eq '') {
-        admin_logger()->ERR("admin helper failed");
+        admin_log('error', 'component=admin_helper outcome=failed');
         return {ok => JSON::PP::false, error => {code => 'internal_error', message => 'Administrative action failed'}};
     }
     my $result = eval { decode_json($stdout) };
     if (!$result || ref($result) ne 'HASH') {
-        admin_logger()->ERR("admin helper returned invalid JSON");
+        admin_log('error', 'component=admin_helper outcome=invalid_response');
         return {ok => JSON::PP::false, error => {code => 'internal_error', message => 'Administrative action failed'}};
     }
     return $result;
@@ -146,12 +200,12 @@ sub stored_general_config {
     $general_config_loaded = 1;
     my $path = "$lbhomedir/config/system/general.json";
     if (!-f $path || !-r $path) {
-        admin_logger()->WARN('Could not read stored LoxBerry configuration');
+        admin_log('warning', 'component=loxberry_config outcome=unreadable');
         $general_config_cache = {};
         return $general_config_cache;
     }
     open my $handle, '<:raw', $path or do {
-        admin_logger()->WARN('Could not open stored LoxBerry configuration');
+        admin_log('warning', 'component=loxberry_config outcome=open_failed');
         $general_config_cache = {};
         return $general_config_cache;
     };
@@ -159,13 +213,13 @@ sub stored_general_config {
     my $raw = <$handle> // '';
     close $handle;
     if (length($raw) > 1024 * 1024) {
-        admin_logger()->WARN('Stored LoxBerry configuration is unexpectedly large');
+        admin_log('warning', 'component=loxberry_config outcome=oversized');
         $general_config_cache = {};
         return $general_config_cache;
     }
     my $document = eval { decode_json($raw) };
     if ($@ || ref($document) ne 'HASH') {
-        admin_logger()->WARN('Stored LoxBerry configuration is invalid');
+        admin_log('warning', 'component=loxberry_config outcome=invalid');
         $general_config_cache = {};
         return $general_config_cache;
     }
@@ -176,7 +230,7 @@ sub stored_general_config {
 sub stored_miniservers {
     my $document = stored_general_config();
     if (ref($document->{Miniserver}) ne 'HASH') {
-        admin_logger()->WARN('Stored Miniserver configuration is invalid');
+        admin_log('warning', 'component=miniserver_config outcome=invalid');
         return {};
     }
 
@@ -311,16 +365,24 @@ if ($action ne '') {
             },
         };
         $result = admin_call('save_config', $document);
+        admin_log($result->{ok} ? 'info' : 'warning',
+            'action=save_config outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
     } elsif ($action eq 'set_logging') {
         $result = admin_call('set_logging', {mode => ($q->{mode} // '')});
+        admin_log($result->{ok} ? 'info' : 'warning',
+            'action=set_service_log_level outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
     } elsif ($action eq 'test_connection') {
         $result = admin_call('test_connection', {endpoint => requested_endpoint($q)});
     } elsif ($action eq 'revoke_session') {
         $result = admin_call('revoke_session', {id => ($q->{id} // '')});
+        admin_log($result->{ok} ? 'info' : 'warning',
+            'action=revoke_session outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
     } elsif ($action eq 'list_sessions') {
         $result = admin_call('list_sessions', {});
     } elsif ($action eq 'revoke_all') {
         $result = admin_call('revoke_all', {});
+        admin_log($result->{ok} ? 'info' : 'warning',
+            'action=revoke_all outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
     } elsif ($action eq 'status') {
         $result = admin_call('status', {});
     } elsif ($action eq 'service_status') {
@@ -330,9 +392,9 @@ if ($action ne '') {
         if ($command =~ /\A(?:start|stop|restart)\z/) {
             $result = admin_call('service_action', {command => $command});
             if ($result->{ok}) {
-                admin_logger()->INF("service-action=$command result=completed");
+                admin_log('info', "action=service_$command outcome=completed");
             } else {
-                admin_logger()->ERR("service-action=$command result=failed");
+                admin_log('error', "action=service_$command outcome=failed");
             }
         } else {
             $result = {ok => JSON::PP::false, error => {code => 'invalid_request', message => 'Unsupported service action'}};
@@ -347,7 +409,8 @@ if ($action ne '') {
             confirmation => ($q->{renew_confirmation} // ''),
         });
         $q->{securepin} = '';
-        admin_logger()->INF('certificate-renewal result=scheduled') if $result->{ok};
+        admin_log($result->{ok} ? 'info' : 'warning',
+            'action=certificate_renewal outcome=' . ($result->{ok} ? 'scheduled' : 'rejected'));
     } else {
         $result = {ok => JSON::PP::false, error => {code => 'invalid_request', message => 'Unsupported action'}};
     }
@@ -421,8 +484,6 @@ my %renewal_labels = (
     error => $L{'CERTIFICATE.STATE_ERROR'},
 );
 my $renewal_state = $renewal->{state} // 'idle';
-my $debug_until = $config->{logging}{debug_until} // 0;
-my $debug_active = $debug_until =~ /\A(?:0|[1-9][0-9]*)\z/ && $debug_until > time ? 1 : 0;
 my $notice_value = $q->{notice} // '';
 my $notice_text = $notice_value eq 'success' ? $L{'AJAX.SUCCESS'}
     : $notice_value eq 'certificate_scheduled' ? $L{'CERTIFICATE.STATE_SCHEDULED'}
@@ -445,12 +506,11 @@ $template->param(
     CONTROL_REQUESTS_PER_MINUTE => $config->{limits}{control_requests_per_minute} // 10,
     MAX_PARALLEL_CALLS => $config->{limits}{max_parallel_calls} // 4,
     LOG_LEVEL => $config->{logging}{level} // 'warning',
+    LOG_LEVEL_OFF => ($config->{logging}{level} // 'warning') eq 'off' ? 1 : 0,
     LOG_LEVEL_ERROR => ($config->{logging}{level} // 'warning') eq 'error' ? 1 : 0,
     LOG_LEVEL_WARNING => ($config->{logging}{level} // 'warning') eq 'warning' ? 1 : 0,
     LOG_LEVEL_INFO => ($config->{logging}{level} // 'warning') eq 'info' ? 1 : 0,
-    DEBUG_ACTIVE => $debug_active,
-    DEBUG_UNTIL => $debug_until,
-    DEBUG_UNTIL_DISPLAY => $debug_active ? format_expiry($debug_until) : '',
+    LOG_LEVEL_DEBUG => ($config->{logging}{level} // 'warning') eq 'debug' ? 1 : 0,
     SERVICE_ACTIVE => $page_state->{service_active} ? 1 : 0,
     SERVICE_INSTALLED => $service->{installed} ? 1 : 0,
     SERVICE_FAILED => ($service->{active_state} // '') eq 'failed' ? 1 : 0,

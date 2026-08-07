@@ -20,7 +20,6 @@ def test_defaults_are_disabled_and_bounded() -> None:
     assert config.control_requests_per_minute == 10
     assert config.max_parallel_calls == 4
     assert config.log_level == "warning"
-    assert config.debug_until == 0
 
 
 def test_configuration_round_trip_preserves_unknown_keys(tmp_path: Path) -> None:
@@ -58,13 +57,31 @@ def test_configuration_round_trip_preserves_unknown_keys(tmp_path: Path) -> None
             "server": {"enabled": False},
             "loxone": {"endpoint": "http://public.example"},
         },
-        {"schema_version": 1, "logging": {"level": "debug"}},
-        {"schema_version": 1, "logging": {"debug_until": -1}},
+        {"schema_version": 1, "logging": {"level": "verbose"}},
     ],
 )
 def test_invalid_configuration_is_rejected(document: object) -> None:
     with pytest.raises(ConfigError):
         PluginConfig.from_document(document)
+
+
+@pytest.mark.parametrize("level", ["off", "error", "warning", "info", "debug"])
+def test_all_persistent_service_levels_round_trip(level: str) -> None:
+    config = PluginConfig.from_document({"schema_version": 1, "logging": {"level": level}})
+
+    assert config.to_document()["logging"] == {"level": level}
+
+
+def test_obsolete_debug_window_is_ignored_and_removed() -> None:
+    config = PluginConfig.from_document(
+        {
+            "schema_version": 1,
+            "logging": {"level": "info", "debug_until": 4_102_444_799},
+        }
+    )
+
+    assert config.log_level == "info"
+    assert config.to_document()["logging"] == {"level": "info"}
 
 
 def test_gen2_control_configuration_is_rejected() -> None:
