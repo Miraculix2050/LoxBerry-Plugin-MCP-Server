@@ -9,7 +9,6 @@ import re
 import socket
 import subprocess
 import sys
-import time
 from contextlib import suppress
 from dataclasses import replace
 from pathlib import Path
@@ -28,7 +27,6 @@ _MAX_REQUEST_BYTES: Final = 32 * 1024
 _SERVICE: Final = "loxberry-mcpserver.service"
 _SERVICE_ACTIONS: Final = frozenset({"start", "stop", "restart"})
 _CLIENT_UUID: Final = UUID("3f52f6fe-3af0-4d30-a8bb-f429b9da4465")
-_DEBUG_DURATIONS: Final = {"debug_15": 15 * 60, "debug_60": 60 * 60}
 
 
 class AdminError(RuntimeError):
@@ -253,11 +251,7 @@ def _save(payload: object) -> dict[str, Any]:
     store = _config_store()
     previous = store.load()
     if "logging" not in payload:
-        config = replace(
-            config,
-            log_level=previous.log_level,
-            debug_until=previous.debug_until,
-        )
+        config = replace(config, log_level=previous.log_level)
     control_families: list[str] = []
     if previous.loxone_control_enabled and not config.loxone_control_enabled:
         document = _auth_store().snapshot()
@@ -300,14 +294,9 @@ def _set_logging(payload: object) -> dict[str, Any]:
     mode = payload["mode"]
     store = _config_store()
     previous = store.load()
-    if mode in {"error", "warning", "info"}:
-        updated = replace(previous, log_level=mode)
-    elif mode in _DEBUG_DURATIONS:
-        updated = replace(previous, debug_until=int(time.time()) + _DEBUG_DURATIONS[mode])
-    elif mode == "stop_debug":
-        updated = replace(previous, debug_until=0)
-    else:
+    if mode not in {"off", "error", "warning", "info", "debug"}:
         raise AdminError("logging mode is invalid")
+    updated = replace(previous, log_level=mode)
     store.save(updated)
     try:
         _restart_service()

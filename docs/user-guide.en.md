@@ -195,11 +195,18 @@ LBPCONFIG=/actual/config/path LBPDATA=/actual/data/path /actual/bin/healthcheck
 
 The service log can be opened directly from the status card in the LoxBerry log
 viewer. It is bounded to the active file and two 512 KiB rotations, approximately
-1.5 MB in total. Under **Diagnostics and logs**, **Warnings** is the default;
-**Errors** and **Information** can be selected persistently. **Debug** can be
-enabled for 15 or 60 minutes and automatically returns to the selected log level
-without another restart. Normal HTTP access and successful read-only MCP calls
-are not recorded individually outside debug.
+1.5 MB in total. Individual records are limited to 8 KiB. Under **Diagnostics
+and logs**, the level applying exclusively to `service.log` can be set
+persistently to **Off**, **Errors**, **Warnings**, **Information**, or **Debug**;
+**Warnings** is the default. Normal HTTP requests are not written as access logs
+even at Debug. Security audits for control operations remain active when **Off**
+is selected. The UI groups this setting under **Service log (service.log)**.
+
+The native LoxBerry log level shown below it separately controls `admin-ui.log`
+and other plugin logs. `admin-ui.log` is extended only for relevant
+administrative actions or errors and does not create a file per page view or
+action. It is likewise limited to the active file and two 512 KiB backups. These
+settings are separated under **Plugin logs (LoxBerry Log Manager)**.
 
 Diagnostic export contains only the version, service state, transport kind and masked counts. Sessions can be
 revoked individually or together; an available Miniserver also receives a
@@ -216,8 +223,8 @@ Service control is an administrative LoxBerry function and grants no Loxone or
 MCP permissions. The sudoers file permits the `loxberry` user only the complete
 `systemctl start`, `systemctl stop`, and `systemctl restart` commands for that
 fixed unit; arbitrary subcommands, arguments, and other units are not allowed.
-The action and result are recorded in the admin log without raw `systemctl`
-output.
+The action and result are recorded in the continuous `admin-ui.log` without raw
+`systemctl` output.
 
 Every control attempt creates one compact masked record in the existing service
 log. Repeated identical rejections are limited; no separate audit file is

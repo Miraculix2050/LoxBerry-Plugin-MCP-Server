@@ -265,7 +265,6 @@ class ServerSettings:
     phase0_auth: Phase0AuthSettings | None = None
     service_enabled: bool = True
     log_level: str = DEFAULT_LOG_LEVEL
-    debug_until: int = 0
 
     @classmethod
     def from_environment(cls) -> ServerSettings:
@@ -319,5 +318,4 @@ class ServerSettings:
             phase0_auth=phase_auth,
             service_enabled=service_enabled,
             log_level=plugin_config.log_level if plugin_config is not None else DEFAULT_LOG_LEVEL,
-            debug_until=plugin_config.debug_until if plugin_config is not None else 0,
         )

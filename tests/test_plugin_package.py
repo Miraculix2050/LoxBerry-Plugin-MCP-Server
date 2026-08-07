@@ -174,6 +174,13 @@ def test_upgrade_preserves_configuration_in_plugin_data() -> None:
     )
 
 
+def test_postupgrade_removes_legacy_per_request_admin_logs() -> None:
+    postupgrade = (ROOT / "postupgrade.sh").read_text(encoding="utf-8")
+
+    assert "${LBHOMEDIR:-/opt/loxberry}/log/plugins/$actual_folder" in postupgrade
+    assert "-name '*_admin-ui.log' -delete" in postupgrade
+
+
 def test_shell_hooks_have_valid_syntax() -> None:
     bash = shutil.which("bash")
     if bash is None:
@@ -189,6 +196,15 @@ def test_shell_hooks_have_valid_syntax() -> None:
         "bin/mcpserver-admin",
     ]
     subprocess.run([bash, "-n", *(str(ROOT / item) for item in scripts)], check=True)
+
+
+def test_upgrade_removes_the_obsolete_debug_window_atomically() -> None:
+    hook = (ROOT / "postupgrade.sh").read_text(encoding="utf-8")
+
+    assert 'python3 - "$plugin_config/mcpserver.json"' in hook
+    assert 'logging_config.pop("debug_until")' in hook
+    assert "os.fsync(handle.fileno())" in hook
+    assert "os.replace(temporary, path)" in hook
 
 
 def test_postroot_keeps_installer_alive_during_apache_activation() -> None:
@@ -236,6 +252,13 @@ def test_postroot_keeps_installer_alive_during_apache_activation() -> None:
     assert "StandardOutput=journal" in unit
     assert "StandardError=journal" in unit
     assert "StandardOutput=append:@LOG_DIR@/service.log" not in unit
+
+
+def test_native_loxberry_log_levels_are_enabled() -> None:
+    plugin = (ROOT / "plugin.cfg").read_text(encoding="utf-8")
+
+    assert "CUSTOM_LOGLEVELS=true" in plugin
+    assert "CUSTOM_LOGLEVELS=false" not in plugin
 
 
 def test_user_guides_document_the_fixed_privileged_service_controls() -> None:

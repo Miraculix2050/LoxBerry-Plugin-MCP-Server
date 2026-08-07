@@ -83,29 +83,84 @@ def test_sessions_poll_only_while_visible_and_open_and_patch_changed_rows() -> N
 def test_read_only_ajax_polling_does_not_create_admin_log_files() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
 
-    assert "sub admin_logger" in cgi
-    assert cgi.index("sub admin_logger") < cgi.index("LoxBerry::Log->new")
+    assert "sub admin_log" in cgi
+    assert cgi.index("sub admin_log") < cgi.index("LoxBerry::Log->new")
+    assert "$admin_log->close() if $admin_log;" in cgi
     assert "LOGSTART('index.cgi called')" not in cgi
-    assert "loglevel => 7" in cgi
-    assert 'admin_logger()->INF("service-action=$command result=completed")' in cgi
-    assert 'admin_logger()->ERR("service-action=$command result=failed")' in cgi
-    assert "LOGSTART('index.cgi called')" not in cgi
-    assert 'admin_logger()->ERR("admin helper failed")' in cgi
-    assert "admin_logger()->WARN('Stored Miniserver configuration is invalid')" in cgi
+    assert "loglevel => 7" not in cgi
+    assert "filename => $filename" in cgi
+    assert "append => 1" in cgi
+    assert "nosession => 1" in cgi
+    assert "LoxBerry::System::pluginloglevel($lbpplugindir)" in cgi
+    assert "flock($lock, LOCK_EX)" in cgi
+    assert "ADMIN_LOG_MAX_BYTES => 512 * 1024" in cgi
+    assert "ADMIN_LOG_BACKUP_COUNT => 2" in cgi
+    assert "ADMIN_LOG_MESSAGE_BYTES => 8 * 1024" in cgi
+    assert "LOGSTART('Administrative action')" not in cgi
+    assert "LOGEND('Administrative action finished')" not in cgi
+    assert "action=service_$command outcome=completed" in cgi
+    assert "component=admin_helper outcome=failed" in cgi
+    assert "component=miniserver_config outcome=invalid" in cgi
 
 
-def test_diagnostics_offer_bounded_temporary_logging_controls() -> None:
+def test_diagnostics_offer_dedicated_persistent_service_logging_controls() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
 
     assert "admin_call('set_logging', {mode => ($q->{mode} // '')})" in cgi
     assert 'data-ajax="set_logging"' in template
-    assert 'value="debug_15"' in template
-    assert 'value="debug_60"' in template
-    assert 'value="stop_debug"' in template
+    for level in ("off", "error", "warning", "info", "debug"):
+        assert f'value="{level}"' in template
+    assert 'value="debug_15"' not in template
+    assert 'value="debug_60"' not in template
+    assert 'value="stop_debug"' not in template
+    assert "debug_until" not in template + cgi
+    assert "DIAGNOSTICS.SERVICE_LEVEL" in template
+    assert "DIAGNOSTICS.LOGMANAGER_HELP" in template
+    assert "DIAGNOSTICS.SERVICE_SECTION" in template
+    assert "DIAGNOSTICS.PLUGIN_SECTION" in template
+    assert template.count('class="mcp-log-section"') == 2
+    assert template.index('id="service-log-heading"') < template.index('id="plugin-log-heading"')
     assert "set_logging: 75000" in template
     assert "renderLogging(result.data.configuration)" in template
     assert "window.location.reload" not in template
+
+
+def test_admin_log_message_and_rotation_are_bounded(tmp_path: Path) -> None:
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    implementation = re.search(
+        r"(use constant ADMIN_LOG_MAX_BYTES.*?)(?=sub admin_log \{)",
+        cgi,
+        re.DOTALL,
+    )
+    assert implementation is not None
+    perl = shutil.which("perl")
+    assert perl is not None, "Perl is required for the complete deterministic gate"
+    log_file = tmp_path / "admin-ui.log"
+    log_file.write_bytes(b"x" * (512 * 1024 - 100))
+    for suffix, content in ((".1", b"one"), (".2", b"two"), (".3", b"stale")):
+        log_file.with_name(log_file.name + suffix).write_bytes(content)
+    script = f"""
+use strict;
+use warnings;
+use Encode qw(decode encode FB_DEFAULT);
+{implementation.group(1)}
+my $message = bounded_admin_message(chr(0xE4) x 8000);
+print length(encode('UTF-8', $message)), "\n";
+print rotate_admin_log_locked($ARGV[0], 300), "\n";
+"""
+
+    result = subprocess.run(
+        [perl, "-e", script, str(log_file)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.stdout.splitlines() == [str(8 * 1024), "1"]
+    assert log_file.with_name(log_file.name + ".1").stat().st_size == 512 * 1024 - 100
+    assert log_file.with_name(log_file.name + ".2").read_bytes() == b"one"
+    assert not log_file.with_name(log_file.name + ".3").exists()
 
 
 def test_service_actions_use_an_accessible_confirmation_and_dynamic_controls() -> None:
