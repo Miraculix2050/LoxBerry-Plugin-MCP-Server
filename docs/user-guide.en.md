@@ -1,4 +1,4 @@
-# LoxBerry MCP Server 0.2.0-alpha.1
+# LoxBerry MCP Server 0.3.0-alpha.1
 
 ## Requirements
 

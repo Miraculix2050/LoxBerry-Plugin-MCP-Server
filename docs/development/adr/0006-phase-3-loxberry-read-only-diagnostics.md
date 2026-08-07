@@ -1,6 +1,6 @@
 # ADR 0006: Phase-3 LoxBerry Read-only Diagnostics
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-07
 
 ## Decision

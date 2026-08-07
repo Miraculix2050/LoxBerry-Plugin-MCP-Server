@@ -52,9 +52,10 @@ def _write_project_wheel(
             name = source.relative_to(ROOT / "src").as_posix()
             if name == missing_file:
                 continue
-            wheel.writestr(name, b"stale" if name == stale_file else source.read_bytes())
+            source_bytes = source.read_bytes().replace(b"\r\n", b"\n")
+            wheel.writestr(name, b"stale" if name == stale_file else source_bytes)
             if name == duplicate_file:
-                wheel.writestr(name, source.read_bytes())
+                wheel.writestr(name, source_bytes)
         if extra_file:
             wheel.writestr(extra_file, b"stale deleted module")
         wheel.writestr("mcpserver/skills/using-loxberry-mcp/SKILL.md", b"skill")
@@ -119,7 +120,7 @@ def test_plugin_identity_and_platform_contract() -> None:
     assert parser["PLUGIN"]["NAME"] == "mcpserver"
     assert parser["PLUGIN"]["FOLDER"] == "mcpserver"
     assert parser["PLUGIN"]["TITLE"] == "LoxBerry MCP Server"
-    assert parser["PLUGIN"]["VERSION"] == "0.2.0-alpha.1"
+    assert parser["PLUGIN"]["VERSION"] == "0.3.0-alpha.1"
     assert parser["SYSTEM"]["LB_MINIMUM"] == "4.0.0"
     assert parser["SYSTEM"]["INTERFACE"] == "2.0"
     for name in ("release.cfg", "prerelease.cfg"):
@@ -427,7 +428,7 @@ def test_plugin_archive_verifier_accepts_builder_output(tmp_path: Path) -> None:
     for name, version in _locked_requirements(ROOT / "requirements" / "runtime-arm64.lock").items():
         wheel_name = name.replace("-", "_")
         (wheelhouse / f"{wheel_name}-{version}-py3-none-any.whl").write_bytes(b"wheel")
-    project_wheel = wheelhouse / "loxberry_mcpserver-0.2.0a1-py3-none-any.whl"
+    project_wheel = wheelhouse / "loxberry_mcpserver-0.3.0a1-py3-none-any.whl"
     _write_project_wheel(project_wheel)
     hash_lock = tmp_path / "runtime-arm64.sha256"
     hash_lock.write_text(
@@ -824,13 +825,13 @@ def test_plugin_archive_verifier_rejects_checksum_mismatch(tmp_path: Path) -> No
 
 
 def test_release_metadata_and_changelog_match_current_prerelease() -> None:
-    notes = validate_release_metadata(ROOT, "0.2.0-alpha.1", "prerelease")
+    notes = validate_release_metadata(ROOT, "0.3.0-alpha.1", "prerelease")
 
-    assert "Tool Explorer" in notes
+    assert "loxberry:read" in notes
     with pytest.raises(ValueError, match="stable releases"):
-        validate_release_metadata(ROOT, "0.2.0-alpha.1", "stable")
+        validate_release_metadata(ROOT, "0.3.0-alpha.1", "stable")
     with pytest.raises(ValueError, match="versions do not match"):
-        validate_release_metadata(ROOT, "0.2.0-alpha.2", "prerelease")
+        validate_release_metadata(ROOT, "0.3.0-alpha.2", "prerelease")
 
 
 def test_release_workflow_is_manual_owner_only_and_separates_permissions() -> None:

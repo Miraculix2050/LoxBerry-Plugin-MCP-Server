@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import re
+import tomllib
 import zipfile
 from pathlib import Path
 from typing import Final
@@ -97,6 +98,14 @@ def _locked_requirements(lock: Path) -> dict[str, str]:
             name = re.sub(r"[-_.]+", "-", match.group(1)).lower()
             requirements[name] = match.group(2)
     return requirements
+
+
+def _project_version(root: Path) -> str:
+    document = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+    version = document.get("project", {}).get("version")
+    if not isinstance(version, str):
+        raise SystemExit("project version is missing")
+    return re.sub(r"(?i)-alpha\.(\d+)$", r"a\1", version)
 
 
 def _wheel_names(wheelhouse: Path) -> set[str]:
@@ -210,8 +219,9 @@ def main() -> int:
         for name, version in requirements.items()
         if (name, version.lower()) not in wheel_versions
     }
-    project_wheels = tuple(wheelhouse.glob("loxberry_mcpserver-0.2.0a1-*.whl"))
-    expected_project = [("loxberry-mcpserver", "0.2.0a1")]
+    project_version = _project_version(root)
+    project_wheels = tuple(wheelhouse.glob(f"loxberry_mcpserver-{project_version}-*.whl"))
+    expected_project = [("loxberry-mcpserver", project_version.lower())]
     unexpected = set(runtime_wheels) - expected_runtime
     duplicates = len(runtime_wheels) != len(set(runtime_wheels))
     invalid_wheel = len(wheel_files) != len(wheel_identities)
