@@ -8,11 +8,12 @@ from typing import Final
 from mcp.server.fastmcp import FastMCP
 
 SKILL_NAME: Final = "using-loxberry-mcp"
-SKILL_REVISION: Final = 2
+SKILL_REVISION: Final = 3
 SKILL_MIME_TYPE: Final = "text/markdown"
 SKILL_RESOURCE_URI: Final = f"skill://{SKILL_NAME}/SKILL.md"
 SERVER_INSTRUCTIONS: Final = (
-    "For multi-step Loxone queries, ambiguous control names, stale or unconfirmed states, "
+    "For Loxone queries, LoxBerry diagnostics, ambiguous control names, "
+    "stale or unconfirmed states, "
     "and before any control operation, retrieve the using-loxberry-mcp guide from "
     f"{SKILL_RESOURCE_URI} or call loxone_get_skill_guide. Never retry uncertain writes."
 )
@@ -31,7 +32,9 @@ def register_skill_resource(server: FastMCP) -> None:
         SKILL_RESOURCE_URI,
         name=SKILL_NAME,
         title="Using LoxBerry MCP",
-        description="Agent workflow for safe Loxone discovery, state reads, and operations.",
+        description=(
+            "Agent workflow for safe Loxone discovery, operations, and LoxBerry diagnostics."
+        ),
         mime_type=SKILL_MIME_TYPE,
     )
     def skill_resource() -> str:

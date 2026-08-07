@@ -22,6 +22,7 @@ from mcpserver.auth.provider import (
     CONTROL_SCOPE,
     EXPLORER_CLIENT_NAME,
     EXPLORER_REFRESH_FAMILY_TTL,
+    LOXBERRY_READ_SCOPE,
     READ_SCOPE,
     REFRESH_FAMILY_TTL,
     SCOPE,
@@ -52,6 +53,99 @@ def test_control_scope_is_additive_and_never_granted_alone() -> None:
         normalize_scopes(CONTROL_SCOPE, control_enabled=True)
     with pytest.raises(ValueError):
         normalize_scopes(f"{READ_SCOPE} {CONTROL_SCOPE}", control_enabled=False)
+
+
+def test_loxberry_scope_is_additive_and_disabled_by_default() -> None:
+    assert normalize_scopes(
+        f"{LOXBERRY_READ_SCOPE} {READ_SCOPE}",
+        control_enabled=False,
+        loxberry_read_enabled=True,
+    ) == (READ_SCOPE, LOXBERRY_READ_SCOPE)
+    with pytest.raises(ValueError):
+        normalize_scopes(
+            f"{READ_SCOPE} {LOXBERRY_READ_SCOPE}",
+            control_enabled=False,
+        )
+    with pytest.raises(ValueError):
+        normalize_scopes(LOXBERRY_READ_SCOPE, control_enabled=False, loxberry_read_enabled=True)
+
+
+@pytest.mark.asyncio
+async def test_loxberry_authorization_code_requires_local_binding(tmp_path: Path) -> None:
+    allowed = False
+    provider = Phase0OAuthProvider(
+        AtomicJsonAuthStore(tmp_path / "auth" / "sessions.json"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+        clock=Clock(),
+        loxberry_read_enabled=True,
+        loxberry_read_allowed=lambda client, identity, miniserver: allowed,
+    )
+    client = OAuthClientInformationFull(
+        client_id="diagnostic-client",
+        redirect_uris=[AnyUrl(REDIRECT)],
+        token_endpoint_auth_method="none",
+        grant_types=["authorization_code", "refresh_token"],
+        response_types=["code"],
+        scope=f"{READ_SCOPE} {LOXBERRY_READ_SCOPE}",
+    )
+    await provider.register_client(client)
+    with pytest.raises(TokenError, match="local approval"):
+        provider.issue_authorization_code(
+            client_id="diagnostic-client",
+            redirect_uri=REDIRECT,
+            code_challenge=CHALLENGE,
+            resource=RESOURCE,
+            identity_id="identity",
+            miniserver_id="miniserver",
+            scopes=(READ_SCOPE, LOXBERRY_READ_SCOPE),
+        )
+    allowed = True
+    assert provider.issue_authorization_code(
+        client_id="diagnostic-client",
+        redirect_uri=REDIRECT,
+        code_challenge=CHALLENGE,
+        resource=RESOURCE,
+        identity_id="identity",
+        miniserver_id="miniserver",
+        scopes=(READ_SCOPE, LOXBERRY_READ_SCOPE),
+    )
+
+
+@pytest.mark.asyncio
+async def test_pending_loxberry_request_keeps_granted_control_scope(tmp_path: Path) -> None:
+    provider = Phase0OAuthProvider(
+        AtomicJsonAuthStore(tmp_path / "auth" / "sessions.json"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+        clock=Clock(),
+        control_enabled=True,
+        loxberry_read_enabled=True,
+        loxberry_read_allowed=lambda *_: False,
+    )
+    client = OAuthClientInformationFull(
+        client_id="pending-client",
+        redirect_uris=[AnyUrl(REDIRECT)],
+        token_endpoint_auth_method="none",
+        grant_types=["authorization_code", "refresh_token"],
+        response_types=["code"],
+        scope=f"{READ_SCOPE} {CONTROL_SCOPE} {LOXBERRY_READ_SCOPE}",
+    )
+    await provider.register_client(client)
+
+    provider.issue_authorization_code(
+        client_id="pending-client",
+        redirect_uri=REDIRECT,
+        code_challenge=CHALLENGE,
+        resource=RESOURCE,
+        identity_id="identity",
+        miniserver_id="miniserver",
+        scopes=(READ_SCOPE, CONTROL_SCOPE, LOXBERRY_READ_SCOPE),
+        pending_loxberry_read=True,
+    )
+    family = next(iter(provider.store.snapshot()["families"].values()))
+    assert family["scope"] == f"{READ_SCOPE} {CONTROL_SCOPE} {LOXBERRY_READ_SCOPE}"
+    assert family["pending_loxberry_read"] is True
 
 
 def test_disabled_control_scope_is_locally_revoked_without_deleting_remote_token(
@@ -572,6 +666,78 @@ async def test_consent_issues_only_the_scopes_selected_by_the_user(
     assert approved.status_code == 302
     assert code is not None
     assert code.scopes == expected_scopes
+
+
+@pytest.mark.asyncio
+async def test_pending_loxberry_consent_issues_scope_without_local_approval(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    provider = Phase0OAuthProvider(
+        AtomicJsonAuthStore(tmp_path / "auth" / "sessions.json"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+        clock=Clock(),
+        loxberry_read_enabled=True,
+        loxberry_read_allowed=lambda *_: False,
+    )
+    client_info = OAuthClientInformationFull(
+        client_id="diagnostic-client",
+        client_name="MCP Tool Explorer",
+        redirect_uris=[AnyUrl(REDIRECT)],
+        token_endpoint_auth_method="none",
+        grant_types=["authorization_code", "refresh_token"],
+        response_types=["code"],
+        scope=f"{READ_SCOPE} {LOXBERRY_READ_SCOPE}",
+    )
+    await provider.register_client(client_info)
+    web = Phase0OAuthWeb(
+        provider,
+        endpoint=MiniserverEndpoint.parse_gen1("http://192.168.255.254"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+    )
+    transaction = LoginTransaction(
+        transaction_id="transaction",
+        csrf_token="csrf",
+        client_id="diagnostic-client",
+        client_name="MCP Tool Explorer",
+        redirect_uri=REDIRECT,
+        state="client-state",
+        code_challenge=CHALLENGE,
+        resource=RESOURCE,
+        created_at=provider.now(),
+        scopes=(READ_SCOPE, LOXBERRY_READ_SCOPE),
+        identity_id="identity",
+        miniserver_id="miniserver",
+        phase="consent",
+    )
+    web.transactions[transaction.transaction_id] = transaction
+
+    async def kill_token(selected: LoginTransaction) -> bool:
+        selected.loxone_token = None
+        return True
+
+    monkeypatch.setattr(web, "_kill", kill_token)
+    app = Starlette(routes=[Route("/authorize", web.authorize, methods=["POST"])])
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="https://public.example",
+        follow_redirects=False,
+        headers={"Cookie": "phase0_oauth_tx=transaction"},
+    ) as client:
+        approved = await client.post(
+            "/authorize",
+            data={"csrf": "csrf", "action": "approve", "grant_loxberry": "true"},
+        )
+
+    code_value = parse_qs(urlsplit(approved.headers["location"]).query)["code"][0]
+    code = await provider.load_authorization_code(client_info, code_value)
+    family = next(iter(provider.store.snapshot()["families"].values()))
+    assert approved.status_code == 302
+    assert code is not None
+    assert code.scopes == [READ_SCOPE, LOXBERRY_READ_SCOPE]
+    assert family["pending_loxberry_read"] is True
 
 
 @pytest.mark.parametrize(

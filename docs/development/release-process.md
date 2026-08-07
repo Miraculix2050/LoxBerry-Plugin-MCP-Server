@@ -33,7 +33,7 @@ AI agents use this same path after the preparation PR is merged:
 
 ```powershell
 gh workflow run "Publish plugin release" --ref master `
-  -f version=0.2.0-alpha.1 -f channel=prerelease -f confirm_release=true
+  -f version=0.3.0-alpha.1 -f channel=prerelease -f confirm_release=true
 ```
 
 No agent may create an official ZIP locally. A future GitHub App actor remains

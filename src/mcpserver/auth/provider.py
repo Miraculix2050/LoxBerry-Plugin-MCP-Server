@@ -25,9 +25,10 @@ from mcpserver.auth.store import AtomicJsonAuthStore, token_digest
 
 READ_SCOPE: Final = "loxone:read"
 CONTROL_SCOPE: Final = "loxone:control"
+LOXBERRY_READ_SCOPE: Final = "loxberry:read"
 # Retained as the Phase 1 source-level alias used by existing integrations.
 SCOPE: Final = READ_SCOPE
-SUPPORTED_SCOPES: Final = (READ_SCOPE, CONTROL_SCOPE)
+SUPPORTED_SCOPES: Final = (READ_SCOPE, CONTROL_SCOPE, LOXBERRY_READ_SCOPE)
 _LOGGER = logging.getLogger("mcpserver.auth.provider")
 AUTHORIZATION_CODE_TTL: Final = 5 * 60
 ACCESS_TOKEN_TTL: Final = 10 * 60
@@ -64,12 +65,18 @@ def _opaque_token() -> str:
     return secrets.token_urlsafe(32)
 
 
-def normalize_scopes(value: str | None, *, control_enabled: bool) -> tuple[str, ...]:
+def normalize_scopes(
+    value: str | None, *, control_enabled: bool, loxberry_read_enabled: bool = False
+) -> tuple[str, ...]:
     """Return the canonical supported scope set without allowing control alone."""
     requested = value.split() if value else [READ_SCOPE]
     if len(requested) != len(set(requested)) or set(requested) - set(SUPPORTED_SCOPES):
         raise ValueError("unsupported scope")
-    if READ_SCOPE not in requested or (CONTROL_SCOPE in requested and not control_enabled):
+    if (
+        READ_SCOPE not in requested
+        or (CONTROL_SCOPE in requested and not control_enabled)
+        or (LOXBERRY_READ_SCOPE in requested and not loxberry_read_enabled)
+    ):
         raise ValueError("unsupported scope")
     return tuple(scope for scope in SUPPORTED_SCOPES if scope in requested)
 
@@ -119,6 +126,8 @@ class Phase0OAuthProvider(
         clock: Callable[[], float] = time.time,
         on_family_revoked: Callable[[str], None] | None = None,
         control_enabled: bool = False,
+        loxberry_read_enabled: bool = False,
+        loxberry_read_allowed: Callable[[str, str, str], bool] | None = None,
         explorer_origins: tuple[str, ...] = (),
     ) -> None:
         self.store = store
@@ -127,12 +136,22 @@ class Phase0OAuthProvider(
         self._clock = clock
         self._on_family_revoked = on_family_revoked
         self.control_enabled = control_enabled
+        self.loxberry_read_enabled = loxberry_read_enabled
+        self._loxberry_read_allowed = loxberry_read_allowed
         canonical_origin = issuer.rsplit("/plugins/mcpserver/oauth", 1)[0]
         self.explorer_origins = frozenset((canonical_origin, *explorer_origins))
         self.store.mutate(self._garbage_collect)
 
     def now(self) -> int:
         return int(self._clock())
+
+    def loxberry_read_allowed(self, client_id: str, identity_id: str, miniserver_id: str) -> bool:
+        """Evaluate the locally administered Phase 3 binding live."""
+        return bool(
+            self.loxberry_read_enabled
+            and self._loxberry_read_allowed is not None
+            and self._loxberry_read_allowed(client_id, identity_id, miniserver_id)
+        )
 
     async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
         record: dict[str, Any] | None = None
@@ -147,7 +166,11 @@ class Phase0OAuthProvider(
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
         try:
-            scopes = normalize_scopes(client_info.scope, control_enabled=self.control_enabled)
+            scopes = normalize_scopes(
+                client_info.scope,
+                control_enabled=self.control_enabled,
+                loxberry_read_enabled=self.loxberry_read_enabled,
+            )
         except ValueError:
             scopes = ()
         if (
@@ -258,17 +281,28 @@ class Phase0OAuthProvider(
         miniserver_id: str,
         scopes: tuple[str, ...] = (READ_SCOPE,),
         family_id: str | None = None,
+        pending_loxberry_read: bool = False,
     ) -> str:
         if resource != self.resource:
             raise TokenError("invalid_grant", "Resource mismatch")
         try:
             validated_scopes = normalize_scopes(
-                scope_text(list(scopes)), control_enabled=self.control_enabled
+                scope_text(list(scopes)),
+                control_enabled=self.control_enabled,
+                loxberry_read_enabled=self.loxberry_read_enabled,
             )
         except ValueError as exc:
             raise TokenError("invalid_scope", "Unsupported authorization scope") from exc
         if validated_scopes != scopes:
             raise TokenError("invalid_scope", "Authorization scopes must be canonical")
+        if pending_loxberry_read and LOXBERRY_READ_SCOPE not in scopes:
+            raise TokenError("invalid_scope", "Pending diagnostics require their scope")
+        if (
+            LOXBERRY_READ_SCOPE in scopes
+            and not pending_loxberry_read
+            and not self.loxberry_read_allowed(client_id, identity_id, miniserver_id)
+        ):
+            raise TokenError("invalid_scope", "LoxBerry diagnostics require local approval")
         raw_code = _opaque_token()
         digest = token_digest(raw_code)
         now = self.now()
@@ -312,6 +346,7 @@ class Phase0OAuthProvider(
                 "resource": resource,
                 "expires_at": now + family_ttl,
                 "revoked": False,
+                "pending_loxberry_read": pending_loxberry_read,
                 **({"client_kind": "tool_explorer"} if is_explorer else {}),
             }
 

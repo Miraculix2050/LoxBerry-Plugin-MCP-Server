@@ -694,10 +694,41 @@ def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
     assert "showConnectionError(_error, label('error'))" in source
     assert "if (canonicalOriginMismatch && stored) clearStoredSession()" in source
     assert 'id="explorer-session-expiry" hidden' in template
-    assert "elements.control.value === 'control'" in source
+    assert "elements.control.value === 'control-loxberry'" in source
+    assert "'loxone:read loxberry:read'" in source
+    assert "function clientStorageKey()" in source
     assert "Cache_Control => 'no-store'" in callback
     assert "frame-ancestors 'none'" in callback
     assert "window.history.replaceState" in callback
+
+
+def test_explorer_initial_discovery_updates_all_optional_scope_choices() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    initial_discovery = source[
+        source.index("(async () => {", source.index("selectTab(false, false);")) : source.index(
+            "stored = readStoredSession"
+        )
+    ]
+
+    assert "setControlAvailability(" in initial_discovery
+    assert "setLoxberryAvailability(" in initial_discovery
+
+
+def test_session_refresh_preserves_pending_loxberry_approval_action() -> None:
+    source = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+
+    assert "session.loxberry_read_eligible && !session.loxberry_read_approved" in source
+    assert "allowForm.dataset.ajax = 'allow_loxberry_read'" in source
+    assert "Boolean(session.loxberry_read_eligible)" in source
+
+
+def test_session_refresh_updates_related_loxberry_bindings() -> None:
+    source = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+
+    assert 'id="loxberry-binding-list"' in source
+    assert "const updateLoxberryBindings = (bindings) =>" in source
+    assert "result.data.loxberry_bindings" in source
+    assert "session.client_name" in source
 
 
 def test_explorer_uses_csp_compatible_panel_free_loxberry_header() -> None:

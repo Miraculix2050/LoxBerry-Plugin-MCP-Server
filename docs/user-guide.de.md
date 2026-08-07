@@ -1,4 +1,4 @@
-# LoxBerry MCP Server 0.2.0-alpha.1
+# LoxBerry MCP Server 0.3.0-alpha.1
 
 ## Voraussetzungen
 
@@ -48,6 +48,16 @@ Gen.-1-Controls bedienen zu können. Danach ist eine neue OAuth-Freigabe mit `lo
 erforderlich. Beim Zurückwechseln auf **Nur lesen** werden bestehende
 Control-Sitzungen widerrufen; reine Lesesitzungen bleiben gültig. Bei einem
 Gen.-2-/HTTPS-Ziel kann **Lesen und schalten** nicht aktiviert werden.
+
+**LoxBerry-Diagnose über MCP** ist standardmäßig deaktiviert. Nach der
+Aktivierung kann ein Client `loxberry:read` zusammen mit `loxone:read` und
+optional `loxone:control` anfordern. Bis ein Administrator die ausstehende
+Diagnoseanfrage freigibt, enthält die Sitzung den bestätigten Scope, aber die
+Diagnosewerkzeuge antworten weiter mit `permission_denied`.
+Die Freigabe ist exakt an OAuth-Client, Loxone-Identität und Miniserver gebunden.
+Nach der Freigabe funktionieren sie in derselben Verbindung. Die drei Diagnosen sind nur lesend,
+starten oder reparieren nichts, zeigen keine Logs und lesen keine beliebigen
+Dateien. Der Entzug beendet passende Sitzungen.
 
 ## Agent Skill
 

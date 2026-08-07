@@ -15,7 +15,10 @@
   const MCP_RESOURCE_PATH = '/plugins/mcpserver/mcp';
   const EXPLORER_PATH = '/admin/plugins/mcpserver/explorer.cgi';
   const OPAQUE_VALUE = /^[A-Za-z0-9_-]{32,512}$/;
-  const EXPLORER_SCOPES = new Set(['loxone:read', 'loxone:read loxone:control']);
+  const EXPLORER_SCOPES = new Set([
+    'loxone:read', 'loxone:read loxone:control', 'loxone:read loxberry:read',
+    'loxone:read loxone:control loxberry:read',
+  ]);
   const SECRET_NAME = /(?:password|passwd|secret|token|api[_-]?key|private[_-]?key)/i;
   const JSON_TYPES = new Set(['null', 'boolean', 'object', 'array', 'number', 'string', 'integer']);
   const REUSE_SCHEMA_KEYS = new Set([
@@ -538,7 +541,10 @@
     disconnect: document.getElementById('explorer-disconnect'),
     control: document.getElementById('explorer-access-mode'),
     controlOption: document.getElementById('explorer-control-option'),
+    loxberryOption: document.getElementById('explorer-loxberry-option'),
+    controlLoxberryOption: document.getElementById('explorer-control-loxberry-option'),
     controlNote: document.getElementById('explorer-control-note'),
+    loxberryNote: document.getElementById('explorer-loxberry-note'),
     originWarning: document.getElementById('explorer-origin-warning'),
     originLink: document.getElementById('explorer-origin-link'),
     sessionExpiry: document.getElementById('explorer-session-expiry'),
@@ -634,6 +640,17 @@
       elements.controlNote,
       available,
     );
+    if (elements.controlLoxberryOption) {
+      elements.controlLoxberryOption.disabled = !available || elements.loxberryOption.disabled;
+      if (!available && elements.control.value === 'control-loxberry') elements.control.value = 'read';
+    }
+  }
+
+  function setLoxberryAvailability(available) {
+    elements.loxberryOption.disabled = !available;
+    elements.controlLoxberryOption.disabled = !available || !state.controlAvailable;
+    if (!available && (elements.control.value === 'loxberry' || elements.control.value === 'control-loxberry')) elements.control.value = 'read';
+    elements.loxberryNote.hidden = available;
   }
 
   async function sha256(value) {
@@ -669,8 +686,8 @@
     return body;
   }
 
-  function clientStorageKey(scope) {
-    return `mcp-explorer-client:${window.location.origin}:${scope}`;
+  function clientStorageKey() {
+    return `mcp-explorer-client:${window.location.origin}`;
   }
 
   function sessionStorageKey() {
@@ -742,8 +759,8 @@
     if (state.releaseSessionLock) state.releaseSessionLock();
   }
 
-  function readClientId(scope) {
-    const key = clientStorageKey(scope);
+  function readClientId() {
+    const key = clientStorageKey();
     // Older releases retained this identifier beyond the server-side DCR lifetime.
     try { window.localStorage.removeItem(key); } catch (_error) { /* migration only */ }
     try {
@@ -758,10 +775,10 @@
     return null;
   }
 
-  function saveClientId(scope, clientId) {
+  function saveClientId(clientId) {
     try {
       window.sessionStorage.setItem(
-        clientStorageKey(scope),
+        clientStorageKey(),
         JSON.stringify(core.clientRegistration(clientId, Date.now())),
       );
     } catch (_error) { /* optional */ }
@@ -804,8 +821,8 @@
     };
   }
 
-  async function registerClient(metadata, scope, redirectUri) {
-    const cached = readClientId(scope);
+  async function registerClient(metadata, registrationScope, redirectUri) {
+    const cached = readClientId();
     if (cached) return cached;
     const registration = await fetchJson(metadata.registration_endpoint, {
       method: 'POST',
@@ -817,11 +834,11 @@
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
         token_endpoint_auth_method: 'none',
-        scope,
+        scope: registrationScope,
       }),
     });
     if (!registration.client_id) throw new Error('OAuth client registration returned no client_id');
-    saveClientId(scope, registration.client_id);
+    saveClientId(registration.client_id);
     return registration.client_id;
   }
 
@@ -861,15 +878,20 @@
     });
   }
 
-  async function authorize(withControl) {
+  async function authorize(accessMode) {
     const resumeUntil = Date.now() + core.EXPLORER_SESSION_MS;
     const discovered = await discover();
     const supported = new Set(discovered.resourceMetadata.scopes_supported || []);
     setControlAvailability(supported.has('loxone:control'));
-    if (withControl && !state.controlAvailable) throw new Error(label('controlRequired'));
-    const scope = withControl ? 'loxone:read loxone:control' : 'loxone:read';
+    setLoxberryAvailability(supported.has('loxberry:read'));
+    const wantsControl = accessMode === 'control' || accessMode === 'control-loxberry';
+    const wantsLoxberry = accessMode === 'loxberry' || accessMode === 'control-loxberry';
+    if (wantsControl && !state.controlAvailable) throw new Error(label('controlRequired'));
+    if (wantsLoxberry && !supported.has('loxberry:read')) throw new Error(label('loxberryRequired'));
+    const scope = ['loxone:read', wantsControl ? 'loxone:control' : '', wantsLoxberry ? 'loxberry:read' : ''].filter(Boolean).join(' ');
+    const registrationScope = ['loxone:read', supported.has('loxone:control') ? 'loxone:control' : '', supported.has('loxberry:read') ? 'loxberry:read' : ''].filter(Boolean).join(' ');
     const redirectUri = new URL('explorer_callback.cgi', window.location.href).href;
-    const clientId = await registerClient(discovered.authorizationMetadata, scope, redirectUri);
+    const clientId = await registerClient(discovered.authorizationMetadata, registrationScope, redirectUri);
     const verifier = randomUrlSafe(64);
     const challenge = core.base64Url(await sha256(verifier));
     const oauthState = randomUrlSafe(32);
@@ -1436,7 +1458,7 @@
     setBusy(true);
     setStatus(label('working'), 'working');
     try {
-      state.oauth = await authorize(elements.control.value === 'control');
+      state.oauth = await authorize(elements.control.value);
       state.oauth.resumeEnabled = await acquireSessionOwnership(state.oauth.sessionId);
       if (state.oauth.resumeEnabled && !saveStoredSession(state.oauth)) {
         state.oauth.resumeEnabled = false;
@@ -1487,6 +1509,9 @@
       const discovered = await discover();
       setControlAvailability(
         (discovered.resourceMetadata.scopes_supported || []).includes('loxone:control'),
+      );
+      setLoxberryAvailability(
+        (discovered.resourceMetadata.scopes_supported || []).includes('loxberry:read'),
       );
       stored = readStoredSession(discovered.resourceMetadata.resource);
       if (stored) {

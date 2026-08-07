@@ -15,9 +15,12 @@ def test_defaults_are_disabled_and_bounded() -> None:
     assert config.loxone_endpoint == ""
     assert config.loxone_read_enabled is True
     assert config.loxone_control_enabled is False
+    assert config.loxberry_read_enabled is False
     assert config.connection_timeout == 10
     assert config.requests_per_minute == 60
     assert config.control_requests_per_minute == 10
+    assert config.loxberry_requests_per_minute == 30
+    assert config.loxberry_read_bindings == ()
     assert config.max_parallel_calls == 4
     assert config.log_level == "warning"
 
@@ -92,6 +95,22 @@ def test_gen2_control_configuration_is_rejected() -> None:
                 "loxone": {"endpoint": "https://miniserver.example"},
                 "tools": {"loxone_control_enabled": True},
             }
+        )
+
+
+@pytest.mark.parametrize(
+    "bindings",
+    [
+        ["A" * 64],
+        ["a" * 63],
+        ["a" * 64, "a" * 64],
+        ["a" * 64] * 65,
+    ],
+)
+def test_invalid_loxberry_policy_bindings_are_rejected(bindings: list[str]) -> None:
+    with pytest.raises(ConfigError, match="loxberry_read_bindings"):
+        PluginConfig.from_document(
+            {"schema_version": 1, "policies": {"loxberry_read_bindings": bindings}}
         )
 
 

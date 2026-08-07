@@ -1,13 +1,13 @@
 # Support-Matrix
 
-- **Stand:** Erweiterter Phase-2-Implementierungsstand, 2026-08-06
-- **Aktueller Pre-Release:** `0.2.0-alpha.1`
+- **Stand:** Phase-3-Abnahme, 2026-08-07
+- **Aktueller Pre-Release:** `0.3.0-alpha.1`
 - **Nächster Meilenstein:** gezielte reale Abnahme der erweiterten
-  Gen.-1-Schreibaktionen und ein Folgerelease
+  Gen.-1-Schreibaktionen
 
 Diese Matrix unterscheidet reale Nachweise von implementierten, aber noch nicht
-real bestätigten Kombinationen. Phase 1 und Phase 2 sind abgenommen;
-`0.2.0-alpha.1` bleibt wegen seines Vorabversionsstatus ein Pre-Release.
+real bestätigten Kombinationen. Phase 1, Phase 2 und Phase 3 sind abgenommen;
+`0.3.0-alpha.1` bleibt wegen seines Vorabversionsstatus ein Pre-Release.
 
 ## Plattformen und Geräte
 
@@ -76,6 +76,20 @@ Der vollständige maskierte Nachweis steht im
   bestätigt.
 - Steuerung bleibt standardmäßig deaktiviert und auf sichtbare, bedienbare
   Gen.-1-Controls vom Typ `Switch` sowie die Aktionen `on` und `off` begrenzt.
+
+## Phase-3-Abnahmenachweis
+
+Der vollständige maskierte Nachweis steht im
+[Phase-3-Abnahmebericht](phase-3-acceptance.md).
+
+- Die drei LoxBerry-Diagnosewerkzeuge sind standardmäßig deaktiviert und bleiben
+  auf maskierte System-, Plugin- und Dienststatuswerte beschränkt.
+- `loxberry:read` kann zusammen mit Loxone-Lesen und -Steuern angefordert
+  werden; bis zur lokalen Adminfreigabe antworten die Diagnosewerkzeuge mit
+  `permission_denied` und funktionieren danach in derselben OAuth-Verbindung.
+- Die Admin-UI zeigt zu jeder pseudonymen Diagnosebindung den Client-Klarnamen
+  und einen kurzen Verbindungsfingerprint; Freigabe und Entzug aktualisieren
+  ohne Seitenreload.
 
 ## Verbleibende Grenzen
 

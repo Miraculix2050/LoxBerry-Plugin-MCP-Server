@@ -1,6 +1,7 @@
 {
   "limits": {
     "control_requests_per_minute": 10,
+    "loxberry_requests_per_minute": 30,
     "max_parallel_calls": 4,
     "requests_per_minute": 60
   },
@@ -11,6 +12,9 @@
   "logging": {
     "level": "warning"
   },
+  "policies": {
+    "loxberry_read_bindings": []
+  },
   "schema_version": 1,
   "server": {
     "enabled": false,
@@ -18,6 +22,7 @@
   },
   "tools": {
     "loxone_control_enabled": false,
-    "loxone_read_enabled": true
+    "loxone_read_enabled": true,
+    "loxberry_read_enabled": false
   }
 }

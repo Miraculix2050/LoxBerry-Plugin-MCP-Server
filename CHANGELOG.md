@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+## 0.3.0-alpha.1 - 2026-08-07
+
+- Add disabled-by-default, locally approved `loxberry:read` diagnostics for
+  sanitized LoxBerry system, plugin, and MCP service status.
+
 - Give `service.log` a dedicated persistent Off/Error/Warning/Information/Debug
   level while retaining masked, unsuppressible audit records for control attempts.
 - Enable the native LoxBerry Log Manager level for plugin logs and consolidate

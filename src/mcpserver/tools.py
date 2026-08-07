@@ -17,9 +17,10 @@ from uuid import uuid4
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
-from pydantic import BaseModel, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from mcpserver.auth.provider import CONTROL_SCOPE, StoredAccessToken
+from mcpserver.auth.provider import CONTROL_SCOPE, LOXBERRY_READ_SCOPE, StoredAccessToken
+from mcpserver.loxberry.diagnostics import DiagnosticsUnavailable, LoxBerryDiagnostics
 from mcpserver.loxone.control import allowed_actions
 from mcpserver.loxone.models import Control, Freshness, NamedGroup
 from mcpserver.loxone.runtime import (
@@ -188,6 +189,71 @@ class ControlOperationEnvelope(ToolEnvelope):
     data: ControlOperationData | ErrorData
 
 
+class LoxBerryCpuData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    logical_processors: int
+    load_1m: float
+
+
+class LoxBerryMemoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    total_mib: float
+    available_mib: float
+    used_percent: float
+
+
+class LoxBerryStorageData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    total_mib: float
+    available_mib: float
+    used_percent: float
+
+
+class LoxBerrySystemStatusData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    loxberry_version: str
+    uptime_seconds: int
+    cpu: LoxBerryCpuData
+    memory: LoxBerryMemoryData
+    storage: LoxBerryStorageData
+
+
+class LoxBerryPluginStatusData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    plugin_version: str
+    service_enabled: bool
+    runtime_status: Literal["ready"]
+    configuration_status: Literal["valid"]
+
+
+class LoxBerryServiceHealthData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    service_name: Literal["loxberry-mcpserver"]
+    installed: bool
+    active_state: str
+    sub_state: str
+    healthy: bool
+
+
+class LoxBerryErrorData(ErrorData):
+    model_config = ConfigDict(extra="forbid")
+
+
+class LoxBerrySystemStatusEnvelope(ToolEnvelope):
+    model_config = ConfigDict(extra="forbid")
+    data: LoxBerrySystemStatusData | LoxBerryErrorData
+
+
+class LoxBerryPluginStatusEnvelope(ToolEnvelope):
+    model_config = ConfigDict(extra="forbid")
+    data: LoxBerryPluginStatusData | LoxBerryErrorData
+
+
+class LoxBerryServiceHealthEnvelope(ToolEnvelope):
+    model_config = ConfigDict(extra="forbid")
+    data: LoxBerryServiceHealthData | LoxBerryErrorData
+
+
 def _now() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
@@ -335,6 +401,59 @@ def _access() -> StoredAccessToken:
     if not isinstance(access, StoredAccessToken):
         raise PermissionError("authentication is required")
     return access
+
+
+class LoxBerryReadRuntime:
+    """Live policy check and bounded access to the fixed diagnostics adapter."""
+
+    def __init__(
+        self, diagnostics: LoxBerryDiagnostics, config_store: Any, auth_store: Any
+    ) -> None:
+        self._diagnostics = diagnostics
+        self._config_store = config_store
+        self._auth_store = auth_store
+        self._requests: dict[str, list[float]] = {}
+
+    def _allowed(self, access: StoredAccessToken) -> Any:
+        if LOXBERRY_READ_SCOPE not in access.scopes:
+            raise PermissionError("LoxBerry diagnostics are not authorized")
+        config = self._config_store.load()
+        binding = self._auth_store.pseudonym(
+            "loxberry-read-binding-v1",
+            access.client_id,
+            access.identity_id,
+            access.miniserver_id,
+        )
+        if not config.loxberry_read_enabled or binding not in config.loxberry_read_bindings:
+            raise PermissionError("LoxBerry diagnostics are not authorized")
+        now = time.monotonic()
+        entries = [item for item in self._requests.get(access.family_id, []) if item > now - 60]
+        if len(entries) >= config.loxberry_requests_per_minute:
+            raise DiagnosticsUnavailable("diagnostics are temporarily unavailable")
+        entries.append(now)
+        self._requests[access.family_id] = entries
+        return config
+
+    async def system_status(self, access: StoredAccessToken) -> dict[str, Any]:
+        self._allowed(access)
+        import asyncio
+
+        return await asyncio.to_thread(self._diagnostics.system_status)
+
+    async def plugin_status(self, access: StoredAccessToken) -> dict[str, Any]:
+        config = self._allowed(access)
+        return {
+            "plugin_version": __import__("mcpserver").__version__,
+            "service_enabled": config.enabled,
+            "runtime_status": "ready",
+            "configuration_status": "valid",
+        }
+
+    async def service_health(self, access: StoredAccessToken) -> dict[str, Any]:
+        self._allowed(access)
+        import asyncio
+
+        return await asyncio.to_thread(self._diagnostics.service_health)
 
 
 def _groups(items: tuple[NamedGroup, ...]) -> list[dict[str, str]]:
@@ -677,6 +796,83 @@ def register_skill_tool(server: FastMCP) -> None:
                 "content": read_skill_markdown(),
             },
         )
+
+
+def register_loxberry_read_tools(server: FastMCP, runtime: LoxBerryReadRuntime) -> None:
+    """Publish the optional, fixed Phase 3 LoxBerry diagnostics surface."""
+    annotations = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
+
+    @server.tool(
+        name="loxberry_get_system_status",
+        description="Get sanitized LoxBerry system status from fixed local sources.",
+        annotations=annotations,
+        structured_output=True,
+    )
+    async def get_loxberry_system_status() -> LoxBerrySystemStatusEnvelope:
+        try:
+            return _result(LoxBerrySystemStatusEnvelope, await runtime.system_status(_access()))
+        except PermissionError:
+            return _error(
+                LoxBerrySystemStatusEnvelope,
+                "permission_denied",
+                "LoxBerry diagnostics require loxberry:read and local approval",
+            )
+        except DiagnosticsUnavailable:
+            return _error(
+                LoxBerrySystemStatusEnvelope,
+                "temporarily_unavailable",
+                "LoxBerry diagnostics are temporarily unavailable",
+            )
+        except Exception:
+            return _error(LoxBerrySystemStatusEnvelope, "internal_error", "Internal error")
+
+    @server.tool(
+        name="loxberry_get_plugin_status",
+        description="Get the sanitized LoxBerry MCP plugin status.",
+        annotations=annotations,
+        structured_output=True,
+    )
+    async def get_loxberry_plugin_status() -> LoxBerryPluginStatusEnvelope:
+        try:
+            return _result(LoxBerryPluginStatusEnvelope, await runtime.plugin_status(_access()))
+        except PermissionError:
+            return _error(
+                LoxBerryPluginStatusEnvelope,
+                "permission_denied",
+                "LoxBerry diagnostics require loxberry:read and local approval",
+            )
+        except DiagnosticsUnavailable:
+            return _error(
+                LoxBerryPluginStatusEnvelope,
+                "temporarily_unavailable",
+                "LoxBerry diagnostics are temporarily unavailable",
+            )
+        except Exception:
+            return _error(LoxBerryPluginStatusEnvelope, "internal_error", "Internal error")
+
+    @server.tool(
+        name="loxberry_get_service_health",
+        description="Get the sanitized health of this MCP service only.",
+        annotations=annotations,
+        structured_output=True,
+    )
+    async def get_loxberry_service_health() -> LoxBerryServiceHealthEnvelope:
+        try:
+            return _result(LoxBerryServiceHealthEnvelope, await runtime.service_health(_access()))
+        except PermissionError:
+            return _error(
+                LoxBerryServiceHealthEnvelope,
+                "permission_denied",
+                "LoxBerry diagnostics require loxberry:read and local approval",
+            )
+        except DiagnosticsUnavailable:
+            return _error(
+                LoxBerryServiceHealthEnvelope,
+                "temporarily_unavailable",
+                "LoxBerry diagnostics are temporarily unavailable",
+            )
+        except Exception:
+            return _error(LoxBerryServiceHealthEnvelope, "internal_error", "Internal error")
 
 
 def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> None:

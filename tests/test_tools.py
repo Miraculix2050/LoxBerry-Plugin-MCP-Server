@@ -6,20 +6,116 @@ import pytest
 from mcp.server.fastmcp import FastMCP
 
 import mcpserver.tools as tools_module
-from mcpserver.auth.provider import CONTROL_SCOPE, READ_SCOPE, StoredAccessToken
+from mcpserver.auth.provider import (
+    CONTROL_SCOPE,
+    LOXBERRY_READ_SCOPE,
+    READ_SCOPE,
+    StoredAccessToken,
+)
+from mcpserver.config import PluginConfig
 from mcpserver.loxone.models import Control, LoxoneIdentity, LoxoneStructure
 from mcpserver.loxone.runtime import RuntimeSnapshot
 from mcpserver.skill_delivery import read_skill_markdown
 from mcpserver.tools import (
+    LoxBerryReadRuntime,
     SystemStatusEnvelope,
     _CursorCodec,
     _error,
     _page,
     _result,
     register_control_tool,
+    register_loxberry_read_tools,
     register_read_tools,
     register_skill_tool,
 )
+
+
+def _loxberry_access(*scopes: str) -> StoredAccessToken:
+    return StoredAccessToken(
+        token="opaque",
+        client_id="client",
+        scopes=list(scopes),
+        expires_at=2_000_000_000,
+        resource="https://loxberry.local/plugins/mcpserver/mcp",
+        subject="identity",
+        claims={},
+        family_id="family",
+        identity_id="identity",
+        miniserver_id="miniserver",
+    )
+
+
+def test_loxberry_runtime_requires_live_binding_and_enforces_rate_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ConfigStore:
+        config = PluginConfig(loxberry_read_enabled=True, loxberry_requests_per_minute=1)
+
+        def load(self) -> PluginConfig:
+            return self.config
+
+    class AuthStore:
+        def pseudonym(self, *parts: str) -> str:
+            assert parts[0] == "loxberry-read-binding-v1"
+            return "binding"
+
+    config_store = ConfigStore()
+    config_store.config = PluginConfig(
+        loxberry_read_enabled=True,
+        loxberry_requests_per_minute=1,
+        loxberry_read_bindings=("binding",),
+    )
+    runtime = LoxBerryReadRuntime(object(), config_store, AuthStore())  # type: ignore[arg-type]
+    access = _loxberry_access(READ_SCOPE, LOXBERRY_READ_SCOPE)
+    monkeypatch.setattr(tools_module.time, "monotonic", lambda: 100.0)
+
+    assert runtime._allowed(access).loxberry_read_enabled is True
+    with pytest.raises(tools_module.DiagnosticsUnavailable):
+        runtime._allowed(access)
+    with pytest.raises(PermissionError):
+        runtime._allowed(_loxberry_access(READ_SCOPE))
+    config_store.config = PluginConfig(
+        loxberry_read_enabled=False, loxberry_read_bindings=("binding",)
+    )
+    with pytest.raises(PermissionError):
+        runtime._allowed(access)
+
+
+def test_loxberry_tool_contracts_have_closed_output_schemas() -> None:
+    class Runtime:
+        async def system_status(self, access: object) -> dict[str, object]:
+            return {}
+
+        async def plugin_status(self, access: object) -> dict[str, object]:
+            return {}
+
+        async def service_health(self, access: object) -> dict[str, object]:
+            return {}
+
+    server = FastMCP("loxberry-contract")
+    register_loxberry_read_tools(server, Runtime())  # type: ignore[arg-type]
+    published = {tool.name: tool for tool in server._tool_manager.list_tools()}
+
+    assert set(published) == {
+        "loxberry_get_system_status",
+        "loxberry_get_plugin_status",
+        "loxberry_get_service_health",
+    }
+    for tool in published.values():
+        assert tool.parameters["properties"] == {}
+        assert tool.annotations is not None
+        assert tool.annotations.readOnlyHint is True
+        assert tool.annotations.destructiveHint is False
+        assert tool.annotations.openWorldHint is False
+        assert tool.output_schema["additionalProperties"] is False
+        data_names = {
+            item["$ref"].rsplit("/", 1)[-1]
+            for item in tool.output_schema["properties"]["data"]["anyOf"]
+        }
+        assert all(
+            tool.output_schema["$defs"][name]["additionalProperties"] is False
+            for name in data_names
+        )
 
 
 def test_read_results_and_expected_errors_are_debug_only(
@@ -127,7 +223,7 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert tool.annotations.destructiveHint is False
     assert tool.annotations.openWorldHint is False
     assert result.data.name == "using-loxberry-mcp"  # type: ignore[union-attr]
-    assert result.data.revision == 2  # type: ignore[union-attr]
+    assert result.data.revision == 3  # type: ignore[union-attr]
     assert result.data.media_type == "text/markdown"  # type: ignore[union-attr]
     assert result.data.content == read_skill_markdown()  # type: ignore[union-attr]
 

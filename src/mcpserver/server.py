@@ -23,14 +23,26 @@ from starlette.types import ASGIApp
 
 from mcpserver import __version__
 from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore
-from mcpserver.auth.provider import CONTROL_SCOPE, READ_SCOPE, Phase0OAuthProvider
+from mcpserver.auth.provider import (
+    CONTROL_SCOPE,
+    LOXBERRY_READ_SCOPE,
+    READ_SCOPE,
+    Phase0OAuthProvider,
+)
 from mcpserver.auth.store import AtomicJsonAuthStore
 from mcpserver.auth.web import Phase0OAuthWeb
-from mcpserver.config import DEFAULT_LOG_LEVEL
+from mcpserver.config import DEFAULT_LOG_LEVEL, AtomicConfigStore
+from mcpserver.loxberry.diagnostics import LoxBerryDiagnostics
 from mcpserver.loxone.runtime import LoxoneRuntime
 from mcpserver.settings import ServerSettings
 from mcpserver.skill_delivery import SERVER_INSTRUCTIONS, register_skill_resource
-from mcpserver.tools import register_control_tool, register_read_tools, register_skill_tool
+from mcpserver.tools import (
+    LoxBerryReadRuntime,
+    register_control_tool,
+    register_loxberry_read_tools,
+    register_read_tools,
+    register_skill_tool,
+)
 
 SERVER_NAME: Final = "LoxBerry MCP Server"
 LOG_MAX_BYTES: Final = 512 * 1024
@@ -261,6 +273,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
     oauth_auth: AuthSettings | None = None
     token_verifier: _Phase0TokenVerifier | None = None
     runtime: LoxoneRuntime | None = None
+    loxberry_runtime: LoxBerryReadRuntime | None = None
     if settings.phase0_auth is not None:
         auth_store = AtomicJsonAuthStore(settings.phase0_auth.store_path)
         loxone_store: EncryptedLoxoneTokenStore | None = None
@@ -272,19 +285,34 @@ def create_server(settings: ServerSettings) -> FastMCP:
                 settings.phase0_auth.loxone_store_path,
                 settings.phase0_auth.install_key_path,
             )
+        config = settings.phase0_auth.plugin_config
+
+        def loxberry_binding_allowed(client_id: str, identity_id: str, miniserver_id: str) -> bool:
+            if settings.phase0_auth is None or settings.phase0_auth.config_path is None:
+                return False
+            try:
+                current = AtomicConfigStore(settings.phase0_auth.config_path).load()
+                binding = auth_store.pseudonym(
+                    "loxberry-read-binding-v1", client_id, identity_id, miniserver_id
+                )
+                return current.loxberry_read_enabled and binding in current.loxberry_read_bindings
+            except Exception:
+                return False
+
         provider = Phase0OAuthProvider(
             auth_store,
             issuer=settings.phase0_auth.issuer_url,
             resource=settings.phase0_auth.resource_url,
             on_family_revoked=loxone_store.delete if loxone_store is not None else None,
-            control_enabled=bool(
-                settings.phase0_auth.plugin_config
-                and settings.phase0_auth.plugin_config.loxone_control_enabled
-            ),
+            control_enabled=bool(config and config.loxone_control_enabled),
+            loxberry_read_enabled=bool(config and config.loxberry_read_enabled),
+            loxberry_read_allowed=loxberry_binding_allowed,
             explorer_origins=settings.allowed_origins,
         )
         if not provider.control_enabled:
             provider.revoke_scope_locally(CONTROL_SCOPE)
+        if not provider.loxberry_read_enabled:
+            provider.revoke_scope_locally(LOXBERRY_READ_SCOPE)
         oauth_web = Phase0OAuthWeb(
             provider,
             endpoint=settings.phase0_auth.loxone_endpoint,
@@ -299,7 +327,6 @@ def create_server(settings: ServerSettings) -> FastMCP:
         )
         token_verifier = _Phase0TokenVerifier(provider)
         if loxone_store is not None:
-            config = settings.phase0_auth.plugin_config
             runtime = LoxoneRuntime(
                 settings.phase0_auth.loxone_endpoint,
                 loxone_store,
@@ -310,6 +337,14 @@ def create_server(settings: ServerSettings) -> FastMCP:
                     config.control_requests_per_minute if config is not None else 10
                 ),
             )
+        if config and config.loxberry_read_enabled and settings.phase0_auth.config_path is not None:
+            home = Path(os.getenv("LBHOMEDIR", "/opt/loxberry"))
+            if home.is_absolute():
+                loxberry_runtime = LoxBerryReadRuntime(
+                    LoxBerryDiagnostics(home),
+                    AtomicConfigStore(settings.phase0_auth.config_path),
+                    auth_store,
+                )
 
     server = _ForwardedHostFastMCP(
         SERVER_NAME,
@@ -331,12 +366,24 @@ def create_server(settings: ServerSettings) -> FastMCP:
         and settings.phase0_auth.plugin_config
         and settings.phase0_auth.plugin_config.loxone_control_enabled
     )
-    server.advertised_scopes = (READ_SCOPE,) + ((CONTROL_SCOPE,) if control_enabled else ())
+    loxberry_enabled = bool(
+        settings.phase0_auth
+        and settings.phase0_auth.plugin_config
+        and settings.phase0_auth.plugin_config.loxberry_read_enabled
+        and loxberry_runtime is not None
+    )
+    server.advertised_scopes = (
+        (READ_SCOPE,)
+        + ((CONTROL_SCOPE,) if control_enabled else ())
+        + ((LOXBERRY_READ_SCOPE,) if loxberry_enabled else ())
+    )
     register_skill_resource(server)
     register_skill_tool(server)
     register_read_tools(server, runtime, control_enabled=control_enabled)
     if control_enabled:
         register_control_tool(server, runtime)
+    if loxberry_enabled and loxberry_runtime is not None:
+        register_loxberry_read_tools(server, loxberry_runtime)
 
     if oauth_web is not None:
         server.custom_route("/authorize", methods=["GET", "POST"], include_in_schema=False)(

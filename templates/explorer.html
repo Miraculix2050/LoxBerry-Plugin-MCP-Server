@@ -70,6 +70,7 @@
   data-session-other-tab="<TMPL_VAR EXPLORER.SESSION_OTHER_TAB ESCAPE=HTML>"
   data-timeout="<TMPL_VAR EXPLORER.TIMEOUT ESCAPE=HTML>"
   data-control-required="<TMPL_VAR EXPLORER.CONTROL_REQUIRED ESCAPE=HTML>"
+  data-loxberry-required="<TMPL_VAR EXPLORER.LOXBERRY_REQUIRED ESCAPE=HTML>"
   data-as-list="<TMPL_VAR EXPLORER.AS_LIST ESCAPE=HTML>"
   data-optional="<TMPL_VAR EXPLORER.OPTIONAL ESCAPE=HTML>"
   data-array-help="<TMPL_VAR EXPLORER.ARRAY_HELP ESCAPE=HTML>"
@@ -98,11 +99,14 @@
       <select id="explorer-access-mode">
         <option value="read"><TMPL_VAR EXPLORER.READ_ONLY></option>
         <option id="explorer-control-option" value="control" disabled><TMPL_VAR EXPLORER.WITH_CONTROL></option>
+        <option id="explorer-loxberry-option" value="loxberry" disabled><TMPL_VAR EXPLORER.WITH_LOXBERRY></option>
+        <option id="explorer-control-loxberry-option" value="control-loxberry" disabled><TMPL_VAR EXPLORER.WITH_CONTROL_LOXBERRY></option>
       </select>
       <button id="explorer-connect" class="lb-button" type="button"><TMPL_VAR EXPLORER.CONNECT></button>
       <button id="explorer-disconnect" class="lb-button" type="button" disabled><TMPL_VAR EXPLORER.DISCONNECT></button>
     </div>
     <p id="explorer-control-note" class="mcp-explorer-warning" hidden><TMPL_VAR EXPLORER.CONTROL_UNAVAILABLE></p>
+    <p id="explorer-loxberry-note" class="mcp-explorer-warning" hidden><TMPL_VAR EXPLORER.LOXBERRY_UNAVAILABLE></p>
     <p id="explorer-origin-warning" class="mcp-explorer-warning" hidden>
       <TMPL_VAR EXPLORER.ORIGIN_MISMATCH>
       <a id="explorer-origin-link" class="lb-button" rel="noopener"><TMPL_VAR EXPLORER.OPEN_CANONICAL></a>

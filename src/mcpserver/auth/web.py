@@ -31,6 +31,7 @@ from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Re
 from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore
 from mcpserver.auth.provider import (
     CONTROL_SCOPE,
+    LOXBERRY_READ_SCOPE,
     READ_SCOPE,
     Phase0OAuthProvider,
     normalize_scopes,
@@ -78,6 +79,7 @@ class LoginTransaction:
     identity_id: str | None = None
     miniserver_id: str | None = None
     miniserver_name: str | None = None
+    loxberry_read_locally_approved: bool = False
     phase: str = "login"
     lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
 
@@ -360,7 +362,9 @@ class Phase0OAuthWeb:
             )
         try:
             scopes = normalize_scopes(
-                query.get("scope"), control_enabled=self.provider.control_enabled
+                query.get("scope"),
+                control_enabled=self.provider.control_enabled,
+                loxberry_read_enabled=self.provider.loxberry_read_enabled,
             )
         except ValueError:
             return _redirect(
@@ -433,6 +437,16 @@ class Phase0OAuthWeb:
             if control_requested
             else ""
         )
+        loxberry_requested = LOXBERRY_READ_SCOPE in transaction.scopes
+        loxberry_option = (
+            """<label class=\"scope-option\"><input type=\"checkbox\" checked disabled>
+<span><strong>LoxBerry diagnostics / LoxBerry-Diagnose</strong><small>Approved locally for this client, identity and Miniserver. / Lokal für diesen Client, diese Identität und diesen Miniserver freigegeben.</small></span></label>"""
+            if transaction.loxberry_read_locally_approved
+            else """<label class="scope-option" for="grant_loxberry"><input id="grant_loxberry" type="checkbox" name="grant_loxberry" value="true">
+<span><strong>LoxBerry diagnostics / LoxBerry-Diagnose</strong><small>Optional: read the approved LoxBerry system, plugin and service status. / Optional: Den freigegebenen LoxBerry-System-, Plugin- und Dienststatus lesen.</small></span></label>"""
+            if loxberry_requested
+            else ""
+        )
         body = f"""<h1>Choose permissions / Berechtigungen auswählen</h1><dl>
 <dt>Client</dt><dd>{html.escape(transaction.client_name)}</dd>
 <dt>Miniserver</dt><dd>{html.escape(transaction.miniserver_name or "")}</dd>
@@ -440,7 +454,7 @@ class Phase0OAuthWeb:
 <form method="post" action="/plugins/mcpserver/oauth/authorize">{self._hidden(transaction, "approve")}
 <fieldset class="scope-list"><legend>Permissions / Berechtigungen</legend>
 <label class="scope-option"><input type="checkbox" checked disabled><span><strong>Read access / Lesezugriff</strong><small>Required: read permitted Loxone structure and states. / Erforderlich: Freigegebene Loxone-Struktur und Zustände lesen.</small></span></label>
-{control_option}</fieldset>
+{control_option}{loxberry_option}</fieldset>
 <p class="notice">After confirmation, you will be redirected to your MCP client. / Nach der Bestätigung werden Sie zu Ihrem MCP-Client weitergeleitet.</p>
 <div class="actions"><button type="submit">Confirm permissions / Berechtigungen bestätigen</button></div></form>
 <form method="post" action="/plugins/mcpserver/oauth/authorize">{self._hidden(transaction, "deny")}
@@ -450,7 +464,14 @@ class Phase0OAuthWeb:
     async def _authorize_post(self, request: Request) -> Response:
         form = await _form(
             request,
-            allowed={"csrf", "action", "username", "password", "grant_control"},
+            allowed={
+                "csrf",
+                "action",
+                "username",
+                "password",
+                "grant_control",
+                "grant_loxberry",
+            },
         )
         transaction_id = request.cookies.get(_COOKIE_NAME, "")
         transaction = self.transactions.get(transaction_id)
@@ -485,8 +506,15 @@ class Phase0OAuthWeb:
                 and transaction.miniserver_id
             ):
                 grant_control = form.get("grant_control")
-                if grant_control not in {None, "true"} or (
-                    grant_control is not None and CONTROL_SCOPE not in transaction.scopes
+                grant_loxberry = form.get("grant_loxberry")
+                if (
+                    grant_control not in {None, "true"}
+                    or (grant_control is not None and CONTROL_SCOPE not in transaction.scopes)
+                    or grant_loxberry not in {None, "true"}
+                    or (transaction.loxberry_read_locally_approved and grant_loxberry is not None)
+                    or (
+                        grant_loxberry is not None and LOXBERRY_READ_SCOPE not in transaction.scopes
+                    )
                 ):
                     return _message_page(
                         "Invalid authorization request",
@@ -497,6 +525,11 @@ class Phase0OAuthWeb:
                 approved_scopes: tuple[str, ...] = (READ_SCOPE,)
                 if grant_control == "true":
                     approved_scopes = (READ_SCOPE, CONTROL_SCOPE)
+                pending_loxberry_read = (
+                    grant_loxberry == "true" and not transaction.loxberry_read_locally_approved
+                )
+                if grant_loxberry == "true" or transaction.loxberry_read_locally_approved:
+                    approved_scopes = (*approved_scopes, LOXBERRY_READ_SCOPE)
                 transaction.phase = "approving"
                 family_id: str | None = None
                 if self.loxone_store is None:
@@ -547,6 +580,7 @@ class Phase0OAuthWeb:
                         miniserver_id=transaction.miniserver_id,
                         scopes=approved_scopes,
                         family_id=family_id,
+                        pending_loxberry_read=pending_loxberry_read,
                     )
                 except TokenError:
                     if family_id is not None and self.loxone_store is not None:
@@ -651,6 +685,12 @@ class Phase0OAuthWeb:
         transaction.miniserver_id = miniserver_id
         transaction.identity_id = identity_id
         self._clear_identity_failures(rate_keys)
+        transaction.loxberry_read_locally_approved = (
+            LOXBERRY_READ_SCOPE in transaction.scopes
+            and self.provider.loxberry_read_allowed(
+                transaction.client_id, identity_id, miniserver_id
+            )
+        )
         transaction.phase = "consent"
         return self._consent_page(transaction)
 
@@ -716,7 +756,11 @@ class Phase0OAuthWeb:
         requested = form.get("scope")
         try:
             scopes = (
-                normalize_scopes(requested, control_enabled=self.provider.control_enabled)
+                normalize_scopes(
+                    requested,
+                    control_enabled=self.provider.control_enabled,
+                    loxberry_read_enabled=self.provider.loxberry_read_enabled,
+                )
                 if requested is not None
                 else tuple(refresh.scopes)
             )
@@ -753,7 +797,9 @@ class Phase0OAuthWeb:
             reason = "Unsupported scope"
             try:
                 scopes = normalize_scopes(
-                    payload.get("scope"), control_enabled=self.provider.control_enabled
+                    payload.get("scope"),
+                    control_enabled=self.provider.control_enabled,
+                    loxberry_read_enabled=self.provider.loxberry_read_enabled,
                 )
             except (AttributeError, ValueError):
                 raise ValueError from None
@@ -803,7 +849,8 @@ class Phase0OAuthWeb:
                 "registration_endpoint": f"{self.issuer}/register",
                 "revocation_endpoint": f"{self.issuer}/revoke",
                 "scopes_supported": [READ_SCOPE]
-                + ([CONTROL_SCOPE] if self.provider.control_enabled else []),
+                + ([CONTROL_SCOPE] if self.provider.control_enabled else [])
+                + ([LOXBERRY_READ_SCOPE] if self.provider.loxberry_read_enabled else []),
                 "response_types_supported": ["code"],
                 "grant_types_supported": ["authorization_code", "refresh_token"],
                 "token_endpoint_auth_methods_supported": ["none"],
