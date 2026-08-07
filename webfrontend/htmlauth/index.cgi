@@ -357,10 +357,13 @@ if ($action ne '') {
                 loxone_read_enabled => JSON::PP::true,
                 loxone_control_enabled => ($q->{loxone_control_enabled} // '') eq '1'
                     ? JSON::PP::true : JSON::PP::false,
+                loxberry_read_enabled => ($q->{loxberry_read_enabled} // '') eq '1'
+                    ? JSON::PP::true : JSON::PP::false,
             },
             limits => {
                 requests_per_minute => 0 + ($q->{requests_per_minute} // 60),
                 control_requests_per_minute => 0 + ($q->{control_requests_per_minute} // 10),
+                loxberry_requests_per_minute => 0 + ($q->{loxberry_requests_per_minute} // 30),
                 max_parallel_calls => 0 + ($q->{max_parallel_calls} // 4),
             },
         };
@@ -377,6 +380,14 @@ if ($action ne '') {
         $result = admin_call('revoke_session', {id => ($q->{id} // '')});
         admin_log($result->{ok} ? 'info' : 'warning',
             'action=revoke_session outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
+    } elsif ($action eq 'allow_loxberry_read') {
+        $result = admin_call('allow_loxberry_read', {session_id => ($q->{session_id} // '')});
+        admin_log($result->{ok} ? 'info' : 'warning',
+            'action=allow_loxberry_read outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
+    } elsif ($action eq 'revoke_loxberry_read') {
+        $result = admin_call('revoke_loxberry_read', {binding_id => ($q->{binding_id} // '')});
+        admin_log($result->{ok} ? 'info' : 'warning',
+            'action=revoke_loxberry_read outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
     } elsif ($action eq 'list_sessions') {
         $result = admin_call('list_sessions', {});
     } elsif ($action eq 'revoke_all') {
@@ -450,6 +461,7 @@ my $page_result = admin_call('page_state', {});
 my $page_state = $page_result->{ok} ? $page_result->{data} : {};
 my $config = $page_state->{configuration} // {};
 my $sessions = $page_state->{sessions} // [];
+my $loxberry_bindings = $page_state->{loxberry_bindings} // [];
 for my $session (@$sessions) {
     next if ref($session) ne 'HASH';
     $session->{expires_display} = format_expiry($session->{expires_at});
@@ -511,8 +523,10 @@ $template->param(
     MANUAL_ENDPOINT => $has_selected_miniserver ? 0 : 1,
     CONNECTION_TIMEOUT => $config->{loxone}{connection_timeout} // 10,
     LOXONE_CONTROL_ENABLED => $config->{tools}{loxone_control_enabled} ? 1 : 0,
+    LOXBERRY_READ_ENABLED => $config->{tools}{loxberry_read_enabled} ? 1 : 0,
     REQUESTS_PER_MINUTE => $config->{limits}{requests_per_minute} // 60,
     CONTROL_REQUESTS_PER_MINUTE => $config->{limits}{control_requests_per_minute} // 10,
+    LOXBERRY_REQUESTS_PER_MINUTE => $config->{limits}{loxberry_requests_per_minute} // 30,
     MAX_PARALLEL_CALLS => $config->{limits}{max_parallel_calls} // 4,
     LOG_LEVEL => $config->{logging}{level} // 'warning',
     LOG_LEVEL_OFF => ($config->{logging}{level} // 'warning') eq 'off' ? 1 : 0,
@@ -545,6 +559,7 @@ $template->param(
     CERTIFICATE_RENEWAL_STATE => $renewal_labels{$renewal_state}
         // $L{'CERTIFICATE.STATE_ERROR'},
     SESSIONS => $sessions,
+    LOXBERRY_BINDINGS => $loxberry_bindings,
     HAS_SESSIONS => scalar(@$sessions) ? 1 : 0,
     NOTICE => $notice_text,
     NOTICE_KIND => $notice_kind,

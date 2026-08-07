@@ -90,6 +90,7 @@ def test_page_state_aggregates_initial_admin_ui_data(monkeypatch: pytest.MonkeyP
         "service_active": True,
         "service": service,
         "sessions": [{"id": "family"}],
+        "loxberry_bindings": [],
         "certificate": {"available": True, "renewal_supported": False},
     }
 

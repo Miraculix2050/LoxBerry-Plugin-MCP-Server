@@ -168,6 +168,7 @@ class Phase0AuthSettings:
     loxone_endpoint: MiniserverEndpoint
     loxone_store_path: Path | None = None
     install_key_path: Path | None = None
+    config_path: Path | None = None
     plugin_config: PluginConfig | None = None
 
     @property
@@ -248,6 +249,9 @@ def _phase1_auth_from_environment(
             loxone_endpoint=endpoint,
             loxone_store_path=Path(token_value) if token_value else None,
             install_key_path=Path(key_value) if key_value else None,
+            config_path=Path(os.getenv("MCPSERVER_CONFIG", ""))
+            if os.getenv("MCPSERVER_CONFIG", "").strip()
+            else None,
             plugin_config=config,
         ),
         True,

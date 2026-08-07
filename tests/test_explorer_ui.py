@@ -694,7 +694,9 @@ def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
     assert "showConnectionError(_error, label('error'))" in source
     assert "if (canonicalOriginMismatch && stored) clearStoredSession()" in source
     assert 'id="explorer-session-expiry" hidden' in template
-    assert "elements.control.value === 'control'" in source
+    assert "elements.control.value === 'control-loxberry'" in source
+    assert "'loxone:read loxberry:read'" in source
+    assert "function clientStorageKey()" in source
     assert "Cache_Control => 'no-store'" in callback
     assert "frame-ancestors 'none'" in callback
     assert "window.history.replaceState" in callback

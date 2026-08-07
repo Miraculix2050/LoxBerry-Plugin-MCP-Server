@@ -1,6 +1,6 @@
 ---
 name: using-loxberry-mcp
-description: Guides safe use of the LoxBerry MCP Server to find Loxone rooms, categories, controls, read current states, diagnose connectivity, and explicitly operate supported switches, dimmers, lighting controllers, and blinds. Use when a user asks about or requests control of a Loxone installation through the LoxBerry MCP Server, including ambiguous control names, stale state, pagination, or unconfirmed operations.
+description: Guides safe use of the LoxBerry MCP Server to inspect Loxone rooms, categories, controls and states, diagnose Loxone connectivity or LoxBerry system, plugin and service status, and explicitly operate supported Loxone controls. Use for Loxone MCP questions, LoxBerry diagnostics, ambiguous control names, stale state, pagination, or unconfirmed operations.
 ---
 
 # Using LoxBerry MCP
@@ -24,6 +24,18 @@ input and output schemas as authoritative; do not invent fields or UUIDs.
 Check the complete result envelope. Do not treat a response as successful when
 `ok` is false. Surface relevant `warnings`, and qualify answers when `stale` is
 true or a state has an old or missing `observed_at` value.
+
+## Diagnose LoxBerry
+
+Use the available `loxberry_*` tools only for the requested LoxBerry system,
+plugin, or MCP service status. Query `tools/list` first; it is authoritative
+for availability and schemas. `loxberry:read` requires a local administrator
+approval for this client, Loxone identity, and Miniserver, followed by a new
+OAuth sign-in and optional consent. If it is unavailable or denied, explain the
+required approval; do not recommend repair, restart, or a permission bypass.
+
+The MCP service can report its own health only while it is reachable. A fully
+stopped MCP service cannot diagnose itself through MCP.
 
 ## Operate a supported control
 
@@ -57,3 +69,5 @@ the requested state was reached.
 - Do not expose access tokens, credentials, private addresses, or session data.
 - If a required tool is unavailable, explain that the connected server or the
   granted scope does not provide the capability.
+- Do not repair, restart, reconfigure, or otherwise modify LoxBerry while
+  diagnosing it.

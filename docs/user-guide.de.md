@@ -49,6 +49,14 @@ erforderlich. Beim Zurückwechseln auf **Nur lesen** werden bestehende
 Control-Sitzungen widerrufen; reine Lesesitzungen bleiben gültig. Bei einem
 Gen.-2-/HTTPS-Ziel kann **Lesen und schalten** nicht aktiviert werden.
 
+**LoxBerry-Diagnose über MCP** ist standardmäßig deaktiviert. Nach der
+Aktivierung muss ein Administrator eine vorhandene reine Lesesitzung freigeben;
+die Freigabe ist exakt an OAuth-Client, Loxone-Identität und Miniserver
+gebunden. Verbinde denselben Client erneut, fordere `loxberry:read` an und
+bestätige den separaten optionalen Consent. Die drei Diagnosen sind nur lesend,
+starten oder reparieren nichts, zeigen keine Logs und lesen keine beliebigen
+Dateien. Der Entzug beendet passende Sitzungen.
+
 ## Agent Skill
 
 Der Server liefert den Agent Skill

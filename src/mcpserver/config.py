@@ -22,6 +22,8 @@ DEFAULT_CONNECTION_TIMEOUT: Final = 10.0
 DEFAULT_REQUESTS_PER_MINUTE: Final = 60
 DEFAULT_MAX_PARALLEL_CALLS: Final = 4
 DEFAULT_CONTROL_REQUESTS_PER_MINUTE: Final = 10
+DEFAULT_LOXBERRY_REQUESTS_PER_MINUTE: Final = 30
+MAX_LOXBERRY_READ_BINDINGS: Final = 64
 DEFAULT_LOG_LEVEL: Final = "warning"
 SUPPORTED_LOG_LEVELS: Final = frozenset({"off", "error", "warning", "info", "debug"})
 
@@ -63,6 +65,23 @@ def _log_level(value: object) -> str:
     return value
 
 
+def _loxberry_read_bindings(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list) or len(value) > MAX_LOXBERRY_READ_BINDINGS:
+        raise ConfigError("policies.loxberry_read_bindings is unsupported")
+    bindings: list[str] = []
+    for binding in value:
+        if not isinstance(binding, str) or len(binding) != 64:
+            raise ConfigError("policies.loxberry_read_bindings is unsupported")
+        try:
+            int(binding, 16)
+        except ValueError as exc:
+            raise ConfigError("policies.loxberry_read_bindings is unsupported") from exc
+        if binding.lower() != binding or binding in bindings:
+            raise ConfigError("policies.loxberry_read_bindings is unsupported")
+        bindings.append(binding)
+    return tuple(bindings)
+
+
 @dataclass(frozen=True, slots=True)
 class PluginConfig:
     """The small public Phase 1 configuration contract."""
@@ -73,10 +92,13 @@ class PluginConfig:
     connection_timeout: float = DEFAULT_CONNECTION_TIMEOUT
     loxone_read_enabled: bool = True
     loxone_control_enabled: bool = False
+    loxberry_read_enabled: bool = False
     requests_per_minute: int = DEFAULT_REQUESTS_PER_MINUTE
     control_requests_per_minute: int = DEFAULT_CONTROL_REQUESTS_PER_MINUTE
+    loxberry_requests_per_minute: int = DEFAULT_LOXBERRY_REQUESTS_PER_MINUTE
     max_parallel_calls: int = DEFAULT_MAX_PARALLEL_CALLS
     log_level: str = DEFAULT_LOG_LEVEL
+    loxberry_read_bindings: tuple[str, ...] = ()
     _source: dict[str, Any] | None = None
 
     @classmethod
@@ -92,6 +114,7 @@ class PluginConfig:
         loxone = _mapping(root.get("loxone", {}), name="loxone")
         tools = _mapping(root.get("tools", {}), name="tools")
         limits = _mapping(root.get("limits", {}), name="limits")
+        policies = _mapping(root.get("policies", {}), name="policies")
         logging_config = _mapping(root.get("logging", {}), name="logging")
 
         enabled = _boolean(server.get("enabled", False), name="server.enabled")
@@ -149,6 +172,9 @@ class PluginConfig:
         control_enabled = _boolean(
             tools.get("loxone_control_enabled", False), name="tools.loxone_control_enabled"
         )
+        loxberry_read_enabled = _boolean(
+            tools.get("loxberry_read_enabled", False), name="tools.loxberry_read_enabled"
+        )
         if enabled and not read_enabled:
             raise ConfigError("the Phase 1 service requires tools.loxone_read_enabled")
         if control_enabled and endpoint and MiniserverEndpoint.parse(endpoint).secure:
@@ -165,6 +191,12 @@ class PluginConfig:
             minimum=1,
             maximum=60,
         )
+        loxberry_requests = _integer(
+            limits.get("loxberry_requests_per_minute", DEFAULT_LOXBERRY_REQUESTS_PER_MINUTE),
+            name="limits.loxberry_requests_per_minute",
+            minimum=1,
+            maximum=60,
+        )
         parallel = _integer(
             limits.get("max_parallel_calls", DEFAULT_MAX_PARALLEL_CALLS),
             name="limits.max_parallel_calls",
@@ -172,6 +204,7 @@ class PluginConfig:
             maximum=32,
         )
         log_level = _log_level(logging_config.get("level", DEFAULT_LOG_LEVEL))
+        loxberry_read_bindings = _loxberry_read_bindings(policies.get("loxberry_read_bindings", []))
         return cls(
             enabled=enabled,
             public_origin=public_origin,
@@ -179,17 +212,20 @@ class PluginConfig:
             connection_timeout=timeout,
             loxone_read_enabled=read_enabled,
             loxone_control_enabled=control_enabled,
+            loxberry_read_enabled=loxberry_read_enabled,
             requests_per_minute=requests,
             control_requests_per_minute=control_requests,
+            loxberry_requests_per_minute=loxberry_requests,
             max_parallel_calls=parallel,
             log_level=log_level,
+            loxberry_read_bindings=loxberry_read_bindings,
             _source=copy.deepcopy(root),
         )
 
     def to_document(self) -> dict[str, Any]:
         document = copy.deepcopy(self._source) if self._source is not None else {}
         document["schema_version"] = SCHEMA_VERSION
-        for key in ("server", "loxone", "tools", "limits", "logging"):
+        for key in ("server", "loxone", "tools", "limits", "logging", "policies"):
             current = document.get(key)
             if not isinstance(current, dict):
                 document[key] = {}
@@ -199,11 +235,14 @@ class PluginConfig:
         document["loxone"]["connection_timeout"] = self.connection_timeout
         document["tools"]["loxone_read_enabled"] = self.loxone_read_enabled
         document["tools"]["loxone_control_enabled"] = self.loxone_control_enabled
+        document["tools"]["loxberry_read_enabled"] = self.loxberry_read_enabled
         document["limits"]["requests_per_minute"] = self.requests_per_minute
         document["limits"]["control_requests_per_minute"] = self.control_requests_per_minute
+        document["limits"]["loxberry_requests_per_minute"] = self.loxberry_requests_per_minute
         document["limits"]["max_parallel_calls"] = self.max_parallel_calls
         document["logging"]["level"] = self.log_level
         document["logging"].pop("debug_until", None)
+        document["policies"]["loxberry_read_bindings"] = list(self.loxberry_read_bindings)
         return document
 
 

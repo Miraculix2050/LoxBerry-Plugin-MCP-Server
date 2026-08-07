@@ -107,6 +107,7 @@
         <label class="mcp-field"><span><TMPL_VAR SETUP.TIMEOUT></span><input name="connection_timeout" type="number" min="1" max="60" value="<TMPL_VAR CONNECTION_TIMEOUT ESCAPE=HTML>"></label>
         <label class="mcp-field"><span><TMPL_VAR SETUP.RATE></span><input name="requests_per_minute" type="number" min="1" max="600" value="<TMPL_VAR REQUESTS_PER_MINUTE ESCAPE=HTML>"></label>
         <label class="mcp-field"><span><TMPL_VAR SETUP.CONTROL_RATE></span><input name="control_requests_per_minute" type="number" min="1" max="60" value="<TMPL_VAR CONTROL_REQUESTS_PER_MINUTE ESCAPE=HTML>"></label>
+        <label class="mcp-field"><span><TMPL_VAR SETUP.LOXBERRY_RATE></span><input name="loxberry_requests_per_minute" type="number" min="1" max="60" value="<TMPL_VAR LOXBERRY_REQUESTS_PER_MINUTE ESCAPE=HTML>"></label>
         <label class="mcp-field"><span><TMPL_VAR SETUP.PARALLEL></span><input name="max_parallel_calls" type="number" min="1" max="32" value="<TMPL_VAR MAX_PARALLEL_CALLS ESCAPE=HTML>"></label>
       </div>
       <label><input name="enabled" type="checkbox" value="1" <TMPL_IF ENABLED>checked</TMPL_IF>> <TMPL_VAR SETUP.ENABLED></label>
@@ -118,6 +119,14 @@
         </select>
       </label>
       <p class="mcp-warning"><TMPL_VAR SETUP.CONTROL_WARNING></p>
+      <label class="mcp-field">
+        <span><TMPL_VAR SETUP.LOXBERRY_MODE></span>
+        <select name="loxberry_read_enabled">
+          <option value="0" <TMPL_UNLESS LOXBERRY_READ_ENABLED>selected</TMPL_UNLESS>><TMPL_VAR SETUP.LOXBERRY_DISABLED></option>
+          <option value="1" <TMPL_IF LOXBERRY_READ_ENABLED>selected</TMPL_IF>><TMPL_VAR SETUP.LOXBERRY_ENABLED></option>
+        </select>
+      </label>
+      <p class="mcp-warning"><TMPL_VAR SETUP.LOXBERRY_WARNING></p>
       <div class="mcp-actions">
         <button class="lb-button" type="submit"><TMPL_VAR ACTION.SAVE></button>
       </div>
@@ -187,7 +196,7 @@
     <div id="session-list">
     <TMPL_IF HAS_SESSIONS>
       <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.SCOPES></th><th><TMPL_VAR SESSIONS.EXPIRES></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody>
-      <TMPL_LOOP SESSIONS><tr data-session-id="<TMPL_VAR id ESCAPE=HTML>"><td><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML><TMPL_ELSE><TMPL_VAR SESSIONS.UNNAMED></TMPL_IF></td><td><code><TMPL_VAR client ESCAPE=HTML></code></td><td><code><TMPL_VAR identity ESCAPE=HTML></code></td><td><code><TMPL_VAR scopes ESCAPE=HTML></code></td><td><time class="mcp-expiry" data-expires-at="<TMPL_VAR expires_at ESCAPE=HTML>"><TMPL_VAR expires_display ESCAPE=HTML></time></td><td><form method="post" action="index.cgi" data-ajax="revoke_session"><input type="hidden" name="action" value="revoke_session"><input type="hidden" name="id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form></td></tr></TMPL_LOOP>
+      <TMPL_LOOP SESSIONS><tr data-session-id="<TMPL_VAR id ESCAPE=HTML>"><td><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML><TMPL_ELSE><TMPL_VAR SESSIONS.UNNAMED></TMPL_IF></td><td><code><TMPL_VAR client ESCAPE=HTML></code></td><td><code><TMPL_VAR identity ESCAPE=HTML></code></td><td><code><TMPL_VAR scopes ESCAPE=HTML></code></td><td><time class="mcp-expiry" data-expires-at="<TMPL_VAR expires_at ESCAPE=HTML>"><TMPL_VAR expires_display ESCAPE=HTML></time></td><td><TMPL_UNLESS loxberry_read_approved><form method="post" action="index.cgi" data-ajax="allow_loxberry_read"><input type="hidden" name="action" value="allow_loxberry_read"><input type="hidden" name="session_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.ALLOW_LOXBERRY_READ></button></form></TMPL_UNLESS><form method="post" action="index.cgi" data-ajax="revoke_session"><input type="hidden" name="action" value="revoke_session"><input type="hidden" name="id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form></td></tr></TMPL_LOOP>
       </tbody></table></div>
       <form method="post" action="index.cgi" data-ajax="revoke_all"><input type="hidden" name="action" value="revoke_all"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE_ALL></button></form>
     <TMPL_ELSE><p><TMPL_VAR SESSIONS.EMPTY></p></TMPL_IF>
@@ -196,6 +205,13 @@
       <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.SCOPES></th><th><TMPL_VAR SESSIONS.EXPIRES></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody></tbody></table></div>
       <form method="post" action="index.cgi" data-ajax="revoke_all"><input type="hidden" name="action" value="revoke_all"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE_ALL></button></form>
     </template>
+    <TMPL_IF LOXBERRY_BINDINGS>
+      <h3><TMPL_VAR SESSIONS.LOXBERRY_APPROVALS></h3>
+      <ul class="mcp-list"><TMPL_LOOP LOXBERRY_BINDINGS><li><code><TMPL_VAR fingerprint ESCAPE=HTML></code> <TMPL_IF active><TMPL_VAR SESSIONS.ACTIVE><TMPL_ELSE><TMPL_VAR SESSIONS.INACTIVE></TMPL_IF>
+        <form method="post" action="index.cgi" data-ajax="revoke_loxberry_read"><input type="hidden" name="action" value="revoke_loxberry_read"><input type="hidden" name="binding_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form>
+      </li></TMPL_LOOP></ul>
+      <p class="mcp-help"><TMPL_VAR SESSIONS.LOXBERRY_REVOKE_HINT></p>
+    </TMPL_IF>
     </div>
   </details>
 
