@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -619,9 +620,13 @@ def test_release_candidate_builds_plugin_archive_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     build_calls: list[tuple[str, ...]] = []
+    test_environments: list[dict[str, str]] = []
 
     def run(*arguments: str, root: Path, environment: dict[str, str] | None = None) -> None:
-        del root, environment
+        del root
+        if "tools/test.py" in arguments:
+            assert environment is not None
+            test_environments.append(environment)
         if "tools/build_plugin.py" in arguments:
             build_calls.append(arguments)
             output = Path(arguments[arguments.index("--output") + 1])
@@ -633,9 +638,17 @@ def test_release_candidate_builds_plugin_archive_once(
         "argv",
         ["build_release_candidate.py", "--output-dir", str(tmp_path)],
     )
+    monkeypatch.setenv("PYTEST_ADDOPTS", "--maxfail=1")
 
     assert build_release_candidate() == 0
     assert len(build_calls) == 1
+    assert len(test_environments) == 1
+    pytest_options = test_environments[0]["PYTEST_ADDOPTS"]
+    parsed_options = shlex.split(pytest_options)
+    assert parsed_options[-2:] == ["-p", "no:cacheprovider"]
+    basetemp = Path(parsed_options[0].removeprefix("--basetemp="))
+    assert basetemp.is_absolute()
+    assert not basetemp.exists()
 
 
 def test_prepare_runtime_wheelhouse_skips_project_wheel(
