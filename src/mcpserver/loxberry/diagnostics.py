@@ -90,7 +90,7 @@ class LoxBerryDiagnostics:
         if total is None or available is None or total <= 0 or available > total or not processors:
             raise DiagnosticsUnavailable("diagnostic source unavailable")
         try:
-            stats = os.statvfs(self._home)  # type: ignore[attr-defined]
+            stats = getattr(os, "statvfs")(self._home)  # noqa: B009
             storage_total = stats.f_frsize * stats.f_blocks / (1024 * 1024)
             storage_available = stats.f_frsize * stats.f_bavail / (1024 * 1024)
         except OSError as exc:

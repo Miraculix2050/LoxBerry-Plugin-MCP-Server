@@ -17,9 +17,45 @@ from mcpserver.tools import (
     _page,
     _result,
     register_control_tool,
+    register_loxberry_read_tools,
     register_read_tools,
     register_skill_tool,
 )
+
+
+def test_loxberry_tool_contracts_have_closed_output_schemas() -> None:
+    class Runtime:
+        async def system_status(self, access: object) -> dict[str, object]:
+            return {}
+
+        async def plugin_status(self, access: object) -> dict[str, object]:
+            return {}
+
+        async def service_health(self, access: object) -> dict[str, object]:
+            return {}
+
+    server = FastMCP("loxberry-contract")
+    register_loxberry_read_tools(server, Runtime())  # type: ignore[arg-type]
+    published = {tool.name: tool for tool in server._tool_manager.list_tools()}
+
+    assert set(published) == {
+        "loxberry_get_system_status",
+        "loxberry_get_plugin_status",
+        "loxberry_get_service_health",
+    }
+    for tool in published.values():
+        assert tool.parameters["properties"] == {}
+        assert tool.annotations is not None
+        assert tool.annotations.readOnlyHint is True
+        assert tool.annotations.destructiveHint is False
+        assert tool.annotations.openWorldHint is False
+        data_schema = next(
+            item
+            for item in tool.output_schema["properties"]["data"]["anyOf"]
+            if item["$ref"].endswith("Data") and not item["$ref"].endswith("ErrorData")
+        )
+        data_name = data_schema["$ref"].rsplit("/", 1)[-1]
+        assert tool.output_schema["$defs"][data_name]["additionalProperties"] is False
 
 
 def test_read_results_and_expected_errors_are_debug_only(

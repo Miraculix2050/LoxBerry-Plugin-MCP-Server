@@ -17,7 +17,7 @@ from uuid import uuid4
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
-from pydantic import BaseModel, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from mcpserver.auth.provider import CONTROL_SCOPE, LOXBERRY_READ_SCOPE, StoredAccessToken
 from mcpserver.loxberry.diagnostics import DiagnosticsUnavailable, LoxBerryDiagnostics
@@ -189,16 +189,62 @@ class ControlOperationEnvelope(ToolEnvelope):
     data: ControlOperationData | ErrorData
 
 
+class LoxBerryCpuData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    logical_processors: int
+    load_1m: float
+
+
+class LoxBerryMemoryData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    total_mib: float
+    available_mib: float
+    used_percent: float
+
+
+class LoxBerryStorageData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    total_mib: float
+    available_mib: float
+    used_percent: float
+
+
+class LoxBerrySystemStatusData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    loxberry_version: str
+    uptime_seconds: int
+    cpu: LoxBerryCpuData
+    memory: LoxBerryMemoryData
+    storage: LoxBerryStorageData
+
+
+class LoxBerryPluginStatusData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    plugin_version: str
+    service_enabled: bool
+    runtime_status: Literal["ready"]
+    configuration_status: Literal["valid"]
+
+
+class LoxBerryServiceHealthData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    service_name: Literal["loxberry-mcpserver"]
+    installed: bool
+    active_state: str
+    sub_state: str
+    healthy: bool
+
+
 class LoxBerrySystemStatusEnvelope(ToolEnvelope):
-    data: dict[str, Any] | ErrorData
+    data: LoxBerrySystemStatusData | ErrorData
 
 
 class LoxBerryPluginStatusEnvelope(ToolEnvelope):
-    data: dict[str, Any] | ErrorData
+    data: LoxBerryPluginStatusData | ErrorData
 
 
 class LoxBerryServiceHealthEnvelope(ToolEnvelope):
-    data: dict[str, Any] | ErrorData
+    data: LoxBerryServiceHealthData | ErrorData
 
 
 def _now() -> str:

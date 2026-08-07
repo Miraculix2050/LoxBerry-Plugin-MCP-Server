@@ -9,6 +9,7 @@ import pytest
 
 from mcpserver.admin import (
     AdminError,
+    _allow_loxberry_read,
     _renew_certificate,
     _revoke,
     _save,
@@ -17,6 +18,7 @@ from mcpserver.admin import (
     dispatch,
 )
 from mcpserver.auth.loxone_store import LoxoneTokenStoreError
+from mcpserver.auth.provider import CONTROL_SCOPE, READ_SCOPE
 from mcpserver.auth.store import AtomicJsonAuthStore
 from mcpserver.config import AtomicConfigStore, PluginConfig
 from mcpserver.loxone.client import LoxoneToken
@@ -57,6 +59,30 @@ def test_diagnostic_contains_no_paths_endpoint_or_identity(
 def test_admin_rejects_unknown_actions() -> None:
     with pytest.raises(Exception, match="not supported"):
         dispatch({"action": "delete_everything"})
+
+
+def test_loxberry_approval_rejects_control_scoped_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = (tmp_path / "config" / "mcpserver.json").resolve()
+    auth_path = (tmp_path / "data" / "auth" / "sessions.json").resolve()
+    AtomicConfigStore(config_path).save(PluginConfig.defaults())
+    auth_store = AtomicJsonAuthStore(auth_path)
+    auth_store.mutate(
+        lambda document: document["families"].update(
+            {
+                "control-family": {
+                    "scope": f"{READ_SCOPE} {CONTROL_SCOPE}",
+                    "revoked": False,
+                }
+            }
+        )
+    )
+    monkeypatch.setenv("MCPSERVER_CONFIG", str(config_path))
+    monkeypatch.setenv("MCPSERVER_AUTH_STORE", str(auth_path))
+
+    with pytest.raises(AdminError, match="read-only session"):
+        _allow_loxberry_read({"session_id": "control-family"})
 
 
 def test_page_state_aggregates_initial_admin_ui_data(monkeypatch: pytest.MonkeyPatch) -> None:

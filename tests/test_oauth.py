@@ -22,6 +22,7 @@ from mcpserver.auth.provider import (
     CONTROL_SCOPE,
     EXPLORER_CLIENT_NAME,
     EXPLORER_REFRESH_FAMILY_TTL,
+    LOXBERRY_READ_SCOPE,
     READ_SCOPE,
     REFRESH_FAMILY_TTL,
     SCOPE,
@@ -52,6 +53,21 @@ def test_control_scope_is_additive_and_never_granted_alone() -> None:
         normalize_scopes(CONTROL_SCOPE, control_enabled=True)
     with pytest.raises(ValueError):
         normalize_scopes(f"{READ_SCOPE} {CONTROL_SCOPE}", control_enabled=False)
+
+
+def test_loxberry_scope_is_additive_and_disabled_by_default() -> None:
+    assert normalize_scopes(
+        f"{LOXBERRY_READ_SCOPE} {READ_SCOPE}",
+        control_enabled=False,
+        loxberry_read_enabled=True,
+    ) == (READ_SCOPE, LOXBERRY_READ_SCOPE)
+    with pytest.raises(ValueError):
+        normalize_scopes(
+            f"{READ_SCOPE} {LOXBERRY_READ_SCOPE}",
+            control_enabled=False,
+        )
+    with pytest.raises(ValueError):
+        normalize_scopes(LOXBERRY_READ_SCOPE, control_enabled=False, loxberry_read_enabled=True)
 
 
 def test_disabled_control_scope_is_locally_revoked_without_deleting_remote_token(

@@ -365,6 +365,8 @@ def _sessions() -> list[dict[str, Any]]:
         if record.get("revoked"):
             continue
         client_id = str(record.get("client_id", ""))
+        scopes = str(record.get("scope", "loxone:read"))
+        read_only = scopes.split() == ["loxone:read"]
         client = clients.get(client_id, {})
         client_name = client.get("client_name", "") if isinstance(client, dict) else ""
         result.append(
@@ -375,10 +377,13 @@ def _sessions() -> list[dict[str, Any]]:
                     client_name if isinstance(client_name, str) and client_name.strip() else ""
                 ),
                 "identity": str(record.get("identity_id", ""))[:12],
-                "scopes": str(record.get("scope", "loxone:read")),
+                "scopes": scopes,
                 "expires_at": record.get("expires_at"),
                 "revoked": bool(record.get("revoked", False)),
-                "loxberry_read_approved": bool(bindings) and _loxberry_binding(record) in bindings,
+                "loxberry_read_eligible": read_only,
+                "loxberry_read_approved": read_only
+                and bool(bindings)
+                and _loxberry_binding(record) in bindings,
             }
         )
     return sorted(result, key=lambda item: str(item["id"]))
@@ -421,7 +426,7 @@ def _allow_loxberry_read(payload: object) -> dict[str, Any]:
     if (
         not isinstance(record, dict)
         or record.get("revoked", False)
-        or "loxone:read" not in str(record.get("scope", "loxone:read")).split()
+        or str(record.get("scope", "loxone:read")).split() != ["loxone:read"]
     ):
         raise AdminError("read-only session is unavailable")
     binding = _loxberry_binding(record)
