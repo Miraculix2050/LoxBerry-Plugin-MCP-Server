@@ -28,7 +28,11 @@ release_json="$(mktemp)"
 load_release() {
   gh release view "$TAG" --repo "$REPOSITORY" \
     --json databaseId,name,body,isDraft,assets |
-    jq '. + {id: .databaseId}'
+    jq '. + {
+      id: .databaseId,
+      draft: .isDraft,
+      assets: [.assets[] | . + {id: (.apiUrl | split("/") | last)}]
+    }'
 }
 
 if load_release >"$release_json" 2>/dev/null; then
