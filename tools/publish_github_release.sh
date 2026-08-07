@@ -25,7 +25,17 @@ else
 fi
 
 release_json="$(mktemp)"
-if gh api "repos/$REPOSITORY/releases/tags/$TAG" >"$release_json" 2>/dev/null; then
+load_release() {
+  gh release view "$TAG" --repo "$REPOSITORY" \
+    --json databaseId,name,body,isDraft,assets |
+    jq '. + {
+      id: .databaseId,
+      draft: .isDraft,
+      assets: [.assets[] | . + {id: (.apiUrl | split("/") | last)}]
+    }'
+}
+
+if load_release >"$release_json" 2>/dev/null; then
   if [[ "$(jq -r .draft "$release_json")" != "true" ]]; then
     echo "Published release $TAG already exists and will not be modified." >&2
     exit 1
@@ -33,7 +43,7 @@ if gh api "repos/$REPOSITORY/releases/tags/$TAG" >"$release_json" 2>/dev/null; t
 else
   gh release create "$TAG" --draft --verify-tag \
     --title "LoxBerry MCP Server $VERSION" --notes-file "$NOTES"
-  gh api "repos/$REPOSITORY/releases/tags/$TAG" >"$release_json"
+  load_release >"$release_json"
 fi
 
 expected_title="LoxBerry MCP Server $VERSION"
@@ -69,7 +79,7 @@ for asset in "$ARCHIVE" "$SIDECAR"; do
   fi
 done
 
-gh api "repos/$REPOSITORY/releases/tags/$TAG" >"$release_json"
+load_release >"$release_json"
 for asset in "$ARCHIVE" "$SIDECAR"; do
   name="$(basename "$asset")"
   asset_id="$(jq -r --arg name "$name" '.assets[] | select(.name == $name) | .id' "$release_json")"
