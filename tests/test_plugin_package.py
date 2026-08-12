@@ -162,8 +162,8 @@ def test_v4_package_manifest_is_present() -> None:
 def test_healthcheck_emits_loxberry_terminal_status_markers() -> None:
     healthcheck = (ROOT / "bin/healthcheck").read_text(encoding="utf-8")
 
-    assert '<ERROR> LoxBerry MCP Server health check failed.' in healthcheck
-    assert '<OK> LoxBerry MCP Server health check passed.' in healthcheck
+    assert "<ERROR> LoxBerry MCP Server health check failed." in healthcheck
+    assert "<OK> LoxBerry MCP Server health check passed." in healthcheck
 
 
 def test_upgrade_preserves_configuration_in_plugin_data() -> None:
