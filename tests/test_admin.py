@@ -12,6 +12,7 @@ from mcpserver.admin import (
     _allow_loxberry_operate,
     _allow_loxberry_read,
     _loxberry_bindings,
+    _loxberry_operate_bindings,
     _renew_certificate,
     _revoke,
     _revoke_loxberry_operate,
@@ -298,6 +299,43 @@ def test_loxberry_bindings_include_a_revocable_inactive_fallback(
             "inactive": True,
         }
     ]
+
+
+def test_loxberry_operate_bindings_ignore_read_only_families(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = (tmp_path / "config" / "mcpserver.json").resolve()
+    auth_path = (tmp_path / "data" / "auth" / "sessions.json").resolve()
+    auth_store = AtomicJsonAuthStore(auth_path)
+    binding = auth_store.pseudonym(
+        "loxberry-operate-binding-v1", "client", "identity", "miniserver"
+    )
+    AtomicConfigStore(config_path).save(
+        PluginConfig.from_document(
+            {"schema_version": 1, "policies": {"loxberry_operate_bindings": [binding]}}
+        )
+    )
+    auth_store.mutate(
+        lambda document: document["families"].update(
+            {
+                "read-family": {
+                    "scope": f"{READ_SCOPE} {LOXBERRY_READ_SCOPE}",
+                    "client_id": "client",
+                    "identity_id": "identity",
+                    "miniserver_id": "miniserver",
+                    "expires_at": 2_000_000_000,
+                    "revoked": False,
+                }
+            }
+        )
+    )
+    monkeypatch.setenv("MCPSERVER_CONFIG", str(config_path))
+    monkeypatch.setenv("MCPSERVER_AUTH_STORE", str(auth_path))
+
+    binding_data = _loxberry_operate_bindings()[0]
+
+    assert binding_data["active"] is False
+    assert binding_data["sessions"] == []
 
 
 def test_page_state_aggregates_initial_admin_ui_data(monkeypatch: pytest.MonkeyPatch) -> None:

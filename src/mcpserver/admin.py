@@ -541,6 +541,8 @@ def _loxberry_bindings() -> list[dict[str, Any]]:
 
 
 def _loxberry_operate_bindings() -> list[dict[str, Any]]:
+    from mcpserver.auth.provider import LOXBERRY_OPERATE_SCOPE
+
     try:
         bindings = _config_store().load().loxberry_operate_bindings
     except AdminError:
@@ -555,6 +557,8 @@ def _loxberry_operate_bindings() -> list[dict[str, Any]]:
         if not isinstance(record, dict) or record.get("revoked", False):
             continue
         if not isinstance(record.get("expires_at"), int | float) or record["expires_at"] <= now:
+            continue
+        if LOXBERRY_OPERATE_SCOPE not in str(record.get("scope", "")).split():
             continue
         binding = _loxberry_operate_binding(record)
         if binding not in related:
