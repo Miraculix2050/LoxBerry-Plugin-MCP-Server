@@ -679,6 +679,8 @@ def _allow_loxberry_operate(payload: object) -> dict[str, Any]:
 
 
 def _revoke_loxberry_operate(payload: object) -> dict[str, Any]:
+    from mcpserver.auth.provider import LOXBERRY_OPERATE_SCOPE
+
     binding = payload.get("binding_id") if isinstance(payload, dict) else None
     if not isinstance(binding, str) or len(binding) != 64:
         raise AdminError("LoxBerry operation approval is invalid")
@@ -700,6 +702,7 @@ def _revoke_loxberry_operate(payload: object) -> dict[str, Any]:
         for family_id, record in document.get("families", {}).items()
         if isinstance(record, dict)
         and not record.get("revoked", False)
+        and LOXBERRY_OPERATE_SCOPE in str(record.get("scope", "")).split()
         and _loxberry_operate_binding(record) == binding
     ]
     if families:

@@ -480,7 +480,7 @@ class LoxoneRuntime:
                 yield control, session
             except ControlOperationError:
                 raise
-            except (LoxoneConnectionError, LoxoneProtocolError) as exc:
+            except (LoxoneConnectionError, LoxoneProtocolError, TimeoutError) as exc:
                 raise ControlOperationError(
                     "loxone_unreachable", "Miniserver connection failed"
                 ) from exc
@@ -578,7 +578,7 @@ class LoxoneRuntime:
                     "temporarily_unavailable",
                     f"Miniserver returned invalid statistic data: {exc}",
                 ) from exc
-            except (LoxoneConnectionError, ValueError) as exc:
+            except (LoxoneConnectionError, TimeoutError, ValueError) as exc:
                 raise ControlOperationError(
                     "temporarily_unavailable", "Statistic data could not be read"
                 ) from exc
@@ -593,7 +593,7 @@ class LoxoneRuntime:
                 raise ControlOperationError("not_found", "control history is not available")
             try:
                 raw = await session.control_history(control.action_uuid)
-            except (LoxoneConnectionError, LoxoneProtocolError, ValueError) as exc:
+            except (LoxoneConnectionError, LoxoneProtocolError, TimeoutError, ValueError) as exc:
                 raise ControlOperationError(
                     "temporarily_unavailable", "Control history could not be read"
                 ) from exc
@@ -655,7 +655,12 @@ class LoxoneRuntime:
                     return control, notes
                 except ControlOperationError:
                     raise
-                except (LoxoneConnectionError, LoxoneProtocolError, ValueError) as exc:
+                except (
+                    LoxoneConnectionError,
+                    LoxoneProtocolError,
+                    TimeoutError,
+                    ValueError,
+                ) as exc:
                     raise ControlOperationError(
                         "temporarily_unavailable", "Control notes could not be read"
                     ) from exc

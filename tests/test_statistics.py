@@ -11,7 +11,11 @@ import pytest
 from mcpserver.auth.provider import HISTORY_SCOPE, READ_SCOPE, StoredAccessToken
 from mcpserver.loxone.events import LoxoneProtocolError
 from mcpserver.loxone.models import Control, StatisticSeries
-from mcpserver.loxone.runtime import LoxoneRuntime, _parse_legacy_statistic_points
+from mcpserver.loxone.runtime import (
+    ControlOperationError,
+    LoxoneRuntime,
+    _parse_legacy_statistic_points,
+)
 from mcpserver.loxone.statistics import (
     StatisticPoint,
     StatisticsCache,
@@ -162,6 +166,63 @@ async def test_runtime_ignores_history_timestamps_outside_supported_range() -> N
     _control, entries = await runtime.get_control_history(access, "control-1")
 
     assert [entry.timestamp for entry in entries] == [1_700_000_000]
+
+
+@pytest.mark.asyncio
+async def test_runtime_translates_history_and_statistic_timeouts() -> None:
+    series = StatisticSeries("series", "v2", "1", "1", "Temperature", "%.1f °C")
+    control = Control(
+        "control-1",
+        "History",
+        "InfoOnlyAnalog",
+        None,
+        None,
+        "action-1",
+        (),
+        has_history=True,
+        statistic_series=(series,),
+    )
+    access = StoredAccessToken(
+        token="opaque",
+        client_id="client",
+        scopes=[READ_SCOPE, HISTORY_SCOPE],
+        expires_at=2_000_000_000,
+        resource="https://loxberry.local/plugins/mcpserver/mcp",
+        subject="identity",
+        claims={},
+        family_id="family",
+        identity_id="identity",
+        miniserver_id="miniserver",
+    )
+
+    class HistoryTimeoutSession:
+        async def control_history(self, _action_uuid: str) -> list[dict[str, object]]:
+            raise TimeoutError
+
+    class StatisticTimeoutSession:
+        async def statistic_info(self, _control_uuid: str) -> list[dict[str, object]]:
+            raise TimeoutError
+
+    runtime = object.__new__(LoxoneRuntime)
+    runtime.statistics_cache = StatisticsCache(None)
+
+    @asynccontextmanager
+    async def history_session(_access: StoredAccessToken, _control_uuid: str):
+        yield control, HistoryTimeoutSession()
+
+    runtime._history_session = history_session  # type: ignore[method-assign]
+    with pytest.raises(ControlOperationError, match="Control history could not be read"):
+        await runtime.get_control_history(access, "control-1")
+
+    @asynccontextmanager
+    async def statistic_session(_access: StoredAccessToken, _control_uuid: str):
+        yield control, StatisticTimeoutSession()
+
+    runtime._history_session = statistic_session  # type: ignore[method-assign]
+    with pytest.raises(ControlOperationError, match="Statistic data could not be read"):
+        await runtime.get_statistics(
+            access, "control-1", "series", 1_700_000_000, 1_700_000_001, "raw"
+        )
 
 
 def test_statistics_cache_expires_memory_and_clears_private_hybrid_files(
