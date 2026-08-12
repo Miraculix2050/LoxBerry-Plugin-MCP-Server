@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 import pytest
+from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.fastmcp import FastMCP
 
 import mcpserver.tools as tools_module
@@ -342,20 +343,18 @@ async def test_statistics_limit_is_enforced_at_runtime() -> None:
     server = FastMCP("statistics-limit")
     register_history_tools(server, Runtime())  # type: ignore[arg-type]
 
-    result = await server._tool_manager.call_tool(
-        "loxone_get_statistics",
-        {
-            "control_uuid": "control",
-            "series_id": "series",
-            "start": "2026-01-01T00:00:00Z",
-            "end": "2026-01-02T00:00:00Z",
-            "granularity": "raw",
-            "limit": 501,
-        },
-    )
-
-    assert result.ok is False
-    assert result.data.error == "invalid_input"  # type: ignore[union-attr]
+    with pytest.raises(ToolError, match="less than or equal to 500"):
+        await server._tool_manager.call_tool(
+            "loxone_get_statistics",
+            {
+                "control_uuid": "control",
+                "series_id": "series",
+                "start": "2026-01-01T00:00:00Z",
+                "end": "2026-01-02T00:00:00Z",
+                "granularity": "raw",
+                "limit": 501,
+            },
+        )
 
 
 @pytest.mark.asyncio
