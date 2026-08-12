@@ -121,7 +121,7 @@ the browser consent page before approving access.
 > safe default. The evidence is recorded in the
 > [Phase-2 acceptance report](../development/phase-2-acceptance.md).
 
-This section applies only when **Read and switch** was deliberately selected
+This section applies only when **Read and control** was deliberately selected
 under **Miniserver access through the MCP server** in the plugin UI. It is
 unnecessary for normal read access.
 
@@ -134,7 +134,7 @@ loxone:read loxone:control
 `loxone:control` alone is invalid. Existing read-only sessions never receive the
 additional scope automatically.
 
-1. Select **Read and switch** in the plugin and save the configuration.
+1. Select **Read and control** in the plugin and save the configuration.
 2. Create the local folder `C:\Users\Public\LoxBerryMCP` and add
    `loxberry-oauth-client.json` with this content:
 

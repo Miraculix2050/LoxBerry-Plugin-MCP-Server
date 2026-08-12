@@ -202,15 +202,62 @@ def test_admin_sections_are_native_persistent_collapsibles() -> None:
     assert "target instanceof HTMLDetailsElement" in template
 
 
-def test_miniserver_access_mode_is_an_explicit_read_or_switch_selection() -> None:
+def test_permission_policy_uses_grouped_scope_labeled_checkboxes() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
 
-    assert '<select name="loxone_control_enabled">' in template
-    assert '<option value="0" <TMPL_UNLESS LOXONE_CONTROL_ENABLED>selected' in template
-    assert '<option value="1" <TMPL_IF LOXONE_CONTROL_ENABLED>selected' in template
-    assert 'name="loxone_control_enabled" type="checkbox"' not in template
-    assert "($q->{loxone_control_enabled} // '') eq '1'" in cgi
+    assert template.index('id="loxone-permissions-heading"') < template.index(
+        'id="loxberry-permissions-heading"'
+    )
+    assert "SETUP.PERMISSIONS_ACTIVE" in template
+    assert "SETUP.PERMISSIONS_OPTION" in template
+    assert "SETUP.PERMISSIONS_SCOPE" in template
+    assert "SETUP.PERMISSIONS_EFFECT" in template
+    assert "SETUP.PERMISSIONS_ALWAYS" in template
+    for field, scope in (
+        ("loxone_history_enabled", "loxone:history"),
+        ("loxone_control_enabled", "loxone:control"),
+        ("loxberry_read_enabled", "loxberry:read"),
+        ("loxberry_operate_enabled", "loxberry:operate"),
+    ):
+        assert f'name="{field}" type="checkbox" value="1"' in template
+        assert f"<code>{scope}</code>" in template
+        assert f"($q->{{{field}}} // '') eq '1'" in cgi
+    assert "<code>loxone:read</code>" in template
+    assert '<select name="loxone_control_enabled">' not in template
+
+
+def test_cache_operation_checkbox_tracks_history_dependency() -> None:
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+
+    assert 'id="loxone-history-enabled"' in template
+    assert 'id="loxberry-operate-enabled"' in template
+    assert "operateEnabled.disabled = !historyEnabled.checked" in template
+    assert "if (operateEnabled.disabled) operateEnabled.checked = false" in template
+    assert "historyEnabled.addEventListener('change', syncOperateDependency)" in template
+    assert template.count("syncOperateDependency();") == 1
+
+
+def test_permission_policy_is_localized_in_german_and_english() -> None:
+    german = (ROOT / "templates/lang/language_de.ini").read_text(encoding="utf-8")
+    english = (ROOT / "templates/lang/language_en.ini").read_text(encoding="utf-8")
+
+    for key in (
+        "PERMISSIONS_ACTIVE",
+        "PERMISSIONS_OPTION",
+        "PERMISSIONS_SCOPE",
+        "PERMISSIONS_EFFECT",
+        "PERMISSIONS_ALWAYS",
+        "READ_DESCRIPTION",
+        "HISTORY_DESCRIPTION",
+        "CONTROL_DESCRIPTION",
+        "LOXBERRY_DESCRIPTION",
+        "OPERATE_DESCRIPTION",
+        "OPERATE_DEPENDENCY",
+        "PERMISSIONS_HINT",
+    ):
+        assert f"{key}=" in german
+        assert f"{key}=" in english
 
 
 def test_miniserver_selection_uses_local_sanitized_loxberry_metadata() -> None:
@@ -345,6 +392,20 @@ def test_sessions_show_client_name_before_the_stable_instance_identifier() -> No
     assert "UNNAMED=Unbenannter OAuth-Client" in german
     assert "INSTANCE=Client instance" in english
     assert "UNNAMED=Unnamed OAuth client" in english
+    assert "LOXBERRY_APPROVALS=Freigegebene Bindungen für loxberry:read" in german
+    assert "LOXBERRY_OPERATE_APPROVALS=Approved bindings for loxberry:operate" in english
+    assert "ALLOW_LOXBERRY_READ=loxberry:read freigeben" in german
+    assert "ALLOW_LOXBERRY_OPERATE=Allow loxberry:operate" in english
+    assert 'id="loxberry-binding-list"' in template
+    assert 'id="loxberry-operate-binding-list"' in template
+    assert "BINDING_ID=Bindungs-ID" in german
+    assert "BINDING_ID=Binding ID" in english
+    assert (
+        "<TMPL_VAR SESSIONS.SCOPES>"
+        not in template[
+            template.index('id="loxberry-binding-section"') : template.index('id="diagnostics"')
+        ]
+    )
 
 
 def test_perl_expiry_formatter_rejects_out_of_range_values_safely() -> None:

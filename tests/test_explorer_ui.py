@@ -223,6 +223,82 @@ def test_explorer_cursor_transfer_and_next_page_preserve_previous_filters() -> N
     )
 
 
+def test_explorer_transfer_uses_the_target_tool_draft_and_invalidates_cursor() -> None:
+    tool = {
+        "name": "statistics",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"control_uuid": {"type": "string"}, "cursor": {"type": "string"}},
+        },
+    }
+    assert run_core(
+        f"core.transferArguments({json.dumps(tool)},'control_uuid','new','direct',null,"
+        "{series_id:'series',cursor:'old'})"
+    ) == {"control_uuid": "new", "series_id": "series"}
+
+
+def test_explorer_sorts_tools_and_prepares_statistics_transfer() -> None:
+    tools = [
+        {
+            "name": "loxberry_clear_statistics_cache",
+            "annotations": {"readOnlyHint": False, "destructiveHint": False},
+        },
+        {
+            "name": "loxone_operate_control",
+            "annotations": {"readOnlyHint": False, "destructiveHint": False},
+        },
+        {
+            "name": "loxone_get_statistics",
+            "annotations": {"readOnlyHint": True, "destructiveHint": False},
+        },
+        {
+            "name": "loxone_describe_control",
+            "annotations": {"readOnlyHint": True, "destructiveHint": False},
+        },
+        {
+            "name": "loxberry_get_system_status",
+            "annotations": {"readOnlyHint": True, "destructiveHint": False},
+        },
+    ]
+    groups = run_core(f"core.sortedToolGroups({json.dumps(tools)})")
+    assert [group["id"] for group in groups] == [
+        "loxoneRead",
+        "loxoneHistory",
+        "loxoneControl",
+        "loxberryRead",
+        "loxberryOperate",
+    ]
+    assert [tool["name"] for tool in groups[0]["tools"]] == [
+        "loxone_describe_control",
+    ]
+    assert [tool["name"] for tool in groups[1]["tools"]] == ["loxone_get_statistics"]
+    assert [tool["name"] for tool in groups[3]["tools"]] == ["loxberry_get_system_status"]
+    assert [tool["name"] for tool in groups[4]["tools"]] == ["loxberry_clear_statistics_cache"]
+
+    result = {
+        "data": {"uuid": "control", "capabilities": {"statistics": [{"series_id": "series"}]}}
+    }
+    assert run_core(
+        "core.statisticsTransfer('loxone_describe_control',"
+        f"{json.dumps(result)},['data','capabilities','statistics',0],{{series_id:'series'}},0)"
+    ) == {
+        "tool": "loxone_get_statistics",
+        "arguments": {
+            "control_uuid": "control",
+            "series_id": "series",
+            "start": "1969-12-31T00:00:00.000Z",
+            "end": "1970-01-01T00:00:00.000Z",
+            "granularity": "raw",
+        },
+    }
+
+
+def test_explorer_converts_datetime_local_values_to_rfc3339() -> None:
+    converted = run_core("core.dateTimeLocalToRfc3339('2026-08-12T12:34')")
+    assert isinstance(converted, str) and converted.endswith("Z")
+    assert run_core(f"core.rfc3339ToDateTimeLocal({json.dumps(converted)})") == "2026-08-12T12:34"
+
+
 def test_explorer_reuse_honours_full_nested_schema() -> None:
     tools = [
         {
@@ -386,6 +462,8 @@ def test_explorer_disconnect_clears_all_in_memory_session_data() -> None:
         "lastResultContext": None,
         "nextPageRequest": None,
         "transferPath": "",
+        "transferRecipe": None,
+        "drafts": {},
     }
 
 
@@ -479,7 +557,7 @@ def test_explorer_client_registration_is_tab_scoped_and_expires_before_server_cl
     registered_at = 1_000_000
     record = run_core(f"core.clientRegistration('{client_id}',{registered_at})")
 
-    assert record == {"version": 1, "clientId": client_id, "registeredAt": registered_at}
+    assert record == {"version": 2, "clientId": client_id, "registeredAt": registered_at}
     encoded = json.dumps(record)
     assert run_core(f"core.validateClientRegistration({encoded},{registered_at})") == record
     assert (
@@ -499,7 +577,15 @@ def test_explorer_client_registration_is_tab_scoped_and_expires_before_server_cl
     assert (
         run_core(
             f"core.validateClientRegistration("
-            f"{json.dumps({'version': 1, 'clientId': 'invalid', 'registeredAt': registered_at})},"
+            f"{json.dumps({'version': 2, 'clientId': 'invalid', 'registeredAt': registered_at})},"
+            f"{registered_at})"
+        )
+        is None
+    )
+    assert (
+        run_core(
+            f"core.validateClientRegistration("
+            f"{json.dumps({'version': 1, 'clientId': client_id, 'registeredAt': registered_at})},"
             f"{registered_at})"
         )
         is None
@@ -597,28 +683,14 @@ def test_explorer_tabs_support_roving_focus_and_arrow_keys() -> None:
     assert "elements.jsonTab.addEventListener('keydown', handleTabKey)" in source
 
 
-def test_explorer_control_option_requires_positive_discovery() -> None:
-    expression = """(() => {
-      const state={controlAvailable:false};
-      const control={value:'control'};
-      const option={disabled:false};
-      const note={hidden:true};
-      core.applyControlAvailability(state,control,option,note,false);
-      const unavailable={state:state.controlAvailable,value:control.value,
-        disabled:option.disabled,noteHidden:note.hidden};
-      core.applyControlAvailability(state,control,option,note,true);
-      return {unavailable,available:{state:state.controlAvailable,
-        disabled:option.disabled,noteHidden:note.hidden}};
-    })()"""
-    assert run_core(expression) == {
-        "unavailable": {
-            "state": False,
-            "value": "read",
-            "disabled": True,
-            "noteHidden": False,
-        },
-        "available": {"state": True, "disabled": False, "noteHidden": True},
-    }
+def test_explorer_scope_validation_accepts_independent_canonical_choices() -> None:
+    assert run_core("core.validExplorerScope('loxone:read')") is True
+    assert run_core("core.validExplorerScope('loxone:read loxone:control loxberry:read')") is True
+    assert (
+        run_core("core.validExplorerScope('loxone:read loxone:history loxberry:operate')") is True
+    )
+    assert run_core("core.validExplorerScope('loxone:read loxberry:operate')") is False
+    assert run_core("core.validExplorerScope('loxone:read loxberry:read loxone:control')") is False
 
 
 def test_explorer_redacts_secret_shaped_arguments() -> None:
@@ -683,26 +755,31 @@ def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
     assert "<dialog" in template
     assert 'id="explorer-confirm-tool"' in template
     assert 'id="explorer-next-page"' in template
+    assert 'id="explorer-history-arguments"' in template
+    assert "data-tool-group-loxone-history=" in template
     assert 'data-help-control-type="<TMPL_VAR EXPLORER.HELP_CONTROL_TYPE ESCAPE=HTML>"' in template
     assert "const description = helpKey ? label(helpKey) : effective.description" in source
-    assert 'id="explorer-access-mode"' in template
-    assert '<option value="read">' in template
-    assert 'id="explorer-control-option" value="control" disabled' in template
+    assert 'id="explorer-access-scopes"' not in template
+    assert 'id="explorer-scope-' not in template
+    assert "<TMPL_VAR EXPLORER.PERMISSIONS_AFTER_LOGIN>" in template
     assert 'id="explorer-origin-warning"' in template
     assert 'id="explorer-origin-link"' in template
     assert "const canonicalUrl = core.canonicalExplorerUrl(" in source
     assert "showConnectionError(_error, label('error'))" in source
     assert "if (canonicalOriginMismatch && stored) clearStoredSession()" in source
     assert 'id="explorer-session-expiry" hidden' in template
-    assert "elements.control.value === 'control-loxberry'" in source
-    assert "'loxone:read loxberry:read'" in source
+    assert "const scope = core.EXPLORER_SCOPE_ORDER.filter" in source
+    assert "const registrationScope = scope" in source
+    assert "supported.delete('loxberry:operate')" in source
+    assert "state.selectedTool.name === 'loxberry_clear_statistics_cache'" in source
+    assert "elements.historyArguments.hidden = !historySource" in source
     assert "function clientStorageKey()" in source
     assert "Cache_Control => 'no-store'" in callback
     assert "frame-ancestors 'none'" in callback
     assert "window.history.replaceState" in callback
 
 
-def test_explorer_initial_discovery_updates_all_optional_scope_choices() -> None:
+def test_explorer_initial_discovery_has_no_pre_login_permission_choice() -> None:
     source = SCRIPT.read_text(encoding="utf-8")
     initial_discovery = source[
         source.index("(async () => {", source.index("selectTab(false, false);")) : source.index(
@@ -710,8 +787,8 @@ def test_explorer_initial_discovery_updates_all_optional_scope_choices() -> None
         )
     ]
 
-    assert "setControlAvailability(" in initial_discovery
-    assert "setLoxberryAvailability(" in initial_discovery
+    assert "setScopeAvailability" not in initial_discovery
+    assert "scopeHistory" not in initial_discovery
 
 
 def test_session_refresh_preserves_pending_loxberry_approval_action() -> None:
@@ -727,8 +804,21 @@ def test_session_refresh_updates_related_loxberry_bindings() -> None:
 
     assert 'id="loxberry-binding-list"' in source
     assert "const updateLoxberryBindings = (bindings) =>" in source
+    assert "const updateLoxberryBindingTable = (bindings, section, body, actionName) =>" in source
     assert "result.data.loxberry_bindings" in source
-    assert "session.client_name" in source
+    assert "bindingRow.client_name" in source
+    assert "bindingRow.identity" in source
+    assert "bindingRow.fingerprint" in source
+
+
+def test_session_refresh_updates_separate_loxberry_operate_bindings() -> None:
+    source = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+
+    assert 'id="loxberry-operate-binding-list"' in source
+    assert "const updateLoxberryOperateBindings = (bindings) =>" in source
+    assert "result.data.loxberry_operate_bindings" in source
+    assert "bindingRow.inactive" in source
+    assert "session.loxberry_operate_eligible && !session.loxberry_operate_approved" in source
 
 
 def test_explorer_uses_csp_compatible_panel_free_loxberry_header() -> None:

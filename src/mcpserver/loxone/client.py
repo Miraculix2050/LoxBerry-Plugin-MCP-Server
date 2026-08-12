@@ -35,7 +35,7 @@ from mcpserver.loxone.security import (
     password_hmac,
     token_hmac,
 )
-from mcpserver.loxone.structure import normalize_structure
+from mcpserver.loxone.structure import LoxoneStructureError, normalize_structure
 
 _LOGGER = logging.getLogger(__name__)
 _MAX_RESPONSE_BYTES: Final = 8 * 1024 * 1024
@@ -43,10 +43,12 @@ _DEFAULT_TIMEOUT_SECONDS: Final = 10.0
 _APP_PERMISSION: Final = 4
 _PERCENT_COMMAND = r"(?:100(?:\.0+)?|(?:[0-9]|[1-9][0-9])(?:\.[0-9]+)?)"
 _CONTROL_COMMAND = re.compile(
-    rf"(?:on|off|FullUp|FullDown|shade|stop|auto|NoAuto|"
+    rf"(?:on|off|pulse|reset|FullUp|FullDown|shade|stop|auto|NoAuto|"
     rf"changeTo/(?:0|[1-9][0-9]{{0,9}})|"
+    rf"hsv\((?:360(?:\.0+)?|(?:[0-9]|[1-9][0-9]|[12][0-9][0-9]|3[0-5][0-9])(?:\.[0-9]+)?),{_PERCENT_COMMAND},{_PERCENT_COMMAND}\)|"
+    rf"(?:temp|lumitech)\({_PERCENT_COMMAND},(?:[1-9][0-9]{{3,4}})\)|"
     rf"manualPosition/{_PERCENT_COMMAND}|manualLamelle/{_PERCENT_COMMAND}|"
-    rf"manualPosBlind/{_PERCENT_COMMAND}/{_PERCENT_COMMAND}|{_PERCENT_COMMAND})\Z"
+    rf"manualPosBlind/{_PERCENT_COMMAND}/{_PERCENT_COMMAND}|(?:0|[1-9][0-9]{{0,2}})|{_PERCENT_COMMAND})\Z"
 )
 _GEN1_IPV4_NETWORKS: Final = tuple(
     ipaddress.ip_network(value) for value in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
@@ -565,7 +567,10 @@ class LoxoneWebSocketSession:
             raise LoxoneProtocolError("Miniserver structure response is not JSON") from exc
         if not isinstance(document, Mapping):
             raise LoxoneProtocolError("Miniserver structure response is invalid")
-        return normalize_structure(document, username=self._token.username)
+        try:
+            return normalize_structure(document, username=self._token.username)
+        except LoxoneStructureError as exc:
+            raise LoxoneProtocolError("Miniserver structure response is invalid") from exc
 
     async def refresh_token(self) -> None:
         """Rotate the in-memory JWT over the authenticated encrypted WebSocket."""
@@ -611,6 +616,165 @@ class LoxoneWebSocketSession:
             f"jdev/sps/io/{quote(action_uuid, safe='')}/{quote(command, safe='/')}",
             encrypted=not self._secure_transport,
         )
+
+    async def control_history(self, action_uuid: str) -> list[Mapping[str, Any]]:
+        """Read one documented control-history response."""
+        if not action_uuid or len(action_uuid) > 128:
+            raise ValueError("invalid control history target")
+        command = f"jdev/sps/io/{quote(action_uuid, safe='')}/gethistory"
+        outgoing = (
+            self._encryptor.encrypted_command(command) if not self._secure_transport else command
+        )
+        await self._websocket.send(outgoing)
+        header, payload = await self._receive()
+        if header.message_type is not MessageType.TEXT or not isinstance(payload, str):
+            raise LoxoneProtocolError("Miniserver control history response is invalid")
+        try:
+            response = json.loads(payload)
+        except json.JSONDecodeError as exc:
+            raise LoxoneProtocolError("Miniserver control history response is invalid") from exc
+        value = _response_value(response) if isinstance(response, Mapping) else response
+        if (
+            not isinstance(value, list)
+            or len(value) > 1000
+            or any(not isinstance(item, Mapping) for item in value)
+        ):
+            raise LoxoneProtocolError("Miniserver control history is invalid")
+        return value
+
+    async def control_notes(self, action_uuid: str) -> str:
+        """Read the bounded plaintext notes for one visible control."""
+        if not action_uuid or len(action_uuid) > 128:
+            raise ValueError("invalid control notes target")
+        command = f"jdev/sps/io/{quote(action_uuid, safe='')}/controlnotes"
+        outgoing = (
+            self._encryptor.encrypted_command(command) if not self._secure_transport else command
+        )
+        await self._websocket.send(outgoing)
+        header, payload = await self._receive()
+        if header.message_type is not MessageType.TEXT or not isinstance(payload, str):
+            raise LoxoneProtocolError("Miniserver control notes response is invalid")
+        value: object = payload
+        try:
+            response = json.loads(payload)
+        except json.JSONDecodeError:
+            pass
+        else:
+            if isinstance(response, Mapping) and "LL" in response:
+                value = _response_value(response)
+            elif isinstance(response, str):
+                value = response
+        if not isinstance(value, str) or len(value) > 500:
+            raise LoxoneProtocolError("Miniserver control notes are invalid")
+        return value
+
+    async def statistic_info(self, control_uuid: str) -> list[Mapping[str, Any]]:
+        """Read the bounded availability metadata for one visible control."""
+        if not control_uuid or len(control_uuid) > 128:
+            raise ValueError("invalid statistic target")
+        value = await self._command(
+            f"jdev/sps/getStatisticInfo/{quote(control_uuid, safe='')}",
+            encrypted=not self._secure_transport,
+        )
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except json.JSONDecodeError as exc:
+                raise LoxoneProtocolError("Miniserver statistic info is invalid") from exc
+        if (
+            not isinstance(value, list)
+            or len(value) > 64
+            or any(not isinstance(item, Mapping) for item in value)
+        ):
+            raise LoxoneProtocolError("Miniserver statistic info is invalid")
+        return value
+
+    async def statistic_data(
+        self,
+        control_uuid: str,
+        *,
+        mode: str,
+        start: int,
+        end: int,
+        unit: str,
+        group_id: str,
+        output: str,
+    ) -> bytes:
+        """Read one single-output StatisticV2 binary response."""
+        if (
+            not control_uuid
+            or len(control_uuid) > 128
+            or mode not in {"raw", "diff"}
+            or unit not in {"all", "hour", "day", "month", "year"}
+            or not 0 <= start <= end <= 4_102_444_800
+            or not group_id.isdecimal()
+            or len(group_id) > 10
+            or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", output)
+        ):
+            raise ValueError("invalid statistic request")
+        command = (
+            f"dev/sps/getStatistic/{quote(control_uuid, safe='')}/{mode}/{start}/{end}/"
+            f"{unit}/{group_id}/{quote(output, safe='')}"
+        )
+        # Binary file responses cannot be transported through the Gen. 1
+        # command-encryption envelope. The session is already token-authenticated,
+        # matching the plaintext structure-file request on the same local socket.
+        await self._websocket.send(command)
+        header, payload = await self._receive()
+        if header.message_type is MessageType.BINARY_FILE and isinstance(payload, bytes):
+            return payload
+        if header.message_type is MessageType.TEXT and isinstance(payload, str):
+            try:
+                response = json.loads(payload)
+            except json.JSONDecodeError as exc:
+                _LOGGER.warning(
+                    "component=statistics outcome=invalid_response frame=text payload_bytes=%d",
+                    len(payload.encode("utf-8")),
+                )
+                raise LoxoneProtocolError("Miniserver statistic response is invalid") from exc
+            if isinstance(response, Mapping):
+                try:
+                    _response_value(response)
+                except (LoxoneConnectionError, LoxoneCommandRejected):
+                    _LOGGER.warning(
+                        "component=statistics outcome=command_rejected frame=text payload_bytes=%d",
+                        len(payload.encode("utf-8")),
+                    )
+                    raise
+        payload_size = len(payload) if isinstance(payload, str | bytes) else 0
+        _LOGGER.warning(
+            "component=statistics outcome=invalid_response frame=%s payload_type=%s "
+            "payload_bytes=%d",
+            header.message_type.name.lower(),
+            type(payload).__name__,
+            payload_size,
+        )
+        raise LoxoneProtocolError("Miniserver statistic response is not binary")
+
+    async def legacy_statistic_data(self, control_uuid: str, date: str) -> bytes:
+        """Read one documented legacy statistic binary file on the authenticated socket."""
+        if (
+            not control_uuid
+            or len(control_uuid) > 128
+            or re.fullmatch(r"(?:20[0-9]{2})(?:0[1-9]|1[0-2])(?:0[1-9]|[12][0-9]|3[01])?", date)
+            is None
+        ):
+            raise ValueError("invalid legacy statistic request")
+        command = f"binstatisticdata/{quote(control_uuid, safe='')}/{date}"
+        await self._websocket.send(command)
+        header, payload = await self._receive()
+        if header.message_type is MessageType.BINARY_FILE and isinstance(payload, bytes):
+            return payload
+        if header.message_type is MessageType.TEXT and isinstance(payload, str):
+            try:
+                response = json.loads(payload)
+            except json.JSONDecodeError as exc:
+                raise LoxoneProtocolError(
+                    "Miniserver legacy statistic response is invalid"
+                ) from exc
+            if isinstance(response, Mapping):
+                _response_value(response)
+        raise LoxoneProtocolError("Miniserver legacy statistic response is not binary")
 
     async def state_events(self) -> AsyncIterator[tuple[StateEvent, ...]]:
         await self._command("jdev/sps/enablebinstatusupdate")

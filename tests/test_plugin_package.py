@@ -120,7 +120,7 @@ def test_plugin_identity_and_platform_contract() -> None:
     assert parser["PLUGIN"]["NAME"] == "mcpserver"
     assert parser["PLUGIN"]["FOLDER"] == "mcpserver"
     assert parser["PLUGIN"]["TITLE"] == "LoxBerry MCP Server"
-    assert parser["PLUGIN"]["VERSION"] == "0.3.0-alpha.1"
+    assert parser["PLUGIN"]["VERSION"] == "0.4.0-alpha.1"
     assert parser["SYSTEM"]["LB_MINIMUM"] == "4.0.0"
     assert parser["SYSTEM"]["INTERFACE"] == "2.0"
     for name in ("release.cfg", "prerelease.cfg"):
@@ -207,6 +207,19 @@ def test_upgrade_removes_the_obsolete_debug_window_atomically() -> None:
     assert 'logging_config.pop("debug_until")' in hook
     assert "os.fsync(handle.fileno())" in hook
     assert "os.replace(temporary, path)" in hook
+
+
+def test_phase_four_upgrade_migrates_configuration_and_private_cache() -> None:
+    hook = (ROOT / "postupgrade.sh").read_text(encoding="utf-8")
+    postroot = (ROOT / "postroot.sh").read_text(encoding="utf-8")
+
+    assert 'document.get("schema_version") == 1' in hook
+    assert 'document["schema_version"] = 2' in hook
+    assert 'mkdir -p "$plugin_data/statistics-cache"' in hook
+    assert 'chown loxberry:loxberry "$plugin_data/statistics-cache"' in hook
+    assert 'chmod 700 "$plugin_data/statistics-cache"' in hook
+    assert 'mkdir -p "$plugin_data/statistics-cache"' in postroot
+    assert 'chmod 700 "$plugin_data/statistics-cache"' in postroot
 
 
 def test_postroot_keeps_installer_alive_during_apache_activation() -> None:
@@ -428,7 +441,7 @@ def test_plugin_archive_verifier_accepts_builder_output(tmp_path: Path) -> None:
     for name, version in _locked_requirements(ROOT / "requirements" / "runtime-arm64.lock").items():
         wheel_name = name.replace("-", "_")
         (wheelhouse / f"{wheel_name}-{version}-py3-none-any.whl").write_bytes(b"wheel")
-    project_wheel = wheelhouse / "loxberry_mcpserver-0.3.0a1-py3-none-any.whl"
+    project_wheel = wheelhouse / "loxberry_mcpserver-0.4.0a1-py3-none-any.whl"
     _write_project_wheel(project_wheel)
     hash_lock = tmp_path / "runtime-arm64.sha256"
     hash_lock.write_text(
@@ -825,11 +838,12 @@ def test_plugin_archive_verifier_rejects_checksum_mismatch(tmp_path: Path) -> No
 
 
 def test_release_metadata_and_changelog_match_current_prerelease() -> None:
-    notes = validate_release_metadata(ROOT, "0.3.0-alpha.1", "prerelease")
+    notes = validate_release_metadata(ROOT, "0.4.0-alpha.1", "prerelease")
 
-    assert "loxberry:read" in notes
+    assert "loxone:history" in notes
+    assert "loxberry:operate" in notes
     with pytest.raises(ValueError, match="stable releases"):
-        validate_release_metadata(ROOT, "0.3.0-alpha.1", "stable")
+        validate_release_metadata(ROOT, "0.4.0-alpha.1", "stable")
     with pytest.raises(ValueError, match="versions do not match"):
         validate_release_metadata(ROOT, "0.3.0-alpha.2", "prerelease")
 

@@ -8,15 +8,18 @@ from mcp.server.fastmcp import FastMCP
 import mcpserver.tools as tools_module
 from mcpserver.auth.provider import (
     CONTROL_SCOPE,
+    HISTORY_SCOPE,
+    LOXBERRY_OPERATE_SCOPE,
     LOXBERRY_READ_SCOPE,
     READ_SCOPE,
     StoredAccessToken,
 )
 from mcpserver.config import PluginConfig
-from mcpserver.loxone.models import Control, LoxoneIdentity, LoxoneStructure
+from mcpserver.loxone.models import Control, LoxoneIdentity, LoxoneStructure, StatisticSeries
 from mcpserver.loxone.runtime import RuntimeSnapshot
 from mcpserver.skill_delivery import read_skill_markdown
 from mcpserver.tools import (
+    LoxBerryOperateRuntime,
     LoxBerryReadRuntime,
     SystemStatusEnvelope,
     _CursorCodec,
@@ -24,6 +27,8 @@ from mcpserver.tools import (
     _page,
     _result,
     register_control_tool,
+    register_history_tools,
+    register_loxberry_operate_tool,
     register_loxberry_read_tools,
     register_read_tools,
     register_skill_tool,
@@ -156,7 +161,7 @@ def test_opaque_cursor_paginates_without_exposing_offset() -> None:
 
     assert first["items"] == list(range(50))
     assert isinstance(first["next_cursor"], str)
-    assert "50" not in first["next_cursor"]
+    assert not first["next_cursor"].startswith("50")
     second = _page(codec, "rooms", list(range(75)), first["next_cursor"], 50)
     assert second == {"items": list(range(50, 75)), "next_cursor": None}
 
@@ -202,6 +207,12 @@ def test_control_tool_contract_is_explicitly_mutating_and_idempotent() -> None:
         "set_position",
         "set_slat_position",
         "set_position_and_slats",
+        "pulse",
+        "select_output",
+        "reset",
+        "set_scene",
+        "set_color_hsv",
+        "set_color_temperature",
     }
 
 
@@ -223,7 +234,7 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert tool.annotations.destructiveHint is False
     assert tool.annotations.openWorldHint is False
     assert result.data.name == "using-loxberry-mcp"  # type: ignore[union-attr]
-    assert result.data.revision == 3  # type: ignore[union-attr]
+    assert result.data.revision == 8  # type: ignore[union-attr]
     assert result.data.media_type == "text/markdown"  # type: ignore[union-attr]
     assert result.data.content == read_skill_markdown()  # type: ignore[union-attr]
 
@@ -242,10 +253,13 @@ def test_tool_input_schemas_explain_every_argument() -> None:
             "room_uuid",
             "category_uuid",
             "control_type",
+            "has_statistics",
+            "has_history",
             "cursor",
             "limit",
         },
         "loxone_describe_control": {"control_uuid"},
+        "loxone_get_control_notes": {"control_uuid"},
         "loxone_get_states": {"state_uuids"},
         "loxone_operate_control": {
             "control_uuid",
@@ -254,6 +268,12 @@ def test_tool_input_schemas_explain_every_argument() -> None:
             "mood_id",
             "position",
             "slat_position",
+            "scene_id",
+            "output_id",
+            "hue",
+            "saturation",
+            "brightness",
+            "kelvin",
         },
     }
     for tool_name, field_names in expected_fields.items():
@@ -263,6 +283,8 @@ def test_tool_input_schemas_explain_every_argument() -> None:
 
     find_properties = published["loxone_find_controls"].parameters["properties"]
     assert find_properties["query"]["maxLength"] == 200
+    assert find_properties["has_statistics"]["default"] is False
+    assert find_properties["has_history"]["default"] is False
     assert find_properties["limit"]["minimum"] == 1
     assert find_properties["limit"]["maximum"] == 100
     assert (
@@ -275,6 +297,63 @@ def test_tool_input_schemas_explain_every_argument() -> None:
     for name in ("level", "position", "slat_position"):
         assert operation[name]["minimum"] == 0
         assert operation[name]["maximum"] == 100
+
+
+def test_phase_four_tool_contracts_are_narrow_and_correctly_annotated() -> None:
+    server = FastMCP("phase-four-contract")
+    register_history_tools(server, None)
+    register_loxberry_operate_tool(server, LoxBerryOperateRuntime(object(), object(), object()))
+    published = {tool.name: tool for tool in server._tool_manager.list_tools()}
+
+    statistics = published["loxone_get_statistics"]
+    assert statistics.annotations is not None
+    assert statistics.annotations.readOnlyHint is True
+    assert set(statistics.parameters["properties"]) == {
+        "control_uuid",
+        "series_id",
+        "start",
+        "end",
+        "granularity",
+        "cursor",
+        "limit",
+    }
+    assert statistics.parameters["properties"]["start"]["format"] == "date-time"
+    assert statistics.parameters["properties"]["end"]["format"] == "date-time"
+    history = published["loxone_get_control_history"]
+    assert history.annotations is not None
+    assert history.annotations.readOnlyHint is True
+    cache = published["loxberry_clear_statistics_cache"]
+    assert cache.annotations is not None
+    assert cache.annotations.readOnlyHint is False
+    assert cache.annotations.destructiveHint is True
+    assert cache.parameters["properties"] == {}
+
+
+@pytest.mark.asyncio
+async def test_loxberry_operate_runtime_requires_exact_live_binding() -> None:
+    class Cache:
+        def clear(self) -> object:
+            return object()
+
+    class ConfigStore:
+        def load(self) -> PluginConfig:
+            return PluginConfig(
+                loxone_history_enabled=True,
+                loxberry_operate_enabled=True,
+                loxberry_operate_bindings=("binding",),
+            )
+
+    class AuthStore:
+        def pseudonym(self, *parts: str) -> str:
+            assert parts[0] == "loxberry-operate-binding-v1"
+            return "binding"
+
+    runtime = LoxBerryOperateRuntime(Cache(), ConfigStore(), AuthStore())
+    allowed = _loxberry_access(READ_SCOPE, HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE)
+    await runtime.clear_statistics_cache(allowed)
+
+    with pytest.raises(PermissionError):
+        await runtime.clear_statistics_cache(_loxberry_access(READ_SCOPE, HISTORY_SCOPE))
 
 
 @pytest.mark.asyncio
@@ -322,6 +401,9 @@ async def test_describe_control_only_advertises_actions_to_control_scope(
                 category_uuid=None,
                 action_uuid="action-1",
                 state_uuids=(("active", "state-1"),),
+                rating=4,
+                secured=True,
+                has_notes=True,
             ),
         ),
     )
@@ -336,6 +418,10 @@ async def test_describe_control_only_advertises_actions_to_control_scope(
 
     read_only = await tool.fn("control-1")
     assert read_only.data.capabilities.allowed_actions == []  # type: ignore[union-attr]
+    assert read_only.data.presentation.rating == 4  # type: ignore[union-attr]
+    assert read_only.data.presentation.secured is True  # type: ignore[union-attr]
+    assert read_only.data.presentation.read_only is False  # type: ignore[union-attr]
+    assert read_only.data.presentation.has_notes is True  # type: ignore[union-attr]
 
     access.scopes.append(CONTROL_SCOPE)
     controlled = await tool.fn("control-1")
@@ -343,6 +429,48 @@ async def test_describe_control_only_advertises_actions_to_control_scope(
         "on",
         "off",
     ]
+
+
+@pytest.mark.asyncio
+async def test_get_control_notes_returns_only_runtime_notes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    access = _loxberry_access(READ_SCOPE)
+
+    class Runtime:
+        async def get_control_notes(
+            self, received_access: StoredAccessToken, control_uuid: str
+        ) -> tuple[Control, str]:
+            assert received_access is access
+            assert control_uuid == "control-1"
+            return (
+                Control(
+                    uuid="control-1",
+                    name="Light",
+                    control_type="Switch",
+                    room_uuid=None,
+                    category_uuid=None,
+                    action_uuid="action-1",
+                    state_uuids=(),
+                    has_notes=True,
+                ),
+                "User-authored note",
+            )
+
+    server = FastMCP("control-notes")
+    register_read_tools(server, Runtime(), control_enabled=True)  # type: ignore[arg-type]
+    monkeypatch.setattr(tools_module, "_access", lambda: access)
+    tool = next(
+        item
+        for item in server._tool_manager.list_tools()
+        if item.name == "loxone_get_control_notes"
+    )
+
+    result = await tool.fn("control-1")
+
+    assert result.ok is True
+    assert result.data.control_uuid == "control-1"  # type: ignore[union-attr]
+    assert result.data.text == "User-authored note"  # type: ignore[union-attr]
 
 
 @pytest.mark.asyncio
@@ -393,3 +521,59 @@ async def test_find_controls_matches_control_type_case_insensitively(
 
     assert result.ok is True
     assert [item.type for item in result.data.items] == ["Switch"]  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+async def test_find_controls_combines_history_and_statistics_filters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    access = _loxberry_access(READ_SCOPE)
+    series = StatisticSeries("1", "control", "1", "value", "Energy", "kWh")
+    structure = LoxoneStructure(
+        identity=LoxoneIdentity("user", "serial"),
+        last_modified="1",
+        rooms=(),
+        categories=(),
+        controls=(
+            Control(
+                "both",
+                "Both",
+                "Meter",
+                None,
+                None,
+                "a1",
+                (),
+                has_history=True,
+                statistic_series=(series,),
+            ),
+            Control("history", "History", "Switch", None, None, "a2", (), has_history=True),
+            Control(
+                "statistics",
+                "Statistics",
+                "Meter",
+                None,
+                None,
+                "a3",
+                (),
+                statistic_series=(series,),
+            ),
+        ),
+    )
+
+    async def snapshot(_runtime: object) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+        return access, RuntimeSnapshot("family", structure, True)
+
+    monkeypatch.setattr(tools_module, "_snapshot", snapshot)
+    server = FastMCP("history-capability-filters")
+    register_read_tools(server, None)
+    tool = next(
+        item for item in server._tool_manager.list_tools() if item.name == "loxone_find_controls"
+    )
+
+    history = await tool.fn(has_history=True)
+    statistics = await tool.fn(has_statistics=True)
+    both = await tool.fn(has_history=True, has_statistics=True)
+
+    assert [item.uuid for item in history.data.items] == ["both", "history"]  # type: ignore[union-attr]
+    assert [item.uuid for item in statistics.data.items] == ["both", "statistics"]  # type: ignore[union-attr]
+    assert [item.uuid for item in both.data.items] == ["both"]  # type: ignore[union-attr]

@@ -17,24 +17,33 @@ Ein Client kann sie zusammen mit den Loxone-Scopes anfordern; bis zur Freigabe
 bleibt die Diagnose ausstehend. Sie erlaubt keine
 Reparatur, Neustarts oder andere LoxBerry-Aktionen.
 
+Phase 4 ergänzt separat aktivierbare StatisticV2-, klassische Binärstatistik- und Control-Historie mit
+`loxone:history`, sichtbare Darstellungsmetadaten sowie begrenzte Control-Hinweise
+über `loxone:read`. `loxberry:operate` nutzt denselben lokalen Freigabemechanismus
+und erlaubt ausschließlich das Löschen des plugin-eigenen Statistik-Caches.
+Legacy-Statistik über XML/FTP und mehrere Miniserver sind nicht aktiviert.
+
 Für jeden Assistenten sollte ein eigener Loxone-Benutzer mit den minimal erforderlichen Rechten angelegt werden. Zugangsdaten und andere Geheimnisse dürfen nicht im Repository gespeichert werden.
 
 ## Projektstatus
 
-Phase 1 und die ursprüngliche Phase 2 sind abgenommen. Der zugehörige
-Pre-Release `0.2.0-alpha.1` begrenzt das optionale Schreibwerkzeug noch auf
-`Switch`. Der aktuelle, noch nicht als Folgerelease veröffentlichte Stand
-erweitert dieses Werkzeug auf Gen.-1-Controls vom Typ `Switch`, `Dimmer`,
-`LightController`, `LightControllerV2` und `Jalousie`. Es bleibt
+Phase 1 bis Phase 3 sind abgenommen. Der vorbereitete Phase-4-Pre-Release
+`0.4.0-alpha.1` erweitert das Schreibwerkzeug auf Gen.-1-Controls vom Typ
+`Switch`, `Dimmer`, `LightController`, `LightControllerV2`, `Jalousie`,
+`TimedSwitch`, `Radio`, `LightsceneRGB`, `ColorPicker`, `ColorPickerV2` und
+`Pushbutton`. Es bleibt
 standardmäßig deaktiviert, akzeptiert ausschließlich typabhängige dokumentierte
 Aktionen und benötigt den separat bestätigten Scope `loxone:control`. Freie
 Kommandos, Namens- und Sammelziele sind ausgeschlossen. Die sechs stabilen
-lesenden Tools und bestehende Read-only-Sitzungen bleiben kompatibel.
+lesenden Tools und bestehende Read-only-Sitzungen bleiben kompatibel. Die neuen
+Phase-4-Pfade sind automatisiert geprüft, aber noch nicht auf Hardware abgenommen.
 
 Bestätigte Kombinationen, Nachweise und bekannte Clientgrenzen stehen in der
 [Support-Matrix](docs/development/support-matrix.md), im
 [Phase-1-Abnahmebericht](docs/development/phase-1-acceptance.md) und im
 [Phase-2-Abnahmebericht](docs/development/phase-2-acceptance.md).
+Der aktuelle Nachweisstand steht im
+[Phase-4-Abnahmebericht](docs/development/phase-4-acceptance.md).
 
 ## Nutzung
 

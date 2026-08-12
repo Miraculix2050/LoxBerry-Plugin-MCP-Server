@@ -10,6 +10,8 @@
   .mcp-explorer-status[data-kind="error"] { border-color: #b91c1c; }
   .mcp-explorer-status[data-kind="working"] { border-color: #1261a0; }
   .mcp-explorer-tool-list { display: grid; gap: .45rem; max-height: 55vh; overflow-y: auto; }
+  .mcp-explorer-tool-group { margin: .65rem 0 0; font-size: .9rem; color: #4b5563; }
+  .mcp-explorer-tool-group:first-child { margin-top: 0; }
   .mcp-explorer-tool { width: 100%; padding: .7rem; border: 1px solid #c9cdd2; border-radius: .3rem; background: #fff; text-align: left; overflow-wrap: anywhere; }
   .mcp-explorer-tool[aria-current="true"] { border-color: #1261a0; box-shadow: inset .25rem 0 #1261a0; }
   .mcp-explorer-badge { display: inline-block; margin: .25rem .25rem 0 0; padding: .15rem .4rem; border-radius: 1rem; background: #e5e7eb; font-size: .82em; }
@@ -71,6 +73,8 @@
   data-timeout="<TMPL_VAR EXPLORER.TIMEOUT ESCAPE=HTML>"
   data-control-required="<TMPL_VAR EXPLORER.CONTROL_REQUIRED ESCAPE=HTML>"
   data-loxberry-required="<TMPL_VAR EXPLORER.LOXBERRY_REQUIRED ESCAPE=HTML>"
+  data-history-required="<TMPL_VAR EXPLORER.HISTORY_REQUIRED ESCAPE=HTML>"
+  data-operate-required="<TMPL_VAR EXPLORER.OPERATE_REQUIRED ESCAPE=HTML>"
   data-as-list="<TMPL_VAR EXPLORER.AS_LIST ESCAPE=HTML>"
   data-optional="<TMPL_VAR EXPLORER.OPTIONAL ESCAPE=HTML>"
   data-array-help="<TMPL_VAR EXPLORER.ARRAY_HELP ESCAPE=HTML>"
@@ -88,25 +92,29 @@
   data-response="<TMPL_VAR EXPLORER.RESPONSE ESCAPE=HTML>"
   data-duration="<TMPL_VAR EXPLORER.DURATION ESCAPE=HTML>"
   data-status="<TMPL_VAR EXPLORER.STATUS ESCAPE=HTML>"
+  data-tool-group-loxone-read="<TMPL_VAR EXPLORER.TOOL_GROUP_LOXONE_READ ESCAPE=HTML>"
+  data-tool-group-loxone-history="<TMPL_VAR EXPLORER.TOOL_GROUP_LOXONE_HISTORY ESCAPE=HTML>"
+  data-tool-group-loxone-control="<TMPL_VAR EXPLORER.TOOL_GROUP_LOXONE_CONTROL ESCAPE=HTML>"
+  data-tool-group-loxberry-read="<TMPL_VAR EXPLORER.TOOL_GROUP_LOXBERRY_READ ESCAPE=HTML>"
+  data-tool-group-loxberry-operate="<TMPL_VAR EXPLORER.TOOL_GROUP_LOXBERRY_OPERATE ESCAPE=HTML>"
+  data-result-current-call="<TMPL_VAR EXPLORER.RESULT_CURRENT_CALL ESCAPE=HTML>"
+  data-result-from-history="<TMPL_VAR EXPLORER.RESULT_FROM_HISTORY ESCAPE=HTML>"
+  data-history-arguments="<TMPL_VAR EXPLORER.HISTORY_ARGUMENTS ESCAPE=HTML>"
+  data-restore-history-confirm="<TMPL_VAR EXPLORER.RESTORE_HISTORY_CONFIRM ESCAPE=HTML>"
+  data-transfer-context="<TMPL_VAR EXPLORER.TRANSFER_CONTEXT ESCAPE=HTML>"
+  data-statistics-transfer-context="<TMPL_VAR EXPLORER.STATISTICS_TRANSFER_CONTEXT ESCAPE=HTML>"
+  data-fields="<TMPL_VAR EXPLORER.FIELDS ESCAPE=HTML>"
   data-origin-mismatch="<TMPL_VAR EXPLORER.ORIGIN_MISMATCH ESCAPE=HTML>">
 
   <section class="mcp-explorer-card" aria-labelledby="explorer-title">
     <p><a class="lb-button" href="index.cgi"><TMPL_VAR EXPLORER.BACK></a></p>
     <h1 id="explorer-title"><TMPL_VAR EXPLORER.TITLE></h1>
     <p><TMPL_VAR EXPLORER.INTRO></p>
+    <p class="mcp-explorer-muted"><TMPL_VAR EXPLORER.PERMISSIONS_AFTER_LOGIN></p>
     <div class="mcp-explorer-actions">
-      <label for="explorer-access-mode"><TMPL_VAR EXPLORER.ACCESS_MODE></label>
-      <select id="explorer-access-mode">
-        <option value="read"><TMPL_VAR EXPLORER.READ_ONLY></option>
-        <option id="explorer-control-option" value="control" disabled><TMPL_VAR EXPLORER.WITH_CONTROL></option>
-        <option id="explorer-loxberry-option" value="loxberry" disabled><TMPL_VAR EXPLORER.WITH_LOXBERRY></option>
-        <option id="explorer-control-loxberry-option" value="control-loxberry" disabled><TMPL_VAR EXPLORER.WITH_CONTROL_LOXBERRY></option>
-      </select>
       <button id="explorer-connect" class="lb-button" type="button"><TMPL_VAR EXPLORER.CONNECT></button>
       <button id="explorer-disconnect" class="lb-button" type="button" disabled><TMPL_VAR EXPLORER.DISCONNECT></button>
     </div>
-    <p id="explorer-control-note" class="mcp-explorer-warning" hidden><TMPL_VAR EXPLORER.CONTROL_UNAVAILABLE></p>
-    <p id="explorer-loxberry-note" class="mcp-explorer-warning" hidden><TMPL_VAR EXPLORER.LOXBERRY_UNAVAILABLE></p>
     <p id="explorer-origin-warning" class="mcp-explorer-warning" hidden>
       <TMPL_VAR EXPLORER.ORIGIN_MISMATCH>
       <a id="explorer-origin-link" class="lb-button" rel="noopener"><TMPL_VAR EXPLORER.OPEN_CANONICAL></a>
@@ -145,6 +153,7 @@
       </div>
       <div class="mcp-explorer-actions">
         <button id="explorer-run" class="lb-button" type="button" disabled><TMPL_VAR EXPLORER.RUN></button>
+        <button id="explorer-reset-draft" class="lb-button" type="button" disabled><TMPL_VAR EXPLORER.RESET_DRAFT></button>
       </div>
       <div id="explorer-validation" class="mcp-explorer-status" role="alert" data-kind="error" hidden></div>
 
@@ -152,7 +161,10 @@
       <div class="mcp-explorer-actions">
         <button id="explorer-copy" class="lb-button" type="button" disabled><TMPL_VAR EXPLORER.COPY_JSON></button>
         <button id="explorer-next-page" class="lb-button" type="button" hidden disabled><TMPL_VAR EXPLORER.NEXT_PAGE></button>
+        <button id="explorer-restore-history" class="lb-button" type="button" hidden><TMPL_VAR EXPLORER.RESTORE_HISTORY></button>
       </div>
+      <p id="explorer-result-context" class="mcp-explorer-muted" hidden></p>
+      <div id="explorer-history-arguments" class="mcp-explorer-stack" hidden></div>
       <div id="explorer-result-tree" class="mcp-explorer-tree"><p class="mcp-explorer-muted"><TMPL_VAR EXPLORER.EMPTY_RESULT></p></div>
       <details id="explorer-raw-details"><summary><TMPL_VAR EXPLORER.JSON></summary><pre id="explorer-result-raw" class="mcp-explorer-pre">{}</pre></details>
       <details id="explorer-transcript-details"><summary><TMPL_VAR EXPLORER.TRANSCRIPT></summary><div id="explorer-transcript"></div></details>
@@ -177,6 +189,7 @@
   <form method="dialog" class="mcp-explorer-stack">
     <h2 id="transfer-title"><TMPL_VAR EXPLORER.TRANSFER></h2>
     <p><code id="explorer-transfer-source"></code></p>
+    <p id="explorer-transfer-context" class="mcp-explorer-muted"></p>
     <label><TMPL_VAR EXPLORER.TRANSFER_TOOL><select id="explorer-transfer-tool"></select></label>
     <label><TMPL_VAR EXPLORER.TRANSFER_FIELD><select id="explorer-transfer-field"></select></label>
     <p id="explorer-transfer-empty" class="mcp-explorer-warning" hidden><TMPL_VAR EXPLORER.NO_TARGET></p>

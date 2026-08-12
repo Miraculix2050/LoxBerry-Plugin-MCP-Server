@@ -243,7 +243,12 @@ def _renew_certificate(payload: object) -> dict[str, Any]:
 
 
 def _save(payload: object) -> dict[str, Any]:
-    from mcpserver.auth.provider import CONTROL_SCOPE, LOXBERRY_READ_SCOPE
+    from mcpserver.auth.provider import (
+        CONTROL_SCOPE,
+        HISTORY_SCOPE,
+        LOXBERRY_OPERATE_SCOPE,
+        LOXBERRY_READ_SCOPE,
+    )
     from mcpserver.config import ConfigError, PluginConfig
 
     if not isinstance(payload, dict):
@@ -254,7 +259,11 @@ def _save(payload: object) -> dict[str, Any]:
     if "logging" not in payload:
         config = replace(config, log_level=previous.log_level)
     if "policies" not in payload:
-        config = replace(config, loxberry_read_bindings=previous.loxberry_read_bindings)
+        config = replace(
+            config,
+            loxberry_read_bindings=previous.loxberry_read_bindings,
+            loxberry_operate_bindings=previous.loxberry_operate_bindings,
+        )
     control_families: list[str] = []
     if previous.loxone_control_enabled and not config.loxone_control_enabled:
         document = _auth_store().snapshot()
@@ -271,6 +280,27 @@ def _save(payload: object) -> dict[str, Any]:
             family_id
             for family_id, record in document["families"].items()
             if LOXBERRY_READ_SCOPE in str(record.get("scope", "")).split()
+            and not record.get("revoked", False)
+        ]
+    phase4_families: list[str] = []
+    disabled_phase4_scopes = {
+        scope
+        for scope, was_enabled, is_enabled in (
+            (HISTORY_SCOPE, previous.loxone_history_enabled, config.loxone_history_enabled),
+            (
+                LOXBERRY_OPERATE_SCOPE,
+                previous.loxberry_operate_enabled,
+                config.loxberry_operate_enabled,
+            ),
+        )
+        if was_enabled and not is_enabled
+    }
+    if disabled_phase4_scopes:
+        document = _auth_store().snapshot()
+        phase4_families = [
+            family_id
+            for family_id, record in document["families"].items()
+            if disabled_phase4_scopes & set(str(record.get("scope", "")).split())
             and not record.get("revoked", False)
         ]
     store.save(config)
@@ -294,6 +324,12 @@ def _save(payload: object) -> dict[str, Any]:
     if loxberry_families:
         _revoke_many(
             loxberry_families,
+            endpoint=previous.loxone_endpoint,
+            timeout_seconds=previous.connection_timeout,
+        )
+    if phase4_families:
+        _revoke_many(
+            phase4_families,
             endpoint=previous.loxone_endpoint,
             timeout_seconds=previous.connection_timeout,
         )
@@ -360,9 +396,12 @@ def _sessions() -> list[dict[str, Any]]:
     if not isinstance(clients, dict):
         clients = {}
     try:
-        bindings = _config_store().load().loxberry_read_bindings
+        current = _config_store().load()
+        bindings = current.loxberry_read_bindings
+        operate_bindings = current.loxberry_operate_bindings
     except AdminError:
         bindings = ()
+        operate_bindings = ()
     result = []
     for family_id, record in document["families"].items():
         expires_at = record.get("expires_at")
@@ -373,6 +412,13 @@ def _sessions() -> list[dict[str, Any]]:
         pending_loxberry_read = (
             bool(record.get("pending_loxberry_read", False))
             and READ_SCOPE in scopes.split()
+            and isinstance(expires_at, int | float)
+            and expires_at > time.time()
+        )
+        pending_loxberry_operate = (
+            bool(record.get("pending_loxberry_operate", False))
+            and "loxone:history" in scopes.split()
+            and "loxberry:operate" in scopes.split()
             and isinstance(expires_at, int | float)
             and expires_at > time.time()
         )
@@ -393,6 +439,10 @@ def _sessions() -> list[dict[str, Any]]:
                 "loxberry_read_approved": pending_loxberry_read
                 and bool(bindings)
                 and _loxberry_binding(record) in bindings,
+                "loxberry_operate_eligible": pending_loxberry_operate,
+                "loxberry_operate_approved": pending_loxberry_operate
+                and bool(operate_bindings)
+                and _loxberry_operate_binding(record) in operate_bindings,
             }
         )
     return sorted(result, key=lambda item: str(item["id"]))
@@ -405,6 +455,38 @@ def _loxberry_binding(record: dict[str, Any]) -> str:
         str(record.get("identity_id", "")),
         str(record.get("miniserver_id", "")),
     )
+
+
+def _loxberry_operate_binding(record: dict[str, Any]) -> str:
+    return _auth_store().pseudonym(
+        "loxberry-operate-binding-v1",
+        str(record.get("client_id", "")),
+        str(record.get("identity_id", "")),
+        str(record.get("miniserver_id", "")),
+    )
+
+
+def _binding_rows(binding: str, sessions: list[dict[str, str]]) -> list[dict[str, Any]]:
+    if sessions:
+        return [
+            {
+                **session,
+                "binding_id": binding,
+                "fingerprint": binding[:12],
+                "inactive": False,
+            }
+            for session in sessions
+        ]
+    return [
+        {
+            "client": binding[:12],
+            "client_name": "",
+            "identity": "",
+            "binding_id": binding,
+            "fingerprint": binding[:12],
+            "inactive": True,
+        }
+    ]
 
 
 def _loxberry_bindings() -> list[dict[str, Any]]:
@@ -442,6 +524,7 @@ def _loxberry_bindings() -> list[dict[str, Any]]:
                 "client_name": client_name
                 if isinstance(client_name, str) and client_name.strip()
                 else "",
+                "identity": str(record.get("identity_id", ""))[:12],
                 "scopes": str(record.get("scope", "")),
             }
         )
@@ -451,6 +534,49 @@ def _loxberry_bindings() -> list[dict[str, Any]]:
             "fingerprint": binding[:12],
             "active": bool(related[binding]),
             "sessions": related[binding],
+            "rows": _binding_rows(binding, related[binding]),
+        }
+        for binding in bindings
+    ]
+
+
+def _loxberry_operate_bindings() -> list[dict[str, Any]]:
+    try:
+        bindings = _config_store().load().loxberry_operate_bindings
+    except AdminError:
+        return []
+    if not bindings:
+        return []
+    document = _auth_store().snapshot()
+    related: dict[str, list[dict[str, str]]] = {binding: [] for binding in bindings}
+    clients = document.get("clients", {})
+    now = time.time()
+    for record in document.get("families", {}).values():
+        if not isinstance(record, dict) or record.get("revoked", False):
+            continue
+        if not isinstance(record.get("expires_at"), int | float) or record["expires_at"] <= now:
+            continue
+        binding = _loxberry_operate_binding(record)
+        if binding not in related:
+            continue
+        client_id = str(record.get("client_id", ""))
+        client = clients.get(client_id, {}) if isinstance(clients, dict) else {}
+        name = client.get("client_name", "") if isinstance(client, dict) else ""
+        related[binding].append(
+            {
+                "client": client_id[:12],
+                "client_name": name if isinstance(name, str) else "",
+                "identity": str(record.get("identity_id", ""))[:12],
+                "scopes": str(record.get("scope", "")),
+            }
+        )
+    return [
+        {
+            "id": binding,
+            "fingerprint": binding[:12],
+            "active": bool(related[binding]),
+            "sessions": related[binding],
+            "rows": _binding_rows(binding, related[binding]),
         }
         for binding in bindings
     ]
@@ -513,6 +639,79 @@ def _revoke_loxberry_read(payload: object) -> dict[str, Any]:
             timeout_seconds=previous.connection_timeout,
         )
     return {"loxberry_bindings": _loxberry_bindings(), "sessions": _sessions()}
+
+
+def _allow_loxberry_operate(payload: object) -> dict[str, Any]:
+    from mcpserver.auth.provider import HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE
+
+    session_id = payload.get("session_id") if isinstance(payload, dict) else None
+    if not isinstance(session_id, str) or len(session_id) > 128:
+        raise AdminError("session identifier is invalid")
+    document = _auth_store().snapshot()
+    record = document.get("families", {}).get(session_id)
+    scopes = str(record.get("scope", "")).split() if isinstance(record, dict) else []
+    if (
+        not isinstance(record, dict)
+        or record.get("revoked", False)
+        or not isinstance(record.get("expires_at"), int | float)
+        or record["expires_at"] <= time.time()
+        or not bool(record.get("pending_loxberry_operate", False))
+        or HISTORY_SCOPE not in scopes
+        or LOXBERRY_OPERATE_SCOPE not in scopes
+    ):
+        raise AdminError("pending operation session is unavailable")
+    binding = _loxberry_operate_binding(record)
+    store = _config_store()
+    previous = store.load()
+    if binding not in previous.loxberry_operate_bindings:
+        if len(previous.loxberry_operate_bindings) >= 64:
+            raise AdminError("LoxBerry operation approval capacity reached")
+        store.save(
+            replace(
+                previous,
+                loxberry_operate_bindings=(*previous.loxberry_operate_bindings, binding),
+            )
+        )
+    return {
+        "sessions": _sessions(),
+        "loxberry_operate_bindings": _loxberry_operate_bindings(),
+    }
+
+
+def _revoke_loxberry_operate(payload: object) -> dict[str, Any]:
+    binding = payload.get("binding_id") if isinstance(payload, dict) else None
+    if not isinstance(binding, str) or len(binding) != 64:
+        raise AdminError("LoxBerry operation approval is invalid")
+    store = _config_store()
+    previous = store.load()
+    if binding not in previous.loxberry_operate_bindings:
+        raise AdminError("LoxBerry operation approval is unavailable")
+    store.save(
+        replace(
+            previous,
+            loxberry_operate_bindings=tuple(
+                item for item in previous.loxberry_operate_bindings if item != binding
+            ),
+        )
+    )
+    document = _auth_store().snapshot()
+    families = [
+        family_id
+        for family_id, record in document.get("families", {}).items()
+        if isinstance(record, dict)
+        and not record.get("revoked", False)
+        and _loxberry_operate_binding(record) == binding
+    ]
+    if families:
+        _revoke_many(
+            families,
+            endpoint=previous.loxone_endpoint,
+            timeout_seconds=previous.connection_timeout,
+        )
+    return {
+        "sessions": _sessions(),
+        "loxberry_operate_bindings": _loxberry_operate_bindings(),
+    }
 
 
 def _revoke(
@@ -616,7 +815,7 @@ def _diagnostic() -> dict[str, Any]:
     config = _config_store().load()
     endpoint = MiniserverEndpoint.parse(config.loxone_endpoint) if config.loxone_endpoint else None
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "plugin_version": __version__,
         "service_active": _service_active(),
         "enabled": config.enabled,
@@ -638,6 +837,7 @@ def dispatch(request: object) -> dict[str, Any]:
             "version": __version__,
             "sessions": _sessions(),
             "loxberry_bindings": _loxberry_bindings(),
+            "loxberry_operate_bindings": _loxberry_operate_bindings(),
             "certificate": _certificate_status(),
         } | _service_response()
     if action == "get_config":
@@ -659,11 +859,19 @@ def dispatch(request: object) -> dict[str, Any]:
     if action == "test_connection":
         return asyncio.run(_test_connection(payload))
     if action == "list_sessions":
-        return {"sessions": _sessions(), "loxberry_bindings": _loxberry_bindings()}
+        return {
+            "sessions": _sessions(),
+            "loxberry_bindings": _loxberry_bindings(),
+            "loxberry_operate_bindings": _loxberry_operate_bindings(),
+        }
     if action == "allow_loxberry_read":
         return _allow_loxberry_read(payload)
     if action == "revoke_loxberry_read":
         return _revoke_loxberry_read(payload)
+    if action == "allow_loxberry_operate":
+        return _allow_loxberry_operate(payload)
+    if action == "revoke_loxberry_operate":
+        return _revoke_loxberry_operate(payload)
     if action == "revoke_session":
         family_id = payload.get("id") if isinstance(payload, dict) else None
         if not isinstance(family_id, str) or len(family_id) > 128:

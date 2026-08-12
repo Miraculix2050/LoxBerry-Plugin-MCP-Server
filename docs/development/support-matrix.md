@@ -1,13 +1,16 @@
 # Support-Matrix
 
-- **Stand:** Phase-3-Abnahme, 2026-08-07
-- **Aktueller Pre-Release:** `0.3.0-alpha.1`
+- **Stand:** Phase-4-Implementierung, 2026-08-11
+- **Vorbereiteter Pre-Release:** `0.4.0-alpha.1`
 - **Nächster Meilenstein:** gezielte reale Abnahme der erweiterten
-  Gen.-1-Schreibaktionen
+  Phase-4-Funktionen
 
 Diese Matrix unterscheidet reale Nachweise von implementierten, aber noch nicht
 real bestätigten Kombinationen. Phase 1, Phase 2 und Phase 3 sind abgenommen;
-`0.3.0-alpha.1` bleibt wegen seines Vorabversionsstatus ein Pre-Release.
+`0.4.0-alpha.1` bleibt wegen seines Vorabversionsstatus ein Pre-Release.
+Phase 4 ist implementiert und für die lesenden Statistik-/Historienpfade sowie
+die eng begrenzte plugin-eigene Cache-Operation auf Hardware abgenommen; siehe
+[Phase-4-Abnahmebericht](phase-4-acceptance.md).
 
 ## Plattformen und Geräte
 
@@ -106,3 +109,22 @@ Der vollständige maskierte Nachweis steht im
   diesem Lauf wird auf dem Zielsystem ausschließlich gelesen; die erweiterten
   Schreibaktionen sind daher noch nicht als reale Hardwarekompatibilität
   bestätigt.
+- Die klassische Binärstatistik (`statistic.outputs`, Rohabruf), eine
+  `StatisticV2`-Serie und die Control-Historie sind an sichtbaren Controls real
+  lesend bestätigt. Die lokal freigegebene, ausschließlich plugin-eigene
+  Cache-Leerung ist ebenfalls bestätigt. Control-Hinweise sowie `TimedSwitch`, `Radio`,
+  `LightsceneRGB`, `ColorPicker`, `ColorPickerV2` und `Pushbutton` sind
+  automatisiert geprüft, aber noch nicht real bestätigt. Für Hinweise wurde in
+  dieser Installation noch kein Control mit dem Verfügbarkeitsmerkmal gefunden.
+  Legacy-XML und
+  FTP-Statistik sind nicht aktiv.
+- Die aktuelle Quelle benötigt vor einem Merge noch das Full-Gate mit Python 3.13.
+  Der lokale Python-Launcher hatte beim Abschluss keine installierte Runtime; die
+  verbleibende Browser-Abnahme der Clients-/Sitzungs-Bindungstabellen erfordert
+  eine authentifizierte Admin-Sitzung und die dokumentierte Viewport-Matrix.
+- Der generische Lesepfad wurde über den verbundenen MCP auf 351 sichtbaren
+  Controls in vier Seiten geprüft; alle in der User-Doku als installationsweit
+  lesbar markierten V2-/Bestandstypen waren vorhanden. Die V1-Varianten fehlten.
+- Es wird genau ein Miniserver-Ziel unterstützt. Die Voraussetzungen für eine
+  spätere Mehrziel-Unterstützung stehen in
+  [Multiple Miniserver support](multi-miniserver.md).

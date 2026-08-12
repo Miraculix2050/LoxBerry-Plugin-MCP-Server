@@ -26,9 +26,17 @@ from mcpserver.auth.store import AtomicJsonAuthStore, token_digest
 READ_SCOPE: Final = "loxone:read"
 CONTROL_SCOPE: Final = "loxone:control"
 LOXBERRY_READ_SCOPE: Final = "loxberry:read"
+HISTORY_SCOPE: Final = "loxone:history"
+LOXBERRY_OPERATE_SCOPE: Final = "loxberry:operate"
 # Retained as the Phase 1 source-level alias used by existing integrations.
 SCOPE: Final = READ_SCOPE
-SUPPORTED_SCOPES: Final = (READ_SCOPE, CONTROL_SCOPE, LOXBERRY_READ_SCOPE)
+SUPPORTED_SCOPES: Final = (
+    READ_SCOPE,
+    HISTORY_SCOPE,
+    CONTROL_SCOPE,
+    LOXBERRY_READ_SCOPE,
+    LOXBERRY_OPERATE_SCOPE,
+)
 _LOGGER = logging.getLogger("mcpserver.auth.provider")
 AUTHORIZATION_CODE_TTL: Final = 5 * 60
 ACCESS_TOKEN_TTL: Final = 10 * 60
@@ -66,16 +74,20 @@ def _opaque_token() -> str:
 
 
 def normalize_scopes(
-    value: str | None, *, control_enabled: bool, loxberry_read_enabled: bool = False
+    value: str | None,
+    *,
+    control_enabled: bool,
+    loxberry_read_enabled: bool = False,
+    history_enabled: bool = False,
+    loxberry_operate_enabled: bool = False,
 ) -> tuple[str, ...]:
-    """Return the canonical supported scope set without allowing control alone."""
+    """Return any canonical known scope set; policy gates are evaluated by tools."""
+    del control_enabled, loxberry_read_enabled, history_enabled, loxberry_operate_enabled
     requested = value.split() if value else [READ_SCOPE]
     if len(requested) != len(set(requested)) or set(requested) - set(SUPPORTED_SCOPES):
         raise ValueError("unsupported scope")
-    if (
-        READ_SCOPE not in requested
-        or (CONTROL_SCOPE in requested and not control_enabled)
-        or (LOXBERRY_READ_SCOPE in requested and not loxberry_read_enabled)
+    if READ_SCOPE not in requested or (
+        LOXBERRY_OPERATE_SCOPE in requested and HISTORY_SCOPE not in requested
     ):
         raise ValueError("unsupported scope")
     return tuple(scope for scope in SUPPORTED_SCOPES if scope in requested)
@@ -128,6 +140,9 @@ class Phase0OAuthProvider(
         control_enabled: bool = False,
         loxberry_read_enabled: bool = False,
         loxberry_read_allowed: Callable[[str, str, str], bool] | None = None,
+        history_enabled: bool = False,
+        loxberry_operate_enabled: bool = False,
+        loxberry_operate_allowed: Callable[[str, str, str], bool] | None = None,
         explorer_origins: tuple[str, ...] = (),
     ) -> None:
         self.store = store
@@ -138,6 +153,9 @@ class Phase0OAuthProvider(
         self.control_enabled = control_enabled
         self.loxberry_read_enabled = loxberry_read_enabled
         self._loxberry_read_allowed = loxberry_read_allowed
+        self.history_enabled = history_enabled
+        self.loxberry_operate_enabled = loxberry_operate_enabled
+        self._loxberry_operate_allowed = loxberry_operate_allowed
         canonical_origin = issuer.rsplit("/plugins/mcpserver/oauth", 1)[0]
         self.explorer_origins = frozenset((canonical_origin, *explorer_origins))
         self.store.mutate(self._garbage_collect)
@@ -151,6 +169,16 @@ class Phase0OAuthProvider(
             self.loxberry_read_enabled
             and self._loxberry_read_allowed is not None
             and self._loxberry_read_allowed(client_id, identity_id, miniserver_id)
+        )
+
+    def loxberry_operate_allowed(
+        self, client_id: str, identity_id: str, miniserver_id: str
+    ) -> bool:
+        """Evaluate the locally administered Phase 4 binding live."""
+        return bool(
+            self.loxberry_operate_enabled
+            and self._loxberry_operate_allowed is not None
+            and self._loxberry_operate_allowed(client_id, identity_id, miniserver_id)
         )
 
     async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
@@ -170,6 +198,8 @@ class Phase0OAuthProvider(
                 client_info.scope,
                 control_enabled=self.control_enabled,
                 loxberry_read_enabled=self.loxberry_read_enabled,
+                history_enabled=self.history_enabled,
+                loxberry_operate_enabled=self.loxberry_operate_enabled,
             )
         except ValueError:
             scopes = ()
@@ -282,6 +312,7 @@ class Phase0OAuthProvider(
         scopes: tuple[str, ...] = (READ_SCOPE,),
         family_id: str | None = None,
         pending_loxberry_read: bool = False,
+        pending_loxberry_operate: bool = False,
     ) -> str:
         if resource != self.resource:
             raise TokenError("invalid_grant", "Resource mismatch")
@@ -290,6 +321,8 @@ class Phase0OAuthProvider(
                 scope_text(list(scopes)),
                 control_enabled=self.control_enabled,
                 loxberry_read_enabled=self.loxberry_read_enabled,
+                history_enabled=self.history_enabled,
+                loxberry_operate_enabled=self.loxberry_operate_enabled,
             )
         except ValueError as exc:
             raise TokenError("invalid_scope", "Unsupported authorization scope") from exc
@@ -297,12 +330,20 @@ class Phase0OAuthProvider(
             raise TokenError("invalid_scope", "Authorization scopes must be canonical")
         if pending_loxberry_read and LOXBERRY_READ_SCOPE not in scopes:
             raise TokenError("invalid_scope", "Pending diagnostics require their scope")
+        if pending_loxberry_operate and LOXBERRY_OPERATE_SCOPE not in scopes:
+            raise TokenError("invalid_scope", "Pending operation requires its scope")
         if (
             LOXBERRY_READ_SCOPE in scopes
             and not pending_loxberry_read
             and not self.loxberry_read_allowed(client_id, identity_id, miniserver_id)
         ):
             raise TokenError("invalid_scope", "LoxBerry diagnostics require local approval")
+        if (
+            LOXBERRY_OPERATE_SCOPE in scopes
+            and not pending_loxberry_operate
+            and not self.loxberry_operate_allowed(client_id, identity_id, miniserver_id)
+        ):
+            raise TokenError("invalid_scope", "LoxBerry operation requires local approval")
         raw_code = _opaque_token()
         digest = token_digest(raw_code)
         now = self.now()
@@ -347,6 +388,7 @@ class Phase0OAuthProvider(
                 "expires_at": now + family_ttl,
                 "revoked": False,
                 "pending_loxberry_read": pending_loxberry_read,
+                "pending_loxberry_operate": pending_loxberry_operate,
                 **({"client_kind": "tool_explorer"} if is_explorer else {}),
             }
 

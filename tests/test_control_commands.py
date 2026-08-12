@@ -6,7 +6,13 @@ from mcpserver.loxone.control import allowed_actions, prepare_control_command, v
 from mcpserver.loxone.models import Control
 
 
-def _control(control_type: str, *, automatic: bool = False, read_only: bool = False) -> Control:
+def _control(
+    control_type: str,
+    *,
+    automatic: bool = False,
+    read_only: bool = False,
+    **kwargs: object,
+) -> Control:
     return Control(
         uuid="control",
         name="Control",
@@ -17,6 +23,7 @@ def _control(control_type: str, *, automatic: bool = False, read_only: bool = Fa
         state_uuids=(),
         read_only=read_only,
         is_automatic=automatic,
+        **kwargs,  # type: ignore[arg-type]
     )
 
 
@@ -38,12 +45,45 @@ def _control(control_type: str, *, automatic: bool = False, read_only: bool = Fa
             {"position": 20, "slat_position": 70},
             "manualPosBlind/20/70",
         ),
+        ("TimedSwitch", "pulse", {}, "pulse"),
+        ("Pushbutton", "pulse", {}, "pulse"),
+        (
+            "Radio",
+            "select_output",
+            {"output_id": "2"},
+            "2",
+        ),
+        (
+            "LightsceneRGB",
+            "set_scene",
+            {"scene_id": "3"},
+            "3",
+        ),
+        (
+            "ColorPickerV2",
+            "set_color_hsv",
+            {"hue": 360, "saturation": 50, "brightness": 25},
+            "hsv(360,50,25)",
+        ),
+        (
+            "ColorPickerV2",
+            "set_color_temperature",
+            {"brightness": 75, "kelvin": 4000},
+            "temp(75,4000)",
+        ),
     ],
 )
 def test_official_commands_are_mapped_without_raw_command_input(
     control_type: str, action: str, kwargs: dict[str, object], command: str
 ) -> None:
-    prepared = prepare_control_command(_control(control_type), action, **kwargs)  # type: ignore[arg-type]
+    options: dict[str, object] = {}
+    if control_type == "Radio":
+        options["radio_output_ids"] = ("2",)
+    elif control_type == "LightsceneRGB":
+        options["scene_ids"] = ("3",)
+    elif control_type == "ColorPickerV2":
+        options["picker_type"] = "Rgb/Lumitech"
+    prepared = prepare_control_command(_control(control_type, **options), action, **kwargs)  # type: ignore[arg-type]
 
     assert prepared.command == command
 
@@ -65,6 +105,19 @@ def test_automatic_actions_are_advertised_only_for_automatic_jalousie() -> None:
         (_control("Jalousie"), "set_position", {}),
         (_control("Jalousie"), "open", {"position": 10}),
         (_control("Jalousie"), "enable_auto", {}),
+        (_control("Radio", radio_output_ids=("2",)), "select_output", {"output_id": "3"}),
+        (_control("Radio"), "reset", {}),
+        (_control("LightsceneRGB", scene_ids=("1",)), "set_scene", {"scene_id": "2"}),
+        (
+            _control("ColorPickerV2", picker_type="Rgb"),
+            "set_color_hsv",
+            {"hue": 361, "saturation": 50, "brightness": 50},
+        ),
+        (
+            _control("ColorPickerV2", picker_type="TunableWhite"),
+            "set_color_temperature",
+            {"brightness": 50, "kelvin": 900},
+        ),
     ],
 )
 def test_invalid_or_mismatched_parameters_are_rejected(
@@ -79,3 +132,8 @@ def test_visible_mood_ids_accepts_numeric_target_data() -> None:
 
     assert visible_mood_ids(value) == frozenset({"314", "999"})
     assert visible_mood_ids('[{"name":"Unsafe","id":"../../on"}]') is None
+
+
+def test_radio_reset_is_advertised_only_when_visible_details_allow_it() -> None:
+    assert allowed_actions(_control("Radio")) == []
+    assert allowed_actions(_control("Radio", radio_reset_allowed=True)) == ["reset"]

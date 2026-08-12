@@ -372,7 +372,8 @@ sind. Sie erhalten keine generische Schreibmöglichkeit.
 | `loxone_list_rooms` | sichtbare Räume, paginiert |
 | `loxone_list_categories` | sichtbare Kategorien, paginiert |
 | `loxone_find_controls` | Suche/Filter nach Name, Raum, Kategorie und Typ |
-| `loxone_describe_control` | Fähigkeiten, erlaubte Actions und State-Metadaten |
+| `loxone_describe_control` | Fähigkeiten, erlaubte Actions sowie State- und Darstellungsmetadaten |
+| `loxone_get_control_notes` | begrenzte, nicht vertrauenswürdige Hinweise eines sichtbaren Controls |
 | `loxone_get_states` | aktuelle Zustände einer begrenzten UUID-Liste |
 
 Diese Tools erhalten `readOnlyHint: true`, `destructiveHint: false` und passende
@@ -741,10 +742,11 @@ Support-Matrix.
 
 ### Phase 4: Erweiterungen
 
-- Historie/Statistik
-- weitere bestätigte Control-Typen
-- eng begrenzte plugin-eigene LoxBerry-Aktion
-- mehrere Miniserver nur bei nachgewiesenem Bedarf
+- `loxone:history` für sichtbare StatisticV2-Reihen und begrenzte Control-Historie
+- weitere eng typisierte Control-Verträge gemäß ADR 0007
+- `loxberry:operate` ausschließlich zum Löschen des plugin-eigenen Statistik-Caches
+- mehrere Miniserver erst in Phase 5 oder später; Bedingungen und Topologien sind
+  in [Multiple Miniserver support](multi-miniserver.md) festgehalten
 
 ## 18. Abnahmekriterien für den ersten öffentlichen Test
 

@@ -54,6 +54,9 @@ fi
 
 key="$plugin_data/auth/install.key"
 mkdir -p "$plugin_data/auth"
+mkdir -p "$plugin_data/statistics-cache"
+chown loxberry:loxberry "$plugin_data/statistics-cache"
+chmod 700 "$plugin_data/statistics-cache"
 if [ ! -f "$key" ]; then
     (umask 0137 && openssl rand 32 > "$key") || exit 2
 fi

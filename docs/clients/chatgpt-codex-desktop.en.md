@@ -21,13 +21,21 @@ Before setup, you need:
 Use the address of the **LoxBerry**, not the Loxone Miniserver address. Never put
 credentials in the URL.
 
-Also decide which permissions are needed before authentication:
+The server always advertises every known OAuth scope. The checkboxes in the
+plugin configuration do not change this list; they are global capability gates.
+The permissions actually granted to a sign-in are selected only in the OAuth
+consent dialog after Loxone authentication.
 
-- When **Read only** is selected in the plugin, the server offers only
-  `loxone:read`.
-- When **Read and switch** is selected, the server also advertises
-  `loxone:control`. The desktop app prefers the server-advertised scopes and
-  therefore requests both permissions during a new login.
+The currently known ChatGPT/Codex desktop app prefers the server-advertised
+scopes and may therefore request all five during a new sign-in:
+
+```text
+loxone:read loxone:history loxone:control loxberry:read loxberry:operate
+```
+
+This does not mean that every permission is granted or administratively
+enabled. Review the browser selection during every new sign-in; exact client
+behavior may change with an app version.
 
 ## Add the MCP server
 
@@ -53,29 +61,33 @@ Also decide which permissions are needed before authentication:
 The server should then appear as connected. Use `/mcp` in the desktop app to
 inspect connected MCP servers.
 
-## Understand read and write access
+## Understand permissions and administrator approval
 
-When **Read and switch** is selected in the plugin, the desktop app requests
-both scopes during authentication:
+The consent dialog shows required `loxone:read`. Every other scope is an
+optional checkbox:
 
-```text
-loxone:read loxone:control
-```
+| Scope | Effect | Additional approval |
+| --- | --- | --- |
+| `loxone:read` | Read visible Loxone structure and current states | always active |
+| `loxone:history` | Read history and statistics | global administrator checkbox |
+| `loxone:control` | Operate supported visible controls with bounded actions | global administrator checkbox |
+| `loxberry:read` | Read LoxBerry and plugin diagnostics | global and local administrator approval |
+| `loxberry:operate` | Clear the plugin-owned statistics cache | `loxone:history` plus global and local administrator approval |
 
-The consent dialog shows required **Read access** and optional **Loxone
-control** as a checkbox. Only when control is selected and confirmed are the six
-read tools and the narrowly limited control tool available. The write tool can
-only operate permitted, visible Gen. 1 controls with actions advertised by
-`loxone_describe_control`. The authenticated
-Loxone user's permissions further restrict what is actually possible.
+`loxberry:operate` can be confirmed only together with `loxone:history`. For
+read-only access, leave every optional checkbox clear.
 
-Write access is not silently added later: it must be selected and approved on
-the browser consent page. For read-only access, leave the optional checkbox
-clear.
+OAuth consent and administrator approval are separate checks: an optional scope
+may already be present in the token while its capability has not yet been
+enabled in the plugin configuration or locally approved. The affected tool then
+fails closed with `permission_denied`. No additional permission selection in
+the desktop app or Tool Explorer is required.
 
-If the setting is later changed to **Read only**, the plugin revokes existing
-control sessions. Authenticate the desktop app again to obtain a read-only
-session.
+Loxone control remains restricted by visible controls, documented actions, and
+the authenticated Loxone user's permissions. LoxBerry approvals are bound to
+the exact OAuth client, Loxone identity, and Miniserver. Disabling an optional
+global capability revokes matching sessions; a new permission is never silently
+added to an existing session.
 
 ## Troubleshooting
 
@@ -86,7 +98,10 @@ session.
 - **Authenticate is missing:** Check that the server is saved and reachable,
   then open its entry again.
 - **Unexpected write access:** Revoke the session and authenticate again without
-  selecting the optional control permission.
+  selecting `loxone:control` or `loxberry:operate`.
+- **`permission_denied` despite a confirmed scope:** Enable the corresponding
+  global capability. For `loxberry:read` and `loxberry:operate`, the
+  administrator must also approve the exact sign-in locally.
 - **Connection remains pending:** Restart the desktop app and then inspect the
   server through `/mcp`.
 

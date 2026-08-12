@@ -30,6 +30,21 @@ class NamedGroup:
 
 
 @dataclass(frozen=True, slots=True)
+class StatisticSeries:
+    """One user-visible statistic datapoint advertised by the structure file."""
+
+    series_id: str
+    source: str
+    group_id: str
+    output: str
+    title: str
+    format: str
+    accumulated: bool = False
+    legacy_output_index: int | None = None
+    legacy_output_count: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class Control:
     uuid: str
     name: str
@@ -40,7 +55,18 @@ class Control:
     state_uuids: tuple[tuple[str, str], ...]
     restrictions: int = 0
     read_only: bool = False
+    rating: int | None = None
+    secured: bool = False
+    has_notes: bool = False
     is_automatic: bool = False
+    has_history: bool = False
+    picker_type: str | None = None
+    min_kelvin: int = 2700
+    max_kelvin: int = 6500
+    scene_ids: tuple[str, ...] = ()
+    radio_output_ids: tuple[str, ...] = ()
+    radio_reset_allowed: bool = False
+    statistic_series: tuple[StatisticSeries, ...] = ()
     subcontrols: tuple[Control, ...] = ()
 
 

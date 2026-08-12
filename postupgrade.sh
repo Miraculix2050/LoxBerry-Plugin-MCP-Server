@@ -7,8 +7,7 @@ if [ -z "$actual_folder" ] || [ -z "${LBPCONFIG:-}" ] || [ -z "${LBPDATA:-}" ]; 
     exit 2
 fi
 
-# Schema 1 is the first released configuration. The migration is intentionally
-# idempotent and never replaces an existing configuration or session store.
+# Schema migrations are idempotent and never replace an existing session store.
 plugin_config="$LBPCONFIG/$actual_folder"
 plugin_data="$LBPDATA/$actual_folder"
 if [ ! -f "$plugin_config/mcpserver.json" ]; then
@@ -28,8 +27,25 @@ if not stat.S_ISREG(metadata.st_mode) or path.is_symlink():
     raise SystemExit("configuration is not a regular file")
 document = json.loads(path.read_text(encoding="utf-8"))
 logging_config = document.get("logging")
+changed = False
 if isinstance(logging_config, dict) and "debug_until" in logging_config:
     logging_config.pop("debug_until")
+    changed = True
+if document.get("schema_version") == 1:
+    tools = document.setdefault("tools", {})
+    limits = document.setdefault("limits", {})
+    policies = document.setdefault("policies", {})
+    cache = document.setdefault("cache", {})
+    tools.setdefault("loxone_history_enabled", False)
+    tools.setdefault("loxberry_operate_enabled", False)
+    limits.setdefault("history_requests_per_minute", 12)
+    limits.setdefault("loxberry_operate_requests_per_minute", 3)
+    policies.setdefault("loxberry_operate_bindings", [])
+    cache.setdefault("statistics_mode", "memory")
+    cache.setdefault("statistics_max_mib", 128)
+    document["schema_version"] = 2
+    changed = True
+if changed:
     descriptor, temporary_name = tempfile.mkstemp(prefix=".mcpserver.", dir=path.parent)
     temporary = Path(temporary_name)
     try:
@@ -46,6 +62,9 @@ PY
 chmod 600 "$plugin_config/mcpserver.json"
 mkdir -p "$plugin_data/auth"
 chmod 700 "$plugin_data/auth"
+mkdir -p "$plugin_data/statistics-cache"
+chown loxberry:loxberry "$plugin_data/statistics-cache"
+chmod 700 "$plugin_data/statistics-cache"
 
 # The former CGI logger created one timestamped file per administrative action.
 # Removing those legacy files makes the new active file plus two backups the

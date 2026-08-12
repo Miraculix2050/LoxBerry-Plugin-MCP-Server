@@ -21,13 +21,22 @@ Vor der Einrichtung benötigst du:
 Verwende hier die Adresse des **LoxBerry**, nicht die Adresse des Loxone
 Miniservers. Trage keine Zugangsdaten in die URL ein.
 
-Entscheide außerdem vor der Anmeldung, welche Rechte benötigt werden:
+Der Server veröffentlicht immer alle bekannten OAuth-Scopes. Die Checkboxen in
+der Plugin-Konfiguration ändern diese Liste nicht; sie sind globale
+Funktionsfreigaben. Die tatsächlich für eine Anmeldung erteilten Rechte werden
+erst nach der Loxone-Anmeldung im OAuth-Berechtigungsdialog ausgewählt.
 
-- Ist im Plugin **Nur lesen** ausgewählt, wird nur der Lesezugriff
-  `loxone:read` angeboten.
-- Ist **Lesen und schalten** ausgewählt, bietet der Server zusätzlich
-  `loxone:control` an. Die Desktop-App bevorzugt die vom Server angebotenen
-  Scopes und fordert deshalb bei einer neuen Anmeldung beide Rechte an.
+Die derzeit bekannte ChatGPT-/Codex-Desktop-App bevorzugt die vom Server
+veröffentlichten Scopes und kann daher bei einer neuen Anmeldung alle fünf
+anfordern:
+
+```text
+loxone:read loxone:history loxone:control loxberry:read loxberry:operate
+```
+
+Das bedeutet noch nicht, dass alle Rechte erteilt oder administrativ
+freigegeben sind. Prüfe die im Browser angezeigte Auswahl bei jeder neuen
+Anmeldung; das genaue Clientverhalten kann sich mit einer App-Version ändern.
 
 ## MCP-Server hinzufügen
 
@@ -54,31 +63,35 @@ Entscheide außerdem vor der Anmeldung, welche Rechte benötigt werden:
 Der Server sollte danach als verbunden erscheinen. Über `/mcp` kannst du in der
 Desktop-App die verbundenen MCP-Server kontrollieren.
 
-## Lese- und Schreibrechte verstehen
+## Berechtigungen und Adminfreigaben verstehen
 
-Wenn im Plugin **Lesen und schalten** ausgewählt ist, fordert die Desktop-App
-bei der Authentifizierung beide Scopes an:
+Der Freigabedialog zeigt `loxone:read` verpflichtend. Die übrigen Scopes sind
+optionale Checkboxen:
 
-```text
-loxone:read loxone:control
-```
+| Scope | Wirkung | Zusätzliche Freigabe |
+| --- | --- | --- |
+| `loxone:read` | Sichtbare Loxone-Struktur und aktuelle Zustände lesen | immer aktiv |
+| `loxone:history` | Historie und Statistiken lesen | globale Admin-Checkbox |
+| `loxone:control` | Unterstützte sichtbare Controls gezielt bedienen | globale Admin-Checkbox |
+| `loxberry:read` | LoxBerry- und Plugin-Diagnosen lesen | globale und lokale Administratorfreigabe |
+| `loxberry:operate` | Plugin-eigenen Statistik-Cache löschen | `loxone:history` sowie globale und lokale Administratorfreigabe |
 
-Der Freigabedialog zeigt **Lesezugriff** verpflichtend und
-**Loxone-Steuerung** als optionale Checkbox. Nur wenn die Steuerung ausgewählt
-und bestätigt wird, stehen die sechs Lesewerkzeuge und das begrenzte
-Control-Schreibwerkzeug zur Verfügung. Das Schreibwerkzeug kann ausschließlich
-freigegebene, sichtbare Gen.-1-Controls mit den von
-`loxone_describe_control` angebotenen Aktionen bedienen. Die tatsächlichen
-Möglichkeiten bleiben zusätzlich durch die Rechte des angemeldeten
-Loxone-Benutzers begrenzt.
+`loxberry:operate` kann im Consent nur zusammen mit `loxone:history` bestätigt
+werden. Für reinen Lesezugriff lässt du alle optionalen Checkboxen deaktiviert.
 
-Die Schreibrechte werden nicht nachträglich still hinzugefügt: Sie müssen auf
-der Browser-Freigabeseite ausgewählt und dort bestätigt werden. Für reinen
-Lesezugriff lässt du die optionale Checkbox deaktiviert.
+OAuth-Consent und Adminfreigabe sind zwei getrennte Prüfungen: Ein optionaler
+Scope darf bereits im Token stehen, obwohl seine Funktion in der
+Plugin-Konfiguration noch nicht aktiviert oder lokal freigegeben ist. Das
+betroffene Werkzeug antwortet dann kontrolliert mit `permission_denied`. Es ist
+keine weitere Berechtigungsauswahl in der Desktop-App oder im Tool Explorer
+erforderlich.
 
-Beim späteren Wechsel auf **Nur lesen** widerruft das Plugin bestehende
-Control-Sitzungen. Authentifiziere die Desktop-App danach erneut, um eine reine
-Read-only-Sitzung zu erhalten.
+Loxone-Steuerungen bleiben zusätzlich auf sichtbare Controls, dokumentierte
+Aktionen und die Rechte des angemeldeten Loxone-Benutzers begrenzt.
+LoxBerry-Freigaben sind an den konkreten OAuth-Client, die Loxone-Identität und
+den Miniserver gebunden. Beim Deaktivieren einer optionalen globalen Freigabe
+widerruft das Plugin passende Sitzungen; eine neue Berechtigung wird nie still
+zu einer bestehenden Sitzung hinzugefügt.
 
 ## Fehlerbehebung
 
@@ -89,7 +102,10 @@ Read-only-Sitzung zu erhalten.
 - **Authentifizieren fehlt:** Prüfe, ob der Server gespeichert und erreichbar
   ist. Öffne den Eintrag anschließend erneut.
 - **Unerwartete Schreibrechte:** Widerrufe die Sitzung und authentifiziere dich
-  erneut, ohne die optionale Steuerungsberechtigung auszuwählen.
+  erneut, ohne `loxone:control` oder `loxberry:operate` auszuwählen.
+- **`permission_denied` trotz bestätigtem Scope:** Aktiviere die zugehörige
+  globale Funktionsfreigabe. Für `loxberry:read` und `loxberry:operate` muss der
+  Administrator zusätzlich die konkrete Anmeldung lokal freigeben.
 - **Verbindung bleibt ausstehend:** Starte die Desktop-App neu und kontrolliere
   den Server anschließend über `/mcp`.
 
