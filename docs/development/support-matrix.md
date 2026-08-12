@@ -107,20 +107,24 @@ Der vollständige maskierte Nachweis steht im
 - `Dimmer` (`set_level`, `off`), `LightControllerV2` (`set_mood`) und
   `TimedSwitch` (`on`, `off`) sind an ausdrücklich freigegebenen, harmlosen
   Fixtures real bestätigt und jeweils in den Ausgangszustand zurückgeführt.
-- `Jalousie` (`stop`), `LightsceneRGB` (`on`, `off`), `Radio` (`reset`) und
-  `Pushbutton` (`pulse`) wurden real akzeptiert, ohne dass die jeweils sichtbare
-  Rückmeldung eine Wirkung bestätigen konnte. Alle übrigen Aktionen bleiben
-  entsprechend der User-Doku unverified.
+- `Jalousie`-`open`, Positions-, Lamellen- und Kombinationsaktionen sowie
+  `enable_auto` sind auf der ausdrücklich freigegebenen Fixture über ihre
+  sichtbaren Rückmeldungen bestätigt. `close`, `shade`, `stop` und der erste
+  `disable_auto`-Aufruf wurden nur akzeptiert. Die abschließende
+  Positionsrückführung blieb nach zwei akzeptierten, aber unbestätigten
+  Befehlen offen; es wurde kein weiterer Befehl automatisch wiederholt.
+  `LightsceneRGB` (`on`, `off`), `Radio` (`reset`) und `Pushbutton` (`pulse`)
+  bleiben lediglich akzeptiert. Alle übrigen Aktionen bleiben entsprechend der
+  User-Doku unverified.
 - Die klassische Binärstatistik (`statistic.outputs`, Rohabruf), eine
   `StatisticV2`-Serie und die Control-Historie sind an sichtbaren Controls real
   lesend bestätigt. Die lokal freigegebene, ausschließlich plugin-eigene
-  Cache-Leerung ist ebenfalls bestätigt. `ColorPickerV2` ist auf derselben
-  Fixture lesend bestätigt und bot `set_color_hsv`; mangels eigener
-  Raum-/Kategoriezuordnung wurde sein Write-Pfad nicht getestet. `ColorPicker`
-  (V1), nicht ausgeführte Aktionen und Control-Hinweise bleiben unverified. Für
-  Hinweise wurde in dieser Installation noch kein Control mit dem
-  Verfügbarkeitsmerkmal gefunden. Legacy-XML und
-  FTP-Statistik sind nicht aktiv.
+  Cache-Leerung ist ebenfalls bestätigt. Ein `ColorPickerV2`-Subcontrol ohne
+  eigene Raum-/Kategoriezuordnung ist über seinen beidseitig zugeordneten
+  `LightControllerV2`-Parent real mit `set_color_hsv` bestätigt und in den
+  Ausgangszustand zurückgeführt. `ColorPicker` (V1) und nicht ausgeführte
+  Aktionen bleiben unverified. Control-Hinweise sind durch einen begrenzten
+  realen Abruf bestätigt. Legacy-XML und FTP-Statistik sind nicht aktiv.
 - Die lokale Python-3.13-Full-Prüfung mit 466 Tests und das finale PR-CI-Gate
   sind bestanden. Die Clients-/Sitzungen-Bindungstabellen wurden mit einer
   authentifizierten Admin-Sitzung bei allen dokumentierten fünf Viewports ohne
