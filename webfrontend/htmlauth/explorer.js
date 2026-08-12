@@ -15,10 +15,9 @@
   const MCP_RESOURCE_PATH = '/plugins/mcpserver/mcp';
   const EXPLORER_PATH = '/admin/plugins/mcpserver/explorer.cgi';
   const OPAQUE_VALUE = /^[A-Za-z0-9_-]{32,512}$/;
-  const EXPLORER_SCOPES = new Set([
-    'loxone:read', 'loxone:read loxone:control', 'loxone:read loxberry:read',
-    'loxone:read loxone:control loxberry:read',
-  ]);
+  const EXPLORER_SCOPE_ORDER = [
+    'loxone:read', 'loxone:history', 'loxone:control', 'loxberry:read', 'loxberry:operate',
+  ];
   const SECRET_NAME = /(?:password|passwd|secret|token|api[_-]?key|private[_-]?key)/i;
   const JSON_TYPES = new Set(['null', 'boolean', 'object', 'array', 'number', 'string', 'integer']);
   const REUSE_SCHEMA_KEYS = new Set([
@@ -27,9 +26,77 @@
     'pattern', 'minItems', 'maxItems', 'uniqueItems', 'title', 'description', 'default',
     'examples', 'readOnly', 'writeOnly',
   ]);
+  const TOOL_GROUPS = [
+    {id: 'loxoneRead', names: [
+      'loxone_get_skill_guide', 'loxone_get_system_status', 'loxone_list_rooms',
+      'loxone_list_categories', 'loxone_find_controls', 'loxone_describe_control',
+      'loxone_get_control_notes', 'loxone_get_states',
+    ]},
+    {id: 'loxoneHistory', names: ['loxone_get_statistics', 'loxone_get_control_history']},
+    {id: 'loxoneControl', names: ['loxone_operate_control']},
+    {id: 'loxberryRead', names: [
+      'loxberry_get_system_status', 'loxberry_get_plugin_status', 'loxberry_get_service_health',
+    ]},
+    {id: 'loxberryOperate', names: ['loxberry_clear_statistics_cache']},
+  ];
 
   function clone(value) {
     return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+  }
+
+  function toolGroup(tool) {
+    const name = tool && tool.name || '';
+    if (name === 'loxone_get_statistics' || name === 'loxone_get_control_history') return 'loxoneHistory';
+    if (name.startsWith('loxone_')) return toolIsMutating(tool) ? 'loxoneControl' : 'loxoneRead';
+    if (name === 'loxberry_clear_statistics_cache') return 'loxberryOperate';
+    return 'loxberryRead';
+  }
+
+  function sortedToolGroups(tools) {
+    return TOOL_GROUPS.map((group) => {
+      const positions = new Map(group.names.map((name, index) => [name, index]));
+      return {
+        id: group.id,
+        tools: (tools || []).filter((tool) => toolGroup(tool) === group.id).sort((left, right) => {
+          const leftPosition = positions.has(left.name) ? positions.get(left.name) : Number.MAX_SAFE_INTEGER;
+          const rightPosition = positions.has(right.name) ? positions.get(right.name) : Number.MAX_SAFE_INTEGER;
+          return leftPosition - rightPosition || left.name.localeCompare(right.name);
+        }),
+      };
+    }).filter((group) => group.tools.length);
+  }
+
+  function dateTimeLocalToRfc3339(value) {
+    if (typeof value !== 'string' || !value) return '';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? '' : date.toISOString();
+  }
+
+  function rfc3339ToDateTimeLocal(value) {
+    const date = new Date(value);
+    if (typeof value !== 'string' || Number.isNaN(date.getTime())) return '';
+    const pad = (number) => String(number).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+
+  function statisticsTransfer(sourceTool, displayedResult, path, value, now) {
+    if (sourceTool !== 'loxone_describe_control' || !Array.isArray(path) || path.length !== 4 ||
+      path[0] !== 'data' || path[1] !== 'capabilities' || path[2] !== 'statistics' ||
+      !value || typeof value !== 'object' || Array.isArray(value) || typeof value.series_id !== 'string' ||
+      !displayedResult || !displayedResult.data || typeof displayedResult.data.uuid !== 'string') return null;
+    const end = new Date(now === undefined ? Date.now() : now);
+    if (Number.isNaN(end.getTime())) return null;
+    const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
+    return {
+      tool: 'loxone_get_statistics',
+      arguments: {
+        control_uuid: displayedResult.data.uuid,
+        series_id: value.series_id,
+        start: start.toISOString(),
+        end: end.toISOString(),
+        granularity: 'raw',
+      },
+    };
   }
 
   function canonicalExplorerUrl(resource, currentOrigin, trustedLocalAlias) {
@@ -291,8 +358,10 @@
     return mode === 'wrap-array' ? [clone(value)] : clone(value);
   }
 
-  function transferArguments(tool, field, value, mode, sourceContext) {
-    const draft = sourceContext && sourceContext.tool === tool.name && sourceContext.arguments &&
+  function transferArguments(tool, field, value, mode, sourceContext, targetDraft) {
+    const draft = targetDraft && typeof targetDraft === 'object' && !Array.isArray(targetDraft)
+      ? clone(targetDraft)
+      : sourceContext && sourceContext.tool === tool.name && sourceContext.arguments &&
       typeof sourceContext.arguments === 'object' && !Array.isArray(sourceContext.arguments)
       ? clone(sourceContext.arguments)
       : defaultArguments(tool.inputSchema || {});
@@ -387,22 +456,31 @@
     };
   }
 
+  function validExplorerScope(value) {
+    if (typeof value !== 'string') return false;
+    const scopes = value.split(/\s+/).filter(Boolean);
+    if (!scopes.length || scopes.length !== new Set(scopes).size) return false;
+    if (scopes.join(' ') !== EXPLORER_SCOPE_ORDER.filter((scope) => scopes.includes(scope)).join(' ')) return false;
+    if (scopes[0] !== 'loxone:read') return false;
+    return !scopes.includes('loxberry:operate') || scopes.includes('loxone:history');
+  }
+
   function validateResumableSession(value, expectedResource, now) {
     if (!value || typeof value !== 'object' || Array.isArray(value) || value.version !== 1) return null;
     if (!OPAQUE_VALUE.test(value.sessionId || '') || !OPAQUE_VALUE.test(value.clientId || '') ||
       !OPAQUE_VALUE.test(value.refreshToken || '')) return null;
-    if (!EXPLORER_SCOPES.has(value.scope) || value.resource !== expectedResource) return null;
+    if (!validExplorerScope(value.scope) || value.resource !== expectedResource) return null;
     if (!Number.isSafeInteger(value.resumeUntil) || value.resumeUntil <= now ||
       value.resumeUntil > now + EXPLORER_SESSION_MS) return null;
     return resumableSession(value);
   }
 
   function clientRegistration(clientId, registeredAt) {
-    return {version: 1, clientId, registeredAt};
+    return {version: 2, clientId, registeredAt};
   }
 
   function validateClientRegistration(value, now) {
-    if (!value || typeof value !== 'object' || Array.isArray(value) || value.version !== 1) return null;
+    if (!value || typeof value !== 'object' || Array.isArray(value) || value.version !== 2) return null;
     if (!/^[A-Za-z0-9_-]{43}$/.test(value.clientId || '')) return null;
     if (!Number.isSafeInteger(value.registeredAt) || value.registeredAt > now ||
       value.registeredAt <= now - EXPLORER_CLIENT_REGISTRATION_MS) return null;
@@ -432,6 +510,8 @@
     state.nextPageRequest = null;
     state.transferValue = undefined;
     state.transferPath = '';
+    state.transferRecipe = null;
+    state.drafts = {};
   }
 
   async function revokeThenClear(oauth, revoke, clear) {
@@ -475,13 +555,6 @@
     return toggleLabel;
   }
 
-  function applyControlAvailability(state, control, controlOption, controlNote, available) {
-    state.controlAvailable = available;
-    controlOption.disabled = !available;
-    if (!available && control.value === 'control') control.value = 'read';
-    controlNote.hidden = available;
-  }
-
   return {
     PROTOCOL_VERSION,
     MAX_CALL_HISTORY,
@@ -489,6 +562,7 @@
     REVOCATION_TIMEOUT_MS,
     EXPLORER_SESSION_MS,
     EXPLORER_CLIENT_REGISTRATION_MS,
+    EXPLORER_SCOPE_ORDER,
     clone,
     resolveRef,
     effectiveSchema,
@@ -500,6 +574,11 @@
     validateArguments,
     redactArguments,
     compatibleTargets,
+    toolGroup,
+    sortedToolGroups,
+    dateTimeLocalToRfc3339,
+    rfc3339ToDateTimeLocal,
+    statisticsTransfer,
     valueForTransfer,
     transferArguments,
     nextPageArguments,
@@ -511,6 +590,7 @@
     authorizationCodeTokenFields,
     refreshTokenFields,
     resumableSession,
+    validExplorerScope,
     validateResumableSession,
     clientRegistration,
     validateClientRegistration,
@@ -523,7 +603,6 @@
     localAuthorizationMetadata,
     createFieldLabel,
     createOptionalToggle,
-    applyControlAvailability,
   };
 });
 
@@ -539,12 +618,6 @@
     status: document.getElementById('explorer-status'),
     connect: document.getElementById('explorer-connect'),
     disconnect: document.getElementById('explorer-disconnect'),
-    control: document.getElementById('explorer-access-mode'),
-    controlOption: document.getElementById('explorer-control-option'),
-    loxberryOption: document.getElementById('explorer-loxberry-option'),
-    controlLoxberryOption: document.getElementById('explorer-control-loxberry-option'),
-    controlNote: document.getElementById('explorer-control-note'),
-    loxberryNote: document.getElementById('explorer-loxberry-note'),
     originWarning: document.getElementById('explorer-origin-warning'),
     originLink: document.getElementById('explorer-origin-link'),
     sessionExpiry: document.getElementById('explorer-session-expiry'),
@@ -561,8 +634,12 @@
     schemaWarning: document.getElementById('explorer-schema-warning'),
     validation: document.getElementById('explorer-validation'),
     run: document.getElementById('explorer-run'),
+    resetDraft: document.getElementById('explorer-reset-draft'),
     copy: document.getElementById('explorer-copy'),
     nextPage: document.getElementById('explorer-next-page'),
+    resultContext: document.getElementById('explorer-result-context'),
+    historyArguments: document.getElementById('explorer-history-arguments'),
+    restoreHistory: document.getElementById('explorer-restore-history'),
     resultTree: document.getElementById('explorer-result-tree'),
     resultRaw: document.getElementById('explorer-result-raw'),
     transcript: document.getElementById('explorer-transcript'),
@@ -571,6 +648,7 @@
     confirmArguments: document.getElementById('explorer-confirm-arguments'),
     transfer: document.getElementById('explorer-transfer'),
     transferSource: document.getElementById('explorer-transfer-source'),
+    transferContext: document.getElementById('explorer-transfer-context'),
     transferTool: document.getElementById('explorer-transfer-tool'),
     transferField: document.getElementById('explorer-transfer-field'),
     transferEmpty: document.getElementById('explorer-transfer-empty'),
@@ -590,8 +668,9 @@
     nextPageRequest: null,
     transferValue: undefined,
     transferPath: '',
+    transferRecipe: null,
+    drafts: {},
     nextId: 1,
-    controlAvailable: false,
     busy: false,
     sessionLockId: null,
     releaseSessionLock: null,
@@ -630,27 +709,6 @@
     }
     clearOriginWarning();
     showError(error, fallback);
-  }
-
-  function setControlAvailability(available) {
-    core.applyControlAvailability(
-      state,
-      elements.control,
-      elements.controlOption,
-      elements.controlNote,
-      available,
-    );
-    if (elements.controlLoxberryOption) {
-      elements.controlLoxberryOption.disabled = !available || elements.loxberryOption.disabled;
-      if (!available && elements.control.value === 'control-loxberry') elements.control.value = 'read';
-    }
-  }
-
-  function setLoxberryAvailability(available) {
-    elements.loxberryOption.disabled = !available;
-    elements.controlLoxberryOption.disabled = !available || !state.controlAvailable;
-    if (!available && (elements.control.value === 'loxberry' || elements.control.value === 'control-loxberry')) elements.control.value = 'read';
-    elements.loxberryNote.hidden = available;
   }
 
   async function sha256(value) {
@@ -878,18 +936,14 @@
     });
   }
 
-  async function authorize(accessMode) {
+  async function authorize() {
     const resumeUntil = Date.now() + core.EXPLORER_SESSION_MS;
     const discovered = await discover();
     const supported = new Set(discovered.resourceMetadata.scopes_supported || []);
-    setControlAvailability(supported.has('loxone:control'));
-    setLoxberryAvailability(supported.has('loxberry:read'));
-    const wantsControl = accessMode === 'control' || accessMode === 'control-loxberry';
-    const wantsLoxberry = accessMode === 'loxberry' || accessMode === 'control-loxberry';
-    if (wantsControl && !state.controlAvailable) throw new Error(label('controlRequired'));
-    if (wantsLoxberry && !supported.has('loxberry:read')) throw new Error(label('loxberryRequired'));
-    const scope = ['loxone:read', wantsControl ? 'loxone:control' : '', wantsLoxberry ? 'loxberry:read' : ''].filter(Boolean).join(' ');
-    const registrationScope = ['loxone:read', supported.has('loxone:control') ? 'loxone:control' : '', supported.has('loxberry:read') ? 'loxberry:read' : ''].filter(Boolean).join(' ');
+    if (!supported.has('loxone:read')) throw new Error(label('error'));
+    if (!supported.has('loxone:history')) supported.delete('loxberry:operate');
+    const scope = core.EXPLORER_SCOPE_ORDER.filter((item) => supported.has(item)).join(' ');
+    const registrationScope = scope;
     const redirectUri = new URL('explorer_callback.cgi', window.location.href).href;
     const clientId = await registerClient(discovered.authorizationMetadata, registrationScope, redirectUri);
     const verifier = randomUrlSafe(64);
@@ -1060,7 +1114,6 @@
     const connected = Boolean(state.oauth);
     elements.connect.disabled = connected;
     elements.disconnect.disabled = !connected;
-    elements.control.disabled = connected;
     elements.run.disabled = !connected || !state.selectedTool;
     elements.sessionExpiry.hidden = !connected;
     if (connected) {
@@ -1091,20 +1144,45 @@
       elements.tools.append(element('p', {className: 'mcp-explorer-muted', text: label('noTools')}));
       return;
     }
-    state.tools.forEach((tool) => {
+    core.sortedToolGroups(state.tools).forEach((group) => {
+      elements.tools.append(element('h3', {className: 'mcp-explorer-tool-group', text: label(`toolGroup${group.id[0].toUpperCase()}${group.id.slice(1)}`)}));
+      group.tools.forEach((tool) => {
       const button = element('button', {type: 'button', className: 'mcp-explorer-tool', 'aria-current': String(state.selectedTool && state.selectedTool.name === tool.name)});
       button.append(element('strong', {text: tool.name}));
       if (core.toolIsMutating(tool)) button.append(element('span', {className: 'mcp-explorer-badge', 'data-kind': 'danger', text: 'write'}));
       else button.append(element('span', {className: 'mcp-explorer-badge', text: 'read-only'}));
       button.addEventListener('click', () => selectTool(tool.name));
       elements.tools.append(button);
+      });
     });
   }
 
+  function draftFor(tool) {
+    if (!tool) return {arguments: {}, json: '{}'};
+    if (!state.drafts[tool.name]) {
+      const argumentsValue = core.defaultArguments(tool.inputSchema || {});
+      state.drafts[tool.name] = {arguments: argumentsValue, json: JSON.stringify(argumentsValue, null, 2)};
+    }
+    return state.drafts[tool.name];
+  }
+
+  function saveCurrentDraft() {
+    if (!state.selectedTool) return;
+    state.drafts[state.selectedTool.name] = {
+      arguments: core.clone(state.arguments),
+      json: elements.json.value,
+    };
+  }
+
   function selectTool(name, draft) {
+    saveCurrentDraft();
     state.selectedTool = state.tools.find((tool) => tool.name === name) || null;
-    state.arguments = draft === undefined ? core.defaultArguments(state.selectedTool ? state.selectedTool.inputSchema : {}) : core.clone(draft);
-    elements.json.value = JSON.stringify(state.arguments, null, 2);
+    if (state.selectedTool && draft !== undefined) {
+      state.drafts[state.selectedTool.name] = {arguments: core.clone(draft), json: JSON.stringify(draft, null, 2)};
+    }
+    const saved = draftFor(state.selectedTool);
+    state.arguments = core.clone(saved.arguments);
+    elements.json.value = saved.json;
     renderTools();
     renderSelectedTool();
   }
@@ -1113,6 +1191,7 @@
     if (included) state.arguments[name] = value;
     else delete state.arguments[name];
     elements.json.value = JSON.stringify(state.arguments, null, 2);
+    saveCurrentDraft();
     validateDraft(false);
   }
 
@@ -1120,9 +1199,12 @@
     const effective = core.effectiveSchema(property, rootSchema);
     const type = core.schemaType(effective, rootSchema);
     const wrapper = element('div', {className: 'mcp-explorer-field'});
-    const included = required || Object.prototype.hasOwnProperty.call(state.arguments, name);
+    const booleanWithDefault = !required && type === 'boolean' &&
+      typeof effective.default === 'boolean';
+    const included = booleanWithDefault || required ||
+      Object.prototype.hasOwnProperty.call(state.arguments, name);
     let include = null;
-    if (!required) {
+    if (!required && !booleanWithDefault) {
       include = element('input', {type: 'checkbox'});
       include.checked = included;
       const optional = core.createOptionalToggle(document, name, include, fieldIndex, label('optional'));
@@ -1163,6 +1245,10 @@
         try { setDraftField(name, true, JSON.parse(input.value)); input.setCustomValidity(''); }
         catch (_error) { input.setCustomValidity(label('invalidJson')); input.reportValidity(); }
       });
+    } else if (type === 'string' && effective.format === 'date-time') {
+      input = element('input', {type: 'datetime-local'});
+      input.value = core.rfc3339ToDateTimeLocal(state.arguments[name]);
+      input.addEventListener('change', () => setDraftField(name, true, core.dateTimeLocalToRfc3339(input.value)));
     } else {
       input = element('input', {type: 'text'});
       input.value = state.arguments[name] === undefined ? '' : String(state.arguments[name]);
@@ -1212,7 +1298,7 @@
     if (!Object.keys(schema.properties || {}).length) elements.form.append(element('p', {className: 'mcp-explorer-muted', text: '{}'}));
     elements.schemaWarning.hidden = supported;
     elements.run.disabled = !state.oauth;
-    elements.json.value = JSON.stringify(state.arguments, null, 2);
+    elements.resetDraft.disabled = !state.oauth;
   }
 
   function validateDraft(show) {
@@ -1233,6 +1319,7 @@
       return false;
     }
     state.arguments = parsed;
+    saveCurrentDraft();
     elements.validation.hidden = true;
     return true;
   }
@@ -1289,6 +1376,22 @@
     state.nextPageRequest = nextArguments ? {tool: sourceTool.name, arguments: nextArguments} : null;
     elements.nextPage.hidden = !state.nextPageRequest;
     elements.nextPage.disabled = state.busy || !state.nextPageRequest;
+    const historySource = context && context.history === true;
+    elements.resultContext.textContent = historySource
+      ? `${label('resultFromHistory')}: ${context.tool}`
+      : context ? `${label('resultCurrentCall')}: ${context.tool}` : '';
+    elements.resultContext.hidden = !context;
+    elements.restoreHistory.hidden = !historySource;
+    elements.historyArguments.hidden = !historySource;
+    elements.historyArguments.replaceChildren();
+    if (historySource) {
+      const historyTool = state.tools.find((tool) => tool.name === context.tool);
+      const argumentsValue = core.redactArguments(context.arguments || {}, historyTool && historyTool.inputSchema);
+      elements.historyArguments.append(
+        element('strong', {text: label('historyArguments')}),
+        element('pre', {className: 'mcp-explorer-pre', text: JSON.stringify(argumentsValue, null, 2)}),
+      );
+    }
     elements.resultRaw.textContent = JSON.stringify(result, null, 2);
     elements.resultTree.replaceChildren(renderTreeNode(displayed, []));
     elements.copy.disabled = false;
@@ -1323,8 +1426,7 @@
     [...state.history].reverse().forEach((entry) => {
       const button = element('button', {type: 'button', text: `${entry.tool} — ${entry.duration} ms — ${entry.ok ? 'OK' : 'ERROR'}`});
       button.addEventListener('click', () => {
-        selectTool(entry.tool, entry.arguments);
-        renderResult(entry.result, {tool: entry.tool, arguments: entry.arguments});
+        renderResult(entry.result, {tool: entry.tool, arguments: entry.arguments, history: true});
       });
       elements.history.append(button);
     });
@@ -1332,8 +1434,11 @@
 
   async function runSelectedTool() {
     if (!validateDraft(true) || !state.selectedTool) return;
-    if (core.toolIsMutating(state.selectedTool) && !(state.oauth && state.oauth.scope.split(/\s+/).includes('loxone:control'))) {
-      showError(new Error(label('controlRequired')), label('error'));
+    const requiredMutationScope = state.selectedTool.name === 'loxberry_clear_statistics_cache'
+      ? 'loxberry:operate'
+      : 'loxone:control';
+    if (core.toolIsMutating(state.selectedTool) && !(state.oauth && state.oauth.scope.split(/\s+/).includes(requiredMutationScope))) {
+      showError(new Error(label(requiredMutationScope === 'loxberry:operate' ? 'operateRequired' : 'controlRequired')), label('error'));
       return;
     }
     if (!(await confirmMutation(state.selectedTool, state.arguments))) return;
@@ -1379,6 +1484,26 @@
     state.transferValue = core.clone(value);
     state.transferPath = core.formatPath(path);
     elements.transferSource.textContent = `${state.transferPath} = ${JSON.stringify(value)}`;
+    const recipe = core.statisticsTransfer(
+      state.lastResultContext && state.lastResultContext.tool,
+      displayValue(state.lastResult),
+      path,
+      value,
+    );
+    state.transferRecipe = recipe;
+    elements.transferContext.textContent = recipe
+      ? `${label('statisticsTransferContext')}: loxone_get_statistics (5 ${label('fields')})`
+      : `${label('transferContext')}: ${state.lastResultContext ? state.lastResultContext.tool : '—'}`;
+    elements.transferTool.closest('label').hidden = Boolean(recipe);
+    elements.transferField.closest('label').hidden = Boolean(recipe);
+    if (recipe) {
+      elements.transferTool.replaceChildren(element('option', {value: recipe.tool, text: recipe.tool}));
+      elements.transferField.replaceChildren();
+      elements.transferEmpty.hidden = true;
+      elements.transferApply.disabled = false;
+      if (typeof elements.transfer.showModal === 'function') elements.transfer.showModal();
+      return;
+    }
     const targets = core.compatibleTargets(state.tools, value, {
       sourcePath: path,
       sourceTool: state.lastResultContext && state.lastResultContext.tool,
@@ -1401,6 +1526,16 @@
   }
 
   function applyTransfer() {
+    if (state.transferRecipe) {
+      const tool = state.tools.find((item) => item.name === state.transferRecipe.tool);
+      if (!tool) return;
+      const existing = draftFor(tool).arguments;
+      const draft = {...core.clone(existing), ...state.transferRecipe.arguments};
+      delete draft.cursor;
+      selectTool(tool.name, draft);
+      window.scrollTo({top: elements.summary.getBoundingClientRect().top + window.scrollY - 16, behavior: 'smooth'});
+      return;
+    }
     const tool = state.tools.find((item) => item.name === elements.transferTool.value);
     if (!tool || !elements.transferField.value) return;
     const selected = elements.transferField.options[elements.transferField.selectedIndex];
@@ -1410,6 +1545,7 @@
       state.transferValue,
       selected.dataset.mode,
       state.lastResultContext,
+      draftFor(tool).arguments,
     );
     selectTool(tool.name, draft);
     window.scrollTo({top: elements.summary.getBoundingClientRect().top + window.scrollY - 16, behavior: 'smooth'});
@@ -1458,7 +1594,7 @@
     setBusy(true);
     setStatus(label('working'), 'working');
     try {
-      state.oauth = await authorize(elements.control.value);
+      state.oauth = await authorize();
       state.oauth.resumeEnabled = await acquireSessionOwnership(state.oauth.sessionId);
       if (state.oauth.resumeEnabled && !saveStoredSession(state.oauth)) {
         state.oauth.resumeEnabled = false;
@@ -1482,10 +1618,16 @@
     setStatus(label('disconnected'), '');
   });
   elements.run.addEventListener('click', runSelectedTool);
+  elements.resetDraft.addEventListener('click', () => {
+    if (!state.selectedTool) return;
+    const defaults = core.defaultArguments(state.selectedTool.inputSchema || {});
+    selectTool(state.selectedTool.name, defaults);
+  });
   elements.formTab.addEventListener('click', () => selectTab(false));
   elements.jsonTab.addEventListener('click', () => selectTab(true));
   elements.formTab.addEventListener('keydown', handleTabKey);
   elements.jsonTab.addEventListener('keydown', handleTabKey);
+  elements.json.addEventListener('input', saveCurrentDraft);
   elements.json.addEventListener('change', () => { if (validateDraft(true)) renderSelectedTool(); });
   elements.copy.addEventListener('click', async () => {
     try { await navigator.clipboard.writeText(JSON.stringify(state.lastResult, null, 2)); setStatus(label('copied'), 'success'); }
@@ -1498,6 +1640,11 @@
     await runSelectedTool();
   });
   elements.transfer.addEventListener('close', () => { if (elements.transfer.returnValue === 'apply') applyTransfer(); });
+  elements.restoreHistory.addEventListener('click', () => {
+    const context = state.lastResultContext;
+    if (!context || !context.history || !window.confirm(label('restoreHistoryConfirm'))) return;
+    selectTool(context.tool, context.arguments);
+  });
 
   selectTab(false, false);
   renderAll();
@@ -1507,12 +1654,6 @@
     let refreshed = false;
     try {
       const discovered = await discover();
-      setControlAvailability(
-        (discovered.resourceMetadata.scopes_supported || []).includes('loxone:control'),
-      );
-      setLoxberryAvailability(
-        (discovered.resourceMetadata.scopes_supported || []).includes('loxberry:read'),
-      );
       stored = readStoredSession(discovered.resourceMetadata.resource);
       if (stored) {
         setBusy(true);
@@ -1531,7 +1672,6 @@
         expiresAt: 0,
         resumeEnabled: true,
       };
-      elements.control.value = stored.scope.includes('loxone:control') ? 'control' : 'read';
       await refreshAccessToken();
       refreshed = true;
       await initializeMcp();
@@ -1551,7 +1691,6 @@
       }
       renderAll();
       if (canonicalOriginMismatch) {
-        setControlAvailability(false);
         showConnectionError(_error, label('error'));
       } else if (stored) {
         showError(
@@ -1560,7 +1699,6 @@
         );
       }
       else {
-        setControlAvailability(false);
         showConnectionError(_error, label('error'));
       }
     } finally {

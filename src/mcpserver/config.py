@@ -17,13 +17,16 @@ import idna
 
 from mcpserver.loxone.client import MiniserverEndpoint
 
-SCHEMA_VERSION: Final = 1
+SCHEMA_VERSION: Final = 2
 DEFAULT_CONNECTION_TIMEOUT: Final = 10.0
 DEFAULT_REQUESTS_PER_MINUTE: Final = 60
 DEFAULT_MAX_PARALLEL_CALLS: Final = 4
 DEFAULT_CONTROL_REQUESTS_PER_MINUTE: Final = 10
 DEFAULT_LOXBERRY_REQUESTS_PER_MINUTE: Final = 30
-MAX_LOXBERRY_READ_BINDINGS: Final = 64
+DEFAULT_HISTORY_REQUESTS_PER_MINUTE: Final = 12
+DEFAULT_LOXBERRY_OPERATE_REQUESTS_PER_MINUTE: Final = 3
+DEFAULT_STATISTICS_CACHE_MAX_MIB: Final = 128
+MAX_LOXBERRY_BINDINGS: Final = 64
 DEFAULT_LOG_LEVEL: Final = "warning"
 SUPPORTED_LOG_LEVELS: Final = frozenset({"off", "error", "warning", "info", "debug"})
 
@@ -65,19 +68,19 @@ def _log_level(value: object) -> str:
     return value
 
 
-def _loxberry_read_bindings(value: object) -> tuple[str, ...]:
-    if not isinstance(value, list) or len(value) > MAX_LOXBERRY_READ_BINDINGS:
-        raise ConfigError("policies.loxberry_read_bindings is unsupported")
+def _bindings(value: object, *, name: str) -> tuple[str, ...]:
+    if not isinstance(value, list) or len(value) > MAX_LOXBERRY_BINDINGS:
+        raise ConfigError(f"{name} is unsupported")
     bindings: list[str] = []
     for binding in value:
         if not isinstance(binding, str) or len(binding) != 64:
-            raise ConfigError("policies.loxberry_read_bindings is unsupported")
+            raise ConfigError(f"{name} is unsupported")
         try:
             int(binding, 16)
         except ValueError as exc:
-            raise ConfigError("policies.loxberry_read_bindings is unsupported") from exc
+            raise ConfigError(f"{name} is unsupported") from exc
         if binding.lower() != binding or binding in bindings:
-            raise ConfigError("policies.loxberry_read_bindings is unsupported")
+            raise ConfigError(f"{name} is unsupported")
         bindings.append(binding)
     return tuple(bindings)
 
@@ -93,12 +96,19 @@ class PluginConfig:
     loxone_read_enabled: bool = True
     loxone_control_enabled: bool = False
     loxberry_read_enabled: bool = False
+    loxone_history_enabled: bool = False
+    loxberry_operate_enabled: bool = False
     requests_per_minute: int = DEFAULT_REQUESTS_PER_MINUTE
     control_requests_per_minute: int = DEFAULT_CONTROL_REQUESTS_PER_MINUTE
     loxberry_requests_per_minute: int = DEFAULT_LOXBERRY_REQUESTS_PER_MINUTE
+    history_requests_per_minute: int = DEFAULT_HISTORY_REQUESTS_PER_MINUTE
+    loxberry_operate_requests_per_minute: int = DEFAULT_LOXBERRY_OPERATE_REQUESTS_PER_MINUTE
     max_parallel_calls: int = DEFAULT_MAX_PARALLEL_CALLS
     log_level: str = DEFAULT_LOG_LEVEL
     loxberry_read_bindings: tuple[str, ...] = ()
+    loxberry_operate_bindings: tuple[str, ...] = ()
+    statistics_cache_mode: str = "memory"
+    statistics_cache_max_mib: int = DEFAULT_STATISTICS_CACHE_MAX_MIB
     _source: dict[str, Any] | None = None
 
     @classmethod
@@ -108,13 +118,14 @@ class PluginConfig:
     @classmethod
     def from_document(cls, document: object) -> PluginConfig:
         root = _mapping(document, name="configuration")
-        if root.get("schema_version") != SCHEMA_VERSION:
+        if root.get("schema_version") not in {1, SCHEMA_VERSION}:
             raise ConfigError("schema_version is unsupported")
         server = _mapping(root.get("server", {}), name="server")
         loxone = _mapping(root.get("loxone", {}), name="loxone")
         tools = _mapping(root.get("tools", {}), name="tools")
         limits = _mapping(root.get("limits", {}), name="limits")
         policies = _mapping(root.get("policies", {}), name="policies")
+        cache = _mapping(root.get("cache", {}), name="cache")
         logging_config = _mapping(root.get("logging", {}), name="logging")
 
         enabled = _boolean(server.get("enabled", False), name="server.enabled")
@@ -175,6 +186,14 @@ class PluginConfig:
         loxberry_read_enabled = _boolean(
             tools.get("loxberry_read_enabled", False), name="tools.loxberry_read_enabled"
         )
+        loxone_history_enabled = _boolean(
+            tools.get("loxone_history_enabled", False), name="tools.loxone_history_enabled"
+        )
+        loxberry_operate_enabled = _boolean(
+            tools.get("loxberry_operate_enabled", False), name="tools.loxberry_operate_enabled"
+        )
+        if loxberry_operate_enabled and not loxone_history_enabled:
+            raise ConfigError("tools.loxberry_operate_enabled requires loxone history")
         if enabled and not read_enabled:
             raise ConfigError("the Phase 1 service requires tools.loxone_read_enabled")
         if control_enabled and endpoint and MiniserverEndpoint.parse(endpoint).secure:
@@ -197,6 +216,21 @@ class PluginConfig:
             minimum=1,
             maximum=60,
         )
+        history_requests = _integer(
+            limits.get("history_requests_per_minute", DEFAULT_HISTORY_REQUESTS_PER_MINUTE),
+            name="limits.history_requests_per_minute",
+            minimum=1,
+            maximum=60,
+        )
+        operate_requests = _integer(
+            limits.get(
+                "loxberry_operate_requests_per_minute",
+                DEFAULT_LOXBERRY_OPERATE_REQUESTS_PER_MINUTE,
+            ),
+            name="limits.loxberry_operate_requests_per_minute",
+            minimum=1,
+            maximum=30,
+        )
         parallel = _integer(
             limits.get("max_parallel_calls", DEFAULT_MAX_PARALLEL_CALLS),
             name="limits.max_parallel_calls",
@@ -204,7 +238,22 @@ class PluginConfig:
             maximum=32,
         )
         log_level = _log_level(logging_config.get("level", DEFAULT_LOG_LEVEL))
-        loxberry_read_bindings = _loxberry_read_bindings(policies.get("loxberry_read_bindings", []))
+        loxberry_read_bindings = _bindings(
+            policies.get("loxberry_read_bindings", []), name="policies.loxberry_read_bindings"
+        )
+        loxberry_operate_bindings = _bindings(
+            policies.get("loxberry_operate_bindings", []),
+            name="policies.loxberry_operate_bindings",
+        )
+        cache_mode = cache.get("statistics_mode", "memory")
+        if cache_mode not in {"memory", "hybrid"}:
+            raise ConfigError("cache.statistics_mode is unsupported")
+        cache_max_mib = _integer(
+            cache.get("statistics_max_mib", DEFAULT_STATISTICS_CACHE_MAX_MIB),
+            name="cache.statistics_max_mib",
+            minimum=16,
+            maximum=512,
+        )
         return cls(
             enabled=enabled,
             public_origin=public_origin,
@@ -213,19 +262,26 @@ class PluginConfig:
             loxone_read_enabled=read_enabled,
             loxone_control_enabled=control_enabled,
             loxberry_read_enabled=loxberry_read_enabled,
+            loxone_history_enabled=loxone_history_enabled,
+            loxberry_operate_enabled=loxberry_operate_enabled,
             requests_per_minute=requests,
             control_requests_per_minute=control_requests,
             loxberry_requests_per_minute=loxberry_requests,
+            history_requests_per_minute=history_requests,
+            loxberry_operate_requests_per_minute=operate_requests,
             max_parallel_calls=parallel,
             log_level=log_level,
             loxberry_read_bindings=loxberry_read_bindings,
+            loxberry_operate_bindings=loxberry_operate_bindings,
+            statistics_cache_mode=cache_mode,
+            statistics_cache_max_mib=cache_max_mib,
             _source=copy.deepcopy(root),
         )
 
     def to_document(self) -> dict[str, Any]:
         document = copy.deepcopy(self._source) if self._source is not None else {}
         document["schema_version"] = SCHEMA_VERSION
-        for key in ("server", "loxone", "tools", "limits", "logging", "policies"):
+        for key in ("server", "loxone", "tools", "limits", "logging", "policies", "cache"):
             current = document.get(key)
             if not isinstance(current, dict):
                 document[key] = {}
@@ -236,13 +292,22 @@ class PluginConfig:
         document["tools"]["loxone_read_enabled"] = self.loxone_read_enabled
         document["tools"]["loxone_control_enabled"] = self.loxone_control_enabled
         document["tools"]["loxberry_read_enabled"] = self.loxberry_read_enabled
+        document["tools"]["loxone_history_enabled"] = self.loxone_history_enabled
+        document["tools"]["loxberry_operate_enabled"] = self.loxberry_operate_enabled
         document["limits"]["requests_per_minute"] = self.requests_per_minute
         document["limits"]["control_requests_per_minute"] = self.control_requests_per_minute
         document["limits"]["loxberry_requests_per_minute"] = self.loxberry_requests_per_minute
+        document["limits"]["history_requests_per_minute"] = self.history_requests_per_minute
+        document["limits"]["loxberry_operate_requests_per_minute"] = (
+            self.loxberry_operate_requests_per_minute
+        )
         document["limits"]["max_parallel_calls"] = self.max_parallel_calls
         document["logging"]["level"] = self.log_level
         document["logging"].pop("debug_until", None)
         document["policies"]["loxberry_read_bindings"] = list(self.loxberry_read_bindings)
+        document["policies"]["loxberry_operate_bindings"] = list(self.loxberry_operate_bindings)
+        document["cache"]["statistics_mode"] = self.statistics_cache_mode
+        document["cache"]["statistics_max_mib"] = self.statistics_cache_max_mib
         return document
 
 

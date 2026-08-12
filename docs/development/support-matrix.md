@@ -1,13 +1,17 @@
 # Support-Matrix
 
-- **Stand:** Phase-3-Abnahme, 2026-08-07
-- **Aktueller Pre-Release:** `0.3.0-alpha.1`
-- **Nächster Meilenstein:** gezielte reale Abnahme der erweiterten
-  Gen.-1-Schreibaktionen
+- **Stand:** Phase-4-Implementierung, 2026-08-12
+- **Vorbereiteter Pre-Release:** `0.4.0-alpha.2`
+- **Nächster Meilenstein:** gezielte reale Abnahme der noch unbestätigten
+  Phase-4-Aktionen und V1-Varianten
 
 Diese Matrix unterscheidet reale Nachweise von implementierten, aber noch nicht
 real bestätigten Kombinationen. Phase 1, Phase 2 und Phase 3 sind abgenommen;
-`0.3.0-alpha.1` bleibt wegen seines Vorabversionsstatus ein Pre-Release.
+`0.4.0-alpha.2` bleibt wegen seines Vorabversionsstatus ein Pre-Release.
+Phase 4 ist implementiert und für die lesenden Statistik-/Historienpfade, die
+eng begrenzte plugin-eigene Cache-Operation und ausgewählte, reversible
+Control-Aktionen auf Hardware abgenommen; siehe
+[Phase-4-Abnahmebericht](phase-4-acceptance.md).
 
 ## Plattformen und Geräte
 
@@ -100,9 +104,30 @@ Der vollständige maskierte Nachweis steht im
 - Codex CLI wurde im finalen Abschlusslauf wegen der lokalen
   Windows-Ausführungsstörung nicht erneut abgenommen; der bekannte Clientfehler
   ist für den Server- und Claude-Nachweis nicht blockierend.
-- Phase 2 implementiert die in ADR 0005 begrenzten Aktionen für `Switch`,
-  `Dimmer`, `LightController`, `LightControllerV2` und `Jalousie`. Befehlspfad,
-  Validierung und Bestätigungslogik sind mit lokalen Testdoubles geprüft. In
-  diesem Lauf wird auf dem Zielsystem ausschließlich gelesen; die erweiterten
-  Schreibaktionen sind daher noch nicht als reale Hardwarekompatibilität
-  bestätigt.
+- `Dimmer` (`set_level`, `off`), `LightControllerV2` (`set_mood`) und
+  `TimedSwitch` (`on`, `off`) sind an ausdrücklich freigegebenen, harmlosen
+  Fixtures real bestätigt und jeweils in den Ausgangszustand zurückgeführt.
+- `Jalousie` (`stop`), `LightsceneRGB` (`on`, `off`), `Radio` (`reset`) und
+  `Pushbutton` (`pulse`) wurden real akzeptiert, ohne dass die jeweils sichtbare
+  Rückmeldung eine Wirkung bestätigen konnte. Alle übrigen Aktionen bleiben
+  entsprechend der User-Doku unverified.
+- Die klassische Binärstatistik (`statistic.outputs`, Rohabruf), eine
+  `StatisticV2`-Serie und die Control-Historie sind an sichtbaren Controls real
+  lesend bestätigt. Die lokal freigegebene, ausschließlich plugin-eigene
+  Cache-Leerung ist ebenfalls bestätigt. `ColorPickerV2` ist auf derselben
+  Fixture lesend bestätigt und bot `set_color_hsv`; mangels eigener
+  Raum-/Kategoriezuordnung wurde sein Write-Pfad nicht getestet. `ColorPicker`
+  (V1), nicht ausgeführte Aktionen und Control-Hinweise bleiben unverified. Für
+  Hinweise wurde in dieser Installation noch kein Control mit dem
+  Verfügbarkeitsmerkmal gefunden. Legacy-XML und
+  FTP-Statistik sind nicht aktiv.
+- Die lokale Python-3.13-Full-Prüfung mit 466 Tests und das finale PR-CI-Gate
+  sind bestanden. Die Clients-/Sitzungen-Bindungstabellen wurden mit einer
+  authentifizierten Admin-Sitzung bei allen dokumentierten fünf Viewports ohne
+  horizontalen Seiten-Overflow abgenommen.
+- Der generische Lesepfad wurde über den verbundenen MCP auf 351 sichtbaren
+  Controls in vier Seiten geprüft; alle in der User-Doku als installationsweit
+  lesbar markierten V2-/Bestandstypen waren vorhanden. Die V1-Varianten fehlten.
+- Es wird genau ein Miniserver-Ziel unterstützt. Die Voraussetzungen für eine
+  spätere Mehrziel-Unterstützung stehen in
+  [Multiple Miniserver support](multi-miniserver.md).

@@ -86,7 +86,9 @@ def _build_project_wheel(root: Path, wheelhouse: Path, environment: dict[str, st
         shutil.copytree(
             root,
             source,
-            ignore=shutil.ignore_patterns(".git", ".venv", "dist", "__pycache__", "*.pyc"),
+            ignore=shutil.ignore_patterns(
+                ".git", ".venv", ".pytest_cache", "dist", "__pycache__", "*.pyc"
+            ),
         )
         text_suffixes = {".py", ".md", ".toml", ".yaml", ".yml", ".txt"}
         for path in source.rglob("*"):

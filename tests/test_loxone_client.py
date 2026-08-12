@@ -112,6 +112,287 @@ async def test_control_operation_accepts_bounded_numeric_mood_id(
 
 
 @pytest.mark.asyncio
+async def test_control_history_uses_only_the_fixed_documented_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeWebSocket:
+        def __init__(self) -> None:
+            self.sent: list[str] = []
+
+        async def send(self, command: str) -> None:
+            self.sent.append(command)
+
+    websocket = FakeWebSocket()
+    session = LoxoneWebSocketSession(
+        cast(Any, websocket),
+        public_key="",
+        token=LoxoneToken("jwt", "user", "key", "SHA256", 1),
+        timeout_seconds=1,
+        max_payload_bytes=1024,
+    )
+
+    class FakeEncryptor:
+        def encrypted_command(self, command: str) -> str:
+            assert command == "jdev/sps/io/action-1/gethistory"
+            return "encrypted-history-command"
+
+    session._encryptor = cast(Any, FakeEncryptor())
+
+    async def receive() -> tuple[MessageHeader, str]:
+        return MessageHeader(MessageType.TEXT, False, 31), '[{"ts":100,"what":"changed"}]'
+
+    monkeypatch.setattr(session, "_receive", receive)
+
+    assert await session.control_history("action-1") == [{"ts": 100, "what": "changed"}]
+    assert websocket.sent == ["encrypted-history-command"]
+
+
+@pytest.mark.asyncio
+async def test_control_history_accepts_wrapped_compatibility_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeWebSocket:
+        async def send(self, _command: str) -> None:
+            return None
+
+    session = LoxoneWebSocketSession(
+        cast(Any, FakeWebSocket()),
+        public_key="",
+        token=LoxoneToken("jwt", "user", "key", "SHA256", 1),
+        timeout_seconds=1,
+        max_payload_bytes=1024,
+        secure_transport=True,
+    )
+
+    async def receive() -> tuple[MessageHeader, str]:
+        payload = '{"LL":{"Code":"200","value":[{"ts":100,"what":"changed"}]}}'
+        return MessageHeader(MessageType.TEXT, False, len(payload)), payload
+
+    monkeypatch.setattr(session, "_receive", receive)
+
+    assert await session.control_history("action-1") == [{"ts": 100, "what": "changed"}]
+
+
+@pytest.mark.asyncio
+async def test_control_notes_uses_only_the_fixed_documented_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeWebSocket:
+        def __init__(self) -> None:
+            self.sent: list[str] = []
+
+        async def send(self, command: str) -> None:
+            self.sent.append(command)
+
+    websocket = FakeWebSocket()
+    session = LoxoneWebSocketSession(
+        cast(Any, websocket),
+        public_key="",
+        token=LoxoneToken("jwt", "user", "key", "SHA256", 1),
+        timeout_seconds=1,
+        max_payload_bytes=1024,
+    )
+
+    class FakeEncryptor:
+        def encrypted_command(self, command: str) -> str:
+            assert command == "jdev/sps/io/action-1/controlnotes"
+            return "encrypted-notes-command"
+
+    session._encryptor = cast(Any, FakeEncryptor())
+
+    async def receive() -> tuple[MessageHeader, str]:
+        return MessageHeader(MessageType.TEXT, False, 9), "User note"
+
+    monkeypatch.setattr(session, "_receive", receive)
+
+    assert await session.control_notes("action-1") == "User note"
+    assert websocket.sent == ["encrypted-notes-command"]
+
+
+@pytest.mark.asyncio
+async def test_control_notes_accepts_wrapped_compatibility_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeWebSocket:
+        async def send(self, _command: str) -> None:
+            return None
+
+    session = LoxoneWebSocketSession(
+        cast(Any, FakeWebSocket()),
+        public_key="",
+        token=LoxoneToken("jwt", "user", "key", "SHA256", 1),
+        timeout_seconds=1,
+        max_payload_bytes=1024,
+        secure_transport=True,
+    )
+
+    async def receive() -> tuple[MessageHeader, str]:
+        payload = '{"LL":{"Code":"200","value":"User note"}}'
+        return MessageHeader(MessageType.TEXT, False, len(payload)), payload
+
+    monkeypatch.setattr(session, "_receive", receive)
+
+    assert await session.control_notes("action-1") == "User note"
+
+
+@pytest.mark.asyncio
+async def test_statistic_info_accepts_json_encoded_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = LoxoneWebSocketSession(
+        cast(Any, object()),
+        public_key="",
+        token=LoxoneToken("jwt", "user", "key", "SHA256", 1),
+        timeout_seconds=1,
+        max_payload_bytes=1024,
+    )
+
+    async def command(value: str, *, encrypted: bool = False) -> object:
+        assert (value, encrypted) == ("jdev/sps/getStatisticInfo/control-1", True)
+        return '[{"id":1,"activeSince":100}]'
+
+    monkeypatch.setattr(session, "_command", command)
+
+    assert await session.statistic_info("control-1") == [{"id": 1, "activeSince": 100}]
+
+
+@pytest.mark.asyncio
+async def test_statistic_data_uses_bounded_single_output_binary_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeWebSocket:
+        def __init__(self) -> None:
+            self.sent: list[str] = []
+
+        async def send(self, command: str) -> None:
+            self.sent.append(command)
+
+    websocket = FakeWebSocket()
+    session = LoxoneWebSocketSession(
+        cast(Any, websocket),
+        public_key="",
+        token=LoxoneToken("jwt", "user", "key", "SHA256", 1),
+        timeout_seconds=1,
+        max_payload_bytes=1024,
+        secure_transport=True,
+    )
+
+    async def receive() -> tuple[MessageHeader, bytes]:
+        return MessageHeader(MessageType.BINARY_FILE, False, 12), b"binary-value"
+
+    monkeypatch.setattr(session, "_receive", receive)
+
+    result = await session.statistic_data(
+        "control-1",
+        mode="raw",
+        start=100,
+        end=200,
+        unit="hour",
+        group_id="1",
+        output="value",
+    )
+
+    assert result == b"binary-value"
+    assert websocket.sent == ["dev/sps/getStatistic/control-1/raw/100/200/hour/1/value"]
+
+
+@pytest.mark.asyncio
+async def test_gen1_statistic_data_requests_binary_file_without_command_envelope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeWebSocket:
+        def __init__(self) -> None:
+            self.sent: list[str] = []
+
+        async def send(self, command: str) -> None:
+            self.sent.append(command)
+
+    websocket = FakeWebSocket()
+    session = LoxoneWebSocketSession(
+        cast(Any, websocket),
+        public_key="",
+        token=LoxoneToken("jwt", "user", "key", "SHA256", 1),
+        timeout_seconds=1,
+        max_payload_bytes=1024,
+    )
+
+    class RejectingEncryptor:
+        def encrypted_command(self, _command: str) -> str:
+            raise AssertionError("binary statistic request must not use the command envelope")
+
+    session._encryptor = cast(Any, RejectingEncryptor())
+
+    async def receive() -> tuple[MessageHeader, bytes]:
+        return MessageHeader(MessageType.BINARY_FILE, False, 12), b"binary-value"
+
+    monkeypatch.setattr(session, "_receive", receive)
+
+    result = await session.statistic_data(
+        "control-1",
+        mode="raw",
+        start=100,
+        end=200,
+        unit="hour",
+        group_id="1",
+        output="value",
+    )
+
+    assert result == b"binary-value"
+    assert websocket.sent == ["dev/sps/getStatistic/control-1/raw/100/200/hour/1/value"]
+
+
+@pytest.mark.asyncio
+async def test_legacy_statistic_data_uses_the_fixed_binary_file_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeWebSocket:
+        def __init__(self) -> None:
+            self.sent: list[str] = []
+
+        async def send(self, command: str) -> None:
+            self.sent.append(command)
+
+    websocket = FakeWebSocket()
+    session = LoxoneWebSocketSession(
+        cast(Any, websocket),
+        public_key="",
+        token=LoxoneToken("jwt", "user", "key", "SHA256", 1),
+        timeout_seconds=1,
+        max_payload_bytes=1024,
+    )
+
+    async def receive() -> tuple[MessageHeader, bytes]:
+        return MessageHeader(MessageType.BINARY_FILE, False, 12), b"binary-value"
+
+    monkeypatch.setattr(session, "_receive", receive)
+
+    assert await session.legacy_statistic_data("control-1", "202608") == b"binary-value"
+    assert websocket.sent == ["binstatisticdata/control-1/202608"]
+
+
+@pytest.mark.asyncio
+async def test_statistic_data_rejects_path_like_output() -> None:
+    session = LoxoneWebSocketSession(
+        cast(Any, object()),
+        public_key="",
+        token=LoxoneToken("jwt", "user", "key", "SHA256", 1),
+        timeout_seconds=1,
+        max_payload_bytes=1024,
+    )
+
+    with pytest.raises(ValueError, match="invalid statistic request"):
+        await session.statistic_data(
+            "control-1",
+            mode="raw",
+            start=100,
+            end=200,
+            unit="hour",
+            group_id="1",
+            output="../unsafe",
+        )
+
+
+@pytest.mark.asyncio
 async def test_websocket_receive_returns_complete_payload_without_waiting_again() -> None:
     class FakeWebSocket:
         def __init__(self) -> None:

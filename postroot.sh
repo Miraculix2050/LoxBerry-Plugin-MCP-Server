@@ -32,6 +32,40 @@ plugin_data="$LBPDATA/$actual_folder"
 plugin_log="$LBPLOG/$actual_folder"
 service_log="$plugin_log/service.log"
 
+prepare_private_directory() {
+    python3 - "$1" <<'PY'
+import grp
+import os
+import pwd
+import stat
+import sys
+
+path = sys.argv[1]
+parent, name = os.path.split(path)
+parent_fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+try:
+    try:
+        os.mkdir(name, 0o700, dir_fd=parent_fd)
+    except FileExistsError:
+        pass
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
+    fd = os.open(name, flags, dir_fd=parent_fd)
+    try:
+        opened = os.fstat(fd)
+        if not stat.S_ISDIR(opened.st_mode):
+            raise RuntimeError("private path is not a directory")
+        os.fchown(fd, pwd.getpwnam("loxberry").pw_uid, grp.getgrnam("loxberry").gr_gid)
+        os.fchmod(fd, 0o700)
+        current = os.lstat(path)
+        if not stat.S_ISDIR(current.st_mode) or (current.st_dev, current.st_ino) != (opened.st_dev, opened.st_ino):
+            raise RuntimeError("private directory path changed during preparation")
+    finally:
+        os.close(fd)
+finally:
+    os.close(parent_fd)
+PY
+}
+
 for target in "$unit" "$apache" "$sudoers" "$certificate_helper"; do
     if [ -e "$target" ] && ! grep -Fqx "$marker" "$target"; then
         echo "<ERROR> Refusing to overwrite foreign file $target."
@@ -54,6 +88,7 @@ fi
 
 key="$plugin_data/auth/install.key"
 mkdir -p "$plugin_data/auth"
+prepare_private_directory "$plugin_data/statistics-cache" || exit 2
 if [ ! -f "$key" ]; then
     (umask 0137 && openssl rand 32 > "$key") || exit 2
 fi

@@ -16,11 +16,16 @@ def test_defaults_are_disabled_and_bounded() -> None:
     assert config.loxone_read_enabled is True
     assert config.loxone_control_enabled is False
     assert config.loxberry_read_enabled is False
+    assert config.loxone_history_enabled is False
+    assert config.loxberry_operate_enabled is False
     assert config.connection_timeout == 10
     assert config.requests_per_minute == 60
     assert config.control_requests_per_minute == 10
     assert config.loxberry_requests_per_minute == 30
     assert config.loxberry_read_bindings == ()
+    assert config.loxberry_operate_bindings == ()
+    assert config.statistics_cache_mode == "memory"
+    assert config.statistics_cache_max_mib == 128
     assert config.max_parallel_calls == 4
     assert config.log_level == "warning"
 
@@ -42,13 +47,40 @@ def test_configuration_round_trip_preserves_unknown_keys(tmp_path: Path) -> None
 
     assert store.load().to_document() == config.to_document()
     assert json.loads(store.path.read_text(encoding="utf-8"))["future"] == {"keep": True}
+    assert config.to_document()["schema_version"] == 2
+
+
+def test_phase_four_configuration_round_trips_bounded_settings() -> None:
+    binding = "a" * 64
+    config = PluginConfig.from_document(
+        {
+            "schema_version": 2,
+            "tools": {
+                "loxone_history_enabled": True,
+                "loxberry_operate_enabled": True,
+            },
+            "limits": {
+                "history_requests_per_minute": 12,
+                "loxberry_operate_requests_per_minute": 2,
+            },
+            "cache": {"statistics_mode": "hybrid", "statistics_max_mib": 64},
+            "policies": {"loxberry_operate_bindings": [binding]},
+        }
+    )
+
+    assert config.loxone_history_enabled is True
+    assert config.loxberry_operate_enabled is True
+    assert config.history_requests_per_minute == 12
+    assert config.statistics_cache_mode == "hybrid"
+    assert config.statistics_cache_max_mib == 64
+    assert config.loxberry_operate_bindings == (binding,)
 
 
 @pytest.mark.parametrize(
     "document",
     [
         {},
-        {"schema_version": 2},
+        {"schema_version": 3},
         {"schema_version": 1, "server": {"enabled": True}},
         {
             "schema_version": 1,
@@ -66,6 +98,16 @@ def test_configuration_round_trip_preserves_unknown_keys(tmp_path: Path) -> None
 def test_invalid_configuration_is_rejected(document: object) -> None:
     with pytest.raises(ConfigError):
         PluginConfig.from_document(document)
+
+
+def test_loxberry_operate_requires_history() -> None:
+    with pytest.raises(ConfigError, match="requires loxone history"):
+        PluginConfig.from_document(
+            {
+                "schema_version": 2,
+                "tools": {"loxberry_operate_enabled": True},
+            }
+        )
 
 
 @pytest.mark.parametrize("level", ["off", "error", "warning", "info", "debug"])

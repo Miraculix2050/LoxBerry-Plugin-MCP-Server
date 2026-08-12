@@ -344,7 +344,7 @@ if ($action ne '') {
     my $result;
     if ($action eq 'save_config') {
         my $document = {
-            schema_version => 1,
+            schema_version => 2,
             server => {
                 enabled => $q->{enabled} ? JSON::PP::true : JSON::PP::false,
                 public_origin => $q->{public_origin} // '',
@@ -359,12 +359,22 @@ if ($action ne '') {
                     ? JSON::PP::true : JSON::PP::false,
                 loxberry_read_enabled => ($q->{loxberry_read_enabled} // '') eq '1'
                     ? JSON::PP::true : JSON::PP::false,
+                loxone_history_enabled => ($q->{loxone_history_enabled} // '') eq '1'
+                    ? JSON::PP::true : JSON::PP::false,
+                loxberry_operate_enabled => ($q->{loxberry_operate_enabled} // '') eq '1'
+                    ? JSON::PP::true : JSON::PP::false,
             },
             limits => {
                 requests_per_minute => 0 + ($q->{requests_per_minute} // 60),
                 control_requests_per_minute => 0 + ($q->{control_requests_per_minute} // 10),
                 loxberry_requests_per_minute => 0 + ($q->{loxberry_requests_per_minute} // 30),
+                history_requests_per_minute => 0 + ($q->{history_requests_per_minute} // 12),
+                loxberry_operate_requests_per_minute => 0 + ($q->{loxberry_operate_requests_per_minute} // 3),
                 max_parallel_calls => 0 + ($q->{max_parallel_calls} // 4),
+            },
+            cache => {
+                statistics_mode => $q->{statistics_mode} // 'memory',
+                statistics_max_mib => 0 + ($q->{statistics_max_mib} // 128),
             },
         };
         $result = admin_call('save_config', $document);
@@ -388,6 +398,14 @@ if ($action ne '') {
         $result = admin_call('revoke_loxberry_read', {binding_id => ($q->{binding_id} // '')});
         admin_log($result->{ok} ? 'info' : 'warning',
             'action=revoke_loxberry_read outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
+    } elsif ($action eq 'allow_loxberry_operate') {
+        $result = admin_call('allow_loxberry_operate', {session_id => ($q->{session_id} // '')});
+        admin_log($result->{ok} ? 'info' : 'warning',
+            'action=allow_loxberry_operate outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
+    } elsif ($action eq 'revoke_loxberry_operate') {
+        $result = admin_call('revoke_loxberry_operate', {binding_id => ($q->{binding_id} // '')});
+        admin_log($result->{ok} ? 'info' : 'warning',
+            'action=revoke_loxberry_operate outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
     } elsif ($action eq 'list_sessions') {
         $result = admin_call('list_sessions', {});
     } elsif ($action eq 'revoke_all') {
@@ -462,6 +480,7 @@ my $page_state = $page_result->{ok} ? $page_result->{data} : {};
 my $config = $page_state->{configuration} // {};
 my $sessions = $page_state->{sessions} // [];
 my $loxberry_bindings = $page_state->{loxberry_bindings} // [];
+my $loxberry_operate_bindings = $page_state->{loxberry_operate_bindings} // [];
 for my $session (@$sessions) {
     next if ref($session) ne 'HASH';
     $session->{expires_display} = format_expiry($session->{expires_at});
@@ -471,6 +490,7 @@ $config->{loxone} = {} if ref($config->{loxone}) ne 'HASH';
 $config->{tools} = {} if ref($config->{tools}) ne 'HASH';
 $config->{limits} = {} if ref($config->{limits}) ne 'HASH';
 $config->{logging} = {} if ref($config->{logging}) ne 'HASH';
+$config->{cache} = {} if ref($config->{cache}) ne 'HASH';
 my $miniservers = configured_miniservers($config->{loxone}{endpoint});
 my $has_selected_miniserver = grep { $_->{selected} } @$miniservers;
 my ($selected_miniserver) = grep { $_->{selected} } @$miniservers;
@@ -524,9 +544,16 @@ $template->param(
     CONNECTION_TIMEOUT => $config->{loxone}{connection_timeout} // 10,
     LOXONE_CONTROL_ENABLED => $config->{tools}{loxone_control_enabled} ? 1 : 0,
     LOXBERRY_READ_ENABLED => $config->{tools}{loxberry_read_enabled} ? 1 : 0,
+    LOXONE_HISTORY_ENABLED => $config->{tools}{loxone_history_enabled} ? 1 : 0,
+    LOXBERRY_OPERATE_ENABLED => $config->{tools}{loxberry_operate_enabled} ? 1 : 0,
     REQUESTS_PER_MINUTE => $config->{limits}{requests_per_minute} // 60,
     CONTROL_REQUESTS_PER_MINUTE => $config->{limits}{control_requests_per_minute} // 10,
     LOXBERRY_REQUESTS_PER_MINUTE => $config->{limits}{loxberry_requests_per_minute} // 30,
+    HISTORY_REQUESTS_PER_MINUTE => $config->{limits}{history_requests_per_minute} // 12,
+    LOXBERRY_OPERATE_REQUESTS_PER_MINUTE => $config->{limits}{loxberry_operate_requests_per_minute} // 3,
+    STATISTICS_MODE_MEMORY => ($config->{cache}{statistics_mode} // 'memory') eq 'memory' ? 1 : 0,
+    STATISTICS_MODE_HYBRID => ($config->{cache}{statistics_mode} // 'memory') eq 'hybrid' ? 1 : 0,
+    STATISTICS_MAX_MIB => $config->{cache}{statistics_max_mib} // 128,
     MAX_PARALLEL_CALLS => $config->{limits}{max_parallel_calls} // 4,
     LOG_LEVEL => $config->{logging}{level} // 'warning',
     LOG_LEVEL_OFF => ($config->{logging}{level} // 'warning') eq 'off' ? 1 : 0,
@@ -560,6 +587,7 @@ $template->param(
         // $L{'CERTIFICATE.STATE_ERROR'},
     SESSIONS => $sessions,
     LOXBERRY_BINDINGS => $loxberry_bindings,
+    LOXBERRY_OPERATE_BINDINGS => $loxberry_operate_bindings,
     HAS_SESSIONS => scalar(@$sessions) ? 1 : 0,
     NOTICE => $notice_text,
     NOTICE_KIND => $notice_kind,

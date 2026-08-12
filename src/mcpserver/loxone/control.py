@@ -11,7 +11,19 @@ from decimal import Decimal
 from mcpserver.loxone.models import Control
 
 SUPPORTED_CONTROL_TYPES = frozenset(
-    {"Switch", "Dimmer", "LightController", "LightControllerV2", "Jalousie"}
+    {
+        "Switch",
+        "Dimmer",
+        "LightController",
+        "LightControllerV2",
+        "Jalousie",
+        "TimedSwitch",
+        "Radio",
+        "LightsceneRGB",
+        "ColorPicker",
+        "ColorPickerV2",
+        "Pushbutton",
+    }
 )
 _MOOD_ID = re.compile(r"(?:0|[1-9][0-9]{0,9})\Z")
 
@@ -71,6 +83,31 @@ def allowed_actions(control: Control) -> list[str]:
             if control.is_automatic:
                 actions.extend(["enable_auto", "disable_auto"])
             return actions
+        case "TimedSwitch":
+            return ["on", "off", "pulse"]
+        case "Radio":
+            actions = ["select_output"] if control.radio_output_ids else []
+            if control.radio_reset_allowed:
+                actions.append("reset")
+            return actions
+        case "LightsceneRGB":
+            return ["on", "off", "set_scene"] if control.scene_ids else ["on", "off"]
+        case "ColorPicker":
+            actions = ["on", "off"]
+            if control.picker_type in {"Rgb", "Lumitech", "Rgb/Lumitech"}:
+                actions.append("set_color_hsv")
+            if control.picker_type in {"Lumitech", "Rgb/Lumitech"}:
+                actions.append("set_color_temperature")
+            return actions
+        case "ColorPickerV2":
+            actions = []
+            if control.picker_type in {"Rgb", "Lumitech", "Rgb/Lumitech"}:
+                actions.append("set_color_hsv")
+            if control.picker_type in {"Lumitech", "Rgb/Lumitech", "TunableWhite"}:
+                actions.append("set_color_temperature")
+            return actions
+        case "Pushbutton":
+            return ["pulse"]
         case _:
             return []
 
@@ -82,6 +119,8 @@ def _percentage(value: float | None, name: str) -> float:
 
 
 def _number(value: float) -> str:
+    if value == 0:
+        return "0"
     formatted = format(Decimal(str(value)), "f")
     return formatted.rstrip("0").rstrip(".") if "." in formatted else formatted
 
@@ -94,6 +133,12 @@ def prepare_control_command(
     mood_id: str | None = None,
     position: float | None = None,
     slat_position: float | None = None,
+    scene_id: str | None = None,
+    output_id: str | None = None,
+    hue: float | None = None,
+    saturation: float | None = None,
+    brightness: float | None = None,
+    kelvin: int | None = None,
 ) -> PreparedControlCommand:
     """Validate one exact action/parameter combination and build its Loxone command."""
     provided = {
@@ -101,6 +146,12 @@ def prepare_control_command(
         "mood_id": mood_id,
         "position": position,
         "slat_position": slat_position,
+        "scene_id": scene_id,
+        "output_id": output_id,
+        "hue": hue,
+        "saturation": saturation,
+        "brightness": brightness,
+        "kelvin": kelvin,
     }
 
     def require_only(*names: str) -> None:
@@ -146,6 +197,64 @@ def prepare_control_command(
         if mood_id is None or not _MOOD_ID.fullmatch(mood_id):
             raise ValueError("mood_id must be a decimal ID from the visible moodList")
         return PreparedControlCommand(f"changeTo/{mood_id}", (("activeMoods", mood_id),))
+
+    if control.control_type == "TimedSwitch":
+        require_only()
+        targets = {"on": -1.0, "off": 0.0}
+        timed_expected: tuple[tuple[str, float | str], ...] = (
+            (("deactivationDelay", targets[action]),) if action in targets else ()
+        )
+        return PreparedControlCommand(action, timed_expected)
+
+    if control.control_type == "Pushbutton":
+        require_only()
+        return PreparedControlCommand("pulse")
+
+    if control.control_type == "Radio":
+        if action == "reset":
+            require_only()
+            return PreparedControlCommand("reset", (("activeOutput", 0.0),))
+        require_only("output_id")
+        if output_id not in control.radio_output_ids:
+            raise ValueError("output_id is not present in the visible outputs")
+        return PreparedControlCommand(output_id, (("activeOutput", float(output_id)),))
+
+    if control.control_type == "LightsceneRGB":
+        if action in {"on", "off"}:
+            require_only()
+            return PreparedControlCommand(action)
+        require_only("scene_id")
+        if scene_id not in control.scene_ids:
+            raise ValueError("scene_id is not present in the visible sceneList")
+        return PreparedControlCommand(scene_id, (("activeScene", float(scene_id)),))
+
+    if control.control_type in {"ColorPicker", "ColorPickerV2"}:
+        if action in {"on", "off"}:
+            require_only()
+            return PreparedControlCommand(action)
+        if action == "set_color_hsv":
+            require_only("hue", "saturation", "brightness")
+            if hue is None or isinstance(hue, bool) or not 0 <= hue <= 360:
+                raise ValueError("hue must be a number from 0 to 360")
+            selected_hue = float(hue)
+            selected_saturation = _percentage(saturation, "saturation")
+            selected_brightness = _percentage(brightness, "brightness")
+            command = (
+                f"hsv({_number(float(selected_hue))},{_number(selected_saturation)},"
+                f"{_number(selected_brightness)})"
+            )
+            return PreparedControlCommand(command, (("color", command),))
+        require_only("brightness", "kelvin")
+        selected_brightness = _percentage(brightness, "brightness")
+        if (
+            kelvin is None
+            or isinstance(kelvin, bool)
+            or not control.min_kelvin <= kelvin <= control.max_kelvin
+        ):
+            raise ValueError("kelvin is outside the visible supported range")
+        prefix = "lumitech" if control.control_type == "ColorPicker" else "temp"
+        command = f"{prefix}({_number(selected_brightness)},{kelvin})"
+        return PreparedControlCommand(command, (("color", command),))
 
     if action in {"open", "close", "shade", "stop", "enable_auto", "disable_auto"}:
         require_only()

@@ -120,7 +120,7 @@ def test_plugin_identity_and_platform_contract() -> None:
     assert parser["PLUGIN"]["NAME"] == "mcpserver"
     assert parser["PLUGIN"]["FOLDER"] == "mcpserver"
     assert parser["PLUGIN"]["TITLE"] == "LoxBerry MCP Server"
-    assert parser["PLUGIN"]["VERSION"] == "0.3.0-alpha.1"
+    assert parser["PLUGIN"]["VERSION"] == "0.4.0-alpha.2"
     assert parser["SYSTEM"]["LB_MINIMUM"] == "4.0.0"
     assert parser["SYSTEM"]["INTERFACE"] == "2.0"
     for name in ("release.cfg", "prerelease.cfg"):
@@ -157,6 +157,19 @@ def test_v4_package_manifest_is_present() -> None:
     assert "actual_folder=$3" in hooks
     assert "LBPCONFIG/$actual_folder" in hooks
     assert "LBPDATA/$actual_folder" in hooks
+
+
+def test_healthcheck_uses_loxberry_plugin_protocol() -> None:
+    healthcheck = (ROOT / "bin/healthcheck").read_text(encoding="utf-8")
+
+    assert 'case "${1:-check}" in' in healthcheck
+    assert "title)" in healthcheck
+    assert "printf '%s\\n' \"$description\"" in healthcheck
+    assert "printf '%s\\n%s\\n%s\\n' \"$description\" 3" in healthcheck
+    assert "printf '%s\\n%s\\n%s\\n' \"$description\" 5" in healthcheck
+    assert 'check "Plugin configuration" test -r "$plugin_config/mcpserver.json"' in healthcheck
+    assert "curl --fail --silent --max-time 3 --output /dev/null" in healthcheck
+    assert "No repair action was taken." in healthcheck
 
 
 def test_upgrade_preserves_configuration_in_plugin_data() -> None:
@@ -207,6 +220,20 @@ def test_upgrade_removes_the_obsolete_debug_window_atomically() -> None:
     assert 'logging_config.pop("debug_until")' in hook
     assert "os.fsync(handle.fileno())" in hook
     assert "os.replace(temporary, path)" in hook
+
+
+def test_phase_four_upgrade_migrates_configuration_and_private_cache() -> None:
+    hook = (ROOT / "postupgrade.sh").read_text(encoding="utf-8")
+    postroot = (ROOT / "postroot.sh").read_text(encoding="utf-8")
+
+    assert 'document.get("schema_version") == 1' in hook
+    assert 'document["schema_version"] = 2' in hook
+    for script in (hook, postroot):
+        assert 'prepare_private_directory "$plugin_data/statistics-cache" || exit 2' in script
+        assert "os.O_NOFOLLOW" in script
+        assert "os.fchown(fd" in script
+        assert "os.fchmod(fd, 0o700)" in script
+        assert "os.lstat(path)" in script
 
 
 def test_postroot_keeps_installer_alive_during_apache_activation() -> None:
@@ -428,7 +455,7 @@ def test_plugin_archive_verifier_accepts_builder_output(tmp_path: Path) -> None:
     for name, version in _locked_requirements(ROOT / "requirements" / "runtime-arm64.lock").items():
         wheel_name = name.replace("-", "_")
         (wheelhouse / f"{wheel_name}-{version}-py3-none-any.whl").write_bytes(b"wheel")
-    project_wheel = wheelhouse / "loxberry_mcpserver-0.3.0a1-py3-none-any.whl"
+    project_wheel = wheelhouse / "loxberry_mcpserver-0.4.0a2-py3-none-any.whl"
     _write_project_wheel(project_wheel)
     hash_lock = tmp_path / "runtime-arm64.sha256"
     hash_lock.write_text(
@@ -825,11 +852,12 @@ def test_plugin_archive_verifier_rejects_checksum_mismatch(tmp_path: Path) -> No
 
 
 def test_release_metadata_and_changelog_match_current_prerelease() -> None:
-    notes = validate_release_metadata(ROOT, "0.3.0-alpha.1", "prerelease")
+    notes = validate_release_metadata(ROOT, "0.4.0-alpha.2", "prerelease")
 
-    assert "loxberry:read" in notes
+    assert "loxone:history" in notes
+    assert "loxberry:operate" in notes
     with pytest.raises(ValueError, match="stable releases"):
-        validate_release_metadata(ROOT, "0.3.0-alpha.1", "stable")
+        validate_release_metadata(ROOT, "0.4.0-alpha.2", "stable")
     with pytest.raises(ValueError, match="versions do not match"):
         validate_release_metadata(ROOT, "0.3.0-alpha.2", "prerelease")
 

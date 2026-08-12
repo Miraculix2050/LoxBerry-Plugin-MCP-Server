@@ -67,6 +67,7 @@ async def test_switch_operation_is_sent_and_confirmed(monkeypatch: pytest.Monkey
         MiniserverEndpoint.parse_gen1("http://192.168.1.10"),
         _TokenStore(),  # type: ignore[arg-type]
         control_confirmation_seconds=0.2,
+        control_enabled=True,
     )
     runtime.cache.begin_connection("family")
 
@@ -105,6 +106,7 @@ async def test_control_requires_scope_and_supported_type(
     runtime = LoxoneRuntime(
         MiniserverEndpoint.parse_gen1("http://192.168.1.10"),
         _TokenStore(),  # type: ignore[arg-type]
+        control_enabled=True,
     )
 
     with pytest.raises(ControlOperationError, match="loxone:control"):
@@ -138,6 +140,7 @@ async def test_transport_failure_after_dispatch_has_unknown_outcome(
     runtime = LoxoneRuntime(
         MiniserverEndpoint.parse_gen1("http://192.168.1.10"),
         _TokenStore(),  # type: ignore[arg-type]
+        control_enabled=True,
     )
 
     async def snapshot(_access: StoredAccessToken) -> RuntimeSnapshot:
@@ -203,6 +206,7 @@ async def test_supported_control_operation_is_bounded_and_confirmed(
         MiniserverEndpoint.parse_gen1("http://192.168.1.10"),
         _TokenStore(),  # type: ignore[arg-type]
         control_confirmation_seconds=0.2,
+        control_enabled=True,
     )
     runtime.cache.begin_connection("family")
     states = ((state_name, "state-1"),)
@@ -262,6 +266,7 @@ async def test_light_controller_v2_rejects_mood_not_in_visible_list(
     runtime = LoxoneRuntime(
         MiniserverEndpoint.parse_gen1("http://192.168.1.10"),
         _TokenStore(),  # type: ignore[arg-type]
+        control_enabled=True,
     )
     runtime.cache.begin_connection("family")
     structure = _structure(
@@ -306,6 +311,7 @@ async def test_read_only_restriction_prevents_dispatch(monkeypatch: pytest.Monke
     runtime = LoxoneRuntime(
         MiniserverEndpoint.parse_gen1("http://192.168.1.10"),
         _TokenStore(),  # type: ignore[arg-type]
+        control_enabled=True,
     )
     structure = _structure(read_only=True)
 

@@ -1,6 +1,8 @@
 {
   "limits": {
     "control_requests_per_minute": 10,
+    "history_requests_per_minute": 12,
+    "loxberry_operate_requests_per_minute": 3,
     "loxberry_requests_per_minute": 30,
     "max_parallel_calls": 4,
     "requests_per_minute": 60
@@ -13,16 +15,23 @@
     "level": "warning"
   },
   "policies": {
+    "loxberry_operate_bindings": [],
     "loxberry_read_bindings": []
   },
-  "schema_version": 1,
+  "cache": {
+    "statistics_max_mib": 128,
+    "statistics_mode": "memory"
+  },
+  "schema_version": 2,
   "server": {
     "enabled": false,
     "public_origin": ""
   },
   "tools": {
     "loxone_control_enabled": false,
+    "loxone_history_enabled": false,
     "loxone_read_enabled": true,
-    "loxberry_read_enabled": false
+    "loxberry_read_enabled": false,
+    "loxberry_operate_enabled": false
   }
 }

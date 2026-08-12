@@ -6,7 +6,13 @@ from pathlib import Path
 import pytest
 from starlette.testclient import TestClient
 
-from mcpserver.auth.provider import CONTROL_SCOPE, READ_SCOPE
+from mcpserver.auth.provider import (
+    CONTROL_SCOPE,
+    HISTORY_SCOPE,
+    LOXBERRY_OPERATE_SCOPE,
+    LOXBERRY_READ_SCOPE,
+    READ_SCOPE,
+)
 from mcpserver.config import PluginConfig
 from mcpserver.loxone.client import MiniserverEndpoint
 from mcpserver.server import create_server, main
@@ -251,6 +257,7 @@ def test_exact_default_read_only_tools_are_published() -> None:
         "loxone_list_categories",
         "loxone_find_controls",
         "loxone_describe_control",
+        "loxone_get_control_notes",
         "loxone_get_states",
     ]
     assert all(tool["annotations"]["readOnlyHint"] is True for tool in tools)
@@ -311,7 +318,13 @@ def test_oauth_routes_and_protected_resource_metadata_are_exact(tmp_path: Path) 
     assert resource.json()["authorization_servers"] == [
         "https://public.example/plugins/mcpserver/oauth"
     ]
-    assert resource.json()["scopes_supported"] == [READ_SCOPE]
+    assert resource.json()["scopes_supported"] == [
+        READ_SCOPE,
+        HISTORY_SCOPE,
+        CONTROL_SCOPE,
+        LOXBERRY_READ_SCOPE,
+        LOXBERRY_OPERATE_SCOPE,
+    ]
     assert unauthenticated.status_code == 401
     assert all(response.status_code == 404 for response in aliases)
 
@@ -339,6 +352,12 @@ def test_protected_resource_metadata_advertises_optional_control_scope(tmp_path:
         )
 
     assert resource.status_code == 200
-    assert resource.json()["scopes_supported"] == [READ_SCOPE, CONTROL_SCOPE]
+    assert resource.json()["scopes_supported"] == [
+        READ_SCOPE,
+        HISTORY_SCOPE,
+        CONTROL_SCOPE,
+        LOXBERRY_READ_SCOPE,
+        LOXBERRY_OPERATE_SCOPE,
+    ]
     assert unauthenticated.status_code == 401
     assert "scope=" not in unauthenticated.headers["www-authenticate"]

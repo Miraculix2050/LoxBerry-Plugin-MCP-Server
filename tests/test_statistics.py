@@ -1,0 +1,410 @@
+from __future__ import annotations
+
+import gzip
+import math
+import os
+import struct
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
+from pathlib import Path
+from threading import Event
+
+import pytest
+
+from mcpserver.auth.provider import HISTORY_SCOPE, READ_SCOPE, StoredAccessToken
+from mcpserver.loxone.events import LoxoneProtocolError
+from mcpserver.loxone.models import Control, StatisticSeries
+from mcpserver.loxone.runtime import (
+    ControlOperationError,
+    LoxoneRuntime,
+    _parse_legacy_statistic_points,
+)
+from mcpserver.loxone.statistics import (
+    StatisticPoint,
+    StatisticsCache,
+    parse_statistic_points,
+)
+
+
+def test_statistic_binary_parser_accepts_ordered_single_output_points() -> None:
+    payload = struct.pack("<IdId", 100, 1.5, 200, -2.25)
+
+    assert parse_statistic_points(payload) == (
+        StatisticPoint(100, 1.5),
+        StatisticPoint(200, -2.25),
+    )
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [struct.pack("<I", 100), struct.pack("<IdId", 200, 1.0, 100, 2.0)],
+)
+def test_statistic_binary_parser_rejects_truncated_or_unordered_data(payload: bytes) -> None:
+    with pytest.raises(LoxoneProtocolError):
+        parse_statistic_points(payload)
+
+
+def test_statistic_binary_parser_rejects_non_finite_values() -> None:
+    with pytest.raises(LoxoneProtocolError):
+        parse_statistic_points(struct.pack("<Id", 100, math.inf))
+
+
+def test_legacy_statistic_binary_parser_selects_one_output() -> None:
+    payload = struct.pack("<IddIdd", 100, 1.5, 10.0, 200, -2.25, 20.0)
+
+    assert _parse_legacy_statistic_points(payload, output_index=1, output_count=2) == (
+        StatisticPoint(100, 10.0),
+        StatisticPoint(200, 20.0),
+    )
+
+
+@pytest.mark.asyncio
+async def test_runtime_reads_bounded_legacy_raw_statistics() -> None:
+    series = StatisticSeries(
+        "legacy:1",
+        "legacy",
+        "1",
+        "1",
+        "Temperature",
+        "%.1f °C",
+        legacy_output_index=1,
+        legacy_output_count=2,
+    )
+    control = Control(
+        "control-1",
+        "Temperature",
+        "InfoOnlyAnalog",
+        None,
+        None,
+        "action-1",
+        (),
+        statistic_series=(series,),
+    )
+    access = StoredAccessToken(
+        token="opaque",
+        client_id="client",
+        scopes=[READ_SCOPE, HISTORY_SCOPE],
+        expires_at=2_000_000_000,
+        resource="https://loxberry.local/plugins/mcpserver/mcp",
+        subject="identity",
+        claims={},
+        family_id="family",
+        identity_id="identity",
+        miniserver_id="miniserver",
+    )
+
+    class Session:
+        def __init__(self) -> None:
+            self.dates: list[str] = []
+
+        async def legacy_statistic_data(self, control_uuid: str, date: str) -> bytes:
+            assert control_uuid == "control-1"
+            self.dates.append(date)
+            return struct.pack("<Idd", 100, 1.5, 20.0) if date == "200901" else b""
+
+    session = Session()
+    runtime = object.__new__(LoxoneRuntime)
+    runtime.statistics_cache = StatisticsCache(None)
+
+    @asynccontextmanager
+    async def history_session(_access: StoredAccessToken, control_uuid: str):
+        assert control_uuid == "control-1"
+        yield control, session
+
+    runtime._history_session = history_session  # type: ignore[method-assign]
+    start = 1_230_768_050
+    end = 1_230_768_150
+
+    _control, returned_series, points = await runtime.get_statistics(
+        access, "control-1", "legacy:1", start, end, "raw"
+    )
+
+    assert returned_series is series
+    assert points == (StatisticPoint(1_230_768_100, 20.0),)
+    assert session.dates == ["200901"]
+
+
+@pytest.mark.asyncio
+async def test_runtime_filters_statistic_v2_points_to_requested_interval() -> None:
+    series = StatisticSeries("v2:1:value", "statistic_v2", "1", "value", "Energy", "%.1f")
+    control = Control(
+        "control-1",
+        "Energy",
+        "Meter",
+        None,
+        None,
+        "action-1",
+        (),
+        statistic_series=(series,),
+    )
+    access = StoredAccessToken(
+        token="opaque",
+        client_id="client",
+        scopes=[READ_SCOPE, HISTORY_SCOPE],
+        expires_at=2_000_000_000,
+        resource="https://loxberry.local/plugins/mcpserver/mcp",
+        subject="identity",
+        claims={},
+        family_id="family",
+        identity_id="identity",
+        miniserver_id="miniserver",
+    )
+
+    class Session:
+        async def statistic_info(self, _control_uuid: str) -> list[dict[str, object]]:
+            return [{"id": 1}]
+
+        async def statistic_data(self, _control_uuid: str, **_kwargs: object) -> bytes:
+            return struct.pack("<IdIdId", 99, 1.0, 100, 2.0, 102, 3.0)
+
+    runtime = object.__new__(LoxoneRuntime)
+    runtime.statistics_cache = StatisticsCache(None)
+
+    @asynccontextmanager
+    async def history_session(_access: StoredAccessToken, control_uuid: str):
+        assert control_uuid == "control-1"
+        yield control, Session()
+
+    runtime._history_session = history_session  # type: ignore[method-assign]
+
+    _control, returned_series, points = await runtime.get_statistics(
+        access, "control-1", "v2:1:value", 100, 101, "raw"
+    )
+
+    assert returned_series is series
+    assert points == (StatisticPoint(100, 2.0),)
+
+
+@pytest.mark.asyncio
+async def test_runtime_allows_single_second_statistic_range() -> None:
+    series = StatisticSeries("v2:1:value", "statistic_v2", "1", "value", "Energy", "%.1f")
+    control = Control(
+        "control-1",
+        "Energy",
+        "Meter",
+        None,
+        None,
+        "action-1",
+        (),
+        statistic_series=(series,),
+    )
+    access = StoredAccessToken(
+        token="opaque",
+        client_id="client",
+        scopes=[READ_SCOPE, HISTORY_SCOPE],
+        expires_at=2_000_000_000,
+        resource="https://loxberry.local/plugins/mcpserver/mcp",
+        subject="identity",
+        claims={},
+        family_id="family",
+        identity_id="identity",
+        miniserver_id="miniserver",
+    )
+
+    class Session:
+        async def statistic_info(self, _control_uuid: str) -> list[dict[str, object]]:
+            return [{"id": 1}]
+
+        async def statistic_data(self, _control_uuid: str, **_kwargs: object) -> bytes:
+            return struct.pack("<Id", 100, 2.0)
+
+    runtime = object.__new__(LoxoneRuntime)
+    runtime.statistics_cache = StatisticsCache(None)
+
+    @asynccontextmanager
+    async def history_session(_access: StoredAccessToken, control_uuid: str):
+        assert control_uuid == "control-1"
+        yield control, Session()
+
+    runtime._history_session = history_session  # type: ignore[method-assign]
+
+    _control, returned_series, points = await runtime.get_statistics(
+        access, "control-1", "v2:1:value", 100, 100, "raw"
+    )
+
+    assert returned_series is series
+    assert points == (StatisticPoint(100, 2.0),)
+
+
+@pytest.mark.asyncio
+async def test_runtime_ignores_history_timestamps_outside_supported_range() -> None:
+    control = Control(
+        "control-1",
+        "History",
+        "Switch",
+        None,
+        None,
+        "action-1",
+        (),
+        has_history=True,
+    )
+    access = StoredAccessToken(
+        token="opaque",
+        client_id="client",
+        scopes=[READ_SCOPE, HISTORY_SCOPE],
+        expires_at=2_000_000_000,
+        resource="https://loxberry.local/plugins/mcpserver/mcp",
+        subject="identity",
+        claims={},
+        family_id="family",
+        identity_id="identity",
+        miniserver_id="miniserver",
+    )
+
+    class Session:
+        async def control_history(self, action_uuid: str) -> list[dict[str, object]]:
+            assert action_uuid == "action-1"
+            return [
+                {"ts": 2**63, "what": "invalid"},
+                {"ts": 1_700_000_000, "what": "valid"},
+            ]
+
+    runtime = object.__new__(LoxoneRuntime)
+
+    @asynccontextmanager
+    async def history_session(_access: StoredAccessToken, control_uuid: str):
+        assert control_uuid == "control-1"
+        yield control, Session()
+
+    runtime._history_session = history_session  # type: ignore[method-assign]
+
+    _control, entries = await runtime.get_control_history(access, "control-1")
+
+    assert [entry.timestamp for entry in entries] == [1_700_000_000]
+
+
+@pytest.mark.asyncio
+async def test_runtime_translates_history_and_statistic_timeouts() -> None:
+    series = StatisticSeries("series", "v2", "1", "1", "Temperature", "%.1f °C")
+    control = Control(
+        "control-1",
+        "History",
+        "InfoOnlyAnalog",
+        None,
+        None,
+        "action-1",
+        (),
+        has_history=True,
+        statistic_series=(series,),
+    )
+    access = StoredAccessToken(
+        token="opaque",
+        client_id="client",
+        scopes=[READ_SCOPE, HISTORY_SCOPE],
+        expires_at=2_000_000_000,
+        resource="https://loxberry.local/plugins/mcpserver/mcp",
+        subject="identity",
+        claims={},
+        family_id="family",
+        identity_id="identity",
+        miniserver_id="miniserver",
+    )
+
+    class HistoryTimeoutSession:
+        async def control_history(self, _action_uuid: str) -> list[dict[str, object]]:
+            raise TimeoutError
+
+    class StatisticTimeoutSession:
+        async def statistic_info(self, _control_uuid: str) -> list[dict[str, object]]:
+            raise TimeoutError
+
+    runtime = object.__new__(LoxoneRuntime)
+    runtime.statistics_cache = StatisticsCache(None)
+
+    @asynccontextmanager
+    async def history_session(_access: StoredAccessToken, _control_uuid: str):
+        yield control, HistoryTimeoutSession()
+
+    runtime._history_session = history_session  # type: ignore[method-assign]
+    with pytest.raises(ControlOperationError, match="Control history could not be read"):
+        await runtime.get_control_history(access, "control-1")
+
+    @asynccontextmanager
+    async def statistic_session(_access: StoredAccessToken, _control_uuid: str):
+        yield control, StatisticTimeoutSession()
+
+    runtime._history_session = statistic_session  # type: ignore[method-assign]
+    with pytest.raises(ControlOperationError, match="Statistic data could not be read"):
+        await runtime.get_statistics(
+            access, "control-1", "series", 1_700_000_000, 1_700_000_001, "raw"
+        )
+
+
+def test_statistics_cache_expires_memory_and_clears_private_hybrid_files(
+    tmp_path: Path,
+) -> None:
+    now = [10.0]
+    cache = StatisticsCache(tmp_path.resolve(), ttl_seconds=5, clock=lambda: now[0])
+    points = (StatisticPoint(100, 1.0),)
+    key = cache.source_key("family", "control", "series")
+
+    cache.put(key, points)
+    cache.put_legacy_source(key, b"bounded source")
+
+    assert cache.get(key) == points
+    stored = list(tmp_path.glob("*.gz"))
+    assert len(stored) == 1
+    assert gzip.decompress(stored[0].read_bytes()) == b"bounded source"
+    now[0] = 16.0
+    assert cache.get(key) is None
+    result = cache.clear()
+    assert result.persistent_entries_removed == 1
+    assert result.bytes_freed > 0
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_statistics_cache_rejects_untrusted_persistent_key(tmp_path: Path) -> None:
+    cache = StatisticsCache(tmp_path.resolve())
+
+    cache.put_legacy_source("../escape", b"payload")
+
+    assert not tmp_path.exists() or list(tmp_path.iterdir()) == []
+
+
+def test_statistics_cache_clear_does_not_hold_memory_lock_during_persistent_io(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache = StatisticsCache(tmp_path.resolve())
+    point = StatisticPoint(100, 1.0)
+    entered_persistent_io = Event()
+    allow_persistent_io = Event()
+    entries = cache._entries
+
+    def slow_entries() -> list[tuple[Path, os.stat_result]]:
+        entered_persistent_io.set()
+        assert allow_persistent_io.wait(timeout=1)
+        return entries()
+
+    monkeypatch.setattr(cache, "_entries", slow_entries)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        clear = executor.submit(cache.clear)
+        assert entered_persistent_io.wait(timeout=1)
+        concurrent_put = executor.submit(cache.put, "live", (point,))
+        concurrent_put.result(timeout=0.2)
+        allow_persistent_io.set()
+        clear.result(timeout=1)
+
+    assert cache.get("live") == (point,)
+
+
+def test_statistics_cache_purges_expired_and_bounds_memory_points() -> None:
+    now = [10.0]
+    cache = StatisticsCache(
+        None,
+        ttl_seconds=5,
+        maximum_memory_points=2,
+        clock=lambda: now[0],
+    )
+    point = StatisticPoint(100, 1.0)
+
+    cache.put("expired", (point,))
+    now[0] = 16.0
+    cache.put("first", (point,))
+    cache.put("second", (point,))
+    cache.put("third", (point,))
+
+    assert cache.get("expired") is None
+    assert cache.get("first") is None
+    assert cache.get("second") == (point,)
+    assert cache.get("third") == (point,)

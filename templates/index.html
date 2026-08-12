@@ -35,6 +35,16 @@
   .mcp-table-wrap { max-width: 100%; overflow-x: auto; }
   .mcp-table { width: 100%; border-collapse: collapse; }
   .mcp-table th, .mcp-table td { padding: .5rem; text-align: left; border-bottom: 1px solid #ddd; }
+  .mcp-permission-groups { display: grid; gap: 1rem; }
+  .mcp-permission-group { display: grid; gap: .45rem; min-width: 0; }
+  .mcp-permission-group h3 { margin: 0; font-size: 1.1rem; }
+  .mcp-permission-table th:first-child,
+  .mcp-permission-table td:first-child { width: 7rem; text-align: center; }
+  .mcp-permission-table th:nth-child(2) { width: 18rem; }
+  .mcp-permission-table th:nth-child(3) { width: 11rem; }
+  .mcp-permission-table input[type="checkbox"] { width: 1.25rem; height: 1.25rem; margin: 0; }
+  .mcp-permission-always { font-weight: 600; white-space: nowrap; }
+  .mcp-permission-scope { white-space: nowrap; }
   .mcp-page :focus-visible { outline: 3px solid #1261a0; outline-offset: 2px; }
   .mcp-dialog { width: min(32rem, calc(100% - 2rem)); border: 0; border-radius: .5rem; padding: 1rem; }
   .mcp-dialog::backdrop { background: rgb(0 0 0 / 55%); }
@@ -53,6 +63,15 @@
     #diagnostics .lb-table td { padding: .25rem 0; border: 0; overflow-wrap: anywhere; }
     #diagnostics .lb-table td:first-child,
     #diagnostics .lb-table td:last-child { display: none; }
+    .mcp-permission-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    .mcp-permission-table,
+    .mcp-permission-table tbody,
+    .mcp-permission-table tr,
+    .mcp-permission-table td { display: block; box-sizing: border-box; width: 100%; }
+    .mcp-permission-table tr { padding: .4rem 0; border-bottom: 1px solid #ddd; }
+    .mcp-permission-table td,
+    .mcp-permission-table td:first-child { padding: .3rem 0; border: 0; text-align: left; }
+    .mcp-permission-table td[data-label]::before { content: attr(data-label); display: block; margin-bottom: .15rem; color: #4b5563; font-size: .85rem; font-weight: 600; }
   }
 </style>
 
@@ -108,25 +127,43 @@
         <label class="mcp-field"><span><TMPL_VAR SETUP.RATE></span><input name="requests_per_minute" type="number" min="1" max="600" value="<TMPL_VAR REQUESTS_PER_MINUTE ESCAPE=HTML>"></label>
         <label class="mcp-field"><span><TMPL_VAR SETUP.CONTROL_RATE></span><input name="control_requests_per_minute" type="number" min="1" max="60" value="<TMPL_VAR CONTROL_REQUESTS_PER_MINUTE ESCAPE=HTML>"></label>
         <label class="mcp-field"><span><TMPL_VAR SETUP.LOXBERRY_RATE></span><input name="loxberry_requests_per_minute" type="number" min="1" max="60" value="<TMPL_VAR LOXBERRY_REQUESTS_PER_MINUTE ESCAPE=HTML>"></label>
+        <label class="mcp-field"><span><TMPL_VAR SETUP.HISTORY_RATE></span><input name="history_requests_per_minute" type="number" min="1" max="60" value="<TMPL_VAR HISTORY_REQUESTS_PER_MINUTE ESCAPE=HTML>"></label>
+        <label class="mcp-field"><span><TMPL_VAR SETUP.OPERATE_RATE></span><input name="loxberry_operate_requests_per_minute" type="number" min="1" max="30" value="<TMPL_VAR LOXBERRY_OPERATE_REQUESTS_PER_MINUTE ESCAPE=HTML>"></label>
         <label class="mcp-field"><span><TMPL_VAR SETUP.PARALLEL></span><input name="max_parallel_calls" type="number" min="1" max="32" value="<TMPL_VAR MAX_PARALLEL_CALLS ESCAPE=HTML>"></label>
       </div>
       <label><input name="enabled" type="checkbox" value="1" <TMPL_IF ENABLED>checked</TMPL_IF>> <TMPL_VAR SETUP.ENABLED></label>
-      <label class="mcp-field">
-        <span><TMPL_VAR SETUP.CONTROL_MODE></span>
-        <select name="loxone_control_enabled">
-          <option value="0" <TMPL_UNLESS LOXONE_CONTROL_ENABLED>selected</TMPL_UNLESS>><TMPL_VAR SETUP.CONTROL_READ_ONLY></option>
-          <option value="1" <TMPL_IF LOXONE_CONTROL_ENABLED>selected</TMPL_IF>><TMPL_VAR SETUP.CONTROL_READ_SWITCH></option>
-        </select>
-      </label>
-      <p class="mcp-warning"><TMPL_VAR SETUP.CONTROL_WARNING></p>
-      <label class="mcp-field">
-        <span><TMPL_VAR SETUP.LOXBERRY_MODE></span>
-        <select name="loxberry_read_enabled">
-          <option value="0" <TMPL_UNLESS LOXBERRY_READ_ENABLED>selected</TMPL_UNLESS>><TMPL_VAR SETUP.LOXBERRY_DISABLED></option>
-          <option value="1" <TMPL_IF LOXBERRY_READ_ENABLED>selected</TMPL_IF>><TMPL_VAR SETUP.LOXBERRY_ENABLED></option>
-        </select>
-      </label>
-      <p class="mcp-warning"><TMPL_VAR SETUP.LOXBERRY_WARNING></p>
+      <div class="mcp-permission-groups" aria-describedby="permission-policy-hint">
+        <section class="mcp-permission-group" aria-labelledby="loxone-permissions-heading">
+          <h3 id="loxone-permissions-heading"><TMPL_VAR SETUP.PERMISSIONS_LOXONE></h3>
+          <div class="mcp-table-wrap">
+            <table class="mcp-table mcp-permission-table">
+              <thead><tr><th scope="col"><TMPL_VAR SETUP.PERMISSIONS_ACTIVE></th><th scope="col"><TMPL_VAR SETUP.PERMISSIONS_OPTION></th><th scope="col"><TMPL_VAR SETUP.PERMISSIONS_SCOPE></th><th scope="col"><TMPL_VAR SETUP.PERMISSIONS_EFFECT></th></tr></thead>
+              <tbody>
+                <tr><td data-label="<TMPL_VAR SETUP.PERMISSIONS_ACTIVE ESCAPE=HTML>"><span class="mcp-permission-always"><TMPL_VAR SETUP.PERMISSIONS_ALWAYS></span></td><td data-label="<TMPL_VAR SETUP.PERMISSIONS_OPTION ESCAPE=HTML>"><TMPL_VAR SETUP.READ_OPTION></td><td class="mcp-permission-scope" data-label="<TMPL_VAR SETUP.PERMISSIONS_SCOPE ESCAPE=HTML>"><code>loxone:read</code></td><td data-label="<TMPL_VAR SETUP.PERMISSIONS_EFFECT ESCAPE=HTML>"><TMPL_VAR SETUP.READ_DESCRIPTION></td></tr>
+                <tr><td data-label="<TMPL_VAR SETUP.PERMISSIONS_ACTIVE ESCAPE=HTML>"><input id="loxone-history-enabled" name="loxone_history_enabled" type="checkbox" value="1" <TMPL_IF LOXONE_HISTORY_ENABLED>checked</TMPL_IF> aria-labelledby="history-option" aria-describedby="history-description"></td><td id="history-option" data-label="<TMPL_VAR SETUP.PERMISSIONS_OPTION ESCAPE=HTML>"><TMPL_VAR SETUP.HISTORY_OPTION></td><td class="mcp-permission-scope" data-label="<TMPL_VAR SETUP.PERMISSIONS_SCOPE ESCAPE=HTML>"><code>loxone:history</code></td><td id="history-description" data-label="<TMPL_VAR SETUP.PERMISSIONS_EFFECT ESCAPE=HTML>"><TMPL_VAR SETUP.HISTORY_DESCRIPTION></td></tr>
+                <tr><td data-label="<TMPL_VAR SETUP.PERMISSIONS_ACTIVE ESCAPE=HTML>"><input id="loxone-control-enabled" name="loxone_control_enabled" type="checkbox" value="1" <TMPL_IF LOXONE_CONTROL_ENABLED>checked</TMPL_IF> aria-labelledby="control-option" aria-describedby="control-description"></td><td id="control-option" data-label="<TMPL_VAR SETUP.PERMISSIONS_OPTION ESCAPE=HTML>"><TMPL_VAR SETUP.CONTROL_OPTION></td><td class="mcp-permission-scope" data-label="<TMPL_VAR SETUP.PERMISSIONS_SCOPE ESCAPE=HTML>"><code>loxone:control</code></td><td id="control-description" data-label="<TMPL_VAR SETUP.PERMISSIONS_EFFECT ESCAPE=HTML>"><TMPL_VAR SETUP.CONTROL_DESCRIPTION></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+        <section class="mcp-permission-group" aria-labelledby="loxberry-permissions-heading">
+          <h3 id="loxberry-permissions-heading"><TMPL_VAR SETUP.PERMISSIONS_LOXBERRY></h3>
+          <div class="mcp-table-wrap">
+            <table class="mcp-table mcp-permission-table">
+              <thead><tr><th scope="col"><TMPL_VAR SETUP.PERMISSIONS_ACTIVE></th><th scope="col"><TMPL_VAR SETUP.PERMISSIONS_OPTION></th><th scope="col"><TMPL_VAR SETUP.PERMISSIONS_SCOPE></th><th scope="col"><TMPL_VAR SETUP.PERMISSIONS_EFFECT></th></tr></thead>
+              <tbody>
+                <tr><td data-label="<TMPL_VAR SETUP.PERMISSIONS_ACTIVE ESCAPE=HTML>"><input id="loxberry-read-enabled" name="loxberry_read_enabled" type="checkbox" value="1" <TMPL_IF LOXBERRY_READ_ENABLED>checked</TMPL_IF> aria-labelledby="loxberry-read-option" aria-describedby="loxberry-read-description"></td><td id="loxberry-read-option" data-label="<TMPL_VAR SETUP.PERMISSIONS_OPTION ESCAPE=HTML>"><TMPL_VAR SETUP.LOXBERRY_OPTION></td><td class="mcp-permission-scope" data-label="<TMPL_VAR SETUP.PERMISSIONS_SCOPE ESCAPE=HTML>"><code>loxberry:read</code></td><td id="loxberry-read-description" data-label="<TMPL_VAR SETUP.PERMISSIONS_EFFECT ESCAPE=HTML>"><TMPL_VAR SETUP.LOXBERRY_DESCRIPTION></td></tr>
+                <tr><td data-label="<TMPL_VAR SETUP.PERMISSIONS_ACTIVE ESCAPE=HTML>"><input id="loxberry-operate-enabled" name="loxberry_operate_enabled" type="checkbox" value="1" <TMPL_IF LOXBERRY_OPERATE_ENABLED>checked</TMPL_IF> aria-labelledby="operate-option" aria-describedby="operate-description operate-dependency"></td><td id="operate-option" data-label="<TMPL_VAR SETUP.PERMISSIONS_OPTION ESCAPE=HTML>"><TMPL_VAR SETUP.OPERATE_OPTION></td><td class="mcp-permission-scope" data-label="<TMPL_VAR SETUP.PERMISSIONS_SCOPE ESCAPE=HTML>"><code>loxberry:operate</code></td><td id="operate-description" data-label="<TMPL_VAR SETUP.PERMISSIONS_EFFECT ESCAPE=HTML>"><TMPL_VAR SETUP.OPERATE_DESCRIPTION> <span id="operate-dependency"><TMPL_VAR SETUP.OPERATE_DEPENDENCY></span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+      <p id="permission-policy-hint" class="mcp-help"><TMPL_VAR SETUP.PERMISSIONS_HINT></p>
+      <div class="mcp-grid">
+        <label class="mcp-field"><span><TMPL_VAR SETUP.CACHE_MODE></span><select name="statistics_mode"><option value="memory" <TMPL_IF STATISTICS_MODE_MEMORY>selected</TMPL_IF>><TMPL_VAR SETUP.CACHE_MEMORY></option><option value="hybrid" <TMPL_IF STATISTICS_MODE_HYBRID>selected</TMPL_IF>><TMPL_VAR SETUP.CACHE_HYBRID></option></select></label>
+        <label class="mcp-field"><span><TMPL_VAR SETUP.CACHE_SIZE></span><input name="statistics_max_mib" type="number" min="16" max="512" value="<TMPL_VAR STATISTICS_MAX_MIB ESCAPE=HTML>"></label>
+      </div>
       <div class="mcp-actions">
         <button class="lb-button" type="submit"><TMPL_VAR ACTION.SAVE></button>
       </div>
@@ -196,7 +233,7 @@
     <div id="session-list">
     <TMPL_IF HAS_SESSIONS>
       <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.SCOPES></th><th><TMPL_VAR SESSIONS.EXPIRES></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody>
-      <TMPL_LOOP SESSIONS><tr data-session-id="<TMPL_VAR id ESCAPE=HTML>"><td><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML><TMPL_ELSE><TMPL_VAR SESSIONS.UNNAMED></TMPL_IF></td><td><code><TMPL_VAR client ESCAPE=HTML></code></td><td><code><TMPL_VAR identity ESCAPE=HTML></code></td><td><code><TMPL_VAR scopes ESCAPE=HTML></code></td><td><time class="mcp-expiry" data-expires-at="<TMPL_VAR expires_at ESCAPE=HTML>"><TMPL_VAR expires_display ESCAPE=HTML></time></td><td><TMPL_IF loxberry_read_eligible><TMPL_UNLESS loxberry_read_approved><form method="post" action="index.cgi" data-ajax="allow_loxberry_read"><input type="hidden" name="action" value="allow_loxberry_read"><input type="hidden" name="session_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.ALLOW_LOXBERRY_READ></button></form></TMPL_UNLESS></TMPL_IF><form method="post" action="index.cgi" data-ajax="revoke_session"><input type="hidden" name="action" value="revoke_session"><input type="hidden" name="id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form></td></tr></TMPL_LOOP>
+      <TMPL_LOOP SESSIONS><tr data-session-id="<TMPL_VAR id ESCAPE=HTML>"><td><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML><TMPL_ELSE><TMPL_VAR SESSIONS.UNNAMED></TMPL_IF></td><td><code><TMPL_VAR client ESCAPE=HTML></code></td><td><code><TMPL_VAR identity ESCAPE=HTML></code></td><td><code><TMPL_VAR scopes ESCAPE=HTML></code></td><td><time class="mcp-expiry" data-expires-at="<TMPL_VAR expires_at ESCAPE=HTML>"><TMPL_VAR expires_display ESCAPE=HTML></time></td><td><TMPL_IF loxberry_read_eligible><TMPL_UNLESS loxberry_read_approved><form method="post" action="index.cgi" data-ajax="allow_loxberry_read"><input type="hidden" name="action" value="allow_loxberry_read"><input type="hidden" name="session_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.ALLOW_LOXBERRY_READ></button></form></TMPL_UNLESS></TMPL_IF><TMPL_IF loxberry_operate_eligible><TMPL_UNLESS loxberry_operate_approved><form method="post" action="index.cgi" data-ajax="allow_loxberry_operate"><input type="hidden" name="action" value="allow_loxberry_operate"><input type="hidden" name="session_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.ALLOW_LOXBERRY_OPERATE></button></form></TMPL_UNLESS></TMPL_IF><form method="post" action="index.cgi" data-ajax="revoke_session"><input type="hidden" name="action" value="revoke_session"><input type="hidden" name="id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form></td></tr></TMPL_LOOP>
       </tbody></table></div>
       <form method="post" action="index.cgi" data-ajax="revoke_all"><input type="hidden" name="action" value="revoke_all"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE_ALL></button></form>
     <TMPL_ELSE><p><TMPL_VAR SESSIONS.EMPTY></p></TMPL_IF>
@@ -205,12 +242,14 @@
       <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.SCOPES></th><th><TMPL_VAR SESSIONS.EXPIRES></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody></tbody></table></div>
       <form method="post" action="index.cgi" data-ajax="revoke_all"><input type="hidden" name="action" value="revoke_all"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE_ALL></button></form>
     </template>
-    <section id="loxberry-binding-section" data-active-label="<TMPL_VAR SESSIONS.ACTIVE ESCAPE=HTML>" data-inactive-label="<TMPL_VAR SESSIONS.INACTIVE ESCAPE=HTML>" <TMPL_UNLESS LOXBERRY_BINDINGS>hidden</TMPL_UNLESS>>
+    <section id="loxberry-binding-section" data-unnamed-label="<TMPL_VAR SESSIONS.UNNAMED ESCAPE=HTML>" data-no-active-label="<TMPL_VAR SESSIONS.NO_ACTIVE_SESSION ESCAPE=HTML>" data-no-identity-label="<TMPL_VAR SESSIONS.NO_IDENTITY ESCAPE=HTML>" <TMPL_UNLESS LOXBERRY_BINDINGS>hidden</TMPL_UNLESS>>
       <h3><TMPL_VAR SESSIONS.LOXBERRY_APPROVALS></h3>
-      <ul id="loxberry-binding-list" class="mcp-list"><TMPL_LOOP LOXBERRY_BINDINGS><li><code><TMPL_VAR fingerprint ESCAPE=HTML></code> <TMPL_IF active><TMPL_VAR SESSIONS.ACTIVE><TMPL_ELSE><TMPL_VAR SESSIONS.INACTIVE></TMPL_IF><TMPL_IF sessions><ul><TMPL_LOOP sessions><li><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML><TMPL_ELSE><TMPL_VAR SESSIONS.UNNAMED></TMPL_IF> <code><TMPL_VAR client ESCAPE=HTML></code> <code><TMPL_VAR scopes ESCAPE=HTML></code></li></TMPL_LOOP></ul></TMPL_IF>
-        <form method="post" action="index.cgi" data-ajax="revoke_loxberry_read"><input type="hidden" name="action" value="revoke_loxberry_read"><input type="hidden" name="binding_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form>
-      </li></TMPL_LOOP></ul>
+      <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.BINDING_ID></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody id="loxberry-binding-list"><TMPL_LOOP LOXBERRY_BINDINGS><TMPL_LOOP rows><tr><td><TMPL_IF inactive><TMPL_VAR SESSIONS.NO_ACTIVE_SESSION><TMPL_ELSE><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML><TMPL_ELSE><TMPL_VAR SESSIONS.UNNAMED></TMPL_IF></TMPL_IF></td><td><code><TMPL_VAR client ESCAPE=HTML></code></td><td><TMPL_IF inactive><TMPL_VAR SESSIONS.NO_IDENTITY><TMPL_ELSE><code><TMPL_VAR identity ESCAPE=HTML></code></TMPL_IF></td><td><code><TMPL_VAR fingerprint ESCAPE=HTML></code></td><td><form method="post" action="index.cgi" data-ajax="revoke_loxberry_read"><input type="hidden" name="action" value="revoke_loxberry_read"><input type="hidden" name="binding_id" value="<TMPL_VAR binding_id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form></td></tr></TMPL_LOOP></TMPL_LOOP></tbody></table></div>
       <p class="mcp-help"><TMPL_VAR SESSIONS.LOXBERRY_REVOKE_HINT></p>
+    </section>
+    <section id="loxberry-operate-binding-section" data-unnamed-label="<TMPL_VAR SESSIONS.UNNAMED ESCAPE=HTML>" data-no-active-label="<TMPL_VAR SESSIONS.NO_ACTIVE_SESSION ESCAPE=HTML>" data-no-identity-label="<TMPL_VAR SESSIONS.NO_IDENTITY ESCAPE=HTML>" <TMPL_UNLESS LOXBERRY_OPERATE_BINDINGS>hidden</TMPL_UNLESS>>
+      <h3><TMPL_VAR SESSIONS.LOXBERRY_OPERATE_APPROVALS></h3>
+      <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.BINDING_ID></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody id="loxberry-operate-binding-list"><TMPL_LOOP LOXBERRY_OPERATE_BINDINGS><TMPL_LOOP rows><tr><td><TMPL_IF inactive><TMPL_VAR SESSIONS.NO_ACTIVE_SESSION><TMPL_ELSE><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML><TMPL_ELSE><TMPL_VAR SESSIONS.UNNAMED></TMPL_IF></TMPL_IF></td><td><code><TMPL_VAR client ESCAPE=HTML></code></td><td><TMPL_IF inactive><TMPL_VAR SESSIONS.NO_IDENTITY><TMPL_ELSE><code><TMPL_VAR identity ESCAPE=HTML></code></TMPL_IF></td><td><code><TMPL_VAR fingerprint ESCAPE=HTML></code></td><td><form method="post" action="index.cgi" data-ajax="revoke_loxberry_operate"><input type="hidden" name="action" value="revoke_loxberry_operate"><input type="hidden" name="binding_id" value="<TMPL_VAR binding_id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form></td></tr></TMPL_LOOP></TMPL_LOOP></tbody></table></div>
     </section>
     </div>
   </details>
@@ -290,6 +329,8 @@
   const miniserverSelect = document.getElementById('miniserver-select');
   const manualEndpointFields = document.getElementById('manual-endpoint-fields');
   const miniserverEndpoint = document.getElementById('miniserver-endpoint');
+  const historyEnabled = document.getElementById('loxone-history-enabled');
+  const operateEnabled = document.getElementById('loxberry-operate-enabled');
   const testEndpoint = document.querySelector('form[data-ajax="test_connection"] input[name="endpoint"]');
   const explorerLink = document.getElementById('explorer-link');
   const explorerPath = '/admin/plugins/mcpserver/explorer.cgi';
@@ -307,6 +348,8 @@
   const sessionTableTemplate = document.getElementById('session-table-template');
   const loxberryBindingSection = document.getElementById('loxberry-binding-section');
   const loxberryBindingList = document.getElementById('loxberry-binding-list');
+  const loxberryOperateBindingSection = document.getElementById('loxberry-operate-binding-section');
+  const loxberryOperateBindingList = document.getElementById('loxberry-operate-binding-list');
   const serviceSection = document.getElementById('status');
   const serviceState = document.getElementById('service-state');
   const serviceActiveState = document.getElementById('service-active-state');
@@ -337,6 +380,10 @@
     ];
   };
   const syncTestEndpoint = () => { testEndpoint.value = miniserverEndpoint.value; };
+  const syncOperateDependency = () => {
+    operateEnabled.disabled = !historyEnabled.checked;
+    if (operateEnabled.disabled) operateEnabled.checked = false;
+  };
   const syncMiniserverSelection = () => {
     const selectedEndpoint = miniserverSelect.value;
     if (selectedEndpoint) miniserverEndpoint.value = selectedEndpoint;
@@ -347,7 +394,9 @@
   };
   miniserverSelect.addEventListener('change', syncMiniserverSelection);
   miniserverEndpoint.addEventListener('input', syncTestEndpoint);
+  historyEnabled.addEventListener('change', syncOperateDependency);
   syncMiniserverSelection();
+  syncOperateDependency();
   const expiryFormatter = new Intl.DateTimeFormat(document.documentElement.lang || undefined, {
     dateStyle: 'medium',
     timeStyle: 'medium',
@@ -566,6 +615,7 @@
     session.client_name || '', session.client || '', session.identity || '',
     session.scopes || '', String(session.expires_at ?? ''),
     Boolean(session.loxberry_read_eligible), Boolean(session.loxberry_read_approved),
+    Boolean(session.loxberry_operate_eligible), Boolean(session.loxberry_operate_approved),
   ]);
   const createSessionRow = (session) => {
     const row = document.createElement('tr');
@@ -603,6 +653,26 @@
       allowButton.className = 'lb-button';
       allowButton.type = 'submit';
       allowButton.textContent = '<TMPL_VAR ACTION.ALLOW_LOXBERRY_READ ESCAPE=JS>';
+      allowForm.append(allowAction, allowId, allowButton);
+      actionCell.append(allowForm);
+    }
+    if (session.loxberry_operate_eligible && !session.loxberry_operate_approved) {
+      const allowForm = document.createElement('form');
+      allowForm.method = 'post';
+      allowForm.action = 'index.cgi';
+      allowForm.dataset.ajax = 'allow_loxberry_operate';
+      const allowAction = document.createElement('input');
+      allowAction.type = 'hidden';
+      allowAction.name = 'action';
+      allowAction.value = 'allow_loxberry_operate';
+      const allowId = document.createElement('input');
+      allowId.type = 'hidden';
+      allowId.name = 'session_id';
+      allowId.value = String(session.id);
+      const allowButton = document.createElement('button');
+      allowButton.className = 'lb-button';
+      allowButton.type = 'submit';
+      allowButton.textContent = '<TMPL_VAR ACTION.ALLOW_LOXBERRY_OPERATE ESCAPE=JS>';
       allowForm.append(allowAction, allowId, allowButton);
       actionCell.append(allowForm);
     }
@@ -655,51 +725,66 @@
     }
     for (const row of existing.values()) row.remove();
   };
-  const updateLoxberryBindings = (bindings) => {
-    loxberryBindingSection.hidden = bindings.length === 0;
-    const entries = bindings.map((binding) => {
-      const entry = document.createElement('li');
-      const fingerprint = document.createElement('code');
-      fingerprint.textContent = String(binding.fingerprint || '');
-      entry.append(fingerprint, document.createTextNode(` ${binding.active
-        ? loxberryBindingSection.dataset.activeLabel
-        : loxberryBindingSection.dataset.inactiveLabel}`));
-      if (Array.isArray(binding.sessions) && binding.sessions.length) {
-        const related = document.createElement('ul');
-        for (const session of binding.sessions) {
-          const item = document.createElement('li');
-          item.append(document.createTextNode(String(session.client_name
-            || sessionsSection.dataset.unnamedLabel)));
-          for (const value of [session.client, session.scopes]) {
-            const code = document.createElement('code');
-            code.textContent = String(value || '');
-            item.append(document.createTextNode(' '), code);
-          }
-          related.append(item);
+  const updateLoxberryBindingTable = (bindings, section, body, actionName) => {
+    section.hidden = bindings.length === 0;
+    const rows = [];
+    for (const binding of bindings) {
+      const related = Array.isArray(binding.rows) ? binding.rows : [];
+      for (const bindingRow of related) {
+        const row = document.createElement('tr');
+        const clientName = document.createElement('td');
+        clientName.textContent = bindingRow.inactive
+          ? section.dataset.noActiveLabel
+          : String(bindingRow.client_name || section.dataset.unnamedLabel);
+        const client = document.createElement('td');
+        const clientCode = document.createElement('code');
+        clientCode.textContent = String(bindingRow.client || '');
+        client.append(clientCode);
+        const identity = document.createElement('td');
+        if (bindingRow.inactive) identity.textContent = section.dataset.noIdentityLabel;
+        else {
+          const identityCode = document.createElement('code');
+          identityCode.textContent = String(bindingRow.identity || '');
+          identity.append(identityCode);
         }
-        entry.append(related);
+        const fingerprint = document.createElement('td');
+        const fingerprintCode = document.createElement('code');
+        fingerprintCode.textContent = String(bindingRow.fingerprint || '');
+        fingerprint.append(fingerprintCode);
+        const actionCell = document.createElement('td');
+        const revokeForm = document.createElement('form');
+        revokeForm.method = 'post';
+        revokeForm.action = 'index.cgi';
+        revokeForm.dataset.ajax = actionName;
+        for (const [name, value] of [['action', actionName], ['binding_id', bindingRow.binding_id]]) {
+          const input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = name;
+          input.value = String(value || '');
+          revokeForm.append(input);
+        }
+        const button = document.createElement('button');
+        button.className = 'lb-button';
+        button.type = 'submit';
+        button.textContent = '<TMPL_VAR ACTION.REVOKE ESCAPE=JS>';
+        revokeForm.append(button);
+        actionCell.append(revokeForm);
+        row.append(clientName, client, identity, fingerprint, actionCell);
+        rows.push(row);
       }
-      const revokeForm = document.createElement('form');
-      revokeForm.method = 'post';
-      revokeForm.action = 'index.cgi';
-      revokeForm.dataset.ajax = 'revoke_loxberry_read';
-      const action = document.createElement('input');
-      action.type = 'hidden';
-      action.name = 'action';
-      action.value = 'revoke_loxberry_read';
-      const bindingId = document.createElement('input');
-      bindingId.type = 'hidden';
-      bindingId.name = 'binding_id';
-      bindingId.value = String(binding.id || '');
-      const button = document.createElement('button');
-      button.className = 'lb-button';
-      button.type = 'submit';
-      button.textContent = '<TMPL_VAR ACTION.REVOKE ESCAPE=JS>';
-      revokeForm.append(action, bindingId, button);
-      entry.append(revokeForm);
-      return entry;
-    });
-    loxberryBindingList.replaceChildren(...entries);
+    }
+    body.replaceChildren(...rows);
+  };
+  const updateLoxberryBindings = (bindings) => {
+    updateLoxberryBindingTable(
+      bindings, loxberryBindingSection, loxberryBindingList, 'revoke_loxberry_read',
+    );
+  };
+  const updateLoxberryOperateBindings = (bindings) => {
+    updateLoxberryBindingTable(
+      bindings, loxberryOperateBindingSection, loxberryOperateBindingList,
+      'revoke_loxberry_operate',
+    );
   };
   const scheduleSessionPoll = (delay = 10000) => {
     window.clearTimeout(sessionPollTimer);
@@ -722,6 +807,9 @@
       if (Array.isArray(result.data.sessions)) updateSessions(result.data.sessions);
       if (Array.isArray(result.data.loxberry_bindings)) {
         updateLoxberryBindings(result.data.loxberry_bindings);
+      }
+      if (Array.isArray(result.data.loxberry_operate_bindings)) {
+        updateLoxberryOperateBindings(result.data.loxberry_operate_bindings);
       }
     } catch {
       // Keep the last known table; the next visible and open-section poll retries.
@@ -764,7 +852,7 @@
         servicePollTimer = null;
         renderService(lastService);
       }
-      if (['revoke_session', 'revoke_all', 'allow_loxberry_read', 'revoke_loxberry_read'].includes(form.dataset.ajax)) {
+      if (['revoke_session', 'revoke_all', 'allow_loxberry_read', 'revoke_loxberry_read', 'allow_loxberry_operate', 'revoke_loxberry_operate'].includes(form.dataset.ajax)) {
         sessionActionRunning = true;
         window.clearTimeout(sessionPollTimer);
         sessionPollTimer = null;
@@ -788,6 +876,9 @@
         if (Array.isArray(result.data.sessions)) updateSessions(result.data.sessions);
         if (Array.isArray(result.data.loxberry_bindings)) {
           updateLoxberryBindings(result.data.loxberry_bindings);
+        }
+        if (Array.isArray(result.data.loxberry_operate_bindings)) {
+          updateLoxberryOperateBindings(result.data.loxberry_operate_bindings);
         }
         if (result.data.certificate) updateCertificate(result.data.certificate);
         if (form.dataset.ajax === 'save_config') {
@@ -814,7 +905,7 @@
           renderService(lastService);
           scheduleServicePoll(0);
         }
-        if (['revoke_session', 'revoke_all', 'allow_loxberry_read', 'revoke_loxberry_read'].includes(form.dataset.ajax)) {
+        if (['revoke_session', 'revoke_all', 'allow_loxberry_read', 'revoke_loxberry_read', 'allow_loxberry_operate', 'revoke_loxberry_operate'].includes(form.dataset.ajax)) {
           sessionActionRunning = false;
           scheduleSessionPoll();
         }

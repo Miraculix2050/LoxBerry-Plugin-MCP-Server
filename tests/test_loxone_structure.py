@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from mcpserver.loxone.structure import normalize_structure
+import pytest
+
+from mcpserver.loxone.structure import LoxoneStructureError, normalize_structure
 
 
 def test_structure_is_reduced_to_user_visible_domain_fields() -> None:
@@ -98,3 +100,148 @@ def test_absent_controls_remain_absent() -> None:
     structure = normalize_structure(raw, username="restricted-reader")
 
     assert structure.controls == ()
+
+
+def test_structure_extracts_only_bounded_phase_four_capabilities() -> None:
+    raw = {
+        "lastModified": "now",
+        "msInfo": {"serialNr": "000000000000"},
+        "rooms": {},
+        "cats": {},
+        "controls": {
+            "picker": {
+                "name": "Picker",
+                "type": "ColorPickerV2",
+                "uuidAction": "picker-action",
+                "defaultRating": 4,
+                "isSecured": True,
+                "hasControlNotes": True,
+                "states": {},
+                "details": {
+                    "hasHistory": True,
+                    "pickerType": "Rgb/Lumitech",
+                    "minKelvin": 2200,
+                    "maxKelvin": 9000,
+                },
+                "statisticV2": {
+                    "groups": [
+                        {
+                            "id": 1,
+                            "accumulated": True,
+                            "dataPoints": [
+                                {"output": "value", "title": "Energy", "format": "%.1f kWh"},
+                                {"output": "../unsafe", "title": "Unsafe"},
+                            ],
+                        }
+                    ]
+                },
+            },
+            "radio": {
+                "name": "Radio",
+                "type": "Radio",
+                "uuidAction": "radio-action",
+                "states": {},
+                "details": {"outputs": {"1": "One", "2": "Two"}, "allOff": "Off"},
+            },
+        },
+    }
+
+    picker, radio = normalize_structure(raw, username="reader").controls
+
+    assert picker.has_history is True
+    assert (picker.rating, picker.secured, picker.has_notes) == (4, True, True)
+    assert (picker.picker_type, picker.min_kelvin, picker.max_kelvin) == (
+        "Rgb/Lumitech",
+        2200,
+        9000,
+    )
+    assert [series.series_id for series in picker.statistic_series] == ["v2:1:value"]
+    assert radio.radio_output_ids == ("1", "2")
+    assert radio.radio_reset_allowed is True
+
+
+def test_structure_exposes_documented_legacy_statistic_outputs() -> None:
+    raw = {
+        "lastModified": "now",
+        "msInfo": {"serialNr": "000000000000"},
+        "rooms": {},
+        "cats": {},
+        "controls": {
+            "temperature": {
+                "name": "Temperature",
+                "type": "InfoOnlyAnalog",
+                "uuidAction": "temperature-action",
+                "states": {},
+                "statistic": {
+                    "frequency": 10,
+                    "outputs": [
+                        {"id": 0, "name": "Temperature", "format": "%.1f °C"},
+                        {"id": 1, "name": "Average", "format": "%.1f °C"},
+                    ],
+                },
+            }
+        },
+    }
+
+    series = normalize_structure(raw, username="reader").controls[0].statistic_series
+
+    assert [
+        (item.series_id, item.source, item.legacy_output_index, item.legacy_output_count)
+        for item in series
+    ] == [
+        ("legacy:0", "legacy", 0, 2),
+        ("legacy:1", "legacy", 1, 2),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("raw_value", "expected"),
+    [(False, False), (True, True), (0, False), (20, True)],
+)
+def test_structure_accepts_documented_and_numeric_history_capabilities(
+    raw_value: object, expected: bool
+) -> None:
+    raw = {
+        "lastModified": "now",
+        "msInfo": {"serialNr": "000000000000"},
+        "rooms": {},
+        "cats": {},
+        "controls": {
+            "control": {
+                "name": "Control",
+                "type": "Switch",
+                "uuidAction": "control-action",
+                "states": {},
+                "details": {"hasHistory": raw_value},
+            }
+        },
+    }
+
+    control = normalize_structure(raw, username="reader").controls[0]
+
+    assert control.has_history is expected
+
+
+@pytest.mark.parametrize("raw_value", [-1, "true", 1.0, None])
+def test_structure_rejects_invalid_history_capabilities(raw_value: object) -> None:
+    raw = {
+        "lastModified": "now",
+        "msInfo": {"serialNr": "000000000000"},
+        "rooms": {},
+        "cats": {},
+        "controls": {
+            "control": {
+                "name": "Control",
+                "type": "Switch",
+                "uuidAction": "control-action",
+                "states": {},
+                "details": {"hasHistory": raw_value},
+            }
+        },
+    }
+
+    with pytest.raises(
+        LoxoneStructureError,
+        match="Control details.hasHistory must be boolean or non-negative integer",
+    ):
+        normalize_structure(raw, username="reader")

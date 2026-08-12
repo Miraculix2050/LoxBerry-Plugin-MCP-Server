@@ -31,6 +31,8 @@ from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Re
 from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore
 from mcpserver.auth.provider import (
     CONTROL_SCOPE,
+    HISTORY_SCOPE,
+    LOXBERRY_OPERATE_SCOPE,
     LOXBERRY_READ_SCOPE,
     READ_SCOPE,
     Phase0OAuthProvider,
@@ -80,6 +82,7 @@ class LoginTransaction:
     miniserver_id: str | None = None
     miniserver_name: str | None = None
     loxberry_read_locally_approved: bool = False
+    loxberry_operate_locally_approved: bool = False
     phase: str = "login"
     lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
 
@@ -365,6 +368,8 @@ class Phase0OAuthWeb:
                 query.get("scope"),
                 control_enabled=self.provider.control_enabled,
                 loxberry_read_enabled=self.provider.loxberry_read_enabled,
+                history_enabled=self.provider.history_enabled,
+                loxberry_operate_enabled=self.provider.loxberry_operate_enabled,
             )
         except ValueError:
             return _redirect(
@@ -430,21 +435,45 @@ class Phase0OAuthWeb:
         return _html_page("Connect Loxone", body, callback_uri=transaction.redirect_uri)
 
     def _consent_page(self, transaction: LoginTransaction) -> HTMLResponse:
+        history_option = (
+            """<label class="scope-option" for="grant_history"><input id="grant_history" type="checkbox" name="grant_history" value="true">
+<span><strong>Loxone history / Loxone-Historie</strong><small>Optional: read bounded statistics and control history. / Optional: Begrenzte Statistiken und Control-Historie lesen.</small></span></label>"""
+            if HISTORY_SCOPE in transaction.scopes
+            else ""
+        )
         control_requested = CONTROL_SCOPE in transaction.scopes
         control_option = (
             """<label class="scope-option" for="grant_control"><input id="grant_control" type="checkbox" name="grant_control" value="true">
-<span><strong>Loxone control / Loxone-Steuerung</strong><small>Optional: switch permitted Loxone controls on and off. / Optional: Freigegebene Loxone-Steuerungen ein- und ausschalten.</small></span></label>"""
+<span><strong>Loxone control / Loxone-Steuerung</strong><small>Optional: execute narrowly documented actions on permitted controls. / Optional: Eng dokumentierte Aktionen auf freigegebenen Controls ausführen.</small></span></label>"""
             if control_requested
             else ""
         )
         loxberry_requested = LOXBERRY_READ_SCOPE in transaction.scopes
-        loxberry_option = (
-            """<label class=\"scope-option\"><input type=\"checkbox\" checked disabled>
-<span><strong>LoxBerry diagnostics / LoxBerry-Diagnose</strong><small>Approved locally for this client, identity and Miniserver. / Lokal für diesen Client, diese Identität und diesen Miniserver freigegeben.</small></span></label>"""
+        loxberry_approval = (
+            " Locally approved for this client, identity and Miniserver. / Lokal für diesen Client, diese Identität und diesen Miniserver freigegeben."
             if transaction.loxberry_read_locally_approved
-            else """<label class="scope-option" for="grant_loxberry"><input id="grant_loxberry" type="checkbox" name="grant_loxberry" value="true">
-<span><strong>LoxBerry diagnostics / LoxBerry-Diagnose</strong><small>Optional: read the approved LoxBerry system, plugin and service status. / Optional: Den freigegebenen LoxBerry-System-, Plugin- und Dienststatus lesen.</small></span></label>"""
+            else " Local approval is requested after consent. / Die lokale Freigabe wird nach der Zustimmung angefordert."
+        )
+        loxberry_option = (
+            """<label class="scope-option" for="grant_loxberry"><input id="grant_loxberry" type="checkbox" name="grant_loxberry" value="true">
+<span><strong>LoxBerry diagnostics / LoxBerry-Diagnose</strong><small>Optional: read the approved LoxBerry system, plugin and service status."""
+            + loxberry_approval
+            + """</small></span></label>"""
             if loxberry_requested
+            else ""
+        )
+        operate_requested = LOXBERRY_OPERATE_SCOPE in transaction.scopes
+        operate_approval = (
+            " Locally approved for this client, identity and Miniserver. / Lokal für diesen Client, diese Identität und diesen Miniserver freigegeben."
+            if transaction.loxberry_operate_locally_approved
+            else " Local approval is requested after consent. / Die lokale Freigabe wird nach der Zustimmung angefordert."
+        )
+        operate_option = (
+            """<label class="scope-option" for="grant_loxberry_operate"><input id="grant_loxberry_operate" type="checkbox" name="grant_loxberry_operate" value="true">
+<span><strong>LoxBerry cache operation / LoxBerry-Cache-Operation</strong><small>Optional: clear only the plugin statistic cache."""
+            + operate_approval
+            + """</small></span></label>"""
+            if operate_requested
             else ""
         )
         body = f"""<h1>Choose permissions / Berechtigungen auswählen</h1><dl>
@@ -454,7 +483,7 @@ class Phase0OAuthWeb:
 <form method="post" action="/plugins/mcpserver/oauth/authorize">{self._hidden(transaction, "approve")}
 <fieldset class="scope-list"><legend>Permissions / Berechtigungen</legend>
 <label class="scope-option"><input type="checkbox" checked disabled><span><strong>Read access / Lesezugriff</strong><small>Required: read permitted Loxone structure and states. / Erforderlich: Freigegebene Loxone-Struktur und Zustände lesen.</small></span></label>
-{control_option}{loxberry_option}</fieldset>
+{history_option}{control_option}{loxberry_option}{operate_option}</fieldset>
 <p class="notice">After confirmation, you will be redirected to your MCP client. / Nach der Bestätigung werden Sie zu Ihrem MCP-Client weitergeleitet.</p>
 <div class="actions"><button type="submit">Confirm permissions / Berechtigungen bestätigen</button></div></form>
 <form method="post" action="/plugins/mcpserver/oauth/authorize">{self._hidden(transaction, "deny")}
@@ -470,7 +499,9 @@ class Phase0OAuthWeb:
                 "username",
                 "password",
                 "grant_control",
+                "grant_history",
                 "grant_loxberry",
+                "grant_loxberry_operate",
             },
         )
         transaction_id = request.cookies.get(_COOKIE_NAME, "")
@@ -506,14 +537,22 @@ class Phase0OAuthWeb:
                 and transaction.miniserver_id
             ):
                 grant_control = form.get("grant_control")
+                grant_history = form.get("grant_history")
                 grant_loxberry = form.get("grant_loxberry")
+                grant_loxberry_operate = form.get("grant_loxberry_operate")
                 if (
                     grant_control not in {None, "true"}
                     or (grant_control is not None and CONTROL_SCOPE not in transaction.scopes)
                     or grant_loxberry not in {None, "true"}
-                    or (transaction.loxberry_read_locally_approved and grant_loxberry is not None)
                     or (
                         grant_loxberry is not None and LOXBERRY_READ_SCOPE not in transaction.scopes
+                    )
+                    or grant_history not in {None, "true"}
+                    or (grant_history is not None and HISTORY_SCOPE not in transaction.scopes)
+                    or grant_loxberry_operate not in {None, "true"}
+                    or (
+                        grant_loxberry_operate is not None
+                        and LOXBERRY_OPERATE_SCOPE not in transaction.scopes
                     )
                 ):
                     return _message_page(
@@ -523,13 +562,28 @@ class Phase0OAuthWeb:
                         status=400,
                     )
                 approved_scopes: tuple[str, ...] = (READ_SCOPE,)
+                if grant_history == "true":
+                    approved_scopes = (*approved_scopes, HISTORY_SCOPE)
                 if grant_control == "true":
-                    approved_scopes = (READ_SCOPE, CONTROL_SCOPE)
+                    approved_scopes = (*approved_scopes, CONTROL_SCOPE)
                 pending_loxberry_read = (
                     grant_loxberry == "true" and not transaction.loxberry_read_locally_approved
                 )
-                if grant_loxberry == "true" or transaction.loxberry_read_locally_approved:
+                if grant_loxberry == "true":
                     approved_scopes = (*approved_scopes, LOXBERRY_READ_SCOPE)
+                pending_loxberry_operate = (
+                    grant_loxberry_operate == "true"
+                    and not transaction.loxberry_operate_locally_approved
+                )
+                if grant_loxberry_operate == "true":
+                    if HISTORY_SCOPE not in approved_scopes:
+                        return _message_page(
+                            "Invalid authorization request",
+                            "Invalid authorization request / Ungültige Autorisierungsanfrage",
+                            "LoxBerry cache operation requires Loxone history. / Die LoxBerry-Cache-Operation benötigt Loxone-Historie.",
+                            status=400,
+                        )
+                    approved_scopes = (*approved_scopes, LOXBERRY_OPERATE_SCOPE)
                 transaction.phase = "approving"
                 family_id: str | None = None
                 if self.loxone_store is None:
@@ -581,6 +635,7 @@ class Phase0OAuthWeb:
                         scopes=approved_scopes,
                         family_id=family_id,
                         pending_loxberry_read=pending_loxberry_read,
+                        pending_loxberry_operate=pending_loxberry_operate,
                     )
                 except TokenError:
                     if family_id is not None and self.loxone_store is not None:
@@ -691,6 +746,12 @@ class Phase0OAuthWeb:
                 transaction.client_id, identity_id, miniserver_id
             )
         )
+        transaction.loxberry_operate_locally_approved = (
+            LOXBERRY_OPERATE_SCOPE in transaction.scopes
+            and self.provider.loxberry_operate_allowed(
+                transaction.client_id, identity_id, miniserver_id
+            )
+        )
         transaction.phase = "consent"
         return self._consent_page(transaction)
 
@@ -760,6 +821,8 @@ class Phase0OAuthWeb:
                     requested,
                     control_enabled=self.provider.control_enabled,
                     loxberry_read_enabled=self.provider.loxberry_read_enabled,
+                    history_enabled=self.provider.history_enabled,
+                    loxberry_operate_enabled=self.provider.loxberry_operate_enabled,
                 )
                 if requested is not None
                 else tuple(refresh.scopes)
@@ -800,6 +863,8 @@ class Phase0OAuthWeb:
                     payload.get("scope"),
                     control_enabled=self.provider.control_enabled,
                     loxberry_read_enabled=self.provider.loxberry_read_enabled,
+                    history_enabled=self.provider.history_enabled,
+                    loxberry_operate_enabled=self.provider.loxberry_operate_enabled,
                 )
             except (AttributeError, ValueError):
                 raise ValueError from None
@@ -848,9 +913,13 @@ class Phase0OAuthWeb:
                 "token_endpoint": f"{self.issuer}/token",
                 "registration_endpoint": f"{self.issuer}/register",
                 "revocation_endpoint": f"{self.issuer}/revoke",
-                "scopes_supported": [READ_SCOPE]
-                + ([CONTROL_SCOPE] if self.provider.control_enabled else [])
-                + ([LOXBERRY_READ_SCOPE] if self.provider.loxberry_read_enabled else []),
+                "scopes_supported": [
+                    READ_SCOPE,
+                    HISTORY_SCOPE,
+                    CONTROL_SCOPE,
+                    LOXBERRY_READ_SCOPE,
+                    LOXBERRY_OPERATE_SCOPE,
+                ],
                 "response_types_supported": ["code"],
                 "grant_types_supported": ["authorization_code", "refresh_token"],
                 "token_endpoint_auth_methods_supported": ["none"],

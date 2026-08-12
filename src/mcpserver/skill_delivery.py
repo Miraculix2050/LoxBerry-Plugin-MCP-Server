@@ -8,11 +8,11 @@ from typing import Final
 from mcp.server.fastmcp import FastMCP
 
 SKILL_NAME: Final = "using-loxberry-mcp"
-SKILL_REVISION: Final = 3
+SKILL_REVISION: Final = 11
 SKILL_MIME_TYPE: Final = "text/markdown"
 SKILL_RESOURCE_URI: Final = f"skill://{SKILL_NAME}/SKILL.md"
 SERVER_INSTRUCTIONS: Final = (
-    "For Loxone queries, LoxBerry diagnostics, ambiguous control names, "
+    "For Loxone queries, history, LoxBerry diagnostics, ambiguous control names, "
     "stale or unconfirmed states, "
     "and before any control operation, retrieve the using-loxberry-mcp guide from "
     f"{SKILL_RESOURCE_URI} or call loxone_get_skill_guide. Never retry uncertain writes."
