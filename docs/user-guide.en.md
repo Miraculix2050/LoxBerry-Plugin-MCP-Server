@@ -269,7 +269,7 @@ room, bulk, learning, rename, expert, or free-form commands.
 | Lighting | `Pushbutton` | yes | yes | `pulse` | hardware command accepted; feedback did not confirm the effect |
 | Lighting | `Radio` | yes | yes | `select_output`; `reset` only with visible `allOff` | hardware command accepted: `reset`; `select_output` not hardware-confirmed |
 | Lighting | `TimedSwitch` | yes | yes | `on`, `off`, `pulse` | hardware confirmed: `on`, `off`; initial state restored; `pulse` contract tested |
-| Shading | `Jalousie` | yes | yes | open/close/shade/stop, position/slats; auto only when advertised | hardware confirmed: `open`, position/slats, and `enable_auto`; `close`, `shade`, and `stop` only accepted. The final position restoration remained unconfirmed |
+| Shading | `Jalousie` | yes | yes | open/close/shade/stop, position; slats only with `details.animation = 0`; auto only when advertised | hardware confirmed in shutter mode: `open`, `set_position`, and `enable_auto`; `close`, `shade`, and `stop` only accepted. Slat actions do not apply there |
 | Shading | `CentralJalousie` | yes | no | – | hardware read confirmed |
 | Climate/ventilation | `IRoomControllerV2`, `IRCV2Daytimer`, `Ventilation`, `Daytimer` | yes | no | – | readable in the maintainer installation |
 | Climate/ventilation | `ClimateControllerUS` | yes | no | – | hardware read confirmed |
@@ -277,7 +277,10 @@ room, bulk, learning, rename, expert, or free-form commands.
 | Sensors/status | `InfoOnlyAnalog`, `InfoOnlyDigital`, `InfoOnlyText`, `TextState`, `StatusMonitor`, `WindowMonitor`, `SmokeAlarm`, `Tracker` | yes | no | – | readable in the maintainer installation |
 | Energy/other | `Meter`, `EFM`, `PvProductionForecast`, `Slider`, `Webpage` | yes | no | – | readable in the maintainer installation |
 
-“Read” means only visible structure and states. History additionally requires
+“Read” means only visible structure and states. For `Jalousie`,
+`set_slat_position` and `set_position_and_slats` are offered only when the visible
+Loxone structure reports `details.animation = 0` (blinds); unknown or other
+animations remain limited to position control. History additionally requires
 `hasHistory`, `statisticV2`, or `statistic` on the control and a granted `loxone:history`
 scope. V1 types deliberately remain marked **unverified** until a real
 acceptance run exists.

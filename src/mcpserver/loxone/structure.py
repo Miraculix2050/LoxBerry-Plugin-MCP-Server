@@ -219,6 +219,13 @@ def _controls(value: object, *, referenced: bool = False) -> tuple[Control, ...]
         is_automatic = details.get("isAutomatic", False)
         if not isinstance(is_automatic, bool):
             raise LoxoneStructureError("Control details.isAutomatic must be boolean")
+        shading_animation = details.get("animation")
+        if (
+            not isinstance(shading_animation, int)
+            or isinstance(shading_animation, bool)
+            or shading_animation not in {0, 1, 2, 3, 4, 5}
+        ):
+            shading_animation = None
         has_history = _history_capability(details.get("hasHistory", False))
         picker_type = details.get("pickerType")
         if not isinstance(picker_type, str) or len(picker_type) > 32:
@@ -248,6 +255,7 @@ def _controls(value: object, *, referenced: bool = False) -> tuple[Control, ...]
                     item.get("hasControlNotes", False), field="hasControlNotes"
                 ),
                 is_automatic=is_automatic,
+                shading_animation=shading_animation,
                 has_history=has_history,
                 picker_type=picker_type,
                 min_kelvin=min_kelvin,

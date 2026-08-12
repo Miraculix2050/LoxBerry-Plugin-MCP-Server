@@ -26,7 +26,9 @@ design comparison and do not override the official contract.
 The normalized operation target comes only from `uuidAction`. A missing target
 or a read-only internal or external restriction makes the control non-operable.
 `details.isAutomatic` is retained only as a boolean capability flag for a
-`Jalousie`; all other details remain excluded from the normalized model.
+`Jalousie`. The documented integer `details.animation` is normalized only when
+it is in the official range 0 through 5; malformed or unknown values are
+discarded. All other details remain excluded from the normalized model.
 
 The existing controls remain unchanged: the tool is disabled by default,
 requires `loxone:read` plus `loxone:control`, resolves an exact UUID in a freshly
@@ -45,7 +47,8 @@ control type and identity:
 | `Dimmer` | `on`, `off`, `set_level` | `on`, `off`, `{position}` |
 | `LightController` | `on`, `off`, `set_mood` | `on`, `off`, `{sceneNumber}` |
 | `LightControllerV2` | `off`, `set_mood` | `changeTo/0`, `changeTo/{moodId}` |
-| `Jalousie` | `open`, `close`, `shade`, `stop`, position actions | `FullUp`, `FullDown`, `shade`, `stop`, `manualPosition`, `manualLamelle`, `manualPosBlind` |
+| `Jalousie` | `open`, `close`, `shade`, `stop`, `set_position` | `FullUp`, `FullDown`, `shade`, `stop`, `manualPosition` |
+| Jalousie with `details.animation = 0` only | plus `set_slat_position`, `set_position_and_slats` | `manualLamelle`, `manualPosBlind` |
 | automatic `Jalousie` | plus `enable_auto`, `disable_auto` | `auto`, `NoAuto` |
 
 Percentages are finite values from 0 through 100. Legacy scenes are decimal
@@ -57,6 +60,11 @@ Parameters must match the selected action exactly; extra and missing parameters
 are rejected. Relative-motion pairs, scene/mood mutation, naming, presence,
 end-position adjustment, expert operations, arbitrary paths, name targets, and
 bulk operations remain unavailable.
+
+Animation 0 is the documented blind mode. A shutter, curtain, unsupported, or
+unknown animation mode never advertises or accepts slat actions. This is a
+fail-closed capability boundary; it does not expose the raw animation value to
+the MCP client.
 
 Command confirmation uses a newer matching official state when a deterministic
 target state exists. Actions without a deterministic documented result can be

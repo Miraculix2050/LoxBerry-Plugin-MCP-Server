@@ -79,6 +79,8 @@ def test_official_commands_are_mapped_without_raw_command_input(
     options: dict[str, object] = {}
     if control_type == "Radio":
         options["radio_output_ids"] = ("2",)
+    elif control_type == "Jalousie":
+        options["shading_animation"] = 0
     elif control_type == "LightsceneRGB":
         options["scene_ids"] = ("3",)
     elif control_type == "ColorPickerV2":
@@ -92,6 +94,32 @@ def test_automatic_actions_are_advertised_only_for_automatic_jalousie() -> None:
     assert "enable_auto" not in allowed_actions(_control("Jalousie"))
     assert "enable_auto" in allowed_actions(_control("Jalousie", automatic=True))
     assert allowed_actions(_control("Jalousie", automatic=True, read_only=True)) == []
+
+
+@pytest.mark.parametrize("animation", (None, 1, 2, 3, 4, 5))
+@pytest.mark.parametrize(
+    ("action", "kwargs"),
+    [
+        ("set_slat_position", {"slat_position": 50}),
+        ("set_position_and_slats", {"position": 50, "slat_position": 50}),
+    ],
+)
+def test_jalousie_without_blind_animation_rejects_slat_actions(
+    animation: int | None, action: str, kwargs: dict[str, int]
+) -> None:
+    control = _control("Jalousie", shading_animation=animation)
+
+    assert "set_slat_position" not in allowed_actions(control)
+    assert "set_position_and_slats" not in allowed_actions(control)
+    with pytest.raises(ValueError, match="not supported"):
+        prepare_control_command(control, action, **kwargs)
+
+
+def test_blind_animation_advertises_slat_actions() -> None:
+    control = _control("Jalousie", shading_animation=0)
+
+    assert "set_slat_position" in allowed_actions(control)
+    assert "set_position_and_slats" in allowed_actions(control)
 
 
 @pytest.mark.parametrize(

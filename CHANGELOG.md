@@ -3,6 +3,11 @@
 All notable user-visible changes are recorded here. GitHub release notes are
 extracted from the matching version heading.
 
+## Unreleased
+
+- Restrict Jalousie slat actions to the documented blind animation mode and
+  fail closed for shutters, curtains, unsupported, malformed, or absent modes.
+
 ## 0.4.0-alpha.2 - 2026-08-12
 
 - Canonicalize signed-zero control values, preserve fractional statistic interval
