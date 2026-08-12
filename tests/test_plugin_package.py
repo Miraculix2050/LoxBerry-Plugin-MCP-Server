@@ -164,6 +164,12 @@ def test_healthcheck_emits_loxberry_terminal_status_markers() -> None:
 
     assert "<ERROR> LoxBerry MCP Server health check failed." in healthcheck
     assert "<OK> LoxBerry MCP Server health check passed." in healthcheck
+    assert (
+        'check "Plugin configuration is readable" test -r "$plugin_config/mcpserver.json"'
+        in healthcheck
+    )
+    assert 'echo "OK: $description"' in healthcheck
+    assert 'echo "FAIL: $description"' in healthcheck
 
 
 def test_upgrade_preserves_configuration_in_plugin_data() -> None:

@@ -7,19 +7,21 @@ actual_folder=$(basename -- "$script_dir")
 plugin_config="${LBPCONFIG:?}/$actual_folder"
 plugin_data="${LBPDATA:?}/$actual_folder"
 check() {
+    description=$1
+    shift
     if "$@"; then
-        echo "OK: $*"
+        echo "OK: $description"
     else
-        echo "FAIL: $*"
+        echo "FAIL: $description"
         failed=1
     fi
 }
 
-check systemctl is-active --quiet loxberry-mcpserver.service
-check curl --fail --silent --show-error --max-time 3 http://127.0.0.1:8765/healthz
-check test -r "$plugin_config/mcpserver.json"
-check test -d "$plugin_data/auth"
-check test -w "$plugin_data/auth"
+check "MCP server service is active" systemctl is-active --quiet loxberry-mcpserver.service
+check "MCP server health endpoint responds" curl --fail --silent --show-error --max-time 3 http://127.0.0.1:8765/healthz
+check "Plugin configuration is readable" test -r "$plugin_config/mcpserver.json"
+check "OAuth data directory exists" test -d "$plugin_data/auth"
+check "OAuth data directory is writable" test -w "$plugin_data/auth"
 
 if [ "$failed" -ne 0 ]; then
     echo "<ERROR> LoxBerry MCP Server health check failed. No repair was attempted."
