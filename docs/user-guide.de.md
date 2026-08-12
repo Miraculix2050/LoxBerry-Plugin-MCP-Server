@@ -276,6 +276,13 @@ Notes, Historie, Statistik und die bestehende Aktions-Allowlist genauso verfügb
 wie andere sichtbare Controls.
 Bei `UpDownAnalog` stehen die Min-/Max-Grenzen und der Schritt für `set_value`
 unter `capabilities.analog_range`.
+Bei `StatusMonitor` liefert `capabilities.status_monitor` die stabilen
+Input-Positionen mit lesbaren Namen und die konfigurierten Status-IDs. Der
+kommaseparierte Wert des State `inputStates` wird über seine Position mit
+`inputs[index]` und über seinen Zahlenwert mit `statuses[status_id]` zugeordnet.
+So lassen sich auch bei mehreren gleichzeitigen Fehlern die betroffenen Eingänge
+eindeutig bestimmen; `numState0` bis `numState9` und `numDef` bleiben die
+aggregierten Zähler.
 Für Diagnosezwecke liefert `loxone_find_controls(include_hidden: true)` zusätzlich
 unverlinkte, versteckte Controls mit `visibility: "hidden"`. Diese sind nur nach
 einem expliziten `include_hidden: true` auch über Beschreiben, States, Notes,

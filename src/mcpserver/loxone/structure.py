@@ -13,6 +13,8 @@ from mcpserver.loxone.models import (
     LoxoneStructure,
     NamedGroup,
     StatisticSeries,
+    StatusMonitorInput,
+    StatusMonitorStatus,
 )
 
 _REFERENCED_ONLY_INTERNAL = 1 << 0
@@ -121,6 +123,64 @@ def _rating(value: object) -> int | None:
     if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 5:
         return value
     return None
+
+
+def _status_monitor_details(
+    details: Mapping[str, object],
+) -> tuple[tuple[StatusMonitorInput, ...], tuple[StatusMonitorStatus, ...]]:
+    """Return bounded, position-stable input and status metadata."""
+    inputs_value = details.get("inputs")
+    inputs: list[StatusMonitorInput] = []
+    if isinstance(inputs_value, list):
+        for index, item in enumerate(inputs_value[:100]):
+            if not isinstance(item, Mapping):
+                inputs.append(StatusMonitorInput(index, None, None, None, None))
+                continue
+            name = item.get("name")
+            if not isinstance(name, str) or len(name) > 200:
+                name = None
+            install_place = item.get("installPlace")
+            if not isinstance(install_place, str) or len(install_place) > 200:
+                install_place = None
+            inputs.append(
+                StatusMonitorInput(
+                    index=index,
+                    name=name,
+                    install_place=install_place,
+                    uuid=_optional_uuid(item.get("uuid")),
+                    room_uuid=_optional_uuid(item.get("room")),
+                )
+            )
+    statuses_value = details.get("status")
+    statuses: list[StatusMonitorStatus] = []
+    if isinstance(statuses_value, Mapping):
+        for item in statuses_value.values():
+            if not isinstance(item, Mapping):
+                continue
+            status_id, name, priority = item.get("id"), item.get("name"), item.get("prio")
+            if (
+                not isinstance(status_id, int)
+                or isinstance(status_id, bool)
+                or not 0 <= status_id <= 255
+                or not isinstance(name, str)
+                or len(name) > 200
+                or not isinstance(priority, int)
+                or isinstance(priority, bool)
+                or not 0 <= priority <= 255
+            ):
+                continue
+            color = item.get("color")
+            if not isinstance(color, str) or re.fullmatch(r"#[0-9A-Fa-f]{6}", color) is None:
+                color = None
+            statuses.append(
+                StatusMonitorStatus(
+                    status_id=status_id,
+                    name=name,
+                    priority=priority,
+                    color=color,
+                )
+            )
+    return tuple(inputs), tuple(sorted(statuses, key=lambda status: status.status_id))
 
 
 def _statistic_series(item: Mapping[str, object]) -> tuple[StatisticSeries, ...]:
@@ -302,6 +362,9 @@ def _controls(
             min_kelvin, max_kelvin = 2700, 6500
         radio_outputs = _radio_outputs(details.get("outputs"))
         minimum, maximum, step = _up_down_range(details)
+        status_monitor_inputs, status_monitor_statuses = (
+            _status_monitor_details(details) if item.get("type") == "StatusMonitor" else ((), ())
+        )
         controls.append(
             Control(
                 uuid=uuid,
@@ -333,6 +396,8 @@ def _controls(
                 maximum=maximum,
                 step=step,
                 statistic_series=_statistic_series(item),
+                status_monitor_inputs=status_monitor_inputs,
+                status_monitor_statuses=status_monitor_statuses,
                 subcontrols=(
                     _controls(subcontrols_value, referenced=True) if subcontrols_value else ()
                 ),

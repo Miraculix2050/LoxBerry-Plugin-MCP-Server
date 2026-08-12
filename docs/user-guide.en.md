@@ -258,6 +258,12 @@ Explicit user links from Loxone's `links` field are reported separately under
 history, statistics, and the existing action allowlist like other visible controls.
 For `UpDownAnalog`, the min/max bounds and step for `set_value` are available
 under `capabilities.analog_range`.
+For `StatusMonitor`, `capabilities.status_monitor` provides stable input
+positions with readable names and the configured status IDs. Map the
+comma-separated `inputStates` state by position through `inputs[index]` and by
+its numeric value through `statuses[status_id]`. This identifies every affected
+input even when several faults occur; `numState0` through `numState9` and
+`numDef` remain the aggregate counters.
 For diagnosis, `loxone_find_controls(include_hidden: true)` also returns
 unlinked hidden controls with `visibility: "hidden"`. Only with the same explicit
 `include_hidden: true` are they readable through describe, states, notes, history,

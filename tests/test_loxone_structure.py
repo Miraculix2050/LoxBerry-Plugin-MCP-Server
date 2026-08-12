@@ -73,6 +73,44 @@ def test_structure_is_reduced_to_user_visible_domain_fields() -> None:
     assert "must not leak" not in repr(structure)
 
 
+def test_structure_preserves_status_monitor_input_mapping() -> None:
+    raw = {
+        "msInfo": {"serialNr": "000000000000"},
+        "lastModified": "1",
+        "rooms": {},
+        "cats": {},
+        "controls": {
+            "monitor": {
+                "name": "Network status",
+                "type": "StatusMonitor",
+                "states": {"inputStates": "monitor-input-states"},
+                "details": {
+                    "inputs": [
+                        {"name": "Printer", "installPlace": "Office", "uuid": "printer"},
+                        {"name": "NAS", "room": "server-room"},
+                        {"name": 3},
+                    ],
+                    "status": {
+                        "status1": {"id": 1, "name": "Offline", "prio": 0, "color": "#E4354A"},
+                        "invalid": {"id": "0", "name": "Online", "prio": 1},
+                    },
+                },
+            }
+        },
+    }
+
+    control = normalize_structure(raw, username="reader").controls[0]
+
+    assert control.status_monitor_inputs[0].name == "Printer"
+    assert control.status_monitor_inputs[0].install_place == "Office"
+    assert control.status_monitor_inputs[1].room_uuid == "server-room"
+    assert len(control.status_monitor_inputs) == 3
+    assert control.status_monitor_inputs[2].index == 2
+    assert control.status_monitor_inputs[2].name is None
+    assert control.status_monitor_statuses[0].status_id == 1
+    assert control.status_monitor_statuses[0].color == "#E4354A"
+
+
 def test_structure_preserves_operability_flags_without_exposing_details() -> None:
     raw = {
         "lastModified": "now",

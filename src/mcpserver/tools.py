@@ -157,6 +157,12 @@ class CapabilitiesData(BaseModel):
         default=None,
         description="Visible UpDownAnalog range, when the control supplies a complete range.",
     )
+    status_monitor: StatusMonitorData | None = Field(
+        default=None,
+        description=(
+            "Position-stable StatusMonitor input and status mapping used to interpret inputStates."
+        ),
+    )
 
 
 class ControlPresentationData(BaseModel):
@@ -205,6 +211,28 @@ class StatisticSeriesData(BaseModel):
     title: str
     format: str
     accumulated: bool
+
+
+class StatusMonitorInputData(BaseModel):
+    index: int = Field(description="Zero-based position in the inputStates value.")
+    name: str | None
+    install_place: str | None
+    uuid: str | None
+    room_uuid: str | None
+
+
+class StatusMonitorStatusData(BaseModel):
+    status_id: int = Field(description="Value emitted at the corresponding inputStates position.")
+    name: str
+    priority: int
+    color: str | None
+
+
+class StatusMonitorData(BaseModel):
+    """Static mapping used to interpret a StatusMonitor inputStates state."""
+
+    inputs: list[StatusMonitorInputData]
+    statuses: list[StatusMonitorStatusData]
 
 
 class ControlDescriptionData(ControlSummaryData):
@@ -1060,6 +1088,31 @@ def register_read_tools(
                     if control.minimum is not None
                     and control.maximum is not None
                     and control.step is not None
+                    else None
+                ),
+                "status_monitor": (
+                    {
+                        "inputs": [
+                            {
+                                "index": item.index,
+                                "name": item.name,
+                                "install_place": item.install_place,
+                                "uuid": item.uuid,
+                                "room_uuid": item.room_uuid,
+                            }
+                            for item in control.status_monitor_inputs
+                        ],
+                        "statuses": [
+                            {
+                                "status_id": item.status_id,
+                                "name": item.name,
+                                "priority": item.priority,
+                                "color": item.color,
+                            }
+                            for item in control.status_monitor_statuses
+                        ],
+                    }
+                    if control.control_type == "StatusMonitor"
                     else None
                 ),
             }
