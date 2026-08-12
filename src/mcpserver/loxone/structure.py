@@ -134,13 +134,14 @@ def _status_monitor_details(
     if isinstance(inputs_value, list):
         for index, item in enumerate(inputs_value[:100]):
             if not isinstance(item, Mapping):
+                inputs.append(StatusMonitorInput(index, None, None, None, None))
                 continue
             name = item.get("name")
             if not isinstance(name, str) or len(name) > 200:
-                continue
-            install_place = item.get("installPlace", "")
+                name = None
+            install_place = item.get("installPlace")
             if not isinstance(install_place, str) or len(install_place) > 200:
-                install_place = ""
+                install_place = None
             inputs.append(
                 StatusMonitorInput(
                     index=index,

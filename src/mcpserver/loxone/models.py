@@ -49,8 +49,8 @@ class StatusMonitorInput:
     """One position-stable StatusMonitor input advertised by LoxAPP3."""
 
     index: int
-    name: str
-    install_place: str
+    name: str | None
+    install_place: str | None
     uuid: str | None
     room_uuid: str | None
 

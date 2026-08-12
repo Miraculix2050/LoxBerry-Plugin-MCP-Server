@@ -104,7 +104,9 @@ def test_structure_preserves_status_monitor_input_mapping() -> None:
     assert control.status_monitor_inputs[0].name == "Printer"
     assert control.status_monitor_inputs[0].install_place == "Office"
     assert control.status_monitor_inputs[1].room_uuid == "server-room"
-    assert len(control.status_monitor_inputs) == 2
+    assert len(control.status_monitor_inputs) == 3
+    assert control.status_monitor_inputs[2].index == 2
+    assert control.status_monitor_inputs[2].name is None
     assert control.status_monitor_statuses[0].status_id == 1
     assert control.status_monitor_statuses[0].color == "#E4354A"
 

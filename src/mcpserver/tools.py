@@ -215,8 +215,8 @@ class StatisticSeriesData(BaseModel):
 
 class StatusMonitorInputData(BaseModel):
     index: int = Field(description="Zero-based position in the inputStates value.")
-    name: str
-    install_place: str
+    name: str | None
+    install_place: str | None
     uuid: str | None
     room_uuid: str | None
 
