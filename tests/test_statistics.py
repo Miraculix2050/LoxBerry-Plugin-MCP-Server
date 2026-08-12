@@ -151,7 +151,10 @@ def test_statistics_cache_rejects_untrusted_persistent_key(tmp_path: Path) -> No
 def test_statistics_cache_purges_expired_and_bounds_memory_points() -> None:
     now = [10.0]
     cache = StatisticsCache(
-        None, ttl_seconds=5, maximum_memory_points=2, clock=lambda: now[0]
+        None,
+        ttl_seconds=5,
+        maximum_memory_points=2,
+        clock=lambda: now[0],
     )
     point = StatisticPoint(100, 1.0)
 
