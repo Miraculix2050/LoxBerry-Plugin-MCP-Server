@@ -74,7 +74,8 @@ StatisticsLimitArgument = Annotated[
     int,
     Field(
         description="Maximum statistic points on this page, from 1 to 500.",
-        json_schema_extra={"minimum": 1, "maximum": 500},
+        ge=1,
+        le=500,
     ),
 ]
 

@@ -46,6 +46,7 @@ from mcpserver.loxone.statistics import (
 _LOXONE_EPOCH_UNIX = 1_230_768_000
 _REFRESH_BEFORE_SECONDS = 24 * 60 * 60
 _MAX_LEGACY_STATISTIC_BYTES = 64 * 1024 * 1024
+_MAX_HISTORY_TIMESTAMP = 4_102_444_800
 
 
 def _legacy_statistic_dates(start: int, end: int) -> tuple[str, ...]:
@@ -606,6 +607,7 @@ class LoxoneRuntime:
             if (
                 not isinstance(timestamp, int)
                 or isinstance(timestamp, bool)
+                or not 0 <= timestamp <= _MAX_HISTORY_TIMESTAMP
                 or not isinstance(what, str)
                 or not isinstance(trigger, str)
                 or not isinstance(trigger_type, str)

@@ -648,6 +648,80 @@ def test_consent_page_uses_one_permission_dialog_for_read_and_control(tmp_path: 
     assert "redirected to your MCP client" in response.body.decode()
 
 
+@pytest.mark.asyncio
+async def test_locally_approved_operate_scope_still_requires_current_consent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    provider = Phase0OAuthProvider(
+        AtomicJsonAuthStore(tmp_path / "auth" / "sessions.json"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+        history_enabled=True,
+        loxberry_operate_enabled=True,
+        loxberry_operate_allowed=lambda *_: True,
+    )
+    client_info = OAuthClientInformationFull(
+        client_id="operate-client",
+        client_name="MCP Tool Explorer",
+        redirect_uris=[AnyUrl(REDIRECT)],
+        token_endpoint_auth_method="none",
+        grant_types=["authorization_code", "refresh_token"],
+        response_types=["code"],
+        scope=f"{READ_SCOPE} {HISTORY_SCOPE} {LOXBERRY_OPERATE_SCOPE}",
+    )
+    await provider.register_client(client_info)
+    web = Phase0OAuthWeb(
+        provider,
+        endpoint=MiniserverEndpoint.parse_gen1("http://192.168.255.254"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+    )
+    transaction = LoginTransaction(
+        transaction_id="transaction",
+        csrf_token="csrf",
+        client_id="operate-client",
+        client_name="MCP Tool Explorer",
+        redirect_uri=REDIRECT,
+        state="client-state",
+        code_challenge=CHALLENGE,
+        resource=RESOURCE,
+        created_at=provider.now(),
+        scopes=(READ_SCOPE, HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE),
+        identity_id="identity",
+        miniserver_id="miniserver",
+        loxberry_operate_locally_approved=True,
+        phase="consent",
+    )
+    web.transactions[transaction.transaction_id] = transaction
+
+    async def kill_token(selected: LoginTransaction) -> bool:
+        selected.loxone_token = None
+        return True
+
+    monkeypatch.setattr(web, "_kill", kill_token)
+    assert 'name="grant_loxberry_operate" value="true"' in web._consent_page(
+        transaction
+    ).body.decode()
+    app = Starlette(routes=[Route("/authorize", web.authorize, methods=["POST"])])
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="https://public.example",
+        follow_redirects=False,
+        headers={"Cookie": "phase0_oauth_tx=transaction"},
+    ) as client:
+        approved = await client.post(
+            "/authorize",
+            data={"csrf": "csrf", "action": "approve", "grant_history": "true"},
+        )
+
+    code_value = parse_qs(urlsplit(approved.headers["location"]).query)["code"][0]
+    code = await provider.load_authorization_code(client_info, code_value)
+    assert approved.status_code == 302
+    assert code is not None
+    assert code.scopes == [READ_SCOPE, HISTORY_SCOPE]
+
+
 @pytest.mark.parametrize(
     ("grant_control", "expected_scopes"),
     [

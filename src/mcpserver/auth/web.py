@@ -449,22 +449,30 @@ class Phase0OAuthWeb:
             else ""
         )
         loxberry_requested = LOXBERRY_READ_SCOPE in transaction.scopes
-        loxberry_option = (
-            """<label class=\"scope-option\"><input type=\"checkbox\" checked disabled>
-<span><strong>LoxBerry diagnostics / LoxBerry-Diagnose</strong><small>Approved locally for this client, identity and Miniserver. / Lokal für diesen Client, diese Identität und diesen Miniserver freigegeben.</small></span></label>"""
+        loxberry_approval = (
+            " Locally approved for this client, identity and Miniserver. / Lokal für diesen Client, diese Identität und diesen Miniserver freigegeben."
             if transaction.loxberry_read_locally_approved
-            else """<label class="scope-option" for="grant_loxberry"><input id="grant_loxberry" type="checkbox" name="grant_loxberry" value="true">
-<span><strong>LoxBerry diagnostics / LoxBerry-Diagnose</strong><small>Optional: read the approved LoxBerry system, plugin and service status. / Optional: Den freigegebenen LoxBerry-System-, Plugin- und Dienststatus lesen.</small></span></label>"""
+            else " Local approval is requested after consent. / Die lokale Freigabe wird nach der Zustimmung angefordert."
+        )
+        loxberry_option = (
+            """<label class="scope-option" for="grant_loxberry"><input id="grant_loxberry" type="checkbox" name="grant_loxberry" value="true">
+<span><strong>LoxBerry diagnostics / LoxBerry-Diagnose</strong><small>Optional: read the approved LoxBerry system, plugin and service status."""
+            + loxberry_approval
+            + """</small></span></label>"""
             if loxberry_requested
             else ""
         )
         operate_requested = LOXBERRY_OPERATE_SCOPE in transaction.scopes
-        operate_option = (
-            """<label class="scope-option"><input type="checkbox" checked disabled>
-<span><strong>LoxBerry cache operation / LoxBerry-Cache-Operation</strong><small>Approved locally for this client, identity and Miniserver. / Lokal für diesen Client, diese Identität und diesen Miniserver freigegeben.</small></span></label>"""
+        operate_approval = (
+            " Locally approved for this client, identity and Miniserver. / Lokal für diesen Client, diese Identität und diesen Miniserver freigegeben."
             if transaction.loxberry_operate_locally_approved
-            else """<label class="scope-option" for="grant_loxberry_operate"><input id="grant_loxberry_operate" type="checkbox" name="grant_loxberry_operate" value="true">
-<span><strong>LoxBerry cache operation / LoxBerry-Cache-Operation</strong><small>Optional: request local approval to clear only the plugin statistic cache. / Optional: Lokale Freigabe ausschließlich zum Leeren des Plugin-Statistik-Caches anfordern.</small></span></label>"""
+            else " Local approval is requested after consent. / Die lokale Freigabe wird nach der Zustimmung angefordert."
+        )
+        operate_option = (
+            """<label class="scope-option" for="grant_loxberry_operate"><input id="grant_loxberry_operate" type="checkbox" name="grant_loxberry_operate" value="true">
+<span><strong>LoxBerry cache operation / LoxBerry-Cache-Operation</strong><small>Optional: clear only the plugin statistic cache."""
+            + operate_approval
+            + """</small></span></label>"""
             if operate_requested
             else ""
         )
@@ -536,17 +544,12 @@ class Phase0OAuthWeb:
                     grant_control not in {None, "true"}
                     or (grant_control is not None and CONTROL_SCOPE not in transaction.scopes)
                     or grant_loxberry not in {None, "true"}
-                    or (transaction.loxberry_read_locally_approved and grant_loxberry is not None)
                     or (
                         grant_loxberry is not None and LOXBERRY_READ_SCOPE not in transaction.scopes
                     )
                     or grant_history not in {None, "true"}
                     or (grant_history is not None and HISTORY_SCOPE not in transaction.scopes)
                     or grant_loxberry_operate not in {None, "true"}
-                    or (
-                        transaction.loxberry_operate_locally_approved
-                        and grant_loxberry_operate is not None
-                    )
                     or (
                         grant_loxberry_operate is not None
                         and LOXBERRY_OPERATE_SCOPE not in transaction.scopes
@@ -566,7 +569,7 @@ class Phase0OAuthWeb:
                 pending_loxberry_read = (
                     grant_loxberry == "true" and not transaction.loxberry_read_locally_approved
                 )
-                if grant_loxberry == "true" or transaction.loxberry_read_locally_approved:
+                if grant_loxberry == "true":
                     approved_scopes = (*approved_scopes, LOXBERRY_READ_SCOPE)
                 pending_loxberry_operate = (
                     grant_loxberry_operate == "true"
@@ -574,7 +577,6 @@ class Phase0OAuthWeb:
                 )
                 if (
                     grant_loxberry_operate == "true"
-                    or transaction.loxberry_operate_locally_approved
                 ):
                     if HISTORY_SCOPE not in approved_scopes:
                         return _message_page(

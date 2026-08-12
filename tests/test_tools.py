@@ -319,6 +319,8 @@ def test_phase_four_tool_contracts_are_narrow_and_correctly_annotated() -> None:
     }
     assert statistics.parameters["properties"]["start"]["format"] == "date-time"
     assert statistics.parameters["properties"]["end"]["format"] == "date-time"
+    assert statistics.parameters["properties"]["limit"]["minimum"] == 1
+    assert statistics.parameters["properties"]["limit"]["maximum"] == 500
     history = published["loxone_get_control_history"]
     assert history.annotations is not None
     assert history.annotations.readOnlyHint is True
@@ -327,6 +329,33 @@ def test_phase_four_tool_contracts_are_narrow_and_correctly_annotated() -> None:
     assert cache.annotations.readOnlyHint is False
     assert cache.annotations.destructiveHint is True
     assert cache.parameters["properties"] == {}
+
+
+@pytest.mark.asyncio
+async def test_statistics_limit_is_enforced_at_runtime() -> None:
+    class Runtime:
+        async def get_statistics(
+            self, *_: object
+        ) -> tuple[object, StatisticSeries, tuple[object, ...]]:
+            raise AssertionError("invalid limit must be rejected before runtime access")
+
+    server = FastMCP("statistics-limit")
+    register_history_tools(server, Runtime())  # type: ignore[arg-type]
+
+    result = await server._tool_manager.call_tool(
+        "loxone_get_statistics",
+        {
+            "control_uuid": "control",
+            "series_id": "series",
+            "start": "2026-01-01T00:00:00Z",
+            "end": "2026-01-02T00:00:00Z",
+            "granularity": "raw",
+            "limit": 501,
+        },
+    )
+
+    assert result.ok is False
+    assert result.data.error == "invalid_input"  # type: ignore[union-attr]
 
 
 @pytest.mark.asyncio

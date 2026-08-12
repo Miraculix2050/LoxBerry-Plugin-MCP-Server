@@ -117,6 +117,53 @@ async def test_runtime_reads_bounded_legacy_raw_statistics() -> None:
     assert session.dates == ["200901"]
 
 
+@pytest.mark.asyncio
+async def test_runtime_ignores_history_timestamps_outside_supported_range() -> None:
+    control = Control(
+        "control-1",
+        "History",
+        "Switch",
+        None,
+        None,
+        "action-1",
+        (),
+        has_history=True,
+    )
+    access = StoredAccessToken(
+        token="opaque",
+        client_id="client",
+        scopes=[READ_SCOPE, HISTORY_SCOPE],
+        expires_at=2_000_000_000,
+        resource="https://loxberry.local/plugins/mcpserver/mcp",
+        subject="identity",
+        claims={},
+        family_id="family",
+        identity_id="identity",
+        miniserver_id="miniserver",
+    )
+
+    class Session:
+        async def control_history(self, action_uuid: str) -> list[dict[str, object]]:
+            assert action_uuid == "action-1"
+            return [
+                {"ts": 2**63, "what": "invalid"},
+                {"ts": 1_700_000_000, "what": "valid"},
+            ]
+
+    runtime = object.__new__(LoxoneRuntime)
+
+    @asynccontextmanager
+    async def history_session(_access: StoredAccessToken, control_uuid: str):
+        assert control_uuid == "control-1"
+        yield control, Session()
+
+    runtime._history_session = history_session  # type: ignore[method-assign]
+
+    _control, entries = await runtime.get_control_history(access, "control-1")
+
+    assert [entry.timestamp for entry in entries] == [1_700_000_000]
+
+
 def test_statistics_cache_expires_memory_and_clears_private_hybrid_files(
     tmp_path: Path,
 ) -> None:
