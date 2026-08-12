@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Canonicalize signed-zero control values, preserve fractional statistic interval
+  boundaries, and keep control-history pagination consistent through bounded
+  in-memory snapshots.
+
 ## 0.4.0-alpha.1 - 2026-08-11
 
 - Add separately authorized `loxone:history` StatisticV2 and bounded

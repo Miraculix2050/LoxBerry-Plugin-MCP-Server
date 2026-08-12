@@ -57,7 +57,8 @@ Use `loxone_describe_control` first. Call `loxone_get_control_history` only when
 advertised under `capabilities.statistics`. For `source: legacy`, use `raw`
 granularity only and no more than seven days; StatisticV2 also supports aggregated
 granularities. Follow `next_cursor` with
-the same query arguments. Do not invent a series ID, request an invisible
+the same query arguments. A control-history cursor continues a short-lived, stable
+snapshot, so restart from the first page if it has expired. Do not invent a series ID, request an invisible
 control, or interpret a cache hit as newer than its response metadata.
 
 ## Operate a supported control

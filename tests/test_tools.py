@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 
 import pytest
 from mcp.server.fastmcp import FastMCP
@@ -17,7 +18,7 @@ from mcpserver.auth.provider import (
 )
 from mcpserver.config import PluginConfig
 from mcpserver.loxone.models import Control, LoxoneIdentity, LoxoneStructure, StatisticSeries
-from mcpserver.loxone.runtime import RuntimeSnapshot
+from mcpserver.loxone.runtime import ControlHistoryEntry, RuntimeSnapshot
 from mcpserver.skill_delivery import read_skill_markdown
 from mcpserver.tools import (
     LoxBerryOperateRuntime,
@@ -183,6 +184,86 @@ def test_rfc3339_rejects_timezone_normalization_overflow() -> None:
         _rfc3339("9999-12-31T23:59:59-23:59")
 
 
+@pytest.mark.asyncio
+async def test_statistics_rounds_fractional_start_upward(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: tuple[int, int] | None = None
+
+    class Runtime:
+        async def get_statistics(
+            self,
+            _access: object,
+            _control: str,
+            _series: str,
+            start: int,
+            end: int,
+            _granularity: str,
+        ) -> tuple[object, StatisticSeries, tuple[object, ...]]:
+            nonlocal observed
+            observed = (start, end)
+            return (
+                object(),
+                StatisticSeries("series", "statistic_v2", "group", "output", "Series", ""),
+                (),
+            )
+
+    server = FastMCP("statistics-fractional-start")
+    register_history_tools(server, Runtime())  # type: ignore[arg-type]
+    monkeypatch.setattr(
+        tools_module, "_access", lambda: _loxberry_access(READ_SCOPE, HISTORY_SCOPE)
+    )
+    result = await server._tool_manager.call_tool(
+        "loxone_get_statistics",
+        {
+            "control_uuid": "control",
+            "series_id": "series",
+            "start": "2026-01-01T00:00:00.500Z",
+            "end": "2026-01-01T00:00:01.500Z",
+            "granularity": "raw",
+        },
+    )
+
+    assert result.ok is True
+    assert observed == (
+        int(datetime(2026, 1, 1, 0, 0, 1, tzinfo=UTC).timestamp()),
+        int(datetime(2026, 1, 1, 0, 0, 1, tzinfo=UTC).timestamp()),
+    )
+
+
+@pytest.mark.asyncio
+async def test_history_cursor_reads_a_stable_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
+    entries = tuple(ControlHistoryEntry(index, str(index), "", "", ()) for index in range(75))
+    calls = 0
+
+    class Runtime:
+        async def get_control_history(
+            self, _access: object, _control: str
+        ) -> tuple[object, tuple[ControlHistoryEntry, ...]]:
+            nonlocal calls
+            calls += 1
+            return object(), entries if calls == 1 else entries[1:]
+
+    server = FastMCP("history-snapshot")
+    register_history_tools(server, Runtime())  # type: ignore[arg-type]
+    monkeypatch.setattr(
+        tools_module, "_access", lambda: _loxberry_access(READ_SCOPE, HISTORY_SCOPE)
+    )
+
+    first = await server._tool_manager.call_tool(
+        "loxone_get_control_history", {"control_uuid": "control", "limit": 50}
+    )
+    second = await server._tool_manager.call_tool(
+        "loxone_get_control_history",
+        {"control_uuid": "control", "cursor": first.data.next_cursor, "limit": 50},
+    )
+
+    assert calls == 1
+    assert [entry.what for entry in first.data.entries] == [str(index) for index in range(50)]
+    assert [entry.what for entry in second.data.entries] == [str(index) for index in range(50, 75)]
+    assert second.data.next_cursor is None
+
+
 @pytest.mark.parametrize("limit", [0, 101])
 def test_page_limit_is_bounded(limit: int) -> None:
     with pytest.raises(ValueError, match="between 1 and 100"):
@@ -241,7 +322,7 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert tool.annotations.destructiveHint is False
     assert tool.annotations.openWorldHint is False
     assert result.data.name == "using-loxberry-mcp"  # type: ignore[union-attr]
-    assert result.data.revision == 8  # type: ignore[union-attr]
+    assert result.data.revision == 9  # type: ignore[union-attr]
     assert result.data.media_type == "text/markdown"  # type: ignore[union-attr]
     assert result.data.content == read_skill_markdown()  # type: ignore[union-attr]
 

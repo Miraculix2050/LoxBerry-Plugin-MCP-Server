@@ -119,6 +119,8 @@ def _percentage(value: float | None, name: str) -> float:
 
 
 def _number(value: float) -> str:
+    if value == 0:
+        return "0"
     formatted = format(Decimal(str(value)), "f")
     return formatted.rstrip("0").rstrip(".") if "." in formatted else formatted
 

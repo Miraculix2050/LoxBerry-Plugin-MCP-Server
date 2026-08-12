@@ -180,6 +180,8 @@ filter compares the complete Loxone type case-insensitively, so `Switch` and
 checkboxes make `loxone_find_controls` return only controls with visible
 StatisticV2 or legacy statistic series, or control history, respectively. When both are selected, a
 control must provide both capabilities.
+For control history, a cursor continues a short-lived stable snapshot; start again from
+the first page if that snapshot has expired.
 
 The MCP transcript shows sanitized JSON-RPC messages, status and duration.
 Authorization headers, OAuth values and secret-shaped arguments are never shown.

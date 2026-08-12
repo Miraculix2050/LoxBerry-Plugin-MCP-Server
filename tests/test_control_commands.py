@@ -150,3 +150,18 @@ def test_combined_v1_color_picker_advertises_temperature_control() -> None:
         kelvin=4000,
     )
     assert prepared.command == "lumitech(75,4000)"
+
+
+@pytest.mark.parametrize(
+    ("action", "kwargs", "command"),
+    [
+        ("set_color_hsv", {"hue": -0.0, "saturation": -0.0, "brightness": -0.0}, "hsv(0,0,0)"),
+        ("set_color_temperature", {"brightness": -0.0, "kelvin": 4000}, "temp(0,4000)"),
+    ],
+)
+def test_color_commands_canonicalize_signed_zero(
+    action: str, kwargs: dict[str, float | int], command: str
+) -> None:
+    control = _control("ColorPickerV2", picker_type="Rgb/Lumitech")
+
+    assert prepare_control_command(control, action, **kwargs).command == command
