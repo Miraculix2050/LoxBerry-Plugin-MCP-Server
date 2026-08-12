@@ -192,8 +192,8 @@ Loxone-Typ ohne Beachtung der Groß-/Kleinschreibung, beispielsweise `Switch` od
 liefert `loxone_find_controls` nur Controls mit sichtbaren StatisticV2- oder klassischen Statistikreihen
 beziehungsweise Control-Historie. Sind beide aktiviert, muss ein Control beide
 Fähigkeiten anbieten.
-Bei der Control-Historie setzt ein Cursor einen kurzlebigen, stabilen Snapshot fort;
-ist er abgelaufen, beginne erneut mit der ersten Seite.
+Cursor für Control-Historie und Statistik verwenden signierte Fortsetzungsanker,
+damit sich bei veränderten Live-Ergebnissen keine bereits gelieferten Einträge wiederholen.
 
 Der MCP-Transkriptbereich zeigt bereinigte JSON-RPC-Nachrichten, Status und Dauer.
 Authorization-Header, OAuth-Werte und als geheim erkannte Argumente werden nicht

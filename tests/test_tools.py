@@ -19,6 +19,7 @@ from mcpserver.auth.provider import (
 from mcpserver.config import PluginConfig
 from mcpserver.loxone.models import Control, LoxoneIdentity, LoxoneStructure, StatisticSeries
 from mcpserver.loxone.runtime import ControlHistoryEntry, RuntimeSnapshot
+from mcpserver.loxone.statistics import StatisticPoint
 from mcpserver.skill_delivery import read_skill_markdown
 from mcpserver.tools import (
     LoxBerryOperateRuntime,
@@ -232,7 +233,7 @@ async def test_statistics_rounds_fractional_start_upward(
 
 
 @pytest.mark.asyncio
-async def test_history_cursor_reads_a_stable_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_history_cursor_uses_a_stable_entry_anchor(monkeypatch: pytest.MonkeyPatch) -> None:
     entries = tuple(ControlHistoryEntry(index, str(index), "", "", ()) for index in range(75))
     calls = 0
 
@@ -242,7 +243,10 @@ async def test_history_cursor_reads_a_stable_snapshot(monkeypatch: pytest.Monkey
         ) -> tuple[object, tuple[ControlHistoryEntry, ...]]:
             nonlocal calls
             calls += 1
-            return object(), entries if calls == 1 else entries[1:]
+            return (
+                object(),
+                entries if calls == 1 else (ControlHistoryEntry(75, "new", "", "", ()), *entries),
+            )
 
     server = FastMCP("history-snapshot")
     register_history_tools(server, Runtime())  # type: ignore[arg-type]
@@ -258,9 +262,56 @@ async def test_history_cursor_reads_a_stable_snapshot(monkeypatch: pytest.Monkey
         {"control_uuid": "control", "cursor": first.data.next_cursor, "limit": 50},
     )
 
-    assert calls == 1
-    assert [entry.what for entry in first.data.entries] == [str(index) for index in range(50)]
-    assert [entry.what for entry in second.data.entries] == [str(index) for index in range(50, 75)]
+    assert calls == 2
+    assert [entry.what for entry in first.data.entries] == [
+        str(index) for index in range(74, 24, -1)
+    ]
+    assert [entry.what for entry in second.data.entries] == [
+        str(index) for index in range(24, -1, -1)
+    ]
+    assert second.data.next_cursor is None
+
+
+@pytest.mark.asyncio
+async def test_statistics_cursor_uses_a_timestamp_anchor(monkeypatch: pytest.MonkeyPatch) -> None:
+    points = tuple(StatisticPoint(index, float(index)) for index in range(1, 4))
+    calls = 0
+
+    class Runtime:
+        async def get_statistics(
+            self, *_: object
+        ) -> tuple[object, StatisticSeries, tuple[StatisticPoint, ...]]:
+            nonlocal calls
+            calls += 1
+            values = points if calls == 1 else (StatisticPoint(0, 0.0), *points)
+            return (
+                object(),
+                StatisticSeries("series", "statistic_v2", "group", "output", "Series", ""),
+                values,
+            )
+
+    server = FastMCP("statistics-anchor")
+    register_history_tools(server, Runtime())  # type: ignore[arg-type]
+    monkeypatch.setattr(
+        tools_module, "_access", lambda: _loxberry_access(READ_SCOPE, HISTORY_SCOPE)
+    )
+    arguments = {
+        "control_uuid": "control",
+        "series_id": "series",
+        "start": "1970-01-01T00:00:00Z",
+        "end": "1970-01-01T00:00:03Z",
+        "granularity": "raw",
+        "limit": 2,
+    }
+
+    first = await server._tool_manager.call_tool("loxone_get_statistics", arguments)
+    second = await server._tool_manager.call_tool(
+        "loxone_get_statistics", {**arguments, "cursor": first.data.next_cursor}
+    )
+
+    assert calls == 2
+    assert [point.value for point in first.data.points] == [1.0, 2.0]
+    assert [point.value for point in second.data.points] == [3.0]
     assert second.data.next_cursor is None
 
 
@@ -322,7 +373,7 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert tool.annotations.destructiveHint is False
     assert tool.annotations.openWorldHint is False
     assert result.data.name == "using-loxberry-mcp"  # type: ignore[union-attr]
-    assert result.data.revision == 9  # type: ignore[union-attr]
+    assert result.data.revision == 10  # type: ignore[union-attr]
     assert result.data.media_type == "text/markdown"  # type: ignore[union-attr]
     assert result.data.content == read_skill_markdown()  # type: ignore[union-attr]
 

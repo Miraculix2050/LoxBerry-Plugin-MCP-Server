@@ -107,6 +107,7 @@ def test_automatic_actions_are_advertised_only_for_automatic_jalousie() -> None:
         (_control("Jalousie"), "enable_auto", {}),
         (_control("Radio", radio_output_ids=("2",)), "select_output", {"output_id": "3"}),
         (_control("Radio"), "reset", {}),
+        (_control("Pushbutton"), "off", {}),
         (_control("LightsceneRGB", scene_ids=("1",)), "set_scene", {"scene_id": "2"}),
         (
             _control("ColorPickerV2", picker_type="Rgb"),

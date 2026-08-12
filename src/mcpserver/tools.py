@@ -11,7 +11,6 @@ import logging
 import secrets
 import time
 from collections import OrderedDict
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from math import ceil, floor
 from typing import Annotated, Any, Final, Literal
@@ -56,8 +55,6 @@ _AUDIT_LAST: OrderedDict[tuple[str, str], float] = OrderedDict()
 _ERROR_SUPPRESSION_SECONDS: Final = 60.0
 _ERROR_LAST: dict[str, float] = {}
 _CACHE_CLEAR_TIMEOUT_SECONDS: Final = 10.0
-_HISTORY_SNAPSHOT_TTL_SECONDS: Final = 120.0
-_MAX_HISTORY_SNAPSHOTS: Final = 32
 
 CursorArgument = Annotated[
     str | None,
@@ -499,51 +496,16 @@ class _CursorCodec:
         except (UnicodeError, ValueError, json.JSONDecodeError):
             raise ValueError("cursor is invalid") from None
 
+    def digest(self, value: bytes) -> str:
+        return hmac.new(self._key, value, hashlib.sha256).hexdigest()
 
-@dataclass(slots=True)
-class _HistorySnapshot:
-    scope: str
-    entries: tuple[ControlHistoryEntry, ...]
-    expires_at: float
-
-
-class _HistorySnapshotPager:
-    """Keep a short, bounded immutable history page set behind signed cursors."""
-
-    def __init__(self) -> None:
-        self._key = secrets.token_bytes(32)
-        self._snapshots: OrderedDict[str, _HistorySnapshot] = OrderedDict()
-
-    def _purge(self, now: float) -> None:
-        expired = [key for key, snapshot in self._snapshots.items() if snapshot.expires_at <= now]
-        for key in expired:
-            self._snapshots.pop(key, None)
-        while len(self._snapshots) > _MAX_HISTORY_SNAPSHOTS:
-            self._snapshots.popitem(last=False)
-
-    def _encode(self, snapshot_id: str, offset: int) -> str:
-        body = json.dumps(
-            {"snapshot": snapshot_id, "offset": offset}, separators=(",", ":")
-        ).encode()
+    def encode_anchor(self, scope: str, anchor: int | tuple[int, str]) -> str:
+        payload: int | list[int | str] = list(anchor) if isinstance(anchor, tuple) else anchor
+        body = json.dumps({"scope": scope, "anchor": payload}, separators=(",", ":")).encode()
         signature = hmac.new(self._key, body, hashlib.sha256).digest()
         return base64.urlsafe_b64encode(body + signature).decode().rstrip("=")
 
-    def begin(self, scope: str, entries: tuple[ControlHistoryEntry, ...]) -> tuple[str, int]:
-        now = time.monotonic()
-        self._purge(now)
-        snapshot_id = secrets.token_urlsafe(16)
-        self._snapshots[snapshot_id] = _HistorySnapshot(
-            scope=scope,
-            entries=entries,
-            expires_at=now + _HISTORY_SNAPSHOT_TTL_SECONDS,
-        )
-        self._snapshots.move_to_end(snapshot_id)
-        self._purge(now)
-        return snapshot_id, 0
-
-    def continue_page(
-        self, scope: str, value: str
-    ) -> tuple[str, int, tuple[ControlHistoryEntry, ...]]:
+    def decode_anchor(self, scope: str, value: str) -> int | tuple[int, str]:
         if len(value) > 512:
             raise ValueError("cursor is invalid")
         try:
@@ -554,22 +516,23 @@ class _HistorySnapshotPager:
             ):
                 raise ValueError
             document = json.loads(body)
-            snapshot_id = document.get("snapshot")
-            offset = document.get("offset")
-            if not isinstance(snapshot_id, str) or not isinstance(offset, int) or offset < 0:
+            anchor = document.get("anchor")
+            if document.get("scope") != scope:
                 raise ValueError
+            if isinstance(anchor, int) and not isinstance(anchor, bool):
+                return anchor
+            if (
+                isinstance(anchor, list)
+                and len(anchor) == 2
+                and isinstance(anchor[0], int)
+                and not isinstance(anchor[0], bool)
+                and isinstance(anchor[1], str)
+                and len(anchor[1]) == 64
+            ):
+                return anchor[0], anchor[1]
+            raise ValueError
         except (UnicodeError, ValueError, json.JSONDecodeError):
             raise ValueError("cursor is invalid") from None
-        now = time.monotonic()
-        self._purge(now)
-        snapshot = self._snapshots.get(snapshot_id)
-        if snapshot is None or snapshot.scope != scope:
-            raise ValueError("cursor is invalid or expired")
-        self._snapshots.move_to_end(snapshot_id)
-        return snapshot_id, offset, snapshot.entries
-
-    def next_cursor(self, snapshot_id: str, offset: int) -> str:
-        return self._encode(snapshot_id, offset)
 
 
 def _access() -> StoredAccessToken:
@@ -1196,7 +1159,16 @@ def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
     """Publish the bounded Phase 4 statistic and control-history tools."""
     annotations = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
     cursors = _CursorCodec()
-    history_snapshots = _HistorySnapshotPager()
+
+    def history_key(entry: ControlHistoryEntry) -> tuple[int, str]:
+        digest = cursors.digest(
+            json.dumps(
+                [entry.what, entry.trigger, entry.trigger_type, entry.impacts],
+                ensure_ascii=True,
+                separators=(",", ":"),
+            ).encode()
+        )
+        return -entry.timestamp, digest
 
     @server.tool(
         name="loxone_get_statistics",
@@ -1255,7 +1227,6 @@ def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                     ).encode()
                 ).hexdigest()
             )
-            offset = cursors.decode(query_scope, cursor)
             _control, series, points = await runtime.get_statistics(
                 access,
                 control_uuid,
@@ -1264,8 +1235,12 @@ def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                 end_second,
                 granularity,
             )
-            selected = points[offset : offset + limit]
-            next_offset = offset + len(selected)
+            if cursor is not None:
+                anchor = cursors.decode_anchor(query_scope, cursor)
+                if not isinstance(anchor, int):
+                    raise ValueError("cursor is invalid")
+                points = tuple(point for point in points if point.timestamp > anchor)
+            selected = points[:limit]
             return _result(
                 StatisticsEnvelope,
                 {
@@ -1286,8 +1261,8 @@ def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                         for point in selected
                     ],
                     "next_cursor": (
-                        cursors.encode(query_scope, next_offset)
-                        if next_offset < len(points)
+                        cursors.encode_anchor(query_scope, selected[-1].timestamp)
+                        if len(selected) < len(points)
                         else None
                     ),
                 },
@@ -1322,13 +1297,14 @@ def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                 "history:"
                 + hashlib.sha256(f"{access.family_id}\0{control_uuid}".encode()).hexdigest()
             )
-            if cursor is None:
-                _control, entries = await runtime.get_control_history(access, control_uuid)
-                snapshot_id, offset = history_snapshots.begin(scope, entries)
-            else:
-                snapshot_id, offset, entries = history_snapshots.continue_page(scope, cursor)
-            selected = entries[offset : offset + limit]
-            next_offset = offset + len(selected)
+            _control, entries = await runtime.get_control_history(access, control_uuid)
+            ordered = tuple(sorted(entries, key=history_key))
+            if cursor is not None:
+                anchor = cursors.decode_anchor(scope, cursor)
+                if not isinstance(anchor, tuple):
+                    raise ValueError("cursor is invalid")
+                ordered = tuple(entry for entry in ordered if history_key(entry) > anchor)
+            selected = ordered[:limit]
             return _result(
                 ControlHistoryEnvelope,
                 {
@@ -1346,8 +1322,8 @@ def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                         for entry in selected
                     ],
                     "next_cursor": (
-                        history_snapshots.next_cursor(snapshot_id, next_offset)
-                        if next_offset < len(entries)
+                        cursors.encode_anchor(scope, history_key(selected[-1]))
+                        if len(selected) < len(ordered)
                         else None
                     ),
                 },
