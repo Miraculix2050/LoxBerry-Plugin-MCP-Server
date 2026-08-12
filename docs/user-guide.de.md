@@ -311,6 +311,13 @@ Der englische Healthcheck führt keine Reparatur aus:
 LBPCONFIG=/actual/config/path LBPDATA=/actual/data/path /actual/bin/healthcheck
 ```
 
+Der LoxBerry-Selbsttest zeigt die Beschreibung **MCP-Server-Verfügbarkeit und
+lokale Daten** und fasst die einzelnen, rein lesenden Prüfungen verständlich im
+Ergebnis zusammen: Dienst aktiv, lokaler Health-Endpunkt erreichbar,
+Konfiguration lesbar sowie OAuth-Datenverzeichnis vorhanden und beschreibbar.
+Ein Fehler wird rot dargestellt und nennt die fehlgeschlagene Prüfung; der
+Selbsttest nimmt keine Reparatur vor.
+
 Das Dienstlog kann direkt aus der Statuskarte oder als Liste der aktiven Datei
 und vorhandenen Backups im Unterabschnitt **Dienst-Log (service.log)** im
 LoxBerry-Logviewer geöffnet werden. Es ist auf die aktive Datei und zwei

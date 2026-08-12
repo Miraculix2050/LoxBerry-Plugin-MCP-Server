@@ -291,6 +291,12 @@ The English healthcheck never repairs the system:
 LBPCONFIG=/actual/config/path LBPDATA=/actual/data/path /actual/bin/healthcheck
 ```
 
+The LoxBerry health check displays the description **MCP server availability
+and local data** and summarizes its read-only checks in the result: active
+service, reachable loopback health endpoint, readable configuration, and an
+existing writable OAuth data directory. A failing check is displayed in red and
+names the affected check; the health check never attempts a repair.
+
 The service log can be opened directly from the status card or as a list of the
 active file and available backups in the **Service log (service.log)** section of
 the LoxBerry log viewer. It is bounded to the active file and two 512 KiB rotations, approximately

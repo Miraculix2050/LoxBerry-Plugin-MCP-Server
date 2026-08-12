@@ -159,17 +159,19 @@ def test_v4_package_manifest_is_present() -> None:
     assert "LBPDATA/$actual_folder" in hooks
 
 
-def test_healthcheck_emits_loxberry_terminal_status_markers() -> None:
+def test_healthcheck_uses_loxberry_plugin_protocol() -> None:
     healthcheck = (ROOT / "bin/healthcheck").read_text(encoding="utf-8")
 
-    assert "<ERROR> LoxBerry MCP Server health check failed." in healthcheck
-    assert "<OK> LoxBerry MCP Server health check passed." in healthcheck
+    assert 'case "${1:-check}" in' in healthcheck
+    assert 'title)' in healthcheck
+    assert "printf '%s\\n' \"$description\"" in healthcheck
+    assert "printf '%s\\n%s\\n%s\\n' \"$description\" 3" in healthcheck
+    assert "printf '%s\\n%s\\n%s\\n' \"$description\" 5" in healthcheck
     assert (
-        'check "Plugin configuration is readable" test -r "$plugin_config/mcpserver.json"'
+        'check "Plugin configuration" test -r "$plugin_config/mcpserver.json"'
         in healthcheck
     )
-    assert 'echo "OK: $description"' in healthcheck
-    assert 'echo "FAIL: $description"' in healthcheck
+    assert "No repair action was taken." in healthcheck
 
 
 def test_upgrade_preserves_configuration_in_plugin_data() -> None:
