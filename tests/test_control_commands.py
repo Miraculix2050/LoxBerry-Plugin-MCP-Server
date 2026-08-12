@@ -144,6 +144,9 @@ def test_combined_v1_color_picker_advertises_temperature_control() -> None:
 
     assert "set_color_temperature" in allowed_actions(control)
     prepared = prepare_control_command(
-        control, "set_color_temperature", brightness=75, kelvin=4000
+        control,
+        "set_color_temperature",
+        brightness=75,
+        kelvin=4000,
     )
     assert prepared.command == "lumitech(75,4000)"
