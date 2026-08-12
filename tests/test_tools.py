@@ -524,6 +524,7 @@ def test_phase_four_tool_contracts_are_narrow_and_correctly_annotated() -> None:
     server = FastMCP("phase-four-contract")
     register_history_tools(server, None)
     register_loxberry_operate_tool(server, LoxBerryOperateRuntime(object(), object(), object()))
+    register_control_tool(server, None)
     published = {tool.name: tool for tool in server._tool_manager.list_tools()}
 
     statistics = published["loxone_get_statistics"]
@@ -551,6 +552,15 @@ def test_phase_four_tool_contracts_are_narrow_and_correctly_annotated() -> None:
     assert cache.annotations.readOnlyHint is False
     assert cache.annotations.destructiveHint is True
     assert cache.parameters["properties"] == {}
+    operation = published["loxone_operate_control"]
+    for control_type in (
+        "TimedSwitch",
+        "Radio",
+        "LightsceneRGB",
+        "ColorPicker V1/V2",
+        "Pushbutton",
+    ):
+        assert control_type in operation.description
 
 
 @pytest.mark.asyncio

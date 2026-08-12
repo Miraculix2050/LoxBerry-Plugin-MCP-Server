@@ -1451,8 +1451,9 @@ def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> Non
     @server.tool(
         name="loxone_operate_control",
         description=(
-            "Operate one visible and operable Switch, Dimmer, LightController, "
-            "LightControllerV2, or Jalousie with an explicit documented action. "
+            "Operate one visible and operable supported control: Switch, Dimmer, "
+            "LightController V1/V2, Jalousie, TimedSwitch, Radio, LightsceneRGB, "
+            "ColorPicker V1/V2, or Pushbutton. Use an explicit documented action. "
             "Requires loxone:control. Never retries an uncertain command."
         ),
         annotations=annotations,
