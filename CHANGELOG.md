@@ -9,6 +9,8 @@ extracted from the matching version heading.
   boundaries, and keep history and statistic pagination consistent through signed
   continuation anchors with stable occurrence tie-breakers without retaining result
   sets in RAM.
+- Rate-limit denied LoxBerry cache-clear attempts and audit cancelled operations as
+  having an unknown outcome.
 
 ## 0.4.0-alpha.1 - 2026-08-11
 

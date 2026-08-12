@@ -618,9 +618,15 @@ class LoxBerryOperateRuntime:
         self._clear_timeout_seconds = clear_timeout_seconds
 
     def _allowed(self, access: StoredAccessToken) -> None:
+        config = self._config_store.load()
+        now = time.monotonic()
+        entries = [item for item in self._requests.get(access.family_id, []) if item > now - 60]
+        if len(entries) >= config.loxberry_operate_requests_per_minute:
+            raise DiagnosticsUnavailable("operation is temporarily unavailable")
+        entries.append(now)
+        self._requests[access.family_id] = entries
         if LOXBERRY_OPERATE_SCOPE not in access.scopes or HISTORY_SCOPE not in access.scopes:
             raise PermissionError("LoxBerry cache operation is not authorized")
-        config = self._config_store.load()
         binding = self._auth_store.pseudonym(
             "loxberry-operate-binding-v1",
             access.client_id,
@@ -633,12 +639,6 @@ class LoxBerryOperateRuntime:
             or binding not in config.loxberry_operate_bindings
         ):
             raise PermissionError("LoxBerry cache operation is not authorized")
-        now = time.monotonic()
-        entries = [item for item in self._requests.get(access.family_id, []) if item > now - 60]
-        if len(entries) >= config.loxberry_operate_requests_per_minute:
-            raise DiagnosticsUnavailable("operation is temporarily unavailable")
-        entries.append(now)
-        self._requests[access.family_id] = entries
 
     async def clear_statistics_cache(self, access: StoredAccessToken) -> Any:
         self._allowed(access)
@@ -1431,6 +1431,9 @@ def register_loxberry_operate_tool(server: FastMCP, runtime: LoxBerryOperateRunt
                 "temporarily_unavailable",
                 "Cache clear timed out; outcome is unknown",
             )
+        except asyncio.CancelledError:
+            audit(access, "cancelled_unknown")
+            raise
         except Exception:
             audit(access, "failed")
             return _error(CacheClearEnvelope, "internal_error", "Internal error")

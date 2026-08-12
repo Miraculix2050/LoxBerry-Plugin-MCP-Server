@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import UTC, datetime
 
@@ -663,6 +664,32 @@ async def test_loxberry_operate_runtime_requires_exact_live_binding() -> None:
 
 
 @pytest.mark.asyncio
+async def test_loxberry_operate_rate_limits_denied_attempts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ConfigStore:
+        def load(self) -> PluginConfig:
+            return PluginConfig(
+                loxone_history_enabled=True,
+                loxberry_operate_enabled=True,
+                loxberry_operate_requests_per_minute=1,
+            )
+
+    class AuthStore:
+        def pseudonym(self, *_parts: str) -> str:
+            return "not-approved"
+
+    runtime = LoxBerryOperateRuntime(object(), ConfigStore(), AuthStore())
+    access = _loxberry_access(READ_SCOPE, HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE)
+    monkeypatch.setattr(tools_module.time, "monotonic", lambda: 100.0)
+
+    with pytest.raises(PermissionError):
+        await runtime.clear_statistics_cache(access)
+    with pytest.raises(tools_module.DiagnosticsUnavailable):
+        await runtime.clear_statistics_cache(access)
+
+
+@pytest.mark.asyncio
 async def test_cache_clear_denial_and_timeout_are_audited(
     caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -700,6 +727,19 @@ async def test_cache_clear_denial_and_timeout_are_audited(
     assert timed_out.ok is False
     assert timed_out.data.error == "temporarily_unavailable"  # type: ignore[union-attr]
     assert "outcome=timed_out_unknown" in caplog.text
+
+    class CancelledRuntime:
+        async def clear_statistics_cache(self, _access: StoredAccessToken) -> object:
+            raise asyncio.CancelledError
+
+    cancelled_server = FastMCP("cache-clear-cancelled")
+    register_loxberry_operate_tool(cancelled_server, CancelledRuntime())  # type: ignore[arg-type]
+    tool = cancelled_server._tool_manager.get_tool("loxberry_clear_statistics_cache")
+    assert tool is not None
+
+    with pytest.raises(asyncio.CancelledError):
+        await tool.fn()
+    assert "outcome=cancelled_unknown" in caplog.text
 
 
 @pytest.mark.asyncio
