@@ -18,7 +18,14 @@ from mcpserver.auth.provider import (
     StoredAccessToken,
 )
 from mcpserver.config import PluginConfig
-from mcpserver.loxone.models import Control, LoxoneIdentity, LoxoneStructure, StatisticSeries
+from mcpserver.loxone.models import (
+    Control,
+    LoxoneIdentity,
+    LoxoneStructure,
+    StatisticSeries,
+    StatusMonitorInput,
+    StatusMonitorStatus,
+)
 from mcpserver.loxone.runtime import ControlHistoryEntry, RuntimeSnapshot
 from mcpserver.loxone.statistics import StatisticPoint
 from mcpserver.skill_delivery import read_skill_markdown
@@ -455,9 +462,10 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert tool.annotations.destructiveHint is False
     assert tool.annotations.openWorldHint is False
     assert result.data.name == "using-loxberry-mcp"  # type: ignore[union-attr]
-    assert result.data.revision == 12  # type: ignore[union-attr]
+    assert result.data.revision == 13  # type: ignore[union-attr]
     assert result.data.media_type == "text/markdown"  # type: ignore[union-attr]
     assert result.data.content == read_skill_markdown()  # type: ignore[union-attr]
+    assert "For a `StatusMonitor`, use its `inputStates` state UUID." in result.data.content  # type: ignore[union-attr]
 
 
 def test_tool_input_schemas_explain_every_argument() -> None:
@@ -876,6 +884,52 @@ async def test_describe_control_only_advertises_actions_to_control_scope(
     assert linked_controlled.data.capabilities.analog_range.minimum == 0.0  # type: ignore[union-attr]
     assert linked_controlled.data.capabilities.analog_range.maximum == 3.0  # type: ignore[union-attr]
     assert linked_controlled.data.capabilities.analog_range.step == 1.0  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+async def test_describe_control_exposes_status_monitor_input_mapping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    access = _loxberry_access(READ_SCOPE)
+    structure = LoxoneStructure(
+        identity=LoxoneIdentity("user", "serial"),
+        last_modified="1",
+        rooms=(),
+        categories=(),
+        controls=(
+            Control(
+                uuid="monitor-1",
+                name="Network status",
+                control_type="StatusMonitor",
+                room_uuid=None,
+                category_uuid=None,
+                action_uuid=None,
+                state_uuids=(("inputStates", "states-1"),),
+                status_monitor_inputs=(
+                    StatusMonitorInput(0, "Printer", "Office", "printer", None),
+                ),
+                status_monitor_statuses=(StatusMonitorStatus(1, "Offline", 0, "#E4354A"),),
+            ),
+        ),
+    )
+
+    async def snapshot(_runtime: object) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+        return access, RuntimeSnapshot("family", structure, True)
+
+    monkeypatch.setattr(tools_module, "_snapshot", snapshot)
+    server = FastMCP("status-monitor-contract")
+    register_read_tools(server, None)
+    tool = server._tool_manager.get_tool("loxone_describe_control")
+    assert tool is not None
+
+    result = await tool.fn("monitor-1")
+
+    assert result.ok is True
+    mapping = result.data.capabilities.status_monitor  # type: ignore[union-attr]
+    assert mapping.inputs[0].index == 0
+    assert mapping.inputs[0].name == "Printer"
+    assert mapping.statuses[0].status_id == 1
+    assert mapping.statuses[0].name == "Offline"
 
 
 @pytest.mark.asyncio

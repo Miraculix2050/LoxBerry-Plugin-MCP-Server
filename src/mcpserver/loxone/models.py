@@ -45,6 +45,27 @@ class StatisticSeries:
 
 
 @dataclass(frozen=True, slots=True)
+class StatusMonitorInput:
+    """One position-stable StatusMonitor input advertised by LoxAPP3."""
+
+    index: int
+    name: str
+    install_place: str
+    uuid: str | None
+    room_uuid: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class StatusMonitorStatus:
+    """One configured StatusMonitor status value."""
+
+    status_id: int
+    name: str
+    priority: int
+    color: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class Control:
     uuid: str
     name: str
@@ -72,6 +93,8 @@ class Control:
     maximum: float | None = None
     step: float | None = None
     statistic_series: tuple[StatisticSeries, ...] = ()
+    status_monitor_inputs: tuple[StatusMonitorInput, ...] = ()
+    status_monitor_statuses: tuple[StatusMonitorStatus, ...] = ()
     subcontrols: tuple[Control, ...] = ()
     linked_control_uuids: tuple[str, ...] = ()
     is_user_linked: bool = False
