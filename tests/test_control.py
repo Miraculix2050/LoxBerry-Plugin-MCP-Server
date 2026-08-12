@@ -336,3 +336,52 @@ async def test_read_only_restriction_prevents_dispatch(monkeypatch: pytest.Monke
         await runtime.operate_control(_access(READ_SCOPE, CONTROL_SCOPE), "control-1", "on")
 
     assert captured.value.code == "permission_denied"
+
+
+@pytest.mark.asyncio
+async def test_hidden_control_is_never_operable(monkeypatch: pytest.MonkeyPatch) -> None:
+    hidden = Control(
+        uuid="hidden-1",
+        name="Hidden",
+        control_type="Switch",
+        room_uuid=None,
+        category_uuid=None,
+        action_uuid="hidden-action-1",
+        state_uuids=(("active", "hidden-state-1"),),
+        is_hidden=True,
+    )
+    structure = LoxoneStructure(
+        identity=LoxoneIdentity("user", "serial"),
+        last_modified="1",
+        rooms=(),
+        categories=(),
+        controls=(),
+        hidden_controls=(hidden,),
+    )
+    runtime = LoxoneRuntime(
+        MiniserverEndpoint.parse_gen1("http://192.168.1.10"),
+        _TokenStore(),  # type: ignore[arg-type]
+        control_enabled=True,
+    )
+
+    async def snapshot(_access: StoredAccessToken) -> RuntimeSnapshot:
+        return RuntimeSnapshot("family", structure, True)
+
+    class Session:
+        async def load_structure(self) -> LoxoneStructure:
+            return structure
+
+        async def close(self) -> None:
+            return None
+
+    class Client:
+        async def open_session(self, _token: LoxoneToken) -> Session:
+            return Session()
+
+    monkeypatch.setattr(runtime, "snapshot", snapshot)
+    runtime.client = Client()  # type: ignore[assignment]
+
+    with pytest.raises(ControlOperationError) as captured:
+        await runtime.operate_control(_access(READ_SCOPE, CONTROL_SCOPE), "hidden-1", "on")
+
+    assert captured.value.code == "not_found"

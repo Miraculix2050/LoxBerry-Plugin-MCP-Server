@@ -28,6 +28,7 @@ def test_structure_is_reduced_to_user_visible_domain_fields() -> None:
                 "restrictions": 0,
                 "states": {"active": "state-1"},
                 "details": {"password": "must not leak"},
+                "links": ["denied-control"],
                 "subControls": {
                     "sub-1": {
                         "name": "Sub",
@@ -45,6 +46,12 @@ def test_structure_is_reduced_to_user_visible_domain_fields() -> None:
                 "cat": "denied-category",
                 "states": {"value": "denied-state"},
             },
+            "unlinked-control": {
+                "name": "Unlinked",
+                "type": "InfoOnlyAnalog",
+                "restrictions": 17,
+                "states": {"value": "unlinked-state"},
+            },
         },
     }
 
@@ -56,9 +63,13 @@ def test_structure_is_reduced_to_user_visible_domain_fields() -> None:
     assert structure.controls[0].state_uuids == (("active", "state-1"),)
     assert structure.controls[0].action_uuid == "action-1"
     assert structure.controls[0].subcontrols[0].uuid == "sub-1"
-    assert {control.uuid for control in structure.controls} == {"control-1"}
-    assert {room.uuid for room in structure.rooms} == {"room-1"}
-    assert {category.uuid for category in structure.categories} == {"cat-1"}
+    assert {control.uuid for control in structure.controls} == {"control-1", "denied-control"}
+    assert {control.uuid for control in structure.hidden_controls} == {"unlinked-control"}
+    assert structure.hidden_controls[0].is_hidden is True
+    assert structure.controls[0].linked_control_uuids == ("denied-control",)
+    assert structure.controls[1].is_user_linked is True
+    assert {room.uuid for room in structure.rooms} == {"room-1", "denied-room"}
+    assert {category.uuid for category in structure.categories} == {"cat-1", "denied-category"}
     assert "must not leak" not in repr(structure)
 
 
@@ -167,10 +178,17 @@ def test_structure_extracts_only_bounded_phase_four_capabilities() -> None:
                 "states": {},
                 "details": {"outputs": {"1": "One", "2": "Two"}, "allOff": "Off"},
             },
+            "up-down": {
+                "name": "Linked value",
+                "type": "UpDownAnalog",
+                "uuidAction": "up-down-action",
+                "states": {"value": "up-down-value"},
+                "details": {"min": 0.0, "max": 3.0, "step": 1.0},
+            },
         },
     }
 
-    picker, radio = normalize_structure(raw, username="reader").controls
+    picker, radio, up_down = normalize_structure(raw, username="reader").controls
 
     assert picker.has_history is True
     assert (picker.rating, picker.secured, picker.has_notes) == (4, True, True)
@@ -181,7 +199,9 @@ def test_structure_extracts_only_bounded_phase_four_capabilities() -> None:
     )
     assert [series.series_id for series in picker.statistic_series] == ["v2:1:value"]
     assert radio.radio_output_ids == ("1", "2")
+    assert radio.radio_outputs == (("1", "One"), ("2", "Two"))
     assert radio.radio_reset_allowed is True
+    assert (up_down.minimum, up_down.maximum, up_down.step) == (0.0, 3.0, 1.0)
 
 
 def test_structure_exposes_documented_legacy_statistic_outputs() -> None:

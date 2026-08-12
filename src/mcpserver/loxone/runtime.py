@@ -215,8 +215,12 @@ class LoxoneRuntime:
         return True
 
     @staticmethod
-    def _control(structure: LoxoneStructure, uuid: str) -> Control | None:
+    def _control(
+        structure: LoxoneStructure, uuid: str, *, include_hidden: bool = False
+    ) -> Control | None:
         pending = list(structure.controls)
+        if include_hidden:
+            pending.extend(structure.hidden_controls)
         while pending:
             control = pending.pop()
             if control.uuid == uuid:
@@ -259,6 +263,7 @@ class LoxoneRuntime:
         saturation: float | None = None,
         brightness: float | None = None,
         kelvin: int | None = None,
+        value: float | None = None,
     ) -> ControlOperation:
         """Execute one bounded documented operation for the immutable OAuth identity."""
         if READ_SCOPE not in access.scopes or CONTROL_SCOPE not in access.scopes:
@@ -338,6 +343,7 @@ class LoxoneRuntime:
                         saturation=saturation,
                         brightness=brightness,
                         kelvin=kelvin,
+                        value=value,
                     )
                 except ValueError as exc:
                     raise ControlOperationError("invalid_input", str(exc)) from exc
@@ -442,7 +448,7 @@ class LoxoneRuntime:
 
     @asynccontextmanager
     async def _history_session(
-        self, access: StoredAccessToken, control_uuid: str
+        self, access: StoredAccessToken, control_uuid: str, *, include_hidden: bool = False
     ) -> AsyncIterator[tuple[Control, LoxoneWebSocketSession]]:
         if READ_SCOPE not in access.scopes or HISTORY_SCOPE not in access.scopes:
             raise ControlOperationError("permission_denied", "loxone:history is required")
@@ -474,7 +480,7 @@ class LoxoneRuntime:
             try:
                 session = await self.client.open_session(token)
                 structure = await session.load_structure()
-                control = self._control(structure, control_uuid)
+                control = self._control(structure, control_uuid, include_hidden=include_hidden)
                 if control is None:
                     raise ControlOperationError("not_found", "control is not visible")
                 yield control, session
@@ -496,6 +502,8 @@ class LoxoneRuntime:
         start: int,
         end: int,
         granularity: str,
+        *,
+        include_hidden: bool = False,
     ) -> tuple[Control, StatisticSeries, tuple[StatisticPoint, ...]]:
         """Read one visible documented statistic series without exposing raw commands."""
         if granularity not in {"raw", "hour", "day", "month", "year"}:
@@ -512,7 +520,17 @@ class LoxoneRuntime:
             access.family_id, control_uuid, series_id, str(start), str(end), granularity
         )
         cached = self.statistics_cache.get(cache_key)
-        async with self._history_session(access, control_uuid) as (control, session):
+        history_session = (
+            self._history_session(access, control_uuid, include_hidden=True)
+            if include_hidden
+            else self._history_session(access, control_uuid)
+        )
+        async with (
+            history_session as (
+                control,
+                session,
+            )
+        ):
             series = next(
                 (item for item in control.statistic_series if item.series_id == series_id), None
             )
@@ -590,9 +608,19 @@ class LoxoneRuntime:
         return control, series, points
 
     async def get_control_history(
-        self, access: StoredAccessToken, control_uuid: str
+        self, access: StoredAccessToken, control_uuid: str, *, include_hidden: bool = False
     ) -> tuple[Control, tuple[ControlHistoryEntry, ...]]:
-        async with self._history_session(access, control_uuid) as (control, session):
+        history_session = (
+            self._history_session(access, control_uuid, include_hidden=True)
+            if include_hidden
+            else self._history_session(access, control_uuid)
+        )
+        async with (
+            history_session as (
+                control,
+                session,
+            )
+        ):
             if not control.has_history or control.action_uuid is None:
                 raise ControlOperationError("not_found", "control history is not available")
             try:
@@ -627,7 +655,7 @@ class LoxoneRuntime:
         return control, tuple(entries)
 
     async def get_control_notes(
-        self, access: StoredAccessToken, control_uuid: str
+        self, access: StoredAccessToken, control_uuid: str, *, include_hidden: bool = False
     ) -> tuple[Control, str]:
         """Read bounded user-authored notes for one currently visible control."""
         if not control_uuid or len(control_uuid) > 128:
@@ -650,7 +678,7 @@ class LoxoneRuntime:
                 try:
                     session = await self.client.open_session(token)
                     structure = await session.load_structure()
-                    control = self._control(structure, control_uuid)
+                    control = self._control(structure, control_uuid, include_hidden=include_hidden)
                     if control is None:
                         raise ControlOperationError("not_found", "control is not visible")
                     if not control.has_notes or control.action_uuid is None:
@@ -699,7 +727,7 @@ class LoxoneRuntime:
             structure = await session.load_structure()
         except LoxoneConnectionError as exc:
             raise RuntimeUnavailable("Miniserver connection failed") from exc
-        allowed = _state_uuids(structure.controls)
+        allowed = _state_uuids(structure.controls + structure.hidden_controls)
         self.cache.begin_connection(access.family_id)
         placeholder = asyncio.create_task(asyncio.sleep(0))
         record = _ConnectionRecord(structure, allowed, session, placeholder)

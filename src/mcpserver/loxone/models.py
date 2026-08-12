@@ -66,9 +66,16 @@ class Control:
     max_kelvin: int = 6500
     scene_ids: tuple[str, ...] = ()
     radio_output_ids: tuple[str, ...] = ()
+    radio_outputs: tuple[tuple[str, str], ...] = ()
     radio_reset_allowed: bool = False
+    minimum: float | None = None
+    maximum: float | None = None
+    step: float | None = None
     statistic_series: tuple[StatisticSeries, ...] = ()
     subcontrols: tuple[Control, ...] = ()
+    linked_control_uuids: tuple[str, ...] = ()
+    is_user_linked: bool = False
+    is_hidden: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,6 +85,9 @@ class LoxoneStructure:
     rooms: tuple[NamedGroup, ...]
     categories: tuple[NamedGroup, ...]
     controls: tuple[Control, ...]
+    hidden_rooms: tuple[NamedGroup, ...] = ()
+    hidden_categories: tuple[NamedGroup, ...] = ()
+    hidden_controls: tuple[Control, ...] = ()
 
 
 type StateValue = float | str | tuple[object, ...]

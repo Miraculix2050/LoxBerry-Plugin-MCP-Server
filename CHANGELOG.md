@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Discover explicitly user-linked controls as `visibility: "linked"`, describe
+  both directions of the link, and support the bounded `UpDownAnalog.set_value`
+  action when the linked control is currently visible and authorized.
+- Add explicit `include_hidden` diagnosis to find, describe, state, notes,
+  history, and statistics tools; hidden controls remain permanently non-operable.
 - Restrict Jalousie slat actions to the documented blind animation mode and
   fail closed for shutters, curtains, unsupported, malformed, or absent modes.
 

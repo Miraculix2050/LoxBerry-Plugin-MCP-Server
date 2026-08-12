@@ -433,6 +433,7 @@ def test_control_tool_contract_is_explicitly_mutating_and_non_idempotent() -> No
         "set_scene",
         "set_color_hsv",
         "set_color_temperature",
+        "set_value",
     }
 
 
@@ -454,7 +455,7 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert tool.annotations.destructiveHint is False
     assert tool.annotations.openWorldHint is False
     assert result.data.name == "using-loxberry-mcp"  # type: ignore[union-attr]
-    assert result.data.revision == 11  # type: ignore[union-attr]
+    assert result.data.revision == 12  # type: ignore[union-attr]
     assert result.data.media_type == "text/markdown"  # type: ignore[union-attr]
     assert result.data.content == read_skill_markdown()  # type: ignore[union-attr]
 
@@ -475,12 +476,13 @@ def test_tool_input_schemas_explain_every_argument() -> None:
             "control_type",
             "has_statistics",
             "has_history",
+            "include_hidden",
             "cursor",
             "limit",
         },
-        "loxone_describe_control": {"control_uuid"},
-        "loxone_get_control_notes": {"control_uuid"},
-        "loxone_get_states": {"state_uuids"},
+        "loxone_describe_control": {"control_uuid", "include_hidden"},
+        "loxone_get_control_notes": {"control_uuid", "include_hidden"},
+        "loxone_get_states": {"state_uuids", "include_hidden"},
         "loxone_operate_control": {
             "control_uuid",
             "action",
@@ -494,6 +496,7 @@ def test_tool_input_schemas_explain_every_argument() -> None:
             "saturation",
             "brightness",
             "kelvin",
+            "value",
         },
     }
     for tool_name, field_names in expected_fields.items():
@@ -536,6 +539,7 @@ def test_phase_four_tool_contracts_are_narrow_and_correctly_annotated() -> None:
         "start",
         "end",
         "granularity",
+        "include_hidden",
         "cursor",
         "limit",
     }
@@ -544,9 +548,11 @@ def test_phase_four_tool_contracts_are_narrow_and_correctly_annotated() -> None:
     assert statistics.parameters["properties"]["series_id"]["maxLength"] == 128
     assert statistics.parameters["properties"]["limit"]["minimum"] == 1
     assert statistics.parameters["properties"]["limit"]["maximum"] == 500
+    assert statistics.parameters["properties"]["include_hidden"]["default"] is False
     history = published["loxone_get_control_history"]
     assert history.annotations is not None
     assert history.annotations.readOnlyHint is True
+    assert history.parameters["properties"]["include_hidden"]["default"] is False
     cache = published["loxberry_clear_statistics_cache"]
     assert cache.annotations is not None
     assert cache.annotations.readOnlyHint is False
@@ -559,6 +565,7 @@ def test_phase_four_tool_contracts_are_narrow_and_correctly_annotated() -> None:
         "LightsceneRGB",
         "ColorPicker V1/V2",
         "Pushbutton",
+        "UpDownAnalog",
     ):
         assert control_type in operation.description
 
@@ -800,6 +807,32 @@ async def test_describe_control_only_advertises_actions_to_control_scope(
                 rating=4,
                 secured=True,
                 has_notes=True,
+                subcontrols=(
+                    Control(
+                        uuid="subcontrol-1",
+                        name="Linked status",
+                        control_type="InfoOnlyAnalog",
+                        room_uuid=None,
+                        category_uuid=None,
+                        action_uuid=None,
+                        state_uuids=(("value", "subcontrol-state-1"),),
+                    ),
+                ),
+                linked_control_uuids=("linked-control-1",),
+            ),
+            Control(
+                uuid="linked-control-1",
+                name="User-linked control",
+                control_type="UpDownAnalog",
+                room_uuid=None,
+                category_uuid=None,
+                action_uuid="linked-action-1",
+                state_uuids=(("value", "linked-state-1"),),
+                restrictions=17,
+                minimum=0.0,
+                maximum=3.0,
+                step=1.0,
+                is_user_linked=True,
             ),
         ),
     )
@@ -818,6 +851,19 @@ async def test_describe_control_only_advertises_actions_to_control_scope(
     assert read_only.data.presentation.secured is True  # type: ignore[union-attr]
     assert read_only.data.presentation.read_only is False  # type: ignore[union-attr]
     assert read_only.data.presentation.has_notes is True  # type: ignore[union-attr]
+    assert read_only.data.visibility == "direct"  # type: ignore[union-attr]
+    assert read_only.data.relationships.parent is None  # type: ignore[union-attr]
+    assert read_only.data.relationships.subcontrols[0].uuid == "subcontrol-1"  # type: ignore[union-attr]
+
+    linked = await tool.fn("subcontrol-1")
+    assert linked.data.relationships.parent.uuid == "control-1"  # type: ignore[union-attr]
+    assert linked.data.relationships.subcontrols == []  # type: ignore[union-attr]
+    assert linked.data.visibility == "direct"  # type: ignore[union-attr]
+
+    user_linked = await tool.fn("linked-control-1")
+    assert user_linked.data.visibility == "linked"  # type: ignore[union-attr]
+    assert user_linked.data.relationships.linked_by[0].uuid == "control-1"  # type: ignore[union-attr]
+    assert read_only.data.relationships.linked_controls[0].uuid == "linked-control-1"  # type: ignore[union-attr]
 
     access.scopes.append(CONTROL_SCOPE)
     controlled = await tool.fn("control-1")
@@ -825,6 +871,11 @@ async def test_describe_control_only_advertises_actions_to_control_scope(
         "on",
         "off",
     ]
+    linked_controlled = await tool.fn("linked-control-1")
+    assert linked_controlled.data.capabilities.allowed_actions == ["set_value"]  # type: ignore[union-attr]
+    assert linked_controlled.data.capabilities.analog_range.minimum == 0.0  # type: ignore[union-attr]
+    assert linked_controlled.data.capabilities.analog_range.maximum == 3.0  # type: ignore[union-attr]
+    assert linked_controlled.data.capabilities.analog_range.step == 1.0  # type: ignore[union-attr]
 
 
 @pytest.mark.asyncio
@@ -917,6 +968,91 @@ async def test_find_controls_matches_control_type_case_insensitively(
 
     assert result.ok is True
     assert [item.type for item in result.data.items] == ["Switch"]  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+async def test_find_controls_matches_a_radio_output_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    access = _loxberry_access(READ_SCOPE)
+    structure = LoxoneStructure(
+        identity=LoxoneIdentity("user", "serial"),
+        last_modified="1",
+        rooms=(),
+        categories=(),
+        controls=(
+            Control(
+                uuid="radio-1",
+                name="Radio buttons",
+                control_type="Radio",
+                room_uuid=None,
+                category_uuid=None,
+                action_uuid="radio-action-1",
+                state_uuids=(),
+                radio_output_ids=("1",),
+                radio_outputs=(("1", "Linked output"),),
+            ),
+        ),
+    )
+
+    async def snapshot(_runtime: object) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+        return access, RuntimeSnapshot("family", structure, True)
+
+    monkeypatch.setattr(tools_module, "_snapshot", snapshot)
+    server = FastMCP("radio-output-search")
+    register_read_tools(server, None)
+    tool = server._tool_manager.get_tool("loxone_find_controls")
+    assert tool is not None
+
+    result = await tool.fn(query="linked output")
+
+    assert [item.uuid for item in result.data.items] == ["radio-1"]  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+async def test_hidden_controls_require_explicit_diagnosis_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    access = _loxberry_access(READ_SCOPE, CONTROL_SCOPE)
+    hidden = Control(
+        uuid="hidden-1",
+        name="Hidden diagnostic value",
+        control_type="UpDownAnalog",
+        room_uuid=None,
+        category_uuid=None,
+        action_uuid="hidden-action-1",
+        state_uuids=(("value", "hidden-state-1"),),
+        restrictions=17,
+        minimum=0.0,
+        maximum=3.0,
+        step=1.0,
+        is_hidden=True,
+    )
+    structure = LoxoneStructure(
+        identity=LoxoneIdentity("user", "serial"),
+        last_modified="1",
+        rooms=(),
+        categories=(),
+        controls=(),
+        hidden_controls=(hidden,),
+    )
+
+    async def snapshot(_runtime: object) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+        return access, RuntimeSnapshot("family", structure, True)
+
+    monkeypatch.setattr(tools_module, "_snapshot", snapshot)
+    server = FastMCP("hidden-control-diagnosis")
+    register_read_tools(server, None, control_enabled=True)
+    find = server._tool_manager.get_tool("loxone_find_controls")
+    describe = server._tool_manager.get_tool("loxone_describe_control")
+    assert find is not None
+    assert describe is not None
+
+    assert (await find.fn(query="hidden")).data.items == []  # type: ignore[union-attr]
+    found = await find.fn(query="hidden", include_hidden=True)
+    assert found.data.items[0].visibility == "hidden"  # type: ignore[union-attr]
+    assert (await describe.fn("hidden-1")).data.error == "not_found"  # type: ignore[union-attr]
+    described = await describe.fn("hidden-1", include_hidden=True)
+    assert described.data.visibility == "hidden"  # type: ignore[union-attr]
+    assert described.data.capabilities.allowed_actions == []  # type: ignore[union-attr]
 
 
 @pytest.mark.asyncio

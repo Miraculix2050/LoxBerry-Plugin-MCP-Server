@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Mapping
 from typing import Any
@@ -69,24 +70,51 @@ def _bounded_integer(value: object, *, default: int, minimum: int, maximum: int)
     )
 
 
+def _up_down_range(
+    details: Mapping[str, object],
+) -> tuple[float | None, float | None, float | None]:
+    minimum, maximum, step = details.get("min"), details.get("max"), details.get("step")
+    if (
+        not isinstance(minimum, int | float)
+        or isinstance(minimum, bool)
+        or not isinstance(maximum, int | float)
+        or isinstance(maximum, bool)
+        or not isinstance(step, int | float)
+        or isinstance(step, bool)
+    ):
+        return None, None, None
+    normalized_minimum, normalized_maximum, normalized_step = (
+        float(minimum),
+        float(maximum),
+        float(step),
+    )
+    if not all(
+        math.isfinite(value) for value in (normalized_minimum, normalized_maximum, normalized_step)
+    ):
+        return None, None, None
+    if normalized_minimum > normalized_maximum or normalized_step <= 0:
+        return None, None, None
+    return normalized_minimum, normalized_maximum, normalized_step
+
+
 def _scene_ids(value: object) -> tuple[str, ...]:
     if not isinstance(value, list) or len(value) > 100:
         return ()
     return tuple(str(index) for index, name in enumerate(value) if isinstance(name, str))
 
 
-def _radio_output_ids(value: object) -> tuple[str, ...]:
+def _radio_outputs(value: object) -> tuple[tuple[str, str], ...]:
     if not isinstance(value, Mapping) or len(value) > 16:
         return ()
-    ids = [
-        key
+    outputs = [
+        (key, name)
         for key, name in value.items()
         if isinstance(key, str)
         and key.isdecimal()
         and 1 <= int(key) <= 16
         and isinstance(name, str)
     ]
-    return tuple(sorted(ids, key=int))
+    return tuple(sorted(outputs, key=lambda item: int(item[0])))
 
 
 def _rating(value: object) -> int | None:
@@ -192,7 +220,36 @@ def _legacy_statistic_series(value: object) -> tuple[StatisticSeries, ...]:
     return tuple(result)
 
 
-def _controls(value: object, *, referenced: bool = False) -> tuple[Control, ...]:
+def _links(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list) or len(value) > 64:
+        return ()
+    return tuple(item for item in value if isinstance(item, str) and 1 <= len(item) <= 128)
+
+
+def _linked_control_uuids(value: object) -> frozenset[str]:
+    if not isinstance(value, Mapping):
+        raise LoxoneStructureError("Structure field controls must be an object")
+    result: set[str] = set()
+    for item in value.values():
+        if not isinstance(item, Mapping):
+            continue
+        restrictions = item.get("restrictions", 0)
+        if (
+            isinstance(restrictions, int)
+            and not isinstance(restrictions, bool)
+            and not (restrictions & _REFERENCED_ONLY_INTERNAL)
+        ):
+            result.update(_links(item.get("links")))
+    return frozenset(result)
+
+
+def _controls(
+    value: object,
+    *,
+    referenced: bool = False,
+    linked_control_uuids: frozenset[str] = frozenset(),
+    hidden_only: bool = False,
+) -> tuple[Control, ...]:
     if not isinstance(value, Mapping):
         raise LoxoneStructureError("Structure field controls must be an object")
     controls: list[Control] = []
@@ -202,7 +259,12 @@ def _controls(value: object, *, referenced: bool = False) -> tuple[Control, ...]
         restrictions = item.get("restrictions", 0)
         if not isinstance(restrictions, int) or isinstance(restrictions, bool) or restrictions < 0:
             raise LoxoneStructureError("Control restrictions must be a non-negative integer")
-        if not referenced and restrictions & _REFERENCED_ONLY_INTERNAL:
+        is_hidden = (
+            not referenced
+            and bool(restrictions & _REFERENCED_ONLY_INTERNAL)
+            and uuid not in linked_control_uuids
+        )
+        if is_hidden != hidden_only:
             continue
         states_value = item.get("states", {})
         if not isinstance(states_value, Mapping):
@@ -238,6 +300,8 @@ def _controls(value: object, *, referenced: bool = False) -> tuple[Control, ...]
         )
         if min_kelvin > max_kelvin:
             min_kelvin, max_kelvin = 2700, 6500
+        radio_outputs = _radio_outputs(details.get("outputs"))
+        minimum, maximum, step = _up_down_range(details)
         controls.append(
             Control(
                 uuid=uuid,
@@ -261,13 +325,24 @@ def _controls(value: object, *, referenced: bool = False) -> tuple[Control, ...]
                 min_kelvin=min_kelvin,
                 max_kelvin=max_kelvin,
                 scene_ids=_scene_ids(details.get("sceneList")),
-                radio_output_ids=_radio_output_ids(details.get("outputs")),
+                radio_output_ids=tuple(output_id for output_id, _name in radio_outputs),
+                radio_outputs=radio_outputs,
                 radio_reset_allowed=isinstance(details.get("allOff"), str)
                 and bool(details.get("allOff")),
+                minimum=minimum,
+                maximum=maximum,
+                step=step,
                 statistic_series=_statistic_series(item),
                 subcontrols=(
                     _controls(subcontrols_value, referenced=True) if subcontrols_value else ()
                 ),
+                linked_control_uuids=_links(item.get("links")),
+                is_user_linked=(
+                    not referenced
+                    and bool(restrictions & _REFERENCED_ONLY_INTERNAL)
+                    and uuid in linked_control_uuids
+                ),
+                is_hidden=is_hidden,
             )
         )
     return tuple(controls)
@@ -290,7 +365,14 @@ def normalize_structure(document: Mapping[str, Any], *, username: str) -> Loxone
         raise LoxoneStructureError("Structure field msInfo must be an object")
     serial = ms_info.get("serialNr", ms_info.get("serial"))
     last_modified = document.get("lastModified", "")
-    controls = _controls(document.get("controls", {}))
+    controls_value = document.get("controls", {})
+    linked_control_uuids = _linked_control_uuids(controls_value)
+    controls = _controls(controls_value, linked_control_uuids=linked_control_uuids)
+    hidden_controls = _controls(
+        controls_value,
+        linked_control_uuids=linked_control_uuids,
+        hidden_only=True,
+    )
     return LoxoneStructure(
         identity=LoxoneIdentity(
             username=username,
@@ -308,4 +390,15 @@ def normalize_structure(document: Mapping[str, Any], *, username: str) -> Loxone
             allowed_uuids=_group_references(controls, field="category"),
         ),
         controls=controls,
+        hidden_rooms=_groups(
+            document.get("rooms", {}),
+            field="rooms",
+            allowed_uuids=_group_references(hidden_controls, field="room"),
+        ),
+        hidden_categories=_groups(
+            document.get("cats", {}),
+            field="cats",
+            allowed_uuids=_group_references(hidden_controls, field="category"),
+        ),
+        hidden_controls=hidden_controls,
     )

@@ -46,7 +46,17 @@ statistic compatibility.
 `loxone_operate_control` gains bounded contracts for `TimedSwitch`, `Radio`,
 `LightsceneRGB`, `ColorPicker`, `ColorPickerV2`, and `Pushbutton`. Commands are
 derived solely from the normalized visible capabilities and typed parameters.
+`UpDownAnalog` adds only `set_value`, bounded to the visible `details.min`,
+`details.max`, and `details.step` values. A linked control remains subject to the
+same visible target,
+OAuth scope, plugin enablement, current Loxone authorization, rate limit, audit,
+and confirmation checks as a directly visible control.
 No raw, learn, rename, bulk, next/previous or expert command is accepted.
+
+The optional `include_hidden` diagnosis mode retains otherwise unlinked
+restriction-17 controls separately from the normal visible structure. It extends
+only the read paths (discovery, description, states, notes, history, and
+statistics); the operation path never resolves these controls.
 
 The only Phase 4 LoxBerry mutation is
 `loxberry_clear_statistics_cache`. It requires both `loxone:read` and
