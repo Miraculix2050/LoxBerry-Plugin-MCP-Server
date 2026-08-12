@@ -59,6 +59,7 @@ class Control:
     secured: bool = False
     has_notes: bool = False
     is_automatic: bool = False
+    shading_animation: int | None = None
     has_history: bool = False
     picker_type: str | None = None
     min_kelvin: int = 2700

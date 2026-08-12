@@ -77,9 +77,9 @@ def allowed_actions(control: Control) -> list[str]:
                 "shade",
                 "stop",
                 "set_position",
-                "set_slat_position",
-                "set_position_and_slats",
             ]
+            if control.shading_animation == 0:
+                actions.extend(["set_slat_position", "set_position_and_slats"])
             if control.is_automatic:
                 actions.extend(["enable_auto", "disable_auto"])
             return actions

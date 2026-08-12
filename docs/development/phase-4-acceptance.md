@@ -103,17 +103,25 @@ and confirmed through the visible color state; the original color state was
 then accepted and confirmed as restored. This is fixture-specific acceptance
 evidence and does not make unassigned controls generally eligible for writes.
 
-The dedicated `Jalousie` fixture advertised all documented bounded actions.
-`open`, `set_position`, `set_slat_position`, `set_position_and_slats`, and
-`enable_auto` were accepted and confirmed through their advertised feedback.
-`close`, `shade`, `stop`, and the first `disable_auto` were accepted but their
-immediate feedback did not confirm an effect. A final explicit `disable_auto`
-was accepted and confirmed, restoring the initial automatic-mode state.
+The dedicated `Jalousie` fixture is configured for shutter animation. `open`,
+`set_position`, and `enable_auto` were accepted and confirmed through their
+advertised feedback. `close`, `shade`, `stop`, and the first `disable_auto` were
+accepted but their immediate feedback did not confirm an effect. A final
+explicit `disable_auto` was accepted and confirmed, restoring the initial
+automatic-mode state.
 
-The final position-and-slats restoration command was accepted twice but not
-confirmed; a read-only check still showed the earlier test target. No further
-write was sent automatically. Therefore this record does not claim that the
-initial Jalousie position was restored or that the unconfirmed commands had a
-physical effect.
+The earlier Lamelle and combined-position commands were accepted before the
+fixture's shutter animation was classified. They are not acceptance evidence
+for a shutter configuration and are no longer advertised for this mode. The
+final combined restoration command was not confirmed; no further write was
+sent automatically. Therefore this record does not claim that the initial
+Jalousie position was restored or that the unconfirmed commands had a physical
+effect.
+
+After the focused runtime deployment on 2026-08-12, a read-only description of
+the same fixture advertised `open`, `close`, `shade`, `stop`, `set_position`,
+`enable_auto`, and `disable_auto`, but no Lamelle or combined-position action.
+This confirms the fail-closed capability boundary on the target; no additional
+Jalousie command was dispatched for this check.
 
 Legacy XML/FTP compatibility remains out of scope and disabled.

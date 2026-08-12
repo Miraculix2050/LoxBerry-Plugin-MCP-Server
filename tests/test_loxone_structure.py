@@ -74,7 +74,7 @@ def test_structure_preserves_operability_flags_without_exposing_details() -> Non
                 "type": "Jalousie",
                 "uuidAction": "blind-action",
                 "restrictions": 32,
-                "details": {"isAutomatic": True, "private": "ignored"},
+                "details": {"isAutomatic": True, "animation": 1, "private": "ignored"},
                 "states": {},
             }
         },
@@ -85,7 +85,31 @@ def test_structure_preserves_operability_flags_without_exposing_details() -> Non
     assert control.action_uuid == "blind-action"
     assert control.read_only is True
     assert control.is_automatic is True
+    assert control.shading_animation == 1
     assert "private" not in repr(control)
+
+
+@pytest.mark.parametrize("animation", (True, False, -1, 6, "0", 0.0))
+def test_structure_ignores_invalid_jalousie_animation_values(animation: object) -> None:
+    raw = {
+        "lastModified": "now",
+        "msInfo": {"serialNr": "000000000000"},
+        "rooms": {},
+        "cats": {},
+        "controls": {
+            "blind": {
+                "name": "Blind",
+                "type": "Jalousie",
+                "uuidAction": "blind-action",
+                "details": {"animation": animation},
+                "states": {},
+            }
+        },
+    }
+
+    control = normalize_structure(raw, username="reader").controls[0]
+
+    assert control.shading_animation is None
 
 
 def test_absent_controls_remain_absent() -> None:

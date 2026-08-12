@@ -289,7 +289,7 @@ Umbenennungs-, Experten- oder freien Kommandos.
 | Beleuchtung | `Pushbutton` | ja | ja | `pulse` | Befehl real akzeptiert; Wirkung nicht über Feedback bestätigt |
 | Beleuchtung | `Radio` | ja | ja | `select_output`; `reset` nur bei sichtbarem `allOff` | Befehl real akzeptiert: `reset`; `select_output` nicht real bestätigt |
 | Beleuchtung | `TimedSwitch` | ja | ja | `on`, `off`, `pulse` | real bestätigt: `on`, `off`; Ausgangszustand wiederhergestellt; `pulse` Vertrag getestet |
-| Beschattung | `Jalousie` | ja | ja | `open`, `close`, `shade`, `stop`, Position/Lamellen; Auto nur falls angeboten | real bestätigt: `open`, Position/Lamellen und `enable_auto`; `close`, `shade`, `stop` nur akzeptiert. Die abschließende Positionsrückführung blieb unbestätigt |
+| Beschattung | `Jalousie` | ja | ja | `open`, `close`, `shade`, `stop`, Position; Lamellen nur bei `details.animation = 0`; Auto nur falls angeboten | real bestätigt am Rolladenmodus: `open`, `set_position` und `enable_auto`; `close`, `shade`, `stop` nur akzeptiert. Lamellenaktionen sind dort nicht anwendbar |
 | Beschattung | `CentralJalousie` | ja | nein | – | Lesen real bestätigt |
 | Klima/Lüftung | `IRoomControllerV2`, `IRCV2Daytimer`, `Ventilation`, `Daytimer` | ja | nein | – | in eigener Installation lesend prüfbar |
 | Klima/Lüftung | `ClimateControllerUS` | ja | nein | – | Lesen real bestätigt |
@@ -297,7 +297,10 @@ Umbenennungs-, Experten- oder freien Kommandos.
 | Sensorik/Status | `InfoOnlyAnalog`, `InfoOnlyDigital`, `InfoOnlyText`, `TextState`, `StatusMonitor`, `WindowMonitor`, `SmokeAlarm`, `Tracker` | ja | nein | – | in eigener Installation lesend prüfbar |
 | Energie/sonstige | `Meter`, `EFM`, `PvProductionForecast`, `Slider`, `Webpage` | ja | nein | – | in eigener Installation lesend prüfbar |
 
-„Lesen“ umfasst nur sichtbare Struktur und Zustände. Historie ist zusätzlich nur
+„Lesen“ umfasst nur sichtbare Struktur und Zustände. Bei `Jalousie` werden
+`set_slat_position` und `set_position_and_slats` nur angeboten, wenn die sichtbare
+Loxone-Struktur `details.animation = 0` (Jalousie/Raffstore) meldet; unbekannte
+oder andere Animationen bleiben auf Positionssteuerung begrenzt. Historie ist zusätzlich nur
 verfügbar, wenn das Control `hasHistory`, `statisticV2` beziehungsweise `statistic` meldet und
 der Client `loxone:history` erhalten hat. V1-Typen bleiben bewusst als **nicht
 verifiziert** markiert, bis ein realer Abnahmetest vorliegt.

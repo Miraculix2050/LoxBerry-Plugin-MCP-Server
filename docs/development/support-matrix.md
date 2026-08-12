@@ -107,12 +107,12 @@ Der vollständige maskierte Nachweis steht im
 - `Dimmer` (`set_level`, `off`), `LightControllerV2` (`set_mood`) und
   `TimedSwitch` (`on`, `off`) sind an ausdrücklich freigegebenen, harmlosen
   Fixtures real bestätigt und jeweils in den Ausgangszustand zurückgeführt.
-- `Jalousie`-`open`, Positions-, Lamellen- und Kombinationsaktionen sowie
-  `enable_auto` sind auf der ausdrücklich freigegebenen Fixture über ihre
-  sichtbaren Rückmeldungen bestätigt. `close`, `shade`, `stop` und der erste
-  `disable_auto`-Aufruf wurden nur akzeptiert. Die abschließende
-  Positionsrückführung blieb nach zwei akzeptierten, aber unbestätigten
-  Befehlen offen; es wurde kein weiterer Befehl automatisch wiederholt.
+- `Jalousie`-`open`, `set_position` und `enable_auto` sind auf der ausdrücklich
+  freigegebenen Rolladen-Fixture über ihre sichtbaren Rückmeldungen bestätigt.
+  `close`, `shade`, `stop` und der erste `disable_auto`-Aufruf wurden nur
+  akzeptiert. Lamellen- und Kombinationsaktionen werden für diesen Modus nicht
+  angeboten. Die frühere kombinierte Positionsrückführung blieb unbestätigt;
+  es wurde kein weiterer Befehl automatisch wiederholt.
   `LightsceneRGB` (`on`, `off`), `Radio` (`reset`) und `Pushbutton` (`pulse`)
   bleiben lediglich akzeptiert. Alle übrigen Aktionen bleiben entsprechend der
   User-Doku unverified.
