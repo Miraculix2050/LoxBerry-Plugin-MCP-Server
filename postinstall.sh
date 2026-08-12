@@ -52,7 +52,7 @@ fi
 
 python3.13 -m venv "$new_venv" || exit 2
 "$new_venv/bin/python" -m pip install --no-index --no-deps --find-links "$wheelhouse" -r "$plugin_bin/runtime-arm64.lock" || exit 2
-"$new_venv/bin/python" -m pip install --no-index --no-deps --find-links "$wheelhouse" loxberry-mcpserver==0.4.0a1 || exit 2
+"$new_venv/bin/python" -m pip install --no-index --no-deps --find-links "$wheelhouse" loxberry-mcpserver==0.4.0a2 || exit 2
 if [ -d "$venv" ]; then
     mv "$venv" "$old_venv" || exit 2
 fi

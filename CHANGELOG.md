@@ -3,7 +3,7 @@
 All notable user-visible changes are recorded here. GitHub release notes are
 extracted from the matching version heading.
 
-## Unreleased
+## 0.4.0-alpha.2 - 2026-08-12
 
 - Canonicalize signed-zero control values, preserve fractional statistic interval
   boundaries, and keep history and statistic pagination consistent through signed
@@ -11,6 +11,10 @@ extracted from the matching version heading.
   sets in RAM.
 - Rate-limit denied LoxBerry cache-clear attempts and audit cancelled operations as
   having an unknown outcome.
+- Finalize the `loxone:history` and `loxberry:operate` workflows with scoped
+  Explorer grouping, guided statistic transfer, and scope-labeled local bindings.
+- Describe every supported Loxone control type in `loxone_operate_control` and
+  document the Phase-4 hardware acceptance boundary.
 
 ## 0.4.0-alpha.1 - 2026-08-11
 

@@ -1,7 +1,7 @@
 # Phase 4 acceptance record
 
-- **Status:** implementation complete; final PR CI gate pending
-- **Hardware status:** read paths, the plugin-owned cache clear and selected authorized Loxone control actions are accepted; control notes and untested actions remain pending
+- **Status:** implementation complete; reviewed source revision and CI accepted; release metadata prepared
+- **Hardware status:** read paths, control notes, the plugin-owned cache clear and selected authorized Loxone control actions are accepted; untested actions remain pending
 - **Date:** 2026-08-12
 
 Phase 4 adds StatisticV2 reads, bounded control history, six additional control
@@ -62,12 +62,14 @@ scope, `loxberry_clear_statistics_cache` completed successfully. It removed one
 RAM entry and no persistent entry, confirming the narrow plugin-owned cache
 operation without touching Loxone controls or configuration.
 
-No tested control advertised `presentation.has_notes`. The required follow-up is
-to find a visible control that advertises notes and call `loxone_get_control_notes`
-once; no notes content should be copied into this record. The Explorer grouping
-was accepted by the user. No authenticated Admin page was open for a browser
-acceptance of the remaining Clients and sessions binding-table changes; that UI
-check remains pending at the prescribed viewports.
+Five controls in the dedicated test fixture advertised `presentation.has_notes`.
+`loxone_get_control_notes` was called once for one of them and returned a bounded,
+current result. Its user-authored content was intentionally not copied into this
+record. The Explorer grouping was accepted by the user. The authenticated Admin
+page was accepted for the Clients and sessions binding tables at 1280x800,
+390x844, 900x768, 360x800 and 320x568: both scope-binding tables, their
+headers, binding IDs and revoke actions remained visible and the page had no
+horizontal overflow.
 
 ## Authorized control-write acceptance
 

@@ -1,13 +1,13 @@
 # Support-Matrix
 
 - **Stand:** Phase-4-Implementierung, 2026-08-12
-- **Vorbereiteter Pre-Release:** `0.4.0-alpha.1`
+- **Vorbereiteter Pre-Release:** `0.4.0-alpha.2`
 - **Nächster Meilenstein:** gezielte reale Abnahme der noch unbestätigten
-  Phase-4-Aktionen und der Clients-/Sitzungen-Bindungstabellen
+  Phase-4-Aktionen und V1-Varianten
 
 Diese Matrix unterscheidet reale Nachweise von implementierten, aber noch nicht
 real bestätigten Kombinationen. Phase 1, Phase 2 und Phase 3 sind abgenommen;
-`0.4.0-alpha.1` bleibt wegen seines Vorabversionsstatus ein Pre-Release.
+`0.4.0-alpha.2` bleibt wegen seines Vorabversionsstatus ein Pre-Release.
 Phase 4 ist implementiert und für die lesenden Statistik-/Historienpfade, die
 eng begrenzte plugin-eigene Cache-Operation und ausgewählte, reversible
 Control-Aktionen auf Hardware abgenommen; siehe
@@ -121,10 +121,10 @@ Der vollständige maskierte Nachweis steht im
   Hinweise wurde in dieser Installation noch kein Control mit dem
   Verfügbarkeitsmerkmal gefunden. Legacy-XML und
   FTP-Statistik sind nicht aktiv.
-- Die lokale Python-3.13-Full-Prüfung mit 466 Tests ist bestanden. Das finale
-  PR-CI-Gate bleibt maßgeblich; die verbleibende Browser-Abnahme der
-  Clients-/Sitzungs-Bindungstabellen erfordert eine authentifizierte Admin-Sitzung
-  und die dokumentierte Viewport-Matrix.
+- Die lokale Python-3.13-Full-Prüfung mit 466 Tests und das finale PR-CI-Gate
+  sind bestanden. Die Clients-/Sitzungen-Bindungstabellen wurden mit einer
+  authentifizierten Admin-Sitzung bei allen dokumentierten fünf Viewports ohne
+  horizontalen Seiten-Overflow abgenommen.
 - Der generische Lesepfad wurde über den verbundenen MCP auf 351 sichtbaren
   Controls in vier Seiten geprüft; alle in der User-Doku als installationsweit
   lesbar markierten V2-/Bestandstypen waren vorhanden. Die V1-Varianten fehlten.
