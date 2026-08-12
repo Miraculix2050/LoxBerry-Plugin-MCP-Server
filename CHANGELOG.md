@@ -7,7 +7,8 @@ extracted from the matching version heading.
 
 - Canonicalize signed-zero control values, preserve fractional statistic interval
   boundaries, and keep history and statistic pagination consistent through signed
-  continuation anchors without retaining result sets in RAM.
+  continuation anchors with stable occurrence tie-breakers without retaining result
+  sets in RAM.
 
 ## 0.4.0-alpha.1 - 2026-08-11
 

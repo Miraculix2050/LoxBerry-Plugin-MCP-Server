@@ -180,8 +180,9 @@ filter compares the complete Loxone type case-insensitively, so `Switch` and
 checkboxes make `loxone_find_controls` return only controls with visible
 StatisticV2 or legacy statistic series, or control history, respectively. When both are selected, a
 control must provide both capabilities.
-History and statistic cursors use signed continuation anchors, so a changed live
-result does not duplicate prior entries.
+History and statistic cursors use signed continuation anchors with stable occurrence
+tie-breakers, so pages retain entries even when a result contains repeated timestamps
+or identical history records.
 
 The MCP transcript shows sanitized JSON-RPC messages, status and duration.
 Authorization headers, OAuth values and secret-shaped arguments are never shown.

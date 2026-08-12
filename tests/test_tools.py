@@ -273,6 +273,37 @@ async def test_history_cursor_uses_a_stable_entry_anchor(monkeypatch: pytest.Mon
 
 
 @pytest.mark.asyncio
+async def test_history_cursor_preserves_identical_entries_across_pages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    entries = tuple(ControlHistoryEntry(100, "same", "", "", ()) for _ in range(51))
+
+    class Runtime:
+        async def get_control_history(
+            self, _access: object, _control: str
+        ) -> tuple[object, tuple[ControlHistoryEntry, ...]]:
+            return object(), entries
+
+    server = FastMCP("history-identical-entries")
+    register_history_tools(server, Runtime())  # type: ignore[arg-type]
+    monkeypatch.setattr(
+        tools_module, "_access", lambda: _loxberry_access(READ_SCOPE, HISTORY_SCOPE)
+    )
+
+    first = await server._tool_manager.call_tool(
+        "loxone_get_control_history", {"control_uuid": "control", "limit": 50}
+    )
+    second = await server._tool_manager.call_tool(
+        "loxone_get_control_history",
+        {"control_uuid": "control", "cursor": first.data.next_cursor, "limit": 50},
+    )
+
+    assert len(first.data.entries) == 50
+    assert len(second.data.entries) == 1
+    assert second.data.next_cursor is None
+
+
+@pytest.mark.asyncio
 async def test_statistics_cursor_uses_a_timestamp_anchor(monkeypatch: pytest.MonkeyPatch) -> None:
     points = tuple(StatisticPoint(index, float(index)) for index in range(1, 4))
     calls = 0
@@ -312,6 +343,55 @@ async def test_statistics_cursor_uses_a_timestamp_anchor(monkeypatch: pytest.Mon
     assert calls == 2
     assert [point.value for point in first.data.points] == [1.0, 2.0]
     assert [point.value for point in second.data.points] == [3.0]
+    assert second.data.next_cursor is None
+
+
+@pytest.mark.asyncio
+async def test_statistics_cursor_preserves_same_timestamp_points_across_pages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    points = (
+        StatisticPoint(1, 1.0),
+        StatisticPoint(1, 1.0),
+        StatisticPoint(1, 2.0),
+    )
+
+    class Runtime:
+        async def get_statistics(
+            self, *_: object
+        ) -> tuple[object, StatisticSeries, tuple[StatisticPoint, ...]]:
+            return (
+                object(),
+                StatisticSeries("series", "statistic_v2", "group", "output", "Series", ""),
+                points,
+            )
+
+    server = FastMCP("statistics-same-timestamp")
+    register_history_tools(server, Runtime())  # type: ignore[arg-type]
+    monkeypatch.setattr(
+        tools_module, "_access", lambda: _loxberry_access(READ_SCOPE, HISTORY_SCOPE)
+    )
+    arguments = {
+        "control_uuid": "control",
+        "series_id": "series",
+        "start": "1970-01-01T00:00:01Z",
+        "end": "1970-01-01T00:00:01Z",
+        "granularity": "raw",
+        "limit": 2,
+    }
+
+    first = await server._tool_manager.call_tool("loxone_get_statistics", arguments)
+    second = await server._tool_manager.call_tool(
+        "loxone_get_statistics", {**arguments, "cursor": first.data.next_cursor}
+    )
+
+    assert len(first.data.points) == 2
+    assert len(second.data.points) == 1
+    assert sorted(point.value for point in (*first.data.points, *second.data.points)) == [
+        1.0,
+        1.0,
+        2.0,
+    ]
     assert second.data.next_cursor is None
 
 
@@ -373,7 +453,7 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert tool.annotations.destructiveHint is False
     assert tool.annotations.openWorldHint is False
     assert result.data.name == "using-loxberry-mcp"  # type: ignore[union-attr]
-    assert result.data.revision == 10  # type: ignore[union-attr]
+    assert result.data.revision == 11  # type: ignore[union-attr]
     assert result.data.media_type == "text/markdown"  # type: ignore[union-attr]
     assert result.data.content == read_skill_markdown()  # type: ignore[union-attr]
 

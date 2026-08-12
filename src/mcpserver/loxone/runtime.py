@@ -500,7 +500,7 @@ class LoxoneRuntime:
         """Read one visible documented statistic series without exposing raw commands."""
         if granularity not in {"raw", "hour", "day", "month", "year"}:
             raise ControlOperationError("invalid_input", "unsupported statistic granularity")
-        if not 0 <= start < end <= 4_102_444_800:
+        if not 0 <= start <= end <= 4_102_444_800:
             raise ControlOperationError("invalid_input", "invalid statistic time range")
         if granularity == "raw" and end - start > 7 * 24 * 60 * 60:
             raise ControlOperationError("invalid_input", "raw statistics are limited to seven days")

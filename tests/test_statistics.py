@@ -176,6 +176,57 @@ async def test_runtime_filters_statistic_v2_points_to_requested_interval() -> No
 
 
 @pytest.mark.asyncio
+async def test_runtime_allows_single_second_statistic_range() -> None:
+    series = StatisticSeries("v2:1:value", "statistic_v2", "1", "value", "Energy", "%.1f")
+    control = Control(
+        "control-1",
+        "Energy",
+        "Meter",
+        None,
+        None,
+        "action-1",
+        (),
+        statistic_series=(series,),
+    )
+    access = StoredAccessToken(
+        token="opaque",
+        client_id="client",
+        scopes=[READ_SCOPE, HISTORY_SCOPE],
+        expires_at=2_000_000_000,
+        resource="https://loxberry.local/plugins/mcpserver/mcp",
+        subject="identity",
+        claims={},
+        family_id="family",
+        identity_id="identity",
+        miniserver_id="miniserver",
+    )
+
+    class Session:
+        async def statistic_info(self, _control_uuid: str) -> list[dict[str, object]]:
+            return [{"id": 1}]
+
+        async def statistic_data(self, _control_uuid: str, **_kwargs: object) -> bytes:
+            return struct.pack("<Id", 100, 2.0)
+
+    runtime = object.__new__(LoxoneRuntime)
+    runtime.statistics_cache = StatisticsCache(None)
+
+    @asynccontextmanager
+    async def history_session(_access: StoredAccessToken, control_uuid: str):
+        assert control_uuid == "control-1"
+        yield control, Session()
+
+    runtime._history_session = history_session  # type: ignore[method-assign]
+
+    _control, returned_series, points = await runtime.get_statistics(
+        access, "control-1", "v2:1:value", 100, 100, "raw"
+    )
+
+    assert returned_series is series
+    assert points == (StatisticPoint(100, 2.0),)
+
+
+@pytest.mark.asyncio
 async def test_runtime_ignores_history_timestamps_outside_supported_range() -> None:
     control = Control(
         "control-1",

@@ -38,6 +38,7 @@ from mcpserver.loxone.runtime import (
     RuntimeSnapshot,
     RuntimeUnavailable,
 )
+from mcpserver.loxone.statistics import StatisticPoint
 from mcpserver.skill_delivery import (
     SKILL_MIME_TYPE,
     SKILL_NAME,
@@ -499,13 +500,13 @@ class _CursorCodec:
     def digest(self, value: bytes) -> str:
         return hmac.new(self._key, value, hashlib.sha256).hexdigest()
 
-    def encode_anchor(self, scope: str, anchor: int | tuple[int, str]) -> str:
-        payload: int | list[int | str] = list(anchor) if isinstance(anchor, tuple) else anchor
+    def encode_anchor(self, scope: str, anchor: tuple[str, int, str, int]) -> str:
+        payload: list[str | int] = list(anchor)
         body = json.dumps({"scope": scope, "anchor": payload}, separators=(",", ":")).encode()
         signature = hmac.new(self._key, body, hashlib.sha256).digest()
         return base64.urlsafe_b64encode(body + signature).decode().rstrip("=")
 
-    def decode_anchor(self, scope: str, value: str) -> int | tuple[int, str]:
+    def decode_anchor(self, scope: str, value: str) -> tuple[str, int, str, int]:
         if len(value) > 512:
             raise ValueError("cursor is invalid")
         try:
@@ -519,17 +520,19 @@ class _CursorCodec:
             anchor = document.get("anchor")
             if document.get("scope") != scope:
                 raise ValueError
-            if isinstance(anchor, int) and not isinstance(anchor, bool):
-                return anchor
             if (
                 isinstance(anchor, list)
-                and len(anchor) == 2
-                and isinstance(anchor[0], int)
-                and not isinstance(anchor[0], bool)
-                and isinstance(anchor[1], str)
-                and len(anchor[1]) == 64
+                and len(anchor) == 4
+                and anchor[0] in {"statistics", "history"}
+                and isinstance(anchor[1], int)
+                and not isinstance(anchor[1], bool)
+                and isinstance(anchor[2], str)
+                and len(anchor[2]) == 64
+                and isinstance(anchor[3], int)
+                and not isinstance(anchor[3], bool)
+                and anchor[3] >= 0
             ):
-                return anchor[0], anchor[1]
+                return anchor[0], anchor[1], anchor[2], anchor[3]
             raise ValueError
         except (UnicodeError, ValueError, json.JSONDecodeError):
             raise ValueError("cursor is invalid") from None
@@ -1160,7 +1163,7 @@ def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
     annotations = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
     cursors = _CursorCodec()
 
-    def history_key(entry: ControlHistoryEntry) -> tuple[int, str]:
+    def history_base_key(entry: ControlHistoryEntry) -> tuple[int, str]:
         digest = cursors.digest(
             json.dumps(
                 [entry.what, entry.trigger, entry.trigger_type, entry.impacts],
@@ -1169,6 +1172,33 @@ def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
             ).encode()
         )
         return -entry.timestamp, digest
+
+    def history_keyed_entries(
+        entries: tuple[ControlHistoryEntry, ...],
+    ) -> tuple[tuple[ControlHistoryEntry, tuple[str, int, str, int]], ...]:
+        occurrences: dict[tuple[int, str], int] = {}
+        keyed: list[tuple[ControlHistoryEntry, tuple[str, int, str, int]]] = []
+        for entry in sorted(entries, key=history_base_key):
+            timestamp, digest = history_base_key(entry)
+            occurrence = occurrences.get((timestamp, digest), 0)
+            occurrences[timestamp, digest] = occurrence + 1
+            keyed.append((entry, ("history", timestamp, digest, occurrence)))
+        return tuple(keyed)
+
+    def statistic_keyed_points(
+        points: tuple[StatisticPoint, ...],
+    ) -> tuple[tuple[StatisticPoint, tuple[str, int, str, int]], ...]:
+        def base_key(point: StatisticPoint) -> tuple[int, str]:
+            return point.timestamp, cursors.digest(repr(point.value).encode())
+
+        occurrences: dict[tuple[int, str], int] = {}
+        keyed: list[tuple[StatisticPoint, tuple[str, int, str, int]]] = []
+        for point in sorted(points, key=base_key):
+            timestamp, digest = base_key(point)
+            occurrence = occurrences.get((timestamp, digest), 0)
+            occurrences[timestamp, digest] = occurrence + 1
+            keyed.append((point, ("statistics", timestamp, digest, occurrence)))
+        return tuple(keyed)
 
     @server.tool(
         name="loxone_get_statistics",
@@ -1235,12 +1265,13 @@ def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                 end_second,
                 granularity,
             )
+            keyed_points = statistic_keyed_points(points)
             if cursor is not None:
                 anchor = cursors.decode_anchor(query_scope, cursor)
-                if not isinstance(anchor, int):
+                if anchor[0] != "statistics":
                     raise ValueError("cursor is invalid")
-                points = tuple(point for point in points if point.timestamp > anchor)
-            selected = points[:limit]
+                keyed_points = tuple(item for item in keyed_points if item[1] > anchor)
+            selected = keyed_points[:limit]
             return _result(
                 StatisticsEnvelope,
                 {
@@ -1258,11 +1289,11 @@ def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                             .replace("+00:00", "Z"),
                             "value": point.value,
                         }
-                        for point in selected
+                        for point, _key in selected
                     ],
                     "next_cursor": (
-                        cursors.encode_anchor(query_scope, selected[-1].timestamp)
-                        if len(selected) < len(points)
+                        cursors.encode_anchor(query_scope, selected[-1][1])
+                        if len(selected) < len(keyed_points)
                         else None
                     ),
                 },
@@ -1298,13 +1329,13 @@ def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                 + hashlib.sha256(f"{access.family_id}\0{control_uuid}".encode()).hexdigest()
             )
             _control, entries = await runtime.get_control_history(access, control_uuid)
-            ordered = tuple(sorted(entries, key=history_key))
+            keyed_entries = history_keyed_entries(entries)
             if cursor is not None:
                 anchor = cursors.decode_anchor(scope, cursor)
-                if not isinstance(anchor, tuple):
+                if anchor[0] != "history":
                     raise ValueError("cursor is invalid")
-                ordered = tuple(entry for entry in ordered if history_key(entry) > anchor)
-            selected = ordered[:limit]
+                keyed_entries = tuple(item for item in keyed_entries if item[1] > anchor)
+            selected = keyed_entries[:limit]
             return _result(
                 ControlHistoryEnvelope,
                 {
@@ -1319,11 +1350,11 @@ def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                             "trigger_type": entry.trigger_type,
                             "impacts": list(entry.impacts),
                         }
-                        for entry in selected
+                        for entry, _key in selected
                     ],
                     "next_cursor": (
-                        cursors.encode_anchor(scope, history_key(selected[-1]))
-                        if len(selected) < len(ordered)
+                        cursors.encode_anchor(scope, selected[-1][1])
+                        if len(selected) < len(keyed_entries)
                         else None
                     ),
                 },
