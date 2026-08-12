@@ -189,7 +189,7 @@ def test_page_limit_is_bounded(limit: int) -> None:
         _page(_CursorCodec(), "rooms", [], None, limit)
 
 
-def test_control_tool_contract_is_explicitly_mutating_and_idempotent() -> None:
+def test_control_tool_contract_is_explicitly_mutating_and_non_idempotent() -> None:
     server = FastMCP("control-contract")
     register_control_tool(server, None)
 
@@ -199,7 +199,7 @@ def test_control_tool_contract_is_explicitly_mutating_and_idempotent() -> None:
     assert tool.annotations is not None
     assert tool.annotations.readOnlyHint is False
     assert tool.annotations.destructiveHint is True
-    assert tool.annotations.idempotentHint is True
+    assert tool.annotations.idempotentHint is False
     assert set(tool.parameters["properties"]["action"]["enum"]) == {
         "on",
         "off",
@@ -291,6 +291,7 @@ def test_tool_input_schemas_explain_every_argument() -> None:
     find_properties = published["loxone_find_controls"].parameters["properties"]
     assert find_properties["query"]["maxLength"] == 200
     assert find_properties["has_statistics"]["default"] is False
+    assert "legacy" in find_properties["has_statistics"]["description"]
     assert find_properties["has_history"]["default"] is False
     assert find_properties["limit"]["minimum"] == 1
     assert find_properties["limit"]["maximum"] == 100

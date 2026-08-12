@@ -566,7 +566,11 @@ class LoxoneRuntime:
                         group_id=series.group_id,
                         output=series.output,
                     )
-                    points = parse_statistic_points(payload)
+                    points = tuple(
+                        point
+                        for point in parse_statistic_points(payload)
+                        if start <= point.timestamp <= end
+                    )
             except ControlOperationError:
                 raise
             except LoxoneCommandRejected as exc:

@@ -778,7 +778,12 @@ def register_read_tools(
         ] = None,
         has_statistics: Annotated[
             bool,
-            Field(description="Only return controls that advertise a visible statisticV2 series."),
+            Field(
+                description=(
+                    "Only return controls that advertise a visible StatisticV2 or legacy "
+                    "statistic series."
+                )
+            ),
         ] = False,
         has_history: Annotated[
             bool,
@@ -1339,7 +1344,7 @@ def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> Non
     annotations = ToolAnnotations(
         readOnlyHint=False,
         destructiveHint=True,
-        idempotentHint=True,
+        idempotentHint=False,
         openWorldHint=False,
     )
 
