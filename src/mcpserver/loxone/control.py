@@ -96,7 +96,7 @@ def allowed_actions(control: Control) -> list[str]:
             actions = ["on", "off"]
             if control.picker_type in {"Rgb", "Lumitech", "Rgb/Lumitech"}:
                 actions.append("set_color_hsv")
-            if control.picker_type == "Lumitech":
+            if control.picker_type in {"Lumitech", "Rgb/Lumitech"}:
                 actions.append("set_color_temperature")
             return actions
         case "ColorPickerV2":

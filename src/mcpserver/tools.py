@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -51,6 +52,7 @@ _MAX_AUDIT_SUPPRESSION_KEYS: Final = 512
 _AUDIT_LAST: OrderedDict[tuple[str, str], float] = OrderedDict()
 _ERROR_SUPPRESSION_SECONDS: Final = 60.0
 _ERROR_LAST: dict[str, float] = {}
+_CACHE_CLEAR_TIMEOUT_SECONDS: Final = 10.0
 
 CursorArgument = Annotated[
     str | None,
@@ -554,11 +556,21 @@ class LoxBerryReadRuntime:
 class LoxBerryOperateRuntime:
     """Live policy check for the sole plugin-owned Phase 4 operation."""
 
-    def __init__(self, cache: Any, config_store: Any, auth_store: Any) -> None:
+    def __init__(
+        self,
+        cache: Any,
+        config_store: Any,
+        auth_store: Any,
+        *,
+        clear_timeout_seconds: float = _CACHE_CLEAR_TIMEOUT_SECONDS,
+    ) -> None:
+        if clear_timeout_seconds <= 0:
+            raise ValueError("cache clear timeout must be positive")
         self._cache = cache
         self._config_store = config_store
         self._auth_store = auth_store
         self._requests: dict[str, list[float]] = {}
+        self._clear_timeout_seconds = clear_timeout_seconds
 
     def _allowed(self, access: StoredAccessToken) -> None:
         if LOXBERRY_OPERATE_SCOPE not in access.scopes or HISTORY_SCOPE not in access.scopes:
@@ -585,9 +597,9 @@ class LoxBerryOperateRuntime:
 
     async def clear_statistics_cache(self, access: StoredAccessToken) -> Any:
         self._allowed(access)
-        import asyncio
-
-        return await asyncio.to_thread(self._cache.clear)
+        return await asyncio.wait_for(
+            asyncio.to_thread(self._cache.clear), timeout=self._clear_timeout_seconds
+        )
 
 
 def _groups(items: tuple[NamedGroup, ...]) -> list[dict[str, str]]:
@@ -1261,6 +1273,14 @@ def register_loxberry_operate_tool(server: FastMCP, runtime: LoxBerryOperateRunt
         openWorldHint=False,
     )
 
+    def audit(access: StoredAccessToken | None, outcome: str) -> None:
+        _LOGGER.warning(
+            "event=loxberry_operation tool=loxberry_clear_statistics_cache outcome=%s family=%s",
+            outcome,
+            _audit_identity(access.family_id) if access is not None else "unknown",
+            extra={"mcp_audit": True},
+        )
+
     @server.tool(
         name="loxberry_clear_statistics_cache",
         description=(
@@ -1275,12 +1295,7 @@ def register_loxberry_operate_tool(server: FastMCP, runtime: LoxBerryOperateRunt
         try:
             access = _access()
             result = await runtime.clear_statistics_cache(access)
-            _LOGGER.warning(
-                "event=loxberry_operation tool=loxberry_clear_statistics_cache "
-                "outcome=completed family=%s",
-                access.family_id[:12],
-                extra={"mcp_audit": True},
-            )
+            audit(access, "completed")
             return _result(
                 CacheClearEnvelope,
                 {
@@ -1290,24 +1305,28 @@ def register_loxberry_operate_tool(server: FastMCP, runtime: LoxBerryOperateRunt
                 },
             )
         except PermissionError:
+            audit(access, "permission_denied")
             return _error(
                 CacheClearEnvelope,
                 "permission_denied",
                 "LoxBerry cache operation requires local approval",
             )
         except DiagnosticsUnavailable:
+            audit(access, "temporarily_unavailable")
             return _error(
                 CacheClearEnvelope,
                 "temporarily_unavailable",
                 "Operation is temporarily unavailable",
             )
-        except Exception:
-            _LOGGER.error(
-                "event=loxberry_operation tool=loxberry_clear_statistics_cache "
-                "outcome=failed family=%s",
-                access.family_id[:12] if access is not None else "unknown",
-                extra={"mcp_audit": True},
+        except TimeoutError:
+            audit(access, "timed_out_unknown")
+            return _error(
+                CacheClearEnvelope,
+                "temporarily_unavailable",
+                "Cache clear timed out; outcome is unknown",
             )
+        except Exception:
+            audit(access, "failed")
             return _error(CacheClearEnvelope, "internal_error", "Internal error")
 
 

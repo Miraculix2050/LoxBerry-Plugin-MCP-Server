@@ -146,3 +146,22 @@ def test_statistics_cache_rejects_untrusted_persistent_key(tmp_path: Path) -> No
     cache.put_legacy_source("../escape", b"payload")
 
     assert not tmp_path.exists() or list(tmp_path.iterdir()) == []
+
+
+def test_statistics_cache_purges_expired_and_bounds_memory_points() -> None:
+    now = [10.0]
+    cache = StatisticsCache(
+        None, ttl_seconds=5, maximum_memory_points=2, clock=lambda: now[0]
+    )
+    point = StatisticPoint(100, 1.0)
+
+    cache.put("expired", (point,))
+    now[0] = 16.0
+    cache.put("first", (point,))
+    cache.put("second", (point,))
+    cache.put("third", (point,))
+
+    assert cache.get("expired") is None
+    assert cache.get("first") is None
+    assert cache.get("second") == (point,)
+    assert cache.get("third") == (point,)

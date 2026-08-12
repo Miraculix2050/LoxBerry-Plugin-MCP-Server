@@ -22,6 +22,7 @@ from mcpserver.loxone.events import LoxoneProtocolError
 
 _POINT: Final = struct.Struct("<Id")
 _MAX_SOURCE_BYTES: Final = 64 * 1024 * 1024
+_MAX_MEMORY_POINTS: Final = 100_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,15 +70,19 @@ class StatisticsCache:
         *,
         maximum_bytes: int = 128 * 1024 * 1024,
         ttl_seconds: float = 60.0,
+        maximum_memory_points: int = _MAX_MEMORY_POINTS,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         if directory is not None and not directory.is_absolute():
             raise ValueError("statistics cache path must be absolute")
         if not 16 * 1024 * 1024 <= maximum_bytes <= 512 * 1024 * 1024:
             raise ValueError("statistics cache size is outside the supported range")
+        if maximum_memory_points < 1:
+            raise ValueError("statistics memory cache point limit must be positive")
         self.directory = directory
         self.maximum_bytes = maximum_bytes
         self.ttl_seconds = ttl_seconds
+        self.maximum_memory_points = maximum_memory_points
         self._clock = clock
         self._memory: OrderedDict[str, tuple[float, tuple[StatisticPoint, ...]]] = OrderedDict()
         self._lock = RLock()
@@ -96,9 +101,17 @@ class StatisticsCache:
 
     def put(self, key: str, value: tuple[StatisticPoint, ...]) -> None:
         with self._lock:
-            self._memory[key] = (self._clock() + self.ttl_seconds, value)
+            now = self._clock()
+            for expired_key, (expires_at, _points) in tuple(self._memory.items()):
+                if expires_at <= now:
+                    self._memory.pop(expired_key, None)
+            if len(value) > self.maximum_memory_points:
+                return
+            self._memory[key] = (now + self.ttl_seconds, value)
             self._memory.move_to_end(key)
-            while len(self._memory) > 128:
+            while sum(len(points) for _expires_at, points in self._memory.values()) > (
+                self.maximum_memory_points
+            ):
                 self._memory.popitem(last=False)
 
     @staticmethod

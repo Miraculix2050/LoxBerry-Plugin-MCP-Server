@@ -137,3 +137,12 @@ def test_visible_mood_ids_accepts_numeric_target_data() -> None:
 def test_radio_reset_is_advertised_only_when_visible_details_allow_it() -> None:
     assert allowed_actions(_control("Radio")) == []
     assert allowed_actions(_control("Radio", radio_reset_allowed=True)) == ["reset"]
+
+
+def test_combined_v1_color_picker_advertises_temperature_control() -> None:
+    control = _control("ColorPicker", picker_type="Rgb/Lumitech")
+
+    assert "set_color_temperature" in allowed_actions(control)
+    assert prepare_control_command(
+        control, "set_color_temperature", brightness=75, kelvin=4000
+    ).command == "lumitech(75,4000)"

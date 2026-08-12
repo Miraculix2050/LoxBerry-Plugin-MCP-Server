@@ -357,6 +357,40 @@ async def test_loxberry_operate_runtime_requires_exact_live_binding() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cache_clear_denial_and_timeout_are_audited(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    access = _loxberry_access(READ_SCOPE, HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE)
+
+    class DeniedRuntime:
+        async def clear_statistics_cache(self, _access: StoredAccessToken) -> object:
+            raise PermissionError
+
+    server = FastMCP("cache-clear-audit")
+    register_loxberry_operate_tool(server, DeniedRuntime())  # type: ignore[arg-type]
+    monkeypatch.setattr(tools_module, "_access", lambda: access)
+    caplog.set_level(logging.WARNING, logger="mcpserver.tools")
+
+    denied = await server._tool_manager.call_tool("loxberry_clear_statistics_cache", {})
+
+    assert denied.ok is False
+    assert denied.data.error == "permission_denied"  # type: ignore[union-attr]
+    assert "outcome=permission_denied" in caplog.text
+
+    class TimedOutRuntime:
+        async def clear_statistics_cache(self, _access: StoredAccessToken) -> object:
+            raise TimeoutError
+
+    timeout_server = FastMCP("cache-clear-timeout")
+    register_loxberry_operate_tool(timeout_server, TimedOutRuntime())  # type: ignore[arg-type]
+    timed_out = await timeout_server._tool_manager.call_tool("loxberry_clear_statistics_cache", {})
+
+    assert timed_out.ok is False
+    assert timed_out.data.error == "temporarily_unavailable"  # type: ignore[union-attr]
+    assert "outcome=timed_out_unknown" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_schema_metadata_keeps_structured_invalid_input_envelope() -> None:
     server = FastMCP("structured-validation")
     register_read_tools(server, None)
