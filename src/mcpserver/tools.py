@@ -1284,9 +1284,12 @@ def register_loxberry_operate_tool(server: FastMCP, runtime: LoxBerryOperateRunt
 
     def audit(access: StoredAccessToken | None, outcome: str) -> None:
         _LOGGER.warning(
-            "event=loxberry_operation tool=loxberry_clear_statistics_cache outcome=%s family=%s",
+            "event=loxberry_operation tool=loxberry_clear_statistics_cache outcome=%s "
+            "family=%s client=%s identity=%s",
             outcome,
             _audit_identity(access.family_id) if access is not None else "unknown",
+            _audit_identity(str(access.client_id)) if access is not None else "unknown",
+            _audit_identity(access.identity_id) if access is not None else "unknown",
             extra={"mcp_audit": True},
         )
 

@@ -228,11 +228,12 @@ def test_phase_four_upgrade_migrates_configuration_and_private_cache() -> None:
 
     assert 'document.get("schema_version") == 1' in hook
     assert 'document["schema_version"] = 2' in hook
-    assert 'mkdir -p "$plugin_data/statistics-cache"' in hook
-    assert 'chown loxberry:loxberry "$plugin_data/statistics-cache"' in hook
-    assert 'chmod 700 "$plugin_data/statistics-cache"' in hook
-    assert 'mkdir -p "$plugin_data/statistics-cache"' in postroot
-    assert 'chmod 700 "$plugin_data/statistics-cache"' in postroot
+    for script in (hook, postroot):
+        assert 'prepare_private_directory "$plugin_data/statistics-cache" || exit 2' in script
+        assert "os.O_NOFOLLOW" in script
+        assert "os.fchown(fd" in script
+        assert "os.fchmod(fd, 0o700)" in script
+        assert "os.lstat(path)" in script
 
 
 def test_postroot_keeps_installer_alive_during_apache_activation() -> None:

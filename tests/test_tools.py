@@ -454,7 +454,9 @@ async def test_loxberry_operate_runtime_requires_exact_live_binding() -> None:
 async def test_cache_clear_denial_and_timeout_are_audited(
     caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    access = _loxberry_access(READ_SCOPE, HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE)
+    access = _loxberry_access(READ_SCOPE, HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE).model_copy(
+        update={"client_id": "private-client-id", "identity_id": "private-identity-id"}
+    )
 
     class DeniedRuntime:
         async def clear_statistics_cache(self, _access: StoredAccessToken) -> object:
@@ -470,6 +472,10 @@ async def test_cache_clear_denial_and_timeout_are_audited(
     assert denied.ok is False
     assert denied.data.error == "permission_denied"  # type: ignore[union-attr]
     assert "outcome=permission_denied" in caplog.text
+    assert f"client={tools_module._audit_identity(str(access.client_id))}" in caplog.text
+    assert f"identity={tools_module._audit_identity(access.identity_id)}" in caplog.text
+    assert str(access.client_id) not in caplog.text
+    assert access.identity_id not in caplog.text
 
     class TimedOutRuntime:
         async def clear_statistics_cache(self, _access: StoredAccessToken) -> object:

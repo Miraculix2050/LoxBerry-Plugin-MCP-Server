@@ -10,6 +10,41 @@ fi
 # Schema migrations are idempotent and never replace an existing session store.
 plugin_config="$LBPCONFIG/$actual_folder"
 plugin_data="$LBPDATA/$actual_folder"
+
+prepare_private_directory() {
+    python3 - "$1" <<'PY'
+import grp
+import os
+import pwd
+import stat
+import sys
+
+path = sys.argv[1]
+parent, name = os.path.split(path)
+parent_fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+try:
+    try:
+        os.mkdir(name, 0o700, dir_fd=parent_fd)
+    except FileExistsError:
+        pass
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
+    fd = os.open(name, flags, dir_fd=parent_fd)
+    try:
+        opened = os.fstat(fd)
+        if not stat.S_ISDIR(opened.st_mode):
+            raise RuntimeError("private path is not a directory")
+        os.fchown(fd, pwd.getpwnam("loxberry").pw_uid, grp.getgrnam("loxberry").gr_gid)
+        os.fchmod(fd, 0o700)
+        current = os.lstat(path)
+        if not stat.S_ISDIR(current.st_mode) or (current.st_dev, current.st_ino) != (opened.st_dev, opened.st_ino):
+            raise RuntimeError("private directory path changed during preparation")
+    finally:
+        os.close(fd)
+finally:
+    os.close(parent_fd)
+PY
+}
+
 if [ ! -f "$plugin_config/mcpserver.json" ]; then
     cp "$plugin_config/default-config.json" "$plugin_config/mcpserver.json" || exit 2
 fi
@@ -62,9 +97,7 @@ PY
 chmod 600 "$plugin_config/mcpserver.json"
 mkdir -p "$plugin_data/auth"
 chmod 700 "$plugin_data/auth"
-mkdir -p "$plugin_data/statistics-cache"
-chown loxberry:loxberry "$plugin_data/statistics-cache"
-chmod 700 "$plugin_data/statistics-cache"
+prepare_private_directory "$plugin_data/statistics-cache" || exit 2
 
 # The former CGI logger created one timestamped file per administrative action.
 # Removing those legacy files makes the new active file plus two backups the
