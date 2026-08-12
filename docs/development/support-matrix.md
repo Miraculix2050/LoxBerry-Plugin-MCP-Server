@@ -110,9 +110,11 @@ Der vollständige maskierte Nachweis steht im
 - `Jalousie`-`open`, `set_position` und `enable_auto` sind auf der ausdrücklich
   freigegebenen Rolladen-Fixture über ihre sichtbaren Rückmeldungen bestätigt.
   `close`, `shade`, `stop` und der erste `disable_auto`-Aufruf wurden nur
-  akzeptiert. Lamellen- und Kombinationsaktionen werden für diesen Modus nicht
-  angeboten. Die frühere kombinierte Positionsrückführung blieb unbestätigt;
-  es wurde kein weiterer Befehl automatisch wiederholt.
+  akzeptiert; ein abschließendes `disable_auto` wurde bestätigt und stellte den
+  ursprünglichen Automatikzustand wieder her. Lamellen- und Kombinationsaktionen
+  werden für diesen Modus nicht angeboten. Die frühere kombinierte
+  Positionsrückführung blieb unbestätigt; es wurde kein weiterer Befehl
+  automatisch wiederholt.
   `LightsceneRGB` (`on`, `off`), `Radio` (`reset`) und `Pushbutton` (`pulse`)
   bleiben lediglich akzeptiert. Alle übrigen Aktionen bleiben entsprechend der
   User-Doku unverified.
