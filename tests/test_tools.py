@@ -288,13 +288,13 @@ def test_tool_input_schemas_explain_every_argument() -> None:
     assert find_properties["has_history"]["default"] is False
     assert find_properties["limit"]["minimum"] == 1
     assert find_properties["limit"]["maximum"] == 100
-    assert (
-        published["loxone_operate_control"].parameters["properties"]["mood_id"]["maxLength"] == 10
-    )
+    operation = published["loxone_operate_control"].parameters["properties"]
+    assert operation["mood_id"]["maxLength"] == 10
+    assert operation["scene_id"]["maxLength"] == 10
+    assert operation["output_id"]["maxLength"] == 2
     state_uuids = published["loxone_get_states"].parameters["properties"]["state_uuids"]
     assert state_uuids["minItems"] == 1
     assert state_uuids["maxItems"] == 100
-    operation = published["loxone_operate_control"].parameters["properties"]
     for name in ("level", "position", "slat_position"):
         assert operation[name]["minimum"] == 0
         assert operation[name]["maximum"] == 100
@@ -379,6 +379,28 @@ async def test_statistic_series_id_length_is_enforced_at_runtime() -> None:
                 "end": "2026-01-02T00:00:00Z",
                 "granularity": "raw",
             },
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("action", "identifier", "value"),
+    [
+        ("set_mood", "mood_id", "x" * 11),
+        ("set_scene", "scene_id", "x" * 11),
+        ("select_output", "output_id", "x" * 3),
+    ],
+)
+async def test_control_identifier_lengths_are_enforced_at_runtime(
+    action: str, identifier: str, value: str
+) -> None:
+    server = FastMCP("control-identifier-length")
+    register_control_tool(server, None)
+
+    with pytest.raises(ToolError, match="at most"):
+        await server._tool_manager.call_tool(
+            "loxone_operate_control",
+            {"control_uuid": "control", "action": action, identifier: value},
         )
 
 

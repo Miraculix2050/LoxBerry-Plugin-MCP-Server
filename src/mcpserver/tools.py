@@ -1394,6 +1394,7 @@ def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> Non
                     "Legacy scene number 0 to 99 or decimal LightControllerV2 mood ID "
                     "returned by its visible moodList; required only for set_mood."
                 ),
+                max_length=10,
                 json_schema_extra={"maxLength": 10},
             ),
         ] = None,
@@ -1421,6 +1422,7 @@ def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> Non
             str | None,
             Field(
                 description="Scene ID advertised by the visible LightsceneRGB control.",
+                max_length=10,
                 json_schema_extra={"maxLength": 10},
             ),
         ] = None,
@@ -1428,6 +1430,7 @@ def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> Non
             str | None,
             Field(
                 description="Radio output ID advertised by the visible control.",
+                max_length=2,
                 json_schema_extra={"maxLength": 2},
             ),
         ] = None,
