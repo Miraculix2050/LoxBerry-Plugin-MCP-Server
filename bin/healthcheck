@@ -22,7 +22,7 @@ check test -d "$plugin_data/auth"
 check test -w "$plugin_data/auth"
 
 if [ "$failed" -ne 0 ]; then
-    echo "Health check failed. No repair was attempted."
+    echo "<ERROR> LoxBerry MCP Server health check failed. No repair was attempted."
     exit 1
 fi
-echo "LoxBerry MCP Server health check passed."
+echo "<OK> LoxBerry MCP Server health check passed."
