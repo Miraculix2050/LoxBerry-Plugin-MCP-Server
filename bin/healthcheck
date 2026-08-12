@@ -44,7 +44,7 @@ check() {
 }
 
 check "MCP server service" systemctl is-active --quiet loxberry-mcpserver.service
-check "MCP server health endpoint" curl --fail --silent --max-time 3 http://127.0.0.1:8765/healthz
+check "MCP server health endpoint" curl --fail --silent --max-time 3 --output /dev/null http://127.0.0.1:8765/healthz
 check "Plugin configuration" test -r "$plugin_config/mcpserver.json"
 check "OAuth data directory" test -d "$plugin_data/auth"
 check "OAuth data directory permissions" test -w "$plugin_data/auth"

@@ -358,6 +358,18 @@ async def test_statistics_limit_is_enforced_at_runtime() -> None:
 
 
 @pytest.mark.asyncio
+async def test_history_limit_is_enforced_at_runtime() -> None:
+    server = FastMCP("history-limit")
+    register_history_tools(server, None)
+
+    with pytest.raises(ToolError, match="less than or equal to 100"):
+        await server._tool_manager.call_tool(
+            "loxone_get_control_history",
+            {"control_uuid": "control", "limit": 101},
+        )
+
+
+@pytest.mark.asyncio
 async def test_loxberry_operate_runtime_requires_exact_live_binding() -> None:
     class Cache:
         def clear(self) -> object:

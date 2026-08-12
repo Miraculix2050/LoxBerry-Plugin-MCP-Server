@@ -168,6 +168,7 @@ def test_healthcheck_uses_loxberry_plugin_protocol() -> None:
     assert "printf '%s\\n%s\\n%s\\n' \"$description\" 3" in healthcheck
     assert "printf '%s\\n%s\\n%s\\n' \"$description\" 5" in healthcheck
     assert 'check "Plugin configuration" test -r "$plugin_config/mcpserver.json"' in healthcheck
+    assert "curl --fail --silent --max-time 3 --output /dev/null" in healthcheck
     assert "No repair action was taken." in healthcheck
 
 

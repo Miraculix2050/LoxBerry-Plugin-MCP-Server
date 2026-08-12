@@ -67,7 +67,8 @@ LimitArgument = Annotated[
     int,
     Field(
         description="Maximum number of results to return on this page, from 1 to 100.",
-        json_schema_extra={"minimum": 1, "maximum": MAX_PAGE_SIZE},
+        ge=1,
+        le=MAX_PAGE_SIZE,
     ),
 ]
 StatisticsLimitArgument = Annotated[
