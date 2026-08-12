@@ -27,6 +27,7 @@ from mcpserver.tools import (
     _error,
     _page,
     _result,
+    _rfc3339,
     register_control_tool,
     register_history_tools,
     register_loxberry_operate_tool,
@@ -175,6 +176,11 @@ def test_cursor_cannot_cross_scope_or_be_modified() -> None:
         codec.decode("categories", cursor)
     with pytest.raises(ValueError, match="cursor is invalid"):
         codec.decode("rooms", cursor[:-1] + ("A" if cursor[-1] != "A" else "B"))
+
+
+def test_rfc3339_rejects_timezone_normalization_overflow() -> None:
+    with pytest.raises(ValueError, match="timestamp must be RFC 3339"):
+        _rfc3339("9999-12-31T23:59:59-23:59")
 
 
 @pytest.mark.parametrize("limit", [0, 101])

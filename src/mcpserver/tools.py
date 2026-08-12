@@ -1101,11 +1101,13 @@ def _rfc3339(value: str) -> datetime:
         raise ValueError("timestamp is invalid")
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
+        normalized = parsed.astimezone(UTC) if parsed.tzinfo is not None else None
+    except (OverflowError, ValueError):
         raise ValueError("timestamp must be RFC 3339 with a timezone") from None
     if parsed.tzinfo is None:
         raise ValueError("timestamp must include a timezone")
-    return parsed.astimezone(UTC)
+    assert normalized is not None
+    return normalized
 
 
 def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> None:
