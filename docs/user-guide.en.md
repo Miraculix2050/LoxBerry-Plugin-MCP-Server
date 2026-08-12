@@ -269,7 +269,7 @@ room, bulk, learning, rename, expert, or free-form commands.
 | Lighting | `Pushbutton` | yes | yes | `pulse` | hardware command accepted; feedback did not confirm the effect |
 | Lighting | `Radio` | yes | yes | `select_output`; `reset` only with visible `allOff` | hardware command accepted: `reset`; `select_output` not hardware-confirmed |
 | Lighting | `TimedSwitch` | yes | yes | `on`, `off`, `pulse` | hardware confirmed: `on`, `off`; initial state restored; `pulse` contract tested |
-| Shading | `Jalousie` | yes | yes | open/close/shade/stop, position; slats only with `details.animation = 0`; auto only when advertised | hardware confirmed in shutter mode: `open`, `set_position`, and `enable_auto`; `close`, `shade`, and `stop` only accepted. Slat actions do not apply there |
+| Shading | `Jalousie` | yes | yes | open/close/shade/stop, position; slats only with `details.animation = 0`; auto only when advertised | hardware confirmed in shutter mode: `open`, `set_position`, `enable_auto`, and the final `disable_auto`; `close`, `shade`, and `stop` only accepted. Slat actions do not apply there |
 | Shading | `CentralJalousie` | yes | no | – | hardware read confirmed |
 | Climate/ventilation | `IRoomControllerV2`, `IRCV2Daytimer`, `Ventilation`, `Daytimer` | yes | no | – | readable in the maintainer installation |
 | Climate/ventilation | `ClimateControllerUS` | yes | no | – | hardware read confirmed |
