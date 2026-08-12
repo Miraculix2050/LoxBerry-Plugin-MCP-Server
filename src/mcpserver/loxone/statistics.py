@@ -169,17 +169,21 @@ class StatisticsCache:
             total -= metadata.st_size
 
     def clear(self) -> CacheClearResult:
+        """Clear cached data without holding the memory lock during filesystem I/O."""
         with self._lock:
             memory = len(self._memory)
             self._memory.clear()
-            entries = self._entries()
-            removed = 0
-            freed = 0
-            for path, metadata in entries:
-                try:
-                    path.unlink()
-                except OSError:
-                    continue
-                removed += 1
-                freed += metadata.st_size
-            return CacheClearResult(memory, removed, freed)
+        # Directory enumeration and unlinking can block on slow storage. A timed-out
+        # MCP call cannot stop a Python worker thread, so it must not retain the lock
+        # that protects normal in-memory statistic reads and writes.
+        entries = self._entries()
+        removed = 0
+        freed = 0
+        for path, metadata in entries:
+            try:
+                path.unlink()
+            except OSError:
+                continue
+            removed += 1
+            freed += metadata.st_size
+        return CacheClearResult(memory, removed, freed)

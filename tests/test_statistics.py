@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import gzip
 import math
+import os
 import struct
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
+from threading import Event
 
 import pytest
 
@@ -254,6 +257,33 @@ def test_statistics_cache_rejects_untrusted_persistent_key(tmp_path: Path) -> No
     cache.put_legacy_source("../escape", b"payload")
 
     assert not tmp_path.exists() or list(tmp_path.iterdir()) == []
+
+
+def test_statistics_cache_clear_does_not_hold_memory_lock_during_persistent_io(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache = StatisticsCache(tmp_path.resolve())
+    point = StatisticPoint(100, 1.0)
+    entered_persistent_io = Event()
+    allow_persistent_io = Event()
+    entries = cache._entries
+
+    def slow_entries() -> list[tuple[Path, os.stat_result]]:
+        entered_persistent_io.set()
+        assert allow_persistent_io.wait(timeout=1)
+        return entries()
+
+    monkeypatch.setattr(cache, "_entries", slow_entries)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        clear = executor.submit(cache.clear)
+        assert entered_persistent_io.wait(timeout=1)
+        concurrent_put = executor.submit(cache.put, "live", (point,))
+        concurrent_put.result(timeout=0.2)
+        allow_persistent_io.set()
+        clear.result(timeout=1)
+
+    assert cache.get("live") == (point,)
 
 
 def test_statistics_cache_purges_expired_and_bounds_memory_points() -> None:

@@ -320,6 +320,7 @@ def test_phase_four_tool_contracts_are_narrow_and_correctly_annotated() -> None:
     }
     assert statistics.parameters["properties"]["start"]["format"] == "date-time"
     assert statistics.parameters["properties"]["end"]["format"] == "date-time"
+    assert statistics.parameters["properties"]["series_id"]["maxLength"] == 128
     assert statistics.parameters["properties"]["limit"]["minimum"] == 1
     assert statistics.parameters["properties"]["limit"]["maximum"] == 500
     history = published["loxone_get_control_history"]
@@ -353,6 +354,30 @@ async def test_statistics_limit_is_enforced_at_runtime() -> None:
                 "end": "2026-01-02T00:00:00Z",
                 "granularity": "raw",
                 "limit": 501,
+            },
+        )
+
+
+@pytest.mark.asyncio
+async def test_statistic_series_id_length_is_enforced_at_runtime() -> None:
+    class Runtime:
+        async def get_statistics(
+            self, *_: object
+        ) -> tuple[object, StatisticSeries, tuple[object, ...]]:
+            raise AssertionError("invalid series ID must be rejected before runtime access")
+
+    server = FastMCP("statistics-series-id")
+    register_history_tools(server, Runtime())  # type: ignore[arg-type]
+
+    with pytest.raises(ToolError, match="at most 128 characters"):
+        await server._tool_manager.call_tool(
+            "loxone_get_statistics",
+            {
+                "control_uuid": "control",
+                "series_id": "x" * 129,
+                "start": "2026-01-01T00:00:00Z",
+                "end": "2026-01-02T00:00:00Z",
+                "granularity": "raw",
             },
         )
 

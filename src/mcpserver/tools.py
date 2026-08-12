@@ -1128,7 +1128,7 @@ def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
             str,
             Field(
                 description="Exact series ID advertised by loxone_describe_control.",
-                json_schema_extra={"maxLength": 128},
+                max_length=128,
             ),
         ],
         start: Annotated[
