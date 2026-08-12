@@ -1,15 +1,16 @@
 # Support-Matrix
 
-- **Stand:** Phase-4-Implementierung, 2026-08-11
+- **Stand:** Phase-4-Implementierung, 2026-08-12
 - **Vorbereiteter Pre-Release:** `0.4.0-alpha.1`
-- **Nächster Meilenstein:** gezielte reale Abnahme der erweiterten
-  Phase-4-Funktionen
+- **Nächster Meilenstein:** gezielte reale Abnahme der noch unbestätigten
+  Phase-4-Aktionen und der Clients-/Sitzungen-Bindungstabellen
 
 Diese Matrix unterscheidet reale Nachweise von implementierten, aber noch nicht
 real bestätigten Kombinationen. Phase 1, Phase 2 und Phase 3 sind abgenommen;
 `0.4.0-alpha.1` bleibt wegen seines Vorabversionsstatus ein Pre-Release.
-Phase 4 ist implementiert und für die lesenden Statistik-/Historienpfade sowie
-die eng begrenzte plugin-eigene Cache-Operation auf Hardware abgenommen; siehe
+Phase 4 ist implementiert und für die lesenden Statistik-/Historienpfade, die
+eng begrenzte plugin-eigene Cache-Operation und ausgewählte, reversible
+Control-Aktionen auf Hardware abgenommen; siehe
 [Phase-4-Abnahmebericht](phase-4-acceptance.md).
 
 ## Plattformen und Geräte
@@ -103,25 +104,27 @@ Der vollständige maskierte Nachweis steht im
 - Codex CLI wurde im finalen Abschlusslauf wegen der lokalen
   Windows-Ausführungsstörung nicht erneut abgenommen; der bekannte Clientfehler
   ist für den Server- und Claude-Nachweis nicht blockierend.
-- Phase 2 implementiert die in ADR 0005 begrenzten Aktionen für `Switch`,
-  `Dimmer`, `LightController`, `LightControllerV2` und `Jalousie`. Befehlspfad,
-  Validierung und Bestätigungslogik sind mit lokalen Testdoubles geprüft. In
-  diesem Lauf wird auf dem Zielsystem ausschließlich gelesen; die erweiterten
-  Schreibaktionen sind daher noch nicht als reale Hardwarekompatibilität
-  bestätigt.
+- `Dimmer` (`set_level`, `off`), `LightControllerV2` (`set_mood`) und
+  `TimedSwitch` (`on`, `off`) sind an ausdrücklich freigegebenen, harmlosen
+  Fixtures real bestätigt und jeweils in den Ausgangszustand zurückgeführt.
+- `Jalousie` (`stop`), `LightsceneRGB` (`on`, `off`), `Radio` (`reset`) und
+  `Pushbutton` (`pulse`) wurden real akzeptiert, ohne dass die jeweils sichtbare
+  Rückmeldung eine Wirkung bestätigen konnte. Alle übrigen Aktionen bleiben
+  entsprechend der User-Doku unverified.
 - Die klassische Binärstatistik (`statistic.outputs`, Rohabruf), eine
   `StatisticV2`-Serie und die Control-Historie sind an sichtbaren Controls real
   lesend bestätigt. Die lokal freigegebene, ausschließlich plugin-eigene
-  Cache-Leerung ist ebenfalls bestätigt. Control-Hinweise sowie `TimedSwitch`, `Radio`,
-  `LightsceneRGB`, `ColorPicker`, `ColorPickerV2` und `Pushbutton` sind
-  automatisiert geprüft, aber noch nicht real bestätigt. Für Hinweise wurde in
-  dieser Installation noch kein Control mit dem Verfügbarkeitsmerkmal gefunden.
-  Legacy-XML und
+  Cache-Leerung ist ebenfalls bestätigt. `ColorPickerV2` ist auf derselben
+  Fixture lesend bestätigt und bot `set_color_hsv`; mangels eigener
+  Raum-/Kategoriezuordnung wurde sein Write-Pfad nicht getestet. `ColorPicker`
+  (V1), nicht ausgeführte Aktionen und Control-Hinweise bleiben unverified. Für
+  Hinweise wurde in dieser Installation noch kein Control mit dem
+  Verfügbarkeitsmerkmal gefunden. Legacy-XML und
   FTP-Statistik sind nicht aktiv.
-- Die aktuelle Quelle benötigt vor einem Merge noch das Full-Gate mit Python 3.13.
-  Der lokale Python-Launcher hatte beim Abschluss keine installierte Runtime; die
-  verbleibende Browser-Abnahme der Clients-/Sitzungs-Bindungstabellen erfordert
-  eine authentifizierte Admin-Sitzung und die dokumentierte Viewport-Matrix.
+- Die lokale Python-3.13-Full-Prüfung mit 466 Tests ist bestanden. Das finale
+  PR-CI-Gate bleibt maßgeblich; die verbleibende Browser-Abnahme der
+  Clients-/Sitzungs-Bindungstabellen erfordert eine authentifizierte Admin-Sitzung
+  und die dokumentierte Viewport-Matrix.
 - Der generische Lesepfad wurde über den verbundenen MCP auf 351 sichtbaren
   Controls in vier Seiten geprüft; alle in der User-Doku als installationsweit
   lesbar markierten V2-/Bestandstypen waren vorhanden. Die V1-Varianten fehlten.

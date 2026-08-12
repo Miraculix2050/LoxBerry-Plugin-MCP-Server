@@ -71,6 +71,6 @@ cache bounds and negative paths. On the authorized test installation, a legacy
 statistic, a StatisticV2 series, bounded control history and the separately
 approved plugin-owned cache clear have also been accepted. A notes-capable visible
 control was not present during that run. User documentation and the support matrix
-continue to mark all new writes and V1 compatibility as unverified until an
-explicitly authorized acceptance run restores every changed output to its initial
-state.
+mark V1 compatibility and every action not explicitly accepted on the authorized
+fixture as unverified. The Phase-4 acceptance record distinguishes state-confirmed
+and only command-accepted writes, and records restoration where a state changed.

@@ -260,18 +260,19 @@ room, bulk, learning, rename, expert, or free-form commands.
 | Area | Loxone type | Read | Control | Available operations | Evidence |
 | --- | --- | --- | --- | --- | --- |
 | Lighting | `Switch` | yes | yes | `on`, `off` | hardware confirmed |
-| Lighting | `Dimmer` | yes | yes | `on`, `off`, `set_level` | contract tested; write not hardware-confirmed |
+| Lighting | `Dimmer` | yes | yes | `on`, `off`, `set_level` | hardware confirmed: `set_level`, then `off`; initial state restored |
 | Lighting | `LightController` (V1) | yes | yes | `on`, `off`, `set_mood` | official documentation; not hardware-verified |
-| Lighting | `LightControllerV2` | yes | yes | `off`, `set_mood` with a visible mood ID | contract tested; write not hardware-confirmed |
+| Lighting | `LightControllerV2` | yes | yes | `off`, `set_mood` with a visible mood ID | hardware confirmed: `set_mood`; initial mood restored |
 | Lighting | `ColorPicker` (V1) | yes | yes | by picker type: `on`, `off`, `set_color_hsv`, `set_color_temperature` | official documentation; not hardware-verified |
-| Lighting | `ColorPickerV2` | yes | yes | by picker type: `set_color_hsv`, `set_color_temperature` | contract tested; write not hardware-confirmed |
-| Lighting | `LightsceneRGB` | yes | yes | `on`, `off`, `set_scene` with a visible scene ID | contract tested; write not hardware-confirmed |
-| Lighting | `Pushbutton` | yes | yes | `pulse` | contract tested; write not hardware-confirmed |
-| Lighting | `Radio` | yes | yes | `select_output`; `reset` only with visible `allOff` | contract tested; write not hardware-confirmed |
-| Lighting | `TimedSwitch` | yes | yes | `on`, `off`, `pulse` | contract tested; write not hardware-confirmed |
-| Shading | `Jalousie` | yes | yes | open/close/shade/stop, position/slats; auto only when advertised | contract tested; write not hardware-confirmed |
-| Shading | `CentralJalousie` | yes | no | – | readable in the maintainer installation |
+| Lighting | `ColorPickerV2` | yes | yes | by picker type: `set_color_hsv`, `set_color_temperature` | hardware read confirmed; write not hardware-confirmed because the picker has no direct test assignment |
+| Lighting | `LightsceneRGB` | yes | yes | `on`, `off`, `set_scene` with a visible scene ID | hardware command accepted: `on`, `off`; feedback did not confirm the effect |
+| Lighting | `Pushbutton` | yes | yes | `pulse` | hardware command accepted; feedback did not confirm the effect |
+| Lighting | `Radio` | yes | yes | `select_output`; `reset` only with visible `allOff` | hardware command accepted: `reset`; `select_output` not hardware-confirmed |
+| Lighting | `TimedSwitch` | yes | yes | `on`, `off`, `pulse` | hardware confirmed: `on`, `off`; initial state restored; `pulse` contract tested |
+| Shading | `Jalousie` | yes | yes | open/close/shade/stop, position/slats; auto only when advertised | hardware command accepted: `stop`; feedback did not confirm the effect |
+| Shading | `CentralJalousie` | yes | no | – | hardware read confirmed |
 | Climate/ventilation | `IRoomControllerV2`, `IRCV2Daytimer`, `Ventilation`, `Daytimer` | yes | no | – | readable in the maintainer installation |
+| Climate/ventilation | `ClimateControllerUS` | yes | no | – | hardware read confirmed |
 | Climate/ventilation | corresponding visible V1 types | yes | no | – | generic read path; not hardware-verified |
 | Sensors/status | `InfoOnlyAnalog`, `InfoOnlyDigital`, `InfoOnlyText`, `TextState`, `StatusMonitor`, `WindowMonitor`, `SmokeAlarm`, `Tracker` | yes | no | – | readable in the maintainer installation |
 | Energy/other | `Meter`, `EFM`, `PvProductionForecast`, `Slider`, `Webpage` | yes | no | – | readable in the maintainer installation |

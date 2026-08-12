@@ -1,7 +1,7 @@
 # Phase 4 acceptance record
 
-- **Status:** implementation complete; final source-revision Full gate pending
-- **Hardware status:** legacy and StatisticV2 statistics, control history and the plugin-owned cache clear are accepted; control notes and all Loxone writes remain pending
+- **Status:** implementation complete; final PR CI gate pending
+- **Hardware status:** read paths, the plugin-owned cache clear and selected authorized Loxone control actions are accepted; control notes and untested actions remain pending
 - **Date:** 2026-08-12
 
 Phase 4 adds StatisticV2 reads, bounded control history, six additional control
@@ -9,17 +9,11 @@ contracts and the plugin-owned statistic-cache clear action. Automated tests
 cover schemas, parsing, bounds, authorization, local approval, migration and
 negative command paths.
 
-The initial local implementation gate completed formatting, linting, type checking
-and 413 tests. Two independently assembled package ZIPs from the verified arm64
-wheel cache were byte-identical and passed the source, runtime-hash and manifest
-checks. At that earlier gate the workstation provided Python 3.12 only, so the repository's wrapper
-correctly reports its mandatory Python 3.13 Full profile as incomplete; CI on
-Python 3.13 remains the merge gate.
-
-On 2026-08-12 the workstation Python launcher was present but no Python runtime
-was installed. Therefore neither the Changed nor the Full profile can be repeated
-locally for the current source revision; the final Python-3.13 CI Full gate remains
-required before merge. `git diff --check` passed for the current revision.
+Two independently assembled package ZIPs from the verified arm64 wheel cache
+were byte-identical and passed the source, runtime-hash and manifest checks.
+The current local Full profile completed with Python 3.13: formatting, linting,
+strict type checking and 466 tests passed. The final PR CI gate remains
+authoritative.
 
 The byte-identical local test package with SHA-256
 `18ce1053e3419ed9b61d76298c84bdd067e844cbd4e321d9d0606582d3e0d76a` was
@@ -31,12 +25,6 @@ sign-in and that the page explains permissions are selected after Loxone login.
 Automated OAuth tests confirm that the consent page offers the client-requested
 optional scopes and issues only the selected canonical subset. No OAuth login or
 tool mutation was performed during this UI check.
-
-No physical write has been authorized in this implementation run. Accordingly, new control types and V1 variants remain
-`experimental`/unverified in the support matrix. Hardware acceptance must name
-the exact harmless fixtures, record their initial state, execute each command
-once, observe the result, restore the initial state, and keep secrets, UUIDs and
-private addresses out of this record.
 
 ## Read-only installation inventory
 
@@ -81,7 +69,30 @@ was accepted by the user. No authenticated Admin page was open for a browser
 acceptance of the remaining Clients and sessions binding-table changes; that UI
 check remains pending at the prescribed viewports.
 
-All Loxone control writes remain deliberately untested and are excluded from this
-acceptance run.
+## Authorized control-write acceptance
+
+On 2026-08-12, the user authorized tests only for the controls simultaneously
+assigned to the dedicated harmless MCP test room and category. All 27 visible
+test controls were described and all 132 advertised states were read. The
+following actions were sent once through the deployed MCP service:
+
+- `Dimmer`: `set_level` and `off` were accepted and confirmed; the initial off
+  state was restored.
+- `LightControllerV2`: a visible `set_mood` action was accepted and confirmed;
+  the initial mood was restored.
+- `TimedSwitch`: `on` and `off` were accepted and confirmed; the initial state
+  was restored.
+- `Jalousie` `stop`, `LightsceneRGB` `on` and `off`, `Radio` `reset`, and
+  `Pushbutton` `pulse` were accepted by the Miniserver. Their available feedback
+  did not confirm a resulting state, so this record does not claim physical
+  effect confirmation.
+
+`CentralJalousie`, `ClimateControllerUS`, `Ventilation`, `IRoomControllerV2`,
+the visible sliders/status controls and the `ColorPickerV2` were read on the
+same fixture. The picker advertised `set_color_hsv`, but it has no direct room
+or category assignment; its write path was intentionally not exercised under
+the narrow authorization boundary. V1 variants and every other untested action
+remain unverified. No UUID, control name, state value, address or credential is
+recorded here.
 
 Legacy XML/FTP compatibility remains out of scope and disabled.
