@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -23,6 +24,7 @@ SUPPORTED_CONTROL_TYPES = frozenset(
         "ColorPicker",
         "ColorPickerV2",
         "Pushbutton",
+        "UpDownAnalog",
     }
 )
 _MOOD_ID = re.compile(r"(?:0|[1-9][0-9]{0,9})\Z")
@@ -108,6 +110,14 @@ def allowed_actions(control: Control) -> list[str]:
             return actions
         case "Pushbutton":
             return ["pulse"]
+        case "UpDownAnalog":
+            return (
+                ["set_value"]
+                if control.minimum is not None
+                and control.maximum is not None
+                and control.step is not None
+                else []
+            )
         case _:
             return []
 
@@ -139,6 +149,7 @@ def prepare_control_command(
     saturation: float | None = None,
     brightness: float | None = None,
     kelvin: int | None = None,
+    value: float | None = None,
 ) -> PreparedControlCommand:
     """Validate one exact action/parameter combination and build its Loxone command."""
     provided = {
@@ -152,6 +163,7 @@ def prepare_control_command(
         "saturation": saturation,
         "brightness": brightness,
         "kelvin": kelvin,
+        "value": value,
     }
 
     def require_only(*names: str) -> None:
@@ -209,6 +221,23 @@ def prepare_control_command(
     if control.control_type == "Pushbutton":
         require_only()
         return PreparedControlCommand("pulse")
+
+    if control.control_type == "UpDownAnalog":
+        require_only("value")
+        if (
+            value is None
+            or isinstance(value, bool)
+            or control.minimum is None
+            or control.maximum is None
+            or control.step is None
+            or not control.minimum <= value <= control.maximum
+        ):
+            raise ValueError("value is outside the visible supported range")
+        target = float(value)
+        steps = (target - control.minimum) / control.step
+        if not math.isclose(steps, round(steps), rel_tol=0, abs_tol=1e-9):
+            raise ValueError("value is not aligned to the visible step")
+        return PreparedControlCommand(_number(target), (("value", target),))
 
     if control.control_type == "Radio":
         if action == "reset":

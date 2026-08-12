@@ -47,6 +47,7 @@ def _control(
         ),
         ("TimedSwitch", "pulse", {}, "pulse"),
         ("Pushbutton", "pulse", {}, "pulse"),
+        ("UpDownAnalog", "set_value", {"value": 2}, "2"),
         (
             "Radio",
             "select_output",
@@ -85,6 +86,8 @@ def test_official_commands_are_mapped_without_raw_command_input(
         options["scene_ids"] = ("3",)
     elif control_type == "ColorPickerV2":
         options["picker_type"] = "Rgb/Lumitech"
+    elif control_type == "UpDownAnalog":
+        options.update({"minimum": 0.0, "maximum": 3.0, "step": 1.0})
     prepared = prepare_control_command(_control(control_type, **options), action, **kwargs)  # type: ignore[arg-type]
 
     assert prepared.command == command
@@ -136,6 +139,16 @@ def test_blind_animation_advertises_slat_actions() -> None:
         (_control("Radio", radio_output_ids=("2",)), "select_output", {"output_id": "3"}),
         (_control("Radio"), "reset", {}),
         (_control("Pushbutton"), "off", {}),
+        (
+            _control("UpDownAnalog", minimum=0.0, maximum=3.0, step=1.0),
+            "set_value",
+            {"value": 4},
+        ),
+        (
+            _control("UpDownAnalog", minimum=0.0, maximum=3.0, step=1.0),
+            "set_value",
+            {"value": 2.5},
+        ),
         (_control("LightsceneRGB", scene_ids=("1",)), "set_scene", {"scene_id": "2"}),
         (
             _control("ColorPickerV2", picker_type="Rgb"),
