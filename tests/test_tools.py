@@ -3,8 +3,8 @@ from __future__ import annotations
 import logging
 
 import pytest
-from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.exceptions import ToolError
 
 import mcpserver.tools as tools_module
 from mcpserver.auth.provider import (
