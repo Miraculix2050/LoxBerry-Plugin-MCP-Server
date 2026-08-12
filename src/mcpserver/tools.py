@@ -167,7 +167,7 @@ class CapabilitiesData(BaseModel):
 
 class ControlPresentationData(BaseModel):
     rating: int | None = Field(
-        default=None, description="Visible Loxone rating from 0 through 5, when advertised."
+        default=None, description="Visible non-negative Loxone rating, when advertised."
     )
     secured: bool = Field(
         description="Whether Loxone marks the control as protected by a visualization password."
@@ -175,6 +175,9 @@ class ControlPresentationData(BaseModel):
     read_only: bool = Field(description="Whether Loxone marks the visible control as read-only.")
     has_notes: bool = Field(
         description="Whether bounded user-authored control notes are available."
+    )
+    is_favorite: bool = Field(
+        description="Whether Loxone marks this visible control as a favorite."
     )
 
 
@@ -1085,7 +1088,8 @@ def register_read_tools(
                         "maximum": control.maximum,
                         "step": control.step,
                     }
-                    if control.minimum is not None
+                    if control.control_type in {"UpDownAnalog", "Slider", "LeftRightAnalog"}
+                    and control.minimum is not None
                     and control.maximum is not None
                     and control.step is not None
                     else None
@@ -1121,6 +1125,7 @@ def register_read_tools(
                 "secured": control.secured,
                 "read_only": control.read_only,
                 "has_notes": control.has_notes,
+                "is_favorite": control.is_favorite,
             }
             parent = _parent_control(snapshot.structure.controls, control.uuid)
             controls = _controls_for_diagnosis(snapshot.structure, include_hidden=include_hidden)
@@ -1699,7 +1704,8 @@ def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> Non
         description=(
             "Operate one visible and operable supported control: Switch, Dimmer, "
             "LightController V1/V2, Jalousie, TimedSwitch, Radio, LightsceneRGB, "
-            "ColorPicker V1/V2, Pushbutton, or UpDownAnalog. Use an explicit documented action. "
+            "ColorPicker V1/V2, Pushbutton, UpDownAnalog, Slider, LeftRightAnalog, "
+            "CentralJalousie, or a digital Daytimer. Use an explicit documented action. "
             "Requires loxone:control. Never retries an uncertain command."
         ),
         annotations=annotations,
@@ -1732,6 +1738,8 @@ def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> Non
                 "set_color_hsv",
                 "set_color_temperature",
                 "set_value",
+                "start_override",
+                "stop_override",
             ],
             Field(description="Explicit action advertised by loxone_describe_control."),
         ],
@@ -1825,6 +1833,16 @@ def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> Non
                 ),
             ),
         ] = None,
+        duration_seconds: Annotated[
+            int | None,
+            Field(
+                description=(
+                    "Digital Daytimer override duration from 1 to 86400 seconds; required "
+                    "only for start_override."
+                ),
+                json_schema_extra={"minimum": 1, "maximum": 86400},
+            ),
+        ] = None,
     ) -> ControlOperationEnvelope:
         access: StoredAccessToken | None = None
         try:
@@ -1848,6 +1866,7 @@ def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> Non
                 brightness=brightness,
                 kelvin=kelvin,
                 value=value,
+                duration_seconds=duration_seconds,
             )
             warnings = (
                 []

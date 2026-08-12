@@ -242,6 +242,29 @@ def test_structure_extracts_only_bounded_phase_four_capabilities() -> None:
     assert (up_down.minimum, up_down.maximum, up_down.step) == (0.0, 3.0, 1.0)
 
 
+def test_structure_preserves_documented_favorite_and_high_rating() -> None:
+    raw = {
+        "lastModified": "now",
+        "msInfo": {"serialNr": "000000000000"},
+        "rooms": {},
+        "cats": {},
+        "controls": {
+            "control": {
+                "name": "Favorite",
+                "type": "Switch",
+                "defaultRating": 9,
+                "isFavorite": True,
+                "states": {},
+            }
+        },
+    }
+
+    control = normalize_structure(raw, username="reader").controls[0]
+
+    assert control.rating == 9
+    assert control.is_favorite is True
+
+
 def test_structure_exposes_documented_legacy_statistic_outputs() -> None:
     raw = {
         "lastModified": "now",

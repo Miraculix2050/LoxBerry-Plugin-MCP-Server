@@ -48,6 +48,18 @@ def _control(
         ("TimedSwitch", "pulse", {}, "pulse"),
         ("Pushbutton", "pulse", {}, "pulse"),
         ("UpDownAnalog", "set_value", {"value": 2}, "2"),
+        ("Slider", "set_value", {"value": 2}, "2"),
+        ("LeftRightAnalog", "set_value", {"value": 2}, "2"),
+        ("CentralJalousie", "open", {}, "FullUp"),
+        ("CentralJalousie", "disable_auto", {}, "NoAuto"),
+        ("Daytimer", "pulse", {}, "pulse"),
+        (
+            "Daytimer",
+            "start_override",
+            {"value": 1, "duration_seconds": 300},
+            "startOverride/1/300",
+        ),
+        ("Daytimer", "stop_override", {}, "stopOverride"),
         (
             "Radio",
             "select_output",
@@ -86,8 +98,10 @@ def test_official_commands_are_mapped_without_raw_command_input(
         options["scene_ids"] = ("3",)
     elif control_type == "ColorPickerV2":
         options["picker_type"] = "Rgb/Lumitech"
-    elif control_type == "UpDownAnalog":
+    elif control_type in {"UpDownAnalog", "Slider", "LeftRightAnalog"}:
         options.update({"minimum": 0.0, "maximum": 3.0, "step": 1.0})
+    elif control_type == "Daytimer":
+        options["is_analog"] = False
     prepared = prepare_control_command(_control(control_type, **options), action, **kwargs)  # type: ignore[arg-type]
 
     assert prepared.command == command
@@ -97,6 +111,15 @@ def test_automatic_actions_are_advertised_only_for_automatic_jalousie() -> None:
     assert "enable_auto" not in allowed_actions(_control("Jalousie"))
     assert "enable_auto" in allowed_actions(_control("Jalousie", automatic=True))
     assert allowed_actions(_control("Jalousie", automatic=True, read_only=True)) == []
+
+
+def test_daytimer_actions_are_only_advertised_for_digital_controls() -> None:
+    assert allowed_actions(_control("Daytimer", is_analog=False)) == [
+        "pulse",
+        "start_override",
+        "stop_override",
+    ]
+    assert allowed_actions(_control("Daytimer", is_analog=True)) == []
 
 
 @pytest.mark.parametrize("animation", (None, 1, 2, 3, 4, 5))
@@ -139,6 +162,18 @@ def test_blind_animation_advertises_slat_actions() -> None:
         (_control("Radio", radio_output_ids=("2",)), "select_output", {"output_id": "3"}),
         (_control("Radio"), "reset", {}),
         (_control("Pushbutton"), "off", {}),
+        (_control("CentralJalousie"), "set_position", {"position": 20}),
+        (
+            _control("Daytimer", is_analog=False),
+            "start_override",
+            {"value": 2, "duration_seconds": 1},
+        ),
+        (
+            _control("Daytimer", is_analog=False),
+            "start_override",
+            {"value": 1, "duration_seconds": 0},
+        ),
+        (_control("Daytimer", is_analog=True), "pulse", {}),
         (
             _control("UpDownAnalog", minimum=0.0, maximum=3.0, step=1.0),
             "set_value",

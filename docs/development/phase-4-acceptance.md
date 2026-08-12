@@ -125,3 +125,14 @@ This confirms the fail-closed capability boundary on the target; no additional
 Jalousie command was dispatched for this check.
 
 Legacy XML/FTP compatibility remains out of scope and disabled.
+
+## Alpha 3 bounded-control acceptance
+
+On 2026-08-13, the focused plugin-owned deployment passed its retained-backup
+and health checks on the authorized LoxBerry test target. A `Slider` in the
+dedicated MCP test room and category accepted `set_value`, confirmed the new
+state, and then confirmed restoration of its initial value. A
+`CentralJalousie.stop` command in the same intersection was accepted. Its
+documented structure has no state suitable for confirmation, so this is only
+command-accepted evidence. No digital Daytimer exists in the authorized test
+intersection; Daytimer override actions remain hardware-unverified.

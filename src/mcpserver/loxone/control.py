@@ -25,6 +25,10 @@ SUPPORTED_CONTROL_TYPES = frozenset(
         "ColorPickerV2",
         "Pushbutton",
         "UpDownAnalog",
+        "Slider",
+        "LeftRightAnalog",
+        "CentralJalousie",
+        "Daytimer",
     }
 )
 _MOOD_ID = re.compile(r"(?:0|[1-9][0-9]{0,9})\Z")
@@ -85,6 +89,12 @@ def allowed_actions(control: Control) -> list[str]:
             if control.is_automatic:
                 actions.extend(["enable_auto", "disable_auto"])
             return actions
+        case "CentralJalousie":
+            return ["open", "close", "shade", "stop", "enable_auto", "disable_auto"]
+        case "Daytimer":
+            return (
+                ["pulse", "start_override", "stop_override"] if control.is_analog is False else []
+            )
         case "TimedSwitch":
             return ["on", "off", "pulse"]
         case "Radio":
@@ -110,7 +120,7 @@ def allowed_actions(control: Control) -> list[str]:
             return actions
         case "Pushbutton":
             return ["pulse"]
-        case "UpDownAnalog":
+        case "UpDownAnalog" | "Slider" | "LeftRightAnalog":
             return (
                 ["set_value"]
                 if control.minimum is not None
@@ -150,6 +160,7 @@ def prepare_control_command(
     brightness: float | None = None,
     kelvin: int | None = None,
     value: float | None = None,
+    duration_seconds: int | None = None,
 ) -> PreparedControlCommand:
     """Validate one exact action/parameter combination and build its Loxone command."""
     provided = {
@@ -164,6 +175,7 @@ def prepare_control_command(
         "brightness": brightness,
         "kelvin": kelvin,
         "value": value,
+        "duration_seconds": duration_seconds,
     }
 
     def require_only(*names: str) -> None:
@@ -222,7 +234,7 @@ def prepare_control_command(
         require_only()
         return PreparedControlCommand("pulse")
 
-    if control.control_type == "UpDownAnalog":
+    if control.control_type in {"UpDownAnalog", "Slider", "LeftRightAnalog"}:
         require_only("value")
         if (
             value is None
@@ -238,6 +250,36 @@ def prepare_control_command(
         if not math.isclose(steps, round(steps), rel_tol=0, abs_tol=1e-9):
             raise ValueError("value is not aligned to the visible step")
         return PreparedControlCommand(_number(target), (("value", target),))
+
+    if control.control_type == "Daytimer":
+        if action == "pulse":
+            require_only()
+            return PreparedControlCommand("pulse")
+        if action == "stop_override":
+            require_only()
+            return PreparedControlCommand("stopOverride", (("override", 0.0),))
+        require_only("value", "duration_seconds")
+        if value not in {0, 1} or duration_seconds is None or not 1 <= duration_seconds <= 86_400:
+            raise ValueError(
+                "digital daytimer override requires value 0 or 1 and duration_seconds "
+                "from 1 to 86400"
+            )
+        return PreparedControlCommand(
+            f"startOverride/{_number(float(value))}/{duration_seconds}",
+            (("override", "__positive__"),),
+        )
+
+    if control.control_type == "CentralJalousie":
+        require_only()
+        commands = {
+            "open": "FullUp",
+            "close": "FullDown",
+            "shade": "shade",
+            "stop": "stop",
+            "enable_auto": "auto",
+            "disable_auto": "NoAuto",
+        }
+        return PreparedControlCommand(commands[action])
 
     if control.control_type == "Radio":
         if action == "reset":

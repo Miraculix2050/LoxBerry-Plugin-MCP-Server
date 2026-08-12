@@ -3,8 +3,11 @@
 All notable user-visible changes are recorded here. GitHub release notes are
 extracted from the matching version heading.
 
-## Unreleased
+## 0.4.0-alpha.3 - 2026-08-13
 
+- Preserve all bounded non-negative Loxone ratings, expose the independent
+  favorite marker, and extend the bounded operation allowlist to virtual analog
+  inputs, CentralJalousie, and digital Daytimer overrides.
 - Discover explicitly user-linked controls as `visibility: "linked"`, describe
   both directions of the link, and support the bounded `UpDownAnalog.set_value`
   action when the linked control is currently visible and authorized.

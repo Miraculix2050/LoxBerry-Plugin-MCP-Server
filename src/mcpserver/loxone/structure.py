@@ -120,7 +120,9 @@ def _radio_outputs(value: object) -> tuple[tuple[str, str], ...]:
 
 
 def _rating(value: object) -> int | None:
-    if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 5:
+    # LoxAPP3 ratings are not limited to the five-star presentation convention.
+    # Keep a generous finite bound so a malformed structure cannot create unbounded data.
+    if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 100:
         return value
     return None
 
@@ -362,6 +364,9 @@ def _controls(
             min_kelvin, max_kelvin = 2700, 6500
         radio_outputs = _radio_outputs(details.get("outputs"))
         minimum, maximum, step = _up_down_range(details)
+        analog = details.get("analog")
+        if not isinstance(analog, bool):
+            analog = None
         status_monitor_inputs, status_monitor_statuses = (
             _status_monitor_details(details) if item.get("type") == "StatusMonitor" else ((), ())
         )
@@ -377,6 +382,7 @@ def _controls(
                 restrictions=restrictions,
                 read_only=bool(restrictions & _READ_ONLY),
                 rating=_rating(item.get("defaultRating")),
+                is_favorite=item.get("isFavorite", False) is True,
                 secured=item.get("isSecured", False) is True,
                 has_notes=_capability_flag(
                     item.get("hasControlNotes", False), field="hasControlNotes"
@@ -395,6 +401,7 @@ def _controls(
                 minimum=minimum,
                 maximum=maximum,
                 step=step,
+                is_analog=analog,
                 statistic_series=_statistic_series(item),
                 status_monitor_inputs=status_monitor_inputs,
                 status_monitor_statuses=status_monitor_statuses,

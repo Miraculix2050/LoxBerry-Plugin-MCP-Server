@@ -441,6 +441,8 @@ def test_control_tool_contract_is_explicitly_mutating_and_non_idempotent() -> No
         "set_color_hsv",
         "set_color_temperature",
         "set_value",
+        "start_override",
+        "stop_override",
     }
 
 
@@ -505,6 +507,7 @@ def test_tool_input_schemas_explain_every_argument() -> None:
             "brightness",
             "kelvin",
             "value",
+            "duration_seconds",
         },
     }
     for tool_name, field_names in expected_fields.items():
