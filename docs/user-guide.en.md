@@ -264,12 +264,12 @@ room, bulk, learning, rename, expert, or free-form commands.
 | Lighting | `LightController` (V1) | yes | yes | `on`, `off`, `set_mood` | official documentation; not hardware-verified |
 | Lighting | `LightControllerV2` | yes | yes | `off`, `set_mood` with a visible mood ID | hardware confirmed: `set_mood`; initial mood restored |
 | Lighting | `ColorPicker` (V1) | yes | yes | by picker type: `on`, `off`, `set_color_hsv`, `set_color_temperature` | official documentation; not hardware-verified |
-| Lighting | `ColorPickerV2` | yes | yes | by picker type: `set_color_hsv`, `set_color_temperature` | hardware read confirmed; write not hardware-confirmed because the picker has no direct test assignment |
+| Lighting | `ColorPickerV2` | yes | yes | by picker type: `set_color_hsv`, `set_color_temperature` | hardware confirmed: `set_color_hsv` on a subcontrol through its test-assigned parent; initial color restored |
 | Lighting | `LightsceneRGB` | yes | yes | `on`, `off`, `set_scene` with a visible scene ID | hardware command accepted: `on`, `off`; feedback did not confirm the effect |
 | Lighting | `Pushbutton` | yes | yes | `pulse` | hardware command accepted; feedback did not confirm the effect |
 | Lighting | `Radio` | yes | yes | `select_output`; `reset` only with visible `allOff` | hardware command accepted: `reset`; `select_output` not hardware-confirmed |
 | Lighting | `TimedSwitch` | yes | yes | `on`, `off`, `pulse` | hardware confirmed: `on`, `off`; initial state restored; `pulse` contract tested |
-| Shading | `Jalousie` | yes | yes | open/close/shade/stop, position/slats; auto only when advertised | hardware command accepted: `stop`; feedback did not confirm the effect |
+| Shading | `Jalousie` | yes | yes | open/close/shade/stop, position/slats; auto only when advertised | hardware confirmed: `open`, position/slats, and `enable_auto`; `close`, `shade`, and `stop` only accepted. The final position restoration remained unconfirmed |
 | Shading | `CentralJalousie` | yes | no | – | hardware read confirmed |
 | Climate/ventilation | `IRoomControllerV2`, `IRCV2Daytimer`, `Ventilation`, `Daytimer` | yes | no | – | readable in the maintainer installation |
 | Climate/ventilation | `ClimateControllerUS` | yes | no | – | hardware read confirmed |

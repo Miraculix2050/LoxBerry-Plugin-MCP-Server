@@ -284,12 +284,12 @@ Umbenennungs-, Experten- oder freien Kommandos.
 | Beleuchtung | `LightController` (V1) | ja | ja | `on`, `off`, `set_mood` | anhand offizieller Doku, nicht real verifiziert |
 | Beleuchtung | `LightControllerV2` | ja | ja | `off`, `set_mood` nur mit sichtbarer Mood-ID | real bestätigt: `set_mood`; Ausgangsstimmung wiederhergestellt |
 | Beleuchtung | `ColorPicker` (V1) | ja | ja | je Picker-Typ `on`, `off`, `set_color_hsv`, `set_color_temperature` | anhand offizieller Doku, nicht real verifiziert |
-| Beleuchtung | `ColorPickerV2` | ja | ja | je Picker-Typ `set_color_hsv`, `set_color_temperature` | Lesen real bestätigt; Write nicht real bestätigt, weil der Picker keine direkte Testzuordnung besitzt |
+| Beleuchtung | `ColorPickerV2` | ja | ja | je Picker-Typ `set_color_hsv`, `set_color_temperature` | real bestätigt: `set_color_hsv` an einem Subcontrol über seinen beidseitig zugeordneten Test-Parent; Ausgangsfarbe wiederhergestellt |
 | Beleuchtung | `LightsceneRGB` | ja | ja | `on`, `off`, `set_scene` nur mit sichtbarer Szenen-ID | Befehl real akzeptiert: `on`, `off`; Wirkung nicht über Feedback bestätigt |
 | Beleuchtung | `Pushbutton` | ja | ja | `pulse` | Befehl real akzeptiert; Wirkung nicht über Feedback bestätigt |
 | Beleuchtung | `Radio` | ja | ja | `select_output`; `reset` nur bei sichtbarem `allOff` | Befehl real akzeptiert: `reset`; `select_output` nicht real bestätigt |
 | Beleuchtung | `TimedSwitch` | ja | ja | `on`, `off`, `pulse` | real bestätigt: `on`, `off`; Ausgangszustand wiederhergestellt; `pulse` Vertrag getestet |
-| Beschattung | `Jalousie` | ja | ja | `open`, `close`, `shade`, `stop`, Position/Lamellen; Auto nur falls angeboten | Befehl real akzeptiert: `stop`; Wirkung nicht über Feedback bestätigt |
+| Beschattung | `Jalousie` | ja | ja | `open`, `close`, `shade`, `stop`, Position/Lamellen; Auto nur falls angeboten | real bestätigt: `open`, Position/Lamellen und `enable_auto`; `close`, `shade`, `stop` nur akzeptiert. Die abschließende Positionsrückführung blieb unbestätigt |
 | Beschattung | `CentralJalousie` | ja | nein | – | Lesen real bestätigt |
 | Klima/Lüftung | `IRoomControllerV2`, `IRCV2Daytimer`, `Ventilation`, `Daytimer` | ja | nein | – | in eigener Installation lesend prüfbar |
 | Klima/Lüftung | `ClimateControllerUS` | ja | nein | – | Lesen real bestätigt |

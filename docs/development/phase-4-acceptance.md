@@ -91,10 +91,29 @@ following actions were sent once through the deployed MCP service:
 
 `CentralJalousie`, `ClimateControllerUS`, `Ventilation`, `IRoomControllerV2`,
 the visible sliders/status controls and the `ColorPickerV2` were read on the
-same fixture. The picker advertised `set_color_hsv`, but it has no direct room
-or category assignment; its write path was intentionally not exercised under
-the narrow authorization boundary. V1 variants and every other untested action
-remain unverified. No UUID, control name, state value, address or credential is
-recorded here.
+same fixture. V1 variants and every other untested action remain unverified. No
+UUID, control name, state value, address or credential is recorded here.
+
+### Supplemental controlled-fixture evidence
+
+On 2026-08-12, a visible `ColorPickerV2` subcontrol with no direct room or
+category assignment was operated through its parent `LightControllerV2`, which
+was assigned to both dedicated MCP test groups. `set_color_hsv` was accepted
+and confirmed through the visible color state; the original color state was
+then accepted and confirmed as restored. This is fixture-specific acceptance
+evidence and does not make unassigned controls generally eligible for writes.
+
+The dedicated `Jalousie` fixture advertised all documented bounded actions.
+`open`, `set_position`, `set_slat_position`, `set_position_and_slats`, and
+`enable_auto` were accepted and confirmed through their advertised feedback.
+`close`, `shade`, `stop`, and the first `disable_auto` were accepted but their
+immediate feedback did not confirm an effect. A final explicit `disable_auto`
+was accepted and confirmed, restoring the initial automatic-mode state.
+
+The final position-and-slats restoration command was accepted twice but not
+confirmed; a read-only check still showed the earlier test target. No further
+write was sent automatically. Therefore this record does not claim that the
+initial Jalousie position was restored or that the unconfirmed commands had a
+physical effect.
 
 Legacy XML/FTP compatibility remains out of scope and disabled.
