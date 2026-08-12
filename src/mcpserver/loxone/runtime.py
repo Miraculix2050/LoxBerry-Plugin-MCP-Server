@@ -264,6 +264,7 @@ class LoxoneRuntime:
         brightness: float | None = None,
         kelvin: int | None = None,
         value: float | None = None,
+        duration_seconds: int | None = None,
     ) -> ControlOperation:
         """Execute one bounded documented operation for the immutable OAuth identity."""
         if READ_SCOPE not in access.scopes or CONTROL_SCOPE not in access.scopes:
@@ -344,6 +345,7 @@ class LoxoneRuntime:
                         brightness=brightness,
                         kelvin=kelvin,
                         value=value,
+                        duration_seconds=duration_seconds,
                     )
                 except ValueError as exc:
                     raise ControlOperationError("invalid_input", str(exc)) from exc

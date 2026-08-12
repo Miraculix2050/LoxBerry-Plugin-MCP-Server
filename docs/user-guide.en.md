@@ -1,4 +1,4 @@
-# LoxBerry MCP Server 0.4.0-alpha.2
+# LoxBerry MCP Server 0.4.0-alpha.3
 
 ## Requirements
 
@@ -248,7 +248,7 @@ source files. Legacy XML and FTP are not used.
 names its visible parent under `relationships.parent`, and a parent lists visible
 direct subcontrols under `relationships.subcontrols`. Each reference contains its
 UUID, name, and type and can then be described directly. The tool also returns
-Loxone presentation metadata: rating, password protection, read-only status, and
+Loxone presentation metadata: rating, favorite marker, password protection, read-only status, and
 whether control notes are available. Call `loxone_get_control_notes` only when
 `presentation.has_notes` is `true`.
 Explicit user links from Loxone's `links` field are reported separately under
@@ -256,7 +256,7 @@ Explicit user links from Loxone's `links` field are reported separately under
 `relationships.linked_by`. Such controls appear in search results with
 `visibility: "linked"`, can be found by their own name, and use states, notes,
 history, statistics, and the existing action allowlist like other visible controls.
-For `UpDownAnalog`, the min/max bounds and step for `set_value` are available
+For `UpDownAnalog`, `Slider`, and `LeftRightAnalog`, the min/max bounds and step for `set_value` are available
 under `capabilities.analog_range`.
 For `StatusMonitor`, `capabilities.status_monitor` provides stable input
 positions with readable names and the configured status IDs. Map the
@@ -291,10 +291,11 @@ room, bulk, learning, rename, expert, or free-form commands.
 | Lighting | `Pushbutton` | yes | yes | `pulse` | hardware command accepted; feedback did not confirm the effect |
 | Lighting | `Radio` | yes | yes | `select_output`; `reset` only with visible `allOff` | hardware command accepted: `reset`; `select_output` not hardware-confirmed |
 | Lighting | `TimedSwitch` | yes | yes | `on`, `off`, `pulse` | hardware confirmed: `on`, `off`; initial state restored; `pulse` contract tested |
-| General | `UpDownAnalog` | yes | yes | `set_value` within the visible min/max bounds | Implemented and automatically tested; not hardware-verified yet |
+| General | `UpDownAnalog`, `Slider`, `LeftRightAnalog` | yes | yes | `set_value` within the visible min/max bounds | `Slider.set_value` hardware confirmed and restored; remaining types automatically tested |
 | Shading | `Jalousie` | yes | yes | open/close/shade/stop, position; slats only with `details.animation = 0`; auto only when advertised | hardware confirmed in shutter mode: `open`, `set_position`, `enable_auto`, and the final `disable_auto`; `close`, `shade`, and `stop` only accepted. Slat actions do not apply there |
-| Shading | `CentralJalousie` | yes | no | – | hardware read confirmed |
-| Climate/ventilation | `IRoomControllerV2`, `IRCV2Daytimer`, `Ventilation`, `Daytimer` | yes | no | – | readable in the maintainer installation |
+| Shading | `CentralJalousie` | yes | yes | `open`, `close`, `shade`, `stop`, `enable_auto`, `disable_auto` | `stop` hardware accepted; the structure provides no confirmation state |
+| Climate/ventilation | digital `Daytimer` | yes | yes | `pulse`, time-bounded `start_override`, `stop_override`; no calendar or mode-list changes | Implemented and automatically tested; not hardware-verified yet |
+| Climate/ventilation | `IRoomControllerV2`, `IRCV2Daytimer`, `Ventilation` | yes | no | – | readable in the maintainer installation |
 | Climate/ventilation | `ClimateControllerUS` | yes | no | – | hardware read confirmed |
 | Climate/ventilation | corresponding visible V1 types | yes | no | – | generic read path; not hardware-verified |
 | Sensors/status | `InfoOnlyAnalog`, `InfoOnlyDigital`, `InfoOnlyText`, `TextState`, `StatusMonitor`, `WindowMonitor`, `SmokeAlarm`, `Tracker` | yes | no | – | readable in the maintainer installation |

@@ -77,6 +77,7 @@ class Control:
     restrictions: int = 0
     read_only: bool = False
     rating: int | None = None
+    is_favorite: bool = False
     secured: bool = False
     has_notes: bool = False
     is_automatic: bool = False
@@ -92,6 +93,7 @@ class Control:
     minimum: float | None = None
     maximum: float | None = None
     step: float | None = None
+    is_analog: bool | None = None
     statistic_series: tuple[StatisticSeries, ...] = ()
     status_monitor_inputs: tuple[StatusMonitorInput, ...] = ()
     status_monitor_statuses: tuple[StatusMonitorStatus, ...] = ()

@@ -1,4 +1,4 @@
-# LoxBerry MCP Server 0.4.0-alpha.2
+# LoxBerry MCP Server 0.4.0-alpha.3
 
 ## Voraussetzungen
 
@@ -267,14 +267,14 @@ Subcontrol nennt unter `relationships.parent` seinen sichtbaren Parent; ein
 Parent listet sichtbare direkte Subcontrols unter `relationships.subcontrols`.
 Jeder Eintrag enthält UUID, Name und Typ und kann anschließend gezielt beschrieben
 werden. Darüber hinaus liefert das Tool Loxone-Darstellungsmetadaten: Bewertung,
-Passwortschutz, Nur-Lesen-Status und ob Control-Hinweise vorhanden sind.
+Favoriten-Markierung, Passwortschutz, Nur-Lesen-Status und ob Control-Hinweise vorhanden sind.
 Explizite Benutzerverlinkungen aus dem Loxone-Feld `links` stehen getrennt unter
 `relationships.linked_controls`; das Ziel nennt die sichtbaren Verlinker unter
 `relationships.linked_by`. Solche Controls erscheinen in Suchergebnissen mit
 `visibility: "linked"`, sind über ihren eigenen Namen auffindbar und für Zustände,
 Notes, Historie, Statistik und die bestehende Aktions-Allowlist genauso verfügbar
 wie andere sichtbare Controls.
-Bei `UpDownAnalog` stehen die Min-/Max-Grenzen und der Schritt für `set_value`
+Bei `UpDownAnalog`, `Slider` und `LeftRightAnalog` stehen die Min-/Max-Grenzen und der Schritt für `set_value`
 unter `capabilities.analog_range`.
 Bei `StatusMonitor` liefert `capabilities.status_monitor` die stabilen
 Input-Positionen mit lesbaren Namen und die konfigurierten Status-IDs. Der
@@ -314,10 +314,11 @@ Umbenennungs-, Experten- oder freien Kommandos.
 | Beleuchtung | `Pushbutton` | ja | ja | `pulse` | Befehl real akzeptiert; Wirkung nicht über Feedback bestätigt |
 | Beleuchtung | `Radio` | ja | ja | `select_output`; `reset` nur bei sichtbarem `allOff` | Befehl real akzeptiert: `reset`; `select_output` nicht real bestätigt |
 | Beleuchtung | `TimedSwitch` | ja | ja | `on`, `off`, `pulse` | real bestätigt: `on`, `off`; Ausgangszustand wiederhergestellt; `pulse` Vertrag getestet |
-| Allgemein | `UpDownAnalog` | ja | ja | `set_value` innerhalb der sichtbaren Min-/Max-Grenzen | Implementiert und automatisiert getestet; noch nicht hardware-verifiziert |
+| Allgemein | `UpDownAnalog`, `Slider`, `LeftRightAnalog` | ja | ja | `set_value` innerhalb der sichtbaren Min-/Max-Grenzen | `Slider.set_value` real bestätigt und Ausgangswert wiederhergestellt; übrige Typen automatisiert getestet |
 | Beschattung | `Jalousie` | ja | ja | `open`, `close`, `shade`, `stop`, Position; Lamellen nur bei `details.animation = 0`; Auto nur falls angeboten | real bestätigt am Rolladenmodus: `open`, `set_position`, `enable_auto` und abschließendes `disable_auto`; `close`, `shade`, `stop` nur akzeptiert. Lamellenaktionen sind dort nicht anwendbar |
-| Beschattung | `CentralJalousie` | ja | nein | – | Lesen real bestätigt |
-| Klima/Lüftung | `IRoomControllerV2`, `IRCV2Daytimer`, `Ventilation`, `Daytimer` | ja | nein | – | in eigener Installation lesend prüfbar |
+| Beschattung | `CentralJalousie` | ja | ja | `open`, `close`, `shade`, `stop`, `enable_auto`, `disable_auto` | `stop` real akzeptiert; die Struktur liefert keinen Bestätigungs-State |
+| Klima/Lüftung | digitaler `Daytimer` | ja | ja | `pulse`, zeitlich begrenztes `start_override`, `stop_override`; keine Kalender- oder Mode-Listen-Änderung | Implementiert und automatisiert getestet; noch nicht hardware-verifiziert |
+| Klima/Lüftung | `IRoomControllerV2`, `IRCV2Daytimer`, `Ventilation` | ja | nein | – | in eigener Installation lesend prüfbar |
 | Klima/Lüftung | `ClimateControllerUS` | ja | nein | – | Lesen real bestätigt |
 | Klima/Lüftung | entsprechende V1-Typen, sofern vom Miniserver sichtbar | ja | nein | – | generischer Lesepfad, nicht real verifiziert |
 | Sensorik/Status | `InfoOnlyAnalog`, `InfoOnlyDigital`, `InfoOnlyText`, `TextState`, `StatusMonitor`, `WindowMonitor`, `SmokeAlarm`, `Tracker` | ja | nein | – | in eigener Installation lesend prüfbar |
