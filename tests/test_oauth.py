@@ -699,9 +699,9 @@ async def test_locally_approved_operate_scope_still_requires_current_consent(
         return True
 
     monkeypatch.setattr(web, "_kill", kill_token)
-    assert 'name="grant_loxberry_operate" value="true"' in web._consent_page(
-        transaction
-    ).body.decode()
+    assert (
+        'name="grant_loxberry_operate" value="true"' in web._consent_page(transaction).body.decode()
+    )
     app = Starlette(routes=[Route("/authorize", web.authorize, methods=["POST"])])
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(

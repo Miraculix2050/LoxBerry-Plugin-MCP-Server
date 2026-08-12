@@ -163,14 +163,11 @@ def test_healthcheck_uses_loxberry_plugin_protocol() -> None:
     healthcheck = (ROOT / "bin/healthcheck").read_text(encoding="utf-8")
 
     assert 'case "${1:-check}" in' in healthcheck
-    assert 'title)' in healthcheck
+    assert "title)" in healthcheck
     assert "printf '%s\\n' \"$description\"" in healthcheck
     assert "printf '%s\\n%s\\n%s\\n' \"$description\" 3" in healthcheck
     assert "printf '%s\\n%s\\n%s\\n' \"$description\" 5" in healthcheck
-    assert (
-        'check "Plugin configuration" test -r "$plugin_config/mcpserver.json"'
-        in healthcheck
-    )
+    assert 'check "Plugin configuration" test -r "$plugin_config/mcpserver.json"' in healthcheck
     assert "No repair action was taken." in healthcheck
 
 

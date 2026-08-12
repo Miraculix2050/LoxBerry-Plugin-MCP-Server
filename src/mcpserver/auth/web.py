@@ -575,9 +575,7 @@ class Phase0OAuthWeb:
                     grant_loxberry_operate == "true"
                     and not transaction.loxberry_operate_locally_approved
                 )
-                if (
-                    grant_loxberry_operate == "true"
-                ):
+                if grant_loxberry_operate == "true":
                     if HISTORY_SCOPE not in approved_scopes:
                         return _message_page(
                             "Invalid authorization request",
