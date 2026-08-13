@@ -70,6 +70,7 @@ async def test_switch_operation_is_sent_and_confirmed(monkeypatch: pytest.Monkey
         control_enabled=True,
     )
     runtime.cache.begin_connection("family")
+    runtime.cache.apply("family", [StateEvent("state-1", 0.0)], allowed_uuids={"state-1"})
 
     async def snapshot(_access: StoredAccessToken) -> RuntimeSnapshot:
         return RuntimeSnapshot("family", _structure(), True)
@@ -108,7 +109,6 @@ async def test_control_requires_scope_and_supported_type(
         _TokenStore(),  # type: ignore[arg-type]
         control_enabled=True,
     )
-
     with pytest.raises(ControlOperationError, match="loxone:control"):
         await runtime.operate_control(_access(READ_SCOPE), "control-1", "on")
 
@@ -142,6 +142,8 @@ async def test_transport_failure_after_dispatch_has_unknown_outcome(
         _TokenStore(),  # type: ignore[arg-type]
         control_enabled=True,
     )
+    runtime.cache.begin_connection("family")
+    runtime.cache.apply("family", [StateEvent("state-1", 1.0)], allowed_uuids={"state-1"})
 
     async def snapshot(_access: StoredAccessToken) -> RuntimeSnapshot:
         return RuntimeSnapshot("family", _structure(), True)
@@ -220,9 +222,14 @@ async def test_supported_control_operation_is_bounded_and_confirmed(
     if control_type == "LightControllerV2":
         runtime.cache.apply(
             "family",
-            [StateEvent("state-2", '[{"name":"Synthetic Mood","id":314}]')],
+            [
+                StateEvent("state-1", "[]"),
+                StateEvent("state-2", '[{"name":"Synthetic Mood","id":314}]'),
+            ],
             allowed_uuids={"state-1", "state-2"},
         )
+    else:
+        runtime.cache.apply("family", [StateEvent("state-1", 0.0)], allowed_uuids={"state-1"})
 
     async def snapshot(_access: StoredAccessToken) -> RuntimeSnapshot:
         return RuntimeSnapshot("family", structure, True)
@@ -257,6 +264,43 @@ async def test_supported_control_operation_is_bounded_and_confirmed(
     assert result.control_type == control_type
     assert result.confirmed is True
     assert dict(result.observed_values)[state_name] == state_value
+
+
+@pytest.mark.asyncio
+async def test_control_requires_current_confirmation_state_before_dispatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = LoxoneRuntime(
+        MiniserverEndpoint.parse_gen1("http://192.168.1.10"),
+        _TokenStore(),  # type: ignore[arg-type]
+        control_enabled=True,
+    )
+    runtime.cache.begin_connection("family")
+
+    async def snapshot(_access: StoredAccessToken) -> RuntimeSnapshot:
+        return RuntimeSnapshot("family", _structure(), True)
+
+    class Session:
+        async def load_structure(self) -> LoxoneStructure:
+            return _structure()
+
+        async def operate_control(self, _action_uuid: str, _command: str) -> None:
+            pytest.fail("operation must not be dispatched without a current confirmation state")
+
+        async def close(self) -> None:
+            return None
+
+    class Client:
+        async def open_session(self, _token: LoxoneToken) -> Session:
+            return Session()
+
+    monkeypatch.setattr(runtime, "snapshot", snapshot)
+    runtime.client = Client()  # type: ignore[assignment]
+
+    with pytest.raises(ControlOperationError) as captured:
+        await runtime.operate_control(_access(READ_SCOPE, CONTROL_SCOPE), "control-1", "on")
+
+    assert captured.value.code == "temporarily_unavailable"
 
 
 @pytest.mark.asyncio
