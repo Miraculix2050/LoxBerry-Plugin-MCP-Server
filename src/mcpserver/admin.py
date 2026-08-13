@@ -24,7 +24,7 @@ from mcpserver import __version__
 if TYPE_CHECKING:
     from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore
     from mcpserver.auth.store import AtomicJsonAuthStore
-    from mcpserver.config import AtomicConfigStore
+    from mcpserver.config import AtomicConfigStore, PluginConfig
     from mcpserver.loxone.client import LoxoneClient, MiniserverEndpoint
 
 _MAX_REQUEST_BYTES: Final = 32 * 1024
@@ -45,9 +45,9 @@ class AdminError(RuntimeError):
 class _AdminReadSnapshot:
     """Consistent, single-read input for one administrative list response."""
 
-    configuration: Any
+    configuration: PluginConfig | None
     auth_document: dict[str, Any]
-    subject_key: bytes
+    subject_key: bytes | None
     now: float
 
 
@@ -401,12 +401,22 @@ async def _test_connection(payload: object) -> dict[str, Any]:
     }
 
 
-def _admin_read_snapshot() -> _AdminReadSnapshot:
+def _admin_read_snapshot(*, require_configuration: bool = False) -> _AdminReadSnapshot:
     """Load the immutable inputs for one admin list response exactly once."""
 
-    configuration = _config_store().load()
+    try:
+        configuration = _config_store().load()
+    except AdminError:
+        if require_configuration:
+            raise
+        configuration = None
     document = _auth_store().snapshot()
-    subject_key = base64.urlsafe_b64decode(document["subject_key"].encode("ascii"))
+    encoded_subject_key = document.get("subject_key")
+    subject_key = (
+        base64.urlsafe_b64decode(encoded_subject_key.encode("ascii"))
+        if isinstance(encoded_subject_key, str)
+        else None
+    )
     return _AdminReadSnapshot(configuration, document, subject_key, time.time())
 
 
@@ -430,8 +440,12 @@ def _sessions(snapshot: _AdminReadSnapshot | None = None) -> list[dict[str, Any]
     clients = document.get("clients", {})
     if not isinstance(clients, dict):
         clients = {}
-    bindings = set(snapshot.configuration.loxberry_read_bindings)
-    operate_bindings = set(snapshot.configuration.loxberry_operate_bindings)
+    bindings = (
+        set(snapshot.configuration.loxberry_read_bindings) if snapshot.configuration else set()
+    )
+    operate_bindings = (
+        set(snapshot.configuration.loxberry_operate_bindings) if snapshot.configuration else set()
+    )
     result = []
     for family_id, record in document["families"].items():
         expires_at = record.get("expires_at")
@@ -455,12 +469,12 @@ def _sessions(snapshot: _AdminReadSnapshot | None = None) -> list[dict[str, Any]
         )
         read_binding = (
             _loxberry_binding(record, subject_key=snapshot.subject_key)
-            if pending_loxberry_read and bindings
+            if pending_loxberry_read and bindings and snapshot.subject_key is not None
             else None
         )
         operate_binding = (
             _loxberry_operate_binding(record, subject_key=snapshot.subject_key)
-            if pending_loxberry_operate and operate_bindings
+            if pending_loxberry_operate and operate_bindings and snapshot.subject_key is not None
             else None
         )
         client = clients.get(client_id, {})
@@ -536,7 +550,7 @@ def _loxberry_bindings(snapshot: _AdminReadSnapshot | None = None) -> list[dict[
     from mcpserver.auth.provider import LOXBERRY_READ_SCOPE
 
     snapshot = snapshot or _admin_read_snapshot()
-    bindings = snapshot.configuration.loxberry_read_bindings
+    bindings = snapshot.configuration.loxberry_read_bindings if snapshot.configuration else ()
     if not bindings:
         return []
     document = snapshot.auth_document
@@ -551,6 +565,8 @@ def _loxberry_bindings(snapshot: _AdminReadSnapshot | None = None) -> list[dict[
         if not isinstance(expires_at, int | float) or expires_at <= snapshot.now:
             continue
         if LOXBERRY_READ_SCOPE not in str(record.get("scope", "")).split():
+            continue
+        if snapshot.subject_key is None:
             continue
         binding = _loxberry_binding(record, subject_key=snapshot.subject_key)
         if binding not in related:
@@ -584,7 +600,7 @@ def _loxberry_operate_bindings(snapshot: _AdminReadSnapshot | None = None) -> li
     from mcpserver.auth.provider import LOXBERRY_OPERATE_SCOPE
 
     snapshot = snapshot or _admin_read_snapshot()
-    bindings = snapshot.configuration.loxberry_operate_bindings
+    bindings = snapshot.configuration.loxberry_operate_bindings if snapshot.configuration else ()
     if not bindings:
         return []
     document = snapshot.auth_document
@@ -599,6 +615,8 @@ def _loxberry_operate_bindings(snapshot: _AdminReadSnapshot | None = None) -> li
         ):
             continue
         if LOXBERRY_OPERATE_SCOPE not in str(record.get("scope", "")).split():
+            continue
+        if snapshot.subject_key is None:
             continue
         binding = _loxberry_operate_binding(record, subject_key=snapshot.subject_key)
         if binding not in related:
@@ -879,7 +897,9 @@ def dispatch(request: object) -> dict[str, Any]:
     action = request["action"]
     payload = request.get("payload", {})
     if action == "page_state":
-        snapshot = _admin_read_snapshot()
+        snapshot = _admin_read_snapshot(require_configuration=True)
+        if snapshot.configuration is None:
+            raise AdminError("plugin storage is not configured")
         return {
             "configuration": snapshot.configuration.to_document(),
             "version": __version__,

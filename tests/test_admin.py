@@ -360,7 +360,7 @@ def test_page_state_aggregates_initial_admin_ui_data(monkeypatch: pytest.MonkeyP
         b"s" * 32,
         0,
     )
-    monkeypatch.setattr("mcpserver.admin._admin_read_snapshot", lambda: snapshot)
+    monkeypatch.setattr("mcpserver.admin._admin_read_snapshot", lambda **_kwargs: snapshot)
     service = {
         "name": "loxberry-mcpserver.service",
         "installed": True,
@@ -473,8 +473,10 @@ def test_admin_list_responses_use_one_snapshot_per_request(
     assert len(result["sessions"]) == session_count
     if session_count:
         assert result["sessions"][0]["id"] == "family-000"
-    assert all(session["loxberry_read_approved"] for session in result["sessions"])
-    assert all(session["loxberry_operate_approved"] for session in result["sessions"])
+    approved = [session for session in result["sessions"] if session["loxberry_read_approved"]]
+    assert [session["id"] for session in approved] == (["family-000"] if session_count else [])
+    approved = [session for session in result["sessions"] if session["loxberry_operate_approved"]]
+    assert [session["id"] for session in approved] == (["family-000"] if session_count else [])
     assert result["loxberry_bindings"][0]["active"] is (session_count > 0)
     assert result["loxberry_operate_bindings"][0]["active"] is (session_count > 0)
 
