@@ -29,9 +29,17 @@ print <<'HTML';
     errorDescription: parameters.get('error_description'),
   };
   window.history.replaceState(null, '', window.location.pathname);
+  // The direct opener message is the normal completion path. BroadcastChannel is
+  // a same-origin fallback for browsers that detach a popup's opener during the
+  // authentication navigation.
+  try {
+    const channel = new BroadcastChannel('mcp-explorer-oauth');
+    channel.postMessage(payload);
+    window.setTimeout(() => channel.close(), 100);
+  } catch (_error) { /* BroadcastChannel is optional. */ }
   if (window.opener && window.opener !== window) {
     window.opener.postMessage(payload, window.location.origin);
-    window.close();
+    window.setTimeout(() => window.close(), 100);
   } else {
     document.body.textContent = 'The authorization window can be closed. / Das Autorisierungsfenster kann geschlossen werden.';
   }
