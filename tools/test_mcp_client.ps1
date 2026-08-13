@@ -45,6 +45,15 @@ function Resolve-ClaudeConfigPath([string]$RequestedPath) {
     throw 'No active Claude Desktop configuration file was found.'
 }
 
+function Resolve-ProcessCommand([string]$Command) {
+    $resolved = Get-Command -Name $Command -CommandType Application -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($resolved) {
+        return $resolved.Source
+    }
+    return $Command
+}
+
 $ClaudeConfigPath = Resolve-ClaudeConfigPath $ClaudeConfigPath
 $config = Get-Content -LiteralPath $ClaudeConfigPath -Raw | ConvertFrom-Json
 $server = $config.mcpServers.$ServerName
@@ -57,7 +66,7 @@ if ($CheckConfigurationOnly) {
 }
 
 $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
-$startInfo.FileName = [string]$server.command
+$startInfo.FileName = Resolve-ProcessCommand ([string]$server.command)
 $proxyArguments = [System.Collections.Generic.List[string]]::new()
 foreach ($argument in @($server.args)) {
     $proxyArguments.Add([string]$argument)
@@ -196,16 +205,21 @@ try {
     $expected = @(
         'loxone_get_system_status', 'loxone_list_rooms', 'loxone_list_categories',
         'loxone_find_controls', 'loxone_describe_control', 'loxone_get_control_notes',
-        'loxone_get_states',
+        'loxone_get_states', 'loxone_list_global_metadata',
         'loxone_get_skill_guide'
     )
     $actual = @($toolsResponse.result.tools | ForEach-Object { $_.name } | Sort-Object)
+    $optional = @(
+        'loxone_operate_control', 'loxone_get_control_history', 'loxone_get_statistics',
+        'loxberry_get_plugin_status', 'loxberry_get_service_health',
+        'loxberry_get_system_status', 'loxberry_clear_statistics_cache'
+    )
     $controlAdvertised = $actual -contains 'loxone_operate_control'
-    if ($controlAdvertised) { $expected += 'loxone_operate_control' }
     if ($ControlFixturePath -and -not $controlAdvertised) {
         throw 'ControlFixturePath requires the enabled loxone_operate_control tool.'
     }
-    if (($actual -join "`n") -ne (($expected | Sort-Object) -join "`n")) {
+    if (@($expected | Where-Object { $_ -notin $actual }).Count -gt 0 -or
+        @($actual | Where-Object { $_ -notin ($expected + $optional) }).Count -gt 0) {
         throw 'MCP tool inventory differs from the expected enabled contract.'
     }
     foreach ($tool in $toolsResponse.result.tools) {

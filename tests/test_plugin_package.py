@@ -750,6 +750,16 @@ def test_mcp_client_probe_has_valid_powershell_syntax() -> None:
     )
 
 
+def test_mcp_client_probe_resolves_windows_application_aliases() -> None:
+    script = (ROOT / "tools" / "test_mcp_client.ps1").read_text(encoding="utf-8")
+
+    assert "function Resolve-ProcessCommand" in script
+    assert "Select-Object -First 1" in script
+    assert "$startInfo.FileName = Resolve-ProcessCommand ([string]$server.command)" in script
+    assert "'loxone_list_global_metadata'" in script
+    assert "$optional = @(" in script
+
+
 def _write_claude_config(path: Path, *, configured: bool) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     document = (
