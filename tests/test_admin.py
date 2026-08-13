@@ -409,7 +409,10 @@ def test_admin_list_responses_use_one_snapshot_per_request(
         }
         for index in range(session_count)
     }
-    first_record = families["family-000"]
+    first_record = next(
+        iter(families.values()),
+        {"client_id": "", "identity_id": "", "miniserver_id": ""},
+    )
 
     def binding(namespace: str) -> str:
         canonical = "\0".join(
@@ -472,8 +475,8 @@ def test_admin_list_responses_use_one_snapshot_per_request(
         assert result["sessions"][0]["id"] == "family-000"
     assert all(session["loxberry_read_approved"] for session in result["sessions"])
     assert all(session["loxberry_operate_approved"] for session in result["sessions"])
-    assert result["loxberry_bindings"][0]["active"] is True
-    assert result["loxberry_operate_bindings"][0]["active"] is True
+    assert result["loxberry_bindings"][0]["active"] is (session_count > 0)
+    assert result["loxberry_operate_bindings"][0]["active"] is (session_count > 0)
 
 
 def test_page_state_benchmark_reports_machine_readable_metrics() -> None:
