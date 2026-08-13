@@ -33,10 +33,12 @@ from mcpserver.auth.provider import (
     READ_SCOPE,
     Phase0OAuthProvider,
 )
+from mcpserver.auth.remote_revocation import run_remote_revocation_worker
 from mcpserver.auth.store import AtomicJsonAuthStore
 from mcpserver.auth.web import Phase0OAuthWeb
 from mcpserver.config import DEFAULT_LOG_LEVEL, AtomicConfigStore
 from mcpserver.loxberry.diagnostics import LoxBerryDiagnostics
+from mcpserver.loxone.client import MiniserverEndpoint
 from mcpserver.loxone.runtime import LoxoneRuntime
 from mcpserver.loxone.statistics import StatisticsCache
 from mcpserver.settings import ServerSettings
@@ -270,11 +272,23 @@ class _Phase0TokenVerifier(TokenVerifier):
 
 
 @asynccontextmanager
-async def _runtime_lifespan(runtime: LoxoneRuntime | None) -> AsyncIterator[None]:
+async def _runtime_lifespan(
+    runtime: LoxoneRuntime | None,
+    remote_revocation: tuple[MiniserverEndpoint, EncryptedLoxoneTokenStore, float] | None = None,
+) -> AsyncIterator[None]:
     """Close all live Miniserver sessions when the HTTP application stops."""
+    worker = (
+        asyncio.create_task(run_remote_revocation_worker(*remote_revocation))
+        if remote_revocation is not None
+        else None
+    )
     try:
         yield
     finally:
+        if worker is not None:
+            worker.cancel()
+            with suppress(asyncio.CancelledError):
+                await worker
         if runtime is not None:
             await runtime.close()
 
@@ -341,7 +355,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
 
         def on_family_revoked(family_id: str) -> None:
             if loxone_store is not None:
-                loxone_store.delete(family_id)
+                loxone_store.schedule_remote_revoke(family_id)
                 loxone_store.delete_explorer_family(family_id)
             runtime_value = runtime_ref.get("runtime")
             if runtime_value is None:
@@ -448,7 +462,16 @@ def create_server(settings: ServerSettings) -> FastMCP:
         stateless_http=True,
         auth=oauth_auth,
         transport_security=transport_security,
-        lifespan=lambda _server: _runtime_lifespan(runtime),
+        lifespan=lambda _server: _runtime_lifespan(
+            runtime,
+            (
+                settings.phase0_auth.loxone_endpoint,
+                loxone_store,
+                config.connection_timeout if config is not None else 10.0,
+            )
+            if settings.phase0_auth is not None and loxone_store is not None
+            else None,
+        ),
     )
     server.forwarded_allowed_hosts = settings.allowed_hosts
     server.transport_guard = transport_guard

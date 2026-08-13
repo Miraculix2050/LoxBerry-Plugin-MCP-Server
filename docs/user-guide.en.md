@@ -362,8 +362,9 @@ action. It is likewise limited to the active file and two 512 KiB backups. These
 settings are separated under **Plugin logs (LoxBerry Log Manager)**.
 
 Diagnostic export contains only the version, service state, transport kind and masked counts. Sessions can be
-revoked individually or together; an available Miniserver also receives a
-best-effort `killtoken`.
+revoked individually or together. The MCP server denies access immediately; the
+encrypted Loxone token remains queued until an available Miniserver confirms a
+`killtoken` request.
 
 The admin status card refreshes the service state and PID automatically. An
 inactive service offers **Start**; an active service offers **Stop** and

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import base64
 import hashlib
 import hmac
@@ -936,10 +935,7 @@ def test_revoke_survives_unreadable_encrypted_token(
     store.mutate(add_family)
 
     class BrokenTokenStore:
-        def get(self, family_id: str, miniserver_id: str, identity_id: str) -> None:
-            raise LoxoneTokenStoreError("cannot decrypt")
-
-        def delete(self, family_id: str) -> None:
+        def schedule_remote_revoke(self, family_id: str) -> None:
             raise LoxoneTokenStoreError("cannot read store")
 
     monkeypatch.setenv("MCPSERVER_AUTH_STORE", str(auth_path))
@@ -999,7 +995,7 @@ def test_revoke_survives_corrupt_encrypted_token_store_constructor(
     assert store.snapshot()["families"]["family"]["revoked"] is True
 
 
-def test_revoke_deletes_local_token_after_remote_protocol_error(
+def test_revoke_queues_local_token_after_remote_protocol_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     auth_path = (tmp_path / "data" / "auth" / "sessions.json").resolve()
@@ -1017,14 +1013,11 @@ def test_revoke_deletes_local_token_after_remote_protocol_error(
         }
 
     store.mutate(add_family)
-    deleted: list[str] = []
+    queued: list[str] = []
 
     class TrackingTokenStore:
-        def get(self, family_id: str, miniserver_id: str, identity_id: str) -> LoxoneToken:
-            return LoxoneToken("jwt", "user", "key", "SHA256", 1)
-
-        def delete(self, family_id: str) -> None:
-            deleted.append(family_id)
+        def schedule_remote_revoke(self, family_id: str) -> None:
+            queued.append(family_id)
 
     class ProtocolFailingClient:
         def __init__(self, *args: object, **kwargs: object) -> None:
@@ -1053,11 +1046,11 @@ def test_revoke_deletes_local_token_after_remote_protocol_error(
     )
 
     assert _revoke("family") == 1
-    assert deleted == ["family"]
+    assert queued == ["family"]
     assert store.snapshot()["families"]["family"]["revoked"] is True
 
 
-def test_revoke_kills_remote_tokens_concurrently(
+def test_revoke_queues_remote_tokens_without_waiting_for_miniserver(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     auth_path = (tmp_path / "data" / "auth" / "sessions.json").resolve()
@@ -1075,31 +1068,14 @@ def test_revoke_kills_remote_tokens_concurrently(
             }
 
     store.mutate(add_families)
-    active = 0
-    maximum_active = 0
-    deleted: list[str] = []
+    queued: list[str] = []
 
     class TokenStore:
-        def get(self, family_id: str, miniserver_id: str, identity_id: str) -> LoxoneToken:
-            return LoxoneToken(family_id, identity_id, "key", "SHA256", 1)
-
-        def delete(self, family_id: str) -> None:
-            deleted.append(family_id)
-
-    class ConcurrentClient:
-        def __init__(self, *args: object, **kwargs: object) -> None:
-            pass
-
-        async def kill_token(self, token: LoxoneToken) -> None:
-            nonlocal active, maximum_active
-            active += 1
-            maximum_active = max(maximum_active, active)
-            await asyncio.sleep(0)
-            active -= 1
+        def schedule_remote_revoke(self, family_id: str) -> None:
+            queued.append(family_id)
 
     monkeypatch.setenv("MCPSERVER_AUTH_STORE", str(auth_path))
     monkeypatch.setattr("mcpserver.admin._token_store", lambda: TokenStore())
-    monkeypatch.setattr("mcpserver.admin._loxone_client", ConcurrentClient)
     monkeypatch.setattr(
         "mcpserver.admin._config_store",
         lambda: type(
@@ -1117,5 +1093,4 @@ def test_revoke_kills_remote_tokens_concurrently(
     )
 
     assert _revoke(None) == 2
-    assert maximum_active == 2
-    assert sorted(deleted) == ["family-0", "family-1"]
+    assert sorted(queued) == ["family-0", "family-1"]

@@ -75,3 +75,17 @@ def test_explorer_session_is_encrypted_and_removed_with_its_oauth_family(tmp_pat
     assert store.get_explorer_session("browser-session") == session
     store.delete_explorer_family("family")
     assert store.get_explorer_session("browser-session") is None
+
+
+def test_remote_revocation_keeps_token_until_confirmed(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    token = LoxoneToken("token-secret", "user", "key", "SHA256", 2_000_000_000)
+    store.put("family", "miniserver", "identity", token)
+
+    assert store.schedule_remote_revoke("family") is True
+    assert store.pending_remote_revocations(0)[0].token == token
+    store.defer_remote_revoke("family", 0)
+    assert store.pending_remote_revocations(1) == ()
+    assert store.pending_remote_revocations(2)[0].family_id == "family"
+    store.complete_remote_revoke("family")
+    assert store.get("family", "miniserver", "identity") is None
