@@ -804,6 +804,11 @@ class LoxoneRuntime:
                 raise LoxoneTokenStoreError("Loxone token is unavailable")
             session = await self.client.open_session(token)
             try:
+                version = await session.structure_version()
+                if version == record.structure.last_modified:
+                    record.last_structure_check = time.monotonic()
+                    _LOGGER.debug("component=structure outcome=unchanged")
+                    return
                 structure = await session.load_structure()
             finally:
                 await session.close()
@@ -814,12 +819,14 @@ class LoxoneRuntime:
             )
             raise RuntimeUnavailable("Miniserver structure refresh failed") from exc
         record.last_structure_check = time.monotonic()
-        if structure.last_modified != record.structure.last_modified:
-            record.structure = structure
-            record.allowed_states = _state_uuids(structure.controls + structure.hidden_controls)
-            record.generation += 1
-            self.cache.apply(access.family_id, (), allowed_uuids=record.allowed_states)
-            _LOGGER.info("component=structure outcome=changed")
+        if structure.last_modified == record.structure.last_modified:
+            _LOGGER.warning("component=structure outcome=version_mismatch_without_change")
+            return
+        record.structure = structure
+        record.allowed_states = _state_uuids(structure.controls + structure.hidden_controls)
+        record.generation += 1
+        self.cache.apply(access.family_id, (), allowed_uuids=record.allowed_states)
+        _LOGGER.info("component=structure outcome=changed")
 
     async def _maintain(
         self,

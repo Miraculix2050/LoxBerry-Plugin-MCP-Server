@@ -597,6 +597,13 @@ class LoxoneWebSocketSession:
             )
             raise LoxoneProtocolError("Miniserver structure response is invalid") from exc
 
+    async def structure_version(self) -> str:
+        """Return the current LoxAPP3 modification marker without downloading it."""
+        value = await self._command("jdev/sps/LoxAPPversion3", encrypted=not self._secure_transport)
+        if not isinstance(value, str) or not value or len(value) > 128:
+            raise LoxoneProtocolError("Miniserver structure version response is invalid")
+        return value
+
     async def refresh_token(self) -> None:
         """Rotate the in-memory JWT over the authenticated encrypted WebSocket."""
         digest = await self._fresh_token_digest()

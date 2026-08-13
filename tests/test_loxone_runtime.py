@@ -58,6 +58,9 @@ async def test_due_structure_refresh_is_single_flight_and_increments_generation(
             return object()
 
     class RefreshSession(_Session):
+        async def structure_version(self) -> str:
+            return "new"
+
         async def load_structure(self) -> LoxoneStructure:
             return _structure("new")
 
@@ -125,6 +128,47 @@ async def test_due_structure_refresh_fails_closed() -> None:
 
     with pytest.raises(RuntimeUnavailable, match="structure refresh failed"):
         await runtime.snapshot(_access())
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+@pytest.mark.asyncio
+async def test_due_structure_refresh_checks_version_without_reloading_unchanged_structure() -> None:
+    class Store:
+        def get(self, *_parts: str) -> object:
+            return object()
+
+    class RefreshSession(_Session):
+        async def structure_version(self) -> str:
+            return "current"
+
+        async def load_structure(self) -> LoxoneStructure:
+            raise AssertionError("unchanged structure must not be downloaded")
+
+    class Client:
+        async def open_session(self, _token: object) -> RefreshSession:
+            return RefreshSession()
+
+    runtime = object.__new__(LoxoneRuntime)
+    task = asyncio.create_task(asyncio.sleep(60))
+    record = _ConnectionRecord(
+        _structure("current"), frozenset(), _Session(), task, last_structure_check=0
+    )
+    runtime._records = {"family": record}
+    runtime._locks = defaultdict(asyncio.Lock)
+    runtime._prune_sessions = lambda _subject: asyncio.sleep(0)  # type: ignore[method-assign]
+    runtime.token_store = Store()
+    runtime.client = Client()
+    runtime.cache = UserStateCache()
+    runtime.structure_refresh_seconds = 1
+
+    snapshot = await runtime.snapshot(_access())
+
+    assert snapshot.structure_generation == 1
+    assert snapshot.structure.last_modified == "current"
+    assert record.last_structure_check > 0
 
     task.cancel()
     with pytest.raises(asyncio.CancelledError):

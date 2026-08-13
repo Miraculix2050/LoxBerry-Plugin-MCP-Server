@@ -919,6 +919,29 @@ async def test_structure_accepts_gen1_text_content_in_file_message(
 
 
 @pytest.mark.asyncio
+async def test_structure_version_uses_authenticated_bounded_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = LoxoneWebSocketSession(
+        cast(Any, object()),
+        public_key="unused",
+        token=LoxoneToken("jwt", "reader", "key", "SHA256", 100),
+        timeout_seconds=1,
+        max_payload_bytes=100,
+    )
+    commands: list[tuple[str, bool]] = []
+
+    async def fake_command(command: str, *, encrypted: bool = False) -> object:
+        commands.append((command, encrypted))
+        return "2026-08-13 16:09:49"
+
+    monkeypatch.setattr(session, "_command", fake_command)
+
+    assert await session.structure_version() == "2026-08-13 16:09:49"
+    assert commands == [("jdev/sps/LoxAPPversion3", True)]
+
+
+@pytest.mark.asyncio
 async def test_refresh_rotates_in_memory_token_with_dynamic_hash(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
