@@ -3,9 +3,11 @@
 All notable user-visible changes are recorded here. GitHub release notes are
 extracted from the matching version heading.
 
-## Unreleased
+## 0.4.0-alpha.10 - 2026-08-14
 
-- Retain encrypted Loxone tokens after a local session revocation until the
+- Load the administrative configuration before deferred status and session data,
+  so the management page remains responsive without weakening its consistency.
+- Retain encrypted Loxone tokens after local session revocation until the
   Miniserver confirms `killtoken`; unavailable Miniservers are retried by the
   service without delaying the administrative UI.
 
