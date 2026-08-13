@@ -441,8 +441,15 @@
     return !(annotations.readOnlyHint === true && annotations.destructiveHint === false);
   }
 
+  function acceptOAuthPayload(data, expectedState) {
+    return Boolean(
+      data && data.type === 'mcp-explorer-oauth' && data.state === expectedState &&
+      (typeof data.code === 'string' || typeof data.error === 'string'),
+    );
+  }
+
   function acceptOAuthMessage(origin, expectedOrigin, data, expectedState) {
-    return origin === expectedOrigin && data && data.type === 'mcp-explorer-oauth' && data.state === expectedState;
+    return origin === expectedOrigin && acceptOAuthPayload(data, expectedState);
   }
 
   function clearSensitiveState(state) {
@@ -512,6 +519,7 @@
     formatPath,
     base64Url,
     toolIsMutating,
+    acceptOAuthPayload,
     acceptOAuthMessage,
     clearSensitiveState,
     fieldControlId,
@@ -730,19 +738,28 @@
   function waitForAuthorization(popup, expectedState) {
     return new Promise((resolve, reject) => {
       let finished = false;
+      const authorizationChannel = typeof BroadcastChannel === 'function'
+        ? new BroadcastChannel('mcp-explorer-oauth')
+        : null;
       const finish = (callback) => {
         if (finished) return;
         finished = true;
         window.clearInterval(closedTimer);
         window.clearTimeout(timeout);
         window.removeEventListener('message', onMessage);
+        authorizationChannel?.close();
         callback();
       };
       const onMessage = (event) => {
         if (!core.acceptOAuthMessage(event.origin, window.location.origin, event.data, expectedState)) return;
         finish(() => event.data.error ? reject(new Error(event.data.errorDescription || event.data.error)) : resolve(event.data.code));
       };
+      const onChannelMessage = (event) => {
+        if (!core.acceptOAuthPayload(event.data, expectedState)) return;
+        finish(() => event.data.error ? reject(new Error(event.data.errorDescription || event.data.error)) : resolve(event.data.code));
+      };
       window.addEventListener('message', onMessage);
+      if (authorizationChannel) authorizationChannel.onmessage = onChannelMessage;
       const closedTimer = window.setInterval(() => {
         if (popup.closed) finish(() => reject(new Error(label('authCancelled'))));
       }, 500);

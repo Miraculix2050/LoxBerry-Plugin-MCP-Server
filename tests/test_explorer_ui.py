@@ -452,22 +452,32 @@ def test_explorer_oauth_guards_and_resource_binding() -> None:
     assert (
         run_core(
             "core.acceptOAuthMessage('https://local','https://local',"
-            "{type:'mcp-explorer-oauth',state:'expected'},'expected')"
+            "{type:'mcp-explorer-oauth',state:'expected',code:'code'},'expected')"
         )
         is True
     )
     assert (
         run_core(
             "core.acceptOAuthMessage('https://other','https://local',"
-            "{type:'mcp-explorer-oauth',state:'expected'},'expected')"
+            "{type:'mcp-explorer-oauth',state:'expected',code:'code'},'expected')"
         )
         is False
     )
     assert (
         run_core(
             "core.acceptOAuthMessage('https://local','https://local',"
-            "{type:'mcp-explorer-oauth',state:'wrong'},'expected')"
+            "{type:'mcp-explorer-oauth',state:'wrong',code:'code'},'expected')"
         )
+        is False
+    )
+    assert (
+        run_core(
+            "core.acceptOAuthPayload({type:'mcp-explorer-oauth',state:'expected',code:'code'},'expected')"
+        )
+        is True
+    )
+    assert (
+        run_core("core.acceptOAuthPayload({type:'mcp-explorer-oauth',state:'expected'},'expected')")
         is False
     )
 
@@ -651,6 +661,10 @@ def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
     assert "Cache_Control => 'no-store'" in callback
     assert "frame-ancestors 'none'" in callback
     assert "window.history.replaceState" in callback
+    assert "new BroadcastChannel('mcp-explorer-oauth')" in callback
+    assert "window.setTimeout(() => window.close(), 100)" in callback
+    assert "new BroadcastChannel('mcp-explorer-oauth')" in source
+    assert "authorizationChannel.onmessage = onChannelMessage" in source
 
 
 def test_explorer_initial_discovery_has_no_pre_login_permission_choice() -> None:
