@@ -578,7 +578,13 @@
     } catch {
       serviceSection.setAttribute('aria-busy', 'false');
       sessionsSection.setAttribute('aria-busy', 'false');
-      certificateSection.setAttribute('aria-busy', 'false');
+      serviceState.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
+      serviceState.dataset.kind = 'error';
+      serviceActiveState.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
+      serviceSubState.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
+      serviceInstalled.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
+      sessionList.replaceChildren(document.createTextNode('<TMPL_VAR AJAX.ERROR ESCAPE=JS>'));
+      updateCertificate(null);
       certificateUnavailable.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
     } finally {
       scheduleServicePoll();

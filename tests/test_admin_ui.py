@@ -31,6 +31,11 @@ def test_initial_page_renders_configuration_before_loading_dynamic_state() -> No
         in template
     )
     assert 'id="certificate-unavailable" class="mcp-status" hidden' in template
+    assert "updateCertificate(null);" in template
+    assert (
+        "sessionList.replaceChildren(document.createTextNode('<TMPL_VAR AJAX.ERROR ESCAPE=JS>'))"
+        in template
+    )
 
 
 def test_common_actions_update_the_page_without_a_reload() -> None:
