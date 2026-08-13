@@ -123,6 +123,24 @@
     }
   }
 
+  function httpsExplorerUrl(currentUrl) {
+    if (typeof currentUrl !== 'string') return null;
+    try {
+      const page = new URL(currentUrl);
+      if (
+        page.protocol !== 'http:'
+        || page.username
+        || page.password
+        || page.pathname !== EXPLORER_PATH
+      ) return null;
+      page.protocol = 'https:';
+      if (page.port === '80') page.port = '';
+      return page.href;
+    } catch (_error) {
+      return null;
+    }
+  }
+
   function localAuthorizationMetadata(metadata, currentOrigin) {
     let issuer;
     let local;
@@ -600,6 +618,7 @@
     revokeOAuthGrant,
     fieldControlId,
     canonicalExplorerUrl,
+    httpsExplorerUrl,
     localAuthorizationMetadata,
     createFieldLabel,
     createOptionalToggle,
@@ -843,6 +862,11 @@
   }
 
   async function discover() {
+    if (window.location.protocol !== 'https:') {
+      const error = new Error(label('originMismatch'));
+      error.canonicalUrl = core.httpsExplorerUrl(window.location.href);
+      throw error;
+    }
     const resourceMetadata = await fetchJson('/.well-known/oauth-protected-resource/plugins/mcpserver/mcp', {cache: 'no-store'});
     const issuer = Array.isArray(resourceMetadata.authorization_servers) ? resourceMetadata.authorization_servers[0] : null;
     const canonicalUrl = core.canonicalExplorerUrl(
@@ -1595,9 +1619,10 @@
   }
 
   elements.connect.addEventListener('click', async () => {
-    // Open synchronously in the user gesture. Firefox otherwise treats the
-    // popup as unsolicited after the asynchronous discovery and PKCE setup.
-    const authorizationPopup = openAuthorizationPopup();
+    const insecureOrigin = window.location.protocol !== 'https:';
+    // A blank window retains the click's transient user activation in Firefox.
+    // HTTP is rejected without opening a window and offers the HTTPS link below.
+    const authorizationPopup = insecureOrigin ? null : openAuthorizationPopup();
     setBusy(true);
     setStatus(label('working'), 'working');
     try {

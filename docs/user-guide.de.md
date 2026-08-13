@@ -1,4 +1,4 @@
-# LoxBerry MCP Server 0.4.0-alpha.6
+# LoxBerry MCP Server 0.4.0-alpha.7
 
 ## Voraussetzungen
 
@@ -172,11 +172,9 @@ zugängliche Browserseite für den lokalen MCP-Endpunkt. Sie meldet sich wie jed
 andere MCP-Client mit einem Loxone-Benutzer an und übernimmt keine Rechte aus der
 LoxBerry-Admin-Sitzung.
 
-**Mit Loxone anmelden** öffnet den Freigabedialog in einem eigenen Fenster. Der
-Explorer öffnet dieses Fenster direkt durch den Klick, damit Firefox es nicht
-als unerwünschtes Popup blockiert. Blockiert ein Browser das Fenster dennoch,
-erlaube Popups für die aktuelle lokale HTTPS-Adresse und starte die Anmeldung
-erneut.
+**Mit Loxone anmelden** erfordert HTTPS. Bei einem über HTTP geöffneten
+Explorer wird keine OAuth-Anmeldung gestartet; stattdessen zeigt die Seite einen
+Link, der dieselbe IP-Adresse oder denselben Hostnamen über HTTPS lädt.
 
 Nach der Anmeldung zeigt der Explorer die aktuell veröffentlichten Tools samt
 Beschreibung, Schema und Read-/Write-Kennzeichnung. Argumente können entweder

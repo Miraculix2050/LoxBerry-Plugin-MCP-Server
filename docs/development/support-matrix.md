@@ -1,17 +1,22 @@
 # Support-Matrix
 
 - **Stand:** Runtime-/Strukturhärtung, 2026-08-13
-- **Vorbereiteter Pre-Release:** `0.4.0-alpha.6`
+- **Vorbereiteter Pre-Release:** `0.4.0-alpha.7`
 - **Nächster Meilenstein:** gezielte reale Abnahme der noch unbestätigten
   Phase-4-Aktionen und V1-Varianten
 
 Diese Matrix unterscheidet reale Nachweise von implementierten, aber noch nicht
 real bestätigten Kombinationen. Phase 1, Phase 2 und Phase 3 sind abgenommen;
-`0.4.0-alpha.6` bleibt wegen seines Vorabversionsstatus ein Pre-Release.
+`0.4.0-alpha.7` bleibt wegen seines Vorabversionsstatus ein Pre-Release.
 Phase 4 ist implementiert und für die lesenden Statistik-/Historienpfade, die
 eng begrenzte plugin-eigene Cache-Operation und ausgewählte, reversible
 Control-Aktionen auf Hardware abgenommen; siehe
 [Phase-4-Abnahmebericht](phase-4-acceptance.md).
+
+Die versionsmarkerbasierte Strukturaktualisierung ist zudem für geänderten
+Anzeigenamen, Control-Hinweis und Bewertung auf der autorisierten Testfixture
+hardware-abgenommen. Die separate Favoriten-Markierung bleibt ungetestet; siehe
+denselben Abnahmebericht.
 
 ## Plattformen und Geräte
 
