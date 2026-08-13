@@ -12,8 +12,8 @@ from pathlib import Path
 import pytest
 
 from mcpserver.admin import (
-    _AdminReadSnapshot,
     AdminError,
+    _AdminReadSnapshot,
     _allow_loxberry_operate,
     _allow_loxberry_read,
     _loxberry_bindings,
@@ -459,7 +459,9 @@ def test_admin_list_responses_use_one_snapshot_per_request(
     monkeypatch.setattr("mcpserver.admin._config_store", lambda: config_store)
     monkeypatch.setattr("mcpserver.admin._auth_store", lambda: auth_store)
     monkeypatch.setattr("mcpserver.admin._service_status", lambda: {"active": True})
-    monkeypatch.setattr("mcpserver.admin._certificate_status", lambda **_kwargs: {"available": False})
+    monkeypatch.setattr(
+        "mcpserver.admin._certificate_status", lambda **_kwargs: {"available": False}
+    )
 
     result = dispatch({"action": action})
 

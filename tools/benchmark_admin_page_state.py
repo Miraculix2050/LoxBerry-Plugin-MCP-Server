@@ -124,7 +124,15 @@ def main() -> None:
     arguments = parser.parse_args()
     if arguments.sessions < 1 or arguments.warmups < 0 or arguments.samples < 2:
         parser.error("sessions must be positive, warmups non-negative, and samples at least two")
-    print(json.dumps(measure(session_count=arguments.sessions, warmups=arguments.warmups, samples=arguments.samples)))
+    print(
+        json.dumps(
+            measure(
+                session_count=arguments.sessions,
+                warmups=arguments.warmups,
+                samples=arguments.samples,
+            )
+        )
+    )
 
 
 if __name__ == "__main__":
