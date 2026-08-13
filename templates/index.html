@@ -211,13 +211,13 @@
     <summary><TMPL_VAR CERTIFICATE.TITLE></summary>
     <div class="mcp-collapsible-content">
     <p><TMPL_VAR CERTIFICATE.TEXT></p>
-      <div id="certificate-details" class="mcp-grid" hidden>
-        <p><TMPL_VAR CERTIFICATE.SOURCE>: <strong id="certificate-source"></strong></p>
-        <p><TMPL_VAR CERTIFICATE.EXPIRES>: <time id="certificate-expiry" class="mcp-expiry"></time></p>
-        <p><TMPL_VAR CERTIFICATE.DNS_SANS>: <strong id="certificate-dns-count"></strong></p>
-        <p><TMPL_VAR CERTIFICATE.IP_SANS>: <strong id="certificate-ip-count"></strong></p>
-        <p><TMPL_VAR CERTIFICATE.ORIGIN_MATCH>: <strong id="certificate-origin-match"></strong></p>
-        <p><TMPL_VAR CERTIFICATE.HOSTNAME_MATCH>: <strong id="certificate-hostname-match"></strong></p>
+      <div id="certificate-details" class="mcp-grid">
+        <p><TMPL_VAR CERTIFICATE.SOURCE>: <strong id="certificate-source"><TMPL_VAR AJAX.WORKING></strong></p>
+        <p><TMPL_VAR CERTIFICATE.EXPIRES>: <time id="certificate-expiry" class="mcp-expiry"><TMPL_VAR AJAX.WORKING></time></p>
+        <p><TMPL_VAR CERTIFICATE.DNS_SANS>: <strong id="certificate-dns-count"><TMPL_VAR AJAX.WORKING></strong></p>
+        <p><TMPL_VAR CERTIFICATE.IP_SANS>: <strong id="certificate-ip-count"><TMPL_VAR AJAX.WORKING></strong></p>
+        <p><TMPL_VAR CERTIFICATE.ORIGIN_MATCH>: <strong id="certificate-origin-match"><TMPL_VAR AJAX.WORKING></strong></p>
+        <p><TMPL_VAR CERTIFICATE.HOSTNAME_MATCH>: <strong id="certificate-hostname-match"><TMPL_VAR AJAX.WORKING></strong></p>
       </div>
       <p id="certificate-warning" class="mcp-warning" hidden><TMPL_VAR CERTIFICATE.WARNING></p>
       <p id="certificate-renewal-info" hidden><TMPL_VAR CERTIFICATE.RENEWAL_STATE>: <strong id="certificate-renewal-state"></strong></p>
@@ -229,7 +229,7 @@
           <div class="mcp-actions"><button class="lb-button" type="submit"><TMPL_VAR ACTION.RENEW_CERTIFICATE></button></div>
         </form>
       <p id="certificate-unsupported" class="mcp-help" hidden><TMPL_VAR CERTIFICATE.UNSUPPORTED></p>
-      <p id="certificate-unavailable" class="mcp-status"><TMPL_VAR AJAX.WORKING></p>
+      <p id="certificate-unavailable" class="mcp-status" hidden><TMPL_VAR CERTIFICATE.UNAVAILABLE></p>
     </div>
   </details>
 
@@ -434,7 +434,7 @@
     }
   };
   for (const element of document.querySelectorAll('time.mcp-expiry')) {
-    updateExpiry(element, element.dataset.expiresAt);
+    if (element.dataset.expiresAt) updateExpiry(element, element.dataset.expiresAt);
   }
   const hideStatusTimers = new WeakMap();
   const hideSuccess = (element) => {
