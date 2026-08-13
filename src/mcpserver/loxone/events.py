@@ -114,11 +114,26 @@ def parse_daytimer_events(payload: bytes) -> tuple[StateEvent, ...]:
         offset += _DAYTIMER_PREFIX.size
         if count < 0 or count > (len(payload) - offset) // _DAYTIMER_ENTRY.size:
             raise LoxoneProtocolError("Daytimer table has an invalid entry count")
-        entries: list[object] = [default_value]
+        entries: list[dict[str, float | int]] = []
         for _ in range(count):
-            entries.append(_DAYTIMER_ENTRY.unpack_from(payload, offset))
+            mode, from_minute, to_minute, needs_activation, value = _DAYTIMER_ENTRY.unpack_from(
+                payload, offset
+            )
+            entries.append(
+                {
+                    "mode": mode,
+                    "from_minute": from_minute,
+                    "to_minute": to_minute,
+                    "needs_activation": needs_activation,
+                    "value": value,
+                }
+            )
             offset += _DAYTIMER_ENTRY.size
-        events.append(StateEvent(uuid=_uuid(raw_uuid), value=tuple(entries)))
+        events.append(
+            StateEvent(
+                uuid=_uuid(raw_uuid), value={"default_value": default_value, "entries": entries}
+            )
+        )
     return tuple(events)
 
 
@@ -132,11 +147,40 @@ def parse_weather_events(payload: bytes) -> tuple[StateEvent, ...]:
         offset += _WEATHER_PREFIX.size
         if count < 0 or count > (len(payload) - offset) // _WEATHER_ENTRY.size:
             raise LoxoneProtocolError("Weather table has an invalid entry count")
-        entries: list[object] = [last_update]
+        entries: list[dict[str, float | int]] = []
         for _ in range(count):
-            entries.append(_WEATHER_ENTRY.unpack_from(payload, offset))
+            (
+                timestamp,
+                weather_type,
+                wind_direction,
+                solar_radiation,
+                relative_humidity,
+                temperature,
+                perceived_temperature,
+                dew_point,
+                precipitation,
+                wind_speed,
+                barometric_pressure,
+            ) = _WEATHER_ENTRY.unpack_from(payload, offset)
+            entries.append(
+                {
+                    "timestamp": timestamp,
+                    "weather_type": weather_type,
+                    "wind_direction": wind_direction,
+                    "solar_radiation": solar_radiation,
+                    "relative_humidity": relative_humidity,
+                    "temperature": temperature,
+                    "perceived_temperature": perceived_temperature,
+                    "dew_point": dew_point,
+                    "precipitation": precipitation,
+                    "wind_speed": wind_speed,
+                    "barometric_pressure": barometric_pressure,
+                }
+            )
             offset += _WEATHER_ENTRY.size
-        events.append(StateEvent(uuid=_uuid(raw_uuid), value=tuple(entries)))
+        events.append(
+            StateEvent(uuid=_uuid(raw_uuid), value={"last_update": last_update, "entries": entries})
+        )
     return tuple(events)
 
 

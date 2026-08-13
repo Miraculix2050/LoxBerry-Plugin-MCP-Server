@@ -270,6 +270,7 @@ def test_exact_default_read_only_tools_are_published() -> None:
         "loxone_get_system_status",
         "loxone_list_rooms",
         "loxone_list_categories",
+        "loxone_list_global_metadata",
         "loxone_find_controls",
         "loxone_describe_control",
         "loxone_get_control_notes",

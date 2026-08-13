@@ -125,6 +125,20 @@ class NamedGroupPageData(BaseModel):
     )
 
 
+class GlobalMetadataData(BaseModel):
+    kind: Literal["operating_mode", "mode", "time", "room_group", "global_state", "weather_state"]
+    identifier: str
+    name: str
+    analog: bool | None = None
+    locked: bool | None = None
+    state_uuid: str | None = None
+
+
+class GlobalMetadataPageData(BaseModel):
+    items: list[GlobalMetadataData]
+    next_cursor: str | None
+
+
 class ControlSummaryData(BaseModel):
     uuid: str
     name: str
@@ -165,6 +179,39 @@ class AnalogRangeData(BaseModel):
     step: float = Field(description="Required increment accepted by set_value.")
 
 
+class NamedOptionData(BaseModel):
+    id: int
+    name: str
+
+
+class VentilationTimerProfileData(BaseModel):
+    index: int
+    name: str
+    interval_seconds: int
+    mode_ids: list[int]
+    default_mode_id: int | None
+    speed_enabled: bool
+
+
+class WindowMonitorItemData(BaseModel):
+    index: int
+    name: str | None
+    room_uuid: str | None
+    control_uuid: str | None
+    install_place: str | None
+
+
+class ControlModelData(BaseModel):
+    """Bounded documented type metadata; state values remain in loxone_get_states."""
+
+    format: str | None = None
+    timer_modes: list[NamedOptionData] = Field(default_factory=list)
+    ventilation_modes: list[NamedOptionData] = Field(default_factory=list)
+    ventilation_timer_profiles: list[VentilationTimerProfileData] = Field(default_factory=list)
+    window_monitor_items: list[WindowMonitorItemData] = Field(default_factory=list)
+    connected_inputs: int | None = None
+
+
 class CapabilitiesData(BaseModel):
     readable: bool
     allowed_actions: list[str]
@@ -182,6 +229,12 @@ class CapabilitiesData(BaseModel):
         default=None,
         description=(
             "Position-stable StatusMonitor input and status mapping used to interpret inputStates."
+        ),
+    )
+    model: ControlModelData | None = Field(
+        default=None,
+        description=(
+            "Bounded documented type metadata for climate, ventilation, and status controls."
         ),
     )
 
@@ -307,6 +360,10 @@ class SystemStatusEnvelope(ToolEnvelope):
 
 class NamedGroupPageEnvelope(ToolEnvelope):
     data: NamedGroupPageData | ErrorData
+
+
+class GlobalMetadataPageEnvelope(ToolEnvelope):
+    data: GlobalMetadataPageData | ErrorData
 
 
 class ControlPageEnvelope(ToolEnvelope):
@@ -864,6 +921,53 @@ def register_read_tools(
             return _error(NamedGroupPageEnvelope, "temporarily_unavailable", str(exc))
 
     @server.tool(
+        name="loxone_list_global_metadata",
+        description=(
+            "List bounded, read-only global LoxAPP3 metadata: operating modes, modes, times, "
+            "room groups, global states, and weather states. This never changes schedules or modes."
+        ),
+        annotations=annotations,
+        structured_output=True,
+    )
+    async def list_global_metadata(
+        kind: Annotated[
+            Literal["operating_mode", "mode", "time", "room_group", "global_state", "weather_state"]
+            | None,
+            Field(description="Optional exact metadata kind."),
+        ] = None,
+        cursor: CursorArgument = None,
+        limit: LimitArgument = DEFAULT_PAGE_SIZE,
+    ) -> GlobalMetadataPageEnvelope:
+        try:
+            _access_token, snapshot = await _snapshot(runtime)
+            values = [
+                {
+                    "kind": item.kind,
+                    "identifier": item.identifier,
+                    "name": item.name,
+                    "analog": item.analog,
+                    "locked": item.locked,
+                    "state_uuid": item.state_uuid,
+                }
+                for item in snapshot.structure.global_metadata
+                if kind is None or item.kind == kind
+            ]
+            return _result(
+                GlobalMetadataPageEnvelope,
+                _page(cursors, f"global-metadata:{kind or 'all'}", values, cursor, limit),
+            )
+        except ValueError as exc:
+            return _error(GlobalMetadataPageEnvelope, "invalid_input", str(exc))
+        except PermissionError:
+            return _error(
+                GlobalMetadataPageEnvelope,
+                "unauthenticated",
+                "Authentication with loxone:read is required",
+            )
+        except RuntimeUnavailable as exc:
+            return _error(GlobalMetadataPageEnvelope, "temporarily_unavailable", str(exc))
+
+    @server.tool(
         name="loxone_find_controls",
         description=(
             "Search visible Loxone controls by text, room, category, type, and historical data "
@@ -1061,6 +1165,50 @@ def register_read_tools(
                         ],
                     }
                     if control.control_type == "StatusMonitor"
+                    else None
+                ),
+                "model": (
+                    {
+                        "format": control.format,
+                        "timer_modes": [
+                            {"id": item.option_id, "name": item.name}
+                            for item in control.timer_modes
+                        ],
+                        "ventilation_modes": [
+                            {"id": item.option_id, "name": item.name}
+                            for item in control.ventilation_modes
+                        ],
+                        "ventilation_timer_profiles": [
+                            {
+                                "index": item.index,
+                                "name": item.name,
+                                "interval_seconds": item.interval_seconds,
+                                "mode_ids": list(item.mode_ids),
+                                "default_mode_id": item.default_mode_id,
+                                "speed_enabled": item.speed_enabled,
+                            }
+                            for item in control.ventilation_timer_profiles
+                        ],
+                        "window_monitor_items": [
+                            {
+                                "index": item.index,
+                                "name": item.name,
+                                "room_uuid": item.room_uuid,
+                                "control_uuid": item.control_uuid,
+                                "install_place": item.install_place,
+                            }
+                            for item in control.window_monitor_items
+                        ],
+                        "connected_inputs": control.connected_inputs,
+                    }
+                    if control.control_type
+                    in {
+                        "IRoomControllerV2",
+                        "IRCV2Daytimer",
+                        "ClimateControllerUS",
+                        "Ventilation",
+                        "WindowMonitor",
+                    }
                     else None
                 ),
             }
@@ -1647,7 +1795,8 @@ def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> Non
             "Operate one visible and operable supported control: Switch, Dimmer, "
             "LightController V1/V2, Jalousie, TimedSwitch, Radio, LightsceneRGB, "
             "ColorPicker V1/V2, Pushbutton, UpDownAnalog, Slider, LeftRightAnalog, "
-            "CentralJalousie, or a digital Daytimer. Use an explicit documented action. "
+            "CentralJalousie, a digital Daytimer, or a temporary climate/ventilation override. "
+            "Use an explicit documented action. "
             "Requires loxone:control. Never retries an uncertain command."
         ),
         annotations=annotations,
@@ -1682,6 +1831,10 @@ def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> Non
                 "set_value",
                 "start_override",
                 "stop_override",
+                "start_fan_override",
+                "stop_fan_override",
+                "start_mode_override",
+                "stop_mode_override",
             ],
             Field(description="Explicit action advertised by loxone_describe_control."),
         ],
@@ -1771,7 +1924,8 @@ def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> Non
             float | None,
             Field(
                 description=(
-                    "UpDownAnalog value within the range advertised by the visible control."
+                    "Visible analog value, timer mode, ventilation mode, or HVAC mode, depending "
+                    "on the advertised action."
                 ),
             ),
         ] = None,
@@ -1779,8 +1933,8 @@ def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> Non
             int | None,
             Field(
                 description=(
-                    "Digital Daytimer override duration from 1 to 86400 seconds; required "
-                    "only for start_override."
+                    "Temporary documented override duration from 1 to 86400 seconds; required "
+                    "for start_override, start_fan_override, and start_mode_override."
                 ),
                 json_schema_extra={"minimum": 1, "maximum": 86400},
             ),

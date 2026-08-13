@@ -3,8 +3,11 @@
 All notable user-visible changes are recorded here. GitHub release notes are
 extracted from the matching version heading.
 
-## Unreleased
+## 0.4.0-alpha.9 - 2026-08-13
 
+- Add bounded LoxAPP3 climate, ventilation, safety/status, energy and global
+  metadata models, semantic Daytimer/weather events, and documented temporary
+  override contracts.
 - Reuse the MCP Tool Explorer OAuth session in new browser tabs for up to eight
   hours without storing refresh credentials in browser storage; disconnect now
   revokes the shared Explorer session in every tab.

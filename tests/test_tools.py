@@ -444,6 +444,10 @@ def test_control_tool_contract_is_explicitly_mutating_and_non_idempotent() -> No
         "set_value",
         "start_override",
         "stop_override",
+        "start_fan_override",
+        "stop_fan_override",
+        "start_mode_override",
+        "stop_mode_override",
     }
 
 
@@ -465,7 +469,7 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert tool.annotations.destructiveHint is False
     assert tool.annotations.openWorldHint is False
     assert result.data.name == "using-loxberry-mcp"  # type: ignore[union-attr]
-    assert result.data.revision == 13  # type: ignore[union-attr]
+    assert result.data.revision == 14  # type: ignore[union-attr]
     assert result.data.media_type == "text/markdown"  # type: ignore[union-attr]
     assert result.data.content == read_skill_markdown()  # type: ignore[union-attr]
     assert "For a `StatusMonitor`, use its `inputStates` state UUID." in result.data.content  # type: ignore[union-attr]
