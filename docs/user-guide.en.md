@@ -1,4 +1,4 @@
-# LoxBerry MCP Server 0.4.0-alpha.4
+# LoxBerry MCP Server 0.4.0-alpha.5
 
 ## Requirements
 
@@ -246,9 +246,11 @@ files on the authenticated WebSocket. Results remain in a bounded RAM cache for
 The visible Loxone structure is reloaded on connection and after a service
 restart. While a connection remains stable, the server also checks it at the
 interval configured under **Advanced runtime and structure limits** (five minutes
-by default). This detects changed Control Notes, ratings, and favorites. If a due
-structure check cannot complete, the server does not return a possibly outdated
-structure. Configurable structure limits protect large projects; an exceeded limit
+by default). It first requests only Loxone's structure-version marker and downloads
+`LoxAPP3.json` only when that marker changed. This detects changed Control Notes,
+display names, ratings, and favorites. If a due structure check cannot complete,
+the server does not return a possibly outdated structure. Configurable structure
+limits protect large projects; an exceeded limit
 rejects the structure and writes a sanitized service-log entry.
 
 `loxone_describe_control` also returns direct control relationships: a subcontrol

@@ -1,4 +1,4 @@
-# LoxBerry MCP Server 0.4.0-alpha.4
+# LoxBerry MCP Server 0.4.0-alpha.5
 
 ## Voraussetzungen
 
@@ -264,9 +264,11 @@ RAM-Cache; es gibt keinen persistenten Statistik- oder FTP-/XML-Cache.
 Die sichtbare Loxone-Struktur wird beim Verbinden und nach einem Dienstneustart
 neu geladen. Während einer stabilen Verbindung prüft der Server sie zusätzlich
 in dem unter **Erweiterte Laufzeit- und Strukturgrenzen** konfigurierten Intervall
-(standardmäßig fünf Minuten). Dadurch werden auch geänderte Control-Hinweise,
-Bewertungen und Favoriten erkannt. Kann eine fällige Strukturprüfung nicht
-erfolgen, liefert der Server keine möglicherweise veraltete Struktur. Die
+(standardmäßig fünf Minuten). Dabei fragt er zuerst nur den Loxone-
+Strukturzeitstempel ab und lädt `LoxAPP3.json` ausschließlich bei einer Änderung.
+Dadurch werden auch geänderte Control-Hinweise, Anzeigenamen, Bewertungen und
+Favoriten erkannt. Kann eine fällige Strukturprüfung nicht erfolgen, liefert der
+Server keine möglicherweise veraltete Struktur. Die
 konfigurierbaren Strukturgrenzen schützen umfangreiche Projekte; eine
 Überschreitung wird abgelehnt und ohne Control-Inhalte im Dienstlog vermerkt.
 

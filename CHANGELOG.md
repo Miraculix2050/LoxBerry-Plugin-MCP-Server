@@ -3,8 +3,10 @@
 All notable user-visible changes are recorded here. GitHub release notes are
 extracted from the matching version heading.
 
-## 0.4.0-alpha.4 - 2026-08-13
+## 0.4.0-alpha.5 - 2026-08-13
 
+- Check the documented LoxAPP3 version marker before each due structure refresh
+  and download the full user-filtered structure only after a detected change.
 - Serialize due LoxAPP3 refreshes per OAuth family, close live Miniserver
   sessions on service shutdown without revoking persisted authorization, and
   extend the deterministic lifecycle tests.
