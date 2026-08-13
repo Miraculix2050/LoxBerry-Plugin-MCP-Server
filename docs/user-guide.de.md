@@ -138,7 +138,8 @@ Claude-Benutzer finden die dafür notwendige Scope-Konfiguration im Abschnitt
 
 Speichern, Verbindungstest und Sitzungswiderruf funktionieren auch ohne
 JavaScript. Mit JavaScript werden Status, Test und Widerruf ohne Seitenwechsel
-aktualisiert.
+aktualisiert. Die Konfigurationsoberfläche wird sofort angezeigt; Dienststatus,
+Zertifikat und Sitzungen werden danach in einem einzelnen seriellen Abruf geladen.
 
 ## Webserver-Zertifikat
 
