@@ -352,7 +352,7 @@ class Phase0OAuthWeb:
                     code.family_id,
                     client.client_id or "",
                     self.resource,
-                    token.scope,
+                    token.scope or scope_text(list(code.scopes)),
                     token.access_token or "",
                     now + int(token.expires_in or 0),
                     token.refresh_token or "",
@@ -376,9 +376,9 @@ class Phase0OAuthWeb:
         if action == "logout" and set(payload) == {"action"}:
             await self.provider.revoke_raw_token(session.refresh_token, session.client_id)
             self.loxone_store.delete_explorer_session(session.session_id)
-            response = Response(status_code=204, headers=_security_headers())
-            self._delete_explorer_cookie(response)
-            return response
+            logout_response = Response(status_code=204, headers=_security_headers())
+            self._delete_explorer_cookie(logout_response)
+            return logout_response
         if action != "access" or set(payload) != {"action"}:
             return _json({"error": "invalid_request"}, status=400)
         lock = self._explorer_locks.setdefault(session.session_id, asyncio.Lock())
@@ -404,7 +404,7 @@ class Phase0OAuthWeb:
                     current.family_id,
                     current.client_id,
                     current.resource,
-                    token.scope,
+                    token.scope or current.scope,
                     token.access_token or "",
                     self.provider.now() + int(token.expires_in or 0),
                     token.refresh_token or "",
