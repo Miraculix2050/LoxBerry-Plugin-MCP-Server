@@ -4,7 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore, LoxoneTokenStoreError
+from mcpserver.auth.loxone_store import (
+    EncryptedLoxoneTokenStore,
+    ExplorerSession,
+    LoxoneTokenStoreError,
+)
 from mcpserver.loxone.client import LoxoneToken
 
 
@@ -48,3 +52,26 @@ def test_wrong_installation_key_cannot_decrypt(tmp_path: Path) -> None:
 
     with pytest.raises(LoxoneTokenStoreError, match="cannot be decrypted"):
         reopened.get("family", "miniserver", "identity")
+
+
+def test_explorer_session_is_encrypted_and_removed_with_its_oauth_family(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    session = ExplorerSession(
+        "browser-session",
+        "family",
+        "client",
+        "https://example/mcp",
+        "loxone:read",
+        "access-secret",
+        2_000_000_000,
+        "refresh-secret",
+        2_000_010_000,
+    )
+
+    store.put_explorer_session(session)
+
+    assert "access-secret" not in store.path.read_text(encoding="utf-8")
+    assert "refresh-secret" not in store.path.read_text(encoding="utf-8")
+    assert store.get_explorer_session("browser-session") == session
+    store.delete_explorer_family("family")
+    assert store.get_explorer_session("browser-session") is None

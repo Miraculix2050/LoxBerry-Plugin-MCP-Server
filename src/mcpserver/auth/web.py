@@ -23,14 +23,20 @@ from urllib.parse import urlencode, urlsplit
 from uuid import NAMESPACE_URL, uuid5
 
 from mcp.server.auth.provider import RegistrationError, TokenError
-from mcp.shared.auth import OAuthClientInformationFull, OAuthClientMetadata
+from mcp.shared.auth import OAuthClientInformationFull, OAuthClientMetadata, OAuthToken
 from pydantic import ValidationError
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
-from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore
+from mcpserver.auth.loxone_store import (
+    EncryptedLoxoneTokenStore,
+    ExplorerSession,
+    LoxoneTokenStoreError,
+)
 from mcpserver.auth.provider import (
     CONTROL_SCOPE,
+    EXPLORER_CLIENT_NAME,
+    EXPLORER_REFRESH_FAMILY_TTL,
     HISTORY_SCOPE,
     LOXBERRY_OPERATE_SCOPE,
     LOXBERRY_READ_SCOPE,
@@ -59,6 +65,7 @@ _MAX_RATE_KEYS: Final = 512
 _REGISTRATION_RATE_WINDOW: Final = 5 * 60
 _MAX_REGISTRATIONS_PER_WINDOW: Final = 16
 _COOKIE_NAME: Final = "phase0_oauth_tx"
+_EXPLORER_COOKIE_NAME: Final = "mcp_explorer_session"
 _PKCE_CHALLENGE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 _PKCE_VERIFIER = re.compile(r"^[A-Za-z0-9._~-]{43,128}$")
 
@@ -216,6 +223,8 @@ class Phase0OAuthWeb:
         self.issuer = issuer
         self.resource = resource
         self.loxone_store = loxone_store
+        self.explorer_origin = issuer.rsplit("/plugins/mcpserver/oauth", 1)[0]
+        self._explorer_locks: dict[str, asyncio.Lock] = {}
         self.transactions: dict[str, LoginTransaction] = {}
         self._client_uuid = uuid5(NAMESPACE_URL, issuer)
         self._login_slots = asyncio.Semaphore(2)
@@ -248,6 +257,167 @@ class Phase0OAuthWeb:
             async with transaction.lock:
                 if self.transactions.get(key) is transaction and await self._kill(transaction):
                     self.transactions.pop(key, None)
+
+    def _explorer_response(self, token: OAuthToken, expires_at: int) -> JSONResponse:
+        return _json(
+            {
+                "access_token": token.access_token,
+                "expires_in": token.expires_in,
+                "scope": token.scope,
+                "expires_at": expires_at,
+            }
+        )
+
+    def _explorer_cookie(self, response: Response, session_id: str) -> None:
+        response.set_cookie(
+            _EXPLORER_COOKIE_NAME,
+            session_id,
+            max_age=EXPLORER_REFRESH_FAMILY_TTL,
+            path="/plugins/mcpserver/oauth",
+            secure=True,
+            httponly=True,
+            samesite="strict",
+        )
+
+    def _delete_explorer_cookie(self, response: Response) -> None:
+        response.delete_cookie(
+            _EXPLORER_COOKIE_NAME,
+            path="/plugins/mcpserver/oauth",
+            secure=True,
+            httponly=True,
+            samesite="strict",
+        )
+
+    async def _explorer_payload(self, request: Request) -> dict[str, str] | None:
+        if request.headers.get("origin") != self.explorer_origin:
+            return None
+        if (
+            request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+            != "application/json"
+        ):
+            return None
+        raw = await _limited_body(request, _MAX_JSON_BYTES)
+        if raw is None:
+            return None
+        try:
+            payload = json.loads(raw)
+        except (UnicodeError, json.JSONDecodeError):
+            return None
+        if not isinstance(payload, dict) or any(
+            not isinstance(key, str) or not isinstance(value, str) for key, value in payload.items()
+        ):
+            return None
+        return payload
+
+    async def explorer_session(self, request: Request) -> Response:
+        """Broker a short-lived Explorer OAuth family through an HttpOnly browser cookie."""
+        payload = await self._explorer_payload(request)
+        if payload is None or self.loxone_store is None:
+            return _json({"error": "invalid_request"}, status=400)
+        action = payload.get("action")
+        if action == "complete":
+            allowed = {"action", "client_id", "code", "redirect_uri", "code_verifier", "resource"}
+            if set(payload) != allowed or payload["resource"] != self.resource:
+                return _json({"error": "invalid_request"}, status=400)
+            client = await self.provider.get_client(payload["client_id"])
+            if (
+                client is None
+                or client.client_name != EXPLORER_CLIENT_NAME
+                or not self.provider.is_explorer_client(client)
+            ):
+                return _json({"error": "invalid_client"}, status=401)
+            code = await self.provider.load_authorization_code(client, payload["code"])
+            verifier = payload["code_verifier"]
+            if (
+                code is None
+                or str(code.redirect_uri) != payload["redirect_uri"]
+                or code.resource != self.resource
+                or not _PKCE_VERIFIER.fullmatch(verifier)
+            ):
+                return _json({"error": "invalid_grant"}, status=400)
+            challenge = (
+                base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest())
+                .rstrip(b"=")
+                .decode("ascii")
+            )
+            if not hmac.compare_digest(challenge, code.code_challenge):
+                return _json({"error": "invalid_grant"}, status=400)
+            token = await self.provider.exchange_authorization_code(client, code)
+            session_id = secrets.token_urlsafe(32)
+            now = self.provider.now()
+            expires_at = now + EXPLORER_REFRESH_FAMILY_TTL
+            self.loxone_store.put_explorer_session(
+                ExplorerSession(
+                    session_id,
+                    code.family_id,
+                    client.client_id or "",
+                    self.resource,
+                    token.scope or scope_text(list(code.scopes)),
+                    token.access_token or "",
+                    now + int(token.expires_in or 0),
+                    token.refresh_token or "",
+                    expires_at,
+                )
+            )
+            response = self._explorer_response(token, expires_at)
+            self._explorer_cookie(response, session_id)
+            return response
+        session_id = request.cookies.get(_EXPLORER_COOKIE_NAME, "")
+        try:
+            session = self.loxone_store.get_explorer_session(session_id)
+        except LoxoneTokenStoreError:
+            session = None
+        if session is None or session.expires_at <= self.provider.now():
+            response = _json({"error": "invalid_session"}, status=401)
+            self._delete_explorer_cookie(response)
+            if session_id:
+                self.loxone_store.delete_explorer_session(session_id)
+            return response
+        if action == "logout" and set(payload) == {"action"}:
+            await self.provider.revoke_raw_token(session.refresh_token, session.client_id)
+            self.loxone_store.delete_explorer_session(session.session_id)
+            logout_response = Response(status_code=204, headers=_security_headers())
+            self._delete_explorer_cookie(logout_response)
+            return logout_response
+        if action != "access" or set(payload) != {"action"}:
+            return _json({"error": "invalid_request"}, status=400)
+        lock = self._explorer_locks.setdefault(session.session_id, asyncio.Lock())
+        async with lock:
+            current = self.loxone_store.get_explorer_session(session.session_id)
+            if current is None or current.expires_at <= self.provider.now():
+                return _json({"error": "invalid_session"}, status=401)
+            if current.access_expires_at <= self.provider.now() + 15:
+                client = await self.provider.get_client(current.client_id)
+                refresh = (
+                    None
+                    if client is None
+                    else await self.provider.load_refresh_token(client, current.refresh_token)
+                )
+                if client is None or refresh is None:
+                    self.loxone_store.delete_explorer_session(current.session_id)
+                    return _json({"error": "invalid_session"}, status=401)
+                token = await self.provider.exchange_refresh_token(
+                    client, refresh, current.scope.split()
+                )
+                current = ExplorerSession(
+                    current.session_id,
+                    current.family_id,
+                    current.client_id,
+                    current.resource,
+                    token.scope or current.scope,
+                    token.access_token or "",
+                    self.provider.now() + int(token.expires_in or 0),
+                    token.refresh_token or "",
+                    current.expires_at,
+                )
+                self.loxone_store.put_explorer_session(current)
+            token = OAuthToken(
+                access_token=current.access_token,
+                token_type="Bearer",
+                expires_in=max(0, current.access_expires_at - self.provider.now()),
+                scope=current.scope,
+            )
+            return self._explorer_response(token, current.expires_at)
 
     @staticmethod
     def _prune_times(values: deque[int], *, now: int, window: int) -> None:

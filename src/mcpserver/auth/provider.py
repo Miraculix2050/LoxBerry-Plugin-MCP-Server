@@ -295,6 +295,10 @@ class Phase0OAuthProvider(
             and origin in self.explorer_origins
         )
 
+    def is_explorer_client(self, client: OAuthClientInformationFull) -> bool:
+        """Return whether a registered public client is the fixed local Explorer."""
+        return self._is_explorer_client(client.model_dump(mode="json"))
+
     async def authorize(
         self, client: OAuthClientInformationFull, params: AuthorizationParams
     ) -> str:

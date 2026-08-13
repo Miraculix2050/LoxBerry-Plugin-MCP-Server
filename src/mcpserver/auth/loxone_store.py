@@ -10,6 +10,7 @@ import stat
 import sys
 import threading
 from contextlib import contextmanager, suppress
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO, Final
 
@@ -51,6 +52,21 @@ def _unlock_file(handle: BinaryIO) -> None:
 
 class LoxoneTokenStoreError(RuntimeError):
     """The encrypted Loxone token store cannot be used safely."""
+
+
+@dataclass(frozen=True)
+class ExplorerSession:
+    """Encrypted server-side credentials for one browser Explorer session."""
+
+    session_id: str
+    family_id: str
+    client_id: str
+    resource: str
+    scope: str
+    access_token: str
+    access_expires_at: int
+    refresh_token: str
+    expires_at: int
 
 
 def _encoded(value: bytes) -> str:
@@ -99,7 +115,9 @@ class EncryptedLoxoneTokenStore:
             os.chmod(self.path.parent, 0o700)
             with self._locked():
                 if not self.path.exists():
-                    self._write({"schema_version": _SCHEMA_VERSION, "tokens": {}})
+                    self._write(
+                        {"schema_version": _SCHEMA_VERSION, "tokens": {}, "explorer_sessions": {}}
+                    )
                 else:
                     self._read()
         except LoxoneTokenStoreError:
@@ -127,9 +145,10 @@ class EncryptedLoxoneTokenStore:
     def _validate(document: object) -> dict[str, Any]:
         if (
             not isinstance(document, dict)
-            or set(document) != {"schema_version", "tokens"}
+            or set(document) != {"schema_version", "tokens", "explorer_sessions"}
             or document.get("schema_version") != _SCHEMA_VERSION
             or not isinstance(document.get("tokens"), dict)
+            or not isinstance(document.get("explorer_sessions"), dict)
         ):
             raise LoxoneTokenStoreError("encrypted token store is invalid")
         return document
@@ -139,7 +158,10 @@ class EncryptedLoxoneTokenStore:
             metadata = self.path.lstat()
             if not stat.S_ISREG(metadata.st_mode) or self.path.is_symlink():
                 raise LoxoneTokenStoreError("encrypted token store path is unsafe")
-            return self._validate(json.loads(self.path.read_text(encoding="utf-8")))
+            document = json.loads(self.path.read_text(encoding="utf-8"))
+            if isinstance(document, dict) and set(document) == {"schema_version", "tokens"}:
+                document["explorer_sessions"] = {}
+            return self._validate(document)
         except LoxoneTokenStoreError:
             raise
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
@@ -247,6 +269,116 @@ class EncryptedLoxoneTokenStore:
         with self._locked():
             document = self._read()
             if document["tokens"].pop(family_id, None) is not None:
+                self._write(document)
+
+    @staticmethod
+    def _explorer_aad(session_id: str, family_id: str, client_id: str) -> bytes:
+        return f"{_SCHEMA_VERSION}\0explorer\0{session_id}\0{family_id}\0{client_id}".encode()
+
+    def put_explorer_session(self, session: ExplorerSession) -> None:
+        if not all(
+            (
+                session.session_id,
+                session.family_id,
+                session.client_id,
+                session.resource,
+                session.scope,
+                session.access_token,
+                session.refresh_token,
+            )
+        ):
+            raise ValueError("explorer session fields must not be empty")
+        plaintext = json.dumps(
+            {
+                "resource": session.resource,
+                "scope": session.scope,
+                "access_token": session.access_token,
+                "access_expires_at": session.access_expires_at,
+                "refresh_token": session.refresh_token,
+                "expires_at": session.expires_at,
+            },
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode()
+        nonce = secrets.token_bytes(12)
+        ciphertext = AESGCM(self._key).encrypt(
+            nonce,
+            plaintext,
+            self._explorer_aad(session.session_id, session.family_id, session.client_id),
+        )
+        with self._locked():
+            document = self._read()
+            document["explorer_sessions"][session.session_id] = {
+                "family_id": session.family_id,
+                "client_id": session.client_id,
+                "nonce": _encoded(nonce),
+                "ciphertext": _encoded(ciphertext),
+            }
+            self._write(document)
+
+    def get_explorer_session(self, session_id: str) -> ExplorerSession | None:
+        with self._locked():
+            record = self._read()["explorer_sessions"].get(session_id)
+        if record is None:
+            return None
+        if (
+            not isinstance(record, dict)
+            or not isinstance(record.get("family_id"), str)
+            or not isinstance(record.get("client_id"), str)
+        ):
+            raise LoxoneTokenStoreError("encrypted Explorer session binding is invalid")
+        family_id, client_id = record["family_id"], record["client_id"]
+        try:
+            plaintext = AESGCM(self._key).decrypt(
+                _decoded(record.get("nonce")),
+                _decoded(record.get("ciphertext")),
+                self._explorer_aad(session_id, family_id, client_id),
+            )
+            value = json.loads(plaintext)
+            expected = {
+                "resource": str,
+                "scope": str,
+                "access_token": str,
+                "access_expires_at": int,
+                "refresh_token": str,
+                "expires_at": int,
+            }
+            if not isinstance(value, dict) or not all(
+                isinstance(value.get(key), kind) for key, kind in expected.items()
+            ):
+                raise ValueError
+        except Exception as exc:
+            raise LoxoneTokenStoreError("encrypted Explorer session is invalid") from exc
+        return ExplorerSession(
+            session_id,
+            family_id,
+            client_id,
+            value["resource"],
+            value["scope"],
+            value["access_token"],
+            value["access_expires_at"],
+            value["refresh_token"],
+            value["expires_at"],
+        )
+
+    def delete_explorer_session(self, session_id: str) -> None:
+        with self._locked():
+            document = self._read()
+            if document["explorer_sessions"].pop(session_id, None) is not None:
+                self._write(document)
+
+    def delete_explorer_family(self, family_id: str) -> None:
+        with self._locked():
+            document = self._read()
+            removed = [
+                key
+                for key, value in document["explorer_sessions"].items()
+                if value.get("family_id") == family_id
+            ]
+            for key in removed:
+                document["explorer_sessions"].pop(key, None)
+            if removed:
                 self._write(document)
 
     def family_ids(self) -> tuple[str, ...]:

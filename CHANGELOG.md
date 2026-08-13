@@ -3,6 +3,12 @@
 All notable user-visible changes are recorded here. GitHub release notes are
 extracted from the matching version heading.
 
+## Unreleased
+
+- Reuse the MCP Tool Explorer OAuth session in new browser tabs for up to eight
+  hours without storing refresh credentials in browser storage; disconnect now
+  revokes the shared Explorer session in every tab.
+
 ## 0.4.0-alpha.8 - 2026-08-13
 
 - Keep the HTTP-to-HTTPS Explorer guidance visible after a sign-in click by
