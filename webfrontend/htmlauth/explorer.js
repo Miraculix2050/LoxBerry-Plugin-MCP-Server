@@ -123,6 +123,24 @@
     }
   }
 
+  function httpsExplorerUrl(currentUrl) {
+    if (typeof currentUrl !== 'string') return null;
+    try {
+      const page = new URL(currentUrl);
+      if (
+        page.protocol !== 'http:'
+        || page.username
+        || page.password
+        || page.pathname !== EXPLORER_PATH
+      ) return null;
+      page.protocol = 'https:';
+      if (page.port === '80') page.port = '';
+      return page.href;
+    } catch (_error) {
+      return null;
+    }
+  }
+
   function localAuthorizationMetadata(metadata, currentOrigin) {
     let issuer;
     let local;
@@ -600,6 +618,7 @@
     revokeOAuthGrant,
     fieldControlId,
     canonicalExplorerUrl,
+    httpsExplorerUrl,
     localAuthorizationMetadata,
     createFieldLabel,
     createOptionalToggle,
@@ -843,6 +862,11 @@
   }
 
   async function discover() {
+    if (window.location.protocol !== 'https:') {
+      const error = new Error(label('originMismatch'));
+      error.canonicalUrl = core.httpsExplorerUrl(window.location.href);
+      throw error;
+    }
     const resourceMetadata = await fetchJson('/.well-known/oauth-protected-resource/plugins/mcpserver/mcp', {cache: 'no-store'});
     const issuer = Array.isArray(resourceMetadata.authorization_servers) ? resourceMetadata.authorization_servers[0] : null;
     const canonicalUrl = core.canonicalExplorerUrl(
@@ -936,16 +960,7 @@
     });
   }
 
-  function openAuthorizationPopup() {
-    return window.open(
-      '',
-      'mcp-explorer-oauth',
-      'popup=yes,width=680,height=900,resizable=yes,scrollbars=yes',
-    );
-  }
-
-  async function authorize(popup) {
-    if (!popup) throw new Error(label('popupBlocked'));
+  async function authorize() {
     const resumeUntil = Date.now() + core.EXPLORER_SESSION_MS;
     const discovered = await discover();
     const supported = new Set(discovered.resourceMetadata.scopes_supported || []);
@@ -964,7 +979,12 @@
       code_challenge: challenge, code_challenge_method: 'S256', state: oauthState,
       scope, resource: discovered.resourceMetadata.resource,
     }).toString();
-    popup.location.replace(authorizationUrl.href);
+    const popup = window.open(
+      authorizationUrl.href,
+      'mcp-explorer-oauth',
+      'popup=yes,width=680,height=900,resizable=yes,scrollbars=yes',
+    );
+    if (!popup) throw new Error(label('popupBlocked'));
     const code = await waitForAuthorization(popup, oauthState);
     if (!code) throw new Error(label('authCancelled'));
     const token = await exchangeToken(
@@ -1595,13 +1615,10 @@
   }
 
   elements.connect.addEventListener('click', async () => {
-    // Open synchronously in the user gesture. Firefox otherwise treats the
-    // popup as unsolicited after the asynchronous discovery and PKCE setup.
-    const authorizationPopup = openAuthorizationPopup();
     setBusy(true);
     setStatus(label('working'), 'working');
     try {
-      state.oauth = await authorize(authorizationPopup);
+      state.oauth = await authorize();
       state.oauth.resumeEnabled = await acquireSessionOwnership(state.oauth.sessionId);
       if (state.oauth.resumeEnabled && !saveStoredSession(state.oauth)) {
         state.oauth.resumeEnabled = false;
@@ -1612,7 +1629,6 @@
       if (state.tools.length) selectTool(state.tools[0].name);
       setStatus(label('connected'), 'success');
     } catch (error) {
-      try { authorizationPopup?.close(); } catch (_closeError) { /* already gone */ }
       if (state.oauth) await revokeAndClear();
       else core.clearSensitiveState(state);
       showConnectionError(error, label('error'));

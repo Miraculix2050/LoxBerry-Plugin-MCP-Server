@@ -28,8 +28,8 @@ Für jeden Assistenten sollte ein eigener Loxone-Benutzer mit den minimal erford
 ## Projektstatus
 
 Phase 1 bis Phase 3 sind abgenommen. Der vorbereitete Phase-4-Pre-Release
-`0.4.0-alpha.6` ergänzt eine Firefox-sichere OAuth-Popup-Öffnung im MCP Tool
-Explorer sowie die versionsgeprüfte, begrenzte single-flight
+`0.4.0-alpha.7` blockiert die MCP-Tool-Explorer-Anmeldung auf HTTP mit einem
+Link zur gleichen IP-Adresse oder demselben Hostnamen über HTTPS sowie die versionsgeprüfte, begrenzte single-flight
 LoxAPP3-Aktualisierung, einen kontrollierten Runtime-Shutdown und einen
 ausschließlich flüchtigen Statistik-Cache. Das Schreibwerkzeug unterstützt auf Gen.-1-Controls die Typen
 `Switch`, `Dimmer`, `LightController`, `LightControllerV2`, `Jalousie`,

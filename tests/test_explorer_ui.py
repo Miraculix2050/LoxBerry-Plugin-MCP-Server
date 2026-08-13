@@ -87,6 +87,18 @@ def test_explorer_requires_and_links_to_the_canonical_https_origin() -> None:
         )
         is None
     )
+    assert (
+        run_core(
+            "core.httpsExplorerUrl('http://192.0.2.10/admin/plugins/mcpserver/explorer.cgi?lang=de')"
+        )
+        == "https://192.0.2.10/admin/plugins/mcpserver/explorer.cgi?lang=de"
+    )
+    assert (
+        run_core(
+            "core.httpsExplorerUrl('https://loxberry.example/admin/plugins/mcpserver/explorer.cgi')"
+        )
+        is None
+    )
 
 
 def test_explorer_uses_current_https_origin_for_validated_oauth_endpoints() -> None:
@@ -125,17 +137,16 @@ def test_explorer_uses_current_https_origin_for_validated_oauth_endpoints() -> N
     )
 
 
-def test_explorer_opens_oauth_popup_in_the_connect_click_handler() -> None:
+def test_explorer_blocks_insecure_origins_before_oauth_discovery() -> None:
     source = SCRIPT.read_text(encoding="utf-8")
-    handler_start = source.index("elements.connect.addEventListener('click'")
-    handler = source[
-        handler_start : source.index("elements.disconnect.addEventListener", handler_start)
+    discover_start = source.index("async function discover()")
+    discover = source[
+        discover_start : source.index("async function registerClient", discover_start)
     ]
 
-    assert "const authorizationPopup = openAuthorizationPopup();" in handler
-    assert handler.index("openAuthorizationPopup()") < handler.index("setBusy(true)")
-    assert "state.oauth = await authorize(authorizationPopup);" in handler
-    assert "authorizationPopup?.close()" in handler
+    assert "if (window.location.protocol !== 'https:')" in discover
+    assert "error.canonicalUrl = core.httpsExplorerUrl(window.location.href);" in discover
+    assert discover.index("window.location.protocol") < discover.index("fetchJson(")
 
 
 def test_explorer_reuses_only_schema_compatible_values() -> None:
