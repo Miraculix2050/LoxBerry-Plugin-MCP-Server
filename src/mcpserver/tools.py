@@ -30,7 +30,28 @@ from mcpserver.auth.provider import (
 )
 from mcpserver.loxberry.diagnostics import DiagnosticsUnavailable, LoxBerryDiagnostics
 from mcpserver.loxone.control import allowed_actions
-from mcpserver.loxone.models import Control, Freshness, LoxoneStructure, NamedGroup
+from mcpserver.loxone.models import Freshness
+from mcpserver.loxone.presentation import (
+    control_matches_query as _control_matches_query,
+)
+from mcpserver.loxone.presentation import (
+    control_summary as _control_summary,
+)
+from mcpserver.loxone.presentation import (
+    controls_for_diagnosis as _controls_for_diagnosis,
+)
+from mcpserver.loxone.presentation import (
+    groups as _groups,
+)
+from mcpserver.loxone.presentation import (
+    linked_control as _linked_control,
+)
+from mcpserver.loxone.presentation import (
+    linked_controls as _linked_controls,
+)
+from mcpserver.loxone.presentation import (
+    parent_control as _parent_control,
+)
 from mcpserver.loxone.runtime import (
     ControlHistoryEntry,
     ControlOperationError,
@@ -368,8 +389,6 @@ class ControlNotesEnvelope(ToolEnvelope):
 
 class CacheClearData(BaseModel):
     memory_entries_removed: int
-    persistent_entries_removed: int
-    bytes_freed: int
 
 
 class CacheClearEnvelope(ToolEnvelope):
@@ -730,83 +749,6 @@ class LoxBerryOperateRuntime:
         return await asyncio.wait_for(
             asyncio.to_thread(self._cache.clear), timeout=self._clear_timeout_seconds
         )
-
-
-def _groups(items: tuple[NamedGroup, ...]) -> list[dict[str, str]]:
-    return [{"uuid": item.uuid, "name": item.name} for item in items]
-
-
-def _flatten(controls: tuple[Control, ...]) -> list[Control]:
-    result: list[Control] = []
-    for control in controls:
-        result.append(control)
-        result.extend(_flatten(control.subcontrols))
-    return result
-
-
-def _controls_for_diagnosis(structure: LoxoneStructure, *, include_hidden: bool) -> list[Control]:
-    controls = _flatten(structure.controls)
-    if include_hidden:
-        controls.extend(_flatten(structure.hidden_controls))
-    return controls
-
-
-def _control_summary(control: Control, snapshot: RuntimeSnapshot) -> dict[str, Any]:
-    rooms = {
-        item.uuid: item.name
-        for item in snapshot.structure.rooms
-        + (snapshot.structure.hidden_rooms if control.is_hidden else ())
-    }
-    categories = {
-        item.uuid: item.name
-        for item in snapshot.structure.categories
-        + (snapshot.structure.hidden_categories if control.is_hidden else ())
-    }
-    return {
-        "uuid": control.uuid,
-        "name": control.name,
-        "type": control.control_type,
-        "visibility": (
-            "hidden" if control.is_hidden else "linked" if control.is_user_linked else "direct"
-        ),
-        "room": (
-            {"uuid": control.room_uuid, "name": rooms.get(control.room_uuid, "")}
-            if control.room_uuid
-            else None
-        ),
-        "category": (
-            {"uuid": control.category_uuid, "name": categories.get(control.category_uuid, "")}
-            if control.category_uuid
-            else None
-        ),
-    }
-
-
-def _control_matches_query(control: Control, query: str | None) -> bool:
-    if query is None:
-        return True
-    return query in control.name.casefold() or any(
-        query in output_name.casefold() for _output_id, output_name in control.radio_outputs
-    )
-
-
-def _linked_control(control: Control) -> dict[str, str]:
-    return {"uuid": control.uuid, "name": control.name, "type": control.control_type}
-
-
-def _parent_control(controls: tuple[Control, ...], control_uuid: str) -> Control | None:
-    for candidate in controls:
-        if any(subcontrol.uuid == control_uuid for subcontrol in candidate.subcontrols):
-            return candidate
-        parent = _parent_control(candidate.subcontrols, control_uuid)
-        if parent is not None:
-            return parent
-    return None
-
-
-def _linked_controls(control: Control, controls: list[Control]) -> list[Control]:
-    by_uuid = {item.uuid: item for item in controls}
-    return [by_uuid[uuid] for uuid in control.linked_control_uuids if uuid in by_uuid]
 
 
 def _page(
@@ -1658,9 +1600,7 @@ def register_loxberry_operate_tool(server: FastMCP, runtime: LoxBerryOperateRunt
             return _result(
                 CacheClearEnvelope,
                 {
-                    "memory_entries_removed": result.memory_entries_removed,
-                    "persistent_entries_removed": result.persistent_entries_removed,
-                    "bytes_freed": result.bytes_freed,
+                    "memory_entries_removed": result,
                 },
             )
         except PermissionError:

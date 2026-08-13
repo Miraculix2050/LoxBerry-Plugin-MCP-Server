@@ -570,6 +570,9 @@ def test_phase_four_tool_contracts_are_narrow_and_correctly_annotated() -> None:
     assert cache.annotations.readOnlyHint is False
     assert cache.annotations.destructiveHint is True
     assert cache.parameters["properties"] == {}
+    assert cache.output_schema["$defs"]["CacheClearData"]["properties"] == {
+        "memory_entries_removed": {"title": "Memory Entries Removed", "type": "integer"}
+    }
     operation = published["loxone_operate_control"]
     for control_type in (
         "TimedSwitch",

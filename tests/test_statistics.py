@@ -99,7 +99,7 @@ async def test_runtime_reads_bounded_legacy_raw_statistics() -> None:
 
     session = Session()
     runtime = object.__new__(LoxoneRuntime)
-    runtime.statistics_cache = StatisticsCache(None)
+    runtime.statistics_cache = StatisticsCache()
 
     @asynccontextmanager
     async def history_session(_access: StoredAccessToken, control_uuid: str):
@@ -153,7 +153,7 @@ async def test_runtime_filters_statistic_v2_points_to_requested_interval() -> No
             return struct.pack("<IdIdId", 99, 1.0, 100, 2.0, 102, 3.0)
 
     runtime = object.__new__(LoxoneRuntime)
-    runtime.statistics_cache = StatisticsCache(None)
+    runtime.statistics_cache = StatisticsCache()
 
     @asynccontextmanager
     async def history_session(_access: StoredAccessToken, control_uuid: str):
@@ -204,7 +204,7 @@ async def test_runtime_allows_single_second_statistic_range() -> None:
             return struct.pack("<Id", 100, 2.0)
 
     runtime = object.__new__(LoxoneRuntime)
-    runtime.statistics_cache = StatisticsCache(None)
+    runtime.statistics_cache = StatisticsCache()
 
     @asynccontextmanager
     async def history_session(_access: StoredAccessToken, control_uuid: str):
@@ -304,7 +304,7 @@ async def test_runtime_translates_history_and_statistic_timeouts() -> None:
             raise TimeoutError
 
     runtime = object.__new__(LoxoneRuntime)
-    runtime.statistics_cache = StatisticsCache(None)
+    runtime.statistics_cache = StatisticsCache()
 
     @asynccontextmanager
     async def history_session(_access: StoredAccessToken, _control_uuid: str):
@@ -336,16 +336,12 @@ def test_statistics_cache_expires_memory_and_clears_only_ram() -> None:
     assert cache.get(key) == points
     now[0] = 16.0
     assert cache.get(key) is None
-    result = cache.clear()
-    assert result.memory_entries_removed == 0
-    assert result.persistent_entries_removed == 0
-    assert result.bytes_freed == 0
+    assert cache.clear() == 0
 
 
 def test_statistics_cache_purges_expired_and_bounds_memory_points() -> None:
     now = [10.0]
     cache = StatisticsCache(
-        None,
         ttl_seconds=5,
         maximum_memory_points=2,
         clock=lambda: now[0],

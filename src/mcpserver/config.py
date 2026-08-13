@@ -17,7 +17,7 @@ import idna
 
 from mcpserver.loxone.client import MiniserverEndpoint
 
-SCHEMA_VERSION: Final = 3
+SCHEMA_VERSION: Final = 4
 DEFAULT_CONNECTION_TIMEOUT: Final = 10.0
 DEFAULT_REQUESTS_PER_MINUTE: Final = 60
 DEFAULT_MAX_PARALLEL_CALLS: Final = 4
@@ -131,7 +131,7 @@ class PluginConfig:
     @classmethod
     def from_document(cls, document: object) -> PluginConfig:
         root = _mapping(document, name="configuration")
-        if root.get("schema_version") not in {1, 2, SCHEMA_VERSION}:
+        if root.get("schema_version") not in {1, 2, 3, SCHEMA_VERSION}:
             raise ConfigError("schema_version is unsupported")
         server = _mapping(root.get("server", {}), name="server")
         loxone = _mapping(root.get("loxone", {}), name="loxone")
@@ -301,10 +301,7 @@ class PluginConfig:
             name="policies.loxberry_operate_bindings",
         )
         cache_max_mib = _integer(
-            cache.get(
-                "statistics_memory_max_mib",
-                cache.get("statistics_max_mib", DEFAULT_STATISTICS_MEMORY_MAX_MIB),
-            ),
+            cache.get("statistics_memory_max_mib", DEFAULT_STATISTICS_MEMORY_MAX_MIB),
             name="cache.statistics_memory_max_mib",
             minimum=16,
             maximum=512,

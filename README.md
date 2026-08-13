@@ -28,7 +28,9 @@ Für jeden Assistenten sollte ein eigener Loxone-Benutzer mit den minimal erford
 ## Projektstatus
 
 Phase 1 bis Phase 3 sind abgenommen. Der vorbereitete Phase-4-Pre-Release
-`0.4.0-alpha.3` erweitert das Schreibwerkzeug auf Gen.-1-Controls vom Typ
+`0.4.0-alpha.4` ergänzt eine begrenzte, single-flight LoxAPP3-Aktualisierung,
+einen kontrollierten Runtime-Shutdown und einen ausschließlich flüchtigen
+Statistik-Cache. Das Schreibwerkzeug unterstützt auf Gen.-1-Controls die Typen
 `Switch`, `Dimmer`, `LightController`, `LightControllerV2`, `Jalousie`,
 `TimedSwitch`, `Radio`, `LightsceneRGB`, `ColorPicker`, `ColorPickerV2` und
 `Pushbutton`. Es bleibt

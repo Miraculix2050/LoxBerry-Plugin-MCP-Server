@@ -1,4 +1,4 @@
-# LoxBerry MCP Server 0.4.0-alpha.3
+# LoxBerry MCP Server 0.4.0-alpha.4
 
 ## Requirements
 
@@ -318,8 +318,8 @@ acceptance run exists.
 
 `loxberry:operate` uses the same local approval mechanism as `loxberry:read`,
 bound to the exact client, Loxone identity and Miniserver. Its sole operation is
-`loxberry_clear_statistics_cache`, which deletes only plugin-owned cache entries
-and emits a compact audit record. Basic Auth remains unsupported. Results and
+`loxberry_clear_statistics_cache`, which deletes only plugin-owned RAM cache entries,
+returns their count, and emits a compact audit record. Basic Auth remains unsupported. Results and
 actions remain limited to the authenticated Loxone user's permissions. Exactly
 one Miniserver is supported.
 

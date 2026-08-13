@@ -23,7 +23,7 @@ from tools.build_plugin import (
 from tools.build_plugin import (
     _verify_project_wheel as verify_project_wheel_input,
 )
-from tools.build_release_candidate import _copy_runtime_wheels, _publish
+from tools.build_release_candidate import _copy_runtime_wheels, _publish, _source_ignore
 from tools.build_release_candidate import main as build_release_candidate
 from tools.prepare_wheelhouse import main as prepare_wheelhouse
 from tools.validate_release_metadata import validate as validate_release_metadata
@@ -120,7 +120,7 @@ def test_plugin_identity_and_platform_contract() -> None:
     assert parser["PLUGIN"]["NAME"] == "mcpserver"
     assert parser["PLUGIN"]["FOLDER"] == "mcpserver"
     assert parser["PLUGIN"]["TITLE"] == "LoxBerry MCP Server"
-    assert parser["PLUGIN"]["VERSION"] == "0.4.0-alpha.3"
+    assert parser["PLUGIN"]["VERSION"] == "0.4.0-alpha.4"
     assert parser["SYSTEM"]["LB_MINIMUM"] == "4.0.0"
     assert parser["SYSTEM"]["INTERFACE"] == "2.0"
     for name in ("release.cfg", "prerelease.cfg"):
@@ -455,7 +455,7 @@ def test_plugin_archive_verifier_accepts_builder_output(tmp_path: Path) -> None:
     for name, version in _locked_requirements(ROOT / "requirements" / "runtime-arm64.lock").items():
         wheel_name = name.replace("-", "_")
         (wheelhouse / f"{wheel_name}-{version}-py3-none-any.whl").write_bytes(b"wheel")
-    project_wheel = wheelhouse / "loxberry_mcpserver-0.4.0a3-py3-none-any.whl"
+    project_wheel = wheelhouse / "loxberry_mcpserver-0.4.0a4-py3-none-any.whl"
     _write_project_wheel(project_wheel)
     hash_lock = tmp_path / "runtime-arm64.sha256"
     hash_lock.write_text(
@@ -642,6 +642,15 @@ def test_release_helpers_exclude_stale_project_wheel_and_refuse_overwrite(
     output.write_bytes(b"old")
     with pytest.raises(RuntimeError, match="different content"):
         _publish(candidate, output, hashlib.sha256(candidate.read_bytes()).hexdigest())
+
+
+def test_release_source_copy_ignores_untracked_build_and_temporary_directories() -> None:
+    ignored = _source_ignore(
+        "source",
+        ["src", "tmp", "dist", "build", ".pytest_cache", "note.txt", "bytecode.pyc"],
+    )
+
+    assert ignored == {"tmp", "dist", "build", ".pytest_cache", "bytecode.pyc"}
 
 
 def test_release_candidate_builds_plugin_archive_once(
@@ -852,12 +861,12 @@ def test_plugin_archive_verifier_rejects_checksum_mismatch(tmp_path: Path) -> No
 
 
 def test_release_metadata_and_changelog_match_current_prerelease() -> None:
-    notes = validate_release_metadata(ROOT, "0.4.0-alpha.3", "prerelease")
+    notes = validate_release_metadata(ROOT, "0.4.0-alpha.4", "prerelease")
 
-    assert "favorite marker" in notes
-    assert "digital Daytimer overrides" in notes
+    assert "Serialize due LoxAPP3 refreshes" in notes
+    assert "hybrid-cache compatibility fields" in notes
     with pytest.raises(ValueError, match="stable releases"):
-        validate_release_metadata(ROOT, "0.4.0-alpha.3", "stable")
+        validate_release_metadata(ROOT, "0.4.0-alpha.4", "stable")
     with pytest.raises(ValueError, match="versions do not match"):
         validate_release_metadata(ROOT, "0.3.0-alpha.2", "prerelease")
 

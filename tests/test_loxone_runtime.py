@@ -1,0 +1,197 @@
+from __future__ import annotations
+
+import asyncio
+from collections import defaultdict
+
+import pytest
+
+import mcpserver.loxone.runtime as runtime_module
+from mcpserver.auth.provider import READ_SCOPE, StoredAccessToken
+from mcpserver.loxone.cache import UserStateCache
+from mcpserver.loxone.client import LoxoneConnectionError
+from mcpserver.loxone.models import LoxoneIdentity, LoxoneStructure
+from mcpserver.loxone.runtime import (
+    LoxoneRuntime,
+    RuntimeUnavailable,
+    _ConnectionRecord,
+)
+
+
+def _access() -> StoredAccessToken:
+    return StoredAccessToken(
+        token="opaque",
+        client_id="client",
+        scopes=[READ_SCOPE],
+        expires_at=2_000_000_000,
+        resource="https://loxberry.local/plugins/mcpserver/mcp",
+        subject="identity",
+        claims={},
+        family_id="family",
+        identity_id="identity",
+        miniserver_id="miniserver",
+    )
+
+
+def _structure(last_modified: str) -> LoxoneStructure:
+    return LoxoneStructure(
+        identity=LoxoneIdentity("reader", "serial"),
+        last_modified=last_modified,
+        rooms=(),
+        categories=(),
+        controls=(),
+    )
+
+
+class _Session:
+    async def close(self) -> None:
+        return None
+
+
+@pytest.mark.asyncio
+async def test_due_structure_refresh_is_single_flight_and_increments_generation() -> None:
+    started = asyncio.Event()
+    release = asyncio.Event()
+    calls = 0
+
+    class Store:
+        def get(self, *_parts: str) -> object:
+            return object()
+
+    class RefreshSession(_Session):
+        async def load_structure(self) -> LoxoneStructure:
+            return _structure("new")
+
+    class Client:
+        async def open_session(self, _token: object) -> RefreshSession:
+            nonlocal calls
+            calls += 1
+            started.set()
+            await release.wait()
+            return RefreshSession()
+
+    runtime = object.__new__(LoxoneRuntime)
+    task = asyncio.create_task(asyncio.sleep(60))
+    record = _ConnectionRecord(
+        _structure("old"), frozenset(), _Session(), task, last_structure_check=0
+    )
+    runtime._records = {"family": record}
+    runtime._locks = defaultdict(asyncio.Lock)
+    runtime._prune_sessions = lambda _subject: asyncio.sleep(0)  # type: ignore[method-assign]
+    runtime.token_store = Store()
+    runtime.client = Client()
+    runtime.cache = UserStateCache()
+    runtime.structure_refresh_seconds = 1
+
+    first = asyncio.create_task(runtime.snapshot(_access()))
+    await started.wait()
+    second = asyncio.create_task(runtime.snapshot(_access()))
+    await asyncio.sleep(0)
+    assert calls == 1
+    release.set()
+
+    snapshots = await asyncio.gather(first, second)
+    assert calls == 1
+    assert [snapshot.structure_generation for snapshot in snapshots] == [2, 2]
+    assert all(snapshot.structure.last_modified == "new" for snapshot in snapshots)
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+@pytest.mark.asyncio
+async def test_due_structure_refresh_fails_closed() -> None:
+    class Store:
+        def get(self, *_parts: str) -> object:
+            return object()
+
+    class Client:
+        async def open_session(self, _token: object) -> object:
+            raise LoxoneConnectionError("unreachable")
+
+    runtime = object.__new__(LoxoneRuntime)
+    task = asyncio.create_task(asyncio.sleep(60))
+    runtime._records = {
+        "family": _ConnectionRecord(
+            _structure("old"), frozenset(), _Session(), task, last_structure_check=0
+        )
+    }
+    runtime._locks = defaultdict(asyncio.Lock)
+    runtime._prune_sessions = lambda _subject: asyncio.sleep(0)  # type: ignore[method-assign]
+    runtime.token_store = Store()
+    runtime.client = Client()
+    runtime.cache = UserStateCache()
+    runtime.structure_refresh_seconds = 1
+
+    with pytest.raises(RuntimeUnavailable, match="structure refresh failed"):
+        await runtime.snapshot(_access())
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+@pytest.mark.asyncio
+async def test_runtime_close_disconnects_all_records_and_deletes_tokens() -> None:
+    runtime = object.__new__(LoxoneRuntime)
+    closed: list[str] = []
+
+    async def revoke(family_id: str) -> None:
+        closed.append(family_id)
+
+    runtime._records = {"one": object(), "two": object()}
+    runtime.revoke = revoke  # type: ignore[method-assign]
+
+    await runtime.close()
+
+    assert closed == ["one", "two"]
+
+
+@pytest.mark.asyncio
+async def test_session_pruning_prefers_idle_then_least_recently_used(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = object.__new__(LoxoneRuntime)
+    runtime.session_idle_seconds = 10
+    runtime.max_active_sessions = 2
+    runtime._records = {
+        "idle": _ConnectionRecord(
+            _structure("1"),
+            frozenset(),
+            _Session(),
+            asyncio.create_task(asyncio.sleep(60)),
+            last_used=0,
+        ),
+        "old": _ConnectionRecord(
+            _structure("1"),
+            frozenset(),
+            _Session(),
+            asyncio.create_task(asyncio.sleep(60)),
+            last_used=100,
+        ),
+        "new": _ConnectionRecord(
+            _structure("1"),
+            frozenset(),
+            _Session(),
+            asyncio.create_task(asyncio.sleep(60)),
+            last_used=101,
+        ),
+    }
+    disconnected: list[str] = []
+
+    async def disconnect(family_id: str) -> None:
+        disconnected.append(family_id)
+        record = runtime._records.pop(family_id)
+        record.task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await record.task
+
+    runtime.disconnect = disconnect  # type: ignore[method-assign]
+
+    monkeypatch.setattr(runtime_module.time, "monotonic", lambda: 110)
+    await runtime._prune_sessions("keep")
+
+    assert disconnected == ["idle", "old"]
+    runtime._records["new"].task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await runtime._records["new"].task

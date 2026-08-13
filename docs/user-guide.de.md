@@ -1,4 +1,4 @@
-# LoxBerry MCP Server 0.4.0-alpha.3
+# LoxBerry MCP Server 0.4.0-alpha.4
 
 ## Voraussetzungen
 
@@ -343,7 +343,7 @@ verifiziert** markiert, bis ein realer Abnahmetest vorliegt.
 `loxberry:operate` verwendet denselben lokalen, an Client, Loxone-Identität und
 Miniserver gebundenen Freigabemechanismus wie `loxberry:read`. Die einzige
 Operate-Funktion ist `loxberry_clear_statistics_cache`; sie löscht ausschließlich
-plugin-eigene Cache-Einträge und schreibt einen kompakten Audit-Eintrag. Basic
+plugin-eigene RAM-Cache-Einträge und gibt deren Anzahl zurück. Basic
 Auth bleibt ausgeschlossen. Ergebnisse und Aktionen entsprechen den Rechten des
 angemeldeten Loxone-Benutzers. Es wird genau ein Miniserver unterstützt.
 

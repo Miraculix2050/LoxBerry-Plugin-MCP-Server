@@ -344,7 +344,7 @@ if ($action ne '') {
     my $result;
     if ($action eq 'save_config') {
         my $document = {
-            schema_version => 3,
+            schema_version => 4,
             server => {
                 enabled => $q->{enabled} ? JSON::PP::true : JSON::PP::false,
                 public_origin => $q->{public_origin} // '',
@@ -557,7 +557,7 @@ $template->param(
     LOXBERRY_REQUESTS_PER_MINUTE => $config->{limits}{loxberry_requests_per_minute} // 30,
     HISTORY_REQUESTS_PER_MINUTE => $config->{limits}{history_requests_per_minute} // 12,
     LOXBERRY_OPERATE_REQUESTS_PER_MINUTE => $config->{limits}{loxberry_operate_requests_per_minute} // 3,
-    STATISTICS_MEMORY_MAX_MIB => $config->{cache}{statistics_memory_max_mib} // $config->{cache}{statistics_max_mib} // 128,
+    STATISTICS_MEMORY_MAX_MIB => $config->{cache}{statistics_memory_max_mib} // 128,
     MAX_PARALLEL_CALLS => $config->{limits}{max_parallel_calls} // 4,
     STRUCTURE_REFRESH_SECONDS => $config->{limits}{structure_refresh_seconds} // 300,
     MAX_ACTIVE_RUNTIME_SESSIONS => $config->{limits}{max_active_runtime_sessions} // 16,

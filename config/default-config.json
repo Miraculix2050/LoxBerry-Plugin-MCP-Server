@@ -28,7 +28,7 @@
   "cache": {
     "statistics_memory_max_mib": 128
   },
-  "schema_version": 3,
+  "schema_version": 4,
   "server": {
     "enabled": false,
     "public_origin": ""
