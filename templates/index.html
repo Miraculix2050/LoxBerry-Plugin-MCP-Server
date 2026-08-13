@@ -160,10 +160,20 @@
         </section>
       </div>
       <p id="permission-policy-hint" class="mcp-help"><TMPL_VAR SETUP.PERMISSIONS_HINT></p>
-      <div class="mcp-grid">
-        <label class="mcp-field"><span><TMPL_VAR SETUP.CACHE_MODE></span><select name="statistics_mode"><option value="memory" <TMPL_IF STATISTICS_MODE_MEMORY>selected</TMPL_IF>><TMPL_VAR SETUP.CACHE_MEMORY></option><option value="hybrid" <TMPL_IF STATISTICS_MODE_HYBRID>selected</TMPL_IF>><TMPL_VAR SETUP.CACHE_HYBRID></option></select></label>
-        <label class="mcp-field"><span><TMPL_VAR SETUP.CACHE_SIZE></span><input name="statistics_max_mib" type="number" min="16" max="512" value="<TMPL_VAR STATISTICS_MAX_MIB ESCAPE=HTML>"></label>
-      </div>
+      <details class="mcp-persistent-section">
+        <summary><TMPL_VAR SETUP.ADVANCED_LIMITS></summary>
+        <div class="mcp-grid">
+          <label class="mcp-field"><span><TMPL_VAR SETUP.STRUCTURE_REFRESH></span><input name="structure_refresh_seconds" type="number" min="60" max="3600" value="<TMPL_VAR STRUCTURE_REFRESH_SECONDS ESCAPE=HTML>"></label>
+          <label class="mcp-field"><span><TMPL_VAR SETUP.RUNTIME_SESSIONS></span><input name="max_active_runtime_sessions" type="number" min="1" max="128" value="<TMPL_VAR MAX_ACTIVE_RUNTIME_SESSIONS ESCAPE=HTML>"></label>
+          <label class="mcp-field"><span><TMPL_VAR SETUP.RUNTIME_IDLE></span><input name="runtime_session_idle_seconds" type="number" min="60" max="86400" value="<TMPL_VAR RUNTIME_SESSION_IDLE_SECONDS ESCAPE=HTML>"></label>
+          <label class="mcp-field"><span><TMPL_VAR SETUP.STRUCTURE_CONTROLS></span><input name="max_structure_controls" type="number" min="1000" max="100000" value="<TMPL_VAR MAX_STRUCTURE_CONTROLS ESCAPE=HTML>"></label>
+          <label class="mcp-field"><span><TMPL_VAR SETUP.STRUCTURE_STATES></span><input name="max_structure_state_references" type="number" min="10000" max="500000" value="<TMPL_VAR MAX_STRUCTURE_STATE_REFERENCES ESCAPE=HTML>"></label>
+          <label class="mcp-field"><span><TMPL_VAR SETUP.STRUCTURE_DEPTH></span><input name="max_structure_depth" type="number" min="4" max="128" value="<TMPL_VAR MAX_STRUCTURE_DEPTH ESCAPE=HTML>"></label>
+          <label class="mcp-field"><span><TMPL_VAR SETUP.CACHE_SIZE></span><input name="statistics_memory_max_mib" type="number" min="16" max="512" value="<TMPL_VAR STATISTICS_MEMORY_MAX_MIB ESCAPE=HTML>"></label>
+          <label class="mcp-field"><span><TMPL_VAR SETUP.CACHED_STATES></span><input name="max_states_per_identity" type="number" min="1000" max="100000" value="<TMPL_VAR MAX_STATES_PER_IDENTITY ESCAPE=HTML>"></label>
+        </div>
+        <p class="mcp-help"><TMPL_VAR SETUP.ADVANCED_LIMITS_HELP></p>
+      </details>
       <div class="mcp-actions">
         <button class="lb-button" type="submit"><TMPL_VAR ACTION.SAVE></button>
       </div>

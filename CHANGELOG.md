@@ -5,6 +5,14 @@ extracted from the matching version heading.
 
 ## 0.4.0-alpha.3 - 2026-08-13
 
+- Refresh the user-filtered LoxAPP3 structure after reconnects and at a bounded
+  configurable interval, including visible Notes, ratings, and favorites; reject
+  stale refreshes and oversized structures safely.
+- Bound runtime WebSocket sessions by activity and capacity, avoid concurrent
+  token-refresh/event reads, and close runtime connections together with OAuth
+  family revocation.
+- Replace the unused persistent statistics-cache mode with a bounded RAM-only
+  cache and add advanced, validated structure and runtime limits.
 - Preserve all bounded non-negative Loxone ratings, expose the independent
   favorite marker, and extend the bounded operation allowlist to virtual analog
   inputs, CentralJalousie, and digital Daytimer overrides.

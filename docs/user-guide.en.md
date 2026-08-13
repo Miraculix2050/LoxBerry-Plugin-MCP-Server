@@ -240,9 +240,16 @@ structure. `loxone:history` additionally enables `loxone_get_statistics` and
 `statisticV2` series and documented legacy `statistic.outputs`. Raw queries are
 limited to seven days and aggregated StatisticV2 queries to ten years. Legacy
 series support raw queries only and are read from at most two bounded monthly binary
-files on the authenticated WebSocket. Results stay in RAM for 60 seconds. The
-optional hybrid cache is bounded and private, but the current paths do not persist
-source files. Legacy XML and FTP are not used.
+files on the authenticated WebSocket. Results remain in a bounded RAM cache for
+60 seconds; there is no persistent statistics cache and no FTP/XML cache.
+
+The visible Loxone structure is reloaded on connection and after a service
+restart. While a connection remains stable, the server also checks it at the
+interval configured under **Advanced runtime and structure limits** (five minutes
+by default). This detects changed Control Notes, ratings, and favorites. If a due
+structure check cannot complete, the server does not return a possibly outdated
+structure. Configurable structure limits protect large projects; an exceeded limit
+rejects the structure and writes a sanitized service-log entry.
 
 `loxone_describe_control` also returns direct control relationships: a subcontrol
 names its visible parent under `relationships.parent`, and a parent lists visible

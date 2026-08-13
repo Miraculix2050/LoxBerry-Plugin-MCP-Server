@@ -282,12 +282,18 @@ class LoxoneClient:
         client_name: str = "LoxBerry MCP Server",
         timeout_seconds: float = _DEFAULT_TIMEOUT_SECONDS,
         max_response_bytes: int = _MAX_RESPONSE_BYTES,
+        max_structure_controls: int = 20_000,
+        max_structure_state_references: int = 100_000,
+        max_structure_depth: int = 32,
     ) -> None:
         self.endpoint = endpoint
         self.client_uuid = client_uuid
         self.client_name = client_name
         self.timeout_seconds = timeout_seconds
         self.max_response_bytes = max_response_bytes
+        self.max_structure_controls = max_structure_controls
+        self.max_structure_state_references = max_structure_state_references
+        self.max_structure_depth = max_structure_depth
 
     async def _get_json(self, path: str) -> Mapping[str, Any]:
         body, _encoding = await self._get_bytes(path)
@@ -491,6 +497,9 @@ class LoxoneClient:
             timeout_seconds=self.timeout_seconds,
             max_payload_bytes=self.max_response_bytes,
             secure_transport=self.endpoint.secure,
+            max_structure_controls=self.max_structure_controls,
+            max_structure_state_references=self.max_structure_state_references,
+            max_structure_depth=self.max_structure_depth,
         )
         try:
             await session.authenticate()
@@ -512,6 +521,9 @@ class LoxoneWebSocketSession:
         timeout_seconds: float,
         max_payload_bytes: int,
         secure_transport: bool = False,
+        max_structure_controls: int = 20_000,
+        max_structure_state_references: int = 100_000,
+        max_structure_depth: int = 32,
     ) -> None:
         self._websocket = websocket
         self._public_key = public_key
@@ -519,6 +531,9 @@ class LoxoneWebSocketSession:
         self._timeout = timeout_seconds
         self._max_payload = max_payload_bytes
         self._secure_transport = secure_transport
+        self._max_structure_controls = max_structure_controls
+        self._max_structure_state_references = max_structure_state_references
+        self._max_structure_depth = max_structure_depth
         self._encryptor = CommandEncryptor.generate()
 
     async def _receive(self) -> tuple[MessageHeader, str | bytes | None]:
@@ -568,8 +583,18 @@ class LoxoneWebSocketSession:
         if not isinstance(document, Mapping):
             raise LoxoneProtocolError("Miniserver structure response is invalid")
         try:
-            return normalize_structure(document, username=self._token.username)
+            return normalize_structure(
+                document,
+                username=self._token.username,
+                max_controls=self._max_structure_controls,
+                max_state_references=self._max_structure_state_references,
+                max_depth=self._max_structure_depth,
+            )
         except LoxoneStructureError as exc:
+            _LOGGER.error(
+                "component=structure outcome=rejected reason=%s",
+                str(exc).replace(" ", "_"),
+            )
             raise LoxoneProtocolError("Miniserver structure response is invalid") from exc
 
     async def refresh_token(self) -> None:

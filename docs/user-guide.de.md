@@ -258,9 +258,17 @@ Statistiken werden für sichtbare `statisticV2`-Reihen und dokumentierte klassis
 `statistic.outputs` angeboten. Rohe Werte sind auf sieben Tage, verdichtete
 StatisticV2-Werte auf zehn Jahre begrenzt. Klassische Reihen unterstützen nur
 den Rohabruf und lesen höchstens zwei begrenzte Monats-Binärdateien über den
-authentifizierten WebSocket. Ergebnisse liegen 60 Sekunden im RAM. Der optionale
-Hybrid-Cache ist begrenzt und privat, die aktuellen Pfade schreiben jedoch keine
-Quelldateien dauerhaft. Legacy-XML und FTP werden nicht verwendet.
+authentifizierten WebSocket. Ergebnisse liegen 60 Sekunden in einem begrenzten
+RAM-Cache; es gibt keinen persistenten Statistik- oder FTP-/XML-Cache.
+
+Die sichtbare Loxone-Struktur wird beim Verbinden und nach einem Dienstneustart
+neu geladen. Während einer stabilen Verbindung prüft der Server sie zusätzlich
+in dem unter **Erweiterte Laufzeit- und Strukturgrenzen** konfigurierten Intervall
+(standardmäßig fünf Minuten). Dadurch werden auch geänderte Control-Hinweise,
+Bewertungen und Favoriten erkannt. Kann eine fällige Strukturprüfung nicht
+erfolgen, liefert der Server keine möglicherweise veraltete Struktur. Die
+konfigurierbaren Strukturgrenzen schützen umfangreiche Projekte; eine
+Überschreitung wird abgelehnt und ohne Control-Inhalte im Dienstlog vermerkt.
 
 `loxone_describe_control` liefert außerdem direkte Control-Beziehungen: Ein
 Subcontrol nennt unter `relationships.parent` seinen sichtbaren Parent; ein

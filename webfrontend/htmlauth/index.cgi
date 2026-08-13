@@ -344,7 +344,7 @@ if ($action ne '') {
     my $result;
     if ($action eq 'save_config') {
         my $document = {
-            schema_version => 2,
+            schema_version => 3,
             server => {
                 enabled => $q->{enabled} ? JSON::PP::true : JSON::PP::false,
                 public_origin => $q->{public_origin} // '',
@@ -371,10 +371,16 @@ if ($action ne '') {
                 history_requests_per_minute => 0 + ($q->{history_requests_per_minute} // 12),
                 loxberry_operate_requests_per_minute => 0 + ($q->{loxberry_operate_requests_per_minute} // 3),
                 max_parallel_calls => 0 + ($q->{max_parallel_calls} // 4),
+                structure_refresh_seconds => 0 + ($q->{structure_refresh_seconds} // 300),
+                max_active_runtime_sessions => 0 + ($q->{max_active_runtime_sessions} // 16),
+                runtime_session_idle_seconds => 0 + ($q->{runtime_session_idle_seconds} // 900),
+                max_structure_controls => 0 + ($q->{max_structure_controls} // 20000),
+                max_structure_state_references => 0 + ($q->{max_structure_state_references} // 100000),
+                max_structure_depth => 0 + ($q->{max_structure_depth} // 32),
+                max_states_per_identity => 0 + ($q->{max_states_per_identity} // 20000),
             },
             cache => {
-                statistics_mode => $q->{statistics_mode} // 'memory',
-                statistics_max_mib => 0 + ($q->{statistics_max_mib} // 128),
+                statistics_memory_max_mib => 0 + ($q->{statistics_memory_max_mib} // 128),
             },
         };
         $result = admin_call('save_config', $document);
@@ -551,10 +557,15 @@ $template->param(
     LOXBERRY_REQUESTS_PER_MINUTE => $config->{limits}{loxberry_requests_per_minute} // 30,
     HISTORY_REQUESTS_PER_MINUTE => $config->{limits}{history_requests_per_minute} // 12,
     LOXBERRY_OPERATE_REQUESTS_PER_MINUTE => $config->{limits}{loxberry_operate_requests_per_minute} // 3,
-    STATISTICS_MODE_MEMORY => ($config->{cache}{statistics_mode} // 'memory') eq 'memory' ? 1 : 0,
-    STATISTICS_MODE_HYBRID => ($config->{cache}{statistics_mode} // 'memory') eq 'hybrid' ? 1 : 0,
-    STATISTICS_MAX_MIB => $config->{cache}{statistics_max_mib} // 128,
+    STATISTICS_MEMORY_MAX_MIB => $config->{cache}{statistics_memory_max_mib} // $config->{cache}{statistics_max_mib} // 128,
     MAX_PARALLEL_CALLS => $config->{limits}{max_parallel_calls} // 4,
+    STRUCTURE_REFRESH_SECONDS => $config->{limits}{structure_refresh_seconds} // 300,
+    MAX_ACTIVE_RUNTIME_SESSIONS => $config->{limits}{max_active_runtime_sessions} // 16,
+    RUNTIME_SESSION_IDLE_SECONDS => $config->{limits}{runtime_session_idle_seconds} // 900,
+    MAX_STRUCTURE_CONTROLS => $config->{limits}{max_structure_controls} // 20000,
+    MAX_STRUCTURE_STATE_REFERENCES => $config->{limits}{max_structure_state_references} // 100000,
+    MAX_STRUCTURE_DEPTH => $config->{limits}{max_structure_depth} // 32,
+    MAX_STATES_PER_IDENTITY => $config->{limits}{max_states_per_identity} // 20000,
     LOG_LEVEL => $config->{logging}{level} // 'warning',
     LOG_LEVEL_OFF => ($config->{logging}{level} // 'warning') eq 'off' ? 1 : 0,
     LOG_LEVEL_ERROR => ($config->{logging}{level} // 'warning') eq 'error' ? 1 : 0,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import re
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
 from mcpserver.loxone.models import (
@@ -25,6 +26,27 @@ _READ_ONLY = _READ_ONLY_INTERNAL | _READ_ONLY_EXTERNAL
 
 class LoxoneStructureError(ValueError):
     """Raised when the user-filtered structure is malformed."""
+
+
+@dataclass(slots=True)
+class StructureBudget:
+    """Reject oversized or excessively nested untrusted structure documents."""
+
+    max_controls: int
+    max_state_references: int
+    max_depth: int
+    controls: int = 0
+    state_references: int = 0
+
+    def visit(self, *, depth: int, state_references: int) -> None:
+        if depth > self.max_depth:
+            raise LoxoneStructureError("Structure nesting depth exceeds the configured limit")
+        self.controls += 1
+        if self.controls > self.max_controls:
+            raise LoxoneStructureError("Structure control count exceeds the configured limit")
+        self.state_references += state_references
+        if self.state_references > self.max_state_references:
+            raise LoxoneStructureError("Structure state count exceeds the configured limit")
 
 
 def _text(value: object, *, field: str) -> str:
@@ -288,11 +310,13 @@ def _links(value: object) -> tuple[str, ...]:
     return tuple(item for item in value if isinstance(item, str) and 1 <= len(item) <= 128)
 
 
-def _linked_control_uuids(value: object) -> frozenset[str]:
+def _linked_control_uuids(value: object, *, maximum_controls: int) -> frozenset[str]:
     if not isinstance(value, Mapping):
         raise LoxoneStructureError("Structure field controls must be an object")
     result: set[str] = set()
-    for item in value.values():
+    for index, item in enumerate(value.values(), start=1):
+        if index > maximum_controls:
+            raise LoxoneStructureError("Structure control count exceeds the configured limit")
         if not isinstance(item, Mapping):
             continue
         restrictions = item.get("restrictions", 0)
@@ -311,6 +335,8 @@ def _controls(
     referenced: bool = False,
     linked_control_uuids: frozenset[str] = frozenset(),
     hidden_only: bool = False,
+    budget: StructureBudget,
+    depth: int = 1,
 ) -> tuple[Control, ...]:
     if not isinstance(value, Mapping):
         raise LoxoneStructureError("Structure field controls must be an object")
@@ -336,6 +362,7 @@ def _controls(
             for name, state_uuid in states_value.items()
             if isinstance(name, str) and isinstance(state_uuid, str)
         )
+        budget.visit(depth=depth, state_references=len(states))
         subcontrols_value = item.get("subControls", {})
         details = item.get("details", {})
         if not isinstance(details, Mapping):
@@ -406,7 +433,14 @@ def _controls(
                 status_monitor_inputs=status_monitor_inputs,
                 status_monitor_statuses=status_monitor_statuses,
                 subcontrols=(
-                    _controls(subcontrols_value, referenced=True) if subcontrols_value else ()
+                    _controls(
+                        subcontrols_value,
+                        referenced=True,
+                        budget=budget,
+                        depth=depth + 1,
+                    )
+                    if subcontrols_value
+                    else ()
                 ),
                 linked_control_uuids=_links(item.get("links")),
                 is_user_linked=(
@@ -430,7 +464,14 @@ def _group_references(controls: tuple[Control, ...], *, field: str) -> set[str]:
     return result
 
 
-def normalize_structure(document: Mapping[str, Any], *, username: str) -> LoxoneStructure:
+def normalize_structure(
+    document: Mapping[str, Any],
+    *,
+    username: str,
+    max_controls: int = 20_000,
+    max_state_references: int = 100_000,
+    max_depth: int = 32,
+) -> LoxoneStructure:
     """Return only fields required for read-only discovery and state association."""
     ms_info = document.get("msInfo")
     if not isinstance(ms_info, Mapping):
@@ -438,12 +479,14 @@ def normalize_structure(document: Mapping[str, Any], *, username: str) -> Loxone
     serial = ms_info.get("serialNr", ms_info.get("serial"))
     last_modified = document.get("lastModified", "")
     controls_value = document.get("controls", {})
-    linked_control_uuids = _linked_control_uuids(controls_value)
-    controls = _controls(controls_value, linked_control_uuids=linked_control_uuids)
+    linked_control_uuids = _linked_control_uuids(controls_value, maximum_controls=max_controls)
+    budget = StructureBudget(max_controls, max_state_references, max_depth)
+    controls = _controls(controls_value, linked_control_uuids=linked_control_uuids, budget=budget)
     hidden_controls = _controls(
         controls_value,
         linked_control_uuids=linked_control_uuids,
         hidden_only=True,
+        budget=budget,
     )
     return LoxoneStructure(
         identity=LoxoneIdentity(

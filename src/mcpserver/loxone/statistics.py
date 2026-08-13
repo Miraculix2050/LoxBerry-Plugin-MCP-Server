@@ -1,20 +1,14 @@
-"""Bounded statistic parsing and disposable plugin-owned caching."""
+"""Bounded statistic parsing and disposable in-memory caching."""
 
 from __future__ import annotations
 
-import gzip
 import hashlib
 import math
-import os
-import re
-import secrets
-import stat
 import struct
 import time
 from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
 from threading import RLock
 from typing import Final
 
@@ -62,24 +56,24 @@ def parse_statistic_points(
 
 
 class StatisticsCache:
-    """Small RAM result cache plus an optional private compressed source cache."""
+    """Small bounded RAM cache for parsed statistic results."""
 
     def __init__(
         self,
-        directory: Path | None,
+        directory: object | None = None,
         *,
         maximum_bytes: int = 128 * 1024 * 1024,
         ttl_seconds: float = 60.0,
         maximum_memory_points: int = _MAX_MEMORY_POINTS,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
-        if directory is not None and not directory.is_absolute():
-            raise ValueError("statistics cache path must be absolute")
         if not 16 * 1024 * 1024 <= maximum_bytes <= 512 * 1024 * 1024:
             raise ValueError("statistics cache size is outside the supported range")
         if maximum_memory_points < 1:
             raise ValueError("statistics memory cache point limit must be positive")
-        self.directory = directory
+        # Kept as an ignored compatibility parameter while callers transition from
+        # the former hybrid cache. Statistics data is never persisted.
+        del directory
         self.maximum_bytes = maximum_bytes
         self.ttl_seconds = ttl_seconds
         self.maximum_memory_points = maximum_memory_points
@@ -109,8 +103,11 @@ class StatisticsCache:
                 return
             self._memory[key] = (now + self.ttl_seconds, value)
             self._memory.move_to_end(key)
-            while sum(len(points) for _expires_at, points in self._memory.values()) > (
-                self.maximum_memory_points
+            while (
+                sum(len(points) for _expires_at, points in self._memory.values())
+                > self.maximum_memory_points
+                or sum(len(points) * _POINT.size for _expires_at, points in self._memory.values())
+                > self.maximum_bytes
             ):
                 self._memory.popitem(last=False)
 
@@ -118,72 +115,10 @@ class StatisticsCache:
     def source_key(*parts: str) -> str:
         return hashlib.sha256("\0".join(parts).encode("utf-8")).hexdigest()
 
-    def put_legacy_source(self, key: str, payload: bytes) -> None:
-        """Persist only an already validated legacy source blob."""
-        if (
-            self.directory is None
-            or len(payload) > _MAX_SOURCE_BYTES
-            or re.fullmatch(r"[0-9a-f]{64}", key) is None
-        ):
-            return
-        with self._lock:
-            if self.directory.exists() and (
-                self.directory.is_symlink() or not self.directory.is_dir()
-            ):
-                return
-            self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-            if self.directory.is_symlink() or not self.directory.is_dir():
-                return
-            os.chmod(self.directory, 0o700)
-            target = self.directory / f"{key}.gz"
-            temporary = self.directory / f".{key}.{secrets.token_hex(8)}.tmp"
-            try:
-                with gzip.open(temporary, "wb", compresslevel=6) as handle:
-                    handle.write(payload)
-                os.chmod(temporary, 0o600)
-                os.replace(temporary, target)
-                self._trim()
-            finally:
-                temporary.unlink(missing_ok=True)
-
-    def _entries(self) -> list[tuple[Path, os.stat_result]]:
-        if self.directory is None or not self.directory.exists() or self.directory.is_symlink():
-            return []
-        result: list[tuple[Path, os.stat_result]] = []
-        for path in self.directory.iterdir():
-            try:
-                metadata = path.lstat()
-            except OSError:
-                continue
-            if path.suffix == ".gz" and stat.S_ISREG(metadata.st_mode) and not path.is_symlink():
-                result.append((path, metadata))
-        return result
-
-    def _trim(self) -> None:
-        entries = self._entries()
-        total = sum(metadata.st_size for _path, metadata in entries)
-        for path, metadata in sorted(entries, key=lambda item: item[1].st_atime):
-            if total <= self.maximum_bytes:
-                break
-            path.unlink(missing_ok=True)
-            total -= metadata.st_size
-
     def clear(self) -> CacheClearResult:
-        """Clear cached data without holding the memory lock during filesystem I/O."""
+        """Clear cached in-memory data."""
         with self._lock:
             memory = len(self._memory)
             self._memory.clear()
-        # Directory enumeration and unlinking can block on slow storage. A timed-out
-        # MCP call cannot stop a Python worker thread, so it must not retain the lock
-        # that protects normal in-memory statistic reads and writes.
-        entries = self._entries()
-        removed = 0
-        freed = 0
-        for path, metadata in entries:
-            try:
-                path.unlink()
-            except OSError:
-                continue
-            removed += 1
-            freed += metadata.st_size
-        return CacheClearResult(memory, removed, freed)
+        # Keep the output schema stable for existing MCP clients.
+        return CacheClearResult(memory, 0, 0)

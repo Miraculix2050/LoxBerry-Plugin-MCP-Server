@@ -1,13 +1,8 @@
 from __future__ import annotations
 
-import gzip
 import math
-import os
 import struct
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
-from pathlib import Path
-from threading import Event
 
 import pytest
 
@@ -330,62 +325,21 @@ async def test_runtime_translates_history_and_statistic_timeouts() -> None:
         )
 
 
-def test_statistics_cache_expires_memory_and_clears_private_hybrid_files(
-    tmp_path: Path,
-) -> None:
+def test_statistics_cache_expires_memory_and_clears_only_ram() -> None:
     now = [10.0]
-    cache = StatisticsCache(tmp_path.resolve(), ttl_seconds=5, clock=lambda: now[0])
+    cache = StatisticsCache(ttl_seconds=5, clock=lambda: now[0])
     points = (StatisticPoint(100, 1.0),)
     key = cache.source_key("family", "control", "series")
 
     cache.put(key, points)
-    cache.put_legacy_source(key, b"bounded source")
 
     assert cache.get(key) == points
-    stored = list(tmp_path.glob("*.gz"))
-    assert len(stored) == 1
-    assert gzip.decompress(stored[0].read_bytes()) == b"bounded source"
     now[0] = 16.0
     assert cache.get(key) is None
     result = cache.clear()
-    assert result.persistent_entries_removed == 1
-    assert result.bytes_freed > 0
-    assert list(tmp_path.iterdir()) == []
-
-
-def test_statistics_cache_rejects_untrusted_persistent_key(tmp_path: Path) -> None:
-    cache = StatisticsCache(tmp_path.resolve())
-
-    cache.put_legacy_source("../escape", b"payload")
-
-    assert not tmp_path.exists() or list(tmp_path.iterdir()) == []
-
-
-def test_statistics_cache_clear_does_not_hold_memory_lock_during_persistent_io(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    cache = StatisticsCache(tmp_path.resolve())
-    point = StatisticPoint(100, 1.0)
-    entered_persistent_io = Event()
-    allow_persistent_io = Event()
-    entries = cache._entries
-
-    def slow_entries() -> list[tuple[Path, os.stat_result]]:
-        entered_persistent_io.set()
-        assert allow_persistent_io.wait(timeout=1)
-        return entries()
-
-    monkeypatch.setattr(cache, "_entries", slow_entries)
-
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        clear = executor.submit(cache.clear)
-        assert entered_persistent_io.wait(timeout=1)
-        concurrent_put = executor.submit(cache.put, "live", (point,))
-        concurrent_put.result(timeout=0.2)
-        allow_persistent_io.set()
-        clear.result(timeout=1)
-
-    assert cache.get("live") == (point,)
+    assert result.memory_entries_removed == 0
+    assert result.persistent_entries_removed == 0
+    assert result.bytes_freed == 0
 
 
 def test_statistics_cache_purges_expired_and_bounds_memory_points() -> None:

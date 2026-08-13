@@ -17,7 +17,7 @@ import idna
 
 from mcpserver.loxone.client import MiniserverEndpoint
 
-SCHEMA_VERSION: Final = 2
+SCHEMA_VERSION: Final = 3
 DEFAULT_CONNECTION_TIMEOUT: Final = 10.0
 DEFAULT_REQUESTS_PER_MINUTE: Final = 60
 DEFAULT_MAX_PARALLEL_CALLS: Final = 4
@@ -25,7 +25,14 @@ DEFAULT_CONTROL_REQUESTS_PER_MINUTE: Final = 10
 DEFAULT_LOXBERRY_REQUESTS_PER_MINUTE: Final = 30
 DEFAULT_HISTORY_REQUESTS_PER_MINUTE: Final = 12
 DEFAULT_LOXBERRY_OPERATE_REQUESTS_PER_MINUTE: Final = 3
-DEFAULT_STATISTICS_CACHE_MAX_MIB: Final = 128
+DEFAULT_STATISTICS_MEMORY_MAX_MIB: Final = 128
+DEFAULT_STRUCTURE_REFRESH_SECONDS: Final = 300
+DEFAULT_MAX_ACTIVE_RUNTIME_SESSIONS: Final = 16
+DEFAULT_RUNTIME_SESSION_IDLE_SECONDS: Final = 900
+DEFAULT_MAX_STRUCTURE_CONTROLS: Final = 20_000
+DEFAULT_MAX_STRUCTURE_STATE_REFERENCES: Final = 100_000
+DEFAULT_MAX_STRUCTURE_DEPTH: Final = 32
+DEFAULT_MAX_STATES_PER_IDENTITY: Final = 20_000
 MAX_LOXBERRY_BINDINGS: Final = 64
 DEFAULT_LOG_LEVEL: Final = "warning"
 SUPPORTED_LOG_LEVELS: Final = frozenset({"off", "error", "warning", "info", "debug"})
@@ -107,8 +114,14 @@ class PluginConfig:
     log_level: str = DEFAULT_LOG_LEVEL
     loxberry_read_bindings: tuple[str, ...] = ()
     loxberry_operate_bindings: tuple[str, ...] = ()
-    statistics_cache_mode: str = "memory"
-    statistics_cache_max_mib: int = DEFAULT_STATISTICS_CACHE_MAX_MIB
+    statistics_memory_max_mib: int = DEFAULT_STATISTICS_MEMORY_MAX_MIB
+    structure_refresh_seconds: int = DEFAULT_STRUCTURE_REFRESH_SECONDS
+    max_active_runtime_sessions: int = DEFAULT_MAX_ACTIVE_RUNTIME_SESSIONS
+    runtime_session_idle_seconds: int = DEFAULT_RUNTIME_SESSION_IDLE_SECONDS
+    max_structure_controls: int = DEFAULT_MAX_STRUCTURE_CONTROLS
+    max_structure_state_references: int = DEFAULT_MAX_STRUCTURE_STATE_REFERENCES
+    max_structure_depth: int = DEFAULT_MAX_STRUCTURE_DEPTH
+    max_states_per_identity: int = DEFAULT_MAX_STATES_PER_IDENTITY
     _source: dict[str, Any] | None = None
 
     @classmethod
@@ -118,7 +131,7 @@ class PluginConfig:
     @classmethod
     def from_document(cls, document: object) -> PluginConfig:
         root = _mapping(document, name="configuration")
-        if root.get("schema_version") not in {1, SCHEMA_VERSION}:
+        if root.get("schema_version") not in {1, 2, SCHEMA_VERSION}:
             raise ConfigError("schema_version is unsupported")
         server = _mapping(root.get("server", {}), name="server")
         loxone = _mapping(root.get("loxone", {}), name="loxone")
@@ -237,6 +250,48 @@ class PluginConfig:
             minimum=1,
             maximum=32,
         )
+        structure_refresh_seconds = _integer(
+            limits.get("structure_refresh_seconds", DEFAULT_STRUCTURE_REFRESH_SECONDS),
+            name="limits.structure_refresh_seconds",
+            minimum=60,
+            maximum=3600,
+        )
+        max_active_runtime_sessions = _integer(
+            limits.get("max_active_runtime_sessions", DEFAULT_MAX_ACTIVE_RUNTIME_SESSIONS),
+            name="limits.max_active_runtime_sessions",
+            minimum=1,
+            maximum=128,
+        )
+        runtime_session_idle_seconds = _integer(
+            limits.get("runtime_session_idle_seconds", DEFAULT_RUNTIME_SESSION_IDLE_SECONDS),
+            name="limits.runtime_session_idle_seconds",
+            minimum=60,
+            maximum=86_400,
+        )
+        max_structure_controls = _integer(
+            limits.get("max_structure_controls", DEFAULT_MAX_STRUCTURE_CONTROLS),
+            name="limits.max_structure_controls",
+            minimum=1_000,
+            maximum=100_000,
+        )
+        max_structure_state_references = _integer(
+            limits.get("max_structure_state_references", DEFAULT_MAX_STRUCTURE_STATE_REFERENCES),
+            name="limits.max_structure_state_references",
+            minimum=10_000,
+            maximum=500_000,
+        )
+        max_structure_depth = _integer(
+            limits.get("max_structure_depth", DEFAULT_MAX_STRUCTURE_DEPTH),
+            name="limits.max_structure_depth",
+            minimum=4,
+            maximum=128,
+        )
+        max_states_per_identity = _integer(
+            limits.get("max_states_per_identity", DEFAULT_MAX_STATES_PER_IDENTITY),
+            name="limits.max_states_per_identity",
+            minimum=1_000,
+            maximum=100_000,
+        )
         log_level = _log_level(logging_config.get("level", DEFAULT_LOG_LEVEL))
         loxberry_read_bindings = _bindings(
             policies.get("loxberry_read_bindings", []), name="policies.loxberry_read_bindings"
@@ -245,12 +300,12 @@ class PluginConfig:
             policies.get("loxberry_operate_bindings", []),
             name="policies.loxberry_operate_bindings",
         )
-        cache_mode = cache.get("statistics_mode", "memory")
-        if cache_mode not in {"memory", "hybrid"}:
-            raise ConfigError("cache.statistics_mode is unsupported")
         cache_max_mib = _integer(
-            cache.get("statistics_max_mib", DEFAULT_STATISTICS_CACHE_MAX_MIB),
-            name="cache.statistics_max_mib",
+            cache.get(
+                "statistics_memory_max_mib",
+                cache.get("statistics_max_mib", DEFAULT_STATISTICS_MEMORY_MAX_MIB),
+            ),
+            name="cache.statistics_memory_max_mib",
             minimum=16,
             maximum=512,
         )
@@ -273,8 +328,14 @@ class PluginConfig:
             log_level=log_level,
             loxberry_read_bindings=loxberry_read_bindings,
             loxberry_operate_bindings=loxberry_operate_bindings,
-            statistics_cache_mode=cache_mode,
-            statistics_cache_max_mib=cache_max_mib,
+            statistics_memory_max_mib=cache_max_mib,
+            structure_refresh_seconds=structure_refresh_seconds,
+            max_active_runtime_sessions=max_active_runtime_sessions,
+            runtime_session_idle_seconds=runtime_session_idle_seconds,
+            max_structure_controls=max_structure_controls,
+            max_structure_state_references=max_structure_state_references,
+            max_structure_depth=max_structure_depth,
+            max_states_per_identity=max_states_per_identity,
             _source=copy.deepcopy(root),
         )
 
@@ -302,12 +363,20 @@ class PluginConfig:
             self.loxberry_operate_requests_per_minute
         )
         document["limits"]["max_parallel_calls"] = self.max_parallel_calls
+        document["limits"]["structure_refresh_seconds"] = self.structure_refresh_seconds
+        document["limits"]["max_active_runtime_sessions"] = self.max_active_runtime_sessions
+        document["limits"]["runtime_session_idle_seconds"] = self.runtime_session_idle_seconds
+        document["limits"]["max_structure_controls"] = self.max_structure_controls
+        document["limits"]["max_structure_state_references"] = self.max_structure_state_references
+        document["limits"]["max_structure_depth"] = self.max_structure_depth
+        document["limits"]["max_states_per_identity"] = self.max_states_per_identity
         document["logging"]["level"] = self.log_level
         document["logging"].pop("debug_until", None)
         document["policies"]["loxberry_read_bindings"] = list(self.loxberry_read_bindings)
         document["policies"]["loxberry_operate_bindings"] = list(self.loxberry_operate_bindings)
-        document["cache"]["statistics_mode"] = self.statistics_cache_mode
-        document["cache"]["statistics_max_mib"] = self.statistics_cache_max_mib
+        document["cache"].pop("statistics_mode", None)
+        document["cache"].pop("statistics_max_mib", None)
+        document["cache"]["statistics_memory_max_mib"] = self.statistics_memory_max_mib
         return document
 
 
