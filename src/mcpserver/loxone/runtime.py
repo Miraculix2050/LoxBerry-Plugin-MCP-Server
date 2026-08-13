@@ -885,4 +885,4 @@ class LoxoneRuntime:
 
     async def close(self) -> None:
         for family_id in tuple(self._records):
-            await self.revoke(family_id)
+            await self.disconnect(family_id)
