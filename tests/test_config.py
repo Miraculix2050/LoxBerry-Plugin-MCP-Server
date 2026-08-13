@@ -24,8 +24,9 @@ def test_defaults_are_disabled_and_bounded() -> None:
     assert config.loxberry_requests_per_minute == 30
     assert config.loxberry_read_bindings == ()
     assert config.loxberry_operate_bindings == ()
-    assert config.statistics_cache_mode == "memory"
-    assert config.statistics_cache_max_mib == 128
+    assert config.statistics_memory_max_mib == 128
+    assert config.structure_refresh_seconds == 300
+    assert config.max_structure_controls == 20_000
     assert config.max_parallel_calls == 4
     assert config.log_level == "warning"
 
@@ -47,7 +48,7 @@ def test_configuration_round_trip_preserves_unknown_keys(tmp_path: Path) -> None
 
     assert store.load().to_document() == config.to_document()
     assert json.loads(store.path.read_text(encoding="utf-8"))["future"] == {"keep": True}
-    assert config.to_document()["schema_version"] == 2
+    assert config.to_document()["schema_version"] == 3
 
 
 def test_phase_four_configuration_round_trips_bounded_settings() -> None:
@@ -63,7 +64,7 @@ def test_phase_four_configuration_round_trips_bounded_settings() -> None:
                 "history_requests_per_minute": 12,
                 "loxberry_operate_requests_per_minute": 2,
             },
-            "cache": {"statistics_mode": "hybrid", "statistics_max_mib": 64},
+            "cache": {"statistics_max_mib": 64},
             "policies": {"loxberry_operate_bindings": [binding]},
         }
     )
@@ -71,8 +72,7 @@ def test_phase_four_configuration_round_trips_bounded_settings() -> None:
     assert config.loxone_history_enabled is True
     assert config.loxberry_operate_enabled is True
     assert config.history_requests_per_minute == 12
-    assert config.statistics_cache_mode == "hybrid"
-    assert config.statistics_cache_max_mib == 64
+    assert config.statistics_memory_max_mib == 64
     assert config.loxberry_operate_bindings == (binding,)
 
 
@@ -80,7 +80,7 @@ def test_phase_four_configuration_round_trips_bounded_settings() -> None:
     "document",
     [
         {},
-        {"schema_version": 3},
+        {"schema_version": 4},
         {"schema_version": 1, "server": {"enabled": True}},
         {
             "schema_version": 1,

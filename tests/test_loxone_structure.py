@@ -175,6 +175,29 @@ def test_absent_controls_remain_absent() -> None:
     assert structure.controls == ()
 
 
+def test_structure_rejects_configured_control_and_depth_limits() -> None:
+    raw = {
+        "lastModified": "now",
+        "msInfo": {"serialNr": "000000000000"},
+        "rooms": {},
+        "cats": {},
+        "controls": {
+            "parent": {
+                "name": "Parent",
+                "type": "Switch",
+                "states": {},
+                "subControls": {"child": {"name": "Child", "type": "Switch", "states": {}}},
+            },
+            "second": {"name": "Second", "type": "Switch", "states": {}},
+        },
+    }
+
+    with pytest.raises(LoxoneStructureError, match="control count"):
+        normalize_structure(raw, username="reader", max_controls=1)
+    with pytest.raises(LoxoneStructureError, match="nesting depth"):
+        normalize_structure(raw, username="reader", max_depth=1)
+
+
 def test_structure_extracts_only_bounded_phase_four_capabilities() -> None:
     raw = {
         "lastModified": "now",

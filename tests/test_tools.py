@@ -147,6 +147,7 @@ def test_read_results_and_expected_errors_are_debug_only(
             "miniserver_serial": "masked",
             "structure_last_modified": "",
             "cache_freshness": "current",
+            "structure_generation": 1,
         },
     )
     _error(SystemStatusEnvelope, "invalid_input", "invalid")

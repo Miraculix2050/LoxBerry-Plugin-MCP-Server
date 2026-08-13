@@ -5,6 +5,13 @@
     "loxberry_operate_requests_per_minute": 3,
     "loxberry_requests_per_minute": 30,
     "max_parallel_calls": 4,
+    "max_active_runtime_sessions": 16,
+    "runtime_session_idle_seconds": 900,
+    "structure_refresh_seconds": 300,
+    "max_structure_controls": 20000,
+    "max_structure_state_references": 100000,
+    "max_structure_depth": 32,
+    "max_states_per_identity": 20000,
     "requests_per_minute": 60
   },
   "loxone": {
@@ -19,10 +26,9 @@
     "loxberry_read_bindings": []
   },
   "cache": {
-    "statistics_max_mib": 128,
-    "statistics_mode": "memory"
+    "statistics_memory_max_mib": 128
   },
-  "schema_version": 2,
+  "schema_version": 3,
   "server": {
     "enabled": false,
     "public_origin": ""

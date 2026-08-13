@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from contextlib import suppress
@@ -325,11 +326,25 @@ def create_server(settings: ServerSettings) -> FastMCP:
             except Exception:
                 return False
 
+        runtime_ref: dict[str, LoxoneRuntime] = {}
+
+        def on_family_revoked(family_id: str) -> None:
+            if loxone_store is not None:
+                loxone_store.delete(family_id)
+            runtime_value = runtime_ref.get("runtime")
+            if runtime_value is None:
+                return
+            try:
+                asyncio.get_running_loop().create_task(runtime_value.revoke(family_id))
+            except RuntimeError:
+                # Startup cleanup has no running event loop; the token was still removed.
+                return
+
         provider = Phase0OAuthProvider(
             auth_store,
             issuer=settings.phase0_auth.issuer_url,
             resource=settings.phase0_auth.resource_url,
-            on_family_revoked=loxone_store.delete if loxone_store is not None else None,
+            on_family_revoked=on_family_revoked,
             control_enabled=bool(config and config.loxone_control_enabled),
             loxberry_read_enabled=bool(config and config.loxberry_read_enabled),
             loxberry_read_allowed=loxberry_binding_allowed,
@@ -352,15 +367,10 @@ def create_server(settings: ServerSettings) -> FastMCP:
         )
         token_verifier = _Phase0TokenVerifier(provider)
         if loxone_store is not None:
-            cache_directory = (
-                settings.phase0_auth.store_path.parent.parent / "statistics-cache"
-                if config is not None and config.statistics_cache_mode == "hybrid"
-                else None
-            )
             statistics_cache = StatisticsCache(
-                cache_directory,
+                None,
                 maximum_bytes=(
-                    config.statistics_cache_max_mib * 1024 * 1024
+                    config.statistics_memory_max_mib * 1024 * 1024
                     if config is not None
                     else 128 * 1024 * 1024
                 ),
@@ -380,7 +390,27 @@ def create_server(settings: ServerSettings) -> FastMCP:
                 statistics_cache=statistics_cache,
                 control_enabled=bool(config and config.loxone_control_enabled),
                 history_enabled=bool(config and config.loxone_history_enabled),
+                structure_refresh_seconds=(
+                    config.structure_refresh_seconds if config is not None else 300
+                ),
+                max_active_sessions=(
+                    config.max_active_runtime_sessions if config is not None else 16
+                ),
+                session_idle_seconds=(
+                    config.runtime_session_idle_seconds if config is not None else 900
+                ),
+                max_states_per_identity=(
+                    config.max_states_per_identity if config is not None else 20_000
+                ),
+                max_structure_controls=(
+                    config.max_structure_controls if config is not None else 20_000
+                ),
+                max_structure_state_references=(
+                    config.max_structure_state_references if config is not None else 100_000
+                ),
+                max_structure_depth=(config.max_structure_depth if config is not None else 32),
             )
+            runtime_ref["runtime"] = runtime
         if config and settings.phase0_auth.config_path is not None:
             home = Path(os.getenv("LBHOMEDIR", "/opt/loxberry"))
             if home.is_absolute():

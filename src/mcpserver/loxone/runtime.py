@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import math
 import struct
 import time
@@ -47,6 +48,7 @@ _LOXONE_EPOCH_UNIX = 1_230_768_000
 _REFRESH_BEFORE_SECONDS = 24 * 60 * 60
 _MAX_LEGACY_STATISTIC_BYTES = 64 * 1024 * 1024
 _MAX_HISTORY_TIMESTAMP = 4_102_444_800
+_LOGGER = logging.getLogger(__name__)
 
 
 def _legacy_statistic_dates(start: int, end: int) -> tuple[str, ...]:
@@ -135,6 +137,7 @@ class RuntimeSnapshot:
     subject: str
     structure: LoxoneStructure
     connected: bool
+    structure_generation: int = 1
 
 
 @dataclass(slots=True)
@@ -144,6 +147,9 @@ class _ConnectionRecord:
     session: LoxoneWebSocketSession
     task: asyncio.Task[None]
     connected: bool = True
+    generation: int = 1
+    last_structure_check: float = 0.0
+    last_used: float = 0.0
 
 
 class LoxoneRuntime:
@@ -163,6 +169,13 @@ class LoxoneRuntime:
         statistics_cache: StatisticsCache | None = None,
         control_enabled: bool = False,
         history_enabled: bool = False,
+        structure_refresh_seconds: int = 300,
+        max_active_sessions: int = 16,
+        session_idle_seconds: int = 900,
+        max_states_per_identity: int = 20_000,
+        max_structure_controls: int = 20_000,
+        max_structure_state_references: int = 100_000,
+        max_structure_depth: int = 32,
     ) -> None:
         from mcpserver.loxone.client import MiniserverEndpoint
 
@@ -174,8 +187,11 @@ class LoxoneRuntime:
             endpoint,
             client_uuid=uuid5(NAMESPACE_URL, "https://loxberry.local/plugins/mcpserver"),
             timeout_seconds=timeout_seconds,
+            max_structure_controls=max_structure_controls,
+            max_structure_state_references=max_structure_state_references,
+            max_structure_depth=max_structure_depth,
         )
-        self.cache = UserStateCache()
+        self.cache = UserStateCache(max_states_per_user=max_states_per_identity)
         self._records: dict[str, _ConnectionRecord] = {}
         self._locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         self._rate: defaultdict[str, deque[float]] = defaultdict(deque)
@@ -190,6 +206,9 @@ class LoxoneRuntime:
         self.statistics_cache = statistics_cache or StatisticsCache(None)
         self.control_enabled = control_enabled
         self.history_enabled = history_enabled
+        self.structure_refresh_seconds = structure_refresh_seconds
+        self.max_active_sessions = max_active_sessions
+        self.session_idle_seconds = session_idle_seconds
 
     @asynccontextmanager
     async def call_slot(self, access: StoredAccessToken) -> AsyncIterator[None]:
@@ -450,7 +469,11 @@ class LoxoneRuntime:
 
     @asynccontextmanager
     async def _history_session(
-        self, access: StoredAccessToken, control_uuid: str, *, include_hidden: bool = False
+        self,
+        access: StoredAccessToken,
+        control_uuid: str,
+        *,
+        include_hidden: bool = False,
     ) -> AsyncIterator[tuple[Control, LoxoneWebSocketSession]]:
         if READ_SCOPE not in access.scopes or HISTORY_SCOPE not in access.scopes:
             raise ControlOperationError("permission_denied", "loxone:history is required")
@@ -539,7 +562,9 @@ class LoxoneRuntime:
             if series is None:
                 raise ControlOperationError("not_found", "statistic series is not visible")
             if cached is not None:
+                _LOGGER.debug("component=statistics outcome=cache_hit")
                 return control, series, cached
+            _LOGGER.debug("component=statistics outcome=cache_miss")
             try:
                 if series.source == "legacy":
                     if (
@@ -706,6 +731,7 @@ class LoxoneRuntime:
 
     async def snapshot(self, access: StoredAccessToken) -> RuntimeSnapshot:
         subject = access.family_id
+        await self._prune_sessions(subject)
         record = self._records.get(subject)
         if record is None or record.task.done():
             async with self._locks[subject]:
@@ -713,8 +739,14 @@ class LoxoneRuntime:
                 if record is None or record.task.done():
                     record = await self._connect(access)
                     self._records[subject] = record
+        record.last_used = time.monotonic()
+        if record.last_structure_check + self.structure_refresh_seconds <= record.last_used:
+            await self._refresh_structure(access, record)
         return RuntimeSnapshot(
-            subject, record.structure, record.connected and not record.task.done()
+            subject,
+            record.structure,
+            record.connected and not record.task.done(),
+            record.generation,
         )
 
     async def _connect(self, access: StoredAccessToken) -> _ConnectionRecord:
@@ -732,9 +764,58 @@ class LoxoneRuntime:
         allowed = _state_uuids(structure.controls + structure.hidden_controls)
         self.cache.begin_connection(access.family_id)
         placeholder = asyncio.create_task(asyncio.sleep(0))
-        record = _ConnectionRecord(structure, allowed, session, placeholder)
+        now = time.monotonic()
+        record = _ConnectionRecord(
+            structure,
+            allowed,
+            session,
+            placeholder,
+            last_structure_check=now,
+            last_used=now,
+        )
         record.task = asyncio.create_task(self._maintain(access, token, record))
         return record
+
+    async def _prune_sessions(self, keep_subject: str) -> None:
+        now = time.monotonic()
+        for subject, record in tuple(self._records.items()):
+            if subject != keep_subject and now - record.last_used >= self.session_idle_seconds:
+                await self.disconnect(subject)
+        active = [
+            (subject, record)
+            for subject, record in self._records.items()
+            if subject != keep_subject and not record.task.done()
+        ]
+        while len(active) >= self.max_active_sessions:
+            subject, _record = min(active, key=lambda item: item[1].last_used)
+            await self.disconnect(subject)
+            active = [item for item in active if item[0] != subject]
+
+    async def _refresh_structure(
+        self, access: StoredAccessToken, record: _ConnectionRecord
+    ) -> None:
+        try:
+            token = self.token_store.get(access.family_id, access.miniserver_id, access.identity_id)
+            if token is None:
+                raise LoxoneTokenStoreError("Loxone token is unavailable")
+            session = await self.client.open_session(token)
+            try:
+                structure = await session.load_structure()
+            finally:
+                await session.close()
+        except (LoxoneConnectionError, LoxoneProtocolError, LoxoneTokenStoreError) as exc:
+            _LOGGER.warning(
+                "component=structure outcome=refresh_failed error_type=%s",
+                type(exc).__name__,
+            )
+            raise RuntimeUnavailable("Miniserver structure refresh failed") from exc
+        record.last_structure_check = time.monotonic()
+        if structure.last_modified != record.structure.last_modified:
+            record.structure = structure
+            record.allowed_states = _state_uuids(structure.controls + structure.hidden_controls)
+            record.generation += 1
+            self.cache.apply(access.family_id, (), allowed_uuids=record.allowed_states)
+            _LOGGER.info("component=structure outcome=changed")
 
     async def _maintain(
         self,
@@ -752,13 +833,24 @@ class LoxoneRuntime:
                     await events
                     break
                 if refresh_at <= time.time():
-                    await record.session.refresh_token()
-                    self.token_store.put(
-                        access.family_id,
-                        access.miniserver_id,
-                        access.identity_id,
-                        token,
-                    )
+                    events.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await events
+                    await record.session.close()
+                    refreshed = await self.client.open_session(token)
+                    try:
+                        await refreshed.refresh_token()
+                        self.token_store.put(
+                            access.family_id,
+                            access.miniserver_id,
+                            access.identity_id,
+                            token,
+                        )
+                    finally:
+                        await refreshed.close()
+                    record.connected = False
+                    self.cache.disconnect(access.family_id)
+                    break
         except Exception:
             record.connected = False
             self.cache.disconnect(access.family_id)
@@ -775,13 +867,16 @@ class LoxoneRuntime:
     def state(self, snapshot: RuntimeSnapshot, uuid: str) -> StateRecord:
         return self.cache.get(snapshot.subject, uuid)
 
-    async def revoke(self, family_id: str) -> None:
+    async def disconnect(self, family_id: str) -> None:
         record = self._records.pop(family_id, None)
         if record is not None:
             record.task.cancel()
             with suppress(asyncio.CancelledError):
                 await record.task
         self.cache.clear(family_id)
+
+    async def revoke(self, family_id: str) -> None:
+        await self.disconnect(family_id)
         self.token_store.delete(family_id)
 
     async def close(self) -> None:

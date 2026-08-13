@@ -268,6 +268,7 @@ class SystemStatusData(BaseModel):
     miniserver_serial: str
     structure_last_modified: str
     cache_freshness: str
+    structure_generation: int = Field(description="Monotonic generation of the current structure.")
 
 
 class ToolEnvelope(BaseModel):
@@ -855,6 +856,7 @@ def register_read_tools(
                     "miniserver_serial": snapshot.structure.identity.miniserver_serial,
                     "structure_last_modified": snapshot.structure.last_modified,
                     "cache_freshness": "current" if snapshot.connected else "stale",
+                    "structure_generation": snapshot.structure_generation,
                 },
                 stale=not snapshot.connected,
             )
