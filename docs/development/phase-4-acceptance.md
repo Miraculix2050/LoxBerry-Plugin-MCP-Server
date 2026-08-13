@@ -142,10 +142,9 @@ intersection; Daytimer override actions remain hardware-unverified.
 On 2026-08-13, the deployed `0.4.0-alpha.5` structure-version refresh was
 read-only accepted on the authorized LoxBerry test target. On one visible
 control in the dedicated MCP test room and category, the user changed the
-display name, a Control Note, and the rating independently. After each change,
-the next read reported a newer Loxone structure marker and current cache
-freshness; the corresponding display name, bounded note result, and rating were
-visible through the MCP tools without restarting the Miniserver or plugin. The
-independent favorite boolean was returned as `false` during the rating check;
-changing that boolean itself remains hardware-unverified. No identifiers or
-user-authored note text are recorded here.
+display name, a Control Note, rating, and independent favorite flag. After each
+change, the next read reported a newer Loxone structure marker and current cache
+freshness; the corresponding display name, bounded note result, rating, and
+favorite flag were visible through the MCP tools without restarting the
+Miniserver or plugin. No identifiers or user-authored note text are recorded
+here.

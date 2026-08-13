@@ -14,9 +14,9 @@ Control-Aktionen auf Hardware abgenommen; siehe
 [Phase-4-Abnahmebericht](phase-4-acceptance.md).
 
 Die versionsmarkerbasierte Strukturaktualisierung ist zudem für geänderten
-Anzeigenamen, Control-Hinweis und Bewertung auf der autorisierten Testfixture
-hardware-abgenommen. Die separate Favoriten-Markierung bleibt ungetestet; siehe
-denselben Abnahmebericht.
+Anzeigenamen, Control-Hinweis, Bewertung und die unabhängige Favoriten-Markierung
+auf der autorisierten Testfixture hardware-abgenommen; siehe denselben
+Abnahmebericht.
 
 ## Plattformen und Geräte
 
