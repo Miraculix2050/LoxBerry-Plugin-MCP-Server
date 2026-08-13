@@ -3,6 +3,12 @@
 All notable user-visible changes are recorded here. GitHub release notes are
 extracted from the matching version heading.
 
+## 0.4.0-alpha.8 - 2026-08-13
+
+- Keep the HTTP-to-HTTPS Explorer guidance visible after a sign-in click by
+  performing the HTTP origin check before testing the intentionally absent
+  authorization popup.
+
 ## 0.4.0-alpha.7 - 2026-08-13
 
 - Block MCP Tool Explorer sign-in on HTTP before OAuth discovery and provide a

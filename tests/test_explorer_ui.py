@@ -147,6 +147,13 @@ def test_explorer_blocks_insecure_origins_before_oauth_discovery() -> None:
     assert "if (window.location.protocol !== 'https:')" in discover
     assert "error.canonicalUrl = core.httpsExplorerUrl(window.location.href);" in discover
     assert discover.index("window.location.protocol") < discover.index("fetchJson(")
+    authorize_start = source.index("async function authorize(popup)")
+    authorize = source[
+        authorize_start : source.index("async function refreshAccessToken", authorize_start)
+    ]
+    assert authorize.index("const discovered = await discover();") < authorize.index(
+        "if (!popup) throw new Error(label('popupBlocked'));"
+    )
 
 
 def test_explorer_opens_oauth_popup_synchronously_only_for_https() -> None:

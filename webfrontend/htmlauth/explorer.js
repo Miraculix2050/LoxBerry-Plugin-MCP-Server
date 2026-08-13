@@ -969,9 +969,9 @@
   }
 
   async function authorize(popup) {
-    if (!popup) throw new Error(label('popupBlocked'));
     const resumeUntil = Date.now() + core.EXPLORER_SESSION_MS;
     const discovered = await discover();
+    if (!popup) throw new Error(label('popupBlocked'));
     const supported = new Set(discovered.resourceMetadata.scopes_supported || []);
     if (!supported.has('loxone:read')) throw new Error(label('error'));
     if (!supported.has('loxone:history')) supported.delete('loxberry:operate');
