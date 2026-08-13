@@ -149,6 +149,20 @@ def test_explorer_blocks_insecure_origins_before_oauth_discovery() -> None:
     assert discover.index("window.location.protocol") < discover.index("fetchJson(")
 
 
+def test_explorer_opens_oauth_popup_synchronously_only_for_https() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    handler_start = source.index("elements.connect.addEventListener('click'")
+    handler = source[
+        handler_start : source.index("elements.disconnect.addEventListener", handler_start)
+    ]
+
+    assert "const insecureOrigin = window.location.protocol !== 'https:';" in handler
+    assert "const authorizationPopup = insecureOrigin ? null : openAuthorizationPopup();" in handler
+    assert handler.index("openAuthorizationPopup()") < handler.index("setBusy(true)")
+    assert "state.oauth = await authorize(authorizationPopup);" in handler
+    assert "authorizationPopup?.close()" in handler
+
+
 def test_explorer_reuses_only_schema_compatible_values() -> None:
     tools = [
         {

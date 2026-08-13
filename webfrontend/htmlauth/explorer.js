@@ -960,7 +960,16 @@
     });
   }
 
-  async function authorize() {
+  function openAuthorizationPopup() {
+    return window.open(
+      '',
+      'mcp-explorer-oauth',
+      'popup=yes,width=680,height=900,resizable=yes,scrollbars=yes',
+    );
+  }
+
+  async function authorize(popup) {
+    if (!popup) throw new Error(label('popupBlocked'));
     const resumeUntil = Date.now() + core.EXPLORER_SESSION_MS;
     const discovered = await discover();
     const supported = new Set(discovered.resourceMetadata.scopes_supported || []);
@@ -979,12 +988,7 @@
       code_challenge: challenge, code_challenge_method: 'S256', state: oauthState,
       scope, resource: discovered.resourceMetadata.resource,
     }).toString();
-    const popup = window.open(
-      authorizationUrl.href,
-      'mcp-explorer-oauth',
-      'popup=yes,width=680,height=900,resizable=yes,scrollbars=yes',
-    );
-    if (!popup) throw new Error(label('popupBlocked'));
+    popup.location.replace(authorizationUrl.href);
     const code = await waitForAuthorization(popup, oauthState);
     if (!code) throw new Error(label('authCancelled'));
     const token = await exchangeToken(
@@ -1615,10 +1619,14 @@
   }
 
   elements.connect.addEventListener('click', async () => {
+    const insecureOrigin = window.location.protocol !== 'https:';
+    // A blank window retains the click's transient user activation in Firefox.
+    // HTTP is rejected without opening a window and offers the HTTPS link below.
+    const authorizationPopup = insecureOrigin ? null : openAuthorizationPopup();
     setBusy(true);
     setStatus(label('working'), 'working');
     try {
-      state.oauth = await authorize();
+      state.oauth = await authorize(authorizationPopup);
       state.oauth.resumeEnabled = await acquireSessionOwnership(state.oauth.sessionId);
       if (state.oauth.resumeEnabled && !saveStoredSession(state.oauth)) {
         state.oauth.resumeEnabled = false;
@@ -1629,6 +1637,7 @@
       if (state.tools.length) selectTool(state.tools[0].name);
       setStatus(label('connected'), 'success');
     } catch (error) {
+      try { authorizationPopup?.close(); } catch (_closeError) { /* already gone */ }
       if (state.oauth) await revokeAndClear();
       else core.clearSensitiveState(state);
       showConnectionError(error, label('error'));

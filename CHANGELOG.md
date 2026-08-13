@@ -6,7 +6,8 @@ extracted from the matching version heading.
 ## 0.4.0-alpha.7 - 2026-08-13
 
 - Block MCP Tool Explorer sign-in on HTTP before OAuth discovery and provide a
-  link that reloads the same IP address or hostname over HTTPS.
+  link that reloads the same IP address or hostname over HTTPS; open the HTTPS
+  authorization popup synchronously so Firefox retains the click activation.
 
 ## 0.4.0-alpha.6 - 2026-08-13
 
