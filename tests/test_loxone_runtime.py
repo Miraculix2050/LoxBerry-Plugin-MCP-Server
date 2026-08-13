@@ -132,15 +132,15 @@ async def test_due_structure_refresh_fails_closed() -> None:
 
 
 @pytest.mark.asyncio
-async def test_runtime_close_disconnects_all_records_and_deletes_tokens() -> None:
+async def test_runtime_close_disconnects_all_records_without_revoking_tokens() -> None:
     runtime = object.__new__(LoxoneRuntime)
     closed: list[str] = []
 
-    async def revoke(family_id: str) -> None:
+    async def disconnect(family_id: str) -> None:
         closed.append(family_id)
 
     runtime._records = {"one": object(), "two": object()}
-    runtime.revoke = revoke  # type: ignore[method-assign]
+    runtime.disconnect = disconnect  # type: ignore[method-assign]
 
     await runtime.close()
 

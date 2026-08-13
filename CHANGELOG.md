@@ -6,7 +6,8 @@ extracted from the matching version heading.
 ## 0.4.0-alpha.4 - 2026-08-13
 
 - Serialize due LoxAPP3 refreshes per OAuth family, close live Miniserver
-  sessions on service shutdown, and extend the deterministic lifecycle tests.
+  sessions on service shutdown without revoking persisted authorization, and
+  extend the deterministic lifecycle tests.
 - Move pure control discovery presentation into its own module and make local
   release-candidate source copies ignore untracked build and temporary artifacts.
 - Simplify `loxberry_clear_statistics_cache` to report only removed RAM entries;
