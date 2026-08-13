@@ -409,10 +409,18 @@ class LoxoneRuntime:
                     raise ControlOperationError(
                         "unsupported_control", "control lacks a state required for confirmation"
                     )
-                before = {
-                    name: self.cache.get(snapshot.subject, state_uuids[name]).observed_at
+                before_records = {
+                    name: self.cache.get(snapshot.subject, state_uuids[name])
                     for name, _target in prepared.expected_states
                 }
+                if any(
+                    record.freshness is not Freshness.CURRENT for record in before_records.values()
+                ):
+                    raise ControlOperationError(
+                        "temporarily_unavailable",
+                        "control confirmation state is not current",
+                    )
+                before = {name: record.observed_at for name, record in before_records.items()}
                 await command_session.operate_control(control.action_uuid, prepared.command)
             except ControlOperationError:
                 raise
