@@ -91,21 +91,21 @@
     data-service-active-state="<TMPL_VAR SERVICE_ACTIVE_STATE ESCAPE=HTML>"
     data-service-sub-state="<TMPL_VAR SERVICE_SUB_STATE ESCAPE=HTML>"
     data-service-pid="<TMPL_VAR SERVICE_PID ESCAPE=HTML>"
-    data-service-name="<TMPL_VAR SERVICE_NAME ESCAPE=HTML>">
-    <summary><span class="mcp-service-summary"><span><TMPL_VAR STATUS.TITLE></span><span id="service-state" class="mcp-service-badge" data-kind="<TMPL_IF SERVICE_ACTIVE>success<TMPL_ELSE><TMPL_IF SERVICE_FAILED>error<TMPL_ELSE>inactive</TMPL_IF></TMPL_IF>"><TMPL_IF SERVICE_ACTIVE><TMPL_VAR STATUS.ACTIVE><TMPL_ELSE><TMPL_IF SERVICE_FAILED><TMPL_VAR STATUS.FAILED><TMPL_ELSE><TMPL_IF SERVICE_KNOWN><TMPL_VAR STATUS.INACTIVE><TMPL_ELSE><TMPL_VAR STATUS.UNKNOWN></TMPL_IF></TMPL_IF></TMPL_IF></span></span></summary>
-    <div class="mcp-collapsible-content mcp-form">
+    data-service-name="<TMPL_VAR SERVICE_NAME ESCAPE=HTML>" aria-busy="true">
+    <summary><span class="mcp-service-summary"><span><TMPL_VAR STATUS.TITLE></span><span id="service-state" class="mcp-service-badge"><TMPL_VAR AJAX.WORKING></span></span></summary>
+    <div class="mcp-collapsible-content mcp-form" id="service-content">
       <div class="mcp-service-details">
         <p><TMPL_VAR STATUS.VERSION>: <code><TMPL_VAR VERSION ESCAPE=HTML></code></p>
-        <p><TMPL_VAR STATUS.SYSTEMD_STATE>: <strong id="service-active-state"><TMPL_VAR SERVICE_ACTIVE_STATE ESCAPE=HTML></strong></p>
-        <p><TMPL_VAR STATUS.SUB_STATE>: <strong id="service-sub-state"><TMPL_VAR SERVICE_SUB_STATE ESCAPE=HTML></strong></p>
+        <p><TMPL_VAR STATUS.SYSTEMD_STATE>: <strong id="service-active-state"><TMPL_VAR AJAX.WORKING></strong></p>
+        <p><TMPL_VAR STATUS.SUB_STATE>: <strong id="service-sub-state"><TMPL_VAR AJAX.WORKING></strong></p>
         <p><TMPL_VAR STATUS.PID>: <code id="service-pid"><TMPL_VAR SERVICE_PID ESCAPE=HTML></code></p>
         <p><TMPL_VAR STATUS.UNIT>: <code id="service-name"><TMPL_VAR SERVICE_NAME ESCAPE=HTML></code></p>
-        <p><TMPL_VAR STATUS.INSTALLED>: <strong id="service-installed"><TMPL_IF SERVICE_INSTALLED><TMPL_VAR STATUS.YES><TMPL_ELSE><TMPL_VAR STATUS.NO></TMPL_IF></strong></p>
+        <p><TMPL_VAR STATUS.INSTALLED>: <strong id="service-installed"><TMPL_VAR AJAX.WORKING></strong></p>
       </div>
       <div class="mcp-actions" id="service-actions">
-        <form method="post" action="index.cgi" data-ajax="service_action" data-service-command="start" <TMPL_IF SERVICE_ACTIVE>hidden</TMPL_IF>><input type="hidden" name="action" value="service_action"><input type="hidden" name="command" value="start"><button class="lb-button" type="submit"><TMPL_VAR ACTION.START></button></form>
-        <form method="post" action="index.cgi" data-ajax="service_action" data-service-command="stop" <TMPL_UNLESS SERVICE_ACTIVE>hidden</TMPL_UNLESS>><input type="hidden" name="action" value="service_action"><input type="hidden" name="command" value="stop"><button class="lb-button" type="submit"><TMPL_VAR ACTION.STOP></button></form>
-        <form method="post" action="index.cgi" data-ajax="service_action" data-service-command="restart" <TMPL_UNLESS SERVICE_ACTIVE>hidden</TMPL_UNLESS>><input type="hidden" name="action" value="service_action"><input type="hidden" name="command" value="restart"><button class="lb-button" type="submit"><TMPL_VAR ACTION.RESTART></button></form>
+        <form method="post" action="index.cgi" data-ajax="service_action" data-service-command="start" hidden><input type="hidden" name="action" value="service_action"><input type="hidden" name="command" value="start"><button class="lb-button" type="submit"><TMPL_VAR ACTION.START></button></form>
+        <form method="post" action="index.cgi" data-ajax="service_action" data-service-command="stop" hidden><input type="hidden" name="action" value="service_action"><input type="hidden" name="command" value="stop"><button class="lb-button" type="submit"><TMPL_VAR ACTION.STOP></button></form>
+        <form method="post" action="index.cgi" data-ajax="service_action" data-service-command="restart" hidden><input type="hidden" name="action" value="service_action"><input type="hidden" name="command" value="restart"><button class="lb-button" type="submit"><TMPL_VAR ACTION.RESTART></button></form>
         <a class="lb-button" href="<TMPL_VAR SERVICE_LOG_URL ESCAPE=HTML>" target="_blank" rel="noopener"><TMPL_VAR STATUS.SHOW_LOG></a>
       </div>
     </div>
@@ -200,7 +200,7 @@
     </div>
   </details>
 
-  <details id="certificate" class="mcp-card" data-persist-collapse
+  <details id="certificate" class="mcp-card" data-persist-collapse aria-busy="true"
     data-state-scheduled="<TMPL_VAR CERTIFICATE.STATE_SCHEDULED ESCAPE=HTML>"
     data-state-running="<TMPL_VAR CERTIFICATE.STATE_RUNNING ESCAPE=HTML>"
     data-state-success="<TMPL_VAR CERTIFICATE.STATE_SUCCESS ESCAPE=HTML>"
@@ -211,42 +211,40 @@
     <summary><TMPL_VAR CERTIFICATE.TITLE></summary>
     <div class="mcp-collapsible-content">
     <p><TMPL_VAR CERTIFICATE.TEXT></p>
-    <TMPL_IF CERTIFICATE_AVAILABLE>
-      <div class="mcp-grid">
-        <p><TMPL_VAR CERTIFICATE.SOURCE>: <strong><TMPL_IF CERTIFICATE_SOURCE_LOXBERRY><TMPL_VAR CERTIFICATE.SOURCE_LOXBERRY><TMPL_ELSE><TMPL_VAR CERTIFICATE.SOURCE_EXTERNAL></TMPL_IF></strong></p>
-        <p><TMPL_VAR CERTIFICATE.EXPIRES>: <time id="certificate-expiry" class="mcp-expiry" data-expires-at="<TMPL_VAR CERTIFICATE_EXPIRES_AT ESCAPE=HTML>"><TMPL_VAR CERTIFICATE_EXPIRES ESCAPE=HTML></time></p>
-        <p><TMPL_VAR CERTIFICATE.DNS_SANS>: <strong id="certificate-dns-count"><TMPL_VAR CERTIFICATE_DNS_COUNT ESCAPE=HTML></strong></p>
-        <p><TMPL_VAR CERTIFICATE.IP_SANS>: <strong id="certificate-ip-count"><TMPL_VAR CERTIFICATE_IP_COUNT ESCAPE=HTML></strong></p>
-        <p><TMPL_VAR CERTIFICATE.ORIGIN_MATCH>: <strong id="certificate-origin-match"><TMPL_IF CERTIFICATE_ORIGIN_CONFIGURED><TMPL_IF CERTIFICATE_ORIGIN_MATCHES><TMPL_VAR CERTIFICATE.YES><TMPL_ELSE><TMPL_VAR CERTIFICATE.NO></TMPL_IF><TMPL_ELSE><TMPL_VAR CERTIFICATE.NOT_CONFIGURED></TMPL_IF></strong></p>
-        <p><TMPL_VAR CERTIFICATE.HOSTNAME_MATCH>: <strong id="certificate-hostname-match"><TMPL_IF CERTIFICATE_HOSTNAME_MATCHES><TMPL_VAR CERTIFICATE.YES><TMPL_ELSE><TMPL_VAR CERTIFICATE.NO></TMPL_IF></strong></p>
+      <div id="certificate-details" class="mcp-grid">
+        <p><TMPL_VAR CERTIFICATE.SOURCE>: <strong id="certificate-source"><TMPL_VAR AJAX.WORKING></strong></p>
+        <p><TMPL_VAR CERTIFICATE.EXPIRES>: <time id="certificate-expiry" class="mcp-expiry"><TMPL_VAR AJAX.WORKING></time></p>
+        <p><TMPL_VAR CERTIFICATE.DNS_SANS>: <strong id="certificate-dns-count"><TMPL_VAR AJAX.WORKING></strong></p>
+        <p><TMPL_VAR CERTIFICATE.IP_SANS>: <strong id="certificate-ip-count"><TMPL_VAR AJAX.WORKING></strong></p>
+        <p><TMPL_VAR CERTIFICATE.ORIGIN_MATCH>: <strong id="certificate-origin-match"><TMPL_VAR AJAX.WORKING></strong></p>
+        <p><TMPL_VAR CERTIFICATE.HOSTNAME_MATCH>: <strong id="certificate-hostname-match"><TMPL_VAR AJAX.WORKING></strong></p>
       </div>
-      <p id="certificate-warning" class="mcp-warning" <TMPL_UNLESS CERTIFICATE_WARNING>hidden</TMPL_UNLESS>><TMPL_VAR CERTIFICATE.WARNING></p>
-      <p><TMPL_VAR CERTIFICATE.RENEWAL_STATE>: <strong id="certificate-renewal-state"><TMPL_VAR CERTIFICATE_RENEWAL_STATE ESCAPE=HTML></strong></p>
-      <TMPL_IF CERTIFICATE_RENEWAL_SUPPORTED>
-        <form class="mcp-form" method="post" action="index.cgi" data-ajax="renew_certificate" data-certificate-renewal>
+      <p id="certificate-warning" class="mcp-warning" hidden><TMPL_VAR CERTIFICATE.WARNING></p>
+      <p id="certificate-renewal-info" hidden><TMPL_VAR CERTIFICATE.RENEWAL_STATE>: <strong id="certificate-renewal-state"></strong></p>
+        <form id="certificate-renewal-form" class="mcp-form" method="post" action="index.cgi" data-ajax="renew_certificate" data-certificate-renewal hidden>
           <input type="hidden" name="action" value="renew_certificate">
           <p class="mcp-warning"><TMPL_VAR CERTIFICATE.RENEW_TEXT></p>
           <label class="mcp-field"><span><TMPL_VAR CERTIFICATE.PIN></span><input name="securepin" type="password" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" autocomplete="off" required></label>
           <label><input name="renew_confirmation" type="checkbox" value="renew" required> <TMPL_VAR CERTIFICATE.CONFIRM></label>
           <div class="mcp-actions"><button class="lb-button" type="submit"><TMPL_VAR ACTION.RENEW_CERTIFICATE></button></div>
         </form>
-      <TMPL_ELSE><p class="mcp-help"><TMPL_VAR CERTIFICATE.UNSUPPORTED></p></TMPL_IF>
-    <TMPL_ELSE><p class="mcp-status" data-kind="error"><TMPL_VAR CERTIFICATE.UNAVAILABLE></p></TMPL_IF>
+      <p id="certificate-unsupported" class="mcp-help" hidden><TMPL_VAR CERTIFICATE.UNSUPPORTED></p>
+      <p id="certificate-unavailable" class="mcp-status" hidden><TMPL_VAR CERTIFICATE.UNAVAILABLE></p>
     </div>
   </details>
 
-  <details id="sessions" class="mcp-card" data-persist-collapse
+  <details id="sessions" class="mcp-card" data-persist-collapse aria-busy="true"
     data-empty-label="<TMPL_VAR SESSIONS.EMPTY ESCAPE=HTML>"
     data-unnamed-label="<TMPL_VAR SESSIONS.UNNAMED ESCAPE=HTML>">
     <summary><TMPL_VAR SESSIONS.TITLE></summary>
     <div class="mcp-collapsible-content">
-    <div id="session-list">
+    <div id="session-list"><p><TMPL_VAR AJAX.WORKING></p>
     <TMPL_IF HAS_SESSIONS>
       <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.SCOPES></th><th><TMPL_VAR SESSIONS.EXPIRES></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody>
       <TMPL_LOOP SESSIONS><tr data-session-id="<TMPL_VAR id ESCAPE=HTML>"><td><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML><TMPL_ELSE><TMPL_VAR SESSIONS.UNNAMED></TMPL_IF></td><td><code><TMPL_VAR client ESCAPE=HTML></code></td><td><code><TMPL_VAR identity ESCAPE=HTML></code></td><td><code><TMPL_VAR scopes ESCAPE=HTML></code></td><td><time class="mcp-expiry" data-expires-at="<TMPL_VAR expires_at ESCAPE=HTML>"><TMPL_VAR expires_display ESCAPE=HTML></time></td><td><TMPL_IF loxberry_read_eligible><TMPL_UNLESS loxberry_read_approved><form method="post" action="index.cgi" data-ajax="allow_loxberry_read"><input type="hidden" name="action" value="allow_loxberry_read"><input type="hidden" name="session_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.ALLOW_LOXBERRY_READ></button></form></TMPL_UNLESS></TMPL_IF><TMPL_IF loxberry_operate_eligible><TMPL_UNLESS loxberry_operate_approved><form method="post" action="index.cgi" data-ajax="allow_loxberry_operate"><input type="hidden" name="action" value="allow_loxberry_operate"><input type="hidden" name="session_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.ALLOW_LOXBERRY_OPERATE></button></form></TMPL_UNLESS></TMPL_IF><form method="post" action="index.cgi" data-ajax="revoke_session"><input type="hidden" name="action" value="revoke_session"><input type="hidden" name="id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form></td></tr></TMPL_LOOP>
       </tbody></table></div>
       <form method="post" action="index.cgi" data-ajax="revoke_all"><input type="hidden" name="action" value="revoke_all"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE_ALL></button></form>
-    <TMPL_ELSE><p><TMPL_VAR SESSIONS.EMPTY></p></TMPL_IF>
+    <TMPL_ELSE></TMPL_IF>
     </div>
     <template id="session-table-template">
       <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.SCOPES></th><th><TMPL_VAR SESSIONS.EXPIRES></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody></tbody></table></div>
@@ -346,6 +344,12 @@
   const explorerPath = '/admin/plugins/mcpserver/explorer.cgi';
   explorerLink.href = `${window.location.origin}${explorerPath}`;
   const certificateSection = document.getElementById('certificate');
+  const certificateDetails = document.getElementById('certificate-details');
+  const certificateSource = document.getElementById('certificate-source');
+  const certificateUnavailable = document.getElementById('certificate-unavailable');
+  const certificateUnsupported = document.getElementById('certificate-unsupported');
+  const certificateRenewalInfo = document.getElementById('certificate-renewal-info');
+  const certificateRenewalForm = document.getElementById('certificate-renewal-form');
   const certificateRenewalState = document.getElementById('certificate-renewal-state');
   const certificateExpiry = document.getElementById('certificate-expiry');
   const certificateDnsCount = document.getElementById('certificate-dns-count');
@@ -430,7 +434,7 @@
     }
   };
   for (const element of document.querySelectorAll('time.mcp-expiry')) {
-    updateExpiry(element, element.dataset.expiresAt);
+    if (element.dataset.expiresAt) updateExpiry(element, element.dataset.expiresAt);
   }
   const hideStatusTimers = new WeakMap();
   const hideSuccess = (element) => {
@@ -467,7 +471,20 @@
     error: certificateSection.dataset.stateError,
   } : {};
   const updateCertificate = (certificate) => {
-    if (!certificate?.available) return;
+    const available = Boolean(certificate?.available);
+    certificateSection.setAttribute('aria-busy', 'false');
+    certificateDetails.hidden = !available;
+    certificateUnavailable.hidden = available;
+    if (!available) {
+      certificateUnavailable.textContent = '<TMPL_VAR CERTIFICATE.UNAVAILABLE ESCAPE=JS>';
+      certificateUnsupported.hidden = true;
+      certificateRenewalInfo.hidden = true;
+      certificateRenewalForm.hidden = true;
+      return;
+    }
+    certificateSource.textContent = certificate.source === 'loxberry_ca'
+      ? '<TMPL_VAR CERTIFICATE.SOURCE_LOXBERRY ESCAPE=JS>'
+      : '<TMPL_VAR CERTIFICATE.SOURCE_EXTERNAL ESCAPE=JS>';
     if (certificateDnsCount) certificateDnsCount.textContent = String(certificate.dns_san_count);
     if (certificateIpCount) certificateIpCount.textContent = String(certificate.ip_san_count);
     if (certificateOriginMatch) certificateOriginMatch.textContent = certificate.origin_configured
@@ -483,6 +500,11 @@
       certificateExpiry.dateTime = date.toISOString();
       certificateExpiry.textContent = expiryFormatter.format(date);
     }
+    const renewalState = certificate.renewal?.state || 'idle';
+    certificateRenewalInfo.hidden = false;
+    certificateRenewalState.textContent = certificateStateLabels[renewalState] || certificateStateLabels.error;
+    certificateRenewalForm.hidden = !certificate.renewal_supported;
+    certificateUnsupported.hidden = Boolean(certificate.renewal_supported);
   };
   const postAjax = async (body, timeoutMs) => {
     const controller = new AbortController();
@@ -540,14 +562,35 @@
       else button.removeAttribute('aria-busy');
     }
   };
-  renderService({
-    installed: serviceSection.dataset.serviceInstalled === '1',
-    active: serviceSection.dataset.serviceActive === '1',
-    active_state: serviceSection.dataset.serviceActiveState,
-    sub_state: serviceSection.dataset.serviceSubState,
-    pid: Number(serviceSection.dataset.servicePid),
-    name: serviceSection.dataset.serviceName,
-  });
+  const loadInitialState = async () => {
+    const body = new FormData();
+    body.set('action', 'page_state');
+    body.set('ajax', '1');
+    try {
+      const result = await postAjax(body, 15000);
+      renderService(result.data.service);
+      serviceSection.setAttribute('aria-busy', 'false');
+      updateCertificate(result.data.certificate);
+      if (Array.isArray(result.data.sessions)) updateSessions(result.data.sessions);
+      if (Array.isArray(result.data.loxberry_bindings)) updateLoxberryBindings(result.data.loxberry_bindings);
+      if (Array.isArray(result.data.loxberry_operate_bindings)) updateLoxberryOperateBindings(result.data.loxberry_operate_bindings);
+      sessionsSection.setAttribute('aria-busy', 'false');
+    } catch {
+      serviceSection.setAttribute('aria-busy', 'false');
+      sessionsSection.setAttribute('aria-busy', 'false');
+      serviceState.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
+      serviceState.dataset.kind = 'error';
+      serviceActiveState.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
+      serviceSubState.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
+      serviceInstalled.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
+      sessionList.replaceChildren(document.createTextNode('<TMPL_VAR AJAX.ERROR ESCAPE=JS>'));
+      updateCertificate(null);
+      certificateUnavailable.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
+    } finally {
+      scheduleServicePoll();
+      scheduleSessionPoll();
+    }
+  };
   const serviceConfirmMessages = {
     stop: '<TMPL_VAR STATUS.CONFIRM_STOP ESCAPE=JS>',
     restart: '<TMPL_VAR STATUS.CONFIRM_RESTART ESCAPE=JS>',
@@ -596,7 +639,6 @@
       scheduleSessionPoll(0);
     }
   });
-  scheduleServicePoll();
   const pollCertificateRenewal = async (button) => {
     const deadline = Date.now() + 75000;
     try {
@@ -829,7 +871,7 @@
     }
   };
   sessionsSection.addEventListener('toggle', () => scheduleSessionPoll(sessionsSection.open ? 0 : 10000));
-  scheduleSessionPoll();
+  loadInitialState();
   const actionTimeout = (action) => ({
     save_config: 90000,
     set_logging: 75000,

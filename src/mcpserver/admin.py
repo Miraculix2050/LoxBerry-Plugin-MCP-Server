@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
+import hmac
 import json
 import os
 import re
@@ -11,7 +14,7 @@ import subprocess
 import sys
 import time
 from contextlib import suppress
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 from uuid import UUID
@@ -21,7 +24,7 @@ from mcpserver import __version__
 if TYPE_CHECKING:
     from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore
     from mcpserver.auth.store import AtomicJsonAuthStore
-    from mcpserver.config import AtomicConfigStore
+    from mcpserver.config import AtomicConfigStore, PluginConfig
     from mcpserver.loxone.client import LoxoneClient, MiniserverEndpoint
 
 _MAX_REQUEST_BYTES: Final = 32 * 1024
@@ -36,6 +39,16 @@ class AdminError(RuntimeError):
     def __init__(self, message: str, *, code: str = "invalid_request") -> None:
         super().__init__(message)
         self.code = code
+
+
+@dataclass(frozen=True)
+class _AdminReadSnapshot:
+    """Consistent, single-read input for one administrative list response."""
+
+    configuration: PluginConfig | None
+    auth_document: dict[str, Any]
+    subject_key: bytes | None
+    now: float
 
 
 def _path(name: str, *, suffix: str | None = None) -> Path:
@@ -173,7 +186,7 @@ def _optional_path(name: str) -> Path | None:
     return path if path.is_absolute() else None
 
 
-def _certificate_status() -> dict[str, Any]:
+def _certificate_status(*, configuration: Any | None = None) -> dict[str, Any]:
     from mcpserver.certificates import inspect_certificate
 
     certificate = _optional_path("MCPSERVER_WEB_CERT")
@@ -186,7 +199,7 @@ def _certificate_status() -> dict[str, Any]:
             "renewal_supported": False,
             "renewal": {"state": "idle"},
         }
-    config = _config_store().load()
+    config = configuration if configuration is not None else _config_store().load()
     return inspect_certificate(
         certificate,
         authority,
@@ -388,20 +401,51 @@ async def _test_connection(payload: object) -> dict[str, Any]:
     }
 
 
-def _sessions() -> list[dict[str, Any]]:
+def _admin_read_snapshot(*, require_configuration: bool = False) -> _AdminReadSnapshot:
+    """Load the immutable inputs for one admin list response exactly once."""
+
+    try:
+        configuration = _config_store().load()
+    except AdminError:
+        if require_configuration:
+            raise
+        configuration = None
+    document = _auth_store().snapshot()
+    encoded_subject_key = document.get("subject_key")
+    subject_key = (
+        base64.urlsafe_b64decode(encoded_subject_key.encode("ascii"))
+        if isinstance(encoded_subject_key, str)
+        else None
+    )
+    return _AdminReadSnapshot(configuration, document, subject_key, time.time())
+
+
+def _binding_pseudonym(subject_key: bytes, namespace: str, record: dict[str, Any]) -> str:
+    canonical = "\0".join(
+        (
+            namespace,
+            str(record.get("client_id", "")),
+            str(record.get("identity_id", "")),
+            str(record.get("miniserver_id", "")),
+        )
+    ).encode("utf-8")
+    return hmac.new(subject_key, canonical, hashlib.sha256).hexdigest()
+
+
+def _sessions(snapshot: _AdminReadSnapshot | None = None) -> list[dict[str, Any]]:
     from mcpserver.auth.provider import READ_SCOPE
 
-    document = _auth_store().snapshot()
+    snapshot = snapshot or _admin_read_snapshot()
+    document = snapshot.auth_document
     clients = document.get("clients", {})
     if not isinstance(clients, dict):
         clients = {}
-    try:
-        current = _config_store().load()
-        bindings = current.loxberry_read_bindings
-        operate_bindings = current.loxberry_operate_bindings
-    except AdminError:
-        bindings = ()
-        operate_bindings = ()
+    bindings = (
+        set(snapshot.configuration.loxberry_read_bindings) if snapshot.configuration else set()
+    )
+    operate_bindings = (
+        set(snapshot.configuration.loxberry_operate_bindings) if snapshot.configuration else set()
+    )
     result = []
     for family_id, record in document["families"].items():
         expires_at = record.get("expires_at")
@@ -409,18 +453,29 @@ def _sessions() -> list[dict[str, Any]]:
             continue
         client_id = str(record.get("client_id", ""))
         scopes = str(record.get("scope", "loxone:read"))
+        scope_set = frozenset(scopes.split())
         pending_loxberry_read = (
             bool(record.get("pending_loxberry_read", False))
-            and READ_SCOPE in scopes.split()
+            and READ_SCOPE in scope_set
             and isinstance(expires_at, int | float)
-            and expires_at > time.time()
+            and expires_at > snapshot.now
         )
         pending_loxberry_operate = (
             bool(record.get("pending_loxberry_operate", False))
-            and "loxone:history" in scopes.split()
-            and "loxberry:operate" in scopes.split()
+            and "loxone:history" in scope_set
+            and "loxberry:operate" in scope_set
             and isinstance(expires_at, int | float)
-            and expires_at > time.time()
+            and expires_at > snapshot.now
+        )
+        read_binding = (
+            _loxberry_binding(record, subject_key=snapshot.subject_key)
+            if pending_loxberry_read and bindings and snapshot.subject_key is not None
+            else None
+        )
+        operate_binding = (
+            _loxberry_operate_binding(record, subject_key=snapshot.subject_key)
+            if pending_loxberry_operate and operate_bindings and snapshot.subject_key is not None
+            else None
         )
         client = clients.get(client_id, {})
         client_name = client.get("client_name", "") if isinstance(client, dict) else ""
@@ -436,19 +491,19 @@ def _sessions() -> list[dict[str, Any]]:
                 "expires_at": record.get("expires_at"),
                 "revoked": bool(record.get("revoked", False)),
                 "loxberry_read_eligible": pending_loxberry_read,
-                "loxberry_read_approved": pending_loxberry_read
-                and bool(bindings)
-                and _loxberry_binding(record) in bindings,
+                "loxberry_read_approved": read_binding in bindings if read_binding else False,
                 "loxberry_operate_eligible": pending_loxberry_operate,
-                "loxberry_operate_approved": pending_loxberry_operate
-                and bool(operate_bindings)
-                and _loxberry_operate_binding(record) in operate_bindings,
+                "loxberry_operate_approved": (
+                    operate_binding in operate_bindings if operate_binding else False
+                ),
             }
         )
     return sorted(result, key=lambda item: str(item["id"]))
 
 
-def _loxberry_binding(record: dict[str, Any]) -> str:
+def _loxberry_binding(record: dict[str, Any], *, subject_key: bytes | None = None) -> str:
+    if subject_key is not None:
+        return _binding_pseudonym(subject_key, "loxberry-read-binding-v1", record)
     return _auth_store().pseudonym(
         "loxberry-read-binding-v1",
         str(record.get("client_id", "")),
@@ -457,7 +512,9 @@ def _loxberry_binding(record: dict[str, Any]) -> str:
     )
 
 
-def _loxberry_operate_binding(record: dict[str, Any]) -> str:
+def _loxberry_operate_binding(record: dict[str, Any], *, subject_key: bytes | None = None) -> str:
+    if subject_key is not None:
+        return _binding_pseudonym(subject_key, "loxberry-operate-binding-v1", record)
     return _auth_store().pseudonym(
         "loxberry-operate-binding-v1",
         str(record.get("client_id", "")),
@@ -489,30 +546,29 @@ def _binding_rows(binding: str, sessions: list[dict[str, str]]) -> list[dict[str
     ]
 
 
-def _loxberry_bindings() -> list[dict[str, Any]]:
+def _loxberry_bindings(snapshot: _AdminReadSnapshot | None = None) -> list[dict[str, Any]]:
     from mcpserver.auth.provider import LOXBERRY_READ_SCOPE
 
-    try:
-        bindings = _config_store().load().loxberry_read_bindings
-    except AdminError:
-        return []
+    snapshot = snapshot or _admin_read_snapshot()
+    bindings = snapshot.configuration.loxberry_read_bindings if snapshot.configuration else ()
     if not bindings:
         return []
-    document = _auth_store().snapshot()
+    document = snapshot.auth_document
     clients = document.get("clients", {})
     if not isinstance(clients, dict):
         clients = {}
     related: dict[str, list[dict[str, str]]] = {binding: [] for binding in bindings}
-    now = time.time()
     for record in document.get("families", {}).values():
         if not isinstance(record, dict) or record.get("revoked", False):
             continue
         expires_at = record.get("expires_at")
-        if not isinstance(expires_at, int | float) or expires_at <= now:
+        if not isinstance(expires_at, int | float) or expires_at <= snapshot.now:
             continue
         if LOXBERRY_READ_SCOPE not in str(record.get("scope", "")).split():
             continue
-        binding = _loxberry_binding(record)
+        if snapshot.subject_key is None:
+            continue
+        binding = _loxberry_binding(record, subject_key=snapshot.subject_key)
         if binding not in related:
             continue
         client_id = str(record.get("client_id", ""))
@@ -540,27 +596,29 @@ def _loxberry_bindings() -> list[dict[str, Any]]:
     ]
 
 
-def _loxberry_operate_bindings() -> list[dict[str, Any]]:
+def _loxberry_operate_bindings(snapshot: _AdminReadSnapshot | None = None) -> list[dict[str, Any]]:
     from mcpserver.auth.provider import LOXBERRY_OPERATE_SCOPE
 
-    try:
-        bindings = _config_store().load().loxberry_operate_bindings
-    except AdminError:
-        return []
+    snapshot = snapshot or _admin_read_snapshot()
+    bindings = snapshot.configuration.loxberry_operate_bindings if snapshot.configuration else ()
     if not bindings:
         return []
-    document = _auth_store().snapshot()
+    document = snapshot.auth_document
     related: dict[str, list[dict[str, str]]] = {binding: [] for binding in bindings}
     clients = document.get("clients", {})
-    now = time.time()
     for record in document.get("families", {}).values():
         if not isinstance(record, dict) or record.get("revoked", False):
             continue
-        if not isinstance(record.get("expires_at"), int | float) or record["expires_at"] <= now:
+        if (
+            not isinstance(record.get("expires_at"), int | float)
+            or record["expires_at"] <= snapshot.now
+        ):
             continue
         if LOXBERRY_OPERATE_SCOPE not in str(record.get("scope", "")).split():
             continue
-        binding = _loxberry_operate_binding(record)
+        if snapshot.subject_key is None:
+            continue
+        binding = _loxberry_operate_binding(record, subject_key=snapshot.subject_key)
         if binding not in related:
             continue
         client_id = str(record.get("client_id", ""))
@@ -839,13 +897,16 @@ def dispatch(request: object) -> dict[str, Any]:
     action = request["action"]
     payload = request.get("payload", {})
     if action == "page_state":
+        snapshot = _admin_read_snapshot(require_configuration=True)
+        if snapshot.configuration is None:
+            raise AdminError("plugin storage is not configured")
         return {
-            "configuration": _config_store().load().to_document(),
+            "configuration": snapshot.configuration.to_document(),
             "version": __version__,
-            "sessions": _sessions(),
-            "loxberry_bindings": _loxberry_bindings(),
-            "loxberry_operate_bindings": _loxberry_operate_bindings(),
-            "certificate": _certificate_status(),
+            "sessions": _sessions(snapshot),
+            "loxberry_bindings": _loxberry_bindings(snapshot),
+            "loxberry_operate_bindings": _loxberry_operate_bindings(snapshot),
+            "certificate": _certificate_status(configuration=snapshot.configuration),
         } | _service_response()
     if action == "get_config":
         return {"configuration": _config_store().load().to_document()}
@@ -866,10 +927,11 @@ def dispatch(request: object) -> dict[str, Any]:
     if action == "test_connection":
         return asyncio.run(_test_connection(payload))
     if action == "list_sessions":
+        snapshot = _admin_read_snapshot()
         return {
-            "sessions": _sessions(),
-            "loxberry_bindings": _loxberry_bindings(),
-            "loxberry_operate_bindings": _loxberry_operate_bindings(),
+            "sessions": _sessions(snapshot),
+            "loxberry_bindings": _loxberry_bindings(snapshot),
+            "loxberry_operate_bindings": _loxberry_operate_bindings(snapshot),
         }
     if action == "allow_loxberry_read":
         return _allow_loxberry_read(payload)

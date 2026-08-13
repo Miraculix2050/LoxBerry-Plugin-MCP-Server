@@ -390,6 +390,8 @@ if ($action ne '') {
         $result = admin_call('set_logging', {mode => ($q->{mode} // '')});
         admin_log($result->{ok} ? 'info' : 'warning',
             'action=set_service_log_level outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
+    } elsif ($action eq 'page_state') {
+        $result = admin_call('page_state', {});
     } elsif ($action eq 'test_connection') {
         $result = admin_call('test_connection', {endpoint => requested_endpoint($q)});
     } elsif ($action eq 'revoke_session') {
@@ -481,16 +483,11 @@ sub format_expiry {
     return defined($formatted) && length($formatted) ? $formatted : $raw;
 }
 
-my $page_result = admin_call('page_state', {});
-my $page_state = $page_result->{ok} ? $page_result->{data} : {};
-my $config = $page_state->{configuration} // {};
-my $sessions = $page_state->{sessions} // [];
-my $loxberry_bindings = $page_state->{loxberry_bindings} // [];
-my $loxberry_operate_bindings = $page_state->{loxberry_operate_bindings} // [];
-for my $session (@$sessions) {
-    next if ref($session) ne 'HASH';
-    $session->{expires_display} = format_expiry($session->{expires_at});
-}
+my $config_result = admin_call('get_config', {});
+my $config = $config_result->{ok} ? ($config_result->{data}{configuration} // {}) : {};
+my $sessions = [];
+my $loxberry_bindings = [];
+my $loxberry_operate_bindings = [];
 $config->{server} = {} if ref($config->{server}) ne 'HASH';
 $config->{loxone} = {} if ref($config->{loxone}) ne 'HASH';
 $config->{tools} = {} if ref($config->{tools}) ne 'HASH';
@@ -504,11 +501,9 @@ my $display_endpoint = $config->{loxone}{endpoint} // '';
 $display_endpoint = $selected_miniserver->{endpoint}
     if $display_endpoint eq '' && $selected_miniserver;
 my $public_origin = $config->{server}{public_origin} // '';
-my $certificate = ref($page_state->{certificate}) eq 'HASH'
-    ? $page_state->{certificate} : {};
-my $service = ref($page_state->{service}) eq 'HASH'
-    ? $page_state->{service} : {};
-my $renewal = ref($certificate->{renewal}) eq 'HASH' ? $certificate->{renewal} : {};
+my $certificate = {};
+my $service = {};
+my $renewal = {};
 my $general_config = stored_general_config();
 my $sslport = ref($general_config->{Webserver}) eq 'HASH'
     ? $general_config->{Webserver}{Sslport} : 443;
@@ -572,7 +567,7 @@ $template->param(
     LOG_LEVEL_WARNING => ($config->{logging}{level} // 'warning') eq 'warning' ? 1 : 0,
     LOG_LEVEL_INFO => ($config->{logging}{level} // 'warning') eq 'info' ? 1 : 0,
     LOG_LEVEL_DEBUG => ($config->{logging}{level} // 'warning') eq 'debug' ? 1 : 0,
-    SERVICE_ACTIVE => $page_state->{service_active} ? 1 : 0,
+    SERVICE_ACTIVE => 0,
     SERVICE_INSTALLED => $service->{installed} ? 1 : 0,
     SERVICE_FAILED => ($service->{active_state} // '') eq 'failed' ? 1 : 0,
     SERVICE_KNOWN => ($service->{active_state} // 'unknown') ne 'unknown' ? 1 : 0,

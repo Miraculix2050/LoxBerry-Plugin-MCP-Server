@@ -132,6 +132,8 @@ Claude users can find the required scope configuration under
 
 Save, connection test and session revocation remain usable without JavaScript.
 With JavaScript, status, test and revocation update without a page navigation.
+The configuration interface appears immediately; service status, certificate and
+sessions load afterwards in one serial request.
 
 ## Web server certificate
 

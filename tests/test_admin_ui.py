@@ -8,13 +8,34 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_initial_page_uses_one_aggregated_admin_call() -> None:
+def test_initial_page_renders_configuration_before_loading_dynamic_state() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
 
+    assert "admin_call('get_config', {})" in cgi
     assert "admin_call('page_state', {})" in cgi
-    assert "my $config_result =" not in cgi
-    assert "my $status_result =" not in cgi
-    assert "my $sessions_result =" not in cgi
+    assert "body.set('action', 'page_state')" in template
+    assert "const loadInitialState" in template
+    assert "loadInitialState();" in template
+    assert 'aria-busy="true"' in template
+    assert '<strong id="service-active-state"><TMPL_VAR AJAX.WORKING></strong>' in template
+    assert '<strong id="service-sub-state"><TMPL_VAR AJAX.WORKING></strong>' in template
+    assert '<strong id="service-installed"><TMPL_VAR AJAX.WORKING></strong>' in template
+    assert '<strong id="certificate-source"><TMPL_VAR AJAX.WORKING></strong>' in template
+    assert (
+        '<time id="certificate-expiry" class="mcp-expiry"><TMPL_VAR AJAX.WORKING></time>'
+        in template
+    )
+    assert (
+        "if (element.dataset.expiresAt) updateExpiry(element, element.dataset.expiresAt);"
+        in template
+    )
+    assert 'id="certificate-unavailable" class="mcp-status" hidden' in template
+    assert "updateCertificate(null);" in template
+    assert (
+        "sessionList.replaceChildren(document.createTextNode('<TMPL_VAR AJAX.ERROR ESCAPE=JS>'))"
+        in template
+    )
 
 
 def test_common_actions_update_the_page_without_a_reload() -> None:
@@ -365,11 +386,8 @@ for my $case (@cases) {{ print((local_mcp_url(@$case) // '') . "\n"); }}
 
 
 def test_session_expiry_is_rendered_as_a_local_date_and_time() -> None:
-    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
 
-    assert "strftime('%Y-%m-%d %H:%M:%S %Z', localtime(0 + $raw))" in cgi
-    assert "$session->{expires_display} = format_expiry($session->{expires_at})" in cgi
     assert 'class="mcp-expiry"' in template
     assert 'data-expires-at="<TMPL_VAR expires_at ESCAPE=HTML>"' in template
     assert "<TMPL_VAR expires_display ESCAPE=HTML>" in template

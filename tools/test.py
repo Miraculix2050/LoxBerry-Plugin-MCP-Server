@@ -56,6 +56,7 @@ _TEST_GROUPS: Final = (
         (
             "src/mcpserver/admin.py",
             "templates/index.html",
+            "tools/benchmark_admin_page_state.py",
             "templates/lang/**",
             "webfrontend/htmlauth/index.cgi",
         ),

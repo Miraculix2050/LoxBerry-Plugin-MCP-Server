@@ -1,14 +1,19 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
+import hmac
 import json
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from mcpserver.admin import (
     AdminError,
+    _AdminReadSnapshot,
     _allow_loxberry_operate,
     _allow_loxberry_read,
     _loxberry_bindings,
@@ -33,6 +38,7 @@ from mcpserver.auth.store import AtomicJsonAuthStore
 from mcpserver.config import AtomicConfigStore, PluginConfig
 from mcpserver.loxone.client import LoxoneToken
 from mcpserver.loxone.events import LoxoneProtocolError
+from tools.benchmark_admin_page_state import measure
 
 
 def test_diagnostic_contains_no_paths_endpoint_or_identity(
@@ -340,12 +346,21 @@ def test_loxberry_operate_bindings_ignore_read_only_families(
 
 def test_page_state_aggregates_initial_admin_ui_data(monkeypatch: pytest.MonkeyPatch) -> None:
     config = PluginConfig.defaults()
-
-    class ConfigStore:
-        def load(self) -> PluginConfig:
-            return config
-
-    monkeypatch.setattr("mcpserver.admin._config_store", lambda: ConfigStore())
+    snapshot = _AdminReadSnapshot(
+        config,
+        {
+            "subject_key": base64.urlsafe_b64encode(b"s" * 32).decode("ascii"),
+            "clients": {},
+            "families": {},
+            "codes": {},
+            "access_tokens": {},
+            "refresh_tokens": {},
+            "schema_version": 1,
+        },
+        b"s" * 32,
+        0,
+    )
+    monkeypatch.setattr("mcpserver.admin._admin_read_snapshot", lambda **_kwargs: snapshot)
     service = {
         "name": "loxberry-mcpserver.service",
         "installed": True,
@@ -355,10 +370,9 @@ def test_page_state_aggregates_initial_admin_ui_data(monkeypatch: pytest.MonkeyP
         "active": True,
     }
     monkeypatch.setattr("mcpserver.admin._service_status", lambda: service)
-    monkeypatch.setattr("mcpserver.admin._sessions", lambda: [{"id": "family"}])
     monkeypatch.setattr(
         "mcpserver.admin._certificate_status",
-        lambda: {"available": True, "renewal_supported": False},
+        lambda **_kwargs: {"available": True, "renewal_supported": False},
     )
 
     result = dispatch({"action": "page_state"})
@@ -368,11 +382,114 @@ def test_page_state_aggregates_initial_admin_ui_data(monkeypatch: pytest.MonkeyP
         "version": result["version"],
         "service_active": True,
         "service": service,
-        "sessions": [{"id": "family"}],
+        "sessions": [],
         "loxberry_bindings": [],
         "loxberry_operate_bindings": [],
         "certificate": {"available": True, "renewal_supported": False},
     }
+
+
+@pytest.mark.parametrize("action", ["page_state", "list_sessions"])
+@pytest.mark.parametrize("session_count", [0, 10, 100])
+def test_admin_list_responses_use_one_snapshot_per_request(
+    action: str, session_count: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    subject_key = b"s" * 32
+    subject_key_text = base64.urlsafe_b64encode(subject_key).decode("ascii")
+    families = {
+        f"family-{index:03}": {
+            "scope": f"{READ_SCOPE} {HISTORY_SCOPE} {LOXBERRY_READ_SCOPE} {LOXBERRY_OPERATE_SCOPE}",
+            "client_id": f"client-{index}",
+            "identity_id": f"identity-{index}",
+            "miniserver_id": "miniserver",
+            "expires_at": 2_000_000_000,
+            "pending_loxberry_read": True,
+            "pending_loxberry_operate": True,
+            "revoked": False,
+        }
+        for index in range(session_count)
+    }
+    first_record = next(
+        iter(families.values()),
+        {"client_id": "", "identity_id": "", "miniserver_id": ""},
+    )
+
+    def binding(namespace: str) -> str:
+        canonical = "\0".join(
+            (
+                namespace,
+                first_record["client_id"],
+                first_record["identity_id"],
+                first_record["miniserver_id"],
+            )
+        ).encode("utf-8")
+        return hmac.new(subject_key, canonical, hashlib.sha256).hexdigest()
+
+    configuration = replace(
+        PluginConfig.defaults(),
+        loxberry_read_bindings=(binding("loxberry-read-binding-v1"),),
+        loxberry_operate_bindings=(binding("loxberry-operate-binding-v1"),),
+    )
+    document = {
+        "schema_version": 1,
+        "subject_key": subject_key_text,
+        "clients": {
+            record["client_id"]: {"client_name": f"Client {index}"}
+            for index, record in enumerate(families.values())
+        },
+        "families": families,
+        "codes": {},
+        "access_tokens": {},
+        "refresh_tokens": {},
+    }
+
+    class ConfigStore:
+        calls = 0
+
+        def load(self) -> PluginConfig:
+            self.calls += 1
+            return configuration
+
+    class AuthStore:
+        calls = 0
+
+        def snapshot(self) -> dict[str, object]:
+            self.calls += 1
+            return document
+
+    config_store = ConfigStore()
+    auth_store = AuthStore()
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: config_store)
+    monkeypatch.setattr("mcpserver.admin._auth_store", lambda: auth_store)
+    monkeypatch.setattr("mcpserver.admin._service_status", lambda: {"active": True})
+    monkeypatch.setattr(
+        "mcpserver.admin._certificate_status", lambda **_kwargs: {"available": False}
+    )
+
+    result = dispatch({"action": action})
+
+    assert config_store.calls == 1
+    assert auth_store.calls == 1
+    assert len(result["sessions"]) == session_count
+    if session_count:
+        assert result["sessions"][0]["id"] == "family-000"
+    approved = [session for session in result["sessions"] if session["loxberry_read_approved"]]
+    assert [session["id"] for session in approved] == (["family-000"] if session_count else [])
+    approved = [session for session in result["sessions"] if session["loxberry_operate_approved"]]
+    assert [session["id"] for session in approved] == (["family-000"] if session_count else [])
+    assert result["loxberry_bindings"][0]["active"] is (session_count > 0)
+    assert result["loxberry_operate_bindings"][0]["active"] is (session_count > 0)
+
+
+def test_page_state_benchmark_reports_machine_readable_metrics() -> None:
+    result = measure(session_count=10, warmups=0, samples=2)
+
+    assert result["sessions"] == 10
+    assert result["warmups"] == 0
+    assert result["samples"] == 2
+    assert isinstance(result["p50_ms"], float)
+    assert isinstance(result["p95_ms"], float)
+    assert isinstance(result["peak_bytes"], int)
 
 
 def test_status_refresh_returns_all_dynamic_admin_ui_data(
