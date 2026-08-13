@@ -69,6 +69,16 @@ class ExplorerSession:
     expires_at: int
 
 
+@dataclass(frozen=True)
+class RemoteRevocation:
+    """A still-encrypted Loxone token awaiting confirmed remote revocation."""
+
+    family_id: str
+    miniserver_id: str
+    identity_id: str
+    token: LoxoneToken
+
+
 def _encoded(value: bytes) -> str:
     return base64.urlsafe_b64encode(value).decode("ascii")
 
@@ -270,6 +280,57 @@ class EncryptedLoxoneTokenStore:
             document = self._read()
             if document["tokens"].pop(family_id, None) is not None:
                 self._write(document)
+
+    def schedule_remote_revoke(self, family_id: str) -> bool:
+        """Retain a token until a worker confirms its Miniserver revocation."""
+        with self._locked():
+            document = self._read()
+            record = document["tokens"].get(family_id)
+            if not isinstance(record, dict):
+                return False
+            record["remote_revoke_pending"] = True
+            record.setdefault("remote_revoke_attempts", 0)
+            record.setdefault("remote_revoke_after", 0)
+            self._write(document)
+            return True
+
+    def pending_remote_revocations(self, now: int) -> tuple[RemoteRevocation, ...]:
+        with self._locked():
+            records = [
+                (family_id, record.copy())
+                for family_id, record in self._read()["tokens"].items()
+                if isinstance(record, dict)
+                and record.get("remote_revoke_pending") is True
+                and isinstance(record.get("remote_revoke_after"), int)
+                and record["remote_revoke_after"] <= now
+            ]
+        pending = []
+        for family_id, record in records:
+            miniserver_id, identity_id = record.get("miniserver_id"), record.get("identity_id")
+            if not isinstance(miniserver_id, str) or not isinstance(identity_id, str):
+                raise LoxoneTokenStoreError("encrypted token binding is invalid")
+            token = self.get(family_id, miniserver_id, identity_id)
+            if token is not None:
+                pending.append(RemoteRevocation(family_id, miniserver_id, identity_id, token))
+        return tuple(pending)
+
+    def defer_remote_revoke(self, family_id: str, now: int) -> None:
+        with self._locked():
+            document = self._read()
+            record = document["tokens"].get(family_id)
+            if not isinstance(record, dict) or record.get("remote_revoke_pending") is not True:
+                return
+            attempts = record.get("remote_revoke_attempts", 0)
+            if not isinstance(attempts, int) or attempts < 0:
+                attempts = 0
+            attempts += 1
+            record["remote_revoke_attempts"] = attempts
+            record["remote_revoke_after"] = now + min(300, 2 ** min(attempts, 8))
+            self._write(document)
+
+    def complete_remote_revoke(self, family_id: str) -> None:
+        """Delete only after the Miniserver accepted killtoken."""
+        self.delete(family_id)
 
     @staticmethod
     def _explorer_aad(session_id: str, family_id: str, client_id: str) -> bytes:

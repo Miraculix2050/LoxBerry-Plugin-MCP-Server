@@ -392,8 +392,9 @@ Unterabschnitt **Plugin-Logs (LoxBerry LogManager)**.
 
 Der Diagnoseexport enthält nur Version,
 Dienststatus, Transportart und maskierte Zähler. Sitzungen können einzeln oder
-gemeinsam widerrufen werden; ein erreichbarer Miniserver erhält zusätzlich
-best effort `killtoken`.
+gemeinsam widerrufen werden. Der MCP-Server sperrt den Zugriff sofort; das
+verschlüsselte Loxone-Token bleibt bis zur Bestätigung durch einen erreichbaren
+Miniserver für den `killtoken`-Aufruf vorgemerkt.
 
 Die Statuskarte der Adminseite aktualisiert Zustand und PID automatisch. Bei
 inaktivem Dienst steht **Starten** bereit; bei aktivem Dienst stehen **Stoppen**

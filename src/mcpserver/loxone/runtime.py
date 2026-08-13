@@ -896,7 +896,6 @@ class LoxoneRuntime:
 
     async def revoke(self, family_id: str) -> None:
         await self.disconnect(family_id)
-        self.token_store.delete(family_id)
 
     async def close(self) -> None:
         for family_id in tuple(self._records):

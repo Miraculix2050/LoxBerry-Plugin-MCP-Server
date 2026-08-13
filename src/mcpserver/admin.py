@@ -799,11 +799,8 @@ def _revoke_many(
     timeout_seconds: float | None = None,
 ) -> int:
     from mcpserver.auth.loxone_store import LoxoneTokenStoreError
-    from mcpserver.loxone.client import LoxoneConnectionError, MiniserverEndpoint
-    from mcpserver.loxone.events import LoxoneProtocolError
 
     revoked: list[str] = []
-    bindings: list[tuple[str, str, str]] = []
 
     def mutate(document: dict[str, Any]) -> None:
         targets = (
@@ -817,13 +814,6 @@ def _revoke_many(
                 continue
             family["revoked"] = True
             revoked.append(target)
-            bindings.append(
-                (
-                    target,
-                    str(family.get("miniserver_id", "")),
-                    str(family.get("identity_id", "")),
-                )
-            )
             for collection in ("codes", "access_tokens", "refresh_tokens"):
                 for record in document[collection].values():
                     if record.get("family_id") == target:
@@ -834,43 +824,10 @@ def _revoke_many(
         token_store = _token_store()
     except LoxoneTokenStoreError:
         token_store = None
-    config = _config_store().load()
-    selected_endpoint = endpoint if endpoint is not None else config.loxone_endpoint
-    selected_timeout = timeout_seconds if timeout_seconds is not None else config.connection_timeout
-    if selected_endpoint and token_store is not None:
-        client = _loxone_client(
-            MiniserverEndpoint.parse(selected_endpoint),
-            client_uuid=_CLIENT_UUID,
-            timeout_seconds=selected_timeout,
-        )
-
-        async def kill_token(binding: tuple[str, str, str]) -> None:
-            target, miniserver_id, identity_id = binding
-            try:
-                token = token_store.get(target, miniserver_id, identity_id)
-            except LoxoneTokenStoreError:
-                token = None
-            if token is not None:
-                with suppress(
-                    TimeoutError,
-                    LoxoneConnectionError,
-                    LoxoneProtocolError,
-                ):
-                    await asyncio.wait_for(
-                        client.kill_token(token),
-                        timeout=selected_timeout + 5,
-                    )
-
-        async def kill_tokens() -> None:
-            async with asyncio.TaskGroup() as group:
-                for binding in bindings:
-                    group.create_task(kill_token(binding))
-
-        asyncio.run(kill_tokens())
     if token_store is not None:
         for target in revoked:
             with suppress(LoxoneTokenStoreError):
-                token_store.delete(target)
+                token_store.schedule_remote_revoke(target)
     return len(revoked)
 
 

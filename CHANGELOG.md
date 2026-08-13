@@ -3,6 +3,12 @@
 All notable user-visible changes are recorded here. GitHub release notes are
 extracted from the matching version heading.
 
+## Unreleased
+
+- Retain encrypted Loxone tokens after a local session revocation until the
+  Miniserver confirms `killtoken`; unavailable Miniservers are retried by the
+  service without delaying the administrative UI.
+
 ## 0.4.0-alpha.9 - 2026-08-13
 
 - Add bounded LoxAPP3 climate, ventilation, safety/status, energy and global
