@@ -76,6 +76,10 @@ def _optional_uuid(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def _bounded_text(value: object, *, maximum: int = 200) -> str | None:
+    return value if isinstance(value, str) and 1 <= len(value) <= maximum else None
+
+
 def _history_capability(value: object) -> bool:
     """Normalize documented booleans and numeric values emitted by real Miniservers."""
     return _capability_flag(value, field="details.hasHistory")
@@ -241,22 +245,22 @@ def _global_metadata(document: Mapping[str, object]) -> tuple[GlobalMetadata, ..
     operating_modes = document.get("operatingModes")
     if isinstance(operating_modes, Mapping):
         for identifier, name in list(operating_modes.items())[:100]:
-            if isinstance(identifier, str) and isinstance(name, str) and len(name) <= 200:
+            if _bounded_text(identifier) is not None and _bounded_text(name) is not None:
                 result.append(GlobalMetadata("operating_mode", identifier, name))
     modes = document.get("modes")
     if isinstance(modes, Mapping):
         for identifier, item in list(modes.items())[:100]:
             if isinstance(identifier, str) and isinstance(item, Mapping):
                 mode_id, name = item.get("id"), item.get("name")
+                normalized_name = _bounded_text(name)
                 if (
                     isinstance(mode_id, int)
                     and not isinstance(mode_id, bool)
-                    and isinstance(name, str)
-                    and len(name) <= 200
+                    and normalized_name is not None
                 ):
                     result.append(
                         GlobalMetadata(
-                            "mode", str(mode_id), name, locked=item.get("locked") is True
+                            "mode", str(mode_id), normalized_name, locked=item.get("locked") is True
                         )
                     )
     times = document.get("times")
@@ -264,20 +268,34 @@ def _global_metadata(document: Mapping[str, object]) -> tuple[GlobalMetadata, ..
         for identifier, item in list(times.items())[:100]:
             if isinstance(identifier, str) and isinstance(item, Mapping):
                 name, analog = item.get("name"), item.get("analog")
-                if isinstance(name, str) and len(name) <= 200 and isinstance(analog, bool):
-                    result.append(GlobalMetadata("time", identifier, name, analog=analog))
+                normalized_identifier, normalized_name = (
+                    _bounded_text(identifier),
+                    _bounded_text(name),
+                )
+                if normalized_identifier and normalized_name and isinstance(analog, bool):
+                    result.append(
+                        GlobalMetadata(
+                            "time", normalized_identifier, normalized_name, analog=analog
+                        )
+                    )
     room_groups = document.get("roomGroups")
     if isinstance(room_groups, list):
         for item in room_groups[:100]:
             if isinstance(item, Mapping):
                 identifier, name = item.get("uuid"), item.get("name")
-                if isinstance(identifier, str) and isinstance(name, str) and len(name) <= 200:
-                    result.append(GlobalMetadata("room_group", identifier, name))
+                normalized_identifier, normalized_name = (
+                    _bounded_text(identifier),
+                    _bounded_text(name),
+                )
+                if normalized_identifier and normalized_name:
+                    result.append(
+                        GlobalMetadata("room_group", normalized_identifier, normalized_name)
+                    )
     global_states = document.get("globalStates")
     if isinstance(global_states, Mapping):
         for name, state_uuid in list(global_states.items())[:100]:
             if (
-                isinstance(name, str)
+                _bounded_text(name) is not None
                 and isinstance(state_uuid, str)
                 and 1 <= len(state_uuid) <= 128
             ):
@@ -288,7 +306,7 @@ def _global_metadata(document: Mapping[str, object]) -> tuple[GlobalMetadata, ..
         if isinstance(states, Mapping):
             for name, state_uuid in list(states.items())[:16]:
                 if (
-                    isinstance(name, str)
+                    _bounded_text(name) is not None
                     and isinstance(state_uuid, str)
                     and 1 <= len(state_uuid) <= 128
                 ):

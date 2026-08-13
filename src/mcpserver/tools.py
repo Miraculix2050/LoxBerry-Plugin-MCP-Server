@@ -1334,6 +1334,11 @@ def register_read_tools(
                 )
                 for _name, uuid in control.state_uuids
             }
+            allowed.update(
+                item.state_uuid
+                for item in snapshot.structure.global_metadata
+                if item.state_uuid is not None
+            )
             if any(uuid not in allowed for uuid in state_uuids):
                 return _error(StatesEnvelope, "not_found", "one or more states are not accessible")
             records = [runtime.state(snapshot, uuid) for uuid in state_uuids] if runtime else []
