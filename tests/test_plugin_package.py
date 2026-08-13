@@ -758,6 +758,8 @@ def test_mcp_client_probe_resolves_windows_application_aliases() -> None:
     assert "$startInfo.FileName = Resolve-ProcessCommand ([string]$server.command)" in script
     assert "'loxone_list_global_metadata'" in script
     assert "$optional = @(" in script
+    assert "$tool.annotations.idempotentHint -ne $false" in script
+    assert "$tool.name -eq 'loxberry_clear_statistics_cache'" in script
 
 
 def _write_claude_config(path: Path, *, configured: bool) -> None:

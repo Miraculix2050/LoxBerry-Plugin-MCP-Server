@@ -226,8 +226,14 @@ try {
         if ($tool.name -eq 'loxone_operate_control') {
             if ($tool.annotations.readOnlyHint -ne $false -or
                 $tool.annotations.destructiveHint -ne $true -or
-                $tool.annotations.idempotentHint -ne $true) {
+                $tool.annotations.idempotentHint -ne $false) {
                 throw 'MCP control tool annotations violate the control contract.'
+            }
+        } elseif ($tool.name -eq 'loxberry_clear_statistics_cache') {
+            if ($tool.annotations.readOnlyHint -ne $false -or
+                $tool.annotations.destructiveHint -ne $true -or
+                $tool.annotations.idempotentHint -ne $true) {
+                throw 'MCP cache tool annotations violate the operate contract.'
             }
         } elseif ($tool.annotations.readOnlyHint -ne $true -or $tool.annotations.destructiveHint -ne $false) {
             throw 'MCP tool annotations violate the read-only contract.'
