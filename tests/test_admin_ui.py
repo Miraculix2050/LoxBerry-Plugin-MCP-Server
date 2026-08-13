@@ -18,6 +18,9 @@ def test_initial_page_renders_configuration_before_loading_dynamic_state() -> No
     assert "const loadInitialState" in template
     assert "loadInitialState();" in template
     assert 'aria-busy="true"' in template
+    assert '<strong id="service-active-state"><TMPL_VAR AJAX.WORKING></strong>' in template
+    assert '<strong id="service-sub-state"><TMPL_VAR AJAX.WORKING></strong>' in template
+    assert '<strong id="service-installed"><TMPL_VAR AJAX.WORKING></strong>' in template
 
 
 def test_common_actions_update_the_page_without_a_reload() -> None:

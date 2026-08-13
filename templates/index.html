@@ -96,16 +96,16 @@
     <div class="mcp-collapsible-content mcp-form" id="service-content">
       <div class="mcp-service-details">
         <p><TMPL_VAR STATUS.VERSION>: <code><TMPL_VAR VERSION ESCAPE=HTML></code></p>
-        <p><TMPL_VAR STATUS.SYSTEMD_STATE>: <strong id="service-active-state"><TMPL_VAR SERVICE_ACTIVE_STATE ESCAPE=HTML></strong></p>
-        <p><TMPL_VAR STATUS.SUB_STATE>: <strong id="service-sub-state"><TMPL_VAR SERVICE_SUB_STATE ESCAPE=HTML></strong></p>
+        <p><TMPL_VAR STATUS.SYSTEMD_STATE>: <strong id="service-active-state"><TMPL_VAR AJAX.WORKING></strong></p>
+        <p><TMPL_VAR STATUS.SUB_STATE>: <strong id="service-sub-state"><TMPL_VAR AJAX.WORKING></strong></p>
         <p><TMPL_VAR STATUS.PID>: <code id="service-pid"><TMPL_VAR SERVICE_PID ESCAPE=HTML></code></p>
         <p><TMPL_VAR STATUS.UNIT>: <code id="service-name"><TMPL_VAR SERVICE_NAME ESCAPE=HTML></code></p>
-        <p><TMPL_VAR STATUS.INSTALLED>: <strong id="service-installed"><TMPL_IF SERVICE_INSTALLED><TMPL_VAR STATUS.YES><TMPL_ELSE><TMPL_VAR STATUS.NO></TMPL_IF></strong></p>
+        <p><TMPL_VAR STATUS.INSTALLED>: <strong id="service-installed"><TMPL_VAR AJAX.WORKING></strong></p>
       </div>
       <div class="mcp-actions" id="service-actions">
-        <form method="post" action="index.cgi" data-ajax="service_action" data-service-command="start" <TMPL_IF SERVICE_ACTIVE>hidden</TMPL_IF>><input type="hidden" name="action" value="service_action"><input type="hidden" name="command" value="start"><button class="lb-button" type="submit"><TMPL_VAR ACTION.START></button></form>
-        <form method="post" action="index.cgi" data-ajax="service_action" data-service-command="stop" <TMPL_UNLESS SERVICE_ACTIVE>hidden</TMPL_UNLESS>><input type="hidden" name="action" value="service_action"><input type="hidden" name="command" value="stop"><button class="lb-button" type="submit"><TMPL_VAR ACTION.STOP></button></form>
-        <form method="post" action="index.cgi" data-ajax="service_action" data-service-command="restart" <TMPL_UNLESS SERVICE_ACTIVE>hidden</TMPL_UNLESS>><input type="hidden" name="action" value="service_action"><input type="hidden" name="command" value="restart"><button class="lb-button" type="submit"><TMPL_VAR ACTION.RESTART></button></form>
+        <form method="post" action="index.cgi" data-ajax="service_action" data-service-command="start" hidden><input type="hidden" name="action" value="service_action"><input type="hidden" name="command" value="start"><button class="lb-button" type="submit"><TMPL_VAR ACTION.START></button></form>
+        <form method="post" action="index.cgi" data-ajax="service_action" data-service-command="stop" hidden><input type="hidden" name="action" value="service_action"><input type="hidden" name="command" value="stop"><button class="lb-button" type="submit"><TMPL_VAR ACTION.STOP></button></form>
+        <form method="post" action="index.cgi" data-ajax="service_action" data-service-command="restart" hidden><input type="hidden" name="action" value="service_action"><input type="hidden" name="command" value="restart"><button class="lb-button" type="submit"><TMPL_VAR ACTION.RESTART></button></form>
         <a class="lb-button" href="<TMPL_VAR SERVICE_LOG_URL ESCAPE=HTML>" target="_blank" rel="noopener"><TMPL_VAR STATUS.SHOW_LOG></a>
       </div>
     </div>
@@ -562,14 +562,6 @@
       else button.removeAttribute('aria-busy');
     }
   };
-  renderService({
-    installed: serviceSection.dataset.serviceInstalled === '1',
-    active: serviceSection.dataset.serviceActive === '1',
-    active_state: serviceSection.dataset.serviceActiveState,
-    sub_state: serviceSection.dataset.serviceSubState,
-    pid: Number(serviceSection.dataset.servicePid),
-    name: serviceSection.dataset.serviceName,
-  });
   const loadInitialState = async () => {
     const body = new FormData();
     body.set('action', 'page_state');
