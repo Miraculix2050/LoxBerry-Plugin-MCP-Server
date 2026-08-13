@@ -80,15 +80,29 @@ def _copy_runtime_wheels(
         raise RuntimeError("runtime wheel filenames do not exactly satisfy the hash lock")
 
 
+def _source_ignore(_directory: str, names: list[str]) -> set[str]:
+    """Exclude local build, cache, and temporary artifacts from the source copy."""
+    excluded = {
+        ".git",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".venv",
+        "build",
+        "dist",
+        "tmp",
+        "__pycache__",
+    }
+    return {name for name in names if name in excluded or name.endswith(".pyc")}
+
+
 def _build_project_wheel(root: Path, wheelhouse: Path, environment: dict[str, str]) -> None:
     with tempfile.TemporaryDirectory(prefix="mcpserver-source-") as temporary:
         source = Path(temporary) / "source"
         shutil.copytree(
             root,
             source,
-            ignore=shutil.ignore_patterns(
-                ".git", ".venv", ".pytest_cache", "dist", "__pycache__", "*.pyc"
-            ),
+            ignore=_source_ignore,
         )
         text_suffixes = {".py", ".md", ".toml", ".yaml", ".yml", ".txt"}
         for path in source.rglob("*"):

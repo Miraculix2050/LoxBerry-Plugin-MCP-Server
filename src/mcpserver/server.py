@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from contextlib import suppress
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, suppress
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Final
@@ -268,6 +269,16 @@ class _Phase0TokenVerifier(TokenVerifier):
         return await self._provider.load_access_token(token)
 
 
+@asynccontextmanager
+async def _runtime_lifespan(runtime: LoxoneRuntime | None) -> AsyncIterator[None]:
+    """Close all live Miniserver sessions when the HTTP application stops."""
+    try:
+        yield
+    finally:
+        if runtime is not None:
+            await runtime.close()
+
+
 def create_server(settings: ServerSettings) -> FastMCP:
     """Create the MCP server from already validated settings."""
     transport_security = TransportSecuritySettings(
@@ -368,7 +379,6 @@ def create_server(settings: ServerSettings) -> FastMCP:
         token_verifier = _Phase0TokenVerifier(provider)
         if loxone_store is not None:
             statistics_cache = StatisticsCache(
-                None,
                 maximum_bytes=(
                     config.statistics_memory_max_mib * 1024 * 1024
                     if config is not None
@@ -437,6 +447,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
         stateless_http=True,
         auth=oauth_auth,
         transport_security=transport_security,
+        lifespan=lambda _server: _runtime_lifespan(runtime),
     )
     server.forwarded_allowed_hosts = settings.allowed_hosts
     server.transport_guard = transport_guard

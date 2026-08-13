@@ -25,13 +25,6 @@ class StatisticPoint:
     value: float
 
 
-@dataclass(frozen=True, slots=True)
-class CacheClearResult:
-    memory_entries_removed: int
-    persistent_entries_removed: int
-    bytes_freed: int
-
-
 def parse_statistic_points(
     payload: bytes, *, maximum_points: int = 100_000
 ) -> tuple[StatisticPoint, ...]:
@@ -60,7 +53,6 @@ class StatisticsCache:
 
     def __init__(
         self,
-        directory: object | None = None,
         *,
         maximum_bytes: int = 128 * 1024 * 1024,
         ttl_seconds: float = 60.0,
@@ -71,9 +63,6 @@ class StatisticsCache:
             raise ValueError("statistics cache size is outside the supported range")
         if maximum_memory_points < 1:
             raise ValueError("statistics memory cache point limit must be positive")
-        # Kept as an ignored compatibility parameter while callers transition from
-        # the former hybrid cache. Statistics data is never persisted.
-        del directory
         self.maximum_bytes = maximum_bytes
         self.ttl_seconds = ttl_seconds
         self.maximum_memory_points = maximum_memory_points
@@ -115,10 +104,9 @@ class StatisticsCache:
     def source_key(*parts: str) -> str:
         return hashlib.sha256("\0".join(parts).encode("utf-8")).hexdigest()
 
-    def clear(self) -> CacheClearResult:
+    def clear(self) -> int:
         """Clear cached in-memory data."""
         with self._lock:
             memory = len(self._memory)
             self._memory.clear()
-        # Keep the output schema stable for existing MCP clients.
-        return CacheClearResult(memory, 0, 0)
+        return memory

@@ -3,6 +3,15 @@
 All notable user-visible changes are recorded here. GitHub release notes are
 extracted from the matching version heading.
 
+## 0.4.0-alpha.4 - 2026-08-13
+
+- Serialize due LoxAPP3 refreshes per OAuth family, close live Miniserver
+  sessions on service shutdown, and extend the deterministic lifecycle tests.
+- Move pure control discovery presentation into its own module and make local
+  release-candidate source copies ignore untracked build and temporary artifacts.
+- Simplify `loxberry_clear_statistics_cache` to report only removed RAM entries;
+  the unused hybrid-cache compatibility fields are removed in this alpha.
+
 ## 0.4.0-alpha.3 - 2026-08-13
 
 - Refresh the user-filtered LoxAPP3 structure after reconnects and at a bounded

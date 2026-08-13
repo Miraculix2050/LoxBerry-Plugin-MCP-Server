@@ -11,7 +11,7 @@ import time
 from collections import defaultdict, deque
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from uuid import NAMESPACE_URL, uuid5
 
@@ -150,6 +150,7 @@ class _ConnectionRecord:
     generation: int = 1
     last_structure_check: float = 0.0
     last_used: float = 0.0
+    refresh_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
 class LoxoneRuntime:
@@ -203,7 +204,7 @@ class LoxoneRuntime:
         self._parallel = asyncio.Semaphore(max_parallel_calls)
         self._history_rate: defaultdict[str, deque[float]] = defaultdict(deque)
         self._history_rate_limit = history_requests_per_minute
-        self.statistics_cache = statistics_cache or StatisticsCache(None)
+        self.statistics_cache = statistics_cache or StatisticsCache()
         self.control_enabled = control_enabled
         self.history_enabled = history_enabled
         self.structure_refresh_seconds = structure_refresh_seconds
@@ -741,7 +742,10 @@ class LoxoneRuntime:
                     self._records[subject] = record
         record.last_used = time.monotonic()
         if record.last_structure_check + self.structure_refresh_seconds <= record.last_used:
-            await self._refresh_structure(access, record)
+            async with record.refresh_lock:
+                record.last_used = time.monotonic()
+                if record.last_structure_check + self.structure_refresh_seconds <= record.last_used:
+                    await self._refresh_structure(access, record)
         return RuntimeSnapshot(
             subject,
             record.structure,

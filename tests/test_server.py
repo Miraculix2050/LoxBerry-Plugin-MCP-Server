@@ -15,7 +15,7 @@ from mcpserver.auth.provider import (
 )
 from mcpserver.config import PluginConfig
 from mcpserver.loxone.client import MiniserverEndpoint
-from mcpserver.server import create_server, main
+from mcpserver.server import _runtime_lifespan, create_server, main
 from mcpserver.settings import Phase0AuthSettings, ServerSettings
 
 
@@ -54,6 +54,21 @@ def test_main_opens_the_configured_log_as_the_service_user(
         "log_file": str(log_file),
     }
     assert run_options == {"transport": "streamable-http"}
+
+
+@pytest.mark.asyncio
+async def test_runtime_lifespan_closes_live_miniserver_sessions() -> None:
+    class Runtime:
+        closed = False
+
+        async def close(self) -> None:
+            self.closed = True
+
+    runtime = Runtime()
+    async with _runtime_lifespan(runtime):  # type: ignore[arg-type]
+        assert runtime.closed is False
+
+    assert runtime.closed is True
 
 
 @pytest.mark.asyncio
