@@ -1,13 +1,13 @@
 # Support-Matrix
 
-- **Stand:** begrenzte LoxAPP3-Modellierung, 2026-08-13
-- **Vorbereiteter Pre-Release:** `0.4.0-alpha.9`
+- **Stand:** Alpha-10-Abnahmekandidat, 2026-08-14
+- **Vorbereiteter Pre-Release:** `0.4.0-alpha.10`
 - **Nächster Meilenstein:** gezielte reale Abnahme der noch unbestätigten
-  Phase-4-Aktionen und V1-Varianten
+  Phase-4-Aktionen und der Alpha-10-Admin-/Widerrufspfade
 
 Diese Matrix unterscheidet reale Nachweise von implementierten, aber noch nicht
 real bestätigten Kombinationen. Phase 1, Phase 2 und Phase 3 sind abgenommen;
-`0.4.0-alpha.9` bleibt wegen seines Vorabversionsstatus ein Pre-Release.
+`0.4.0-alpha.10` bleibt wegen seines Vorabversionsstatus ein Pre-Release.
 Phase 4 ist implementiert und für die lesenden Statistik-/Historienpfade, die
 eng begrenzte plugin-eigene Cache-Operation und ausgewählte, reversible
 Control-Aktionen auf Hardware abgenommen; siehe
