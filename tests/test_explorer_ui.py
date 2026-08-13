@@ -125,6 +125,19 @@ def test_explorer_uses_current_https_origin_for_validated_oauth_endpoints() -> N
     )
 
 
+def test_explorer_opens_oauth_popup_in_the_connect_click_handler() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    handler_start = source.index("elements.connect.addEventListener('click'")
+    handler = source[
+        handler_start : source.index("elements.disconnect.addEventListener", handler_start)
+    ]
+
+    assert "const authorizationPopup = openAuthorizationPopup();" in handler
+    assert handler.index("openAuthorizationPopup()") < handler.index("setBusy(true)")
+    assert "state.oauth = await authorize(authorizationPopup);" in handler
+    assert "authorizationPopup?.close()" in handler
+
+
 def test_explorer_reuses_only_schema_compatible_values() -> None:
     tools = [
         {

@@ -3,6 +3,12 @@
 All notable user-visible changes are recorded here. GitHub release notes are
 extracted from the matching version heading.
 
+## 0.4.0-alpha.6 - 2026-08-13
+
+- Open the Tool Explorer OAuth popup synchronously from the user click, then
+  navigate it after asynchronous discovery and PKCE setup so Firefox does not
+  block a valid sign-in popup.
+
 ## 0.4.0-alpha.5 - 2026-08-13
 
 - Check the documented LoxAPP3 version marker before each due structure refresh

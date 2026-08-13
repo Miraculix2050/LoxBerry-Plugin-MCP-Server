@@ -1,4 +1,4 @@
-# LoxBerry MCP Server 0.4.0-alpha.5
+# LoxBerry MCP Server 0.4.0-alpha.6
 
 ## Requirements
 
@@ -160,6 +160,11 @@ change; the manual reissue covers that case.
 **Open MCP Tool Explorer** opens a separate, admin-only browser page for the
 local MCP endpoint. It signs in with a Loxone user like every other MCP client
 and does not inherit permissions from the LoxBerry admin session.
+
+**Sign in with Loxone** opens the consent flow in a separate window. The
+Explorer opens that window directly from the click so Firefox does not treat it
+as an unsolicited popup. If a browser still blocks it, allow popups for the
+current local HTTPS address and start the sign-in again.
 
 After sign-in, the explorer lists the currently published tools with their
 description, schema and read/write classification. Arguments can be edited in
