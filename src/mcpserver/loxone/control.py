@@ -29,6 +29,9 @@ SUPPORTED_CONTROL_TYPES = frozenset(
         "LeftRightAnalog",
         "CentralJalousie",
         "Daytimer",
+        "IRoomControllerV2",
+        "Ventilation",
+        "ClimateControllerUS",
     }
 )
 _MOOD_ID = re.compile(r"(?:0|[1-9][0-9]{0,9})\Z")
@@ -95,6 +98,19 @@ def allowed_actions(control: Control) -> list[str]:
             return (
                 ["pulse", "start_override", "stop_override"] if control.is_analog is False else []
             )
+        case "IRoomControllerV2":
+            return ["start_override", "stop_override"] if control.timer_modes else []
+        case "Ventilation":
+            return ["start_override", "stop_override"] if control.ventilation_modes else []
+        case "ClimateControllerUS":
+            if control.connected_inputs is None:
+                return []
+            climate_actions: list[str] = []
+            if not control.connected_inputs & 4:
+                climate_actions.extend(["start_fan_override", "stop_fan_override"])
+            if not control.connected_inputs & 1:
+                climate_actions.extend(["start_mode_override", "stop_mode_override"])
+            return climate_actions
         case "TimedSwitch":
             return ["on", "off", "pulse"]
         case "Radio":
@@ -161,6 +177,7 @@ def prepare_control_command(
     kelvin: int | None = None,
     value: float | None = None,
     duration_seconds: int | None = None,
+    now_seconds_since_2009: int | None = None,
 ) -> PreparedControlCommand:
     """Validate one exact action/parameter combination and build its Loxone command."""
     provided = {
@@ -267,6 +284,82 @@ def prepare_control_command(
         return PreparedControlCommand(
             f"startOverride/{_number(float(value))}/{duration_seconds}",
             (("override", "__positive__"),),
+        )
+
+    if control.control_type == "IRoomControllerV2":
+        if action == "stop_override":
+            require_only()
+            return PreparedControlCommand("stopOverride", (("overrideReason", 0.0),))
+        require_only("value", "duration_seconds")
+        if (
+            value is None
+            or isinstance(value, bool)
+            or not value.is_integer()
+            or int(value) not in {item.option_id for item in control.timer_modes}
+            or duration_seconds is None
+            or not 1 <= duration_seconds <= 86_400
+            or now_seconds_since_2009 is None
+        ):
+            raise ValueError(
+                "IRoomControllerV2 override requires a visible timer mode and bounded duration"
+            )
+        return PreparedControlCommand(
+            f"override/{int(value)}/{now_seconds_since_2009 + duration_seconds}",
+            (("overrideReason", "__positive__"),),
+        )
+
+    if control.control_type == "Ventilation":
+        if action == "stop_override":
+            require_only()
+            return PreparedControlCommand("setTimer/0", (("overwriteUntil", 0.0),))
+        require_only("value", "duration_seconds")
+        if (
+            value is None
+            or isinstance(value, bool)
+            or not value.is_integer()
+            or int(value) not in {item.option_id for item in control.ventilation_modes}
+            or duration_seconds is None
+            or not 1 <= duration_seconds <= 86_400
+        ):
+            raise ValueError(
+                "Ventilation override requires a visible mode and duration_seconds from 1 to 86400"
+            )
+        return PreparedControlCommand(
+            f"setTimer/{duration_seconds}/100/{int(value)}/-1",
+            (("overwriteUntil", "__positive__"),),
+        )
+
+    if control.control_type == "ClimateControllerUS":
+        if action == "stop_fan_override":
+            require_only()
+            return PreparedControlCommand("startVentilationTimer/0", (("fanTimerUntil", 0.0),))
+        if action == "stop_mode_override":
+            require_only()
+            return PreparedControlCommand("startmodetimer/0/0/0", (("modeTimerUntil", 0.0),))
+        if (
+            duration_seconds is None
+            or not 1 <= duration_seconds <= 86_400
+            or now_seconds_since_2009 is None
+        ):
+            raise ValueError(
+                "ClimateControllerUS override requires duration_seconds from 1 to 86400"
+            )
+        until = now_seconds_since_2009 + duration_seconds
+        if action == "start_fan_override":
+            require_only("duration_seconds")
+            return PreparedControlCommand(
+                f"startVentilationTimer/{until}", (("fanTimerUntil", "__positive__"),)
+            )
+        require_only("value", "duration_seconds")
+        if (
+            value is None
+            or isinstance(value, bool)
+            or not value.is_integer()
+            or int(value) not in {0, 1, 2, 3}
+        ):
+            raise ValueError("ClimateControllerUS mode override requires mode value from 0 to 3")
+        return PreparedControlCommand(
+            f"startmodetimer/{int(value)}/{until}/0", (("modeTimerUntil", "__positive__"),)
         )
 
     if control.control_type == "CentralJalousie":

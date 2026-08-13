@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from mcpserver.loxone.control import allowed_actions, prepare_control_command, visible_mood_ids
-from mcpserver.loxone.models import Control
+from mcpserver.loxone.models import Control, NamedOption
 
 
 def _control(
@@ -119,6 +119,36 @@ def test_daytimer_actions_are_only_advertised_for_digital_controls() -> None:
         "start_override",
         "stop_override",
     ]
+
+
+def test_documented_temporary_hvac_overrides_are_bounded() -> None:
+    irc = _control("IRoomControllerV2", timer_modes=())
+    assert allowed_actions(irc) == []
+
+    irc = _control("IRoomControllerV2", timer_modes=(NamedOption(1, "Comfort"),))
+    assert (
+        prepare_control_command(
+            irc, "start_override", value=1, duration_seconds=60, now_seconds_since_2009=100
+        ).command
+        == "override/1/160"
+    )
+    assert prepare_control_command(irc, "stop_override").command == "stopOverride"
+
+    ventilation = _control("Ventilation", ventilation_modes=(NamedOption(2, "Boost"),))
+    assert (
+        prepare_control_command(ventilation, "start_override", value=2, duration_seconds=60).command
+        == "setTimer/60/100/2/-1"
+    )
+    assert prepare_control_command(ventilation, "stop_override").command == "setTimer/0"
+
+    hvac = _control("ClimateControllerUS", connected_inputs=0)
+    assert (
+        prepare_control_command(
+            hvac, "start_fan_override", duration_seconds=60, now_seconds_since_2009=100
+        ).command
+        == "startVentilationTimer/160"
+    )
+    assert prepare_control_command(hvac, "stop_mode_override").command == "startmodetimer/0/0/0"
     assert allowed_actions(_control("Daytimer", is_analog=True)) == []
 
 

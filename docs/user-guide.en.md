@@ -1,4 +1,4 @@
-# LoxBerry MCP Server 0.4.0-alpha.8
+# LoxBerry MCP Server 0.4.0-alpha.9
 
 ## Requirements
 
@@ -282,7 +282,8 @@ available through this user-filtered Miniserver interface. A rating is not a
 separate favorite flag.
 
 `loxone_operate_control` accepts only a directly visible or linked control UUID and an action
-advertised by `loxone_describe_control`. Percentages are bounded to 0–100, hue
+  advertised by `loxone_describe_control`. Temporary climate and ventilation overrides
+  are limited to 1–86400 seconds and require a current confirming state. Percentages are bounded to 0–100, hue
 to 0–360, and color temperature to the visible Kelvin range. There are no name,
 room, bulk, learning, rename, expert, or free-form commands.
 
@@ -302,11 +303,13 @@ room, bulk, learning, rename, expert, or free-form commands.
 | Shading | `Jalousie` | yes | yes | open/close/shade/stop, position; slats only with `details.animation = 0`; auto only when advertised | hardware confirmed in shutter mode: `open`, `set_position`, `enable_auto`, and the final `disable_auto`; `close`, `shade`, and `stop` only accepted. Slat actions do not apply there |
 | Shading | `CentralJalousie` | yes | yes | `open`, `close`, `shade`, `stop`, `enable_auto`, `disable_auto` | `stop` hardware accepted; the structure provides no confirmation state |
 | Climate/ventilation | digital `Daytimer` | yes | yes | `pulse`, time-bounded `start_override`, `stop_override`; no calendar or mode-list changes | Implemented and automatically tested; not hardware-verified yet |
-| Climate/ventilation | `IRoomControllerV2`, `IRCV2Daytimer`, `Ventilation` | yes | no | – | readable in the maintainer installation |
-| Climate/ventilation | `ClimateControllerUS` | yes | no | – | hardware read confirmed |
+| Climate/ventilation | `IRoomControllerV2` | yes | yes | visible timer-mode `start_override`, `stop_override`; no schedules or permanent temperatures | official documentation and automated contract; not hardware-verified |
+| Climate/ventilation | `Ventilation` | yes | yes | temporary manual timer with visible mode, `stop_override`; no profiles, limits, filter acknowledgement, or arbitrary status actions | official documentation and automated contract; not hardware-verified |
+| Climate/ventilation | `ClimateControllerUS` | yes | yes | temporary fan/mode overrides only when the matching logic input is absent | official documentation and automated contract; read path hardware confirmed, writes not hardware-verified |
+| Climate/ventilation | `IRCV2Daytimer` | yes | no | typed analog schedule metadata; no schedule writes | readable in the maintainer installation |
 | Climate/ventilation | corresponding visible V1 types | yes | no | – | generic read path; not hardware-verified |
-| Sensors/status | `InfoOnlyAnalog`, `InfoOnlyDigital`, `InfoOnlyText`, `TextState`, `StatusMonitor`, `WindowMonitor`, `SmokeAlarm`, `Tracker` | yes | no | – | readable in the maintainer installation |
-| Energy/other | `Meter`, `EFM`, `PvProductionForecast`, `Slider`, `Webpage` | yes | no | – | readable in the maintainer installation |
+| Sensors/status | `InfoOnlyAnalog`, `InfoOnlyDigital`, `InfoOnlyText`, `TextState`, `StatusMonitor`, `WindowMonitor`, `SmokeAlarm`, `Tracker`, `Intercom` | yes | no | typed visible state metadata where documented; no alarm, lock, intercom, or acknowledgement actions | documentation-based read model; not hardware-verified |
+| Energy/other | `Meter`, `EFM`, `PvProductionForecast`, `Slider`, `Webpage` | yes | no | visible states and statistics where advertised | documentation-based read model; not hardware-verified |
 
 “Read” means only visible structure and states. For `Jalousie`,
 `set_slat_position` and `set_position_and_slats` are offered only when the visible
@@ -315,6 +318,11 @@ animations remain limited to position control. History additionally requires
 `hasHistory`, `statisticV2`, or `statistic` on the control and a granted `loxone:history`
 scope. V1 types deliberately remain marked **unverified** until a real
 acceptance run exists.
+
+`loxone_list_global_metadata` pages only visible operating modes, modes, times, room
+groups, global states, and weather-state references. It never exposes a raw LoxAPP3
+document and never changes schedules or global operating modes. Daytimer and weather
+WebSocket frames are returned as named, bounded entries rather than protocol tuples.
 
 `loxberry:operate` uses the same local approval mechanism as `loxberry:read`,
 bound to the exact client, Loxone identity and Miniserver. Its sole operation is

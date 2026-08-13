@@ -132,6 +132,13 @@ def _state_uuids(controls: tuple[Control, ...]) -> frozenset[str]:
     return frozenset(result)
 
 
+def _structure_state_uuids(structure: LoxoneStructure) -> frozenset[str]:
+    """Return visible control plus explicitly normalized global-state UUIDs."""
+    return _state_uuids(structure.controls + structure.hidden_controls) | frozenset(
+        item.state_uuid for item in structure.global_metadata if item.state_uuid is not None
+    )
+
+
 @dataclass(slots=True)
 class RuntimeSnapshot:
     subject: str
@@ -366,6 +373,7 @@ class LoxoneRuntime:
                         kelvin=kelvin,
                         value=value,
                         duration_seconds=duration_seconds,
+                        now_seconds_since_2009=int(time.time()) - _LOXONE_EPOCH_UNIX,
                     )
                 except ValueError as exc:
                     raise ControlOperationError("invalid_input", str(exc)) from exc
@@ -765,7 +773,7 @@ class LoxoneRuntime:
             structure = await session.load_structure()
         except LoxoneConnectionError as exc:
             raise RuntimeUnavailable("Miniserver connection failed") from exc
-        allowed = _state_uuids(structure.controls + structure.hidden_controls)
+        allowed = _structure_state_uuids(structure)
         self.cache.begin_connection(access.family_id)
         placeholder = asyncio.create_task(asyncio.sleep(0))
         now = time.monotonic()
@@ -823,7 +831,7 @@ class LoxoneRuntime:
             _LOGGER.warning("component=structure outcome=version_mismatch_without_change")
             return
         record.structure = structure
-        record.allowed_states = _state_uuids(structure.controls + structure.hidden_controls)
+        record.allowed_states = _structure_state_uuids(structure)
         record.generation += 1
         self.cache.apply(access.family_id, (), allowed_uuids=record.allowed_states)
         _LOGGER.info("component=structure outcome=changed")

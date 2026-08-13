@@ -1,4 +1,4 @@
-# LoxBerry MCP Server 0.4.0-alpha.8
+# LoxBerry MCP Server 0.4.0-alpha.9
 
 ## Voraussetzungen
 
@@ -304,7 +304,9 @@ Bewertung ist kein eigenständiges Favoriten-Flag.
 
 `loxone_operate_control` akzeptiert ausschließlich eine direkt sichtbare oder
 verlinkte Control-UUID
-und eine von `loxone_describe_control` angebotene Aktion. Prozentwerte sind auf
+  und eine von `loxone_describe_control` angebotene Aktion. Temporäre Klima- und
+Lüftungs-Overrides sind auf 1–86400 Sekunden begrenzt und benötigen einen aktuellen
+bestätigenden State. Prozentwerte sind auf
 0 bis 100, Farbton auf 0 bis 360 und Farbtemperatur auf den sichtbaren
 Kelvin-Bereich begrenzt. Es gibt keine Namens-, Raum-, Bulk-, Lern-,
 Umbenennungs-, Experten- oder freien Kommandos.
@@ -325,11 +327,13 @@ Umbenennungs-, Experten- oder freien Kommandos.
 | Beschattung | `Jalousie` | ja | ja | `open`, `close`, `shade`, `stop`, Position; Lamellen nur bei `details.animation = 0`; Auto nur falls angeboten | real bestätigt am Rolladenmodus: `open`, `set_position`, `enable_auto` und abschließendes `disable_auto`; `close`, `shade`, `stop` nur akzeptiert. Lamellenaktionen sind dort nicht anwendbar |
 | Beschattung | `CentralJalousie` | ja | ja | `open`, `close`, `shade`, `stop`, `enable_auto`, `disable_auto` | `stop` real akzeptiert; die Struktur liefert keinen Bestätigungs-State |
 | Klima/Lüftung | digitaler `Daytimer` | ja | ja | `pulse`, zeitlich begrenztes `start_override`, `stop_override`; keine Kalender- oder Mode-Listen-Änderung | Implementiert und automatisiert getestet; noch nicht hardware-verifiziert |
-| Klima/Lüftung | `IRoomControllerV2`, `IRCV2Daytimer`, `Ventilation` | ja | nein | – | in eigener Installation lesend prüfbar |
-| Klima/Lüftung | `ClimateControllerUS` | ja | nein | – | Lesen real bestätigt |
+| Klima/Lüftung | `IRoomControllerV2` | ja | ja | sichtbarer Timer-Modus `start_override`, `stop_override`; keine Kalender oder dauerhaften Temperaturen | offizielle Doku und automatisierter Vertrag; nicht hardware-verifiziert |
+| Klima/Lüftung | `Ventilation` | ja | ja | zeitlich begrenzter manueller Timer mit sichtbarem Modus, `stop_override`; keine Profile, Grenzen, Filterquittierung oder beliebigen Statusaktionen | offizielle Doku und automatisierter Vertrag; nicht hardware-verifiziert |
+| Klima/Lüftung | `ClimateControllerUS` | ja | ja | temporäre Lüfter-/Modus-Overrides nur ohne zugehörigen Logikeingang | offizielle Doku und automatisierter Vertrag; Lesen real bestätigt, Writes nicht hardware-verifiziert |
+| Klima/Lüftung | `IRCV2Daytimer` | ja | nein | typisierte analoge Kalender-Metadaten; keine Kalenderwrites | in eigener Installation lesend prüfbar |
 | Klima/Lüftung | entsprechende V1-Typen, sofern vom Miniserver sichtbar | ja | nein | – | generischer Lesepfad, nicht real verifiziert |
-| Sensorik/Status | `InfoOnlyAnalog`, `InfoOnlyDigital`, `InfoOnlyText`, `TextState`, `StatusMonitor`, `WindowMonitor`, `SmokeAlarm`, `Tracker` | ja | nein | – | in eigener Installation lesend prüfbar |
-| Energie/sonstige | `Meter`, `EFM`, `PvProductionForecast`, `Slider`, `Webpage` | ja | nein | – | in eigener Installation lesend prüfbar |
+| Sensorik/Status | `InfoOnlyAnalog`, `InfoOnlyDigital`, `InfoOnlyText`, `TextState`, `StatusMonitor`, `WindowMonitor`, `SmokeAlarm`, `Tracker`, `Intercom` | ja | nein | typisierte sichtbare Statusmetadaten, soweit dokumentiert; keine Alarm-, Sperr-, Intercom- oder Quittierungsaktionen | dokumentationsbasiertes Lesemodell; nicht hardware-verifiziert |
+| Energie/sonstige | `Meter`, `EFM`, `PvProductionForecast`, `Slider`, `Webpage` | ja | nein | sichtbare States und Statistik, soweit angeboten | dokumentationsbasiertes Lesemodell; nicht hardware-verifiziert |
 
 „Lesen“ umfasst nur sichtbare Struktur und Zustände. Bei `Jalousie` werden
 `set_slat_position` und `set_position_and_slats` nur angeboten, wenn die sichtbare
@@ -338,6 +342,12 @@ oder andere Animationen bleiben auf Positionssteuerung begrenzt. Historie ist zu
 verfügbar, wenn das Control `hasHistory`, `statisticV2` beziehungsweise `statistic` meldet und
 der Client `loxone:history` erhalten hat. V1-Typen bleiben bewusst als **nicht
 verifiziert** markiert, bis ein realer Abnahmetest vorliegt.
+
+`loxone_list_global_metadata` liefert seitenweise nur sichtbare Betriebsarten,
+Modi, Zeiten, Raumgruppen, globale States und Wetter-State-Referenzen. Es liefert
+niemals ein Roh-LoxAPP3-Dokument und ändert weder Kalender noch globale Betriebsarten.
+Daytimer- und Wetter-WebSocket-Frames werden als benannte, begrenzte Einträge statt
+als Protokoll-Tupel ausgegeben.
 
 `loxberry:operate` verwendet denselben lokalen, an Client, Loxone-Identität und
 Miniserver gebundenen Freigabemechanismus wie `loxberry:read`. Die einzige

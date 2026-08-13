@@ -148,3 +148,15 @@ freshness; the corresponding display name, bounded note result, rating, and
 favorite flag were visible through the MCP tools without restarting the
 Miniserver or plugin. No identifiers or user-authored note text are recorded
 here.
+
+## Alpha 9 LoxAPP3 model boundary
+
+`0.4.0-alpha.9` adds bounded metadata and semantic event models plus documented
+temporary climate and ventilation override contracts. They passed deterministic
+tests. The focused file deployment passed backup and health checks. The authorized
+MCP test intersection contains eligible `IRoomControllerV2`, `Ventilation` and
+`ClimateControllerUS` controls; an `IRoomControllerV2` description confirmed the
+new bounded timer-mode model and action allowlist. Its required confirmation
+states were stale after the service restart, so fail-closed behavior prevented a
+write. No new control command was dispatched and none of these actions is
+hardware-verified.

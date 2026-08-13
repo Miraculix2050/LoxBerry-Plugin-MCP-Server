@@ -10,12 +10,16 @@ from typing import Any
 
 from mcpserver.loxone.models import (
     Control,
+    GlobalMetadata,
     LoxoneIdentity,
     LoxoneStructure,
     NamedGroup,
+    NamedOption,
     StatisticSeries,
     StatusMonitorInput,
     StatusMonitorStatus,
+    VentilationTimerProfile,
+    WindowMonitorItem,
 )
 
 _REFERENCED_ONLY_INTERNAL = 1 << 0
@@ -70,6 +74,10 @@ def _groups(value: object, *, field: str, allowed_uuids: set[str]) -> tuple[Name
 
 def _optional_uuid(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
+
+
+def _bounded_text(value: object, *, maximum: int = 200) -> str | None:
+    return value if isinstance(value, str) and 1 <= len(value) <= maximum else None
 
 
 def _history_capability(value: object) -> bool:
@@ -147,6 +155,165 @@ def _rating(value: object) -> int | None:
     if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 100:
         return value
     return None
+
+
+def _named_options(value: object, *, maximum: int = 32) -> tuple[NamedOption, ...]:
+    if not isinstance(value, list) or len(value) > maximum:
+        return ()
+    result: list[NamedOption] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            continue
+        option_id, name = item.get("id"), item.get("name")
+        if (
+            isinstance(option_id, int)
+            and not isinstance(option_id, bool)
+            and -1000 <= option_id <= 1000
+            and isinstance(name, str)
+            and 1 <= len(name) <= 200
+        ):
+            result.append(NamedOption(option_id, name))
+    return tuple(result)
+
+
+def _ventilation_profiles(value: object) -> tuple[VentilationTimerProfile, ...]:
+    if not isinstance(value, list) or len(value) > 32:
+        return ()
+    result: list[VentilationTimerProfile] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, Mapping):
+            continue
+        name, interval, modes, default_mode, speed = (
+            item.get("name"),
+            item.get("interval"),
+            item.get("modes"),
+            item.get("defaultMode"),
+            item.get("speed"),
+        )
+        if not isinstance(name, str) or not 1 <= len(name) <= 200:
+            continue
+        if (
+            not isinstance(interval, int)
+            or isinstance(interval, bool)
+            or not 1 <= interval <= 86_400
+        ):
+            continue
+        if not isinstance(modes, list) or len(modes) > 32:
+            continue
+        mode_ids = tuple(
+            item
+            for item in modes
+            if isinstance(item, int) and not isinstance(item, bool) and -1000 <= item <= 1000
+        )
+        if len(mode_ids) != len(modes):
+            continue
+        if (
+            not isinstance(default_mode, int)
+            or isinstance(default_mode, bool)
+            or default_mode not in mode_ids
+        ):
+            default_mode = None
+        speed_enabled = isinstance(speed, Mapping) and speed.get("enabled") is True
+        result.append(
+            VentilationTimerProfile(index, name, interval, mode_ids, default_mode, speed_enabled)
+        )
+    return tuple(result)
+
+
+def _window_monitor_items(value: object) -> tuple[WindowMonitorItem, ...]:
+    if not isinstance(value, list) or len(value) > 100:
+        return ()
+    result: list[WindowMonitorItem] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, Mapping):
+            result.append(WindowMonitorItem(index, None, None, None, None))
+            continue
+
+        def text(key: str, source: Mapping[str, object] = item) -> str | None:
+            candidate = source.get(key)
+            return candidate if isinstance(candidate, str) and len(candidate) <= 200 else None
+
+        result.append(
+            WindowMonitorItem(index, text("name"), text("room"), text("uuid"), text("installPlace"))
+        )
+    return tuple(result)
+
+
+def _global_metadata(document: Mapping[str, object]) -> tuple[GlobalMetadata, ...]:
+    """Keep only bounded, user-visible global metadata; never expose raw LoxAPP3."""
+    result: list[GlobalMetadata] = []
+    operating_modes = document.get("operatingModes")
+    if isinstance(operating_modes, Mapping):
+        for identifier, name in list(operating_modes.items())[:100]:
+            if _bounded_text(identifier) is not None and _bounded_text(name) is not None:
+                result.append(GlobalMetadata("operating_mode", identifier, name))
+    modes = document.get("modes")
+    if isinstance(modes, Mapping):
+        for identifier, item in list(modes.items())[:100]:
+            if isinstance(identifier, str) and isinstance(item, Mapping):
+                mode_id, name = item.get("id"), item.get("name")
+                normalized_name = _bounded_text(name)
+                if (
+                    isinstance(mode_id, int)
+                    and not isinstance(mode_id, bool)
+                    and normalized_name is not None
+                ):
+                    result.append(
+                        GlobalMetadata(
+                            "mode", str(mode_id), normalized_name, locked=item.get("locked") is True
+                        )
+                    )
+    times = document.get("times")
+    if isinstance(times, Mapping):
+        for identifier, item in list(times.items())[:100]:
+            if isinstance(identifier, str) and isinstance(item, Mapping):
+                name, analog = item.get("name"), item.get("analog")
+                normalized_identifier, normalized_name = (
+                    _bounded_text(identifier),
+                    _bounded_text(name),
+                )
+                if normalized_identifier and normalized_name and isinstance(analog, bool):
+                    result.append(
+                        GlobalMetadata(
+                            "time", normalized_identifier, normalized_name, analog=analog
+                        )
+                    )
+    room_groups = document.get("roomGroups")
+    if isinstance(room_groups, list):
+        for item in room_groups[:100]:
+            if isinstance(item, Mapping):
+                identifier, name = item.get("uuid"), item.get("name")
+                normalized_identifier, normalized_name = (
+                    _bounded_text(identifier),
+                    _bounded_text(name),
+                )
+                if normalized_identifier and normalized_name:
+                    result.append(
+                        GlobalMetadata("room_group", normalized_identifier, normalized_name)
+                    )
+    global_states = document.get("globalStates")
+    if isinstance(global_states, Mapping):
+        for name, state_uuid in list(global_states.items())[:100]:
+            if (
+                _bounded_text(name) is not None
+                and isinstance(state_uuid, str)
+                and 1 <= len(state_uuid) <= 128
+            ):
+                result.append(GlobalMetadata("global_state", name, name, state_uuid=state_uuid))
+    weather = document.get("weatherServer")
+    if isinstance(weather, Mapping):
+        states = weather.get("states")
+        if isinstance(states, Mapping):
+            for name, state_uuid in list(states.items())[:16]:
+                if (
+                    _bounded_text(name) is not None
+                    and isinstance(state_uuid, str)
+                    and 1 <= len(state_uuid) <= 128
+                ):
+                    result.append(
+                        GlobalMetadata("weather_state", name, name, state_uuid=state_uuid)
+                    )
+    return tuple(result)
 
 
 def _status_monitor_details(
@@ -391,6 +558,16 @@ def _controls(
             min_kelvin, max_kelvin = 2700, 6500
         radio_outputs = _radio_outputs(details.get("outputs"))
         minimum, maximum, step = _up_down_range(details)
+        format_value = details.get("format")
+        if not isinstance(format_value, str) or len(format_value) > 64:
+            format_value = None
+        connected_inputs = details.get("connectedInputs")
+        if (
+            not isinstance(connected_inputs, int)
+            or isinstance(connected_inputs, bool)
+            or connected_inputs < 0
+        ):
+            connected_inputs = None
         analog = details.get("analog")
         if not isinstance(analog, bool):
             analog = None
@@ -432,6 +609,12 @@ def _controls(
                 statistic_series=_statistic_series(item),
                 status_monitor_inputs=status_monitor_inputs,
                 status_monitor_statuses=status_monitor_statuses,
+                format=format_value,
+                timer_modes=_named_options(details.get("timerModes")),
+                ventilation_modes=_named_options(details.get("modes")),
+                ventilation_timer_profiles=_ventilation_profiles(details.get("timerProfiles")),
+                window_monitor_items=_window_monitor_items(details.get("windows")),
+                connected_inputs=connected_inputs,
                 subcontrols=(
                     _controls(
                         subcontrols_value,
@@ -516,4 +699,5 @@ def normalize_structure(
             allowed_uuids=_group_references(hidden_controls, field="category"),
         ),
         hidden_controls=hidden_controls,
+        global_metadata=_global_metadata(document),
     )

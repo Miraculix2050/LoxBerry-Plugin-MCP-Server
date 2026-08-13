@@ -66,6 +66,49 @@ class StatusMonitorStatus:
 
 
 @dataclass(frozen=True, slots=True)
+class NamedOption:
+    """A bounded id/name option advertised by a control."""
+
+    option_id: int
+    name: str
+
+
+@dataclass(frozen=True, slots=True)
+class VentilationTimerProfile:
+    """One bounded, visible Ventilation timer profile."""
+
+    index: int
+    name: str
+    interval_seconds: int
+    mode_ids: tuple[int, ...]
+    default_mode_id: int | None
+    speed_enabled: bool
+
+
+@dataclass(frozen=True, slots=True)
+class WindowMonitorItem:
+    """One position-stable WindowMonitor entry."""
+
+    index: int
+    name: str | None
+    room_uuid: str | None
+    control_uuid: str | None
+    install_place: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class GlobalMetadata:
+    """One normalized, read-only LoxAPP3 global metadata entry."""
+
+    kind: str
+    identifier: str
+    name: str
+    analog: bool | None = None
+    locked: bool | None = None
+    state_uuid: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class Control:
     uuid: str
     name: str
@@ -97,6 +140,12 @@ class Control:
     statistic_series: tuple[StatisticSeries, ...] = ()
     status_monitor_inputs: tuple[StatusMonitorInput, ...] = ()
     status_monitor_statuses: tuple[StatusMonitorStatus, ...] = ()
+    format: str | None = None
+    timer_modes: tuple[NamedOption, ...] = ()
+    ventilation_modes: tuple[NamedOption, ...] = ()
+    ventilation_timer_profiles: tuple[VentilationTimerProfile, ...] = ()
+    window_monitor_items: tuple[WindowMonitorItem, ...] = ()
+    connected_inputs: int | None = None
     subcontrols: tuple[Control, ...] = ()
     linked_control_uuids: tuple[str, ...] = ()
     is_user_linked: bool = False
@@ -113,9 +162,10 @@ class LoxoneStructure:
     hidden_rooms: tuple[NamedGroup, ...] = ()
     hidden_categories: tuple[NamedGroup, ...] = ()
     hidden_controls: tuple[Control, ...] = ()
+    global_metadata: tuple[GlobalMetadata, ...] = ()
 
 
-type StateValue = float | str | tuple[object, ...]
+type StateValue = float | str | tuple[object, ...] | dict[str, object]
 
 
 @dataclass(frozen=True, slots=True)

@@ -8,9 +8,11 @@ import pytest
 from mcpserver.loxone.events import (
     LoxoneProtocolError,
     MessageType,
+    parse_daytimer_events,
     parse_header,
     parse_text_events,
     parse_value_events,
+    parse_weather_events,
 )
 
 
@@ -60,3 +62,29 @@ def test_text_table_honors_four_byte_padding() -> None:
 
     assert event.uuid == "00112233-4455-6677-8899aabbccddeeff"
     assert event.value == "on"
+
+
+def test_daytimer_table_returns_named_entries() -> None:
+    state_uuid = "00112233-4455-6677-8899-aabbccddeeff"
+    payload = struct.pack("<16sdi", _loxone_uuid(state_uuid), 12.0, 1)
+    payload += struct.pack("<iiiid", 2, 60, 120, 1, 21.5)
+
+    event = parse_daytimer_events(payload)[0]
+
+    assert event.value == {
+        "default_value": 12.0,
+        "entries": [
+            {"mode": 2, "from_minute": 60, "to_minute": 120, "needs_activation": 1, "value": 21.5}
+        ],
+    }
+
+
+def test_weather_table_returns_named_entries() -> None:
+    state_uuid = "00112233-4455-6677-8899-aabbccddeeff"
+    payload = struct.pack("<16sIi", _loxone_uuid(state_uuid), 100, 1)
+    payload += struct.pack("<iiiiidddddd", 200, 3, 4, 5, 6, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
+
+    event = parse_weather_events(payload)[0]
+
+    assert event.value["last_update"] == 100  # type: ignore[index]
+    assert event.value["entries"][0]["temperature"] == 1.0  # type: ignore[index]

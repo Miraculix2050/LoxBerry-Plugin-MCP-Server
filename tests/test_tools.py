@@ -20,8 +20,11 @@ from mcpserver.auth.provider import (
 from mcpserver.config import PluginConfig
 from mcpserver.loxone.models import (
     Control,
+    Freshness,
+    GlobalMetadata,
     LoxoneIdentity,
     LoxoneStructure,
+    StateRecord,
     StatisticSeries,
     StatusMonitorInput,
     StatusMonitorStatus,
@@ -444,6 +447,10 @@ def test_control_tool_contract_is_explicitly_mutating_and_non_idempotent() -> No
         "set_value",
         "start_override",
         "stop_override",
+        "start_fan_override",
+        "stop_fan_override",
+        "start_mode_override",
+        "stop_mode_override",
     }
 
 
@@ -465,7 +472,7 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert tool.annotations.destructiveHint is False
     assert tool.annotations.openWorldHint is False
     assert result.data.name == "using-loxberry-mcp"  # type: ignore[union-attr]
-    assert result.data.revision == 13  # type: ignore[union-attr]
+    assert result.data.revision == 14  # type: ignore[union-attr]
     assert result.data.media_type == "text/markdown"  # type: ignore[union-attr]
     assert result.data.content == read_skill_markdown()  # type: ignore[union-attr]
     assert "For a `StatusMonitor`, use its `inputStates` state UUID." in result.data.content  # type: ignore[union-attr]
@@ -937,6 +944,40 @@ async def test_describe_control_exposes_status_monitor_input_mapping(
     assert mapping.inputs[0].name == "Printer"
     assert mapping.statuses[0].status_id == 1
     assert mapping.statuses[0].name == "Offline"
+
+
+@pytest.mark.asyncio
+async def test_get_states_accepts_advertised_global_metadata_states(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    access = _loxberry_access(READ_SCOPE)
+    structure = LoxoneStructure(
+        identity=LoxoneIdentity("user", "serial"),
+        last_modified="1",
+        rooms=(),
+        categories=(),
+        controls=(),
+        global_metadata=(GlobalMetadata("global_state", "ready", "ready", state_uuid="state-1"),),
+    )
+
+    class Runtime:
+        def state(self, _snapshot: RuntimeSnapshot, uuid: str) -> StateRecord:
+            assert uuid == "state-1"
+            return StateRecord(uuid, 1.0, Freshness.CURRENT, 1_700_000_000.0)
+
+    async def snapshot(_runtime: object) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+        return access, RuntimeSnapshot("family", structure, True)
+
+    monkeypatch.setattr(tools_module, "_snapshot", snapshot)
+    server = FastMCP("global-states")
+    register_read_tools(server, Runtime())  # type: ignore[arg-type]
+    tool = server._tool_manager.get_tool("loxone_get_states")
+    assert tool is not None
+
+    result = await tool.fn(["state-1"])
+
+    assert result.ok is True
+    assert result.data.states[0].value == 1.0  # type: ignore[union-attr]
 
 
 @pytest.mark.asyncio

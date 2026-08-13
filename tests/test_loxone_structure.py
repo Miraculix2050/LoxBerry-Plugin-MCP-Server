@@ -288,6 +288,27 @@ def test_structure_preserves_documented_favorite_and_high_rating() -> None:
     assert control.is_favorite is True
 
 
+def test_structure_bounds_global_metadata_identifiers() -> None:
+    raw = {
+        "lastModified": "now",
+        "msInfo": {"serialNr": "000000000000"},
+        "rooms": {},
+        "cats": {},
+        "controls": {},
+        "operatingModes": {"good": "Good", "x" * 201: "Too long"},
+        "globalStates": {"ready": "state-1", "x" * 201: "state-2"},
+        "weatherServer": {"states": {"forecast": "state-3", "x" * 201: "state-4"}},
+    }
+
+    metadata = normalize_structure(raw, username="reader").global_metadata
+
+    assert {(item.kind, item.identifier) for item in metadata} == {
+        ("operating_mode", "good"),
+        ("global_state", "ready"),
+        ("weather_state", "forecast"),
+    }
+
+
 def test_structure_exposes_documented_legacy_statistic_outputs() -> None:
     raw = {
         "lastModified": "now",
