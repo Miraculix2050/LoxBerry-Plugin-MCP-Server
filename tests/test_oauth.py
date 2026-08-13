@@ -18,6 +18,7 @@ from starlette.requests import Request
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
+from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore
 from mcpserver.auth.provider import (
     CONTROL_SCOPE,
     EXPLORER_CLIENT_NAME,
@@ -556,12 +557,15 @@ async def test_expired_code_and_access_token_fail_closed(tmp_path: Path) -> None
     assert await provider.load_authorization_code(client, raw_code) is None
 
 
-def _web_app(provider: Phase0OAuthProvider) -> Starlette:
+def _web_app(
+    provider: Phase0OAuthProvider, explorer_store: EncryptedLoxoneTokenStore | None = None
+) -> Starlette:
     web = Phase0OAuthWeb(
         provider,
         endpoint=MiniserverEndpoint.parse_gen1("http://192.168.255.254"),
         issuer=ISSUER,
         resource=RESOURCE,
+        loxone_store=explorer_store,
     )
     return Starlette(
         routes=[
@@ -569,9 +573,75 @@ def _web_app(provider: Phase0OAuthProvider) -> Starlette:
             Route("/authorize", web.authorize, methods=["GET", "POST"]),
             Route("/token", web.token, methods=["POST"]),
             Route("/revoke", web.revoke, methods=["POST"]),
+            Route("/explorer-session", web.explorer_session, methods=["POST"]),
             Route("/metadata", web.authorization_metadata, methods=["GET"]),
         ]
     )
+
+
+def test_explorer_session_cookie_reuses_one_oauth_family_and_logout_revokes_it(
+    tmp_path: Path,
+) -> None:
+    provider = _provider(tmp_path)
+    client_info = _client_info(
+        "explorer-client", client_name=EXPLORER_CLIENT_NAME, redirect_uri=EXPLORER_REDIRECT
+    )
+    asyncio.run(provider.register_client(client_info))
+    code = provider.issue_authorization_code(
+        client_id="explorer-client",
+        redirect_uri=EXPLORER_REDIRECT,
+        code_challenge=CHALLENGE,
+        resource=RESOURCE,
+        identity_id="identity",
+        miniserver_id="miniserver",
+    )
+    key = tmp_path / "install.key"
+    key.write_bytes(b"k" * 32)
+    encrypted = EncryptedLoxoneTokenStore((tmp_path / "tokens.json").resolve(), key.resolve())
+    headers = {"Origin": "https://public.example"}
+    with TestClient(_web_app(provider, encrypted), base_url="https://public.example") as browser:
+        complete = browser.post(
+            "/explorer-session",
+            headers=headers,
+            json={
+                "action": "complete",
+                "client_id": "explorer-client",
+                "code": code,
+                "redirect_uri": EXPLORER_REDIRECT,
+                "code_verifier": VERIFIER,
+                "resource": RESOURCE,
+            },
+        )
+        session_headers = {**headers, "Cookie": complete.headers["set-cookie"].split(";", 1)[0]}
+        reused = browser.post(
+            "/explorer-session", headers=session_headers, json={"action": "access"}
+        )
+        logout = browser.post(
+            "/explorer-session", headers=session_headers, json={"action": "logout"}
+        )
+
+    assert complete.status_code == 200
+    assert "Secure" in complete.headers["set-cookie"]
+    assert "HttpOnly" in complete.headers["set-cookie"]
+    assert "SameSite=strict" in complete.headers["set-cookie"]
+    assert reused.status_code == 200
+    assert reused.json()["access_token"] == complete.json()["access_token"]
+    assert logout.status_code == 204
+    assert next(iter(provider.store.snapshot()["families"].values()))["revoked"] is True
+
+
+def test_explorer_session_rejects_cross_origin_requests(tmp_path: Path) -> None:
+    key = tmp_path / "install.key"
+    key.write_bytes(b"k" * 32)
+    encrypted = EncryptedLoxoneTokenStore((tmp_path / "tokens.json").resolve(), key.resolve())
+    with TestClient(_web_app(_provider(tmp_path), encrypted)) as browser:
+        response = browser.post(
+            "/explorer-session",
+            headers={"Origin": "https://attacker.example"},
+            json={"action": "access"},
+        )
+
+    assert response.status_code == 400
 
 
 def _registration_payload() -> dict[str, object]:

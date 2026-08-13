@@ -342,6 +342,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
         def on_family_revoked(family_id: str) -> None:
             if loxone_store is not None:
                 loxone_store.delete(family_id)
+                loxone_store.delete_explorer_family(family_id)
             runtime_value = runtime_ref.get("runtime")
             if runtime_value is None:
                 return
@@ -485,6 +486,9 @@ def create_server(settings: ServerSettings) -> FastMCP:
             oauth_web.register
         )
         server.custom_route("/revoke", methods=["POST"], include_in_schema=False)(oauth_web.revoke)
+        server.custom_route("/explorer-session", methods=["POST"], include_in_schema=False)(
+            oauth_web.explorer_session
+        )
         server.custom_route(
             "/.well-known/oauth-authorization-server/plugins/mcpserver/oauth",
             methods=["GET"],

@@ -204,19 +204,12 @@ oder identischen History-Einträgen vollständig.
 Der MCP-Transkriptbereich zeigt bereinigte JSON-RPC-Nachrichten, Status und Dauer.
 Authorization-Header, OAuth-Werte und als geheim erkannte Argumente werden nicht
 angezeigt. Access-Token, Entwürfe, Ergebnisse und der auf 50 Aufrufe begrenzte
-Verlauf bleiben nur im Speicher des Tabs. Das Refresh-Token wird im
-`sessionStorage` desselben Tabs gehalten, damit ein Neuladen die Anmeldung
-wiederherstellen und das Token sofort rotieren kann. Eine Browser-Tab-Sperre
-verhindert die automatische Wiederverwendung in einem duplizierten Tab. Andere
-Seiten derselben LoxBerry-Admin-Origin sind keine Sicherheitsgrenze und müssen
-aus vertrauenswürdigen Plugins stammen. Beim Schließen des Tabs
-verwirft der Browser diesen lokalen Wert normalerweise, kann die Serversitzung
-aber nicht zuverlässig sofort widerrufen. Explorer-Sitzungen laufen deshalb
-spätestens nach acht Stunden ab. **Trennen und widerrufen** beendet sie sofort
-und bleibt vor dem Schließen der zuverlässige Abmeldeweg.
-Auch die öffentliche OAuth-Clientregistrierung ist auf den Tab und höchstens
-acht Stunden begrenzt; veraltete Registrierungen früherer Plugin-Versionen
-werden automatisch verworfen und neu angelegt.
+Verlauf bleiben nur im Speicher des Tabs. Das Refresh-Token bleibt verschlüsselt
+auf dem Server; ein `Secure`, `HttpOnly`, `SameSite=Strict`-Cookie verbindet neue
+Explorer-Tabs mit derselben höchstens achtstündigen Sitzung. Andere Seiten
+derselben LoxBerry-Admin-Origin sind keine Sicherheitsgrenze und müssen aus
+vertrauenswürdigen Plugins stammen. **Trennen und widerrufen** beendet die
+gemeinsame Sitzung sofort in allen Explorer-Tabs.
 
 Der Explorer fordert beim Start automatisch alle Berechtigungen an, die der
 installierte Server anbietet. Die einzige sichtbare Auswahl erfolgt anschließend

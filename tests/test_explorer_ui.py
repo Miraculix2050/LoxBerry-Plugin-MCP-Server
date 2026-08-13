@@ -470,22 +470,6 @@ def test_explorer_oauth_guards_and_resource_binding() -> None:
         )
         is False
     )
-    assert run_core(
-        "core.authorizationCodeTokenFields('client','code','https://local/callback','verifier','https://local/mcp')"
-    ) == {
-        "grant_type": "authorization_code",
-        "client_id": "client",
-        "code": "code",
-        "redirect_uri": "https://local/callback",
-        "code_verifier": "verifier",
-        "resource": "https://local/mcp",
-    }
-    assert run_core("core.refreshTokenFields('client','refresh','https://local/mcp')") == {
-        "grant_type": "refresh_token",
-        "client_id": "client",
-        "refresh_token": "refresh",
-        "resource": "https://local/mcp",
-    }
 
 
 def test_explorer_disconnect_clears_all_in_memory_session_data() -> None:
@@ -512,41 +496,6 @@ def test_explorer_disconnect_clears_all_in_memory_session_data() -> None:
     }
 
 
-@pytest.mark.parametrize("revocation_fails", [False, True])
-def test_explorer_revocation_always_clears_session(revocation_fails: bool) -> None:
-    revoke = (
-        "async()=>{events.push('revoke-attempt');throw new Error('offline')}"
-        if revocation_fails
-        else "async()=>{events.push('revoke')}"
-    )
-    expression = f"""(() => {{
-      const events=[];
-      return core.revokeThenClear({{refreshToken:'refresh'}},{revoke},()=>events.push('cleared'))
-        .then(()=>events);
-    }})()"""
-
-    expected = ["revoke-attempt", "cleared"] if revocation_fails else ["revoke", "cleared"]
-    assert run_core_async(expression) == expected
-
-
-def test_explorer_revocation_request_uses_bounded_timeout() -> None:
-    expression = """(() => {
-      const seen={};
-      const fetcher=async(url,options,timeout)=>Object.assign(seen,
-        {url,timeout,body:options.body.toString(),keepalive:options.keepalive});
-      const oauth={metadata:{revocation_endpoint:'https://local/revoke'},
-        refreshToken:'refresh',clientId:'client'};
-      return core.revokeOAuthGrant(fetcher,oauth,core.REVOCATION_TIMEOUT_MS).then(()=>seen);
-    })()"""
-
-    assert run_core_async(expression) == {
-        "url": "https://local/revoke",
-        "timeout": 5000,
-        "body": "token=refresh&token_type_hint=refresh_token&client_id=client",
-        "keepalive": True,
-    }
-
-
 def test_session_clear_prevents_call_artifacts_from_being_recreated() -> None:
     source = SCRIPT.read_text(encoding="utf-8")
 
@@ -556,117 +505,15 @@ def test_session_clear_prevents_call_artifacts_from_being_recreated() -> None:
     assert source.count("if (!sessionCleared) {") >= 2
 
 
-def test_explorer_resume_record_contains_only_valid_tab_scoped_refresh_data() -> None:
-    token = "a" * 43
-    resource = "https://local/plugins/mcpserver/mcp"
-    oauth = {
-        "metadata": {"token_endpoint": "https://local/token"},
-        "clientId": token,
-        "sessionId": token,
-        "scope": "loxone:read",
-        "accessToken": "must-not-be-stored",
-        "refreshToken": token,
-        "resource": resource,
-        "expiresAt": 123,
-        "resumeUntil": 1_000_000,
-    }
-    record = run_core(f"core.resumableSession({json.dumps(oauth)})")
+def test_explorer_keeps_refresh_credentials_out_of_browser_storage() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
 
-    assert record == {
-        "version": 1,
-        "sessionId": token,
-        "clientId": token,
-        "scope": "loxone:read",
-        "refreshToken": token,
-        "resource": resource,
-        "resumeUntil": 1_000_000,
-    }
-    encoded = json.dumps(record)
-    assert (
-        run_core(f"core.validateResumableSession({encoded},{json.dumps(resource)},999999)")
-        == record
-    )
-    assert (
-        run_core(f"core.validateResumableSession({encoded},{json.dumps(resource)},1000000)") is None
-    )
-    assert (
-        run_core(
-            f"core.validateResumableSession({encoded},'https://other/plugins/mcpserver/mcp',999999)"
-        )
-        is None
-    )
-
-
-def test_explorer_client_registration_is_tab_scoped_and_expires_before_server_cleanup() -> None:
-    client_id = "a" * 43
-    registered_at = 1_000_000
-    record = run_core(f"core.clientRegistration('{client_id}',{registered_at})")
-
-    assert record == {"version": 2, "clientId": client_id, "registeredAt": registered_at}
-    encoded = json.dumps(record)
-    assert run_core(f"core.validateClientRegistration({encoded},{registered_at})") == record
-    assert (
-        run_core(
-            f"core.validateClientRegistration({encoded},"
-            f"{registered_at}+core.EXPLORER_CLIENT_REGISTRATION_MS-1)"
-        )
-        == record
-    )
-    assert (
-        run_core(
-            f"core.validateClientRegistration({encoded},"
-            f"{registered_at}+core.EXPLORER_CLIENT_REGISTRATION_MS)"
-        )
-        is None
-    )
-    assert (
-        run_core(
-            f"core.validateClientRegistration("
-            f"{json.dumps({'version': 2, 'clientId': 'invalid', 'registeredAt': registered_at})},"
-            f"{registered_at})"
-        )
-        is None
-    )
-    assert (
-        run_core(
-            f"core.validateClientRegistration("
-            f"{json.dumps({'version': 1, 'clientId': client_id, 'registeredAt': registered_at})},"
-            f"{registered_at})"
-        )
-        is None
-    )
-
-
-@pytest.mark.parametrize("exchange_fails", [False, True])
-def test_explorer_refresh_removes_replayable_state_before_rotation(
-    exchange_fails: bool,
-) -> None:
-    exchange = (
-        "async()=>{events.push('exchange');throw new Error('offline')}"
-        if exchange_fails
-        else "async()=>{events.push('exchange');return {access_token:'new-access',"
-        "refresh_token:'new-refresh',expires_in:600,scope:'loxone:read'}}"
-    )
-    expression = f"""(async()=>{{
-      const events=[];
-      const oauth={{resumeEnabled:true,clientId:'client',refreshToken:'old-refresh',
-        resource:'https://local/mcp',scope:'loxone:read'}};
-      try {{
-        const saved=await core.rotateRefreshToken(oauth,{exchange},
-          ()=>events.push('clear'),()=>{{events.push('save');return true}},1000);
-        return {{events,saved,refreshToken:oauth.refreshToken}};
-      }} catch (_error) {{ return {{events,refreshToken:oauth.refreshToken}}; }}
-    }})()"""
-
-    actual = run_core_async(expression)
-    if exchange_fails:
-        assert actual == {"events": ["clear", "exchange"], "refreshToken": "old-refresh"}
-    else:
-        assert actual == {
-            "events": ["clear", "exchange", "save"],
-            "saved": True,
-            "refreshToken": "new-refresh",
-        }
+    assert "explorer-session" in source
+    assert "credentials: 'same-origin'" in source
+    assert "BroadcastChannel" in source
+    assert "sessionStorage" not in source
+    assert "localStorage" not in source
+    assert "refreshToken" not in source
 
 
 def test_explorer_generated_field_ids_are_unique_and_labelled() -> None:
@@ -728,16 +575,6 @@ def test_explorer_tabs_support_roving_focus_and_arrow_keys() -> None:
     assert "elements.jsonTab.addEventListener('keydown', handleTabKey)" in source
 
 
-def test_explorer_scope_validation_accepts_independent_canonical_choices() -> None:
-    assert run_core("core.validExplorerScope('loxone:read')") is True
-    assert run_core("core.validExplorerScope('loxone:read loxone:control loxberry:read')") is True
-    assert (
-        run_core("core.validExplorerScope('loxone:read loxone:history loxberry:operate')") is True
-    )
-    assert run_core("core.validExplorerScope('loxone:read loxberry:operate')") is False
-    assert run_core("core.validExplorerScope('loxone:read loxberry:read loxone:control')") is False
-
-
 def test_explorer_redacts_secret_shaped_arguments() -> None:
     schema = {
         "type": "object",
@@ -769,21 +606,15 @@ def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
     assert "issuerUrl.origin !== resourceUrl.origin" in source
     assert "code_challenge_method: 'S256'" in source
     assert "width=680,height=900,resizable=yes,scrollbars=yes" in source
-    assert "core.rotateRefreshToken(" in source
+    assert "action: 'access'" in source
     assert "if (state.oauth) await revokeAndClear()" in source
     assert "core.toolIsMutating(state.selectedTool)" in source
     assert "state.history.length > core.MAX_CALL_HISTORY" in source
     assert "fetchWithTimeout('/plugins/mcpserver/mcp'" in source
     assert "}, 70000)" in source
-    assert "localStorage.setItem" not in source
-    assert "window.localStorage.removeItem(key)" in source
-    assert "core.validateClientRegistration" in source
-    assert "JSON.stringify(core.clientRegistration(clientId, Date.now()))" in source
-    assert "sessionStorage.setItem" in source
-    assert "core.validateResumableSession" in source
-    assert "readStoredSession(discovered.resourceMetadata.resource)" in source
-    assert "navigator.locks.request" in source
-    assert "ifAvailable: true" in source
+    assert "sessionStorage" not in source
+    assert "localStorage" not in source
+    assert "navigator.locks.request" not in source
     assert "await refreshAccessToken();" in source
     assert "window.addEventListener('pagehide'" not in source
     assert "navigator.sendBeacon" not in source
@@ -811,14 +642,12 @@ def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
     assert 'id="explorer-origin-link"' in template
     assert "const canonicalUrl = core.canonicalExplorerUrl(" in source
     assert "showConnectionError(_error, label('error'))" in source
-    assert "if (canonicalOriginMismatch && stored) clearStoredSession()" in source
     assert 'id="explorer-session-expiry" hidden' in template
     assert "const scope = core.EXPLORER_SCOPE_ORDER.filter" in source
     assert "const registrationScope = scope" in source
     assert "supported.delete('loxberry:operate')" in source
     assert "state.selectedTool.name === 'loxberry_clear_statistics_cache'" in source
     assert "elements.historyArguments.hidden = !historySource" in source
-    assert "function clientStorageKey()" in source
     assert "Cache_Control => 'no-store'" in callback
     assert "frame-ancestors 'none'" in callback
     assert "window.history.replaceState" in callback
@@ -827,9 +656,7 @@ def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
 def test_explorer_initial_discovery_has_no_pre_login_permission_choice() -> None:
     source = SCRIPT.read_text(encoding="utf-8")
     initial_discovery = source[
-        source.index("(async () => {", source.index("selectTab(false, false);")) : source.index(
-            "stored = readStoredSession"
-        )
+        source.index("(async () => {", source.index("selectTab(false, false);")) :
     ]
 
     assert "setScopeAvailability" not in initial_discovery

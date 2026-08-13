@@ -192,18 +192,12 @@ or identical history records.
 The MCP transcript shows sanitized JSON-RPC messages, status and duration.
 Authorization headers, OAuth values and secret-shaped arguments are never shown.
 Access tokens, drafts, results and the history bounded to 50 calls remain only in
-tab memory. The refresh token is kept in that tab's `sessionStorage` so a reload
-can restore the sign-in and rotate the token immediately. A browser tab lock
-prevents automatic reuse in a duplicated tab. Other pages on the same LoxBerry
-admin origin are not a security boundary and must come from trusted plugins.
-Closing the tab normally
-discards that local value, but the browser cannot reliably revoke the server
-session immediately. Explorer sessions therefore expire after eight hours at the
-latest. **Disconnect and revoke** ends the session immediately and remains the
-reliable sign-out path before closing the tab.
-The public OAuth client registration is likewise limited to the tab and at most
-eight hours; stale registrations from earlier plugin versions are discarded and
-registered again automatically.
+tab memory. The refresh token stays encrypted on the server; a `Secure`,
+`HttpOnly`, `SameSite=Strict` cookie connects new Explorer tabs to the same
+session for no more than eight hours. Other pages on the same LoxBerry admin
+origin are not a security boundary and must come from trusted plugins.
+**Disconnect and revoke** ends the shared session immediately in every Explorer
+tab.
 
 The Explorer automatically requests every permission advertised by the
 installed server. The only visible selection then occurs in the OAuth consent
