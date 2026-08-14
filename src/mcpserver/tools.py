@@ -565,7 +565,11 @@ def _result[EnvelopeT: ToolEnvelope](
 
 
 def _error[EnvelopeT: ToolEnvelope](
-    envelope_type: type[EnvelopeT], code: str, message: str, *, trace_id: str | None = None
+    envelope_type: type[EnvelopeT],
+    code: str,
+    message: str,
+    *,
+    trace_id: str | None = None,
 ) -> EnvelopeT:
     trace_id = trace_id or str(uuid4())
     if code == "temporarily_unavailable":
@@ -1438,7 +1442,9 @@ def register_loxberry_read_tools(server: FastMCP, runtime: LoxBerryReadRuntime) 
         trace_id = str(uuid4())
         try:
             return _result(
-                LoxBerrySystemStatusEnvelope, await runtime.system_status(_access()), trace_id=trace_id
+                LoxBerrySystemStatusEnvelope,
+                await runtime.system_status(_access()),
+                trace_id=trace_id,
             )
         except PermissionError:
             return _error(
@@ -1456,12 +1462,16 @@ def register_loxberry_read_tools(server: FastMCP, runtime: LoxBerryReadRuntime) 
             )
         except Exception as exc:
             _LOGGER.error(
-                "component=tools trace_id=%s outcome=internal_error tool=loxberry_get_system_status error_type=%s",
+                "component=tools trace_id=%s outcome=internal_error "
+                "tool=loxberry_get_system_status error_type=%s",
                 trace_id,
                 type(exc).__name__,
             )
             return _error(
-                LoxBerrySystemStatusEnvelope, "internal_error", "Internal error", trace_id=trace_id
+                LoxBerrySystemStatusEnvelope,
+                "internal_error",
+                "Internal error",
+                trace_id=trace_id,
             )
 
     @server.tool(
@@ -1474,7 +1484,9 @@ def register_loxberry_read_tools(server: FastMCP, runtime: LoxBerryReadRuntime) 
         trace_id = str(uuid4())
         try:
             return _result(
-                LoxBerryPluginStatusEnvelope, await runtime.plugin_status(_access()), trace_id=trace_id
+                LoxBerryPluginStatusEnvelope,
+                await runtime.plugin_status(_access()),
+                trace_id=trace_id,
             )
         except PermissionError:
             return _error(
@@ -1492,12 +1504,16 @@ def register_loxberry_read_tools(server: FastMCP, runtime: LoxBerryReadRuntime) 
             )
         except Exception as exc:
             _LOGGER.error(
-                "component=tools trace_id=%s outcome=internal_error tool=loxberry_get_plugin_status error_type=%s",
+                "component=tools trace_id=%s outcome=internal_error "
+                "tool=loxberry_get_plugin_status error_type=%s",
                 trace_id,
                 type(exc).__name__,
             )
             return _error(
-                LoxBerryPluginStatusEnvelope, "internal_error", "Internal error", trace_id=trace_id
+                LoxBerryPluginStatusEnvelope,
+                "internal_error",
+                "Internal error",
+                trace_id=trace_id,
             )
 
     @server.tool(
@@ -1510,7 +1526,9 @@ def register_loxberry_read_tools(server: FastMCP, runtime: LoxBerryReadRuntime) 
         trace_id = str(uuid4())
         try:
             return _result(
-                LoxBerryServiceHealthEnvelope, await runtime.service_health(_access()), trace_id=trace_id
+                LoxBerryServiceHealthEnvelope,
+                await runtime.service_health(_access()),
+                trace_id=trace_id,
             )
         except PermissionError:
             return _error(
@@ -1528,19 +1546,24 @@ def register_loxberry_read_tools(server: FastMCP, runtime: LoxBerryReadRuntime) 
             )
         except Exception as exc:
             _LOGGER.error(
-                "component=tools trace_id=%s outcome=internal_error tool=loxberry_get_service_health error_type=%s",
+                "component=tools trace_id=%s outcome=internal_error "
+                "tool=loxberry_get_service_health error_type=%s",
                 trace_id,
                 type(exc).__name__,
             )
             return _error(
-                LoxBerryServiceHealthEnvelope, "internal_error", "Internal error", trace_id=trace_id
+                LoxBerryServiceHealthEnvelope,
+                "internal_error",
+                "Internal error",
+                trace_id=trace_id,
             )
 
     @server.tool(
         name="loxberry_list_service_events",
         description=(
             "List recent sanitized diagnostic events from this plugin's fixed service log. "
-            "It never returns raw log lines, arbitrary files, payloads, credentials, or other services."
+            "It never returns raw log lines, arbitrary files, payloads, credentials, "
+            "or other services."
         ),
         annotations=annotations,
         structured_output=True,
@@ -1558,7 +1581,12 @@ def register_loxberry_read_tools(server: FastMCP, runtime: LoxBerryReadRuntime) 
                 trace_id=trace_id,
             )
         except ValueError as exc:
-            return _error(LoxBerryServiceEventsEnvelope, "invalid_input", str(exc), trace_id=trace_id)
+            return _error(
+                LoxBerryServiceEventsEnvelope,
+                "invalid_input",
+                str(exc),
+                trace_id=trace_id,
+            )
         except PermissionError:
             return _error(
                 LoxBerryServiceEventsEnvelope,
@@ -1575,12 +1603,16 @@ def register_loxberry_read_tools(server: FastMCP, runtime: LoxBerryReadRuntime) 
             )
         except Exception as exc:
             _LOGGER.error(
-                "component=tools trace_id=%s outcome=internal_error tool=loxberry_list_service_events error_type=%s",
+                "component=tools trace_id=%s outcome=internal_error "
+                "tool=loxberry_list_service_events error_type=%s",
                 trace_id,
                 type(exc).__name__,
             )
             return _error(
-                LoxBerryServiceEventsEnvelope, "internal_error", "Internal error", trace_id=trace_id
+                LoxBerryServiceEventsEnvelope,
+                "internal_error",
+                "Internal error",
+                trace_id=trace_id,
             )
 
 
