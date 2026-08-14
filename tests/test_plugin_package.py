@@ -137,7 +137,7 @@ def test_plugin_identity_and_platform_contract() -> None:
     assert parser["PLUGIN"]["NAME"] == "mcpserver"
     assert parser["PLUGIN"]["FOLDER"] == "mcpserver"
     assert parser["PLUGIN"]["TITLE"] == "LoxBerry MCP Server"
-    assert parser["PLUGIN"]["VERSION"] == "0.4.0-alpha.11"
+    assert parser["PLUGIN"]["VERSION"] == "0.4.0-alpha.12"
     assert parser["AUTOUPDATE"]["AUTOMATIC_UPDATES"] == "true"
     assert parser["AUTOUPDATE"]["RELEASECFG"].startswith("https://")
     assert parser["AUTOUPDATE"]["PRERELEASECFG"].startswith("https://")
@@ -893,11 +893,11 @@ def test_plugin_archive_verifier_rejects_checksum_mismatch(tmp_path: Path) -> No
 
 
 def test_release_metadata_and_changelog_match_current_prerelease() -> None:
-    notes = validate_release_metadata(ROOT, "0.4.0-alpha.11", "prerelease")
+    notes = validate_release_metadata(ROOT, "0.4.0-alpha.12", "prerelease")
 
     assert "Restore MCP Tool Explorer sign-in" in notes
     with pytest.raises(ValueError, match="stable releases"):
-        validate_release_metadata(ROOT, "0.4.0-alpha.11", "stable")
+        validate_release_metadata(ROOT, "0.4.0-alpha.12", "stable")
     with pytest.raises(ValueError, match="versions do not match"):
         validate_release_metadata(ROOT, "0.3.0-alpha.2", "prerelease")
 
