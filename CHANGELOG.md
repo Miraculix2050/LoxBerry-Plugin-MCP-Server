@@ -3,7 +3,11 @@
 All notable user-visible changes are recorded here. GitHub release notes are
 extracted from the matching version heading.
 
-## Unreleased
+## 0.4.0-alpha.15 - 2026-08-15
+
+- Fail closed when the Miniserver binary-state stream ends before its first
+  state batch, instead of returning an apparently usable read session without
+  current values.
 
 - Wait briefly for the Miniserver's initial binary-state table when opening a
   read session, so current state reads no longer race the asynchronous stream.

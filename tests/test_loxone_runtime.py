@@ -275,9 +275,84 @@ async def test_connect_waits_for_the_initial_state_batch() -> None:
     release.set()
     record = await task
     assert record.initial_state_batch.is_set()
-    record.task.cancel()
+    await record.task
+
+
+@pytest.mark.asyncio
+async def test_connect_fails_closed_when_state_stream_ends_before_initial_batch() -> None:
+    closed = False
+
+    class Session(_Session):
+        async def load_structure(self) -> LoxoneStructure:
+            return _structure("current")
+
+        async def state_events(self):
+            raise LoxoneConnectionError("connection closed")
+            yield ()  # pragma: no cover - make this an async generator
+
+        async def close(self) -> None:
+            nonlocal closed
+            closed = True
+
+    class Client:
+        async def open_session(self, _token: object) -> Session:
+            return Session()
+
+    runtime = object.__new__(LoxoneRuntime)
+    runtime.token_health = None
+    runtime.token_store = SimpleNamespace(
+        get=lambda *_args: SimpleNamespace(valid_until=2_000_000_000)
+    )
+    runtime.client = Client()
+    runtime.cache = UserStateCache()
+    runtime._initial_state_timeout_seconds = 1.0
+
+    with pytest.raises(RuntimeUnavailable, match="state subscription failed"):
+        await runtime._connect(_access())
+    assert closed
+    assert runtime.cache.get("family", "state-1").freshness.name == "UNAVAILABLE"
+
+
+@pytest.mark.asyncio
+async def test_connect_cancellation_closes_unregistered_state_session() -> None:
+    state_stream_started = asyncio.Event()
+    state_stream_release = asyncio.Event()
+    closed = False
+
+    class Session(_Session):
+        async def load_structure(self) -> LoxoneStructure:
+            return _structure("current")
+
+        async def state_events(self):
+            state_stream_started.set()
+            await state_stream_release.wait()
+            yield ()
+
+        async def close(self) -> None:
+            nonlocal closed
+            closed = True
+
+    class Client:
+        async def open_session(self, _token: object) -> Session:
+            return Session()
+
+    runtime = object.__new__(LoxoneRuntime)
+    runtime.token_health = None
+    runtime.token_store = SimpleNamespace(
+        get=lambda *_args: SimpleNamespace(valid_until=2_000_000_000)
+    )
+    runtime.client = Client()
+    runtime.cache = UserStateCache()
+    runtime._initial_state_timeout_seconds = 1.0
+    task = asyncio.create_task(runtime._connect(_access()))
+    await state_stream_started.wait()
+
+    task.cancel()
     with pytest.raises(asyncio.CancelledError):
-        await record.task
+        await task
+
+    assert closed
+    assert runtime.cache.get("family", "state-1").freshness.name == "UNAVAILABLE"
 
 
 @pytest.mark.asyncio
