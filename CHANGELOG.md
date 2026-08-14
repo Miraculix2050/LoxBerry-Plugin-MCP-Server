@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Suspend all pending remote Loxone token-revocation attempts for one hour after
+  an authentication rejection or Miniserver source-IP lockout, preventing the
+  revocation worker from creating a burst of further logins while retaining the
+  tokens until remote confirmation is possible.
+
 ## 0.4.0-alpha.14 - 2026-08-14
 
 - Use the existing narrow non-interactive service-stop permission during the

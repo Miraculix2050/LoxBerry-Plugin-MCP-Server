@@ -143,6 +143,10 @@ Sitzung keine weitere Anmeldung, bis ein lokaler Administrator **Weiteren
 Token-Versuch erlauben** auswählt. Eine Quell-IP-Sperre des Miniservers wird
 separat gemeldet und erhöht diesen Zähler nicht. Andere Sitzungen bleiben nutzbar;
 eine erfolgreiche authentifizierte Verbindung löscht den Ablehnungszähler.
+Ausstehende Hintergrund-Widerrufe von Tokens werden nach einer abgelehnten
+Anmeldung oder einer Quell-IP-Sperre eine Stunde ausgesetzt, damit sie keinen
+weiteren Anmeldeversuch-Block erzeugen. Die Tokens bleiben bis zur bestätigten
+Löschung sicher gespeichert.
 
 Die lokalen Freigaben werden darunter nach `loxberry:read` und
 `loxberry:operate` getrennt angezeigt. Aktive Bindungen zeigen dieselbe
