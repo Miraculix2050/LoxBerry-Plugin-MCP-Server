@@ -5,6 +5,9 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Wait briefly for the Miniserver's initial binary-state table when opening a
+  read session, so current state reads no longer race the asynchronous stream.
+
 - Suspend all pending remote Loxone token-revocation attempts for one hour after
   an authentication rejection or Miniserver source-IP lockout, preventing the
   revocation worker from creating a burst of further logins while retaining the

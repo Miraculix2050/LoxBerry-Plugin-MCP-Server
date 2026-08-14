@@ -844,6 +844,7 @@ class LoxoneWebSocketSession:
 
     async def state_events(self) -> AsyncIterator[tuple[StateEvent, ...]]:
         await self._command("jdev/sps/enablebinstatusupdate")
+        _LOGGER.debug("component=loxone.client severity=DEBUG outcome=state_subscription_accepted")
         keepalive_pending = False
         while True:
             try:
