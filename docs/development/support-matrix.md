@@ -1,13 +1,13 @@
 # Support-Matrix
 
-- **Stand:** Alpha 13 vorbereitet, 2026-08-14
-- **Pre-Release:** `0.4.0-alpha.13`
+- **Stand:** Alpha 14 vorbereitet, 2026-08-14
+- **Pre-Release:** `0.4.0-alpha.14`
 - **Nächster Meilenstein:** gezielte reale Abnahme der verbleibenden
   Phase-4-Aktionen
 
 Diese Matrix unterscheidet reale Nachweise von implementierten, aber noch nicht
 real bestätigten Kombinationen. Phase 1, Phase 2 und Phase 3 sind abgenommen;
-`0.4.0-alpha.13` bleibt wegen seines Vorabversionsstatus ein Pre-Release.
+`0.4.0-alpha.14` bleibt wegen seines Vorabversionsstatus ein Pre-Release.
 Phase 4 ist implementiert und für die lesenden Statistik-/Historienpfade, die
 eng begrenzte plugin-eigene Cache-Operation und ausgewählte, reversible
 Control-Aktionen auf Hardware abgenommen; siehe

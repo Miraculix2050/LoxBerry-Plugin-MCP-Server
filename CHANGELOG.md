@@ -5,6 +5,12 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+## 0.4.0-alpha.14 - 2026-08-14
+
+- Use the existing narrow non-interactive service-stop permission during the
+  pre-upgrade hook, so a native Plugin Manager upgrade can stop the MCP service
+  before migrating its persistent auth data.
+
 ## 0.4.0-alpha.13 - 2026-08-14
 
 - Stop the MCP service before an upgrade replaces its persistent auth data, so

@@ -30,7 +30,8 @@ Für jeden Assistenten sollte ein eigener Loxone-Benutzer mit den minimal erford
 ## Projektstatus
 
 Phase 1 bis Phase 3 sind abgenommen. Der vorbereitete Phase-4-Pre-Release
-`0.4.0-alpha.13` stoppt den Dienst vor einer Upgrade-Datenmigration und
+`0.4.0-alpha.14` stoppt den Dienst mit der begrenzten vorhandenen
+Systemfreigabe vor einer Upgrade-Datenmigration und
 behandelt eine temporäre Miniserver-IP-Sperre auch während eines WebSocket-Sends
 als wiederherstellbaren Verbindungsfehler. Es enthält außerdem die begrenzten
 LoxAPP3-Modelle für Klima, Lüftung, Status, Energie und globale Metadaten sowie

@@ -9,7 +9,7 @@ if [ -z "$actual_folder" ] || [ -z "$installer_root" ] || [ -z "${LBPCONFIG:-}" 
 fi
 
 if systemctl is-active --quiet loxberry-mcpserver.service; then
-    systemctl stop loxberry-mcpserver.service || exit 2
+    sudo -n /bin/systemctl stop loxberry-mcpserver.service || exit 2
     echo "<INFO> MCP service stopped before upgrade data migration."
 fi
 
