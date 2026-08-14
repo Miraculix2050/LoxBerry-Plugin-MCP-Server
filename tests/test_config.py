@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from pathlib import Path
+from threading import Barrier
+from time import sleep
 
 import pytest
 
@@ -189,3 +193,27 @@ def test_failed_save_keeps_previous_valid_configuration(
         )
 
     assert store.load().to_document() == original.to_document()
+
+
+def test_concurrent_mutations_preserve_each_binding(tmp_path: Path) -> None:
+    path = (tmp_path / "config.json").resolve()
+    AtomicConfigStore(path).save(PluginConfig.defaults())
+    bindings = ("a" * 64, "b" * 64)
+    barrier = Barrier(len(bindings))
+
+    def add(binding: str) -> None:
+        barrier.wait()
+
+        def operation(config: PluginConfig) -> PluginConfig:
+            sleep(0.01)
+            return replace(
+                config,
+                loxberry_read_bindings=(*config.loxberry_read_bindings, binding),
+            )
+
+        AtomicConfigStore(path).mutate(operation)
+
+    with ThreadPoolExecutor(max_workers=len(bindings)) as executor:
+        list(executor.map(add, bindings))
+
+    assert set(AtomicConfigStore(path).load().loxberry_read_bindings) == set(bindings)

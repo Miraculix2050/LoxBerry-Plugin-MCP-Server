@@ -101,6 +101,25 @@ def test_sessions_poll_only_while_visible_and_open_and_patch_changed_rows() -> N
     assert "sessionList.replaceChildren(fragment)" in template
 
 
+def test_parallel_session_actions_pause_polling_without_blocking_buttons() -> None:
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+
+    assert "const isSessionAction = (action)" in template
+    assert "let activeSessionActions = 0;" in template
+    assert "let sessionDataVersion = 0;" in template
+    assert "const pendingSessionActionButtons = new Set();" in template
+    assert "activeSessionActions += 1;" in template
+    assert "sessionDataVersion += 1;" in template
+    assert "sessionActionRunning = activeSessionActions > 0;" in template
+    assert "if (!sessionActionRunning) scheduleSessionPoll(0);" in template
+    assert "if (isSessionAction(form.dataset.ajax) && sessionActionRunning) return;" not in template
+    assert "if (expectedSessionDataVersion !== sessionDataVersion) return;" in template
+    assert "if (!isSessionAction(form.dataset.ajax)) {" in template
+    assert "pendingSessionActionButtons.add(button);" in template
+    assert "releasePendingSessionActionButtons();" in template
+    assert template.count("if (isSessionAction(form.dataset.ajax)) {") == 3
+
+
 def test_read_only_ajax_polling_does_not_create_admin_log_files() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
 
