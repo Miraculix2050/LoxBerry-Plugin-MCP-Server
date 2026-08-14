@@ -352,8 +352,8 @@ Umbenennungs-, Experten- oder freien Kommandos.
 | Klima/Lüftung | `ClimateControllerUS` | ja | ja | temporäre Lüfter-/Modus-Overrides nur ohne zugehörigen Logikeingang | offizielle Doku und automatisierter Vertrag; Lesen real bestätigt, Writes nicht hardware-verifiziert |
 | Klima/Lüftung | `IRCV2Daytimer` | ja | nein | typisierte analoge Kalender-Metadaten; keine Kalenderwrites | in eigener Installation lesend prüfbar |
 | Klima/Lüftung | entsprechende V1-Typen, sofern vom Miniserver sichtbar | ja | nein | – | generischer Lesepfad, nicht real verifiziert |
-| Sensorik/Status | `InfoOnlyAnalog`, `InfoOnlyDigital`, `InfoOnlyText`, `TextState`, `StatusMonitor`, `WindowMonitor`, `SmokeAlarm`, `Tracker`, `Intercom` | ja | nein | typisierte sichtbare Statusmetadaten, soweit dokumentiert; keine Alarm-, Sperr-, Intercom- oder Quittierungsaktionen | dokumentationsbasiertes Lesemodell; nicht hardware-verifiziert |
-| Energie/sonstige | `Meter`, `EFM`, `PvProductionForecast`, `Slider`, `Webpage` | ja | nein | sichtbare States und Statistik, soweit angeboten | dokumentationsbasiertes Lesemodell; nicht hardware-verifiziert |
+| Sensorik/Status | `InfoOnlyAnalog`, `InfoOnlyDigital`, `InfoOnlyText`, `TextState`, `StatusMonitor`, `WindowMonitor`, `SmokeAlarm`, `Tracker`, `Intercom` | ja | nein | typisierte sichtbare Statusmetadaten, soweit dokumentiert; keine Alarm-, Sperr-, Intercom- oder Quittierungsaktionen | die sichtbaren Beschreibungen von `StatusMonitor`, `WindowMonitor`, `SmokeAlarm`, `Tracker` und `Intercom` sind real bestätigt; aktuelle States dieser Fixture blieben nach der Subskription `unknown`, die übrigen Typen sind dokumentationsbasiert |
+| Energie/sonstige | `Meter`, `EFM`, `PvProductionForecast`, `Slider`, `Webpage` | ja | nein | sichtbare States und Statistik, soweit angeboten | `Meter` und `EFM` sind mit sichtbarer Beschreibung und begrenzter Stundenstatistik real bestätigt; aktuelle States und `PvProductionForecast` bleiben nicht hardware-verifiziert |
 
 „Lesen“ umfasst nur sichtbare Struktur und Zustände. Bei `Jalousie` werden
 `set_slat_position` und `set_position_and_slats` nur angeboten, wenn die sichtbare

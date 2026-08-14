@@ -71,6 +71,32 @@ page was accepted for the Clients and sessions binding tables at 1280x800,
 headers, binding IDs and revoke actions remained visible and the page had no
 horizontal overflow.
 
+## Status and energy model read-only acceptance
+
+On 2026-08-14, the deployed service was queried read-only for one visible
+representative of each `StatusMonitor`, `WindowMonitor`, `SmokeAlarm`,
+`Tracker`, `Intercom`, `Meter`, `EFM`, and `PvProductionForecast` family. Each
+description exposed the documented visible state references, `readable` was
+true, and no operation was advertised. The `StatusMonitor` response included
+its position-stable input/status mapping; the `WindowMonitor` response included
+its typed item model. This accepts the live structure and description path for
+those eight families, without disclosing identifiers, names, addresses, or
+state values.
+
+The current-state result is deliberately narrower. A single bounded read of
+the 74 state references returned only `unknown` values after the documented
+WebSocket status subscription, while the Miniserver remained reachable and the
+structure cache current. The service therefore did not manufacture a value and
+this report does not claim hardware confirmation for current state delivery of
+these families. No state-changing command was issued to provoke an update.
+
+For the visible `Meter` and `EFM` representatives, the service advertised four
+and two statistic series respectively. One bounded one-day hourly query per
+control returned 97 and 24 points without pagination. This is hardware
+acceptance for their read-only statistics metadata and retrieval paths; it does
+not confirm current state values or the remaining `PvProductionForecast` state
+delivery.
+
 ## Authorized control-write acceptance
 
 On 2026-08-12, the user authorized tests only for the controls simultaneously
