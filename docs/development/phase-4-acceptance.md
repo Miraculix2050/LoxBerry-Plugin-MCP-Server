@@ -219,3 +219,12 @@ error during cleanup; deterministic tests and a focused target deployment
 passed, and the target emitted no stream-failure event. The absent initial state
 tables therefore remain an external hardware/runtime observation. No additional
 control command was sent, and the remaining actions stay hardware-unverified.
+
+The later initial-state handshake acceptance supersedes that read-path finding:
+the deployed server received one initial binary table with 350 structure-matching
+states before returning the read result. HVAC descriptions and their visible
+state references were confirmed on the MCP test fixture. The Miniserver did not
+publish the selected HVAC individual values in that table, so they remain
+`unknown` by design. This is a documented visualization-publication boundary,
+not incomplete HVAC parsing, transport, or hardware acceptance. It does not
+extend the separate evidence for untested temporary override actions.
