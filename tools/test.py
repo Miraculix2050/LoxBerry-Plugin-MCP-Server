@@ -14,6 +14,7 @@ from typing import Final, cast
 
 ROOT: Final = Path(__file__).resolve().parents[1]
 Command = tuple[str, ...]
+_PYTEST_BASETEMP: Final = "tmp/pytest"
 
 _DOCUMENTATION_PATTERNS: Final = (
     "AGENTS.md",
@@ -176,6 +177,10 @@ def _full_commands() -> tuple[Command, ...]:
     )
 
 
+def _is_pytest_command(command: Command) -> bool:
+    return command[1:4] == ("-m", "pytest", "-q")
+
+
 def create_plan(profile: str, files: tuple[str, ...] = ()) -> TestPlan:
     normalized = tuple(sorted({_normalize_file(path) for path in files}))
     if profile == "full":
@@ -308,7 +313,15 @@ def _run(plan: TestPlan) -> int:
             return 2
 
     environment = {**os.environ, "PYTHONPATH": str(ROOT / "src")}
+    existing_pytest_options = environment.get("PYTEST_ADDOPTS", "")
+    uses_default_pytest_basetemp = "--basetemp" not in existing_pytest_options
+    if uses_default_pytest_basetemp:
+        environment["PYTEST_ADDOPTS"] = (
+            f"{existing_pytest_options} --basetemp={_PYTEST_BASETEMP}"
+        ).strip()
     for command in plan.commands:
+        if _is_pytest_command(command) and uses_default_pytest_basetemp:
+            (ROOT / _PYTEST_BASETEMP).parent.mkdir(parents=True, exist_ok=True)
         completed = subprocess.run(command, check=False, cwd=ROOT, env=environment)
         if completed.returncode:
             return completed.returncode

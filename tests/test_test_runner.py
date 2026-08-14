@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
+from tools import test as test_runner
 from tools.test import TestPlan as RunnerPlan
 from tools.test import create_plan, discover_changed_files, main
+
+_PYTEST_BASETEMP = "--basetemp=tmp/pytest"
 
 
 def _pytest_targets(plan: RunnerPlan) -> set[str]:
@@ -101,6 +105,51 @@ def test_full_profile_keeps_ci_commands_quiet() -> None:
 
     assert plan.commands[-1][1:] == ("-m", "pytest", "-q")
     assert plan.commands[0] == ("git", "diff", "--check")
+
+
+def test_runner_creates_pytest_basetemp_parent_before_running(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    plan = RunnerPlan(
+        "changed",
+        "changed",
+        (),
+        ((sys.executable, "-m", "pytest", "-q"),),
+    )
+    monkeypatch.setattr(test_runner, "ROOT", tmp_path)
+    monkeypatch.delenv("PYTEST_ADDOPTS", raising=False)
+
+    def run(command: tuple[str, ...], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        assert (tmp_path / "tmp").is_dir()
+        environment = kwargs["env"]
+        assert isinstance(environment, dict)
+        assert environment["PYTHONPATH"] == str(tmp_path / "src")
+        assert environment["PYTEST_ADDOPTS"] == _PYTEST_BASETEMP
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(test_runner.subprocess, "run", run)
+
+    assert test_runner._run(plan) == 0
+
+
+def test_runner_preserves_existing_pytest_basetemp(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    plan = RunnerPlan("changed", "changed", (), ((sys.executable, "-m", "pytest", "-q"),))
+    monkeypatch.setattr(test_runner, "ROOT", tmp_path)
+    monkeypatch.setenv("PYTEST_ADDOPTS", "--basetemp=/managed/pytest -p no:cacheprovider")
+
+    def run(command: tuple[str, ...], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        assert not (tmp_path / "tmp").exists()
+        environment = kwargs["env"]
+        assert isinstance(environment, dict)
+        assert environment["PYTHONPATH"] == str(tmp_path / "src")
+        assert environment["PYTEST_ADDOPTS"] == "--basetemp=/managed/pytest -p no:cacheprovider"
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(test_runner.subprocess, "run", run)
+
+    assert test_runner._run(plan) == 0
 
 
 def test_invalid_explicit_base_ref_fails(
