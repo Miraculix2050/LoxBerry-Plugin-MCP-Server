@@ -79,6 +79,17 @@ Nach dem Anlegen eines lokalen virtuellen Environments werden die fixierten
 Laufzeit- und Testabhängigkeiten installiert und das Projekt ohne erneute
 Abhängigkeitsauflösung eingebunden:
 
+```powershell
+.\tools\setup-development-environment.ps1
+```
+
+Das Skript sucht Python 3.13 zuerst im üblichen benutzerspezifischen
+Installationspfad und legt `.venv` an. Ein anderer Interpreter oder Pfad kann
+über `-PythonPath` beziehungsweise `-VenvPath` angegeben werden; `-DryRun`
+prüft die Auflösung ohne Dateien oder Abhängigkeiten zu ändern.
+
+Manuell entspricht das:
+
 ```text
 python -m pip install -r requirements/runtime-arm64.lock -r requirements/dev.lock
 python -m pip install --no-deps -e .

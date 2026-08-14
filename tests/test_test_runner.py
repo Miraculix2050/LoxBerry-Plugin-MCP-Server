@@ -10,8 +10,6 @@ from tools import test as test_runner
 from tools.test import TestPlan as RunnerPlan
 from tools.test import create_plan, discover_changed_files, main
 
-_PYTEST_BASETEMP = "--basetemp=tmp/pytest"
-
 
 def _pytest_targets(plan: RunnerPlan) -> set[str]:
     for command in plan.commands:
@@ -107,7 +105,7 @@ def test_full_profile_keeps_ci_commands_quiet() -> None:
     assert plan.commands[0] == ("git", "diff", "--check")
 
 
-def test_runner_creates_pytest_basetemp_parent_before_running(
+def test_runner_creates_a_unique_pytest_basetemp_before_running(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     plan = RunnerPlan(
@@ -119,17 +117,25 @@ def test_runner_creates_pytest_basetemp_parent_before_running(
     monkeypatch.setattr(test_runner, "ROOT", tmp_path)
     monkeypatch.delenv("PYTEST_ADDOPTS", raising=False)
 
+    pytest_basetemps: list[Path] = []
+
     def run(command: tuple[str, ...], **kwargs: object) -> subprocess.CompletedProcess[str]:
         assert (tmp_path / "tmp").is_dir()
         environment = kwargs["env"]
         assert isinstance(environment, dict)
         assert environment["PYTHONPATH"] == str(tmp_path / "src")
-        assert environment["PYTEST_ADDOPTS"] == _PYTEST_BASETEMP
+        pytest_basetemp = Path(environment["PYTEST_ADDOPTS"].removeprefix("--basetemp="))
+        assert pytest_basetemp.parent == tmp_path / "tmp"
+        assert pytest_basetemp.is_dir()
+        pytest_basetemps.append(pytest_basetemp)
         return subprocess.CompletedProcess(command, 0)
 
     monkeypatch.setattr(test_runner.subprocess, "run", run)
 
     assert test_runner._run(plan) == 0
+    assert test_runner._run(plan) == 0
+    assert len(set(pytest_basetemps)) == 2
+    assert not any(pytest_basetemp.exists() for pytest_basetemp in pytest_basetemps)
 
 
 def test_runner_preserves_existing_pytest_basetemp(
