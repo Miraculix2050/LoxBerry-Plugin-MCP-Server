@@ -30,9 +30,9 @@ Für jeden Assistenten sollte ein eigener Loxone-Benutzer mit den minimal erford
 ## Projektstatus
 
 Phase 1 bis Phase 3 sind abgenommen. Der vorbereitete Phase-4-Pre-Release
-`0.4.0-alpha.12` schützt parallele Widerrufe lokaler LoxBerry-Freigaben vor
-verlorenen Konfigurationsänderungen und ergänzt eine reproduzierbare
-Windows-Entwicklungsumgebung. Es enthält außerdem die begrenzten
+`0.4.0-alpha.13` stoppt den Dienst vor einer Upgrade-Datenmigration und
+behandelt eine temporäre Miniserver-IP-Sperre auch während eines WebSocket-Sends
+als wiederherstellbaren Verbindungsfehler. Es enthält außerdem die begrenzten
 LoxAPP3-Modelle für Klima, Lüftung, Status, Energie und globale Metadaten sowie
 nur dokumentierte temporäre Overrides. Die vorherige `0.4.0-alpha.8` blockiert die MCP-Tool-Explorer-Anmeldung auf HTTP mit einem
 Link zur gleichen IP-Adresse oder demselben Hostnamen über HTTPS sowie die versionsgeprüfte, begrenzte single-flight
