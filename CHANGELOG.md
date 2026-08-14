@@ -5,6 +5,9 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Enable LoxBerry Plugin Manager automatic update discovery for stable releases
+  and explicitly opted-in prereleases.
+
 ## 0.4.0-alpha.11 - 2026-08-14
 
 - Add `loxberry_list_service_events`: a bounded, read-only MCP diagnostic feed
