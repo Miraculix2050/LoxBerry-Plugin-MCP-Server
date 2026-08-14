@@ -91,6 +91,10 @@ def test_mcp_client_smoke_covers_skill_delivery_surfaces() -> None:
     assert "$proxyArguments.Insert($callbackIndex, [string]$CallbackPort)" in script
     assert "$controlAdvertised = $actual -contains 'loxone_operate_control'" in script
     assert "if ($ControlFixturePath -and -not $controlAdvertised)" in script
+    assert "'loxberry_get_system_status', 'loxberry_list_service_events'," in script
+    assert "Temporary override control is outside the approved test intersection." in script
+    assert "Temporary override starts must use the fixed 60-second test duration." in script
+    assert "Read-only tool $Name returned error code $($envelope.data.error)." in script
 
 
 @pytest.mark.parametrize("variant", ["extra", "duplicate", "missing"])

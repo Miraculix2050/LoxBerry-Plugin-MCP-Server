@@ -3,6 +3,7 @@ param(
     [string]$ServerName = 'loxberry-mcp',
     [string]$VisibilityFixturePath,
     [string]$ControlFixturePath,
+    [string]$TemporaryOverrideFixturePath,
     [int]$CallbackPort,
     [int]$TimeoutSeconds = 120,
     [switch]$CheckConfigurationOnly
@@ -179,7 +180,9 @@ function Invoke-ToolEnvelope([int]$Id, [string]$Name, [hashtable]$Arguments) {
 
 function Invoke-ReadTool([int]$Id, [string]$Name, [hashtable]$Arguments) {
     $envelope = Invoke-ToolEnvelope $Id $Name $Arguments
-    if (-not $envelope.ok) { throw "Read-only tool $Name returned an error envelope." }
+    if (-not $envelope.ok) {
+        throw "Read-only tool $Name returned error code $($envelope.data.error)."
+    }
     return $envelope
 }
 
@@ -212,7 +215,8 @@ try {
     $optional = @(
         'loxone_operate_control', 'loxone_get_control_history', 'loxone_get_statistics',
         'loxberry_get_plugin_status', 'loxberry_get_service_health',
-        'loxberry_get_system_status', 'loxberry_clear_statistics_cache'
+        'loxberry_get_system_status', 'loxberry_list_service_events',
+        'loxberry_clear_statistics_cache'
     )
     $controlAdvertised = $actual -contains 'loxone_operate_control'
     if ($ControlFixturePath -and -not $controlAdvertised) {
@@ -364,6 +368,57 @@ try {
         }
         $controlUuid = $null
         'mcp_switch_control=pass'
+    }
+
+    if ($TemporaryOverrideFixturePath) {
+        $overrideFixture = Get-Content -LiteralPath $TemporaryOverrideFixturePath -Raw | ConvertFrom-Json
+        $operations = @($overrideFixture.operations)
+        $allowedActions = @{
+            IRoomControllerV2 = @('start_override', 'stop_override')
+            Ventilation = @('start_override', 'stop_override')
+            ClimateControllerUS = @(
+                'start_fan_override', 'stop_fan_override',
+                'start_mode_override', 'stop_mode_override'
+            )
+        }
+        if ($operations.Count -lt 1 -or $operations.Count -gt 6) {
+            throw 'Temporary override fixture must contain one to six operations.'
+        }
+        foreach ($item in $operations) {
+            $controlUuid = [string]$item.control_uuid
+            $controlType = [string]$item.control_type
+            $action = [string]$item.action
+            if (-not $controlUuid -or -not $allowedActions.ContainsKey($controlType) -or
+                $action -notin $allowedActions[$controlType]) {
+                throw 'Temporary override fixture contains an unsupported operation.'
+            }
+            $summary = @($allControls | Where-Object { $_.uuid -eq $controlUuid }) |
+                Select-Object -First 1
+            if (-not $summary -or $summary.type -ne $controlType -or
+                $summary.room.uuid -ne $overrideFixture.room_uuid -or
+                $summary.category.uuid -ne $overrideFixture.category_uuid) {
+                throw 'Temporary override control is outside the approved test intersection.'
+            }
+            $controlDescription = Invoke-ReadTool (Get-NextId) 'loxone_describe_control' @{
+                control_uuid = $controlUuid
+            }
+            if ($action -notin @($controlDescription.data.capabilities.allowed_actions)) {
+                throw 'Temporary override action is not currently advertised.'
+            }
+            $arguments = @{ control_uuid = $controlUuid; action = $action }
+            if ($action -in @('start_override', 'start_fan_override', 'start_mode_override')) {
+                if ($item.duration_seconds -ne 60) {
+                    throw 'Temporary override starts must use the fixed 60-second test duration.'
+                }
+                $arguments.duration_seconds = 60
+            }
+            if ($null -ne $item.value) { $arguments.value = [double]$item.value }
+            $operation = Invoke-ToolEnvelope (Get-NextId) 'loxone_operate_control' $arguments
+            if (-not $operation.ok -or -not $operation.data.accepted -or -not $operation.data.confirmed) {
+                throw 'Temporary override action was not accepted and confirmed; it will not be retried.'
+            }
+        }
+        'mcp_temporary_override_controls=pass'
     }
 
     $visibleUuid = $null
