@@ -141,7 +141,7 @@ def test_plugin_identity_and_platform_contract() -> None:
     assert parser["PLUGIN"]["NAME"] == "mcpserver"
     assert parser["PLUGIN"]["FOLDER"] == "mcpserver"
     assert parser["PLUGIN"]["TITLE"] == "LoxBerry MCP Server"
-    assert parser["PLUGIN"]["VERSION"] == "0.4.0-alpha.12"
+    assert parser["PLUGIN"]["VERSION"] == "0.4.0-alpha.13"
     assert parser["AUTOUPDATE"]["AUTOMATIC_UPDATES"] == "true"
     assert parser["AUTOUPDATE"]["RELEASECFG"].startswith("https://")
     assert parser["AUTOUPDATE"]["PRERELEASECFG"].startswith("https://")
@@ -483,7 +483,7 @@ def test_plugin_archive_verifier_accepts_builder_output(tmp_path: Path) -> None:
     for name, version in _locked_requirements(ROOT / "requirements" / "runtime-arm64.lock").items():
         wheel_name = name.replace("-", "_")
         (wheelhouse / f"{wheel_name}-{version}-py3-none-any.whl").write_bytes(b"wheel")
-    project_wheel = wheelhouse / "loxberry_mcpserver-0.4.0a12-py3-none-any.whl"
+    project_wheel = wheelhouse / "loxberry_mcpserver-0.4.0a13-py3-none-any.whl"
     _write_project_wheel(project_wheel)
     hash_lock = tmp_path / "runtime-arm64.sha256"
     hash_lock.write_text(
@@ -901,11 +901,11 @@ def test_plugin_archive_verifier_rejects_checksum_mismatch(tmp_path: Path) -> No
 
 
 def test_release_metadata_and_changelog_match_current_prerelease() -> None:
-    notes = validate_release_metadata(ROOT, "0.4.0-alpha.12", "prerelease")
+    notes = validate_release_metadata(ROOT, "0.4.0-alpha.13", "prerelease")
 
-    assert "Prevent concurrent local LoxBerry read or operate binding changes" in notes
+    assert "Stop the MCP service before an upgrade" in notes
     with pytest.raises(ValueError, match="stable releases"):
-        validate_release_metadata(ROOT, "0.4.0-alpha.12", "stable")
+        validate_release_metadata(ROOT, "0.4.0-alpha.13", "stable")
     with pytest.raises(ValueError, match="versions do not match"):
         validate_release_metadata(ROOT, "0.3.0-alpha.2", "prerelease")
 

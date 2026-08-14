@@ -5,6 +5,8 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+## 0.4.0-alpha.13 - 2026-08-14
+
 - Stop the MCP service before an upgrade replaces its persistent auth data, so
   in-flight requests cannot fail against a temporarily unavailable store.
 - Classify a Miniserver source-IP lockout received while sending a WebSocket

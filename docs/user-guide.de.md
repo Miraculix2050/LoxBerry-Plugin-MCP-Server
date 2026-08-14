@@ -1,4 +1,4 @@
-# LoxBerry MCP Server 0.4.0-alpha.12
+# LoxBerry MCP Server 0.4.0-alpha.13
 
 ## Voraussetzungen
 
