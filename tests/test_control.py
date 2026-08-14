@@ -171,6 +171,46 @@ async def test_transport_failure_after_dispatch_has_unknown_outcome(
 
 
 @pytest.mark.asyncio
+async def test_transport_validation_failure_is_not_an_unknown_outcome(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    runtime = LoxoneRuntime(
+        MiniserverEndpoint.parse_gen1("http://192.168.1.10"),
+        _TokenStore(),  # type: ignore[arg-type]
+        control_enabled=True,
+    )
+    runtime.cache.begin_connection("family")
+    runtime.cache.apply("family", [StateEvent("state-1", 0.0)], allowed_uuids={"state-1"})
+
+    async def snapshot(_access: StoredAccessToken) -> RuntimeSnapshot:
+        return RuntimeSnapshot("family", _structure(), True)
+
+    class Session:
+        async def load_structure(self) -> LoxoneStructure:
+            return _structure()
+
+        async def operate_control(self, _action_uuid: str, _command: str) -> None:
+            raise ValueError("transport validation failed")
+
+        async def close(self) -> None:
+            return None
+
+    class Client:
+        async def open_session(self, _token: LoxoneToken) -> Session:
+            return Session()
+
+    monkeypatch.setattr(runtime, "snapshot", snapshot)
+    runtime.client = Client()  # type: ignore[assignment]
+
+    with pytest.raises(ControlOperationError) as captured:
+        await runtime.operate_control(_access(READ_SCOPE, CONTROL_SCOPE), "control-1", "on")
+
+    assert captured.value.code == "unsupported_control"
+    assert "outcome=transport_validation_failed control_type=Switch action=on" in caplog.text
+    assert "transport validation failed" not in caplog.text
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("control_type", "action", "kwargs", "command", "state_name", "state_value"),
     [
