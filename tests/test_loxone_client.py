@@ -88,8 +88,23 @@ async def test_control_operation_rejects_unprepared_command() -> None:
 
 
 @pytest.mark.asyncio
-async def test_control_operation_accepts_bounded_numeric_mood_id(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(
+    "operation",
+    (
+        "changeTo/314",
+        "startOverride/1/60",
+        "stopOverride",
+        "override/2/549000000",
+        "setTimer/60/100/2/-1",
+        "setTimer/0",
+        "startVentilationTimer/549000000",
+        "startVentilationTimer/0",
+        "startmodetimer/3/549000000/0",
+        "startmodetimer/0/0/0",
+    ),
+)
+async def test_control_operation_accepts_documented_bounded_commands(
+    monkeypatch: pytest.MonkeyPatch, operation: str
 ) -> None:
     session = LoxoneWebSocketSession(
         cast(Any, object()),
@@ -106,9 +121,9 @@ async def test_control_operation_accepts_bounded_numeric_mood_id(
 
     monkeypatch.setattr(session, "_command", command)
 
-    await session.operate_control("action-1", "changeTo/314")
+    await session.operate_control("action-1", operation)
 
-    assert commands == [("jdev/sps/io/action-1/changeTo/314", True)]
+    assert commands == [(f"jdev/sps/io/action-1/{operation}", True)]
 
 
 @pytest.mark.asyncio
