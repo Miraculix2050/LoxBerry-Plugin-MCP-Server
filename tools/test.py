@@ -189,6 +189,10 @@ def _pytest_command(*tests: str) -> Command:
     )
 
 
+def _is_pytest_command(command: Command) -> bool:
+    return command[1:4] == ("-m", "pytest", "-q")
+
+
 def create_plan(profile: str, files: tuple[str, ...] = ()) -> TestPlan:
     normalized = tuple(sorted({_normalize_file(path) for path in files}))
     if profile == "full":
@@ -322,6 +326,8 @@ def _run(plan: TestPlan) -> int:
 
     environment = {**os.environ, "PYTHONPATH": str(ROOT / "src")}
     for command in plan.commands:
+        if _is_pytest_command(command):
+            (ROOT / _PYTEST_BASETEMP).parent.mkdir(parents=True, exist_ok=True)
         completed = subprocess.run(command, check=False, cwd=ROOT, env=environment)
         if completed.returncode:
             return completed.returncode

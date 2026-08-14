@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
+from tools import test as test_runner
 from tools.test import TestPlan as RunnerPlan
 from tools.test import create_plan, discover_changed_files, main
 
@@ -104,6 +106,26 @@ def test_full_profile_keeps_ci_commands_quiet() -> None:
 
     assert plan.commands[-1][1:] == ("-m", "pytest", "-q", *_PYTEST_BASETEMP)
     assert plan.commands[0] == ("git", "diff", "--check")
+
+
+def test_runner_creates_pytest_basetemp_parent_before_running(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    plan = RunnerPlan(
+        "changed",
+        "changed",
+        (),
+        ((sys.executable, "-m", "pytest", "-q", *_PYTEST_BASETEMP),),
+    )
+    monkeypatch.setattr(test_runner, "ROOT", tmp_path)
+
+    def run(command: tuple[str, ...], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        assert (tmp_path / "tmp").is_dir()
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(test_runner.subprocess, "run", run)
+
+    assert test_runner._run(plan) == 0
 
 
 def test_invalid_explicit_base_ref_fails(
