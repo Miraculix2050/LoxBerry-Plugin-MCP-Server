@@ -26,6 +26,10 @@ Override-Aktionen bleiben dokumentationsbasiert und nicht hardware-verifiziert.
 Ein späterer `IRoomControllerV2.stop_override`-Befehl wurde zwar angenommen,
 lieferte aber innerhalb des Bestätigungsfensters kein neues passendes
 Zustandsereignis und gilt deshalb nur als angenommen, nicht als hardware-bestätigt.
+Ein einzelner, zeitlich auf 60 Sekunden begrenzter
+`Ventilation.start_override`-Befehl wurde dagegen angenommen und über den
+dokumentierten Timer-State bestätigt. `Ventilation.stop_override` sowie die
+`ClimateControllerUS`-Override-Aktionen bleiben nicht hardware-verifiziert.
 
 ## Plattformen und Geräte
 
