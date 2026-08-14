@@ -381,6 +381,9 @@
   let servicePollInFlight = false;
   let servicePollTimer = null;
   let sessionActionRunning = false;
+  let activeSessionActions = 0;
+  let sessionDataVersion = 0;
+  const pendingSessionActionButtons = new Set();
   let sessionPollInFlight = false;
   let sessionPollTimer = null;
   let lastService = null;
@@ -875,17 +878,27 @@
       sessionPollTimer = window.setTimeout(pollSessions, delay);
     }
   };
+  const releasePendingSessionActionButtons = () => {
+    for (const button of pendingSessionActionButtons) {
+      button.disabled = false;
+      button.removeAttribute('aria-busy');
+    }
+    pendingSessionActionButtons.clear();
+  };
   const pollSessions = async () => {
     if (document.hidden || !sessionsSection.open || sessionActionRunning || sessionPollInFlight) {
       scheduleSessionPoll();
       return;
     }
     sessionPollInFlight = true;
+    let expectedSessionDataVersion = -1;
     try {
       const body = new FormData();
       body.set('action', 'list_sessions');
       body.set('ajax', '1');
+      expectedSessionDataVersion = sessionDataVersion;
       const result = await postAjax(body, 7000);
+      if (expectedSessionDataVersion !== sessionDataVersion) return;
       if (Array.isArray(result.data.sessions)) updateSessions(result.data.sessions);
       if (Array.isArray(result.data.loxberry_bindings)) {
         updateLoxberryBindings(result.data.loxberry_bindings);
@@ -893,8 +906,12 @@
       if (Array.isArray(result.data.loxberry_operate_bindings)) {
         updateLoxberryOperateBindings(result.data.loxberry_operate_bindings);
       }
+      releasePendingSessionActionButtons();
     } catch {
       // Keep the last known table; the next visible and open-section poll retries.
+      if (expectedSessionDataVersion === sessionDataVersion) {
+        releasePendingSessionActionButtons();
+      }
     } finally {
       sessionPollInFlight = false;
       scheduleSessionPoll();
@@ -911,6 +928,10 @@
     service_action: 75000,
     service_status: 7000,
   })[action] || 15000;
+  const isSessionAction = (action) => [
+    'revoke_session', 'revoke_all', 'confirm_loxone_token', 'allow_loxberry_read', 'revoke_loxberry_read',
+    'allow_loxberry_operate', 'revoke_loxberry_operate',
+  ].includes(action);
   document.addEventListener('submit', async (event) => {
     const form = event.target.closest('form[data-ajax]');
     if (!form) return;
@@ -934,7 +955,9 @@
         servicePollTimer = null;
         renderService(lastService);
       }
-      if (['revoke_session', 'revoke_all', 'confirm_loxone_token', 'allow_loxberry_read', 'revoke_loxberry_read', 'allow_loxberry_operate', 'revoke_loxberry_operate'].includes(form.dataset.ajax)) {
+      if (isSessionAction(form.dataset.ajax)) {
+        activeSessionActions += 1;
+        sessionDataVersion += 1;
         sessionActionRunning = true;
         window.clearTimeout(sessionPollTimer);
         sessionPollTimer = null;
@@ -955,12 +978,18 @@
         status.textContent = '<TMPL_VAR AJAX.SUCCESS ESCAPE=JS>';
         hideSuccess(status);
         if (result.data.service) renderService(result.data.service);
-        if (Array.isArray(result.data.sessions)) updateSessions(result.data.sessions);
-        if (Array.isArray(result.data.loxberry_bindings)) {
-          updateLoxberryBindings(result.data.loxberry_bindings);
+        if (!isSessionAction(form.dataset.ajax)) {
+          if (Array.isArray(result.data.sessions)) updateSessions(result.data.sessions);
+          if (Array.isArray(result.data.loxberry_bindings)) {
+            updateLoxberryBindings(result.data.loxberry_bindings);
+          }
+          if (Array.isArray(result.data.loxberry_operate_bindings)) {
+            updateLoxberryOperateBindings(result.data.loxberry_operate_bindings);
+          }
         }
-        if (Array.isArray(result.data.loxberry_operate_bindings)) {
-          updateLoxberryOperateBindings(result.data.loxberry_operate_bindings);
+        if (isSessionAction(form.dataset.ajax)) {
+          keepButtonDisabled = true;
+          pendingSessionActionButtons.add(button);
         }
         if (result.data.certificate) updateCertificate(result.data.certificate);
         if (form.dataset.ajax === 'save_config') {
@@ -987,9 +1016,10 @@
           renderService(lastService);
           scheduleServicePoll(0);
         }
-        if (['revoke_session', 'revoke_all', 'confirm_loxone_token', 'allow_loxberry_read', 'revoke_loxberry_read', 'allow_loxberry_operate', 'revoke_loxberry_operate'].includes(form.dataset.ajax)) {
-          sessionActionRunning = false;
-          scheduleSessionPoll();
+        if (isSessionAction(form.dataset.ajax)) {
+          activeSessionActions -= 1;
+          sessionActionRunning = activeSessionActions > 0;
+          if (!sessionActionRunning) scheduleSessionPoll(0);
         }
         if (!keepButtonDisabled) {
           button.disabled = false;
