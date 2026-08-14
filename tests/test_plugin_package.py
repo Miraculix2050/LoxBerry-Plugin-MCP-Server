@@ -201,9 +201,16 @@ def test_upgrade_preserves_configuration_in_plugin_data() -> None:
     postinstall = (ROOT / "postinstall.sh").read_text(encoding="utf-8")
 
     assert "installer_root=${6:-}" in preupgrade
-    assert "sudo -n /bin/systemctl stop loxberry-mcpserver.service || exit 2" in preupgrade
+    assert "if ! sudo -n /bin/systemctl stop loxberry-mcpserver.service; then" in preupgrade
+    assert (
+        "main_pid=$(systemctl show --property=MainPID --value --no-pager "
+        "loxberry-mcpserver.service || true)"
+    ) in preupgrade
+    assert 'kill -TERM "$main_pid" || exit 2' in preupgrade
+    assert "for _ in {1..20}" in preupgrade
+    assert "MCP service did not stop before upgrade migration." in preupgrade
     assert preupgrade.index(
-        "sudo -n /bin/systemctl stop loxberry-mcpserver.service || exit 2"
+        "if ! sudo -n /bin/systemctl stop loxberry-mcpserver.service; then"
     ) < preupgrade.index('config_file="$LBPCONFIG/$actual_folder/mcpserver.json"')
     assert 'backup_dir="$installer_root/.mcpserver-upgrade"' in preupgrade
     assert 'install -m 600 "$config_file" "$backup_dir/mcpserver.json"' in preupgrade

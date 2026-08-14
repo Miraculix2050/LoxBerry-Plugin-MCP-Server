@@ -9,7 +9,27 @@ if [ -z "$actual_folder" ] || [ -z "$installer_root" ] || [ -z "${LBPCONFIG:-}" 
 fi
 
 if systemctl is-active --quiet loxberry-mcpserver.service; then
-    sudo -n /bin/systemctl stop loxberry-mcpserver.service || exit 2
+    if ! sudo -n /bin/systemctl stop loxberry-mcpserver.service; then
+        # Older plugin releases did not grant `stop`, but their service runs as
+        # this hook's loxberry user and treats SIGTERM as a clean exit.
+        main_pid=$(systemctl show --property=MainPID --value --no-pager loxberry-mcpserver.service || true)
+        case "$main_pid" in
+            ''|0|*[!0-9]*) echo "<ERROR> MCP service has no safe main PID."; exit 2 ;;
+        esac
+        kill -TERM "$main_pid" || exit 2
+        stopped=0
+        for _ in {1..20}; do
+            if ! systemctl is-active --quiet loxberry-mcpserver.service; then
+                stopped=1
+                break
+            fi
+            sleep 1
+        done
+        if [ "$stopped" -ne 1 ]; then
+            echo "<ERROR> MCP service did not stop before upgrade migration."
+            exit 2
+        fi
+    fi
     echo "<INFO> MCP service stopped before upgrade data migration."
 fi
 

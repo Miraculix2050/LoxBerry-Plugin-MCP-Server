@@ -9,7 +9,8 @@ extracted from the matching version heading.
 
 - Use the existing narrow non-interactive service-stop permission during the
   pre-upgrade hook, so a native Plugin Manager upgrade can stop the MCP service
-  before migrating its persistent auth data.
+  before migrating its persistent auth data; upgrades from older releases
+  without that permission safely stop only the plugin's own service process.
 
 ## 0.4.0-alpha.13 - 2026-08-14
 
