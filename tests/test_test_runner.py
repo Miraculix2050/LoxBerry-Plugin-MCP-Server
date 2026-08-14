@@ -8,11 +8,14 @@ import pytest
 from tools.test import TestPlan as RunnerPlan
 from tools.test import create_plan, discover_changed_files, main
 
+_PYTEST_BASETEMP = ("--basetemp", "tmp/pytest")
+
 
 def _pytest_targets(plan: RunnerPlan) -> set[str]:
     for command in plan.commands:
         if command[1:4] == ("-m", "pytest", "-q"):
-            return set(command[4:])
+            assert command[4:6] == _PYTEST_BASETEMP
+            return set(command[6:])
     return set()
 
 
@@ -99,7 +102,7 @@ def test_changed_explicit_plan_cli_does_not_run_commands(
 def test_full_profile_keeps_ci_commands_quiet() -> None:
     plan = create_plan("full")
 
-    assert plan.commands[-1][1:] == ("-m", "pytest", "-q")
+    assert plan.commands[-1][1:] == ("-m", "pytest", "-q", *_PYTEST_BASETEMP)
     assert plan.commands[0] == ("git", "diff", "--check")
 
 

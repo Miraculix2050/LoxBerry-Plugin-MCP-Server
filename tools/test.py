@@ -14,6 +14,7 @@ from typing import Final, cast
 
 ROOT: Final = Path(__file__).resolve().parents[1]
 Command = tuple[str, ...]
+_PYTEST_BASETEMP: Final = "tmp/pytest"
 
 _DOCUMENTATION_PATTERNS: Final = (
     "AGENTS.md",
@@ -172,7 +173,19 @@ def _full_commands() -> tuple[Command, ...]:
         (sys.executable, "-m", "ruff", "format", "--check", "."),
         (sys.executable, "-m", "ruff", "check", "."),
         (sys.executable, "-m", "mypy"),
-        (sys.executable, "-m", "pytest", "-q"),
+        _pytest_command(),
+    )
+
+
+def _pytest_command(*tests: str) -> Command:
+    return (
+        sys.executable,
+        "-m",
+        "pytest",
+        "-q",
+        "--basetemp",
+        _PYTEST_BASETEMP,
+        *tests,
     )
 
 
@@ -226,7 +239,7 @@ def create_plan(profile: str, files: tuple[str, ...] = ()) -> TestPlan:
     if needs_mypy:
         commands.append((sys.executable, "-m", "mypy"))
     if selected_tests:
-        commands.append((sys.executable, "-m", "pytest", "-q", *tuple(sorted(selected_tests))))
+        commands.append(_pytest_command(*tuple(sorted(selected_tests))))
     return TestPlan("changed", "changed", normalized, tuple(commands))
 
 
