@@ -246,6 +246,41 @@ async def test_state_batch_populates_cache_before_marking_initial_batch_ready() 
 
 
 @pytest.mark.asyncio
+async def test_connect_waits_for_the_initial_state_batch() -> None:
+    release = asyncio.Event()
+
+    class Session(_Session):
+        async def load_structure(self) -> LoxoneStructure:
+            return _structure("current")
+
+        async def state_events(self):
+            await release.wait()
+            yield ()
+
+    class Client:
+        async def open_session(self, _token: object) -> Session:
+            return Session()
+
+    runtime = object.__new__(LoxoneRuntime)
+    runtime.token_health = None
+    runtime.token_store = SimpleNamespace(
+        get=lambda *_args: SimpleNamespace(valid_until=2_000_000_000)
+    )
+    runtime.client = Client()
+    runtime.cache = UserStateCache()
+    runtime._initial_state_timeout_seconds = 1.0
+    task = asyncio.create_task(runtime._connect(_access()))
+    await asyncio.sleep(0)
+    assert not task.done()
+    release.set()
+    record = await task
+    assert record.initial_state_batch.is_set()
+    record.task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await record.task
+
+
+@pytest.mark.asyncio
 async def test_session_pruning_prefers_idle_then_least_recently_used(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
