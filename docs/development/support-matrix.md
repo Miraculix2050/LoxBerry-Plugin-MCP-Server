@@ -1,9 +1,9 @@
 # Support-Matrix
 
-- **Stand:** Alpha-10-Abnahmekandidat, 2026-08-14
-- **Vorbereiteter Pre-Release:** `0.4.0-alpha.10`
-- **Nächster Meilenstein:** gezielte reale Abnahme der noch unbestätigten
-  Phase-4-Aktionen und der Alpha-10-Admin-/Widerrufspfade
+- **Stand:** Alpha 10 veröffentlicht, 2026-08-14
+- **Pre-Release:** `0.4.0-alpha.10`
+- **Nächster Meilenstein:** gezielte reale Abnahme der verbleibenden
+  Phase-4-Aktionen
 
 Diese Matrix unterscheidet reale Nachweise von implementierten, aber noch nicht
 real bestätigten Kombinationen. Phase 1, Phase 2 und Phase 3 sind abgenommen;
@@ -19,8 +19,10 @@ auf der autorisierten Testfixture hardware-abgenommen; siehe denselben
 Abnahmebericht.
 
 Die Alpha-9-Modelle für Klima, Lüftung, Zeitpläne, Sensorik/Status, Energie und
-globale Metadaten sind deterministisch getestet. Die zusätzlichen temporären
-Override-Aktionen sind dokumentationsbasiert und nicht hardware-verifiziert.
+globale Metadaten sind deterministisch getestet. Der zeitlich begrenzte
+`IRoomControllerV2.start_override`-Pfad mit Eco-Modus und Bestätigungs-State ist
+auf der autorisierten Fixture hardware-bestätigt. Die übrigen temporären
+Override-Aktionen bleiben dokumentationsbasiert und nicht hardware-verifiziert.
 
 ## Plattformen und Geräte
 
