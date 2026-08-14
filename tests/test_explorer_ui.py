@@ -117,6 +117,7 @@ def test_explorer_uses_current_https_origin_for_validated_oauth_endpoints() -> N
         "token_endpoint": "https://loxberry-test/plugins/mcpserver/oauth/token",
         "registration_endpoint": "https://loxberry-test/plugins/mcpserver/oauth/register",
         "revocation_endpoint": "https://loxberry-test/plugins/mcpserver/oauth/revoke",
+        "explorer_session_endpoint": "https://loxberry-test/plugins/mcpserver/oauth/explorer-session",
     }
     tampered = dict(metadata)
     tampered["token_endpoint"] = "https://other.example/token"
@@ -656,6 +657,7 @@ def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
     assert "const scope = core.EXPLORER_SCOPE_ORDER.filter" in source
     assert "const registrationScope = scope" in source
     assert "supported.delete('loxberry:operate')" in source
+    assert "return fetchJson(metadata.explorer_session_endpoint" in source
     assert "state.selectedTool.name === 'loxberry_clear_statistics_cache'" in source
     assert "elements.historyArguments.hidden = !historySource" in source
     assert "Cache_Control => 'no-store'" in callback
@@ -675,6 +677,24 @@ def test_explorer_initial_discovery_has_no_pre_login_permission_choice() -> None
 
     assert "setScopeAvailability" not in initial_discovery
     assert "scopeHistory" not in initial_discovery
+
+
+def test_explorer_login_failure_remains_visible_after_connection_render() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    login_handler = source[
+        source.index("elements.connect.addEventListener('click'") : source.index(
+            "elements.disconnect.addEventListener('click'"
+        )
+    ]
+    failure_handler = login_handler[
+        login_handler.index("} catch (error) {") : login_handler.index(
+            "} finally { setBusy(false); }"
+        )
+    ]
+
+    assert failure_handler.index("renderAll();") < failure_handler.index(
+        "showConnectionError(error, label('error'));"
+    )
 
 
 def test_session_refresh_preserves_pending_loxberry_approval_action() -> None:

@@ -644,6 +644,22 @@ def test_explorer_session_rejects_cross_origin_requests(tmp_path: Path) -> None:
     assert response.status_code == 400
 
 
+def test_explorer_session_accepts_configured_origin_alias(tmp_path: Path) -> None:
+    key = tmp_path / "install.key"
+    key.write_bytes(b"k" * 32)
+    encrypted = EncryptedLoxoneTokenStore((tmp_path / "tokens.json").resolve(), key.resolve())
+    provider = _provider(tmp_path, explorer_origins=("https://loxberry-alias",))
+    with TestClient(_web_app(provider, encrypted), base_url="https://loxberry-alias") as browser:
+        response = browser.post(
+            "/explorer-session",
+            headers={"Origin": "https://loxberry-alias"},
+            json={"action": "access"},
+        )
+
+    assert response.status_code == 401
+    assert response.json() == {"error": "invalid_session"}
+
+
 def _registration_payload() -> dict[str, object]:
     return {
         "redirect_uris": [REDIRECT],

@@ -137,7 +137,7 @@ def _verify_project_wheel(content: bytes, source_root: Path) -> None:
                 raise PackageVerificationError(
                     f"project wheel is missing current source: {name}"
                 ) from exc
-            if packaged != source.read_bytes().replace(b"\r\n", b"\n"):
+            if packaged.replace(b"\r\n", b"\n") != source.read_bytes().replace(b"\r\n", b"\n"):
                 raise PackageVerificationError(f"project wheel contains stale source: {name}")
         missing = _REQUIRED_PROJECT_WHEEL_ENTRIES - set(wheel.namelist())
         if missing:

@@ -113,6 +113,23 @@ def test_project_wheel_source_set_must_match_exactly(tmp_path: Path, variant: st
         verify_project_wheel_archive(wheel.read_bytes(), ROOT / "src")
 
 
+def test_project_wheel_source_verification_ignores_line_endings(tmp_path: Path) -> None:
+    source_root = tmp_path / "src"
+    source = source_root / "mcpserver" / "module.py"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b'"""Module."""\r\n')
+    wheel = tmp_path / "project.whl"
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr("mcpserver/module.py", b'"""Module."""\n')
+        archive.writestr("mcpserver/skills/using-loxberry-mcp/SKILL.md", b"skill\n")
+        archive.writestr(
+            "mcpserver/skills/using-loxberry-mcp/agents/openai.yaml", b"interface: {}\n"
+        )
+
+    verify_project_wheel_input(wheel, source_root)
+    verify_project_wheel_archive(wheel.read_bytes(), source_root)
+
+
 def test_plugin_identity_and_platform_contract() -> None:
     parser = configparser.ConfigParser()
     parser.read(ROOT / "plugin.cfg", encoding="utf-8")
@@ -120,7 +137,7 @@ def test_plugin_identity_and_platform_contract() -> None:
     assert parser["PLUGIN"]["NAME"] == "mcpserver"
     assert parser["PLUGIN"]["FOLDER"] == "mcpserver"
     assert parser["PLUGIN"]["TITLE"] == "LoxBerry MCP Server"
-    assert parser["PLUGIN"]["VERSION"] == "0.4.0-alpha.10"
+    assert parser["PLUGIN"]["VERSION"] == "0.4.0-alpha.11"
     assert parser["SYSTEM"]["LB_MINIMUM"] == "4.0.0"
     assert parser["SYSTEM"]["INTERFACE"] == "2.0"
     for name in ("release.cfg", "prerelease.cfg"):
@@ -455,7 +472,7 @@ def test_plugin_archive_verifier_accepts_builder_output(tmp_path: Path) -> None:
     for name, version in _locked_requirements(ROOT / "requirements" / "runtime-arm64.lock").items():
         wheel_name = name.replace("-", "_")
         (wheelhouse / f"{wheel_name}-{version}-py3-none-any.whl").write_bytes(b"wheel")
-    project_wheel = wheelhouse / "loxberry_mcpserver-0.4.0a10-py3-none-any.whl"
+    project_wheel = wheelhouse / "loxberry_mcpserver-0.4.0a11-py3-none-any.whl"
     _write_project_wheel(project_wheel)
     hash_lock = tmp_path / "runtime-arm64.sha256"
     hash_lock.write_text(
@@ -873,12 +890,11 @@ def test_plugin_archive_verifier_rejects_checksum_mismatch(tmp_path: Path) -> No
 
 
 def test_release_metadata_and_changelog_match_current_prerelease() -> None:
-    notes = validate_release_metadata(ROOT, "0.4.0-alpha.10", "prerelease")
+    notes = validate_release_metadata(ROOT, "0.4.0-alpha.11", "prerelease")
 
-    assert "Load the administrative configuration" in notes
-    assert "Retain encrypted Loxone tokens" in notes
+    assert "Restore MCP Tool Explorer sign-in" in notes
     with pytest.raises(ValueError, match="stable releases"):
-        validate_release_metadata(ROOT, "0.4.0-alpha.10", "stable")
+        validate_release_metadata(ROOT, "0.4.0-alpha.11", "stable")
     with pytest.raises(ValueError, match="versions do not match"):
         validate_release_metadata(ROOT, "0.3.0-alpha.2", "prerelease")
 

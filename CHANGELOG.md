@@ -5,12 +5,17 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+## 0.4.0-alpha.11 - 2026-08-14
+
 - Add `loxberry_list_service_events`: a bounded, read-only MCP diagnostic feed
   exposing only allowlisted fields from server-authored records in the fixed
   plugin service log. Raw logs, arbitrary files, journal data, payloads and
   foreign services remain unavailable.
 - Record sanitized error classes for unexpected LoxBerry diagnostic failures and
   retain the returned trace ID for correlation.
+- Restore MCP Tool Explorer sign-in through approved HTTPS IP or hostname aliases:
+  proxy the exact internal Explorer-session endpoint, bind it to the current
+  validated Explorer origin, and retain its real error message for diagnosis.
 
 ## 0.4.0-alpha.10 - 2026-08-14
 
