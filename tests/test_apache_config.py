@@ -26,6 +26,7 @@ def test_apache_exposes_only_exact_oauth_and_metadata_paths() -> None:
         "/plugins/mcpserver/oauth/token",
         "/plugins/mcpserver/oauth/register",
         "/plugins/mcpserver/oauth/revoke",
+        "/plugins/mcpserver/oauth/explorer-session",
         "/.well-known/oauth-protected-resource/plugins/mcpserver/mcp",
         "/.well-known/oauth-authorization-server/plugins/mcpserver/oauth",
     )
@@ -49,6 +50,7 @@ def test_apache_caps_oauth_request_bodies_on_exact_routes() -> None:
         "/plugins/mcpserver/oauth/token": 16384,
         "/plugins/mcpserver/oauth/register": 32768,
         "/plugins/mcpserver/oauth/revoke": 16384,
+        "/plugins/mcpserver/oauth/explorer-session": 32768,
     }
 
     for path, limit in expected_limits.items():

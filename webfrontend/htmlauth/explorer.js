@@ -165,7 +165,10 @@
       if (metadata[name] !== `${issuer.origin}${path}`) return null;
     }
     return Object.fromEntries(
-      Object.entries(endpoints).map(([name, path]) => [name, `${local.origin}${path}`]),
+      [
+        ...Object.entries(endpoints),
+        ['explorer_session_endpoint', '/plugins/mcpserver/oauth/explorer-session'],
+      ].map(([name, path]) => [name, `${local.origin}${path}`]),
     );
   }
 
@@ -771,7 +774,7 @@
   }
 
   async function explorerSession(metadata, body) {
-    return fetchJson(`${metadata.issuer}/explorer-session`, {
+    return fetchJson(metadata.explorer_session_endpoint, {
       method: 'POST', cache: 'no-store', credentials: 'same-origin',
       headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body),
     });
@@ -1440,8 +1443,10 @@
       try { authorizationPopup?.close(); } catch (_closeError) { /* already gone */ }
       if (state.oauth) await revokeAndClear();
       else core.clearSensitiveState(state);
-      showConnectionError(error, label('error'));
       renderAll();
+      // renderAll() resets the connection status. Render first so the actual
+      // OAuth failure remains visible instead of being replaced by "disconnected".
+      showConnectionError(error, label('error'));
     } finally { setBusy(false); }
   });
   elements.disconnect.addEventListener('click', async () => {
