@@ -398,6 +398,10 @@ if ($action ne '') {
         $result = admin_call('revoke_session', {id => ($q->{id} // '')});
         admin_log($result->{ok} ? 'info' : 'warning',
             'action=revoke_session outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
+    } elsif ($action eq 'confirm_loxone_token') {
+        $result = admin_call('confirm_loxone_token', {session_id => ($q->{session_id} // '')});
+        admin_log($result->{ok} ? 'info' : 'warning',
+            'action=confirm_loxone_token outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
     } elsif ($action eq 'allow_loxberry_read') {
         $result = admin_call('allow_loxberry_read', {session_id => ($q->{session_id} // '')});
         admin_log($result->{ok} ? 'info' : 'warning',

@@ -881,6 +881,36 @@ def test_session_list_excludes_revoked_families(
     assert result["sessions"][0]["client"] == "active-clien"
 
 
+def test_admin_can_confirm_a_faulty_loxone_token_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    auth_path = (tmp_path / "data" / "auth" / "sessions.json").resolve()
+    store = AtomicJsonAuthStore(auth_path)
+    store.mutate(
+        lambda document: document["families"].update(
+            {
+                "family": {
+                    "client_id": "client",
+                    "identity_id": "identity",
+                    "revoked": False,
+                    "loxone_token_confirmation_required": True,
+                    "loxone_token_rejections": 3,
+                    "loxone_token_rejection_kind": "token_authentication",
+                }
+            }
+        )
+    )
+    monkeypatch.setenv("MCPSERVER_AUTH_STORE", str(auth_path))
+
+    result = dispatch({"action": "confirm_loxone_token", "payload": {"session_id": "family"}})
+
+    assert result["sessions"][0]["loxone_token_confirmation_required"] is False
+    record = store.snapshot()["families"]["family"]
+    assert "loxone_token_confirmation_required" not in record
+    assert "loxone_token_rejections" not in record
+    assert "loxone_token_rejection_kind" not in record
+
+
 def test_session_list_uses_empty_name_for_missing_or_invalid_client_metadata(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

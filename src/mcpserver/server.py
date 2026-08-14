@@ -24,6 +24,7 @@ from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
 
 from mcpserver import __version__
+from mcpserver.auth.loxone_health import LoxoneTokenHealthStore
 from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore
 from mcpserver.auth.provider import (
     CONTROL_SCOPE,
@@ -403,6 +404,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
             runtime = LoxoneRuntime(
                 settings.phase0_auth.loxone_endpoint,
                 loxone_store,
+                token_health=LoxoneTokenHealthStore(auth_store),
                 timeout_seconds=config.connection_timeout if config is not None else 10.0,
                 requests_per_minute=config.requests_per_minute if config is not None else 60,
                 max_parallel_calls=config.max_parallel_calls if config is not None else 4,

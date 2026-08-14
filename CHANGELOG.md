@@ -5,6 +5,13 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Restore Gen. 1 Loxone token authentication by using the firmware-supported
+  JWT credential inside RSA/AES Command Encryption instead of the rejected
+  token-hash variant; the independent Gen. 2 hash path remains unchanged.
+- Stop Loxone token authentication attempts after three rejections of the
+  `authwithtoken` step per OAuth session until a local administrator explicitly
+  permits another bounded attempt. Miniserver source-IP lockouts are reported
+  separately and never increment that counter.
 - Enable LoxBerry Plugin Manager automatic update discovery for stable releases
   and explicitly opted-in prereleases.
 
