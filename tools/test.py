@@ -173,19 +173,7 @@ def _full_commands() -> tuple[Command, ...]:
         (sys.executable, "-m", "ruff", "format", "--check", "."),
         (sys.executable, "-m", "ruff", "check", "."),
         (sys.executable, "-m", "mypy"),
-        _pytest_command(),
-    )
-
-
-def _pytest_command(*tests: str) -> Command:
-    return (
-        sys.executable,
-        "-m",
-        "pytest",
-        "-q",
-        "--basetemp",
-        _PYTEST_BASETEMP,
-        *tests,
+        (sys.executable, "-m", "pytest", "-q"),
     )
 
 
@@ -243,7 +231,7 @@ def create_plan(profile: str, files: tuple[str, ...] = ()) -> TestPlan:
     if needs_mypy:
         commands.append((sys.executable, "-m", "mypy"))
     if selected_tests:
-        commands.append(_pytest_command(*tuple(sorted(selected_tests))))
+        commands.append((sys.executable, "-m", "pytest", "-q", *tuple(sorted(selected_tests))))
     return TestPlan("changed", "changed", normalized, tuple(commands))
 
 
@@ -325,8 +313,14 @@ def _run(plan: TestPlan) -> int:
             return 2
 
     environment = {**os.environ, "PYTHONPATH": str(ROOT / "src")}
+    existing_pytest_options = environment.get("PYTEST_ADDOPTS", "")
+    uses_default_pytest_basetemp = "--basetemp" not in existing_pytest_options
+    if uses_default_pytest_basetemp:
+        environment["PYTEST_ADDOPTS"] = (
+            f"{existing_pytest_options} --basetemp={_PYTEST_BASETEMP}"
+        ).strip()
     for command in plan.commands:
-        if _is_pytest_command(command):
+        if _is_pytest_command(command) and uses_default_pytest_basetemp:
             (ROOT / _PYTEST_BASETEMP).parent.mkdir(parents=True, exist_ok=True)
         completed = subprocess.run(command, check=False, cwd=ROOT, env=environment)
         if completed.returncode:
