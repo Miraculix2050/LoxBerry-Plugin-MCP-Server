@@ -939,12 +939,16 @@ class LoxoneRuntime:
                     record.connected = False
                     self.cache.disconnect(access.family_id)
                     break
-        except Exception:
+        except Exception as exc:
+            _LOGGER.warning(
+                "component=state_cache outcome=event_stream_failed error_type=%s",
+                type(exc).__name__,
+            )
             record.connected = False
             self.cache.disconnect(access.family_id)
         finally:
             events.cancel()
-            with suppress(asyncio.CancelledError):
+            with suppress(asyncio.CancelledError, Exception):
                 await events
             await record.session.close()
 

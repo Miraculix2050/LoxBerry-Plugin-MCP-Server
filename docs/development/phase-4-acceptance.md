@@ -169,3 +169,13 @@ additional stop command was sent; the accepted command was restricted to its
 60-second duration.
 This confirms that exact action and mode on the maintainer fixture, not the
 remaining HVAC/ventilation actions or timer modes.
+
+On 2026-08-14, the MCP user was granted access to all three eligible controls
+in the dedicated test intersection. The direct MCP connection and its structure
+snapshot were current, but neither the required confirmation states nor ordinary
+visible states received a current binary-state value. The runtime was corrected
+to retain a sanitized event-stream failure class without re-raising that task's
+error during cleanup; deterministic tests and a focused target deployment
+passed, and the target emitted no stream-failure event. The absent initial state
+tables therefore remain an external hardware/runtime observation. No additional
+control command was sent, and the remaining actions stay hardware-unverified.

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
+from types import SimpleNamespace
 
 import pytest
 
@@ -189,6 +190,37 @@ async def test_runtime_close_disconnects_all_records_without_revoking_tokens() -
     await runtime.close()
 
     assert closed == ["one", "two"]
+
+
+@pytest.mark.asyncio
+async def test_event_stream_failure_is_logged_without_payload_details(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    runtime = object.__new__(LoxoneRuntime)
+    runtime.cache = UserStateCache()
+    runtime.cache.begin_connection("family")
+
+    async def failed_pump(_subject: str, _record: _ConnectionRecord) -> None:
+        raise LoxoneConnectionError("private endpoint detail")
+
+    runtime._pump_events = failed_pump  # type: ignore[method-assign]
+    task = asyncio.create_task(asyncio.sleep(60))
+    record = _ConnectionRecord(_structure("current"), frozenset(), _Session(), task)
+
+    with caplog.at_level("WARNING", logger="mcpserver.loxone.runtime"):
+        await runtime._maintain(_access(), SimpleNamespace(valid_until=2_000_000_000), record)
+
+    assert record.connected is False
+    assert runtime.cache.get("family", "state-1").freshness.name == "UNAVAILABLE"
+    assert (
+        "component=state_cache outcome=event_stream_failed error_type=LoxoneConnectionError"
+        in caplog.text
+    )
+    assert "private endpoint detail" not in caplog.text
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
 
 
 @pytest.mark.asyncio

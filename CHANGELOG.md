@@ -5,6 +5,9 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Keep a failed Loxone binary-state stream fail-closed while recording only its
+  sanitized exception class; the stream task is now consumed after that record
+  so its error cannot be raised a second time during session cleanup.
 - Restore Gen. 1 Loxone token authentication by using the firmware-supported
   JWT credential inside RSA/AES Command Encryption instead of the rejected
   token-hash variant; the independent Gen. 2 hash path remains unchanged.
