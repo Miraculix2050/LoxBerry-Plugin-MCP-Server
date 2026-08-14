@@ -662,17 +662,18 @@ def _allow_loxberry_read(payload: object) -> dict[str, Any]:
     ):
         raise AdminError("pending diagnostic session is unavailable")
     binding = _loxberry_binding(record)
-    store = _config_store()
-    previous = store.load()
-    if binding not in previous.loxberry_read_bindings:
+
+    def add_binding(previous: PluginConfig) -> PluginConfig:
+        if binding in previous.loxberry_read_bindings:
+            return previous
         if len(previous.loxberry_read_bindings) >= 64:
             raise AdminError("LoxBerry approval capacity reached")
-        store.save(
-            replace(
-                previous,
-                loxberry_read_bindings=(*previous.loxberry_read_bindings, binding),
-            )
+        return replace(
+            previous,
+            loxberry_read_bindings=(*previous.loxberry_read_bindings, binding),
         )
+
+    _config_store().mutate(add_binding)
     return {"loxberry_bindings": _loxberry_bindings(), "sessions": _sessions()}
 
 
@@ -680,12 +681,18 @@ def _revoke_loxberry_read(payload: object) -> dict[str, Any]:
     binding = payload.get("binding_id") if isinstance(payload, dict) else None
     if not isinstance(binding, str) or len(binding) != 64:
         raise AdminError("LoxBerry approval is invalid")
-    store = _config_store()
-    previous = store.load()
-    if binding not in previous.loxberry_read_bindings:
-        raise AdminError("LoxBerry approval is unavailable")
-    updated = tuple(item for item in previous.loxberry_read_bindings if item != binding)
-    store.save(replace(previous, loxberry_read_bindings=updated))
+
+    def remove_binding(previous: PluginConfig) -> PluginConfig:
+        if binding not in previous.loxberry_read_bindings:
+            raise AdminError("LoxBerry approval is unavailable")
+        return replace(
+            previous,
+            loxberry_read_bindings=tuple(
+                item for item in previous.loxberry_read_bindings if item != binding
+            ),
+        )
+
+    updated_config = _config_store().mutate(remove_binding)
     document = _auth_store().snapshot()
     families = [
         family_id
@@ -697,8 +704,8 @@ def _revoke_loxberry_read(payload: object) -> dict[str, Any]:
     if families:
         _revoke_many(
             families,
-            endpoint=previous.loxone_endpoint,
-            timeout_seconds=previous.connection_timeout,
+            endpoint=updated_config.loxone_endpoint,
+            timeout_seconds=updated_config.connection_timeout,
         )
     return {"loxberry_bindings": _loxberry_bindings(), "sessions": _sessions()}
 
@@ -723,17 +730,18 @@ def _allow_loxberry_operate(payload: object) -> dict[str, Any]:
     ):
         raise AdminError("pending operation session is unavailable")
     binding = _loxberry_operate_binding(record)
-    store = _config_store()
-    previous = store.load()
-    if binding not in previous.loxberry_operate_bindings:
+
+    def add_binding(previous: PluginConfig) -> PluginConfig:
+        if binding in previous.loxberry_operate_bindings:
+            return previous
         if len(previous.loxberry_operate_bindings) >= 64:
             raise AdminError("LoxBerry operation approval capacity reached")
-        store.save(
-            replace(
-                previous,
-                loxberry_operate_bindings=(*previous.loxberry_operate_bindings, binding),
-            )
+        return replace(
+            previous,
+            loxberry_operate_bindings=(*previous.loxberry_operate_bindings, binding),
         )
+
+    _config_store().mutate(add_binding)
     return {
         "sessions": _sessions(),
         "loxberry_operate_bindings": _loxberry_operate_bindings(),
@@ -746,18 +754,18 @@ def _revoke_loxberry_operate(payload: object) -> dict[str, Any]:
     binding = payload.get("binding_id") if isinstance(payload, dict) else None
     if not isinstance(binding, str) or len(binding) != 64:
         raise AdminError("LoxBerry operation approval is invalid")
-    store = _config_store()
-    previous = store.load()
-    if binding not in previous.loxberry_operate_bindings:
-        raise AdminError("LoxBerry operation approval is unavailable")
-    store.save(
-        replace(
+
+    def remove_binding(previous: PluginConfig) -> PluginConfig:
+        if binding not in previous.loxberry_operate_bindings:
+            raise AdminError("LoxBerry operation approval is unavailable")
+        return replace(
             previous,
             loxberry_operate_bindings=tuple(
                 item for item in previous.loxberry_operate_bindings if item != binding
             ),
         )
-    )
+
+    updated_config = _config_store().mutate(remove_binding)
     document = _auth_store().snapshot()
     families = [
         family_id
@@ -770,8 +778,8 @@ def _revoke_loxberry_operate(payload: object) -> dict[str, Any]:
     if families:
         _revoke_many(
             families,
-            endpoint=previous.loxone_endpoint,
-            timeout_seconds=previous.connection_timeout,
+            endpoint=updated_config.loxone_endpoint,
+            timeout_seconds=updated_config.connection_timeout,
         )
     return {
         "sessions": _sessions(),

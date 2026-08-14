@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import json
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 
@@ -20,6 +21,7 @@ from mcpserver.admin import (
     _renew_certificate,
     _revoke,
     _revoke_loxberry_operate,
+    _revoke_loxberry_read,
     _save,
     _service_status,
     _set_logging,
@@ -207,6 +209,48 @@ def test_revoking_loxberry_operate_keeps_other_bound_scope_families(
     _revoke_loxberry_operate({"binding_id": binding})
 
     assert revoked == ["operate-family"]
+
+
+def test_concurrent_loxberry_read_binding_revocations_remove_each_binding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = (tmp_path / "config" / "mcpserver.json").resolve()
+    auth_path = (tmp_path / "data" / "auth" / "sessions.json").resolve()
+    auth_store = AtomicJsonAuthStore(auth_path)
+    families = {
+        f"family-{index}": {
+            "scope": f"{READ_SCOPE} {LOXBERRY_READ_SCOPE}",
+            "client_id": f"client-{index}",
+            "identity_id": f"identity-{index}",
+            "miniserver_id": f"miniserver-{index}",
+            "revoked": False,
+        }
+        for index in range(2)
+    }
+    bindings = tuple(
+        auth_store.pseudonym(
+            "loxberry-read-binding-v1",
+            f"client-{index}",
+            f"identity-{index}",
+            f"miniserver-{index}",
+        )
+        for index in range(len(families))
+    )
+    AtomicConfigStore(config_path).save(
+        PluginConfig.from_document(
+            {"schema_version": 1, "policies": {"loxberry_read_bindings": list(bindings)}}
+        )
+    )
+    auth_store.mutate(lambda document: document["families"].update(families))
+    monkeypatch.setenv("MCPSERVER_CONFIG", str(config_path))
+    monkeypatch.setenv("MCPSERVER_AUTH_STORE", str(auth_path))
+    monkeypatch.setattr("mcpserver.admin._token_store", lambda: None)
+
+    with ThreadPoolExecutor(max_workers=len(bindings)) as executor:
+        list(executor.map(lambda binding: _revoke_loxberry_read({"binding_id": binding}), bindings))
+
+    assert AtomicConfigStore(config_path).load().loxberry_read_bindings == ()
+    assert all(record["revoked"] for record in auth_store.snapshot()["families"].values())
 
 
 def test_loxberry_bindings_expose_related_active_client_without_raw_ids(

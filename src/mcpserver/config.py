@@ -7,10 +7,13 @@ import json
 import os
 import secrets
 import stat
-from contextlib import suppress
+import sys
+import threading
+from collections.abc import Callable
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, BinaryIO, Final
 from urllib.parse import urlsplit
 
 import idna
@@ -40,6 +43,35 @@ SUPPORTED_LOG_LEVELS: Final = frozenset({"off", "error", "warning", "info", "deb
 
 class ConfigError(ValueError):
     """The plugin configuration is invalid or cannot be persisted safely."""
+
+
+def _lock_file(handle: BinaryIO) -> None:
+    if sys.platform == "win32":  # pragma: win32 cover
+        import msvcrt
+
+        handle.seek(0)
+        if os.fstat(handle.fileno()).st_size == 0:
+            handle.seek(0)
+            handle.write(b"0")
+            handle.flush()
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+    else:  # pragma: posix cover
+        import fcntl
+
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+
+
+def _unlock_file(handle: BinaryIO) -> None:
+    if sys.platform == "win32":  # pragma: win32 cover
+        import msvcrt
+
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+    else:  # pragma: posix cover
+        import fcntl
+
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def _mapping(value: object, *, name: str) -> dict[str, Any]:
@@ -384,8 +416,31 @@ class AtomicConfigStore:
         if not path.is_absolute() or path.suffix.lower() != ".json":
             raise ValueError("configuration path must be an absolute JSON file")
         self.path = path
+        self.lock_path = path.with_name(f".{path.name}.lock")
+        self._thread_lock = threading.RLock()
+
+    @contextmanager
+    def _locked(self):  # type: ignore[no-untyped-def]
+        with self._thread_lock:
+            try:
+                self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                with self.lock_path.open("a+b") as handle:
+                    os.chmod(self.lock_path, 0o600)
+                    _lock_file(handle)
+                    try:
+                        yield
+                    finally:
+                        _unlock_file(handle)
+            except ConfigError:
+                raise
+            except OSError as exc:
+                raise ConfigError("configuration lock failed") from exc
 
     def load(self) -> PluginConfig:
+        with self._locked():
+            return self._load_unlocked()
+
+    def _load_unlocked(self) -> PluginConfig:
         if not self.path.exists():
             return PluginConfig.defaults()
         try:
@@ -399,6 +454,10 @@ class AtomicConfigStore:
             raise ConfigError("configuration is unreadable") from exc
 
     def save(self, config: PluginConfig) -> None:
+        with self._locked():
+            self._save_unlocked(config)
+
+    def _save_unlocked(self, config: PluginConfig) -> None:
         document = config.to_document()
         PluginConfig.from_document(document)
         temporary: Path | None = None
@@ -419,3 +478,12 @@ class AtomicConfigStore:
                 with suppress(OSError):
                     temporary.unlink(missing_ok=True)
             raise ConfigError("configuration update failed") from exc
+
+    def mutate(self, operation: Callable[[PluginConfig], PluginConfig]) -> PluginConfig:
+        """Apply one configuration update while holding the cross-process lock."""
+        with self._locked():
+            current = self._load_unlocked()
+            result = operation(current)
+            if result != current:
+                self._save_unlocked(result)
+            return result
