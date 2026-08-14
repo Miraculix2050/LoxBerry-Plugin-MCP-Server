@@ -159,7 +159,7 @@ def _verify_project_wheel(project_wheel: Path, source_root: Path) -> None:
                 packaged = wheel.read(name)
             except KeyError as exc:
                 raise SystemExit(f"project wheel is missing current source: {name}") from exc
-            if packaged != source.read_bytes().replace(b"\r\n", b"\n"):
+            if packaged.replace(b"\r\n", b"\n") != source.read_bytes().replace(b"\r\n", b"\n"):
                 raise SystemExit(f"project wheel contains stale source: {name}")
 
 
