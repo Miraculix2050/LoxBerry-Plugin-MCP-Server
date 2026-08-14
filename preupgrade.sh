@@ -8,6 +8,11 @@ if [ -z "$actual_folder" ] || [ -z "$installer_root" ] || [ -z "${LBPCONFIG:-}" 
     exit 2
 fi
 
+if systemctl is-active --quiet loxberry-mcpserver.service; then
+    systemctl stop loxberry-mcpserver.service || exit 2
+    echo "<INFO> MCP service stopped before upgrade data migration."
+fi
+
 config_file="$LBPCONFIG/$actual_folder/mcpserver.json"
 auth_dir="$LBPDATA/$actual_folder/auth"
 backup_dir="$installer_root/.mcpserver-upgrade"
