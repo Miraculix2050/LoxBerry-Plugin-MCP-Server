@@ -3,7 +3,7 @@
 - **Stand:** Alpha 14 vorbereitet, 2026-08-14
 - **Pre-Release:** `0.4.0-alpha.14`
 - **Nächster Meilenstein:** gezielte reale Abnahme der verbleibenden
-  Phase-4-Aktionen und der aktuellen State-Übermittlung
+  Phase-4-Aktionen
 
 Diese Matrix unterscheidet reale Nachweise von implementierten, aber noch nicht
 real bestätigten Kombinationen. Phase 1, Phase 2 und Phase 3 sind abgenommen;
@@ -30,6 +30,12 @@ Ein einzelner, zeitlich auf 60 Sekunden begrenzter
 `Ventilation.start_override`-Befehl wurde dagegen angenommen und über den
 dokumentierten Timer-State bestätigt. `Ventilation.stop_override` sowie die
 `ClimateControllerUS`-Override-Aktionen bleiben nicht hardware-verifiziert.
+Die HVAC-Leseintegration (`IRoomControllerV2`, `Ventilation` und
+`ClimateControllerUS`) ist dagegen auf Hardware abgeschlossen: Struktur,
+sichtbare States, Action-Allowlist und der initiale Binär-State-Handshake wurden
+auf der MCP-Testfixture geprüft. Einzelne HVAC-States, die der Miniserver nicht
+für die Visualisierung veröffentlicht, bleiben bewusst `unknown`; das ist eine
+Loxone-Visualisierungsgrenze und kein offener MCP-Defekt oder Abnahmepunkt.
 
 Auf derselben Fixture sind die LoxAPP3-Beschreibungen für `StatusMonitor`,
 `WindowMonitor`, `SmokeAlarm`, `Tracker`, `Intercom`, `Meter`, `EFM` und
