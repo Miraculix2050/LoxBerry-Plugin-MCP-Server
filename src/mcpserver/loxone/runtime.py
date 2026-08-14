@@ -169,6 +169,8 @@ class _ConnectionRecord:
     generation: int = 1
     last_structure_check: float = 0.0
     last_used: float = 0.0
+    state_stream_diagnostics_logged: bool = False
+    initial_state_batch: asyncio.Event = field(default_factory=asyncio.Event)
     refresh_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
@@ -213,6 +215,7 @@ class LoxoneRuntime:
             max_structure_state_references=max_structure_state_references,
             max_structure_depth=max_structure_depth,
         )
+        self._initial_state_timeout_seconds = min(timeout_seconds, 2.0)
         self.cache = UserStateCache(max_states_per_user=max_states_per_identity)
         self._records: dict[str, _ConnectionRecord] = {}
         self._locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
@@ -855,6 +858,10 @@ class LoxoneRuntime:
             last_used=now,
         )
         record.task = asyncio.create_task(self._maintain(access, token, record))
+        with suppress(TimeoutError):
+            await asyncio.wait_for(
+                record.initial_state_batch.wait(), timeout=self._initial_state_timeout_seconds
+            )
         return record
 
     async def _prune_sessions(self, keep_subject: str) -> None:
@@ -954,7 +961,17 @@ class LoxoneRuntime:
 
     async def _pump_events(self, subject: str, record: _ConnectionRecord) -> None:
         async for event_batch in record.session.state_events():
+            if not record.state_stream_diagnostics_logged:
+                matching = sum(event.uuid in record.allowed_states for event in event_batch)
+                _LOGGER.debug(
+                    "component=loxone.runtime severity=DEBUG outcome=state_event_batch "
+                    "code=received_%d_matched_%d",
+                    len(event_batch),
+                    matching,
+                )
+                record.state_stream_diagnostics_logged = True
             self.cache.apply(subject, event_batch, allowed_uuids=record.allowed_states)
+            record.initial_state_batch.set()
 
     def state(self, snapshot: RuntimeSnapshot, uuid: str) -> StateRecord:
         return self.cache.get(snapshot.subject, uuid)

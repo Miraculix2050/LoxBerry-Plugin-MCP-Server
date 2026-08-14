@@ -10,6 +10,7 @@ import mcpserver.loxone.runtime as runtime_module
 from mcpserver.auth.provider import READ_SCOPE, StoredAccessToken
 from mcpserver.loxone.cache import UserStateCache
 from mcpserver.loxone.client import LoxoneConnectionError
+from mcpserver.loxone.events import StateEvent
 from mcpserver.loxone.models import LoxoneIdentity, LoxoneStructure
 from mcpserver.loxone.runtime import (
     LoxoneRuntime,
@@ -221,6 +222,62 @@ async def test_event_stream_failure_is_logged_without_payload_details(
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
+
+
+@pytest.mark.asyncio
+async def test_state_batch_populates_cache_before_marking_initial_batch_ready() -> None:
+    class EventSession(_Session):
+        async def state_events(self):
+            yield (StateEvent(uuid="state-1", value=1.0),)
+
+    runtime = object.__new__(LoxoneRuntime)
+    runtime.cache = UserStateCache()
+    runtime.cache.begin_connection("family")
+    task = asyncio.create_task(asyncio.sleep(60))
+    record = _ConnectionRecord(_structure("current"), frozenset({"state-1"}), EventSession(), task)
+
+    await runtime._pump_events("family", record)
+
+    assert record.initial_state_batch.is_set()
+    assert runtime.cache.get("family", "state-1").value == 1.0
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+@pytest.mark.asyncio
+async def test_connect_waits_for_the_initial_state_batch() -> None:
+    release = asyncio.Event()
+
+    class Session(_Session):
+        async def load_structure(self) -> LoxoneStructure:
+            return _structure("current")
+
+        async def state_events(self):
+            await release.wait()
+            yield ()
+
+    class Client:
+        async def open_session(self, _token: object) -> Session:
+            return Session()
+
+    runtime = object.__new__(LoxoneRuntime)
+    runtime.token_health = None
+    runtime.token_store = SimpleNamespace(
+        get=lambda *_args: SimpleNamespace(valid_until=2_000_000_000)
+    )
+    runtime.client = Client()
+    runtime.cache = UserStateCache()
+    runtime._initial_state_timeout_seconds = 1.0
+    task = asyncio.create_task(runtime._connect(_access()))
+    await asyncio.sleep(0)
+    assert not task.done()
+    release.set()
+    record = await task
+    assert record.initial_state_batch.is_set()
+    record.task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await record.task
 
 
 @pytest.mark.asyncio
