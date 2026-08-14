@@ -41,6 +41,15 @@ Für die ChatGPT-/Codex-Desktop-App beschreibt die
 Hinzufügen per URL, die Browser-Authentifizierung und die angeforderten Lese-
 beziehungsweise Schreibrechte. Dafür wird keine lokale Node.js-Bridge benötigt.
 
+## Updates
+
+Der LoxBerry Plugin Manager darf neue Versionen dieses Plugins automatisch
+erkennen und installieren. Reguläre Updates stammen aus der stabilen
+Releasequelle; Vorabversionen werden nur angeboten, wenn sie im Plugin Manager
+ausdrücklich zugelassen sind. Vor einem Update einer Vorabversion sollte ein
+funktionsfähiger vorheriger Stand für den in [Rollback](#rollback) beschriebenen
+Rückweg verfügbar sein.
+
 Die Admin-Oberfläche zeigt die globale Funktionsfreigabe nach Zielsystem
 gruppiert. Die Checkboxen vergeben keine OAuth-Berechtigung, sondern erlauben
 die Funktion grundsätzlich. Der Client muss den angegebenen Scope zusätzlich

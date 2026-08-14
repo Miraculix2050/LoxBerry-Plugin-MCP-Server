@@ -40,6 +40,14 @@ For the ChatGPT/Codex desktop app, the
 setup, browser authentication, and the requested read or write permissions. It
 does not require a local Node.js bridge.
 
+## Updates
+
+LoxBerry Plugin Manager may automatically discover and install new versions of
+this plugin. Regular updates use the stable release source; prereleases are
+offered only when they are explicitly enabled in Plugin Manager. Before updating
+a prerelease, keep a known-working earlier version available for the
+[rollback](#rollback) path.
+
 The administration UI groups global capability approval by target system. Its
 checkboxes do not grant OAuth permissions; they globally enable the capability.
 The client must additionally request the listed scope during sign-in and the

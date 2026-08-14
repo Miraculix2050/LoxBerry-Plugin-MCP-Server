@@ -138,6 +138,9 @@ def test_plugin_identity_and_platform_contract() -> None:
     assert parser["PLUGIN"]["FOLDER"] == "mcpserver"
     assert parser["PLUGIN"]["TITLE"] == "LoxBerry MCP Server"
     assert parser["PLUGIN"]["VERSION"] == "0.4.0-alpha.11"
+    assert parser["AUTOUPDATE"]["AUTOMATIC_UPDATES"] == "true"
+    assert parser["AUTOUPDATE"]["RELEASECFG"].startswith("https://")
+    assert parser["AUTOUPDATE"]["PRERELEASECFG"].startswith("https://")
     assert parser["SYSTEM"]["LB_MINIMUM"] == "4.0.0"
     assert parser["SYSTEM"]["INTERFACE"] == "2.0"
     for name in ("release.cfg", "prerelease.cfg"):
