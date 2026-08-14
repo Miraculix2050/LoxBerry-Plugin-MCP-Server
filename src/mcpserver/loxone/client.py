@@ -48,7 +48,13 @@ _CONTROL_COMMAND = re.compile(
     rf"hsv\((?:360(?:\.0+)?|(?:[0-9]|[1-9][0-9]|[12][0-9][0-9]|3[0-5][0-9])(?:\.[0-9]+)?),{_PERCENT_COMMAND},{_PERCENT_COMMAND}\)|"
     rf"(?:temp|lumitech)\({_PERCENT_COMMAND},(?:[1-9][0-9]{{3,4}})\)|"
     rf"manualPosition/{_PERCENT_COMMAND}|manualLamelle/{_PERCENT_COMMAND}|"
-    rf"manualPosBlind/{_PERCENT_COMMAND}/{_PERCENT_COMMAND}|(?:0|[1-9][0-9]{{0,2}})|{_PERCENT_COMMAND})\Z"
+    rf"manualPosBlind/{_PERCENT_COMMAND}/{_PERCENT_COMMAND}|"
+    rf"startOverride/[01]/[1-9][0-9]{{0,4}}|stopOverride|"
+    rf"override/(?:0|[1-9][0-9]{{0,9}})/[1-9][0-9]{{0,9}}|"
+    rf"setTimer/(?:0|[1-9][0-9]{{0,4}}/100/(?:0|[1-9][0-9]{{0,9}})/-1)|"
+    rf"startVentilationTimer/(?:0|[1-9][0-9]{{0,9}})|"
+    rf"startmodetimer/[0-3]/(?:0|[1-9][0-9]{{0,9}})/0|"
+    rf"(?:0|[1-9][0-9]{{0,2}})|{_PERCENT_COMMAND})\Z"
 )
 _GEN1_IPV4_NETWORKS: Final = tuple(
     ipaddress.ip_network(value) for value in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")

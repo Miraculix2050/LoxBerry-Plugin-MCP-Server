@@ -421,7 +421,20 @@ class LoxoneRuntime:
                         "control confirmation state is not current",
                     )
                 before = {name: record.observed_at for name, record in before_records.items()}
-                await command_session.operate_control(control.action_uuid, prepared.command)
+                try:
+                    await command_session.operate_control(control.action_uuid, prepared.command)
+                except ValueError as exc:
+                    _LOGGER.warning(
+                        "component=control outcome=transport_validation_failed "
+                        "control_type=%s action=%s error_type=%s",
+                        control.control_type,
+                        action,
+                        type(exc).__name__,
+                    )
+                    raise ControlOperationError(
+                        "unsupported_control",
+                        "control command is not supported by the transport",
+                    ) from exc
             except ControlOperationError:
                 raise
             except LoxoneCommandRejected as exc:

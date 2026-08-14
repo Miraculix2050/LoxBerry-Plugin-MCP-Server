@@ -10,6 +10,8 @@ extracted from the matching version heading.
 - Retain encrypted Loxone tokens after local session revocation until the
   Miniserver confirms `killtoken`; unavailable Miniservers are retried by the
   service without delaying the administrative UI.
+- Correct the final transport allowlist for documented Daytimer, room-controller,
+  ventilation and HVAC temporary overrides; unsupported raw commands remain rejected.
 
 ## 0.4.0-alpha.9 - 2026-08-13
 
