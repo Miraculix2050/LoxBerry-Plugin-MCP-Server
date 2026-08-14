@@ -74,9 +74,10 @@ verschlüsselte `getkey2` und die verschlüsselte JWT-Anforderung mit dem
 vorgesehenen Testbenutzer. Der `apiKey`-Probe berücksichtigt dabei das
 historische Gen.-1-Format, in dem `LL.value` ein flaches, einfach quotiertes
 Objekt statt standardkonformem JSON enthält. `getkey2` bestimmt dynamisch SHA1
-oder SHA256 für den Passwort- und Tokenhash. Jede Tokenauthentifizierung,
--erneuerung und -widerrufung bezieht über die jeweilige verschlüsselte
-WebSocket-Verbindung einen frischen `getkey`-Einmalschlüssel.
+oder SHA256 für den Passworthash. Der Gen.-1-Pfad übermittelt den seit Firmware
+11.2 unterstützten JWT direkt innerhalb der RSA/AES-verschlüsselten
+Tokenoperationen; der Token erscheint dabei nie im unverschlüsselten
+WebSocket-Befehl.
 
 Der reale Strukturabruf bestätigte außerdem das dokumentierte Estimated-Bit
 `0x80` vor dem exakten Header. Der getestete Gen.-1-Miniserver kennzeichnet die

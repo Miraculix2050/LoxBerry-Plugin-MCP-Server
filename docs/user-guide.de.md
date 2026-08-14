@@ -136,6 +136,14 @@ Anwendung unterscheiden. Der Anwendungsname ist eine reine Anzeigeangabe des
 Clients; für die technische Zuordnung und Autorisierung bleibt die Client-ID
 maßgeblich.
 
+Wird der Schritt `authwithtoken` für ein gespeichertes Loxone-Token beim
+Neuaufbau einer Verbindung dreimal abgelehnt, erhält nur die betroffene Sitzung
+den Status **Adminbestätigung erforderlich**. Der Server unternimmt für diese
+Sitzung keine weitere Anmeldung, bis ein lokaler Administrator **Weiteren
+Token-Versuch erlauben** auswählt. Eine Quell-IP-Sperre des Miniservers wird
+separat gemeldet und erhöht diesen Zähler nicht. Andere Sitzungen bleiben nutzbar;
+eine erfolgreiche authentifizierte Verbindung löscht den Ablehnungszähler.
+
 Die lokalen Freigaben werden darunter nach `loxberry:read` und
 `loxberry:operate` getrennt angezeigt. Aktive Bindungen zeigen dieselbe
 Anwendung, Client-Instanz und gekürzte Loxone-Identität wie die zugehörige

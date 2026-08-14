@@ -15,7 +15,7 @@ from uuid import UUID
 
 import httpx
 from websockets.asyncio.client import ClientConnection, connect
-from websockets.exceptions import ConnectionClosedOK
+from websockets.exceptions import ConnectionClosed, ConnectionClosedOK
 from websockets.typing import Subprotocol
 
 from mcpserver.loxone.events import (
@@ -67,7 +67,15 @@ class LoxoneConnectionError(RuntimeError):
 
 
 class LoxoneCommandRejected(LoxoneConnectionError):
-    """Raised when an authenticated Miniserver rejects a control command."""
+    """Raised when the Miniserver rejects a command response."""
+
+    def __init__(self, message: str, *, response_code: str = "") -> None:
+        super().__init__(message)
+        self.response_code = response_code
+
+
+class LoxoneSourceIpBlocked(LoxoneConnectionError):
+    """The Miniserver temporarily blocked this source after failed logins."""
 
 
 class _WebSocketIdleTimeout(TimeoutError):
@@ -207,7 +215,7 @@ def _response_value(document: Mapping[str, Any]) -> Any:
         raise LoxoneConnectionError("Miniserver returned an invalid response")
     code = wrapper.get("Code", wrapper.get("code"))
     if str(code) != "200":
-        raise LoxoneCommandRejected("Miniserver rejected the request")
+        raise LoxoneCommandRejected("Miniserver rejected the request", response_code=str(code))
     return wrapper.get("value")
 
 
@@ -222,6 +230,13 @@ async def _receive_websocket(
             raw_header = await asyncio.wait_for(websocket.recv(), timeout=timeout_seconds)
         except TimeoutError:
             raise _WebSocketIdleTimeout from None
+        except ConnectionClosed as exc:
+            received = exc.rcvd
+            if received is not None and received.code == 4003:
+                raise LoxoneSourceIpBlocked(
+                    "Miniserver temporarily blocked this source IP"
+                ) from None
+            raise LoxoneConnectionError("Miniserver WebSocket connection closed") from None
         if not isinstance(raw_header, bytes):
             raise LoxoneProtocolError("Expected a binary WebSocket header")
         header = parse_header(raw_header, max_payload_bytes=max_payload_bytes)
@@ -563,11 +578,18 @@ class LoxoneWebSocketSession:
         if not self._secure_transport:
             session_key = self._encryptor.encrypted_session_key(self._public_key)
             await self._command(f"jdev/sys/keyexchange/{session_key}")
-        digest = await self._fresh_token_digest()
+        credential = await self._token_credential()
         await self._command(
-            f"authwithtoken/{digest}/{quote(self._token.username, safe='')}",
+            f"authwithtoken/{credential}/{quote(self._token.username, safe='')}",
             encrypted=not self._secure_transport,
         )
+
+    async def _token_credential(self) -> str:
+        if not self._secure_transport:
+            # Firmware 11.2 and newer accepts the JWT itself. On Gen. 1 the
+            # complete command remains protected by RSA/AES Command Encryption.
+            return self._token.value
+        return await self._fresh_token_digest()
 
     async def _fresh_token_digest(self) -> str:
         key = await self._command("jdev/sys/getkey", encrypted=not self._secure_transport)
@@ -612,10 +634,10 @@ class LoxoneWebSocketSession:
 
     async def refresh_token(self) -> None:
         """Rotate the in-memory JWT over the authenticated encrypted WebSocket."""
-        digest = await self._fresh_token_digest()
+        credential = await self._token_credential()
         user = quote(self._token.username, safe="")
         value = await self._command(
-            f"jdev/sys/refreshjwt/{digest}/{user}", encrypted=not self._secure_transport
+            f"jdev/sys/refreshjwt/{credential}/{user}", encrypted=not self._secure_transport
         )
         if not isinstance(value, Mapping):
             raise LoxoneConnectionError("Miniserver returned an invalid refreshed token")
@@ -628,11 +650,11 @@ class LoxoneWebSocketSession:
 
     async def kill_token(self) -> None:
         """Invalidate the current token over this authenticated session."""
-        digest = await self._fresh_token_digest()
+        credential = await self._token_credential()
         user = quote(self._token.username, safe="")
         try:
             await self._command(
-                f"jdev/sys/killtoken/{digest}/{user}", encrypted=not self._secure_transport
+                f"jdev/sys/killtoken/{credential}/{user}", encrypted=not self._secure_transport
             )
         except ConnectionClosedOK:
             # A Miniserver may close the authenticated connection immediately

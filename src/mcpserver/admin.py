@@ -490,6 +490,11 @@ def _sessions(snapshot: _AdminReadSnapshot | None = None) -> list[dict[str, Any]
                 "scopes": scopes,
                 "expires_at": record.get("expires_at"),
                 "revoked": bool(record.get("revoked", False)),
+                "loxone_token_confirmation_required": record.get(
+                    "loxone_token_confirmation_required"
+                )
+                is True
+                and record.get("loxone_token_rejection_kind") == "token_authentication",
                 "loxberry_read_eligible": pending_loxberry_read,
                 "loxberry_read_approved": read_binding in bindings if read_binding else False,
                 "loxberry_operate_eligible": pending_loxberry_operate,
@@ -499,6 +504,17 @@ def _sessions(snapshot: _AdminReadSnapshot | None = None) -> list[dict[str, Any]
             }
         )
     return sorted(result, key=lambda item: str(item["id"]))
+
+
+def _confirm_loxone_token(payload: object) -> dict[str, Any]:
+    from mcpserver.auth.loxone_health import LoxoneTokenHealthStore
+
+    family_id = payload.get("session_id") if isinstance(payload, dict) else None
+    if not isinstance(family_id, str) or len(family_id) > 128:
+        raise AdminError("session identifier is invalid")
+    if not LoxoneTokenHealthStore(_auth_store()).confirm_retry(family_id):
+        raise AdminError("Loxone token confirmation is unavailable")
+    return {"sessions": _sessions()}
 
 
 def _loxberry_binding(record: dict[str, Any], *, subject_key: bytes | None = None) -> str:
@@ -911,6 +927,8 @@ def dispatch(request: object) -> dict[str, Any]:
         if not isinstance(family_id, str) or len(family_id) > 128:
             raise AdminError("session identifier is invalid")
         return {"revoked": _revoke(family_id), "sessions": _sessions()}
+    if action == "confirm_loxone_token":
+        return _confirm_loxone_token(payload)
     if action == "revoke_all":
         return {"revoked": _revoke(None), "sessions": _sessions()}
     if action == "diagnostic":

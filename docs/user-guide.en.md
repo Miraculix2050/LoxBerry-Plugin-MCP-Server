@@ -130,6 +130,14 @@ application distinguishable. The application name is display-only metadata
 supplied by the client; the client ID remains authoritative for technical
 association and authorization.
 
+If the `authwithtoken` step rejects one stored Loxone token three times during a
+new connection, the affected session is marked **Admin confirmation required**.
+The server makes no further login attempt for that session until a local
+administrator chooses **Allow another token attempt**. A Miniserver source-IP
+lockout is reported separately and never increments this counter. This keeps
+other sessions usable and limits failed logins; a successful authenticated
+connection clears the rejection count.
+
 Local approvals are listed below separately for `loxberry:read` and
 `loxberry:operate`. Active bindings show the same application, client instance,
 and shortened Loxone identity as the related session. A binding itself does not

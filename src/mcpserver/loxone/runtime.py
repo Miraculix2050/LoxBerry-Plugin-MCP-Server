@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from uuid import NAMESPACE_URL, uuid5
 
+from mcpserver.auth.loxone_health import LoxoneTokenHealthStore
 from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore, LoxoneTokenStoreError
 from mcpserver.auth.provider import CONTROL_SCOPE, HISTORY_SCOPE, READ_SCOPE, StoredAccessToken
 from mcpserver.loxone.cache import UserStateCache
@@ -22,6 +23,7 @@ from mcpserver.loxone.client import (
     LoxoneClient,
     LoxoneCommandRejected,
     LoxoneConnectionError,
+    LoxoneSourceIpBlocked,
     LoxoneToken,
     LoxoneWebSocketSession,
 )
@@ -49,6 +51,16 @@ _REFRESH_BEFORE_SECONDS = 24 * 60 * 60
 _MAX_LEGACY_STATISTIC_BYTES = 64 * 1024 * 1024
 _MAX_HISTORY_TIMESTAMP = 4_102_444_800
 _LOGGER = logging.getLogger(__name__)
+
+
+def _token_auth_rejection_message(response_code: str) -> str:
+    messages = {
+        "401": "Miniserver rejected token authentication as unauthorized",
+        "403": "Miniserver rejected token authentication due to insufficient rights",
+        "423": "Miniserver rejected token authentication because the user is disabled",
+        "429": "Miniserver rate-limited token authentication after failed logins",
+    }
+    return messages.get(response_code, "Miniserver token authentication was rejected")
 
 
 def _legacy_statistic_dates(start: int, end: int) -> tuple[str, ...]:
@@ -168,6 +180,7 @@ class LoxoneRuntime:
         endpoint: object,
         token_store: EncryptedLoxoneTokenStore,
         *,
+        token_health: LoxoneTokenHealthStore | None = None,
         timeout_seconds: float = 10.0,
         requests_per_minute: int = 60,
         max_parallel_calls: int = 4,
@@ -191,6 +204,7 @@ class LoxoneRuntime:
             raise TypeError("endpoint must be a MiniserverEndpoint")
         self.endpoint = endpoint
         self.token_store = token_store
+        self.token_health = token_health
         self.client = LoxoneClient(
             endpoint,
             client_uuid=uuid5(NAMESPACE_URL, "https://loxberry.local/plugins/mcpserver"),
@@ -783,6 +797,13 @@ class LoxoneRuntime:
         )
 
     async def _connect(self, access: StoredAccessToken) -> _ConnectionRecord:
+        if (
+            self.token_health is not None
+            and self.token_health.get(access.family_id).confirmation_required
+        ):
+            raise RuntimeUnavailable(
+                "Loxone token use requires local administrator confirmation before another login"
+            )
         try:
             token = self.token_store.get(access.family_id, access.miniserver_id, access.identity_id)
         except LoxoneTokenStoreError as exc:
@@ -791,9 +812,36 @@ class LoxoneRuntime:
             raise RuntimeUnavailable("Loxone authorization is unavailable")
         try:
             session = await self.client.open_session(token)
-            structure = await session.load_structure()
+        except LoxoneSourceIpBlocked as exc:
+            raise RuntimeUnavailable(
+                "Miniserver temporarily blocked this source IP after failed login attempts"
+            ) from exc
+        except LoxoneCommandRejected as exc:
+            if exc.response_code == "4003":
+                raise RuntimeUnavailable(
+                    "Miniserver temporarily blocked this source IP after failed login attempts"
+                ) from exc
+            health = (
+                self.token_health.record_rejected_authentication(access.family_id)
+                if self.token_health is not None
+                else None
+            )
+            if health is not None and health.confirmation_required:
+                _LOGGER.warning("component=auth outcome=token_confirmation_required")
+                raise RuntimeUnavailable(
+                    "Loxone token use requires local administrator confirmation "
+                    "before another login"
+                ) from exc
+            raise RuntimeUnavailable(_token_auth_rejection_message(exc.response_code)) from exc
         except LoxoneConnectionError as exc:
             raise RuntimeUnavailable("Miniserver connection failed") from exc
+        try:
+            structure = await session.load_structure()
+        except LoxoneConnectionError as exc:
+            await session.close()
+            raise RuntimeUnavailable("Miniserver structure access failed") from exc
+        if self.token_health is not None:
+            self.token_health.record_successful_authentication(access.family_id)
         allowed = _structure_state_uuids(structure)
         self.cache.begin_connection(access.family_id)
         placeholder = asyncio.create_task(asyncio.sleep(0))
@@ -891,12 +939,16 @@ class LoxoneRuntime:
                     record.connected = False
                     self.cache.disconnect(access.family_id)
                     break
-        except Exception:
+        except Exception as exc:
+            _LOGGER.warning(
+                "component=state_cache outcome=event_stream_failed error_type=%s",
+                type(exc).__name__,
+            )
             record.connected = False
             self.cache.disconnect(access.family_id)
         finally:
             events.cancel()
-            with suppress(asyncio.CancelledError):
+            with suppress(asyncio.CancelledError, Exception):
                 await events
             await record.session.close()
 
