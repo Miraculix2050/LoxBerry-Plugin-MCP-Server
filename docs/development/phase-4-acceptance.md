@@ -174,6 +174,13 @@ three-second confirmation window. It is therefore recorded as accepted but
 unconfirmed, not as a confirmed stop action. No retry was sent. The documented
 `stopOverride` command and the expected zero state remain covered by automated
 tests; the missing fresh event is an external hardware/runtime observation.
+
+Also on 2026-08-14, a separate visible `Ventilation.start_override` action was
+issued in the authorized fixture with one visible mode and a 60-second duration.
+The Miniserver accepted the command and delivered the documented current timer
+confirmation. No stop command was sent; the timer was bounded to expire on its
+own. This confirms that exact start action, but not `Ventilation.stop_override`
+or the `ClimateControllerUS` override actions.
 This confirms that exact action and mode on the maintainer fixture, not the
 remaining HVAC/ventilation actions or timer modes.
 
