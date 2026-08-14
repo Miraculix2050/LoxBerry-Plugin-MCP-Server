@@ -328,6 +328,22 @@ class EncryptedLoxoneTokenStore:
             record["remote_revoke_after"] = now + min(300, 2 ** min(attempts, 8))
             self._write(document)
 
+    def suspend_remote_revoke(self, family_id: str, now: int, *, delay_seconds: int) -> None:
+        """Retain a token without retrying an authentication-sensitive revoke too soon."""
+        if not 1 <= delay_seconds <= 86_400:
+            raise ValueError("remote revoke suspension delay is invalid")
+        with self._locked():
+            document = self._read()
+            record = document["tokens"].get(family_id)
+            if not isinstance(record, dict) or record.get("remote_revoke_pending") is not True:
+                return
+            after = now + delay_seconds
+            current = record.get("remote_revoke_after", 0)
+            record["remote_revoke_after"] = (
+                max(current, after) if isinstance(current, int) else after
+            )
+            self._write(document)
+
     def complete_remote_revoke(self, family_id: str) -> None:
         """Delete only after the Miniserver accepted killtoken."""
         self.delete(family_id)

@@ -137,6 +137,9 @@ administrator chooses **Allow another token attempt**. A Miniserver source-IP
 lockout is reported separately and never increments this counter. This keeps
 other sessions usable and limits failed logins; a successful authenticated
 connection clears the rejection count.
+Pending background token revocations pause for one hour after an authentication
+rejection or source-IP lockout so they cannot create a further block of login
+attempts. Tokens remain securely stored until deletion is confirmed.
 
 Local approvals are listed below separately for `loxberry:read` and
 `loxberry:operate`. Active bindings show the same application, client instance,
