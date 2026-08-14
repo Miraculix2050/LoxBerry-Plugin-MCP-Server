@@ -89,3 +89,16 @@ def test_service_events_reject_invalid_limit_and_oversized_log(tmp_path: Path) -
     target.write_bytes(b"x" * (512 * 1024 + 1))
     with pytest.raises(DiagnosticsUnavailable):
         diagnostics.service_events(limit=1)
+
+
+def test_diagnostic_source_rejects_a_symlink(tmp_path: Path) -> None:
+    target = tmp_path / "target.log"
+    target.write_text("safe", encoding="utf-8")
+    source = tmp_path / "source.log"
+    try:
+        source.symlink_to(target)
+    except OSError as exc:
+        pytest.skip(f"symlinks are unavailable: {exc}")
+
+    with pytest.raises(DiagnosticsUnavailable):
+        LoxBerryDiagnostics._read_limited(source, 64)

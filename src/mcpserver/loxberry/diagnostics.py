@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import stat
 import subprocess
 from pathlib import Path
 from typing import Any, Final
@@ -51,7 +52,14 @@ class LoxBerryDiagnostics:
     @staticmethod
     def _read_limited(path: Path, maximum: int) -> bytes:
         try:
-            with path.open("rb") as handle:
+            # Diagnostic sources are fixed by code. Refuse indirection even if a
+            # plugin-owned log directory is writable by the service account.
+            metadata = path.lstat()
+            if not stat.S_ISREG(metadata.st_mode):
+                raise OSError("diagnostic source is not a regular file")
+            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            descriptor = os.open(path, flags)
+            with os.fdopen(descriptor, "rb") as handle:
                 result = handle.read(maximum + 1)
         except OSError as exc:
             raise DiagnosticsUnavailable("diagnostic source unavailable") from exc
