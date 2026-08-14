@@ -328,8 +328,8 @@ room, bulk, learning, rename, expert, or free-form commands.
 | Climate/ventilation | `ClimateControllerUS` | yes | yes | temporary fan/mode overrides only when the matching logic input is absent | official documentation and automated contract; read path hardware confirmed, writes not hardware-verified |
 | Climate/ventilation | `IRCV2Daytimer` | yes | no | typed analog schedule metadata; no schedule writes | readable in the maintainer installation |
 | Climate/ventilation | corresponding visible V1 types | yes | no | – | generic read path; not hardware-verified |
-| Sensors/status | `InfoOnlyAnalog`, `InfoOnlyDigital`, `InfoOnlyText`, `TextState`, `StatusMonitor`, `WindowMonitor`, `SmokeAlarm`, `Tracker`, `Intercom` | yes | no | typed visible state metadata where documented; no alarm, lock, intercom, or acknowledgement actions | documentation-based read model; not hardware-verified |
-| Energy/other | `Meter`, `EFM`, `PvProductionForecast`, `Slider`, `Webpage` | yes | no | visible states and statistics where advertised | documentation-based read model; not hardware-verified |
+| Sensors/status | `InfoOnlyAnalog`, `InfoOnlyDigital`, `InfoOnlyText`, `TextState`, `StatusMonitor`, `WindowMonitor`, `SmokeAlarm`, `Tracker`, `Intercom` | yes | no | typed visible state metadata where documented; no alarm, lock, intercom, or acknowledgement actions | visible descriptions of `StatusMonitor`, `WindowMonitor`, `SmokeAlarm`, `Tracker`, and `Intercom` are hardware-confirmed; current states on this fixture remained `unknown` after subscription, and the remaining types are documentation-based |
+| Energy/other | `Meter`, `EFM`, `PvProductionForecast`, `Slider`, `Webpage` | yes | no | visible states and statistics where advertised | `Meter` and `EFM` are hardware-confirmed for visible descriptions and bounded hourly statistics; current states and `PvProductionForecast` remain unverified |
 
 “Read” means only visible structure and states. For `Jalousie`,
 `set_slat_position` and `set_position_and_slats` are offered only when the visible

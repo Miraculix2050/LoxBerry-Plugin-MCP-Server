@@ -3,7 +3,7 @@
 - **Stand:** Alpha 14 vorbereitet, 2026-08-14
 - **Pre-Release:** `0.4.0-alpha.14`
 - **Nächster Meilenstein:** gezielte reale Abnahme der verbleibenden
-  Phase-4-Aktionen
+  Phase-4-Aktionen und der aktuellen State-Übermittlung
 
 Diese Matrix unterscheidet reale Nachweise von implementierten, aber noch nicht
 real bestätigten Kombinationen. Phase 1, Phase 2 und Phase 3 sind abgenommen;
@@ -30,6 +30,14 @@ Ein einzelner, zeitlich auf 60 Sekunden begrenzter
 `Ventilation.start_override`-Befehl wurde dagegen angenommen und über den
 dokumentierten Timer-State bestätigt. `Ventilation.stop_override` sowie die
 `ClimateControllerUS`-Override-Aktionen bleiben nicht hardware-verifiziert.
+
+Auf derselben Fixture sind die LoxAPP3-Beschreibungen für `StatusMonitor`,
+`WindowMonitor`, `SmokeAlarm`, `Tracker`, `Intercom`, `Meter`, `EFM` und
+`PvProductionForecast` real bestätigt. Die Statistikabfragen eines sichtbaren
+`Meter` und `EFM` lieferten je einen begrenzten Stundenverlauf. Die aktuelle
+State-Übermittlung dieser Familien blieb nach der Subskription `unknown`; sie
+wird daher nicht als hardware-bestätigt ausgewiesen. Der vollständige,
+maskierte Befund steht im [Phase-4-Abnahmebericht](phase-4-acceptance.md#status-and-energy-model-read-only-acceptance).
 
 ## Plattformen und Geräte
 
