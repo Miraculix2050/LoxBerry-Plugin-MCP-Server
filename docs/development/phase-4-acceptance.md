@@ -1,8 +1,8 @@
 # Phase 4 acceptance record
 
-- **Status:** implementation complete; reviewed source revision and CI accepted; release metadata prepared
-- **Hardware status:** read paths, control notes, the plugin-owned cache clear and selected authorized Loxone control actions are accepted; untested actions remain pending
-- **Date:** 2026-08-12
+- **Status:** implementation complete; `0.4.0-alpha.10` published
+- **Hardware status:** read paths, control notes, the plugin-owned cache clear, selected authorized Loxone control actions, and one bounded IRoomControllerV2 override are accepted; untested actions remain pending
+- **Date:** 2026-08-14
 
 Phase 4 adds StatisticV2 reads, bounded control history, six additional control
 contracts and the plugin-owned statistic-cache clear action. Automated tests
@@ -149,7 +149,7 @@ favorite flag were visible through the MCP tools without restarting the
 Miniserver or plugin. No identifiers or user-authored note text are recorded
 here.
 
-## Alpha 9 LoxAPP3 model boundary
+## Alpha 9 and Alpha 10 LoxAPP3 model boundary
 
 `0.4.0-alpha.9` adds bounded metadata and semantic event models plus documented
 temporary climate and ventilation override contracts. They passed deterministic
@@ -157,6 +157,15 @@ tests. The focused file deployment passed backup and health checks. The authoriz
 MCP test intersection contains eligible `IRoomControllerV2`, `Ventilation` and
 `ClimateControllerUS` controls; an `IRoomControllerV2` description confirmed the
 new bounded timer-mode model and action allowlist. Its required confirmation
-states were stale after the service restart, so fail-closed behavior prevented a
-write. No new control command was dispatched and none of these actions is
-hardware-verified.
+states were initially stale after the service restart, so fail-closed behavior
+correctly prevented a write.
+
+After the Alpha-10 transport correction was installed, a single 60-second Eco
+`IRoomControllerV2.start_override` was issued only on the authorized MCP test
+fixture. The Miniserver accepted the command, the documented `overrideReason`
+confirmation state changed to the expected value, and the bounded control history
+recorded the Eco timer activation as triggered by the MCP user. No retry or
+additional stop command was sent; the accepted command was restricted to its
+60-second duration.
+This confirms that exact action and mode on the maintainer fixture, not the
+remaining HVAC/ventilation actions or timer modes.
