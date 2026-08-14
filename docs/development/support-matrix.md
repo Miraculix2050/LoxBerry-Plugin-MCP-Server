@@ -23,6 +23,9 @@ globale Metadaten sind deterministisch getestet. Der zeitlich begrenzte
 `IRoomControllerV2.start_override`-Pfad mit Eco-Modus und Bestätigungs-State ist
 auf der autorisierten Fixture hardware-bestätigt. Die übrigen temporären
 Override-Aktionen bleiben dokumentationsbasiert und nicht hardware-verifiziert.
+Ein späterer `IRoomControllerV2.stop_override`-Befehl wurde zwar angenommen,
+lieferte aber innerhalb des Bestätigungsfensters kein neues passendes
+Zustandsereignis und gilt deshalb nur als angenommen, nicht als hardware-bestätigt.
 
 ## Plattformen und Geräte
 

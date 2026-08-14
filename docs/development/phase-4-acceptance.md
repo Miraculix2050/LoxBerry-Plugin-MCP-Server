@@ -167,6 +167,13 @@ confirmation state changed to the expected value, and the bounded control histor
 recorded the Eco timer activation as triggered by the MCP user. No retry or
 additional stop command was sent; the accepted command was restricted to its
 60-second duration.
+
+On 2026-08-14, a later controlled stop request on the same fixture was accepted
+by the Miniserver, but no newer `overrideReason=0` state event arrived within the
+three-second confirmation window. It is therefore recorded as accepted but
+unconfirmed, not as a confirmed stop action. No retry was sent. The documented
+`stopOverride` command and the expected zero state remain covered by automated
+tests; the missing fresh event is an external hardware/runtime observation.
 This confirms that exact action and mode on the maintainer fixture, not the
 remaining HVAC/ventilation actions or timer modes.
 
