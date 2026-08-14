@@ -858,10 +858,27 @@ class LoxoneRuntime:
             last_used=now,
         )
         record.task = asyncio.create_task(self._maintain(access, token, record))
-        with suppress(TimeoutError):
-            await asyncio.wait_for(
-                record.initial_state_batch.wait(), timeout=self._initial_state_timeout_seconds
+        initial_state_wait = asyncio.create_task(record.initial_state_batch.wait())
+        try:
+            done, _pending = await asyncio.wait(
+                {initial_state_wait, record.task}, timeout=self._initial_state_timeout_seconds
             )
+            if record.task in done and not record.initial_state_batch.is_set():
+                await record.task
+                raise RuntimeUnavailable("Miniserver state subscription failed")
+        except BaseException:
+            if not record.task.done():
+                record.task.cancel()
+            with suppress(asyncio.CancelledError, Exception):
+                await record.task
+            await record.session.close()
+            self.cache.disconnect(access.family_id)
+            raise
+        finally:
+            if not initial_state_wait.done():
+                initial_state_wait.cancel()
+                with suppress(asyncio.CancelledError):
+                    await initial_state_wait
         return record
 
     async def _prune_sessions(self, keep_subject: str) -> None:
