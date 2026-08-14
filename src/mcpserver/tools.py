@@ -498,6 +498,24 @@ class LoxBerryServiceHealthData(BaseModel):
     healthy: bool
 
 
+class LoxBerryServiceEventData(BaseModel):
+    """Sanitized, server-authored diagnostic event; never a raw log line."""
+
+    model_config = ConfigDict(extra="forbid")
+    timestamp: str
+    component: str
+    severity: Literal["debug", "info", "warning", "error", "critical"]
+    trace_id: str | None = None
+    outcome: str | None = None
+    code: str | None = None
+    error_type: str | None = None
+
+
+class LoxBerryServiceEventsData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    events: list[LoxBerryServiceEventData]
+
+
 class LoxBerryErrorData(ErrorData):
     model_config = ConfigDict(extra="forbid")
 
@@ -517,6 +535,11 @@ class LoxBerryServiceHealthEnvelope(ToolEnvelope):
     data: LoxBerryServiceHealthData | LoxBerryErrorData
 
 
+class LoxBerryServiceEventsEnvelope(ToolEnvelope):
+    model_config = ConfigDict(extra="forbid")
+    data: LoxBerryServiceEventsData | LoxBerryErrorData
+
+
 def _now() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
@@ -527,8 +550,9 @@ def _result[EnvelopeT: ToolEnvelope](
     *,
     stale: bool = False,
     warnings: list[str] | None = None,
+    trace_id: str | None = None,
 ) -> EnvelopeT:
-    trace_id = str(uuid4())
+    trace_id = trace_id or str(uuid4())
     _LOGGER.debug("component=tools severity=DEBUG trace_id=%s outcome=ok", trace_id)
     return envelope_type(
         ok=True,
@@ -541,9 +565,9 @@ def _result[EnvelopeT: ToolEnvelope](
 
 
 def _error[EnvelopeT: ToolEnvelope](
-    envelope_type: type[EnvelopeT], code: str, message: str
+    envelope_type: type[EnvelopeT], code: str, message: str, *, trace_id: str | None = None
 ) -> EnvelopeT:
-    trace_id = str(uuid4())
+    trace_id = trace_id or str(uuid4())
     if code == "temporarily_unavailable":
         now = time.monotonic()
         previous = _ERROR_LAST.get(code)
@@ -757,6 +781,12 @@ class LoxBerryReadRuntime:
         import asyncio
 
         return await asyncio.to_thread(self._diagnostics.service_health)
+
+    async def service_events(self, access: StoredAccessToken, limit: int) -> dict[str, Any]:
+        self._allowed(access)
+        import asyncio
+
+        return {"events": await asyncio.to_thread(self._diagnostics.service_events, limit=limit)}
 
 
 class LoxBerryOperateRuntime:
@@ -1405,22 +1435,34 @@ def register_loxberry_read_tools(server: FastMCP, runtime: LoxBerryReadRuntime) 
         structured_output=True,
     )
     async def get_loxberry_system_status() -> LoxBerrySystemStatusEnvelope:
+        trace_id = str(uuid4())
         try:
-            return _result(LoxBerrySystemStatusEnvelope, await runtime.system_status(_access()))
+            return _result(
+                LoxBerrySystemStatusEnvelope, await runtime.system_status(_access()), trace_id=trace_id
+            )
         except PermissionError:
             return _error(
                 LoxBerrySystemStatusEnvelope,
                 "permission_denied",
                 "LoxBerry diagnostics require loxberry:read and local approval",
+                trace_id=trace_id,
             )
         except DiagnosticsUnavailable:
             return _error(
                 LoxBerrySystemStatusEnvelope,
                 "temporarily_unavailable",
                 "LoxBerry diagnostics are temporarily unavailable",
+                trace_id=trace_id,
             )
-        except Exception:
-            return _error(LoxBerrySystemStatusEnvelope, "internal_error", "Internal error")
+        except Exception as exc:
+            _LOGGER.error(
+                "component=tools trace_id=%s outcome=internal_error tool=loxberry_get_system_status error_type=%s",
+                trace_id,
+                type(exc).__name__,
+            )
+            return _error(
+                LoxBerrySystemStatusEnvelope, "internal_error", "Internal error", trace_id=trace_id
+            )
 
     @server.tool(
         name="loxberry_get_plugin_status",
@@ -1429,22 +1471,34 @@ def register_loxberry_read_tools(server: FastMCP, runtime: LoxBerryReadRuntime) 
         structured_output=True,
     )
     async def get_loxberry_plugin_status() -> LoxBerryPluginStatusEnvelope:
+        trace_id = str(uuid4())
         try:
-            return _result(LoxBerryPluginStatusEnvelope, await runtime.plugin_status(_access()))
+            return _result(
+                LoxBerryPluginStatusEnvelope, await runtime.plugin_status(_access()), trace_id=trace_id
+            )
         except PermissionError:
             return _error(
                 LoxBerryPluginStatusEnvelope,
                 "permission_denied",
                 "LoxBerry diagnostics require loxberry:read and local approval",
+                trace_id=trace_id,
             )
         except DiagnosticsUnavailable:
             return _error(
                 LoxBerryPluginStatusEnvelope,
                 "temporarily_unavailable",
                 "LoxBerry diagnostics are temporarily unavailable",
+                trace_id=trace_id,
             )
-        except Exception:
-            return _error(LoxBerryPluginStatusEnvelope, "internal_error", "Internal error")
+        except Exception as exc:
+            _LOGGER.error(
+                "component=tools trace_id=%s outcome=internal_error tool=loxberry_get_plugin_status error_type=%s",
+                trace_id,
+                type(exc).__name__,
+            )
+            return _error(
+                LoxBerryPluginStatusEnvelope, "internal_error", "Internal error", trace_id=trace_id
+            )
 
     @server.tool(
         name="loxberry_get_service_health",
@@ -1453,22 +1507,81 @@ def register_loxberry_read_tools(server: FastMCP, runtime: LoxBerryReadRuntime) 
         structured_output=True,
     )
     async def get_loxberry_service_health() -> LoxBerryServiceHealthEnvelope:
+        trace_id = str(uuid4())
         try:
-            return _result(LoxBerryServiceHealthEnvelope, await runtime.service_health(_access()))
+            return _result(
+                LoxBerryServiceHealthEnvelope, await runtime.service_health(_access()), trace_id=trace_id
+            )
         except PermissionError:
             return _error(
                 LoxBerryServiceHealthEnvelope,
                 "permission_denied",
                 "LoxBerry diagnostics require loxberry:read and local approval",
+                trace_id=trace_id,
             )
         except DiagnosticsUnavailable:
             return _error(
                 LoxBerryServiceHealthEnvelope,
                 "temporarily_unavailable",
                 "LoxBerry diagnostics are temporarily unavailable",
+                trace_id=trace_id,
             )
-        except Exception:
-            return _error(LoxBerryServiceHealthEnvelope, "internal_error", "Internal error")
+        except Exception as exc:
+            _LOGGER.error(
+                "component=tools trace_id=%s outcome=internal_error tool=loxberry_get_service_health error_type=%s",
+                trace_id,
+                type(exc).__name__,
+            )
+            return _error(
+                LoxBerryServiceHealthEnvelope, "internal_error", "Internal error", trace_id=trace_id
+            )
+
+    @server.tool(
+        name="loxberry_list_service_events",
+        description=(
+            "List recent sanitized diagnostic events from this plugin's fixed service log. "
+            "It never returns raw log lines, arbitrary files, payloads, credentials, or other services."
+        ),
+        annotations=annotations,
+        structured_output=True,
+    )
+    async def list_loxberry_service_events(
+        limit: Annotated[
+            int, Field(description="Recent events to return, from 1 to 100.", ge=1, le=100)
+        ] = 50,
+    ) -> LoxBerryServiceEventsEnvelope:
+        trace_id = str(uuid4())
+        try:
+            return _result(
+                LoxBerryServiceEventsEnvelope,
+                await runtime.service_events(_access(), limit),
+                trace_id=trace_id,
+            )
+        except ValueError as exc:
+            return _error(LoxBerryServiceEventsEnvelope, "invalid_input", str(exc), trace_id=trace_id)
+        except PermissionError:
+            return _error(
+                LoxBerryServiceEventsEnvelope,
+                "permission_denied",
+                "LoxBerry diagnostics require loxberry:read and local approval",
+                trace_id=trace_id,
+            )
+        except DiagnosticsUnavailable:
+            return _error(
+                LoxBerryServiceEventsEnvelope,
+                "temporarily_unavailable",
+                "LoxBerry diagnostic events are temporarily unavailable",
+                trace_id=trace_id,
+            )
+        except Exception as exc:
+            _LOGGER.error(
+                "component=tools trace_id=%s outcome=internal_error tool=loxberry_list_service_events error_type=%s",
+                trace_id,
+                type(exc).__name__,
+            )
+            return _error(
+                LoxBerryServiceEventsEnvelope, "internal_error", "Internal error", trace_id=trace_id
+            )
 
 
 def _rfc3339(value: str) -> datetime:

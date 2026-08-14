@@ -120,9 +120,12 @@ def test_loxberry_tool_contracts_have_closed_output_schemas() -> None:
         "loxberry_get_system_status",
         "loxberry_get_plugin_status",
         "loxberry_get_service_health",
+        "loxberry_list_service_events",
     }
-    for tool in published.values():
-        assert tool.parameters["properties"] == {}
+    for name, tool in published.items():
+        assert set(tool.parameters["properties"]) == (
+            {"limit"} if name == "loxberry_list_service_events" else set()
+        )
         assert tool.annotations is not None
         assert tool.annotations.readOnlyHint is True
         assert tool.annotations.destructiveHint is False
@@ -472,7 +475,7 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert tool.annotations.destructiveHint is False
     assert tool.annotations.openWorldHint is False
     assert result.data.name == "using-loxberry-mcp"  # type: ignore[union-attr]
-    assert result.data.revision == 14  # type: ignore[union-attr]
+    assert result.data.revision == 15  # type: ignore[union-attr]
     assert result.data.media_type == "text/markdown"  # type: ignore[union-attr]
     assert result.data.content == read_skill_markdown()  # type: ignore[union-attr]
     assert "For a `StatusMonitor`, use its `inputStates` state UUID." in result.data.content  # type: ignore[union-attr]

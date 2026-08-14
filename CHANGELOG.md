@@ -3,6 +3,15 @@
 All notable user-visible changes are recorded here. GitHub release notes are
 extracted from the matching version heading.
 
+## Unreleased
+
+- Add `loxberry_list_service_events`: a bounded, read-only MCP diagnostic feed
+  exposing only allowlisted fields from server-authored records in the fixed
+  plugin service log. Raw logs, arbitrary files, journal data, payloads and
+  foreign services remain unavailable.
+- Record sanitized error classes for unexpected LoxBerry diagnostic failures and
+  retain the returned trace ID for correlation.
+
 ## 0.4.0-alpha.10 - 2026-08-14
 
 - Load the administrative configuration before deferred status and session data,
