@@ -18,6 +18,14 @@ extracted from the matching version heading.
 - Enable LoxBerry Plugin Manager automatic update discovery for stable releases
   and explicitly opted-in prereleases.
 
+## 0.4.0-alpha.12 - 2026-08-14
+
+- Prevent concurrent local LoxBerry read or operate binding changes from
+  overwriting one another. The Admin UI keeps parallel session actions pending
+  until it refreshes one consistent server state.
+- Add a reproducible Windows development-environment setup and keep temporary
+  test data inside the project data area.
+
 ## 0.4.0-alpha.11 - 2026-08-14
 
 - Add `loxberry_list_service_events`: a bounded, read-only MCP diagnostic feed
