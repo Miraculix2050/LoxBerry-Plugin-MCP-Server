@@ -289,7 +289,7 @@ class Phase0OAuthWeb:
         )
 
     async def _explorer_payload(self, request: Request) -> dict[str, str] | None:
-        if request.headers.get("origin") != self.explorer_origin:
+        if request.headers.get("origin") not in self.provider.explorer_origins:
             return None
         if (
             request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
