@@ -8,13 +8,14 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, cast
 
 ROOT: Final = Path(__file__).resolve().parents[1]
 Command = tuple[str, ...]
-_PYTEST_BASETEMP: Final = "tmp/pytest"
+_PYTEST_TEMP_PARENT: Final = "tmp"
 
 _DOCUMENTATION_PATTERNS: Final = (
     "AGENTS.md",
@@ -315,16 +316,23 @@ def _run(plan: TestPlan) -> int:
     environment = {**os.environ, "PYTHONPATH": str(ROOT / "src")}
     existing_pytest_options = environment.get("PYTEST_ADDOPTS", "")
     uses_default_pytest_basetemp = "--basetemp" not in existing_pytest_options
-    if uses_default_pytest_basetemp:
+    pytest_commands = tuple(command for command in plan.commands if _is_pytest_command(command))
+    pytest_basetemp: Path | None = None
+    if pytest_commands and uses_default_pytest_basetemp:
+        pytest_temp_parent = ROOT / _PYTEST_TEMP_PARENT
+        pytest_temp_parent.mkdir(parents=True, exist_ok=True)
+        pytest_basetemp = Path(tempfile.mkdtemp(prefix="pytest-", dir=pytest_temp_parent))
         environment["PYTEST_ADDOPTS"] = (
-            f"{existing_pytest_options} --basetemp={_PYTEST_BASETEMP}"
+            f"{existing_pytest_options} --basetemp={pytest_basetemp.as_posix()}"
         ).strip()
-    for command in plan.commands:
-        if _is_pytest_command(command) and uses_default_pytest_basetemp:
-            (ROOT / _PYTEST_BASETEMP).parent.mkdir(parents=True, exist_ok=True)
-        completed = subprocess.run(command, check=False, cwd=ROOT, env=environment)
-        if completed.returncode:
-            return completed.returncode
+    try:
+        for command in plan.commands:
+            completed = subprocess.run(command, check=False, cwd=ROOT, env=environment)
+            if completed.returncode:
+                return completed.returncode
+    finally:
+        if pytest_basetemp is not None:
+            shutil.rmtree(pytest_basetemp, ignore_errors=True)
     print(
         f"TEST_RESULT=pass profile={plan.effective_profile} "
         f"commands={len(plan.commands)} files={len(plan.files)}"

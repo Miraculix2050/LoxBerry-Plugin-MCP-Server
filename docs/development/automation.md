@@ -26,9 +26,10 @@ requires Python 3.13 plus Perl and Node.js; the runner exits `2` as incomplete w
 those requirements are missing. CI runs Full on Python 3.13. A green Full CI result
 for the same commit need not be duplicated locally.
 
-When no `--basetemp` is already configured, the runner gives pytest the
-repository-local `tmp/pytest` base directory. This avoids relying on a global
-user temp directory that may be unavailable in a restricted local environment.
+When no `--basetemp` is already configured, the runner gives each pytest
+invocation a unique repository-local temp directory under `tmp`. This avoids
+relying on a global user temp directory that may be unavailable in a restricted
+local environment and keeps overlapping test runs isolated.
 
 ## Packages
 
