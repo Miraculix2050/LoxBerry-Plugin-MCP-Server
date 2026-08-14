@@ -23,6 +23,7 @@ from mcpserver.loxone.client import (
     _loxone_uuid,
     _receive_websocket,
     _response_value,
+    _websocket_command,
 )
 from mcpserver.loxone.events import MessageHeader, MessageType
 from mcpserver.loxone.security import token_hmac
@@ -444,6 +445,23 @@ async def test_websocket_receive_classifies_miniserver_source_ip_block() -> None
     with pytest.raises(LoxoneSourceIpBlocked):
         await _receive_websocket(
             cast(Any, FakeWebSocket()), timeout_seconds=0.1, max_payload_bytes=100
+        )
+
+
+@pytest.mark.asyncio
+async def test_websocket_send_classifies_miniserver_source_ip_block() -> None:
+    class FakeWebSocket:
+        async def send(self, _message: str) -> None:
+            raise ConnectionClosedError(Close(4003, "blocked"), None)
+
+    with pytest.raises(LoxoneSourceIpBlocked):
+        await _websocket_command(
+            cast(Any, FakeWebSocket()),
+            cast(Any, object()),
+            "jdev/sys/keyexchange/value",
+            encrypted=False,
+            timeout_seconds=0.1,
+            max_payload_bytes=100,
         )
 
 

@@ -275,7 +275,13 @@ async def _websocket_command(
     max_payload_bytes: int,
 ) -> Any:
     outgoing = encryptor.encrypted_command(command) if encrypted else command
-    await websocket.send(outgoing)
+    try:
+        await websocket.send(outgoing)
+    except ConnectionClosed as exc:
+        received = exc.rcvd
+        if received is not None and received.code == 4003:
+            raise LoxoneSourceIpBlocked("Miniserver temporarily blocked this source IP") from None
+        raise LoxoneConnectionError("Miniserver WebSocket connection closed") from None
     header, payload = await _receive_websocket(
         websocket,
         timeout_seconds=timeout_seconds,

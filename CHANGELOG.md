@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Stop the MCP service before an upgrade replaces its persistent auth data, so
+  in-flight requests cannot fail against a temporarily unavailable store.
+- Classify a Miniserver source-IP lockout received while sending a WebSocket
+  command as a recoverable connection failure, including deferred token cleanup.
 - Keep a failed Loxone binary-state stream fail-closed while recording only its
   sanitized exception class; the stream task is now consumed after that record
   so its error cannot be raised a second time during session cleanup.

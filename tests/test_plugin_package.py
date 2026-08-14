@@ -201,6 +201,10 @@ def test_upgrade_preserves_configuration_in_plugin_data() -> None:
     postinstall = (ROOT / "postinstall.sh").read_text(encoding="utf-8")
 
     assert "installer_root=${6:-}" in preupgrade
+    assert "systemctl stop loxberry-mcpserver.service || exit 2" in preupgrade
+    assert preupgrade.index(
+        "systemctl stop loxberry-mcpserver.service || exit 2"
+    ) < preupgrade.index('config_file="$LBPCONFIG/$actual_folder/mcpserver.json"')
     assert 'backup_dir="$installer_root/.mcpserver-upgrade"' in preupgrade
     assert 'install -m 600 "$config_file" "$backup_dir/mcpserver.json"' in preupgrade
     assert "sessions.json loxone-tokens.json.enc install.key" in preupgrade
