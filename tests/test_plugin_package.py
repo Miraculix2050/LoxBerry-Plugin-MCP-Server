@@ -902,8 +902,12 @@ def test_plugin_archive_verifier_rejects_checksum_mismatch(tmp_path: Path) -> No
 
 def test_release_metadata_and_changelog_match_current_prerelease() -> None:
     notes = validate_release_metadata(ROOT, "0.4.0-alpha.13", "prerelease")
+    parser = configparser.ConfigParser()
+    parser.read(ROOT / "plugin.cfg", encoding="utf-8")
+    source_fallback = (ROOT / "src" / "mcpserver" / "__init__.py").read_text(encoding="utf-8")
 
     assert "Stop the MCP service before an upgrade" in notes
+    assert f'__version__ = "{parser["PLUGIN"]["VERSION"]}"' in source_fallback
     with pytest.raises(ValueError, match="stable releases"):
         validate_release_metadata(ROOT, "0.4.0-alpha.13", "stable")
     with pytest.raises(ValueError, match="versions do not match"):
