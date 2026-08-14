@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import stat
 import subprocess
 from pathlib import Path
 from typing import Any, Final
@@ -18,6 +20,25 @@ _PROC_MAX_BYTES: Final = 64 * 1024
 _SYSTEMCTL_MAX_BYTES: Final = 16 * 1024
 _SERVICE: Final = "loxberry-mcpserver.service"
 _SYSTEMCTL_PROPERTIES: Final = ("LoadState", "ActiveState", "SubState")
+_SERVICE_LOG_MAX_BYTES: Final = 512 * 1024
+_MAX_SERVICE_EVENTS: Final = 100
+_EVENT_LINE: Final = re.compile(
+    r"^(?P<timestamp>.{1,40}?) component=(?P<component>[a-z_.]{1,96}) "
+    r"severity=(?P<severity>DEBUG|INFO|WARNING|ERROR|CRITICAL)(?P<fields>.*)$"
+)
+_EVENT_FIELD: Final = re.compile(
+    r" (?P<name>trace_id|outcome|code|error_type)=(?P<value>[^ ]{1,128})"
+)
+_EVENT_COMPONENTS: Final = frozenset(
+    {
+        "mcpserver.tools",
+        "mcpserver.service",
+        "mcpserver.auth.provider",
+        "mcpserver.auth.remote_revocation",
+        "mcpserver.loxone.client",
+        "mcpserver.loxone.runtime",
+    }
+)
 
 
 class LoxBerryDiagnostics:
@@ -31,7 +52,14 @@ class LoxBerryDiagnostics:
     @staticmethod
     def _read_limited(path: Path, maximum: int) -> bytes:
         try:
-            with path.open("rb") as handle:
+            # Diagnostic sources are fixed by code. Refuse indirection even if a
+            # plugin-owned log directory is writable by the service account.
+            metadata = path.lstat()
+            if not stat.S_ISREG(metadata.st_mode):
+                raise OSError("diagnostic source is not a regular file")
+            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            descriptor = os.open(path, flags)
+            with os.fdopen(descriptor, "rb") as handle:
                 result = handle.read(maximum + 1)
         except OSError as exc:
             raise DiagnosticsUnavailable("diagnostic source unavailable") from exc
@@ -150,3 +178,30 @@ class LoxBerryDiagnostics:
             "sub_state": sub_state or "unknown",
             "healthy": installed and active_state == "active",
         }
+
+    def service_events(self, *, limit: int) -> list[dict[str, str]]:
+        """Return only allowlisted fields from this plugin's bounded service log."""
+        if not 1 <= limit <= _MAX_SERVICE_EVENTS:
+            raise ValueError("event limit is invalid")
+        # This is a fixed plugin-owned path, deliberately not an MCP argument.
+        raw = self._read_limited(
+            self._home / "log/plugins/mcpserver/service.log", _SERVICE_LOG_MAX_BYTES
+        )
+        try:
+            text = raw.decode("utf-8", "strict")
+        except UnicodeError as exc:
+            raise DiagnosticsUnavailable("diagnostic source unavailable") from exc
+        events: list[dict[str, str]] = []
+        for line in text.splitlines():
+            match = _EVENT_LINE.fullmatch(line)
+            if match is None or match["component"] not in _EVENT_COMPONENTS:
+                continue
+            event = {
+                "timestamp": match["timestamp"],
+                "component": match["component"],
+                "severity": match["severity"].lower(),
+            }
+            for field in _EVENT_FIELD.finditer(match["fields"]):
+                event[field["name"]] = field["value"]
+            events.append(event)
+        return events[-limit:]

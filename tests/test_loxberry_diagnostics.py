@@ -55,3 +55,50 @@ def test_service_health_uses_fixed_command_and_masks_missing_unit(
         "sub_state": "running",
         "healthy": True,
     }
+
+
+def test_service_events_return_only_allowlisted_fields_from_fixed_log(tmp_path: Path) -> None:
+    log = tmp_path / "log" / "plugins" / "mcpserver"
+    log.mkdir(parents=True)
+    (log / "service.log").write_text(
+        "2026-08-14 10:00:00,000 component=mcpserver.tools severity=ERROR "
+        "component=tools outcome=internal_error tool=secret error_type=ValueError\n"
+        "not an event and definitely not returned\n",
+        encoding="utf-8",
+    )
+
+    assert LoxBerryDiagnostics(tmp_path.resolve()).service_events(limit=100) == [
+        {
+            "timestamp": "2026-08-14 10:00:00,000",
+            "component": "mcpserver.tools",
+            "severity": "error",
+            "outcome": "internal_error",
+            "error_type": "ValueError",
+        }
+    ]
+
+
+def test_service_events_reject_invalid_limit_and_oversized_log(tmp_path: Path) -> None:
+    log = tmp_path / "log" / "plugins" / "mcpserver"
+    log.mkdir(parents=True)
+    target = log / "service.log"
+    target.write_text("", encoding="utf-8")
+    diagnostics = LoxBerryDiagnostics(tmp_path.resolve())
+    with pytest.raises(ValueError):
+        diagnostics.service_events(limit=0)
+    target.write_bytes(b"x" * (512 * 1024 + 1))
+    with pytest.raises(DiagnosticsUnavailable):
+        diagnostics.service_events(limit=1)
+
+
+def test_diagnostic_source_rejects_a_symlink(tmp_path: Path) -> None:
+    target = tmp_path / "target.log"
+    target.write_text("safe", encoding="utf-8")
+    source = tmp_path / "source.log"
+    try:
+        source.symlink_to(target)
+    except OSError as exc:
+        pytest.skip(f"symlinks are unavailable: {exc}")
+
+    with pytest.raises(DiagnosticsUnavailable):
+        LoxBerryDiagnostics._read_limited(source, 64)

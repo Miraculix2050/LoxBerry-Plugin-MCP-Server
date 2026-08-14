@@ -63,8 +63,10 @@ permissions. Until an administrator enables the feature globally and approves
 the pending diagnostics request,
 the client keeps its confirmed scope, but diagnostic tools continue to return
 `permission_denied`. The approval is bound to that exact OAuth client, Loxone identity
-and Miniserver. Once approved, diagnostics work in that same connection. The three diagnostics are read-only and never repair, restart, expose
-logs, or access arbitrary files. Revoking the approval ends matching sessions.
+and Miniserver. Once approved, diagnostics work in that same connection. They are read-only and never repair or restart. `loxberry_list_service_events` returns only bounded,
+server-authored event fields from the fixed plugin-owned `service.log`; it never
+exposes raw log lines, arbitrary files, journal data, or foreign services.
+Revoking the approval ends matching sessions.
 
 **Loxone history and statistics** is also disabled by default.
 `loxone:history` may be requested and confirmed beforehand; history tools return

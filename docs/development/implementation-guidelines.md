@@ -199,6 +199,14 @@ Architekturentscheidung festgehalten.
 - Wiederholte identische Fehler werden begrenzt, damit ein Ausfall weder Datenträger
   noch LoxBerry-Logverwaltung überlastet.
 - Debug-Logging ist zeitlich oder explizit aktivierbar und standardmäßig aus.
+- Erwartete Fehler werden als stabiler MCP-Fehlercode zurückgegeben und als
+  sanitisierter strukturierter Eintrag mit Komponente, Schweregrad,
+  Korrelations-ID und Ergebnis geloggt. Unerwartete Fehler enthalten intern nur
+  die Fehlerklasse, niemals Rohdaten oder einen Stacktrace.
+- Ein über MCP lesbarer Diagnosefeed darf nur explizit erlaubte,
+  server-erzeugte Strukturfelder aus einer festen plugin-eigenen Quelle liefern.
+  Er akzeptiert keine Pfade und liefert keine Rohlogzeilen, Journal-, Prozess-
+  oder Fremdservice-Daten.
 - Ein Diagnoseexport maskiert Zugangsdaten, Tokens, Sessiondaten, interne
   Adressen und andere identifizierende Werte.
 - Telemetrie an einen Hersteller- oder Projektserver findet nicht statt.

@@ -65,9 +65,11 @@ und die ausstehende
 Diagnoseanfrage freigibt, enthält die Sitzung den bestätigten Scope, aber die
 Diagnosewerkzeuge antworten weiter mit `permission_denied`.
 Die Freigabe ist exakt an OAuth-Client, Loxone-Identität und Miniserver gebunden.
-Nach der Freigabe funktionieren sie in derselben Verbindung. Die drei Diagnosen sind nur lesend,
-starten oder reparieren nichts, zeigen keine Logs und lesen keine beliebigen
-Dateien. Der Entzug beendet passende Sitzungen.
+Nach der Freigabe funktionieren sie in derselben Verbindung. Die Diagnosen sind nur lesend
+und starten oder reparieren nichts. `loxberry_list_service_events` liefert nur
+begrenzte, server-erzeugte Ereignisfelder aus dem festen plugin-eigenen
+`service.log`; es zeigt keine Rohlogzeilen und liest keine beliebigen Dateien,
+Journaldaten oder fremden Dienste. Der Entzug beendet passende Sitzungen.
 
 **Loxone-Historie und Statistiken** ist ebenfalls standardmäßig deaktiviert.
 `loxone:history` darf bereits vorher angefordert und bestätigt werden; die

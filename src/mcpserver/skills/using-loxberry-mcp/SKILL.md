@@ -59,6 +59,12 @@ required approval; do not recommend repair, restart, or a permission bypass.
 The MCP service can report its own health only while it is reachable. A fully
 stopped MCP service cannot diagnose itself through MCP.
 
+`loxberry_list_service_events` is a read-only, bounded aid for correlating a
+tool response's `trace_id` with recent server-authored diagnostic events. It
+does not expose raw logs, arbitrary files, journal output, credentials, or
+foreign services. If the service is stopped, use the local LoxBerry log viewer
+or an explicitly authorized host diagnosis instead.
+
 Optional scopes may already be present while their administrator policy gate is
 disabled. In that case the relevant tool returns `permission_denied`; explain
 which global or local approval is missing and retry only after the administrator

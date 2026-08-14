@@ -30,10 +30,15 @@ disable ends diagnostic-scoped families but retains approvals.
 
 The adapter reads only `Base.Version` from the bounded LoxBerry general config,
 fixed bounded `/proc` sources, `os.cpu_count`, `statvfs(LBHOMEDIR)`, and a
-fixed-property, three-second `/bin/systemctl show` for this service. It uses no
-shell, dynamic paths, foreign services, logs, PIDs, network data, environment
-values, or write operations. A stopped MCP service cannot report itself through
-MCP.
+fixed-property, three-second `/bin/systemctl show` for this service. The
+additional `loxberry_list_service_events` tool reads only the active,
+plugin-owned `service.log` at its fixed path. It parses server-authored,
+structured records and returns only timestamp, component, severity, trace ID,
+outcome, error code, and error type. It never returns raw lines, arbitrary
+files, backups, payloads, stack traces, identifiers, credentials, tokens,
+addresses, or foreign-service logs. It uses no shell, dynamic paths, PIDs,
+network data, environment values, or write operations. A stopped MCP service
+cannot report itself through MCP.
 
 ## Consequences
 

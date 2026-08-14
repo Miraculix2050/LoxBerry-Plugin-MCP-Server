@@ -11,7 +11,9 @@ Das McpServer-Plugin betreibt einen [Model Context Protocol (MCP)](https://model
 Der Zugriff auf Loxone-Funktionen ist durch den Loxone-Login geschützt. Ein verbindender Assistent muss sich mit einem Loxone-Benutzerkonto anmelden und kann nur die Elemente lesen oder bedienen, für die dieses Konto berechtigt ist. Steuerzugriff benötigt zusätzlich die bewusste Aktivierung im Plugin und den separat bestätigten Scope `loxone:control`.
 
 Die optionale LoxBerry-Diagnose ist standardmäßig deaktiviert. Sie zeigt nur
-maskierte System-, Plugin- und Dienststatusdaten. `loxberry:read` benötigt eine
+maskierte System-, Plugin- und Dienststatusdaten sowie begrenzte,
+server-erzeugte Ereignisfelder aus dem festen plugin-eigenen Service-Log.
+`loxberry:read` benötigt eine
 lokale Administratorfreigabe für exakt Client, Loxone-Identität und Miniserver.
 Ein Client kann sie zusammen mit den Loxone-Scopes anfordern; bis zur Freigabe
 bleibt die Diagnose ausstehend. Sie erlaubt keine
