@@ -10,7 +10,10 @@ import zipfile
 from pathlib import Path
 from typing import Final
 
-from tools.versioning import project_version
+try:
+    from tools.versioning import project_version
+except ModuleNotFoundError:  # Direct documented CLI execution from repository root.
+    from versioning import project_version
 
 _TIMESTAMP: Final = (2026, 1, 1, 0, 0, 0)
 _ROOT_FILES: Final = (
