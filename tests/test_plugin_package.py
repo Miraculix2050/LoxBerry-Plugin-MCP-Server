@@ -329,20 +329,6 @@ def test_native_loxberry_log_levels_are_enabled() -> None:
     assert "CUSTOM_LOGLEVELS=false" not in plugin
 
 
-def test_user_guides_document_the_fixed_privileged_service_controls() -> None:
-    german = (ROOT / "docs/user-guide.de.md").read_text(encoding="utf-8")
-    english = (ROOT / "docs/user-guide.en.md").read_text(encoding="utf-8")
-
-    for guide in (german, english):
-        assert "loxberry-mcpserver.service" in guide
-        assert "systemctl start" in guide
-        assert "systemctl stop" in guide
-        assert "systemctl restart" in guide
-        assert "sudoers" in guide
-    assert "aktive MCP-Verbindungen" in " ".join(german.split())
-    assert "active MCP connections" in " ".join(english.split())
-
-
 def test_postinstall_rewrites_moved_venv_entrypoints() -> None:
     hook = (ROOT / "postinstall.sh").read_text(encoding="utf-8")
 

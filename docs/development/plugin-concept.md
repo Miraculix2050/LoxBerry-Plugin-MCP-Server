@@ -2,7 +2,7 @@
 
 - **Status:** Konzeptentwurf zur fachlichen und technischen Prüfung
 - **Stand:** 2026-08-01
-- **Basis:** [Recherche-Ergebnisse](../research/research-results.md) und
+- **Basis:** historische Recherche (außerhalb des Repositorys archiviert) und
   [Implementierungsrichtlinien](implementation-guidelines.md)
 
 ## 1. Produktvision
