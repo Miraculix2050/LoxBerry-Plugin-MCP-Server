@@ -21,7 +21,7 @@
     '$ref', '$defs', 'type', 'enum', 'const', 'anyOf', 'oneOf', 'properties', 'required',
     'additionalProperties', 'items', 'minimum', 'maximum', 'minLength', 'maxLength',
     'pattern', 'minItems', 'maxItems', 'uniqueItems', 'title', 'description', 'default',
-    'examples', 'readOnly', 'writeOnly',
+    'examples', 'format', 'readOnly', 'writeOnly',
   ]);
   const TOOL_GROUPS = [
     {id: 'loxoneRead', names: [
@@ -198,7 +198,9 @@
     const useful = variants
       .map((item) => resolveRef(item, rootSchema))
       .filter((item) => item.type !== 'null');
-    return useful.length === 1 ? useful[0] : resolved;
+    if (useful.length !== 1) return resolved;
+    const {anyOf, oneOf, ...outer} = resolved;
+    return {...outer, ...useful[0]};
   }
 
   function schemaType(schema, rootSchema) {
@@ -408,6 +410,7 @@
     if (visited.has(schema)) return true;
     visited.add(schema);
     if (Object.keys(schema).some((key) => !REUSE_SCHEMA_KEYS.has(key))) return false;
+    if (schema.format !== undefined && schema.format !== 'date-time') return false;
     if (typeof schema.$ref === 'string') {
       if (!schema.$ref.startsWith('#/')) return false;
       const resolved = schema.$ref.slice(2).split('/').reduce((value, part) => {

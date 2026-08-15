@@ -357,6 +357,18 @@ def test_explorer_converts_datetime_local_values_to_rfc3339() -> None:
     assert run_core(f"core.rfc3339ToDateTimeLocal({json.dumps(converted)})") == "2026-08-12T12:34"
 
 
+def test_explorer_preserves_datetime_format_for_optional_string_fields() -> None:
+    schema = {
+        "anyOf": [{"type": "string"}, {"type": "null"}],
+        "format": "date-time",
+        "default": None,
+    }
+    encoded = json.dumps(schema)
+
+    assert run_core(f"core.effectiveSchema({encoded},{encoded}).format") == "date-time"
+    assert run_core(f"core.schemaSupportedForReuse({encoded},{encoded})") is True
+
+
 def test_explorer_reuse_honours_full_nested_schema() -> None:
     tools = [
         {

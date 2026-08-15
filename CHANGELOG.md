@@ -50,6 +50,8 @@ extracted from the matching version heading.
   contract during package builds, link it from Help and the Tool Explorer, and
   document `tools/list` as the authoritative installed tool surface.
 
+- Restore date/time pickers for optional RFC-3339 tool parameters in the Tool Explorer.
+
 - Update the bundled `using-loxberry-mcp` agent workflow to revision 24 with
   task-specific read paths, complete cache-operation authorization and
   uncertainty guidance, and fail-closed schema and parameter-source rules.
