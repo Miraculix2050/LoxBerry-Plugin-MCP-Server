@@ -104,6 +104,36 @@ acceptance for their read-only statistics metadata and retrieval paths; it does
 not confirm current state values or the remaining `PvProductionForecast` state
 delivery.
 
+## Room snapshot, weather and read-only controller acceptance
+
+On 2026-08-15, the focused deployment of the room snapshot, weather, and
+controller-model files passed its retained-backup and service-health checks on
+the authorized LoxBerry test target. A fresh MCP process then completed the
+tool-contract and canonical skill-revision checks before the feature acceptance
+calls.
+
+One real room snapshot was compared through the existing visible discovery and
+state paths. A page size of one returned a next cursor, and the cursor returned
+a different second state from the same resolved room. This confirms the bounded
+room filter, shared state resolution, and cursor path without expanding through
+hidden or unrelated controls.
+
+The configured weather service returned exactly one `actual` point with a valid
+UTC timestamp. A `forecast` request with a page size of one returned a next
+cursor and a different second forecast timestamp. This confirms the internal
+weather-state resolution, 2009-epoch conversion, and bounded pagination for the
+live installation; it is not evidence for weather history, which is not part of
+this feature.
+
+One visible real `Irrigation` and one visible real `AlarmClock` control were
+described and read. Both descriptions advertised their typed model, both
+returned at least one successfully decoded `semantic_value`, and both exposed
+an empty `allowed_actions` list. The raw state values remained available through
+the same read response. The entire acceptance was read-only: no control command,
+schedule change, alarm edit, irrigation action, or retry was issued. No room or
+control name, UUID, weather value, state value, address, or credential is
+recorded here.
+
 ## Authorized control-write acceptance
 
 On 2026-08-12, the user authorized tests only for the controls simultaneously

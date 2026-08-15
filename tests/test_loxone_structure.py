@@ -415,6 +415,47 @@ def test_structure_bounds_global_metadata_identifiers() -> None:
     }
 
 
+def test_structure_normalizes_weather_and_alarm_clock_metadata() -> None:
+    raw = {
+        "lastModified": "now",
+        "msInfo": {"serialNr": "000000000000"},
+        "rooms": {},
+        "cats": {},
+        "controls": {
+            "alarm": {
+                "name": "Alarm",
+                "type": "AlarmClock",
+                "states": {},
+                "details": {
+                    "hasNightLight": True,
+                    "brightInactiveConnected": 1,
+                    "brightActiveConnected": False,
+                    "snoozeDurationConnected": True,
+                    "wakeAlarmSounds": [{"id": 3, "name": "Tone"}],
+                    "wakeAlarmSoundConnected": True,
+                    "wakeAlarmVolumeConnected": False,
+                    "wakeAlarmSlopingConnected": 1,
+                },
+            }
+        },
+        "weatherServer": {
+            "states": {"actual": "actual-state", "forecast": "forecast-state"},
+            "format": {"temperature": "%.1f °C"},
+            "weatherTypeTexts": ["Unknown", "Clear"],
+        },
+    }
+
+    structure = normalize_structure(raw, username="reader")
+    alarm = structure.controls[0]
+
+    assert alarm.alarm_clock_has_night_light is True
+    assert alarm.alarm_clock_brightness_inactive_connected is True
+    assert alarm.alarm_clock_brightness_active_connected is False
+    assert alarm.alarm_clock_wake_alarm_sounds[0].name == "Tone"
+    assert structure.weather.formats == (("temperature", "%.1f °C"),)
+    assert structure.weather.type_texts == ((0, "Unknown"), (1, "Clear"))
+
+
 def test_structure_exposes_documented_legacy_statistic_outputs() -> None:
     raw = {
         "lastModified": "now",

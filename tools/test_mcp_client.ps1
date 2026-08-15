@@ -6,6 +6,7 @@ param(
     [string]$TemporaryOverrideFixturePath,
     [int]$CallbackPort,
     [int]$TimeoutSeconds = 120,
+    [switch]$ReadFeatureAcceptance,
     [switch]$CheckConfigurationOnly
 )
 
@@ -206,7 +207,8 @@ try {
     if ($toolsResponse.error) { throw 'MCP tools/list failed.' }
 
     $expected = @(
-        'loxone_get_system_status', 'loxone_list_rooms', 'loxone_list_categories',
+        'loxone_get_system_status', 'loxone_list_rooms', 'loxone_get_room_snapshot',
+        'loxone_list_categories', 'loxone_get_weather',
         'loxone_find_controls', 'loxone_describe_control', 'loxone_get_control_notes',
         'loxone_get_states', 'loxone_list_global_metadata',
         'loxone_get_skill_guide'
@@ -270,7 +272,7 @@ try {
     $script:nextId = 4
     $skillGuide = Invoke-ReadTool (Get-NextId) 'loxone_get_skill_guide' @{}
     if ($skillGuide.data.name -ne 'using-loxberry-mcp' -or
-        $skillGuide.data.revision -ne 17 -or
+        $skillGuide.data.revision -ne 18 -or
         $skillGuide.data.media_type -ne 'text/markdown' -or
         $skillGuide.data.content -ne $skillMarkdown) {
         throw 'MCP skill guide tool differs from the canonical resource.'
@@ -336,6 +338,123 @@ try {
     $stateUuid = @($description.data.states | ForEach-Object { $_.uuid }) | Select-Object -First 1
     if (-not $stateUuid) { throw 'The selected visible control has no readable state.' }
     [void](Invoke-ReadTool (Get-NextId) 'loxone_get_states' @{ state_uuids = @($stateUuid) })
+
+    if ($ReadFeatureAcceptance) {
+        $roomSnapshot = $null
+        $roomSnapshotSecondPage = $null
+        $roomUuids = @(
+            $allControls |
+                Where-Object { $_.room -and $_.room.uuid } |
+                ForEach-Object { [string]$_.room.uuid } |
+                Select-Object -Unique -First 100
+        )
+        foreach ($roomUuid in $roomUuids) {
+            $candidate = Invoke-ReadTool (Get-NextId) 'loxone_get_room_snapshot' @{
+                room_uuid = $roomUuid
+                limit = 1
+            }
+            if (@($candidate.data.items).Count -eq 1 -and $candidate.data.next_cursor) {
+                $roomSnapshot = $candidate
+                $roomSnapshotSecondPage = Invoke-ReadTool (Get-NextId) `
+                    'loxone_get_room_snapshot' @{
+                        room_uuid = $roomUuid
+                        cursor = $candidate.data.next_cursor
+                        limit = 1
+                    }
+                break
+            }
+        }
+        if (-not $roomSnapshot -or @($roomSnapshotSecondPage.data.items).Count -ne 1 -or
+            $roomSnapshot.data.room.uuid -notin $roomUuids -or
+            $roomSnapshot.data.items[0].state.uuid -eq
+                $roomSnapshotSecondPage.data.items[0].state.uuid) {
+            throw 'Room snapshot acceptance could not prove two bounded read-only pages.'
+        }
+
+        $actualWeather = Invoke-ReadTool (Get-NextId) 'loxone_get_weather' @{
+            mode = 'actual'
+            limit = 1
+        }
+        if ($actualWeather.data.mode -ne 'actual') {
+            throw 'Actual weather acceptance returned the wrong mode.'
+        }
+        if (@($actualWeather.data.items).Count -ne 1) {
+            throw 'Actual weather acceptance did not return exactly one point.'
+        }
+        if ($actualWeather.data.next_cursor) {
+            throw 'Actual weather acceptance unexpectedly returned a cursor.'
+        }
+        $actualWeatherAt = [DateTimeOffset]::MinValue
+        $actualWeatherAtValue = $actualWeather.data.items[0].at
+        $actualWeatherAtValid = if ($actualWeatherAtValue -is [DateTime]) {
+            $actualWeatherAt = [DateTimeOffset]$actualWeatherAtValue
+            $true
+        } else {
+            [DateTimeOffset]::TryParse([string]$actualWeatherAtValue, [ref]$actualWeatherAt)
+        }
+        if (-not $actualWeatherAtValid -or $actualWeatherAt.Offset -ne [TimeSpan]::Zero) {
+            throw 'Actual weather acceptance returned an invalid UTC timestamp.'
+        }
+        $forecastWeather = Invoke-ReadTool (Get-NextId) 'loxone_get_weather' @{
+            mode = 'forecast'
+            limit = 1
+        }
+        if ($forecastWeather.data.mode -ne 'forecast' -or
+            @($forecastWeather.data.items).Count -ne 1 -or
+            -not $forecastWeather.data.next_cursor) {
+            throw 'Forecast weather acceptance did not expose a bounded next page.'
+        }
+        $forecastWeatherSecondPage = Invoke-ReadTool (Get-NextId) 'loxone_get_weather' @{
+            mode = 'forecast'
+            cursor = $forecastWeather.data.next_cursor
+            limit = 1
+        }
+        if (@($forecastWeatherSecondPage.data.items).Count -ne 1 -or
+            $forecastWeather.data.items[0].at -eq $forecastWeatherSecondPage.data.items[0].at) {
+            throw 'Forecast weather acceptance returned an invalid second page.'
+        }
+
+        foreach ($controlType in @('Irrigation', 'AlarmClock')) {
+            $found = Invoke-ReadTool (Get-NextId) 'loxone_find_controls' @{
+                control_type = $controlType
+                limit = 1
+            }
+            if (@($found.data.items).Count -ne 1) {
+                throw "No visible $controlType control is available for read-only acceptance."
+            }
+            $controller = Invoke-ReadTool (Get-NextId) 'loxone_describe_control' @{
+                control_uuid = $found.data.items[0].uuid
+            }
+            if (-not $controller.data.capabilities.readable -or
+                @($controller.data.capabilities.allowed_actions).Count -ne 0) {
+                throw "$controlType does not satisfy the read-only controller contract."
+            }
+            $modelName = if ($controlType -eq 'Irrigation') { 'irrigation' } else { 'alarm_clock' }
+            if (-not $controller.data.capabilities.model.$modelName) {
+                throw "$controlType is missing its semantic controller model."
+            }
+            $controllerStateUuids = @(
+                $controller.data.states |
+                    ForEach-Object { [string]$_.uuid } |
+                    Select-Object -First 100
+            )
+            if ($controllerStateUuids.Count -eq 0) {
+                throw "$controlType has no visible state for semantic acceptance."
+            }
+            $controllerStates = Invoke-ReadTool (Get-NextId) 'loxone_get_states' @{
+                state_uuids = $controllerStateUuids
+            }
+            if (@($controllerStates.data.states).Count -ne $controllerStateUuids.Count -or
+                @($controllerStates.data.states | Where-Object {
+                    $null -ne $_.semantic_value
+                }).Count -eq 0) {
+                throw "$controlType did not return a current semantic state."
+            }
+        }
+        'mcp_room_snapshot_acceptance=pass'
+        'mcp_weather_acceptance=pass'
+        'mcp_readonly_controller_models_acceptance=pass'
+    }
 
     if ($ControlFixturePath) {
         $controlFixture = Get-Content -LiteralPath $ControlFixturePath -Raw | ConvertFrom-Json
@@ -426,8 +545,8 @@ try {
     $stateUuid = $null
     'mcp_tool_contract=pass'
     'mcp_skill_delivery=pass'
-    if ($ControlFixturePath) { 'mcp_six_data_tools_plus_skill_guide_and_control=pass' }
-    else { 'mcp_six_data_tools_plus_skill_guide=pass' }
+    if ($ControlFixturePath) { 'mcp_read_tools_plus_skill_guide_and_control=pass' }
+    else { 'mcp_read_tools_plus_skill_guide=pass' }
     if ($VisibilityFixturePath) { 'mcp_visibility_filter=pass' }
 } finally {
     try { $process.StandardInput.Close() } catch {}

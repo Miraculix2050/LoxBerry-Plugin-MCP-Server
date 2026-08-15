@@ -45,8 +45,10 @@ ausschließlich flüchtigen Statistik-Cache. Das Schreibwerkzeug unterstützt au
 `Pushbutton`. Es bleibt
 standardmäßig deaktiviert, akzeptiert ausschließlich typabhängige dokumentierte
 Aktionen und benötigt den separat bestätigten Scope `loxone:control`. Freie
-Kommandos, Namens- und Sammelziele sind ausgeschlossen. Die sechs stabilen
-lesenden Tools und bestehende Read-only-Sitzungen bleiben kompatibel. Die neuen
+Kommandos, Namens- und Sammelziele sind ausgeschlossen. Die stabilen lesenden
+Tools und bestehende Read-only-Sitzungen bleiben kompatibel. Dazu gehören ein
+seitenweiser Raumzustands-Snapshot, aktuelles Wetter und der bis zu 96 Stunden
+begrenzte Forecast sowie read-only Semantik für `Irrigation` und `AlarmClock`. Die neuen
 Phase-4-Pfade sind automatisiert geprüft; die abgegrenzten Hardware-Nachweise
 stehen im Phase-4-Abnahmebericht.
 

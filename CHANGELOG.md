@@ -5,6 +5,16 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add `loxone_get_room_snapshot` for bounded current states in one exact visible
+  room and `loxone_get_weather` for current or paginated forecast weather.
+
+- Add compatible semantic state values and read-only description models for
+  visible `Irrigation` and `AlarmClock` controls while preserving their raw values
+  and advertising no actions.
+
+- Update the bundled `using-loxberry-mcp` agent workflow to revision 18 for room
+  snapshots, weather, and the new read-only controller interpretations.
+
 - Add an explicit, fail-closed `room_group` reference to each visible room from
   `loxone_list_rooms`, and resolve visible room and control references in
   StatusMonitor and WindowMonitor descriptions.

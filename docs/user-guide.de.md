@@ -305,6 +305,12 @@ Explizite Benutzerverlinkungen aus dem Loxone-Feld `links` stehen getrennt unter
 `visibility: "linked"`, sind über ihren eigenen Namen auffindbar und für Zustände,
 Notes, Historie, Statistik und die bestehende Aktions-Allowlist genauso verfügbar
 wie andere sichtbare Controls.
+`loxone_get_room_snapshot` fasst die aktuellen States der sichtbaren Controls mit
+exakt derselben Raum-UUID seitenweise zusammen. Es erweitert keine Control-
+Beziehungen und enthält keine Controls ohne States; für das vollständige Inventar
+bleibt `loxone_find_controls` maßgeblich. Rohwert, optionale semantische
+Interpretation, Freshness und Beobachtungszeit stammen je Seite aus demselben
+Runtime-Snapshot.
 Bei `UpDownAnalog`, `Slider` und `LeftRightAnalog` stehen die Min-/Max-Grenzen und der Schritt für `set_value`
 unter `capabilities.analog_range`.
 Bei `StatusMonitor` liefert `capabilities.status_monitor` die stabilen
@@ -357,6 +363,8 @@ Umbenennungs-, Experten- oder freien Kommandos.
 | Klima/Lüftung | `IRCV2Daytimer` | ja | nein | typisierte analoge Kalender-Metadaten; keine Kalenderwrites | in eigener Installation lesend prüfbar |
 | Klima/Lüftung | entsprechende V1-Typen, sofern vom Miniserver sichtbar | ja | nein | – | generischer Lesepfad, nicht real verifiziert |
 | Sensorik/Status | `InfoOnlyAnalog`, `InfoOnlyDigital`, `InfoOnlyText`, `TextState`, `StatusMonitor`, `WindowMonitor`, `SmokeAlarm`, `Tracker`, `Intercom` | ja | nein | typisierte sichtbare Statusmetadaten, soweit dokumentiert; keine Alarm-, Sperr-, Intercom- oder Quittierungsaktionen | die sichtbaren Beschreibungen von `StatusMonitor`, `WindowMonitor`, `SmokeAlarm`, `Tracker` und `Intercom` sind real bestätigt; WindowMonitor-Eintrag-/Control-Referenzen und aktuelle Aggregat-States sind real bestätigt, die aktuellen States der übrigen Familien sind dokumentationsbasiert oder auf dieser Fixture `unknown` |
+| Garten | `Irrigation` | ja | nein | Zonen, Regenstatus und aktuelle Zone als additive Semantik; Rohwerte bleiben erhalten | automatisiert getestet und an einem realen Control semantisch gelesen; keine Actions angeboten |
+| Zeit/Wecken | `AlarmClock` | ja | nein | Einträge, Zeiten, Status und sichtbare Weckermetadaten als additive Semantik; keine Kalender- oder Alarmaktionen | automatisiert getestet und an einem realen Control semantisch gelesen; keine Actions angeboten |
 | Energie/sonstige | `Meter`, `EFM`, `PvProductionForecast`, `Slider`, `Webpage` | ja | nein | sichtbare States und Statistik, soweit angeboten | `Meter` und `EFM` sind mit sichtbarer Beschreibung und begrenzter Stundenstatistik real bestätigt; aktuelle States und `PvProductionForecast` bleiben nicht hardware-verifiziert |
 
 „Lesen“ umfasst nur sichtbare Struktur und Zustände. Bei `Jalousie` werden
@@ -375,7 +383,14 @@ explizit per Identifier geschlüsselte LoxAPP3-Objekte; ein nicht auflösbarer E
 mit Name oder Index gemeldet und nie über eine Namensheuristik verknüpft. `loxone_list_global_metadata` liefert seitenweise nur sichtbare
 Betriebsarten, Modi, Zeiten, Raumgruppen-Definitionen, globale States und Wetter-State-Referenzen. Es liefert
 niemals ein Roh-LoxAPP3-Dokument und ändert weder Kalender noch globale Betriebsarten. Daytimer- und Wetter-WebSocket-Frames werden als benannte, begrenzte Einträge statt
-als Protokoll-Tupel ausgegeben.
+als Protokoll-Tupel ausgegeben. `loxone_get_weather` löst diese Referenzen intern
+auf: `mode: "actual"` liefert das aktuelle Wetter, `mode: "forecast"` standardmäßig
+bis zu 96 Forecast-Stunden seitenweise. Das Tool zeichnet keine Wetterhistorie auf.
+
+Für `Irrigation` und `AlarmClock` ergänzt `loxone_get_states` den unveränderten
+`value` um ein begrenztes `semantic_value`. Ungültige oder zu große JSON-
+Zustände bleiben als Rohwert sichtbar, erhalten keine Interpretation und erzeugen
+eine Warnung. Beide Typen bleiben unabhängig vom Control-Scope ohne Actions.
 
 `loxberry:operate` verwendet denselben lokalen, an Client, Loxone-Identität und
 Miniserver gebundenen Freigabemechanismus wie `loxberry:read`. Die einzige

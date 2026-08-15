@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from datetime import UTC, datetime
 
@@ -25,11 +26,13 @@ from mcpserver.loxone.models import (
     LoxoneIdentity,
     LoxoneStructure,
     NamedGroup,
+    NamedOption,
     Room,
     StateRecord,
     StatisticSeries,
     StatusMonitorInput,
     StatusMonitorStatus,
+    WeatherMetadata,
     WindowMonitorItem,
 )
 from mcpserver.loxone.runtime import ControlHistoryEntry, RuntimeSnapshot
@@ -478,11 +481,13 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert tool.annotations.destructiveHint is False
     assert tool.annotations.openWorldHint is False
     assert result.data.name == "using-loxberry-mcp"  # type: ignore[union-attr]
-    assert result.data.revision == 17  # type: ignore[union-attr]
+    assert result.data.revision == 18  # type: ignore[union-attr]
     assert result.data.media_type == "text/markdown"  # type: ignore[union-attr]
     assert result.data.content == read_skill_markdown()  # type: ignore[union-attr]
     assert "For a `StatusMonitor`, use its `inputStates` state UUID." in result.data.content  # type: ignore[union-attr]
     assert "`room_group`" in result.data.content  # type: ignore[union-attr]
+    assert "`loxone_get_room_snapshot`" in result.data.content  # type: ignore[union-attr]
+    assert "`loxone_get_weather" in result.data.content  # type: ignore[union-attr]
 
 
 def test_tool_input_schemas_explain_every_argument() -> None:
@@ -493,7 +498,9 @@ def test_tool_input_schemas_explain_every_argument() -> None:
 
     expected_fields = {
         "loxone_list_rooms": {"cursor", "limit"},
+        "loxone_get_room_snapshot": {"room_uuid", "cursor", "limit"},
         "loxone_list_categories": {"cursor", "limit"},
+        "loxone_get_weather": {"mode", "cursor", "limit"},
         "loxone_find_controls": {
             "query",
             "room_uuid",
@@ -544,6 +551,9 @@ def test_tool_input_schemas_explain_every_argument() -> None:
     state_uuids = published["loxone_get_states"].parameters["properties"]["state_uuids"]
     assert state_uuids["minItems"] == 1
     assert state_uuids["maxItems"] == 100
+    weather = published["loxone_get_weather"].parameters["properties"]
+    assert weather["mode"]["default"] == "forecast"
+    assert weather["limit"]["maximum"] == 96
     for name in ("level", "position", "slat_position"):
         assert operation[name]["minimum"] == 0
         assert operation[name]["maximum"] == 100
@@ -1071,6 +1081,281 @@ async def test_get_states_accepts_advertised_global_metadata_states(
 
     assert result.ok is True
     assert result.data.states[0].value == 1.0  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+async def test_room_snapshot_matches_additive_irrigation_state_semantics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    access = _loxberry_access(READ_SCOPE)
+    zones = (
+        '[{"id":0,"name":"Front","duration":600,"setByLogic":false,"futureField":{"ignored":true}}]'
+    )
+    irrigation = Control(
+        uuid="irrigation",
+        name="Irrigation",
+        control_type="Irrigation",
+        room_uuid="room-1",
+        category_uuid=None,
+        action_uuid="action",
+        state_uuids=(
+            ("zones", "zones-state"),
+            ("currentZone", "current-state"),
+            ("rainActive", "rain-state"),
+        ),
+    )
+    structure = LoxoneStructure(
+        identity=LoxoneIdentity("user", "serial"),
+        last_modified="1",
+        rooms=(Room("room-1", "Garden"), Room("room-2", "Empty")),
+        categories=(),
+        controls=(irrigation,),
+        hidden_controls=(
+            Control(
+                uuid="hidden",
+                name="Hidden",
+                control_type="InfoOnlyAnalog",
+                room_uuid="room-1",
+                category_uuid=None,
+                action_uuid=None,
+                state_uuids=(("value", "hidden-state"),),
+                is_hidden=True,
+            ),
+        ),
+    )
+    records = {
+        "zones-state": StateRecord("zones-state", zones, Freshness.CURRENT, 1_700_000_000.0),
+        "current-state": StateRecord("current-state", 0.0, Freshness.CURRENT, 1_700_000_001.0),
+        "rain-state": StateRecord("rain-state", 1.0, Freshness.STALE, 1_700_000_002.0),
+        "hidden-state": StateRecord("hidden-state", 1.0, Freshness.CURRENT, 1_700_000_003.0),
+    }
+
+    class Runtime:
+        def state(self, _snapshot: RuntimeSnapshot, uuid: str) -> StateRecord:
+            return records[uuid]
+
+    async def snapshot(_runtime: object) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+        return access, RuntimeSnapshot("family", structure, True)
+
+    monkeypatch.setattr(tools_module, "_snapshot", snapshot)
+    server = FastMCP("room-snapshot")
+    register_read_tools(server, Runtime())  # type: ignore[arg-type]
+    room_tool = server._tool_manager.get_tool("loxone_get_room_snapshot")
+    states_tool = server._tool_manager.get_tool("loxone_get_states")
+    describe_tool = server._tool_manager.get_tool("loxone_describe_control")
+    assert room_tool is not None and states_tool is not None and describe_tool is not None
+
+    first = await room_tool.fn("room-1", limit=2)
+    second = await room_tool.fn("room-1", cursor=first.data.next_cursor, limit=2)  # type: ignore[union-attr]
+    wrong_cursor = await room_tool.fn("room-2", cursor=first.data.next_cursor, limit=2)  # type: ignore[union-attr]
+    missing = await room_tool.fn("missing")
+    states = await states_tool.fn(["zones-state", "current-state", "rain-state"])
+    description = await describe_tool.fn("irrigation")
+
+    assert first.ok is True and second.ok is True
+    assert [item.state.name for item in first.data.items] == ["zones", "currentZone"]  # type: ignore[union-attr]
+    assert [item.state.name for item in second.data.items] == ["rainActive"]  # type: ignore[union-attr]
+    assert second.stale is True
+    assert first.data.items[0].state.value == zones  # type: ignore[union-attr]
+    assert first.data.items[0].state.semantic_value == states.data.states[0].semantic_value  # type: ignore[union-attr]
+    assert states.data.states[1].semantic_value == {  # type: ignore[union-attr]
+        "status": "zone",
+        "zone_id": 0,
+        "zone_name": "Front",
+    }
+    assert states.data.states[2].semantic_value is True  # type: ignore[union-attr]
+    assert description.data.capabilities.allowed_actions == []  # type: ignore[union-attr]
+    assert description.data.capabilities.model.irrigation.all_zones_id == 8  # type: ignore[union-attr]
+    assert wrong_cursor.data.error == "invalid_input"  # type: ignore[union-attr]
+    assert missing.data.error == "not_found"  # type: ignore[union-attr]
+
+    incomplete = '[{"id":0,"name":"Front"}]'
+    records["zones-state"] = StateRecord(
+        "zones-state", incomplete, Freshness.CURRENT, 1_700_000_004.0
+    )
+    incomplete_result = await states_tool.fn(["zones-state"])
+    assert incomplete_result.data.states[0].value == incomplete  # type: ignore[union-attr]
+    assert incomplete_result.data.states[0].semantic_value is None  # type: ignore[union-attr]
+    assert incomplete_result.warnings
+
+    too_many = json.dumps(
+        [{"id": index, "name": "Zone", "duration": 1, "setByLogic": False} for index in range(101)]
+    )
+    records["zones-state"] = StateRecord(
+        "zones-state", too_many, Freshness.CURRENT, 1_700_000_005.0
+    )
+    bounded_result = await states_tool.fn(["zones-state"])
+    assert bounded_result.data.states[0].value == too_many  # type: ignore[union-attr]
+    assert bounded_result.data.states[0].semantic_value is None  # type: ignore[union-attr]
+    assert bounded_result.warnings
+
+
+@pytest.mark.asyncio
+async def test_weather_tool_pages_actual_and_forecast_without_state_uuid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    access = _loxberry_access(READ_SCOPE)
+    structure = LoxoneStructure(
+        identity=LoxoneIdentity("user", "serial"),
+        last_modified="1",
+        rooms=(),
+        categories=(),
+        controls=(),
+        global_metadata=(
+            GlobalMetadata("weather_state", "actual", "actual", state_uuid="actual-state"),
+            GlobalMetadata("weather_state", "forecast", "forecast", state_uuid="forecast-state"),
+        ),
+        weather=WeatherMetadata(formats=(("temperature", "%.1f °C"),), type_texts=((1, "Clear"),)),
+    )
+
+    def point(timestamp: int, temperature: float) -> dict[str, object]:
+        return {
+            "timestamp": timestamp,
+            "weather_type": 1,
+            "wind_direction": 180,
+            "solar_radiation": 100,
+            "relative_humidity": 50,
+            "temperature": temperature,
+            "perceived_temperature": temperature - 1,
+            "dew_point": 5.0,
+            "precipitation": 0.0,
+            "wind_speed": 3.0,
+            "barometric_pressure": 1013.0,
+        }
+
+    records = {
+        "actual-state": StateRecord(
+            "actual-state",
+            {"last_update": 1, "entries": [point(0, 20.0)]},
+            Freshness.CURRENT,
+            1_700_000_000.0,
+        ),
+        "forecast-state": StateRecord(
+            "forecast-state",
+            {"last_update": 1, "entries": [point(3600, 21.0), point(7200, 22.0)]},
+            Freshness.STALE,
+            1_700_000_000.0,
+        ),
+    }
+
+    class Runtime:
+        def state(self, _snapshot: RuntimeSnapshot, uuid: str) -> StateRecord:
+            return records[uuid]
+
+    async def snapshot(_runtime: object) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+        return access, RuntimeSnapshot("family", structure, True)
+
+    monkeypatch.setattr(tools_module, "_snapshot", snapshot)
+    server = FastMCP("weather")
+    register_read_tools(server, Runtime())  # type: ignore[arg-type]
+    tool = server._tool_manager.get_tool("loxone_get_weather")
+    assert tool is not None
+
+    first = await tool.fn(limit=1)
+    second = await tool.fn(cursor=first.data.next_cursor, limit=1)  # type: ignore[union-attr]
+    actual = await tool.fn("actual")
+    wrong_cursor = await tool.fn("actual", cursor=first.data.next_cursor)  # type: ignore[union-attr]
+    records["forecast-state"] = StateRecord("forecast-state", None, Freshness.UNKNOWN, None)
+    unavailable = await tool.fn()
+
+    assert first.data.mode == "forecast"  # type: ignore[union-attr]
+    assert first.data.items[0].at == "2009-01-01T01:00:00Z"  # type: ignore[union-attr]
+    assert first.data.items[0].weather_type_text == "Clear"  # type: ignore[union-attr]
+    assert first.data.formats == {"temperature": "%.1f °C"}  # type: ignore[union-attr]
+    assert first.stale is True and second.data.next_cursor is None  # type: ignore[union-attr]
+    assert len(actual.data.items) == 1  # type: ignore[union-attr]
+    assert wrong_cursor.ok is False
+    assert wrong_cursor.data.error == "invalid_input"  # type: ignore[union-attr]
+    assert unavailable.data.error == "temporarily_unavailable"  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+async def test_alarm_clock_model_and_semantics_remain_read_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    access = _loxberry_access(READ_SCOPE, CONTROL_SCOPE)
+    entries = (
+        '{"3":{"name":"Morning","isActive":true,"alarmTime":25200,'
+        '"modes":[1,2],"nightLight":false,"daily":false,'
+        '"futureField":{"ignored":true}}}'
+    )
+    alarm = Control(
+        uuid="alarm",
+        name="Alarm",
+        control_type="AlarmClock",
+        room_uuid=None,
+        category_uuid=None,
+        action_uuid="action",
+        state_uuids=(
+            ("entryList", "entries"),
+            ("nextEntry", "next"),
+            ("nextEntryTime", "time"),
+            ("isEnabled", "enabled"),
+            ("deviceState", "device"),
+            ("deviceSettings", "settings"),
+        ),
+        alarm_clock_has_night_light=True,
+        alarm_clock_wake_alarm_sounds=(NamedOption(3, "Tone"),),
+    )
+    structure = LoxoneStructure(
+        identity=LoxoneIdentity("user", "serial"),
+        last_modified="1",
+        rooms=(),
+        categories=(),
+        controls=(alarm,),
+    )
+    records = {
+        "entries": StateRecord("entries", entries, Freshness.CURRENT, 1.0),
+        "next": StateRecord("next", 3.0, Freshness.CURRENT, 1.0),
+        "time": StateRecord("time", 3600.0, Freshness.CURRENT, 1.0),
+        "enabled": StateRecord("enabled", 1.0, Freshness.CURRENT, 1.0),
+        "device": StateRecord("device", 2.0, Freshness.CURRENT, 1.0),
+        "settings": StateRecord("settings", "{", Freshness.CURRENT, 1.0),
+    }
+
+    class Runtime:
+        def state(self, _snapshot: RuntimeSnapshot, uuid: str) -> StateRecord:
+            return records[uuid]
+
+    async def snapshot(_runtime: object) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+        return access, RuntimeSnapshot("family", structure, True)
+
+    monkeypatch.setattr(tools_module, "_snapshot", snapshot)
+    server = FastMCP("alarm-clock")
+    register_read_tools(server, Runtime(), control_enabled=True)  # type: ignore[arg-type]
+    describe = server._tool_manager.get_tool("loxone_describe_control")
+    states_tool = server._tool_manager.get_tool("loxone_get_states")
+    assert describe is not None and states_tool is not None
+
+    description = await describe.fn("alarm")
+    states = await states_tool.fn(["entries", "next", "time", "enabled", "device", "settings"])
+
+    assert description.data.capabilities.allowed_actions == []  # type: ignore[union-attr]
+    model = description.data.capabilities.model.alarm_clock  # type: ignore[union-attr]
+    assert model.has_night_light is True
+    assert model.wake_alarm_sounds[0].name == "Tone"
+    assert states.data.states[0].value == entries  # type: ignore[union-attr]
+    assert states.data.states[0].semantic_value[0]["alarm_time"] == "07:00:00"  # type: ignore[index,union-attr]
+    assert states.data.states[1].semantic_value["entry"]["id"] == 3  # type: ignore[index,union-attr]
+    assert states.data.states[2].semantic_value["at"] == "2009-01-01T01:00:00Z"  # type: ignore[index,union-attr]
+    assert states.data.states[3].semantic_value is True  # type: ignore[union-attr]
+    assert states.data.states[4].semantic_value == {"status": "online"}  # type: ignore[union-attr]
+    assert states.data.states[5].semantic_value is None  # type: ignore[union-attr]
+    assert states.warnings
+
+    invalid_time = 4_000_000_001.0
+    records["time"] = StateRecord("time", invalid_time, Freshness.CURRENT, 2.0)
+    invalid_time_result = await states_tool.fn(["time"])
+    assert invalid_time_result.data.states[0].value == invalid_time  # type: ignore[union-attr]
+    assert invalid_time_result.data.states[0].semantic_value is None  # type: ignore[union-attr]
+    assert invalid_time_result.warnings
+
+    malicious_entries = '{"__proto__":{"name":"ignored"}}'
+    records["entries"] = StateRecord("entries", malicious_entries, Freshness.CURRENT, 3.0)
+    malicious_result = await states_tool.fn(["entries"])
+    assert malicious_result.data.states[0].value == malicious_entries  # type: ignore[union-attr]
+    assert malicious_result.data.states[0].semantic_value is None  # type: ignore[union-attr]
+    assert malicious_result.warnings
 
 
 @pytest.mark.asyncio

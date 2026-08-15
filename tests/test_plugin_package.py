@@ -95,6 +95,10 @@ def test_mcp_client_smoke_covers_skill_delivery_surfaces() -> None:
     assert "Temporary override control is outside the approved test intersection." in script
     assert "Temporary override starts must use the fixed 60-second test duration." in script
     assert "Read-only tool $Name returned error code $($envelope.data.error)." in script
+    assert "[switch]$ReadFeatureAcceptance" in script
+    assert "mcp_room_snapshot_acceptance=pass" in script
+    assert "mcp_weather_acceptance=pass" in script
+    assert "mcp_readonly_controller_models_acceptance=pass" in script
 
 
 @pytest.mark.parametrize("variant", ["extra", "duplicate", "missing"])
@@ -792,6 +796,8 @@ def test_mcp_client_probe_resolves_windows_application_aliases() -> None:
     assert "Select-Object -First 1" in script
     assert "$startInfo.FileName = Resolve-ProcessCommand ([string]$server.command)" in script
     assert "'loxone_list_global_metadata'" in script
+    assert "'loxone_get_room_snapshot'" in script
+    assert "'loxone_get_weather'" in script
     assert "$optional = @(" in script
     assert "$tool.annotations.idempotentHint -ne $false" in script
     assert "$tool.name -eq 'loxberry_clear_statistics_cache'" in script
