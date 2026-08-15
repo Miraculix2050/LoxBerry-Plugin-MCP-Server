@@ -7,6 +7,11 @@ import configparser
 import re
 from pathlib import Path
 
+try:
+    from tools.versioning import VERSION_PATTERN
+except ModuleNotFoundError:  # Direct documented CLI execution from repository root.
+    from versioning import VERSION_PATTERN
+
 
 def _read(path: Path) -> configparser.ConfigParser:
     parser = configparser.ConfigParser()
@@ -17,9 +22,9 @@ def _read(path: Path) -> configparser.ConfigParser:
 def validate(root: Path, version: str, channel: str) -> str:
     if channel not in {"prerelease", "stable"}:
         raise ValueError("channel must be prerelease or stable")
-    prerelease = re.fullmatch(r"\d+\.\d+\.\d+-(?:alpha|beta)\.\d+", version)
+    prerelease = re.fullmatch(r"\d+\.\d+\.\d+-(?:alpha|beta)\.(?:0|[1-9]\d*)", version)
     stable = re.fullmatch(r"\d+\.\d+\.\d+", version)
-    if not prerelease and not stable:
+    if VERSION_PATTERN.fullmatch(version) is None or (not prerelease and not stable):
         raise ValueError("version must use x.y.z, x.y.z-alpha.n or x.y.z-beta.n")
     if channel == "stable" and not stable:
         raise ValueError("stable releases must not use a prerelease version")

@@ -6,7 +6,7 @@ if ! command -v python3.13 >/dev/null 2>&1; then
     exit 2
 fi
 if [ "$(dpkg --print-architecture 2>/dev/null)" != "arm64" ]; then
-    echo "<ERROR> This alpha package contains arm64 runtime wheels only."
+    echo "<ERROR> This prerelease package contains arm64 runtime wheels only."
     exit 2
 fi
 for command in openssl systemctl systemd-run apache2ctl; do
