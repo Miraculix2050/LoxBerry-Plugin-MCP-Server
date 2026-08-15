@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+import re
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -725,13 +726,24 @@ def test_consent_page_uses_one_permission_dialog_for_read_and_control(tmp_path: 
     )
 
     response = web._consent_page(transaction)
+    page = response.body.decode()
 
     assert response.status_code == 200
-    assert "Choose permissions / Berechtigungen auswählen" in response.body.decode()
-    assert 'type="checkbox" checked disabled' in response.body.decode()
-    assert 'name="grant_control" value="true"' in response.body.decode()
-    assert "Confirm permissions / Berechtigungen bestätigen" in response.body.decode()
-    assert "redirected to your MCP client" in response.body.decode()
+    assert "Choose permissions / Berechtigungen auswählen" in page
+    assert 'type="checkbox" checked disabled' in page
+    assert 'id="grant_all" type="checkbox"' in page
+    assert "Select all / Alle auswählen" in page
+    assert "Deselect all / Alle abwählen" in page
+    assert "data-optional-scope" in page
+    assert "options.forEach((option) => { option.checked = selectAll.checked; });" in page
+    nonce_match = re.search(r'<script nonce="([^\"]+)">', page)
+    assert nonce_match is not None
+    assert (
+        f"script-src 'nonce-{nonce_match.group(1)}'" in response.headers["content-security-policy"]
+    )
+    assert 'name="grant_control" value="true"' in page
+    assert "Confirm permissions / Berechtigungen bestätigen" in page
+    assert "redirected to your MCP client" in page
 
 
 @pytest.mark.asyncio
