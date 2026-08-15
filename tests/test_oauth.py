@@ -738,6 +738,7 @@ def test_consent_page_uses_one_permission_dialog_for_read_and_control(tmp_path: 
     assert "options.forEach((option) => { option.checked = selectAll.checked; });" in page
     nonce_match = re.search(r'<script nonce="([^\"]+)">', page)
     assert nonce_match is not None
+    assert page.index("<script") > page.index("</main>")
     assert (
         f"script-src 'nonce-{nonce_match.group(1)}'" in response.headers["content-security-policy"]
     )

@@ -696,7 +696,7 @@ sync();
 <fieldset class="scope-list"><legend>Permissions / Berechtigungen</legend>
 {select_all_option}
 <label class="scope-option"><input type="checkbox" checked disabled><span><strong>Read access / Lesezugriff</strong><small>Required: read permitted Loxone structure and states. / Erforderlich: Freigegebene Loxone-Struktur und Zustände lesen.</small></span></label>
-{history_option}{control_option}{loxberry_option}{operate_option}</fieldset>{select_all_script}
+{history_option}{control_option}{loxberry_option}{operate_option}</fieldset>
 <p class="notice">After confirmation, you will be redirected to your MCP client. / Nach der Bestätigung werden Sie zu Ihrem MCP-Client weitergeleitet.</p>
 <div class="actions"><button type="submit">Confirm permissions / Berechtigungen bestätigen</button></div></form>
 <form method="post" action="/plugins/mcpserver/oauth/authorize">{self._hidden(transaction, "deny")}
