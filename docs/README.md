@@ -9,3 +9,4 @@
 - [User documentation](user/README.md) — installation, configuration and operation.
 - [Client setup](clients/README.md) — supported client connection guides.
 - [Developer documentation](development/README.md) — architecture, contracts, tests and releases.
+- [Evidence](evidence/README.md) — current public support evidence.

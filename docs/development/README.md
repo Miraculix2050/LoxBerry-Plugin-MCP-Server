@@ -7,8 +7,10 @@
 ## Contents
 
 - [Implementation guidelines](implementation-guidelines.md) — binding engineering and security rules.
-- [Plugin concept](plugin-concept.md) — current product and technical concept; replaced by architecture documentation during the beta transition.
+- [Architecture](architecture.md) — implemented system boundaries and data flows.
+- [Historical plugin concept](plugin-concept.md) — compatibility entry point for the superseded planning document.
 - [Support matrix](support-matrix.md) — confirmed platforms, clients and limits.
+- [Evidence](../evidence/README.md) — current public evidence summary.
 - [Test strategy](test-strategy.md) — change-driven validation.
 - [Release process](release-process.md) — publication workflow.
 - [Architecture decisions](adr/README.md) — recorded decisions and their status.

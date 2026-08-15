@@ -125,7 +125,7 @@ Freigabeseite im Browser.
 > **Mit Claude abgenommen:** Registrierung, Freigabe mit `loxone:control`,
 > Werkzeugsichtbarkeit und ein realer Aufruf wurden vollständig bestätigt. Der
 > sichere Standard bleibt Read-only. Der Nachweis steht im
-> [Phase-2-Abnahmebericht](../development/phase-2-acceptance.md).
+> [aktuellen Evidenzübersicht](../evidence/current-evidence.md).
 
 Dieser Abschnitt gilt nur, wenn in der Plugin-Oberfläche unter **Zugriff auf den
 Miniserver über den MCP Server** bewusst **Lesen und steuern** gewählt wurde.

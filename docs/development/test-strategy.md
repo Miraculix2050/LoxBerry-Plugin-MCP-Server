@@ -89,7 +89,7 @@ unkritischen Steuerungen mit Wiederherstellung.
 
 Nicht real geprüfte Kombinationen bleiben `unverified` oder `experimental`; Mocks
 ersetzen keine Hardware-Evidenz. Für Gen. 2 gilt der separate
-[Beta-Testplan](gen2-beta-test.md). Maintainer und AI-Agenten greifen nur mit einer
+[Gen.-2-Kompatibilitätstest](gen2-compatibility-test.md). Maintainer und AI-Agenten greifen nur mit einer
 separaten ausdrücklichen Zustimmung auf Geräte Dritter zu.
 
 ## Mindestanforderungen

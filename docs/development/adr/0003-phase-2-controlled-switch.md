@@ -83,4 +83,4 @@ acceptance run.
 
 The required real Switch operation and the complete control-client flow were
 confirmed on 2026-08-06. The sanitized evidence and remaining boundaries are
-recorded in the [Phase-2 acceptance report](../phase-2-acceptance.md).
+summarized in the [current evidence](../../evidence/current-evidence.md).
