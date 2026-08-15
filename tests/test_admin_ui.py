@@ -125,16 +125,14 @@ def test_read_only_ajax_polling_does_not_create_admin_log_files() -> None:
 
     assert "sub admin_log" in cgi
     assert cgi.index("sub admin_log") < cgi.index("LoxBerry::Log->new")
-    assert "$admin_log->close() if $admin_log;" in cgi
+    assert "$admin_log->close() if $admin_log;" not in cgi
     assert "LOGSTART('index.cgi called')" not in cgi
     assert "loglevel => 7" not in cgi
-    assert "filename => $filename" in cgi
-    assert "append => 1" in cgi
-    assert "nosession => 1" in cgi
+    assert "            filename => $filename," not in cgi
+    assert "append => 1" not in cgi
+    assert "nosession => 1" not in cgi
     assert "LoxBerry::System::pluginloglevel($lbpplugindir)" in cgi
-    assert "flock($lock, LOCK_EX)" in cgi
-    assert "ADMIN_LOG_MAX_BYTES => 512 * 1024" in cgi
-    assert "ADMIN_LOG_BACKUP_COUNT => 2" in cgi
+    assert "name => 'admin-ui'" in cgi
     assert "ADMIN_LOG_MESSAGE_BYTES => 8 * 1024" in cgi
     assert "LOGSTART('Administrative action')" not in cgi
     assert "LOGEND('Administrative action finished')" not in cgi
@@ -175,41 +173,12 @@ def test_diagnostics_offer_dedicated_persistent_service_logging_controls() -> No
     assert "window.location.reload" not in template
 
 
-def test_admin_log_message_and_rotation_are_bounded(tmp_path: Path) -> None:
+def test_first_setup_prefills_https_origin_from_loxberry_hostname() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
-    implementation = re.search(
-        r"(use constant ADMIN_LOG_MAX_BYTES.*?)(?=sub admin_log \{)",
-        cgi,
-        re.DOTALL,
-    )
-    assert implementation is not None
-    perl = shutil.which("perl")
-    assert perl is not None, "Perl is required for the complete deterministic gate"
-    log_file = tmp_path / "admin-ui.log"
-    log_file.write_bytes(b"x" * (512 * 1024 - 100))
-    for suffix, content in ((".1", b"one"), (".2", b"two"), (".3", b"stale")):
-        log_file.with_name(log_file.name + suffix).write_bytes(content)
-    script = f"""
-use strict;
-use warnings;
-use Encode qw(decode encode FB_DEFAULT);
-{implementation.group(1)}
-my $message = bounded_admin_message(chr(0xE4) x 8000);
-print length(encode('UTF-8', $message)), "\n";
-print rotate_admin_log_locked($ARGV[0], 300), "\n";
-"""
 
-    result = subprocess.run(
-        [perl, "-e", script, str(log_file)],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.stdout.splitlines() == [str(8 * 1024), "1"]
-    assert log_file.with_name(log_file.name + ".1").stat().st_size == 512 * 1024 - 100
-    assert log_file.with_name(log_file.name + ".2").read_bytes() == b"one"
-    assert not log_file.with_name(log_file.name + ".3").exists()
+    assert "my $hostname_mcp_url = local_mcp_url(LoxBerry::System::lbhostname(), $sslport);" in cgi
+    assert "if ($public_origin eq '' && $hostname_mcp_url ne '')" in cgi
+    assert "s{/plugins/mcpserver/mcp\\z}{}" in cgi
 
 
 def test_service_actions_use_an_accessible_confirmation_and_dynamic_controls() -> None:

@@ -4,7 +4,7 @@
 
 ## Basic settings
 
-Configure one local HTTPS origin and exactly one Miniserver target. Selecting a Miniserver stored in LoxBerry does not reuse its credentials. The first save of a complete, valid setup enables the server; test the connection before production use.
+Configure one local HTTPS origin and exactly one Miniserver target. Selecting a Miniserver stored in LoxBerry does not reuse its credentials. On first setup, the origin is suggested from the LoxBerry hostname and HTTPS port; verify it matches the browser's certificate address. The first save of a complete, valid setup enables the server.
 
 ## Certificate
 
