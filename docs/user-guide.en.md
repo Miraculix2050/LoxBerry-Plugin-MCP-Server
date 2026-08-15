@@ -331,7 +331,7 @@ room, bulk, learning, rename, expert, or free-form commands.
 | Climate/ventilation | `ClimateControllerUS` | yes | yes | temporary fan/mode overrides only when the matching logic input is absent | official documentation and automated contract; read path hardware confirmed, writes not hardware-verified |
 | Climate/ventilation | `IRCV2Daytimer` | yes | no | typed analog schedule metadata; no schedule writes | readable in the maintainer installation |
 | Climate/ventilation | corresponding visible V1 types | yes | no | – | generic read path; not hardware-verified |
-| Sensors/status | `InfoOnlyAnalog`, `InfoOnlyDigital`, `InfoOnlyText`, `TextState`, `StatusMonitor`, `WindowMonitor`, `SmokeAlarm`, `Tracker`, `Intercom` | yes | no | typed visible state metadata where documented; no alarm, lock, intercom, or acknowledgement actions | visible descriptions of `StatusMonitor`, `WindowMonitor`, `SmokeAlarm`, `Tracker`, and `Intercom` are hardware-confirmed; current states on this fixture remained `unknown` after subscription, and the remaining types are documentation-based |
+| Sensors/status | `InfoOnlyAnalog`, `InfoOnlyDigital`, `InfoOnlyText`, `TextState`, `StatusMonitor`, `WindowMonitor`, `SmokeAlarm`, `Tracker`, `Intercom` | yes | no | typed visible state metadata where documented; no alarm, lock, intercom, or acknowledgement actions | visible descriptions are hardware-confirmed for `StatusMonitor`, `WindowMonitor`, `SmokeAlarm`, `Tracker`, and `Intercom`; WindowMonitor item/control references and current aggregate states are hardware-confirmed, while current states for the remaining families are documentation-based or `unknown` on this fixture |
 | Energy/other | `Meter`, `EFM`, `PvProductionForecast`, `Slider`, `Webpage` | yes | no | visible states and statistics where advertised | `Meter` and `EFM` are hardware-confirmed for visible descriptions and bounded hourly statistics; current states and `PvProductionForecast` remain unverified |
 
 “Read” means only visible structure and states. For `Jalousie`,
@@ -345,7 +345,9 @@ acceptance run exists.
 `loxone_list_rooms` includes an explicit room-group reference only when the current
 structure resolves it unambiguously; it never derives one from a room name. StatusMonitor
 and WindowMonitor details retain their UUIDs and add visible resolved room/control references
-where available. `loxone_list_global_metadata` pages only visible operating modes, modes,
+where available. WindowMonitor mappings accept both bounded lists and explicitly keyed
+objects from LoxAPP3; an unresolved item is reported by name or index and is never linked
+by a name heuristic. `loxone_list_global_metadata` pages only visible operating modes, modes,
 times, room-group definitions, global states, and weather-state references. It never exposes a raw LoxAPP3
 document and never changes schedules or global operating modes. Daytimer and weather
 WebSocket frames are returned as named, bounded entries rather than protocol tuples.

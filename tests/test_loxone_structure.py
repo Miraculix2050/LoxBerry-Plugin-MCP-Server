@@ -111,6 +111,42 @@ def test_structure_preserves_status_monitor_input_mapping() -> None:
     assert control.status_monitor_statuses[0].color == "#E4354A"
 
 
+def test_structure_preserves_window_monitor_mapping_entries() -> None:
+    raw = {
+        "msInfo": {"serialNr": "000000000000"},
+        "lastModified": "1",
+        "rooms": {},
+        "cats": {},
+        "controls": {
+            "monitor": {
+                "name": "Windows",
+                "type": "WindowMonitor",
+                "states": {"windowStates": "monitor-states"},
+                "details": {
+                    "windows": {
+                        "window-1": {
+                            "name": "Office window",
+                            "room": "room-1",
+                            "installPlace": "Office",
+                        },
+                        "window-2": {"name": "Attic window", "uuid": "control-2"},
+                    }
+                },
+            }
+        },
+    }
+
+    control = normalize_structure(raw, username="reader").controls[0]
+
+    assert [
+        (item.index, item.name, item.room_uuid, item.control_uuid)
+        for item in control.window_monitor_items
+    ] == [
+        (0, "Office window", "room-1", "window-1"),
+        (1, "Attic window", None, "control-2"),
+    ]
+
+
 def test_structure_resolves_only_unambiguous_explicit_room_group_membership() -> None:
     raw = {
         "msInfo": {"serialNr": "000000000000"},

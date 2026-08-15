@@ -251,20 +251,32 @@ def _ventilation_profiles(value: object) -> tuple[VentilationTimerProfile, ...]:
 
 
 def _window_monitor_items(value: object) -> tuple[WindowMonitorItem, ...]:
-    if not isinstance(value, list) or len(value) > 100:
+    entries: list[tuple[str | None, object]]
+    if isinstance(value, list) and len(value) <= 100:
+        entries = [(None, item) for item in value]
+    elif isinstance(value, Mapping) and len(value) <= 100:
+        entries = [(key if isinstance(key, str) else None, item) for key, item in value.items()]
+    else:
         return ()
     result: list[WindowMonitorItem] = []
-    for index, item in enumerate(value):
+    for index, (mapped_uuid, item) in enumerate(entries):
         if not isinstance(item, Mapping):
             result.append(WindowMonitorItem(index, None, None, None, None))
             continue
+        window: Mapping[str, object] = item
 
-        def text(key: str, source: Mapping[str, object] = item) -> str | None:
+        def text(key: str, source: Mapping[str, object] = window) -> str | None:
             candidate = source.get(key)
             return candidate if isinstance(candidate, str) and len(candidate) <= 200 else None
 
         result.append(
-            WindowMonitorItem(index, text("name"), text("room"), text("uuid"), text("installPlace"))
+            WindowMonitorItem(
+                index,
+                text("name"),
+                text("room"),
+                text("uuid") or mapped_uuid,
+                text("installPlace"),
+            )
         )
     return tuple(result)
 

@@ -40,9 +40,12 @@ Loxone-Visualisierungsgrenze und kein offener MCP-Defekt oder Abnahmepunkt.
 Auf derselben Fixture sind die LoxAPP3-Beschreibungen für `StatusMonitor`,
 `WindowMonitor`, `SmokeAlarm`, `Tracker`, `Intercom`, `Meter`, `EFM` und
 `PvProductionForecast` real bestätigt. Die Statistikabfragen eines sichtbaren
-`Meter` und `EFM` lieferten je einen begrenzten Stundenverlauf. Die aktuelle
-State-Übermittlung dieser Familien blieb nach der Subskription `unknown`; sie
-wird daher nicht als hardware-bestätigt ausgewiesen. Der vollständige,
+`Meter` und `EFM` lieferten je einen begrenzten Stundenverlauf. Die zwei
+sichtbaren `WindowMonitor` lieferten am 2026-08-15 ihre explizit referenzierten
+Einträge vollständig (5 und 23), einschließlich sichtbarer Raum-/Control-
+Auflösung und aktueller begrenzter Statuswerte. Die aktuelle State-Übermittlung
+der übrigen Familien blieb nach der Subskription `unknown`; sie wird daher nicht
+als hardware-bestätigt ausgewiesen. Der vollständige,
 maskierte Befund steht im [Phase-4-Abnahmebericht](phase-4-acceptance.md#status-and-energy-model-read-only-acceptance).
 
 ## Plattformen und Geräte
