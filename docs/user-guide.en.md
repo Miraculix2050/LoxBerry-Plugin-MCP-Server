@@ -342,8 +342,11 @@ animations remain limited to position control. History additionally requires
 scope. V1 types deliberately remain marked **unverified** until a real
 acceptance run exists.
 
-`loxone_list_global_metadata` pages only visible operating modes, modes, times, room
-groups, global states, and weather-state references. It never exposes a raw LoxAPP3
+`loxone_list_rooms` includes an explicit room-group reference only when the current
+structure resolves it unambiguously; it never derives one from a room name. StatusMonitor
+and WindowMonitor details retain their UUIDs and add visible resolved room/control references
+where available. `loxone_list_global_metadata` pages only visible operating modes, modes,
+times, room-group definitions, global states, and weather-state references. It never exposes a raw LoxAPP3
 document and never changes schedules or global operating modes. Daytimer and weather
 WebSocket frames are returned as named, bounded entries rather than protocol tuples.
 

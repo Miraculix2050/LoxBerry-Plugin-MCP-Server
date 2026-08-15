@@ -15,6 +15,7 @@ from mcpserver.loxone.models import (
     LoxoneStructure,
     NamedGroup,
     NamedOption,
+    Room,
     StatisticSeries,
     StatusMonitorInput,
     StatusMonitorStatus,
@@ -59,7 +60,12 @@ def _text(value: object, *, field: str) -> str:
     return value
 
 
-def _groups(value: object, *, field: str, allowed_uuids: set[str]) -> tuple[NamedGroup, ...]:
+def _groups(
+    value: object,
+    *,
+    field: str,
+    allowed_uuids: set[str],
+) -> tuple[NamedGroup, ...]:
     if not isinstance(value, Mapping):
         raise LoxoneStructureError(f"Structure field {field} must be an object")
     groups: list[NamedGroup] = []
@@ -70,6 +76,30 @@ def _groups(value: object, *, field: str, allowed_uuids: set[str]) -> tuple[Name
             continue
         groups.append(NamedGroup(uuid=uuid, name=_text(item.get("name"), field=f"{field}.name")))
     return tuple(groups)
+
+
+def _rooms(
+    value: object,
+    *,
+    allowed_uuids: set[str],
+    room_group_uuids: Mapping[str, str | None],
+) -> tuple[Room, ...]:
+    if not isinstance(value, Mapping):
+        raise LoxoneStructureError("Structure field rooms must be an object")
+    rooms: list[Room] = []
+    for uuid, item in value.items():
+        if not isinstance(uuid, str) or not isinstance(item, Mapping):
+            raise LoxoneStructureError("Structure field rooms contains an invalid entry")
+        if uuid not in allowed_uuids:
+            continue
+        rooms.append(
+            Room(
+                uuid=uuid,
+                name=_text(item.get("name"), field="rooms.name"),
+                room_group_uuid=room_group_uuids.get(uuid),
+            )
+        )
+    return tuple(rooms)
 
 
 def _optional_uuid(value: object) -> str | None:
@@ -239,7 +269,46 @@ def _window_monitor_items(value: object) -> tuple[WindowMonitorItem, ...]:
     return tuple(result)
 
 
-def _global_metadata(document: Mapping[str, object]) -> tuple[GlobalMetadata, ...]:
+def _room_groups(
+    document: Mapping[str, object],
+) -> tuple[tuple[NamedGroup, ...], dict[str, str | None]]:
+    """Return bounded explicit room-group metadata and unambiguous room memberships."""
+    raw_groups = document.get("roomGroups")
+    if not isinstance(raw_groups, list):
+        return (), {}
+    groups: list[NamedGroup] = []
+    memberships: dict[str, set[str]] = {}
+    for item in raw_groups[:100]:
+        if not isinstance(item, Mapping):
+            continue
+        identifier, name = _bounded_text(item.get("uuid")), _bounded_text(item.get("name"))
+        if identifier is None or name is None:
+            continue
+        groups.append(NamedGroup(identifier, name))
+        room_ids = item.get("rooms", item.get("roomUuids"))
+        if isinstance(room_ids, list) and len(room_ids) <= 100:
+            for room_uuid in room_ids:
+                normalized_room_uuid = _bounded_text(room_uuid, maximum=128)
+                if normalized_room_uuid is not None:
+                    memberships.setdefault(normalized_room_uuid, set()).add(identifier)
+    known_groups = {item.uuid for item in groups}
+    rooms = document.get("rooms")
+    if isinstance(rooms, Mapping):
+        for room_uuid, room in rooms.items():
+            if not isinstance(room_uuid, str) or not isinstance(room, Mapping):
+                continue
+            group_uuid = _bounded_text(room.get("roomGroup"))
+            if group_uuid in known_groups:
+                memberships.setdefault(room_uuid, set()).add(group_uuid)
+    return tuple(groups), {
+        room_uuid: next(iter(group_uuids)) if len(group_uuids) == 1 else None
+        for room_uuid, group_uuids in memberships.items()
+    }
+
+
+def _global_metadata(
+    document: Mapping[str, object], *, room_groups: tuple[NamedGroup, ...]
+) -> tuple[GlobalMetadata, ...]:
     """Keep only bounded, user-visible global metadata; never expose raw LoxAPP3."""
     result: list[GlobalMetadata] = []
     operating_modes = document.get("operatingModes")
@@ -278,19 +347,7 @@ def _global_metadata(document: Mapping[str, object]) -> tuple[GlobalMetadata, ..
                             "time", normalized_identifier, normalized_name, analog=analog
                         )
                     )
-    room_groups = document.get("roomGroups")
-    if isinstance(room_groups, list):
-        for item in room_groups[:100]:
-            if isinstance(item, Mapping):
-                identifier, name = item.get("uuid"), item.get("name")
-                normalized_identifier, normalized_name = (
-                    _bounded_text(identifier),
-                    _bounded_text(name),
-                )
-                if normalized_identifier and normalized_name:
-                    result.append(
-                        GlobalMetadata("room_group", normalized_identifier, normalized_name)
-                    )
+    result.extend(GlobalMetadata("room_group", item.uuid, item.name) for item in room_groups)
     global_states = document.get("globalStates")
     if isinstance(global_states, Mapping):
         for name, state_uuid in list(global_states.items())[:100]:
@@ -671,16 +728,17 @@ def normalize_structure(
         hidden_only=True,
         budget=budget,
     )
+    room_groups, room_group_uuids = _room_groups(document)
     return LoxoneStructure(
         identity=LoxoneIdentity(
             username=username,
             miniserver_serial=_text(serial, field="msInfo.serialNr"),
         ),
         last_modified=_text(last_modified, field="lastModified"),
-        rooms=_groups(
+        rooms=_rooms(
             document.get("rooms", {}),
-            field="rooms",
             allowed_uuids=_group_references(controls, field="room"),
+            room_group_uuids=room_group_uuids,
         ),
         categories=_groups(
             document.get("cats", {}),
@@ -699,5 +757,6 @@ def normalize_structure(
             allowed_uuids=_group_references(hidden_controls, field="category"),
         ),
         hidden_controls=hidden_controls,
-        global_metadata=_global_metadata(document),
+        global_metadata=_global_metadata(document, room_groups=room_groups),
+        room_groups=room_groups,
     )

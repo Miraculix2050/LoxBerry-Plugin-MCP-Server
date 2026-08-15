@@ -30,6 +30,13 @@ class NamedGroup:
 
 
 @dataclass(frozen=True, slots=True)
+class Room:
+    uuid: str
+    name: str
+    room_group_uuid: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class StatisticSeries:
     """One user-visible statistic datapoint advertised by the structure file."""
 
@@ -156,13 +163,14 @@ class Control:
 class LoxoneStructure:
     identity: LoxoneIdentity
     last_modified: str
-    rooms: tuple[NamedGroup, ...]
+    rooms: tuple[Room, ...]
     categories: tuple[NamedGroup, ...]
     controls: tuple[Control, ...]
     hidden_rooms: tuple[NamedGroup, ...] = ()
     hidden_categories: tuple[NamedGroup, ...] = ()
     hidden_controls: tuple[Control, ...] = ()
     global_metadata: tuple[GlobalMetadata, ...] = ()
+    room_groups: tuple[NamedGroup, ...] = ()
 
 
 type StateValue = float | str | tuple[object, ...] | dict[str, object]

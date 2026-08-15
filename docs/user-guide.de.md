@@ -367,10 +367,12 @@ verfügbar, wenn das Control `hasHistory`, `statisticV2` beziehungsweise `statis
 der Client `loxone:history` erhalten hat. V1-Typen bleiben bewusst als **nicht
 verifiziert** markiert, bis ein realer Abnahmetest vorliegt.
 
-`loxone_list_global_metadata` liefert seitenweise nur sichtbare Betriebsarten,
-Modi, Zeiten, Raumgruppen, globale States und Wetter-State-Referenzen. Es liefert
-niemals ein Roh-LoxAPP3-Dokument und ändert weder Kalender noch globale Betriebsarten.
-Daytimer- und Wetter-WebSocket-Frames werden als benannte, begrenzte Einträge statt
+`loxone_list_rooms` enthält eine explizite Raumgruppenreferenz nur, wenn die aktuelle
+Struktur sie eindeutig auflöst; sie wird niemals aus dem Raumnamen abgeleitet. StatusMonitor-
+und WindowMonitor-Details behalten ihre UUIDs und ergänzen sichtbare aufgelöste Raum-/Control-
+Referenzen, sofern vorhanden. `loxone_list_global_metadata` liefert seitenweise nur sichtbare
+Betriebsarten, Modi, Zeiten, Raumgruppen-Definitionen, globale States und Wetter-State-Referenzen. Es liefert
+niemals ein Roh-LoxAPP3-Dokument und ändert weder Kalender noch globale Betriebsarten. Daytimer- und Wetter-WebSocket-Frames werden als benannte, begrenzte Einträge statt
 als Protokoll-Tupel ausgegeben.
 
 `loxberry:operate` verwendet denselben lokalen, an Client, Loxone-Identität und
