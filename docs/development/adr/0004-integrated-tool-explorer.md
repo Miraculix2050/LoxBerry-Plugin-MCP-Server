@@ -49,6 +49,12 @@ Origin, JSON content type and an explicitly parsed request body. The same-origin
 policy and a strict Content Security Policy remain important boundaries for the
 access token held in tab memory.
 
+Dynamic client registrations that have not entered an authorization flow expire
+after one hour. With the public rate limit of 16 registrations per five minutes,
+at most 192 unused clients can remain concurrently—below the persistent capacity
+of 256. Clients referenced by an authorization code or token family remain
+governed by their respective OAuth lifetime.
+
 Browsers cannot reliably distinguish reload from tab close or guarantee an
 unload request. The explorer therefore does not claim automatic revocation on
 page unload. Explicit disconnect performs RFC 7009 revocation and deletes the
