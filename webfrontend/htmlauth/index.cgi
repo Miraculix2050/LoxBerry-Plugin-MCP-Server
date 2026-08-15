@@ -4,7 +4,6 @@ use strict;
 use warnings;
 use CGI;
 use Encode qw(decode encode FB_DEFAULT);
-use Fcntl qw(:flock);
 use HTML::Template;
 use IPC::Open3;
 use JSON::PP qw(decode_json encode_json);
@@ -26,8 +25,6 @@ if (($q->{lang} // '') =~ /\A(?:de|en)\z/) {
 }
 my $version = LoxBerry::System::pluginversion();
 my $admin_log;
-use constant ADMIN_LOG_MAX_BYTES => 512 * 1024;
-use constant ADMIN_LOG_BACKUP_COUNT => 2;
 use constant ADMIN_LOG_MESSAGE_BYTES => 8 * 1024;
 use constant ADMIN_LOG_TRUNCATION_SUFFIX => ' ... [truncated]';
 
@@ -42,25 +39,6 @@ sub bounded_admin_message {
     return decode('UTF-8', $prefix, FB_DEFAULT) . ADMIN_LOG_TRUNCATION_SUFFIX;
 }
 
-sub rotate_admin_log_locked {
-    my ($filename, $next_bytes) = @_;
-    for my $candidate (glob("$filename.*")) {
-        next if $candidate !~ /\.([0-9]+)\z/ || $1 <= ADMIN_LOG_BACKUP_COUNT;
-        unlink $candidate;
-    }
-    my $current_bytes = -f $filename ? (-s $filename // 0) : 0;
-    return 1 if $current_bytes + $next_bytes <= ADMIN_LOG_MAX_BYTES;
-    my $oldest = "$filename." . ADMIN_LOG_BACKUP_COUNT;
-    unlink $oldest if -e $oldest;
-    for (my $index = ADMIN_LOG_BACKUP_COUNT - 1; $index >= 1; $index--) {
-        my $source = "$filename.$index";
-        my $target = "$filename." . ($index + 1);
-        return 0 if -e $source && !rename($source, $target);
-    }
-    return 0 if -e $filename && !rename($filename, "$filename.1");
-    return 1;
-}
-
 sub admin_log {
     my ($severity, $message) = @_;
     my %threshold = (error => 3, warning => 4, info => 6, debug => 7);
@@ -71,25 +49,13 @@ sub admin_log {
     return if $plugin_level == 0 || $threshold{$severity} > $plugin_level;
 
     $message = bounded_admin_message($message);
-    my $filename = "$lbplogdir/admin-ui.log";
-    open my $lock, '>>', "$filename.lock" or return;
-    flock($lock, LOCK_EX) or return;
-    my $next_bytes = length(encode('UTF-8', $message)) + 256;
-    $admin_log->close() if $admin_log;
-    if (rotate_admin_log_locked($filename, $next_bytes)) {
-        $admin_log //= LoxBerry::Log->new(
-            name => 'admin-ui',
-            package => $lbpplugindir,
-            filename => $filename,
-            append => 1,
-            nosession => 1,
-            addtime => 1,
-        );
-        my $log_method = $method{$severity};
-        $admin_log->$log_method($message) if $admin_log;
-    }
-    flock($lock, LOCK_UN);
-    close $lock;
+    $admin_log //= LoxBerry::Log->new(
+        name => 'admin-ui',
+        package => $lbpplugindir,
+        addtime => 1,
+    );
+    my $log_method = $method{$severity};
+    $admin_log->$log_method($message) if $admin_log;
 }
 
 $ENV{LBPDATA} = $lbpdatadir;
@@ -513,6 +479,9 @@ my $sslport = ref($general_config->{Webserver}) eq 'HASH'
     ? $general_config->{Webserver}{Sslport} : 443;
 my $hostname_mcp_url = local_mcp_url(LoxBerry::System::lbhostname(), $sslport);
 my $ip_mcp_url = local_mcp_url(LoxBerry::System::get_localip(), $sslport);
+if ($public_origin eq '' && $hostname_mcp_url ne '') {
+    ($public_origin = $hostname_mcp_url) =~ s{/plugins/mcpserver/mcp\z}{};
+}
 my %renewal_labels = (
     idle => $L{'CERTIFICATE.STATE_IDLE'},
     scheduled => $L{'CERTIFICATE.STATE_SCHEDULED'},

@@ -145,7 +145,7 @@ def test_plugin_identity_and_platform_contract() -> None:
     assert parser["PLUGIN"]["NAME"] == "mcpserver"
     assert parser["PLUGIN"]["FOLDER"] == "mcpserver"
     assert parser["PLUGIN"]["TITLE"] == "LoxBerry MCP Server"
-    assert parser["PLUGIN"]["VERSION"] == "0.4.0-beta.2"
+    assert parser["PLUGIN"]["VERSION"] == "0.4.0-beta.3"
     assert parser["AUTOUPDATE"]["AUTOMATIC_UPDATES"] == "true"
     assert parser["AUTOUPDATE"]["RELEASECFG"].startswith("https://")
     assert parser["AUTOUPDATE"]["PRERELEASECFG"].startswith("https://")
@@ -223,6 +223,7 @@ def test_upgrade_preserves_configuration_in_plugin_data() -> None:
     assert 'upgrade_backup="$upgrade_backup_dir/mcpserver.json"' in postinstall
     assert 'install -m 600 "$upgrade_backup" "$config_file"' in postinstall
     assert "sessions.json loxone-tokens.json.enc install.key" in postinstall
+    assert 'cp "$plugin_config/default-config.json" "$config_file"' in postinstall
     assert postinstall.index('install -m 600 "$upgrade_backup" "$config_file"') < postinstall.index(
         'cp "$plugin_config/default-config.json" "$config_file"'
     )
@@ -480,7 +481,7 @@ def test_plugin_archive_verifier_accepts_builder_output(tmp_path: Path) -> None:
     for name, version in _locked_requirements(ROOT / "requirements" / "runtime-arm64.lock").items():
         wheel_name = name.replace("-", "_")
         (wheelhouse / f"{wheel_name}-{version}-py3-none-any.whl").write_bytes(b"wheel")
-    project_wheel = wheelhouse / "loxberry_mcpserver-0.4.0b2-py3-none-any.whl"
+    project_wheel = wheelhouse / "loxberry_mcpserver-0.4.0b3-py3-none-any.whl"
     _write_project_wheel(project_wheel)
     hash_lock = tmp_path / "runtime-arm64.sha256"
     hash_lock.write_text(
@@ -900,19 +901,19 @@ def test_plugin_archive_verifier_rejects_checksum_mismatch(tmp_path: Path) -> No
 
 
 def test_release_metadata_and_changelog_match_current_prerelease() -> None:
-    notes = validate_release_metadata(ROOT, "0.4.0-beta.2", "prerelease")
+    notes = validate_release_metadata(ROOT, "0.4.0-beta.3", "prerelease")
     parser = configparser.ConfigParser()
     parser.read(ROOT / "plugin.cfg", encoding="utf-8")
     source_fallback = (ROOT / "src" / "mcpserver" / "__init__.py").read_text(encoding="utf-8")
 
-    assert "Enable bounded history/statistics" in notes
+    assert "Enable the bounded read-only feature families" in notes
     assert f'__version__ = "{parser["PLUGIN"]["VERSION"]}"' in source_fallback
     with pytest.raises(ValueError, match="stable releases"):
-        validate_release_metadata(ROOT, "0.4.0-beta.2", "stable")
+        validate_release_metadata(ROOT, "0.4.0-beta.3", "stable")
     with pytest.raises(ValueError, match="prerelease releases"):
         validate_release_metadata(ROOT, "0.4.0", "prerelease")
     with pytest.raises(ValueError, match="channel must"):
-        validate_release_metadata(ROOT, "0.4.0-beta.2", "preview")
+        validate_release_metadata(ROOT, "0.4.0-beta.3", "preview")
     with pytest.raises(ValueError, match="versions do not match"):
         validate_release_metadata(ROOT, "0.3.0-alpha.2", "prerelease")
 

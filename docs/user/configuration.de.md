@@ -4,7 +4,7 @@
 
 ## Grundeinstellungen
 
-Konfiguriere eine lokale HTTPS-Origin und genau ein Miniserver-Ziel. Die Auswahl eines in LoxBerry hinterlegten Miniservers übernimmt keine dort gespeicherten Zugangsdaten. Das erste Speichern einer vollständigen, gültigen Einrichtung aktiviert den Server; prüfe die Verbindung vor dem produktiven Einsatz.
+Konfiguriere eine lokale HTTPS-Origin und genau ein Miniserver-Ziel. Die Auswahl eines in LoxBerry hinterlegten Miniservers übernimmt keine dort gespeicherten Zugangsdaten. Bei der ersten Einrichtung wird die Origin aus LoxBerry-Hostname und HTTPS-Port vorgeschlagen; prüfe, ob sie zur Zertifikatsadresse im Browser passt. Das erste Speichern einer vollständigen, gültigen Einrichtung aktiviert den Server.
 
 ## Zertifikat
 
