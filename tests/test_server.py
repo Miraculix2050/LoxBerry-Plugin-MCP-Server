@@ -297,7 +297,20 @@ async def test_bundled_skill_is_published_as_an_mcp_resource() -> None:
     assert len(contents) == 1
     assert contents[0].mime_type == "text/markdown"
     assert contents[0].content.startswith("---\nname: using-loxberry-mcp\n")
+    assert "canonical `loxone_*` and `loxberry_*`" in contents[0].content
+    assert "including tool-specific limits" in contents[0].content
+    assert "schema-defined bounds from the current tool schema" in contents[0].content
+    assert "such as a visible `moodList`" in contents[0].content
+    assert "only when the current MCP results expose the required `scene_id`" in contents[0].content
+    assert "do not guess or probe" in contents[0].content
+    assert "### Inspect one known room" in contents[0].content
+    assert "### Find and read a control" in contents[0].content
+    assert "### Interpret controller-specific states" in contents[0].content
+    assert "### Read weather" in contents[0].content
     assert "Never automatically retry an uncertain or failed write" in contents[0].content
+    assert "It requires `loxone:history`," in contents[0].content
+    assert "Treat a timeout as an unknown outcome" in contents[0].content
+    assert "failed or uncertain cache clear" in contents[0].content
 
 
 def test_oauth_routes_and_protected_resource_metadata_are_exact(tmp_path: Path) -> None:

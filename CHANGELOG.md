@@ -40,6 +40,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Update the bundled `using-loxberry-mcp` agent workflow to revision 24 with
+  task-specific read paths, complete cache-operation authorization and
+  uncertainty guidance, and fail-closed schema and parameter-source rules.
+
 ## 0.4.0-alpha.15 - 2026-08-15
 
 - Fail closed when the Miniserver binary-state stream ends before its first
