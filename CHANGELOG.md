@@ -46,6 +46,9 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add Tool Explorer time-range shortcuts, in-tab reference selection, action-specific
+  control fields, and collapsible advanced parameters.
+
 - Generate a versioned HTML and JSON reference for the complete MCP tool
   contract during package builds, link it from Help and the Tool Explorer, and
   document `tools/list` as the authoritative installed tool surface.

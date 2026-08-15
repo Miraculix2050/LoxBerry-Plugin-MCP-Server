@@ -357,6 +357,73 @@ def test_explorer_converts_datetime_local_values_to_rfc3339() -> None:
     assert run_core(f"core.rfc3339ToDateTimeLocal({json.dumps(converted)})") == "2026-08-12T12:34"
 
 
+def test_explorer_time_ranges_and_action_fields_are_bounded() -> None:
+    assert run_core("core.timeRange('hour',0)") == {
+        "start": "1969-12-31T23:00:00.000Z",
+        "end": "1970-01-01T00:00:00.000Z",
+    }
+    assert run_core("core.timeRange('today',0).start <= core.timeRange('today',0).end") is True
+    assert (
+        run_core("new Date(core.timeRange('day',0).end) - new Date(core.timeRange('day',0).start)")
+        == 86_400_000
+    )
+    assert (
+        run_core(
+            "new Date(core.timeRange('week',0).end) - new Date(core.timeRange('week',0).start)"
+        )
+        == 604_800_000
+    )
+    assert run_core("core.timeRange('unknown',0)") is None
+    assert run_core("core.actionFields('set_color_hsv')") == ["hue", "saturation", "brightness"]
+    assert run_core("core.actionFields('set_color_temperature')") == ["brightness", "kelvin"]
+    assert run_core("core.actionFields('on')") == []
+    assert run_core("core.isAdvancedField('cursor')") is True
+    assert run_core("core.isAdvancedField('control_uuid')") is False
+    assert run_core("core.isReferenceField('control_uuid')") is True
+
+
+def test_explorer_reference_candidates_use_matching_tab_history_only() -> None:
+    history = [
+        {
+            "tool": "loxone_list_rooms",
+            "result": {
+                "structuredContent": {
+                    "data": {
+                        "items": [
+                            {
+                                "uuid": "room-1",
+                                "name": "Office",
+                                "room_group": {"uuid": "group-1", "name": "Ground floor"},
+                            },
+                        ]
+                    }
+                }
+            },
+        },
+        {
+            "tool": "loxone_find_controls",
+            "result": {
+                "content": {
+                    "data": {
+                        "items": [
+                            {"uuid": "control-1", "name": "Ceiling light"},
+                        ]
+                    }
+                }
+            },
+        },
+    ]
+    encoded = json.dumps(history)
+
+    assert run_core(f"core.referenceCandidates('control_uuid',{encoded})") == [
+        {"value": "control-1", "label": "Ceiling light (control-1)"}
+    ]
+    assert run_core(f"core.referenceCandidates('room_group_uuid',{encoded})") == [
+        {"value": "group-1", "label": "Ground floor (group-1)"}
+    ]
+    assert run_core(f"core.referenceCandidates('state_uuids',{encoded})") == []
+
+
 def test_explorer_preserves_datetime_format_for_optional_string_fields() -> None:
     schema = {
         "anyOf": [{"type": "string"}, {"type": "null"}],
