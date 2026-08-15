@@ -14,8 +14,10 @@ from typing import Final
 
 try:
     from tools.build_plugin import _TIMESTAMP, expected_source_entries
+    from tools.versioning import project_version
 except ModuleNotFoundError:  # Direct documented CLI execution from repository root.
     from build_plugin import _TIMESTAMP, expected_source_entries
+    from versioning import project_version
 
 _REQUIRED: Final = {
     "plugin.cfg",
@@ -99,7 +101,7 @@ def _wheel_identity(filename: str) -> tuple[str, str] | None:
 
 
 def _expected_project_version(plugin_version: str) -> str:
-    return re.sub(r"(?i)-alpha\.(\d+)$", r"a\1", plugin_version)
+    return project_version(plugin_version)
 
 
 def _verify_checksum(archive: Path, digest: str) -> None:

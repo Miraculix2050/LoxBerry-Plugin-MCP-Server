@@ -4,7 +4,6 @@ import configparser
 import hashlib
 import json
 import os
-import re
 import shlex
 import shutil
 import subprocess
@@ -29,6 +28,7 @@ from tools.prepare_wheelhouse import main as prepare_wheelhouse
 from tools.validate_release_metadata import validate as validate_release_metadata
 from tools.verify_plugin import (
     PackageVerificationError,
+    _expected_project_version,
     verify_archive,
 )
 from tools.verify_plugin import (
@@ -341,7 +341,7 @@ def test_postinstall_rewrites_moved_venv_entrypoints() -> None:
 def test_postinstall_project_pin_matches_plugin_version() -> None:
     parser = configparser.ConfigParser()
     parser.read(ROOT / "plugin.cfg", encoding="utf-8")
-    project_version = re.sub(r"(?i)-alpha\.(\d+)$", r"a\1", parser["PLUGIN"]["VERSION"])
+    project_version = _expected_project_version(parser["PLUGIN"]["VERSION"])
     hook = (ROOT / "postinstall.sh").read_text(encoding="utf-8")
 
     assert f"loxberry-mcpserver=={project_version}" in hook
@@ -909,8 +909,26 @@ def test_release_metadata_and_changelog_match_current_prerelease() -> None:
     assert f'__version__ = "{parser["PLUGIN"]["VERSION"]}"' in source_fallback
     with pytest.raises(ValueError, match="stable releases"):
         validate_release_metadata(ROOT, "0.4.0-alpha.15", "stable")
+    with pytest.raises(ValueError, match="prerelease releases"):
+        validate_release_metadata(ROOT, "0.4.0", "prerelease")
+    with pytest.raises(ValueError, match="channel must"):
+        validate_release_metadata(ROOT, "0.4.0-alpha.15", "preview")
     with pytest.raises(ValueError, match="versions do not match"):
         validate_release_metadata(ROOT, "0.3.0-alpha.2", "prerelease")
+
+
+@pytest.mark.parametrize(
+    ("version", "expected"),
+    (
+        ("0.4.0-alpha.15", "0.4.0a15"),
+        ("0.4.0-beta.1", "0.4.0b1"),
+        ("0.4.0", "0.4.0"),
+    ),
+)
+def test_project_version_normalization_supports_alpha_beta_and_stable(
+    version: str, expected: str
+) -> None:
+    assert _expected_project_version(version) == expected
 
 
 def test_release_workflow_is_manual_owner_only_and_separates_permissions() -> None:
@@ -921,6 +939,7 @@ def test_release_workflow_is_manual_owner_only_and_separates_permissions() -> No
     assert "github.triggering_actor" in workflow
     assert "github.repository_owner" in workflow
     assert "REF_NAME: ${{ github.ref_name }}" in workflow
+    assert "CHANNEL: ${{ inputs.channel }}" in workflow
     assert "ref: ${{ github.sha }}" in workflow
     assert "confirm_release:" in workflow
     assert "contents: read" in workflow

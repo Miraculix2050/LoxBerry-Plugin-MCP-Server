@@ -39,14 +39,20 @@ jobs:
           REF_NAME: ${{ github.ref_name }}
           CONFIRMED: ${{ inputs.confirm_release }}
           VERSION: ${{ inputs.version }}
+          CHANNEL: ${{ inputs.channel }}
         run: |
           set -euo pipefail
           [[ "$ACTOR" == "$OWNER" && "$TRIGGERING_ACTOR" == "$OWNER" ]] ||
             { echo "Only the repository owner may start or rerun publication." >&2; exit 1; }
           [[ "$REF_NAME" == "master" ]] || { echo "Official releases must run from master." >&2; exit 1; }
           [[ "$CONFIRMED" == "true" ]] || { echo "Release confirmation is required." >&2; exit 1; }
-          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-alpha\.[0-9]+)?$ ]] ||
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta)\.[0-9]+)?$ ]] ||
             { echo "Invalid release version." >&2; exit 1; }
+          if [[ "$CHANNEL" == "stable" ]]; then
+            [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Stable requires a plain version." >&2; exit 1; }
+          else
+            [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta)\.[0-9]+$ ]] || { echo "Prerelease requires an alpha or beta version." >&2; exit 1; }
+          fi
 
   build:
     needs: authorize
