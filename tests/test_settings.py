@@ -121,7 +121,7 @@ def test_invalid_phase0_public_origin_is_rejected(
     monkeypatch.setenv("MCPSERVER_AUTH_STORE", str(tmp_path / "sessions.json"))
     monkeypatch.setenv("MCPSERVER_LOXONE_ENDPOINT", "http://192.168.255.254")
 
-    with pytest.raises(ValueError, match="MCPSERVER_(PUBLIC_ORIGIN|ALLOWED_ORIGINS)"):
+    with pytest.raises(ValueError, match=r"MCPSERVER_(PUBLIC_ORIGIN|ALLOWED_ORIGINS)"):
         ServerSettings.from_environment()
 
 

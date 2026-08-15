@@ -141,7 +141,7 @@ def test_obsolete_debug_window_is_ignored_and_removed() -> None:
 
 
 def test_gen2_control_configuration_is_rejected() -> None:
-    with pytest.raises(ConfigError, match="only for Gen. 1"):
+    with pytest.raises(ConfigError, match=r"only for Gen\. 1"):
         PluginConfig.from_document(
             {
                 "schema_version": 1,

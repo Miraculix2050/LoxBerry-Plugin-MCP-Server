@@ -310,23 +310,26 @@ def _room_groups(
                 if room_name is not None:
                     room_uuids_by_name.setdefault(room_name, set()).add(room_uuid)
 
-    def references(value: object, targets: set[str]) -> set[str]:
-        """Find bounded explicit references across compatible LoxAPP3 variants."""
+    def collection_references(
+        value: object, targets: set[str], *, entry_fields: tuple[str, ...] = ()
+    ) -> set[str]:
+        """Read bounded references from an explicit LoxAPP3 membership collection."""
 
+        if isinstance(value, Mapping):
+            candidates = [*value.keys(), *value.values()]
+        elif isinstance(value, (list, tuple, set, frozenset)):
+            candidates = value
+        else:
+            return set()
         result: set[str] = set()
-        pending = [value]
-        inspected = 0
-        while pending and inspected < 100:
-            current = pending.pop()
-            inspected += 1
-            if isinstance(current, str):
-                if current in targets:
-                    result.add(current)
-            elif isinstance(current, Mapping):
-                pending.extend(list(current.keys())[:100 - inspected])
-                pending.extend(list(current.values())[:100 - inspected])
-            elif isinstance(current, (list, tuple, set, frozenset)):
-                pending.extend(list(current)[:100 - inspected])
+        for candidate in list(candidates)[:100]:
+            if isinstance(candidate, str) and candidate in targets:
+                result.add(candidate)
+            elif isinstance(candidate, Mapping):
+                for field in entry_fields:
+                    reference = _bounded_text(candidate.get(field))
+                    if reference in targets:
+                        result.add(reference)
         return result
 
     for item in raw_groups[:100]:
@@ -336,10 +339,20 @@ def _room_groups(
         if identifier is None or name is None:
             continue
         groups.append(NamedGroup(identifier, name))
-        room_uuids = references(item, known_room_uuids)
-        for room_name in references(item, set(room_uuids_by_name)):
-            if len(room_uuids_by_name[room_name]) == 1:
-                room_uuids.update(room_uuids_by_name[room_name])
+        room_uuids: set[str] = set()
+        for field in ("rooms", "roomUuids", "roomUUIDs", "roomIds", "roomIDs", "roomNames"):
+            room_uuids.update(
+                collection_references(
+                    item.get(field),
+                    known_room_uuids,
+                    entry_fields=("uuid", "roomUuid", "roomUUID", "roomId", "roomID"),
+                )
+            )
+            for room_name in collection_references(
+                item.get(field), set(room_uuids_by_name), entry_fields=("name", "roomName")
+            ):
+                if len(room_uuids_by_name[room_name]) == 1:
+                    room_uuids.update(room_uuids_by_name[room_name])
         for room_uuid in room_uuids:
             memberships.setdefault(room_uuid, set()).add(identifier)
     known_groups = {item.uuid for item in groups}
@@ -351,14 +364,20 @@ def _room_groups(
         for room_uuid, room in rooms.items():
             if not isinstance(room_uuid, str) or not isinstance(room, Mapping):
                 continue
-            for group_uuid in references(room, known_groups):
-                memberships.setdefault(room_uuid, set()).add(group_uuid)
-            for field in ("roomGroup", "roomGroupName"):
+            for field in (
+                "roomGroup",
+                "roomGroupUuid",
+                "roomGroupUUID",
+                "roomGroupId",
+                "roomGroupID",
+                "parentGroup",
+            ):
+                group_reference = _bounded_text(room.get(field))
+                if group_reference in known_groups:
+                    memberships.setdefault(room_uuid, set()).add(group_reference)
+            for field in ("roomGroup", "roomGroupName", "parentGroup"):
                 group_name = _bounded_text(room.get(field))
-                if (
-                    group_name is not None
-                    and len(group_uuids_by_name.get(group_name, ())) == 1
-                ):
+                if group_name is not None and len(group_uuids_by_name.get(group_name, ())) == 1:
                     memberships.setdefault(room_uuid, set()).update(group_uuids_by_name[group_name])
     return tuple(groups), {
         room_uuid: next(iter(group_uuids)) if len(group_uuids) == 1 else None

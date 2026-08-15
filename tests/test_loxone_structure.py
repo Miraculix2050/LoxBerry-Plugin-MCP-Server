@@ -191,12 +191,17 @@ def test_structure_resolves_only_unambiguous_explicit_room_group_membership() ->
             "room-4": {"name": "Mapped group"},
             "room-5": {"name": "Mapped IDs"},
             "room-6": {"name": "Direct UUID", "roomGroupUUID": "group-upper"},
-            "room-7": {"name": "Direct name", "roomGroup": "Upper floor"},
+            "room-7": {"name": "Direct name", "parentGroup": "Upper floor"},
             "room-8": {"name": "Mapped name"},
+            "room-9": {"name": "Object member"},
         },
         "cats": {},
         "roomGroups": [
-            {"uuid": "group-ground", "name": "Ground floor", "rooms": ["room-2", "room-3"]},
+            {
+                "uuid": "group-ground",
+                "name": "Ground floor",
+                "rooms": ["room-2", "room-3", {"name": "Object member"}],
+            },
             {
                 "uuid": "group-upper",
                 "name": "Upper floor",
@@ -217,6 +222,7 @@ def test_structure_resolves_only_unambiguous_explicit_room_group_membership() ->
                 "room-6",
                 "room-7",
                 "room-8",
+                "room-9",
             )
         },
     }
@@ -232,6 +238,7 @@ def test_structure_resolves_only_unambiguous_explicit_room_group_membership() ->
         "room-6": "group-upper",
         "room-7": "group-upper",
         "room-8": "group-upper",
+        "room-9": "group-ground",
     }
     assert [(item.uuid, item.name) for item in structure.room_groups] == [
         ("group-ground", "Ground floor"),
@@ -240,6 +247,36 @@ def test_structure_resolves_only_unambiguous_explicit_room_group_membership() ->
     assert {item.identifier for item in structure.global_metadata if item.kind == "room_group"} == {
         "group-ground",
         "group-upper",
+    }
+
+
+def test_structure_does_not_infer_room_group_membership_from_unrelated_fields() -> None:
+    raw = {
+        "msInfo": {"serialNr": "000000000000"},
+        "lastModified": "1",
+        "rooms": {
+            "room-1": {"name": "Ground floor"},
+            "room-2": {"name": "Office", "details": {"note": "group-ground"}},
+        },
+        "cats": {},
+        "roomGroups": [
+            {
+                "uuid": "group-ground",
+                "name": "Ground floor",
+                "details": {"defaultRoom": "room-2"},
+            }
+        ],
+        "controls": {
+            room_uuid: {"name": room_uuid, "type": "Switch", "room": room_uuid, "states": {}}
+            for room_uuid in ("room-1", "room-2")
+        },
+    }
+
+    structure = normalize_structure(raw, username="reader")
+
+    assert {item.uuid: item.room_group_uuid for item in structure.rooms} == {
+        "room-1": None,
+        "room-2": None,
     }
 
 
@@ -564,6 +601,6 @@ def test_structure_rejects_invalid_history_capabilities(raw_value: object) -> No
 
     with pytest.raises(
         LoxoneStructureError,
-        match="Control details.hasHistory must be boolean or non-negative integer",
+        match=r"Control details\.hasHistory must be boolean or non-negative integer",
     ):
         normalize_structure(raw, username="reader")
