@@ -1,7 +1,7 @@
-name: Gen. 2 read-only beta report
-description: Report a complete, sanitized experimental Gen. 2 test
-title: "[Gen2 beta] "
-labels: ["gen2-beta"]
+name: Gen. 2 compatibility report
+description: Report a complete, sanitized experimental Gen. 2 compatibility test
+title: "[Gen2 compatibility] "
+labels: ["gen2-compatibility"]
 body:
   - type: markdown
     attributes:
@@ -27,8 +27,8 @@ body:
   - type: textarea
     id: tools
     attributes:
-      label: Six read-only tools and permission filtering
-      description: List expected and observed outcomes for every tool, without sensitive values
+      label: Documented read-only tools and permission filtering
+      description: List expected and observed outcomes for every available documented read-only tool, without sensitive values
     validations:
       required: true
   - type: textarea

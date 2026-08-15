@@ -6,5 +6,5 @@
 
 ## Contents
 
-- `0001` to `0008` — phase foundations, access boundaries, Explorer, diagnostics, history and bounded controls.
-- The certificate reissue decision is currently stored under a duplicate `0005` filename and will receive its unique `0009` identifier during the beta documentation consolidation.
+- `0001` to `0009` — foundations, access boundaries, Explorer, diagnostics, history, bounded controls and certificate reissue.
+- ADR 0009 corrects the former duplicate ADR 0005 identifier without changing the decision content.

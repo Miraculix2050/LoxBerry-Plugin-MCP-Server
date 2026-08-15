@@ -119,7 +119,7 @@ the browser consent page before approving access.
 > **Accepted with Claude:** Registration, consent with `loxone:control`, tool
 > visibility, and a real invocation were fully confirmed. Read-only remains the
 > safe default. The evidence is recorded in the
-> [Phase-2 acceptance report](../development/phase-2-acceptance.md).
+> [current evidence summary](../evidence/current-evidence.md).
 
 This section applies only when **Read and control** was deliberately selected
 under **Miniserver access through the MCP server** in the plugin UI. It is
