@@ -318,7 +318,7 @@ def _room_groups(
         if isinstance(value, Mapping):
             candidates = [*value.keys(), *value.values()]
         elif isinstance(value, list | tuple | set | frozenset):
-            candidates = value
+            candidates = list(value)
         else:
             return set()
         result: set[str] = set()
