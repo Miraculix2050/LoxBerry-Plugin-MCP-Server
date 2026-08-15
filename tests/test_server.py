@@ -299,7 +299,9 @@ async def test_bundled_skill_is_published_as_an_mcp_resource() -> None:
     assert contents[0].content.startswith("---\nname: using-loxberry-mcp\n")
     assert "canonical `loxone_*` and `loxberry_*`" in contents[0].content
     assert "including tool-specific limits" in contents[0].content
-    assert "different controller models use the same field names" in contents[0].content
+    assert "schema-defined bounds from the current tool schema" in contents[0].content
+    assert "such as a visible `moodList` or `sceneList`" in contents[0].content
+    assert "do not guess or probe" in contents[0].content
     assert "### Inspect one known room" in contents[0].content
     assert "### Find and read a control" in contents[0].content
     assert "### Interpret controller-specific states" in contents[0].content

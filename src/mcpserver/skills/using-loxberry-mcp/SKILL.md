@@ -133,14 +133,17 @@ action on one identified target.
 3. Continue only when `visibility` is `direct` or `linked` and
    `capabilities.allowed_actions` contains the requested
    action exactly.
-4. Read parameter names from the current tool schema and parameter values from
-   the freshly described capability object. Do not assume identifiers from
-   different controller models use the same field names. Call
-   `loxone_operate_control` once with that control UUID, the advertised action,
-   and only its required parameters. Switches use `on` or `off`; dimmers use
-   `set_level` with `level`; lighting controllers use `set_mood` with `mood_id`;
-   blinds use the advertised explicit target action and, when required,
-   `position` and/or `slat_position`.
+4. Read parameter names and schema-defined bounds from the current tool schema.
+   Obtain target-specific selectable values only from freshly described
+   capabilities or from current values of exact state references returned by
+   that description, such as a visible `moodList` or `sceneList`. Do not assume
+   identifiers from different controller models use the same field names. If a
+   required target-specific value or range is not exposed, do not guess or probe
+   it through retries. Call `loxone_operate_control` once with that control UUID,
+   the advertised action, and only its required parameters. Switches use `on` or
+   `off`; dimmers use `set_level` with `level`; lighting controllers use
+   `set_mood` with `mood_id`; blinds use the advertised explicit target action
+   and, when required, `position` and/or `slat_position`.
    Timed switches use `on`, `off`, or `pulse`; pushbuttons use `pulse`; radios
    use a visible `output_id` or an advertised `reset`; RGB scenes use a visible
    `scene_id`; color pickers require the advertised HSV or temperature action
