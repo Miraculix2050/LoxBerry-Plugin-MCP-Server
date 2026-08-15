@@ -3,7 +3,7 @@
 All notable user-visible changes are recorded here. GitHub release notes are
 extracted from the matching version heading.
 
-## Unreleased
+## 0.4.0-beta.1 - 2026-08-15
 
 - Add `loxone_get_room_snapshot` for bounded current states in one exact visible
   room and `loxone_get_weather` for current or paginated forecast weather.
@@ -22,6 +22,11 @@ extracted from the matching version heading.
 - Preserve explicit WindowMonitor item mappings when LoxAPP3 represents them as
   a bounded object keyed by control identifier, so their referenced visible
   controls can be resolved without name inference.
+
+- Begin the feature-frozen `0.4.0` beta channel. Future `0.4.0` changes are
+  limited to beta blockers, fixes and necessary compatibility corrections.
+
+## Unreleased
 
 ## 0.4.0-alpha.15 - 2026-08-15
 

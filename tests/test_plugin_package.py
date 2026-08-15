@@ -145,7 +145,7 @@ def test_plugin_identity_and_platform_contract() -> None:
     assert parser["PLUGIN"]["NAME"] == "mcpserver"
     assert parser["PLUGIN"]["FOLDER"] == "mcpserver"
     assert parser["PLUGIN"]["TITLE"] == "LoxBerry MCP Server"
-    assert parser["PLUGIN"]["VERSION"] == "0.4.0-alpha.15"
+    assert parser["PLUGIN"]["VERSION"] == "0.4.0-beta.1"
     assert parser["AUTOUPDATE"]["AUTOMATIC_UPDATES"] == "true"
     assert parser["AUTOUPDATE"]["RELEASECFG"].startswith("https://")
     assert parser["AUTOUPDATE"]["PRERELEASECFG"].startswith("https://")
@@ -480,7 +480,7 @@ def test_plugin_archive_verifier_accepts_builder_output(tmp_path: Path) -> None:
     for name, version in _locked_requirements(ROOT / "requirements" / "runtime-arm64.lock").items():
         wheel_name = name.replace("-", "_")
         (wheelhouse / f"{wheel_name}-{version}-py3-none-any.whl").write_bytes(b"wheel")
-    project_wheel = wheelhouse / "loxberry_mcpserver-0.4.0a15-py3-none-any.whl"
+    project_wheel = wheelhouse / "loxberry_mcpserver-0.4.0b1-py3-none-any.whl"
     _write_project_wheel(project_wheel)
     hash_lock = tmp_path / "runtime-arm64.sha256"
     hash_lock.write_text(
@@ -900,19 +900,19 @@ def test_plugin_archive_verifier_rejects_checksum_mismatch(tmp_path: Path) -> No
 
 
 def test_release_metadata_and_changelog_match_current_prerelease() -> None:
-    notes = validate_release_metadata(ROOT, "0.4.0-alpha.15", "prerelease")
+    notes = validate_release_metadata(ROOT, "0.4.0-beta.1", "prerelease")
     parser = configparser.ConfigParser()
     parser.read(ROOT / "plugin.cfg", encoding="utf-8")
     source_fallback = (ROOT / "src" / "mcpserver" / "__init__.py").read_text(encoding="utf-8")
 
-    assert "Fail closed when the Miniserver binary-state stream ends" in notes
+    assert "Add `loxone_get_room_snapshot`" in notes
     assert f'__version__ = "{parser["PLUGIN"]["VERSION"]}"' in source_fallback
     with pytest.raises(ValueError, match="stable releases"):
-        validate_release_metadata(ROOT, "0.4.0-alpha.15", "stable")
+        validate_release_metadata(ROOT, "0.4.0-beta.1", "stable")
     with pytest.raises(ValueError, match="prerelease releases"):
         validate_release_metadata(ROOT, "0.4.0", "prerelease")
     with pytest.raises(ValueError, match="channel must"):
-        validate_release_metadata(ROOT, "0.4.0-alpha.15", "preview")
+        validate_release_metadata(ROOT, "0.4.0-beta.1", "preview")
     with pytest.raises(ValueError, match="versions do not match"):
         validate_release_metadata(ROOT, "0.3.0-alpha.2", "prerelease")
 
@@ -929,6 +929,14 @@ def test_project_version_normalization_supports_alpha_beta_and_stable(
     version: str, expected: str
 ) -> None:
     assert _expected_project_version(version) == expected
+
+
+@pytest.mark.parametrize("version", ("0.4.0-alpha.01", "0.4.0-beta.01", "0.4.0-BETA.1"))
+def test_project_version_normalization_rejects_leading_zero_prerelease_counter(
+    version: str,
+) -> None:
+    with pytest.raises(ValueError, match="version must use"):
+        _expected_project_version(version)
 
 
 def test_release_workflow_is_manual_owner_only_and_separates_permissions() -> None:

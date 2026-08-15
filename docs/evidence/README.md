@@ -7,3 +7,4 @@
 ## Contents
 
 - [Current evidence](current-evidence.md) — what is implemented, automatically tested and hardware confirmed.
+- [Beta 1 readiness](beta-1-readiness.md) — final release gate and dated audit status.
