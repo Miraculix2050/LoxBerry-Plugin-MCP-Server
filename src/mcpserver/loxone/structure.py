@@ -299,6 +299,36 @@ def _room_groups(
         return (), {}
     groups: list[NamedGroup] = []
     memberships: dict[str, set[str]] = {}
+    known_room_uuids: set[str] = set()
+    room_uuids_by_name: dict[str, set[str]] = {}
+    rooms = document.get("rooms")
+    if isinstance(rooms, Mapping):
+        for room_uuid, room in rooms.items():
+            if isinstance(room_uuid, str) and isinstance(room, Mapping):
+                known_room_uuids.add(room_uuid)
+                room_name = _bounded_text(room.get("name"))
+                if room_name is not None:
+                    room_uuids_by_name.setdefault(room_name, set()).add(room_uuid)
+
+    def references(value: object, targets: set[str]) -> set[str]:
+        """Find bounded explicit references across compatible LoxAPP3 variants."""
+
+        result: set[str] = set()
+        pending = [value]
+        inspected = 0
+        while pending and inspected < 100:
+            current = pending.pop()
+            inspected += 1
+            if isinstance(current, str):
+                if current in targets:
+                    result.add(current)
+            elif isinstance(current, Mapping):
+                pending.extend(list(current.keys())[:100 - inspected])
+                pending.extend(list(current.values())[:100 - inspected])
+            elif isinstance(current, (list, tuple, set, frozenset)):
+                pending.extend(list(current)[:100 - inspected])
+        return result
+
     for item in raw_groups[:100]:
         if not isinstance(item, Mapping):
             continue
@@ -306,21 +336,30 @@ def _room_groups(
         if identifier is None or name is None:
             continue
         groups.append(NamedGroup(identifier, name))
-        room_ids = item.get("rooms", item.get("roomUuids"))
-        if isinstance(room_ids, list) and len(room_ids) <= 100:
-            for room_uuid in room_ids:
-                normalized_room_uuid = _bounded_text(room_uuid, maximum=128)
-                if normalized_room_uuid is not None:
-                    memberships.setdefault(normalized_room_uuid, set()).add(identifier)
+        room_uuids = references(item, known_room_uuids)
+        for room_name in references(item, set(room_uuids_by_name)):
+            if len(room_uuids_by_name[room_name]) == 1:
+                room_uuids.update(room_uuids_by_name[room_name])
+        for room_uuid in room_uuids:
+            memberships.setdefault(room_uuid, set()).add(identifier)
     known_groups = {item.uuid for item in groups}
+    group_uuids_by_name: dict[str, set[str]] = {}
+    for group in groups:
+        group_uuids_by_name.setdefault(group.name, set()).add(group.uuid)
     rooms = document.get("rooms")
     if isinstance(rooms, Mapping):
         for room_uuid, room in rooms.items():
             if not isinstance(room_uuid, str) or not isinstance(room, Mapping):
                 continue
-            group_uuid = _bounded_text(room.get("roomGroup"))
-            if group_uuid in known_groups:
+            for group_uuid in references(room, known_groups):
                 memberships.setdefault(room_uuid, set()).add(group_uuid)
+            for field in ("roomGroup", "roomGroupName"):
+                group_name = _bounded_text(room.get(field))
+                if (
+                    group_name is not None
+                    and len(group_uuids_by_name.get(group_name, ())) == 1
+                ):
+                    memberships.setdefault(room_uuid, set()).update(group_uuids_by_name[group_name])
     return tuple(groups), {
         room_uuid: next(iter(group_uuids)) if len(group_uuids) == 1 else None
         for room_uuid, group_uuids in memberships.items()

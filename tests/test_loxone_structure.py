@@ -188,15 +188,36 @@ def test_structure_resolves_only_unambiguous_explicit_room_group_membership() ->
             "room-1": {"name": "Kitchen", "roomGroup": "group-ground"},
             "room-2": {"name": "Office"},
             "room-3": {"name": "Ambiguous"},
+            "room-4": {"name": "Mapped group"},
+            "room-5": {"name": "Mapped IDs"},
+            "room-6": {"name": "Direct UUID", "roomGroupUUID": "group-upper"},
+            "room-7": {"name": "Direct name", "roomGroup": "Upper floor"},
+            "room-8": {"name": "Mapped name"},
         },
         "cats": {},
         "roomGroups": [
             {"uuid": "group-ground", "name": "Ground floor", "rooms": ["room-2", "room-3"]},
-            {"uuid": "group-upper", "name": "Upper floor", "roomUuids": ["room-3"]},
+            {
+                "uuid": "group-upper",
+                "name": "Upper floor",
+                "roomUuids": ["room-3"],
+                "roomUUIDs": {"room-4": {}},
+                "roomIds": ["room-5"],
+                "roomNames": ["Mapped name"],
+            },
         ],
         "controls": {
             room_uuid: {"name": room_uuid, "type": "Switch", "room": room_uuid, "states": {}}
-            for room_uuid in ("room-1", "room-2", "room-3")
+            for room_uuid in (
+                "room-1",
+                "room-2",
+                "room-3",
+                "room-4",
+                "room-5",
+                "room-6",
+                "room-7",
+                "room-8",
+            )
         },
     }
 
@@ -206,6 +227,11 @@ def test_structure_resolves_only_unambiguous_explicit_room_group_membership() ->
         "room-1": "group-ground",
         "room-2": "group-ground",
         "room-3": None,
+        "room-4": "group-upper",
+        "room-5": "group-upper",
+        "room-6": "group-upper",
+        "room-7": "group-upper",
+        "room-8": "group-upper",
     }
     assert [(item.uuid, item.name) for item in structure.room_groups] == [
         ("group-ground", "Ground floor"),
