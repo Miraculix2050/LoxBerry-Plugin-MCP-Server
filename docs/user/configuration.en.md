@@ -4,7 +4,7 @@
 
 ## Basic settings
 
-Configure one local HTTPS origin and exactly one Miniserver target. Selecting a Miniserver stored in LoxBerry does not reuse its credentials. An unreachable or invalid target is not enabled.
+Configure one local HTTPS origin and exactly one Miniserver target. Selecting a Miniserver stored in LoxBerry does not reuse its credentials. The first save of a complete, valid setup enables the server; test the connection before production use.
 
 ## Certificate
 
@@ -12,6 +12,6 @@ Use an MCP client address covered by the LoxBerry web-server certificate. Certif
 
 ## Feature switches
 
-The admin interface only enables a feature globally. The client must also request the matching scope and the user must approve it.
+Read access, history/statistics and LoxBerry diagnostics are globally available. The client must still request the matching scope and the user must approve it; LoxBerry diagnostics also require local approval.
 
 Next: [Permissions](permissions.en.md).

@@ -3,6 +3,12 @@
 All notable user-visible changes are recorded here. GitHub release notes are
 extracted from the matching version heading.
 
+## 0.4.0-beta.2 - 2026-08-15
+
+- Enable bounded history/statistics and masked LoxBerry diagnostics for fresh
+  installations. Saving the first complete configuration also enables the
+  service; OAuth consent and local diagnostic approvals remain required.
+
 ## 0.4.0-beta.1 - 2026-08-15
 
 - Add `loxone_get_room_snapshot` for bounded current states in one exact visible
