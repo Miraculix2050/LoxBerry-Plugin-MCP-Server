@@ -35,9 +35,9 @@
   },
   "tools": {
     "loxone_control_enabled": false,
-    "loxone_history_enabled": false,
+    "loxone_history_enabled": true,
     "loxone_read_enabled": true,
-    "loxberry_read_enabled": false,
+    "loxberry_read_enabled": true,
     "loxberry_operate_enabled": false
   }
 }

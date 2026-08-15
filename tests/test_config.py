@@ -35,6 +35,21 @@ def test_defaults_are_disabled_and_bounded() -> None:
     assert config.log_level == "warning"
 
 
+def test_fresh_install_default_enables_read_only_history_and_diagnostics() -> None:
+    document = json.loads(
+        (Path(__file__).resolve().parents[1] / "config" / "default-config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    config = PluginConfig.from_document(document)
+
+    assert config.enabled is False
+    assert config.loxone_read_enabled is True
+    assert config.loxone_history_enabled is True
+    assert config.loxberry_read_enabled is True
+    assert config.loxberry_read_bindings == ()
+
+
 def test_configuration_round_trip_preserves_unknown_keys(tmp_path: Path) -> None:
     store = AtomicConfigStore((tmp_path / "config.json").resolve())
     config = PluginConfig.from_document(

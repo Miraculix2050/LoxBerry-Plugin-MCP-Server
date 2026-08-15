@@ -269,6 +269,16 @@ def _save(payload: object) -> dict[str, Any]:
     config = PluginConfig.from_document(payload)
     store = _config_store()
     previous = store.load()
+    if (
+        not previous.enabled
+        and not previous.public_origin
+        and not previous.loxone_endpoint
+        and not config.enabled
+        and config.public_origin
+        and config.loxone_endpoint
+        and config.loxone_read_enabled
+    ):
+        config = replace(config, enabled=True)
     if "logging" not in payload:
         config = replace(config, log_level=previous.log_level)
     if "policies" not in payload:

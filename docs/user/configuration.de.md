@@ -4,7 +4,7 @@
 
 ## Grundeinstellungen
 
-Konfiguriere eine lokale HTTPS-Origin und genau ein Miniserver-Ziel. Die Auswahl eines in LoxBerry hinterlegten Miniservers übernimmt keine dort gespeicherten Zugangsdaten. Ein nicht erreichbares oder ungültiges Ziel wird nicht aktiviert.
+Konfiguriere eine lokale HTTPS-Origin und genau ein Miniserver-Ziel. Die Auswahl eines in LoxBerry hinterlegten Miniservers übernimmt keine dort gespeicherten Zugangsdaten. Das erste Speichern einer vollständigen, gültigen Einrichtung aktiviert den Server; prüfe die Verbindung vor dem produktiven Einsatz.
 
 ## Zertifikat
 
@@ -12,6 +12,6 @@ Verwende für MCP-Clients eine Adresse, die vom LoxBerry-Webserverzertifikat abg
 
 ## Funktionsfreigaben
 
-Die Admin-Oberfläche aktiviert Funktionen nur grundsätzlich. Der Client muss den passenden Scope zusätzlich anfordern und der Benutzer bestätigen.
+Lesezugriff sowie Historie/Statistiken und LoxBerry-Diagnose sind grundsätzlich verfügbar. Der Client muss den passenden Scope zusätzlich anfordern und der Benutzer bestätigen; LoxBerry-Diagnose benötigt außerdem eine lokale Freigabe.
 
 Weiter: [Berechtigungen](permissions.de.md).

@@ -785,6 +785,51 @@ def test_failed_config_apply_restores_previous_configuration(
     assert store.load().to_document() == previous.to_document()
 
 
+def test_first_complete_configuration_enables_the_service(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    store.save(PluginConfig.defaults())
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._restart_service", lambda: None)
+    monkeypatch.setattr("mcpserver.admin._sessions", lambda: [])
+    monkeypatch.setattr("mcpserver.admin._service_response", lambda: {"service_active": True})
+
+    result = _save(
+        {
+            "schema_version": 4,
+            "server": {"enabled": False, "public_origin": "https://loxberry.example"},
+            "loxone": {"endpoint": "http://192.168.10.20"},
+        }
+    )
+
+    assert store.load().enabled is True
+    assert result["configuration"]["server"]["enabled"] is True
+
+
+def test_first_complete_configuration_respects_disabled_read_access(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    store.save(PluginConfig.defaults())
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._restart_service", lambda: None)
+    monkeypatch.setattr("mcpserver.admin._sessions", lambda: [])
+    monkeypatch.setattr("mcpserver.admin._service_response", lambda: {"service_active": True})
+
+    result = _save(
+        {
+            "schema_version": 4,
+            "server": {"enabled": False, "public_origin": "https://loxberry.example"},
+            "loxone": {"endpoint": "http://192.168.10.20"},
+            "tools": {"loxone_read_enabled": False},
+        }
+    )
+
+    assert store.load().enabled is False
+    assert result["configuration"]["server"]["enabled"] is False
+
+
 @pytest.mark.parametrize(
     "mode",
     ["off", "error", "warning", "info", "debug"],
