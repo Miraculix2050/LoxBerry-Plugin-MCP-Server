@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from logging.handlers import RotatingFileHandler
@@ -132,8 +133,13 @@ def configure_service_logging(
         handler = logging.StreamHandler()
     handler.addFilter(ServiceLevelFilter(level))
     handler.setFormatter(
-        BoundedLogFormatter("%(asctime)s component=%(name)s severity=%(levelname)s %(message)s")
+        BoundedLogFormatter(
+            "%(asctime)s component=%(name)s severity=%(levelname)s %(message)s",
+            datefmt="%Y-%m-%dT%H:%M:%SZ",
+        )
     )
+    assert handler.formatter is not None
+    handler.formatter.converter = time.gmtime
     logging.basicConfig(
         level=logging.DEBUG,
         handlers=[handler],

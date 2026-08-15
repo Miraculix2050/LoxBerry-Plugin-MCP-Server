@@ -618,6 +618,7 @@ class LoxBerryServiceEventData(BaseModel):
 class LoxBerryServiceEventsData(BaseModel):
     model_config = ConfigDict(extra="forbid")
     events: list[LoxBerryServiceEventData]
+    next_cursor: str | None = None
 
 
 class LoxBerryErrorData(ErrorData):
@@ -890,11 +891,27 @@ class LoxBerryReadRuntime:
 
         return await asyncio.to_thread(self._diagnostics.service_health)
 
-    async def service_events(self, access: StoredAccessToken, limit: int) -> dict[str, Any]:
+    async def service_events(
+        self,
+        access: StoredAccessToken,
+        *,
+        trace_id: str | None = None,
+        component: str | None = None,
+        severity: str | None = None,
+        start: datetime | None = None,
+        end: datetime | None = None,
+    ) -> list[dict[str, str]]:
         self._allowed(access)
         import asyncio
 
-        return {"events": await asyncio.to_thread(self._diagnostics.service_events, limit=limit)}
+        return await asyncio.to_thread(
+            self._diagnostics.service_events,
+            trace_id=trace_id,
+            component=component,
+            severity=severity,
+            start=start,
+            end=end,
+        )
 
 
 class LoxBerryOperateRuntime:
@@ -958,6 +975,12 @@ def _page(
         "items": selected,
         "next_cursor": codec.encode(scope, next_offset) if next_offset < len(items) else None,
     }
+
+
+def _normalized_query(value: str | None) -> str | None:
+    if value is not None and len(value) > 200:
+        raise ValueError("query is too long")
+    return value.casefold().strip() if value else None
 
 
 async def _snapshot(runtime: LoxoneRuntime | None) -> tuple[StoredAccessToken, RuntimeSnapshot]:
@@ -1349,11 +1372,24 @@ def register_read_tools(
         structured_output=True,
     )
     async def list_rooms(
-        cursor: CursorArgument = None, limit: LimitArgument = DEFAULT_PAGE_SIZE
+        query: Annotated[
+            str | None,
+            Field(
+                description="Case-insensitive text contained in the visible room name.",
+                max_length=200,
+            ),
+        ] = None,
+        room_group_uuid: Annotated[
+            str | None,
+            Field(description="Exact room-group UUID returned by loxone_list_global_metadata."),
+        ] = None,
+        cursor: CursorArgument = None,
+        limit: LimitArgument = DEFAULT_PAGE_SIZE,
     ) -> RoomPageEnvelope:
         try:
             _access_token, snapshot = await _snapshot(runtime)
             room_groups = {item.uuid: item.name for item in snapshot.structure.room_groups}
+            normalized = _normalized_query(query)
             values = [
                 {
                     "uuid": item.uuid,
@@ -1365,10 +1401,18 @@ def register_read_tools(
                     ),
                 }
                 for item in snapshot.structure.rooms
+                if (normalized is None or normalized in item.name.casefold())
+                and (room_group_uuid is None or item.room_group_uuid == room_group_uuid)
             ]
             return _result(
                 RoomPageEnvelope,
-                _page(cursors, "rooms", values, cursor, limit),
+                _page(
+                    cursors,
+                    f"rooms:{normalized or ''}:{room_group_uuid or ''}",
+                    values,
+                    cursor,
+                    limit,
+                ),
             )
         except ValueError as exc:
             return _error(RoomPageEnvelope, "invalid_input", str(exc))
@@ -1453,13 +1497,27 @@ def register_read_tools(
         structured_output=True,
     )
     async def list_categories(
-        cursor: CursorArgument = None, limit: LimitArgument = DEFAULT_PAGE_SIZE
+        query: Annotated[
+            str | None,
+            Field(
+                description="Case-insensitive text contained in the visible category name.",
+                max_length=200,
+            ),
+        ] = None,
+        cursor: CursorArgument = None,
+        limit: LimitArgument = DEFAULT_PAGE_SIZE,
     ) -> NamedGroupPageEnvelope:
         try:
             _access_token, snapshot = await _snapshot(runtime)
+            normalized = _normalized_query(query)
+            values = [
+                item
+                for item in _groups(snapshot.structure.categories)
+                if normalized is None or normalized in item["name"].casefold()
+            ]
             return _result(
                 NamedGroupPageEnvelope,
-                _page(cursors, "categories", _groups(snapshot.structure.categories), cursor, limit),
+                _page(cursors, f"categories:{normalized or ''}", values, cursor, limit),
             )
         except ValueError as exc:
             return _error(NamedGroupPageEnvelope, "invalid_input", str(exc))
@@ -1487,11 +1545,19 @@ def register_read_tools(
             | None,
             Field(description="Optional exact metadata kind."),
         ] = None,
+        query: Annotated[
+            str | None,
+            Field(
+                description="Case-insensitive text contained in the visible metadata name.",
+                max_length=200,
+            ),
+        ] = None,
         cursor: CursorArgument = None,
         limit: LimitArgument = DEFAULT_PAGE_SIZE,
     ) -> GlobalMetadataPageEnvelope:
         try:
             _access_token, snapshot = await _snapshot(runtime)
+            normalized = _normalized_query(query)
             values = [
                 {
                     "kind": item.kind,
@@ -1502,11 +1568,18 @@ def register_read_tools(
                     "state_uuid": item.state_uuid,
                 }
                 for item in snapshot.structure.global_metadata
-                if kind is None or item.kind == kind
+                if (kind is None or item.kind == kind)
+                and (normalized is None or normalized in item.name.casefold())
             ]
             return _result(
                 GlobalMetadataPageEnvelope,
-                _page(cursors, f"global-metadata:{kind or 'all'}", values, cursor, limit),
+                _page(
+                    cursors,
+                    f"global-metadata:{kind or 'all'}:{normalized or ''}",
+                    values,
+                    cursor,
+                    limit,
+                ),
             )
         except ValueError as exc:
             return _error(GlobalMetadataPageEnvelope, "invalid_input", str(exc))
@@ -1657,6 +1730,22 @@ def register_read_tools(
             bool,
             Field(description="Only return controls that advertise control history."),
         ] = False,
+        visibility: Annotated[
+            Literal["direct", "linked", "hidden"] | None,
+            Field(description="Optional exact discovery visibility."),
+        ] = None,
+        has_notes: Annotated[
+            bool,
+            Field(description="Only return controls that advertise bounded control notes."),
+        ] = False,
+        is_favorite: Annotated[
+            bool,
+            Field(description="Only return controls marked as a Loxone favorite."),
+        ] = False,
+        room_group_uuid: Annotated[
+            str | None,
+            Field(description="Exact room-group UUID returned by loxone_list_global_metadata."),
+        ] = None,
         include_hidden: Annotated[
             bool,
             Field(
@@ -1669,12 +1758,11 @@ def register_read_tools(
         cursor: CursorArgument = None,
         limit: LimitArgument = DEFAULT_PAGE_SIZE,
     ) -> ControlPageEnvelope:
-        if query is not None and len(query) > 200:
-            return _error(ControlPageEnvelope, "invalid_input", "query is too long")
         try:
+            normalized = _normalized_query(query)
             _access_token, snapshot = await _snapshot(runtime)
             controls = _controls_for_diagnosis(snapshot.structure, include_hidden=include_hidden)
-            normalized = query.casefold().strip() if query else None
+            room_groups = {item.uuid: item.room_group_uuid for item in snapshot.structure.rooms}
             normalized_control_type = control_type.casefold().strip() if control_type else None
             matches = [
                 item
@@ -1688,6 +1776,19 @@ def register_read_tools(
                 )
                 and (not has_statistics or bool(item.statistic_series))
                 and (not has_history or item.has_history)
+                and (
+                    visibility is None
+                    or _control_summary(item, snapshot)["visibility"] == visibility
+                )
+                and (not has_notes or item.has_notes)
+                and (not is_favorite or item.is_favorite)
+                and (
+                    room_group_uuid is None
+                    or (
+                        item.room_uuid is not None
+                        and room_groups.get(item.room_uuid) == room_group_uuid
+                    )
+                )
             ]
             scope = hashlib.sha256(
                 json.dumps(
@@ -1698,6 +1799,10 @@ def register_read_tools(
                         normalized_control_type,
                         has_statistics,
                         has_history,
+                        visibility,
+                        has_notes,
+                        is_favorite,
+                        room_group_uuid,
                         include_hidden,
                     ]
                 ).encode()
@@ -2115,6 +2220,7 @@ def register_skill_tool(server: FastMCP) -> None:
 def register_loxberry_read_tools(server: FastMCP, runtime: LoxBerryReadRuntime) -> None:
     """Publish the optional, fixed Phase 3 LoxBerry diagnostics surface."""
     annotations = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
+    cursors = _CursorCodec()
 
     @server.tool(
         name="loxberry_get_system_status",
@@ -2253,50 +2359,111 @@ def register_loxberry_read_tools(server: FastMCP, runtime: LoxBerryReadRuntime) 
         structured_output=True,
     )
     async def list_loxberry_service_events(
+        trace_id: Annotated[
+            str | None,
+            Field(
+                description="Optional exact trace ID returned by a prior MCP tool call.",
+                max_length=64,
+            ),
+        ] = None,
+        component: Annotated[
+            Literal[
+                "mcpserver.tools",
+                "mcpserver.service",
+                "mcpserver.auth.provider",
+                "mcpserver.auth.remote_revocation",
+                "mcpserver.loxone.client",
+                "mcpserver.loxone.runtime",
+            ]
+            | None,
+            Field(description="Optional exact server component."),
+        ] = None,
+        severity: Annotated[
+            Literal["debug", "info", "warning", "error", "critical"] | None,
+            Field(description="Optional exact event severity."),
+        ] = None,
+        start: Annotated[
+            str | None,
+            Field(
+                description="Inclusive RFC 3339 start timestamp with timezone.",
+                json_schema_extra={"format": "date-time"},
+            ),
+        ] = None,
+        end: Annotated[
+            str | None,
+            Field(
+                description="Inclusive RFC 3339 end timestamp with timezone.",
+                json_schema_extra={"format": "date-time"},
+            ),
+        ] = None,
+        cursor: CursorArgument = None,
         limit: Annotated[
             int, Field(description="Recent events to return, from 1 to 100.", ge=1, le=100)
         ] = 50,
     ) -> LoxBerryServiceEventsEnvelope:
-        trace_id = str(uuid4())
+        call_trace_id = str(uuid4())
         try:
+            start_time = _rfc3339(start) if start is not None else None
+            end_time = _rfc3339(end) if end is not None else None
+            if start_time is not None and end_time is not None and start_time > end_time:
+                raise ValueError("event interval is invalid")
+            events = await runtime.service_events(
+                _access(),
+                trace_id=trace_id,
+                component=component,
+                severity=severity,
+                start=start_time,
+                end=end_time,
+            )
+            scope = (
+                "service-events:"
+                + hashlib.sha256(
+                    json.dumps(
+                        [trace_id, component, severity, start, end], separators=(",", ":")
+                    ).encode()
+                ).hexdigest()
+            )
+            # Page from newest to oldest, while keeping each returned page chronological
+            # like the pre-pagination "last limit" response.
+            page = _page(cursors, scope, list(reversed(events)), cursor, limit)
             return _result(
                 LoxBerryServiceEventsEnvelope,
-                await runtime.service_events(_access(), limit),
-                trace_id=trace_id,
+                {"events": list(reversed(page["items"])), "next_cursor": page["next_cursor"]},
+                trace_id=call_trace_id,
             )
         except ValueError as exc:
             return _error(
                 LoxBerryServiceEventsEnvelope,
                 "invalid_input",
                 str(exc),
-                trace_id=trace_id,
+                trace_id=call_trace_id,
             )
         except PermissionError:
             return _error(
                 LoxBerryServiceEventsEnvelope,
                 "permission_denied",
                 "LoxBerry diagnostics require loxberry:read and local approval",
-                trace_id=trace_id,
+                trace_id=call_trace_id,
             )
         except DiagnosticsUnavailable:
             return _error(
                 LoxBerryServiceEventsEnvelope,
                 "temporarily_unavailable",
                 "LoxBerry diagnostic events are temporarily unavailable",
-                trace_id=trace_id,
+                trace_id=call_trace_id,
             )
         except Exception as exc:
             _LOGGER.error(
                 "component=tools trace_id=%s outcome=internal_error "
                 "tool=loxberry_list_service_events error_type=%s",
-                trace_id,
+                call_trace_id,
                 type(exc).__name__,
             )
             return _error(
                 LoxBerryServiceEventsEnvelope,
                 "internal_error",
                 "Internal error",
-                trace_id=trace_id,
+                trace_id=call_trace_id,
             )
 
 
@@ -2483,6 +2650,20 @@ def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
     )
     async def get_control_history(
         control_uuid: Annotated[str, Field(description="Exact control UUID.")],
+        start: Annotated[
+            str | None,
+            Field(
+                description="Inclusive RFC 3339 start timestamp with timezone.",
+                json_schema_extra={"format": "date-time"},
+            ),
+        ] = None,
+        end: Annotated[
+            str | None,
+            Field(
+                description="Inclusive RFC 3339 end timestamp with timezone.",
+                json_schema_extra={"format": "date-time"},
+            ),
+        ] = None,
         include_hidden: Annotated[
             bool,
             Field(description="Allow a hidden control returned by include_hidden search."),
@@ -2496,9 +2677,15 @@ def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                     "temporarily_unavailable", "the service is not configured"
                 )
             access = _access()
+            start_time = _rfc3339(start) if start is not None else None
+            end_time = _rfc3339(end) if end is not None else None
+            if start_time is not None and end_time is not None and start_time > end_time:
+                raise ValueError("history interval is invalid")
             scope = (
                 "history:"
-                + hashlib.sha256(f"{access.family_id}\0{control_uuid}".encode()).hexdigest()
+                + hashlib.sha256(
+                    f"{access.family_id}\0{control_uuid}\0{include_hidden}\0{start}\0{end}".encode()
+                ).hexdigest()
             )
             if include_hidden:
                 _control, entries = await runtime.get_control_history(
@@ -2507,6 +2694,12 @@ def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
             else:
                 _control, entries = await runtime.get_control_history(access, control_uuid)
             keyed_entries = history_keyed_entries(entries)
+            keyed_entries = tuple(
+                item
+                for item in keyed_entries
+                if (start_time is None or item[0].timestamp >= ceil(start_time.timestamp()))
+                and (end_time is None or item[0].timestamp <= floor(end_time.timestamp()))
+            )
             if cursor is not None:
                 anchor = cursors.decode_anchor(scope, cursor)
                 if anchor[0] != "history":

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -67,7 +68,7 @@ def test_service_events_return_only_allowlisted_fields_from_fixed_log(tmp_path: 
         encoding="utf-8",
     )
 
-    assert LoxBerryDiagnostics(tmp_path.resolve()).service_events(limit=100) == [
+    assert LoxBerryDiagnostics(tmp_path.resolve()).service_events() == [
         {
             "timestamp": "2026-08-14 10:00:00,000",
             "component": "mcpserver.tools",
@@ -78,17 +79,51 @@ def test_service_events_return_only_allowlisted_fields_from_fixed_log(tmp_path: 
     ]
 
 
-def test_service_events_reject_invalid_limit_and_oversized_log(tmp_path: Path) -> None:
+def test_service_events_filter_and_reject_invalid_input_or_oversized_log(tmp_path: Path) -> None:
     log = tmp_path / "log" / "plugins" / "mcpserver"
     log.mkdir(parents=True)
     target = log / "service.log"
-    target.write_text("", encoding="utf-8")
+    target.write_text(
+        (
+            "2026-08-14T10:00:00Z component=mcpserver.tools severity=ERROR "
+            "trace_id=trace-1 outcome=failed\n"
+            "2026-08-14T11:00:00Z component=mcpserver.service severity=INFO "
+            "trace_id=trace-2 outcome=ok\n"
+        ),
+        encoding="utf-8",
+    )
     diagnostics = LoxBerryDiagnostics(tmp_path.resolve())
     with pytest.raises(ValueError):
-        diagnostics.service_events(limit=0)
+        diagnostics.service_events(component="not-allowed")
+    assert diagnostics.service_events(trace_id="trace-1", severity="error") == [
+        {
+            "timestamp": "2026-08-14T10:00:00Z",
+            "component": "mcpserver.tools",
+            "severity": "error",
+            "trace_id": "trace-1",
+            "outcome": "failed",
+        }
+    ]
+    assert diagnostics.service_events(
+        start=datetime(2026, 8, 14, 10, 0, tzinfo=UTC),
+        end=datetime(2026, 8, 14, 10, 0, tzinfo=UTC),
+    ) == [
+        {
+            "timestamp": "2026-08-14T10:00:00Z",
+            "component": "mcpserver.tools",
+            "severity": "error",
+            "trace_id": "trace-1",
+            "outcome": "failed",
+        }
+    ]
+    with pytest.raises(ValueError, match="event interval"):
+        diagnostics.service_events(
+            start=datetime(2026, 8, 14, 11, 0, tzinfo=UTC),
+            end=datetime(2026, 8, 14, 10, 0, tzinfo=UTC),
+        )
     target.write_bytes(b"x" * (512 * 1024 + 1))
     with pytest.raises(DiagnosticsUnavailable):
-        diagnostics.service_events(limit=1)
+        diagnostics.service_events()
 
 
 def test_diagnostic_source_rejects_a_symlink(tmp_path: Path) -> None:

@@ -7,6 +7,7 @@ import os
 import re
 import stat
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
@@ -39,6 +40,16 @@ _EVENT_COMPONENTS: Final = frozenset(
         "mcpserver.loxone.runtime",
     }
 )
+
+
+def _event_timestamp(value: str) -> datetime | None:
+    """Parse current UTC log records and legacy records retained during upgrade."""
+    try:
+        if value.endswith("Z"):
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC)
+        return datetime.strptime(value, "%Y-%m-%d %H:%M:%S,%f").replace(tzinfo=UTC)
+    except ValueError:
+        return None
 
 
 class LoxBerryDiagnostics:
@@ -179,10 +190,28 @@ class LoxBerryDiagnostics:
             "healthy": installed and active_state == "active",
         }
 
-    def service_events(self, *, limit: int) -> list[dict[str, str]]:
+    def service_events(
+        self,
+        *,
+        trace_id: str | None = None,
+        component: str | None = None,
+        severity: str | None = None,
+        start: datetime | None = None,
+        end: datetime | None = None,
+    ) -> list[dict[str, str]]:
         """Return only allowlisted fields from this plugin's bounded service log."""
-        if not 1 <= limit <= _MAX_SERVICE_EVENTS:
-            raise ValueError("event limit is invalid")
+        if component is not None and component not in _EVENT_COMPONENTS:
+            raise ValueError("event component is invalid")
+        if severity is not None and severity not in {
+            "debug",
+            "info",
+            "warning",
+            "error",
+            "critical",
+        }:
+            raise ValueError("event severity is invalid")
+        if start is not None and end is not None and start > end:
+            raise ValueError("event interval is invalid")
         # This is a fixed plugin-owned path, deliberately not an MCP argument.
         raw = self._read_limited(
             self._home / "log/plugins/mcpserver/service.log", _SERVICE_LOG_MAX_BYTES
@@ -203,5 +232,16 @@ class LoxBerryDiagnostics:
             }
             for field in _EVENT_FIELD.finditer(match["fields"]):
                 event[field["name"]] = field["value"]
+            observed_at = _event_timestamp(event["timestamp"])
+            if trace_id is not None and event.get("trace_id") != trace_id:
+                continue
+            if component is not None and event["component"] != component:
+                continue
+            if severity is not None and event["severity"] != severity:
+                continue
+            if start is not None and (observed_at is None or observed_at < start):
+                continue
+            if end is not None and (observed_at is None or observed_at > end):
+                continue
             events.append(event)
-        return events[-limit:]
+        return events

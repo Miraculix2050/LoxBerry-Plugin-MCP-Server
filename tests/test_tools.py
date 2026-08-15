@@ -130,7 +130,9 @@ def test_loxberry_tool_contracts_have_closed_output_schemas() -> None:
     }
     for name, tool in published.items():
         assert set(tool.parameters["properties"]) == (
-            {"limit"} if name == "loxberry_list_service_events" else set()
+            {"trace_id", "component", "severity", "start", "end", "cursor", "limit"}
+            if name == "loxberry_list_service_events"
+            else set()
         )
         assert tool.annotations is not None
         assert tool.annotations.readOnlyHint is True
@@ -145,6 +147,73 @@ def test_loxberry_tool_contracts_have_closed_output_schemas() -> None:
             tool.output_schema["$defs"][name]["additionalProperties"] is False
             for name in data_names
         )
+
+
+@pytest.mark.asyncio
+async def test_service_events_filters_time_range_and_binds_cursor_scope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    received: dict[str, object] = {}
+
+    class Runtime:
+        async def service_events(self, _access: object, **kwargs: object) -> list[dict[str, str]]:
+            received.update(kwargs)
+            return [
+                {
+                    "timestamp": "2026-08-14T10:00:00Z",
+                    "component": "mcpserver.tools",
+                    "severity": "error",
+                    "trace_id": "trace-1",
+                    "outcome": "first",
+                },
+                {
+                    "timestamp": "2026-08-14T10:01:00Z",
+                    "component": "mcpserver.tools",
+                    "severity": "error",
+                    "trace_id": "trace-1",
+                    "outcome": "second",
+                },
+            ]
+
+    server = FastMCP("service-event-filters")
+    register_loxberry_read_tools(server, Runtime())  # type: ignore[arg-type]
+    monkeypatch.setattr(
+        tools_module, "_access", lambda: _loxberry_access(READ_SCOPE, LOXBERRY_READ_SCOPE)
+    )
+    arguments = {
+        "trace_id": "trace-1",
+        "component": "mcpserver.tools",
+        "severity": "error",
+        "start": "2026-08-14T10:00:00Z",
+        "end": "2026-08-14T10:01:00Z",
+        "limit": 1,
+    }
+    first = await server._tool_manager.call_tool("loxberry_list_service_events", arguments)
+
+    assert first.ok is True
+    assert [event.outcome for event in first.data.events] == ["second"]
+    assert received == {
+        "trace_id": "trace-1",
+        "component": "mcpserver.tools",
+        "severity": "error",
+        "start": datetime(2026, 8, 14, 10, 0, tzinfo=UTC),
+        "end": datetime(2026, 8, 14, 10, 1, tzinfo=UTC),
+    }
+    assert first.data.next_cursor is not None
+
+    second = await server._tool_manager.call_tool(
+        "loxberry_list_service_events",
+        {**arguments, "cursor": first.data.next_cursor},
+    )
+    assert [event.outcome for event in second.data.events] == ["first"]
+    assert second.data.next_cursor is None
+
+    changed_range = await server._tool_manager.call_tool(
+        "loxberry_list_service_events",
+        {**arguments, "start": "2026-08-14T09:59:00Z", "cursor": first.data.next_cursor},
+    )
+    assert changed_range.ok is False
+    assert changed_range.data.error == "invalid_input"
 
 
 def test_read_results_and_expected_errors_are_debug_only(
@@ -325,6 +394,59 @@ async def test_history_cursor_preserves_identical_entries_across_pages(
 
 
 @pytest.mark.asyncio
+async def test_history_time_range_is_inclusive_and_binds_cursor_scope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    entries = tuple(ControlHistoryEntry(index, str(index), "", "", ()) for index in range(100, 103))
+
+    class Runtime:
+        async def get_control_history(
+            self, _access: object, _control: str
+        ) -> tuple[object, tuple[ControlHistoryEntry, ...]]:
+            return object(), entries
+
+    server = FastMCP("history-time-range")
+    register_history_tools(server, Runtime())  # type: ignore[arg-type]
+    monkeypatch.setattr(
+        tools_module, "_access", lambda: _loxberry_access(READ_SCOPE, HISTORY_SCOPE)
+    )
+    arguments = {
+        "control_uuid": "control",
+        "start": "1970-01-01T00:01:41Z",
+        "end": "1970-01-01T00:01:42Z",
+        "limit": 1,
+    }
+    first = await server._tool_manager.call_tool("loxone_get_control_history", arguments)
+
+    assert first.ok is True
+    assert [entry.what for entry in first.data.entries] == ["102"]
+    assert first.data.next_cursor is not None
+
+    second = await server._tool_manager.call_tool(
+        "loxone_get_control_history", {**arguments, "cursor": first.data.next_cursor}
+    )
+    assert [entry.what for entry in second.data.entries] == ["101"]
+
+    changed_range = await server._tool_manager.call_tool(
+        "loxone_get_control_history",
+        {**arguments, "start": "1970-01-01T00:01:40Z", "cursor": first.data.next_cursor},
+    )
+    assert changed_range.ok is False
+    assert changed_range.data.error == "invalid_input"
+
+    invalid = await server._tool_manager.call_tool(
+        "loxone_get_control_history",
+        {
+            "control_uuid": "control",
+            "start": "1970-01-01T00:01:42Z",
+            "end": "1970-01-01T00:01:41Z",
+        },
+    )
+    assert invalid.ok is False
+    assert invalid.data.error == "invalid_input"
+
+
+@pytest.mark.asyncio
 async def test_statistics_cursor_uses_a_timestamp_anchor(monkeypatch: pytest.MonkeyPatch) -> None:
     points = tuple(StatisticPoint(index, float(index)) for index in range(1, 4))
     calls = 0
@@ -481,7 +603,7 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert tool.annotations.destructiveHint is False
     assert tool.annotations.openWorldHint is False
     assert result.data.name == "using-loxberry-mcp"  # type: ignore[union-attr]
-    assert result.data.revision == 24  # type: ignore[union-attr]
+    assert result.data.revision == 25  # type: ignore[union-attr]
     assert result.data.media_type == "text/markdown"  # type: ignore[union-attr]
     assert result.data.content == read_skill_markdown()  # type: ignore[union-attr]
     assert "For a `StatusMonitor`, use its `inputStates` state UUID." in result.data.content  # type: ignore[union-attr]
@@ -497,9 +619,10 @@ def test_tool_input_schemas_explain_every_argument() -> None:
     published = {tool.name: tool for tool in server._tool_manager.list_tools()}
 
     expected_fields = {
-        "loxone_list_rooms": {"cursor", "limit"},
+        "loxone_list_rooms": {"query", "room_group_uuid", "cursor", "limit"},
         "loxone_get_room_snapshot": {"room_uuid", "cursor", "limit"},
-        "loxone_list_categories": {"cursor", "limit"},
+        "loxone_list_categories": {"query", "cursor", "limit"},
+        "loxone_list_global_metadata": {"kind", "query", "cursor", "limit"},
         "loxone_get_weather": {"mode", "cursor", "limit"},
         "loxone_find_controls": {
             "query",
@@ -508,6 +631,10 @@ def test_tool_input_schemas_explain_every_argument() -> None:
             "control_type",
             "has_statistics",
             "has_history",
+            "visibility",
+            "has_notes",
+            "is_favorite",
+            "room_group_uuid",
             "include_hidden",
             "cursor",
             "limit",
@@ -589,6 +716,8 @@ def test_phase_four_tool_contracts_are_narrow_and_correctly_annotated() -> None:
     assert history.annotations is not None
     assert history.annotations.readOnlyHint is True
     assert history.parameters["properties"]["include_hidden"]["default"] is False
+    assert history.parameters["properties"]["start"]["format"] == "date-time"
+    assert history.parameters["properties"]["end"]["format"] == "date-time"
     cache = published["loxberry_clear_statistics_cache"]
     assert cache.annotations is not None
     assert cache.annotations.readOnlyHint is False
@@ -1620,3 +1749,53 @@ async def test_find_controls_combines_history_and_statistics_filters(
     assert [item.uuid for item in history.data.items] == ["both", "history"]  # type: ignore[union-attr]
     assert [item.uuid for item in statistics.data.items] == ["both", "statistics"]  # type: ignore[union-attr]
     assert [item.uuid for item in both.data.items] == ["both"]  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+async def test_find_controls_filters_visibility_notes_favorite_and_room_group(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    access = _loxberry_access(READ_SCOPE)
+    structure = LoxoneStructure(
+        identity=LoxoneIdentity("user", "serial"),
+        last_modified="1",
+        rooms=(Room("room-1", "Office", "group-1"),),
+        categories=(),
+        controls=(
+            Control(
+                "matching",
+                "Matching",
+                "Switch",
+                "room-1",
+                None,
+                "action-1",
+                (),
+                has_notes=True,
+                is_favorite=True,
+            ),
+            Control(
+                "not-favorite",
+                "Not favorite",
+                "Switch",
+                "room-1",
+                None,
+                "action-2",
+                (),
+                has_notes=True,
+            ),
+        ),
+    )
+
+    async def snapshot(_runtime: object) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+        return access, RuntimeSnapshot("family", structure, True)
+
+    monkeypatch.setattr(tools_module, "_snapshot", snapshot)
+    server = FastMCP("discovery-filters")
+    register_read_tools(server, None)
+    tool = server._tool_manager.get_tool("loxone_find_controls")
+    assert tool is not None
+
+    result = await tool.fn(
+        visibility="direct", has_notes=True, is_favorite=True, room_group_uuid="group-1"
+    )
+    assert [item.uuid for item in result.data.items] == ["matching"]  # type: ignore[union-attr]
