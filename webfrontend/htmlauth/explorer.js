@@ -33,6 +33,7 @@
     {id: 'loxoneControl', names: ['loxone_operate_control']},
     {id: 'loxberryRead', names: [
       'loxberry_get_system_status', 'loxberry_get_plugin_status', 'loxberry_get_service_health',
+      'loxberry_list_service_events',
     ]},
     {id: 'loxberryOperate', names: ['loxberry_clear_statistics_cache']},
   ];

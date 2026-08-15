@@ -27,6 +27,12 @@ extracted from the matching version heading.
 - Update the bundled `using-loxberry-mcp` agent workflow to revision 18 for room
   snapshots, weather, and the new read-only controller interpretations.
 
+- Add bounded, paginated filtering for service events by trace ID, component,
+  severity and RFC-3339 time range; diagnostic records now use UTC timestamps.
+
+- Add optional time-range filters to control history and discovery filters for
+  visibility, notes, favorites, room groups and bounded name searches.
+
 - Add an explicit, fail-closed `room_group` reference to each visible room from
   `loxone_list_rooms`, and resolve visible room and control references in
   StatusMonitor and WindowMonitor descriptions.

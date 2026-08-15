@@ -13,5 +13,6 @@ Unter **Clients und Sitzungen** können Administratoren Sitzungen und lokale Dia
 ## Tool Explorer
 
 Der MCP Tool Explorer ist ein lokaler administrativer Testclient. Er meldet sich mit einem Loxone-Benutzer an und erhält keine Rechte aus der LoxBerry-Admin-Sitzung. Ändernde Aufrufe verlangen vor dem Senden eine Bestätigung.
+RFC-3339-Zeitfelder werden als lokale Datum-/Zeitfelder angezeigt und als UTC übermittelt.
 
 Weiter: [Fehlerbehebung](troubleshooting.de.md).

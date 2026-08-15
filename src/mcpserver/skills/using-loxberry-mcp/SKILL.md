@@ -39,8 +39,11 @@ Call `loxone_get_system_status` when connectivity or data freshness matters.
    statistic series, `has_history=true` to require control history, or both to
    require both capabilities.
 2. For an explicit read-only diagnosis of controls that are neither visible nor
-   linked in Loxone, set `include_hidden=true`. Treat results with
-   `visibility: "hidden"` as non-operable.
+    linked in Loxone, set `include_hidden=true`. Treat results with
+    `visibility: "hidden"` as non-operable.
+   `visibility`, `has_notes`, `is_favorite`, and `room_group_uuid` are additional
+   exact discovery filters. Rooms, categories, and global metadata also support
+   bounded case-insensitive name queries.
 3. Follow every non-null `next_cursor` until the relevant result is found or all
    pages are checked. If more than one control remains plausible, present the
    candidates and ask the user to choose. Never guess a UUID.
@@ -100,7 +103,10 @@ The MCP service can report its own health only while it is reachable. A fully
 stopped MCP service cannot diagnose itself through MCP.
 
 `loxberry_list_service_events` is a read-only, bounded aid for correlating a
-tool response's `trace_id` with recent server-authored diagnostic events. It
+tool response's `trace_id` with server-authored diagnostic events. Use its exact
+`trace_id`, component, severity, and optional RFC-3339 `start`/`end` filters;
+without them it returns the most recent `limit` events. Keep all filters unchanged
+when following `next_cursor`. It
 does not expose raw logs, arbitrary files, journal output, credentials, or
 foreign services. If the service is stopped, use the local LoxBerry log viewer
 or an explicitly authorized host diagnosis instead.
@@ -121,6 +127,9 @@ the same query arguments. History and statistic cursors use signed continuation
 anchors, so a changed live result does not duplicate prior entries. Do not invent
 a series ID or interpret a cache hit as newer than its response metadata. A hidden
 control is readable only with the same explicit `include_hidden=true` mode.
+`loxone_get_control_history` accepts optional inclusive RFC-3339 `start` and `end`
+filters; they narrow its returned bounded result but do not expand the Miniserver
+history fetch.
 
 ## Operate a supported control
 
