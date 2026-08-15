@@ -512,6 +512,7 @@ $template->param(
     HOSTNAME_MCP_URL => $hostname_mcp_url,
     IP_MCP_URL => $ip_mcp_url,
     EXPLORER_URL => 'explorer.cgi',
+    SCHEMA_REFERENCE_URL => 'tool-schema-reference.html',
     ENDPOINT => $display_endpoint,
     MINISERVERS => $miniservers,
     MANUAL_ENDPOINT => $has_selected_miniserver ? 0 : 1,

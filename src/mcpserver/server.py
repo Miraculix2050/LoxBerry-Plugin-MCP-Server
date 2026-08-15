@@ -48,12 +48,7 @@ from mcpserver.skill_delivery import SERVER_INSTRUCTIONS, register_skill_resourc
 from mcpserver.tools import (
     LoxBerryOperateRuntime,
     LoxBerryReadRuntime,
-    register_control_tool,
-    register_history_tools,
-    register_loxberry_operate_tool,
-    register_loxberry_read_tools,
-    register_read_tools,
-    register_skill_tool,
+    register_tool_surface,
 )
 
 SERVER_NAME: Final = "LoxBerry MCP Server"
@@ -497,16 +492,13 @@ def create_server(settings: ServerSettings) -> FastMCP:
         LOXBERRY_OPERATE_SCOPE,
     )
     register_skill_resource(server)
-    register_skill_tool(server)
-    register_read_tools(server, runtime, control_enabled=control_enabled)
-    if runtime is not None:
-        register_control_tool(server, runtime)
-    if loxberry_runtime is not None:
-        register_loxberry_read_tools(server, loxberry_runtime)
-    if runtime is not None:
-        register_history_tools(server, runtime)
-    if loxberry_operate_runtime is not None:
-        register_loxberry_operate_tool(server, loxberry_operate_runtime)
+    register_tool_surface(
+        server,
+        runtime=runtime,
+        loxberry_runtime=loxberry_runtime,
+        loxberry_operate_runtime=loxberry_operate_runtime,
+        control_enabled=control_enabled,
+    )
 
     if oauth_web is not None:
         server.custom_route("/authorize", methods=["GET", "POST"], include_in_schema=False)(

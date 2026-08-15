@@ -3020,3 +3020,23 @@ def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> Non
             )
         except ControlOperationError as exc:
             return _control_envelope(access, control_uuid, action, error=(exc.code, str(exc)))
+
+
+def register_tool_surface(
+    server: FastMCP,
+    *,
+    runtime: LoxoneRuntime | None,
+    loxberry_runtime: LoxBerryReadRuntime | None,
+    loxberry_operate_runtime: LoxBerryOperateRuntime | None,
+    control_enabled: bool,
+) -> None:
+    """Register one complete live or synthetic MCP tool surface."""
+    register_skill_tool(server)
+    register_read_tools(server, runtime, control_enabled=control_enabled)
+    if runtime is not None:
+        register_control_tool(server, runtime)
+        register_history_tools(server, runtime)
+    if loxberry_runtime is not None:
+        register_loxberry_read_tools(server, loxberry_runtime)
+    if loxberry_operate_runtime is not None:
+        register_loxberry_operate_tool(server, loxberry_operate_runtime)

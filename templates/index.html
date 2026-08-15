@@ -195,7 +195,10 @@
         <label class="mcp-field"><span><TMPL_VAR HELP.MCP_IP></span><span class="mcp-copy-row"><input id="mcp-url-ip" type="text" readonly value="<TMPL_VAR IP_MCP_URL ESCAPE=HTML>"><button class="lb-button" type="button" data-copy-target="mcp-url-ip"><TMPL_VAR ACTION.COPY></button></span></label>
       </div>
       <p class="mcp-help"><TMPL_VAR HELP.MCP_CERTIFICATE_HINT></p>
-      <p><a id="explorer-link" class="lb-button" href="<TMPL_VAR EXPLORER_URL ESCAPE=HTML>" target="_blank" rel="noopener"><TMPL_VAR ACTION.EXPLORER></a></p>
+      <p class="mcp-actions">
+        <a id="explorer-link" class="lb-button" href="<TMPL_VAR EXPLORER_URL ESCAPE=HTML>" target="_blank" rel="noopener"><TMPL_VAR ACTION.EXPLORER></a>
+        <a id="schema-reference-link" class="lb-button" href="<TMPL_VAR SCHEMA_REFERENCE_URL ESCAPE=HTML>" target="_blank" rel="noopener"><TMPL_VAR ACTION.SCHEMA_REFERENCE></a>
+      </p>
       <p><a href="https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server" target="_blank" rel="noopener"><TMPL_VAR HELP.PROJECT></a></p>
     </div>
   </details>

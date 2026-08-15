@@ -46,6 +46,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Generate a versioned HTML and JSON reference for the complete MCP tool
+  contract during package builds, link it from Help and the Tool Explorer, and
+  document `tools/list` as the authoritative installed tool surface.
+
 - Update the bundled `using-loxberry-mcp` agent workflow to revision 24 with
   task-specific read paths, complete cache-operation authorization and
   uncertainty guidance, and fail-closed schema and parameter-source rules.

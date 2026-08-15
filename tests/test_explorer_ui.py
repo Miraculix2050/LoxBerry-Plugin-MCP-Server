@@ -11,6 +11,18 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "webfrontend" / "htmlauth" / "explorer.js"
 
 
+def test_help_and_explorer_link_to_static_schema_reference() -> None:
+    index = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+    explorer = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
+    cgi = (ROOT / "webfrontend" / "htmlauth" / "index.cgi").read_text(encoding="utf-8")
+
+    assert "SCHEMA_REFERENCE_URL => 'tool-schema-reference.html'" in cgi
+    assert 'href="<TMPL_VAR SCHEMA_REFERENCE_URL ESCAPE=HTML>"' in index
+    assert 'href="tool-schema-reference.html"' in explorer
+    assert "ACTION.SCHEMA_REFERENCE" in index
+    assert "ACTION.SCHEMA_REFERENCE" in explorer
+
+
 def run_core(expression: str) -> object:
     node = shutil.which("node")
     if node is None:

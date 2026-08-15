@@ -8,6 +8,7 @@
 
 - [Implementation guidelines](implementation-guidelines.md) — binding engineering and security rules.
 - [Architecture](architecture.md) — implemented system boundaries and data flows.
+- [Tool schema reference](tool-schema-reference.md) — live discovery and generated release-contract documentation.
 - [Historical plugin concept](plugin-concept.md) — compatibility entry point for the superseded planning document.
 - [Support matrix](support-matrix.md) — confirmed platforms, clients and limits.
 - [Evidence](../evidence/README.md) — current public evidence summary.

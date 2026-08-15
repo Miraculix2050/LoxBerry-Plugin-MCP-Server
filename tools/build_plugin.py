@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import re
+import sys
 import tomllib
 import zipfile
 from pathlib import Path
@@ -26,6 +27,9 @@ _ROOT_FILES: Final = (
     "postupgrade.sh",
 )
 _DIRECTORIES: Final = ("config", "icons", "templates", "uninstall", "webfrontend")
+REFERENCE_HTML_PATH: Final = "webfrontend/htmlauth/tool-schema-reference.html"
+REFERENCE_JSON_PATH: Final = "webfrontend/htmlauth/tool-schema-reference.json"
+_GENERATED_REFERENCE_PATHS: Final = {REFERENCE_HTML_PATH, REFERENCE_JSON_PATH}
 _EXECUTABLES: Final = {
     "preinstall.sh",
     "preupgrade.sh",
@@ -81,7 +85,7 @@ def expected_source_entries(root: Path) -> set[str]:
         item.relative_to(root).as_posix()
         for directory in _DIRECTORIES
         for item in (root / directory).rglob("*")
-        if item.is_file()
+        if item.is_file() and item.relative_to(root).as_posix() not in _GENERATED_REFERENCE_PATHS
     )
     entries.update(
         {
@@ -90,6 +94,8 @@ def expected_source_entries(root: Path) -> set[str]:
             "bin/renew-web-certificate",
             "bin/runtime-arm64.lock",
             "bin/runtime-arm64.sha256",
+            REFERENCE_HTML_PATH,
+            REFERENCE_JSON_PATH,
         }
     )
     return entries
@@ -105,12 +111,17 @@ def _locked_requirements(lock: Path) -> dict[str, str]:
     return requirements
 
 
-def _project_version(root: Path) -> str:
+def _release_version(root: Path) -> str:
     document = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
     version = document.get("project", {}).get("version")
     if not isinstance(version, str):
         raise SystemExit("project version is missing")
-    return project_version(version)
+    project_version(version)
+    return version
+
+
+def _project_version(root: Path) -> str:
+    return project_version(_release_version(root))
 
 
 def _wheel_names(wheelhouse: Path) -> set[str]:
@@ -168,17 +179,20 @@ def _verify_project_wheel(project_wheel: Path, source_root: Path) -> None:
                 raise SystemExit(f"project wheel contains stale source: {name}")
 
 
-def _add(archive: zipfile.ZipFile, source: Path, target: str) -> None:
+def _add_content(archive: zipfile.ZipFile, content: bytes, target: str) -> None:
     info = zipfile.ZipInfo(target.replace("\\", "/"), _TIMESTAMP)
     info.create_system = 3
     info.compress_type = zipfile.ZIP_STORED
     mode = 0o755 if target.replace("\\", "/") in _EXECUTABLES else 0o644
     info.external_attr = (mode | 0o100000) << 16
-    content = source.read_bytes()
     target_path = Path(target)
     if target_path.suffix.lower() in _TEXT_SUFFIXES or target.replace("\\", "/") in _TEXT_NAMES:
         content = content.replace(b"\r\n", b"\n")
     archive.writestr(info, content)
+
+
+def _add(archive: zipfile.ZipFile, source: Path, target: str) -> None:
+    _add_content(archive, source.read_bytes(), target)
 
 
 def main() -> int:
@@ -192,6 +206,9 @@ def main() -> int:
     )
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
+    sys.path.insert(0, str(root / "src"))
+    from mcpserver.schema_reference import schema_reference_html, schema_reference_json
+
     wheelhouse = args.wheelhouse.resolve()
     output = args.output.resolve()
     lock = root / "requirements" / "runtime-arm64.lock"
@@ -224,9 +241,10 @@ def main() -> int:
         for name, version in requirements.items()
         if (name, version.lower()) not in wheel_versions
     }
-    project_version = _project_version(root)
-    project_wheels = tuple(wheelhouse.glob(f"loxberry_mcpserver-{project_version}-*.whl"))
-    expected_project = [("loxberry-mcpserver", project_version.lower())]
+    release_version = _release_version(root)
+    project_wheel_version = _project_version(root)
+    project_wheels = tuple(wheelhouse.glob(f"loxberry_mcpserver-{project_wheel_version}-*.whl"))
+    expected_project = [("loxberry-mcpserver", project_wheel_version.lower())]
     unexpected = set(runtime_wheels) - expected_runtime
     duplicates = len(runtime_wheels) != len(set(runtime_wheels))
     invalid_wheel = len(wheel_files) != len(wheel_identities)
@@ -261,7 +279,7 @@ def main() -> int:
         (item, item.relative_to(root).as_posix())
         for directory in _DIRECTORIES
         for item in (root / directory).rglob("*")
-        if item.is_file()
+        if item.is_file() and item.relative_to(root).as_posix() not in _GENERATED_REFERENCE_PATHS
     )
     entries.extend(
         [
@@ -278,6 +296,8 @@ def main() -> int:
     with zipfile.ZipFile(output, "w") as archive:
         for source, target in sorted(entries, key=lambda item: item[1]):
             _add(archive, source, target)
+        _add_content(archive, schema_reference_html(release_version), REFERENCE_HTML_PATH)
+        _add_content(archive, schema_reference_json(release_version), REFERENCE_JSON_PATH)
     digest = hashlib.sha256(output.read_bytes()).hexdigest()
     output.with_suffix(output.suffix + ".sha256").write_text(
         f"{digest}  {output.name}\n", encoding="ascii", newline="\n"

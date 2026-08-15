@@ -48,11 +48,17 @@ _TEST_GROUPS: Final = (
             "release.cfg",
             "tools/build_plugin.py",
             "tools/build_release_candidate.py",
+            "tools/generate_schema_reference.py",
             "tools/prepare_wheelhouse.py",
             "tools/verify_plugin.py",
+            "src/mcpserver/schema_reference.py",
             "uninstall/**",
         ),
-        ("tests/test_plugin_package.py", "tests/test_apache_config.py"),
+        (
+            "tests/test_plugin_package.py",
+            "tests/test_apache_config.py",
+            "tests/test_schema_reference.py",
+        ),
     ),
     (
         (

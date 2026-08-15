@@ -8,15 +8,26 @@ import hashlib
 import io
 import re
 import stat
+import sys
 import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Final
 
 try:
-    from tools.build_plugin import _TIMESTAMP, expected_source_entries
+    from tools.build_plugin import (
+        _TIMESTAMP,
+        REFERENCE_HTML_PATH,
+        REFERENCE_JSON_PATH,
+        expected_source_entries,
+    )
     from tools.versioning import project_version
 except ModuleNotFoundError:  # Direct documented CLI execution from repository root.
-    from build_plugin import _TIMESTAMP, expected_source_entries
+    from build_plugin import (
+        _TIMESTAMP,
+        REFERENCE_HTML_PATH,
+        REFERENCE_JSON_PATH,
+        expected_source_entries,
+    )
     from versioning import project_version
 
 _REQUIRED: Final = {
@@ -212,6 +223,22 @@ def verify_archive(archive: Path, *, require_checksum: bool = True) -> str:
             missing_exact = expected_names - set(names)
             detail = min(extra or missing_exact)
             raise PackageVerificationError(f"plugin archive violates exact manifest: {detail}")
+        try:
+            sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+            from mcpserver.schema_reference import schema_reference_html, schema_reference_json
+        except ModuleNotFoundError as exc:
+            if exc.name != "mcp":
+                raise
+        else:
+            generated_reference = {
+                REFERENCE_HTML_PATH: schema_reference_html(version),
+                REFERENCE_JSON_PATH: schema_reference_json(version),
+            }
+            for name, expected in generated_reference.items():
+                if package.read(name) != expected:
+                    raise PackageVerificationError(
+                        f"plugin archive contains stale schema reference: {name}"
+                    )
         if any(
             PurePosixPath(name).parent != PurePosixPath("bin/wheelhouse")
             or PurePosixPath(name).suffix != ".whl"
