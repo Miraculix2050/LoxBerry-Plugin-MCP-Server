@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from mcpserver.schema_reference import REFERENCE_HTML_PATH, REFERENCE_JSON_PATH
 from mcpserver.skill_delivery import SKILL_REVISION
 from tools.build_plugin import (
     _EXECUTABLES,
@@ -24,6 +25,7 @@ from tools.build_plugin import (
 )
 from tools.build_release_candidate import _copy_runtime_wheels, _publish, _source_ignore
 from tools.build_release_candidate import main as build_release_candidate
+from tools.generate_schema_reference import main as generate_schema_reference
 from tools.prepare_wheelhouse import main as prepare_wheelhouse
 from tools.validate_release_metadata import validate as validate_release_metadata
 from tools.verify_plugin import (
@@ -74,6 +76,43 @@ def test_agent_skill_is_declared_as_wheel_package_data() -> None:
     assert (skill / "agents" / "openai.yaml").is_file()
     assert '"skills/using-loxberry-mcp/SKILL.md"' in pyproject
     assert '"skills/using-loxberry-mcp/agents/openai.yaml"' in pyproject
+
+
+def test_package_contract_includes_generated_schema_reference() -> None:
+    from tools.build_plugin import expected_source_entries
+
+    entries = expected_source_entries(ROOT)
+    assert REFERENCE_HTML_PATH in entries
+    assert REFERENCE_JSON_PATH in entries
+
+
+def test_verifier_help_does_not_import_mcp_runtime(tmp_path: Path) -> None:
+    (tmp_path / "mcp.py").write_text(
+        "raise RuntimeError('MCP runtime must not be imported')\n", encoding="utf-8"
+    )
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(tmp_path)
+
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "tools" / "verify_plugin.py"), "--help"],
+        cwd=ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Verify a built LoxBerry plugin archive" in result.stdout
+
+
+def test_schema_generator_requires_explicit_output_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sys, "argv", ["generate_schema_reference.py"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        generate_schema_reference()
+
+    assert exc_info.value.code == 2
 
 
 def test_mcp_client_smoke_covers_skill_delivery_surfaces() -> None:

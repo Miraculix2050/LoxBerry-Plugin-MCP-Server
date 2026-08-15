@@ -25,6 +25,7 @@ def test_changed_packaging_selects_package_contract_tests() -> None:
     assert _pytest_targets(plan) == {
         "tests/test_apache_config.py",
         "tests/test_plugin_package.py",
+        "tests/test_schema_reference.py",
     }
 
 
