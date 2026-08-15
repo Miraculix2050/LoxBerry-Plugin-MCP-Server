@@ -23,6 +23,16 @@
     'pattern', 'minItems', 'maxItems', 'uniqueItems', 'title', 'description', 'default',
     'examples', 'format', 'readOnly', 'writeOnly',
   ]);
+  const ADVANCED_FIELDS = new Set(['cursor', 'limit', 'include_hidden']);
+  const REFERENCE_FIELDS = new Set(['control_uuid', 'room_uuid', 'category_uuid', 'room_group_uuid']);
+  const ACTION_FIELDS = {
+    set_level: ['level'], set_mood: ['mood_id'], set_position: ['position'],
+    set_slat_position: ['slat_position'], set_position_and_slats: ['position', 'slat_position'],
+    select_output: ['output_id'], set_scene: ['scene_id'],
+    set_color_hsv: ['hue', 'saturation', 'brightness'], set_color_temperature: ['brightness', 'kelvin'],
+    set_value: ['value'], start_override: ['value', 'duration_seconds'],
+    start_fan_override: ['duration_seconds'], start_mode_override: ['value', 'duration_seconds'],
+  };
   const TOOL_GROUPS = [
     {id: 'loxoneRead', names: [
       'loxone_get_skill_guide', 'loxone_get_system_status', 'loxone_list_rooms',
@@ -75,6 +85,57 @@
     if (typeof value !== 'string' || Number.isNaN(date.getTime())) return '';
     const pad = (number) => String(number).padStart(2, '0');
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+
+  function timeRange(preset, now) {
+    const end = new Date(now === undefined ? Date.now() : now);
+    if (Number.isNaN(end.getTime())) return null;
+    const start = new Date(end.getTime());
+    if (preset === 'hour') start.setTime(start.getTime() - 60 * 60 * 1000);
+    else if (preset === 'day') start.setTime(start.getTime() - 24 * 60 * 60 * 1000);
+    else if (preset === 'week') start.setTime(start.getTime() - 7 * 24 * 60 * 60 * 1000);
+    else if (preset === 'today') start.setHours(0, 0, 0, 0);
+    else return null;
+    return {start: start.toISOString(), end: end.toISOString()};
+  }
+
+  function actionFields(action) {
+    return ACTION_FIELDS[action] || [];
+  }
+
+  function operationParameterFields() {
+    return [...new Set(Object.values(ACTION_FIELDS).flat())];
+  }
+
+  function isAdvancedField(name) {
+    return ADVANCED_FIELDS.has(name);
+  }
+
+  function isReferenceField(name) {
+    return REFERENCE_FIELDS.has(name);
+  }
+
+  function referenceCandidates(field, history) {
+    if (!REFERENCE_FIELDS.has(field) || !Array.isArray(history)) return [];
+    const candidates = new Map();
+    const add = (value, name) => {
+      if (typeof value !== 'string' || !value || candidates.has(value)) return;
+      candidates.set(value, {value, label: name ? `${name} (${value})` : value});
+    };
+    for (const entry of [...history].reverse()) {
+      const result = entry && entry.result;
+      const displayed = result && (result.structuredContent ?? result.content ?? result);
+      const data = displayed && displayed.data;
+      if (!data || !Array.isArray(data.items)) continue;
+      for (const item of data.items) {
+        if (!item || typeof item !== 'object') continue;
+        if (field === 'control_uuid' && entry.tool === 'loxone_find_controls') add(item.uuid, item.name);
+        if (field === 'room_uuid' && entry.tool === 'loxone_list_rooms') add(item.uuid, item.name);
+        if (field === 'category_uuid' && entry.tool === 'loxone_list_categories') add(item.uuid, item.name);
+        if (field === 'room_group_uuid' && entry.tool === 'loxone_list_rooms' && item.room_group) add(item.room_group.uuid, item.room_group.name);
+      }
+    }
+    return [...candidates.values()];
   }
 
   function statisticsTransfer(sourceTool, displayedResult, path, value, now) {
@@ -519,6 +580,12 @@
     dateTimeLocalToRfc3339,
     rfc3339ToDateTimeLocal,
     statisticsTransfer,
+    timeRange,
+    actionFields,
+    operationParameterFields,
+    isAdvancedField,
+    isReferenceField,
+    referenceCandidates,
     valueForTransfer,
     transferArguments,
     nextPageArguments,
@@ -1035,6 +1102,20 @@
     validateDraft(false);
   }
 
+  function setAction(value) {
+    const next = core.clone(state.arguments);
+    const visible = new Set(core.actionFields(value));
+    core.operationParameterFields().forEach((name) => {
+      if (!visible.has(name)) delete next[name];
+    });
+    next.action = value;
+    state.arguments = next;
+    elements.json.value = JSON.stringify(next, null, 2);
+    saveCurrentDraft();
+    validateDraft(false);
+    renderSelectedTool();
+  }
+
   function renderField(name, property, required, rootSchema, fieldIndex) {
     const effective = core.effectiveSchema(property, rootSchema);
     const type = core.schemaType(effective, rootSchema);
@@ -1065,7 +1146,11 @@
         input.append(option);
       });
       input.addEventListener('change', () => {
-        if (input.value !== '') setDraftField(name, true, JSON.parse(input.value));
+        if (input.value !== '') {
+          const value = JSON.parse(input.value);
+          if (state.selectedTool && state.selectedTool.name === 'loxone_operate_control' && name === 'action') setAction(value);
+          else setDraftField(name, true, value);
+        }
       });
     } else if (type === 'boolean') {
       input = element('input', {type: 'checkbox'});
@@ -1105,6 +1190,39 @@
     const description = helpKey ? label(helpKey) : effective.description;
     if (description) wrapper.append(element('span', {className: 'mcp-explorer-muted', text: description}));
     wrapper.append(input);
+    if (core.isReferenceField(name)) {
+      const candidates = core.referenceCandidates(name, state.history);
+      if (candidates.length) {
+        const select = element('select', {'aria-label': `${label('referenceSelect')}: ${name}`});
+        select.append(element('option', {value: '', text: label('referenceSelect')}));
+        candidates.forEach((candidate) => select.append(element('option', {value: candidate.value, text: candidate.label})));
+        select.addEventListener('change', () => {
+          if (select.value) {
+            setDraftField(name, true, select.value);
+            renderSelectedTool();
+            document.getElementById(core.fieldControlId(fieldIndex))?.focus();
+          }
+        });
+        wrapper.append(select);
+      }
+    }
+    if (name === 'start' && rootSchema.properties && rootSchema.properties.end) {
+      const actions = element('div', {className: 'mcp-explorer-actions'});
+      [['hour', 'rangeHour'], ['day', 'rangeDay'], ['week', 'rangeWeek'], ['today', 'rangeToday']].forEach(([preset, text]) => {
+        const button = element('button', {type: 'button', text: label(text)});
+        button.addEventListener('click', () => {
+          const range = core.timeRange(preset);
+          if (!range) return;
+          state.arguments = {...state.arguments, ...range};
+          elements.json.value = JSON.stringify(state.arguments, null, 2);
+          saveCurrentDraft();
+          validateDraft(false);
+          renderSelectedTool();
+        });
+        actions.append(button);
+      });
+      wrapper.append(actions);
+    }
     if (include) include.addEventListener('change', () => {
       input.disabled = !include.checked;
       setDraftField(name, include.checked, include.checked ? core.initialValue(property, rootSchema) : undefined);
@@ -1130,11 +1248,18 @@
     const required = new Set(schema.required || []);
     let supported = true;
     let fieldIndex = 0;
+    const advanced = element('details', {className: 'mcp-explorer-stack'});
+    advanced.append(element('summary', {text: label('advancedOptions')}));
+    const selectedAction = state.selectedTool.name === 'loxone_operate_control' ? state.arguments.action : null;
+    const actionFields = core.actionFields(selectedAction);
     for (const [name, property] of Object.entries(schema.properties || {})) {
+      if (state.selectedTool.name === 'loxone_operate_control' && name !== 'control_uuid' && name !== 'action' && !actionFields.includes(name)) continue;
       const rendered = renderField(name, property, required.has(name), schema, fieldIndex++);
       supported = rendered.supported && supported;
-      elements.form.append(rendered.wrapper);
+      if (core.isAdvancedField(name)) advanced.append(rendered.wrapper);
+      else elements.form.append(rendered.wrapper);
     }
+    if (advanced.childElementCount > 1) elements.form.append(advanced);
     if (!Object.keys(schema.properties || {}).length) elements.form.append(element('p', {className: 'mcp-explorer-muted', text: '{}'}));
     elements.schemaWarning.hidden = supported;
     elements.run.disabled = !state.oauth;
