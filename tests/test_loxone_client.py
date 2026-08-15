@@ -660,7 +660,7 @@ async def test_probe_rejects_tls_capable_miniserver(monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setattr(client, "_get_json", fake_get_json)
 
-    with pytest.raises(LoxoneConnectionError, match="Gen. 2"):
+    with pytest.raises(LoxoneConnectionError, match=r"Gen\. 2"):
         await client.probe()
 
 
