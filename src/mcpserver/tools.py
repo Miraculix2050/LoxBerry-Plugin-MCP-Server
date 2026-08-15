@@ -8,9 +8,11 @@ import hashlib
 import hmac
 import json
 import logging
+import math
 import secrets
 import time
 from collections import OrderedDict
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from math import ceil, floor
 from typing import Annotated, Any, Final, Literal
@@ -30,7 +32,7 @@ from mcpserver.auth.provider import (
 )
 from mcpserver.loxberry.diagnostics import DiagnosticsUnavailable, LoxBerryDiagnostics
 from mcpserver.loxone.control import allowed_actions
-from mcpserver.loxone.models import Freshness
+from mcpserver.loxone.models import Control, Freshness, StateRecord
 from mcpserver.loxone.presentation import (
     control_matches_query as _control_matches_query,
 )
@@ -73,6 +75,10 @@ from mcpserver.skill_delivery import (
 DEFAULT_PAGE_SIZE: Final = 50
 MAX_PAGE_SIZE: Final = 100
 MAX_STATE_UUIDS: Final = 100
+MAX_WEATHER_POINTS: Final = 96
+_LOXONE_EPOCH_UNIX: Final = 1_230_768_000
+_MAX_SEMANTIC_JSON_TEXT: Final = 65_536
+_MAX_SEMANTIC_ENTRIES: Final = 100
 _LOGGER = logging.getLogger("mcpserver.tools")
 _AUDIT_SUPPRESSION_SECONDS: Final = 60.0
 _MAX_AUDIT_SUPPRESSION_KEYS: Final = 512
@@ -225,6 +231,22 @@ class WindowMonitorItemData(BaseModel):
     control: LinkedControlData | None = None
 
 
+class IrrigationModelData(BaseModel):
+    off_zone_id: Literal[-1] = -1
+    all_zones_id: Literal[8] = 8
+
+
+class AlarmClockModelData(BaseModel):
+    has_night_light: bool | None = None
+    brightness_inactive_connected: bool | None = None
+    brightness_active_connected: bool | None = None
+    snooze_duration_connected: bool | None = None
+    wake_alarm_sounds: list[NamedOptionData] = Field(default_factory=list)
+    wake_alarm_sound_connected: bool | None = None
+    wake_alarm_volume_connected: bool | None = None
+    wake_alarm_sloping_connected: bool | None = None
+
+
 class ControlModelData(BaseModel):
     """Bounded documented type metadata; state values remain in loxone_get_states."""
 
@@ -234,6 +256,8 @@ class ControlModelData(BaseModel):
     ventilation_timer_profiles: list[VentilationTimerProfileData] = Field(default_factory=list)
     window_monitor_items: list[WindowMonitorItemData] = Field(default_factory=list)
     connected_inputs: int | None = None
+    irrigation: IrrigationModelData | None = None
+    alarm_clock: AlarmClockModelData | None = None
 
 
 class CapabilitiesData(BaseModel):
@@ -257,9 +281,7 @@ class CapabilitiesData(BaseModel):
     )
     model: ControlModelData | None = Field(
         default=None,
-        description=(
-            "Bounded documented type metadata for climate, ventilation, and status controls."
-        ),
+        description=("Bounded documented type metadata for supported read-only control families."),
     )
 
 
@@ -347,12 +369,57 @@ class ControlDescriptionData(ControlSummaryData):
 class StateData(BaseModel):
     uuid: str
     value: JsonValue
+    semantic_value: JsonValue | None = Field(
+        default=None,
+        description=(
+            "Bounded additive interpretation for documented Irrigation and AlarmClock states. "
+            "The original value remains unchanged."
+        ),
+    )
     freshness: str
     observed_at: str | None
 
 
 class StatesData(BaseModel):
     states: list[StateData]
+
+
+class NamedStateData(StateData):
+    name: str
+
+
+class RoomSnapshotItemData(BaseModel):
+    control: ControlSummaryData
+    state: NamedStateData
+
+
+class RoomSnapshotData(BaseModel):
+    room: NamedGroupData
+    items: list[RoomSnapshotItemData]
+    next_cursor: str | None
+
+
+class WeatherPointData(BaseModel):
+    at: str
+    weather_type: int
+    weather_type_text: str | None = None
+    wind_direction: int
+    solar_radiation: int
+    relative_humidity: int
+    temperature: float
+    perceived_temperature: float
+    dew_point: float
+    precipitation: float
+    wind_speed: float
+    barometric_pressure: float
+
+
+class WeatherData(BaseModel):
+    mode: Literal["actual", "forecast"]
+    last_updated_at: str
+    formats: dict[str, str]
+    items: list[WeatherPointData]
+    next_cursor: str | None
 
 
 class SkillGuideData(BaseModel):
@@ -405,6 +472,14 @@ class ControlDescriptionEnvelope(ToolEnvelope):
 
 class StatesEnvelope(ToolEnvelope):
     data: StatesData | ErrorData
+
+
+class RoomSnapshotEnvelope(ToolEnvelope):
+    data: RoomSnapshotData | ErrorData
+
+
+class WeatherEnvelope(ToolEnvelope):
+    data: WeatherData | ErrorData
 
 
 class SkillGuideEnvelope(ToolEnvelope):
@@ -893,10 +968,343 @@ async def _snapshot(runtime: LoxoneRuntime | None) -> tuple[StoredAccessToken, R
         return access, await runtime.snapshot(access)
 
 
+def _state_observed_at(record: StateRecord) -> str | None:
+    return (
+        datetime.fromtimestamp(record.observed_at, UTC).isoformat().replace("+00:00", "Z")
+        if record.observed_at is not None
+        else None
+    )
+
+
+class _SemanticValueError(ValueError):
+    pass
+
+
+def _semantic_json(value: object) -> object:
+    if not isinstance(value, str) or len(value) > _MAX_SEMANTIC_JSON_TEXT:
+        raise _SemanticValueError
+    try:
+        return json.loads(value)
+    except (json.JSONDecodeError, RecursionError) as exc:
+        raise _SemanticValueError from exc
+
+
+def _semantic_integer(value: object, *, minimum: int, maximum: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise _SemanticValueError
+    try:
+        number = float(value)
+    except (OverflowError, ValueError) as exc:
+        raise _SemanticValueError from exc
+    if not math.isfinite(number) or not number.is_integer():
+        raise _SemanticValueError
+    result = int(number)
+    if not minimum <= result <= maximum:
+        raise _SemanticValueError
+    return result
+
+
+def _semantic_number(value: object, *, minimum: float, maximum: float) -> float | int:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise _SemanticValueError
+    try:
+        number = float(value)
+    except (OverflowError, ValueError) as exc:
+        raise _SemanticValueError from exc
+    if not math.isfinite(number) or not minimum <= number <= maximum:
+        raise _SemanticValueError
+    return value
+
+
+def _semantic_boolean(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    return bool(_semantic_integer(value, minimum=0, maximum=1))
+
+
+def _semantic_text(value: object) -> str:
+    if not isinstance(value, str) or not 1 <= len(value) <= 200:
+        raise _SemanticValueError
+    return value
+
+
+def _irrigation_zones(value: object) -> list[dict[str, object]]:
+    raw = _semantic_json(value)
+    if not isinstance(raw, list) or len(raw) > _MAX_SEMANTIC_ENTRIES:
+        raise _SemanticValueError
+    result: list[dict[str, object]] = []
+    for item in raw:
+        if not isinstance(item, Mapping):
+            raise _SemanticValueError
+        result.append(
+            {
+                "id": _semantic_integer(item.get("id"), minimum=0, maximum=99),
+                "name": _semantic_text(item.get("name")),
+                "duration_seconds": _semantic_integer(
+                    item.get("duration"), minimum=0, maximum=31_536_000
+                ),
+                "set_by_logic": _semantic_boolean(item.get("setByLogic")),
+            }
+        )
+    return result
+
+
+def _alarm_entries(value: object) -> list[dict[str, object]]:
+    raw = _semantic_json(value)
+    if not isinstance(raw, Mapping) or len(raw) > _MAX_SEMANTIC_ENTRIES:
+        raise _SemanticValueError
+    result: list[dict[str, object]] = []
+    for identifier, item in raw.items():
+        if (
+            not isinstance(identifier, str)
+            or not identifier.isdecimal()
+            or not isinstance(item, Mapping)
+        ):
+            raise _SemanticValueError
+        entry_id = int(identifier)
+        if not 0 <= entry_id <= 1_000_000:
+            raise _SemanticValueError
+        alarm_time = _semantic_integer(item.get("alarmTime"), minimum=0, maximum=86_399)
+        modes = item.get("modes")
+        if not isinstance(modes, list) or len(modes) > _MAX_SEMANTIC_ENTRIES:
+            raise _SemanticValueError
+        mode_ids = [_semantic_integer(mode, minimum=0, maximum=1000) for mode in modes]
+        alarm_time_text = (
+            f"{alarm_time // 3600:02d}:{alarm_time % 3600 // 60:02d}:{alarm_time % 60:02d}"
+        )
+        result.append(
+            {
+                "id": entry_id,
+                "name": _semantic_text(item.get("name")),
+                "active": _semantic_boolean(item.get("isActive")),
+                "alarm_time_seconds": alarm_time,
+                "alarm_time": alarm_time_text,
+                "mode_ids": mode_ids,
+                "night_light": _semantic_boolean(item.get("nightLight", False)),
+                "daily": _semantic_boolean(item.get("daily", False)),
+            }
+        )
+    return sorted(
+        result,
+        key=lambda item: _semantic_integer(item["id"], minimum=0, maximum=1_000_000),
+    )
+
+
+def _alarm_settings(value: object, *, sound: bool) -> dict[str, object]:
+    raw = _semantic_json(value)
+    if not isinstance(raw, Mapping) or len(raw) > 16:
+        raise _SemanticValueError
+    result: dict[str, object] = {}
+    if sound:
+        if "sound" in raw:
+            result["sound_id"] = _semantic_integer(raw["sound"], minimum=0, maximum=1000)
+        if "volume" in raw:
+            result["volume"] = _semantic_number(raw["volume"], minimum=0, maximum=100)
+        if "isSloping" in raw:
+            result["sloping"] = _semantic_boolean(raw["isSloping"])
+    else:
+        if "beepUsed" in raw:
+            result["beep_used"] = _semantic_boolean(raw["beepUsed"])
+        if "brightInactive" in raw:
+            result["brightness_inactive"] = _semantic_number(
+                raw["brightInactive"], minimum=0, maximum=100
+            )
+        if "brightActive" in raw:
+            result["brightness_active"] = _semantic_number(
+                raw["brightActive"], minimum=0, maximum=100
+            )
+    return result
+
+
+def _alarm_entry_reference(value: object, entries_value: object) -> dict[str, object]:
+    entry_id = _semantic_integer(value, minimum=-1, maximum=1_000_000)
+    if entry_id == -1:
+        return {"status": "none"}
+    result: dict[str, object] = {"status": "entry", "entry_id": entry_id}
+    try:
+        entry = next(
+            (item for item in _alarm_entries(entries_value) if item["id"] == entry_id), None
+        )
+    except _SemanticValueError:
+        entry = None
+    if entry is not None:
+        result["entry"] = entry
+    return result
+
+
+def _semantic_state_value(
+    snapshot: RuntimeSnapshot,
+    control: Control,
+    state_name: str,
+    value: object,
+    companion_values: Mapping[str, object],
+) -> tuple[object | None, bool]:
+    try:
+        if control.control_type == "Irrigation":
+            if state_name == "zones":
+                return _irrigation_zones(value), False
+            if state_name == "rainActive":
+                return _semantic_boolean(value), False
+            if state_name == "currentZone":
+                zone_id = _semantic_integer(value, minimum=-1, maximum=8)
+                if zone_id == -1:
+                    return {"status": "off"}, False
+                if zone_id == 8:
+                    return {"status": "all"}, False
+                result: dict[str, object] = {"status": "zone", "zone_id": zone_id}
+                try:
+                    zone = next(
+                        (
+                            item
+                            for item in _irrigation_zones(companion_values.get("zones"))
+                            if item["id"] == zone_id
+                        ),
+                        None,
+                    )
+                except _SemanticValueError:
+                    zone = None
+                if zone is not None:
+                    result["zone_name"] = zone["name"]
+                return result, False
+
+        if control.control_type == "AlarmClock":
+            if state_name in {"isEnabled", "isAlarmActive", "confirmationNeeded"}:
+                return _semantic_boolean(value), False
+            if state_name == "entryList":
+                return _alarm_entries(value), False
+            if state_name in {"currentEntry", "nextEntry"}:
+                return _alarm_entry_reference(value, companion_values.get("entryList")), False
+            if state_name == "nextEntryMode":
+                mode_id = _semantic_integer(value, minimum=-1, maximum=1000)
+                if mode_id == -1:
+                    return {"status": "none"}, False
+                result = {"status": "mode", "mode_id": mode_id}
+                mode_name = next(
+                    (
+                        item.name
+                        for item in snapshot.structure.global_metadata
+                        if item.kind == "operating_mode" and item.identifier == str(mode_id)
+                    ),
+                    None,
+                )
+                if mode_name is not None:
+                    result["mode_name"] = mode_name
+                return result, False
+            if state_name in {
+                "ringingTime",
+                "ringDuration",
+                "prepareDuration",
+                "snoozeTime",
+                "snoozeDuration",
+            }:
+                return {"seconds": _semantic_integer(value, minimum=0, maximum=31_536_000)}, False
+            if state_name == "nextEntryTime":
+                seconds = _semantic_integer(value, minimum=-1, maximum=4_000_000_000)
+                if seconds <= 0:
+                    return {"status": "none"}, False
+                return {"status": "scheduled", "at": _loxone_time(seconds)}, False
+            if state_name == "deviceState":
+                state = _semantic_integer(value, minimum=0, maximum=2)
+                return {"status": {0: "not_connected", 1: "offline", 2: "online"}[state]}, False
+            if state_name == "deviceSettings":
+                return _alarm_settings(value, sound=False), False
+            if state_name == "wakeAlarmSoundSettings":
+                return _alarm_settings(value, sound=True), False
+    except ValueError:
+        return None, True
+    return None, False
+
+
+def _state_payload(
+    runtime: LoxoneRuntime,
+    snapshot: RuntimeSnapshot,
+    control: Control | None,
+    state_name: str | None,
+    state_uuid: str,
+) -> tuple[dict[str, Any], bool]:
+    record = runtime.state(snapshot, state_uuid)
+    semantic_value: object | None = None
+    semantic_invalid = False
+    if control is not None and state_name is not None and record.value is not None:
+        companion_values = {}
+        for name, uuid in control.state_uuids:
+            companion = runtime.state(snapshot, uuid)
+            if companion.freshness is Freshness.CURRENT:
+                companion_values[name] = companion.value
+        semantic_value, semantic_invalid = _semantic_state_value(
+            snapshot, control, state_name, record.value, companion_values
+        )
+    return (
+        {
+            "uuid": record.uuid,
+            "value": record.value,
+            "semantic_value": semantic_value,
+            "freshness": record.freshness.value,
+            "observed_at": _state_observed_at(record),
+        },
+        semantic_invalid,
+    )
+
+
+def _loxone_time(value: object) -> str:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ValueError("weather timestamp is invalid")
+    number = float(value)
+    if not number.is_integer() or not 0 <= number <= 4_000_000_000:
+        raise ValueError("weather timestamp is invalid")
+    try:
+        return (
+            datetime.fromtimestamp(_LOXONE_EPOCH_UNIX + int(number), UTC)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
+    except (OverflowError, OSError, ValueError) as exc:
+        raise ValueError("weather timestamp is invalid") from exc
+
+
+def _weather_point(value: object, type_texts: dict[int, str]) -> dict[str, object]:
+    if not isinstance(value, dict):
+        raise ValueError("weather entry is invalid")
+
+    def integer(name: str) -> int:
+        candidate = value.get(name)
+        if isinstance(candidate, bool) or not isinstance(candidate, int | float):
+            raise ValueError("weather entry is invalid")
+        number = float(candidate)
+        if not number.is_integer() or not math.isfinite(number):
+            raise ValueError("weather entry is invalid")
+        return int(number)
+
+    def number(name: str) -> float:
+        candidate = value.get(name)
+        if isinstance(candidate, bool) or not isinstance(candidate, int | float):
+            raise ValueError("weather entry is invalid")
+        result = float(candidate)
+        if not math.isfinite(result):
+            raise ValueError("weather entry is invalid")
+        return result
+
+    weather_type = integer("weather_type")
+    return {
+        "at": _loxone_time(value.get("timestamp")),
+        "weather_type": weather_type,
+        "weather_type_text": type_texts.get(weather_type),
+        "wind_direction": integer("wind_direction"),
+        "solar_radiation": integer("solar_radiation"),
+        "relative_humidity": integer("relative_humidity"),
+        "temperature": number("temperature"),
+        "perceived_temperature": number("perceived_temperature"),
+        "dew_point": number("dew_point"),
+        "precipitation": number("precipitation"),
+        "wind_speed": number("wind_speed"),
+        "barometric_pressure": number("barometric_pressure"),
+    }
+
+
 def register_read_tools(
     server: FastMCP, runtime: LoxoneRuntime | None, *, control_enabled: bool = False
 ) -> None:
-    """Publish exactly the six stable Phase 1 read-only tools."""
+    """Publish the stable Loxone read-only tools."""
     annotations = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
     cursors = _CursorCodec()
 
@@ -974,6 +1382,71 @@ def register_read_tools(
             return _error(RoomPageEnvelope, "temporarily_unavailable", str(exc))
 
     @server.tool(
+        name="loxone_get_room_snapshot",
+        description=(
+            "Get a bounded current-state snapshot for visible controls assigned to one exact "
+            "Loxone room. This does not expand relationships or return controls without states."
+        ),
+        annotations=annotations,
+        structured_output=True,
+    )
+    async def get_room_snapshot(
+        room_uuid: Annotated[
+            str,
+            Field(description="Exact room UUID returned by loxone_list_rooms."),
+        ],
+        cursor: CursorArgument = None,
+        limit: LimitArgument = DEFAULT_PAGE_SIZE,
+    ) -> RoomSnapshotEnvelope:
+        try:
+            _access_token, snapshot = await _snapshot(runtime)
+            room = next((item for item in snapshot.structure.rooms if item.uuid == room_uuid), None)
+            if room is None:
+                return _error(RoomSnapshotEnvelope, "not_found", "room is not visible")
+            if runtime is None:  # pragma: no cover - _snapshot already rejects this case
+                raise RuntimeUnavailable("the service is not configured")
+            state_entries = [
+                (control, state_name, state_uuid)
+                for control in _controls_for_diagnosis(snapshot.structure, include_hidden=False)
+                if control.room_uuid == room_uuid
+                for state_name, state_uuid in control.state_uuids
+            ]
+            page = _page(cursors, f"room-snapshot:{room_uuid}", state_entries, cursor, limit)
+            items: list[dict[str, object]] = []
+            stale = False
+            semantic_invalid = False
+            for control, state_name, state_uuid in page["items"]:
+                state, invalid = _state_payload(runtime, snapshot, control, state_name, state_uuid)
+                state["name"] = state_name
+                stale = stale or state["freshness"] != Freshness.CURRENT.value
+                semantic_invalid = semantic_invalid or invalid
+                items.append({"control": _control_summary(control, snapshot), "state": state})
+            return _result(
+                RoomSnapshotEnvelope,
+                {
+                    "room": {"uuid": room.uuid, "name": room.name},
+                    "items": items,
+                    "next_cursor": page["next_cursor"],
+                },
+                stale=stale,
+                warnings=(
+                    ["One or more documented controller states could not be interpreted safely."]
+                    if semantic_invalid
+                    else None
+                ),
+            )
+        except ValueError as exc:
+            return _error(RoomSnapshotEnvelope, "invalid_input", str(exc))
+        except PermissionError:
+            return _error(
+                RoomSnapshotEnvelope,
+                "unauthenticated",
+                "Authentication with loxone:read is required",
+            )
+        except RuntimeUnavailable as exc:
+            return _error(RoomSnapshotEnvelope, "temporarily_unavailable", str(exc))
+
+    @server.tool(
         name="loxone_list_categories",
         description="List visible Loxone categories.",
         annotations=annotations,
@@ -1045,6 +1518,101 @@ def register_read_tools(
             )
         except RuntimeUnavailable as exc:
             return _error(GlobalMetadataPageEnvelope, "temporarily_unavailable", str(exc))
+
+    @server.tool(
+        name="loxone_get_weather",
+        description=(
+            "Get bounded current or forecast weather from the configured Loxone weather server. "
+            "This does not provide historical weather."
+        ),
+        annotations=annotations,
+        structured_output=True,
+    )
+    async def get_weather(
+        mode: Annotated[
+            Literal["actual", "forecast"],
+            Field(description="Return the current weather or the forecast for up to 96 hours."),
+        ] = "forecast",
+        cursor: CursorArgument = None,
+        limit: Annotated[
+            int,
+            Field(
+                description="Maximum weather points on this page, from 1 to 96.",
+                ge=1,
+                le=MAX_WEATHER_POINTS,
+            ),
+        ] = 24,
+    ) -> WeatherEnvelope:
+        try:
+            _access_token, snapshot = await _snapshot(runtime)
+            metadata = next(
+                (
+                    item
+                    for item in snapshot.structure.global_metadata
+                    if item.kind == "weather_state"
+                    and item.identifier == mode
+                    and item.state_uuid is not None
+                ),
+                None,
+            )
+            if metadata is None or metadata.state_uuid is None:
+                return _error(WeatherEnvelope, "not_found", "Loxone weather is not configured")
+            if runtime is None:  # pragma: no cover - _snapshot already rejects this case
+                raise RuntimeUnavailable("the service is not configured")
+            record = runtime.state(snapshot, metadata.state_uuid)
+            raw = record.value
+            if not isinstance(raw, dict):
+                return _error(
+                    WeatherEnvelope,
+                    "temporarily_unavailable",
+                    "weather data has not been received yet",
+                )
+            entries = raw.get("entries")
+            if not isinstance(entries, list) or not entries:
+                return _error(
+                    WeatherEnvelope,
+                    "temporarily_unavailable",
+                    "weather data has not been received yet",
+                )
+            try:
+                last_updated_at = _loxone_time(raw.get("last_update"))
+                type_texts = dict(snapshot.structure.weather.type_texts)
+                points = [_weather_point(item, type_texts) for item in entries[:MAX_WEATHER_POINTS]]
+            except ValueError:
+                return _error(
+                    WeatherEnvelope,
+                    "temporarily_unavailable",
+                    "weather data is not valid",
+                )
+            warnings: list[str] = []
+            if len(entries) > MAX_WEATHER_POINTS:
+                warnings.append("Weather data was limited to 96 points.")
+            if mode == "actual" and len(points) > 1:
+                points = points[:1]
+                warnings.append("Current weather was limited to one point.")
+            page = _page(cursors, f"weather:{mode}", points, cursor, limit)
+            return _result(
+                WeatherEnvelope,
+                {
+                    "mode": mode,
+                    "last_updated_at": last_updated_at,
+                    "formats": dict(snapshot.structure.weather.formats),
+                    "items": page["items"],
+                    "next_cursor": page["next_cursor"],
+                },
+                stale=record.freshness is not Freshness.CURRENT,
+                warnings=warnings,
+            )
+        except ValueError as exc:
+            return _error(WeatherEnvelope, "invalid_input", str(exc))
+        except PermissionError:
+            return _error(
+                WeatherEnvelope,
+                "unauthenticated",
+                "Authentication with loxone:read is required",
+            )
+        except RuntimeUnavailable as exc:
+            return _error(WeatherEnvelope, "temporarily_unavailable", str(exc))
 
     @server.tool(
         name="loxone_find_controls",
@@ -1298,6 +1866,40 @@ def register_read_tools(
                             for item in control.window_monitor_items
                         ],
                         "connected_inputs": control.connected_inputs,
+                        "irrigation": (
+                            {"off_zone_id": -1, "all_zones_id": 8}
+                            if control.control_type == "Irrigation"
+                            else None
+                        ),
+                        "alarm_clock": (
+                            {
+                                "has_night_light": control.alarm_clock_has_night_light,
+                                "brightness_inactive_connected": (
+                                    control.alarm_clock_brightness_inactive_connected
+                                ),
+                                "brightness_active_connected": (
+                                    control.alarm_clock_brightness_active_connected
+                                ),
+                                "snooze_duration_connected": (
+                                    control.alarm_clock_snooze_duration_connected
+                                ),
+                                "wake_alarm_sounds": [
+                                    {"id": item.option_id, "name": item.name}
+                                    for item in control.alarm_clock_wake_alarm_sounds
+                                ],
+                                "wake_alarm_sound_connected": (
+                                    control.alarm_clock_wake_alarm_sound_connected
+                                ),
+                                "wake_alarm_volume_connected": (
+                                    control.alarm_clock_wake_alarm_volume_connected
+                                ),
+                                "wake_alarm_sloping_connected": (
+                                    control.alarm_clock_wake_alarm_sloping_connected
+                                ),
+                            }
+                            if control.control_type == "AlarmClock"
+                            else None
+                        ),
                     }
                     if control.control_type
                     in {
@@ -1306,6 +1908,8 @@ def register_read_tools(
                         "ClimateControllerUS",
                         "Ventilation",
                         "WindowMonitor",
+                        "Irrigation",
+                        "AlarmClock",
                     }
                     else None
                 ),
@@ -1439,24 +2043,40 @@ def register_read_tools(
             )
             if any(uuid not in allowed for uuid in state_uuids):
                 return _error(StatesEnvelope, "not_found", "one or more states are not accessible")
-            records = [runtime.state(snapshot, uuid) for uuid in state_uuids] if runtime else []
-            stale = any(record.freshness is not Freshness.CURRENT for record in records)
-            values = [
-                {
-                    "uuid": record.uuid,
-                    "value": record.value,
-                    "freshness": record.freshness.value,
-                    "observed_at": (
-                        datetime.fromtimestamp(record.observed_at, UTC)
-                        .isoformat()
-                        .replace("+00:00", "Z")
-                        if record.observed_at is not None
-                        else None
-                    ),
-                }
-                for record in records
-            ]
-            return _result(StatesEnvelope, {"states": values}, stale=stale)
+            if runtime is None:  # pragma: no cover - _snapshot already rejects this case
+                raise RuntimeUnavailable("the service is not configured")
+            owners = {
+                state_uuid: (control, state_name)
+                for control in _controls_for_diagnosis(
+                    snapshot.structure, include_hidden=include_hidden
+                )
+                for state_name, state_uuid in control.state_uuids
+            }
+            values: list[dict[str, Any]] = []
+            stale = False
+            semantic_invalid = False
+            for state_uuid in state_uuids:
+                owner = owners.get(state_uuid)
+                value, invalid = _state_payload(
+                    runtime,
+                    snapshot,
+                    owner[0] if owner else None,
+                    owner[1] if owner else None,
+                    state_uuid,
+                )
+                values.append(value)
+                stale = stale or value["freshness"] != Freshness.CURRENT.value
+                semantic_invalid = semantic_invalid or invalid
+            return _result(
+                StatesEnvelope,
+                {"states": values},
+                stale=stale,
+                warnings=(
+                    ["One or more documented controller states could not be interpreted safely."]
+                    if semantic_invalid
+                    else None
+                ),
+            )
         except PermissionError:
             return _error(
                 StatesEnvelope,

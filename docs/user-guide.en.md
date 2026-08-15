@@ -286,6 +286,11 @@ Explicit user links from Loxone's `links` field are reported separately under
 `relationships.linked_by`. Such controls appear in search results with
 `visibility: "linked"`, can be found by their own name, and use states, notes,
 history, statistics, and the existing action allowlist like other visible controls.
+`loxone_get_room_snapshot` pages the current states of visible controls assigned
+to exactly the requested room UUID. It does not expand control relationships and
+does not include controls without states; `loxone_find_controls` remains the
+complete inventory path. Raw value, optional semantic interpretation, freshness,
+and observation time on one page come from the same runtime snapshot.
 For `UpDownAnalog`, `Slider`, and `LeftRightAnalog`, the min/max bounds and step for `set_value` are available
 under `capabilities.analog_range`.
 For `StatusMonitor`, `capabilities.status_monitor` provides stable input
@@ -332,6 +337,8 @@ room, bulk, learning, rename, expert, or free-form commands.
 | Climate/ventilation | `IRCV2Daytimer` | yes | no | typed analog schedule metadata; no schedule writes | readable in the maintainer installation |
 | Climate/ventilation | corresponding visible V1 types | yes | no | – | generic read path; not hardware-verified |
 | Sensors/status | `InfoOnlyAnalog`, `InfoOnlyDigital`, `InfoOnlyText`, `TextState`, `StatusMonitor`, `WindowMonitor`, `SmokeAlarm`, `Tracker`, `Intercom` | yes | no | typed visible state metadata where documented; no alarm, lock, intercom, or acknowledgement actions | visible descriptions are hardware-confirmed for `StatusMonitor`, `WindowMonitor`, `SmokeAlarm`, `Tracker`, and `Intercom`; WindowMonitor item/control references and current aggregate states are hardware-confirmed, while current states for the remaining families are documentation-based or `unknown` on this fixture |
+| Garden | `Irrigation` | yes | no | additive zone, rain-status, and current-zone semantics while retaining raw values | automatically tested and semantically read from one real control; no actions advertised |
+| Time/alarm | `AlarmClock` | yes | no | additive entries, times, status, and visible alarm-clock metadata; no schedule or alarm actions | automatically tested and semantically read from one real control; no actions advertised |
 | Energy/other | `Meter`, `EFM`, `PvProductionForecast`, `Slider`, `Webpage` | yes | no | visible states and statistics where advertised | `Meter` and `EFM` are hardware-confirmed for visible descriptions and bounded hourly statistics; current states and `PvProductionForecast` remain unverified |
 
 “Read” means only visible structure and states. For `Jalousie`,
@@ -351,6 +358,14 @@ by a name heuristic. `loxone_list_global_metadata` pages only visible operating 
 times, room-group definitions, global states, and weather-state references. It never exposes a raw LoxAPP3
 document and never changes schedules or global operating modes. Daytimer and weather
 WebSocket frames are returned as named, bounded entries rather than protocol tuples.
+`loxone_get_weather` resolves these references internally: `mode: "actual"`
+returns current weather, while the default `mode: "forecast"` pages up to 96
+forecast hours. The tool does not record weather history.
+
+For `Irrigation` and `AlarmClock`, `loxone_get_states` adds a bounded
+`semantic_value` while preserving the original `value`. Invalid or oversized JSON
+states remain available as raw values, receive no interpretation, and add a
+warning. Both control types remain without actions regardless of control scope.
 
 `loxberry:operate` uses the same local approval mechanism as `loxberry:read`,
 bound to the exact client, Loxone identity and Miniserver. Its sole operation is

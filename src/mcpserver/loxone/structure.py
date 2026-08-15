@@ -20,6 +20,7 @@ from mcpserver.loxone.models import (
     StatusMonitorInput,
     StatusMonitorStatus,
     VentilationTimerProfile,
+    WeatherMetadata,
     WindowMonitorItem,
 )
 
@@ -130,6 +131,14 @@ def _bounded_integer(value: object, *, default: int, minimum: int, maximum: int)
         if isinstance(value, int) and not isinstance(value, bool) and minimum <= value <= maximum
         else default
     )
+
+
+def _optional_flag(value: object) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value > 0
+    return None
 
 
 def _up_down_range(
@@ -383,6 +392,41 @@ def _global_metadata(
                         GlobalMetadata("weather_state", name, name, state_uuid=state_uuid)
                     )
     return tuple(result)
+
+
+def _weather_metadata(document: Mapping[str, object]) -> WeatherMetadata:
+    weather = document.get("weatherServer")
+    if not isinstance(weather, Mapping):
+        return WeatherMetadata()
+
+    formats: list[tuple[str, str]] = []
+    raw_formats = weather.get("format")
+    if isinstance(raw_formats, Mapping) and len(raw_formats) <= 32:
+        for name, value in raw_formats.items():
+            normalized_name = _bounded_text(name, maximum=64)
+            normalized_value = _bounded_text(value, maximum=64)
+            if normalized_name is not None and normalized_value is not None:
+                formats.append((normalized_name, normalized_value))
+
+    type_texts: list[tuple[int, str]] = []
+    raw_type_texts = weather.get("weatherTypeTexts")
+    if isinstance(raw_type_texts, list) and len(raw_type_texts) <= 100:
+        type_texts.extend(
+            (index, text)
+            for index, text in enumerate(raw_type_texts)
+            if _bounded_text(text) is not None
+        )
+    elif isinstance(raw_type_texts, Mapping) and len(raw_type_texts) <= 100:
+        for identifier, text in raw_type_texts.items():
+            try:
+                type_id = int(identifier)
+            except (TypeError, ValueError):
+                continue
+            normalized_text = _bounded_text(text)
+            if -1000 <= type_id <= 1000 and normalized_text is not None:
+                type_texts.append((type_id, normalized_text))
+
+    return WeatherMetadata(tuple(formats), tuple(type_texts))
 
 
 def _status_monitor_details(
@@ -714,6 +758,46 @@ def _controls(
                 ventilation_timer_profiles=_ventilation_profiles(details.get("timerProfiles")),
                 window_monitor_items=_window_monitor_items(details.get("windows")),
                 connected_inputs=connected_inputs,
+                alarm_clock_has_night_light=(
+                    _optional_flag(details.get("hasNightLight"))
+                    if item.get("type") == "AlarmClock"
+                    else None
+                ),
+                alarm_clock_brightness_inactive_connected=(
+                    _optional_flag(details.get("brightInactiveConnected"))
+                    if item.get("type") == "AlarmClock"
+                    else None
+                ),
+                alarm_clock_brightness_active_connected=(
+                    _optional_flag(details.get("brightActiveConnected"))
+                    if item.get("type") == "AlarmClock"
+                    else None
+                ),
+                alarm_clock_snooze_duration_connected=(
+                    _optional_flag(details.get("snoozeDurationConnected"))
+                    if item.get("type") == "AlarmClock"
+                    else None
+                ),
+                alarm_clock_wake_alarm_sounds=(
+                    _named_options(details.get("wakeAlarmSounds"), maximum=100)
+                    if item.get("type") == "AlarmClock"
+                    else ()
+                ),
+                alarm_clock_wake_alarm_sound_connected=(
+                    _optional_flag(details.get("wakeAlarmSoundConnected"))
+                    if item.get("type") == "AlarmClock"
+                    else None
+                ),
+                alarm_clock_wake_alarm_volume_connected=(
+                    _optional_flag(details.get("wakeAlarmVolumeConnected"))
+                    if item.get("type") == "AlarmClock"
+                    else None
+                ),
+                alarm_clock_wake_alarm_sloping_connected=(
+                    _optional_flag(details.get("wakeAlarmSlopingConnected"))
+                    if item.get("type") == "AlarmClock"
+                    else None
+                ),
                 subcontrols=(
                     _controls(
                         subcontrols_value,
@@ -826,4 +910,5 @@ def normalize_structure(
         hidden_controls=hidden_controls,
         global_metadata=_global_metadata(document, room_groups=room_groups),
         room_groups=room_groups,
+        weather=_weather_metadata(document),
     )

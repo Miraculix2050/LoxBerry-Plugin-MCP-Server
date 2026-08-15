@@ -116,6 +116,14 @@ class GlobalMetadata:
 
 
 @dataclass(frozen=True, slots=True)
+class WeatherMetadata:
+    """Bounded presentation metadata advertised by the configured weather server."""
+
+    formats: tuple[tuple[str, str], ...] = ()
+    type_texts: tuple[tuple[int, str], ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class Control:
     uuid: str
     name: str
@@ -153,6 +161,14 @@ class Control:
     ventilation_timer_profiles: tuple[VentilationTimerProfile, ...] = ()
     window_monitor_items: tuple[WindowMonitorItem, ...] = ()
     connected_inputs: int | None = None
+    alarm_clock_has_night_light: bool | None = None
+    alarm_clock_brightness_inactive_connected: bool | None = None
+    alarm_clock_brightness_active_connected: bool | None = None
+    alarm_clock_snooze_duration_connected: bool | None = None
+    alarm_clock_wake_alarm_sounds: tuple[NamedOption, ...] = ()
+    alarm_clock_wake_alarm_sound_connected: bool | None = None
+    alarm_clock_wake_alarm_volume_connected: bool | None = None
+    alarm_clock_wake_alarm_sloping_connected: bool | None = None
     subcontrols: tuple[Control, ...] = ()
     linked_control_uuids: tuple[str, ...] = ()
     is_user_linked: bool = False
@@ -172,6 +188,7 @@ class LoxoneStructure:
     hidden_controls: tuple[Control, ...] = ()
     global_metadata: tuple[GlobalMetadata, ...] = ()
     room_groups: tuple[NamedGroup, ...] = ()
+    weather: WeatherMetadata = WeatherMetadata()
 
 
 type StateValue = float | str | tuple[object, ...] | dict[str, object]

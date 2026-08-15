@@ -370,7 +370,9 @@ sind. Sie erhalten keine generische Schreibmöglichkeit.
 | --- | --- |
 | `loxone_get_system_status` | Erreichbarkeit, Version, Verbindung und Cachefrische |
 | `loxone_list_rooms` | sichtbare Räume mit expliziter Raumgruppenreferenz, paginiert |
+| `loxone_get_room_snapshot` | aktuelle sichtbare Zustände eines exakten Raums, paginiert |
 | `loxone_list_categories` | sichtbare Kategorien, paginiert |
+| `loxone_get_weather` | aktuelles Loxone-Wetter oder Forecast bis 96 Stunden, paginiert |
 | `loxone_find_controls` | Suche/Filter nach Name, Raum, Kategorie und Typ |
 | `loxone_describe_control` | Fähigkeiten, erlaubte Actions sowie State- und Darstellungsmetadaten |
 | `loxone_get_control_notes` | begrenzte, nicht vertrauenswürdige Hinweise eines sichtbaren Controls |
@@ -378,6 +380,10 @@ sind. Sie erhalten keine generische Schreibmöglichkeit.
 
 Diese Tools erhalten `readOnlyHint: true`, `destructiveHint: false` und passende
 Ausgabeschemas.
+
+`loxone_get_weather` liest ausschließlich die aktuellen `actual`- und `forecast`-
+Weather-States. Eine spätere Wetterhistorie benötigt einen eigenen Vertrag für
+Aufzeichnungsbeginn, Aufbewahrung und Datenqualität und ist nicht Teil dieses Tools.
 
 ### MVP: Loxone bedienen
 

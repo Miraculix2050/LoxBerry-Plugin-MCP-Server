@@ -13,6 +13,12 @@ eng begrenzte plugin-eigene Cache-Operation und ausgewählte, reversible
 Control-Aktionen auf Hardware abgenommen; siehe
 [Phase-4-Abnahmebericht](phase-4-acceptance.md).
 
+Der Raum-Snapshot mit Pagination, aktuelles Wetter und Wettervorhersage sowie
+die rein lesenden semantischen Modelle für je einen realen `Irrigation`- und
+`AlarmClock`-Controller sind auf derselben autorisierten Fixture bestätigt.
+Beide Controller bieten dabei keine Actions an. Wetterhistorie bleibt außerhalb
+dieses Stands.
+
 Die versionsmarkerbasierte Strukturaktualisierung ist zudem für geänderten
 Anzeigenamen, Control-Hinweis, Bewertung und die unabhängige Favoriten-Markierung
 auf der autorisierten Testfixture hardware-abgenommen; siehe denselben
