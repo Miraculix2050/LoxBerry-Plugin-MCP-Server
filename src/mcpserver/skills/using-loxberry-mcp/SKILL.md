@@ -136,18 +136,19 @@ action on one identified target.
 4. Read parameter names and schema-defined bounds from the current tool schema.
    Obtain target-specific selectable values only from freshly described
    capabilities or from current values of exact state references returned by
-   that description, such as a visible `moodList` or `sceneList`. Do not assume
-   identifiers from different controller models use the same field names. If a
-   required target-specific value or range is not exposed, do not guess or probe
-   it through retries. Call `loxone_operate_control` once with that control UUID,
+   that description, such as a visible `moodList`. Do not assume identifiers
+   from different controller models use the same field names. If a required
+   target-specific value or range is not exposed, do not guess or probe it
+   through retries. Call `loxone_operate_control` once with that control UUID,
    the advertised action, and only its required parameters. Switches use `on` or
    `off`; dimmers use `set_level` with `level`; lighting controllers use
    `set_mood` with `mood_id`; blinds use the advertised explicit target action
    and, when required, `position` and/or `slat_position`.
    Timed switches use `on`, `off`, or `pulse`; pushbuttons use `pulse`; radios
-   use a visible `output_id` or an advertised `reset`; RGB scenes use a visible
-   `scene_id`; color pickers require the advertised HSV or temperature action
-   and its bounded parameters.
+   use a visible `output_id` or an advertised `reset`; RGB scenes use `set_scene`
+   only when the current MCP results expose the required `scene_id`; color
+   pickers require the advertised HSV or temperature action and its bounded
+   parameters.
    `IRoomControllerV2` and `Ventilation` accept only an advertised temporary
    `start_override`/`stop_override`; `ClimateControllerUS` accepts only the
    advertised temporary fan or mode override. Use `duration_seconds` from 1 to
