@@ -68,7 +68,12 @@ def visible_mood_ids(value: object) -> frozenset[str] | None:
 
 def allowed_actions(control: Control) -> list[str]:
     """Return actions whose command contracts are documented for this control."""
-    if control.action_uuid is None or not 1 <= len(control.action_uuid) <= 128 or control.read_only:
+    if (
+        control.action_uuid is None
+        or not 1 <= len(control.action_uuid) <= 128
+        or control.read_only
+        or control.is_monitor_referenced
+    ):
         return []
     match control.control_type:
         case "Switch":

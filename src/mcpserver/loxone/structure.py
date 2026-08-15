@@ -565,11 +565,40 @@ def _linked_control_uuids(value: object, *, maximum_controls: int) -> frozenset[
     return frozenset(result)
 
 
+def _monitor_referenced_control_uuids(value: object, *, maximum_controls: int) -> frozenset[str]:
+    """Return read-only references explicitly published by visible WindowMonitors."""
+    if not isinstance(value, Mapping):
+        raise LoxoneStructureError("Structure field controls must be an object")
+    result: set[str] = set()
+    for index, item in enumerate(value.values(), start=1):
+        if index > maximum_controls:
+            raise LoxoneStructureError("Structure control count exceeds the configured limit")
+        if not isinstance(item, Mapping) or item.get("type") != "WindowMonitor":
+            continue
+        restrictions = item.get("restrictions", 0)
+        if (
+            not isinstance(restrictions, int)
+            or isinstance(restrictions, bool)
+            or restrictions & _REFERENCED_ONLY_INTERNAL
+        ):
+            continue
+        details = item.get("details", {})
+        if not isinstance(details, Mapping):
+            continue
+        result.update(
+            entry.control_uuid
+            for entry in _window_monitor_items(details.get("windows"))
+            if entry.control_uuid is not None
+        )
+    return frozenset(result)
+
+
 def _controls(
     value: object,
     *,
     referenced: bool = False,
     linked_control_uuids: frozenset[str] = frozenset(),
+    monitor_referenced_control_uuids: frozenset[str] = frozenset(),
     hidden_only: bool = False,
     budget: StructureBudget,
     depth: int = 1,
@@ -587,6 +616,7 @@ def _controls(
             not referenced
             and bool(restrictions & _REFERENCED_ONLY_INTERNAL)
             and uuid not in linked_control_uuids
+            and uuid not in monitor_referenced_control_uuids
         )
         if is_hidden != hidden_only:
             continue
@@ -700,6 +730,11 @@ def _controls(
                     and bool(restrictions & _REFERENCED_ONLY_INTERNAL)
                     and uuid in linked_control_uuids
                 ),
+                is_monitor_referenced=(
+                    not referenced
+                    and bool(restrictions & _REFERENCED_ONLY_INTERNAL)
+                    and uuid in monitor_referenced_control_uuids
+                ),
                 is_hidden=is_hidden,
             )
         )
@@ -712,6 +747,17 @@ def _group_references(controls: tuple[Control, ...], *, field: str) -> set[str]:
         uuid = control.room_uuid if field == "room" else control.category_uuid
         if uuid is not None:
             result.add(uuid)
+        if field == "room":
+            result.update(
+                item.room_uuid
+                for item in control.status_monitor_inputs
+                if item.room_uuid is not None
+            )
+            result.update(
+                item.room_uuid
+                for item in control.window_monitor_items
+                if item.room_uuid is not None
+            )
         result.update(_group_references(control.subcontrols, field=field))
     return result
 
@@ -732,11 +778,20 @@ def normalize_structure(
     last_modified = document.get("lastModified", "")
     controls_value = document.get("controls", {})
     linked_control_uuids = _linked_control_uuids(controls_value, maximum_controls=max_controls)
+    monitor_referenced_control_uuids = _monitor_referenced_control_uuids(
+        controls_value, maximum_controls=max_controls
+    )
     budget = StructureBudget(max_controls, max_state_references, max_depth)
-    controls = _controls(controls_value, linked_control_uuids=linked_control_uuids, budget=budget)
+    controls = _controls(
+        controls_value,
+        linked_control_uuids=linked_control_uuids,
+        monitor_referenced_control_uuids=monitor_referenced_control_uuids,
+        budget=budget,
+    )
     hidden_controls = _controls(
         controls_value,
         linked_control_uuids=linked_control_uuids,
+        monitor_referenced_control_uuids=monitor_referenced_control_uuids,
         hidden_only=True,
         budget=budget,
     )

@@ -147,6 +147,39 @@ def test_structure_preserves_window_monitor_mapping_entries() -> None:
     ]
 
 
+def test_structure_exposes_only_explicit_window_monitor_references_for_reading() -> None:
+    raw = {
+        "msInfo": {"serialNr": "000000000000"},
+        "lastModified": "1",
+        "rooms": {"room-from-monitor": {"name": "Office"}},
+        "cats": {},
+        "controls": {
+            "monitor": {
+                "name": "Windows",
+                "type": "WindowMonitor",
+                "states": {"windowStates": "monitor-states"},
+                "details": {"windows": {"window-control": {"room": "room-from-monitor"}}},
+            },
+            "window-control": {
+                "name": "Office window",
+                "type": "Switch",
+                "restrictions": 1,
+                "room": "room-from-monitor",
+                "uuidAction": "must-not-be-operable",
+                "states": {"active": "window-state"},
+            },
+        },
+    }
+
+    structure = normalize_structure(raw, username="reader")
+    controls = {item.uuid: item for item in structure.controls}
+
+    assert set(controls) == {"monitor", "window-control"}
+    assert controls["window-control"].is_monitor_referenced is True
+    assert {item.uuid for item in structure.hidden_controls} == set()
+    assert {item.uuid for item in structure.rooms} == {"room-from-monitor"}
+
+
 def test_structure_resolves_only_unambiguous_explicit_room_group_membership() -> None:
     raw = {
         "msInfo": {"serialNr": "000000000000"},

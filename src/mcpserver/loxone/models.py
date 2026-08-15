@@ -156,6 +156,7 @@ class Control:
     subcontrols: tuple[Control, ...] = ()
     linked_control_uuids: tuple[str, ...] = ()
     is_user_linked: bool = False
+    is_monitor_referenced: bool = False
     is_hidden: bool = False
 
 
