@@ -13,13 +13,11 @@ gate for the merged commit.
 ## Dependency and license check
 
 Runtime dependencies are locked in `requirements/runtime-arm64.lock`. The
-repository's Dependabot alerts endpoint was checked on 2026-08-15 but is disabled
-for this repository, so it provides no vulnerability result. `pip-audit` is not
-installed in the release environment. This is recorded as an incomplete external
-vulnerability check, not as a clean result. The existing Apache-2.0 project
-license and locked dependency set have not received a dated beta review.
-Publication is blocked until the dependency, license and vulnerability check is
-completed and recorded.
+2026-08-15 review covered all 30 locked runtime packages. `pip-audit` 2.10.1
+reported no known vulnerabilities. The project is Apache-2.0; every runtime
+wheel supplied license metadata: 15 MIT, 10 BSD-3-Clause, and one each of
+Apache-2.0, Apache-2.0 OR BSD-3-Clause, MIT-0, MPL-2.0 and PSF-2.0. The
+sanitized dated result is retained in Project-Data evidence.
 
 ## Required native acceptance
 
@@ -32,14 +30,17 @@ action is part of this record without separate current fixture authorization.
 
 ## Candidate evidence
 
-The verified local candidate SHA-256 was
-`92c26365f350977a2a2a89faae66ec7e201e8cb0bd4ed25a348c6d274da3a5a6`.
-Its native installation on the authorized target restarted the service. The
-subsequent loopback health response reported `0.4.0b1`; the bounded diagnostic
-reported an active, enabled service and five retained sessions. The Plugin
-Manager status files include terminal success (`0`) records for the install.
+The Alpha-15 upgrade candidate retained the supported configuration and five
+sessions; its bounded diagnostic reported an active, enabled service. The
+subsequent clean candidate SHA-256 was
+`e0eea6e83013fcfc19d9d8877899257b9a5e51a2fff1d5d5b6954bb36ed53ae2`.
+After a native Plugin Manager uninstall, it completed a separate fresh install
+with terminal status `0`; the active service and loopback health reported
+`0.4.0b1`. Both sanitized lifecycle records are retained in Project-Data
+evidence.
 
-The Admin UI and OAuth read-only smoke remain open: both available browsers
-received native HTTP Basic authentication rejection and no credentials were
-entered. The incomplete external vulnerability check and these two smokes are
-release blockers; this record does not claim publication readiness.
+Chrome acceptance used an authenticated LoxBerry administrator session. The
+Admin UI showed Beta 1 and an active, running service on desktop and mobile;
+the mobile viewport had no horizontal overflow. The authenticated Tool Explorer
+completed the read-only `loxone_get_skill_guide` call successfully. No Loxone
+write smoke was requested or performed.
