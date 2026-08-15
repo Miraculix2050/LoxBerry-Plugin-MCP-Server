@@ -103,16 +103,19 @@ def _callback_csp_source(uri: str) -> str:
     return f"{parsed.scheme}://{authority}"
 
 
-def _security_headers(*, callback_uri: str | None = None) -> dict[str, str]:
+def _security_headers(
+    *, callback_uri: str | None = None, script_nonce: str | None = None
+) -> dict[str, str]:
     form_action = "'self'"
     if callback_uri is not None:
         form_action = f"{form_action} {_callback_csp_source(callback_uri)}"
+    script_policy = "" if script_nonce is None else f" script-src 'nonce-{script_nonce}';"
     return {
         "Cache-Control": "no-store",
         "Pragma": "no-cache",
         "Content-Security-Policy": (
             f"default-src 'none'; style-src 'unsafe-inline'; form-action {form_action}; "
-            "frame-ancestors 'none'; base-uri 'none'"
+            f"{script_policy} frame-ancestors 'none'; base-uri 'none'"
         ),
         "X-Content-Type-Options": "nosniff",
         "X-Frame-Options": "DENY",
@@ -138,8 +141,15 @@ def _redirect(uri: str, parameters: Mapping[str, str]) -> RedirectResponse:
 
 
 def _html_page(
-    title: str, body: str, *, status: int = 200, callback_uri: str | None = None
+    title: str,
+    body: str,
+    *,
+    status: int = 200,
+    callback_uri: str | None = None,
+    script: str | None = None,
 ) -> HTMLResponse:
+    script_nonce = secrets.token_urlsafe(16) if script is not None else None
+    script_markup = "" if script is None else f'<script nonce="{script_nonce}">{script}</script>'
     document = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{html.escape(title)}</title><style>
@@ -149,13 +159,17 @@ label{{display:block;margin:.9rem 0 .25rem}}input{{box-sizing:border-box;width:1
 .actions{{display:flex;gap:.7rem;flex-wrap:wrap;margin-top:1.2rem}}button{{padding:.7rem 1rem;font:inherit}}
 .error{{color:#a00000}}.notice{{padding:.8rem;border-left:.3rem solid #476d91;background:#edf4fa}}
 .scope-list{{margin:1rem 0;padding:0;border:0}}.scope-list legend{{font-weight:700;margin-bottom:.35rem}}
+.scope-select-all{{display:flex;align-items:center;gap:.45rem;margin:.2rem 0 .55rem;font-size:.9rem;font-weight:600}}
+.scope-select-all input{{width:auto;margin:0;padding:0;flex:none}}
 .scope-option{{display:flex;align-items:flex-start;gap:.7rem;margin:.65rem 0;padding:.8rem;border:1px solid #b6c2cc;border-radius:.5rem}}
 .scope-option input{{width:auto;margin:.2rem 0 0;padding:0;flex:none}}.scope-option span{{display:block}}.scope-option small{{display:block;margin-top:.2rem}}
 dl{{display:grid;grid-template-columns:max-content 1fr;gap:.4rem .8rem}}dt{{font-weight:700}}
 @media(max-width:430px){{main{{margin:0 auto;padding:1rem}}dl{{display:block}}dd{{margin:0 0 .7rem}}button{{flex:1}}}}
-</style></head><body><main>{body}</main></body></html>"""
+</style></head><body><main>{body}</main>{script_markup}</body></html>"""
     return HTMLResponse(
-        document, status_code=status, headers=_security_headers(callback_uri=callback_uri)
+        document,
+        status_code=status,
+        headers=_security_headers(callback_uri=callback_uri, script_nonce=script_nonce),
     )
 
 
@@ -606,14 +620,14 @@ class Phase0OAuthWeb:
 
     def _consent_page(self, transaction: LoginTransaction) -> HTMLResponse:
         history_option = (
-            """<label class="scope-option" for="grant_history"><input id="grant_history" type="checkbox" name="grant_history" value="true">
+            """<label class="scope-option" for="grant_history"><input id="grant_history" type="checkbox" name="grant_history" value="true" data-optional-scope>
 <span><strong>Loxone history / Loxone-Historie</strong><small>Optional: read bounded statistics and control history. / Optional: Begrenzte Statistiken und Control-Historie lesen.</small></span></label>"""
             if HISTORY_SCOPE in transaction.scopes
             else ""
         )
         control_requested = CONTROL_SCOPE in transaction.scopes
         control_option = (
-            """<label class="scope-option" for="grant_control"><input id="grant_control" type="checkbox" name="grant_control" value="true">
+            """<label class="scope-option" for="grant_control"><input id="grant_control" type="checkbox" name="grant_control" value="true" data-optional-scope>
 <span><strong>Loxone control / Loxone-Steuerung</strong><small>Optional: execute narrowly documented actions on permitted controls. / Optional: Eng dokumentierte Aktionen auf freigegebenen Controls ausführen.</small></span></label>"""
             if control_requested
             else ""
@@ -625,7 +639,7 @@ class Phase0OAuthWeb:
             else " Local approval is requested after consent. / Die lokale Freigabe wird nach der Zustimmung angefordert."
         )
         loxberry_option = (
-            """<label class="scope-option" for="grant_loxberry"><input id="grant_loxberry" type="checkbox" name="grant_loxberry" value="true">
+            """<label class="scope-option" for="grant_loxberry"><input id="grant_loxberry" type="checkbox" name="grant_loxberry" value="true" data-optional-scope>
 <span><strong>LoxBerry diagnostics / LoxBerry-Diagnose</strong><small>Optional: read the approved LoxBerry system, plugin and service status."""
             + loxberry_approval
             + """</small></span></label>"""
@@ -639,11 +653,39 @@ class Phase0OAuthWeb:
             else " Local approval is requested after consent. / Die lokale Freigabe wird nach der Zustimmung angefordert."
         )
         operate_option = (
-            """<label class="scope-option" for="grant_loxberry_operate"><input id="grant_loxberry_operate" type="checkbox" name="grant_loxberry_operate" value="true">
+            """<label class="scope-option" for="grant_loxberry_operate"><input id="grant_loxberry_operate" type="checkbox" name="grant_loxberry_operate" value="true" data-optional-scope>
 <span><strong>LoxBerry cache operation / LoxBerry-Cache-Operation</strong><small>Optional: clear only the plugin statistic cache."""
             + operate_approval
             + """</small></span></label>"""
             if operate_requested
+            else ""
+        )
+        select_all_option = (
+            """<label class="scope-select-all" for="grant_all"><input id="grant_all" type="checkbox">
+<span id="grant_all_label" data-select-label="Select all / Alle auswählen" data-deselect-label="Deselect all / Alle abwählen">Select all / Alle auswählen</span></label>"""
+            if any((history_option, control_option, loxberry_option, operate_option))
+            else ""
+        )
+        select_all_script = (
+            """(() => {
+const selectAll = document.getElementById("grant_all");
+const label = document.getElementById("grant_all_label");
+const options = [...document.querySelectorAll("input[data-optional-scope]")];
+if (!selectAll || !label || !options.length) return;
+const sync = () => {
+  const selected = options.filter((option) => option.checked).length;
+  selectAll.checked = selected === options.length;
+  selectAll.indeterminate = selected > 0 && selected < options.length;
+  label.textContent = selectAll.checked ? label.dataset.deselectLabel : label.dataset.selectLabel;
+};
+selectAll.addEventListener("change", () => {
+  options.forEach((option) => { option.checked = selectAll.checked; });
+  sync();
+});
+options.forEach((option) => option.addEventListener("change", sync));
+sync();
+})();"""
+            if select_all_option
             else ""
         )
         body = f"""<h1>Choose permissions / Berechtigungen auswählen</h1><dl>
@@ -652,13 +694,19 @@ class Phase0OAuthWeb:
 <dt>Loxone identity / Loxone-Identität</dt><dd>{html.escape(transaction.identity_name or "")}</dd></dl>
 <form method="post" action="/plugins/mcpserver/oauth/authorize">{self._hidden(transaction, "approve")}
 <fieldset class="scope-list"><legend>Permissions / Berechtigungen</legend>
+{select_all_option}
 <label class="scope-option"><input type="checkbox" checked disabled><span><strong>Read access / Lesezugriff</strong><small>Required: read permitted Loxone structure and states. / Erforderlich: Freigegebene Loxone-Struktur und Zustände lesen.</small></span></label>
 {history_option}{control_option}{loxberry_option}{operate_option}</fieldset>
 <p class="notice">After confirmation, you will be redirected to your MCP client. / Nach der Bestätigung werden Sie zu Ihrem MCP-Client weitergeleitet.</p>
 <div class="actions"><button type="submit">Confirm permissions / Berechtigungen bestätigen</button></div></form>
 <form method="post" action="/plugins/mcpserver/oauth/authorize">{self._hidden(transaction, "deny")}
 <div class="actions"><button type="submit">Deny / Ablehnen</button></div></form>"""
-        return _html_page("Authorize client", body, callback_uri=transaction.redirect_uri)
+        return _html_page(
+            "Authorize client",
+            body,
+            callback_uri=transaction.redirect_uri,
+            script=select_all_script or None,
+        )
 
     async def _authorize_post(self, request: Request) -> Response:
         form = await _form(
