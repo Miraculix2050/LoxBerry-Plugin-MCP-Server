@@ -34,6 +34,7 @@ def _structure(
     states: tuple[tuple[str, str], ...] = (("active", "state-1"),),
     automatic: bool = False,
     read_only: bool = False,
+    monitor_referenced: bool = False,
 ) -> LoxoneStructure:
     return LoxoneStructure(
         identity=LoxoneIdentity("user", "serial"),
@@ -51,6 +52,7 @@ def _structure(
                 state_uuids=states,
                 is_automatic=automatic,
                 read_only=read_only,
+                is_monitor_referenced=monitor_referenced,
             ),
         ),
     )
@@ -98,6 +100,44 @@ async def test_switch_operation_is_sent_and_confirmed(monkeypatch: pytest.Monkey
     assert result.accepted is True
     assert result.confirmed is True
     assert result.observed_state == "on"
+
+
+@pytest.mark.asyncio
+async def test_monitor_referenced_control_cannot_be_operated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = LoxoneRuntime(
+        MiniserverEndpoint.parse_gen1("http://192.168.1.10"),
+        _TokenStore(),  # type: ignore[arg-type]
+        control_enabled=True,
+    )
+    command_issued = False
+
+    async def snapshot(_access: StoredAccessToken) -> RuntimeSnapshot:
+        return RuntimeSnapshot("family", _structure(monitor_referenced=True), True)
+
+    class Session:
+        async def load_structure(self) -> LoxoneStructure:
+            return _structure(monitor_referenced=True)
+
+        async def operate_control(self, _action_uuid: str, _command: str) -> None:
+            nonlocal command_issued
+            command_issued = True
+
+        async def close(self) -> None:
+            return None
+
+    class Client:
+        async def open_session(self, _token: LoxoneToken) -> Session:
+            return Session()
+
+    monkeypatch.setattr(runtime, "snapshot", snapshot)
+    runtime.client = Client()  # type: ignore[assignment]
+
+    with pytest.raises(ControlOperationError, match="not operable"):
+        await runtime.operate_control(_access(READ_SCOPE, CONTROL_SCOPE), "control-1", "on")
+
+    assert command_issued is False
 
 
 @pytest.mark.asyncio

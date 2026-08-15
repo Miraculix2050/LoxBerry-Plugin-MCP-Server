@@ -27,6 +27,10 @@ def _control(
     )
 
 
+def test_monitor_referenced_control_is_read_only_even_when_its_type_has_an_action() -> None:
+    assert allowed_actions(_control("Switch", is_monitor_referenced=True)) == []
+
+
 @pytest.mark.parametrize(
     ("control_type", "action", "kwargs", "command"),
     [

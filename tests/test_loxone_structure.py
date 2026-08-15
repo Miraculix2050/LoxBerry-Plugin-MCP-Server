@@ -111,6 +111,112 @@ def test_structure_preserves_status_monitor_input_mapping() -> None:
     assert control.status_monitor_statuses[0].color == "#E4354A"
 
 
+def test_structure_preserves_window_monitor_mapping_entries() -> None:
+    raw = {
+        "msInfo": {"serialNr": "000000000000"},
+        "lastModified": "1",
+        "rooms": {},
+        "cats": {},
+        "controls": {
+            "monitor": {
+                "name": "Windows",
+                "type": "WindowMonitor",
+                "states": {"windowStates": "monitor-states"},
+                "details": {
+                    "windows": {
+                        "window-1": {
+                            "name": "Office window",
+                            "room": "room-1",
+                            "installPlace": "Office",
+                        },
+                        "window-2": {"name": "Attic window", "uuid": "control-2"},
+                    }
+                },
+            }
+        },
+    }
+
+    control = normalize_structure(raw, username="reader").controls[0]
+
+    assert [
+        (item.index, item.name, item.room_uuid, item.control_uuid)
+        for item in control.window_monitor_items
+    ] == [
+        (0, "Office window", "room-1", "window-1"),
+        (1, "Attic window", None, "control-2"),
+    ]
+
+
+def test_structure_exposes_only_explicit_window_monitor_references_for_reading() -> None:
+    raw = {
+        "msInfo": {"serialNr": "000000000000"},
+        "lastModified": "1",
+        "rooms": {"room-from-monitor": {"name": "Office"}},
+        "cats": {},
+        "controls": {
+            "monitor": {
+                "name": "Windows",
+                "type": "WindowMonitor",
+                "states": {"windowStates": "monitor-states"},
+                "details": {"windows": {"window-control": {"room": "room-from-monitor"}}},
+            },
+            "window-control": {
+                "name": "Office window",
+                "type": "Switch",
+                "restrictions": 1,
+                "room": "room-from-monitor",
+                "uuidAction": "must-not-be-operable",
+                "states": {"active": "window-state"},
+            },
+        },
+    }
+
+    structure = normalize_structure(raw, username="reader")
+    controls = {item.uuid: item for item in structure.controls}
+
+    assert set(controls) == {"monitor", "window-control"}
+    assert controls["window-control"].is_monitor_referenced is True
+    assert {item.uuid for item in structure.hidden_controls} == set()
+    assert {item.uuid for item in structure.rooms} == {"room-from-monitor"}
+
+
+def test_structure_resolves_only_unambiguous_explicit_room_group_membership() -> None:
+    raw = {
+        "msInfo": {"serialNr": "000000000000"},
+        "lastModified": "1",
+        "rooms": {
+            "room-1": {"name": "Kitchen", "roomGroup": "group-ground"},
+            "room-2": {"name": "Office"},
+            "room-3": {"name": "Ambiguous"},
+        },
+        "cats": {},
+        "roomGroups": [
+            {"uuid": "group-ground", "name": "Ground floor", "rooms": ["room-2", "room-3"]},
+            {"uuid": "group-upper", "name": "Upper floor", "roomUuids": ["room-3"]},
+        ],
+        "controls": {
+            room_uuid: {"name": room_uuid, "type": "Switch", "room": room_uuid, "states": {}}
+            for room_uuid in ("room-1", "room-2", "room-3")
+        },
+    }
+
+    structure = normalize_structure(raw, username="reader")
+
+    assert {item.uuid: item.room_group_uuid for item in structure.rooms} == {
+        "room-1": "group-ground",
+        "room-2": "group-ground",
+        "room-3": None,
+    }
+    assert [(item.uuid, item.name) for item in structure.room_groups] == [
+        ("group-ground", "Ground floor"),
+        ("group-upper", "Upper floor"),
+    ]
+    assert {item.identifier for item in structure.global_metadata if item.kind == "room_group"} == {
+        "group-ground",
+        "group-upper",
+    }
+
+
 def test_structure_preserves_operability_flags_without_exposing_details() -> None:
     raw = {
         "lastModified": "now",

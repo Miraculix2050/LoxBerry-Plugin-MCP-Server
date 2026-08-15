@@ -369,7 +369,7 @@ sind. Sie erhalten keine generische Schreibmöglichkeit.
 | Tool | Zweck |
 | --- | --- |
 | `loxone_get_system_status` | Erreichbarkeit, Version, Verbindung und Cachefrische |
-| `loxone_list_rooms` | sichtbare Räume, paginiert |
+| `loxone_list_rooms` | sichtbare Räume mit expliziter Raumgruppenreferenz, paginiert |
 | `loxone_list_categories` | sichtbare Kategorien, paginiert |
 | `loxone_find_controls` | Suche/Filter nach Name, Raum, Kategorie und Typ |
 | `loxone_describe_control` | Fähigkeiten, erlaubte Actions sowie State- und Darstellungsmetadaten |

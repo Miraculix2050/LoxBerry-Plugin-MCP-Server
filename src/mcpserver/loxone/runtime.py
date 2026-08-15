@@ -362,7 +362,11 @@ class LoxoneRuntime:
                 control = self._control(structure, control_uuid)
                 if control is None:
                     raise ControlOperationError("not_found", "control is not visible")
-                if control.action_uuid is None or control.read_only:
+                if (
+                    control.action_uuid is None
+                    or control.read_only
+                    or control.is_monitor_referenced
+                ):
                     raise ControlOperationError(
                         "permission_denied", "control is not operable for this identity"
                     )

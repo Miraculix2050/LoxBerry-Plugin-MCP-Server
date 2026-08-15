@@ -356,7 +356,7 @@ Umbenennungs-, Experten- oder freien Kommandos.
 | Klima/Lüftung | `ClimateControllerUS` | ja | ja | temporäre Lüfter-/Modus-Overrides nur ohne zugehörigen Logikeingang | offizielle Doku und automatisierter Vertrag; Lesen real bestätigt, Writes nicht hardware-verifiziert |
 | Klima/Lüftung | `IRCV2Daytimer` | ja | nein | typisierte analoge Kalender-Metadaten; keine Kalenderwrites | in eigener Installation lesend prüfbar |
 | Klima/Lüftung | entsprechende V1-Typen, sofern vom Miniserver sichtbar | ja | nein | – | generischer Lesepfad, nicht real verifiziert |
-| Sensorik/Status | `InfoOnlyAnalog`, `InfoOnlyDigital`, `InfoOnlyText`, `TextState`, `StatusMonitor`, `WindowMonitor`, `SmokeAlarm`, `Tracker`, `Intercom` | ja | nein | typisierte sichtbare Statusmetadaten, soweit dokumentiert; keine Alarm-, Sperr-, Intercom- oder Quittierungsaktionen | die sichtbaren Beschreibungen von `StatusMonitor`, `WindowMonitor`, `SmokeAlarm`, `Tracker` und `Intercom` sind real bestätigt; aktuelle States dieser Fixture blieben nach der Subskription `unknown`, die übrigen Typen sind dokumentationsbasiert |
+| Sensorik/Status | `InfoOnlyAnalog`, `InfoOnlyDigital`, `InfoOnlyText`, `TextState`, `StatusMonitor`, `WindowMonitor`, `SmokeAlarm`, `Tracker`, `Intercom` | ja | nein | typisierte sichtbare Statusmetadaten, soweit dokumentiert; keine Alarm-, Sperr-, Intercom- oder Quittierungsaktionen | die sichtbaren Beschreibungen von `StatusMonitor`, `WindowMonitor`, `SmokeAlarm`, `Tracker` und `Intercom` sind real bestätigt; WindowMonitor-Eintrag-/Control-Referenzen und aktuelle Aggregat-States sind real bestätigt, die aktuellen States der übrigen Familien sind dokumentationsbasiert oder auf dieser Fixture `unknown` |
 | Energie/sonstige | `Meter`, `EFM`, `PvProductionForecast`, `Slider`, `Webpage` | ja | nein | sichtbare States und Statistik, soweit angeboten | `Meter` und `EFM` sind mit sichtbarer Beschreibung und begrenzter Stundenstatistik real bestätigt; aktuelle States und `PvProductionForecast` bleiben nicht hardware-verifiziert |
 
 „Lesen“ umfasst nur sichtbare Struktur und Zustände. Bei `Jalousie` werden
@@ -367,10 +367,14 @@ verfügbar, wenn das Control `hasHistory`, `statisticV2` beziehungsweise `statis
 der Client `loxone:history` erhalten hat. V1-Typen bleiben bewusst als **nicht
 verifiziert** markiert, bis ein realer Abnahmetest vorliegt.
 
-`loxone_list_global_metadata` liefert seitenweise nur sichtbare Betriebsarten,
-Modi, Zeiten, Raumgruppen, globale States und Wetter-State-Referenzen. Es liefert
-niemals ein Roh-LoxAPP3-Dokument und ändert weder Kalender noch globale Betriebsarten.
-Daytimer- und Wetter-WebSocket-Frames werden als benannte, begrenzte Einträge statt
+`loxone_list_rooms` enthält eine explizite Raumgruppenreferenz nur, wenn die aktuelle
+Struktur sie eindeutig auflöst; sie wird niemals aus dem Raumnamen abgeleitet. StatusMonitor-
+und WindowMonitor-Details behalten ihre UUIDs und ergänzen sichtbare aufgelöste Raum-/Control-
+Referenzen, sofern vorhanden. WindowMonitor-Zuordnungen akzeptieren begrenzte Listen und
+explizit per Identifier geschlüsselte LoxAPP3-Objekte; ein nicht auflösbarer Eintrag wird nur
+mit Name oder Index gemeldet und nie über eine Namensheuristik verknüpft. `loxone_list_global_metadata` liefert seitenweise nur sichtbare
+Betriebsarten, Modi, Zeiten, Raumgruppen-Definitionen, globale States und Wetter-State-Referenzen. Es liefert
+niemals ein Roh-LoxAPP3-Dokument und ändert weder Kalender noch globale Betriebsarten. Daytimer- und Wetter-WebSocket-Frames werden als benannte, begrenzte Einträge statt
 als Protokoll-Tupel ausgegeben.
 
 `loxberry:operate` verwendet denselben lokalen, an Client, Loxone-Identität und

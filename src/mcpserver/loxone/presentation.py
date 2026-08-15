@@ -47,7 +47,11 @@ def control_summary(control: Control, snapshot: RuntimeSnapshot) -> dict[str, An
         "name": control.name,
         "type": control.control_type,
         "visibility": (
-            "hidden" if control.is_hidden else "linked" if control.is_user_linked else "direct"
+            "hidden"
+            if control.is_hidden
+            else "linked"
+            if control.is_user_linked or control.is_monitor_referenced
+            else "direct"
         ),
         "room": (
             {"uuid": control.room_uuid, "name": rooms.get(control.room_uuid, "")}

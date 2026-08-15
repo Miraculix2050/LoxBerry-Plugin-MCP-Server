@@ -41,6 +41,9 @@ from mcpserver.loxone.presentation import (
     controls_for_diagnosis as _controls_for_diagnosis,
 )
 from mcpserver.loxone.presentation import (
+    flatten_controls as _flatten_controls,
+)
+from mcpserver.loxone.presentation import (
     groups as _groups,
 )
 from mcpserver.loxone.presentation import (
@@ -125,6 +128,25 @@ class NamedGroupPageData(BaseModel):
     )
 
 
+class RoomData(NamedGroupData):
+    room_group: NamedGroupData | None = Field(
+        default=None,
+        description=(
+            "Explicit visible room group from the current LoxAPP3 structure, when unambiguous."
+        ),
+    )
+
+
+class RoomPageData(BaseModel):
+    items: list[RoomData]
+    next_cursor: str | None = Field(
+        description=(
+            "Cursor for the next page. Pass it unchanged as cursor to the same tool with "
+            "the same filters, or stop when it is null."
+        )
+    )
+
+
 class GlobalMetadataData(BaseModel):
     kind: Literal["operating_mode", "mode", "time", "room_group", "global_state", "weather_state"]
     identifier: str
@@ -199,6 +221,8 @@ class WindowMonitorItemData(BaseModel):
     room_uuid: str | None
     control_uuid: str | None
     install_place: str | None
+    room: NamedGroupData | None = None
+    control: LinkedControlData | None = None
 
 
 class ControlModelData(BaseModel):
@@ -296,6 +320,7 @@ class StatusMonitorInputData(BaseModel):
     install_place: str | None
     uuid: str | None
     room_uuid: str | None
+    room: NamedGroupData | None = None
 
 
 class StatusMonitorStatusData(BaseModel):
@@ -356,6 +381,10 @@ class ToolEnvelope(BaseModel):
 
 class SystemStatusEnvelope(ToolEnvelope):
     data: SystemStatusData | ErrorData
+
+
+class RoomPageEnvelope(ToolEnvelope):
+    data: RoomPageData | ErrorData
 
 
 class NamedGroupPageEnvelope(ToolEnvelope):
@@ -904,29 +933,45 @@ def register_read_tools(
 
     @server.tool(
         name="loxone_list_rooms",
-        description="List visible Loxone rooms.",
+        description=(
+            "List visible Loxone rooms with an explicit room-group reference when the "
+            "Miniserver structure provides one unambiguously."
+        ),
         annotations=annotations,
         structured_output=True,
     )
     async def list_rooms(
         cursor: CursorArgument = None, limit: LimitArgument = DEFAULT_PAGE_SIZE
-    ) -> NamedGroupPageEnvelope:
+    ) -> RoomPageEnvelope:
         try:
             _access_token, snapshot = await _snapshot(runtime)
+            room_groups = {item.uuid: item.name for item in snapshot.structure.room_groups}
+            values = [
+                {
+                    "uuid": item.uuid,
+                    "name": item.name,
+                    "room_group": (
+                        {"uuid": item.room_group_uuid, "name": room_groups[item.room_group_uuid]}
+                        if item.room_group_uuid in room_groups
+                        else None
+                    ),
+                }
+                for item in snapshot.structure.rooms
+            ]
             return _result(
-                NamedGroupPageEnvelope,
-                _page(cursors, "rooms", _groups(snapshot.structure.rooms), cursor, limit),
+                RoomPageEnvelope,
+                _page(cursors, "rooms", values, cursor, limit),
             )
         except ValueError as exc:
-            return _error(NamedGroupPageEnvelope, "invalid_input", str(exc))
+            return _error(RoomPageEnvelope, "invalid_input", str(exc))
         except PermissionError:
             return _error(
-                NamedGroupPageEnvelope,
+                RoomPageEnvelope,
                 "unauthenticated",
                 "Authentication with loxone:read is required",
             )
         except RuntimeUnavailable as exc:
-            return _error(NamedGroupPageEnvelope, "temporarily_unavailable", str(exc))
+            return _error(RoomPageEnvelope, "temporarily_unavailable", str(exc))
 
     @server.tool(
         name="loxone_list_categories",
@@ -1139,6 +1184,10 @@ def register_read_tools(
             if control is None:
                 return _error(ControlDescriptionEnvelope, "not_found", "control is not visible")
             value = _control_summary(control, snapshot)
+            visible_rooms = {item.uuid: item.name for item in snapshot.structure.rooms}
+            visible_controls = {
+                item.uuid: item for item in _flatten_controls(snapshot.structure.controls)
+            }
             value["states"] = [{"name": name, "uuid": uuid} for name, uuid in control.state_uuids]
             value["capabilities"] = {
                 "readable": True,
@@ -1185,6 +1234,11 @@ def register_read_tools(
                                 "install_place": item.install_place,
                                 "uuid": item.uuid,
                                 "room_uuid": item.room_uuid,
+                                "room": (
+                                    {"uuid": item.room_uuid, "name": visible_rooms[item.room_uuid]}
+                                    if item.room_uuid in visible_rooms
+                                    else None
+                                ),
                             }
                             for item in control.status_monitor_inputs
                         ],
@@ -1230,6 +1284,16 @@ def register_read_tools(
                                 "room_uuid": item.room_uuid,
                                 "control_uuid": item.control_uuid,
                                 "install_place": item.install_place,
+                                "room": (
+                                    {"uuid": item.room_uuid, "name": visible_rooms[item.room_uuid]}
+                                    if item.room_uuid in visible_rooms
+                                    else None
+                                ),
+                                "control": (
+                                    _linked_control(visible_controls[item.control_uuid])
+                                    if item.control_uuid in visible_controls
+                                    else None
+                                ),
                             }
                             for item in control.window_monitor_items
                         ],

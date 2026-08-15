@@ -83,6 +83,13 @@ its typed item model. This accepts the live structure and description path for
 those eight families, without disclosing identifiers, names, addresses, or
 state values.
 
+On 2026-08-15, both visible `WindowMonitor` controls were queried again after
+the parser accepted explicitly keyed item objects. Their item lists had the same
+length as their `windowStates` vectors (5 and 23), and every item resolved to a
+visible room and control. The seven aggregate WindowMonitor state values were
+current. This is read-only hardware evidence for the reference and current-state
+paths; it does not imply a write capability.
+
 The current-state result is deliberately narrower. A single bounded read of
 the 74 state references returned only `unknown` values after the documented
 WebSocket status subscription, while the Miniserver remained reachable and the

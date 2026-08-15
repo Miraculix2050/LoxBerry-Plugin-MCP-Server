@@ -3,6 +3,16 @@
 All notable user-visible changes are recorded here. GitHub release notes are
 extracted from the matching version heading.
 
+## Unreleased
+
+- Add an explicit, fail-closed `room_group` reference to each visible room from
+  `loxone_list_rooms`, and resolve visible room and control references in
+  StatusMonitor and WindowMonitor descriptions.
+
+- Preserve explicit WindowMonitor item mappings when LoxAPP3 represents them as
+  a bounded object keyed by control identifier, so their referenced visible
+  controls can be resolved without name inference.
+
 ## 0.4.0-alpha.15 - 2026-08-15
 
 - Fail closed when the Miniserver binary-state stream ends before its first
