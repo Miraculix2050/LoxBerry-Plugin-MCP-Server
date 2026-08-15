@@ -13,4 +13,5 @@
 - [Evidence](../evidence/README.md) — current public evidence summary.
 - [Test strategy](test-strategy.md) — change-driven validation.
 - [Release process](release-process.md) — publication workflow.
+- [Release criteria](release-criteria.md) — feature freeze and publication gate.
 - [Architecture decisions](adr/README.md) — recorded decisions and their status.

@@ -10,6 +10,8 @@ import zipfile
 from pathlib import Path
 from typing import Final
 
+from tools.versioning import project_version
+
 _TIMESTAMP: Final = (2026, 1, 1, 0, 0, 0)
 _ROOT_FILES: Final = (
     "LICENSE",
@@ -105,7 +107,7 @@ def _project_version(root: Path) -> str:
     version = document.get("project", {}).get("version")
     if not isinstance(version, str):
         raise SystemExit("project version is missing")
-    return re.sub(r"(?i)-alpha\.(\d+)$", r"a\1", version)
+    return project_version(version)
 
 
 def _wheel_names(wheelhouse: Path) -> set[str]:

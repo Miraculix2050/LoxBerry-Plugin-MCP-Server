@@ -15,10 +15,16 @@ def _read(path: Path) -> configparser.ConfigParser:
 
 
 def validate(root: Path, version: str, channel: str) -> str:
-    if re.fullmatch(r"\d+\.\d+\.\d+(?:-alpha\.\d+)?", version) is None:
-        raise ValueError("version must use x.y.z or x.y.z-alpha.n")
-    if channel == "stable" and "-alpha." in version:
-        raise ValueError("stable releases must not use an alpha version")
+    if channel not in {"prerelease", "stable"}:
+        raise ValueError("channel must be prerelease or stable")
+    prerelease = re.fullmatch(r"\d+\.\d+\.\d+-(?:alpha|beta)\.\d+", version)
+    stable = re.fullmatch(r"\d+\.\d+\.\d+", version)
+    if not prerelease and not stable:
+        raise ValueError("version must use x.y.z, x.y.z-alpha.n or x.y.z-beta.n")
+    if channel == "stable" and not stable:
+        raise ValueError("stable releases must not use a prerelease version")
+    if channel == "prerelease" and not prerelease:
+        raise ValueError("prerelease releases must use an alpha or beta version")
     plugin = _read(root / "plugin.cfg")
     selected = _read(root / ("release.cfg" if channel == "stable" else "prerelease.cfg"))
     plugin_version = plugin["PLUGIN"]["VERSION"]
