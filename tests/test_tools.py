@@ -1169,9 +1169,17 @@ async def test_room_snapshot_matches_additive_irrigation_state_semantics(
     assert wrong_cursor.data.error == "invalid_input"  # type: ignore[union-attr]
     assert missing.data.error == "not_found"  # type: ignore[union-attr]
 
+    records["zones-state"] = StateRecord("zones-state", zones, Freshness.STALE, 1_700_000_004.0)
+    current_zone_without_fresh_zones = await states_tool.fn(["current-state"])
+    assert current_zone_without_fresh_zones.stale is False
+    assert current_zone_without_fresh_zones.data.states[0].semantic_value == {  # type: ignore[union-attr]
+        "status": "zone",
+        "zone_id": 0,
+    }
+
     incomplete = '[{"id":0,"name":"Front"}]'
     records["zones-state"] = StateRecord(
-        "zones-state", incomplete, Freshness.CURRENT, 1_700_000_004.0
+        "zones-state", incomplete, Freshness.CURRENT, 1_700_000_005.0
     )
     incomplete_result = await states_tool.fn(["zones-state"])
     assert incomplete_result.data.states[0].value == incomplete  # type: ignore[union-attr]
@@ -1182,12 +1190,21 @@ async def test_room_snapshot_matches_additive_irrigation_state_semantics(
         [{"id": index, "name": "Zone", "duration": 1, "setByLogic": False} for index in range(101)]
     )
     records["zones-state"] = StateRecord(
-        "zones-state", too_many, Freshness.CURRENT, 1_700_000_005.0
+        "zones-state", too_many, Freshness.CURRENT, 1_700_000_006.0
     )
     bounded_result = await states_tool.fn(["zones-state"])
     assert bounded_result.data.states[0].value == too_many  # type: ignore[union-attr]
     assert bounded_result.data.states[0].semantic_value is None  # type: ignore[union-attr]
     assert bounded_result.warnings
+
+    overflowing = '[{"id":0,"name":"Zone","duration":' + "9" * 400 + ',"setByLogic":false}]'
+    records["zones-state"] = StateRecord(
+        "zones-state", overflowing, Freshness.CURRENT, 1_700_000_007.0
+    )
+    overflowing_result = await states_tool.fn(["zones-state"])
+    assert overflowing_result.data.states[0].value == overflowing  # type: ignore[union-attr]
+    assert overflowing_result.data.states[0].semantic_value is None  # type: ignore[union-attr]
+    assert overflowing_result.warnings
 
 
 @pytest.mark.asyncio
@@ -1342,6 +1359,20 @@ async def test_alarm_clock_model_and_semantics_remain_read_only(
     assert states.data.states[4].semantic_value == {"status": "online"}  # type: ignore[union-attr]
     assert states.data.states[5].semantic_value is None  # type: ignore[union-attr]
     assert states.warnings
+
+    records["entries"] = StateRecord("entries", entries, Freshness.STALE, 2.0)
+    next_without_fresh_entries = await states_tool.fn(["next"])
+    assert next_without_fresh_entries.stale is False
+    assert next_without_fresh_entries.data.states[0].semantic_value == {  # type: ignore[union-attr]
+        "status": "entry",
+        "entry_id": 3,
+    }
+
+    records["entries"] = StateRecord("entries", None, Freshness.UNKNOWN, None)
+    unknown_entries = await states_tool.fn(["entries"])
+    assert unknown_entries.stale is True
+    assert unknown_entries.data.states[0].semantic_value is None  # type: ignore[union-attr]
+    assert unknown_entries.warnings == []
 
     invalid_time = 4_000_000_001.0
     records["time"] = StateRecord("time", invalid_time, Freshness.CURRENT, 2.0)

@@ -992,7 +992,10 @@ def _semantic_json(value: object) -> object:
 def _semantic_integer(value: object, *, minimum: int, maximum: int) -> int:
     if isinstance(value, bool) or not isinstance(value, int | float):
         raise _SemanticValueError
-    number = float(value)
+    try:
+        number = float(value)
+    except (OverflowError, ValueError) as exc:
+        raise _SemanticValueError from exc
     if not math.isfinite(number) or not number.is_integer():
         raise _SemanticValueError
     result = int(number)
@@ -1004,7 +1007,10 @@ def _semantic_integer(value: object, *, minimum: int, maximum: int) -> int:
 def _semantic_number(value: object, *, minimum: float, maximum: float) -> float | int:
     if isinstance(value, bool) or not isinstance(value, int | float):
         raise _SemanticValueError
-    number = float(value)
+    try:
+        number = float(value)
+    except (OverflowError, ValueError) as exc:
+        raise _SemanticValueError from exc
     if not math.isfinite(number) or not minimum <= number <= maximum:
         raise _SemanticValueError
     return value
@@ -1219,10 +1225,12 @@ def _state_payload(
     record = runtime.state(snapshot, state_uuid)
     semantic_value: object | None = None
     semantic_invalid = False
-    if control is not None and state_name is not None:
-        companion_values = {
-            name: runtime.state(snapshot, uuid).value for name, uuid in control.state_uuids
-        }
+    if control is not None and state_name is not None and record.value is not None:
+        companion_values = {}
+        for name, uuid in control.state_uuids:
+            companion = runtime.state(snapshot, uuid)
+            if companion.freshness is Freshness.CURRENT:
+                companion_values[name] = companion.value
         semantic_value, semantic_invalid = _semantic_state_value(
             snapshot, control, state_name, record.value, companion_values
         )
