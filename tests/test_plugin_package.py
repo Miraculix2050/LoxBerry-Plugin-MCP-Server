@@ -939,6 +939,7 @@ def test_release_workflow_is_manual_owner_only_and_separates_permissions() -> No
     assert "github.triggering_actor" in workflow
     assert "github.repository_owner" in workflow
     assert "REF_NAME: ${{ github.ref_name }}" in workflow
+    assert "CHANNEL: ${{ inputs.channel }}" in workflow
     assert "ref: ${{ github.sha }}" in workflow
     assert "confirm_release:" in workflow
     assert "contents: read" in workflow
