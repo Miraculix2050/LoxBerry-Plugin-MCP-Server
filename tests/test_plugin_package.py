@@ -426,6 +426,8 @@ def test_ui_is_nojqm_responsive_and_progressively_enhanced() -> None:
     assert 'type="password"' in template
     assert 'name="renew_confirmation"' in template
     assert 'data-ajax="renew_certificate"' in template
+    assert 'href="/admin/system/services.php"' in template
+    assert "ACTION.DOWNLOAD_CA_CERTIFICATE" in template
     assert 'data-copy-target="mcp-url-hostname"' in template
     assert 'data-copy-target="mcp-url-ip"' in template
     assert "LoxBerry::System::check_securepin" not in cgi
