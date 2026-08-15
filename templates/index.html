@@ -226,7 +226,7 @@
           <p class="mcp-warning"><TMPL_VAR CERTIFICATE.RENEW_TEXT></p>
           <label class="mcp-field"><span><TMPL_VAR CERTIFICATE.PIN></span><input name="securepin" type="password" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" autocomplete="off" required></label>
           <label><input name="renew_confirmation" type="checkbox" value="renew" required> <TMPL_VAR CERTIFICATE.CONFIRM></label>
-          <div class="mcp-actions"><button class="lb-button" type="submit"><TMPL_VAR ACTION.RENEW_CERTIFICATE></button></div>
+          <div class="mcp-actions"><button class="lb-button" type="submit"><TMPL_VAR ACTION.RENEW_CERTIFICATE></button><a class="lb-button" href="/admin/system/services.php"><TMPL_VAR ACTION.DOWNLOAD_CA_CERTIFICATE></a></div>
         </form>
       <p id="certificate-unsupported" class="mcp-help" hidden><TMPL_VAR CERTIFICATE.UNSUPPORTED></p>
       <p id="certificate-unavailable" class="mcp-status" hidden><TMPL_VAR CERTIFICATE.UNAVAILABLE></p>
