@@ -60,10 +60,10 @@ if [ -f "$config_file" ]; then
 else
     echo "<INFO> No existing configuration needs to be saved."
 fi
-for auth_file in sessions.json loxone-tokens.json.enc install.key; do
+for auth_file in sessions.json loxone-tokens.json.enc mqtt-credentials.json.enc install.key; do
     if [ -f "$auth_dir/$auth_file" ]; then
         install -m 600 "$auth_dir/$auth_file" "$backup_dir/$auth_file" || exit 2
     fi
 done
-echo "<INFO> Existing sessions, encrypted tokens and installation key saved for the upgrade."
+echo "<INFO> Existing sessions, encrypted credentials and installation key saved for the upgrade."
 exit 0

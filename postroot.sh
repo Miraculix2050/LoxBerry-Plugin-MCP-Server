@@ -48,6 +48,14 @@ plugin_data="$LBPDATA/$actual_folder"
 plugin_log="$LBPLOG/$actual_folder"
 service_log="$plugin_log/service.log"
 root_path_helper="$installer_root/bin/root-lifecycle-paths.py"
+preserve_disabled_service=0
+
+# A new installation starts enabled. During an upgrade, preserve an explicit
+# administrator choice to keep the unit disabled across package replacement.
+if [ -f "$unit" ] && grep -Fqx "$marker" "$unit" \
+    && ! systemctl is-enabled --quiet loxberry-mcpserver.service; then
+    preserve_disabled_service=1
+fi
 
 for target in "$unit" "$apache" "$sudoers" "$certificate_helper"; do
     if [ -e "$target" ] && ! grep -Fqx "$marker" "$target"; then
@@ -114,6 +122,8 @@ fi
     echo 'loxberry ALL=(root) NOPASSWD: /bin/systemctl start loxberry-mcpserver.service'
     echo 'loxberry ALL=(root) NOPASSWD: /bin/systemctl stop loxberry-mcpserver.service'
     echo 'loxberry ALL=(root) NOPASSWD: /bin/systemctl restart loxberry-mcpserver.service'
+    echo 'loxberry ALL=(root) NOPASSWD: /bin/systemctl enable loxberry-mcpserver.service'
+    echo 'loxberry ALL=(root) NOPASSWD: /bin/systemctl disable loxberry-mcpserver.service'
     echo 'loxberry ALL=(root) NOPASSWD: /bin/systemctl is-active --quiet loxberry-mcpserver.service'
     echo 'loxberry ALL=(root) NOPASSWD: /usr/local/sbin/loxberry-mcpserver-renew-web-certificate ""'
 } > "$sudoers"
@@ -130,19 +140,24 @@ fi
 python3 "$root_path_helper" service-log --home "$loxberry_home" --folder "$actual_folder" || exit 2
 
 systemctl daemon-reload
-systemctl enable loxberry-mcpserver.service >/dev/null
-systemctl restart loxberry-mcpserver.service || exit 2
-service_ready=0
-for _ in {1..30}; do
-    if curl --fail --silent --max-time 2 http://127.0.0.1:8765/healthz >/dev/null; then
-        service_ready=1
-        break
+if [ "$preserve_disabled_service" -eq 1 ]; then
+    systemctl disable loxberry-mcpserver.service >/dev/null
+    echo "<INFO> Service remains disabled after upgrade."
+else
+    systemctl enable loxberry-mcpserver.service >/dev/null
+    systemctl restart loxberry-mcpserver.service || exit 2
+    service_ready=0
+    for _ in {1..30}; do
+        if curl --fail --silent --max-time 2 http://127.0.0.1:8765/healthz >/dev/null; then
+            service_ready=1
+            break
+        fi
+        sleep 1
+    done
+    if [ "$service_ready" -ne 1 ]; then
+        echo "<ERROR> Service did not become healthy after installation."
+        exit 2
     fi
-    sleep 1
-done
-if [ "$service_ready" -ne 1 ]; then
-    echo "<ERROR> Service did not become healthy after installation."
-    exit 2
 fi
 systemctl reload apache2
 echo "<OK> Service and Apache proxy installed."

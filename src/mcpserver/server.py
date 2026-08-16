@@ -43,6 +43,7 @@ from mcpserver.loxberry.diagnostics import LoxBerryDiagnostics
 from mcpserver.loxone.client import MiniserverEndpoint
 from mcpserver.loxone.runtime import LoxoneRuntime
 from mcpserver.loxone.statistics import StatisticsCache
+from mcpserver.mqtt_health import MqttHealthPublisher
 from mcpserver.settings import ServerSettings
 from mcpserver.skill_delivery import SERVER_INSTRUCTIONS, register_skill_resource
 from mcpserver.tools import (
@@ -221,20 +222,27 @@ class _ForwardedHostFastMCP(FastMCP):
         """Run Uvicorn through the bounded root logger without request access logs."""
         import uvicorn
 
-        config = uvicorn.Config(
-            self.streamable_http_app(),
-            host=self.settings.host,
-            port=self.settings.port,
-            log_config=None,
-            log_level="debug",
-            access_log=False,
-        )
-        await uvicorn.Server(config).serve()
+        if self.mqtt_health is not None:
+            await self.mqtt_health.start()
+        try:
+            config = uvicorn.Config(
+                self.streamable_http_app(),
+                host=self.settings.host,
+                port=self.settings.port,
+                log_config=None,
+                log_level="debug",
+                access_log=False,
+            )
+            await uvicorn.Server(config).serve()
+        finally:
+            if self.mqtt_health is not None:
+                await self.mqtt_health.close()
 
     forwarded_allowed_hosts: tuple[str, ...] = ()
     transport_guard: TransportSecurityMiddleware | None = None
     service_enabled: bool = True
     advertised_scopes: tuple[str, ...] = ()
+    mqtt_health: MqttHealthPublisher | None = None
 
     def streamable_http_app(self) -> Starlette:
         app = super().streamable_http_app()
@@ -310,6 +318,11 @@ def create_server(settings: ServerSettings) -> FastMCP:
     loxberry_runtime: LoxBerryReadRuntime | None = None
     loxberry_operate_runtime: LoxBerryOperateRuntime | None = None
     statistics_cache: StatisticsCache | None = None
+    mqtt_health: MqttHealthPublisher | None = None
+    if settings.plugin_config is not None and settings.plugin_config.mqtt_enabled:
+        home = Path(os.getenv("LBHOMEDIR", "/opt/loxberry"))
+        if home.is_absolute():
+            mqtt_health = MqttHealthPublisher(settings.plugin_config, home=home)
     if settings.phase0_auth is not None:
         auth_store = AtomicJsonAuthStore(settings.phase0_auth.store_path)
         loxone_store: EncryptedLoxoneTokenStore | None = None
@@ -479,6 +492,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
     server.forwarded_allowed_hosts = settings.allowed_hosts
     server.transport_guard = transport_guard
     server.service_enabled = settings.service_enabled
+    server.mqtt_health = mqtt_health
     control_enabled = bool(
         settings.phase0_auth
         and settings.phase0_auth.plugin_config

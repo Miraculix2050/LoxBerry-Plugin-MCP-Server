@@ -84,6 +84,8 @@ def test_initial_page_renders_configuration_before_loading_dynamic_state() -> No
     assert "body.set('action', 'page_state')" in template
     assert "const loadInitialState" in template
     assert "loadInitialState();" in template
+    assert "field.addEventListener('input'" in template
+    assert "if (!mqttUseLoxberryGateway.checked)" in template
     assert 'aria-busy="true"' in template
     assert '<strong id="service-active-state"><TMPL_VAR AJAX.WORKING></strong>' in template
     assert '<strong id="service-sub-state"><TMPL_VAR AJAX.WORKING></strong>' in template
@@ -108,7 +110,12 @@ def test_initial_page_renders_configuration_before_loading_dynamic_state() -> No
 def test_common_actions_update_the_page_without_a_reload() -> None:
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
 
-    assert 'data-ajax="save_config"' in template
+    assert 'data-ajax="save_mcp_config"' in template
+    assert 'data-ajax="save_mqtt_config"' in template
+    assert 'name="mqtt_username"' in template
+    assert 'name="mqtt_password" type="password"' in template
+    assert 'name="mqtt_clear_password"' in template
+    assert 'name="mqtt_use_loxberry_gateway"' in template
     assert "Array.isArray(result.data.sessions)" in template
     assert "updateSessions(result.data.sessions)" in template
     assert "window.location.reload" not in template
@@ -116,9 +123,12 @@ def test_common_actions_update_the_page_without_a_reload() -> None:
     assert "window.clearTimeout(hideStatusTimers.get(status))" in template
     assert "url.searchParams.delete('notice')" in template
     assert "postAjax(body, actionTimeout(form.dataset.ajax))" in template
-    assert "save_config: 90000" in template
+    assert "save_mcp_config: 90000" in template
+    assert "save_mqtt_config: 75000" in template
     assert "revoke_all: 75000" in template
     assert "postAjax(body, 5000)" in template
+    assert "new URLSearchParams(new FormData(form))" in template
+    assert "const body = new FormData" not in template
     assert "if (result.data.certificate) updateCertificate" in template
     assert 'id="session-table-template"' in template
     assert "row.dataset.fingerprint !== sessionFingerprint(session)" in template
@@ -146,16 +156,17 @@ def test_service_status_is_first_and_uses_a_lightweight_ajax_contract() -> None:
 
     assert template.index('id="status"') < template.index('id="setup"')
     assert 'data-ajax="service_status"' not in template
-    assert 'data-service-command="start"' in template
-    assert 'data-service-command="stop"' in template
-    assert 'data-service-command="restart"' in template
+    for command in ("start", "stop", "restart"):
+        assert f'data-service-command="{command}"' in template
+    assert 'data-ajax="set_service_enabled"' in template
     assert "body.set('action', 'service_status')" in template
     assert "window.setTimeout(pollServiceStatus, delay)" in template
     assert "document.hidden || serviceActionRunning || servicePollInFlight" in template
     assert "document.addEventListener('visibilitychange'" in template
     assert "admin_call('service_status', {})" in cgi
     assert "admin_call('service_action', {command => $command})" in cgi
-    assert "$command =~ /\\A(?:start|stop|restart)\\z/" in cgi
+    assert "admin_call('set_service_enabled', {enabled => $enabled})" in cgi
+    assert "$command eq 'start' || $command eq 'stop' || $command eq 'restart'" in cgi
     assert "service.log&header=html&format=template" in cgi
 
 
@@ -260,20 +271,20 @@ def test_service_actions_use_an_accessible_confirmation_and_dynamic_controls() -
 
     assert '<dialog id="service-confirm"' in template
     assert 'aria-labelledby="service-confirm-title"' in template
-    assert "serviceConfirmMessages[serviceCommand]" in template
+    assert "serviceConfirmMessages[confirmationKey]" in template
     assert "form.dataset.confirmed = 'true'" in template
     assert "form.requestSubmit()" in template
-    assert "command === 'start'" in template
-    assert "installed && active" in template
+    assert "command === 'start' && !active" in template
+    assert "command === 'stop' || command === 'restart'" in template
     assert "serviceState.dataset.kind = kind" in template
     assert "serviceActionRunning = true" in template
-    assert "service_action: 75000" in template
+    assert "set_service_enabled: 75000" in template
 
 
 def test_admin_sections_are_native_persistent_collapsibles() -> None:
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
 
-    for section in ("status", "setup", "help", "certificate", "sessions", "diagnostics"):
+    for section in ("status", "setup", "mqtt", "help", "certificate", "sessions", "diagnostics"):
         assert f'<details id="{section}" class="mcp-card" data-persist-collapse' in template
     assert '<details id="status" class="mcp-card" data-persist-collapse open' in template
     assert '<details id="setup" class="mcp-card" data-persist-collapse open' in template

@@ -13,6 +13,7 @@ dependencies = [
     "httpx==0.28.1",
     "idna==3.18",
     "mcp==1.28.1",
+    "paho-mqtt==2.1.0",
     "websockets==17.0.1",
 ]
 

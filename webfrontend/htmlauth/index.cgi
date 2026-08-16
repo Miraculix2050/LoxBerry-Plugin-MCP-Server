@@ -63,6 +63,7 @@ $ENV{MCPSERVER_CONFIG} = "$lbpconfigdir/mcpserver.json";
 $ENV{MCPSERVER_AUTH_STORE} = "$lbpdatadir/auth/sessions.json";
 $ENV{MCPSERVER_LOXONE_TOKEN_STORE} = "$lbpdatadir/auth/loxone-tokens.json.enc";
 $ENV{MCPSERVER_INSTALL_KEY} = "$lbpdatadir/auth/install.key";
+$ENV{MCPSERVER_MQTT_CREDENTIALS} = "$lbpdatadir/auth/mqtt-credentials.json.enc";
 $ENV{MCPSERVER_WEB_CERT} = "$lbhomedir/data/system/LoxBerryCA/certs/wwwcert.pem";
 $ENV{MCPSERVER_CA_CERT} = "$lbhomedir/data/system/LoxBerryCA/cacert.pem";
 $ENV{MCPSERVER_CERT_HELPER} = '/usr/local/sbin/loxberry-mcpserver-renew-web-certificate';
@@ -338,9 +339,9 @@ if ($action ne '') {
     }
 
     my $result;
-    if ($action eq 'save_config') {
+    if ($action eq 'save_mcp_config') {
         my $document = {
-            schema_version => 4,
+            schema_version => 5,
             server => {
                 enabled => $q->{enabled} ? JSON::PP::true : JSON::PP::false,
                 public_origin => $q->{public_origin} // '',
@@ -379,9 +380,28 @@ if ($action ne '') {
                 statistics_memory_max_mib => 0 + ($q->{statistics_memory_max_mib} // 128),
             },
         };
-        $result = admin_call('save_config', $document);
+        $result = admin_call('save_mcp_config', $document);
         admin_log($result->{ok} ? 'info' : 'warning',
-            'action=save_config outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
+            'action=save_mcp_config outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
+    } elsif ($action eq 'save_mqtt_config') {
+        my $document = {
+            schema_version => 5,
+            mqtt => {
+                enabled => $q->{mqtt_enabled} ? JSON::PP::true : JSON::PP::false,
+                root_topic => $q->{mqtt_root_topic} // 'mcpserver',
+                heartbeat_seconds => 0 + ($q->{mqtt_heartbeat_seconds} // 60),
+                use_loxberry_gateway => $q->{mqtt_use_loxberry_gateway} ? JSON::PP::true : JSON::PP::false,
+                host => $q->{mqtt_host} // '',
+                port => 0 + ($q->{mqtt_port} // 1883),
+                username => $q->{mqtt_username} // '',
+            },
+        };
+        $document->{mqtt_password} = $q->{mqtt_password} if defined $q->{mqtt_password};
+        $document->{mqtt_clear_password} = ($q->{mqtt_clear_password} // '') eq '1'
+            ? JSON::PP::true : JSON::PP::false;
+        $result = admin_call('save_mqtt_config', $document);
+        admin_log($result->{ok} ? 'info' : 'warning',
+            'action=save_mqtt_config outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
     } elsif ($action eq 'set_logging') {
         $result = admin_call('set_logging', {mode => ($q->{mode} // '')});
         admin_log($result->{ok} ? 'info' : 'warning',
@@ -424,9 +444,14 @@ if ($action ne '') {
         $result = admin_call('status', {});
     } elsif ($action eq 'service_status') {
         $result = admin_call('service_status', {});
+    } elsif ($action eq 'set_service_enabled') {
+        my $enabled = $q->{service_enabled} ? JSON::PP::true : JSON::PP::false;
+        $result = admin_call('set_service_enabled', {enabled => $enabled});
+        admin_log($result->{ok} ? 'info' : 'warning',
+            'action=set_service_enabled outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
     } elsif ($action eq 'service_action') {
         my $command = $q->{command} // '';
-        if ($command =~ /\A(?:start|stop|restart)\z/) {
+        if ($command eq 'start' || $command eq 'stop' || $command eq 'restart') {
             $result = admin_call('service_action', {command => $command});
             if ($result->{ok}) {
                 admin_log('info', "action=service_$command outcome=completed");
@@ -538,6 +563,13 @@ for my $suffix ('', '.1', '.2') {
 $template->param(
     VERSION => $version,
     ENABLED => $config->{server}{enabled} ? 1 : 0,
+    MQTT_ENABLED => $config->{mqtt}{enabled} ? 1 : 0,
+    MQTT_ROOT_TOPIC => $config->{mqtt}{root_topic} // 'mcpserver',
+    MQTT_HEARTBEAT_SECONDS => $config->{mqtt}{heartbeat_seconds} // 60,
+    MQTT_USE_LOXBERRY_GATEWAY => $config->{mqtt}{use_loxberry_gateway} ? 1 : 0,
+    MQTT_HOST => $config->{mqtt}{host} // '',
+    MQTT_PORT => $config->{mqtt}{port} // 1883,
+    MQTT_USERNAME => $config->{mqtt}{username} // '',
     PUBLIC_ORIGIN => $public_origin,
     HOSTNAME_MCP_URL => $hostname_mcp_url,
     IP_MCP_URL => $ip_mcp_url,

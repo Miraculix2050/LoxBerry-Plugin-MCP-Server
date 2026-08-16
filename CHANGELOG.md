@@ -46,6 +46,13 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Separate systemd runtime, MCP access and optional MQTT health configuration.
+  MQTT health publishes retained Loxone-epoch heartbeat and systemd state topics
+
+- MQTT health can optionally use a custom broker. Its password is stored in a
+  separate encrypted credential store and is never displayed or logged.
+  below the configurable `mcpserver` root without storing or displaying broker credentials.
+
 - Harden Admin UI browser responses with no-store caching, CSP, frame, referrer
   and MIME protections across page, AJAX, download and redirect paths.
 

@@ -13,6 +13,7 @@ import socket
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -30,6 +31,7 @@ if TYPE_CHECKING:
 _MAX_REQUEST_BYTES: Final = 32 * 1024
 _SERVICE: Final = "loxberry-mcpserver.service"
 _SERVICE_ACTIONS: Final = frozenset({"start", "stop", "restart"})
+_SYSTEMD_COMMANDS: Final = frozenset({"enable", "disable", "start", "stop", "restart"})
 _CLIENT_UUID: Final = UUID("3f52f6fe-3af0-4d30-a8bb-f429b9da4465")
 
 
@@ -96,6 +98,8 @@ def _service_status() -> dict[str, Any]:
         "sub_state": "unknown",
         "pid": None,
         "active": False,
+        "enabled": False,
+        "enable_state": "unknown",
     }
     try:
         result = subprocess.run(
@@ -106,6 +110,7 @@ def _service_status() -> dict[str, Any]:
                 "--property=ActiveState",
                 "--property=SubState",
                 "--property=MainPID",
+                "--property=UnitFileState",
                 "--no-pager",
                 _SERVICE,
             ],
@@ -125,6 +130,21 @@ def _service_status() -> dict[str, Any]:
     active_state = properties.get("ActiveState", "unknown")
     sub_state = properties.get("SubState", "unknown")
     raw_pid = properties.get("MainPID", "")
+    enable_state = properties.get("UnitFileState", "unknown") or "unknown"
+    try:
+        enabled_result = subprocess.run(
+            ["/bin/systemctl", "is-enabled", "--quiet", _SERVICE],
+            check=False,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+        )
+        enabled = enabled_result.returncode == 0
+        if not enabled and enable_state == "enabled":
+            enable_state = "disabled"
+    except (OSError, subprocess.TimeoutExpired):
+        enabled = False
     pid = int(raw_pid) if raw_pid.isdecimal() and int(raw_pid) > 0 else None
     status.update(
         installed=load_state not in {"not-found", "unknown", ""},
@@ -132,6 +152,8 @@ def _service_status() -> dict[str, Any]:
         sub_state=sub_state or "unknown",
         pid=pid,
         active=active_state == "active",
+        enabled=enabled,
+        enable_state=enable_state,
     )
     return status
 
@@ -141,7 +163,7 @@ def _service_active() -> bool:
 
 
 def _run_service_command(command: str) -> None:
-    if command not in _SERVICE_ACTIONS:
+    if command not in _SYSTEMD_COMMANDS:
         raise AdminError("service action is invalid")
     try:
         result = subprocess.run(
@@ -163,12 +185,76 @@ def _service_response() -> dict[str, Any]:
     return {"service_active": service["active"], "service": service}
 
 
+def _mqtt_gateway_status() -> dict[str, Any]:
+    """Report gateway connection details, excluding the broker password."""
+    from mcpserver.mqtt_health import MqttGateway
+
+    home = os.getenv("LBHOMEDIR", "").strip()
+    home_path = Path(home)
+    gateway = MqttGateway.from_loxberry_home(home_path) if home_path.is_absolute() else None
+    if gateway is None:
+        return {"gateway_configured": False}
+    return {
+        "gateway_configured": True,
+        "host": gateway.host,
+        "port": gateway.port,
+        "username": gateway.username,
+    }
+
+
+def _mqtt_password_configured() -> bool:
+    """Expose only whether an optional custom broker password exists."""
+    from mcpserver.mqtt_health import MqttCredentialStore, MqttCredentialStoreError
+
+    path_value = os.getenv("MCPSERVER_MQTT_CREDENTIALS", "").strip()
+    key_value = os.getenv("MCPSERVER_INSTALL_KEY", "").strip()
+    if not path_value or not key_value:
+        return False
+    try:
+        return MqttCredentialStore(Path(path_value), Path(key_value)).load() is not None
+    except (MqttCredentialStoreError, ValueError):
+        return False
+
+
 def _service_action(payload: object) -> dict[str, Any]:
     command = payload.get("command") if isinstance(payload, dict) else None
     if not isinstance(command, str) or command not in _SERVICE_ACTIONS:
         raise AdminError("service action is invalid")
     _run_service_command(command)
     return _service_response()
+
+
+def _set_service_enabled(payload: object) -> dict[str, Any]:
+    enabled = payload.get("enabled") if isinstance(payload, dict) else None
+    if not isinstance(enabled, bool):
+        raise AdminError("service enabled state is invalid")
+    previous = _service_status()
+    commands = ("enable", "start") if enabled else ("stop", "disable")
+    try:
+        for command in commands:
+            _run_service_command(command)
+    except AdminError as exc:
+        # Restore the prior combined systemd state if the second fixed action failed.
+        if command != commands[0]:
+            _restore_service_state(previous)
+        raise AdminError("the service state was not applied") from exc
+    response = _service_response()
+    service = response["service"]
+    if bool(service["enabled"]) != enabled or bool(service["active"]) != enabled:
+        _restore_service_state(previous)
+        raise AdminError("the service state was not applied")
+    return response
+
+
+def _restore_service_state(previous: dict[str, Any]) -> None:
+    """Best-effort restoration after a failed fixed systemd state transition."""
+    commands = (
+        "enable" if previous["enabled"] else "disable",
+        "start" if previous["active"] else "stop",
+    )
+    for command in commands:
+        with suppress(AdminError):
+            _run_service_command(command)
 
 
 def _restart_service() -> None:
@@ -269,16 +355,6 @@ def _save(payload: object) -> dict[str, Any]:
     config = PluginConfig.from_document(payload)
     store = _config_store()
     previous = store.load()
-    if (
-        not previous.enabled
-        and not previous.public_origin
-        and not previous.loxone_endpoint
-        and not config.enabled
-        and config.public_origin
-        and config.loxone_endpoint
-        and config.loxone_read_enabled
-    ):
-        config = replace(config, enabled=True)
     if "logging" not in payload:
         config = replace(config, log_level=previous.log_level)
     if "policies" not in payload:
@@ -360,6 +436,124 @@ def _save(payload: object) -> dict[str, Any]:
         "configuration": config.to_document(),
         "applied": True,
         "sessions": _sessions(),
+    } | _service_response()
+
+
+def _save_mcp(payload: object) -> dict[str, Any]:
+    """Atomically apply only the MCP configuration section, preserving MQTT."""
+    from mcpserver.config import PluginConfig
+
+    if not isinstance(payload, dict):
+        raise AdminError("configuration payload is invalid")
+    candidate = PluginConfig.from_document(payload)
+    store = _config_store()
+    previous = store.load()
+    fields = (
+        "enabled",
+        "public_origin",
+        "loxone_endpoint",
+        "connection_timeout",
+        "loxone_read_enabled",
+        "loxone_control_enabled",
+        "loxberry_read_enabled",
+        "loxone_history_enabled",
+        "loxberry_operate_enabled",
+        "requests_per_minute",
+        "control_requests_per_minute",
+        "loxberry_requests_per_minute",
+        "history_requests_per_minute",
+        "loxberry_operate_requests_per_minute",
+        "max_parallel_calls",
+        "statistics_memory_max_mib",
+        "structure_refresh_seconds",
+        "max_active_runtime_sessions",
+        "runtime_session_idle_seconds",
+        "max_structure_controls",
+        "max_structure_state_references",
+        "max_structure_depth",
+        "max_states_per_identity",
+    )
+
+    def apply(current: PluginConfig) -> PluginConfig:
+        return replace(current, **{field: getattr(candidate, field) for field in fields})
+
+    updated = store.mutate(apply)
+    try:
+        if _service_active():
+            _restart_service()
+    except AdminError as exc:
+        store.save(previous)
+        raise AdminError(
+            "MCP configuration was not applied; previous configuration restored"
+        ) from exc
+    return {"configuration": updated.to_document(), "applied": True} | _service_response()
+
+
+def _save_mqtt(payload: object) -> dict[str, Any]:
+    """Atomically apply MQTT settings and separately protect an optional password."""
+    from mcpserver.config import PluginConfig
+    from mcpserver.mqtt_health import MqttCredentialStore, MqttCredentialStoreError
+
+    if not isinstance(payload, dict):
+        raise AdminError("MQTT configuration payload is invalid")
+    candidate = PluginConfig.from_document(payload)
+    password = payload.get("mqtt_password")
+    if password is not None and (not isinstance(password, str) or len(password) > 1024):
+        raise AdminError("MQTT password is invalid")
+    clear_password = payload.get("mqtt_clear_password", False)
+    if not isinstance(clear_password, bool):
+        raise AdminError("MQTT password clear intent is invalid")
+    if clear_password and password:
+        raise AdminError("MQTT password update and clear cannot be combined")
+    credentials: MqttCredentialStore | None = None
+    if password or clear_password:
+        path_value = os.getenv("MCPSERVER_MQTT_CREDENTIALS", "").strip()
+        key_value = os.getenv("MCPSERVER_INSTALL_KEY", "").strip()
+        if not path_value or not key_value:
+            raise AdminError("MQTT credential storage is unavailable")
+        credentials = MqttCredentialStore(Path(path_value), Path(key_value))
+    store = _config_store()
+
+    def apply(previous: PluginConfig, save: Callable[[PluginConfig], None]) -> PluginConfig:
+        previous_password = credentials.load() if credentials is not None else None
+        updated = replace(
+            previous,
+            mqtt_enabled=candidate.mqtt_enabled,
+            mqtt_root_topic=candidate.mqtt_root_topic,
+            mqtt_heartbeat_seconds=candidate.mqtt_heartbeat_seconds,
+            mqtt_use_loxberry_gateway=candidate.mqtt_use_loxberry_gateway,
+            mqtt_host=candidate.mqtt_host,
+            mqtt_port=candidate.mqtt_port,
+            mqtt_username=candidate.mqtt_username,
+        )
+        try:
+            if password and credentials is not None:
+                credentials.save(password)
+            elif clear_password and credentials is not None:
+                credentials.delete()
+            save(updated)
+            if _service_active():
+                _restart_service()
+            return updated
+        except (AdminError, MqttCredentialStoreError, ValueError) as exc:
+            save(previous)
+            if credentials is not None:
+                try:
+                    if previous_password is None:
+                        credentials.delete()
+                    else:
+                        credentials.save(previous_password)
+                except MqttCredentialStoreError:
+                    pass
+            raise AdminError(
+                "MQTT configuration was not applied; previous configuration restored"
+            ) from exc
+
+    updated = store.transaction(apply)
+    return {
+        "configuration": updated.to_document(),
+        "mqtt_password_configured": _mqtt_password_configured(),
+        "applied": True,
     } | _service_response()
 
 
@@ -898,11 +1092,17 @@ def dispatch(request: object) -> dict[str, Any]:
             "loxberry_bindings": _loxberry_bindings(snapshot),
             "loxberry_operate_bindings": _loxberry_operate_bindings(snapshot),
             "certificate": _certificate_status(configuration=snapshot.configuration),
+            "mqtt_gateway": _mqtt_gateway_status(),
+            "mqtt_password_configured": _mqtt_password_configured(),
         } | _service_response()
     if action == "get_config":
         return {"configuration": _config_store().load().to_document()}
     if action == "save_config":
         return _save(payload)
+    if action == "save_mcp_config":
+        return _save_mcp(payload)
+    if action == "save_mqtt_config":
+        return _save_mqtt(payload)
     if action == "set_logging":
         return _set_logging(payload)
     if action == "status":
@@ -915,6 +1115,8 @@ def dispatch(request: object) -> dict[str, Any]:
         return _service_response()
     if action == "service_action":
         return _service_action(payload)
+    if action == "set_service_enabled":
+        return _set_service_enabled(payload)
     if action == "test_connection":
         return asyncio.run(_test_connection(payload))
     if action == "list_sessions":

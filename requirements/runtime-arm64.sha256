@@ -13,6 +13,7 @@ d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad  httpx-0.28.1-p
 98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe  jsonschema_specifications-2025.9.1-py3-none-any.whl
 d489f15263b8d200f8387e64b4c3a75f06629559fb73deb8fdfb525f2dab50ce  jsonschema-4.26.0-py3-none-any.whl
 2726bca5e7193f61c5dde8b12500a6de2d9acf6d1a1c0be9e8c2e706437991df  mcp-1.28.1-py3-none-any.whl
+6db9ba9b34ed5bc6b6e3812718c7e06e2fd7444540df2455d2c51bd58808feee  paho_mqtt-2.1.0-py3-none-any.whl
 b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992  pycparser-3.0-py3-none-any.whl
 f027324c56cd5406ca49c124b0db10e56c69064fec039acc571c29020cc87c76  pydantic_core-2.46.4-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
 a20c97b37910b6550d5ea50fbcc2d4187defe58cd57070b73863d069419c9440  pydantic_settings-2.14.2-py3-none-any.whl

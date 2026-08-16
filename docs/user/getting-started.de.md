@@ -14,7 +14,7 @@
 1. Installiere das Release-ZIP im LoxBerry Plugin Manager.
 2. Öffne **LoxBerry MCP Server** und trage die lokale HTTPS-Origin des LoxBerry ein.
 3. Wähle einen konfigurierten Miniserver oder gib den kanonischen Endpunkt ein.
-4. Prüfe die Verbindung, aktiviere den Dienst und speichere.
+4. Prüfe die Verbindung, aktiviere **MCP-Zugriff aktivieren** und speichere die MCP-Konfiguration.
 5. Verbinde einen Client mit `https://<loxberry>/plugins/mcpserver/mcp` und folge dem OAuth-Login.
 
 Die verwendete HTTPS-Adresse muss zum Webserver-Zertifikat passen. Die Plugin-Hilfe bietet kopierbare Hostname- und IP-Adressen.

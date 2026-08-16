@@ -83,6 +83,25 @@ if document.get("schema_version") == 1:
     cache.setdefault("statistics_max_mib", 128)
     document["schema_version"] = 2
     changed = True
+if document.get("schema_version") in {2, 3, 4}:
+    mqtt = document.setdefault("mqtt", {})
+    if not isinstance(mqtt, dict):
+        raise SystemExit("mqtt configuration is not an object")
+    mqtt.setdefault("enabled", False)
+    mqtt.setdefault("root_topic", "mcpserver")
+    mqtt.setdefault("heartbeat_seconds", 60)
+    document["schema_version"] = 5
+    changed = True
+if document.get("schema_version") == 5:
+    mqtt = document.setdefault("mqtt", {})
+    if not isinstance(mqtt, dict):
+        raise SystemExit("mqtt configuration is not an object")
+    mqtt.setdefault("use_loxberry_gateway", True)
+    mqtt.setdefault("host", "")
+    mqtt.setdefault("port", 1883)
+    mqtt.setdefault("username", "")
+    document["schema_version"] = 6
+    changed = True
 if changed:
     descriptor, temporary_name = tempfile.mkstemp(prefix=".mcpserver.", dir=path.parent)
     temporary = Path(temporary_name)

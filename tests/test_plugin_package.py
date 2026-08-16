@@ -259,11 +259,15 @@ def test_upgrade_preserves_configuration_in_plugin_data() -> None:
     ) < preupgrade.index('config_file="$LBPCONFIG/$actual_folder/mcpserver.json"')
     assert 'backup_dir="$installer_root/.mcpserver-upgrade"' in preupgrade
     assert 'install -m 600 "$config_file" "$backup_dir/mcpserver.json"' in preupgrade
-    assert "sessions.json loxone-tokens.json.enc install.key" in preupgrade
+    assert (
+        "sessions.json loxone-tokens.json.enc mqtt-credentials.json.enc install.key" in preupgrade
+    )
     assert "installer_root=${6:-}" in postinstall
     assert 'upgrade_backup="$upgrade_backup_dir/mcpserver.json"' in postinstall
     assert 'install -m 600 "$upgrade_backup" "$config_file"' in postinstall
-    assert "sessions.json loxone-tokens.json.enc install.key" in postinstall
+    assert (
+        "sessions.json loxone-tokens.json.enc mqtt-credentials.json.enc install.key" in postinstall
+    )
     assert 'cp "$plugin_config/default-config.json" "$config_file"' in postinstall
     assert postinstall.index('install -m 600 "$upgrade_backup" "$config_file"') < postinstall.index(
         'cp "$plugin_config/default-config.json" "$config_file"'
@@ -334,6 +338,8 @@ def test_phase_four_upgrade_migrates_configuration_and_private_cache() -> None:
 
     assert 'document.get("schema_version") == 1' in hook
     assert 'document["schema_version"] = 2' in hook
+    assert 'document.get("schema_version") == 5' in hook
+    assert 'document["schema_version"] = 6' in hook
     assert 'prepare_private_directory "$plugin_data/statistics-cache" || exit 2' in hook
     assert 'python3 "$root_path_helper" statistics-cache' in postroot
     assert "os.O_NOFOLLOW" in helper
@@ -351,6 +357,9 @@ def test_postroot_keeps_installer_alive_during_apache_activation() -> None:
         "systemctl reload apache2"
     )
     assert "systemctl restart loxberry-mcpserver.service || exit 2" in hook
+    assert "preserve_disabled_service=0" in hook
+    assert "Service remains disabled after upgrade." in hook
+    assert hook.index("preserve_disabled_service=1") < hook.index("systemctl daemon-reload")
     assert "for _ in {1..30}" in hook
     assert "curl --fail --silent --max-time 2 http://127.0.0.1:8765/healthz" in hook
     assert 'if [ "$service_ready" -ne 1 ]' in hook
@@ -370,7 +379,7 @@ def test_postroot_keeps_installer_alive_during_apache_activation() -> None:
     assert "/usr/local/sbin/loxberry-mcpserver-renew-web-certificate" in hook
     assert 'NOPASSWD: /usr/local/sbin/loxberry-mcpserver-renew-web-certificate ""' in hook
     assert "renew-web-certificate *" not in hook
-    for action in ("start", "stop", "restart"):
+    for action in ("start", "stop", "restart", "enable", "disable"):
         assert f"NOPASSWD: /bin/systemctl {action} loxberry-mcpserver.service" in hook
     assert "NOPASSWD: /bin/systemctl * loxberry-mcpserver.service" not in hook
     assert "NOPASSWD: /bin/systemctl start *" not in hook
@@ -391,6 +400,9 @@ def test_postroot_keeps_installer_alive_during_apache_activation() -> None:
     assert "@LOCAL_IP_HOST@" in unit
     assert "https://@LOCAL_IP_HOST@" in unit
     assert "Environment=MCPSERVER_LOG_FILE=@LOG_DIR@/service.log" in unit
+    assert (
+        "Environment=MCPSERVER_MQTT_CREDENTIALS=@DATA_DIR@/auth/mqtt-credentials.json.enc" in unit
+    )
     assert "StandardOutput=journal" in unit
     assert "StandardError=journal" in unit
     assert "StandardOutput=append:@LOG_DIR@/service.log" not in unit
