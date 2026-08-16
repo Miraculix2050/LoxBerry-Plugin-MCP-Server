@@ -15,7 +15,7 @@ from collections.abc import Callable
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, BinaryIO, Final
+from typing import Any, BinaryIO, Final, TypeVar
 from urllib.parse import urlsplit
 
 import idna
@@ -44,6 +44,7 @@ DEFAULT_MQTT_ROOT_TOPIC: Final = "mcpserver"
 DEFAULT_MQTT_HEARTBEAT_SECONDS: Final = 60
 DEFAULT_MQTT_PORT: Final = 1883
 SUPPORTED_LOG_LEVELS: Final = frozenset({"off", "error", "warning", "info", "debug"})
+_TransactionResult = TypeVar("_TransactionResult")
 
 
 class ConfigError(ValueError):
@@ -567,3 +568,11 @@ class AtomicConfigStore:
             if result != current:
                 self._save_unlocked(result)
             return result
+
+    def transaction(
+        self,
+        operation: Callable[[PluginConfig, Callable[[PluginConfig], None]], _TransactionResult],
+    ) -> _TransactionResult:
+        """Run a coupled update while holding the configuration cross-process lock."""
+        with self._locked():
+            return operation(self._load_unlocked(), self._save_unlocked)

@@ -13,6 +13,7 @@ import socket
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -223,8 +224,16 @@ def _set_service_enabled(payload: object) -> dict[str, Any]:
     if not isinstance(enabled, bool):
         raise AdminError("service enabled state is invalid")
     commands = ("enable", "start") if enabled else ("stop", "disable")
-    for command in commands:
-        _run_service_command(command)
+    rollback = "disable" if enabled else "start"
+    try:
+        for command in commands:
+            _run_service_command(command)
+    except AdminError as exc:
+        # Restore the prior combined systemd state if the second fixed action failed.
+        if command != commands[0]:
+            with suppress(AdminError):
+                _run_service_command(rollback)
+        raise AdminError("the service state was not applied") from exc
     return _service_response()
 
 
@@ -477,19 +486,18 @@ def _save_mqtt(payload: object) -> dict[str, Any]:
     if clear_password and password:
         raise AdminError("MQTT password update and clear cannot be combined")
     credentials: MqttCredentialStore | None = None
-    previous_password: str | None = None
     if password or clear_password:
         path_value = os.getenv("MCPSERVER_MQTT_CREDENTIALS", "").strip()
         key_value = os.getenv("MCPSERVER_INSTALL_KEY", "").strip()
         if not path_value or not key_value:
             raise AdminError("MQTT credential storage is unavailable")
         credentials = MqttCredentialStore(Path(path_value), Path(key_value))
-        previous_password = credentials.load()
     store = _config_store()
-    previous = store.load()
-    updated = store.mutate(
-        lambda current: replace(
-            current,
+
+    def apply(previous: PluginConfig, save: Callable[[PluginConfig], None]) -> PluginConfig:
+        previous_password = credentials.load() if credentials is not None else None
+        updated = replace(
+            previous,
             mqtt_enabled=candidate.mqtt_enabled,
             mqtt_root_topic=candidate.mqtt_root_topic,
             mqtt_heartbeat_seconds=candidate.mqtt_heartbeat_seconds,
@@ -498,27 +506,30 @@ def _save_mqtt(payload: object) -> dict[str, Any]:
             mqtt_port=candidate.mqtt_port,
             mqtt_username=candidate.mqtt_username,
         )
-    )
-    try:
-        if password and credentials is not None:
-            credentials.save(password)
-        elif clear_password and credentials is not None:
-            credentials.delete()
-        if _service_active():
-            _restart_service()
-    except (AdminError, MqttCredentialStoreError, ValueError) as exc:
-        store.save(previous)
-        if credentials is not None:
-            try:
-                if previous_password is None:
-                    credentials.delete()
-                else:
-                    credentials.save(previous_password)
-            except MqttCredentialStoreError:
-                pass
-        raise AdminError(
-            "MQTT configuration was not applied; previous configuration restored"
-        ) from exc
+        try:
+            if password and credentials is not None:
+                credentials.save(password)
+            elif clear_password and credentials is not None:
+                credentials.delete()
+            save(updated)
+            if _service_active():
+                _restart_service()
+            return updated
+        except (AdminError, MqttCredentialStoreError, ValueError) as exc:
+            save(previous)
+            if credentials is not None:
+                try:
+                    if previous_password is None:
+                        credentials.delete()
+                    else:
+                        credentials.save(previous_password)
+                except MqttCredentialStoreError:
+                    pass
+            raise AdminError(
+                "MQTT configuration was not applied; previous configuration restored"
+            ) from exc
+
+    updated = store.transaction(apply)
     return {
         "configuration": updated.to_document(),
         "mqtt_password_configured": _mqtt_password_configured(),

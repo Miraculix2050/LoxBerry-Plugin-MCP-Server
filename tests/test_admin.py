@@ -985,6 +985,56 @@ def test_failed_mqtt_apply_restores_previous_encrypted_password(
     assert credential_store.load() == "previous-secret"
 
 
+def test_concurrent_mqtt_saves_keep_broker_and_password_paired(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mcpserver.mqtt_health import MqttCredentialStore
+
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    store.save(PluginConfig())
+    key = tmp_path / "data" / "auth" / "install.key"
+    key.parent.mkdir(parents=True)
+    key.write_bytes(b"k" * 32)
+    credentials = key.with_name("mqtt-credentials.json.enc")
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._service_active", lambda: False)
+    monkeypatch.setattr("mcpserver.admin._service_response", lambda: {"service_active": False})
+    monkeypatch.setenv("MCPSERVER_INSTALL_KEY", str(key.resolve()))
+    monkeypatch.setenv("MCPSERVER_MQTT_CREDENTIALS", str(credentials.resolve()))
+
+    def save(host: str, password: str) -> None:
+        _save_mqtt(
+            {
+                "schema_version": 6,
+                "mqtt": {
+                    "enabled": True,
+                    "root_topic": "mcpserver",
+                    "heartbeat_seconds": 60,
+                    "use_loxberry_gateway": False,
+                    "host": host,
+                    "port": 1883,
+                    "username": host,
+                },
+                "mqtt_password": password,
+            }
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(save, "one.example", "one-secret"),
+            executor.submit(save, "two.example", "two-secret"),
+        ]
+        for future in futures:
+            future.result()
+
+    final = store.load()
+    password = MqttCredentialStore(credentials.resolve(), key.resolve()).load()
+    assert (final.mqtt_host, final.mqtt_username, password) in {
+        ("one.example", "one.example", "one-secret"),
+        ("two.example", "two.example", "two-secret"),
+    }
+
+
 @pytest.mark.parametrize(
     ("enabled", "commands"),
     [(True, ["enable", "start"]), (False, ["stop", "disable"])],
@@ -1000,6 +1050,22 @@ def test_master_service_state_uses_only_fixed_systemd_operations(
         "service_active": enabled
     }
     assert called == commands
+
+
+def test_failed_master_service_second_action_compensates(monkeypatch: pytest.MonkeyPatch) -> None:
+    called: list[str] = []
+
+    def command(value: str) -> None:
+        called.append(value)
+        if value == "start":
+            raise AdminError("failed")
+
+    monkeypatch.setattr("mcpserver.admin._run_service_command", command)
+
+    with pytest.raises(AdminError, match="not applied"):
+        dispatch({"action": "set_service_enabled", "payload": {"enabled": True}})
+
+    assert called == ["enable", "start", "disable"]
 
 
 def test_first_complete_configuration_respects_disabled_read_access(
