@@ -8,7 +8,8 @@ import logging
 import os
 import subprocess
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import NAMESPACE_URL, uuid5
 
@@ -29,11 +30,17 @@ class EmergencyStopMonitor:
 
     config: PluginConfig
     status: str = "enabled"
+    status_changed_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     _task: asyncio.Task[None] | None = None
 
     def __post_init__(self) -> None:
         if self.config.emergency_stop_virtual_status_uuid:
             self.status = "unknown"
+
+    def _set_status(self, status: str) -> None:
+        if self.status != status:
+            self.status = status
+            self.status_changed_at = datetime.now(UTC)
 
     @property
     def allows_tool_calls(self) -> bool:
@@ -41,15 +48,23 @@ class EmergencyStopMonitor:
 
     def apply(self, value: object) -> None:
         if isinstance(value, bool):
-            self.status = "enabled" if value else "disabled"
+            self._set_status("enabled" if value else "disabled")
         elif isinstance(value, int | float) and value in {0, 1}:
-            self.status = "enabled" if value == 1 else "disabled"
+            self._set_status("enabled" if value == 1 else "disabled")
         else:
-            self.status = "unknown"
+            self._set_status("unknown")
 
     def unavailable(self) -> None:
         if self.config.emergency_stop_virtual_status_uuid:
-            self.status = "unknown"
+            self._set_status("unknown")
+
+    def blocked_status(self) -> dict[str, str]:
+        """Return sanitized current blocker metadata for a rejected MCP request."""
+        return {
+            "status": self.status,
+            "observed_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "blocked_since": self.status_changed_at.isoformat().replace("+00:00", "Z"),
+        }
 
     async def start(self) -> None:
         """Start a dedicated LoxBerry-managed read-only state subscription."""

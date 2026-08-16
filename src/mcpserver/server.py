@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import time
@@ -230,12 +231,20 @@ class _EmergencyStopMiddleware(BaseHTTPMiddleware):
             and not self._monitor.allows_tool_calls
         ):
             body = await request.body()
-            if b'"tools/call"' in body:
+            try:
+                message = json.loads(body)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                message = None
+            if isinstance(message, dict) and message.get("method") == "tools/call":
                 return JSONResponse(
                     {
                         "jsonrpc": "2.0",
-                        "id": None,
-                        "error": {"code": -32000, "message": "emergency_stop_active"},
+                        "id": message.get("id"),
+                        "error": {
+                            "code": -32000,
+                            "message": "emergency_stop_active",
+                            "data": self._monitor.blocked_status(),
+                        },
                     },
                     status_code=503,
                 )
