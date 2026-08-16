@@ -268,8 +268,9 @@ class MqttHealthPublisher:
 
     def _create_clients(self, gateway: MqttGateway) -> list[Any]:
         if self._client_factory is None:
+            client_class = "Client"
             factory: Callable[..., Any] = getattr(
-                importlib.import_module("paho.mqtt.client"), "Client"
+                importlib.import_module("paho.mqtt.client"), client_class
             )
         else:
             factory = self._client_factory
