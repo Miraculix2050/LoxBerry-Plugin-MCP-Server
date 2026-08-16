@@ -46,6 +46,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Treat the service-enable switch as a saved boot setting: initialize it when
+  the page loads and update it only after applying that setting, never from
+  periodic service-status polling or separate Start/Stop/Restart actions. Disable
+  those runtime actions while the saved service setting is off.
+
 - Separate systemd runtime, MCP access and optional MQTT health configuration.
   MQTT health publishes retained Loxone-epoch heartbeat and systemd state topics
 

@@ -4,7 +4,7 @@
 
 ## Grundeinstellungen
 
-Der Schalter **Dienst aktivieren** steuert nur die systemd-Laufzeit. Nach einer Neuinstallation ist der Dienst aktiv, MCP und MQTT-Health sind jedoch getrennt und jeweils deaktiviert. Deaktivieren stoppt den Dienst und verhindert seinen Start beim nächsten Systemstart; diese Wahl bleibt auch bei Updates erhalten. **Starten** und **Stoppen** ändern nur den aktuellen Laufzeitstatus und nicht die Einstellung für den Systemstart.
+Der Schalter **Dienst aktivieren** ist die gespeicherte Betriebsfreigabe. Nach einer Neuinstallation ist er aktiviert, MCP und MQTT-Health sind jedoch getrennt und jeweils deaktiviert. Aktivieren startet den Dienst sofort und beim nächsten Systemstart. Deaktivieren stoppt ihn sofort und verhindert seinen Start beim nächsten Systemstart; diese Wahl bleibt auch bei Updates erhalten. Die Statusaktionen **Starten**, **Stoppen** und **Neu starten** sind nur bei aktivierter Betriebsfreigabe verfügbar und ändern ausschließlich den aktuellen Laufzeitstatus, nicht das Verhalten beim Systemstart.
 
 ## MCP-Konfiguration
 

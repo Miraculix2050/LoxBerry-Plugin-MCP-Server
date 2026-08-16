@@ -81,6 +81,8 @@ def test_initial_page_renders_configuration_before_loading_dynamic_state() -> No
 
     assert "admin_call('get_config', {})" in cgi
     assert "admin_call('page_state', {})" in cgi
+    assert "my $service_setting_result = admin_call('service_status', {});" in cgi
+    assert "SERVICE_ENABLED_SETTING_KNOWN => $service_setting_known" in cgi
     assert "body.set('action', 'page_state')" in template
     assert "const loadInitialState" in template
     assert "loadInitialState();" in template
@@ -90,6 +92,13 @@ def test_initial_page_renders_configuration_before_loading_dynamic_state() -> No
     assert '<strong id="service-active-state"><TMPL_VAR AJAX.WORKING></strong>' in template
     assert '<strong id="service-sub-state"><TMPL_VAR AJAX.WORKING></strong>' in template
     assert '<strong id="service-installed"><TMPL_VAR AJAX.WORKING></strong>' in template
+    assert (
+        'data-service-enabled-setting-known="<TMPL_IF SERVICE_ENABLED_SETTING_KNOWN>1' in template
+    )
+    assert (
+        'name="service_enabled" type="checkbox" value="1" <TMPL_IF SERVICE_ENABLED_SETTING>checked'
+        in template
+    )
     assert '<strong id="certificate-source"><TMPL_VAR AJAX.WORKING></strong>' in template
     assert (
         '<time id="certificate-expiry" class="mcp-expiry"><TMPL_VAR AJAX.WORKING></time>'
@@ -161,7 +170,7 @@ def test_service_status_is_first_and_uses_a_lightweight_ajax_contract() -> None:
     assert 'data-ajax="set_service_enabled"' in template
     assert "body.set('action', 'service_status')" in template
     assert "window.setTimeout(pollServiceStatus, delay)" in template
-    assert "document.hidden || serviceActionRunning || servicePollInFlight" in template
+    assert "document.hidden || serviceInteractionActive() || servicePollInFlight" in template
     assert "document.addEventListener('visibilitychange'" in template
     assert "admin_call('service_status', {})" in cgi
     assert "admin_call('service_action', {command => $command})" in cgi
@@ -275,9 +284,46 @@ def test_service_actions_use_an_accessible_confirmation_and_dynamic_controls() -
     assert "form.dataset.confirmed = 'true'" in template
     assert "form.requestSubmit()" in template
     assert "command === 'start' && !active" in template
-    assert "command === 'stop' || command === 'restart'" in template
+    assert "command === 'stop' && active" in template
     assert "serviceState.dataset.kind = kind" in template
     assert "serviceActionRunning = true" in template
+    assert (
+        "renderService(result.data.service, {updateEnabledSetting: !serviceEnabledSettingLoaded});"
+        in template
+    )
+    assert "let serviceEnabledSetting = serviceEnabledInput.checked" in template
+    assert (
+        "let serviceEnabledSettingLoaded = serviceEnableForm.dataset."
+        "serviceEnabledSettingKnown === '1'" in template
+    )
+    assert "serviceEnabledSetting = enabled" in template
+    assert "serviceEnabledSettingLoaded = true" in template
+    assert "serviceEnabledInput.checked = enabled" in template
+    assert (
+        "serviceEnabledInput.disabled = serviceActionRunning || !serviceEnabledSettingLoaded"
+        in template
+    )
+    assert (
+        "serviceEnabledApplyButton.disabled = serviceActionRunning || !serviceEnabledSettingLoaded"
+        in template
+    )
+    assert "updateEnabledSetting: form.dataset.ajax === 'set_service_enabled'" in template
+    assert "command === 'restart'" in template
+    assert "const commandReady = command === 'start' ? !active : active" in template
+    assert "const available = visible && commandReady && serviceEnabledSetting" in template
+    assert "form.hidden = !visible" in template
+    assert "serviceEnabledInput.checked = serviceEnabledSetting" in template
+    assert "body.set('service_enabled', requestedServiceEnabled ? '1' : '0')" in template
+    assert "Boolean(service.enabled) !== requestedServiceEnabled" in template
+    assert "Boolean(service.active) !== requestedServiceEnabled" in template
+    assert (
+        "const serviceInteractionActive = () => serviceActionRunning || pendingServiceForm !== null"
+        in template
+    )
+    assert "if (serviceInteractionActive()) return;" in template
+    assert "serviceEnabledInput.disabled = serviceActionRunning" in template
+    assert "serviceStatusRefreshRequired" not in template
+    assert "preserveRequestedEnabledState" not in template
     assert "set_service_enabled: 75000" in template
 
 

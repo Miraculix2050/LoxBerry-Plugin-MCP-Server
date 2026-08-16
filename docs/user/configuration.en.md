@@ -4,7 +4,7 @@
 
 ## Basic settings
 
-The **Enable service** switch controls only the systemd runtime. After a new installation the service is active, while MCP and MQTT health are separately disabled. Disabling it stops the service and prevents it from starting at the next system boot; this choice is preserved across upgrades. **Start** and **Stop** change only the current runtime state, not the boot setting.
+The **Enable service** switch is the saved operating permission. It is enabled after a new installation, while MCP and MQTT health are separately disabled. Enabling it starts the service immediately and at the next system boot. Disabling it stops the service immediately and prevents it from starting at the next system boot; this choice is preserved across upgrades. The **Start**, **Stop** and **Restart** status actions are available only while this permission is enabled and affect only the current runtime state, never the boot behavior.
 
 ## MCP configuration
 

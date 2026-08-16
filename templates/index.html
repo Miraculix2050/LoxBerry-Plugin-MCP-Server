@@ -37,10 +37,10 @@
     </div>
   </details>
 
-  <form id="service-enable-form" class="mcp-card mcp-form" method="post" action="index.cgi" data-ajax="set_service_enabled" data-service-master>
+  <form id="service-enable-form" class="mcp-card mcp-form" method="post" action="index.cgi" data-ajax="set_service_enabled" data-service-master data-service-enabled-setting-known="<TMPL_IF SERVICE_ENABLED_SETTING_KNOWN>1<TMPL_ELSE>0</TMPL_IF>">
     <input type="hidden" name="action" value="set_service_enabled">
-    <label><input id="service-enabled-input" name="service_enabled" type="checkbox" value="1"> <TMPL_VAR STATUS.ENABLED></label>
-    <button class="lb-button" type="submit"><TMPL_VAR ACTION.APPLY_SERVICE_STATUS></button>
+    <label><input id="service-enabled-input" name="service_enabled" type="checkbox" value="1" <TMPL_IF SERVICE_ENABLED_SETTING>checked</TMPL_IF> <TMPL_UNLESS SERVICE_ENABLED_SETTING_KNOWN>disabled</TMPL_UNLESS>> <TMPL_VAR STATUS.ENABLED></label>
+    <button class="lb-button" type="submit" <TMPL_UNLESS SERVICE_ENABLED_SETTING_KNOWN>disabled</TMPL_UNLESS>><TMPL_VAR ACTION.APPLY_SERVICE_STATUS></button>
     <p class="mcp-help"><TMPL_VAR STATUS.ENABLED_HELP></p>
   </form>
 
@@ -334,7 +334,9 @@
   const serviceName = document.getElementById('service-name');
   const serviceInstalled = document.getElementById('service-installed');
   const serviceEnabled = document.getElementById('service-enabled');
+  const serviceEnableForm = document.getElementById('service-enable-form');
   const serviceEnabledInput = document.getElementById('service-enabled-input');
+  const serviceEnabledApplyButton = serviceEnableForm.querySelector('button[type="submit"]');
   const mqttUseLoxberryGateway = document.getElementById('mqtt-use-loxberry-gateway');
   const mqttHost = document.getElementById('mqtt-host');
   const mqttPort = document.getElementById('mqtt-port');
@@ -357,6 +359,8 @@
   let serviceActionRunning = false;
   let servicePollInFlight = false;
   let servicePollTimer = null;
+  let serviceEnabledSetting = serviceEnabledInput.checked;
+  let serviceEnabledSettingLoaded = serviceEnableForm.dataset.serviceEnabledSettingKnown === '1';
   let sessionActionRunning = false;
   let activeSessionActions = 0;
   let sessionDataVersion = 0;
@@ -364,6 +368,7 @@
   let sessionPollInFlight = false;
   let sessionPollTimer = null;
   let lastService = null;
+  const serviceInteractionActive = () => serviceActionRunning || pendingServiceForm !== null;
   const renderLogging = (configuration) => {
     const configured = configuration && configuration.logging ? configuration.logging : {};
     const level = ['off', 'error', 'warning', 'info', 'debug'].includes(configured.level)
@@ -530,7 +535,7 @@
       window.clearTimeout(timeout);
     }
   };
-  const renderService = (service) => {
+  const renderService = (service, {updateEnabledSetting = false} = {}) => {
     if (!service || typeof service !== 'object') return;
     lastService = service;
     const installed = Boolean(service.installed);
@@ -559,14 +564,28 @@
     serviceInstalled.textContent = installed ? serviceSection.dataset.yes : serviceSection.dataset.no;
     const enabled = Boolean(service.enabled);
     serviceEnabled.textContent = enabled ? serviceSection.dataset.yes : serviceSection.dataset.no;
-    serviceEnabledInput.checked = enabled;
+    if (updateEnabledSetting) {
+      serviceEnabledSetting = enabled;
+      serviceEnabledSettingLoaded = true;
+      serviceEnabledInput.checked = enabled;
+    }
+    serviceEnabledInput.disabled = serviceActionRunning || !serviceEnabledSettingLoaded;
+    serviceEnabledApplyButton.disabled = serviceActionRunning || !serviceEnabledSettingLoaded;
+    if (serviceActionRunning) {
+      serviceEnabledInput.setAttribute('aria-busy', 'true');
+    } else {
+      serviceEnabledInput.removeAttribute('aria-busy');
+    }
     for (const form of document.querySelectorAll('form[data-service-command]')) {
       const command = form.dataset.serviceCommand;
-      const available = installed && (
-        (command === 'start' && !active)
-        || ((command === 'stop' || command === 'restart') && active)
+      const visible = installed && (
+        command === 'restart'
+        || (command === 'start' && !active)
+        || (command === 'stop' && active)
       );
-      form.hidden = !available;
+      const commandReady = command === 'start' ? !active : active;
+      const available = visible && commandReady && serviceEnabledSetting;
+      form.hidden = !visible;
       const button = form.querySelector('button[type="submit"]');
       button.disabled = serviceActionRunning || !available;
       if (serviceActionRunning) button.setAttribute('aria-busy', 'true');
@@ -579,7 +598,7 @@
     body.set('ajax', '1');
     try {
       const result = await postAjax(body, 15000);
-      renderService(result.data.service);
+      renderService(result.data.service, {updateEnabledSetting: !serviceEnabledSettingLoaded});
       serviceSection.setAttribute('aria-busy', 'false');
       updateCertificate(result.data.certificate);
       mqttPasswordStatus.hidden = !Boolean(result.data.mqtt_password_configured);
@@ -613,19 +632,25 @@
   serviceConfirm.addEventListener('close', () => {
     const form = pendingServiceForm;
     pendingServiceForm = null;
-    if (serviceConfirm.returnValue !== 'confirm' || !form) return;
+    if (serviceConfirm.returnValue !== 'confirm' || !form) {
+      if (form?.dataset.ajax === 'set_service_enabled') {
+        serviceEnabledInput.checked = serviceEnabledSetting;
+      }
+      scheduleServicePoll(0);
+      return;
+    }
     form.dataset.confirmed = 'true';
     form.requestSubmit();
   });
   const scheduleServicePoll = (delay = 10000) => {
     window.clearTimeout(servicePollTimer);
     servicePollTimer = null;
-    if (!document.hidden && !serviceActionRunning) {
+    if (!document.hidden && !serviceInteractionActive()) {
       servicePollTimer = window.setTimeout(pollServiceStatus, delay);
     }
   };
   const pollServiceStatus = async () => {
-    if (document.hidden || serviceActionRunning || servicePollInFlight) {
+    if (document.hidden || serviceInteractionActive() || servicePollInFlight) {
       scheduleServicePoll();
       return;
     }
@@ -635,6 +660,7 @@
       body.set('action', 'service_status');
       body.set('ajax', '1');
       const result = await postAjax(body, 7000);
+      if (serviceInteractionActive()) return;
       renderService(result.data.service);
     } catch {
       // Keep the last known state; the next visible-page poll retries.
@@ -970,6 +996,8 @@
           && serviceConfirmMessages[confirmationKey]
           && form.dataset.confirmed !== 'true') {
         pendingServiceForm = form;
+        window.clearTimeout(servicePollTimer);
+        servicePollTimer = null;
         serviceConfirmMessage.textContent = serviceConfirmMessages[confirmationKey];
         serviceConfirm.returnValue = '';
         serviceConfirm.showModal();
@@ -1000,13 +1028,29 @@
         ? '<TMPL_VAR STATUS.ACTION_RUNNING ESCAPE=JS>'
         : '<TMPL_VAR AJAX.WORKING ESCAPE=JS>';
       const body = new URLSearchParams(new FormData(form));
+      const requestedServiceEnabled = form.dataset.ajax === 'set_service_enabled'
+        ? serviceEnabledInput.checked : null;
+      if (requestedServiceEnabled !== null) {
+        body.set('service_enabled', requestedServiceEnabled ? '1' : '0');
+      }
       body.set('ajax', '1');
       try {
         const result = await postAjax(body, actionTimeout(form.dataset.ajax));
+        if (requestedServiceEnabled !== null) {
+          const service = result.data.service;
+          if (!service || Boolean(service.enabled) !== requestedServiceEnabled
+              || Boolean(service.active) !== requestedServiceEnabled) {
+            throw new Error('<TMPL_VAR STATUS.ERROR_ACTION ESCAPE=JS>');
+          }
+        }
         status.dataset.kind = 'success';
         status.textContent = '<TMPL_VAR AJAX.SUCCESS ESCAPE=JS>';
         hideSuccess(status);
-        if (result.data.service) renderService(result.data.service);
+        if (result.data.service) {
+          renderService(result.data.service, {
+            updateEnabledSetting: form.dataset.ajax === 'set_service_enabled',
+          });
+        }
         if (!isSessionAction(form.dataset.ajax)) {
           if (Array.isArray(result.data.sessions)) updateSessions(result.data.sessions);
           if (Array.isArray(result.data.loxberry_bindings)) {
@@ -1040,6 +1084,9 @@
           pollCertificateRenewal(button);
         }
       } catch (error) {
+        if (form.dataset.ajax === 'set_service_enabled') {
+          serviceEnabledInput.checked = serviceEnabledSetting;
+        }
         status.dataset.kind = 'error';
         if (error instanceof DOMException && error.name === 'AbortError') status.textContent = '<TMPL_VAR AJAX.TIMEOUT ESCAPE=JS>';
         else if (error instanceof TypeError) status.textContent = '<TMPL_VAR AJAX.NETWORK ESCAPE=JS>';
