@@ -47,7 +47,11 @@ _EXPLORER_CALLBACK_PATH: Final = "/admin/plugins/mcpserver/explorer_callback.cgi
 _MAX_REGISTERED_CLIENTS: Final = 256
 _MAX_ACTIVE_FAMILIES: Final = 256
 _MAX_FAMILIES_PER_CLIENT: Final = 16
-_UNUSED_CLIENT_TTL: Final = 24 * 60 * 60
+# Public Dynamic Client Registration is deliberately rate-limited to 16 clients
+# per five minutes. Keep an unused client for at most one hour, so even a
+# sustained unauthenticated registration flood cannot consume all 256 slots.
+# A client becomes durable once it is referenced by an authorization flow.
+_UNUSED_CLIENT_TTL: Final = 60 * 60
 
 
 class StoredAuthorizationCode(AuthorizationCode):
@@ -234,7 +238,9 @@ class Phase0OAuthProvider(
 
         self.store.mutate(insert)
 
-    def _garbage_collect(self, document: dict[str, Any]) -> None:
+    def _garbage_collect(
+        self, document: dict[str, Any], *, preserve_client_ids: frozenset[str] = frozenset()
+    ) -> None:
         now = self.now()
         for family in document["families"].values():
             client = document["clients"].get(family.get("client_id"), {})
@@ -277,6 +283,7 @@ class Phase0OAuthProvider(
             client_id: record
             for client_id, record in document["clients"].items()
             if client_id in referenced_clients
+            or client_id in preserve_client_ids
             or int(record.get("client_id_issued_at", now)) + _UNUSED_CLIENT_TTL > now
         }
 
@@ -366,7 +373,10 @@ class Phase0OAuthProvider(
         }
 
         def insert(document: dict[str, Any]) -> None:
-            self._garbage_collect(document)
+            # The browser validated this client at authorization start. Preserve
+            # it through the short consent flow even if its unused-registration
+            # lifetime elapses before the authorization code is committed.
+            self._garbage_collect(document, preserve_client_ids=frozenset({client_id}))
             client_record = document["clients"].get(client_id)
             if client_record is None:
                 raise TokenError("invalid_client", "Client registration is unavailable")

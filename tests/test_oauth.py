@@ -19,6 +19,7 @@ from starlette.requests import Request
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
+from mcpserver.auth import web as auth_web
 from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore
 from mcpserver.auth.provider import (
     CONTROL_SCOPE,
@@ -448,9 +449,40 @@ async def test_registration_capacity_returns_protocol_error_and_prunes_old_clien
     with pytest.raises(RegistrationError, match="capacity"):
         await provider.register_client(_client_info("overflow"))
 
-    clock.value += 24 * 60 * 60 + 1
+    clock.value += 60 * 60 + 1
     await provider.register_client(_client_info("replacement"))
     assert set(provider.store.snapshot()["clients"]) == {"replacement"}
+
+
+@pytest.mark.asyncio
+async def test_public_registration_rate_cannot_exhaust_unused_client_capacity(
+    tmp_path: Path,
+) -> None:
+    clock = Clock()
+    provider = _provider(tmp_path, clock)
+
+    # The public endpoint admits at most 16 clients per five-minute window.
+    # At the one-hour unused-client TTL, the oldest batch expires before a
+    # thirteenth batch can raise the live population above 192.
+    for window in range(13):
+        for index in range(16):
+            await provider.register_client(_client_info(f"client-{window}-{index}"))
+        assert len(provider.store.snapshot()["clients"]) <= 192
+        clock.value += 5 * 60
+
+
+def test_public_registration_rate_and_unused_client_ttl_preserve_capacity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clock = Clock()
+    provider = _provider(tmp_path, clock)
+    monkeypatch.setattr(auth_web.time, "time", lambda: clock.value)
+    with TestClient(_web_app(provider)) as client:
+        for _window in range(13):
+            responses = [client.post("/register", json=_registration_payload()) for _ in range(17)]
+            assert [response.status_code for response in responses] == [201] * 16 + [429]
+            assert len(provider.store.snapshot()["clients"]) <= 192
+            clock.value += 5 * 60
 
 
 @pytest.mark.asyncio
@@ -467,7 +499,7 @@ async def test_stale_unused_client_is_removed_before_authorization_starts(tmp_pa
     client = _client_info("stale-client")
     await provider.register_client(client)
 
-    clock.value += 24 * 60 * 60 + 1
+    clock.value += 60 * 60 + 1
 
     assert await provider.get_client("stale-client") is None
     with pytest.raises(TokenError, match="registration"):
@@ -479,6 +511,29 @@ async def test_stale_unused_client_is_removed_before_authorization_starts(tmp_pa
             identity_id="identity",
             miniserver_id="miniserver",
         )
+
+
+@pytest.mark.asyncio
+async def test_started_authorization_can_finish_after_unused_client_ttl(tmp_path: Path) -> None:
+    clock = Clock()
+    provider = _provider(tmp_path, clock)
+    client = _client_info("consent-client")
+    await provider.register_client(client)
+
+    clock.value += 60 * 60 - 1
+    assert await provider.get_client("consent-client") is not None
+
+    clock.value += 2
+    code = provider.issue_authorization_code(
+        client_id="consent-client",
+        redirect_uri=REDIRECT,
+        code_challenge=CHALLENGE,
+        resource=RESOURCE,
+        identity_id="identity",
+        miniserver_id="miniserver",
+    )
+
+    assert await provider.load_authorization_code(client, code) is not None
 
 
 @pytest.mark.asyncio
