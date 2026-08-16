@@ -397,6 +397,8 @@ if ($action ne '') {
             },
         };
         $document->{mqtt_password} = $q->{mqtt_password} if defined $q->{mqtt_password};
+        $document->{mqtt_clear_password} = ($q->{mqtt_clear_password} // '') eq '1'
+            ? JSON::PP::true : JSON::PP::false;
         $result = admin_call('save_mqtt_config', $document);
         admin_log($result->{ok} ? 'info' : 'warning',
             'action=save_mqtt_config outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
