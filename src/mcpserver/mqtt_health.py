@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import importlib
 import json
 import logging
 import os
@@ -267,9 +268,9 @@ class MqttHealthPublisher:
 
     def _create_clients(self, gateway: MqttGateway) -> list[Any]:
         if self._client_factory is None:
-            import paho.mqtt.client as paho
-
-            factory: Callable[..., Any] = paho.Client
+            factory: Callable[..., Any] = getattr(
+                importlib.import_module("paho.mqtt.client"), "Client"
+            )
         else:
             factory = self._client_factory
         topics = self.topics
