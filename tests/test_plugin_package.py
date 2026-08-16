@@ -211,6 +211,7 @@ def test_v4_package_manifest_is_present() -> None:
         "webfrontend/htmlauth/explorer.cgi",
         "webfrontend/htmlauth/explorer_callback.cgi",
         "webfrontend/htmlauth/explorer.js",
+        "webfrontend/htmlauth/mcp-ui.css",
         "templates/index.html",
         "templates/explorer.html",
         "templates/lang/language_de.ini",
@@ -450,6 +451,7 @@ def test_language_files_have_matching_contracts() -> None:
 def test_ui_is_nojqm_responsive_and_progressively_enhanced() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    stylesheet = (ROOT / "webfrontend/htmlauth/mcp-ui.css").read_text(encoding="utf-8")
 
     assert "'nojqm'" in cgi
     assert "/\\A(?:de|en)\\z/" in cgi
@@ -458,10 +460,10 @@ def test_ui_is_nojqm_responsive_and_progressively_enhanced() -> None:
     assert "ajax-generic.php" not in cgi + template
     assert 'method="post"' in template
     assert "fetch('index.cgi'" in template
-    assert "overflow-x: auto" in template
-    assert "@media (max-width: 30rem)" in template
-    assert "#diagnostics .lb-table-scroll { overflow-x: visible; }" in template
-    assert ":focus-visible" in template
+    assert "overflow-x: auto" in stylesheet
+    assert "@media (max-width: 30rem)" in stylesheet
+    assert "#diagnostics .lb-table-scroll { overflow-x: visible; }" in stylesheet
+    assert ":focus-visible" in stylesheet
     assert 'type="password"' in template
     assert 'name="renew_confirmation"' in template
     assert 'data-ajax="renew_certificate"' in template
@@ -505,15 +507,15 @@ def test_package_builder_emits_unix_executable_modes(tmp_path: Path) -> None:
 
 
 def test_package_builder_normalizes_installed_text_to_lf(tmp_path: Path) -> None:
-    source = tmp_path / "runtime.lock"
+    source = tmp_path / "mcp-ui.css"
     source.write_bytes(b"first\r\nsecond\r\n")
     output = tmp_path / "test.zip"
 
     with zipfile.ZipFile(output, "w") as archive:
-        _add(archive, source, "bin/runtime-arm64.lock")
+        _add(archive, source, "webfrontend/htmlauth/mcp-ui.css")
 
     with zipfile.ZipFile(output) as archive:
-        assert archive.read("bin/runtime-arm64.lock") == b"first\nsecond\n"
+        assert archive.read("webfrontend/htmlauth/mcp-ui.css") == b"first\nsecond\n"
 
 
 def test_plugin_archive_verifier_accepts_builder_output(tmp_path: Path) -> None:

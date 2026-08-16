@@ -48,6 +48,7 @@ _TEXT_SUFFIXES: Final = {
     ".cfg",
     ".cgi",
     ".conf",
+    ".css",
     ".html",
     ".ini",
     ".json",

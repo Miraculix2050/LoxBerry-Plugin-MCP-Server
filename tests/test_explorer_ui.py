@@ -697,6 +697,7 @@ def test_explorer_redacts_secret_shaped_arguments() -> None:
 def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
     source = SCRIPT.read_text(encoding="utf-8")
     template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
+    stylesheet = (ROOT / "webfrontend" / "htmlauth" / "mcp-ui.css").read_text(encoding="utf-8")
     callback = (ROOT / "webfrontend" / "htmlauth" / "explorer_callback.cgi").read_text(
         encoding="utf-8"
     )
@@ -728,8 +729,8 @@ def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
     assert "explorerLink.href = `${window.location.origin}${explorerPath}`" in index_template
     assert "EXPLORER_URL => 'explorer.cgi'" in index_cgi
     assert "savedOrigin" not in index_template
-    assert "@media (max-width: 52rem)" in template
-    assert ":focus-visible" in template
+    assert "@media (max-width: 52rem)" in stylesheet
+    assert ":focus-visible" in stylesheet
     assert "<dialog" in template
     assert 'id="explorer-confirm-tool"' in template
     assert 'id="explorer-next-page"' in template
