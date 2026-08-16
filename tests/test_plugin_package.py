@@ -204,6 +204,7 @@ def test_v4_package_manifest_is_present() -> None:
         "postroot.sh",
         "postupgrade.sh",
         "uninstall/uninstall.sh",
+        "bin/emergency-stop-miniserver.php",
         "bin/healthcheck",
         "bin/renew-web-certificate",
         "bin/root-lifecycle-paths.py",
