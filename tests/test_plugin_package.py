@@ -281,6 +281,9 @@ def test_postinstall_creates_a_native_admin_ui_log_for_clean_installs() -> None:
     postinstall = (ROOT / "postinstall.sh").read_text(encoding="utf-8")
 
     assert "is_upgrade=0" in postinstall
+    assert '[ -z "${LBHOMEDIR:-}" ]' in postinstall
+    assert 'loxberry_home=$(realpath -e -- "$LBHOMEDIR")' in postinstall
+    assert 'perl -I"$loxberry_home/libs/perllib"' in postinstall
     assert 'if [ -d "$upgrade_backup_dir" ]; then' in postinstall
     assert 'if [ "$is_upgrade" -eq 0 ]; then' in postinstall
     assert 'name => "admin-ui"' in postinstall
