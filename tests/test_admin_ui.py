@@ -1,11 +1,78 @@
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _admin_cgi_environment(tmp_path: Path) -> dict[str, str]:
+    helper = tmp_path / "mcpserver-admin"
+    helper.write_text(
+        "#!/usr/bin/env perl\n"
+        "use strict; use warnings;\n"
+        "my $request = <STDIN>;\n"
+        'print qq({\\"ok\\":true,\\"data\\":{}});\n',
+        encoding="utf-8",
+    )
+    helper.chmod(0o755)
+    return {
+        **os.environ,
+        "LB_TEST_HOME": str(tmp_path),
+        "LB_TEST_CONFIG_DIR": str(tmp_path),
+        "LB_TEST_DATA_DIR": str(tmp_path),
+        "LB_TEST_BIN_DIR": str(tmp_path),
+        "LB_TEST_TEMPLATE_DIR": str(tmp_path),
+        "LB_TEST_LOG_DIR": str(tmp_path),
+    }
+
+
+def _assert_admin_security_headers(output: str) -> None:
+    headers = output.lower()
+    assert "cache-control: no-store" in headers
+    assert "pragma: no-cache" in headers
+    assert "content-security-policy:" in headers
+    assert "frame-ancestors 'none'" in headers
+    assert "base-uri 'self'" in headers
+    assert "object-src 'none'" in headers
+    assert "form-action 'self'" in headers
+    assert "connect-src 'self'" in headers
+    assert "referrer-policy: no-referrer" in headers
+    assert "x-content-type-options: nosniff" in headers
+    assert "x-frame-options: deny" in headers
+
+
+def test_admin_responses_emit_no_store_and_frame_protection(tmp_path: Path) -> None:
+    perl = shutil.which("perl")
+    if perl is None or os.name == "nt":
+        return
+    environment = _admin_cgi_environment(tmp_path)
+    cgi = ROOT / "webfrontend" / "htmlauth" / "index.cgi"
+    common = [perl, f"-I{ROOT / 'tests' / 'perl_stubs'}", str(cgi)]
+
+    page = subprocess.run(common, check=True, capture_output=True, text=True, env=environment)
+    _assert_admin_security_headers(page.stdout)
+
+    ajax_environment = {
+        **environment,
+        "REQUEST_METHOD": "POST",
+        "CONTENT_TYPE": "application/x-www-form-urlencoded",
+        "CONTENT_LENGTH": "20",
+        "HTTP_ORIGIN": "https://loxberry.example",
+        "HTTP_HOST": "loxberry.example",
+    }
+    ajax = subprocess.run(
+        common,
+        check=True,
+        capture_output=True,
+        text=True,
+        input="action=status&ajax=1",
+        env=ajax_environment,
+    )
+    _assert_admin_security_headers(ajax.stdout)
 
 
 def test_initial_page_renders_configuration_before_loading_dynamic_state() -> None:

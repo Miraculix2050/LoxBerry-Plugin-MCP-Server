@@ -99,9 +99,40 @@ sub same_origin_post {
     return $origin =~ m{^https?://\Q$host\E$}i ? 1 : 0;
 }
 
+sub security_header_args {
+    return (
+        -Cache_Control => 'no-store',
+        -Pragma => 'no-cache',
+        -Content_Security_Policy => "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'",
+        -Referrer_Policy => 'no-referrer',
+        -X_Content_Type_Options => 'nosniff',
+        -X_Frame_Options => 'DENY',
+    );
+}
+
+sub print_html_security_headers {
+    print "Cache-Control: no-store\n";
+    print "Pragma: no-cache\n";
+    print "Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'\n";
+    print "Referrer-Policy: no-referrer\n";
+    print "X-Content-Type-Options: nosniff\n";
+    print "X-Frame-Options: DENY\n";
+}
+
+sub redirect_reply {
+    my ($location) = @_;
+    print $cgi->header(-status => 302, -location => $location, security_header_args());
+    exit;
+}
+
 sub json_reply {
     my ($result, $status) = @_;
-    print $cgi->header(-type => 'application/json', -charset => 'utf-8', -status => ($status // 200));
+    print $cgi->header(
+        -type => 'application/json',
+        -charset => 'utf-8',
+        -status => ($status // 200),
+        security_header_args(),
+    );
     print encode_json($result);
     exit;
 }
@@ -303,8 +334,7 @@ if ($action ne '') {
     if (!same_origin_post()) {
         my $failure = {ok => JSON::PP::false, error => {code => 'forbidden', message => 'Same-origin POST required'}};
         json_reply($failure, 403) if $q->{ajax};
-        print $cgi->redirect('index.cgi?notice=forbidden');
-        exit;
+        redirect_reply('index.cgi?notice=forbidden');
     }
 
     my $result;
@@ -427,6 +457,7 @@ if ($action ne '') {
             -type => 'application/json',
             -charset => 'utf-8',
             -attachment => 'mcpserver-diagnostic.json',
+            security_header_args(),
         );
         print encode_json($result->{data});
         exit;
@@ -435,8 +466,7 @@ if ($action ne '') {
     my $notice = $result->{ok}
         ? ($action eq 'renew_certificate' ? 'certificate_scheduled' : 'success')
         : 'error';
-    print $cgi->redirect("index.cgi?notice=$notice");
-    exit;
+    redirect_reply("index.cgi?notice=$notice");
 }
 
 use constant MAX_EXPIRY_EPOCH => 4_102_444_799;
@@ -588,6 +618,7 @@ $navbar{45}{URL} = '#certificate';
 $navbar{50}{Name} = $L{'NAV.HELP'};
 $navbar{50}{URL} = '#help';
 
+print_html_security_headers();
 LoxBerry::Web::lbheader($L{'BASIC.TITLE'} . " V$version", '', '', 'nojqm');
 print LoxBerry::Log::get_notifications_html($lbpplugindir);
 print $template->output();
