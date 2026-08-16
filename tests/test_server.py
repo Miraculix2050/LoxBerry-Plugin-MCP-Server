@@ -101,6 +101,40 @@ async def test_http_runtime_uses_root_logging_without_access_log(
     assert len(served) == 1
 
 
+@pytest.mark.asyncio
+async def test_http_runtime_starts_mqtt_for_the_service_lifetime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Publisher:
+        started = False
+        closed = False
+
+        async def start(self) -> None:
+            self.started = True
+
+        async def close(self) -> None:
+            self.closed = True
+
+    publisher = Publisher()
+    server = create_server(_settings())
+    server.mqtt_health = publisher  # type: ignore[assignment]
+
+    monkeypatch.setattr("uvicorn.Config", lambda app, **kwargs: app)
+
+    class UvicornServer:
+        def __init__(self, _config: object) -> None:
+            pass
+
+        async def serve(self) -> None:
+            assert publisher.started is True
+
+    monkeypatch.setattr("uvicorn.Server", UvicornServer)
+
+    await server.run_streamable_http_async()
+
+    assert publisher.closed is True
+
+
 def test_health_is_small_and_contains_no_configuration() -> None:
     app = create_server(_settings()).streamable_http_app()
     with TestClient(app, base_url="http://testserver") as client:

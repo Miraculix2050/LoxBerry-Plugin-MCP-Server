@@ -222,20 +222,27 @@ class _ForwardedHostFastMCP(FastMCP):
         """Run Uvicorn through the bounded root logger without request access logs."""
         import uvicorn
 
-        config = uvicorn.Config(
-            self.streamable_http_app(),
-            host=self.settings.host,
-            port=self.settings.port,
-            log_config=None,
-            log_level="debug",
-            access_log=False,
-        )
-        await uvicorn.Server(config).serve()
+        if self.mqtt_health is not None:
+            await self.mqtt_health.start()
+        try:
+            config = uvicorn.Config(
+                self.streamable_http_app(),
+                host=self.settings.host,
+                port=self.settings.port,
+                log_config=None,
+                log_level="debug",
+                access_log=False,
+            )
+            await uvicorn.Server(config).serve()
+        finally:
+            if self.mqtt_health is not None:
+                await self.mqtt_health.close()
 
     forwarded_allowed_hosts: tuple[str, ...] = ()
     transport_guard: TransportSecurityMiddleware | None = None
     service_enabled: bool = True
     advertised_scopes: tuple[str, ...] = ()
+    mqtt_health: MqttHealthPublisher | None = None
 
     def streamable_http_app(self) -> Starlette:
         app = super().streamable_http_app()
@@ -278,7 +285,6 @@ class _Phase0TokenVerifier(TokenVerifier):
 async def _runtime_lifespan(
     runtime: LoxoneRuntime | None,
     remote_revocation: tuple[MiniserverEndpoint, EncryptedLoxoneTokenStore, float] | None = None,
-    mqtt_health: MqttHealthPublisher | None = None,
 ) -> AsyncIterator[None]:
     """Close all live Miniserver sessions when the HTTP application stops."""
     worker = (
@@ -286,8 +292,6 @@ async def _runtime_lifespan(
         if remote_revocation is not None
         else None
     )
-    if mqtt_health is not None:
-        await mqtt_health.start()
     try:
         yield
     finally:
@@ -297,8 +301,6 @@ async def _runtime_lifespan(
                 await worker
         if runtime is not None:
             await runtime.close()
-        if mqtt_health is not None:
-            await mqtt_health.close()
 
 
 def create_server(settings: ServerSettings) -> FastMCP:
@@ -485,12 +487,12 @@ def create_server(settings: ServerSettings) -> FastMCP:
             )
             if settings.phase0_auth is not None and loxone_store is not None
             else None,
-            mqtt_health,
         ),
     )
     server.forwarded_allowed_hosts = settings.allowed_hosts
     server.transport_guard = transport_guard
     server.service_enabled = settings.service_enabled
+    server.mqtt_health = mqtt_health
     control_enabled = bool(
         settings.phase0_auth
         and settings.phase0_auth.plugin_config

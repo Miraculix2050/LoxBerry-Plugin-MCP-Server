@@ -235,7 +235,6 @@ class MqttHealthPublisher:
             for client in self._clients:
                 client.connect_async(gateway.host, gateway.port, keepalive=60)
                 client.loop_start()
-            self.publish()
             self._task = asyncio.create_task(self._publish_loop())
         except Exception:
             self._close_clients()
@@ -277,9 +276,14 @@ class MqttHealthPublisher:
         for client in clients:
             client.username_pw_set(gateway.username, gateway.password)
             client.reconnect_delay_set(min_delay=1, max_delay=60)
+            client.on_connect = self._on_connect
         clients[0].will_set(topics["system_state"], "unknown", qos=1, retain=True)
         clients[1].will_set(topics["substate"], "unknown", qos=1, retain=True)
         return clients
+
+    def _on_connect(self, _client: Any, *_args: object) -> None:
+        """Publish current health only after the broker accepted the connection."""
+        self.publish()
 
     async def _publish_loop(self) -> None:
         try:

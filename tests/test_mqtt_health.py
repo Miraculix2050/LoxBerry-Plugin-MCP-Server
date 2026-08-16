@@ -123,6 +123,7 @@ def test_health_publishes_retained_start_and_shutdown_messages(tmp_path: Path) -
 
     async def exercise() -> None:
         await publisher.start()
+        clients[0].on_connect(clients[0])
         publisher.publish()
         await publisher.close()
 
@@ -134,6 +135,7 @@ def test_health_publishes_retained_start_and_shutdown_messages(tmp_path: Path) -
         call[:2] == ("publish", "mcpserver/health/heartbeat") and call[-1]["retain"]
         for call in calls
     )
+    assert any(call[:2] == ("publish", "mcpserver/health/system_state") for call in calls)
     assert (
         "publish",
         "mcpserver/health/system_state",
