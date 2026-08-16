@@ -177,6 +177,33 @@ def test_health_is_small_and_contains_no_configuration() -> None:
     assert set(response.json()) == {"ok", "service", "version"}
 
 
+def test_streamable_app_starts_the_configured_emergency_stop_monitor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = ServerSettings(
+        host="127.0.0.1",
+        port=8765,
+        allowed_hosts=("testserver",),
+        allowed_origins=(),
+        plugin_config=PluginConfig(
+            emergency_stop_virtual_status_uuid="00112233-4455-6677-8899aabbccddeeff"
+        ),
+    )
+    server = create_server(settings)
+    assert server.emergency_stop is not None
+    started = False
+
+    async def start(_monitor: EmergencyStopMonitor) -> None:
+        nonlocal started
+        started = True
+
+    monkeypatch.setattr(EmergencyStopMonitor, "start", start)
+    with TestClient(server.streamable_http_app(), base_url="http://testserver"):
+        pass
+
+    assert started is True
+
+
 @pytest.mark.parametrize(
     ("method", "path"),
     [

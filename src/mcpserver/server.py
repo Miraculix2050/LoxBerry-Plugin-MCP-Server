@@ -280,9 +280,26 @@ class _ForwardedHostFastMCP(FastMCP):
     advertised_scopes: tuple[str, ...] = ()
     mqtt_health: MqttHealthPublisher | None = None
     emergency_stop: EmergencyStopMonitor | None = None
+    live_runtime: LoxoneRuntime | None = None
+    remote_revocation: tuple[MiniserverEndpoint, EncryptedLoxoneTokenStore, float] | None = None
 
     def streamable_http_app(self) -> Starlette:
         app = super().streamable_http_app()
+        session_lifespan = app.router.lifespan_context
+
+        @asynccontextmanager
+        async def plugin_lifespan(starlette_app: Starlette) -> AsyncIterator[None]:
+            async with (
+                _runtime_lifespan(
+                    self.live_runtime,
+                    self.emergency_stop,
+                    self.remote_revocation,
+                ),
+                session_lifespan(starlette_app),
+            ):
+                yield
+
+        app.router.lifespan_context = plugin_lifespan
         auth = self.settings.auth
         if self.advertised_scopes and auth and auth.resource_server_url:
             metadata_route = create_protected_resource_routes(
@@ -520,6 +537,15 @@ def create_server(settings: ServerSettings) -> FastMCP:
                 auth_store,
             )
 
+    remote_revocation = (
+        (
+            settings.phase0_auth.loxone_endpoint,
+            loxone_store,
+            config.connection_timeout if config is not None else 10.0,
+        )
+        if settings.phase0_auth is not None and loxone_store is not None
+        else None
+    )
     server = _ForwardedHostFastMCP(
         SERVER_NAME,
         instructions=SERVER_INSTRUCTIONS,
@@ -531,23 +557,14 @@ def create_server(settings: ServerSettings) -> FastMCP:
         stateless_http=True,
         auth=oauth_auth,
         transport_security=transport_security,
-        lifespan=lambda _server: _runtime_lifespan(
-            runtime,
-            emergency_stop,
-            (
-                settings.phase0_auth.loxone_endpoint,
-                loxone_store,
-                config.connection_timeout if config is not None else 10.0,
-            )
-            if settings.phase0_auth is not None and loxone_store is not None
-            else None,
-        ),
     )
     server.forwarded_allowed_hosts = settings.allowed_hosts
     server.transport_guard = transport_guard
     server.service_enabled = settings.service_enabled
     server.mqtt_health = mqtt_health
     server.emergency_stop = emergency_stop
+    server.live_runtime = runtime
+    server.remote_revocation = remote_revocation
     control_enabled = bool(
         settings.phase0_auth
         and settings.phase0_auth.plugin_config
