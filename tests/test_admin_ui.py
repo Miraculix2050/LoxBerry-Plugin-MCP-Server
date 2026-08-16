@@ -60,9 +60,16 @@ def test_common_actions_update_the_page_without_a_reload() -> None:
 
 def test_admin_cards_use_consistent_vertical_spacing() -> None:
     template = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+    explorer = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
+    stylesheet = (ROOT / "webfrontend" / "htmlauth" / "mcp-ui.css").read_text(encoding="utf-8")
 
-    assert ".mcp-page { display: grid; gap: 1rem;" in template
-    assert ".mcp-field-stack { display: grid; gap: .85rem; }" in template
+    assert '<link rel="stylesheet" href="mcp-ui.css">' in template
+    assert '<link rel="stylesheet" href="mcp-ui.css">' in explorer
+    assert "<style>" not in template
+    assert "<style>" not in explorer
+    assert ".mcp-page { display: grid; gap: 1rem;" in stylesheet
+    assert ".mcp-field-stack { display: grid; gap: .85rem; }" in stylesheet
+    assert ".mcp-explorer { max-width: 92rem;" in stylesheet
     assert '<div class="mcp-field-stack">' in template
 
 

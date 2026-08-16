@@ -64,6 +64,7 @@ _TEST_GROUPS: Final = (
         (
             "src/mcpserver/admin.py",
             "templates/index.html",
+            "webfrontend/htmlauth/mcp-ui.css",
             "tools/benchmark_admin_page_state.py",
             "templates/lang/**",
             "webfrontend/htmlauth/index.cgi",
@@ -77,6 +78,7 @@ _TEST_GROUPS: Final = (
     (
         (
             "templates/explorer.html",
+            "webfrontend/htmlauth/mcp-ui.css",
             "templates/lang/**",
             "webfrontend/htmlauth/explorer.cgi",
             "webfrontend/htmlauth/explorer_callback.cgi",
