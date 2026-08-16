@@ -131,6 +131,7 @@
           <label class="mcp-field"><span><TMPL_VAR MQTT.USERNAME></span><input id="mqtt-username" name="mqtt_username" type="text" maxlength="256" value="<TMPL_VAR MQTT_USERNAME ESCAPE=HTML>"></label>
           <label class="mcp-field"><span><TMPL_VAR MQTT.PASSWORD></span><input id="mqtt-password" name="mqtt_password" type="password" maxlength="1024" autocomplete="new-password" placeholder="<TMPL_VAR MQTT.PASSWORD_PLACEHOLDER ESCAPE=HTML>"></label>
         </div>
+        <label><input id="mqtt-clear-password" name="mqtt_clear_password" type="checkbox" value="1"> <TMPL_VAR MQTT.CLEAR_PASSWORD></label>
         <p id="mqtt-password-status" class="mcp-help" hidden><TMPL_VAR MQTT.PASSWORD_CONFIGURED></p>
         <div class="mcp-grid">
           <label class="mcp-field"><span><TMPL_VAR MQTT.ROOT_TOPIC></span><input name="mqtt_root_topic" type="text" pattern="[A-Za-z0-9_/-]+" maxlength="128" value="<TMPL_VAR MQTT_ROOT_TOPIC ESCAPE=HTML>" required></label>
@@ -337,6 +338,7 @@
   const mqttPort = document.getElementById('mqtt-port');
   const mqttUsername = document.getElementById('mqtt-username');
   const mqttPassword = document.getElementById('mqtt-password');
+  const mqttClearPassword = document.getElementById('mqtt-clear-password');
   const mqttPasswordStatus = document.getElementById('mqtt-password-status');
   const serviceConfirm = document.getElementById('service-confirm');
   const serviceConfirmMessage = document.getElementById('service-confirm-message');
@@ -365,7 +367,7 @@
   };
   const updateMqttBrokerFields = () => {
     const useGateway = mqttUseLoxberryGateway.checked;
-    for (const field of [mqttHost, mqttPort, mqttUsername, mqttPassword]) {
+    for (const field of [mqttHost, mqttPort, mqttUsername, mqttPassword, mqttClearPassword]) {
       field.disabled = useGateway;
     }
   };
@@ -974,6 +976,11 @@
           pendingSessionActionButtons.add(button);
         }
         if (result.data.certificate) updateCertificate(result.data.certificate);
+        if (form.dataset.ajax === 'save_mqtt_config') {
+          mqttPassword.value = '';
+          mqttClearPassword.checked = false;
+          mqttPasswordStatus.hidden = !Boolean(result.data.mqtt_password_configured);
+        }
         if (form.dataset.ajax === 'save_mcp_config') {
           const savedEndpoint = result.data.configuration.loxone.endpoint;
           miniserverEndpoint.value = savedEndpoint;

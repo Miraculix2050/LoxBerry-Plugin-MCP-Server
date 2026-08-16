@@ -259,11 +259,15 @@ def test_upgrade_preserves_configuration_in_plugin_data() -> None:
     ) < preupgrade.index('config_file="$LBPCONFIG/$actual_folder/mcpserver.json"')
     assert 'backup_dir="$installer_root/.mcpserver-upgrade"' in preupgrade
     assert 'install -m 600 "$config_file" "$backup_dir/mcpserver.json"' in preupgrade
-    assert "sessions.json loxone-tokens.json.enc install.key" in preupgrade
+    assert (
+        "sessions.json loxone-tokens.json.enc mqtt-credentials.json.enc install.key" in preupgrade
+    )
     assert "installer_root=${6:-}" in postinstall
     assert 'upgrade_backup="$upgrade_backup_dir/mcpserver.json"' in postinstall
     assert 'install -m 600 "$upgrade_backup" "$config_file"' in postinstall
-    assert "sessions.json loxone-tokens.json.enc install.key" in postinstall
+    assert (
+        "sessions.json loxone-tokens.json.enc mqtt-credentials.json.enc install.key" in postinstall
+    )
     assert 'cp "$plugin_config/default-config.json" "$config_file"' in postinstall
     assert postinstall.index('install -m 600 "$upgrade_backup" "$config_file"') < postinstall.index(
         'cp "$plugin_config/default-config.json" "$config_file"'

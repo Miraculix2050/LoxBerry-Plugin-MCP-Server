@@ -471,6 +471,20 @@ def _save_mqtt(payload: object) -> dict[str, Any]:
     password = payload.get("mqtt_password")
     if password is not None and (not isinstance(password, str) or len(password) > 1024):
         raise AdminError("MQTT password is invalid")
+    clear_password = payload.get("mqtt_clear_password", False)
+    if not isinstance(clear_password, bool):
+        raise AdminError("MQTT password clear intent is invalid")
+    if clear_password and password:
+        raise AdminError("MQTT password update and clear cannot be combined")
+    credentials: MqttCredentialStore | None = None
+    previous_password: str | None = None
+    if password or clear_password:
+        path_value = os.getenv("MCPSERVER_MQTT_CREDENTIALS", "").strip()
+        key_value = os.getenv("MCPSERVER_INSTALL_KEY", "").strip()
+        if not path_value or not key_value:
+            raise AdminError("MQTT credential storage is unavailable")
+        credentials = MqttCredentialStore(Path(path_value), Path(key_value))
+        previous_password = credentials.load()
     store = _config_store()
     previous = store.load()
     updated = store.mutate(
@@ -486,16 +500,22 @@ def _save_mqtt(payload: object) -> dict[str, Any]:
         )
     )
     try:
-        if password:
-            path_value = os.getenv("MCPSERVER_MQTT_CREDENTIALS", "").strip()
-            key_value = os.getenv("MCPSERVER_INSTALL_KEY", "").strip()
-            if not path_value or not key_value:
-                raise AdminError("MQTT credential storage is unavailable")
-            MqttCredentialStore(Path(path_value), Path(key_value)).save(password)
+        if password and credentials is not None:
+            credentials.save(password)
+        elif clear_password and credentials is not None:
+            credentials.delete()
         if _service_active():
             _restart_service()
     except (AdminError, MqttCredentialStoreError, ValueError) as exc:
         store.save(previous)
+        if credentials is not None:
+            try:
+                if previous_password is None:
+                    credentials.delete()
+                else:
+                    credentials.save(previous_password)
+            except MqttCredentialStoreError:
+                pass
         raise AdminError(
             "MQTT configuration was not applied; previous configuration restored"
         ) from exc

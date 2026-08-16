@@ -12,7 +12,7 @@ Konfiguriere eine lokale HTTPS-Origin und genau ein Miniserver-Ziel. Die Auswahl
 
 ## MQTT-Konfiguration (Health)
 
-MQTT-Health ist standardmäßig deaktiviert. Standardmäßig verwendet das Plugin Host, Port und Zugangsdaten des LoxBerry MQTT-Gateways zur Laufzeit. Für einen eigenen Broker deaktivieren Sie **LoxBerry MQTT-Gateway verwenden** und geben Host, Port, Benutzername und Passwort ein. Das Passwort wird getrennt verschlüsselt gespeichert, nie wieder angezeigt und nie in Diagnose- oder Logausgaben aufgenommen. Das Root Topic lautet standardmäßig `mcpserver`; der Heartbeat läuft standardmäßig alle 60 Sekunden. Die retained Topics sind `mcpserver/health/heartbeat`, `mcpserver/health/system_state` und `mcpserver/health/substate`. Der Zeitwert verwendet Loxone-Epoch-Sekunden.
+MQTT-Health ist standardmäßig deaktiviert. Standardmäßig verwendet das Plugin Host, Port und Zugangsdaten des LoxBerry MQTT-Gateways zur Laufzeit. Für einen eigenen Broker deaktivieren Sie **LoxBerry MQTT-Gateway verwenden** und geben Host, Port, Benutzername und Passwort ein. Das Passwort wird getrennt verschlüsselt gespeichert, nie wieder angezeigt und nie in Diagnose- oder Logausgaben aufgenommen. Mit **Gespeichertes MQTT-Passwort löschen** entfernen Sie es bewusst. Das Root Topic lautet standardmäßig `mcpserver`; der Heartbeat läuft standardmäßig alle 60 Sekunden. Die retained Topics sind `mcpserver/health/heartbeat`, `mcpserver/health/system_state` und `mcpserver/health/substate`. Der Zeitwert verwendet Loxone-Epoch-Sekunden.
 
 ## Zertifikat
 

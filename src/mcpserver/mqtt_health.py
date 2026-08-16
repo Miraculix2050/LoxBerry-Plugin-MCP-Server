@@ -111,6 +111,20 @@ class MqttCredentialStore:
             temporary.unlink(missing_ok=True)
             raise MqttCredentialStoreError("MQTT credential store update failed") from exc
 
+    def delete(self) -> None:
+        """Remove the optional password only after rejecting unsafe paths."""
+        if not self.path.exists():
+            return
+        try:
+            metadata = self.path.lstat()
+            if not stat.S_ISREG(metadata.st_mode) or self.path.is_symlink():
+                raise MqttCredentialStoreError("MQTT credential path is unsafe")
+            self.path.unlink()
+        except MqttCredentialStoreError:
+            raise
+        except OSError as exc:
+            raise MqttCredentialStoreError("MQTT credential store removal failed") from exc
+
 
 @dataclass(frozen=True, slots=True)
 class MqttGateway:

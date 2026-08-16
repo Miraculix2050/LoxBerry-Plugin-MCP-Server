@@ -923,6 +923,67 @@ def test_save_mqtt_keeps_custom_password_out_of_configuration(
     assert "custom-secret" not in store.path.read_text(encoding="utf-8")
     assert "custom-secret" not in credentials.read_text(encoding="utf-8")
 
+    cleared = _save_mqtt(
+        {
+            "schema_version": 6,
+            "mqtt": {
+                "enabled": True,
+                "root_topic": "mcpserver",
+                "heartbeat_seconds": 60,
+                "use_loxberry_gateway": False,
+                "host": "broker.example",
+                "port": 1883,
+                "username": "health",
+            },
+            "mqtt_clear_password": True,
+        }
+    )
+    assert cleared["mqtt_password_configured"] is False
+    assert not credentials.exists()
+
+
+def test_failed_mqtt_apply_restores_previous_encrypted_password(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mcpserver.mqtt_health import MqttCredentialStore
+
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    previous = PluginConfig(mqtt_use_loxberry_gateway=False, mqtt_host="previous.example")
+    store.save(previous)
+    key = tmp_path / "data" / "auth" / "install.key"
+    key.parent.mkdir(parents=True)
+    key.write_bytes(b"k" * 32)
+    credentials = key.with_name("mqtt-credentials.json.enc")
+    credential_store = MqttCredentialStore(credentials.resolve(), key.resolve())
+    credential_store.save("previous-secret")
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._service_active", lambda: True)
+    monkeypatch.setattr(
+        "mcpserver.admin._restart_service", lambda: (_ for _ in ()).throw(AdminError("failed"))
+    )
+    monkeypatch.setenv("MCPSERVER_INSTALL_KEY", str(key.resolve()))
+    monkeypatch.setenv("MCPSERVER_MQTT_CREDENTIALS", str(credentials.resolve()))
+
+    with pytest.raises(AdminError, match="previous configuration restored"):
+        _save_mqtt(
+            {
+                "schema_version": 6,
+                "mqtt": {
+                    "enabled": True,
+                    "root_topic": "mcpserver",
+                    "heartbeat_seconds": 60,
+                    "use_loxberry_gateway": False,
+                    "host": "new.example",
+                    "port": 1883,
+                    "username": "health",
+                },
+                "mqtt_password": "new-secret",
+            }
+        )
+
+    assert store.load().mqtt_host == "previous.example"
+    assert credential_store.load() == "previous-secret"
+
 
 @pytest.mark.parametrize(
     ("enabled", "commands"),

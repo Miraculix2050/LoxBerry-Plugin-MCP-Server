@@ -61,7 +61,7 @@ elif [ ! -f "$config_file" ]; then
 fi
 chmod 600 "$config_file"
 
-for auth_file in sessions.json loxone-tokens.json.enc install.key; do
+for auth_file in sessions.json loxone-tokens.json.enc mqtt-credentials.json.enc install.key; do
     upgrade_auth="$upgrade_backup_dir/$auth_file"
     if [ -f "$upgrade_auth" ] && [ ! -L "$upgrade_auth" ]; then
         install -m 600 "$upgrade_auth" "$plugin_data/auth/$auth_file" || exit 2

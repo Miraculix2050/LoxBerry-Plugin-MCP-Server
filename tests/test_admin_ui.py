@@ -112,6 +112,7 @@ def test_common_actions_update_the_page_without_a_reload() -> None:
     assert 'data-ajax="save_mqtt_config"' in template
     assert 'name="mqtt_username"' in template
     assert 'name="mqtt_password" type="password"' in template
+    assert 'name="mqtt_clear_password"' in template
     assert 'name="mqtt_use_loxberry_gateway"' in template
     assert "Array.isArray(result.data.sessions)" in template
     assert "updateSessions(result.data.sessions)" in template
