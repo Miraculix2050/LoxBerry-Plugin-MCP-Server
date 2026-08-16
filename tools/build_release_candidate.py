@@ -91,6 +91,7 @@ def _source_ignore(_directory: str, names: list[str]) -> set[str]:
         "build",
         "dist",
         "tmp",
+        ".tmp",
         "__pycache__",
     }
     return {name for name in names if name in excluded or name.endswith(".pyc")}

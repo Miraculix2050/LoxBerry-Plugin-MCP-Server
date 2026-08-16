@@ -749,10 +749,10 @@ def test_release_helpers_exclude_stale_project_wheel_and_refuse_overwrite(
 def test_release_source_copy_ignores_untracked_build_and_temporary_directories() -> None:
     ignored = _source_ignore(
         "source",
-        ["src", "tmp", "dist", "build", ".pytest_cache", "note.txt", "bytecode.pyc"],
+        ["src", "tmp", ".tmp", "dist", "build", ".pytest_cache", "note.txt", "bytecode.pyc"],
     )
 
-    assert ignored == {"tmp", "dist", "build", ".pytest_cache", "bytecode.pyc"}
+    assert ignored == {"tmp", ".tmp", "dist", "build", ".pytest_cache", "bytecode.pyc"}
 
 
 def test_release_candidate_builds_plugin_archive_once(
