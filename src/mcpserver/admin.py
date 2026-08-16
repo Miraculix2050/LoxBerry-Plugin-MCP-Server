@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 
 _MAX_REQUEST_BYTES: Final = 32 * 1024
 _SERVICE: Final = "loxberry-mcpserver.service"
-_SERVICE_ACTIONS: Final = frozenset({"restart"})
+_SERVICE_ACTIONS: Final = frozenset({"start", "stop", "restart"})
 _SYSTEMD_COMMANDS: Final = frozenset({"enable", "disable", "start", "stop", "restart"})
 _CLIENT_UUID: Final = UUID("3f52f6fe-3af0-4d30-a8bb-f429b9da4465")
 
@@ -228,18 +228,33 @@ def _set_service_enabled(payload: object) -> dict[str, Any]:
     enabled = payload.get("enabled") if isinstance(payload, dict) else None
     if not isinstance(enabled, bool):
         raise AdminError("service enabled state is invalid")
+    previous = _service_status()
     commands = ("enable", "start") if enabled else ("stop", "disable")
-    rollback = "disable" if enabled else "start"
     try:
         for command in commands:
             _run_service_command(command)
     except AdminError as exc:
         # Restore the prior combined systemd state if the second fixed action failed.
         if command != commands[0]:
-            with suppress(AdminError):
-                _run_service_command(rollback)
+            _restore_service_state(previous)
         raise AdminError("the service state was not applied") from exc
-    return _service_response()
+    response = _service_response()
+    service = response["service"]
+    if bool(service["enabled"]) != enabled or bool(service["active"]) != enabled:
+        _restore_service_state(previous)
+        raise AdminError("the service state was not applied")
+    return response
+
+
+def _restore_service_state(previous: dict[str, Any]) -> None:
+    """Best-effort restoration after a failed fixed systemd state transition."""
+    commands = (
+        "enable" if previous["enabled"] else "disable",
+        "start" if previous["active"] else "stop",
+    )
+    for command in commands:
+        with suppress(AdminError):
+            _run_service_command(command)
 
 
 def _restart_service() -> None:

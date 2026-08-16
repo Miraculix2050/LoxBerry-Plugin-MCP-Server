@@ -29,6 +29,8 @@
         <p><TMPL_VAR STATUS.ENABLED>: <strong id="service-enabled"><TMPL_VAR AJAX.WORKING></strong></p>
       </div>
       <div class="mcp-actions" id="service-actions">
+        <form method="post" action="index.cgi" data-ajax="service_action" data-service-command="start" hidden><input type="hidden" name="action" value="service_action"><input type="hidden" name="command" value="start"><button class="lb-button" type="submit"><TMPL_VAR ACTION.START></button></form>
+        <form method="post" action="index.cgi" data-ajax="service_action" data-service-command="stop" hidden><input type="hidden" name="action" value="service_action"><input type="hidden" name="command" value="stop"><button class="lb-button" type="submit"><TMPL_VAR ACTION.STOP></button></form>
         <form method="post" action="index.cgi" data-ajax="service_action" data-service-command="restart" hidden><input type="hidden" name="action" value="service_action"><input type="hidden" name="command" value="restart"><button class="lb-button" type="submit"><TMPL_VAR ACTION.RESTART></button></form>
         <a class="lb-button" href="<TMPL_VAR SERVICE_LOG_URL ESCAPE=HTML>" target="_blank" rel="noopener"><TMPL_VAR STATUS.SHOW_LOG></a>
       </div>
@@ -560,7 +562,10 @@
     serviceEnabledInput.checked = enabled;
     for (const form of document.querySelectorAll('form[data-service-command]')) {
       const command = form.dataset.serviceCommand;
-      const available = command === 'restart' && installed && active && enabled;
+      const available = installed && (
+        (command === 'start' && !active)
+        || ((command === 'stop' || command === 'restart') && active)
+      );
       form.hidden = !available;
       const button = form.querySelector('button[type="submit"]');
       button.disabled = serviceActionRunning || !available;
@@ -601,6 +606,7 @@
     }
   };
   const serviceConfirmMessages = {
+    stop: '<TMPL_VAR STATUS.CONFIRM_STOP ESCAPE=JS>',
     disable: '<TMPL_VAR STATUS.CONFIRM_DISABLE ESCAPE=JS>',
     restart: '<TMPL_VAR STATUS.CONFIRM_RESTART ESCAPE=JS>',
   };

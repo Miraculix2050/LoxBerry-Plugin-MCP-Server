@@ -213,6 +213,7 @@ class MqttHealthPublisher:
         self._client_factory = client_factory
         self._state_reader = state_reader
         self._clients: list[Any] = []
+        self._connected_clients: set[int] = set()
         self._task: asyncio.Task[None] | None = None
 
     @property
@@ -286,13 +287,15 @@ class MqttHealthPublisher:
             client.reconnect_delay_set(min_delay=1, max_delay=60)
             if not self._config.mqtt_use_loxberry_gateway:
                 client.tls_set()
-            client.on_connect = self._on_connect
+        for index, client in enumerate(clients):
+            client.on_connect = lambda *_args, index=index: self._on_connect(index)
         clients[0].will_set(topics["system_state"], "unknown", qos=1, retain=True)
         clients[1].will_set(topics["substate"], "unknown", qos=1, retain=True)
         return clients
 
-    def _on_connect(self, _client: Any, *_args: object) -> None:
-        """Publish current health only after the broker accepted the connection."""
+    def _on_connect(self, index: int) -> None:
+        """Publish each retained value only after its broker connection is ready."""
+        self._connected_clients.add(index)
         self.publish()
 
     async def _publish_loop(self) -> None:
@@ -314,11 +317,13 @@ class MqttHealthPublisher:
         active_state, substate = self._state_reader()
         topics = self.topics
         try:
-            self._clients[0].publish(
-                topics["heartbeat"], str(loxone_epoch_seconds()), qos=1, retain=True
-            )
-            self._clients[0].publish(topics["system_state"], active_state, qos=1, retain=True)
-            self._clients[1].publish(topics["substate"], substate, qos=1, retain=True)
+            if 0 in self._connected_clients:
+                self._clients[0].publish(
+                    topics["heartbeat"], str(loxone_epoch_seconds()), qos=1, retain=True
+                )
+                self._clients[0].publish(topics["system_state"], active_state, qos=1, retain=True)
+            if 1 in self._connected_clients:
+                self._clients[1].publish(topics["substate"], substate, qos=1, retain=True)
         except Exception:
             _LOGGER.warning("event=mqtt_publish_failed")
 
@@ -327,14 +332,34 @@ class MqttHealthPublisher:
             self._task.cancel()
             with suppress(asyncio.CancelledError):
                 await self._task
+        await self._publish_shutdown_state()
+        self._close_clients()
+
+    async def _publish_shutdown_state(self) -> None:
+        """Replace the Last-Will fallback before a controlled service stop."""
+        if not self._clients:
+            return
         topics = self.topics
+        publications: list[Any] = []
         try:
-            if self._clients:
-                self._clients[0].publish(topics["system_state"], "inactive", qos=1, retain=True)
-                self._clients[1].publish(topics["substate"], "dead", qos=1, retain=True)
+            if 0 in self._connected_clients:
+                publications.append(
+                    self._clients[0].publish(topics["system_state"], "inactive", qos=1, retain=True)
+                )
+            if 1 in self._connected_clients:
+                publications.append(
+                    self._clients[1].publish(topics["substate"], "dead", qos=1, retain=True)
+                )
+            await asyncio.gather(
+                *(self._wait_for_publish(publication) for publication in publications)
+            )
         except Exception:
             _LOGGER.warning("event=mqtt_shutdown_publish_failed")
-        self._close_clients()
+
+    async def _wait_for_publish(self, publication: Any) -> None:
+        wait_for_publish = getattr(publication, "wait_for_publish", None)
+        if callable(wait_for_publish):
+            await asyncio.wait_for(asyncio.to_thread(wait_for_publish), timeout=3)
 
     def _close_clients(self) -> None:
         for client in self._clients:
@@ -344,3 +369,4 @@ class MqttHealthPublisher:
             except Exception:
                 pass
         self._clients = []
+        self._connected_clients.clear()

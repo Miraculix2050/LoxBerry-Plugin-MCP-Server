@@ -128,6 +128,7 @@ def test_health_publishes_retained_start_and_shutdown_messages(tmp_path: Path) -
     async def exercise() -> None:
         await publisher.start()
         clients[0].on_connect(clients[0])
+        clients[1].on_connect(clients[1])
         publisher.publish()
         await publisher.close()
 
@@ -147,6 +148,50 @@ def test_health_publishes_retained_start_and_shutdown_messages(tmp_path: Path) -
         {"qos": 1, "retain": True},
     ) in calls
     assert ("publish", "mcpserver/health/substate", "dead", {"qos": 1, "retain": True}) in calls
+
+
+def test_health_waits_for_each_broker_connection_before_publishing(tmp_path: Path) -> None:
+    path = tmp_path / "config" / "system"
+    path.mkdir(parents=True)
+    (path / "general.json").write_text(
+        json.dumps(
+            {
+                "Mqtt": {
+                    "Brokerhost": "broker",
+                    "Brokerport": 1883,
+                    "Brokeruser": "user",
+                    "Brokerpass": "secret",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    clients: list[_Client] = []
+    publisher = MqttHealthPublisher(
+        PluginConfig(mqtt_enabled=True),
+        home=tmp_path,
+        client_factory=lambda **kwargs: clients.append(_Client(**kwargs)) or clients[-1],
+        state_reader=lambda: ("active", "running"),
+    )
+
+    async def exercise() -> None:
+        await publisher.start()
+        publisher.publish()
+        assert not [call for client in clients for call in client.calls if call[0] == "publish"]
+        clients[0].on_connect(clients[0])
+        assert any(
+            call[:2] == ("publish", "mcpserver/health/system_state") for call in clients[0].calls
+        )
+        assert not any(
+            call[:2] == ("publish", "mcpserver/health/substate") for call in clients[1].calls
+        )
+        clients[1].on_connect(clients[1])
+        assert any(
+            call[:2] == ("publish", "mcpserver/health/substate") for call in clients[1].calls
+        )
+        await publisher.close()
+
+    asyncio.run(exercise())
 
 
 def test_missing_gateway_schedules_a_bounded_retry(tmp_path: Path) -> None:

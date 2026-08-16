@@ -451,7 +451,7 @@ if ($action ne '') {
             'action=set_service_enabled outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
     } elsif ($action eq 'service_action') {
         my $command = $q->{command} // '';
-        if ($command eq 'restart') {
+        if ($command eq 'start' || $command eq 'stop' || $command eq 'restart') {
             $result = admin_call('service_action', {command => $command});
             if ($result->{ok}) {
                 admin_log('info', "action=service_$command outcome=completed");

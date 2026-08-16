@@ -357,6 +357,9 @@ def test_postroot_keeps_installer_alive_during_apache_activation() -> None:
         "systemctl reload apache2"
     )
     assert "systemctl restart loxberry-mcpserver.service || exit 2" in hook
+    assert "preserve_disabled_service=0" in hook
+    assert "Service remains disabled after upgrade." in hook
+    assert hook.index("preserve_disabled_service=1") < hook.index("systemctl daemon-reload")
     assert "for _ in {1..30}" in hook
     assert "curl --fail --silent --max-time 2 http://127.0.0.1:8765/healthz" in hook
     assert 'if [ "$service_ready" -ne 1 ]' in hook

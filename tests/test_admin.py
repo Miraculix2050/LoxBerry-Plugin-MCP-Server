@@ -647,7 +647,7 @@ def test_service_status_fails_closed_when_systemctl_times_out(
     }
 
 
-@pytest.mark.parametrize("command", ["restart"])
+@pytest.mark.parametrize("command", ["start", "stop", "restart"])
 def test_service_action_uses_only_the_fixed_unit(
     command: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1049,11 +1049,14 @@ def test_master_service_state_uses_only_fixed_systemd_operations(
 ) -> None:
     called: list[str] = []
     monkeypatch.setattr("mcpserver.admin._run_service_command", called.append)
-    monkeypatch.setattr("mcpserver.admin._service_response", lambda: {"service_active": enabled})
+    monkeypatch.setattr(
+        "mcpserver.admin._service_status",
+        lambda: {"enabled": not enabled, "active": not enabled},
+    )
+    response = {"service_active": enabled, "service": {"enabled": enabled, "active": enabled}}
+    monkeypatch.setattr("mcpserver.admin._service_response", lambda: response)
 
-    assert dispatch({"action": "set_service_enabled", "payload": {"enabled": enabled}}) == {
-        "service_active": enabled
-    }
+    assert dispatch({"action": "set_service_enabled", "payload": {"enabled": enabled}}) == response
     assert called == commands
 
 
@@ -1066,11 +1069,33 @@ def test_failed_master_service_second_action_compensates(monkeypatch: pytest.Mon
             raise AdminError("failed")
 
     monkeypatch.setattr("mcpserver.admin._run_service_command", command)
+    monkeypatch.setattr(
+        "mcpserver.admin._service_status", lambda: {"enabled": False, "active": False}
+    )
 
     with pytest.raises(AdminError, match="not applied"):
         dispatch({"action": "set_service_enabled", "payload": {"enabled": True}})
 
-    assert called == ["enable", "start", "disable"]
+    assert called == ["enable", "start", "disable", "stop"]
+
+
+def test_master_service_state_rejects_an_unconfirmed_systemd_transition(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    called: list[str] = []
+    monkeypatch.setattr("mcpserver.admin._run_service_command", called.append)
+    monkeypatch.setattr(
+        "mcpserver.admin._service_status", lambda: {"enabled": False, "active": False}
+    )
+    monkeypatch.setattr(
+        "mcpserver.admin._service_response",
+        lambda: {"service_active": False, "service": {"enabled": False, "active": False}},
+    )
+
+    with pytest.raises(AdminError, match="not applied"):
+        dispatch({"action": "set_service_enabled", "payload": {"enabled": True}})
+
+    assert called == ["enable", "start", "disable", "stop"]
 
 
 def test_first_complete_configuration_respects_disabled_read_access(

@@ -4,7 +4,7 @@
 
 ## Basic settings
 
-The **Enable service** switch controls only the systemd runtime. After a new installation the service is active, while MCP and MQTT health are separately disabled. Disabling it stops the service and prevents it from starting at the next system boot.
+The **Enable service** switch controls only the systemd runtime. After a new installation the service is active, while MCP and MQTT health are separately disabled. Disabling it stops the service and prevents it from starting at the next system boot; this choice is preserved across upgrades. **Start** and **Stop** change only the current runtime state, not the boot setting.
 
 ## MCP configuration
 
@@ -12,7 +12,7 @@ Configure one local HTTPS origin and exactly one Miniserver target. Selecting a 
 
 ## MQTT configuration (health)
 
-MQTT health is disabled by default. By default, the plugin reads host, port, and credentials at runtime from the LoxBerry MQTT gateway. For a custom broker, disable **Use LoxBerry MQTT gateway** and enter its host, port, username, and password. Custom-broker connections always use TLS with normal certificate and hostname validation. The password is stored separately with encryption, is never displayed again, and is never included in diagnostics or logs. Use **Clear saved MQTT password** to remove it deliberately. The default root topic is `mcpserver` and the default heartbeat interval is 60 seconds. Retained topics are `mcpserver/health/heartbeat`, `mcpserver/health/system_state` and `mcpserver/health/substate`. The timestamp uses Loxone epoch seconds.
+MQTT health is disabled by default. By default, the plugin reads host, port, and credentials at runtime from the LoxBerry MQTT gateway. For a custom broker, disable **Use LoxBerry MQTT gateway** and enter its host, port, username, and password. Custom-broker connections always use TLS with normal certificate and hostname validation. The password is stored separately with encryption, is never displayed again, and is never included in diagnostics or logs. Use **Clear saved MQTT password** to remove it deliberately. The default root topic is `mcpserver` and the default heartbeat interval is 60 seconds. Retained topics are `mcpserver/health/heartbeat`, `mcpserver/health/system_state` and `mcpserver/health/substate`. A controlled stop publishes `inactive` and `dead`; an unexpected process or connection loss publishes the retained fallback `unknown`. The timestamp uses Loxone epoch seconds.
 
 ## Certificate
 

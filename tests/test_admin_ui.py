@@ -156,7 +156,8 @@ def test_service_status_is_first_and_uses_a_lightweight_ajax_contract() -> None:
 
     assert template.index('id="status"') < template.index('id="setup"')
     assert 'data-ajax="service_status"' not in template
-    assert 'data-service-command="restart"' in template
+    for command in ("start", "stop", "restart"):
+        assert f'data-service-command="{command}"' in template
     assert 'data-ajax="set_service_enabled"' in template
     assert "body.set('action', 'service_status')" in template
     assert "window.setTimeout(pollServiceStatus, delay)" in template
@@ -165,7 +166,7 @@ def test_service_status_is_first_and_uses_a_lightweight_ajax_contract() -> None:
     assert "admin_call('service_status', {})" in cgi
     assert "admin_call('service_action', {command => $command})" in cgi
     assert "admin_call('set_service_enabled', {enabled => $enabled})" in cgi
-    assert "$command eq 'restart'" in cgi
+    assert "$command eq 'start' || $command eq 'stop' || $command eq 'restart'" in cgi
     assert "service.log&header=html&format=template" in cgi
 
 
@@ -273,7 +274,8 @@ def test_service_actions_use_an_accessible_confirmation_and_dynamic_controls() -
     assert "serviceConfirmMessages[confirmationKey]" in template
     assert "form.dataset.confirmed = 'true'" in template
     assert "form.requestSubmit()" in template
-    assert "command === 'restart' && installed && active && enabled" in template
+    assert "command === 'start' && !active" in template
+    assert "command === 'stop' || command === 'restart'" in template
     assert "serviceState.dataset.kind = kind" in template
     assert "serviceActionRunning = true" in template
     assert "set_service_enabled: 75000" in template

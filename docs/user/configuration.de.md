@@ -4,7 +4,7 @@
 
 ## Grundeinstellungen
 
-Der Schalter **Dienst aktivieren** steuert nur die systemd-Laufzeit. Nach einer Neuinstallation ist der Dienst aktiv, MCP und MQTT-Health sind jedoch getrennt und jeweils deaktiviert. Deaktivieren stoppt den Dienst und verhindert seinen Start beim nächsten Systemstart.
+Der Schalter **Dienst aktivieren** steuert nur die systemd-Laufzeit. Nach einer Neuinstallation ist der Dienst aktiv, MCP und MQTT-Health sind jedoch getrennt und jeweils deaktiviert. Deaktivieren stoppt den Dienst und verhindert seinen Start beim nächsten Systemstart; diese Wahl bleibt auch bei Updates erhalten. **Starten** und **Stoppen** ändern nur den aktuellen Laufzeitstatus und nicht die Einstellung für den Systemstart.
 
 ## MCP-Konfiguration
 
@@ -12,7 +12,7 @@ Konfiguriere eine lokale HTTPS-Origin und genau ein Miniserver-Ziel. Die Auswahl
 
 ## MQTT-Konfiguration (Health)
 
-MQTT-Health ist standardmäßig deaktiviert. Standardmäßig verwendet das Plugin Host, Port und Zugangsdaten des LoxBerry MQTT-Gateways zur Laufzeit. Für einen eigenen Broker deaktivieren Sie **LoxBerry MQTT-Gateway verwenden** und geben Host, Port, Benutzername und Passwort ein. Eigene Broker werden immer per TLS mit normaler Zertifikats- und Hostnamenprüfung verbunden. Das Passwort wird getrennt verschlüsselt gespeichert, nie wieder angezeigt und nie in Diagnose- oder Logausgaben aufgenommen. Mit **Gespeichertes MQTT-Passwort löschen** entfernen Sie es bewusst. Das Root Topic lautet standardmäßig `mcpserver`; der Heartbeat läuft standardmäßig alle 60 Sekunden. Die retained Topics sind `mcpserver/health/heartbeat`, `mcpserver/health/system_state` und `mcpserver/health/substate`. Der Zeitwert verwendet Loxone-Epoch-Sekunden.
+MQTT-Health ist standardmäßig deaktiviert. Standardmäßig verwendet das Plugin Host, Port und Zugangsdaten des LoxBerry MQTT-Gateways zur Laufzeit. Für einen eigenen Broker deaktivieren Sie **LoxBerry MQTT-Gateway verwenden** und geben Host, Port, Benutzername und Passwort ein. Eigene Broker werden immer per TLS mit normaler Zertifikats- und Hostnamenprüfung verbunden. Das Passwort wird getrennt verschlüsselt gespeichert, nie wieder angezeigt und nie in Diagnose- oder Logausgaben aufgenommen. Mit **Gespeichertes MQTT-Passwort löschen** entfernen Sie es bewusst. Das Root Topic lautet standardmäßig `mcpserver`; der Heartbeat läuft standardmäßig alle 60 Sekunden. Die retained Topics sind `mcpserver/health/heartbeat`, `mcpserver/health/system_state` und `mcpserver/health/substate`. Ein kontrolliertes Stoppen veröffentlicht `inactive` und `dead`; bei einem unerwarteten Prozess- oder Verbindungsverlust veröffentlicht das retained Fallback `unknown`. Der Zeitwert verwendet Loxone-Epoch-Sekunden.
 
 ## Zertifikat
 
