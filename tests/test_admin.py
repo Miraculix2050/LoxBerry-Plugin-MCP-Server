@@ -23,6 +23,8 @@ from mcpserver.admin import (
     _revoke_loxberry_operate,
     _revoke_loxberry_read,
     _save,
+    _save_mcp,
+    _save_mqtt,
     _service_status,
     _set_logging,
     dispatch,
@@ -429,6 +431,8 @@ def test_page_state_aggregates_initial_admin_ui_data(monkeypatch: pytest.MonkeyP
         "loxberry_bindings": [],
         "loxberry_operate_bindings": [],
         "certificate": {"available": True, "renewal_supported": False},
+        "mqtt_gateway": {"gateway_configured": False},
+        "mqtt_password_configured": False,
     }
 
 
@@ -588,6 +592,7 @@ def test_service_status_reads_bounded_systemd_properties(
             f"ActiveState={active_state}\n"
             f"SubState={sub_state}\n"
             f"MainPID={raw_pid}\n"
+            "UnitFileState=enabled\n"
         )
         return subprocess.CompletedProcess(command, 0, output, "")
 
@@ -602,7 +607,12 @@ def test_service_status_reads_bounded_systemd_properties(
         "--property=ActiveState",
         "--property=SubState",
         "--property=MainPID",
+        "--property=UnitFileState",
         "--no-pager",
+        "loxberry-mcpserver.service",
+        "/bin/systemctl",
+        "is-enabled",
+        "--quiet",
         "loxberry-mcpserver.service",
     ]
     assert result == {
@@ -612,6 +622,8 @@ def test_service_status_reads_bounded_systemd_properties(
         "sub_state": sub_state,
         "pid": expected_pid,
         "active": active,
+        "enabled": True,
+        "enable_state": "enabled",
     }
 
 
@@ -630,10 +642,12 @@ def test_service_status_fails_closed_when_systemctl_times_out(
         "sub_state": "unknown",
         "pid": None,
         "active": False,
+        "enabled": False,
+        "enable_state": "unknown",
     }
 
 
-@pytest.mark.parametrize("command", ["start", "stop", "restart"])
+@pytest.mark.parametrize("command", ["restart"])
 def test_service_action_uses_only_the_fixed_unit(
     command: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -686,7 +700,7 @@ def test_service_action_maps_timeout_to_sanitized_error(
     )
 
     with pytest.raises(AdminError) as failure:
-        dispatch({"action": "service_action", "payload": {"command": "start"}})
+        dispatch({"action": "service_action", "payload": {"command": "restart"}})
     assert failure.value.code == "service_action_failed"
     assert str(failure.value) == "the service action failed"
 
@@ -785,7 +799,7 @@ def test_failed_config_apply_restores_previous_configuration(
     assert store.load().to_document() == previous.to_document()
 
 
-def test_first_complete_configuration_enables_the_service(
+def test_first_complete_configuration_does_not_enable_mcp_access(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
@@ -803,8 +817,128 @@ def test_first_complete_configuration_enables_the_service(
         }
     )
 
-    assert store.load().enabled is True
-    assert result["configuration"]["server"]["enabled"] is True
+    assert store.load().enabled is False
+    assert result["configuration"]["server"]["enabled"] is False
+
+
+def test_section_saves_are_atomic_and_preserve_the_other_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    initial = PluginConfig(
+        mqtt_enabled=True,
+        mqtt_root_topic="existing",
+        mqtt_heartbeat_seconds=120,
+    )
+    store.save(initial)
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._service_active", lambda: False)
+    monkeypatch.setattr("mcpserver.admin._service_response", lambda: {"service_active": False})
+
+    _save_mcp(
+        {
+            "schema_version": 5,
+            "server": {"enabled": False, "public_origin": "https://loxberry.example"},
+            "loxone": {"endpoint": "http://192.168.10.20"},
+        }
+    )
+    after_mcp = store.load()
+    assert after_mcp.mqtt_enabled is True
+    assert after_mcp.mqtt_root_topic == "existing"
+
+    _save_mqtt(
+        {
+            "schema_version": 5,
+            "mqtt": {"enabled": False, "root_topic": "mcpserver", "heartbeat_seconds": 60},
+        }
+    )
+    after_mqtt = store.load()
+    assert after_mqtt.public_origin == "https://loxberry.example"
+    assert after_mqtt.loxone_endpoint == "http://192.168.10.20"
+    assert after_mqtt.mqtt_enabled is False
+
+
+def test_mqtt_gateway_status_masks_credentials(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mcpserver.admin import _mqtt_gateway_status
+
+    path = tmp_path / "config" / "system"
+    path.mkdir(parents=True)
+    (path / "general.json").write_text(
+        json.dumps(
+            {
+                "Mqtt": {
+                    "Brokerhost": "broker.local",
+                    "Brokerport": "1883",
+                    "Brokeruser": "sensitive-user",
+                    "Brokerpass": "sensitive-password",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LBHOMEDIR", str(tmp_path))
+
+    status = _mqtt_gateway_status()
+
+    assert status == {"gateway_configured": True, "host": "broker.local", "port": 1883}
+    assert "sensitive" not in json.dumps(status)
+
+
+def test_save_mqtt_keeps_custom_password_out_of_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    store.save(PluginConfig())
+    key = tmp_path / "data" / "auth" / "install.key"
+    key.parent.mkdir(parents=True)
+    key.write_bytes(b"k" * 32)
+    credentials = key.with_name("mqtt-credentials.json.enc")
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._service_active", lambda: False)
+    monkeypatch.setattr("mcpserver.admin._service_response", lambda: {"service_active": False})
+    monkeypatch.setenv("MCPSERVER_INSTALL_KEY", str(key.resolve()))
+    monkeypatch.setenv("MCPSERVER_MQTT_CREDENTIALS", str(credentials.resolve()))
+
+    result = _save_mqtt(
+        {
+            "schema_version": 6,
+            "mqtt": {
+                "enabled": True,
+                "root_topic": "mcpserver",
+                "heartbeat_seconds": 60,
+                "use_loxberry_gateway": False,
+                "host": "broker.example",
+                "port": 1883,
+                "username": "health",
+            },
+            "mqtt_password": "custom-secret",
+        }
+    )
+
+    rendered = json.dumps(result)
+    assert result["mqtt_password_configured"] is True
+    assert "custom-secret" not in rendered
+    assert "custom-secret" not in store.path.read_text(encoding="utf-8")
+    assert "custom-secret" not in credentials.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("enabled", "commands"),
+    [(True, ["enable", "start"]), (False, ["stop", "disable"])],
+)
+def test_master_service_state_uses_only_fixed_systemd_operations(
+    enabled: bool, commands: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    called: list[str] = []
+    monkeypatch.setattr("mcpserver.admin._run_service_command", called.append)
+    monkeypatch.setattr("mcpserver.admin._service_response", lambda: {"service_active": enabled})
+
+    assert dispatch({"action": "set_service_enabled", "payload": {"enabled": enabled}}) == {
+        "service_active": enabled
+    }
+    assert called == commands
 
 
 def test_first_complete_configuration_respects_disabled_read_access(

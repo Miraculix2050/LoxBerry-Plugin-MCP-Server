@@ -67,7 +67,7 @@ def test_configuration_round_trip_preserves_unknown_keys(tmp_path: Path) -> None
 
     assert store.load().to_document() == config.to_document()
     assert json.loads(store.path.read_text(encoding="utf-8"))["future"] == {"keep": True}
-    assert config.to_document()["schema_version"] == 4
+    assert config.to_document()["schema_version"] == 6
 
 
 def test_phase_four_configuration_uses_only_the_ram_cache_setting() -> None:
@@ -102,11 +102,62 @@ def test_removed_hybrid_cache_key_is_not_reused() -> None:
     assert config.to_document()["cache"] == {"statistics_memory_max_mib": 128}
 
 
+def test_mqtt_defaults_migrate_without_enabling_health() -> None:
+    config = PluginConfig.from_document({"schema_version": 4})
+
+    assert config.mqtt_enabled is False
+    assert config.mqtt_root_topic == "mcpserver"
+    assert config.mqtt_heartbeat_seconds == 60
+    assert config.to_document()["mqtt"] == {
+        "enabled": False,
+        "root_topic": "mcpserver",
+        "heartbeat_seconds": 60,
+        "use_loxberry_gateway": True,
+        "host": "",
+        "port": 1883,
+        "username": "",
+    }
+
+
+@pytest.mark.parametrize(
+    "mqtt",
+    [
+        {"root_topic": "mcpserver/#"},
+        {"root_topic": "mcpserver/+"},
+        {"root_topic": "/mcpserver"},
+        {"root_topic": "mcpserver/"},
+        {"heartbeat_seconds": 9},
+        {"heartbeat_seconds": 3601},
+    ],
+)
+def test_mqtt_rejects_unsafe_topics_and_heartbeat_bounds(mqtt: dict[str, object]) -> None:
+    with pytest.raises(ConfigError):
+        PluginConfig.from_document({"schema_version": 6, "mqtt": mqtt})
+
+
+def test_mqtt_custom_broker_is_validated_without_persisting_a_password() -> None:
+    config = PluginConfig.from_document(
+        {
+            "schema_version": 6,
+            "mqtt": {
+                "use_loxberry_gateway": False,
+                "host": "broker.example",
+                "port": 2883,
+                "username": "health",
+            },
+        }
+    )
+
+    assert config.mqtt_use_loxberry_gateway is False
+    assert config.mqtt_host == "broker.example"
+    assert "password" not in config.to_document()["mqtt"]
+
+
 @pytest.mark.parametrize(
     "document",
     [
         {},
-        {"schema_version": 5},
+        {"schema_version": 7},
         {"schema_version": 1, "server": {"enabled": True}},
         {
             "schema_version": 1,

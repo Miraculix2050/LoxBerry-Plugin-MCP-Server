@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import copy
+import ipaddress
 import json
 import os
+import re
 import secrets
 import stat
 import sys
@@ -20,7 +22,7 @@ import idna
 
 from mcpserver.loxone.client import MiniserverEndpoint
 
-SCHEMA_VERSION: Final = 4
+SCHEMA_VERSION: Final = 6
 DEFAULT_CONNECTION_TIMEOUT: Final = 10.0
 DEFAULT_REQUESTS_PER_MINUTE: Final = 60
 DEFAULT_MAX_PARALLEL_CALLS: Final = 4
@@ -38,6 +40,9 @@ DEFAULT_MAX_STRUCTURE_DEPTH: Final = 32
 DEFAULT_MAX_STATES_PER_IDENTITY: Final = 20_000
 MAX_LOXBERRY_BINDINGS: Final = 64
 DEFAULT_LOG_LEVEL: Final = "warning"
+DEFAULT_MQTT_ROOT_TOPIC: Final = "mcpserver"
+DEFAULT_MQTT_HEARTBEAT_SECONDS: Final = 60
+DEFAULT_MQTT_PORT: Final = 1883
 SUPPORTED_LOG_LEVELS: Final = frozenset({"off", "error", "warning", "info", "debug"})
 
 
@@ -107,6 +112,38 @@ def _log_level(value: object) -> str:
     return value
 
 
+def _mqtt_topic(value: object) -> str:
+    if not isinstance(value, str) or not value or len(value) > 128:
+        raise ConfigError("mqtt.root_topic is unsupported")
+    if value != value.strip() or value.startswith("/") or value.endswith("/"):
+        raise ConfigError("mqtt.root_topic is unsupported")
+    allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-/"
+    if any(character not in allowed for character in value) or "//" in value:
+        raise ConfigError("mqtt.root_topic is unsupported")
+    return value
+
+
+def _mqtt_host(value: object) -> str:
+    if not isinstance(value, str) or not value or len(value) > 253 or value != value.strip():
+        raise ConfigError("mqtt.host is unsupported")
+    try:
+        ipaddress.ip_address(value)
+        return value
+    except ValueError:
+        pass
+    if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?", value):
+        raise ConfigError("mqtt.host is unsupported")
+    if ".." in value:
+        raise ConfigError("mqtt.host is unsupported")
+    return value
+
+
+def _mqtt_username(value: object) -> str:
+    if not isinstance(value, str) or len(value) > 256 or "\x00" in value:
+        raise ConfigError("mqtt.username is unsupported")
+    return value
+
+
 def _bindings(value: object, *, name: str) -> tuple[str, ...]:
     if not isinstance(value, list) or len(value) > MAX_LOXBERRY_BINDINGS:
         raise ConfigError(f"{name} is unsupported")
@@ -154,6 +191,13 @@ class PluginConfig:
     max_structure_state_references: int = DEFAULT_MAX_STRUCTURE_STATE_REFERENCES
     max_structure_depth: int = DEFAULT_MAX_STRUCTURE_DEPTH
     max_states_per_identity: int = DEFAULT_MAX_STATES_PER_IDENTITY
+    mqtt_enabled: bool = False
+    mqtt_root_topic: str = DEFAULT_MQTT_ROOT_TOPIC
+    mqtt_heartbeat_seconds: int = DEFAULT_MQTT_HEARTBEAT_SECONDS
+    mqtt_use_loxberry_gateway: bool = True
+    mqtt_host: str = ""
+    mqtt_port: int = DEFAULT_MQTT_PORT
+    mqtt_username: str = ""
     _source: dict[str, Any] | None = None
 
     @classmethod
@@ -163,7 +207,7 @@ class PluginConfig:
     @classmethod
     def from_document(cls, document: object) -> PluginConfig:
         root = _mapping(document, name="configuration")
-        if root.get("schema_version") not in {1, 2, 3, SCHEMA_VERSION}:
+        if root.get("schema_version") not in {1, 2, 3, 4, 5, SCHEMA_VERSION}:
             raise ConfigError("schema_version is unsupported")
         server = _mapping(root.get("server", {}), name="server")
         loxone = _mapping(root.get("loxone", {}), name="loxone")
@@ -172,6 +216,7 @@ class PluginConfig:
         policies = _mapping(root.get("policies", {}), name="policies")
         cache = _mapping(root.get("cache", {}), name="cache")
         logging_config = _mapping(root.get("logging", {}), name="logging")
+        mqtt = _mapping(root.get("mqtt", {}), name="mqtt")
 
         enabled = _boolean(server.get("enabled", False), name="server.enabled")
         public_origin_value = server.get("public_origin", "")
@@ -338,6 +383,27 @@ class PluginConfig:
             minimum=16,
             maximum=512,
         )
+        mqtt_enabled = _boolean(mqtt.get("enabled", False), name="mqtt.enabled")
+        mqtt_root_topic = _mqtt_topic(mqtt.get("root_topic", DEFAULT_MQTT_ROOT_TOPIC))
+        mqtt_heartbeat_seconds = _integer(
+            mqtt.get("heartbeat_seconds", DEFAULT_MQTT_HEARTBEAT_SECONDS),
+            name="mqtt.heartbeat_seconds",
+            minimum=10,
+            maximum=3600,
+        )
+        mqtt_use_loxberry_gateway = _boolean(
+            mqtt.get("use_loxberry_gateway", True), name="mqtt.use_loxberry_gateway"
+        )
+        mqtt_host = mqtt.get("host", "")
+        mqtt_port = _integer(
+            mqtt.get("port", DEFAULT_MQTT_PORT),
+            name="mqtt.port",
+            minimum=1,
+            maximum=65535,
+        )
+        mqtt_username = _mqtt_username(mqtt.get("username", ""))
+        if not mqtt_use_loxberry_gateway or mqtt_host != "":
+            mqtt_host = _mqtt_host(mqtt_host)
         return cls(
             enabled=enabled,
             public_origin=public_origin,
@@ -365,13 +431,20 @@ class PluginConfig:
             max_structure_state_references=max_structure_state_references,
             max_structure_depth=max_structure_depth,
             max_states_per_identity=max_states_per_identity,
+            mqtt_enabled=mqtt_enabled,
+            mqtt_root_topic=mqtt_root_topic,
+            mqtt_heartbeat_seconds=mqtt_heartbeat_seconds,
+            mqtt_use_loxberry_gateway=mqtt_use_loxberry_gateway,
+            mqtt_host=mqtt_host,
+            mqtt_port=mqtt_port,
+            mqtt_username=mqtt_username,
             _source=copy.deepcopy(root),
         )
 
     def to_document(self) -> dict[str, Any]:
         document = copy.deepcopy(self._source) if self._source is not None else {}
         document["schema_version"] = SCHEMA_VERSION
-        for key in ("server", "loxone", "tools", "limits", "logging", "policies", "cache"):
+        for key in ("server", "loxone", "tools", "limits", "logging", "policies", "cache", "mqtt"):
             current = document.get(key)
             if not isinstance(current, dict):
                 document[key] = {}
@@ -406,6 +479,13 @@ class PluginConfig:
         document["cache"].pop("statistics_mode", None)
         document["cache"].pop("statistics_max_mib", None)
         document["cache"]["statistics_memory_max_mib"] = self.statistics_memory_max_mib
+        document["mqtt"]["enabled"] = self.mqtt_enabled
+        document["mqtt"]["root_topic"] = self.mqtt_root_topic
+        document["mqtt"]["heartbeat_seconds"] = self.mqtt_heartbeat_seconds
+        document["mqtt"]["use_loxberry_gateway"] = self.mqtt_use_loxberry_gateway
+        document["mqtt"]["host"] = self.mqtt_host
+        document["mqtt"]["port"] = self.mqtt_port
+        document["mqtt"]["username"] = self.mqtt_username
         return document
 
 

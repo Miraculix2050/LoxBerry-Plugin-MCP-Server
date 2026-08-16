@@ -26,21 +26,27 @@
         <p><TMPL_VAR STATUS.PID>: <code id="service-pid"><TMPL_VAR SERVICE_PID ESCAPE=HTML></code></p>
         <p><TMPL_VAR STATUS.UNIT>: <code id="service-name"><TMPL_VAR SERVICE_NAME ESCAPE=HTML></code></p>
         <p><TMPL_VAR STATUS.INSTALLED>: <strong id="service-installed"><TMPL_VAR AJAX.WORKING></strong></p>
+        <p><TMPL_VAR STATUS.ENABLED>: <strong id="service-enabled"><TMPL_VAR AJAX.WORKING></strong></p>
       </div>
       <div class="mcp-actions" id="service-actions">
-        <form method="post" action="index.cgi" data-ajax="service_action" data-service-command="start" hidden><input type="hidden" name="action" value="service_action"><input type="hidden" name="command" value="start"><button class="lb-button" type="submit"><TMPL_VAR ACTION.START></button></form>
-        <form method="post" action="index.cgi" data-ajax="service_action" data-service-command="stop" hidden><input type="hidden" name="action" value="service_action"><input type="hidden" name="command" value="stop"><button class="lb-button" type="submit"><TMPL_VAR ACTION.STOP></button></form>
         <form method="post" action="index.cgi" data-ajax="service_action" data-service-command="restart" hidden><input type="hidden" name="action" value="service_action"><input type="hidden" name="command" value="restart"><button class="lb-button" type="submit"><TMPL_VAR ACTION.RESTART></button></form>
         <a class="lb-button" href="<TMPL_VAR SERVICE_LOG_URL ESCAPE=HTML>" target="_blank" rel="noopener"><TMPL_VAR STATUS.SHOW_LOG></a>
       </div>
     </div>
   </details>
 
+  <form id="service-enable-form" class="mcp-card mcp-form" method="post" action="index.cgi" data-ajax="set_service_enabled" data-service-master>
+    <input type="hidden" name="action" value="set_service_enabled">
+    <label><input id="service-enabled-input" name="service_enabled" type="checkbox" value="1"> <TMPL_VAR STATUS.ENABLED></label>
+    <button class="lb-button" type="submit"><TMPL_VAR ACTION.APPLY_SERVICE_STATUS></button>
+    <p class="mcp-help"><TMPL_VAR STATUS.ENABLED_HELP></p>
+  </form>
+
   <details id="setup" class="mcp-card" data-persist-collapse open>
     <summary><TMPL_VAR SETUP.TITLE></summary>
     <div class="mcp-collapsible-content">
-    <form class="mcp-form" method="post" action="index.cgi" data-ajax="save_config">
-      <input type="hidden" name="action" value="save_config">
+    <form class="mcp-form" method="post" action="index.cgi" data-ajax="save_mcp_config">
+      <input type="hidden" name="action" value="save_mcp_config">
       <label class="mcp-field"><span><TMPL_VAR SETUP.PUBLIC_ORIGIN></span><input name="public_origin" type="url" value="<TMPL_VAR PUBLIC_ORIGIN ESCAPE=HTML>" placeholder="https://loxberry.local" required></label>
       <label class="mcp-field"><span><TMPL_VAR SETUP.MINISERVER_SOURCE></span><select id="miniserver-select" name="miniserver_endpoint"><option value="" <TMPL_IF MANUAL_ENDPOINT>selected</TMPL_IF>><TMPL_VAR SETUP.MANUAL_OPTION></option><TMPL_LOOP MINISERVERS><option value="<TMPL_VAR endpoint ESCAPE=HTML>" <TMPL_IF selected>selected</TMPL_IF>><TMPL_VAR label ESCAPE=HTML></option></TMPL_LOOP></select></label>
       <div id="manual-endpoint-fields" class="mcp-manual-endpoint" <TMPL_UNLESS MANUAL_ENDPOINT>hidden</TMPL_UNLESS>>
@@ -100,7 +106,7 @@
         <p class="mcp-help"><TMPL_VAR SETUP.ADVANCED_LIMITS_HELP></p>
       </details>
       <div class="mcp-actions">
-        <button class="lb-button" type="submit"><TMPL_VAR ACTION.SAVE></button>
+        <button class="lb-button" type="submit"><TMPL_VAR ACTION.SAVE_MCP></button>
       </div>
     </form>
     <form class="mcp-actions" method="post" action="index.cgi" data-ajax="test_connection">
@@ -108,6 +114,31 @@
       <input type="hidden" name="endpoint" value="<TMPL_VAR ENDPOINT ESCAPE=HTML>">
       <button class="lb-button" type="submit"><TMPL_VAR ACTION.TEST></button>
     </form>
+    </div>
+  </details>
+
+  <details id="mqtt" class="mcp-card" data-persist-collapse open>
+    <summary><TMPL_VAR MQTT.TITLE></summary>
+    <div class="mcp-collapsible-content">
+      <form class="mcp-form" method="post" action="index.cgi" data-ajax="save_mqtt_config">
+        <input type="hidden" name="action" value="save_mqtt_config">
+        <label><input name="mqtt_enabled" type="checkbox" value="1" <TMPL_IF MQTT_ENABLED>checked</TMPL_IF>> <TMPL_VAR MQTT.ENABLED></label>
+        <label><input id="mqtt-use-loxberry-gateway" name="mqtt_use_loxberry_gateway" type="checkbox" value="1" <TMPL_IF MQTT_USE_LOXBERRY_GATEWAY>checked</TMPL_IF>> <TMPL_VAR MQTT.USE_LOXBERRY_GATEWAY></label>
+        <p class="mcp-help"><TMPL_VAR MQTT.GATEWAY_HELP></p>
+        <div class="mcp-grid">
+          <label class="mcp-field"><span><TMPL_VAR MQTT.CUSTOM_HOST></span><input id="mqtt-host" name="mqtt_host" type="text" maxlength="253" value="<TMPL_VAR MQTT_HOST ESCAPE=HTML>"></label>
+          <label class="mcp-field"><span><TMPL_VAR MQTT.CUSTOM_PORT></span><input id="mqtt-port" name="mqtt_port" type="number" min="1" max="65535" value="<TMPL_VAR MQTT_PORT ESCAPE=HTML>" required></label>
+          <label class="mcp-field"><span><TMPL_VAR MQTT.USERNAME></span><input id="mqtt-username" name="mqtt_username" type="text" maxlength="256" value="<TMPL_VAR MQTT_USERNAME ESCAPE=HTML>"></label>
+          <label class="mcp-field"><span><TMPL_VAR MQTT.PASSWORD></span><input id="mqtt-password" name="mqtt_password" type="password" maxlength="1024" autocomplete="new-password" placeholder="<TMPL_VAR MQTT.PASSWORD_PLACEHOLDER ESCAPE=HTML>"></label>
+        </div>
+        <p id="mqtt-password-status" class="mcp-help" hidden><TMPL_VAR MQTT.PASSWORD_CONFIGURED></p>
+        <div class="mcp-grid">
+          <label class="mcp-field"><span><TMPL_VAR MQTT.ROOT_TOPIC></span><input name="mqtt_root_topic" type="text" pattern="[A-Za-z0-9_/-]+" maxlength="128" value="<TMPL_VAR MQTT_ROOT_TOPIC ESCAPE=HTML>" required></label>
+          <label class="mcp-field"><span><TMPL_VAR MQTT.HEARTBEAT></span><input name="mqtt_heartbeat_seconds" type="number" min="10" max="3600" value="<TMPL_VAR MQTT_HEARTBEAT_SECONDS ESCAPE=HTML>" required></label>
+        </div>
+        <p class="mcp-help"><TMPL_VAR MQTT.CREDENTIALS_HELP></p>
+        <button class="lb-button" type="submit"><TMPL_VAR ACTION.SAVE_MQTT></button>
+      </form>
     </div>
   </details>
 
@@ -299,6 +330,14 @@
   const servicePid = document.getElementById('service-pid');
   const serviceName = document.getElementById('service-name');
   const serviceInstalled = document.getElementById('service-installed');
+  const serviceEnabled = document.getElementById('service-enabled');
+  const serviceEnabledInput = document.getElementById('service-enabled-input');
+  const mqttUseLoxberryGateway = document.getElementById('mqtt-use-loxberry-gateway');
+  const mqttHost = document.getElementById('mqtt-host');
+  const mqttPort = document.getElementById('mqtt-port');
+  const mqttUsername = document.getElementById('mqtt-username');
+  const mqttPassword = document.getElementById('mqtt-password');
+  const mqttPasswordStatus = document.getElementById('mqtt-password-status');
   const serviceConfirm = document.getElementById('service-confirm');
   const serviceConfirmMessage = document.getElementById('service-confirm-message');
   const loggingControls = document.getElementById('logging-controls');
@@ -323,6 +362,12 @@
     loggingCurrent.textContent = loggingControls.dataset[
       `level${level[0].toUpperCase()}${level.slice(1)}`
     ];
+  };
+  const updateMqttBrokerFields = () => {
+    const useGateway = mqttUseLoxberryGateway.checked;
+    for (const field of [mqttHost, mqttPort, mqttUsername, mqttPassword]) {
+      field.disabled = useGateway;
+    }
   };
   const syncTestEndpoint = () => { testEndpoint.value = miniserverEndpoint.value; };
   const syncOperateDependency = () => {
@@ -481,11 +526,12 @@
     servicePid.textContent = pid;
     serviceName.textContent = String(service.name || 'loxberry-mcpserver.service');
     serviceInstalled.textContent = installed ? serviceSection.dataset.yes : serviceSection.dataset.no;
+    const enabled = Boolean(service.enabled);
+    serviceEnabled.textContent = enabled ? serviceSection.dataset.yes : serviceSection.dataset.no;
+    serviceEnabledInput.checked = enabled;
     for (const form of document.querySelectorAll('form[data-service-command]')) {
       const command = form.dataset.serviceCommand;
-      const available = command === 'start'
-        ? installed && !active && ['inactive', 'failed'].includes(activeState)
-        : installed && active;
+      const available = command === 'restart' && installed && active && enabled;
       form.hidden = !available;
       const button = form.querySelector('button[type="submit"]');
       button.disabled = serviceActionRunning || !available;
@@ -494,7 +540,7 @@
     }
   };
   const loadInitialState = async () => {
-    const body = new FormData();
+    const body = new URLSearchParams();
     body.set('action', 'page_state');
     body.set('ajax', '1');
     try {
@@ -502,6 +548,8 @@
       renderService(result.data.service);
       serviceSection.setAttribute('aria-busy', 'false');
       updateCertificate(result.data.certificate);
+      mqttPasswordStatus.hidden = !Boolean(result.data.mqtt_password_configured);
+      updateMqttBrokerFields();
       if (Array.isArray(result.data.sessions)) updateSessions(result.data.sessions);
       if (Array.isArray(result.data.loxberry_bindings)) updateLoxberryBindings(result.data.loxberry_bindings);
       if (Array.isArray(result.data.loxberry_operate_bindings)) updateLoxberryOperateBindings(result.data.loxberry_operate_bindings);
@@ -523,7 +571,7 @@
     }
   };
   const serviceConfirmMessages = {
-    stop: '<TMPL_VAR STATUS.CONFIRM_STOP ESCAPE=JS>',
+    disable: '<TMPL_VAR STATUS.CONFIRM_DISABLE ESCAPE=JS>',
     restart: '<TMPL_VAR STATUS.CONFIRM_RESTART ESCAPE=JS>',
   };
   serviceConfirm.addEventListener('close', () => {
@@ -547,7 +595,7 @@
     }
     servicePollInFlight = true;
     try {
-      const body = new FormData();
+    const body = new URLSearchParams();
       body.set('action', 'service_status');
       body.set('ajax', '1');
       const result = await postAjax(body, 7000);
@@ -576,7 +624,7 @@
       while (certificateRenewalState && Date.now() < deadline) {
         await new Promise((resolve) => window.setTimeout(resolve, 2000));
         try {
-          const body = new FormData();
+          const body = new URLSearchParams();
           body.set('action', 'certificate_status');
           body.set('ajax', '1');
           const result = await postAjax(body, 5000);
@@ -821,7 +869,7 @@
     sessionPollInFlight = true;
     let expectedSessionDataVersion = -1;
     try {
-      const body = new FormData();
+      const body = new URLSearchParams();
       body.set('action', 'list_sessions');
       body.set('ajax', '1');
       expectedSessionDataVersion = sessionDataVersion;
@@ -847,8 +895,12 @@
   };
   sessionsSection.addEventListener('toggle', () => scheduleSessionPoll(sessionsSection.open ? 0 : 10000));
   loadInitialState();
+  mqttUseLoxberryGateway.addEventListener('change', updateMqttBrokerFields);
+  updateMqttBrokerFields();
   const actionTimeout = (action) => ({
-    save_config: 90000,
+    save_mcp_config: 90000,
+    save_mqtt_config: 75000,
+    set_service_enabled: 75000,
     set_logging: 75000,
     revoke_session: 75000,
     revoke_all: 75000,
@@ -865,11 +917,13 @@
     if (!form) return;
       event.preventDefault();
       const serviceCommand = form.dataset.serviceCommand;
-      if (form.dataset.ajax === 'service_action'
-          && serviceConfirmMessages[serviceCommand]
+      const confirmationKey = form.dataset.ajax === 'set_service_enabled' && !serviceEnabledInput.checked
+        ? 'disable' : serviceCommand;
+      if ((form.dataset.ajax === 'service_action' || form.dataset.ajax === 'set_service_enabled')
+          && serviceConfirmMessages[confirmationKey]
           && form.dataset.confirmed !== 'true') {
         pendingServiceForm = form;
-        serviceConfirmMessage.textContent = serviceConfirmMessages[serviceCommand];
+        serviceConfirmMessage.textContent = serviceConfirmMessages[confirmationKey];
         serviceConfirm.returnValue = '';
         serviceConfirm.showModal();
         return;
@@ -877,7 +931,7 @@
       delete form.dataset.confirmed;
       const button = form.querySelector('button[type="submit"]');
       let keepButtonDisabled = false;
-      if (form.dataset.ajax === 'service_action') {
+      if (form.dataset.ajax === 'service_action' || form.dataset.ajax === 'set_service_enabled') {
         serviceActionRunning = true;
         window.clearTimeout(servicePollTimer);
         servicePollTimer = null;
@@ -895,10 +949,10 @@
       window.clearTimeout(hideStatusTimers.get(status));
       status.hidden = false;
       status.dataset.kind = '';
-      status.textContent = form.dataset.ajax === 'service_action'
+      status.textContent = (form.dataset.ajax === 'service_action' || form.dataset.ajax === 'set_service_enabled')
         ? '<TMPL_VAR STATUS.ACTION_RUNNING ESCAPE=JS>'
         : '<TMPL_VAR AJAX.WORKING ESCAPE=JS>';
-      const body = new FormData(form);
+      const body = new URLSearchParams(new FormData(form));
       body.set('ajax', '1');
       try {
         const result = await postAjax(body, actionTimeout(form.dataset.ajax));
@@ -920,7 +974,7 @@
           pendingSessionActionButtons.add(button);
         }
         if (result.data.certificate) updateCertificate(result.data.certificate);
-        if (form.dataset.ajax === 'save_config') {
+        if (form.dataset.ajax === 'save_mcp_config') {
           const savedEndpoint = result.data.configuration.loxone.endpoint;
           miniserverEndpoint.value = savedEndpoint;
           explorerLink.href = `${window.location.origin}${explorerPath}`;
@@ -939,7 +993,7 @@
         else if (error instanceof TypeError) status.textContent = '<TMPL_VAR AJAX.NETWORK ESCAPE=JS>';
         else status.textContent = error instanceof Error ? error.message : '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
       } finally {
-        if (form.dataset.ajax === 'service_action') {
+        if (form.dataset.ajax === 'service_action' || form.dataset.ajax === 'set_service_enabled') {
           serviceActionRunning = false;
           renderService(lastService);
           scheduleServicePoll(0);

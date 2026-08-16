@@ -114,6 +114,8 @@ fi
     echo 'loxberry ALL=(root) NOPASSWD: /bin/systemctl start loxberry-mcpserver.service'
     echo 'loxberry ALL=(root) NOPASSWD: /bin/systemctl stop loxberry-mcpserver.service'
     echo 'loxberry ALL=(root) NOPASSWD: /bin/systemctl restart loxberry-mcpserver.service'
+    echo 'loxberry ALL=(root) NOPASSWD: /bin/systemctl enable loxberry-mcpserver.service'
+    echo 'loxberry ALL=(root) NOPASSWD: /bin/systemctl disable loxberry-mcpserver.service'
     echo 'loxberry ALL=(root) NOPASSWD: /bin/systemctl is-active --quiet loxberry-mcpserver.service'
     echo 'loxberry ALL=(root) NOPASSWD: /usr/local/sbin/loxberry-mcpserver-renew-web-certificate ""'
 } > "$sudoers"

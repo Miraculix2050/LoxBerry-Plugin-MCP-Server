@@ -43,6 +43,7 @@ from mcpserver.loxberry.diagnostics import LoxBerryDiagnostics
 from mcpserver.loxone.client import MiniserverEndpoint
 from mcpserver.loxone.runtime import LoxoneRuntime
 from mcpserver.loxone.statistics import StatisticsCache
+from mcpserver.mqtt_health import MqttHealthPublisher
 from mcpserver.settings import ServerSettings
 from mcpserver.skill_delivery import SERVER_INSTRUCTIONS, register_skill_resource
 from mcpserver.tools import (
@@ -277,6 +278,7 @@ class _Phase0TokenVerifier(TokenVerifier):
 async def _runtime_lifespan(
     runtime: LoxoneRuntime | None,
     remote_revocation: tuple[MiniserverEndpoint, EncryptedLoxoneTokenStore, float] | None = None,
+    mqtt_health: MqttHealthPublisher | None = None,
 ) -> AsyncIterator[None]:
     """Close all live Miniserver sessions when the HTTP application stops."""
     worker = (
@@ -284,6 +286,8 @@ async def _runtime_lifespan(
         if remote_revocation is not None
         else None
     )
+    if mqtt_health is not None:
+        await mqtt_health.start()
     try:
         yield
     finally:
@@ -293,6 +297,8 @@ async def _runtime_lifespan(
                 await worker
         if runtime is not None:
             await runtime.close()
+        if mqtt_health is not None:
+            await mqtt_health.close()
 
 
 def create_server(settings: ServerSettings) -> FastMCP:
@@ -310,6 +316,11 @@ def create_server(settings: ServerSettings) -> FastMCP:
     loxberry_runtime: LoxBerryReadRuntime | None = None
     loxberry_operate_runtime: LoxBerryOperateRuntime | None = None
     statistics_cache: StatisticsCache | None = None
+    mqtt_health: MqttHealthPublisher | None = None
+    if settings.plugin_config is not None and settings.plugin_config.mqtt_enabled:
+        home = Path(os.getenv("LBHOMEDIR", "/opt/loxberry"))
+        if home.is_absolute():
+            mqtt_health = MqttHealthPublisher(settings.plugin_config, home=home)
     if settings.phase0_auth is not None:
         auth_store = AtomicJsonAuthStore(settings.phase0_auth.store_path)
         loxone_store: EncryptedLoxoneTokenStore | None = None
@@ -474,6 +485,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
             )
             if settings.phase0_auth is not None and loxone_store is not None
             else None,
+            mqtt_health,
         ),
     )
     server.forwarded_allowed_hosts = settings.allowed_hosts

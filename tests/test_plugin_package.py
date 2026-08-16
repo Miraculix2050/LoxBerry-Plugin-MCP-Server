@@ -334,6 +334,8 @@ def test_phase_four_upgrade_migrates_configuration_and_private_cache() -> None:
 
     assert 'document.get("schema_version") == 1' in hook
     assert 'document["schema_version"] = 2' in hook
+    assert 'document.get("schema_version") == 5' in hook
+    assert 'document["schema_version"] = 6' in hook
     assert 'prepare_private_directory "$plugin_data/statistics-cache" || exit 2' in hook
     assert 'python3 "$root_path_helper" statistics-cache' in postroot
     assert "os.O_NOFOLLOW" in helper
@@ -370,7 +372,7 @@ def test_postroot_keeps_installer_alive_during_apache_activation() -> None:
     assert "/usr/local/sbin/loxberry-mcpserver-renew-web-certificate" in hook
     assert 'NOPASSWD: /usr/local/sbin/loxberry-mcpserver-renew-web-certificate ""' in hook
     assert "renew-web-certificate *" not in hook
-    for action in ("start", "stop", "restart"):
+    for action in ("start", "stop", "restart", "enable", "disable"):
         assert f"NOPASSWD: /bin/systemctl {action} loxberry-mcpserver.service" in hook
     assert "NOPASSWD: /bin/systemctl * loxberry-mcpserver.service" not in hook
     assert "NOPASSWD: /bin/systemctl start *" not in hook
@@ -391,6 +393,9 @@ def test_postroot_keeps_installer_alive_during_apache_activation() -> None:
     assert "@LOCAL_IP_HOST@" in unit
     assert "https://@LOCAL_IP_HOST@" in unit
     assert "Environment=MCPSERVER_LOG_FILE=@LOG_DIR@/service.log" in unit
+    assert (
+        "Environment=MCPSERVER_MQTT_CREDENTIALS=@DATA_DIR@/auth/mqtt-credentials.json.enc" in unit
+    )
     assert "StandardOutput=journal" in unit
     assert "StandardError=journal" in unit
     assert "StandardOutput=append:@LOG_DIR@/service.log" not in unit

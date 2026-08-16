@@ -28,7 +28,16 @@
   "cache": {
     "statistics_memory_max_mib": 128
   },
-  "schema_version": 4,
+  "mqtt": {
+    "enabled": false,
+    "heartbeat_seconds": 60,
+    "root_topic": "mcpserver",
+    "use_loxberry_gateway": true,
+    "host": "",
+    "port": 1883,
+    "username": ""
+  },
+  "schema_version": 6,
   "server": {
     "enabled": false,
     "public_origin": ""
