@@ -270,11 +270,24 @@ def test_upgrade_preserves_configuration_in_plugin_data() -> None:
     )
 
 
-def test_postupgrade_removes_legacy_per_request_admin_logs() -> None:
+def test_upgrade_preserves_native_admin_ui_logs() -> None:
     postupgrade = (ROOT / "postupgrade.sh").read_text(encoding="utf-8")
 
-    assert "${LBHOMEDIR:-/opt/loxberry}/log/plugins/$actual_folder" in postupgrade
-    assert "-name '*_admin-ui.log' -delete" in postupgrade
+    assert "admin-ui.log" not in postupgrade
+    assert "-delete" not in postupgrade
+
+
+def test_postinstall_creates_a_native_admin_ui_log_for_clean_installs() -> None:
+    postinstall = (ROOT / "postinstall.sh").read_text(encoding="utf-8")
+
+    assert "is_upgrade=0" in postinstall
+    assert 'if [ -d "$upgrade_backup_dir" ]; then' in postinstall
+    assert 'if [ "$is_upgrade" -eq 0 ]; then' in postinstall
+    assert 'name => "admin-ui"' in postinstall
+    assert "package => $folder" in postinstall
+    assert "logdir => $logdir" in postinstall
+    assert "loglevel => 7" in postinstall
+    assert "component=admin_ui outcome=initialized" in postinstall
 
 
 def test_lifecycle_hooks_reject_an_unsafe_plugin_folder() -> None:

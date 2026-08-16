@@ -23,6 +23,14 @@ def test_help_and_explorer_link_to_static_schema_reference() -> None:
     assert "ACTION.SCHEMA_REFERENCE" in explorer
 
 
+def test_schema_reference_link_label_is_concise_in_both_languages() -> None:
+    german = (ROOT / "templates" / "lang" / "language_de.ini").read_text(encoding="utf-8")
+    english = (ROOT / "templates" / "lang" / "language_en.ini").read_text(encoding="utf-8")
+
+    assert "SCHEMA_REFERENCE=Schema-Referenz öffnen" in german
+    assert "SCHEMA_REFERENCE=Open schema reference" in english
+
+
 def run_core(expression: str) -> object:
     node = shutil.which("node")
     if node is None:

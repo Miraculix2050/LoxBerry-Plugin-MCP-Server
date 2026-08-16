@@ -27,6 +27,10 @@ plugin_log="$LBPLOG/$actual_folder"
 config_file="$plugin_config/mcpserver.json"
 upgrade_backup_dir="$installer_root/.mcpserver-upgrade"
 upgrade_backup="$upgrade_backup_dir/mcpserver.json"
+is_upgrade=0
+if [ -d "$upgrade_backup_dir" ]; then
+    is_upgrade=1
+fi
 venv="$plugin_data/venv"
 new_venv="$plugin_data/.venv.new.$$"
 old_venv="$plugin_data/.venv.previous.$$"
@@ -88,5 +92,18 @@ trap - EXIT
 
 chown -R loxberry:loxberry "$plugin_config" "$plugin_data" "$plugin_log"
 chmod 700 "$plugin_data/venv" "$plugin_data/auth"
+if [ "$is_upgrade" -eq 0 ]; then
+    perl -I"$LBHOMEDIR/libs/perllib" -MLoxBerry::Log -e '
+        my ($folder, $logdir) = @ARGV;
+        my $log = LoxBerry::Log->new(
+            name => "admin-ui",
+            package => $folder,
+            logdir => $logdir,
+            addtime => 1,
+            loglevel => 7,
+        );
+        $log->INF("component=admin_ui outcome=initialized");
+    ' "$actual_folder" "$plugin_log" || exit 2
+fi
 echo "<OK> Python runtime installed offline for plugin folder $actual_folder."
 exit 0
