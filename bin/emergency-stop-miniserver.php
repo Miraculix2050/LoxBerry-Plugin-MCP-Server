@@ -5,7 +5,7 @@ require_once "loxberry_system.php";
 
 $endpoint = $argv[1] ?? "";
 if (!is_string($endpoint) || strlen($endpoint) > 512) { exit(2); }
-$servers = LBSystem::get_miniservers();
+$servers = LoxBerry::System::get_miniservers();
 foreach ($servers as $server) {
     if (!is_array($server)) { continue; }
     $host = $server['Ipaddress'] ?? '';
