@@ -925,6 +925,17 @@
   };
   sessionsSection.addEventListener('toggle', () => scheduleSessionPoll(sessionsSection.open ? 0 : 10000));
   loadInitialState();
+  for (const field of [mqttHost, mqttPort, mqttUsername]) {
+    field.addEventListener('input', () => {
+      if (!mqttUseLoxberryGateway.checked) {
+        mqttCustomBroker = {
+          host: mqttHost.value,
+          port: mqttPort.value,
+          username: mqttUsername.value,
+        };
+      }
+    });
+  }
   mqttUseLoxberryGateway.addEventListener('change', updateMqttBrokerFields);
   updateMqttBrokerFields();
   const actionTimeout = (action) => ({

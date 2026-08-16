@@ -84,6 +84,8 @@ def test_initial_page_renders_configuration_before_loading_dynamic_state() -> No
     assert "body.set('action', 'page_state')" in template
     assert "const loadInitialState" in template
     assert "loadInitialState();" in template
+    assert "field.addEventListener('input'" in template
+    assert "if (!mqttUseLoxberryGateway.checked)" in template
     assert 'aria-busy="true"' in template
     assert '<strong id="service-active-state"><TMPL_VAR AJAX.WORKING></strong>' in template
     assert '<strong id="service-sub-state"><TMPL_VAR AJAX.WORKING></strong>' in template
