@@ -1,6 +1,6 @@
 ---
 name: using-loxberry-mcp
-description: Guides safe use of the LoxBerry MCP Server to inspect Loxone rooms, controls, states, weather, history and statistics, diagnose LoxBerry status, clear the plugin-owned statistics cache, and explicitly operate supported Loxone controls. Use for Loxone MCP questions, LoxBerry diagnostics, history, ambiguous names, stale state, pagination, or unconfirmed operations.
+description: Guides safe use of the LoxBerry MCP Server to inspect Loxone rooms, controls, states, weather, history and statistics, diagnose LoxBerry status, clear the plugin-owned statistics cache, and explicitly operate supported Loxone controls. Use for Loxone MCP questions, LoxBerry diagnostics, history, ambiguous names, stale state, pagination, unconfirmed operations, or an emergency-stop rejection.
 ---
 
 # Using LoxBerry MCP
@@ -115,6 +115,31 @@ Optional scopes may already be present while their administrator policy gate is
 disabled. In that case the relevant tool returns `permission_denied`; explain
 which global or local approval is missing and retry only after the administrator
 has granted it. Do not ask the user to create a different authorization path.
+
+## Emergency stop
+
+An administrator can configure a visible digital Loxone Virtual Status as the
+MCP emergency-stop signal. Tool calls are enabled only after its monitor has
+confirmed value `1`. A confirmed `0`, an unknown initial value, a connection
+loss, or an invalid monitor configuration blocks tool calls fail closed. When no
+emergency-stop signal is configured, tool calls remain enabled.
+
+If a call returns a JSON-RPC error with `error.message` equal to
+`emergency_stop_active`, do not retry it, request a new OAuth authorization, or
+attempt a workaround through another MCP tool. Use these response fields when
+reporting the condition:
+
+- `error.data.status` is `disabled` for a confirmed signal value of `0`, or
+  `unknown` when the server has no confirmed safe value.
+- `error.data.observed_at` is the UTC time at which the server rejected the
+  call.
+- `error.data.blocked_since` is the UTC time at which the current blocking
+  state began.
+
+Recovery is external to MCP: an administrator must restore the configured
+Virtual Status to `1`, or remove the selected signal in the LoxBerry Admin UI.
+MCP discovery, OAuth, and the HTTP health endpoint remain reachable, but no MCP
+tool call can inspect or alter the emergency-stop condition while it is active.
 
 ## Read history and statistics
 

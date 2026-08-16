@@ -403,6 +403,8 @@ async def test_bundled_skill_is_published_as_an_mcp_resource() -> None:
     assert "It requires `loxone:history`," in contents[0].content
     assert "Treat a timeout as an unknown outcome" in contents[0].content
     assert "failed or uncertain cache clear" in contents[0].content
+    assert "`emergency_stop_active`" in contents[0].content
+    assert "Recovery is external to MCP" in contents[0].content
 
 
 def test_oauth_routes_and_protected_resource_metadata_are_exact(tmp_path: Path) -> None:
