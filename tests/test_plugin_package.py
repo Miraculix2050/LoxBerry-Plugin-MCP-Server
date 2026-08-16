@@ -251,6 +251,12 @@ def test_emergency_stop_helper_uses_the_supported_loxberry_php_sdk() -> None:
     assert "$server['Pass_RAW'] ?? $server['Pass']" in helper
 
 
+def test_admin_cli_provides_the_plugin_bin_directory() -> None:
+    admin_cli = (ROOT / "bin/mcpserver-admin").read_text(encoding="utf-8")
+
+    assert 'export MCPSERVER_BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"' in admin_cli
+
+
 def test_upgrade_preserves_configuration_in_plugin_data() -> None:
     preupgrade = (ROOT / "preupgrade.sh").read_text(encoding="utf-8")
     postinstall = (ROOT / "postinstall.sh").read_text(encoding="utf-8")

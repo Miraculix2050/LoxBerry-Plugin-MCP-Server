@@ -1,3 +1,4 @@
 #!/bin/bash
 set -u
+export MCPSERVER_BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 exec "${LBPDATA:?}/venv/bin/python" -m mcpserver.admin
