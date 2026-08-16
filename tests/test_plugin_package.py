@@ -204,7 +204,7 @@ def test_v4_package_manifest_is_present() -> None:
         "postroot.sh",
         "postupgrade.sh",
         "uninstall/uninstall.sh",
-        "bin/emergency-stop-miniserver.pl",
+        "bin/emergency-stop-miniserver.php",
         "bin/healthcheck",
         "bin/renew-web-certificate",
         "bin/root-lifecycle-paths.py",
@@ -242,14 +242,13 @@ def test_healthcheck_uses_loxberry_plugin_protocol() -> None:
     assert "No repair action was taken." in healthcheck
 
 
-def test_emergency_stop_helper_uses_the_supported_loxberry_perl_sdk() -> None:
-    helper = (ROOT / "bin/emergency-stop-miniserver.pl").read_text(encoding="utf-8")
+def test_emergency_stop_helper_uses_the_supported_loxberry_php_sdk() -> None:
+    helper = (ROOT / "bin/emergency-stop-miniserver.php").read_text(encoding="utf-8")
 
-    assert "use LoxBerry::System;" in helper
-    assert "LoxBerry::System::get_miniservers()" in helper
-    assert "$server->{IPAddress}" in helper
-    assert "$server->{Admin}" in helper
-    assert "$server->{Pass_RAW} // $server->{Pass}" in helper
+    assert "LBSystem::get_miniservers()" in helper
+    assert "$server['IPAddress']" in helper
+    assert "$server['Admin_RAW'] ?? $server['Admin']" in helper
+    assert "$server['Pass_RAW'] ?? $server['Pass']" in helper
 
 
 def test_upgrade_preserves_configuration_in_plugin_data() -> None:
