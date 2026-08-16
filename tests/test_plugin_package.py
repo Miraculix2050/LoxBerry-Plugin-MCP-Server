@@ -242,11 +242,11 @@ def test_healthcheck_uses_loxberry_plugin_protocol() -> None:
     assert "No repair action was taken." in healthcheck
 
 
-def test_emergency_stop_helper_uses_the_supported_loxberry_api() -> None:
+def test_emergency_stop_helper_uses_the_supported_php_loxberry_api() -> None:
     helper = (ROOT / "bin/emergency-stop-miniserver.php").read_text(encoding="utf-8")
 
-    assert "LoxBerry::System::get_miniservers()" in helper
-    assert "LBSystem::get_miniservers()" not in helper
+    assert "LBSystem::get_miniservers()" in helper
+    assert "LoxBerry::System::get_miniservers()" not in helper
 
 
 def test_upgrade_preserves_configuration_in_plugin_data() -> None:
