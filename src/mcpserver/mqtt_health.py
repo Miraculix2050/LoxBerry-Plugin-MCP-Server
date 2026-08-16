@@ -299,9 +299,7 @@ class MqttHealthPublisher:
             while True:
                 if not self._clients:
                     await asyncio.sleep(retry_seconds)
-                    retry_seconds = (
-                        1 if self._connect() else min(retry_seconds * 2, 60)
-                    )
+                    retry_seconds = 1 if self._connect() else min(retry_seconds * 2, 60)
                     continue
                 self.publish()
                 await asyncio.sleep(self._config.mqtt_heartbeat_seconds)
