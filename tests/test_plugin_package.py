@@ -242,13 +242,14 @@ def test_healthcheck_uses_loxberry_plugin_protocol() -> None:
     assert "No repair action was taken." in healthcheck
 
 
-def test_emergency_stop_helper_uses_the_supported_loxberry_php_sdk() -> None:
+def test_emergency_stop_helper_uses_the_supported_loxberry_perl_sdk() -> None:
     helper = (ROOT / "bin/emergency-stop-miniserver.php").read_text(encoding="utf-8")
 
-    assert "LBSystem::get_miniservers()" in helper
-    assert "$server['IPAddress']" in helper
-    assert "$server['Admin_RAW'] ?? $server['Admin']" in helper
-    assert "$server['Pass_RAW'] ?? $server['Pass']" in helper
+    assert "use LoxBerry::System;" in helper
+    assert "LoxBerry::System::get_miniservers()" in helper
+    assert "$miniserver->{IPAddress}" in helper
+    assert "$miniserver->{Admin}" in helper
+    assert "$miniserver->{Pass_RAW}" in helper
 
 
 def test_admin_cli_provides_the_plugin_bin_directory() -> None:

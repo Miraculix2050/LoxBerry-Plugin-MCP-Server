@@ -1,29 +1,32 @@
-#!/usr/bin/php
-<?php
-/* Read one configured Miniserver through the supported LoxBerry SDK only. */
-require_once "loxberry_system.php";
+#!/usr/bin/perl
+use strict;
+use warnings;
 
-$endpoint = $argv[1] ?? "";
-if (!is_string($endpoint) || strlen($endpoint) > 512) { exit(2); }
-$servers = LBSystem::get_miniservers();
-foreach ($servers as $server) {
-    if (!is_array($server)) { continue; }
-    $host = $server['IPAddress'] ?? '';
-    if (!is_string($host) || $host === '') { continue; }
-    if (str_contains($host, ':') && !str_starts_with($host, '[')) { $host = "[$host]"; }
-    $scheme = $server['Transport'] ?? (($server['PreferHttps'] ?? false) ? 'https' : 'http');
-    if ($scheme !== 'http' && $scheme !== 'https') { continue; }
-    $port = $scheme === 'https' ? ($server['PortHttps'] ?? 443) : ($server['Port'] ?? 80);
-    if (!is_int($port) && !ctype_digit((string)$port)) { continue; }
-    $port = (int)$port;
-    if ($port < 1 || $port > 65535) { continue; }
-    $defaultPort = $scheme === 'https' ? 443 : 80;
-    $candidate = $scheme . '://' . $host . ($port === $defaultPort ? '' : ':' . $port);
-    if ($candidate !== $endpoint) { continue; }
-    $username = $server['Admin_RAW'] ?? $server['Admin'] ?? '';
-    $password = $server['Pass_RAW'] ?? $server['Pass'] ?? '';
-    if (!is_string($username) || !is_string($password) || $username === '' || $password === '') { exit(3); }
-    echo json_encode(['username' => $username, 'password' => $password], JSON_UNESCAPED_SLASHES);
-    exit(0);
+# Read one configured Miniserver through the supported LoxBerry SDK only.
+use LoxBerry::System;
+use JSON;
+
+my $endpoint = shift // '';
+exit 2 if @ARGV || length($endpoint) > 512;
+
+my %miniservers = LoxBerry::System::get_miniservers();
+for my $number (sort { $a <=> $b } keys %miniservers) {
+    my $miniserver = $miniservers{$number};
+    next if ref($miniserver) ne 'HASH';
+    my $host = $miniserver->{IPAddress} // '';
+    next if $host eq '';
+    $host = "[$host]" if $host =~ /:/ && $host !~ /^\[/;
+    my $scheme = $miniserver->{Transport} // ($miniserver->{PreferHttps} ? 'https' : 'http');
+    next if $scheme ne 'http' && $scheme ne 'https';
+    my $port = $scheme eq 'https' ? ($miniserver->{PortHttps} // 443) : ($miniserver->{Port} // 80);
+    next if $port !~ /^\d+$/ || $port < 1 || $port > 65535;
+    my $default_port = $scheme eq 'https' ? 443 : 80;
+    my $candidate = $scheme . '://' . $host . ($port == $default_port ? '' : ':' . $port);
+    next if $candidate ne $endpoint;
+    my $username = $miniserver->{Admin} // '';
+    my $password = $miniserver->{Pass_RAW} // $miniserver->{Pass} // '';
+    exit 3 if $username eq '' || $password eq '';
+    print JSON::to_json({ username => $username, password => $password }, { canonical => 1 });
+    exit 0;
 }
-exit(4);
+exit 4;

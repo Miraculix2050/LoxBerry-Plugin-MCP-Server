@@ -58,7 +58,7 @@ class EmergencyStopMonitor:
             raise RuntimeError("provider unavailable")
         result = await asyncio.to_thread(
             subprocess.run,
-            ["php", str(helper), self.config.loxone_endpoint],
+            ["perl", str(helper), self.config.loxone_endpoint],
             check=False,
             capture_output=True,
             text=True,
