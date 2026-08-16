@@ -417,6 +417,9 @@ def test_postroot_keeps_installer_alive_during_apache_activation() -> None:
     assert "@LOCAL_IP_HOST@" in unit
     assert "https://@LOCAL_IP_HOST@" in unit
     assert "Environment=MCPSERVER_LOG_FILE=@LOG_DIR@/service.log" in unit
+    assert "Environment=MCPSERVER_BIN_DIR=@BIN_DIR@" in unit
+    assert 'plugin_bin="$LBPBIN/$actual_folder"' in hook
+    assert '-e "s|@BIN_DIR@|$plugin_bin|g"' in hook
     assert (
         "Environment=MCPSERVER_MQTT_CREDENTIALS=@DATA_DIR@/auth/mqtt-credentials.json.enc" in unit
     )

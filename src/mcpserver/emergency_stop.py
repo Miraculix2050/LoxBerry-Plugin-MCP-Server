@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import subprocess
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -17,6 +18,14 @@ from mcpserver.config import PluginConfig
 from mcpserver.loxone.client import LoxoneClient
 
 _LOGGER = logging.getLogger("mcpserver.emergency_stop")
+
+
+class _ProviderUnavailable(RuntimeError):
+    """Identify one fixed provider failure without exposing provider output."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__("provider unavailable")
+        self.reason = reason
 
 
 def _sorted_virtual_status_options(options: list[dict[str, str]]) -> list[dict[str, str]]:
@@ -73,26 +82,50 @@ class EmergencyStopMonitor:
 
     async def _credentials(self) -> tuple[str, str]:
         directory = Path(os.getenv("MCPSERVER_BIN_DIR", ""))
+        if not directory.is_absolute():
+            config_path = Path(os.getenv("MCPSERVER_CONFIG", ""))
+            plugin_folder = config_path.parent.name if config_path.is_absolute() else ""
+            home = Path(os.getenv("LBHOMEDIR", "/opt/loxberry"))
+            if re.fullmatch(r"[A-Za-z0-9_-]+", plugin_folder) and home.is_absolute():
+                directory = home / "bin" / "plugins" / plugin_folder
         helper = directory / "emergency-stop-miniserver.php"
         if not directory.is_absolute() or not helper.is_file():
-            raise RuntimeError("provider unavailable")
+            raise _ProviderUnavailable("helper_missing")
+        home = Path(os.getenv("LBHOMEDIR", "/opt/loxberry"))
+        perl_library = home / "libs" / "perllib"
+        if not home.is_absolute() or not perl_library.is_dir():
+            raise _ProviderUnavailable("perl_runtime_missing")
+        provider_environment = os.environ.copy()
+        provider_environment["LBHOMEDIR"] = str(home)
+        provider_environment["PERL5LIB"] = str(perl_library)
         result = await asyncio.to_thread(
             subprocess.run,
-            ["perl", str(helper), self.config.loxone_endpoint],
+            ["perl", "-I", str(perl_library), str(helper), self.config.loxone_endpoint],
             check=False,
             capture_output=True,
+            env=provider_environment,
             text=True,
             timeout=10,
         )
-        if result.returncode != 0 or len(result.stdout) > 4096:
-            raise RuntimeError("provider unavailable")
-        value = json.loads(result.stdout)
+        if result.returncode != 0:
+            reason = {
+                2: "request_rejected",
+                3: "credentials_missing",
+                4: "endpoint_not_found",
+            }.get(result.returncode, "helper_failed")
+            raise _ProviderUnavailable(reason)
+        if len(result.stdout) > 4096:
+            raise _ProviderUnavailable("response_oversized")
+        try:
+            value = json.loads(result.stdout)
+        except (json.JSONDecodeError, TypeError) as exc:
+            raise _ProviderUnavailable("response_invalid") from exc
         if (
             not isinstance(value, dict)
             or not isinstance(value.get("username"), str)
             or not isinstance(value.get("password"), str)
         ):
-            raise RuntimeError("provider unavailable")
+            raise _ProviderUnavailable("response_invalid")
         return value["username"], value["password"]
 
     async def _run(self) -> None:
@@ -101,6 +134,7 @@ class EmergencyStopMonitor:
         while True:
             token = None
             session = None
+            stage = "credentials"
             try:
                 username, password = await self._credentials()
                 client = LoxoneClient(
@@ -110,9 +144,13 @@ class EmergencyStopMonitor:
                     ),
                     timeout_seconds=self.config.connection_timeout,
                 )
+                stage = "token"
                 token = await client.acquire_token(username, password)
+                stage = "session"
                 session = await client.open_session(token)
+                stage = "structure"
                 structure = await session.load_structure()
+                stage = "selection"
                 control = next(
                     (
                         item
@@ -125,15 +163,24 @@ class EmergencyStopMonitor:
                 if control is None or len(control.state_uuids) != 1:
                     raise RuntimeError("selected status unavailable")
                 state_uuid = control.state_uuids[0][1]
+                stage = "subscription"
                 async for batch in session.state_events():
+                    stage = "events"
                     for event in batch:
                         if event.uuid == state_uuid:
                             self.apply(event.value)
             except asyncio.CancelledError:
                 raise
-            except Exception:
+            except Exception as exc:
                 self.unavailable()
-                _LOGGER.warning("component=emergency_stop outcome=monitor_unavailable")
+                failure_code = (
+                    f"{stage}_{exc.reason}" if isinstance(exc, _ProviderUnavailable) else stage
+                )
+                _LOGGER.warning(
+                    "component=emergency_stop outcome=monitor_unavailable code=%s error_type=%s",
+                    failure_code,
+                    type(exc).__name__,
+                )
                 await asyncio.sleep(5)
             finally:
                 if session is not None:

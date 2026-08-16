@@ -9,7 +9,7 @@ certificate_helper=/usr/local/sbin/loxberry-mcpserver-renew-web-certificate
 
 actual_folder=$3
 installer_root=${6:-}
-if [ -z "$actual_folder" ] || [ -z "$installer_root" ] || [ -z "${LBHOMEDIR:-}" ] || [ -z "${LBPCONFIG:-}" ] || [ -z "${LBPDATA:-}" ] || [ -z "${LBPLOG:-}" ]; then
+if [ -z "$actual_folder" ] || [ -z "$installer_root" ] || [ -z "${LBHOMEDIR:-}" ] || [ -z "${LBPBIN:-}" ] || [ -z "${LBPCONFIG:-}" ] || [ -z "${LBPDATA:-}" ] || [ -z "${LBPLOG:-}" ]; then
     echo "<ERROR> LoxBerry plugin paths are unavailable."
     exit 2
 fi
@@ -43,6 +43,7 @@ if [ ! -d "$installer_root" ] || [ ! -f "$installer_root/config/systemd/loxberry
     echo "<ERROR> Required package templates are unavailable."
     exit 2
 fi
+plugin_bin="$LBPBIN/$actual_folder"
 plugin_config="$LBPCONFIG/$actual_folder"
 plugin_data="$LBPDATA/$actual_folder"
 plugin_log="$LBPLOG/$actual_folder"
@@ -103,6 +104,7 @@ sed \
     -e "s|@CONFIG_DIR@|$plugin_config|g" \
     -e "s|@DATA_DIR@|$plugin_data|g" \
     -e "s|@LOG_DIR@|$plugin_log|g" \
+    -e "s|@BIN_DIR@|$plugin_bin|g" \
     "$installer_root/config/systemd/loxberry-mcpserver.service.in" > "$unit" || exit 2
 
 cp "$installer_root/config/apache/mcpserver.conf" "$apache" || exit 2
