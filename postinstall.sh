@@ -3,8 +3,17 @@ set -u
 
 actual_folder=$3
 installer_root=${6:-}
-if [ -z "$actual_folder" ] || [ -z "$installer_root" ] || [ -z "${LBPBIN:-}" ] || [ -z "${LBPCONFIG:-}" ] || [ -z "${LBPDATA:-}" ] || [ -z "${LBPLOG:-}" ]; then
+if [ -z "$actual_folder" ] || [ -z "$installer_root" ] || [ -z "${LBHOMEDIR:-}" ] || [ -z "${LBPBIN:-}" ] || [ -z "${LBPCONFIG:-}" ] || [ -z "${LBPDATA:-}" ] || [ -z "${LBPLOG:-}" ]; then
     echo "<ERROR> LoxBerry did not provide the plugin paths or actual folder."
+    exit 2
+fi
+case "$LBHOMEDIR" in
+    /*) ;;
+    *) echo "<ERROR> Invalid LoxBerry home directory."; exit 2 ;;
+esac
+loxberry_home=$(realpath -e -- "$LBHOMEDIR") || { echo "<ERROR> Invalid LoxBerry home directory."; exit 2; }
+if [ ! -d "$loxberry_home" ]; then
+    echo "<ERROR> Invalid LoxBerry home directory."
     exit 2
 fi
 case "$actual_folder" in
@@ -27,6 +36,10 @@ plugin_log="$LBPLOG/$actual_folder"
 config_file="$plugin_config/mcpserver.json"
 upgrade_backup_dir="$installer_root/.mcpserver-upgrade"
 upgrade_backup="$upgrade_backup_dir/mcpserver.json"
+is_upgrade=0
+if [ -d "$upgrade_backup_dir" ]; then
+    is_upgrade=1
+fi
 venv="$plugin_data/venv"
 new_venv="$plugin_data/.venv.new.$$"
 old_venv="$plugin_data/.venv.previous.$$"
@@ -88,5 +101,18 @@ trap - EXIT
 
 chown -R loxberry:loxberry "$plugin_config" "$plugin_data" "$plugin_log"
 chmod 700 "$plugin_data/venv" "$plugin_data/auth"
+if [ "$is_upgrade" -eq 0 ]; then
+    perl -I"$loxberry_home/libs/perllib" -MLoxBerry::Log -e '
+        my ($folder, $logdir) = @ARGV;
+        my $log = LoxBerry::Log->new(
+            name => "admin-ui",
+            package => $folder,
+            logdir => $logdir,
+            addtime => 1,
+            loglevel => 7,
+        );
+        $log->LOGSTART("component=admin_ui outcome=initialized");
+    ' "$actual_folder" "$plugin_log" || exit 2
+fi
 echo "<OK> Python runtime installed offline for plugin folder $actual_folder."
 exit 0

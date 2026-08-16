@@ -102,13 +102,5 @@ mkdir -p "$plugin_data/auth"
 chmod 700 "$plugin_data/auth"
 prepare_private_directory "$plugin_data/statistics-cache" || exit 2
 
-# The former CGI logger created one timestamped file per administrative action.
-# Removing those legacy files makes the new active file plus two backups the
-# immediate upper bound after an upgrade. Missing files are hidden by the
-# native LogManager even if an old volatile database entry still exists.
-plugin_log="${LBHOMEDIR:-/opt/loxberry}/log/plugins/$actual_folder"
-if [ -d "$plugin_log" ]; then
-    find "$plugin_log" -maxdepth 1 -type f -name '*_admin-ui.log' -delete || exit 2
-fi
 echo "<OK> Configuration and sessions retained."
 exit 0
