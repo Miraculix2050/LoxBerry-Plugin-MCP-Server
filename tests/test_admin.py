@@ -1042,7 +1042,7 @@ def test_concurrent_mqtt_saves_keep_broker_and_password_paired(
 
 @pytest.mark.parametrize(
     ("enabled", "commands"),
-    [(True, ["enable", "start"]), (False, ["stop", "disable"])],
+    [(True, ["enable", "start"]), (False, ["disable", "stop"])],
 )
 def test_master_service_state_uses_only_fixed_systemd_operations(
     enabled: bool, commands: list[str], monkeypatch: pytest.MonkeyPatch

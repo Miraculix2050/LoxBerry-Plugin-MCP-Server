@@ -294,9 +294,31 @@ class MqttHealthPublisher:
         return clients
 
     def _on_connect(self, index: int) -> None:
-        """Publish each retained value only after its broker connection is ready."""
+        """Replace Last-Will values as soon as each broker connection is ready."""
         self._connected_clients.add(index)
-        self.publish()
+        self._publish_startup_state()
+
+    def _publish_startup_state(self) -> None:
+        """Publish the service's own ready state without a systemd start race.
+
+        systemd marks this Type=simple unit active when its process has started,
+        while querying it during the first MQTT callback can still expose the
+        previous retained state.  The publisher itself is only started by that
+        process, so ``active/running`` is the accurate immediate replacement
+        for the Last-Will fallback.  Later heartbeats continue to use systemd
+        for the current state.
+        """
+        topics = self.topics
+        try:
+            if 0 in self._connected_clients:
+                self._clients[0].publish(
+                    topics["heartbeat"], str(loxone_epoch_seconds()), qos=1, retain=True
+                )
+                self._clients[0].publish(topics["system_state"], "active", qos=1, retain=True)
+            if 1 in self._connected_clients:
+                self._clients[1].publish(topics["substate"], "running", qos=1, retain=True)
+        except Exception:
+            _LOGGER.warning("event=mqtt_startup_publish_failed")
 
     async def _publish_loop(self) -> None:
         retry_seconds = 1

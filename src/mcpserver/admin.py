@@ -229,7 +229,11 @@ def _set_service_enabled(payload: object) -> dict[str, Any]:
     if not isinstance(enabled, bool):
         raise AdminError("service enabled state is invalid")
     previous = _service_status()
-    commands = ("enable", "start") if enabled else ("stop", "disable")
+    # This handler runs inside the service it controls.  Disabling first keeps
+    # the process alive long enough to persist the unit-file state and return
+    # an authoritative response to the Admin UI; stopping first can terminate
+    # the handler before it reaches ``disable``.
+    commands = ("enable", "start") if enabled else ("disable", "stop")
     try:
         for command in commands:
             _run_service_command(command)

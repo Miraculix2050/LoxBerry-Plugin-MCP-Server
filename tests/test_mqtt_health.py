@@ -194,6 +194,51 @@ def test_health_waits_for_each_broker_connection_before_publishing(tmp_path: Pat
     asyncio.run(exercise())
 
 
+def test_health_replaces_last_will_immediately_with_the_service_ready_state(tmp_path: Path) -> None:
+    path = tmp_path / "config" / "system"
+    path.mkdir(parents=True)
+    (path / "general.json").write_text(
+        json.dumps(
+            {
+                "Mqtt": {
+                    "Brokerhost": "broker",
+                    "Brokerport": 1883,
+                    "Brokeruser": "user",
+                    "Brokerpass": "secret",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    clients: list[_Client] = []
+    publisher = MqttHealthPublisher(
+        PluginConfig(mqtt_enabled=True),
+        home=tmp_path,
+        client_factory=lambda **kwargs: clients.append(_Client(**kwargs)) or clients[-1],
+        state_reader=lambda: ("unknown", "unknown"),
+    )
+
+    async def exercise() -> None:
+        await publisher.start()
+        clients[0].on_connect(clients[0])
+        clients[1].on_connect(clients[1])
+        await publisher.close()
+
+    asyncio.run(exercise())
+    assert (
+        "publish",
+        "mcpserver/health/system_state",
+        "active",
+        {"qos": 1, "retain": True},
+    ) in clients[0].calls
+    assert (
+        "publish",
+        "mcpserver/health/substate",
+        "running",
+        {"qos": 1, "retain": True},
+    ) in clients[1].calls
+
+
 def test_missing_gateway_schedules_a_bounded_retry(tmp_path: Path) -> None:
     publisher = MqttHealthPublisher(
         PluginConfig(mqtt_enabled=True),
