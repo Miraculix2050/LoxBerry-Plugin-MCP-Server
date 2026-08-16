@@ -204,6 +204,7 @@ def test_v4_package_manifest_is_present() -> None:
         "postroot.sh",
         "postupgrade.sh",
         "uninstall/uninstall.sh",
+        "bin/emergency-stop-miniserver.php",
         "bin/healthcheck",
         "bin/renew-web-certificate",
         "bin/root-lifecycle-paths.py",
@@ -239,6 +240,22 @@ def test_healthcheck_uses_loxberry_plugin_protocol() -> None:
     assert 'check "Plugin configuration" test -r "$plugin_config/mcpserver.json"' in healthcheck
     assert "curl --fail --silent --max-time 3 --output /dev/null" in healthcheck
     assert "No repair action was taken." in healthcheck
+
+
+def test_emergency_stop_helper_uses_the_supported_loxberry_perl_sdk() -> None:
+    helper = (ROOT / "bin/emergency-stop-miniserver.php").read_text(encoding="utf-8")
+
+    assert "use LoxBerry::System;" in helper
+    assert "LoxBerry::System::get_miniservers()" in helper
+    assert "$miniserver->{IPAddress}" in helper
+    assert "$miniserver->{Admin}" in helper
+    assert "$miniserver->{Pass_RAW}" in helper
+
+
+def test_admin_cli_provides_the_plugin_bin_directory() -> None:
+    admin_cli = (ROOT / "bin/mcpserver-admin").read_text(encoding="utf-8")
+
+    assert 'export MCPSERVER_BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"' in admin_cli
 
 
 def test_upgrade_preserves_configuration_in_plugin_data() -> None:
@@ -400,6 +417,9 @@ def test_postroot_keeps_installer_alive_during_apache_activation() -> None:
     assert "@LOCAL_IP_HOST@" in unit
     assert "https://@LOCAL_IP_HOST@" in unit
     assert "Environment=MCPSERVER_LOG_FILE=@LOG_DIR@/service.log" in unit
+    assert "Environment=MCPSERVER_BIN_DIR=@BIN_DIR@" in unit
+    assert 'plugin_bin="$LBPBIN/$actual_folder"' in hook
+    assert '-e "s|@BIN_DIR@|$plugin_bin|g"' in hook
     assert (
         "Environment=MCPSERVER_MQTT_CREDENTIALS=@DATA_DIR@/auth/mqtt-credentials.json.enc" in unit
     )

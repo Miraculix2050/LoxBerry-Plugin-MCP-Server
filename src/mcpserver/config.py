@@ -22,7 +22,7 @@ import idna
 
 from mcpserver.loxone.client import MiniserverEndpoint
 
-SCHEMA_VERSION: Final = 6
+SCHEMA_VERSION: Final = 8
 DEFAULT_CONNECTION_TIMEOUT: Final = 10.0
 DEFAULT_REQUESTS_PER_MINUTE: Final = 60
 DEFAULT_MAX_PARALLEL_CALLS: Final = 4
@@ -145,6 +145,14 @@ def _mqtt_username(value: object) -> str:
     return value
 
 
+def _emergency_stop_uuid(value: object) -> str:
+    if not isinstance(value, str) or value == "":
+        return ""
+    if not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{16}", value):
+        raise ConfigError("emergency_stop.virtual_status_uuid is unsupported")
+    return value
+
+
 def _bindings(value: object, *, name: str) -> tuple[str, ...]:
     if not isinstance(value, list) or len(value) > MAX_LOXBERRY_BINDINGS:
         raise ConfigError(f"{name} is unsupported")
@@ -199,6 +207,7 @@ class PluginConfig:
     mqtt_host: str = ""
     mqtt_port: int = DEFAULT_MQTT_PORT
     mqtt_username: str = ""
+    emergency_stop_virtual_status_uuid: str = ""
     _source: dict[str, Any] | None = None
 
     @classmethod
@@ -208,7 +217,7 @@ class PluginConfig:
     @classmethod
     def from_document(cls, document: object) -> PluginConfig:
         root = _mapping(document, name="configuration")
-        if root.get("schema_version") not in {1, 2, 3, 4, 5, SCHEMA_VERSION}:
+        if root.get("schema_version") not in {1, 2, 3, 4, 5, 6, SCHEMA_VERSION}:
             raise ConfigError("schema_version is unsupported")
         server = _mapping(root.get("server", {}), name="server")
         loxone = _mapping(root.get("loxone", {}), name="loxone")
@@ -218,6 +227,7 @@ class PluginConfig:
         cache = _mapping(root.get("cache", {}), name="cache")
         logging_config = _mapping(root.get("logging", {}), name="logging")
         mqtt = _mapping(root.get("mqtt", {}), name="mqtt")
+        emergency_stop = _mapping(root.get("emergency_stop", {}), name="emergency_stop")
 
         enabled = _boolean(server.get("enabled", False), name="server.enabled")
         public_origin_value = server.get("public_origin", "")
@@ -405,6 +415,9 @@ class PluginConfig:
         mqtt_username = _mqtt_username(mqtt.get("username", ""))
         if not mqtt_use_loxberry_gateway or mqtt_host != "":
             mqtt_host = _mqtt_host(mqtt_host)
+        emergency_stop_virtual_status_uuid = _emergency_stop_uuid(
+            emergency_stop.get("virtual_status_uuid", "")
+        )
         return cls(
             enabled=enabled,
             public_origin=public_origin,
@@ -439,13 +452,24 @@ class PluginConfig:
             mqtt_host=mqtt_host,
             mqtt_port=mqtt_port,
             mqtt_username=mqtt_username,
+            emergency_stop_virtual_status_uuid=emergency_stop_virtual_status_uuid,
             _source=copy.deepcopy(root),
         )
 
     def to_document(self) -> dict[str, Any]:
         document = copy.deepcopy(self._source) if self._source is not None else {}
         document["schema_version"] = SCHEMA_VERSION
-        for key in ("server", "loxone", "tools", "limits", "logging", "policies", "cache", "mqtt"):
+        for key in (
+            "server",
+            "loxone",
+            "tools",
+            "limits",
+            "logging",
+            "policies",
+            "cache",
+            "mqtt",
+            "emergency_stop",
+        ):
             current = document.get(key)
             if not isinstance(current, dict):
                 document[key] = {}
@@ -487,6 +511,7 @@ class PluginConfig:
         document["mqtt"]["host"] = self.mqtt_host
         document["mqtt"]["port"] = self.mqtt_port
         document["mqtt"]["username"] = self.mqtt_username
+        document["emergency_stop"]["virtual_status_uuid"] = self.emergency_stop_virtual_status_uuid
         return document
 
 

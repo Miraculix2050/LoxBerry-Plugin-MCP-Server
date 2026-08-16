@@ -228,11 +228,13 @@ class MqttHealthPublisher:
         home: Path,
         client_factory: Callable[..., Any] | None = None,
         state_reader: Callable[[], tuple[str, str]] = service_state,
+        emergency_stop_reader: Callable[[], str] | None = None,
     ) -> None:
         self._config = config
         self._home = home
         self._client_factory = client_factory
         self._state_reader = state_reader
+        self._emergency_stop_reader = emergency_stop_reader or (lambda: "unknown")
         self._clients: list[Any] = []
         self._connected_clients: set[int] = set()
         self._task: asyncio.Task[None] | None = None
@@ -244,6 +246,7 @@ class MqttHealthPublisher:
             "heartbeat": f"{prefix}/health/heartbeat",
             "system_state": f"{prefix}/health/system_state",
             "substate": f"{prefix}/health/substate",
+            "emergency_stop": f"{prefix}/emergency_stop/status",
         }
 
     async def start(self) -> None:
@@ -367,6 +370,9 @@ class MqttHealthPublisher:
                 self._clients[0].publish(topics["system_state"], active_state, qos=1, retain=True)
             if 1 in self._connected_clients:
                 self._clients[1].publish(topics["substate"], substate, qos=1, retain=True)
+                self._clients[1].publish(
+                    topics["emergency_stop"], self._emergency_stop_reader(), qos=1, retain=True
+                )
         except Exception:
             _LOGGER.warning("event=mqtt_publish_failed")
 
@@ -402,6 +408,11 @@ class MqttHealthPublisher:
             if 1 in self._connected_clients:
                 publications.append(
                     self._clients[1].publish(topics["substate"], substate, qos=1, retain=True)
+                )
+                publications.append(
+                    self._clients[1].publish(
+                        topics["emergency_stop"], "unknown", qos=1, retain=True
+                    )
                 )
             await asyncio.gather(
                 *(self._wait_for_publish(publication) for publication in publications)

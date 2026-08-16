@@ -67,7 +67,7 @@ def test_configuration_round_trip_preserves_unknown_keys(tmp_path: Path) -> None
 
     assert store.load().to_document() == config.to_document()
     assert json.loads(store.path.read_text(encoding="utf-8"))["future"] == {"keep": True}
-    assert config.to_document()["schema_version"] == 6
+    assert config.to_document()["schema_version"] == 8
 
 
 def test_phase_four_configuration_uses_only_the_ram_cache_setting() -> None:
@@ -117,6 +117,32 @@ def test_mqtt_defaults_migrate_without_enabling_health() -> None:
         "port": 1883,
         "username": "",
     }
+
+
+def test_emergency_stop_accepts_a_loxone_state_uuid() -> None:
+    status_uuid = "00112233-4455-6677-8899aabbccddeeff"
+
+    config = PluginConfig.from_document(
+        {"schema_version": 8, "emergency_stop": {"virtual_status_uuid": status_uuid}}
+    )
+
+    assert config.emergency_stop_virtual_status_uuid == status_uuid
+    assert config.to_document()["emergency_stop"] == {"virtual_status_uuid": status_uuid}
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "00112233-4455-6677-8899-aabbccddeeff",
+        "00112233-4455-6677-8899aabbccddeef",
+        "00112233-4455-6677-8899AABBCCDDEEFF",
+    ],
+)
+def test_emergency_stop_rejects_non_loxone_status_uuids(value: str) -> None:
+    with pytest.raises(ConfigError, match=r"emergency_stop\.virtual_status_uuid"):
+        PluginConfig.from_document(
+            {"schema_version": 8, "emergency_stop": {"virtual_status_uuid": value}}
+        )
 
 
 @pytest.mark.parametrize(

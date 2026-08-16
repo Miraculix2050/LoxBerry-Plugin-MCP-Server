@@ -38,6 +38,7 @@ _REQUIRED: Final = {
     "postroot.sh",
     "postupgrade.sh",
     "uninstall/uninstall.sh",
+    "bin/emergency-stop-miniserver.php",
     "bin/healthcheck",
     "bin/mcpserver-admin",
     "bin/renew-web-certificate",

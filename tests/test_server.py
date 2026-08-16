@@ -4,6 +4,10 @@ import logging
 from pathlib import Path
 
 import pytest
+from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+from starlette.routing import Route
 from starlette.testclient import TestClient
 
 from mcpserver.auth.provider import (
@@ -14,8 +18,9 @@ from mcpserver.auth.provider import (
     READ_SCOPE,
 )
 from mcpserver.config import PluginConfig
+from mcpserver.emergency_stop import EmergencyStopMonitor
 from mcpserver.loxone.client import MiniserverEndpoint
-from mcpserver.server import _runtime_lifespan, create_server, main
+from mcpserver.server import _EmergencyStopMiddleware, _runtime_lifespan, create_server, main
 from mcpserver.settings import Phase0AuthSettings, ServerSettings
 
 
@@ -26,6 +31,32 @@ def _settings() -> ServerSettings:
         allowed_hosts=("testserver",),
         allowed_origins=("https://client.example",),
     )
+
+
+def test_emergency_stop_blocks_only_tools_call_and_reports_when_blocking_started() -> None:
+    async def echo(request: Request) -> JSONResponse:
+        return JSONResponse(await request.json())
+
+    monitor = EmergencyStopMonitor(
+        PluginConfig(emergency_stop_virtual_status_uuid="00112233-4455-6677-8899aabbccddeeff")
+    )
+    monitor.apply(0)
+    app = Starlette(routes=[Route("/mcp", echo, methods=["POST"])])
+    app.add_middleware(_EmergencyStopMiddleware, monitor=monitor)
+
+    with TestClient(app) as client:
+        discovery = client.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+        blocked = client.post("/mcp", json={"jsonrpc": "2.0", "id": 2, "method": "tools/call"})
+
+    assert discovery.status_code == 200
+    assert discovery.json()["method"] == "tools/list"
+    assert blocked.status_code == 503
+    error = blocked.json()["error"]
+    assert blocked.json()["id"] == 2
+    assert error["message"] == "emergency_stop_active"
+    assert error["data"]["status"] == "disabled"
+    assert error["data"]["observed_at"].endswith("Z")
+    assert error["data"]["blocked_since"].endswith("Z")
 
 
 def test_main_opens_the_configured_log_as_the_service_user(
@@ -144,6 +175,33 @@ def test_health_is_small_and_contains_no_configuration() -> None:
     assert response.json()["ok"] is True
     assert response.json()["service"] == "mcpserver"
     assert set(response.json()) == {"ok", "service", "version"}
+
+
+def test_streamable_app_starts_the_configured_emergency_stop_monitor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = ServerSettings(
+        host="127.0.0.1",
+        port=8765,
+        allowed_hosts=("testserver",),
+        allowed_origins=(),
+        plugin_config=PluginConfig(
+            emergency_stop_virtual_status_uuid="00112233-4455-6677-8899aabbccddeeff"
+        ),
+    )
+    server = create_server(settings)
+    assert server.emergency_stop is not None
+    started = False
+
+    async def start(_monitor: EmergencyStopMonitor) -> None:
+        nonlocal started
+        started = True
+
+    monkeypatch.setattr(EmergencyStopMonitor, "start", start)
+    with TestClient(server.streamable_http_app(), base_url="http://testserver"):
+        pass
+
+    assert started is True
 
 
 @pytest.mark.parametrize(
@@ -345,6 +403,8 @@ async def test_bundled_skill_is_published_as_an_mcp_resource() -> None:
     assert "It requires `loxone:history`," in contents[0].content
     assert "Treat a timeout as an unknown outcome" in contents[0].content
     assert "failed or uncertain cache clear" in contents[0].content
+    assert "`emergency_stop_active`" in contents[0].content
+    assert "Recovery is external to MCP" in contents[0].content
 
 
 def test_oauth_routes_and_protected_resource_metadata_are_exact(tmp_path: Path) -> None:

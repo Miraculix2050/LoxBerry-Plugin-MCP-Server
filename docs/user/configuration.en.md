@@ -10,9 +10,28 @@ The **Enable service** switch is the saved operating permission. It is enabled a
 
 Configure one local HTTPS origin and exactly one Miniserver target. Selecting a Miniserver stored in LoxBerry does not reuse its credentials. On first setup, the origin is suggested from the LoxBerry hostname and HTTPS port; verify it matches the browser's certificate address. Only **Enable MCP access** releases MCP and OAuth access.
 
+## Emergency-stop signal (Virtual Status)
+
+The optional **Emergency-stop signal (Virtual Status)** is in the **MCP
+configuration** section. Select only a visible Virtual Status configured as
+digital on the selected Miniserver. The default, **No virtual status selected**,
+allows all MCP tool calls.
+
+When a signal is selected, value `1` permits MCP tool calls and value `0` blocks
+them. An as-yet unknown value during service startup or loss of the Miniserver
+connection also blocks calls fail closed. Set the Virtual Status back to `1`, or
+remove the selection and save the configuration, to permit tool calls again. The
+block applies only to tool calls; OAuth, tool discovery and the HTTP health
+endpoint remain reachable.
+
 ## MQTT configuration (health)
 
 MQTT health is disabled by default. By default, the plugin reads host, port, and credentials at runtime from the LoxBerry MQTT gateway. For a custom broker, disable **Use LoxBerry MQTT gateway** and enter its host, port, username, and password. Custom-broker connections always use TLS with normal certificate and hostname validation. The password is stored separately with encryption, is never displayed again, and is never included in diagnostics or logs. Use **Clear saved MQTT password** to remove it deliberately. The default root topic is `mcpserver` and the default heartbeat interval is 60 seconds. Retained topics are `mcpserver/health/heartbeat`, `mcpserver/health/system_state` and `mcpserver/health/substate`. A controlled stop publishes `inactive` and `dead`; an unexpected process or connection loss publishes the retained fallback `unknown`. The timestamp uses Loxone epoch seconds.
+
+When MQTT health is enabled, the plugin additionally publishes the retained
+emergency-stop state `enabled`, `disabled`, or `unknown` with QoS 1 under
+`<root>/emergency_stop/status`. This topic is independent of the `health/*`
+topics.
 
 ## Certificate
 

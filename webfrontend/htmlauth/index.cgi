@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 use CGI;
-use Encode qw(decode encode FB_DEFAULT);
+use Encode qw(decode encode is_utf8 FB_DEFAULT);
 use HTML::Template;
 use IPC::Open3;
 use JSON::PP qw(decode_json encode_json);
@@ -379,6 +379,9 @@ if ($action ne '') {
             cache => {
                 statistics_memory_max_mib => 0 + ($q->{statistics_memory_max_mib} // 128),
             },
+            emergency_stop => {
+                virtual_status_uuid => $q->{emergency_stop_virtual_status_uuid} // '',
+            },
         };
         $result = admin_call('save_mcp_config', $document);
         admin_log($result->{ok} ? 'info' : 'warning',
@@ -515,6 +518,9 @@ my $service_setting = $service_setting_result->{ok}
     && ref($service_setting_result->{data}{service}) eq 'HASH'
     ? $service_setting_result->{data}{service} : {};
 my $service_setting_known = $service_setting_result->{ok} ? 1 : 0;
+my $emergency_options_result = admin_call('emergency_stop_options', {});
+my $emergency_options = $emergency_options_result->{ok}
+    ? ($emergency_options_result->{data}{options} // []) : [];
 my $sessions = [];
 my $loxberry_bindings = [];
 my $loxberry_operate_bindings = [];
@@ -524,6 +530,16 @@ $config->{tools} = {} if ref($config->{tools}) ne 'HASH';
 $config->{limits} = {} if ref($config->{limits}) ne 'HASH';
 $config->{logging} = {} if ref($config->{logging}) ne 'HASH';
 $config->{cache} = {} if ref($config->{cache}) ne 'HASH';
+$config->{emergency_stop} = {} if ref($config->{emergency_stop}) ne 'HASH';
+my $selected_emergency_stop = $config->{emergency_stop}{virtual_status_uuid} // '';
+for my $option (@$emergency_options) {
+    # HTML::Template writes byte strings. Convert only Unicode data returned by
+    # the Python helper; language strings are already UTF-8 bytes.
+    if (defined($option->{name}) && !ref($option->{name}) && is_utf8($option->{name})) {
+        $option->{name} = encode('UTF-8', $option->{name});
+    }
+    $option->{selected} = $option->{uuid} eq $selected_emergency_stop ? 1 : 0;
+}
 my $miniservers = configured_miniservers($config->{loxone}{endpoint});
 my $has_selected_miniserver = grep { $_->{selected} } @$miniservers;
 my ($selected_miniserver) = grep { $_->{selected} } @$miniservers;
@@ -604,6 +620,7 @@ $template->param(
     MAX_STRUCTURE_STATE_REFERENCES => $config->{limits}{max_structure_state_references} // 100000,
     MAX_STRUCTURE_DEPTH => $config->{limits}{max_structure_depth} // 32,
     MAX_STATES_PER_IDENTITY => $config->{limits}{max_states_per_identity} // 20000,
+    EMERGENCY_STOP_OPTIONS => $emergency_options,
     LOG_LEVEL => $config->{logging}{level} // 'warning',
     LOG_LEVEL_OFF => ($config->{logging}{level} // 'warning') eq 'off' ? 1 : 0,
     LOG_LEVEL_ERROR => ($config->{logging}{level} // 'warning') eq 'error' ? 1 : 0,
