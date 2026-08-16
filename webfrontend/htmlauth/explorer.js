@@ -536,6 +536,18 @@
     state.drafts = {};
   }
 
+  function mcpFailure(response, fallback) {
+    const protocolError = response && response.error;
+    if (protocolError && typeof protocolError === 'object') {
+      return {
+        message: typeof protocolError.message === 'string' ? protocolError.message : fallback,
+        result: {error: clone(protocolError)},
+      };
+    }
+    const message = typeof protocolError === 'string' ? protocolError : fallback;
+    return {message, result: {error: message}};
+  }
+
   function fieldControlId(index) {
     return `explorer-field-${index}`;
   }
@@ -595,6 +607,7 @@
     toolIsMutating,
     acceptOAuthPayload,
     acceptOAuthMessage,
+    mcpFailure,
     clearSensitiveState,
     fieldControlId,
     canonicalExplorerUrl,
@@ -975,8 +988,12 @@
       const text = await http.text();
       response = parseMcpBody(text, http.headers.get('content-type') || '');
       addTranscript(method, safeRequest, safeMcpResponse(response, selected), status, Math.round(performance.now() - started));
-      if (!http.ok) throw new Error(response && response.error && response.error.message ? response.error.message : `${http.status} ${http.statusText}`);
-      if (response && response.error) throw new Error(response.error.message || 'MCP protocol error');
+      if (!http.ok || (response && response.error)) {
+        const failure = core.mcpFailure(response, http.ok ? 'MCP protocol error' : `${http.status} ${http.statusText}`);
+        const error = new Error(failure.message);
+        error.mcpResult = failure.result;
+        throw error;
+      }
       return response ? response.result : null;
     } catch (error) {
       if (!(error && error.sessionCleared === true) &&
@@ -1431,7 +1448,9 @@
     } catch (error) {
       sessionCleared = Boolean(error && error.sessionCleared === true);
       if (!sessionCleared) {
-        result = {error: error instanceof Error ? error.message : label('error')};
+        result = error && error.mcpResult
+          ? core.clone(error.mcpResult)
+          : {error: error instanceof Error ? error.message : label('error')};
         renderResult(result, {tool: tool.name, arguments: args});
       }
       showError(error, label('error'));

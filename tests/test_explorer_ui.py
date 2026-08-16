@@ -55,6 +55,30 @@ def run_core_async(expression: str) -> object:
     return json.loads(result.stdout)
 
 
+def test_explorer_preserves_structured_mcp_error_details() -> None:
+    response = {
+        "jsonrpc": "2.0",
+        "id": 7,
+        "error": {
+            "code": -32000,
+            "message": "emergency_stop_active",
+            "data": {
+                "status": "disabled",
+                "observed_at": "2026-08-16T21:41:03Z",
+                "blocked_since": "2026-08-16T21:40:51Z",
+            },
+        },
+    }
+
+    assert run_core(f"core.mcpFailure({json.dumps(response)},'fallback')") == {
+        "message": "emergency_stop_active",
+        "result": {"error": response["error"]},
+    }
+    source = SCRIPT.read_text(encoding="utf-8")
+    assert "error.mcpResult = failure.result" in source
+    assert "core.clone(error.mcpResult)" in source
+
+
 def test_explorer_defaults_and_validation_follow_tool_schema() -> None:
     schema = {
         "type": "object",
