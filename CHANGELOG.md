@@ -44,7 +44,7 @@ extracted from the matching version heading.
 - Begin the feature-frozen `0.4.0` beta channel. Future `0.4.0` changes are
   limited to beta blockers, fixes and necessary compatibility corrections.
 
-## Unreleased
+## 0.4.0-beta.4 - 2026-08-17
 
 - Add an optional fail-closed emergency-stop signal from a visible digital
   Loxone Virtual Status. It blocks MCP tool calls on `0` or an unknown signal
