@@ -40,6 +40,7 @@ _EXECUTABLES: Final = {
     "bin/healthcheck",
     "bin/mcpserver-admin",
     "bin/renew-web-certificate",
+    "bin/root-lifecycle-paths.py",
     "webfrontend/htmlauth/index.cgi",
     "webfrontend/htmlauth/explorer.cgi",
     "webfrontend/htmlauth/explorer_callback.cgi",
@@ -64,6 +65,7 @@ _TEXT_NAMES: Final = {
     "bin/healthcheck",
     "bin/mcpserver-admin",
     "bin/renew-web-certificate",
+    "bin/root-lifecycle-paths.py",
 }
 
 
@@ -93,6 +95,7 @@ def expected_source_entries(root: Path) -> set[str]:
             "bin/healthcheck",
             "bin/mcpserver-admin",
             "bin/renew-web-certificate",
+            "bin/root-lifecycle-paths.py",
             "bin/runtime-arm64.lock",
             "bin/runtime-arm64.sha256",
             REFERENCE_HTML_PATH,
@@ -287,6 +290,7 @@ def main() -> int:
             (root / "bin" / "healthcheck", "bin/healthcheck"),
             (root / "bin" / "mcpserver-admin", "bin/mcpserver-admin"),
             (root / "bin" / "renew-web-certificate", "bin/renew-web-certificate"),
+            (root / "bin" / "root-lifecycle-paths.py", "bin/root-lifecycle-paths.py"),
             (lock, "bin/runtime-arm64.lock"),
             (hash_lock, "bin/runtime-arm64.sha256"),
         ]

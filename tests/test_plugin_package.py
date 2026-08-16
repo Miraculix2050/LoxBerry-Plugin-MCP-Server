@@ -206,6 +206,7 @@ def test_v4_package_manifest_is_present() -> None:
         "uninstall/uninstall.sh",
         "bin/healthcheck",
         "bin/renew-web-certificate",
+        "bin/root-lifecycle-paths.py",
         "icons/icon.svg",
         "webfrontend/htmlauth/index.cgi",
         "webfrontend/htmlauth/explorer.cgi",
@@ -276,6 +277,14 @@ def test_postupgrade_removes_legacy_per_request_admin_logs() -> None:
     assert "-name '*_admin-ui.log' -delete" in postupgrade
 
 
+def test_lifecycle_hooks_reject_an_unsafe_plugin_folder() -> None:
+    for name in ("postinstall.sh", "preupgrade.sh", "postroot.sh", "postupgrade.sh"):
+        hook = (ROOT / name).read_text(encoding="utf-8")
+
+        assert 'case "$actual_folder" in' in hook
+        assert "*[!A-Za-z0-9_-]*|'')" in hook
+
+
 def test_shell_hooks_have_valid_syntax() -> None:
     bash = shutil.which("bash")
     if bash is None:
@@ -305,15 +314,16 @@ def test_upgrade_removes_the_obsolete_debug_window_atomically() -> None:
 def test_phase_four_upgrade_migrates_configuration_and_private_cache() -> None:
     hook = (ROOT / "postupgrade.sh").read_text(encoding="utf-8")
     postroot = (ROOT / "postroot.sh").read_text(encoding="utf-8")
+    helper = (ROOT / "bin/root-lifecycle-paths.py").read_text(encoding="utf-8")
 
     assert 'document.get("schema_version") == 1' in hook
     assert 'document["schema_version"] = 2' in hook
-    for script in (hook, postroot):
-        assert 'prepare_private_directory "$plugin_data/statistics-cache" || exit 2' in script
-        assert "os.O_NOFOLLOW" in script
-        assert "os.fchown(fd" in script
-        assert "os.fchmod(fd, 0o700)" in script
-        assert "os.lstat(path)" in script
+    assert 'prepare_private_directory "$plugin_data/statistics-cache" || exit 2' in hook
+    assert 'python3 "$root_path_helper" statistics-cache' in postroot
+    assert "os.O_NOFOLLOW" in helper
+    assert "os.fchown(child_fd" in helper
+    assert "os.fchmod(child_fd, 0o700)" in helper
+    assert "os.lstat(path)" in helper
 
 
 def test_postroot_keeps_installer_alive_during_apache_activation() -> None:
@@ -328,7 +338,14 @@ def test_postroot_keeps_installer_alive_during_apache_activation() -> None:
     assert "for _ in {1..30}" in hook
     assert "curl --fail --silent --max-time 2 http://127.0.0.1:8765/healthz" in hook
     assert 'if [ "$service_ready" -ne 1 ]' in hook
-    assert '(umask 0137 && openssl rand 32 > "$key")' in hook
+    assert "installer_root=${6:-}" in hook
+    assert 'installer_root=$(realpath -e -- "$installer_root")' in hook
+    assert '"$installer_root/config/systemd/loxberry-mcpserver.service.in" > "$unit"' in hook
+    assert 'cp "$installer_root/config/apache/mcpserver.conf" "$apache"' in hook
+    assert '"$installer_root/bin/renew-web-certificate" > "$certificate_helper_tmp"' in hook
+    assert '"$plugin_config/systemd/loxberry-mcpserver.service.in"' not in hook
+    assert '"$plugin_config/apache/mcpserver.conf"' not in hook
+    assert '"$LBPBIN/$actual_folder/renew-web-certificate"' not in hook
     assert 'chmod 644 "$unit" "$apache"' in hook
     assert 'loxberry_home=$(realpath -e -- "$LBHOMEDIR")' in hook
     assert 'sed "s|@LBHOMEDIR@|$loxberry_home|g"' in hook
@@ -344,13 +361,13 @@ def test_postroot_keeps_installer_alive_during_apache_activation() -> None:
     assert "NOPASSWD: /bin/systemctl stop *" not in hook
     assert 'service_log="$plugin_log/service.log"' in hook
     assert "systemctl stop loxberry-mcpserver.service || exit 2" in hook
-    assert hook.index("systemctl stop loxberry-mcpserver.service || exit 2") < hook.index(
-        'python3 - "$service_log"'
+    assert hook.index("systemctl stop loxberry-mcpserver.service || exit 2") < hook.rindex(
+        'python3 "$root_path_helper" service-log'
     )
-    assert "os.O_NOFOLLOW" in hook
-    assert "os.fchown(fd" in hook
-    assert "os.fchmod(fd, 0o640)" in hook
-    assert "os.lstat(path)" in hook
+    assert 'root_path_helper="$installer_root/bin/root-lifecycle-paths.py"' in hook
+    assert 'python3 "$root_path_helper" install-key' in hook
+    assert 'python3 "$root_path_helper" service-log' in hook
+    assert "openssl rand 32" not in hook
     assert 'chown loxberry:loxberry "$service_log"' not in hook
     assert 'chmod 640 "$service_log"' not in hook
     assert "LoxBerry::System::get_localip()" in hook
