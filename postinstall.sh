@@ -7,6 +7,18 @@ if [ -z "$actual_folder" ] || [ -z "$installer_root" ] || [ -z "${LBPBIN:-}" ] |
     echo "<ERROR> LoxBerry did not provide the plugin paths or actual folder."
     exit 2
 fi
+case "$actual_folder" in
+    *[!A-Za-z0-9_-]*|'') echo "<ERROR> Invalid plugin folder."; exit 2 ;;
+esac
+case "$installer_root" in
+    /*) ;;
+    *) echo "<ERROR> Invalid installer root."; exit 2 ;;
+esac
+installer_root=$(realpath -e -- "$installer_root") || { echo "<ERROR> Invalid installer root."; exit 2; }
+if [ ! -d "$installer_root" ]; then
+    echo "<ERROR> Invalid installer root."
+    exit 2
+fi
 
 plugin_bin="$LBPBIN/$actual_folder"
 plugin_config="$LBPCONFIG/$actual_folder"

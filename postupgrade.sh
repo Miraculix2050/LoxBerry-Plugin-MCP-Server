@@ -6,6 +6,9 @@ if [ -z "$actual_folder" ] || [ -z "${LBPCONFIG:-}" ] || [ -z "${LBPDATA:-}" ]; 
     echo "<ERROR> LoxBerry plugin paths are unavailable."
     exit 2
 fi
+case "$actual_folder" in
+    *[!A-Za-z0-9_-]*|'') echo "<ERROR> Invalid plugin folder."; exit 2 ;;
+esac
 
 # Schema migrations are idempotent and never replace an existing session store.
 plugin_config="$LBPCONFIG/$actual_folder"

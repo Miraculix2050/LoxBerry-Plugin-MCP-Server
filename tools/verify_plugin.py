@@ -41,6 +41,7 @@ _REQUIRED: Final = {
     "bin/healthcheck",
     "bin/mcpserver-admin",
     "bin/renew-web-certificate",
+    "bin/root-lifecycle-paths.py",
     "bin/runtime-arm64.lock",
     "config/default-config.json",
     "config/apache/mcpserver.conf",
@@ -65,6 +66,7 @@ _EXECUTABLES: Final = {
     "bin/healthcheck",
     "bin/mcpserver-admin",
     "bin/renew-web-certificate",
+    "bin/root-lifecycle-paths.py",
     "webfrontend/htmlauth/index.cgi",
     "webfrontend/htmlauth/explorer.cgi",
     "webfrontend/htmlauth/explorer_callback.cgi",
@@ -82,7 +84,12 @@ _TEXT_SUFFIXES: Final = {
     ".sh",
     ".svg",
 }
-_TEXT_NAMES: Final = {"bin/healthcheck", "bin/mcpserver-admin", "bin/renew-web-certificate"}
+_TEXT_NAMES: Final = {
+    "bin/healthcheck",
+    "bin/mcpserver-admin",
+    "bin/renew-web-certificate",
+    "bin/root-lifecycle-paths.py",
+}
 _REQUIRED_PROJECT_WHEEL_ENTRIES: Final = {
     "mcpserver/skills/using-loxberry-mcp/SKILL.md",
     "mcpserver/skills/using-loxberry-mcp/agents/openai.yaml",

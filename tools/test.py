@@ -99,6 +99,10 @@ _TEST_GROUPS: Final = (
         ("tests/test_admin.py", "tests/test_certificates.py"),
     ),
     (
+        ("bin/root-lifecycle-paths.py", "postroot.sh"),
+        ("tests/test_plugin_package.py", "tests/test_root_lifecycle_paths.py"),
+    ),
+    (
         ("src/mcpserver/auth/**",),
         (
             "tests/test_auth_store.py",

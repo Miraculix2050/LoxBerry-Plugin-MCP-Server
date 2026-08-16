@@ -8,7 +8,8 @@ sudoers=/etc/sudoers.d/loxberry-mcpserver
 certificate_helper=/usr/local/sbin/loxberry-mcpserver-renew-web-certificate
 
 actual_folder=$3
-if [ -z "$actual_folder" ] || [ -z "${LBHOMEDIR:-}" ] || [ -z "${LBPBIN:-}" ] || [ -z "${LBPCONFIG:-}" ] || [ -z "${LBPDATA:-}" ] || [ -z "${LBPLOG:-}" ]; then
+installer_root=${6:-}
+if [ -z "$actual_folder" ] || [ -z "$installer_root" ] || [ -z "${LBHOMEDIR:-}" ] || [ -z "${LBPCONFIG:-}" ] || [ -z "${LBPDATA:-}" ] || [ -z "${LBPLOG:-}" ]; then
     echo "<ERROR> LoxBerry plugin paths are unavailable."
     exit 2
 fi
@@ -27,44 +28,26 @@ if [ ! -d "$loxberry_home/libs/perllib" ]; then
     echo "<ERROR> LoxBerry Perl libraries are unavailable."
     exit 2
 fi
+case "$actual_folder" in
+    *[!A-Za-z0-9_-]*|'') echo "<ERROR> Invalid plugin folder."; exit 2 ;;
+esac
+case "$installer_root" in
+    /*) ;;
+    *) echo "<ERROR> Invalid installer root."; exit 2 ;;
+esac
+installer_root=$(realpath -e -- "$installer_root") || { echo "<ERROR> Invalid installer root."; exit 2; }
+if [ ! -d "$installer_root" ] || [ ! -f "$installer_root/config/systemd/loxberry-mcpserver.service.in" ] \
+    || [ ! -f "$installer_root/config/apache/mcpserver.conf" ] \
+    || [ ! -f "$installer_root/bin/renew-web-certificate" ] \
+    || [ ! -f "$installer_root/bin/root-lifecycle-paths.py" ]; then
+    echo "<ERROR> Required package templates are unavailable."
+    exit 2
+fi
 plugin_config="$LBPCONFIG/$actual_folder"
 plugin_data="$LBPDATA/$actual_folder"
 plugin_log="$LBPLOG/$actual_folder"
 service_log="$plugin_log/service.log"
-
-prepare_private_directory() {
-    python3 - "$1" <<'PY'
-import grp
-import os
-import pwd
-import stat
-import sys
-
-path = sys.argv[1]
-parent, name = os.path.split(path)
-parent_fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
-try:
-    try:
-        os.mkdir(name, 0o700, dir_fd=parent_fd)
-    except FileExistsError:
-        pass
-    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
-    fd = os.open(name, flags, dir_fd=parent_fd)
-    try:
-        opened = os.fstat(fd)
-        if not stat.S_ISDIR(opened.st_mode):
-            raise RuntimeError("private path is not a directory")
-        os.fchown(fd, pwd.getpwnam("loxberry").pw_uid, grp.getgrnam("loxberry").gr_gid)
-        os.fchmod(fd, 0o700)
-        current = os.lstat(path)
-        if not stat.S_ISDIR(current.st_mode) or (current.st_dev, current.st_ino) != (opened.st_dev, opened.st_ino):
-            raise RuntimeError("private directory path changed during preparation")
-    finally:
-        os.close(fd)
-finally:
-    os.close(parent_fd)
-PY
-}
+root_path_helper="$installer_root/bin/root-lifecycle-paths.py"
 
 for target in "$unit" "$apache" "$sudoers" "$certificate_helper"; do
     if [ -e "$target" ] && ! grep -Fqx "$marker" "$target"; then
@@ -72,10 +55,6 @@ for target in "$unit" "$apache" "$sudoers" "$certificate_helper"; do
         exit 2
     fi
 done
-
-case "$actual_folder" in
-    *[!A-Za-z0-9_-]*|'') echo "<ERROR> Invalid plugin folder."; exit 2 ;;
-esac
 
 if ss -H -ltn 'sport = :8765' | grep -q . && ! systemctl is-active --quiet loxberry-mcpserver.service; then
     echo "<ERROR> TCP port 8765 is already owned by another service."
@@ -87,13 +66,8 @@ if grep -RIl --exclude='loxberry-mcpserver.conf' '/plugins/mcpserver/mcp' /etc/a
 fi
 
 key="$plugin_data/auth/install.key"
-mkdir -p "$plugin_data/auth"
-prepare_private_directory "$plugin_data/statistics-cache" || exit 2
-if [ ! -f "$key" ]; then
-    (umask 0137 && openssl rand 32 > "$key") || exit 2
-fi
-chown root:loxberry "$key"
-chmod 640 "$key"
+python3 "$root_path_helper" statistics-cache --home "$loxberry_home" --folder "$actual_folder" || exit 2
+python3 "$root_path_helper" install-key --home "$loxberry_home" --folder "$actual_folder" || exit 2
 
 host=$(hostname -f 2>/dev/null || hostname)
 case "$host" in
@@ -121,14 +95,14 @@ sed \
     -e "s|@CONFIG_DIR@|$plugin_config|g" \
     -e "s|@DATA_DIR@|$plugin_data|g" \
     -e "s|@LOG_DIR@|$plugin_log|g" \
-    "$plugin_config/systemd/loxberry-mcpserver.service.in" > "$unit" || exit 2
+    "$installer_root/config/systemd/loxberry-mcpserver.service.in" > "$unit" || exit 2
 
-cp "$plugin_config/apache/mcpserver.conf" "$apache" || exit 2
+cp "$installer_root/config/apache/mcpserver.conf" "$apache" || exit 2
 chown root:root "$unit" "$apache"
 chmod 644 "$unit" "$apache"
 certificate_helper_tmp=$(mktemp "${certificate_helper}.tmp.XXXXXX") || exit 2
 if ! sed "s|@LBHOMEDIR@|$loxberry_home|g" \
-    "$LBPBIN/$actual_folder/renew-web-certificate" > "$certificate_helper_tmp" \
+    "$installer_root/bin/renew-web-certificate" > "$certificate_helper_tmp" \
     || ! chown root:root "$certificate_helper_tmp" \
     || ! chmod 755 "$certificate_helper_tmp" \
     || ! mv -f "$certificate_helper_tmp" "$certificate_helper"; then
@@ -153,28 +127,7 @@ apache2ctl configtest >/dev/null || { a2disconf loxberry-mcpserver >/dev/null; e
 if systemctl is-active --quiet loxberry-mcpserver.service; then
     systemctl stop loxberry-mcpserver.service || exit 2
 fi
-python3 - "$service_log" <<'PY' || exit 2
-import grp
-import os
-import pwd
-import stat
-import sys
-
-path = sys.argv[1]
-flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_CLOEXEC | os.O_NOFOLLOW
-fd = os.open(path, flags, 0o640)
-try:
-    opened = os.fstat(fd)
-    if not stat.S_ISREG(opened.st_mode):
-        raise RuntimeError("service log is not a regular file")
-    os.fchown(fd, pwd.getpwnam("loxberry").pw_uid, grp.getgrnam("loxberry").gr_gid)
-    os.fchmod(fd, 0o640)
-    current = os.lstat(path)
-    if not stat.S_ISREG(current.st_mode) or (current.st_dev, current.st_ino) != (opened.st_dev, opened.st_ino):
-        raise RuntimeError("service log path changed during preparation")
-finally:
-    os.close(fd)
-PY
+python3 "$root_path_helper" service-log --home "$loxberry_home" --folder "$actual_folder" || exit 2
 
 systemctl daemon-reload
 systemctl enable loxberry-mcpserver.service >/dev/null
