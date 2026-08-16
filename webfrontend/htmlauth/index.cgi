@@ -510,6 +510,11 @@ sub format_expiry {
 
 my $config_result = admin_call('get_config', {});
 my $config = $config_result->{ok} ? ($config_result->{data}{configuration} // {}) : {};
+my $service_setting_result = admin_call('service_status', {});
+my $service_setting = $service_setting_result->{ok}
+    && ref($service_setting_result->{data}{service}) eq 'HASH'
+    ? $service_setting_result->{data}{service} : {};
+my $service_setting_known = $service_setting_result->{ok} ? 1 : 0;
 my $sessions = [];
 my $loxberry_bindings = [];
 my $loxberry_operate_bindings = [];
@@ -562,6 +567,8 @@ for my $suffix ('', '.1', '.2') {
 }
 $template->param(
     VERSION => $version,
+    SERVICE_ENABLED_SETTING => $service_setting->{enabled} ? 1 : 0,
+    SERVICE_ENABLED_SETTING_KNOWN => $service_setting_known,
     ENABLED => $config->{server}{enabled} ? 1 : 0,
     MQTT_ENABLED => $config->{mqtt}{enabled} ? 1 : 0,
     MQTT_ROOT_TOPIC => $config->{mqtt}{root_topic} // 'mcpserver',
