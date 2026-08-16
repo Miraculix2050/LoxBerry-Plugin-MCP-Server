@@ -15,6 +15,8 @@ BEGIN {
 }
 sub pluginversion { return 'test'; }
 sub pluginloglevel { return 3; }
+sub lbhostname { return 'localhost'; }
+sub get_localip { return '127.0.0.1'; }
 sub read_file { return ''; }
 sub readlanguage { return (); }
 1;
