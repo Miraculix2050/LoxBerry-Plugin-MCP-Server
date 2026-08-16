@@ -339,6 +339,12 @@
   const mqttUsername = document.getElementById('mqtt-username');
   const mqttPassword = document.getElementById('mqtt-password');
   const mqttClearPassword = document.getElementById('mqtt-clear-password');
+  let mqttGateway = null;
+  let mqttCustomBroker = {
+    host: mqttHost.value,
+    port: mqttPort.value,
+    username: mqttUsername.value,
+  };
   const mqttPasswordStatus = document.getElementById('mqtt-password-status');
   const serviceConfirm = document.getElementById('service-confirm');
   const serviceConfirmMessage = document.getElementById('service-confirm-message');
@@ -365,8 +371,29 @@
       `level${level[0].toUpperCase()}${level.slice(1)}`
     ];
   };
+  const updateMqttGateway = (gateway) => {
+    mqttGateway = gateway?.gateway_configured ? gateway : null;
+    updateMqttBrokerFields();
+  };
   const updateMqttBrokerFields = () => {
     const useGateway = mqttUseLoxberryGateway.checked;
+    if (useGateway && !mqttHost.disabled) {
+      mqttCustomBroker = {
+        host: mqttHost.value,
+        port: mqttPort.value,
+        username: mqttUsername.value,
+      };
+    }
+    if (useGateway && mqttGateway) {
+      mqttHost.value = String(mqttGateway.host || '');
+      mqttPort.value = String(mqttGateway.port || '');
+      mqttUsername.value = String(mqttGateway.username || '');
+      mqttPassword.value = '';
+    } else if (!useGateway) {
+      mqttHost.value = mqttCustomBroker.host;
+      mqttPort.value = mqttCustomBroker.port;
+      mqttUsername.value = mqttCustomBroker.username;
+    }
     for (const field of [mqttHost, mqttPort, mqttUsername, mqttPassword, mqttClearPassword]) {
       field.disabled = useGateway;
     }
@@ -551,6 +578,7 @@
       serviceSection.setAttribute('aria-busy', 'false');
       updateCertificate(result.data.certificate);
       mqttPasswordStatus.hidden = !Boolean(result.data.mqtt_password_configured);
+      updateMqttGateway(result.data.mqtt_gateway);
       updateMqttBrokerFields();
       if (Array.isArray(result.data.sessions)) updateSessions(result.data.sessions);
       if (Array.isArray(result.data.loxberry_bindings)) updateLoxberryBindings(result.data.loxberry_bindings);

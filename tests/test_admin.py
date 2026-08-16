@@ -882,8 +882,13 @@ def test_mqtt_gateway_status_masks_credentials(
 
     status = _mqtt_gateway_status()
 
-    assert status == {"gateway_configured": True, "host": "broker.local", "port": 1883}
-    assert "sensitive" not in json.dumps(status)
+    assert status == {
+        "gateway_configured": True,
+        "host": "broker.local",
+        "port": 1883,
+        "username": "sensitive-user",
+    }
+    assert "sensitive-password" not in json.dumps(status)
 
 
 def test_save_mqtt_keeps_custom_password_out_of_configuration(

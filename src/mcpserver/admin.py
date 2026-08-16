@@ -186,7 +186,7 @@ def _service_response() -> dict[str, Any]:
 
 
 def _mqtt_gateway_status() -> dict[str, Any]:
-    """Report only availability; broker credentials never enter the admin response."""
+    """Report gateway connection details, excluding the broker password."""
     from mcpserver.mqtt_health import MqttGateway
 
     home = os.getenv("LBHOMEDIR", "").strip()
@@ -194,7 +194,12 @@ def _mqtt_gateway_status() -> dict[str, Any]:
     gateway = MqttGateway.from_loxberry_home(home_path) if home_path.is_absolute() else None
     if gateway is None:
         return {"gateway_configured": False}
-    return {"gateway_configured": True, "host": gateway.host, "port": gateway.port}
+    return {
+        "gateway_configured": True,
+        "host": gateway.host,
+        "port": gateway.port,
+        "username": gateway.username,
+    }
 
 
 def _mqtt_password_configured() -> bool:
