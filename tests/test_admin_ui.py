@@ -116,6 +116,14 @@ def test_initial_page_renders_configuration_before_loading_dynamic_state() -> No
     )
 
 
+def test_emergency_stop_option_names_are_encoded_for_the_html_template() -> None:
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+
+    assert "use Encode qw(decode encode is_utf8 FB_DEFAULT);" in cgi
+    assert "is_utf8($option->{name})" in cgi
+    assert "$option->{name} = encode('UTF-8', $option->{name});" in cgi
+
+
 def test_common_actions_update_the_page_without_a_reload() -> None:
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
 

@@ -3,7 +3,7 @@
 use strict;
 use warnings;
 use CGI;
-use Encode qw(decode encode FB_DEFAULT);
+use Encode qw(decode encode is_utf8 FB_DEFAULT);
 use HTML::Template;
 use IPC::Open3;
 use JSON::PP qw(decode_json encode_json);
@@ -533,6 +533,11 @@ $config->{cache} = {} if ref($config->{cache}) ne 'HASH';
 $config->{emergency_stop} = {} if ref($config->{emergency_stop}) ne 'HASH';
 my $selected_emergency_stop = $config->{emergency_stop}{virtual_status_uuid} // '';
 for my $option (@$emergency_options) {
+    # HTML::Template writes byte strings. Convert only Unicode data returned by
+    # the Python helper; language strings are already UTF-8 bytes.
+    if (defined($option->{name}) && !ref($option->{name}) && is_utf8($option->{name})) {
+        $option->{name} = encode('UTF-8', $option->{name});
+    }
     $option->{selected} = $option->{uuid} eq $selected_emergency_stop ? 1 : 0;
 }
 my $miniservers = configured_miniservers($config->{loxone}{endpoint});
