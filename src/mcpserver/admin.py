@@ -488,6 +488,7 @@ def _save_mcp(payload: object) -> dict[str, Any]:
         "max_structure_state_references",
         "max_structure_depth",
         "max_states_per_identity",
+        "emergency_stop_virtual_status_uuid",
     )
 
     def apply(current: PluginConfig) -> PluginConfig:
@@ -503,6 +504,12 @@ def _save_mcp(payload: object) -> dict[str, Any]:
             "MCP configuration was not applied; previous configuration restored"
         ) from exc
     return {"configuration": updated.to_document(), "applied": True} | _service_response()
+
+
+def _emergency_stop_options() -> dict[str, Any]:
+    from mcpserver.emergency_stop import virtual_status_options
+
+    return {"options": asyncio.run(virtual_status_options(_config_store().load()))}
 
 
 def _save_mqtt(payload: object) -> dict[str, Any]:
@@ -1119,6 +1126,8 @@ def dispatch(request: object) -> dict[str, Any]:
         return _save_mcp(payload)
     if action == "save_mqtt_config":
         return _save_mqtt(payload)
+    if action == "emergency_stop_options":
+        return _emergency_stop_options()
     if action == "set_logging":
         return _set_logging(payload)
     if action == "status":

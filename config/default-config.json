@@ -37,7 +37,8 @@
     "port": 1883,
     "username": ""
   },
-  "schema_version": 6,
+  "emergency_stop": {"virtual_status_uuid": ""},
+  "schema_version": 8,
   "server": {
     "enabled": false,
     "public_origin": ""

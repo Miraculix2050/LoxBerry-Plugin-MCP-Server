@@ -18,6 +18,7 @@ Environment=MCPSERVER_LOXONE_TOKEN_STORE=@TOKENS@
 Environment=MCPSERVER_INSTALL_KEY=@KEY@
 Environment=MCPSERVER_MQTT_CREDENTIALS=@DATA_DIR@/auth/mqtt-credentials.json.enc
 Environment=MCPSERVER_LOG_FILE=@LOG_DIR@/service.log
+Environment=MCPSERVER_BIN_DIR=@BIN_DIR@
 Environment=MCPSERVER_ALLOWED_HOSTS=127.0.0.1:8765,localhost:8765,@HOST@,@HOST@:*,@LOCAL_IP_HOST@,@LOCAL_IP_HOST@:*
 Environment=MCPSERVER_ALLOWED_ORIGINS=https://@HOST@,https://@LOCAL_IP_HOST@
 ExecStart=@VENV@/bin/mcpserver

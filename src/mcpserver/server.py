@@ -39,6 +39,7 @@ from mcpserver.auth.remote_revocation import run_remote_revocation_worker
 from mcpserver.auth.store import AtomicJsonAuthStore
 from mcpserver.auth.web import Phase0OAuthWeb
 from mcpserver.config import DEFAULT_LOG_LEVEL, AtomicConfigStore
+from mcpserver.emergency_stop import EmergencyStopMonitor
 from mcpserver.loxberry.diagnostics import LoxBerryDiagnostics
 from mcpserver.loxone.client import MiniserverEndpoint
 from mcpserver.loxone.runtime import LoxoneRuntime
@@ -215,6 +216,32 @@ class _DisabledServiceMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+class _EmergencyStopMiddleware(BaseHTTPMiddleware):
+    """Reject only MCP tool calls while retaining login and discovery."""
+
+    def __init__(self, app: ASGIApp, *, monitor: EmergencyStopMonitor) -> None:
+        super().__init__(app)
+        self._monitor = monitor
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        if (
+            request.url.path == "/mcp"
+            and request.method == "POST"
+            and not self._monitor.allows_tool_calls
+        ):
+            body = await request.body()
+            if b'"tools/call"' in body:
+                return JSONResponse(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": None,
+                        "error": {"code": -32000, "message": "emergency_stop_active"},
+                    },
+                    status_code=503,
+                )
+        return await call_next(request)
+
+
 class _ForwardedHostFastMCP(FastMCP):
     """FastMCP application that also validates Apache's original Host header."""
 
@@ -243,6 +270,7 @@ class _ForwardedHostFastMCP(FastMCP):
     service_enabled: bool = True
     advertised_scopes: tuple[str, ...] = ()
     mqtt_health: MqttHealthPublisher | None = None
+    emergency_stop: EmergencyStopMonitor | None = None
 
     def streamable_http_app(self) -> Starlette:
         app = super().streamable_http_app()
@@ -262,6 +290,8 @@ class _ForwardedHostFastMCP(FastMCP):
         app.router.redirect_slashes = False
         if not self.service_enabled:
             app.add_middleware(_DisabledServiceMiddleware)
+        if self.emergency_stop is not None:
+            app.add_middleware(_EmergencyStopMiddleware, monitor=self.emergency_stop)
         app.add_middleware(
             _ForwardedHostValidationMiddleware,
             allowed_hosts=self.forwarded_allowed_hosts,
@@ -284,6 +314,7 @@ class _Phase0TokenVerifier(TokenVerifier):
 @asynccontextmanager
 async def _runtime_lifespan(
     runtime: LoxoneRuntime | None,
+    emergency_stop: EmergencyStopMonitor | None = None,
     remote_revocation: tuple[MiniserverEndpoint, EncryptedLoxoneTokenStore, float] | None = None,
 ) -> AsyncIterator[None]:
     """Close all live Miniserver sessions when the HTTP application stops."""
@@ -293,6 +324,8 @@ async def _runtime_lifespan(
         else None
     )
     try:
+        if emergency_stop is not None:
+            await emergency_stop.start()
         yield
     finally:
         if worker is not None:
@@ -301,6 +334,8 @@ async def _runtime_lifespan(
                 await worker
         if runtime is not None:
             await runtime.close()
+        if emergency_stop is not None:
+            await emergency_stop.close()
 
 
 def create_server(settings: ServerSettings) -> FastMCP:
@@ -319,10 +354,19 @@ def create_server(settings: ServerSettings) -> FastMCP:
     loxberry_operate_runtime: LoxBerryOperateRuntime | None = None
     statistics_cache: StatisticsCache | None = None
     mqtt_health: MqttHealthPublisher | None = None
+    emergency_stop: EmergencyStopMonitor | None = None
+    if settings.plugin_config is not None:
+        emergency_stop = EmergencyStopMonitor(settings.plugin_config)
     if settings.plugin_config is not None and settings.plugin_config.mqtt_enabled:
         home = Path(os.getenv("LBHOMEDIR", "/opt/loxberry"))
         if home.is_absolute():
-            mqtt_health = MqttHealthPublisher(settings.plugin_config, home=home)
+            mqtt_health = MqttHealthPublisher(
+                settings.plugin_config,
+                home=home,
+                emergency_stop_reader=lambda: (
+                    emergency_stop.status if emergency_stop else "unknown"
+                ),
+            )
     if settings.phase0_auth is not None:
         auth_store = AtomicJsonAuthStore(settings.phase0_auth.store_path)
         loxone_store: EncryptedLoxoneTokenStore | None = None
@@ -480,6 +524,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
         transport_security=transport_security,
         lifespan=lambda _server: _runtime_lifespan(
             runtime,
+            emergency_stop,
             (
                 settings.phase0_auth.loxone_endpoint,
                 loxone_store,
@@ -493,6 +538,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
     server.transport_guard = transport_guard
     server.service_enabled = settings.service_enabled
     server.mqtt_health = mqtt_health
+    server.emergency_stop = emergency_stop
     control_enabled = bool(
         settings.phase0_auth
         and settings.phase0_auth.plugin_config

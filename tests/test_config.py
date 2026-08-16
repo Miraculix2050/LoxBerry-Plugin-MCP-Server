@@ -67,7 +67,7 @@ def test_configuration_round_trip_preserves_unknown_keys(tmp_path: Path) -> None
 
     assert store.load().to_document() == config.to_document()
     assert json.loads(store.path.read_text(encoding="utf-8"))["future"] == {"keep": True}
-    assert config.to_document()["schema_version"] == 6
+    assert config.to_document()["schema_version"] == 8
 
 
 def test_phase_four_configuration_uses_only_the_ram_cache_setting() -> None:

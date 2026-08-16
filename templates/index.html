@@ -65,6 +65,8 @@
         <label class="mcp-field"><span><TMPL_VAR SETUP.PARALLEL></span><input name="max_parallel_calls" type="number" min="1" max="32" value="<TMPL_VAR MAX_PARALLEL_CALLS ESCAPE=HTML>"></label>
       </div>
       <label><input name="enabled" type="checkbox" value="1" <TMPL_IF ENABLED>checked</TMPL_IF>> <TMPL_VAR SETUP.ENABLED></label>
+      <label class="mcp-field"><span><TMPL_VAR SETUP.EMERGENCY_STOP></span><select name="emergency_stop_virtual_status_uuid" aria-describedby="emergency-stop-help"><option value=""><TMPL_VAR SETUP.EMERGENCY_STOP_NONE></option><TMPL_LOOP EMERGENCY_STOP_OPTIONS><option value="<TMPL_VAR uuid ESCAPE=HTML>" <TMPL_IF selected>selected</TMPL_IF>><TMPL_VAR name ESCAPE=HTML></option></TMPL_LOOP></select></label>
+      <p id="emergency-stop-help" class="mcp-help"><TMPL_VAR SETUP.EMERGENCY_STOP_HELP></p>
       <div class="mcp-permission-groups" aria-describedby="permission-policy-hint">
         <section class="mcp-permission-group" aria-labelledby="loxone-permissions-heading">
           <h3 id="loxone-permissions-heading"><TMPL_VAR SETUP.PERMISSIONS_LOXONE></h3>
