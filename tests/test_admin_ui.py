@@ -8,6 +8,27 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_admin_responses_emit_no_store_and_frame_protection() -> None:
+    cgi = (ROOT / "webfrontend" / "htmlauth" / "index.cgi").read_text(encoding="utf-8")
+
+    assert "sub security_header_args" in cgi
+    assert "-Cache_Control => 'no-store'" in cgi
+    assert "-Pragma => 'no-cache'" in cgi
+    assert "-Content_Security_Policy =>" in cgi
+    assert "frame-ancestors 'none'" in cgi
+    assert "base-uri 'self'" in cgi
+    assert "object-src 'none'" in cgi
+    assert "form-action 'self'" in cgi
+    assert "connect-src 'self'" in cgi
+    assert "-Referrer_Policy => 'no-referrer'" in cgi
+    assert "-X_Content_Type_Options => 'nosniff'" in cgi
+    assert "-X_Frame_Options => 'DENY'" in cgi
+    assert "'unsafe-eval'" not in cgi
+    assert "sub redirect_reply" in cgi
+    assert "security_header_args()," in cgi
+    assert "print_html_security_headers();" in cgi
+
+
 def test_initial_page_renders_configuration_before_loading_dynamic_state() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
