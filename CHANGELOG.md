@@ -46,6 +46,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add an optional fail-closed emergency-stop signal from a visible digital
+  Loxone Virtual Status. It blocks MCP tool calls on `0` or an unknown signal
+  state and publishes its retained MQTT status independently from health topics.
+
 - Treat the service-enable switch as a saved boot setting: initialize it when
   the page loads and update it only after applying that setting, never from
   periodic service-status polling or separate Start/Stop/Restart actions. Disable
