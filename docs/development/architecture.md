@@ -40,6 +40,10 @@ Configuration, encrypted sessions and plugin identity persist outside the packag
 
 Gen. 1 uses local HTTP/WS plus Loxone command encryption; Gen. 2 requires validated HTTPS/WSS and never falls back to cleartext. Logs and diagnostic exports are structured and sanitized: no credentials, tokens, private keys, full structures or arbitrary raw logs. Writes are audited without secrets and are never retried after an uncertain outcome.
 
+The authenticated Admin UI sends no-store cache directives, a same-origin Content
+Security Policy, frame denial, a no-referrer policy and MIME sniffing protection
+for page, AJAX, diagnostic-download and redirect responses.
+
 ## Related documents
 
 - [Implementation guidelines](implementation-guidelines.md)

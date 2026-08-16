@@ -46,6 +46,9 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Harden Admin UI browser responses with no-store caching, CSP, frame, referrer
+  and MIME protections across page, AJAX, download and redirect paths.
+
 - Add Tool Explorer time-range shortcuts, in-tab reference selection, action-specific
   control fields, and collapsible advanced parameters.
 
