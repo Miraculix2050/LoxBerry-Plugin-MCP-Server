@@ -53,12 +53,12 @@ class EmergencyStopMonitor:
 
     async def _credentials(self) -> tuple[str, str]:
         directory = Path(os.getenv("MCPSERVER_BIN_DIR", ""))
-        helper = directory / "emergency-stop-miniserver.php"
+        helper = directory / "emergency-stop-miniserver.pl"
         if not directory.is_absolute() or not helper.is_file():
             raise RuntimeError("provider unavailable")
         result = await asyncio.to_thread(
             subprocess.run,
-            ["php", str(helper), self.config.loxone_endpoint],
+            ["perl", str(helper), self.config.loxone_endpoint],
             check=False,
             capture_output=True,
             text=True,

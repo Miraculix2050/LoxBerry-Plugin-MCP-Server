@@ -56,6 +56,7 @@ _TEXT_SUFFIXES: Final = {
     ".js",
     ".lock",
     ".md",
+    ".pl",
     ".sh",
     ".svg",
     ".txt",
@@ -92,7 +93,7 @@ def expected_source_entries(root: Path) -> set[str]:
     )
     entries.update(
         {
-            "bin/emergency-stop-miniserver.php",
+            "bin/emergency-stop-miniserver.pl",
             "bin/healthcheck",
             "bin/mcpserver-admin",
             "bin/renew-web-certificate",
@@ -288,7 +289,7 @@ def main() -> int:
     )
     entries.extend(
         [
-            (root / "bin" / "emergency-stop-miniserver.php", "bin/emergency-stop-miniserver.php"),
+            (root / "bin" / "emergency-stop-miniserver.pl", "bin/emergency-stop-miniserver.pl"),
             (root / "bin" / "healthcheck", "bin/healthcheck"),
             (root / "bin" / "mcpserver-admin", "bin/mcpserver-admin"),
             (root / "bin" / "renew-web-certificate", "bin/renew-web-certificate"),
