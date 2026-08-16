@@ -667,6 +667,7 @@ def test_service_action_uses_only_the_fixed_unit(
 
     monkeypatch.setattr("mcpserver.admin.subprocess.run", run)
     monkeypatch.setattr("mcpserver.admin._service_status", lambda: service)
+    monkeypatch.setattr("mcpserver.admin.request_service_restart", lambda: None)
 
     result = dispatch({"action": "service_action", "payload": {"command": command}})
 

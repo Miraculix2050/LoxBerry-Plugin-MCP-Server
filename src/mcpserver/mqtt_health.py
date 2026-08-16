@@ -25,6 +25,27 @@ from mcpserver.config import PluginConfig
 LOXONE_EPOCH_OFFSET: Final = 1_230_768_000
 _LOGGER = logging.getLogger("mcpserver.mqtt_health")
 _CREDENTIALS_AAD: Final = b"mcpserver:mqtt-credentials:v1"
+_SERVICE_RESTART_REQUESTED = False
+
+
+def request_service_restart() -> None:
+    """Mark an Admin-initiated restart for the controlled shutdown publisher."""
+    global _SERVICE_RESTART_REQUESTED
+    _SERVICE_RESTART_REQUESTED = True
+
+
+def clear_service_restart() -> None:
+    """Clear a restart marker when systemd could not accept the request."""
+    global _SERVICE_RESTART_REQUESTED
+    _SERVICE_RESTART_REQUESTED = False
+
+
+def consume_service_restart() -> bool:
+    """Return and clear the process-local intentional restart marker."""
+    global _SERVICE_RESTART_REQUESTED
+    requested = _SERVICE_RESTART_REQUESTED
+    _SERVICE_RESTART_REQUESTED = False
+    return requested
 
 
 class MqttCredentialStoreError(RuntimeError):
@@ -358,19 +379,29 @@ class MqttHealthPublisher:
         self._close_clients()
 
     async def _publish_shutdown_state(self) -> None:
-        """Replace the Last-Will fallback before a controlled service stop."""
+        """Replace the Last-Will fallback before a controlled stop or restart."""
         if not self._clients:
             return
         topics = self.topics
+        restarting = consume_service_restart()
+        system_state = "restarting" if restarting else "inactive"
+        substate = "restarting" if restarting else "dead"
         publications: list[Any] = []
         try:
             if 0 in self._connected_clients:
                 publications.append(
-                    self._clients[0].publish(topics["system_state"], "inactive", qos=1, retain=True)
+                    self._clients[0].publish(
+                        topics["heartbeat"], str(loxone_epoch_seconds()), qos=1, retain=True
+                    )
+                )
+                publications.append(
+                    self._clients[0].publish(
+                        topics["system_state"], system_state, qos=1, retain=True
+                    )
                 )
             if 1 in self._connected_clients:
                 publications.append(
-                    self._clients[1].publish(topics["substate"], "dead", qos=1, retain=True)
+                    self._clients[1].publish(topics["substate"], substate, qos=1, retain=True)
                 )
             await asyncio.gather(
                 *(self._wait_for_publish(publication) for publication in publications)

@@ -25,8 +25,10 @@ from mcpserver import __version__
 if TYPE_CHECKING:
     from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore
     from mcpserver.auth.store import AtomicJsonAuthStore
-    from mcpserver.config import AtomicConfigStore, PluginConfig
     from mcpserver.loxone.client import LoxoneClient, MiniserverEndpoint
+
+from mcpserver.config import AtomicConfigStore, PluginConfig
+from mcpserver.mqtt_health import clear_service_restart, request_service_restart
 
 _MAX_REQUEST_BYTES: Final = 32 * 1024
 _SERVICE: Final = "loxberry-mcpserver.service"
@@ -220,7 +222,17 @@ def _service_action(payload: object) -> dict[str, Any]:
     command = payload.get("command") if isinstance(payload, dict) else None
     if not isinstance(command, str) or command not in _SERVICE_ACTIONS:
         raise AdminError("service action is invalid")
-    _run_service_command(command)
+    if command == "restart":
+        # The service owns the MQTT connection.  Its graceful shutdown consumes
+        # this process-local marker and publishes retained ``restarting`` before
+        # systemd launches the replacement process.
+        request_service_restart()
+    try:
+        _run_service_command(command)
+    except AdminError:
+        if command == "restart":
+            clear_service_restart()
+        raise
     return _service_response()
 
 
