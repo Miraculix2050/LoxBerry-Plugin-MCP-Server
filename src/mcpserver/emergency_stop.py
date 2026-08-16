@@ -18,6 +18,11 @@ from mcpserver.loxone.client import LoxoneClient
 _LOGGER = logging.getLogger("mcpserver.emergency_stop")
 
 
+def _sorted_virtual_status_options(options: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Order display labels deterministically while retaining the UUID tie-breaker."""
+    return sorted(options, key=lambda option: (option["name"].casefold(), option["uuid"]))
+
+
 @dataclass(slots=True)
 class EmergencyStopMonitor:
     """Tracks the one trusted status value; no selection means enabled."""
@@ -149,12 +154,14 @@ async def virtual_status_options(config: PluginConfig) -> list[dict[str, str]]:
         token = await client.acquire_token(username, password)
         session = await client.open_session(token)
         structure = await session.load_structure()
-        return [
-            {"uuid": item.uuid, "name": item.name}
-            for item in structure.controls
-            if item.control_type in {"VirtualStatus", "InfoOnlyDigital"}
-            and len(item.state_uuids) == 1
-        ]
+        return _sorted_virtual_status_options(
+            [
+                {"uuid": item.uuid, "name": item.name}
+                for item in structure.controls
+                if item.control_type in {"VirtualStatus", "InfoOnlyDigital"}
+                and len(item.state_uuids) == 1
+            ]
+        )
     except Exception:
         return []
     finally:
