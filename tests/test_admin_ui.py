@@ -14,6 +14,7 @@ def _admin_cgi_environment(tmp_path: Path) -> dict[str, str]:
     helper.write_text(
         "#!/usr/bin/env perl\n"
         "use strict; use warnings;\n"
+        "my $request = <STDIN>;\n"
         'print qq({\\"ok\\":true,\\"data\\":{}});\n',
         encoding="utf-8",
     )
