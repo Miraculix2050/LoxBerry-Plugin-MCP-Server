@@ -111,7 +111,7 @@ if [ "$is_upgrade" -eq 0 ]; then
             addtime => 1,
             loglevel => 7,
         );
-        $log->INF("component=admin_ui outcome=initialized");
+        $log->LOGSTART("component=admin_ui outcome=initialized");
     ' "$actual_folder" "$plugin_log" || exit 2
 fi
 echo "<OK> Python runtime installed offline for plugin folder $actual_folder."

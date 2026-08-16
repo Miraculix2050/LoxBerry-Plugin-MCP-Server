@@ -290,7 +290,7 @@ def test_postinstall_creates_a_native_admin_ui_log_for_clean_installs() -> None:
     assert "package => $folder" in postinstall
     assert "logdir => $logdir" in postinstall
     assert "loglevel => 7" in postinstall
-    assert "component=admin_ui outcome=initialized" in postinstall
+    assert '$log->LOGSTART("component=admin_ui outcome=initialized")' in postinstall
 
 
 def test_lifecycle_hooks_reject_an_unsafe_plugin_folder() -> None:
