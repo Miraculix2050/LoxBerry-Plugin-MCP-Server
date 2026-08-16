@@ -226,19 +226,25 @@ class MqttHealthPublisher:
     async def start(self) -> None:
         if not self._config.mqtt_enabled:
             return
+        self._connect()
+        self._task = asyncio.create_task(self._publish_loop())
+
+    def _connect(self) -> bool:
+        """Start asynchronous broker connections without making MCP depend on them."""
         gateway = self._broker()
         if gateway is None:
             _LOGGER.warning("event=mqtt_broker_unavailable")
-            return
+            return False
         try:
             self._clients = self._create_clients(gateway)
             for client in self._clients:
                 client.connect_async(gateway.host, gateway.port, keepalive=60)
                 client.loop_start()
-            self._task = asyncio.create_task(self._publish_loop())
+            return True
         except Exception:
             self._close_clients()
             _LOGGER.warning("event=mqtt_connect_failed")
+            return False
 
     def _broker(self) -> MqttGateway | None:
         if self._config.mqtt_use_loxberry_gateway:
@@ -276,6 +282,8 @@ class MqttHealthPublisher:
         for client in clients:
             client.username_pw_set(gateway.username, gateway.password)
             client.reconnect_delay_set(min_delay=1, max_delay=60)
+            if not self._config.mqtt_use_loxberry_gateway:
+                client.tls_set()
             client.on_connect = self._on_connect
         clients[0].will_set(topics["system_state"], "unknown", qos=1, retain=True)
         clients[1].will_set(topics["substate"], "unknown", qos=1, retain=True)
@@ -286,8 +294,15 @@ class MqttHealthPublisher:
         self.publish()
 
     async def _publish_loop(self) -> None:
+        retry_seconds = 1
         try:
             while True:
+                if not self._clients:
+                    await asyncio.sleep(retry_seconds)
+                    retry_seconds = (
+                        1 if self._connect() else min(retry_seconds * 2, 60)
+                    )
+                    continue
                 self.publish()
                 await asyncio.sleep(self._config.mqtt_heartbeat_seconds)
         except asyncio.CancelledError:

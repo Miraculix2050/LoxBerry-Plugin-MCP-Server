@@ -24,6 +24,9 @@ class _Client:
     def reconnect_delay_set(self, **kwargs: object) -> None:
         self.calls.append(("backoff", kwargs))
 
+    def tls_set(self) -> None:
+        self.calls.append(("tls",))
+
     def will_set(self, *args: object, **kwargs: object) -> None:
         self.calls.append(("will", *args, kwargs))
 
@@ -94,6 +97,7 @@ def test_custom_broker_password_is_encrypted_and_used_without_gateway(
     assert credentials.read_text(encoding="utf-8").find("custom-secret") == -1
     calls = [call for client in clients for call in client.calls]
     assert ("credentials", "custom-user", "custom-secret") in calls
+    assert ("tls",) in calls
     assert ("connect", "broker.example", 2883, 60) in calls
 
 
@@ -143,6 +147,21 @@ def test_health_publishes_retained_start_and_shutdown_messages(tmp_path: Path) -
         {"qos": 1, "retain": True},
     ) in calls
     assert ("publish", "mcpserver/health/substate", "dead", {"qos": 1, "retain": True}) in calls
+
+
+def test_missing_gateway_schedules_a_bounded_retry(tmp_path: Path) -> None:
+    publisher = MqttHealthPublisher(
+        PluginConfig(mqtt_enabled=True),
+        home=tmp_path / "missing-gateway",
+    )
+
+    async def exercise() -> None:
+        await publisher.start()
+        assert publisher._task is not None
+        assert publisher._clients == []
+        await publisher.close()
+
+    asyncio.run(exercise())
 
 
 def test_loxone_epoch_is_compact_seconds() -> None:
