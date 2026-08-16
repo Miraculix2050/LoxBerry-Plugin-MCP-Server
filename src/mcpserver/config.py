@@ -148,7 +148,7 @@ def _mqtt_username(value: object) -> str:
 def _emergency_stop_uuid(value: object) -> str:
     if not isinstance(value, str) or value == "":
         return ""
-    if not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", value):
+    if not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{16}", value):
         raise ConfigError("emergency_stop.virtual_status_uuid is unsupported")
     return value
 
