@@ -13,6 +13,14 @@ targeted discovery tools for details. Each breakdown contains at most 50 items,
 and the complete result envelope is limited to 64 KiB with explicit completeness
 metadata.
 
+For initial orientation, this replaces separate calls to `loxone_list_rooms`,
+`loxone_list_categories`, and an unfiltered `loxone_find_controls` request just
+to learn their aggregate distribution. For example, a client can make one
+overview call to see that its authorized visible structure has 18 controls in
+four rooms and three categories, then use `loxone_find_controls` only for the
+chosen room, category, or type. It does not replace those targeted calls when a
+client needs individual controls, descriptions, or current states.
+
 ## Limits
 
 - Exactly one Miniserver target is supported.
