@@ -40,6 +40,7 @@ from mcpserver.loxone.models import (
     StateRecord,
     StatisticSeries,
 )
+from mcpserver.loxone.project.service import ProjectService
 from mcpserver.loxone.statistics import (
     StatisticPoint,
     StatisticsCache,
@@ -205,6 +206,7 @@ class LoxoneRuntime:
         if not isinstance(endpoint, MiniserverEndpoint):
             raise TypeError("endpoint must be a MiniserverEndpoint")
         self.endpoint = endpoint
+        self.projects: ProjectService | None = None
         self.token_store = token_store
         self.token_health = token_health
         self.client = LoxoneClient(
@@ -1006,8 +1008,12 @@ class LoxoneRuntime:
         self.cache.clear(family_id)
 
     async def revoke(self, family_id: str) -> None:
+        if self.projects is not None:
+            await self.projects.revoke(family_id)
         await self.disconnect(family_id)
 
     async def close(self) -> None:
+        if self.projects is not None:
+            await self.projects.close()
         for family_id in tuple(self._records):
             await self.disconnect(family_id)

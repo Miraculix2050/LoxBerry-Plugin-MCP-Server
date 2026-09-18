@@ -35,6 +35,7 @@ from mcpserver.auth.provider import (
     LOXBERRY_READ_SCOPE,
     READ_SCOPE,
     Phase0OAuthProvider,
+    StoredAccessToken,
 )
 from mcpserver.auth.remote_revocation import run_remote_revocation_worker
 from mcpserver.auth.store import AtomicJsonAuthStore
@@ -43,6 +44,7 @@ from mcpserver.config import DEFAULT_LOG_LEVEL, AtomicConfigStore
 from mcpserver.emergency_stop import EmergencyStopMonitor
 from mcpserver.loxberry.diagnostics import LoxBerryDiagnostics
 from mcpserver.loxone.client import MiniserverEndpoint
+from mcpserver.loxone.project.service import ProjectService
 from mcpserver.loxone.runtime import LoxoneRuntime
 from mcpserver.loxone.statistics import StatisticsCache
 from mcpserver.mqtt_health import MqttHealthPublisher
@@ -520,6 +522,23 @@ def create_server(settings: ServerSettings) -> FastMCP:
                     config.max_structure_state_references if config is not None else 100_000
                 ),
                 max_structure_depth=(config.max_structure_depth if config is not None else 32),
+            )
+
+            async def validate_project_access(access: StoredAccessToken) -> bool:
+                current = await provider.load_access_token(access.token)
+                return bool(
+                    current is not None
+                    and current.family_id == access.family_id
+                    and current.identity_id == access.identity_id
+                    and current.miniserver_id == access.miniserver_id
+                    and READ_SCOPE in current.scopes
+                )
+
+            runtime.projects = ProjectService(
+                runtime.client,
+                loxone_store,
+                LoxoneTokenHealthStore(auth_store),
+                validate_project_access,
             )
             runtime_ref["runtime"] = runtime
         if config and settings.phase0_auth.config_path is not None:
