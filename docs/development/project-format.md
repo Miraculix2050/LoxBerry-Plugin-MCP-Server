@@ -16,3 +16,17 @@ Das interne LoxCC-Format enthält Kennung, komprimierte und dekodierte Länge so
 CRC32. Der Decoder prüft diese Werte und ungültige Rückverweise vor Freigabe der
 Projektbytes. Es wird kein Code der AGPL-Referenz übernommen und keine neue
 Laufzeitabhängigkeit eingeführt. XML-Verarbeitung folgt separat.
+
+## Parser evidence
+
+The authorized target supplied ControlList/C blocks, Co connectors and In/Input
+references. Both files decoded with valid CRCs and parsed successfully: 5,252 and
+18,241 elements. The latter contained 54 literal attribute-newline anomalies.
+The archive also contained three auxiliary files; these are bounded and validated
+but not interpreted as projects. No source values were retained in this document.
+The parser preserves duplicate attributes and mixed content, rejects declarations
+and external entities, and retains unknown schema fields internally.
+
+Beide realen Projekte wurden mit gültiger CRC dekodiert und erfolgreich geparst.
+54 Attribut-Zeilenumbrüche wurden als Anomalien erfasst. Begleitdateien im ZIP
+zählen zu den Größenlimits, werden aber nicht als Projekte interpretiert.
