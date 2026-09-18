@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import Any
 
 from mcpserver.loxone.models import Control, LoxoneStructure, NamedGroup
@@ -22,12 +23,132 @@ def flatten_controls(controls: tuple[Control, ...]) -> list[Control]:
     return result
 
 
+def visible_controls(structure: LoxoneStructure) -> list[Control]:
+    """Return the normalized control corpus used by ordinary discovery."""
+    return flatten_controls(structure.controls)
+
+
 def controls_for_diagnosis(structure: LoxoneStructure, *, include_hidden: bool) -> list[Control]:
     """Return public controls and explicitly requested hidden diagnostics."""
-    controls = flatten_controls(structure.controls)
+    controls = visible_controls(structure)
     if include_hidden:
         controls.extend(flatten_controls(structure.hidden_controls))
     return controls
+
+
+def structure_overview(structure: LoxoneStructure, *, max_items: int) -> dict[str, Any]:
+    """Aggregate one bounded overview from the authorized visible structure."""
+    if max_items < 1:
+        raise ValueError("max_items must be positive")
+
+    controls = visible_controls(structure)
+    rooms = {item.uuid: item.name for item in structure.rooms}
+    categories = {item.uuid: item.name for item in structure.categories}
+    room_counts: Counter[str] = Counter()
+    category_counts: Counter[str] = Counter()
+    type_counts: Counter[str] = Counter()
+    unassigned_rooms = 0
+    unassigned_categories = 0
+
+    for control in controls:
+        type_counts[control.control_type] += 1
+        if control.room_uuid in rooms:
+            room_counts[control.room_uuid] += 1
+        else:
+            unassigned_rooms += 1
+        if control.category_uuid in categories:
+            category_counts[control.category_uuid] += 1
+        else:
+            unassigned_categories += 1
+
+    room_items: list[dict[str, object]] = [
+        {
+            "assignment": "assigned",
+            "uuid": uuid,
+            "name": name,
+            "control_count": room_counts[uuid],
+        }
+        for uuid, name in rooms.items()
+    ]
+    if unassigned_rooms:
+        room_items.append(
+            {
+                "assignment": "unassigned",
+                "uuid": None,
+                "name": None,
+                "control_count": unassigned_rooms,
+            }
+        )
+
+    category_items: list[dict[str, object]] = [
+        {
+            "assignment": "assigned",
+            "uuid": uuid,
+            "name": name,
+            "control_count": category_counts[uuid],
+        }
+        for uuid, name in categories.items()
+    ]
+    if unassigned_categories:
+        category_items.append(
+            {
+                "assignment": "unassigned",
+                "uuid": None,
+                "name": None,
+                "control_count": unassigned_categories,
+            }
+        )
+
+    type_items = [
+        {"type": control_type, "control_count": count}
+        for control_type, count in type_counts.items()
+    ]
+
+    def group_key(item: dict[str, object]) -> tuple[int, str, str]:
+        name = item["name"]
+        uuid = item["uuid"]
+        count = item["control_count"]
+        if not isinstance(count, int):  # pragma: no cover - constructed above
+            raise TypeError("control_count must be an integer")
+        return (
+            -count,
+            name.casefold() if isinstance(name, str) else "",
+            uuid if isinstance(uuid, str) else "",
+        )
+
+    def type_key(item: dict[str, object]) -> tuple[int, str, str]:
+        control_type = item["type"]
+        count = item["control_count"]
+        if not isinstance(control_type, str) or not isinstance(count, int):  # pragma: no cover
+            raise TypeError("type breakdown is invalid")
+        return (-count, control_type.casefold(), control_type)
+
+    room_items.sort(key=group_key)
+    category_items.sort(key=group_key)
+    type_items.sort(key=type_key)
+
+    def breakdown(items: list[dict[str, object]]) -> dict[str, object]:
+        total = len(items)
+        selected = items[:max_items]
+        return {
+            "items": selected,
+            "returned": len(selected),
+            "total": total,
+            "truncated": len(selected) < total,
+            "complete": len(selected) == total,
+        }
+
+    return {
+        "counts": {
+            "controls": len(controls),
+            "rooms": len(rooms),
+            "categories": len(categories),
+            "control_types": len(type_counts),
+        },
+        "rooms": breakdown(room_items),
+        "categories": breakdown(category_items),
+        "control_types": breakdown(type_items),
+    }
 
 
 def control_summary(control: Control, snapshot: RuntimeSnapshot) -> dict[str, Any]:

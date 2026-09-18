@@ -6,6 +6,23 @@
 
 Der Server liest sichtbare Räume, Kategorien, Controls und Zustände. Optional sind begrenzte Historie, Statistiken, maskierte LoxBerry-Diagnosen sowie dokumentierte, typabhängige Aktionen für sichtbare Gen.-1-Controls verfügbar.
 
+`loxone_get_structure_overview` liefert eine begrenzte erste Übersicht der für
+den angemeldeten Loxone-Benutzer sichtbaren Räume, Kategorien und Control-Typen.
+Sie enthält keine aktuellen Zustände, Historie, Zahlen zu versteckten Objekten
+oder Config-Projektdaten; Details liefern die gezielten Discovery-Tools. Jede
+Aufschlüsselung enthält höchstens 50 Einträge, und das vollständige Ergebnis-
+Envelope ist mit expliziten Vollständigkeitsangaben auf 64 KiB begrenzt.
+
+Für die erste Orientierung ersetzt dies getrennte Aufrufe von
+`loxone_list_rooms`, `loxone_list_categories` und einem ungefilterten
+`loxone_find_controls`-Aufruf, die nur deren aggregierte Verteilung ermitteln
+sollen. Ein Client kann beispielsweise mit einem Overview-Aufruf sehen, dass
+seine autorisiert sichtbare Struktur 18 Controls in vier Räumen und drei
+Kategorien enthält, und anschließend `loxone_find_controls` nur für den
+gewählten Raum, die Kategorie oder den Typ verwenden. Die gezielten Aufrufe
+bleiben nötig, wenn einzelne Controls, Beschreibungen oder aktuelle Zustände
+benötigt werden.
+
 ## Grenzen
 
 - Genau ein Miniserver-Ziel wird unterstützt.

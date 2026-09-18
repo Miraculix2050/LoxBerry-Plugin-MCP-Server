@@ -207,7 +207,8 @@ try {
     if ($toolsResponse.error) { throw 'MCP tools/list failed.' }
 
     $expected = @(
-        'loxone_get_system_status', 'loxone_list_rooms', 'loxone_get_room_snapshot',
+        'loxone_get_system_status', 'loxone_get_structure_overview',
+        'loxone_list_rooms', 'loxone_get_room_snapshot',
         'loxone_list_categories', 'loxone_get_weather',
         'loxone_find_controls', 'loxone_describe_control', 'loxone_get_control_notes',
         'loxone_get_states', 'loxone_list_global_metadata',
@@ -272,12 +273,13 @@ try {
     $script:nextId = 4
     $skillGuide = Invoke-ReadTool (Get-NextId) 'loxone_get_skill_guide' @{}
     if ($skillGuide.data.name -ne 'using-loxberry-mcp' -or
-        $skillGuide.data.revision -ne 26 -or
+        $skillGuide.data.revision -ne 27 -or
         $skillGuide.data.media_type -ne 'text/markdown' -or
         $skillGuide.data.content -ne $skillMarkdown) {
         throw 'MCP skill guide tool differs from the canonical resource.'
     }
     [void](Invoke-ReadTool (Get-NextId) 'loxone_get_system_status' @{})
+    [void](Invoke-ReadTool (Get-NextId) 'loxone_get_structure_overview' @{})
     [void](Invoke-ReadTool (Get-NextId) 'loxone_list_rooms' @{ limit = 100 })
     [void](Invoke-ReadTool (Get-NextId) 'loxone_list_categories' @{ limit = 100 })
 

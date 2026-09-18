@@ -57,6 +57,8 @@ from mcpserver.loxone.presentation import (
 from mcpserver.loxone.presentation import (
     parent_control as _parent_control,
 )
+from mcpserver.loxone.presentation import structure_overview as _structure_overview
+from mcpserver.loxone.presentation import visible_controls as _visible_controls
 from mcpserver.loxone.runtime import (
     ControlHistoryEntry,
     ControlOperationError,
@@ -76,6 +78,8 @@ DEFAULT_PAGE_SIZE: Final = 50
 MAX_PAGE_SIZE: Final = 100
 MAX_STATE_UUIDS: Final = 100
 MAX_WEATHER_POINTS: Final = 96
+STRUCTURE_OVERVIEW_MAX_ITEMS: Final = 50
+STRUCTURE_OVERVIEW_MAX_BYTES: Final = 65_536
 _LOXONE_EPOCH_UNIX: Final = 1_230_768_000
 _MAX_SEMANTIC_JSON_TEXT: Final = 65_536
 _MAX_SEMANTIC_ENTRIES: Final = 100
@@ -437,6 +441,51 @@ class SystemStatusData(BaseModel):
     structure_generation: int = Field(description="Monotonic generation of the current structure.")
 
 
+class StructureOverviewCountsData(BaseModel):
+    controls: int
+    rooms: int
+    categories: int
+    control_types: int
+
+
+class StructureOverviewGroupItemData(BaseModel):
+    assignment: Literal["assigned", "unassigned"]
+    uuid: str | None
+    name: str | None
+    control_count: int
+
+
+class StructureOverviewTypeItemData(BaseModel):
+    type: str
+    control_count: int
+
+
+class StructureOverviewGroupBreakdownData(BaseModel):
+    items: list[StructureOverviewGroupItemData]
+    returned: int
+    total: int
+    truncated: bool
+    complete: bool
+
+
+class StructureOverviewTypeBreakdownData(BaseModel):
+    items: list[StructureOverviewTypeItemData]
+    returned: int
+    total: int
+    truncated: bool
+    complete: bool
+
+
+class StructureOverviewData(BaseModel):
+    scope: Literal["authorized_visible_structure"]
+    structure_last_modified: str
+    structure_generation: int
+    counts: StructureOverviewCountsData
+    rooms: StructureOverviewGroupBreakdownData
+    categories: StructureOverviewGroupBreakdownData
+    control_types: StructureOverviewTypeBreakdownData
+
+
 class ToolEnvelope(BaseModel):
     ok: bool
     data: object
@@ -448,6 +497,10 @@ class ToolEnvelope(BaseModel):
 
 class SystemStatusEnvelope(ToolEnvelope):
     data: SystemStatusData | ErrorData
+
+
+class StructureOverviewEnvelope(ToolEnvelope):
+    data: StructureOverviewData | ErrorData
 
 
 class RoomPageEnvelope(ToolEnvelope):
@@ -991,6 +1044,56 @@ async def _snapshot(runtime: LoxoneRuntime | None) -> tuple[StoredAccessToken, R
         return access, await runtime.snapshot(access)
 
 
+def _fit_structure_overview(envelope: StructureOverviewEnvelope) -> StructureOverviewEnvelope:
+    """Trim lowest-priority breakdown entries to the public envelope byte limit."""
+    if not isinstance(envelope.data, StructureOverviewData):
+        return envelope
+    breakdowns = (
+        envelope.data.control_types,
+        envelope.data.categories,
+        envelope.data.rooms,
+    )
+    while len(envelope.model_dump_json().encode("utf-8")) > STRUCTURE_OVERVIEW_MAX_BYTES:
+        selected_breakdown: (
+            StructureOverviewGroupBreakdownData | StructureOverviewTypeBreakdownData | None
+        ) = None
+        smallest_size: int | None = None
+        for breakdown in breakdowns:
+            if breakdown.items:
+                if isinstance(breakdown, StructureOverviewGroupBreakdownData):
+                    group_item = breakdown.items.pop()
+                    previous = (breakdown.returned, breakdown.truncated, breakdown.complete)
+                    breakdown.returned = len(breakdown.items)
+                    breakdown.truncated = breakdown.returned < breakdown.total
+                    breakdown.complete = not breakdown.truncated
+                    candidate_size = len(envelope.model_dump_json().encode("utf-8"))
+                    breakdown.items.append(group_item)
+                    breakdown.returned, breakdown.truncated, breakdown.complete = previous
+                else:
+                    type_item = breakdown.items.pop()
+                    previous = (breakdown.returned, breakdown.truncated, breakdown.complete)
+                    breakdown.returned = len(breakdown.items)
+                    breakdown.truncated = breakdown.returned < breakdown.total
+                    breakdown.complete = not breakdown.truncated
+                    candidate_size = len(envelope.model_dump_json().encode("utf-8"))
+                    breakdown.items.append(type_item)
+                    breakdown.returned, breakdown.truncated, breakdown.complete = previous
+                if smallest_size is None or candidate_size < smallest_size:
+                    selected_breakdown = breakdown
+                    smallest_size = candidate_size
+        if selected_breakdown is None:
+            return _error(
+                StructureOverviewEnvelope,
+                "temporarily_unavailable",
+                "Structure overview exceeds the response size limit",
+            )
+        selected_breakdown.items.pop()
+        selected_breakdown.returned = len(selected_breakdown.items)
+        selected_breakdown.truncated = selected_breakdown.returned < selected_breakdown.total
+        selected_breakdown.complete = not selected_breakdown.truncated
+    return envelope
+
+
 def _state_observed_at(record: StateRecord) -> str | None:
     return (
         datetime.fromtimestamp(record.observed_at, UTC).isoformat().replace("+00:00", "Z")
@@ -1361,6 +1464,42 @@ def register_read_tools(
             )
         except RuntimeUnavailable as exc:
             return _error(SystemStatusEnvelope, "temporarily_unavailable", str(exc))
+
+    @server.tool(
+        name="loxone_get_structure_overview",
+        description=(
+            "Get one bounded overview of the authorized visible Loxone runtime structure, "
+            "including exact counts and room, category, and control-type breakdowns."
+        ),
+        annotations=annotations,
+        structured_output=True,
+    )
+    async def get_structure_overview() -> StructureOverviewEnvelope:
+        try:
+            _access_token, snapshot = await _snapshot(runtime)
+            overview = _structure_overview(
+                snapshot.structure,
+                max_items=STRUCTURE_OVERVIEW_MAX_ITEMS,
+            )
+            envelope = _result(
+                StructureOverviewEnvelope,
+                {
+                    "scope": "authorized_visible_structure",
+                    "structure_last_modified": snapshot.structure.last_modified,
+                    "structure_generation": snapshot.structure_generation,
+                    **overview,
+                },
+                stale=not snapshot.connected,
+            )
+            return _fit_structure_overview(envelope)
+        except PermissionError:
+            return _error(
+                StructureOverviewEnvelope,
+                "unauthenticated",
+                "Authentication with loxone:read is required",
+            )
+        except RuntimeUnavailable as exc:
+            return _error(StructureOverviewEnvelope, "temporarily_unavailable", str(exc))
 
     @server.tool(
         name="loxone_list_rooms",
@@ -1761,7 +1900,11 @@ def register_read_tools(
         try:
             normalized = _normalized_query(query)
             _access_token, snapshot = await _snapshot(runtime)
-            controls = _controls_for_diagnosis(snapshot.structure, include_hidden=include_hidden)
+            controls = (
+                _controls_for_diagnosis(snapshot.structure, include_hidden=True)
+                if include_hidden
+                else _visible_controls(snapshot.structure)
+            )
             room_groups = {item.uuid: item.room_group_uuid for item in snapshot.structure.rooms}
             normalized_control_type = control_type.casefold().strip() if control_type else None
             matches = [
