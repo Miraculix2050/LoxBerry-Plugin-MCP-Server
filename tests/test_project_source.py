@@ -23,6 +23,23 @@ def test_archive_fingerprint_ignores_order():
     assert len(first.files) == 2
 
 
+def test_archive_accepts_bounded_companions_without_fingerprinting_them():
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as target:
+        target.writestr("project.LoxCC", struct.pack("<IIII", 0xAABBCCEE, 1, 1, 0) + b"x")
+        target.writestr("companion.json", b"{}")
+    bundle = unpack_project(output.getvalue())
+    assert tuple(member.key for member in bundle.files) == ("project.LoxCC",)
+
+
+def test_archive_requires_at_least_one_project_member():
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as target:
+        target.writestr("companion.json", b"{}")
+    with pytest.raises(ProjectError, match="without_project"):
+        unpack_project(output.getvalue())
+
+
 @pytest.mark.parametrize("names", [["../x.LoxCC"], ["/x.LoxCC"], ["x.zip"], ["x.LoxCC", "X.LoxCC"]])
 def test_archive_rejects_unsafe_or_ambiguous_entries(names):
     with pytest.raises(ProjectError):

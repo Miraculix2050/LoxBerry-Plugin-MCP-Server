@@ -44,7 +44,6 @@ def unpack_project(data: bytes, limits: ProjectLimits = DEFAULT_LIMITS) -> Proje
                         or ".." in path.parts
                         or ":" in name
                         or name.casefold() in names
-                        or not name.lower().endswith(".loxcc")
                         or entry.compress_type not in {zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED}
                     ):
                         raise ProjectError("project_archive_unsupported")
@@ -54,7 +53,11 @@ def unpack_project(data: bytes, limits: ProjectLimits = DEFAULT_LIMITS) -> Proje
                         raise ProjectError("project_archive_limit")
                     with archive.open(entry) as source:
                         body = source.read(min(entry.file_size, limits.expanded_bytes) + 1)
-                    if len(body) != entry.file_size or not body.startswith(b"\xee\xcc\xbb\xaa"):
+                    if len(body) != entry.file_size or body.startswith(b"PK"):
+                        raise ProjectError("project_archive_invalid")
+                    if not name.lower().endswith(".loxcc"):
+                        continue
+                    if not body.startswith(b"\xee\xcc\xbb\xaa"):
                         raise ProjectError("project_archive_invalid")
                     members.append(ProjectFile(name, body))
         else:
@@ -65,6 +68,8 @@ def unpack_project(data: bytes, limits: ProjectLimits = DEFAULT_LIMITS) -> Proje
         if isinstance(exc, ProjectError):
             raise
         raise ProjectError("project_archive_invalid") from None
+    if not members:
+        raise ProjectError("project_archive_without_project")
     members.sort(key=lambda member: member.key)
     digest = hashlib.sha256()
     for member in members:
