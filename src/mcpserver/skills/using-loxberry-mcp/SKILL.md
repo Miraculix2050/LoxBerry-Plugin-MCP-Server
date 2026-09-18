@@ -20,6 +20,17 @@ when `stale` is true or a state has an old or missing `observed_at` value.
 
 Call `loxone_get_system_status` when connectivity or data freshness matters.
 
+### Orient within an installation
+
+Call `loxone_get_structure_overview` when a task needs an initial, bounded map
+of the authorized visible runtime structure. Treat its counts as scoped to the
+signed-in Loxone user, not as a complete physical or Config-project inventory.
+Check `stale` plus every breakdown's `truncated` and `complete` fields. Then use
+`loxone_list_rooms`, `loxone_list_categories`, `loxone_find_controls`,
+`loxone_describe_control`, or `loxone_get_room_snapshot` for targeted detail.
+Do not infer hidden objects, household roles, importance, or program logic from
+the overview.
+
 ### Inspect one known room
 
 1. Resolve the room with `loxone_list_rooms`. Use its exact UUID and follow every

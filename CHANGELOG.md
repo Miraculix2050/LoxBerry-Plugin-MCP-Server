@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add `loxone_get_structure_overview` for exact authorized-visible counts and
+  bounded room, category and control-type breakdowns without additional
+  Miniserver polling, state reads or Config-project access.
+
 - Add the internal, read-only Loxone project pipeline for authenticated downloads,
   bounded LoxCC decoding, tolerant parsing, deterministic graph construction and
   evidence-based runtime UUID mapping. No public MCP tool or additional scope is added.

@@ -6,6 +6,13 @@
 
 The server reads visible rooms, categories, controls and states. Optional bounded history, statistics, masked LoxBerry diagnostics and documented type-specific actions for visible Gen. 1 controls are available.
 
+`loxone_get_structure_overview` returns a bounded initial map of the rooms,
+categories and control types visible to the signed-in Loxone user. It contains
+no current states, history, hidden-object counts or Config-project data; use the
+targeted discovery tools for details. Each breakdown contains at most 50 items,
+and the complete result envelope is limited to 64 KiB with explicit completeness
+metadata.
+
 ## Limits
 
 - Exactly one Miniserver target is supported.

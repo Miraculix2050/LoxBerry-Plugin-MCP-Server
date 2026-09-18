@@ -30,6 +30,7 @@ EXPECTED_TOOLS = {
     "loxone_get_skill_guide",
     "loxone_get_states",
     "loxone_get_statistics",
+    "loxone_get_structure_overview",
     "loxone_get_system_status",
     "loxone_get_weather",
     "loxone_list_categories",

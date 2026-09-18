@@ -360,6 +360,7 @@ def test_exact_default_read_only_tools_are_published() -> None:
     assert [tool["name"] for tool in tools] == [
         "loxone_get_skill_guide",
         "loxone_get_system_status",
+        "loxone_get_structure_overview",
         "loxone_list_rooms",
         "loxone_get_room_snapshot",
         "loxone_list_categories",
