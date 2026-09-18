@@ -14,6 +14,7 @@ class ProjectLimits:
     expanded_bytes: int = 64 * 1024 * 1024
     decoded_bytes: int = 64 * 1024 * 1024
     timeout_seconds: float = 20.0
+    processing_timeout_seconds: float = 45.0
     elements: int = 200_000
     attributes: int = 1_000_000
     depth: int = 128

@@ -1,100 +1,21 @@
-"""Bounded, secret-safe project-download probe using an existing MCP identity.
+"""Read-only end-to-end project diagnostic using one existing MCP OAuth family."""
 
-Run locally on the authorized LoxBerry with the service environment. This is a
-developer diagnostic, not an MCP tool. Never persist the received project.
-"""
-
-from __future__ import annotations
-
-import argparse
 import asyncio
-import io
 import json
 import logging
-import struct
 import time
-import zipfile
-from urllib.parse import quote
+from collections import Counter
+from types import SimpleNamespace
 from uuid import NAMESPACE_URL, uuid5
-
-import httpx
 
 from mcpserver.auth.loxone_health import LoxoneTokenHealthStore
 from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore
+from mcpserver.auth.provider import StoredAccessToken
 from mcpserver.auth.store import AtomicJsonAuthStore
 from mcpserver.loxone.client import LoxoneClient
-from mcpserver.loxone.security import CommandEncryptor
+from mcpserver.loxone.project.models import ProjectError
+from mcpserver.loxone.project.service import ProjectService
 from mcpserver.settings import ServerSettings
-
-MAX_BYTES = 8 * 1024 * 1024
-MAX_DECODED_BYTES = 64 * 1024 * 1024
-TIMEOUT = 20
-COMMAND = "dev/fsget/prog/sps.LoxCC"
-
-
-def classify_zip(payload: bytes) -> dict[str, object]:
-    try:
-        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
-            entries = archive.infolist()
-            if len(entries) > 32 or sum(e.file_size for e in entries) > MAX_DECODED_BYTES:
-                return {"result": "size_limit"}
-            projects = [
-                e for e in entries if not e.is_dir() and e.filename.lower().endswith(".loxcc")
-            ]
-            if not projects:
-                return {"result": "zip_without_project"}
-            for entry in projects:
-                if entry.file_size > MAX_BYTES or entry.flag_bits & 1:
-                    return {"result": "unsupported_zip_entry"}
-                with archive.open(entry) as source:
-                    member = source.read(MAX_BYTES + 1)
-                if member.startswith(b"PK") or classify(member)["result"] != "download_verified":
-                    return {"result": "invalid_zip_project"}
-            return {
-                "result": "download_verified",
-                "format": "zip",
-                "bytes": len(payload),
-                "project_count": len(projects),
-                "validation": "zip_crc_and_loxcc_headers_only",
-            }
-    except (ValueError, OSError, RuntimeError, zipfile.BadZipFile, NotImplementedError):
-        return {"result": "invalid_zip"}
-
-
-def classify(payload: str | bytes | None) -> dict[str, object]:
-    """Validate the LoxCC envelope only; decoding/CRC is a separate issue."""
-    if payload is None:
-        return {"result": "empty_response"}
-    if len(payload) > MAX_BYTES:
-        return {"result": "size_limit"}
-    if isinstance(payload, str):
-        try:
-            reply = json.loads(payload)
-            code = str(reply.get("LL", {}).get("Code", ""))
-        except (ValueError, AttributeError):
-            code = ""
-        return {
-            "result": "request_rejected" if code in {"401", "403"} else "non_project_response",
-            **({"status_code": int(code)} if code in {"401", "403", "404"} else {}),
-        }
-    if payload.startswith(b"PK\x03\x04"):
-        return classify_zip(payload)
-    if len(payload) < 16:
-        return {"result": "invalid_header"}
-    magic, compressed, decoded, _crc = struct.unpack_from("<IIII", payload)
-    if magic != 0xAABBCCEE:
-        return {"result": "non_project_response"}
-    if not 0 < decoded <= MAX_DECODED_BYTES or not 0 < compressed <= MAX_BYTES - 16:
-        return {"result": "size_limit"}
-    if compressed != len(payload) - 16:
-        return {"result": "invalid_length"}
-    return {
-        "result": "download_verified",
-        "format": "loxcc",
-        "bytes": len(payload),
-        "decoded_bytes_declared": decoded,
-        "validation": "header_and_length_only",
-    }
 
 
 def select_family(document: dict, now: float) -> tuple[str, dict] | None:
@@ -113,33 +34,7 @@ def select_family(document: dict, now: float) -> tuple[str, dict] | None:
     return max(candidates, key=lambda item: item[1]["expires_at"])
 
 
-async def fetch_http(client, session, token) -> dict[str, object]:
-    command = f"{COMMAND}?autht={quote(token.value, safe='')}&user={quote(token.username, safe='')}"
-    path = (
-        f"/{command}"
-        if client.endpoint.secure
-        else CommandEncryptor.generate().encrypted_http_request(command, session._public_key)
-    )
-    async with (
-        httpx.AsyncClient(
-            base_url=client.endpoint.origin,
-            follow_redirects=False,
-            timeout=TIMEOUT,
-            trust_env=False,
-        ) as http,
-        http.stream("GET", path, headers={"Accept-Encoding": "identity"}) as response,
-    ):
-        if response.status_code != 200:
-            return {"result": "http_rejected", "status_code": response.status_code}
-        body = bytearray()
-        async for chunk in response.aiter_raw(chunk_size=65536):
-            if len(body) + len(chunk) > MAX_BYTES:
-                return {"result": "size_limit"}
-            body.extend(chunk)
-        return classify(bytes(body))
-
-
-async def run(transport: str = "websocket") -> dict[str, object]:
+async def run() -> dict[str, object]:
     settings = ServerSettings.from_environment().phase0_auth
     if settings is None or not settings.loxone_store_path or not settings.install_key_path:
         return {"result": "settings_unavailable"}
@@ -153,62 +48,84 @@ async def run(transport: str = "websocket") -> dict[str, object]:
     if selected is None:
         return {"result": "unique_active_mcp_identity_required"}
     family_id, family = selected
-    if LoxoneTokenHealthStore(store).get(family_id).confirmation_required:
+    health = LoxoneTokenHealthStore(store)
+    if health.get(family_id).confirmation_required:
         return {"result": "token_confirmation_required"}
     tokens = EncryptedLoxoneTokenStore(settings.loxone_store_path, settings.install_key_path)
-    token = tokens.get(family_id, family["miniserver_id"], family["identity_id"])
-    if token is None:
-        return {"result": "existing_token_required"}
-    session = None
-    stage = "authentication"
-    try:
-        client = LoxoneClient(
-            settings.loxone_endpoint,
-            client_uuid=uuid5(NAMESPACE_URL, "https://loxberry.local/plugins/mcpserver"),
-            timeout_seconds=TIMEOUT,
-            max_response_bytes=MAX_BYTES,
+
+    async def validate(access):
+        current = store.snapshot()["families"].get(family_id, {})
+        return bool(
+            not current.get("revoked", True)
+            and current.get("expires_at", 0) > time.time()
+            and current.get("identity_id") == access.identity_id
+            and current.get("miniserver_id") == access.miniserver_id
+            and "loxone:read" in current.get("scope", "").split()
         )
-        async with asyncio.timeout(TIMEOUT):
+
+    access = StoredAccessToken(
+        token="local-diagnostic-context",
+        client_id=family["client_id"],
+        scopes=["loxone:read"],
+        family_id=family_id,
+        identity_id=family["identity_id"],
+        miniserver_id=family["miniserver_id"],
+    )
+    client = LoxoneClient(
+        settings.loxone_endpoint,
+        client_uuid=uuid5(NAMESPACE_URL, "https://loxberry.local/plugins/mcpserver"),
+    )
+    service = ProjectService(client, tokens, health, validate)
+    token = None
+    session = None
+    started = time.monotonic()
+    try:
+        await service._check(access)
+        token = tokens.get(family_id, access.miniserver_id, access.identity_id)
+        if token is None:
+            return {"result": "existing_token_required"}
+        async with asyncio.timeout(20):
             session = await client.open_session(token)
-            stage = "download"
-            if transport == "http":
-                result = await fetch_http(client, session, token)
-            else:
-                # Isolated diagnostic session: no event reader competes for frames.
-                command = (
-                    COMMAND
-                    if settings.loxone_endpoint.secure
-                    else session._encryptor.encrypted_command(COMMAND)
+            structure = await session.load_structure()
+        await session.close()
+        session = None
+        view = await service.view(access, SimpleNamespace(subject=family_id, structure=structure))
+        graph = view.snapshot.graph
+        return {
+            "result": "pipeline_verified",
+            "transport": "encrypted_http_or_https",
+            "projects": len(view.snapshot.projects),
+            "nodes": len(graph.nodes),
+            "edges": dict(Counter(edge.kind for edge in graph.edges)),
+            "unresolved": len(graph.unresolved),
+            "mapping": dict(Counter(entry.status for entry in view.mapping.entries)),
+            "parser_anomalies": dict(
+                Counter(
+                    code for project in view.snapshot.projects for code in project.anomaly_codes
                 )
-                await session._websocket.send(command)
-                _header, payload = await session._receive()
-                result = classify(payload)
-            current = store.snapshot()["families"].get(family_id, {})
-            if current.get("revoked", True) or current.get("expires_at", 0) <= time.time():
-                return {"result": "session_revoked"}
-            return {"stage": stage, "transport": transport, **result}
-    except TimeoutError:
-        return {"result": "timeout", "stage": stage}
+            ),
+            "elapsed_seconds": round(time.monotonic() - started, 2),
+        }
+    except ProjectError as exc:
+        return {"result": str(exc)}
     except Exception:
-        # Exception messages can include URLs, credentials or response content.
-        return {"result": "transport_or_authentication_error", "stage": stage}
+        return {"result": "diagnostic_transport_or_processing_error"}
     finally:
         if session is not None:
             await session.close()
-        token.destroy()  # In-memory copy only; do not revoke or rotate the live token.
+        if token is not None:
+            token.destroy()
+        await service.close()
 
 
 def main() -> int:
     logging.disable(logging.CRITICAL)
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--transport", choices=("websocket", "http"), default="websocket")
-    args = parser.parse_args()
     try:
-        result = asyncio.run(run(args.transport))
+        result = asyncio.run(run())
     except Exception:
         result = {"result": "diagnostic_setup_error"}
     print(json.dumps(result, sort_keys=True))
-    return 0 if result["result"] == "download_verified" else 2
+    return 0 if result["result"] == "pipeline_verified" else 2
 
 
 if __name__ == "__main__":

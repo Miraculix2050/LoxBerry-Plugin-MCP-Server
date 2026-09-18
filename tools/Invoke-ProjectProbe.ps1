@@ -28,8 +28,8 @@ root = pathlib.Path(staging.name)
 for package_name, original in [('mcpserver',mcpserver),('mcpserver.loxone',mcpserver.loxone)]:
     folder = root.joinpath(*package_name.split('.'))
     folder.mkdir(parents=True, exist_ok=True)
-    init = pathlib.Path(original.__file__).read_text()
-    init += '\n__path__.append(' + repr(str(pathlib.Path(original.__file__).parent)) + ')\n'
+    init = '__path__.append(' + repr(str(pathlib.Path(original.__file__).parent)) + ')\n'
+    if package_name == 'mcpserver': init += pathlib.Path(original.__file__).read_text()
     (folder/'__init__.py').write_text(init)
 for name, source in sources.items():
     path = root.joinpath(*name.split('.')).with_suffix('.py')
@@ -48,5 +48,5 @@ for name in order:
 '@
 $source = $bootstrap.Replace('ENCODED_MODULES', $encoded) + "`n" + (Get-Content -LiteralPath $ProbePath -Raw)
 Assert-LoxBerryConnection
-$result = Invoke-LoxBerryCommand -Command '/opt/loxberry/data/plugins/mcpserver/venv/bin/python -' -InputText $source -AllowedExitCodes @(0,2) -TimeoutSeconds 60
+$result = Invoke-LoxBerryCommand -Command '/opt/loxberry/data/plugins/mcpserver/venv/bin/python -' -InputText $source -AllowedExitCodes @(0,2) -TimeoutSeconds 90
 $result.StdOut

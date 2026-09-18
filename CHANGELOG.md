@@ -3,6 +3,12 @@
 All notable user-visible changes are recorded here. GitHub release notes are
 extracted from the matching version heading.
 
+## Unreleased
+
+- Add the internal, read-only Loxone project pipeline for authenticated downloads,
+  bounded LoxCC decoding, tolerant parsing, deterministic graph construction and
+  evidence-based runtime UUID mapping. No public MCP tool or additional scope is added.
+
 ## 0.4.0-beta.3 - 2026-08-15
 
 - Enable the bounded read-only feature families for fresh installations, prefill

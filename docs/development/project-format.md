@@ -40,7 +40,8 @@ never treats containment as evidence of signal causality. Unknown or ambiguous
 references stay unresolved. No Miniserver identity is inferred from ZIP filenames.
 
 Source, decoder, parser and graph execute in a disposable subprocess with a
-20-second deadline, bounded IPC and Linux address-space/CPU/core-dump limits.
+45-second processing deadline, bounded IPC and Linux address-space/CPU/core-dump
+limits. The separate network download deadline remains 20 seconds.
 Only project bytes and limits cross into the worker, never authentication tokens.
 The service serializes builds and publishes complete immutable snapshots. Its
 identity-isolated RAM cache is capped at eight entries and a conservative 128 MiB

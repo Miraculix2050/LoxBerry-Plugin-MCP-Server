@@ -3,6 +3,7 @@
 import asyncio
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING
 
 from mcpserver.auth.loxone_health import LoxoneTokenHealthStore
 from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore
@@ -10,8 +11,12 @@ from mcpserver.auth.provider import READ_SCOPE, StoredAccessToken
 from mcpserver.loxone.client import LoxoneClient
 
 from .graph import ProjectSnapshot
+from .mapping import ProjectView, map_runtime
 from .models import DEFAULT_LIMITS, ProjectBundle, ProjectError, ProjectLimits
 from .worker import process_project
+
+if TYPE_CHECKING:
+    from mcpserver.loxone.runtime import RuntimeSnapshot
 
 
 class ProjectService:
@@ -49,6 +54,14 @@ class ProjectService:
         assert isinstance(result, ProjectSnapshot)
         return result
 
+    async def view(self, access: StoredAccessToken, runtime: "RuntimeSnapshot") -> ProjectView:
+        if runtime.subject != access.family_id:
+            raise ProjectError("project_identity_mismatch")
+        snapshot = await self.load_snapshot(access)
+        mapping = map_runtime(snapshot, runtime.structure)
+        await self._check(access)
+        return ProjectView(snapshot, mapping)
+
     async def _load(
         self, access: StoredAccessToken, *, bundle_only: bool
     ) -> ProjectBundle | ProjectSnapshot:
@@ -83,7 +96,7 @@ class ProjectService:
                 # Conservative object overhead allowance in addition to serialized content.
                 size = (
                     serialized_size * 4
-                    + sum(len(project.elements) * 1024 for _, project in snapshot.projects)
+                    + sum(project.element_count * 128 for project in snapshot.projects)
                     + (len(snapshot.graph.nodes) + len(snapshot.graph.edges)) * 512
                 )
                 if size <= 128 * 1024 * 1024:

@@ -57,9 +57,12 @@ def decode_loxcc(data: bytes, limits: ProjectLimits = DEFAULT_LIMITS) -> bytes:
         # Overlapping matches repeat a finite existing suffix. Copy in bounded
         # chunks rather than allocating an attacker-controlled repeat buffer.
         while count:
-            step = min(count, distance, 65536)
+            step = min(count, 65536)
             start = len(output) - distance
-            output.extend(output[start : start + step])
+            pattern = output[start : start + min(distance, step)]
+            repeats, tail = divmod(step, len(pattern))
+            output.extend(pattern * repeats)
+            output.extend(pattern[:tail])
             count -= step
     if len(output) != expected:
         raise ProjectError("loxcc_length_invalid")
