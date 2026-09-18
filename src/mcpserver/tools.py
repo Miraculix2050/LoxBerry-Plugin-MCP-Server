@@ -1054,20 +1054,43 @@ def _fit_structure_overview(envelope: StructureOverviewEnvelope) -> StructureOve
         envelope.data.rooms,
     )
     while len(envelope.model_dump_json().encode("utf-8")) > STRUCTURE_OVERVIEW_MAX_BYTES:
-        removed = False
+        selected_breakdown: (
+            StructureOverviewGroupBreakdownData | StructureOverviewTypeBreakdownData | None
+        ) = None
+        smallest_size: int | None = None
         for breakdown in breakdowns:
             if breakdown.items:
-                breakdown.items.pop()
-                breakdown.returned = len(breakdown.items)
-                breakdown.truncated = breakdown.returned < breakdown.total
-                breakdown.complete = not breakdown.truncated
-                removed = True
-        if not removed:
+                if isinstance(breakdown, StructureOverviewGroupBreakdownData):
+                    group_item = breakdown.items.pop()
+                    previous = (breakdown.returned, breakdown.truncated, breakdown.complete)
+                    breakdown.returned = len(breakdown.items)
+                    breakdown.truncated = breakdown.returned < breakdown.total
+                    breakdown.complete = not breakdown.truncated
+                    candidate_size = len(envelope.model_dump_json().encode("utf-8"))
+                    breakdown.items.append(group_item)
+                    breakdown.returned, breakdown.truncated, breakdown.complete = previous
+                else:
+                    type_item = breakdown.items.pop()
+                    previous = (breakdown.returned, breakdown.truncated, breakdown.complete)
+                    breakdown.returned = len(breakdown.items)
+                    breakdown.truncated = breakdown.returned < breakdown.total
+                    breakdown.complete = not breakdown.truncated
+                    candidate_size = len(envelope.model_dump_json().encode("utf-8"))
+                    breakdown.items.append(type_item)
+                    breakdown.returned, breakdown.truncated, breakdown.complete = previous
+                if smallest_size is None or candidate_size < smallest_size:
+                    selected_breakdown = breakdown
+                    smallest_size = candidate_size
+        if selected_breakdown is None:
             return _error(
                 StructureOverviewEnvelope,
                 "temporarily_unavailable",
                 "Structure overview exceeds the response size limit",
             )
+        selected_breakdown.items.pop()
+        selected_breakdown.returned = len(selected_breakdown.items)
+        selected_breakdown.truncated = selected_breakdown.returned < selected_breakdown.total
+        selected_breakdown.complete = not selected_breakdown.truncated
     return envelope
 
 

@@ -112,15 +112,22 @@ async def test_structure_overview_tool_is_bounded_stale_and_uses_one_snapshot(
     calls = 0
     long_name = "x" * 2_000
     rooms = tuple(Room(f"room-{index}", f"{long_name}-{index}") for index in range(50))
+    categories = tuple(NamedGroup(f"category-{index}", f"Category {index}") for index in range(50))
     controls = tuple(
-        _control(f"control-{index}", f"Control {index}", f"Type {index}", rooms[index].uuid, None)
+        _control(
+            f"control-{index}",
+            f"Control {index}",
+            f"Type {index}",
+            rooms[index].uuid,
+            categories[index].uuid,
+        )
         for index in range(50)
     )
     structure = LoxoneStructure(
         identity=LoxoneIdentity("user", "serial"),
         last_modified="99",
         rooms=rooms,
-        categories=(),
+        categories=categories,
         controls=controls,
     )
 
@@ -144,6 +151,8 @@ async def test_structure_overview_tool_is_bounded_stale_and_uses_one_snapshot(
     assert result.data.structure_generation == 7  # type: ignore[union-attr]
     assert result.data.counts.controls == 50  # type: ignore[union-attr]
     assert result.data.rooms.truncated is True  # type: ignore[union-attr]
+    assert result.data.categories.complete is True  # type: ignore[union-attr]
+    assert result.data.control_types.complete is True  # type: ignore[union-attr]
     assert len(result.model_dump_json().encode("utf-8")) <= STRUCTURE_OVERVIEW_MAX_BYTES
 
 
