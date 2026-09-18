@@ -46,3 +46,9 @@ def test_limits_apply_before_unbounded_model_growth():
         parse_project(b"<P><C/></P>", ProjectLimits(depth=1))
     with pytest.raises(ProjectError, match="parse_limit"):
         parse_project(b'<P a="1" b="2"/>', ProjectLimits(attributes=1))
+
+
+def test_attribute_cursor_handles_many_attributes_without_suffix_scans():
+    attributes = b" ".join(f'a{index}="x"'.encode() for index in range(10_000))
+    parsed = parse_project(b"<P " + attributes + b"/>", ProjectLimits(attributes=10_000))
+    assert len(parsed.elements[0].attributes) == 10_000

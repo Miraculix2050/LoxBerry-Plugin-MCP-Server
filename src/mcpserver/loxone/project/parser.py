@@ -127,7 +127,12 @@ def parse_project(data: bytes, limits: ProjectLimits = DEFAULT_LIMITS) -> Parsed
         pairs: list[tuple[str, str]] = []
         seen: set[str] = set()
         index = len(tags)
-        while position < len(body) and body[position:].strip():
+        while position < len(body):
+            remaining = position
+            while remaining < len(body) and body[remaining].isspace():
+                remaining += 1
+            if remaining == len(body):
+                break
             attribute = _ATTRIBUTE.match(body, position)
             if attribute is None:
                 raise ProjectError("project_xml_invalid")
