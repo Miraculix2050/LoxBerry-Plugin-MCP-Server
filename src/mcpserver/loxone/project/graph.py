@@ -68,10 +68,17 @@ class ProjectGraph:
 
 
 @dataclass(frozen=True, slots=True)
+class ProjectPartSummary:
+    namespace: str
+    element_count: int
+    anomaly_codes: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class ProjectSnapshot:
     fingerprint: str
     model_version: int
-    projects: tuple[tuple[str, ParsedProject], ...] = field(repr=False)
+    projects: tuple[ProjectPartSummary, ...] = field(repr=False)
     graph: ProjectGraph = field(repr=False)
 
 
@@ -141,7 +148,10 @@ def build_snapshot(
     total_bytes = 0
     total_elements = 0
     total_attributes = 0
-    projects: list[tuple[str, ParsedProject]] = []
+    projects: list[ProjectPartSummary] = []
+    nodes: list[GraphNode] = []
+    edges: list[GraphEdge] = []
+    unresolved: list[tuple[str, str]] = []
     for member in bundle.files:
         data = decode_loxcc(member.content, limits)
         total_bytes += len(data)
@@ -153,6 +163,18 @@ def build_snapshot(
         if total_elements > limits.elements or total_attributes > limits.attributes:
             raise ProjectError("project_parse_limit")
         namespace = hashlib.sha256(member.key.encode()).hexdigest()[:24]
-        projects.append((namespace, project))
-    entries = tuple(projects)
-    return ProjectSnapshot(bundle.fingerprint, 1, entries, build_graph(entries, limits))
+        part_graph = build_graph(((namespace, project),), limits)
+        nodes.extend(part_graph.nodes)
+        edges.extend(part_graph.edges)
+        unresolved.extend(part_graph.unresolved)
+        if len(nodes) > limits.elements or len(edges) > limits.edges:
+            raise ProjectError("project_graph_limit")
+        projects.append(
+            ProjectPartSummary(
+                namespace,
+                len(project.elements),
+                tuple(code for _, code in project.anomalies),
+            )
+        )
+    graph = ProjectGraph(tuple(nodes), tuple(edges), tuple(unresolved))
+    return ProjectSnapshot(bundle.fingerprint, 1, tuple(projects), graph)

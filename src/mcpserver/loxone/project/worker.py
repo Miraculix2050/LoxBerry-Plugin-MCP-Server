@@ -5,6 +5,7 @@ import json
 import os
 import pickle
 import sys
+from contextlib import suppress
 from dataclasses import asdict
 
 from .graph import ProjectSnapshot, build_snapshot
@@ -28,20 +29,22 @@ async def process_project(
         json.dumps(asdict(limits)),
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
         env=environment,
     )
-    assert process.stdin is not None and process.stdout is not None
+    assert process.stdin is not None and process.stdout is not None and process.stderr is not None
+    stderr_task = asyncio.create_task(process.stderr.read())
 
     async def send() -> None:
         assert process.stdin is not None
-        process.stdin.write(data)
-        await process.stdin.drain()
-        process.stdin.close()
+        with suppress(BrokenPipeError, ConnectionResetError):
+            process.stdin.write(data)
+            await process.stdin.drain()
+            process.stdin.close()
 
     sender = asyncio.create_task(send())
     try:
-        async with asyncio.timeout(limits.timeout_seconds):
+        async with asyncio.timeout(limits.processing_timeout_seconds):
             chunks = bytearray()
             while chunk := await process.stdout.read(65536):
                 chunks.extend(chunk)
@@ -50,7 +53,8 @@ async def process_project(
             await sender
             code = await process.wait()
             if code != 0:
-                raise ProjectError("project_worker_failed")
+                category = "project_worker_resource_limit" if code < 0 else "project_worker_failed"
+                raise ProjectError(category)
             # Only this local worker serializes these bytes; never deserialize
             # network payloads. The worker creates closed, immutable model types.
             result = pickle.loads(chunks)
@@ -66,18 +70,21 @@ async def process_project(
         if process.returncode is None:
             process.kill()
         await process.wait()
+        # Discard diagnostics so child exception text never reaches logs or callers.
+        await stderr_task
         await asyncio.gather(sender, return_exceptions=True)
 
 
 def main() -> None:
     try:
+        limits = ProjectLimits(**json.loads(sys.argv[2]))
         if sys.platform == "linux":
             import resource
 
             resource.setrlimit(resource.RLIMIT_AS, (512 * 1024 * 1024, 512 * 1024 * 1024))
-            resource.setrlimit(resource.RLIMIT_CPU, (20, 20))
+            cpu_seconds = max(1, int(limits.processing_timeout_seconds))
+            resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds))
             resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-        limits = ProjectLimits(**json.loads(sys.argv[2]))
         data = sys.stdin.buffer.read(limits.download_bytes + 1)
         bundle = unpack_project(data, limits)
         result: ProjectBundle | ProjectSnapshot | ProjectError = (
