@@ -2,12 +2,20 @@
 
 import hashlib
 import json
+import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 
 from mcpserver.loxone.models import Control, LoxoneStructure
 
 from .graph import ProjectSnapshot, normalize_id
+
+_UUID = re.compile(r"[0-9a-f]{32}")
+
+
+def _uuid_id(value: str | None) -> str | None:
+    normalized = normalize_id(value)
+    return normalized if _UUID.fullmatch(normalized) else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,8 +42,9 @@ class ProjectView:
 def map_runtime(snapshot: ProjectSnapshot, structure: LoxoneStructure) -> RuntimeMapping:
     index: dict[str, list[str]] = defaultdict(list)
     for node in snapshot.graph.nodes:
-        if node.kind == "block" and node.source_id:
-            index[normalize_id(node.source_id)].append(node.key)
+        source_id = _uuid_id(node.source_id)
+        if node.kind == "block" and source_id is not None:
+            index[source_id].append(node.key)
     entries: list[ControlMapping] = []
     identity_material: list[tuple[str, str | None, str | None]] = []
     pending: list[tuple[Control, str | None]] = [
@@ -44,8 +53,10 @@ def map_runtime(snapshot: ProjectSnapshot, structure: LoxoneStructure) -> Runtim
     while pending:
         control, parent = pending.pop()
         identity_material.append((control.uuid, control.action_uuid, parent))
-        uuid_candidates = set(index.get(normalize_id(control.uuid), ()))
-        action_candidates = set(index.get(normalize_id(control.action_uuid), ()))
+        control_id = _uuid_id(control.uuid)
+        action_id = _uuid_id(control.action_uuid)
+        uuid_candidates = set(index.get(control_id, ())) if control_id is not None else set()
+        action_candidates = set(index.get(action_id, ())) if action_id is not None else set()
         candidates = uuid_candidates | action_candidates
         rules = []
         if uuid_candidates:

@@ -11,12 +11,14 @@ def control(uuid, action=None, children=()):
 
 
 def test_exact_nested_ambiguous_and_unmapped_are_explicit():
-    parsed = parse_project(b'<P><C U="a"/><C U="b"/><C U="b"/></P>')
+    first, second, missing = "a" * 32, "b" * 32, "c" * 32
+    parsed = parse_project(f'<P><C U="{first}"/><C U="{second}"/><C U="{second}"/></P>'.encode())
     snapshot = ProjectSnapshot(
         "hash", 1, (ProjectPartSummary("p", 4, ()),), build_graph((("p", parsed),))
     )
     structure = SimpleNamespace(
-        last_modified="v1", controls=(control("A", children=(control("b"), control("missing"))),)
+        last_modified="v1",
+        controls=(control(first, children=(control(second), control(missing))),),
     )
     mapped = map_runtime(snapshot, structure)
     assert [entry.status for entry in mapped.entries] == ["exact", "ambiguous", "unmapped"]
@@ -28,12 +30,25 @@ def test_exact_nested_ambiguous_and_unmapped_are_explicit():
 
 
 def test_conflicting_uuid_and_action_matches_are_not_guessed():
-    parsed = parse_project(b'<P><C U="a"/><C U="b"/></P>')
+    first, second = "a" * 32, "b" * 32
+    parsed = parse_project(f'<P><C U="{first}"/><C U="{second}"/></P>'.encode())
     snapshot = ProjectSnapshot(
         "hash", 1, (ProjectPartSummary("p", 3, ()),), build_graph((("p", parsed),))
     )
     result = map_runtime(
-        snapshot, SimpleNamespace(last_modified="v", controls=(control("a", "b"),))
+        snapshot, SimpleNamespace(last_modified="v", controls=(control(first, second),))
     )
     assert result.entries[0].status == "ambiguous"
     assert result.entries[0].rule == "control_uuid+action_uuid"
+
+
+def test_missing_action_uuid_cannot_match_an_invalid_project_identifier():
+    parsed = parse_project(b'<P><C U="-"/></P>')
+    snapshot = ProjectSnapshot(
+        "hash", 1, (ProjectPartSummary("p", 2, ()),), build_graph((("p", parsed),))
+    )
+    result = map_runtime(
+        snapshot, SimpleNamespace(last_modified="v", controls=(control("a" * 32),))
+    )
+    assert result.entries[0].status == "unmapped"
+    assert result.entries[0].rule == "none"
