@@ -1008,12 +1008,14 @@ class LoxoneRuntime:
         self.cache.clear(family_id)
 
     async def revoke(self, family_id: str) -> None:
-        if self.projects is not None:
-            await self.projects.revoke(family_id)
+        projects = getattr(self, "projects", None)
+        if projects is not None:
+            await projects.revoke(family_id)
         await self.disconnect(family_id)
 
     async def close(self) -> None:
-        if self.projects is not None:
-            await self.projects.close()
+        projects = getattr(self, "projects", None)
+        if projects is not None:
+            await projects.close()
         for family_id in tuple(self._records):
             await self.disconnect(family_id)
