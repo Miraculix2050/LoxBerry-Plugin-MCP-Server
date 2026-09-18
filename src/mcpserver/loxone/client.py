@@ -27,6 +27,7 @@ from mcpserver.loxone.events import (
     parse_state_events,
 )
 from mcpserver.loxone.models import LoxoneStructure
+from mcpserver.loxone.project.models import DEFAULT_LIMITS, ProjectError, ProjectLimits
 from mcpserver.loxone.security import (
     CommandEncryptor,
     LoxoneSecurityError,
@@ -363,6 +364,52 @@ class LoxoneClient:
             # httpx exceptions may contain the complete encrypted request URL.
             # Suppress the cause so callers and logs only see this fixed text.
             raise LoxoneConnectionError("Miniserver request failed") from None
+
+    async def download_project(
+        self, token: LoxoneToken, limits: ProjectLimits = DEFAULT_LIMITS
+    ) -> bytes:
+        """Fetch only the active project with the supplied identity; never retry."""
+        if not token.value:
+            raise ProjectError("project_token_unavailable")
+        try:
+            async with asyncio.timeout(limits.timeout_seconds):
+                command = (
+                    "dev/fsget/prog/sps.LoxCC?autht="
+                    + quote(token.value, safe="")
+                    + "&user="
+                    + quote(token.username, safe="")
+                )
+                path = "/" + command
+                if not self.endpoint.secure:
+                    key = await self.websocket_public_key()
+                    path = CommandEncryptor.generate().encrypted_http_request(command, key)
+                async with (
+                    httpx.AsyncClient(
+                        base_url=self.endpoint.origin,
+                        follow_redirects=False,
+                        timeout=limits.timeout_seconds,
+                        trust_env=False,
+                    ) as http,
+                    http.stream("GET", path, headers={"Accept-Encoding": "identity"}) as response,
+                ):
+                    if response.status_code in {401, 403}:
+                        raise ProjectError("project_permission_denied")
+                    if response.status_code != 200:
+                        raise ProjectError("project_http_rejected")
+                    if response.headers.get("content-encoding", "identity") != "identity":
+                        raise ProjectError("project_encoding_unsupported")
+                    body = bytearray()
+                    async for chunk in response.aiter_raw(chunk_size=65536):
+                        if len(body) + len(chunk) > limits.download_bytes:
+                            raise ProjectError("project_download_limit")
+                        body.extend(chunk)
+                    return bytes(body)
+        except ProjectError:
+            raise
+        except TimeoutError:
+            raise ProjectError("project_timeout") from None
+        except Exception:
+            raise ProjectError("project_transport_error") from None
 
     async def probe(self) -> ProbeResult:
         value = _response_value(await self._get_json("/jdev/cfg/apiKey"))

@@ -50,3 +50,11 @@ for page, AJAX, diagnostic-download and redirect responses.
 - [Architecture decisions](adr/README.md)
 - [Test strategy](test-strategy.md)
 - [Support matrix](support-matrix.md)
+
+## Internal project source
+
+ProjectService is attached to the Loxone runtime lifecycle but performs no eager
+fetches. Every explicit load validates the current OAuth identity and read scope,
+uses its existing token for the fixed encrypted HTTP project endpoint, and
+rechecks authorization before releasing data. ZIP processing is bounded and
+memory-only. This is an internal capability, not an additional MCP tool or scope.
