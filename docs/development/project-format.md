@@ -30,3 +30,22 @@ and external entities, and retains unknown schema fields internally.
 Beide realen Projekte wurden mit gültiger CRC dekodiert und erfolgreich geparst.
 54 Attribut-Zeilenumbrüche wurden als Anomalien erfasst. Begleitdateien im ZIP
 zählen zu den Größenlimits, werden aber nicht als Projekte interpretiert.
+
+## Graph and processing boundary
+
+C elements and their Co connectors retain source attributes and part-local IDs.
+An In/Input reference contributes a signal edge from its referenced Co to its
+containing Co. Ref aliases and containment have distinct edge kinds; traversal
+never treats containment as evidence of signal causality. Unknown or ambiguous
+references stay unresolved. No Miniserver identity is inferred from ZIP filenames.
+
+Source, decoder, parser and graph execute in a disposable subprocess with a
+20-second deadline, bounded IPC and Linux address-space/CPU/core-dump limits.
+Only project bytes and limits cross into the worker, never authentication tokens.
+The service serializes builds and publishes complete immutable snapshots. Its
+identity-isolated RAM cache is capped at eight entries and a conservative 128 MiB
+accounting budget. A cache hit still requires a fresh successful download.
+
+Der Graph unterscheidet Signal-, Referenz- und Hierarchiebeziehungen. Unbekannte
+Referenzen bleiben sichtbar unaufgelöst. Die Verarbeitung läuft in einem
+abbrechbaren Unterprozess; der Cache ersetzt keine Zugriffsprüfung.
