@@ -187,22 +187,26 @@ class ProjectQuery:
             if edge.kind == "contains":
                 children[edge.source].append(edge.target)
         seeds = [node.key]
+        seed_set = {node.key}
         pending = deque([node.key])
-        while pending:
+        seed_truncated = False
+        while pending and not seed_truncated:
             current = pending.popleft()
             for child in children[current]:
-                if child not in seeds:
-                    seeds.append(child)
-                    pending.append(child)
-        visited = set(seeds)
+                if child in seed_set:
+                    continue
+                if len(seeds) >= max_nodes:
+                    seed_truncated = True
+                    break
+                seed_set.add(child)
+                seeds.append(child)
+                pending.append(child)
+        visited = seed_set
         queue = deque((key, 0) for key in seeds)
-        keys = seeds[:max_nodes]
+        keys = seeds
         edges: list[dict[str, str]] = []
-        truncated = len(seeds) > max_nodes
-        reason: str | None = "max_nodes" if truncated else None
-        if truncated:
-            visited = set(keys)
-            queue = deque((key, 0) for key in keys)
+        truncated = seed_truncated
+        reason: str | None = "max_nodes" if seed_truncated else None
         while queue:
             current, depth = queue.popleft()
             if depth >= max_depth:
@@ -229,6 +233,15 @@ class ProjectQuery:
                 edges.append({"kind": edge.kind, "source": edge.source, "target": edge.target})
             if truncated:
                 break
+        unresolved_relationships: list[dict[str, str]] = []
+        unresolved_truncated = False
+        for key, code in self.view.snapshot.graph.unresolved:
+            if key not in visited:
+                continue
+            if len(unresolved_relationships) >= max_nodes:
+                unresolved_truncated = True
+                break
+            unresolved_relationships.append({"project_node_id": key, "code": code})
         return {
             "start": self._summary(node),
             "direction": direction,
@@ -236,9 +249,6 @@ class ProjectQuery:
             "edges": edges,
             "truncated": truncated,
             "truncation_reason": reason,
-            "unresolved_relationships": [
-                {"project_node_id": key, "code": code}
-                for key, code in self.view.snapshot.graph.unresolved
-                if key in visited
-            ],
+            "unresolved_relationships": unresolved_relationships,
+            "unresolved_truncated": unresolved_truncated,
         }

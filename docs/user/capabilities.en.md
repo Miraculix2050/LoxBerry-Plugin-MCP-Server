@@ -11,7 +11,8 @@ The server reads visible rooms, categories, controls and states. Optional bounde
 read-only Project Intelligence for a project that the bound Loxone identity can load. They expose
 graph evidence rather than raw XML: a signal or reference trace describes structural influence,
 not an observed historical cause. Results are limited and explicitly report truncation; unknown
-block types and unresolved relationships remain visible without invented semantics.
+block types and unresolved relationships remain visible without invented semantics. A trace caps
+its unresolved-relationship entries independently and reports that with `unresolved_truncated`.
 
 `loxone_get_structure_overview` returns a bounded initial map of the rooms,
 categories and control types visible to the signed-in Loxone user. It contains

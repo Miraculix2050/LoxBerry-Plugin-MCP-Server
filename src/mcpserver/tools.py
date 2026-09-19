@@ -544,6 +544,7 @@ class ProjectTraceData(BaseModel):
     truncated: bool
     truncation_reason: Literal["max_depth", "max_nodes", "max_edges"] | None
     unresolved_relationships: list[dict[str, str]]
+    unresolved_truncated: bool
 
 
 class ToolEnvelope(BaseModel):
