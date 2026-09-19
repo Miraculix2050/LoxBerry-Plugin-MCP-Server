@@ -217,6 +217,8 @@ try {
     $actual = @($toolsResponse.result.tools | ForEach-Object { $_.name } | Sort-Object)
     $optional = @(
         'loxone_operate_control', 'loxone_get_control_history', 'loxone_get_statistics',
+        'loxone_get_project_status', 'loxone_find_project_objects',
+        'loxone_describe_project_object', 'loxone_trace_project_logic',
         'loxberry_get_plugin_status', 'loxberry_get_service_health',
         'loxberry_get_system_status', 'loxberry_list_service_events',
         'loxberry_clear_statistics_cache'
@@ -273,7 +275,7 @@ try {
     $script:nextId = 4
     $skillGuide = Invoke-ReadTool (Get-NextId) 'loxone_get_skill_guide' @{}
     if ($skillGuide.data.name -ne 'using-loxberry-mcp' -or
-        $skillGuide.data.revision -ne 27 -or
+        $skillGuide.data.revision -ne 28 -or
         $skillGuide.data.media_type -ne 'text/markdown' -or
         $skillGuide.data.content -ne $skillMarkdown) {
         throw 'MCP skill guide tool differs from the canonical resource.'

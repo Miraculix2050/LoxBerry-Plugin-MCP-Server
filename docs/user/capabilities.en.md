@@ -6,6 +6,14 @@
 
 The server reads visible rooms, categories, controls and states. Optional bounded history, statistics, masked LoxBerry diagnostics and documented type-specific actions for visible Gen. 1 controls are available.
 
+`loxone_get_project_status`, `loxone_find_project_objects`,
+`loxone_describe_project_object`, and `loxone_trace_project_logic` provide bounded,
+read-only Project Intelligence for a project that the bound Loxone identity can load. They expose
+graph evidence rather than raw XML: a signal or reference trace describes structural influence,
+not an observed historical cause. Results are limited and explicitly report truncation; unknown
+block types and unresolved relationships remain visible without invented semantics. A trace caps
+its unresolved-relationship entries independently and reports that with `unresolved_truncated`.
+
 `loxone_get_structure_overview` returns a bounded initial map of the rooms,
 categories and control types visible to the signed-in Loxone user. It contains
 no current states, history, hidden-object counts or Config-project data; use the

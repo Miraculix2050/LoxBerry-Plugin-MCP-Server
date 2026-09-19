@@ -11,6 +11,10 @@ extracted from the matching version heading.
 - Update Clients and sessions immediately after a successful session action instead
   of relying on a follow-up refresh that can fail.
 
+- Publish an unambiguous retained MQTT emergency-stop state: `not_configured`,
+  `clear`, `active`, or `unknown`. Its dedicated MQTT connection now retains
+  `unknown` after an unexpected connection or process loss.
+
 - Restore the previous MCP or MQTT configuration, encrypted MQTT credential and
   running service together when applying a section-specific configuration fails.
 
@@ -20,7 +24,11 @@ extracted from the matching version heading.
 
 - Add the internal, read-only Loxone project pipeline for authenticated downloads,
   bounded LoxCC decoding, tolerant parsing, deterministic graph construction and
-  evidence-based runtime UUID mapping. No public MCP tool or additional scope is added.
+  evidence-based runtime UUID mapping.
+
+- Add four bounded, read-only Project Intelligence tools for project status, object search,
+  object descriptions, and upstream/downstream signal or reference traces. They use
+  `loxone:read`, never return raw project XML, and keep ambiguous mappings explicit.
 
 ## 0.4.0-beta.3 - 2026-08-15
 
