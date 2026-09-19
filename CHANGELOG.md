@@ -5,6 +5,12 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add bounded, source-backed KNX/EIB semantics to Project Intelligence. Existing
+  project search, description and trace tools can filter and report confirmed
+  bus lines, endpoints and KNX logic blocks without exposing raw project
+  attributes or inferring DPTs, physical device roles, or graph edges from
+  equal group addresses.
+
 - Render the Admin UI without waiting for service status or Miniserver emergency-stop
   discovery, while preserving an unavailable configured emergency-stop selection.
 

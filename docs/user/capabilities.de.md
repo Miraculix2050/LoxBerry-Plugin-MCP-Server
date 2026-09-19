@@ -14,6 +14,12 @@ strukturellen Einfluss, nicht eine beobachtete historische Ursache. Ergebnisse s
 melden Abschneiden explizit; unbekannte Blocktypen und unaufgelöste Beziehungen bleiben ohne
 erfundene Semantik sichtbar. Ein Trace begrenzt unaufgelöste Beziehungen unabhängig und meldet
 dies über `unresolved_truncated`.
+Bestätigte KNX/EIB-Projektobjekte ergänzen begrenzte, quellengestützte Metadaten für Buslinien,
+Endpunkte und KNX-Logikblöcke. Die Endpunktrichtung lautet `bus_to_loxone` oder
+`loxone_to_bus`; sie ist keine Aussage über die physische Gerätefunktion. Gruppenadressen
+behalten ihren Originaltext und erhalten nur bei gültigem Format eine kanonische Form. `EIBType`
+bleibt ein unaufgelöster Quellcode, keine geratene DPT. Gleiche Gruppenadressen erzeugen keine
+Graphbeziehung und beweisen keine Kausalität.
 
 `loxone_get_structure_overview` liefert eine begrenzte erste Übersicht der für
 den angemeldeten Loxone-Benutzer sichtbaren Räume, Kategorien und Control-Typen.

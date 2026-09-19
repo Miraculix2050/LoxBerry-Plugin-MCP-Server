@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from .decoder import decode_loxcc
 from .models import DEFAULT_LIMITS, ProjectBundle, ProjectError, ProjectLimits
 from .parser import ParsedProject, parse_project
+from .semantics import KnxSemantics, classify_knx
 
 
 def normalize_id(value: str | None) -> str:
@@ -22,6 +23,7 @@ class GraphNode:
     source_id: str | None = field(repr=False)
     block_type: str | None = field(repr=False)
     attributes: tuple[tuple[str, str], ...] = field(repr=False)
+    knx: KnxSemantics | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,6 +105,7 @@ def build_graph(
                 element.value("U"),
                 element.value("Type"),
                 element.attributes,
+                classify_knx(element),
             )
             local[index] = node
             nodes.append(node)
@@ -177,4 +180,4 @@ def build_snapshot(
             )
         )
     graph = ProjectGraph(tuple(nodes), tuple(edges), tuple(unresolved))
-    return ProjectSnapshot(bundle.fingerprint, 1, tuple(projects), graph)
+    return ProjectSnapshot(bundle.fingerprint, 2, tuple(projects), graph)

@@ -21,5 +21,8 @@ gebundenen Loxone-Identität abgerufen, um den Zugriff zu prüfen; zwischengespe
 Verarbeitungsergebnisse gewähren keinen Zugriff. Sie stellt begrenzten Graphstatus, Suche,
 Objektbeschreibungen sowie vor- und nachgelagerte Signal- oder Referenzpfade bereit, aber keine
 rohen Projektdateien und keine Projektänderung.
+KNX/EIB-Metadaten sind eine erlaubnisgebundene, begrenzte Projektion desselben autorisierten
+Projekts. Sie geben weder beliebige Projektattribute noch ETS-Daten, Busmonitoring oder
+Konfigurationsschreibzugriffe frei.
 
 Weiter: [Funktionsumfang](capabilities.de.md).

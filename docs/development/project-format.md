@@ -39,6 +39,17 @@ containing Co. Ref aliases and containment have distinct edge kinds; traversal
 never treats containment as evidence of signal causality. Unknown or ambiguous
 references stay unresolved. No Miniserver identity is inferred from ZIP filenames.
 
+## KNX/EIB semantic projection
+
+The worker classifies only confirmed exact project types: `EIBline`, `EIBsensor`,
+`EIBactor`, `EIBPush`, `EibDimmer`, and `EIBJalousie`. `EIBsensor` is a
+`bus_to_loxone` endpoint and `EIBactor` a `loxone_to_bus` endpoint. This records
+the bus data-flow direction, never a physical device role. Group addresses are
+kept verbatim and normalized only for validated two- or three-level forms.
+`EIBType` is retained as an unresolved source code; the model does not infer an
+EIS or DPT meaning. Unknown attributes remain internal and are never a raw MCP
+projection. Equal group addresses do not create graph edges.
+
 Source, decoder, parser and graph execute in a disposable subprocess with a
 45-second processing deadline, bounded IPC and Linux address-space/CPU/core-dump
 limits. The separate network download deadline remains 20 seconds.

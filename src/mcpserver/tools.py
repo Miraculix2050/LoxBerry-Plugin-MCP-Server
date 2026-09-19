@@ -495,6 +495,40 @@ class ProjectRuntimeControlData(BaseModel):
     mapping_rule: str
 
 
+class ProjectKnxGroupAddressData(BaseModel):
+    original: str
+    canonical: str | None
+    format: Literal["two_level", "three_level"] | None
+    segments: list[int] | None
+
+
+class ProjectKnxDatatypeData(BaseModel):
+    source_field: str
+    source_value: str
+    system: Literal["unknown"]
+    normalized_code: None = None
+
+
+class ProjectKnxData(BaseModel):
+    object_kind: Literal["line", "endpoint", "logic_block"]
+    flow_direction: Literal["bus_to_loxone", "loxone_to_bus"] | None
+    source_type: str
+    title: str | None
+    description: str | None
+    internal_name: str | None
+    group_address: ProjectKnxGroupAddressData | None
+    datatype: ProjectKnxDatatypeData | None
+    truncated_fields: list[
+        Literal[
+            "title",
+            "description",
+            "internal_name",
+            "group_address.original",
+            "datatype.source_value",
+        ]
+    ]
+
+
 class ProjectNodeData(BaseModel):
     project_node_id: str
     kind: Literal["block", "connector"]
@@ -502,6 +536,7 @@ class ProjectNodeData(BaseModel):
     source_id: str | None
     connector_key: str | None
     runtime_control: ProjectRuntimeControlData | None = None
+    knx: ProjectKnxData | None = None
 
 
 class ProjectStatusData(BaseModel):
@@ -2514,6 +2549,21 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
         block_type: Annotated[str | None, Field(max_length=200)] = None,
         source_id: Annotated[str | None, Field(max_length=200)] = None,
         runtime_control_uuid: Annotated[str | None, Field(max_length=200)] = None,
+        technology: Annotated[
+            Literal["knx_eib"] | None, Field(description="Optional project technology filter.")
+        ] = None,
+        knx_object_kind: Annotated[
+            Literal["line", "endpoint", "logic_block"] | None,
+            Field(description="Optional KNX/EIB semantic object-kind filter."),
+        ] = None,
+        knx_flow_direction: Annotated[
+            Literal["bus_to_loxone", "loxone_to_bus"] | None,
+            Field(description="Optional KNX/EIB bus data-flow filter."),
+        ] = None,
+        knx_group_address: Annotated[
+            str | None,
+            Field(max_length=200, description="Exact original or canonical KNX group address."),
+        ] = None,
         cursor: CursorArgument = None,
         limit: LimitArgument = DEFAULT_PAGE_SIZE,
     ) -> ProjectObjectPageEnvelope:
@@ -2525,6 +2575,10 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                 block_type=block_type,
                 source_id=source_id,
                 runtime_control_uuid=runtime_control_uuid,
+                technology=technology,
+                knx_object_kind=knx_object_kind,
+                knx_flow_direction=knx_flow_direction,
+                knx_group_address=knx_group_address,
             )
             scope = "project-find:" + "|".join(
                 (
@@ -2533,6 +2587,10 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                     block_type or "",
                     source_id or "",
                     runtime_control_uuid or "",
+                    technology or "",
+                    knx_object_kind or "",
+                    knx_flow_direction or "",
+                    knx_group_address or "",
                 )
             )
             return _result(

@@ -52,6 +52,13 @@ current states, statistics, or history only when those sources independently
 provide the required observation. Do not infer meanings for unknown block types
 or request raw project XML.
 
+For confirmed KNX/EIB objects, use the optional `knx` metadata to distinguish
+bus lines, endpoints, and KNX logic blocks. `bus_to_loxone` and
+`loxone_to_bus` describe bus data flow, not a physical sensor or actuator role.
+Use a canonical group address only when present; equal addresses do not prove a
+program path. Treat `EIBType` as an unresolved source code, not as a guessed
+DPT or EIS meaning.
+
 ### Inspect one known room
 
 1. Resolve the room with `loxone_list_rooms`. Use its exact UUID and follow every
