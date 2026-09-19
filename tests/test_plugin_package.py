@@ -893,6 +893,10 @@ def test_mcp_client_probe_resolves_windows_application_aliases() -> None:
     assert "'loxone_list_global_metadata'" in script
     assert "'loxone_get_room_snapshot'" in script
     assert "'loxone_get_weather'" in script
+    assert "'loxone_get_project_status'" in script
+    assert "'loxone_find_project_objects'" in script
+    assert "'loxone_describe_project_object'" in script
+    assert "'loxone_trace_project_logic'" in script
     assert "$optional = @(" in script
     assert "$tool.annotations.idempotentHint -ne $false" in script
     assert "$tool.name -eq 'loxberry_clear_statistics_cache'" in script

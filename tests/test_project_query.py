@@ -76,6 +76,56 @@ def test_trace_excludes_containment_and_reports_limits():
     assert all(edge["kind"] in {"signal", "reference"} for edge in result["edges"])
 
 
+def test_trace_stops_containment_seeding_at_node_limit():
+    parsed = parse_project(b'<P><C U="root"><Co U="one"/><Co U="two"/></C></P>')
+    snapshot = ProjectSnapshot(
+        "project", 1, (ProjectPartSummary("p", 4, ()),), build_graph((("p", parsed),))
+    )
+    project = ProjectQuery(
+        ProjectView(
+            snapshot, map_runtime(snapshot, SimpleNamespace(last_modified="v", controls=()))
+        ),
+        {},
+    )
+
+    result = project.trace(
+        project.resolve("p:1", "project_node_id"),
+        direction="downstream",
+        max_depth=1,
+        max_nodes=1,
+    )
+
+    assert [item["project_node_id"] for item in result["nodes"]] == ["p:1"]
+    assert result["truncated"] is True
+    assert result["truncation_reason"] == "max_nodes"
+
+
+def test_trace_caps_unresolved_relationships():
+    parsed = parse_project(
+        b'<P><C U="root"><Co U="connector"><In Input="missing-one"/>'
+        b'<In Input="missing-two"/></Co></C></P>'
+    )
+    snapshot = ProjectSnapshot(
+        "project", 1, (ProjectPartSummary("p", 5, ()),), build_graph((("p", parsed),))
+    )
+    project = ProjectQuery(
+        ProjectView(
+            snapshot, map_runtime(snapshot, SimpleNamespace(last_modified="v", controls=()))
+        ),
+        {},
+    )
+
+    result = project.trace(
+        project.resolve("p:2", "project_node_id"),
+        direction="upstream",
+        max_depth=1,
+        max_nodes=1,
+    )
+
+    assert len(result["unresolved_relationships"]) == 1
+    assert result["unresolved_truncated"] is True
+
+
 def test_ambiguous_runtime_mapping_is_never_guessed():
     project = query()
     with pytest.raises(ProjectQueryError, match="project_node_unknown"):

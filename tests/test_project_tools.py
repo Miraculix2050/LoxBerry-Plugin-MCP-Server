@@ -56,6 +56,7 @@ class Query:
             "truncated": False,
             "truncation_reason": None,
             "unresolved_relationships": [],
+            "unresolved_truncated": False,
         }
 
 

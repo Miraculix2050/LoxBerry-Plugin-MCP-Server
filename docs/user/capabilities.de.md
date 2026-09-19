@@ -12,7 +12,8 @@ schreibgeschützte Project Intelligence für ein durch die gebundene Loxone-Iden
 Projekt bereit. Sie liefern Graph-Evidenz statt rohem XML: Ein Signal- oder Referenzpfad beschreibt
 strukturellen Einfluss, nicht eine beobachtete historische Ursache. Ergebnisse sind begrenzt und
 melden Abschneiden explizit; unbekannte Blocktypen und unaufgelöste Beziehungen bleiben ohne
-erfundene Semantik sichtbar.
+erfundene Semantik sichtbar. Ein Trace begrenzt unaufgelöste Beziehungen unabhängig und meldet
+dies über `unresolved_truncated`.
 
 `loxone_get_structure_overview` liefert eine begrenzte erste Übersicht der für
 den angemeldeten Loxone-Benutzer sichtbaren Räume, Kategorien und Control-Typen.
