@@ -300,11 +300,12 @@ class MqttHealthPublisher:
         else:
             factory = self._client_factory
         topics = self.topics
-        # MQTT permits one Last-Will per connection. Two connections preserve the
-        # requested independent retained unknown values for abrupt termination.
+        # MQTT permits one Last-Will per connection. Separate connections preserve
+        # independent retained unknown values for abrupt termination.
         clients = [
             factory(client_id="loxberry-mcp-health-state"),
             factory(client_id="loxberry-mcp-health-substate"),
+            factory(client_id="loxberry-mcp-emergency-stop"),
         ]
         for client in clients:
             client.username_pw_set(gateway.username, gateway.password)
@@ -312,15 +313,42 @@ class MqttHealthPublisher:
             if not self._config.mqtt_use_loxberry_gateway:
                 client.tls_set()
         for index, client in enumerate(clients):
-            client.on_connect = lambda *_args, index=index: self._on_connect(index)
+            client.on_connect = lambda current, *_args, index=index: self._on_connect(
+                index, current
+            )
+            client.on_disconnect = lambda current, *_args, index=index: self._on_disconnect(
+                index, current
+            )
         clients[0].will_set(topics["system_state"], "unknown", qos=1, retain=True)
         clients[1].will_set(topics["substate"], "unknown", qos=1, retain=True)
+        clients[2].will_set(topics["emergency_stop"], "unknown", qos=1, retain=True)
         return clients
 
-    def _on_connect(self, index: int) -> None:
+    def _on_connect(self, index: int, client: Any) -> None:
         """Replace Last-Will values as soon as each broker connection is ready."""
+        if not self._is_current_client(index, client):
+            return
         self._connected_clients.add(index)
         self._publish_startup_state()
+
+    def _on_disconnect(self, index: int, client: Any) -> None:
+        """Stop publishing through a client until its broker reconnect succeeds."""
+        if not self._is_current_client(index, client):
+            return
+        self._connected_clients.discard(index)
+
+    def _is_current_client(self, index: int, client: Any) -> bool:
+        return index < len(self._clients) and self._clients[index] is client
+
+    def _emergency_stop_state(self) -> str:
+        """Translate the monitor's access-oriented state into the MQTT contract."""
+        if not self._config.emergency_stop_virtual_status_uuid:
+            return "not_configured"
+        return {
+            "enabled": "clear",
+            "disabled": "active",
+            "unknown": "unknown",
+        }.get(self._emergency_stop_reader(), "unknown")
 
     def _publish_startup_state(self) -> None:
         """Publish the service's own ready state without a systemd start race.
@@ -341,6 +369,10 @@ class MqttHealthPublisher:
                 self._clients[0].publish(topics["system_state"], "active", qos=1, retain=True)
             if 1 in self._connected_clients:
                 self._clients[1].publish(topics["substate"], "running", qos=1, retain=True)
+            if 2 in self._connected_clients:
+                self._clients[2].publish(
+                    topics["emergency_stop"], self._emergency_stop_state(), qos=1, retain=True
+                )
         except Exception:
             _LOGGER.warning("event=mqtt_startup_publish_failed")
 
@@ -370,8 +402,9 @@ class MqttHealthPublisher:
                 self._clients[0].publish(topics["system_state"], active_state, qos=1, retain=True)
             if 1 in self._connected_clients:
                 self._clients[1].publish(topics["substate"], substate, qos=1, retain=True)
-                self._clients[1].publish(
-                    topics["emergency_stop"], self._emergency_stop_reader(), qos=1, retain=True
+            if 2 in self._connected_clients:
+                self._clients[2].publish(
+                    topics["emergency_stop"], self._emergency_stop_state(), qos=1, retain=True
                 )
         except Exception:
             _LOGGER.warning("event=mqtt_publish_failed")
@@ -409,8 +442,9 @@ class MqttHealthPublisher:
                 publications.append(
                     self._clients[1].publish(topics["substate"], substate, qos=1, retain=True)
                 )
+            if 2 in self._connected_clients:
                 publications.append(
-                    self._clients[1].publish(
+                    self._clients[2].publish(
                         topics["emergency_stop"], "unknown", qos=1, retain=True
                     )
                 )

@@ -29,8 +29,11 @@ die Tool-Erkennung und der HTTP-Health-Endpunkt bleiben erreichbar.
 MQTT-Health ist standardmäßig deaktiviert. Standardmäßig verwendet das Plugin Host, Port und Zugangsdaten des LoxBerry MQTT-Gateways zur Laufzeit. Für einen eigenen Broker deaktivieren Sie **LoxBerry MQTT-Gateway verwenden** und geben Host, Port, Benutzername und Passwort ein. Eigene Broker werden immer per TLS mit normaler Zertifikats- und Hostnamenprüfung verbunden. Das Passwort wird getrennt verschlüsselt gespeichert, nie wieder angezeigt und nie in Diagnose- oder Logausgaben aufgenommen. Mit **Gespeichertes MQTT-Passwort löschen** entfernen Sie es bewusst. Das Root Topic lautet standardmäßig `mcpserver`; der Heartbeat läuft standardmäßig alle 60 Sekunden. Die retained Topics sind `mcpserver/health/heartbeat`, `mcpserver/health/system_state` und `mcpserver/health/substate`. Ein kontrolliertes Stoppen veröffentlicht `inactive` und `dead`; bei einem unerwarteten Prozess- oder Verbindungsverlust veröffentlicht das retained Fallback `unknown`. Der Zeitwert verwendet Loxone-Epoch-Sekunden.
 
 Ist MQTT-Health aktiviert, veröffentlicht das Plugin zusätzlich retained mit QoS
-1 unter `<root>/emergency_stop/status` den Notaus-Status `enabled`, `disabled`
-oder `unknown`. Dieses Topic ist unabhängig von den `health/*`-Topics.
+1 unter `<root>/emergency_stop/status` den Notaus-Status. Dieses Topic hat einen
+eigenen Last Will und ist unabhängig von den `health/*`-Topics: Ohne ausgewähltes
+Signal veröffentlicht es `not_configured`, beim konfigurierten Signalwert `1`
+`clear`, bei `0` `active` und bei nicht verfügbarem Signal oder MQTT-Verlust
+`unknown`. `active` und `unknown` bei konfiguriertem Signal sperren MCP-Tool-Aufrufe.
 
 ## Zertifikat
 

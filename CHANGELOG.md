@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Publish an unambiguous retained MQTT emergency-stop state: `not_configured`,
+  `clear`, `active`, or `unknown`. Its dedicated MQTT connection now retains
+  `unknown` after an unexpected connection or process loss.
+
 - Restore the previous MCP or MQTT configuration, encrypted MQTT credential and
   running service together when applying a section-specific configuration fails.
 

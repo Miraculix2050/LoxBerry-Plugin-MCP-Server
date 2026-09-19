@@ -130,6 +130,7 @@ def test_health_publishes_retained_start_and_shutdown_messages(tmp_path: Path) -
         await publisher.start()
         clients[0].on_connect(clients[0])
         clients[1].on_connect(clients[1])
+        clients[2].on_connect(clients[2])
         publisher.publish()
         await publisher.close()
 
@@ -137,6 +138,12 @@ def test_health_publishes_retained_start_and_shutdown_messages(tmp_path: Path) -
     calls = [call for client in clients for call in client.calls]
     assert ("will", "mcpserver/health/system_state", "unknown", {"qos": 1, "retain": True}) in calls
     assert ("will", "mcpserver/health/substate", "unknown", {"qos": 1, "retain": True}) in calls
+    assert (
+        "will",
+        "mcpserver/emergency_stop/status",
+        "unknown",
+        {"qos": 1, "retain": True},
+    ) in calls
     assert any(
         call[:2] == ("publish", "mcpserver/health/heartbeat") and call[-1]["retain"]
         for call in calls
@@ -149,6 +156,12 @@ def test_health_publishes_retained_start_and_shutdown_messages(tmp_path: Path) -
         {"qos": 1, "retain": True},
     ) in calls
     assert ("publish", "mcpserver/health/substate", "dead", {"qos": 1, "retain": True}) in calls
+    assert (
+        "publish",
+        "mcpserver/emergency_stop/status",
+        "unknown",
+        {"qos": 1, "retain": True},
+    ) in calls
 
 
 def test_health_waits_for_each_broker_connection_before_publishing(tmp_path: Path) -> None:
@@ -190,6 +203,16 @@ def test_health_waits_for_each_broker_connection_before_publishing(tmp_path: Pat
         assert any(
             call[:2] == ("publish", "mcpserver/health/substate") for call in clients[1].calls
         )
+        assert not any(
+            call[:2] == ("publish", "mcpserver/emergency_stop/status") for call in clients[2].calls
+        )
+        clients[2].on_connect(clients[2])
+        assert (
+            "publish",
+            "mcpserver/emergency_stop/status",
+            "not_configured",
+            {"qos": 1, "retain": True},
+        ) in clients[2].calls
         await publisher.close()
 
     asyncio.run(exercise())
@@ -223,6 +246,7 @@ def test_health_replaces_last_will_immediately_with_the_service_ready_state(tmp_
         await publisher.start()
         clients[0].on_connect(clients[0])
         clients[1].on_connect(clients[1])
+        clients[2].on_connect(clients[2])
         await publisher.close()
 
     asyncio.run(exercise())
@@ -267,6 +291,7 @@ def test_health_publishes_restarting_for_an_admin_initiated_restart(tmp_path: Pa
         await publisher.start()
         clients[0].on_connect(clients[0])
         clients[1].on_connect(clients[1])
+        clients[2].on_connect(clients[2])
         request_service_restart()
         await publisher.close()
 
@@ -283,6 +308,103 @@ def test_health_publishes_restarting_for_an_admin_initiated_restart(tmp_path: Pa
         "restarting",
         {"qos": 1, "retain": True},
     ) in clients[1].calls
+
+
+def test_emergency_stop_mqtt_state_is_explicit_and_reconnects_immediately(tmp_path: Path) -> None:
+    path = tmp_path / "config" / "system"
+    path.mkdir(parents=True)
+    (path / "general.json").write_text(
+        json.dumps(
+            {
+                "Mqtt": {
+                    "Brokerhost": "broker",
+                    "Brokerport": 1883,
+                    "Brokeruser": "user",
+                    "Brokerpass": "secret",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    clients: list[_Client] = []
+    publisher = MqttHealthPublisher(
+        PluginConfig(
+            mqtt_enabled=True,
+            emergency_stop_virtual_status_uuid="00112233-4455-6677-8899aabbccddeeff",
+        ),
+        home=tmp_path,
+        client_factory=lambda **kwargs: clients.append(_Client(**kwargs)) or clients[-1],
+        emergency_stop_reader=lambda: "enabled",
+    )
+
+    async def exercise() -> None:
+        await publisher.start()
+        clients[2].on_connect(clients[2])
+        clients[2].on_disconnect(clients[2])
+        publications_before = len([call for call in clients[2].calls if call[0] == "publish"])
+        publisher.publish()
+        assert (
+            len([call for call in clients[2].calls if call[0] == "publish"]) == publications_before
+        )
+        clients[2].on_connect(clients[2])
+        await publisher.close()
+
+    asyncio.run(exercise())
+    assert [client.calls[0] for client in clients] == [
+        ("new", {"client_id": "loxberry-mcp-health-state"}),
+        ("new", {"client_id": "loxberry-mcp-health-substate"}),
+        ("new", {"client_id": "loxberry-mcp-emergency-stop"}),
+    ]
+    assert (
+        "will",
+        "mcpserver/emergency_stop/status",
+        "unknown",
+        {"qos": 1, "retain": True},
+    ) in clients[2].calls
+    assert (
+        clients[2].calls.count(
+            ("publish", "mcpserver/emergency_stop/status", "clear", {"qos": 1, "retain": True})
+        )
+        == 2
+    )
+
+
+def test_emergency_stop_mqtt_state_mapping() -> None:
+    configured = PluginConfig(
+        emergency_stop_virtual_status_uuid="00112233-4455-6677-8899aabbccddeeff"
+    )
+    for monitor_state, expected in {
+        "enabled": "clear",
+        "disabled": "active",
+        "unknown": "unknown",
+        "unexpected": "unknown",
+    }.items():
+        publisher = MqttHealthPublisher(
+            configured,
+            home=Path("."),
+            emergency_stop_reader=lambda monitor_state=monitor_state: monitor_state,
+        )
+        assert publisher._emergency_stop_state() == expected
+
+    assert (
+        MqttHealthPublisher(
+            PluginConfig(), home=Path("."), emergency_stop_reader=lambda: "enabled"
+        )._emergency_stop_state()
+        == "not_configured"
+    )
+
+
+def test_stale_mqtt_client_callback_does_not_change_current_connection_state(
+    tmp_path: Path,
+) -> None:
+    publisher = MqttHealthPublisher(PluginConfig(), home=tmp_path)
+    current = _Client()
+    publisher._clients = [current]
+    publisher._connected_clients.add(0)
+
+    publisher._on_disconnect(0, _Client())
+
+    assert publisher._connected_clients == {0}
 
 
 def test_missing_gateway_schedules_a_bounded_retry(tmp_path: Path) -> None:
