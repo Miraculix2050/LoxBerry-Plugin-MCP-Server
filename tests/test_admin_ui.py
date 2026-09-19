@@ -222,9 +222,15 @@ def test_session_actions_are_serialized_and_apply_their_snapshot_immediately() -
     assert "let sessionDataVersion = 0;" in template
     assert "const expectedSessionDataVersion = sessionDataVersion;" in template
     assert "if (expectedSessionDataVersion !== sessionDataVersion) return;" in template
-    assert "scheduleSessionPoll(expectedSessionDataVersion === sessionDataVersion ? 10000 : 0);" in template
+    assert (
+        "scheduleSessionPoll(expectedSessionDataVersion === sessionDataVersion ? 10000 : 0);"
+        in template
+    )
     assert "sessionDataVersion += 1;" in template
-    assert "if (isSessionAction(form.dataset.ajax)) {\n          if (Array.isArray(result.data.sessions)) updateSessions(result.data.sessions);" in template
+    assert (
+        "if (isSessionAction(form.dataset.ajax)) {\n          if (Array.isArray(result.data.sessions)) updateSessions(result.data.sessions);"
+        in template
+    )
     assert "const result = await postAjax(body, 15000);" in template
     assert "activeSessionActions" not in template
     assert "pendingSessionActionButtons" not in template
