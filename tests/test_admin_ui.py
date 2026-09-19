@@ -81,11 +81,15 @@ def test_initial_page_renders_configuration_before_loading_dynamic_state() -> No
 
     assert "admin_call('get_config', {})" in cgi
     assert "admin_call('page_state', {})" in cgi
-    assert "my $service_setting_result = admin_call('service_status', {});" in cgi
-    assert "SERVICE_ENABLED_SETTING_KNOWN => $service_setting_known" in cgi
+    assert "my $service_setting_result = admin_call('service_status', {});" not in cgi
+    assert cgi.index("admin_call('service_status', {})") < cgi.index("my $config_result")
+    assert cgi.index("admin_call('emergency_stop_options', {})") < cgi.index("my $config_result")
+    assert "SERVICE_ENABLED_SETTING_KNOWN => 0" in cgi
+    assert "SELECTED_EMERGENCY_STOP => $selected_emergency_stop" in cgi
     assert "body.set('action', 'page_state')" in template
     assert "const loadInitialState" in template
     assert "loadInitialState();" in template
+    assert "loadEmergencyStopOptions();" in template
     assert "field.addEventListener('input'" in template
     assert "if (!mqttUseLoxberryGateway.checked)" in template
     assert 'aria-busy="true"' in template
@@ -116,12 +120,17 @@ def test_initial_page_renders_configuration_before_loading_dynamic_state() -> No
     )
 
 
-def test_emergency_stop_option_names_are_encoded_for_the_html_template() -> None:
+def test_emergency_stop_selection_is_preserved_while_options_load() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
 
-    assert "use Encode qw(decode encode is_utf8 FB_DEFAULT);" in cgi
-    assert "is_utf8($option->{name})" in cgi
-    assert "$option->{name} = encode('UTF-8', $option->{name});" in cgi
+    assert "SELECTED_EMERGENCY_STOP => $selected_emergency_stop" in cgi
+    assert 'id="emergency-stop-value" name="emergency_stop_virtual_status_uuid"' in template
+    assert 'id="emergency-stop-select"' in template
+    assert "emergencyStopSelect.disabled = false;" in template
+    assert "emergencyStopValue.value = emergencyStopSelect.value;" in template
+    assert "option.textContent = label;" in template
+    assert "EMERGENCY_STOP_LOAD_ERROR" in template
 
 
 def test_common_actions_update_the_page_without_a_reload() -> None:
@@ -203,23 +212,18 @@ def test_sessions_poll_only_while_visible_and_open_and_patch_changed_rows() -> N
     assert "sessionList.replaceChildren(fragment)" in template
 
 
-def test_parallel_session_actions_pause_polling_without_blocking_buttons() -> None:
+def test_session_actions_are_serialized_and_apply_their_snapshot_immediately() -> None:
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
 
     assert "const isSessionAction = (action)" in template
-    assert "let activeSessionActions = 0;" in template
-    assert "let sessionDataVersion = 0;" in template
-    assert "const pendingSessionActionButtons = new Set();" in template
-    assert "activeSessionActions += 1;" in template
-    assert "sessionDataVersion += 1;" in template
-    assert "sessionActionRunning = activeSessionActions > 0;" in template
-    assert "if (!sessionActionRunning) scheduleSessionPoll(0);" in template
-    assert "if (isSessionAction(form.dataset.ajax) && sessionActionRunning) return;" not in template
-    assert "if (expectedSessionDataVersion !== sessionDataVersion) return;" in template
-    assert "if (!isSessionAction(form.dataset.ajax)) {" in template
-    assert "pendingSessionActionButtons.add(button);" in template
-    assert "releasePendingSessionActionButtons();" in template
-    assert template.count("if (isSessionAction(form.dataset.ajax)) {") == 3
+    assert "if (sessionActionRunning) return;" in template
+    assert "setSessionActionControlsDisabled(true);" in template
+    assert "setSessionActionControlsDisabled(false);" in template
+    assert "if (isSessionAction(form.dataset.ajax)) {\n          if (Array.isArray(result.data.sessions)) updateSessions(result.data.sessions);" in template
+    assert "const result = await postAjax(body, 15000);" in template
+    assert "activeSessionActions" not in template
+    assert "sessionDataVersion" not in template
+    assert "pendingSessionActionButtons" not in template
 
 
 def test_read_only_ajax_polling_does_not_create_admin_log_files() -> None:

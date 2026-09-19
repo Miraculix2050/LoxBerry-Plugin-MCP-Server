@@ -5,6 +5,12 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Render the Admin UI without waiting for service status or Miniserver emergency-stop
+  discovery, while preserving an unavailable configured emergency-stop selection.
+
+- Update Clients and sessions immediately after a successful session action instead
+  of relying on a follow-up refresh that can fail.
+
 - Restore the previous MCP or MQTT configuration, encrypted MQTT credential and
   running service together when applying a section-specific configuration fails.
 
