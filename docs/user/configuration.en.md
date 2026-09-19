@@ -28,13 +28,14 @@ endpoint remain reachable.
 
 MQTT health is disabled by default. By default, the plugin reads host, port, and credentials at runtime from the LoxBerry MQTT gateway. For a custom broker, disable **Use LoxBerry MQTT gateway** and enter its host, port, username, and password. Custom-broker connections always use TLS with normal certificate and hostname validation. The password is stored separately with encryption, is never displayed again, and is never included in diagnostics or logs. Use **Clear saved MQTT password** to remove it deliberately. The default root topic is `mcpserver` and the default heartbeat interval is 60 seconds. Retained topics are `mcpserver/health/heartbeat`, `mcpserver/health/system_state` and `mcpserver/health/substate`. A controlled stop publishes `inactive` and `dead`; an unexpected process or connection loss publishes the retained fallback `unknown`. The timestamp uses Loxone epoch seconds.
 
-When MQTT health is enabled, the plugin additionally publishes the retained
-emergency-stop state with QoS 1 under `<root>/emergency_stop/status`. This topic
-has its own Last Will and is independent of the `health/*` topics: it publishes
+When MQTT health is enabled, the plugin keeps publishing the compatible retained
+emergency-stop state `enabled`, `disabled`, or `unknown` with QoS 1 under
+`<root>/emergency_stop/status`. That topic now has its own Last Will. The
+versioned `<root>/emergency_stop/v2/status` topic provides unambiguous values:
 `not_configured` when no signal is selected, `clear` when the configured signal
 is `1`, `active` when it is `0`, and `unknown` when a configured signal is
-unavailable or the MQTT connection is lost. `active` and configured `unknown`
-block MCP tool calls.
+unavailable or either MQTT connection is lost. `active` and configured `unknown`
+block MCP tool calls. Both topics are independent of `health/*` topics.
 
 ## Certificate
 

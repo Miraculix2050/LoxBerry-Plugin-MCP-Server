@@ -131,6 +131,7 @@ def test_health_publishes_retained_start_and_shutdown_messages(tmp_path: Path) -
         clients[0].on_connect(clients[0])
         clients[1].on_connect(clients[1])
         clients[2].on_connect(clients[2])
+        clients[3].on_connect(clients[3])
         publisher.publish()
         await publisher.close()
 
@@ -141,6 +142,12 @@ def test_health_publishes_retained_start_and_shutdown_messages(tmp_path: Path) -
     assert (
         "will",
         "mcpserver/emergency_stop/status",
+        "unknown",
+        {"qos": 1, "retain": True},
+    ) in calls
+    assert (
+        "will",
+        "mcpserver/emergency_stop/v2/status",
         "unknown",
         {"qos": 1, "retain": True},
     ) in calls
@@ -159,6 +166,12 @@ def test_health_publishes_retained_start_and_shutdown_messages(tmp_path: Path) -
     assert (
         "publish",
         "mcpserver/emergency_stop/status",
+        "unknown",
+        {"qos": 1, "retain": True},
+    ) in calls
+    assert (
+        "publish",
+        "mcpserver/emergency_stop/v2/status",
         "unknown",
         {"qos": 1, "retain": True},
     ) in calls
@@ -210,9 +223,20 @@ def test_health_waits_for_each_broker_connection_before_publishing(tmp_path: Pat
         assert (
             "publish",
             "mcpserver/emergency_stop/status",
-            "not_configured",
+            "unknown",
             {"qos": 1, "retain": True},
         ) in clients[2].calls
+        assert not any(
+            call[:2] == ("publish", "mcpserver/emergency_stop/v2/status")
+            for call in clients[3].calls
+        )
+        clients[3].on_connect(clients[3])
+        assert (
+            "publish",
+            "mcpserver/emergency_stop/v2/status",
+            "not_configured",
+            {"qos": 1, "retain": True},
+        ) in clients[3].calls
         await publisher.close()
 
     asyncio.run(exercise())
@@ -247,6 +271,7 @@ def test_health_replaces_last_will_immediately_with_the_service_ready_state(tmp_
         clients[0].on_connect(clients[0])
         clients[1].on_connect(clients[1])
         clients[2].on_connect(clients[2])
+        clients[3].on_connect(clients[3])
         await publisher.close()
 
     asyncio.run(exercise())
@@ -292,6 +317,7 @@ def test_health_publishes_restarting_for_an_admin_initiated_restart(tmp_path: Pa
         clients[0].on_connect(clients[0])
         clients[1].on_connect(clients[1])
         clients[2].on_connect(clients[2])
+        clients[3].on_connect(clients[3])
         request_service_restart()
         await publisher.close()
 
@@ -340,13 +366,14 @@ def test_emergency_stop_mqtt_state_is_explicit_and_reconnects_immediately(tmp_pa
     async def exercise() -> None:
         await publisher.start()
         clients[2].on_connect(clients[2])
-        clients[2].on_disconnect(clients[2])
-        publications_before = len([call for call in clients[2].calls if call[0] == "publish"])
+        clients[3].on_connect(clients[3])
+        clients[3].on_disconnect(clients[3])
+        publications_before = len([call for call in clients[3].calls if call[0] == "publish"])
         publisher.publish()
         assert (
-            len([call for call in clients[2].calls if call[0] == "publish"]) == publications_before
+            len([call for call in clients[3].calls if call[0] == "publish"]) == publications_before
         )
-        clients[2].on_connect(clients[2])
+        clients[3].on_connect(clients[3])
         await publisher.close()
 
     asyncio.run(exercise())
@@ -354,6 +381,7 @@ def test_emergency_stop_mqtt_state_is_explicit_and_reconnects_immediately(tmp_pa
         ("new", {"client_id": "loxberry-mcp-health-state"}),
         ("new", {"client_id": "loxberry-mcp-health-substate"}),
         ("new", {"client_id": "loxberry-mcp-emergency-stop"}),
+        ("new", {"client_id": "loxberry-mcp-emergency-stop-v2"}),
     ]
     assert (
         "will",
@@ -363,7 +391,19 @@ def test_emergency_stop_mqtt_state_is_explicit_and_reconnects_immediately(tmp_pa
     ) in clients[2].calls
     assert (
         clients[2].calls.count(
-            ("publish", "mcpserver/emergency_stop/status", "clear", {"qos": 1, "retain": True})
+            ("publish", "mcpserver/emergency_stop/status", "enabled", {"qos": 1, "retain": True})
+        )
+        >= 1
+    )
+    assert (
+        "will",
+        "mcpserver/emergency_stop/v2/status",
+        "unknown",
+        {"qos": 1, "retain": True},
+    ) in clients[3].calls
+    assert (
+        clients[3].calls.count(
+            ("publish", "mcpserver/emergency_stop/v2/status", "clear", {"qos": 1, "retain": True})
         )
         == 2
     )
@@ -384,12 +424,15 @@ def test_emergency_stop_mqtt_state_mapping() -> None:
             home=Path("."),
             emergency_stop_reader=lambda monitor_state=monitor_state: monitor_state,
         )
-        assert publisher._emergency_stop_state() == expected
+        assert publisher._emergency_stop_v2_state() == expected
+        assert publisher._legacy_emergency_stop_state() == (
+            monitor_state if monitor_state in {"enabled", "disabled", "unknown"} else "unknown"
+        )
 
     assert (
         MqttHealthPublisher(
             PluginConfig(), home=Path("."), emergency_stop_reader=lambda: "enabled"
-        )._emergency_stop_state()
+        )._emergency_stop_v2_state()
         == "not_configured"
     )
 
