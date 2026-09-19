@@ -411,6 +411,8 @@ if ($action ne '') {
             'action=set_service_log_level outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
     } elsif ($action eq 'page_state') {
         $result = admin_call('page_state', {});
+    } elsif ($action eq 'emergency_stop_options') {
+        $result = admin_call('emergency_stop_options', {});
     } elsif ($action eq 'test_connection') {
         $result = admin_call('test_connection', {endpoint => requested_endpoint($q)});
     } elsif ($action eq 'revoke_session') {
@@ -513,14 +515,6 @@ sub format_expiry {
 
 my $config_result = admin_call('get_config', {});
 my $config = $config_result->{ok} ? ($config_result->{data}{configuration} // {}) : {};
-my $service_setting_result = admin_call('service_status', {});
-my $service_setting = $service_setting_result->{ok}
-    && ref($service_setting_result->{data}{service}) eq 'HASH'
-    ? $service_setting_result->{data}{service} : {};
-my $service_setting_known = $service_setting_result->{ok} ? 1 : 0;
-my $emergency_options_result = admin_call('emergency_stop_options', {});
-my $emergency_options = $emergency_options_result->{ok}
-    ? ($emergency_options_result->{data}{options} // []) : [];
 my $sessions = [];
 my $loxberry_bindings = [];
 my $loxberry_operate_bindings = [];
@@ -532,14 +526,6 @@ $config->{logging} = {} if ref($config->{logging}) ne 'HASH';
 $config->{cache} = {} if ref($config->{cache}) ne 'HASH';
 $config->{emergency_stop} = {} if ref($config->{emergency_stop}) ne 'HASH';
 my $selected_emergency_stop = $config->{emergency_stop}{virtual_status_uuid} // '';
-for my $option (@$emergency_options) {
-    # HTML::Template writes byte strings. Convert only Unicode data returned by
-    # the Python helper; language strings are already UTF-8 bytes.
-    if (defined($option->{name}) && !ref($option->{name}) && is_utf8($option->{name})) {
-        $option->{name} = encode('UTF-8', $option->{name});
-    }
-    $option->{selected} = $option->{uuid} eq $selected_emergency_stop ? 1 : 0;
-}
 my $miniservers = configured_miniservers($config->{loxone}{endpoint});
 my $has_selected_miniserver = grep { $_->{selected} } @$miniservers;
 my ($selected_miniserver) = grep { $_->{selected} } @$miniservers;
@@ -583,8 +569,8 @@ for my $suffix ('', '.1', '.2') {
 }
 $template->param(
     VERSION => $version,
-    SERVICE_ENABLED_SETTING => $service_setting->{enabled} ? 1 : 0,
-    SERVICE_ENABLED_SETTING_KNOWN => $service_setting_known,
+    SERVICE_ENABLED_SETTING => 0,
+    SERVICE_ENABLED_SETTING_KNOWN => 0,
     ENABLED => $config->{server}{enabled} ? 1 : 0,
     MQTT_ENABLED => $config->{mqtt}{enabled} ? 1 : 0,
     MQTT_ROOT_TOPIC => $config->{mqtt}{root_topic} // 'mcpserver',
@@ -620,7 +606,7 @@ $template->param(
     MAX_STRUCTURE_STATE_REFERENCES => $config->{limits}{max_structure_state_references} // 100000,
     MAX_STRUCTURE_DEPTH => $config->{limits}{max_structure_depth} // 32,
     MAX_STATES_PER_IDENTITY => $config->{limits}{max_states_per_identity} // 20000,
-    EMERGENCY_STOP_OPTIONS => $emergency_options,
+    SELECTED_EMERGENCY_STOP => $selected_emergency_stop,
     LOG_LEVEL => $config->{logging}{level} // 'warning',
     LOG_LEVEL_OFF => ($config->{logging}{level} // 'warning') eq 'off' ? 1 : 0,
     LOG_LEVEL_ERROR => ($config->{logging}{level} // 'warning') eq 'error' ? 1 : 0,
