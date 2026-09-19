@@ -1186,6 +1186,58 @@ def test_failed_mqtt_credential_rollback_reports_distinct_failure(
     assert credential_store.load() == "new-secret"
 
 
+def test_failed_mqtt_credential_persistence_restores_previous_credential(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mcpserver.mqtt_health import MqttCredentialStore, MqttCredentialStoreError
+
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    previous = PluginConfig(mqtt_use_loxberry_gateway=False, mqtt_host="previous.example")
+    store.save(previous)
+    key = tmp_path / "data" / "auth" / "install.key"
+    key.parent.mkdir(parents=True)
+    key.write_bytes(b"k" * 32)
+    credentials = key.with_name("mqtt-credentials.json.enc")
+    credential_store = MqttCredentialStore(credentials.resolve(), key.resolve())
+    credential_store.save("previous-secret")
+    original_save = MqttCredentialStore.save
+    saves = 0
+
+    def save(target: MqttCredentialStore, password: str) -> None:
+        nonlocal saves
+        saves += 1
+        original_save(target, password)
+        if saves == 1:
+            raise MqttCredentialStoreError("simulated post-replace credential failure")
+
+    monkeypatch.setattr(MqttCredentialStore, "save", save)
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._service_active", lambda: True)
+    monkeypatch.setattr(
+        "mcpserver.admin._restart_service",
+        lambda: (_ for _ in ()).throw(AssertionError("service was restarted")),
+    )
+    monkeypatch.setenv("MCPSERVER_INSTALL_KEY", str(key.resolve()))
+    monkeypatch.setenv("MCPSERVER_MQTT_CREDENTIALS", str(credentials.resolve()))
+
+    with pytest.raises(AdminError, match="previous configuration restored"):
+        _save_mqtt(
+            {
+                "schema_version": 6,
+                "mqtt": {
+                    "enabled": True,
+                    "root_topic": "mcpserver",
+                    "heartbeat_seconds": 60,
+                    "use_loxberry_gateway": False,
+                    "host": "new.example",
+                    "port": 1883,
+                    "username": "health",
+                },
+                "mqtt_password": "new-secret",
+            }
+        )
+
+
 def test_failed_mqtt_config_persistence_restores_changed_credential(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1201,8 +1253,15 @@ def test_failed_mqtt_config_persistence_restores_changed_credential(
     credential_store = MqttCredentialStore(credentials.resolve(), key.resolve())
     credential_store.save("previous-secret")
 
+    original_save = store._save_unlocked
+    saves = 0
+
     def fail_save(config: PluginConfig) -> None:
-        raise ConfigError("simulated candidate persistence failure")
+        nonlocal saves
+        saves += 1
+        original_save(config)
+        if saves == 1:
+            raise ConfigError("simulated post-replace persistence failure")
 
     restarts = 0
 

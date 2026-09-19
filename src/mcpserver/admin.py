@@ -557,30 +557,27 @@ def _save_mqtt(payload: object) -> dict[str, Any]:
             mqtt_port=candidate.mqtt_port,
             mqtt_username=candidate.mqtt_username,
         )
-        credentials_changed = False
-        configuration_saved = False
+        credentials_restore_required = bool(password or clear_password)
+        configuration_restore_required = True
         restart_attempted = False
         try:
             if password and credentials is not None:
                 credentials.save(password)
-                credentials_changed = True
             elif clear_password and credentials is not None:
                 credentials.delete()
-                credentials_changed = True
             save(updated)
-            configuration_saved = True
             if was_active:
                 restart_attempted = True
                 _restart_service()
             return updated
         except (AdminError, MqttCredentialStoreError, ValueError) as apply_error:
             rollback_error: Exception | None = None
-            if configuration_saved:
+            if configuration_restore_required:
                 try:
                     save(previous)
                 except ConfigError as exc:
                     rollback_error = exc
-            if credentials_changed and credentials is not None:
+            if credentials_restore_required and credentials is not None:
                 try:
                     if previous_password is None:
                         credentials.delete()
