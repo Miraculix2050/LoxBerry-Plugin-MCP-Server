@@ -38,7 +38,7 @@ from mcpserver.auth.provider import (
     READ_SCOPE,
 )
 from mcpserver.auth.store import AtomicJsonAuthStore
-from mcpserver.config import AtomicConfigStore, PluginConfig
+from mcpserver.config import AtomicConfigStore, ConfigError, PluginConfig
 from mcpserver.loxone.client import LoxoneToken
 from mcpserver.loxone.events import LoxoneProtocolError
 from tools.benchmark_admin_page_state import measure
@@ -859,6 +859,135 @@ def test_section_saves_are_atomic_and_preserve_the_other_configuration(
     assert after_mqtt.mqtt_enabled is False
 
 
+def test_failed_mcp_section_apply_restores_running_service(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    previous = PluginConfig(public_origin="https://previous.example")
+    store.save(previous)
+    restarts = 0
+
+    def restart() -> None:
+        nonlocal restarts
+        restarts += 1
+        if restarts == 1:
+            raise AdminError("simulated apply failure")
+
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._service_active", lambda: True)
+    monkeypatch.setattr("mcpserver.admin._restart_service", restart)
+
+    with pytest.raises(AdminError, match="previous configuration restored"):
+        _save_mcp(
+            {
+                "schema_version": 6,
+                "server": {"enabled": True, "public_origin": "https://new.example"},
+                "loxone": {"endpoint": "http://192.168.10.20"},
+            }
+        )
+
+    assert restarts == 2
+    assert store.load().to_document() == previous.to_document()
+
+
+def test_failed_mcp_section_rollback_restart_reports_distinct_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    previous = PluginConfig(public_origin="https://previous.example")
+    store.save(previous)
+    restarts = 0
+
+    def restart() -> None:
+        nonlocal restarts
+        restarts += 1
+        raise AdminError("simulated restart failure")
+
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._service_active", lambda: True)
+    monkeypatch.setattr("mcpserver.admin._restart_service", restart)
+
+    with pytest.raises(AdminError, match="MCP configuration apply and rollback failed"):
+        _save_mcp(
+            {
+                "schema_version": 6,
+                "server": {"enabled": True, "public_origin": "https://new.example"},
+                "loxone": {"endpoint": "http://192.168.10.20"},
+            }
+        )
+
+    assert restarts == 2
+    assert store.load().to_document() == previous.to_document()
+
+
+def test_failed_mcp_section_rollback_reports_distinct_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    previous = PluginConfig(public_origin="https://previous.example")
+    store.save(previous)
+    original_save = store._save_unlocked
+    saves = 0
+
+    def save(config: PluginConfig) -> None:
+        nonlocal saves
+        saves += 1
+        if saves == 2:
+            raise ConfigError("simulated rollback failure")
+        original_save(config)
+
+    monkeypatch.setattr(store, "_save_unlocked", save)
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._service_active", lambda: True)
+    monkeypatch.setattr(
+        "mcpserver.admin._restart_service",
+        lambda: (_ for _ in ()).throw(AdminError("simulated apply failure")),
+    )
+
+    with pytest.raises(AdminError, match="MCP configuration apply and rollback failed"):
+        _save_mcp(
+            {
+                "schema_version": 6,
+                "server": {"enabled": True, "public_origin": "https://new.example"},
+                "loxone": {"endpoint": "http://192.168.10.20"},
+            }
+        )
+
+    assert store.load().public_origin == "https://new.example"
+
+
+def test_inactive_section_saves_do_not_restart_service(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    store.save(PluginConfig())
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._service_active", lambda: False)
+    monkeypatch.setattr(
+        "mcpserver.admin._restart_service",
+        lambda: (_ for _ in ()).throw(AssertionError("inactive service was restarted")),
+    )
+    monkeypatch.setattr("mcpserver.admin._service_response", lambda: {"service_active": False})
+
+    _save_mcp(
+        {
+            "schema_version": 6,
+            "server": {"enabled": True, "public_origin": "https://loxberry.example"},
+            "loxone": {"endpoint": "http://192.168.10.20"},
+        }
+    )
+    _save_mqtt(
+        {
+            "schema_version": 6,
+            "mqtt": {
+                "enabled": True,
+                "root_topic": "mcpserver",
+                "heartbeat_seconds": 60,
+            },
+        }
+    )
+
+
 def test_mqtt_gateway_status_masks_credentials(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -962,10 +1091,131 @@ def test_failed_mqtt_apply_restores_previous_encrypted_password(
     credentials = key.with_name("mqtt-credentials.json.enc")
     credential_store = MqttCredentialStore(credentials.resolve(), key.resolve())
     credential_store.save("previous-secret")
+    restarts = 0
+
+    def restart() -> None:
+        nonlocal restarts
+        restarts += 1
+        if restarts == 1:
+            raise AdminError("simulated apply failure")
+
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._service_active", lambda: True)
+    monkeypatch.setattr("mcpserver.admin._restart_service", restart)
+    monkeypatch.setenv("MCPSERVER_INSTALL_KEY", str(key.resolve()))
+    monkeypatch.setenv("MCPSERVER_MQTT_CREDENTIALS", str(credentials.resolve()))
+
+    with pytest.raises(AdminError, match="previous configuration restored"):
+        _save_mqtt(
+            {
+                "schema_version": 6,
+                "mqtt": {
+                    "enabled": True,
+                    "root_topic": "mcpserver",
+                    "heartbeat_seconds": 60,
+                    "use_loxberry_gateway": False,
+                    "host": "new.example",
+                    "port": 1883,
+                    "username": "health",
+                },
+                "mqtt_password": "new-secret",
+            }
+        )
+
+    assert restarts == 2
+    assert store.load().mqtt_host == "previous.example"
+    assert credential_store.load() == "previous-secret"
+
+
+def test_failed_mqtt_credential_rollback_reports_distinct_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mcpserver.mqtt_health import MqttCredentialStore, MqttCredentialStoreError
+
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    previous = PluginConfig(mqtt_use_loxberry_gateway=False, mqtt_host="previous.example")
+    store.save(previous)
+    key = tmp_path / "data" / "auth" / "install.key"
+    key.parent.mkdir(parents=True)
+    key.write_bytes(b"k" * 32)
+    credentials = key.with_name("mqtt-credentials.json.enc")
+    credential_store = MqttCredentialStore(credentials.resolve(), key.resolve())
+    credential_store.save("previous-secret")
+    original_save = MqttCredentialStore.save
+    save_calls = 0
+    restarts = 0
+
+    def save(target: MqttCredentialStore, password: str) -> None:
+        nonlocal save_calls
+        save_calls += 1
+        if save_calls == 2:
+            raise MqttCredentialStoreError("simulated credential rollback failure")
+        original_save(target, password)
+
+    def restart() -> None:
+        nonlocal restarts
+        restarts += 1
+        raise AdminError("simulated apply failure")
+
+    monkeypatch.setattr(MqttCredentialStore, "save", save)
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._service_active", lambda: True)
+    monkeypatch.setattr("mcpserver.admin._restart_service", restart)
+    monkeypatch.setenv("MCPSERVER_INSTALL_KEY", str(key.resolve()))
+    monkeypatch.setenv("MCPSERVER_MQTT_CREDENTIALS", str(credentials.resolve()))
+
+    with pytest.raises(AdminError, match="MQTT configuration apply and rollback failed"):
+        _save_mqtt(
+            {
+                "schema_version": 6,
+                "mqtt": {
+                    "enabled": True,
+                    "root_topic": "mcpserver",
+                    "heartbeat_seconds": 60,
+                    "use_loxberry_gateway": False,
+                    "host": "new.example",
+                    "port": 1883,
+                    "username": "health",
+                },
+                "mqtt_password": "new-secret",
+            }
+        )
+
+    assert restarts == 1
+    assert store.load().mqtt_host == "previous.example"
+    assert credential_store.load() == "new-secret"
+
+
+def test_failed_mqtt_credential_persistence_restores_previous_credential(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mcpserver.mqtt_health import MqttCredentialStore, MqttCredentialStoreError
+
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    previous = PluginConfig(mqtt_use_loxberry_gateway=False, mqtt_host="previous.example")
+    store.save(previous)
+    key = tmp_path / "data" / "auth" / "install.key"
+    key.parent.mkdir(parents=True)
+    key.write_bytes(b"k" * 32)
+    credentials = key.with_name("mqtt-credentials.json.enc")
+    credential_store = MqttCredentialStore(credentials.resolve(), key.resolve())
+    credential_store.save("previous-secret")
+    original_save = MqttCredentialStore.save
+    saves = 0
+
+    def save(target: MqttCredentialStore, password: str) -> None:
+        nonlocal saves
+        saves += 1
+        original_save(target, password)
+        if saves == 1:
+            raise MqttCredentialStoreError("simulated post-replace credential failure")
+
+    monkeypatch.setattr(MqttCredentialStore, "save", save)
     monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
     monkeypatch.setattr("mcpserver.admin._service_active", lambda: True)
     monkeypatch.setattr(
-        "mcpserver.admin._restart_service", lambda: (_ for _ in ()).throw(AdminError("failed"))
+        "mcpserver.admin._restart_service",
+        lambda: (_ for _ in ()).throw(AssertionError("service was restarted")),
     )
     monkeypatch.setenv("MCPSERVER_INSTALL_KEY", str(key.resolve()))
     monkeypatch.setenv("MCPSERVER_MQTT_CREDENTIALS", str(credentials.resolve()))
@@ -987,6 +1237,63 @@ def test_failed_mqtt_apply_restores_previous_encrypted_password(
             }
         )
 
+
+def test_failed_mqtt_config_persistence_restores_changed_credential(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mcpserver.mqtt_health import MqttCredentialStore
+
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    previous = PluginConfig(mqtt_use_loxberry_gateway=False, mqtt_host="previous.example")
+    store.save(previous)
+    key = tmp_path / "data" / "auth" / "install.key"
+    key.parent.mkdir(parents=True)
+    key.write_bytes(b"k" * 32)
+    credentials = key.with_name("mqtt-credentials.json.enc")
+    credential_store = MqttCredentialStore(credentials.resolve(), key.resolve())
+    credential_store.save("previous-secret")
+
+    original_save = store._save_unlocked
+    saves = 0
+
+    def fail_save(config: PluginConfig) -> None:
+        nonlocal saves
+        saves += 1
+        original_save(config)
+        if saves == 1:
+            raise ConfigError("simulated post-replace persistence failure")
+
+    restarts = 0
+
+    def restart() -> None:
+        nonlocal restarts
+        restarts += 1
+
+    monkeypatch.setattr(store, "_save_unlocked", fail_save)
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._service_active", lambda: True)
+    monkeypatch.setattr("mcpserver.admin._restart_service", restart)
+    monkeypatch.setenv("MCPSERVER_INSTALL_KEY", str(key.resolve()))
+    monkeypatch.setenv("MCPSERVER_MQTT_CREDENTIALS", str(credentials.resolve()))
+
+    with pytest.raises(AdminError, match="previous configuration restored"):
+        _save_mqtt(
+            {
+                "schema_version": 6,
+                "mqtt": {
+                    "enabled": True,
+                    "root_topic": "mcpserver",
+                    "heartbeat_seconds": 60,
+                    "use_loxberry_gateway": False,
+                    "host": "new.example",
+                    "port": 1883,
+                    "username": "health",
+                },
+                "mqtt_password": "new-secret",
+            }
+        )
+
+    assert restarts == 0
     assert store.load().mqtt_host == "previous.example"
     assert credential_store.load() == "previous-secret"
 
