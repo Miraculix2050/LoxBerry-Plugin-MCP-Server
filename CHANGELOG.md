@@ -5,6 +5,9 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Restore the previous MCP or MQTT configuration, encrypted MQTT credential and
+  running service together when applying a section-specific configuration fails.
+
 - Add `loxone_get_structure_overview` for exact authorized-visible counts and
   bounded room, category and control-type breakdowns without additional
   Miniserver polling, state reads or Config-project access.

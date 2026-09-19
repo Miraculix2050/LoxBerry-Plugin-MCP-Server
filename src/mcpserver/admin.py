@@ -457,13 +457,12 @@ def _save(payload: object) -> dict[str, Any]:
 
 def _save_mcp(payload: object) -> dict[str, Any]:
     """Atomically apply only the MCP configuration section, preserving MQTT."""
-    from mcpserver.config import PluginConfig
+    from mcpserver.config import ConfigError, PluginConfig
 
     if not isinstance(payload, dict):
         raise AdminError("configuration payload is invalid")
     candidate = PluginConfig.from_document(payload)
     store = _config_store()
-    previous = store.load()
     fields = (
         "enabled",
         "public_origin",
@@ -491,18 +490,26 @@ def _save_mcp(payload: object) -> dict[str, Any]:
         "emergency_stop_virtual_status_uuid",
     )
 
-    def apply(current: PluginConfig) -> PluginConfig:
-        return replace(current, **{field: getattr(candidate, field) for field in fields})
-
-    updated = store.mutate(apply)
-    try:
-        if _service_active():
+    def apply(previous: PluginConfig, save: Callable[[PluginConfig], None]) -> PluginConfig:
+        was_active = _service_active()
+        updated = replace(previous, **{field: getattr(candidate, field) for field in fields})
+        save(updated)
+        if not was_active:
+            return updated
+        try:
             _restart_service()
-    except AdminError as exc:
-        store.save(previous)
-        raise AdminError(
-            "MCP configuration was not applied; previous configuration restored"
-        ) from exc
+        except AdminError as apply_error:
+            try:
+                save(previous)
+                _restart_service()
+            except (AdminError, ConfigError) as rollback_error:
+                raise AdminError("MCP configuration apply and rollback failed") from rollback_error
+            raise AdminError(
+                "MCP configuration was not applied; previous configuration restored"
+            ) from apply_error
+        return updated
+
+    updated = store.transaction(apply)
     return {"configuration": updated.to_document(), "applied": True} | _service_response()
 
 
@@ -514,7 +521,7 @@ def _emergency_stop_options() -> dict[str, Any]:
 
 def _save_mqtt(payload: object) -> dict[str, Any]:
     """Atomically apply MQTT settings and separately protect an optional password."""
-    from mcpserver.config import PluginConfig
+    from mcpserver.config import ConfigError, PluginConfig
     from mcpserver.mqtt_health import MqttCredentialStore, MqttCredentialStoreError
 
     if not isinstance(payload, dict):
@@ -539,6 +546,7 @@ def _save_mqtt(payload: object) -> dict[str, Any]:
 
     def apply(previous: PluginConfig, save: Callable[[PluginConfig], None]) -> PluginConfig:
         previous_password = credentials.load() if credentials is not None else None
+        was_active = _service_active()
         updated = replace(
             previous,
             mqtt_enabled=candidate.mqtt_enabled,
@@ -549,28 +557,47 @@ def _save_mqtt(payload: object) -> dict[str, Any]:
             mqtt_port=candidate.mqtt_port,
             mqtt_username=candidate.mqtt_username,
         )
+        credentials_changed = False
+        configuration_saved = False
+        restart_attempted = False
         try:
             if password and credentials is not None:
                 credentials.save(password)
+                credentials_changed = True
             elif clear_password and credentials is not None:
                 credentials.delete()
+                credentials_changed = True
             save(updated)
-            if _service_active():
+            configuration_saved = True
+            if was_active:
+                restart_attempted = True
                 _restart_service()
             return updated
-        except (AdminError, MqttCredentialStoreError, ValueError) as exc:
-            save(previous)
-            if credentials is not None:
+        except (AdminError, MqttCredentialStoreError, ValueError) as apply_error:
+            rollback_error: Exception | None = None
+            if configuration_saved:
+                try:
+                    save(previous)
+                except ConfigError as exc:
+                    rollback_error = exc
+            if credentials_changed and credentials is not None:
                 try:
                     if previous_password is None:
                         credentials.delete()
                     else:
                         credentials.save(previous_password)
-                except MqttCredentialStoreError:
-                    pass
+                except MqttCredentialStoreError as exc:
+                    rollback_error = rollback_error or exc
+            if rollback_error is None and restart_attempted:
+                try:
+                    _restart_service()
+                except AdminError as exc:
+                    rollback_error = exc
+            if rollback_error is not None:
+                raise AdminError("MQTT configuration apply and rollback failed") from rollback_error
             raise AdminError(
                 "MQTT configuration was not applied; previous configuration restored"
-            ) from exc
+            ) from apply_error
 
     updated = store.transaction(apply)
     return {
