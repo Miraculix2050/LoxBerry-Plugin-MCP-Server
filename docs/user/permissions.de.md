@@ -8,7 +8,7 @@ Nutze für jeden Assistenten ein eigenes Loxone-Konto. Der Server zeigt nur Elem
 
 | Scope | Freigabe | Wirkung |
 | --- | --- | --- |
-| `loxone:read` | immer | Struktur und aktuelle Zustände lesen; erlaubt bei Aufruf eine interne Projektanalyse mit derselben Loxone-Identität |
+| `loxone:read` | immer | Struktur, aktuelle Zustände und begrenzte Project Intelligence mit derselben Loxone-Identität lesen |
 | `loxone:history` | optional | Historie und Statistiken lesen |
 | `loxone:control` | optional | dokumentierte sichtbare Controls bedienen |
 | `loxberry:read` | optional, lokal freigeben | maskierte Plugin- und Systemdiagnosen |
@@ -16,6 +16,10 @@ Nutze für jeden Assistenten ein eigenes Loxone-Konto. Der Server zeigt nur Elem
 
 Steuerung ist standardmäßig deaktiviert. Lokale LoxBerry-Freigaben sind exakt an Client, Loxone-Identität und Miniserver gebunden und ersetzen weder Loxone-Rechte noch OAuth-Zustimmung.
 
-Die interne Projektanalyse ergänzt kein öffentliches Tool. Bei jedem Aufruf wird das Projekt erneut mit der gebundenen Loxone-Identität abgerufen, um den Zugriff zu prüfen; zwischengespeicherte Verarbeitungsergebnisse gewähren keinen Zugriff.
+Project Intelligence ergänzt keinen Scope. Bei jedem Aufruf wird das Projekt erneut mit der
+gebundenen Loxone-Identität abgerufen, um den Zugriff zu prüfen; zwischengespeicherte
+Verarbeitungsergebnisse gewähren keinen Zugriff. Sie stellt begrenzten Graphstatus, Suche,
+Objektbeschreibungen sowie vor- und nachgelagerte Signal- oder Referenzpfade bereit, aber keine
+rohen Projektdateien und keine Projektänderung.
 
 Weiter: [Funktionsumfang](capabilities.de.md).

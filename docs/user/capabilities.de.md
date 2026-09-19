@@ -6,6 +6,14 @@
 
 Der Server liest sichtbare Räume, Kategorien, Controls und Zustände. Optional sind begrenzte Historie, Statistiken, maskierte LoxBerry-Diagnosen sowie dokumentierte, typabhängige Aktionen für sichtbare Gen.-1-Controls verfügbar.
 
+`loxone_get_project_status`, `loxone_find_project_objects`,
+`loxone_describe_project_object` und `loxone_trace_project_logic` stellen begrenzte,
+schreibgeschützte Project Intelligence für ein durch die gebundene Loxone-Identität abrufbares
+Projekt bereit. Sie liefern Graph-Evidenz statt rohem XML: Ein Signal- oder Referenzpfad beschreibt
+strukturellen Einfluss, nicht eine beobachtete historische Ursache. Ergebnisse sind begrenzt und
+melden Abschneiden explizit; unbekannte Blocktypen und unaufgelöste Beziehungen bleiben ohne
+erfundene Semantik sichtbar.
+
 `loxone_get_structure_overview` liefert eine begrenzte erste Übersicht der für
 den angemeldeten Loxone-Benutzer sichtbaren Räume, Kategorien und Control-Typen.
 Sie enthält keine aktuellen Zustände, Historie, Zahlen zu versteckten Objekten
