@@ -369,6 +369,7 @@
   let serviceEnabledSetting = serviceEnabledInput.checked;
   let serviceEnabledSettingLoaded = serviceEnableForm.dataset.serviceEnabledSettingKnown === '1';
   let sessionActionRunning = false;
+  let sessionDataVersion = 0;
   let sessionPollInFlight = false;
   let sessionPollTimer = null;
   let lastService = null;
@@ -980,11 +981,13 @@
       return;
     }
     sessionPollInFlight = true;
+    const expectedSessionDataVersion = sessionDataVersion;
     try {
       const body = new URLSearchParams();
       body.set('action', 'list_sessions');
       body.set('ajax', '1');
       const result = await postAjax(body, 15000);
+      if (expectedSessionDataVersion !== sessionDataVersion) return;
       if (Array.isArray(result.data.sessions)) updateSessions(result.data.sessions);
       if (Array.isArray(result.data.loxberry_bindings)) {
         updateLoxberryBindings(result.data.loxberry_bindings);
@@ -996,7 +999,7 @@
       // Keep the last known table; the next visible and open-section poll retries.
     } finally {
       sessionPollInFlight = false;
-      scheduleSessionPoll();
+      scheduleSessionPoll(expectedSessionDataVersion === sessionDataVersion ? 10000 : 0);
     }
   };
   sessionsSection.addEventListener('toggle', () => scheduleSessionPoll(sessionsSection.open ? 0 : 10000));
@@ -1060,6 +1063,7 @@
       }
       if (isSessionAction(form.dataset.ajax)) {
         if (sessionActionRunning) return;
+        sessionDataVersion += 1;
         sessionActionRunning = true;
         window.clearTimeout(sessionPollTimer);
         sessionPollTimer = null;
