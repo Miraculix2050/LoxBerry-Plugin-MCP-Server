@@ -228,7 +228,8 @@ def test_session_actions_are_serialized_and_apply_their_snapshot_immediately() -
     )
     assert "sessionDataVersion += 1;" in template
     assert (
-        "if (isSessionAction(form.dataset.ajax)) {\n          if (Array.isArray(result.data.sessions)) updateSessions(result.data.sessions);"
+        "if (isSessionAction(form.dataset.ajax)) {\n"
+        "          if (Array.isArray(result.data.sessions)) updateSessions(result.data.sessions);"
         in template
     )
     assert "const result = await postAjax(body, 15000);" in template
