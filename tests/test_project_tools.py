@@ -37,13 +37,14 @@ class Query:
             raise ProjectQueryError("project_mapping_ambiguous")
         return object()
 
-    def describe(self, _node):
+    def describe(self, _node, **_kwargs):
         return {
             **self.find()[0],
             "parent_project_node_id": None,
             "child_project_node_ids": [],
             "relationships": [],
             "unresolved_relationships": [],
+            "truncated_fields": [],
         }
 
     def trace(self, _node, **_kwargs):

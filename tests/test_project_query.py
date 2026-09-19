@@ -39,9 +39,10 @@ def test_find_status_and_describe_are_deterministic_and_bounded():
     )
     assert len(found) == 1
     assert found[0]["block_type"] == "Target"
-    described = project.describe(project.resolve("p:4", "project_node_id"))
+    described = project.describe(project.resolve("p:4", "project_node_id"), limit=1)
     assert described["connector_key"] == "AI"
     assert described["relationships"][0]["kind"] == "signal"
+    assert described["truncated_fields"] == []
     assert (
         project.find(
             query=None,
@@ -79,3 +80,45 @@ def test_ambiguous_runtime_mapping_is_never_guessed():
     project = query()
     with pytest.raises(ProjectQueryError, match="project_node_unknown"):
         project.resolve("missing", "runtime_control_uuid")
+
+
+def test_describe_caps_each_relationship_collection():
+    parsed = parse_project(b'<P><C U="root"><Co U="one"/><Co U="two"/></C></P>')
+    snapshot = ProjectSnapshot(
+        "project", 1, (ProjectPartSummary("p", 4, ()),), build_graph((("p", parsed),))
+    )
+    project = ProjectQuery(
+        ProjectView(
+            snapshot, map_runtime(snapshot, SimpleNamespace(last_modified="v", controls=()))
+        ),
+        {},
+    )
+
+    result = project.describe(project.resolve("p:1", "project_node_id"), limit=1)
+
+    assert result["child_project_node_ids"] == ["p:2"]
+    assert result["truncated_fields"] == ["child_project_node_ids"]
+
+
+def test_trace_keeps_converging_edges_without_unbounded_edge_output():
+    parsed = parse_project(
+        b'<P><C U="a"><Co U="a1"/></C><C U="b"><Co U="b1"><In Input="a1"/>'
+        b'</Co></C><C U="c"><Co U="c1"><In Input="a1"/></Co></C><C U="d">'
+        b'<Co U="d1"><In Input="b1"/><In Input="c1"/></Co></C></P>'
+    )
+    snapshot = ProjectSnapshot(
+        "project", 1, (ProjectPartSummary("p", 12, ()),), build_graph((("p", parsed),))
+    )
+    project = ProjectQuery(
+        ProjectView(
+            snapshot, map_runtime(snapshot, SimpleNamespace(last_modified="v", controls=()))
+        ),
+        {},
+    )
+
+    result = project.trace(
+        project.resolve("p:1", "project_node_id"), direction="downstream", max_depth=3, max_nodes=10
+    )
+
+    assert len(result["edges"]) == 4
+    assert result["truncated"] is False

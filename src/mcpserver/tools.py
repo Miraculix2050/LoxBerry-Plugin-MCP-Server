@@ -531,6 +531,9 @@ class ProjectDescriptionData(ProjectNodeData):
     child_project_node_ids: list[str]
     relationships: list[ProjectRelationshipData]
     unresolved_relationships: list[str]
+    truncated_fields: list[
+        Literal["child_project_node_ids", "relationships", "unresolved_relationships"]
+    ]
 
 
 class ProjectTraceData(BaseModel):
@@ -539,7 +542,7 @@ class ProjectTraceData(BaseModel):
     nodes: list[ProjectNodeData]
     edges: list[ProjectRelationshipData]
     truncated: bool
-    truncation_reason: Literal["max_depth", "max_nodes"] | None
+    truncation_reason: Literal["max_depth", "max_nodes", "max_edges"] | None
     unresolved_relationships: list[dict[str, str]]
 
 
@@ -2568,12 +2571,20 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                 )
             ),
         ] = "project_node_id",
+        limit: Annotated[
+            int,
+            Field(
+                description="Maximum child objects, relationships, and unresolved entries.",
+                ge=1,
+                le=100,
+            ),
+        ] = DEFAULT_PAGE_SIZE,
     ) -> ProjectDescriptionEnvelope:
         try:
             project, snapshot = await _project_query(runtime)
             return _result(
                 ProjectDescriptionEnvelope,
-                project.describe(project.resolve(identifier, identifier_type)),
+                project.describe(project.resolve(identifier, identifier_type), limit=limit),
                 stale=not snapshot.connected,
             )
         except PermissionError:

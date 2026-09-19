@@ -130,7 +130,9 @@ class ProjectQuery:
             raise ProjectQueryError("project_mapping_ambiguous")
         return self._nodes[mapping.node_keys[0]]
 
-    def describe(self, node: GraphNode) -> dict[str, object]:
+    def describe(self, node: GraphNode, *, limit: int) -> dict[str, object]:
+        if not 1 <= limit <= 100:
+            raise ProjectQueryError("project_query_invalid")
         graph = self.view.snapshot.graph
         contains_in = [
             edge.source
@@ -147,12 +149,22 @@ class ProjectQuery:
             for edge in graph.edges
             if edge.kind != "contains" and (edge.source == node.key or edge.target == node.key)
         ]
+        child_ids = sorted(contains_out)
+        unresolved = [code for key, code in graph.unresolved if key == node.key]
+        truncated_fields = []
+        if len(child_ids) > limit:
+            truncated_fields.append("child_project_node_ids")
+        if len(direct) > limit:
+            truncated_fields.append("relationships")
+        if len(unresolved) > limit:
+            truncated_fields.append("unresolved_relationships")
         return {
             **self._summary(node),
             "parent_project_node_id": contains_in[0] if len(contains_in) == 1 else None,
-            "child_project_node_ids": sorted(contains_out),
-            "relationships": direct,
-            "unresolved_relationships": [code for key, code in graph.unresolved if key == node.key],
+            "child_project_node_ids": child_ids[:limit],
+            "relationships": direct[:limit],
+            "unresolved_relationships": unresolved[:limit],
+            "truncated_fields": truncated_fields,
         }
 
     def trace(
@@ -200,9 +212,16 @@ class ProjectQuery:
             for edge in adjacency[current]:
                 neighbor = edge.source if direction == "upstream" else edge.target
                 if neighbor in visited:
+                    if len(edges) >= max_nodes:
+                        truncated, reason = True, "max_edges"
+                        break
+                    edges.append({"kind": edge.kind, "source": edge.source, "target": edge.target})
                     continue
                 if len(keys) >= max_nodes:
                     truncated, reason = True, "max_nodes"
+                    break
+                if len(edges) >= max_nodes:
+                    truncated, reason = True, "max_edges"
                     break
                 visited.add(neighbor)
                 keys.append(neighbor)
