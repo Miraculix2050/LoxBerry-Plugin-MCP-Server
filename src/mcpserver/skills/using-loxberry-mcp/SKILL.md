@@ -1,6 +1,6 @@
 ---
 name: using-loxberry-mcp
-description: Guides safe use of the LoxBerry MCP Server to inspect Loxone rooms, controls, states, weather, history and statistics, diagnose LoxBerry status, clear the plugin-owned statistics cache, and explicitly operate supported Loxone controls. Use for Loxone MCP questions, LoxBerry diagnostics, history, ambiguous names, stale state, pagination, unconfirmed operations, or an emergency-stop rejection.
+description: Guides safe use of the LoxBerry MCP Server to inspect Loxone rooms, controls, project logic, states, weather, history and statistics, diagnose LoxBerry status, clear the plugin-owned statistics cache, and explicitly operate supported Loxone controls. Use for Loxone MCP questions, project traces, LoxBerry diagnostics, history, ambiguous names, stale state, pagination, unconfirmed operations, or an emergency-stop rejection.
 ---
 
 # Using LoxBerry MCP
@@ -30,6 +30,27 @@ Check `stale` plus every breakdown's `truncated` and `complete` fields. Then use
 `loxone_describe_control`, or `loxone_get_room_snapshot` for targeted detail.
 Do not infer hidden objects, household roles, importance, or program logic from
 the overview.
+
+### Inspect project logic
+
+Use Project Intelligence only for a structural question such as what can
+influence a known control. Call `loxone_get_project_status` first when project
+freshness, mapping coverage, or unresolved relationships matter. Then:
+
+1. Use `loxone_find_project_objects` with narrow exact filters or a bounded
+   query. Follow `next_cursor` while keeping all filters unchanged.
+2. Call `loxone_describe_project_object` for one returned `project_node_id`, or
+   for an exact visible `runtime_control_uuid`. If a runtime mapping is
+   ambiguous, present the candidates; never choose one.
+3. Call `loxone_trace_project_logic` with the exact start object, direction,
+   and only the needed limits. Check `truncated`, `truncation_reason`, and
+   `unresolved_relationships` before drawing a conclusion.
+
+A signal or reference trace is structural evidence, not proof that a signal
+changed at a particular time or caused an observed action. Combine it with
+current states, statistics, or history only when those sources independently
+provide the required observation. Do not infer meanings for unknown block types
+or request raw project XML.
 
 ### Inspect one known room
 

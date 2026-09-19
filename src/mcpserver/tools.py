@@ -59,6 +59,8 @@ from mcpserver.loxone.presentation import (
 )
 from mcpserver.loxone.presentation import structure_overview as _structure_overview
 from mcpserver.loxone.presentation import visible_controls as _visible_controls
+from mcpserver.loxone.project.models import ProjectError
+from mcpserver.loxone.project.query import ProjectQuery, ProjectQueryError
 from mcpserver.loxone.runtime import (
     ControlHistoryEntry,
     ControlOperationError,
@@ -486,6 +488,61 @@ class StructureOverviewData(BaseModel):
     control_types: StructureOverviewTypeBreakdownData
 
 
+class ProjectRuntimeControlData(BaseModel):
+    uuid: str
+    name: str | None
+    mapping_status: Literal["exact"]
+    mapping_rule: str
+
+
+class ProjectNodeData(BaseModel):
+    project_node_id: str
+    kind: Literal["block", "connector"]
+    block_type: str | None
+    source_id: str | None
+    connector_key: str | None
+    runtime_control: ProjectRuntimeControlData | None = None
+
+
+class ProjectStatusData(BaseModel):
+    project_fingerprint: str
+    model_version: int
+    project_parts: int
+    nodes: int
+    edges: int
+    unresolved_relationships: int
+    mapping: dict[str, int]
+    structure_generation: int
+
+
+class ProjectObjectPageData(BaseModel):
+    items: list[ProjectNodeData]
+    next_cursor: str | None
+
+
+class ProjectRelationshipData(BaseModel):
+    kind: Literal["signal", "reference"]
+    source: str
+    target: str
+
+
+class ProjectDescriptionData(ProjectNodeData):
+    parent_project_node_id: str | None
+    child_project_node_ids: list[str]
+    relationships: list[ProjectRelationshipData]
+    unresolved_relationships: list[str]
+
+
+class ProjectTraceData(BaseModel):
+    start: ProjectNodeData
+    direction: Literal["upstream", "downstream"]
+    nodes: list[ProjectNodeData]
+    edges: list[ProjectRelationshipData]
+    truncated: bool
+    truncation_reason: Literal["max_depth", "max_nodes"] | None
+    unresolved_relationships: list[dict[str, str]]
+
+
 class ToolEnvelope(BaseModel):
     ok: bool
     data: object
@@ -501,6 +558,22 @@ class SystemStatusEnvelope(ToolEnvelope):
 
 class StructureOverviewEnvelope(ToolEnvelope):
     data: StructureOverviewData | ErrorData
+
+
+class ProjectStatusEnvelope(ToolEnvelope):
+    data: ProjectStatusData | ErrorData
+
+
+class ProjectObjectPageEnvelope(ToolEnvelope):
+    data: ProjectObjectPageData | ErrorData
+
+
+class ProjectDescriptionEnvelope(ToolEnvelope):
+    data: ProjectDescriptionData | ErrorData
+
+
+class ProjectTraceEnvelope(ToolEnvelope):
+    data: ProjectTraceData | ErrorData
 
 
 class RoomPageEnvelope(ToolEnvelope):
@@ -1042,6 +1115,36 @@ async def _snapshot(runtime: LoxoneRuntime | None) -> tuple[StoredAccessToken, R
     access = _access()
     async with runtime.call_slot(access):
         return access, await runtime.snapshot(access)
+
+
+async def _project_query(runtime: LoxoneRuntime | None) -> tuple[ProjectQuery, RuntimeSnapshot]:
+    """Load one authorization-checked project view within the normal call slot."""
+    if runtime is None or runtime.projects is None:
+        raise RuntimeUnavailable("the project service is not configured")
+    access = _access()
+    async with runtime.call_slot(access):
+        snapshot = await runtime.snapshot(access)
+        view = await runtime.projects.view(access, snapshot)
+    names = {control.uuid: control.name for control in _visible_controls(snapshot.structure)}
+    return ProjectQuery(view, names), snapshot
+
+
+def _project_error_code(error: ProjectError | ProjectQueryError) -> tuple[str, str]:
+    code = str(error)
+    if code in {
+        "project_access_denied",
+        "project_identity_mismatch",
+        "project_permission_denied",
+        "project_token_confirmation_required",
+    }:
+        return "permission_denied", "Project analysis is not authorized for this identity"
+    if code in {"project_node_unknown"}:
+        return "not_found", "Project object is not available"
+    if code in {"project_mapping_ambiguous"}:
+        return "ambiguous_mapping", "Runtime control maps to multiple project objects"
+    if code in {"project_query_invalid"}:
+        return "invalid_input", "Project query is invalid"
+    return "temporarily_unavailable", "Project analysis is temporarily unavailable"
 
 
 def _fit_structure_overview(envelope: StructureOverviewEnvelope) -> StructureOverviewEnvelope:
@@ -2360,6 +2463,168 @@ def register_skill_tool(server: FastMCP) -> None:
         )
 
 
+def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> None:
+    """Publish bounded read-only Project Intelligence operations."""
+    annotations = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
+    cursors = _CursorCodec()
+
+    @server.tool(
+        name="loxone_get_project_status",
+        description=(
+            "Get bounded status and runtime-mapping counts for the authorized Loxone project."
+        ),
+        annotations=annotations,
+        structured_output=True,
+    )
+    async def get_project_status() -> ProjectStatusEnvelope:
+        try:
+            query, snapshot = await _project_query(runtime)
+            return _result(
+                ProjectStatusEnvelope,
+                {**query.status(), "structure_generation": snapshot.structure_generation},
+                stale=not snapshot.connected,
+            )
+        except PermissionError:
+            return _error(
+                ProjectStatusEnvelope,
+                "unauthenticated",
+                "Authentication with loxone:read is required",
+            )
+        except (ProjectError, ProjectQueryError) as exc:
+            code, message = _project_error_code(exc)
+            return _error(ProjectStatusEnvelope, code, message)
+        except RuntimeUnavailable as exc:
+            return _error(ProjectStatusEnvelope, "temporarily_unavailable", str(exc))
+
+    @server.tool(
+        name="loxone_find_project_objects",
+        description="Find bounded project blocks or connectors in the authorized Loxone project.",
+        annotations=annotations,
+        structured_output=True,
+    )
+    async def find_project_objects(
+        query: Annotated[str | None, Field(max_length=200)] = None,
+        kind: Annotated[
+            Literal["block", "connector"] | None, Field(description="Optional node kind.")
+        ] = None,
+        block_type: Annotated[str | None, Field(max_length=200)] = None,
+        source_id: Annotated[str | None, Field(max_length=200)] = None,
+        runtime_control_uuid: Annotated[str | None, Field(max_length=200)] = None,
+        cursor: CursorArgument = None,
+        limit: LimitArgument = DEFAULT_PAGE_SIZE,
+    ) -> ProjectObjectPageEnvelope:
+        try:
+            project, snapshot = await _project_query(runtime)
+            values = project.find(
+                query=query,
+                kind=kind,
+                block_type=block_type,
+                source_id=source_id,
+                runtime_control_uuid=runtime_control_uuid,
+            )
+            scope = "project-find:" + "|".join(
+                (
+                    query or "",
+                    kind or "",
+                    block_type or "",
+                    source_id or "",
+                    runtime_control_uuid or "",
+                )
+            )
+            return _result(
+                ProjectObjectPageEnvelope,
+                _page(cursors, scope, values, cursor, limit),
+                stale=not snapshot.connected,
+            )
+        except ValueError as exc:
+            return _error(ProjectObjectPageEnvelope, "invalid_input", str(exc))
+        except PermissionError:
+            return _error(
+                ProjectObjectPageEnvelope,
+                "unauthenticated",
+                "Authentication with loxone:read is required",
+            )
+        except (ProjectError, ProjectQueryError) as exc:
+            code, message = _project_error_code(exc)
+            return _error(ProjectObjectPageEnvelope, code, message)
+        except RuntimeUnavailable as exc:
+            return _error(ProjectObjectPageEnvelope, "temporarily_unavailable", str(exc))
+
+    @server.tool(
+        name="loxone_describe_project_object",
+        description=(
+            "Describe one authorized project object and its direct structural relationships."
+        ),
+        annotations=annotations,
+        structured_output=True,
+    )
+    async def describe_project_object(
+        identifier: Annotated[str, Field(min_length=1, max_length=200)],
+        identifier_type: Annotated[
+            Literal["project_node_id", "runtime_control_uuid"],
+            Field(
+                description=(
+                    "Whether identifier is a project node ID or visible runtime control UUID."
+                )
+            ),
+        ] = "project_node_id",
+    ) -> ProjectDescriptionEnvelope:
+        try:
+            project, snapshot = await _project_query(runtime)
+            return _result(
+                ProjectDescriptionEnvelope,
+                project.describe(project.resolve(identifier, identifier_type)),
+                stale=not snapshot.connected,
+            )
+        except PermissionError:
+            return _error(
+                ProjectDescriptionEnvelope,
+                "unauthenticated",
+                "Authentication with loxone:read is required",
+            )
+        except (ProjectError, ProjectQueryError) as exc:
+            code, message = _project_error_code(exc)
+            return _error(ProjectDescriptionEnvelope, code, message)
+        except RuntimeUnavailable as exc:
+            return _error(ProjectDescriptionEnvelope, "temporarily_unavailable", str(exc))
+
+    @server.tool(
+        name="loxone_trace_project_logic",
+        description=(
+            "Trace bounded upstream or downstream signal and reference logic "
+            "from one project object."
+        ),
+        annotations=annotations,
+        structured_output=True,
+    )
+    async def trace_project_logic(
+        start_identifier: Annotated[str, Field(min_length=1, max_length=200)],
+        start_type: Annotated[Literal["project_node_id", "runtime_control_uuid"], Field()],
+        direction: Annotated[Literal["upstream", "downstream"], Field()],
+        max_depth: Annotated[int, Field(ge=1, le=16)] = 6,
+        max_nodes: Annotated[int, Field(ge=1, le=200)] = 100,
+    ) -> ProjectTraceEnvelope:
+        try:
+            project, snapshot = await _project_query(runtime)
+            node = project.resolve(start_identifier, start_type)
+            return _result(
+                ProjectTraceEnvelope,
+                project.trace(node, direction=direction, max_depth=max_depth, max_nodes=max_nodes),
+                stale=not snapshot.connected,
+            )
+        except PermissionError:
+            return _error(
+                ProjectTraceEnvelope,
+                "unauthenticated",
+                "Authentication with loxone:read is required",
+            )
+        except (ProjectError, ProjectQueryError) as exc:
+            code, message = _project_error_code(exc)
+            return _error(ProjectTraceEnvelope, code, message)
+        except RuntimeUnavailable as exc:
+            return _error(ProjectTraceEnvelope, "temporarily_unavailable", str(exc))
+
+
 def register_loxberry_read_tools(server: FastMCP, runtime: LoxBerryReadRuntime) -> None:
     """Publish the optional, fixed Phase 3 LoxBerry diagnostics surface."""
     annotations = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
@@ -3177,6 +3442,7 @@ def register_tool_surface(
     register_skill_tool(server)
     register_read_tools(server, runtime, control_enabled=control_enabled)
     if runtime is not None:
+        register_project_tools(server, runtime)
         register_control_tool(server, runtime)
         register_history_tools(server, runtime)
     if loxberry_runtime is not None:
