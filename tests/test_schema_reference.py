@@ -23,9 +23,12 @@ EXPECTED_TOOLS = {
     "loxberry_get_system_status",
     "loxberry_list_service_events",
     "loxone_describe_control",
+    "loxone_describe_project_object",
     "loxone_find_controls",
+    "loxone_find_project_objects",
     "loxone_get_control_history",
     "loxone_get_control_notes",
+    "loxone_get_project_status",
     "loxone_get_room_snapshot",
     "loxone_get_skill_guide",
     "loxone_get_states",
@@ -37,6 +40,7 @@ EXPECTED_TOOLS = {
     "loxone_list_global_metadata",
     "loxone_list_rooms",
     "loxone_operate_control",
+    "loxone_trace_project_logic",
 }
 
 
