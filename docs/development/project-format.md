@@ -66,6 +66,19 @@ usage observations. A trace may classify a bounded path as `knx_to_loxone`,
 KNX endpoints or exact runtime mappings. These paths describe static project
 reachability, not a physical device role, bus telegram, or historical cause.
 
+## KNX project analysis
+
+`loxone_analyze_project` returns bounded, deterministic project-local evidence;
+it never grades a KNX installation. Version 1 aggregates canonical address
+prefix distributions, conflicting raw `EIBType` values on one group address,
+mixed reviewed signal-use observations, static KNX/Loxone path counts, and
+endpoints without an observed project relationship. Raw `EIBType` remains an
+unknown-system source code, so the analysis never claims DPT compatibility.
+Names, room/function domains, ETS data, bus traffic and physical-device use are
+outside this projection. Findings are stable only for an unchanged project model
+and analysis version; they include project-node evidence for follow-up describe
+or trace calls.
+
 Source, decoder, parser and graph execute in a disposable subprocess with a
 45-second processing deadline, bounded IPC and Linux address-space/CPU/core-dump
 limits. The separate network download deadline remains 20 seconds.

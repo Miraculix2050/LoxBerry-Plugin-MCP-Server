@@ -67,6 +67,13 @@ separately in `semantic_edges`. Use `technology_paths` only as static
 reachability evidence, check `semantic_truncated`, and never present a path as
 proof of a bus telegram or a historical cause.
 
+Use `loxone_analyze_project` for a bounded installation-level KNX review before
+retrieving individual traces. Treat its findings as project-local facts and
+check `analysis_truncated`, `truncation_reasons`, and pagination. It does not
+grade the configuration, infer DPT meanings, or establish ETS/bus evidence.
+Use an affected `project_node_id` with describe or trace before explaining an
+exception or proposing an improvement.
+
 ### Inspect one known room
 
 1. Resolve the room with `loxone_list_rooms`. Use its exact UUID and follow every

@@ -61,6 +61,7 @@ from mcpserver.loxone.presentation import structure_overview as _structure_overv
 from mcpserver.loxone.presentation import visible_controls as _visible_controls
 from mcpserver.loxone.project.models import ProjectError
 from mcpserver.loxone.project.query import ProjectQuery, ProjectQueryError
+from mcpserver.loxone.project.worker import process_analysis
 from mcpserver.loxone.runtime import (
     ControlHistoryEntry,
     ControlOperationError,
@@ -659,6 +660,74 @@ class ProjectDescriptionEnvelope(ToolEnvelope):
 
 class ProjectTraceEnvelope(ToolEnvelope):
     data: ProjectTraceData | ErrorData
+
+
+class ProjectAnalysisCoverageData(BaseModel):
+    endpoints: int
+    canonical_group_addresses: int
+    raw_datatypes: int
+    reviewed_signal_usage: int
+    unresolved_relationships: int
+
+
+class ProjectAnalysisFindingData(BaseModel):
+    finding_id: str
+    analysis: Literal[
+        "address_patterns", "raw_datatype_reuse", "signal_usage", "project_connectivity"
+    ]
+    finding_type: Literal[
+        "address_pattern_deviation",
+        "raw_datatype_conflict",
+        "mixed_signal_usage",
+        "no_project_signal_relationship",
+        "project_connectivity_ambiguous",
+    ]
+    flow_direction: Literal["bus_to_loxone", "loxone_to_bus"] | None = None
+    address_format: Literal["two_level", "three_level"] | None = None
+    raw_datatype: str | None = None
+    usage: list[dict[Literal["interpretation", "effect"], str | None]] = Field(
+        default_factory=list
+    )
+    prefix_level: int | None = None
+    dominant_prefix: list[int] = Field(default_factory=list)
+    dominant_count: int | None = None
+    peer_count: int | None = None
+    deviation_prefix: list[int] = Field(default_factory=list)
+    group_address: str | None = None
+    raw_datatypes: list[str] = Field(default_factory=list)
+    usage_signatures: list[list[dict[Literal["interpretation", "effect"], str | None]]] = (
+        Field(default_factory=list)
+    )
+    affected_project_node_ids: list[str]
+    affected_omitted: int
+
+
+class ProjectAnalysisData(BaseModel):
+    analysis_version: int
+    project_fingerprint: str
+    model_version: int
+    scope: Literal["knx"]
+    analyses: list[
+        Literal[
+            "address_patterns",
+            "raw_datatype_reuse",
+            "signal_usage",
+            "technology_paths",
+            "project_connectivity",
+        ]
+    ]
+    coverage: ProjectAnalysisCoverageData
+    summaries: dict[str, JsonValue]
+    findings: list[ProjectAnalysisFindingData]
+    next_cursor: str | None
+    analysis_truncated: bool
+    truncation_reasons: list[Literal["max_path_nodes", "max_paths", "max_findings"]]
+    page_truncated: bool = False
+    page_truncation_reason: Literal["max_response_bytes"] | None = None
+
+
+class ProjectAnalysisEnvelope(ToolEnvelope):
+    data: ProjectAnalysisData | ErrorData
 
 
 class RoomPageEnvelope(ToolEnvelope):
@@ -1368,6 +1437,34 @@ def _fit_project_trace(envelope: ProjectTraceEnvelope) -> bool:
         or len(data.technology_paths) < len(technology_paths)
     )
     return True
+
+
+def _fit_project_analysis_page(
+    envelope: ProjectAnalysisEnvelope, codec: _CursorCodec, scope: str, cursor: str | None
+) -> bool:
+    if not isinstance(envelope.data, ProjectAnalysisData):
+        return True
+    data = envelope.data
+    if len(envelope.model_dump_json().encode("utf-8")) <= PROJECT_RESPONSE_MAX_BYTES:
+        return True
+    offset = codec.decode(scope, cursor)
+    findings = data.findings
+    data.page_truncated = True
+    data.page_truncation_reason = "max_response_bytes"
+    low, high = 0, len(findings)
+    while low < high:
+        count = (low + high + 1) // 2
+        data.findings = findings[:count]
+        data.next_cursor = codec.encode(scope, offset + count)
+        if len(envelope.model_dump_json().encode("utf-8")) <= PROJECT_RESPONSE_MAX_BYTES:
+            low = count
+        else:
+            high = count - 1
+    if not low:
+        return False
+    data.findings = findings[:low]
+    data.next_cursor = codec.encode(scope, offset + low)
+    return len(envelope.model_dump_json().encode("utf-8")) <= PROJECT_RESPONSE_MAX_BYTES
 
 
 def _state_observed_at(record: StateRecord) -> str | None:
@@ -2841,6 +2938,87 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
             return _error(ProjectTraceEnvelope, code, message)
         except RuntimeUnavailable as exc:
             return _error(ProjectTraceEnvelope, "temporarily_unavailable", str(exc))
+
+    @server.tool(
+        name="loxone_analyze_project",
+        description=(
+            "Analyze bounded KNX project evidence for project-local patterns and review candidates. "
+            "Findings are facts, not configuration verdicts."
+        ),
+        annotations=annotations,
+        structured_output=True,
+    )
+    async def analyze_project(
+        scope: Annotated[
+            Literal["knx"], Field(description="Project technology analysis scope.")
+        ] = "knx",
+        analyses: Annotated[
+            list[
+                Literal[
+                    "address_patterns",
+                    "raw_datatype_reuse",
+                    "signal_usage",
+                    "technology_paths",
+                    "project_connectivity",
+                ]
+            ]
+            | None,
+            Field(description="Optional unique bounded analyses; omit for all KNX analyses."),
+        ] = None,
+        cursor: CursorArgument = None,
+        limit: Annotated[int, Field(ge=1, le=50)] = 20,
+    ) -> ProjectAnalysisEnvelope:
+        try:
+            selected = frozenset(analyses) if analyses is not None else frozenset(
+                {
+                    "address_patterns",
+                    "raw_datatype_reuse",
+                    "signal_usage",
+                    "technology_paths",
+                    "project_connectivity",
+                }
+            )
+            if not selected or (analyses is not None and len(selected) != len(analyses)):
+                raise ValueError("analyses must be a non-empty unique list")
+            project, snapshot = await _project_query(runtime)
+            result = await process_analysis(project.view, selected)
+            analysis_scope = "project-analysis:" + hashlib.sha256(
+                json.dumps(
+                    [
+                        scope,
+                        result["project_fingerprint"],
+                        result["model_version"],
+                        sorted(selected),
+                    ],
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest()
+            page = _page(cursors, analysis_scope, list(result.pop("findings")), cursor, limit)
+            envelope = _result(
+                ProjectAnalysisEnvelope,
+                {**result, **page},
+                stale=not snapshot.connected,
+            )
+            if not _fit_project_analysis_page(envelope, cursors, analysis_scope, cursor):
+                return _error(
+                    ProjectAnalysisEnvelope,
+                    "temporarily_unavailable",
+                    "Project analysis result exceeds the response limit",
+                )
+            return envelope
+        except ValueError as exc:
+            return _error(ProjectAnalysisEnvelope, "invalid_input", str(exc))
+        except PermissionError:
+            return _error(
+                ProjectAnalysisEnvelope,
+                "unauthenticated",
+                "Authentication with loxone:read is required",
+            )
+        except (ProjectError, ProjectQueryError) as exc:
+            code, message = _project_error_code(exc)
+            return _error(ProjectAnalysisEnvelope, code, message)
+        except RuntimeUnavailable as exc:
+            return _error(ProjectAnalysisEnvelope, "temporarily_unavailable", str(exc))
 
 
 def register_loxberry_read_tools(server: FastMCP, runtime: LoxBerryReadRuntime) -> None:

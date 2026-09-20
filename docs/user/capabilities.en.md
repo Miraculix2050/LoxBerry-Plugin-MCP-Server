@@ -7,7 +7,8 @@
 The server reads visible rooms, categories, controls and states. Optional bounded history, statistics, masked LoxBerry diagnostics and documented type-specific actions for visible Gen. 1 controls are available.
 
 `loxone_get_project_status`, `loxone_find_project_objects`,
-`loxone_describe_project_object`, and `loxone_trace_project_logic` provide bounded,
+`loxone_describe_project_object`, `loxone_trace_project_logic`, and
+`loxone_analyze_project` provide bounded,
 read-only Project Intelligence for a project that the bound Loxone identity can load. They expose
 graph evidence rather than raw XML: a signal or reference trace describes structural influence,
 not an observed historical cause. Results are limited and explicitly report truncation; unknown
@@ -26,6 +27,12 @@ separate KNX signal-use observations, while trace returns separately marked deri
 and bounded `knx_to_loxone`, `loxone_to_knx`, or `knx_to_knx` paths. Unknown block or connector
 behaviour is not guessed. These are static project paths, not evidence that a bus telegram or
 historical state change caused an action.
+
+`loxone_analyze_project` summarizes bounded project-local KNX evidence: address patterns, raw
+datatype reuse, reviewed signal-use differences, path counts, and endpoints without an observed
+project relationship. Findings are review facts, not quality ratings. They do not claim DPT
+compatibility, ETS coverage, bus activity, or physical-device use; use a returned project-node ID
+with describe or trace to inspect its evidence.
 
 `loxone_get_structure_overview` returns a bounded initial map of the rooms,
 categories and control types visible to the signed-in Loxone user. It contains

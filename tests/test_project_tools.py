@@ -9,6 +9,8 @@ from mcpserver.tools import PROJECT_RESPONSE_MAX_BYTES, register_project_tools
 
 
 class Query:
+    view = object()
+
     def status(self):
         return {
             "project_fingerprint": "a" * 64,
@@ -156,3 +158,49 @@ async def test_project_tools_bound_large_find_and_trace_responses(monkeypatch):
     assert len(traced.model_dump_json().encode("utf-8")) <= PROJECT_RESPONSE_MAX_BYTES
     assert traced.data.truncated is True  # type: ignore[union-attr]
     assert traced.data.truncation_reason == "max_response_bytes"  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+async def test_project_analysis_is_read_only_bounded_and_cursor_scoped(monkeypatch):
+    async def project_query(_runtime):
+        return Query(), SimpleNamespace(connected=True, structure_generation=1)
+
+    async def analysis(_view, _selected):
+        return {
+            "analysis_version": 1,
+            "project_fingerprint": "a" * 64,
+            "model_version": 3,
+            "scope": "knx",
+            "analyses": ["project_connectivity"],
+            "coverage": {
+                "endpoints": 1,
+                "canonical_group_addresses": 1,
+                "raw_datatypes": 0,
+                "reviewed_signal_usage": 0,
+                "unresolved_relationships": 0,
+            },
+            "summaries": {"project_connectivity": {"unconnected": 1, "ambiguous": 0}},
+            "findings": [
+                {
+                    "finding_id": "knx:1",
+                    "analysis": "project_connectivity",
+                    "finding_type": "no_project_signal_relationship",
+                    "group_address": "1/2/3",
+                    "affected_project_node_ids": ["p:1"],
+                    "affected_omitted": 0,
+                }
+            ],
+            "analysis_truncated": False,
+            "truncation_reasons": [],
+        }
+
+    monkeypatch.setattr(tools_module, "_project_query", project_query)
+    monkeypatch.setattr(tools_module, "process_analysis", analysis)
+    server = FastMCP("project-analysis")
+    register_project_tools(server, None)
+
+    result = await server._tool_manager.get_tool("loxone_analyze_project").fn()  # type: ignore[union-attr]
+
+    assert result.ok is True
+    assert result.data.findings[0].finding_id == "knx:1"  # type: ignore[union-attr]
+    assert result.data.next_cursor is None  # type: ignore[union-attr]

@@ -8,11 +8,14 @@ import sys
 from contextlib import suppress
 from dataclasses import asdict
 
+from .analysis import analyze_knx
 from .graph import ProjectSnapshot, build_snapshot
+from .mapping import ProjectView
 from .models import DEFAULT_LIMITS, ProjectBundle, ProjectError, ProjectLimits
 from .source import unpack_project
 
 MAX_RESULT = 64 * 1024 * 1024
+MAX_ANALYSIS_INPUT = 64 * 1024 * 1024
 
 
 async def process_project(
@@ -75,8 +78,74 @@ async def process_project(
         await asyncio.gather(sender, return_exceptions=True)
 
 
+async def process_analysis(view: ProjectView, analyses: frozenset[str]) -> dict[str, object]:
+    """Run CPU-bound aggregate analysis in the same restricted worker boundary."""
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-m",
+        "mcpserver.loxone.project.worker",
+        "analysis",
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env={key: value for key, value in os.environ.items() if not key.startswith("MCPSERVER_")},
+    )
+    assert process.stdin is not None and process.stdout is not None and process.stderr is not None
+    stderr_task = asyncio.create_task(process.stderr.read())
+    payload = pickle.dumps((view, analyses), protocol=5)
+    if len(payload) > MAX_ANALYSIS_INPUT:
+        process.kill()
+        await process.wait()
+        await stderr_task
+        raise ProjectError("project_worker_limit")
+    try:
+        async with asyncio.timeout(45):
+            process.stdin.write(payload)
+            await process.stdin.drain()
+            process.stdin.close()
+            result = bytearray()
+            while chunk := await process.stdout.read(65536):
+                result.extend(chunk)
+                if len(result) > MAX_RESULT:
+                    raise ProjectError("project_worker_limit")
+            if await process.wait() != 0:
+                raise ProjectError("project_worker_failed")
+            value = pickle.loads(result)
+            if isinstance(value, ProjectError):
+                raise value
+            if not isinstance(value, dict):
+                raise ProjectError("project_worker_invalid")
+            return value
+    except TimeoutError:
+        raise ProjectError("project_worker_timeout") from None
+    finally:
+        if process.returncode is None:
+            process.kill()
+        await process.wait()
+        await stderr_task
+
+
 def main() -> None:
     try:
+        if sys.argv[1] == "analysis":
+            if sys.platform == "linux":
+                import resource
+
+                resource.setrlimit(resource.RLIMIT_AS, (512 * 1024 * 1024, 512 * 1024 * 1024))
+                resource.setrlimit(resource.RLIMIT_CPU, (45, 45))
+                resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+            raw = sys.stdin.buffer.read(MAX_ANALYSIS_INPUT + 1)
+            if len(raw) > MAX_ANALYSIS_INPUT:
+                raise ProjectError("project_worker_limit")
+            view, analyses = pickle.loads(raw)
+            if not isinstance(view, ProjectView) or not isinstance(analyses, frozenset):
+                raise ProjectError("project_worker_invalid")
+            result = analyze_knx(view, analyses)
+            payload = pickle.dumps(result, protocol=5)
+            if len(payload) > MAX_RESULT:
+                raise ProjectError("project_worker_limit")
+            sys.stdout.buffer.write(payload)
+            return
         limits = ProjectLimits(**json.loads(sys.argv[2]))
         if sys.platform == "linux":
             import resource

@@ -7,7 +7,8 @@
 Der Server liest sichtbare Räume, Kategorien, Controls und Zustände. Optional sind begrenzte Historie, Statistiken, maskierte LoxBerry-Diagnosen sowie dokumentierte, typabhängige Aktionen für sichtbare Gen.-1-Controls verfügbar.
 
 `loxone_get_project_status`, `loxone_find_project_objects`,
-`loxone_describe_project_object` und `loxone_trace_project_logic` stellen begrenzte,
+`loxone_describe_project_object`, `loxone_trace_project_logic` und
+`loxone_analyze_project` stellen begrenzte,
 schreibgeschützte Project Intelligence für ein durch die gebundene Loxone-Identität abrufbares
 Projekt bereit. Sie liefern Graph-Evidenz statt rohem XML: Ein Signal- oder Referenzpfad beschreibt
 strukturellen Einfluss, nicht eine beobachtete historische Ursache. Ergebnisse sind begrenzt und
@@ -28,6 +29,13 @@ mehrere getrennte KNX-Signalnutzungsbeobachtungen. Trace liefert getrennt markie
 Connectorkanten sowie begrenzte Pfade `knx_to_loxone`, `loxone_to_knx` oder `knx_to_knx`.
 Unbekanntes Block- oder Connector-Verhalten wird nicht geraten. Diese Ergebnisse beschreiben
 statische Projektpfade, keine Bus-Telegramme und keine historische Ursache einer Aktion.
+
+`loxone_analyze_project` fasst begrenzte, projektlokale KNX-Evidenz zusammen: Adressmuster,
+Wiederverwendung von Rohdatentypen, geprüfte Unterschiede der Signalnutzung, Pfadzähler und
+Endpunkte ohne beobachtete Projektbeziehung. Findings sind Prüffakten, keine Qualitätsurteile.
+Sie behaupten weder DPT-Kompatibilität noch ETS-Abdeckung, Busaktivität oder physische
+Geräteverwendung; die Evidenz eines zurückgegebenen Projektknotens lässt sich mit Describe oder
+Trace vertiefen.
 
 `loxone_get_structure_overview` liefert eine begrenzte erste Übersicht der für
 den angemeldeten Loxone-Benutzer sichtbaren Räume, Kategorien und Control-Typen.

@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add `loxone_analyze_project`, a bounded read-only KNX evidence surface for
+  project-local address patterns, raw datatype reuse, reviewed signal-use
+  differences, static path counts, and absent project relationships. Findings
+  are traceable review facts, never KNX quality ratings or DPT/ETS claims.
+
 - Remove retained MQTT health and emergency-stop topics from an obsolete broker
   destination after relevant MQTT configuration changes. If the old broker is
   unavailable, retain the new configuration and show an Admin UI warning.
