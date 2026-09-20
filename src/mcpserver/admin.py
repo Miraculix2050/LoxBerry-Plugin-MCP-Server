@@ -1,6 +1,12 @@
 """Narrow JSON stdin/stdout boundary used by the authenticated Perl UI."""
 
+# ruff: noqa: E402
+
 from __future__ import annotations
+
+import time
+
+_MODULE_IMPORT_STARTED_NS = time.time_ns()
 
 import asyncio
 import base64
@@ -12,7 +18,6 @@ import re
 import socket
 import subprocess
 import sys
-import time
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass, replace
@@ -37,6 +42,8 @@ from mcpserver.mqtt_health import (
     mqtt_cleanup_required,
     request_service_restart,
 )
+
+_MODULE_IMPORT_FINISHED_NS = time.time_ns()
 
 _MAX_REQUEST_BYTES: Final = 32 * 1024
 _SERVICE: Final = "loxberry-mcpserver.service"
@@ -1191,7 +1198,7 @@ def _diagnostic() -> dict[str, Any]:
     }
 
 
-def dispatch(request: object) -> dict[str, Any]:
+def dispatch(request: object, *, timing: dict[str, float] | None = None) -> dict[str, Any]:
     if not isinstance(request, dict) or not isinstance(request.get("action"), str):
         raise AdminError("request is invalid")
     action = request["action"]
@@ -1202,7 +1209,13 @@ def dispatch(request: object) -> dict[str, Any]:
             "mqtt_password_configured": _mqtt_password_configured(),
         }
     if action == "get_config":
-        return {"configuration": _config_store().load().to_document()}
+        store = _config_store()
+        if timing is None:
+            configuration = store.load()
+        else:
+            configuration, config_timing = store.load_with_timing()
+            timing.update(config_timing)
+        return {"configuration": configuration.to_document()}
     if action == "save_config":
         return _save(payload)
     if action == "save_mcp_config":
@@ -1261,11 +1274,16 @@ def dispatch(request: object) -> dict[str, Any]:
 
 
 def main() -> None:
+    request_started = time.perf_counter_ns()
+    timing: dict[str, float] = {}
+    action: str | None = None
     try:
         raw = sys.stdin.buffer.read(_MAX_REQUEST_BYTES + 1)
         if len(raw) > _MAX_REQUEST_BYTES:
             raise AdminError("request is too large")
-        response = {"ok": True, "data": dispatch(json.loads(raw))}
+        request = json.loads(raw)
+        action = request.get("action") if isinstance(request, dict) else None
+        response = {"ok": True, "data": dispatch(request, timing=timing)}
     except AdminError as exc:
         response = {"ok": False, "error": {"code": exc.code, "message": str(exc)}}
     except (ValueError, json.JSONDecodeError) as exc:
@@ -1276,6 +1294,26 @@ def main() -> None:
             "error": {"code": "internal_error", "message": "administrative action failed"},
         }
     sys.stdout.write(json.dumps(response, ensure_ascii=True, separators=(",", ":")) + "\n")
+    if action == "get_config":
+        helper_started = os.getenv("MCPSERVER_ADMIN_STARTED_NS", "")
+        try:
+            bootstrap_ms = (int(_MODULE_IMPORT_STARTED_NS) - int(helper_started)) / 1_000_000
+        except ValueError:
+            bootstrap_ms = None
+        timing.update(
+            {
+                "module_import_ms": (_MODULE_IMPORT_FINISHED_NS - _MODULE_IMPORT_STARTED_NS)
+                / 1_000_000,
+                "request_dispatch_ms": (time.perf_counter_ns() - request_started) / 1_000_000,
+            }
+        )
+        if bootstrap_ms is not None and bootstrap_ms >= 0:
+            timing["process_bootstrap_ms"] = bootstrap_ms
+        sys.stderr.write(
+            "mcpserver_admin_timing="
+            + json.dumps(timing, ensure_ascii=True, separators=(",", ":"))
+            + "\n"
+        )
 
 
 if __name__ == "__main__":

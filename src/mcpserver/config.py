@@ -11,6 +11,7 @@ import secrets
 import stat
 import sys
 import threading
+import time
 from collections.abc import Callable
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
@@ -545,6 +546,18 @@ class AtomicConfigStore:
     def load(self) -> PluginConfig:
         with self._locked():
             return self._load_unlocked()
+
+    def load_with_timing(self) -> tuple[PluginConfig, dict[str, float]]:
+        """Load configuration and report the lock and read/validation durations."""
+        waiting_started = time.perf_counter_ns()
+        with self._locked():
+            lock_acquired = time.perf_counter_ns()
+            config = self._load_unlocked()
+        loaded = time.perf_counter_ns()
+        return config, {
+            "config_lock_wait_ms": (lock_acquired - waiting_started) / 1_000_000,
+            "config_read_validate_ms": (loaded - lock_acquired) / 1_000_000,
+        }
 
     def _load_unlocked(self) -> PluginConfig:
         if not self.path.exists():
