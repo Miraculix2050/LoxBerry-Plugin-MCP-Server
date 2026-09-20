@@ -306,8 +306,8 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
                     break
                 if depth >= 16:
                     continue
-                for edge in path_adjacency[current]:
-                    other = edge.target if is_downstream else edge.source
+                for traversal_edge in path_adjacency[current]:
+                    other = traversal_edge.target if is_downstream else traversal_edge.source
                     if other in visited:
                         continue
                     visited.add(other)
