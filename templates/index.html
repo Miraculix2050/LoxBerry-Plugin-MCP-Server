@@ -466,9 +466,11 @@
     emergencyStopValue.value = String(emergencyStop.virtual_status_uuid || '');
     setFormChecked(mqttConfigForm, 'mqtt_enabled', mqtt.enabled);
     setFormChecked(mqttConfigForm, 'mqtt_use_loxberry_gateway', mqtt.use_loxberry_gateway);
-    for (const name of ['mqtt_host', 'mqtt_port', 'mqtt_username', 'mqtt_root_topic', 'mqtt_heartbeat_seconds']) {
-      setFormValue(mqttConfigForm, name, mqtt[name]);
-    }
+    setFormValue(mqttConfigForm, 'mqtt_host', mqtt.host);
+    setFormValue(mqttConfigForm, 'mqtt_port', mqtt.port);
+    setFormValue(mqttConfigForm, 'mqtt_username', mqtt.username);
+    setFormValue(mqttConfigForm, 'mqtt_root_topic', mqtt.root_topic);
+    setFormValue(mqttConfigForm, 'mqtt_heartbeat_seconds', mqtt.heartbeat_seconds);
     mqttCustomBroker = {host: mqttHost.value, port: mqttPort.value, username: mqttUsername.value};
     syncMiniserverSelection();
     syncOperateDependency();

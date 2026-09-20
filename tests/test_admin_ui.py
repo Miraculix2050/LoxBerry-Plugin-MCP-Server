@@ -106,6 +106,15 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert "body.set('action', 'page_state')" in template
     assert "body.set('action', 'get_config')" in template
     assert "const loadConfiguration = async () =>" in template
+    assert "setFormValue(mqttConfigForm, 'mqtt_host', mqtt.host);" in template
+    assert "setFormValue(mqttConfigForm, 'mqtt_port', mqtt.port);" in template
+    assert "setFormValue(mqttConfigForm, 'mqtt_username', mqtt.username);" in template
+    assert "setFormValue(mqttConfigForm, 'mqtt_root_topic', mqtt.root_topic);" in template
+    assert (
+        "setFormValue(mqttConfigForm, 'mqtt_heartbeat_seconds', mqtt.heartbeat_seconds);"
+        in template
+    )
+    assert "mqtt[name]" not in template
     assert 'id="loxberry-notifications" aria-busy="true" aria-live="polite"' in template
     assert 'id="plugin-log-list" aria-busy="true" aria-live="polite"' in template
     assert "const loadPageAuxiliaryContent = async () =>" in template
