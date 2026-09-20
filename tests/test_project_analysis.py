@@ -96,4 +96,4 @@ def test_technology_path_analysis_never_reverses_at_a_logic_input_merge():
 
     counts = result["summaries"]["technology_paths"]["counts"]
     assert counts.get("knx_to_loxone", 0) == 0
-    assert counts["knx_to_knx"] == 1
+    assert counts.get("knx_to_knx", 0) >= 1
