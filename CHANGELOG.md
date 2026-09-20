@@ -16,7 +16,8 @@ extracted from the matching version heading.
   are traceable review facts, never KNX quality ratings or DPT/ETS claims.
 
 - Make the MCP Tool Explorer compact on narrow screens and use a three-zone
-  request/result workspace on sufficiently wide screens without changing MCP calls.
+  request/result workspace on sufficiently wide screens without changing MCP calls;
+  the tool rail has enough width for long tool names.
 
 - Remove retained MQTT health and emergency-stop topics from an obsolete broker
   destination after relevant MQTT configuration changes. If the old broker is
