@@ -129,7 +129,12 @@ def _usage(
             return (), True
         seen.add(current)
         seeds.append(current)
-        seed_pending.extend(child for child in children[current] if child not in seen)
+        for child in children[current]:
+            if child in seen:
+                continue
+            if len(seen) + len(seed_pending) >= _MAX_USAGE_NODES_PER_ENDPOINT:
+                return (), True
+            seed_pending.append(child)
     upstream = node.knx.flow_direction == "loxone_to_bus"
     pending, result = deque(seeds), set[tuple[str, str | None]]()
     while pending:
@@ -632,9 +637,8 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
         endpoint_blocks = {item.block.key for item in endpoints}
         mapped = {
             key
-            for entry in view.mapping.entries
-            if entry.status == "exact"
-            for key in entry.node_keys
+            for key, evidence in runtime_candidates.items()
+            if len(evidence) == 1
             if key not in endpoint_blocks
         }
         seen_paths: set[tuple[str, str, str]] = set()
@@ -708,6 +712,11 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
                                         ),
                                     }
                                 )
+                            if len(seen_paths) >= _MAX_PATHS:
+                                truncated_reasons.append("max_paths")
+                                path_limit_reached = True
+                                pending.clear()
+                                break
                     if path_limit_reached:
                         pending.clear()
                         break
@@ -766,6 +775,11 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
                                         "evidence_project_node_ids": next_path,
                                     }
                                 )
+                            if len(seen_paths) >= _MAX_PATHS:
+                                truncated_reasons.append("max_paths")
+                                path_limit_reached = True
+                                loxone_pending.clear()
+                                break
                     if path_limit_reached:
                         loxone_pending.clear()
                         break

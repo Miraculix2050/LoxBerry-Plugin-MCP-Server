@@ -161,6 +161,18 @@ def test_usage_analysis_stops_at_the_shared_traversal_budget(monkeypatch):
     assert result["coverage"]["reviewed_signal_usage"] == 0
 
 
+def test_usage_analysis_bounds_containment_fan_out_before_enqueueing_children(monkeypatch):
+    monkeypatch.setattr(project_analysis, "_MAX_USAGE_NODES_PER_ENDPOINT", 3)
+    connectors = b"".join(f'<Co U="child{index}"/>'.encode() for index in range(4))
+    result = analyze_knx(
+        _view(b'<P><C Type="EIBsensor" U="sensor" EibAddr="1/2/3">' + connectors + b"</C></P>"),
+        frozenset({"signal_usage_consistency"}),
+    )
+
+    assert result["analysis_truncated"] is True
+    assert result["truncation_reasons"] == ["max_usage_nodes"]
+
+
 def test_analysis_uses_runtime_evidence_only_for_a_unique_reverse_mapping():
     identifier = "a" * 32
     controls = (
@@ -317,6 +329,64 @@ def test_technology_path_analysis_stops_all_endpoint_expansion_at_the_global_pat
     assert observed_descendants.count(blocks["sensor"]) == 1
     assert observed_descendants.count(blocks["actor1"]) == 0
     assert observed_descendants.count(blocks["actor2"]) == 0
+
+
+def test_technology_path_analysis_stops_when_it_records_the_final_allowed_path(monkeypatch):
+    monkeypatch.setattr(project_analysis, "_MAX_PATHS", 1)
+    observed_descendants = []
+    original = project_analysis._descendants
+
+    def track_descendants(key, children):
+        observed_descendants.append(key)
+        return original(key, children)
+
+    monkeypatch.setattr(project_analysis, "_descendants", track_descendants)
+    view = _view(
+        b'<P><C Type="EIBsensor" U="sensor" EibAddr="1/2/3"><Co U="source"/></C>'
+        b'<C Type="EIBPush" U="push"><Co K="Tg" U="trigger"><In Input="source"/></Co>'
+        b'<Co K="O" U="output"/></C><C Type="EIBactor" U="actor" EibAddr="1/2/4">'
+        b'<Co U="input"><In Input="output"/></Co></C></P>'
+    )
+
+    result = analyze_knx(view, frozenset({"technology_architecture"}))
+
+    blocks = {
+        node.source_id: node.key
+        for node in view.snapshot.graph.nodes
+        if node.kind == "block" and node.source_id in {"sensor", "actor"}
+    }
+    assert result["truncation_reasons"] == ["max_paths"]
+    assert observed_descendants.count(blocks["sensor"]) == 1
+    assert observed_descendants.count(blocks["actor"]) == 0
+
+
+def test_technology_architecture_requires_unique_reverse_mapping_for_loxone_boundaries():
+    loxone_id = "c" * 32
+    controls = tuple(
+        SimpleNamespace(
+            uuid=loxone_id,
+            action_uuid=None,
+            subcontrols=(),
+            name=name,
+            control_type="Switch",
+            room_uuid=None,
+            category_uuid=None,
+        )
+        for name in ("First", "Second")
+    )
+    result = analyze_knx(
+        _view(
+            f'<P><C Type="EIBsensor" U="sensor" EibAddr="1/2/3"><Co U="source"/></C>'
+            f'<C Type="EIBPush" U="push"><Co K="Tg" U="trigger"><In Input="source"/></Co>'
+            f'<Co K="O" U="output"/></C><C Type="DigitalInput" U="{loxone_id}">'
+            f'<Co U="input"><In Input="output"/></Co></C></P>'.encode(),
+            controls,
+        ),
+        frozenset({"technology_architecture"}),
+    )
+
+    counts = result["summaries"]["technology_architecture"]["counts"]
+    assert "knx_to_loxone" not in counts
 
 
 def test_v2_uses_exact_runtime_evidence_for_naming_without_inventing_knx_semantics():
