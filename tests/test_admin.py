@@ -16,6 +16,7 @@ from mcpserver.admin import (
     AdminError,
     _allow_loxberry_operate,
     _allow_loxberry_read,
+    _emergency_stop_runtime_status,
     _loxberry_bindings,
     _loxberry_operate_bindings,
     _renew_certificate,
@@ -607,6 +608,13 @@ def test_status_refresh_returns_all_dynamic_admin_ui_data(
         "active": True,
     }
     monkeypatch.setattr("mcpserver.admin._service_status", lambda: service)
+    runtime = {
+        "availability": "available",
+        "signal_uuid": None,
+        "signal_name": None,
+        "status": "not_configured",
+    }
+    monkeypatch.setattr("mcpserver.admin._emergency_stop_runtime_status", lambda _service: runtime)
     monkeypatch.setattr("mcpserver.admin._sessions", lambda: sessions)
     monkeypatch.setattr("mcpserver.admin._certificate_status", lambda: certificate)
 
@@ -616,6 +624,7 @@ def test_status_refresh_returns_all_dynamic_admin_ui_data(
         "version": result["version"],
         "service_active": True,
         "service": service,
+        "emergency_stop_runtime": runtime,
         "sessions": sessions,
         "certificate": certificate,
     }
@@ -701,6 +710,70 @@ def test_service_status_fails_closed_when_systemctl_times_out(
     }
 
 
+class _RuntimeResponse:
+    def __init__(self, body: bytes, status: int = 200) -> None:
+        self._body = body
+        self._status = status
+
+    def __enter__(self) -> _RuntimeResponse:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+    def getcode(self) -> int:
+        return self._status
+
+    def read(self, _limit: int) -> bytes:
+        return self._body
+
+
+def test_emergency_stop_runtime_status_reads_only_the_validated_loopback_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    payload = {
+        "ok": True,
+        "emergency_stop": {
+            "signal_uuid": "00112233-4455-6677-8899aabbccddeeff",
+            "signal_name": "Workshop emergency stop",
+            "status": "active",
+        },
+    }
+
+    def open_runtime(request: object, *, timeout: float) -> _RuntimeResponse:
+        captured["url"] = request.full_url  # type: ignore[attr-defined]
+        captured["timeout"] = timeout
+        return _RuntimeResponse(json.dumps(payload).encode())
+
+    monkeypatch.setattr("mcpserver.admin.urlopen", open_runtime)
+
+    assert _emergency_stop_runtime_status({"active": True}) == {
+        "availability": "available",
+        "signal_uuid": "00112233-4455-6677-8899aabbccddeeff",
+        "signal_name": "Workshop emergency stop",
+        "status": "active",
+    }
+    assert captured == {
+        "url": "http://127.0.0.1:8765/internal/emergency-stop-status",
+        "timeout": 1,
+    }
+
+
+def test_emergency_stop_runtime_status_never_invents_unknown_for_an_invalid_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "mcpserver.admin.urlopen",
+        lambda *_args, **_kwargs: _RuntimeResponse(
+            b'{"ok":true,"emergency_stop":{"signal_uuid":null,"signal_name":null,"status":"active"}}'
+        ),
+    )
+
+    assert _emergency_stop_runtime_status({"active": True}) == {"availability": "unavailable"}
+    assert _emergency_stop_runtime_status({"active": False}) == {"availability": "service_inactive"}
+
+
 @pytest.mark.parametrize("command", ["start", "stop", "restart"])
 def test_service_action_uses_only_the_fixed_unit(
     command: str, monkeypatch: pytest.MonkeyPatch
@@ -721,6 +794,10 @@ def test_service_action_uses_only_the_fixed_unit(
 
     monkeypatch.setattr("mcpserver.admin.subprocess.run", run)
     monkeypatch.setattr("mcpserver.admin._service_status", lambda: service)
+    monkeypatch.setattr(
+        "mcpserver.admin._emergency_stop_runtime_status",
+        lambda _service: {"availability": "unavailable"},
+    )
     monkeypatch.setattr("mcpserver.admin.request_service_restart", lambda: None)
 
     result = dispatch({"action": "service_action", "payload": {"command": command}})
@@ -729,7 +806,11 @@ def test_service_action_uses_only_the_fixed_unit(
     argv, kwargs = captured[0]
     assert argv == ["sudo", "-n", "/bin/systemctl", command, "loxberry-mcpserver.service"]
     assert kwargs["timeout"] == 65
-    assert result == {"service_active": True, "service": service}
+    assert result == {
+        "service_active": True,
+        "service": service,
+        "emergency_stop_runtime": {"availability": "unavailable"},
+    }
 
 
 def test_service_action_rejects_arbitrary_commands(monkeypatch: pytest.MonkeyPatch) -> None:

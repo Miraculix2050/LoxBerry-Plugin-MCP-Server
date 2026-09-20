@@ -21,6 +21,12 @@ The page shows the saved selection immediately. Use **Load available signals**
 when you want to query the configured Miniserver for the current choices; a
 temporary discovery failure never clears the saved value.
 
+The Admin UI also shows the signal used by the running service, including its
+name and UUID, and its state. The states match MQTT publication:
+`not_configured`, `clear`, `active`, and `unknown`. A selection that has not
+yet been saved remains separate and is identified as a change not yet adopted
+by the service. If the service is unavailable, the page does not invent a state.
+
 When a signal is selected, value `1` permits MCP tool calls and value `0` blocks
 them. An as-yet unknown value during service startup or loss of the Miniserver
 connection also blocks calls fail closed. Set the Virtual Status back to `1`, or
