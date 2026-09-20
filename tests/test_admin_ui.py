@@ -204,7 +204,8 @@ def test_sessions_poll_only_while_visible_and_open_and_patch_changed_rows() -> N
     assert "body.set('action', 'list_sessions')" in template
     assert "window.setTimeout(pollSessions, delay)" in template
     assert (
-        "document.hidden || !sessionsSection.open || activeSessionActions.size > 0 || sessionPollInFlight"
+        "document.hidden || !sessionsSection.open || activeSessionActions.size > 0 "
+        "|| sessionPollInFlight"
         in template
     )
     assert "sessionsSection.addEventListener('toggle'" in template
@@ -243,7 +244,9 @@ const result = {{
   readAndOperateAllowed: Boolean(first && operate),
   otherSessionAllowed: Boolean(otherSession),
   revokeAllBlockedWhileActive: beginSessionAction(descriptor('revoke_all'), null) === null,
-  finalFinishOnly: [finishSessionAction(operate), finishSessionAction(otherSession), finishSessionAction(first)],
+  finalFinishOnly: [
+    finishSessionAction(operate), finishSessionAction(otherSession), finishSessionAction(first),
+  ],
 }};
 const readBinding = descriptor('revoke_loxberry_read', '', 'binding-a');
 const otherBinding = descriptor('revoke_loxberry_read', '', 'binding-b');
