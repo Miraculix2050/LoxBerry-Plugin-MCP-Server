@@ -65,3 +65,22 @@ def test_analysis_scopes_unconnected_evidence_to_the_project_graph():
     finding = result["findings"][0]
     assert finding["finding_type"] == "no_project_signal_relationship"
     assert "unused" not in str(finding)
+
+
+def test_technology_path_analysis_never_reverses_at_a_logic_input_merge():
+    loxone_id = "a" * 32
+    view = _view(
+        f'<P><C Type="EIBsensor" U="sensor" EibAddr="1/2/3"><Co U="sensor-out"/></C>'
+        f'<C Type="DigitalInput" U="{loxone_id}"><Co U="loxone-out"/></C>'
+        f'<C Type="EIBPush" U="push"><Co K="Tg" U="trigger"><In Input="sensor-out"/></Co>'
+        f'<Co K="On" U="on"><In Input="loxone-out"/></Co><Co K="O" U="output"/></C>'
+        f'<C Type="EIBactor" U="actor" EibAddr="1/2/4"><Co U="actor-in"><In Input="output"/>'
+        f'</Co></C></P>'.encode(),
+        (SimpleNamespace(uuid=loxone_id, action_uuid=None, subcontrols=()),),
+    )
+
+    result = analyze_knx(view, frozenset({"technology_paths"}))
+
+    counts = result["summaries"]["technology_paths"]["counts"]
+    assert counts.get("knx_to_loxone", 0) == 0
+    assert counts["knx_to_knx"] == 1

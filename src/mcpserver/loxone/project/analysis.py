@@ -279,16 +279,19 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
             if entry.status == "exact"
             for key in entry.node_keys
         }
-        adjacency: dict[str, list[GraphEdge | SemanticEdge]] = defaultdict(list)
+        downstream: dict[str, list[GraphEdge | SemanticEdge]] = defaultdict(list)
+        upstream: dict[str, list[GraphEdge | SemanticEdge]] = defaultdict(list)
         for edge in graph.edges:
             if edge.kind in {"signal", "reference"}:
-                adjacency[edge.source].append(edge)
-                adjacency[edge.target].append(edge)
+                downstream[edge.source].append(edge)
+                upstream[edge.target].append(edge)
         for edge in graph.semantic_edges:
-            adjacency[edge.source].append(edge)
-            adjacency[edge.target].append(edge)
+            downstream[edge.source].append(edge)
+            upstream[edge.target].append(edge)
         seen_paths: set[tuple[str, str, str]] = set()
         for start in endpoints:
+            is_downstream = start.direction == "bus_to_loxone"
+            adjacency = downstream if is_downstream else upstream
             pending = deque((key, [key], 0) for key in _descendants(start.block.key, children))
             visited = {key for key, _, _ in pending}
             while pending:
@@ -299,7 +302,7 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
                 if depth >= 16:
                     continue
                 for edge in adjacency[current]:
-                    other = edge.target if edge.source == current else edge.source
+                    other = edge.target if is_downstream else edge.source
                     if other in visited:
                         continue
                     visited.add(other)
