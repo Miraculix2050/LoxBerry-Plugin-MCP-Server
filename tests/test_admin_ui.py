@@ -152,9 +152,14 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     )
     assert "<TMPL_VAR LOGLIST>" not in template
     assert (
-        '<noscript><meta http-equiv="refresh" content="0;url=index.cgi?fallback=1"></noscript>'
-        in template
+        '<noscript><meta http-equiv="refresh" content="0;url='
+        '<TMPL_VAR FALLBACK_URL ESCAPE=HTML>"></noscript>' in template
     )
+    assert "FALLBACK_CONFIGURATION_LOADED => $fallback_configuration_loaded" in cgi
+    assert "NOTIFICATIONS_HTML => $notifications_html" in cgi
+    assert "LOGLIST_HTML => $loglist_html" in cgi
+    assert "mcpserver_admin_timing=" in cgi
+    assert "component=admin_helper request_id=%s action=%s timing=%s" in cgi
     assert (
         'id="mcp-config-fields" class="mcp-configuration-fields" '
         "<TMPL_UNLESS SERVER_RENDERED_FALLBACK>disabled" in template

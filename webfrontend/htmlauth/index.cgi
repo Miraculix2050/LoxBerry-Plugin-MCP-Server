@@ -84,6 +84,20 @@ sub admin_call {
     my $stdout = <$child_out> // '';
     my $stderr = <$child_err> // '';
     waitpid($pid, 0);
+    if ($stderr =~ /(?:\A|\n)mcpserver_admin_timing=(\{[^\r\n]{1,2048}\})/) {
+        my $timing = eval { decode_json($1) };
+        if (ref($timing) eq 'HASH') {
+            my %safe_timing = map {
+                ($_ => $timing->{$_})
+            } grep {
+                /\A[a-z_]{1,64}\z/ && defined($timing->{$_}) && $timing->{$_} =~ /\A\d+(?:\.\d+)?\z/
+            } keys %$timing;
+            admin_log('debug', sprintf(
+                'component=admin_helper request_id=%s action=%s timing=%s',
+                $request_id, $action, encode_json(\%safe_timing),
+            )) if %safe_timing;
+        }
+    }
     admin_log('debug', sprintf(
         'component=admin_ui request_id=%s action=%s duration_ms=%.1f',
         $request_id,
@@ -582,6 +596,9 @@ my $loxberry_bindings = [];
 my $loxberry_operate_bindings = [];
 my $emergency_stop_options = [];
 my $selected_emergency_stop_unavailable = 0;
+my $fallback_configuration_loaded = 0;
+my $notifications_html = '';
+my $loglist_html = '';
 my $service_enabled_setting_known = 0;
 my $service_enabled_setting = 0;
 my $service = {};
@@ -589,12 +606,15 @@ if ($server_rendered_fallback) {
     my $config_result = admin_call('get_config', {});
     $config = $config_result->{data}{configuration}
         if $config_result->{ok} && ref($config_result->{data}{configuration}) eq 'HASH';
+    $fallback_configuration_loaded = $config_result->{ok} ? 1 : 0;
     my $service_result = admin_call('service_status', {});
     if ($service_result->{ok} && ref($service_result->{data}{service}) eq 'HASH') {
         $service = $service_result->{data}{service};
         $service_enabled_setting_known = 1;
         $service_enabled_setting = $service->{enabled} ? 1 : 0;
     }
+    $notifications_html = LoxBerry::Log::get_notifications_html($lbpplugindir) // '';
+    $loglist_html = LoxBerry::Web::loglist_html() // '';
     my $sessions_result = admin_call('list_sessions', {});
     if ($sessions_result->{ok} && ref($sessions_result->{data}) eq 'HASH') {
         $sessions = $sessions_result->{data}{sessions}
@@ -665,6 +685,9 @@ my $notice_text = $notice_value eq 'success' ? $L{'AJAX.SUCCESS'}
     : $notice_value ne '' ? $L{'AJAX.ERROR'} : '';
 my $notice_kind = $notice_value eq 'success' || $notice_value eq 'certificate_scheduled'
     ? 'success' : 'error';
+my $fallback_url = 'index.cgi?fallback=1';
+$fallback_url .= '&notice=' . $notice_value
+    if $notice_value =~ /\A(?:success|certificate_scheduled|error|forbidden)\z/;
 for my $session (@$sessions) {
     next if ref($session) ne 'HASH';
     $session->{expires_display} = format_expiry($session->{expires_at});
@@ -681,6 +704,10 @@ for my $suffix ('', '.1', '.2') {
 $template->param(
     VERSION => $version,
     SERVER_RENDERED_FALLBACK => $server_rendered_fallback,
+    FALLBACK_CONFIGURATION_LOADED => $fallback_configuration_loaded,
+    FALLBACK_URL => $fallback_url,
+    NOTIFICATIONS_HTML => $notifications_html,
+    LOGLIST_HTML => $loglist_html,
     SERVICE_ENABLED_SETTING => $service_enabled_setting,
     SERVICE_ENABLED_SETTING_KNOWN => $service_enabled_setting_known,
     ENABLED => $config->{server}{enabled} ? 1 : 0,
