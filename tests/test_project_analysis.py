@@ -27,7 +27,7 @@ def test_analysis_reports_project_local_datatype_and_usage_facts_deterministical
         b'<C Type="EIBPush" U="push"><Co K="Tg" U="trigger"><In Input="co"/></Co>'
         b'<Co K="O" U="out"/></C></P>'
     )
-    selected = frozenset({"raw_datatype_reuse", "signal_usage"})
+    selected = frozenset({"datatype_consistency", "signal_usage_consistency"})
 
     first = analyze_knx(view, selected)
     second = analyze_knx(view, selected)
@@ -89,10 +89,10 @@ def test_analysis_skips_signal_usage_when_the_selected_analysis_does_not_need_it
 
     result = project_analysis.analyze_knx(
         _view(b'<P><C Type="EIBsensor" U="sensor" EibAddr="1/2/3"><Co U="out"/></C></P>'),
-        frozenset({"raw_datatype_reuse"}),
+        frozenset({"datatype_consistency"}),
     )
 
-    assert result["summaries"]["raw_datatype_reuse"] == {"conflicts": 0}
+    assert result["summaries"]["datatype_consistency"] == {"conflicts": 0, "peer_outliers": 0}
 
 
 def test_technology_path_analysis_never_reverses_at_a_logic_input_merge():
@@ -107,12 +107,12 @@ def test_technology_path_analysis_never_reverses_at_a_logic_input_merge():
         (SimpleNamespace(uuid=loxone_id, action_uuid=None, subcontrols=()),),
     )
 
-    result = analyze_knx(view, frozenset({"technology_paths"}))
+    result = analyze_knx(view, frozenset({"technology_architecture"}))
 
-    counts = result["summaries"]["technology_paths"]["counts"]
+    counts = result["summaries"]["technology_architecture"]["counts"]
     assert counts.get("knx_to_loxone", 0) == 0
     assert counts["knx_to_knx"] == 1
-    sample = result["summaries"]["technology_paths"]["samples"]["knx_to_knx"][0]
+    sample = result["summaries"]["technology_architecture"]["samples"]["knx_to_knx"][0]
     endpoint_blocks = {
         node.knx.group_address.canonical: node.key
         for node in view.snapshot.graph.nodes
@@ -120,3 +120,42 @@ def test_technology_path_analysis_never_reverses_at_a_logic_input_merge():
     }
     assert sample["source_project_node_id"] == endpoint_blocks["1/2/3"]
     assert sample["target_project_node_id"] == endpoint_blocks["1/2/4"]
+
+
+def test_v2_uses_exact_runtime_evidence_for_naming_without_inventing_knx_semantics():
+    identifiers = tuple(f"{index:032x}" for index in range(1, 7))
+    project = (
+        b"<P>"
+        + b"".join(
+            (
+                f'<C Type="EIBsensor" U="{identifier}" EibAddr="1/2/{index}" '
+                f'EIBType="1"><Co U="o{index}"/></C>'
+            ).encode()
+            for index, identifier in enumerate(identifiers, 1)
+        )
+        + b"</P>"
+    )
+    controls = tuple(
+        SimpleNamespace(
+            uuid=identifier,
+            action_uuid=None,
+            subcontrols=(),
+            name=f"Zone {index}" if index < 6 else "Different",
+            control_type="Switch",
+            room_uuid=None,
+            category_uuid=None,
+        )
+        for index, identifier in enumerate(identifiers, 1)
+    )
+
+    result = analyze_knx(_view(project, controls), frozenset({"naming_consistency"}))
+
+    assert result["analysis_version"] == 2
+    assert result["coverage"]["exact_runtime_mappings"] == 6
+    assert result["coverage"]["reviewed_signal_usage"] == 0
+    assert any(item["finding_type"] == "naming_deviation" for item in result["findings"])
+    assert {item["code"] for item in result["limitations"]} >= {
+        "normalized_dpt_unavailable",
+        "semantic_domain_unavailable",
+        "usage_semantics_unreviewed",
+    }

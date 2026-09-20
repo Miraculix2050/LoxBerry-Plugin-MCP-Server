@@ -29,10 +29,14 @@ mehrere getrennte KNX-Signalnutzungsbeobachtungen. Trace liefert getrennt markie
 Connectorkanten sowie begrenzte Pfade `knx_to_loxone`, `loxone_to_knx` oder `knx_to_knx`.
 Unbekanntes Block- oder Connector-Verhalten wird nicht geraten. Diese Ergebnisse beschreiben
 statische Projektpfade, keine Bus-Telegramme und keine historische Ursache einer Aktion.
-`loxone_analyze_project` fasst begrenzte, projektlokale KNX-Evidenz zusammen: Adressmuster,
-Wiederverwendung von Rohdatentypen, geprüfte Unterschiede der Signalnutzung, Pfadzähler und
-Endpunkte ohne beobachtete Projektbeziehung. Findings sind Prüffakten, keine Qualitätsurteile.
-Sie behaupten weder DPT-Kompatibilität noch ETS-Abdeckung, Busaktivität oder physische
+`loxone_analyze_project` Version 2 fasst begrenzte, projektlokale KNX-Evidenz zusammen:
+Adress- und Quellnamensmuster, Wiederverwendung von Rohdatentypen, geprüfte Unterschiede der
+Signalnutzung, Kontext aus exakten Runtime-Mappings, lokale Peer- und Graph-Ausreißer,
+Pfadzähler und Endpunkte ohne beobachtete Projektbeziehung. Runtime-Namen, Räume, Kategorien und
+Control-Typen werden nur bei exaktem UUID-Mapping verwendet; Namen erzeugen nie ein Mapping.
+Findings sind Prüffakten, keine Qualitätsurteile. Feste Limitierungs-Codes kennzeichnen fehlende
+normalisierte DPTs, Semantikdomänen, geprüfte Signalnutzung oder Runtime-Mappings. Die Analyse
+behauptet weder DPT-Kompatibilität noch ETS-Abdeckung, Busaktivität oder physische
 Geräteverwendung; die Evidenz eines zurückgegebenen Projektknotens lässt sich mit Describe oder
 Trace vertiefen.
 

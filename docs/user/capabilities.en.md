@@ -27,11 +27,14 @@ separate KNX signal-use observations, while trace returns separately marked deri
 and bounded `knx_to_loxone`, `loxone_to_knx`, or `knx_to_knx` paths. Unknown block or connector
 behaviour is not guessed. These are static project paths, not evidence that a bus telegram or
 historical state change caused an action.
-`loxone_analyze_project` summarizes bounded project-local KNX evidence: address patterns, raw
-datatype reuse, reviewed signal-use differences, path counts, and endpoints without an observed
-project relationship. Findings are review facts, not quality ratings. They do not claim DPT
-compatibility, ETS coverage, bus activity, or physical-device use; use a returned project-node ID
-with describe or trace to inspect its evidence.
+`loxone_analyze_project` version 2 summarizes bounded project-local KNX evidence: address and
+source-name patterns, raw datatype reuse, reviewed signal-use differences, exact runtime-mapping
+context, local peer and graph outliers, path counts, and endpoints without an observed project
+relationship. Runtime names, rooms, categories, and control types are included only for exact UUID
+mappings; names never establish a mapping. Findings are review facts, not quality ratings. Fixed
+limitation codes show when normalized DPTs, semantic domains, reviewed usage, or runtime mappings
+are unavailable. The tool does not claim DPT compatibility, ETS coverage, bus activity, or physical
+device use; use a returned project-node ID with describe or trace to inspect its evidence.
 
 `loxone_get_structure_overview` returns a bounded initial map of the rooms,
 categories and control types visible to the signed-in Loxone user. It contains

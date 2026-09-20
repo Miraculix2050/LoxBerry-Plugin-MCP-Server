@@ -24,6 +24,19 @@ class ControlMapping:
     status: str
     node_keys: tuple[str, ...]
     rule: str
+    evidence: "RuntimeEvidence | None" = field(default=None, repr=False)
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeEvidence:
+    """Visible runtime metadata attached only to an exact project mapping."""
+
+    name: str
+    control_type: str
+    room_uuid: str | None
+    room_name: str | None
+    category_uuid: str | None
+    category_name: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,13 +59,27 @@ def map_runtime(snapshot: ProjectSnapshot, structure: LoxoneStructure) -> Runtim
         if node.kind == "block" and source_id is not None:
             index[source_id].append(node.key)
     entries: list[ControlMapping] = []
-    identity_material: list[tuple[str, str | None, str | None]] = []
+    rooms = {room.uuid: room.name for room in getattr(structure, "rooms", ())}
+    categories = {category.uuid: category.name for category in getattr(structure, "categories", ())}
+    identity_material: list[tuple[object, ...]] = []
     pending: list[tuple[Control, str | None]] = [
         (control, None) for control in reversed(structure.controls)
     ]
     while pending:
         control, parent = pending.pop()
-        identity_material.append((control.uuid, control.action_uuid, parent))
+        identity_material.append(
+            (
+                control.uuid,
+                control.action_uuid,
+                parent,
+                getattr(control, "name", ""),
+                getattr(control, "control_type", ""),
+                getattr(control, "room_uuid", None),
+                rooms.get(getattr(control, "room_uuid", None)),
+                getattr(control, "category_uuid", None),
+                categories.get(getattr(control, "category_uuid", None)),
+            )
+        )
         control_id = _uuid_id(control.uuid)
         action_id = _uuid_id(control.action_uuid)
         uuid_candidates = set(index.get(control_id, ())) if control_id is not None else set()
@@ -69,6 +96,16 @@ def map_runtime(snapshot: ProjectSnapshot, structure: LoxoneStructure) -> Runtim
                 "exact" if len(candidates) == 1 else "ambiguous" if candidates else "unmapped",
                 tuple(sorted(candidates)),
                 "+".join(rules) if rules else "none",
+                RuntimeEvidence(
+                    getattr(control, "name", ""),
+                    getattr(control, "control_type", ""),
+                    getattr(control, "room_uuid", None),
+                    rooms.get(getattr(control, "room_uuid", None)),
+                    getattr(control, "category_uuid", None),
+                    categories.get(getattr(control, "category_uuid", None)),
+                )
+                if len(candidates) == 1
+                else None,
             )
         )
         pending.extend((child, control.uuid) for child in reversed(control.subcontrols))

@@ -6,8 +6,8 @@ from mcpserver.loxone.project.mapping import map_runtime
 from mcpserver.loxone.project.parser import parse_project
 
 
-def control(uuid, action=None, children=()):
-    return SimpleNamespace(uuid=uuid, action_uuid=action, subcontrols=children)
+def control(uuid, action=None, children=(), **kwargs):
+    return SimpleNamespace(uuid=uuid, action_uuid=action, subcontrols=children, **kwargs)
 
 
 def test_exact_nested_ambiguous_and_unmapped_are_explicit():
@@ -52,3 +52,36 @@ def test_missing_action_uuid_cannot_match_an_invalid_project_identifier():
     )
     assert result.entries[0].status == "unmapped"
     assert result.entries[0].rule == "none"
+
+
+def test_runtime_presentation_evidence_is_attached_only_to_exact_uuid_mappings():
+    exact, ambiguous = "a" * 32, "b" * 32
+    parsed = parse_project(
+        f'<P><C U="{exact}"/><C U="{ambiguous}"/><C U="{ambiguous}"/></P>'.encode()
+    )
+    snapshot = ProjectSnapshot(
+        "hash", 1, (ProjectPartSummary("p", 3, ()),), build_graph((("p", parsed),))
+    )
+    structure = SimpleNamespace(
+        last_modified="v1",
+        rooms=(SimpleNamespace(uuid="room", name="Office"),),
+        categories=(SimpleNamespace(uuid="category", name="Lights"),),
+        controls=(
+            control(
+                exact,
+                name="Office light",
+                control_type="Switch",
+                room_uuid="room",
+                category_uuid="category",
+            ),
+            control(ambiguous, name="Not attributable", control_type="Switch"),
+        ),
+    )
+
+    result = map_runtime(snapshot, structure)
+
+    assert result.entries[0].evidence is not None
+    assert result.entries[0].evidence.name == "Office light"
+    assert result.entries[0].evidence.room_name == "Office"
+    assert result.entries[0].evidence.category_name == "Lights"
+    assert result.entries[1].evidence is None

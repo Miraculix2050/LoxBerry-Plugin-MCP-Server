@@ -4,20 +4,25 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
+import unicodedata
 from collections import Counter, defaultdict, deque
 from dataclasses import dataclass
 
 from .graph import GraphEdge, GraphNode, SemanticEdge
-from .mapping import ProjectView
+from .mapping import ProjectView, RuntimeEvidence
 
-ANALYSIS_VERSION = 1
+ANALYSIS_VERSION = 2
 ANALYSES = frozenset(
     {
         "address_patterns",
-        "raw_datatype_reuse",
-        "signal_usage",
-        "technology_paths",
+        "naming_consistency",
+        "datatype_consistency",
+        "signal_usage_consistency",
+        "technology_architecture",
+        "graph_outliers",
         "project_connectivity",
+        "peer_group_consistency",
     }
 )
 _MAX_FINDINGS = 10_000
@@ -38,6 +43,8 @@ class _Endpoint:
     segments: tuple[int, ...] | None
     datatype: str | None
     usage: tuple[tuple[str, str | None], ...]
+    runtime: RuntimeEvidence | None
+    names: tuple[tuple[str, str], ...]
 
 
 def _finding_id(kind: str, basis: object, nodes: list[str]) -> str:
@@ -112,6 +119,35 @@ def _usage(
     return tuple(sorted(result))
 
 
+_NAME_PART = re.compile(r"(?<=[a-z])(?=[A-Z])|(?<=[A-Za-z])(?=\d)|(?<=\d)(?=[A-Za-z])|[^\w]+")
+
+
+def _name_shape(value: str) -> tuple[str, ...]:
+    """Return a language-neutral, deterministic name skeleton without assigning a role."""
+
+    normalized = unicodedata.normalize("NFKC", value).strip()
+    parts = [part.casefold() for part in _NAME_PART.split(normalized) if part]
+    return tuple("{number}" if part.isdecimal() else part for part in parts)
+
+
+def _role_key(item: _Endpoint) -> tuple[object, ...] | None:
+    """Build a peer key only from exact runtime or reviewed signal evidence."""
+
+    runtime_type = item.runtime.control_type if item.runtime is not None else None
+    if runtime_type is None and not item.usage:
+        return None
+    return (
+        item.direction,
+        item.node.knx.source_type if item.node.knx else None,
+        runtime_type,
+        item.usage,
+    )
+
+
+def _support(members: list[_Endpoint], selected: list[_Endpoint]) -> dict[str, object]:
+    return {"count": len(selected), "total": len(members), "ratio": len(selected) / len(members)}
+
+
 def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object]:
     """Return facts and review candidates, never a configuration verdict."""
     if not analyses or not analyses <= ANALYSES:
@@ -119,12 +155,20 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
     graph = view.snapshot.graph
     nodes = {node.key: node for node in graph.nodes}
     children, parents = _children(graph.edges)
-    needs_usage = bool({"address_patterns", "signal_usage"} & analyses)
-    needs_directional_adjacency = needs_usage or "technology_paths" in analyses
+    needs_usage = bool(
+        {"address_patterns", "signal_usage_consistency", "peer_group_consistency"} & analyses
+    )
+    needs_directional_adjacency = needs_usage or "technology_architecture" in analyses
     downstream: _DirectionalAdjacency = {}
     upstream: _DirectionalAdjacency = {}
     if needs_directional_adjacency:
         downstream, upstream = _directional_adjacencies(graph.edges, graph.semantic_edges)
+    runtime_by_node = {
+        key: entry.evidence
+        for entry in view.mapping.entries
+        if entry.status == "exact" and entry.evidence is not None
+        for key in entry.node_keys
+    }
     endpoints: list[_Endpoint] = []
     for node in graph.nodes:
         knx = node.knx
@@ -132,6 +176,14 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
             continue
         address = knx.group_address
         usage_adjacency = upstream if knx.flow_direction == "loxone_to_bus" else downstream
+        runtime = runtime_by_node.get(_block(node, nodes, parents).key)
+        names: list[tuple[str, str]] = []
+        if knx.title:
+            names.append(("knx_title", knx.title))
+        if knx.internal_name:
+            names.append(("knx_internal_name", knx.internal_name))
+        if runtime is not None and runtime.name:
+            names.append(("runtime_control_name", runtime.name))
         endpoints.append(
             _Endpoint(
                 node,
@@ -142,11 +194,29 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
                 address.segments if address else None,
                 knx.datatype.source_value if knx.datatype else None,
                 _usage(node, children, usage_adjacency) if needs_usage else (),
+                runtime,
+                tuple(names),
             )
         )
     findings: list[dict[str, object]] = []
     summaries: dict[str, object] = {}
     truncated_reasons: list[str] = []
+
+    def emit(kind: str, basis: object, evidence: list[str], payload: dict[str, object]) -> None:
+        """Add one bounded finding while hashing the complete evidence set."""
+
+        if len(findings) >= _MAX_FINDINGS:
+            truncated_reasons.append("max_findings")
+            return
+        ids, omitted = _bounded_nodes(evidence)
+        findings.append(
+            {
+                "finding_id": _finding_id(kind, basis, evidence),
+                **payload,
+                "affected_project_node_ids": ids,
+                "affected_omitted": omitted,
+            }
+        )
 
     if "address_patterns" in analyses:
         groups: dict[_AddressGroupKey, list[_Endpoint]] = defaultdict(list)
@@ -173,11 +243,12 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
                 for prefix, minority in sorted(prefixes.items()):
                     if prefix == dominant:
                         continue
-                    ids, omitted = _bounded_nodes([item.node.key for item in minority])
+                    evidence = [item.node.key for item in minority]
+                    ids, omitted = _bounded_nodes(evidence)
                     findings.append(
                         {
                             "finding_id": _finding_id(
-                                "address_pattern_deviation", [basis, level, prefix], ids
+                                "address_pattern_deviation", [basis, level, prefix], evidence
                             ),
                             "analysis": "address_patterns",
                             "finding_type": "address_pattern_deviation",
@@ -200,7 +271,68 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
             "deviations": pattern_count,
         }
 
-    if "raw_datatype_reuse" in analyses:
+    if "naming_consistency" in analyses:
+        name_groups: dict[
+            tuple[str, tuple[object, ...]], list[tuple[_Endpoint, tuple[str, ...]]]
+        ] = defaultdict(list)
+        for item in endpoints:
+            role = _role_key(item)
+            if role is None:
+                continue
+            for source, name in item.names:
+                shape = _name_shape(name)
+                if shape:
+                    name_groups[(source, role)].append((item, shape))
+        patterns = deviations = 0
+        for (source, role), name_members in sorted(
+            name_groups.items(), key=lambda pair: repr(pair[0])
+        ):
+            if len(name_members) < 5:
+                continue
+            by_shape: dict[tuple[str, ...], list[_Endpoint]] = defaultdict(list)
+            for item, shape in name_members:
+                by_shape[shape].append(item)
+            dominant_shape, dominant_members = max(
+                by_shape.items(), key=lambda pair: (len(pair[1]), pair[0])
+            )
+            if len(dominant_members) / len(name_members) < 0.8:
+                continue
+            all_members = [item.node.key for item, _ in name_members]
+            emit(
+                "naming_pattern",
+                [source, role, dominant_shape],
+                all_members,
+                {
+                    "analysis": "naming_consistency",
+                    "finding_type": "naming_pattern",
+                    "classification": "pattern",
+                    "name_source": source,
+                    "name_shape": list(dominant_shape),
+                    "support": _support([item for item, _ in name_members], dominant_members),
+                },
+            )
+            patterns += 1
+            for shape, minority in sorted(by_shape.items()):
+                if shape == dominant_shape:
+                    continue
+                emit(
+                    "naming_deviation",
+                    [source, role, dominant_shape, shape],
+                    [item.node.key for item in minority],
+                    {
+                        "analysis": "naming_consistency",
+                        "finding_type": "naming_deviation",
+                        "classification": "outlier",
+                        "name_source": source,
+                        "name_shape": list(shape),
+                        "dominant_name_shape": list(dominant_shape),
+                        "support": _support([item for item, _ in name_members], dominant_members),
+                    },
+                )
+                deviations += 1
+        summaries["naming_consistency"] = {"patterns": patterns, "deviations": deviations}
+
+    if "datatype_consistency" in analyses:
         by_address: dict[str, list[_Endpoint]] = defaultdict(list)
         for item in endpoints:
             if item.address and item.datatype:
@@ -210,13 +342,14 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
             values = sorted({item.datatype for item in members if item.datatype is not None})
             if len(values) < 2:
                 continue
-            ids, omitted = _bounded_nodes([item.node.key for item in members])
+            evidence = [item.node.key for item in members]
+            ids, omitted = _bounded_nodes(evidence)
             findings.append(
                 {
                     "finding_id": _finding_id(
-                        "raw_datatype_conflict", [group_address, values], ids
+                        "raw_datatype_conflict", [group_address, values], evidence
                     ),
-                    "analysis": "raw_datatype_reuse",
+                    "analysis": "datatype_consistency",
                     "finding_type": "raw_datatype_conflict",
                     "group_address": group_address,
                     "raw_datatypes": values,
@@ -225,9 +358,9 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
                 }
             )
             conflicts += 1
-        summaries["raw_datatype_reuse"] = {"conflicts": conflicts}
+        summaries["datatype_consistency"] = {"conflicts": conflicts, "peer_outliers": 0}
 
-    if "signal_usage" in analyses:
+    if "signal_usage_consistency" in analyses:
         by_address = defaultdict(list)
         for item in endpoints:
             if item.address and item.usage:
@@ -237,13 +370,14 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
             signatures = sorted({item.usage for item in members})
             if len(signatures) < 2:
                 continue
-            ids, omitted = _bounded_nodes([item.node.key for item in members])
+            evidence = [item.node.key for item in members]
+            ids, omitted = _bounded_nodes(evidence)
             findings.append(
                 {
                     "finding_id": _finding_id(
-                        "mixed_signal_usage", [group_address, signatures], ids
+                        "mixed_signal_usage", [group_address, signatures], evidence
                     ),
-                    "analysis": "signal_usage",
+                    "analysis": "signal_usage_consistency",
                     "finding_type": "mixed_signal_usage",
                     "group_address": group_address,
                     "usage_signatures": [
@@ -255,19 +389,181 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
                 }
             )
             mixed += 1
-        summaries["signal_usage"] = {"mixed_group_addresses": mixed}
+        summaries["signal_usage_consistency"] = {"mixed_group_addresses": mixed, "peer_outliers": 0}
+
+    role_groups: dict[tuple[object, ...], list[_Endpoint]] = defaultdict(list)
+    for item in endpoints:
+        role = _role_key(item)
+        if role is not None:
+            role_groups[role].append(item)
+
+    if "datatype_consistency" in analyses:
+        peer_outliers = 0
+        for role, members in sorted(role_groups.items(), key=lambda pair: repr(pair[0])):
+            known = [item for item in members if item.datatype is not None]
+            if len(known) < 5:
+                continue
+            by_value: dict[str, list[_Endpoint]] = defaultdict(list)
+            for item in known:
+                assert item.datatype is not None
+                by_value[item.datatype].append(item)
+            dominant_datatype, dominant_members = max(
+                by_value.items(), key=lambda pair: (len(pair[1]), pair[0])
+            )
+            if len(dominant_members) / len(known) < 0.8 or len(by_value) == 1:
+                continue
+            for value, minority in sorted(by_value.items()):
+                if value == dominant_datatype:
+                    continue
+                emit(
+                    "datatype_peer_outlier",
+                    [role, dominant_datatype, value],
+                    [item.node.key for item in minority],
+                    {
+                        "analysis": "datatype_consistency",
+                        "finding_type": "datatype_peer_outlier",
+                        "classification": "outlier",
+                        "raw_datatype": value,
+                        "dominant_raw_datatype": dominant_datatype,
+                        "support": _support(known, dominant_members),
+                    },
+                )
+                peer_outliers += 1
+        summaries["datatype_consistency"]["peer_outliers"] = peer_outliers  # type: ignore[index]
+
+    if "signal_usage_consistency" in analyses:
+        peer_outliers = 0
+        for role, members in sorted(role_groups.items(), key=lambda pair: repr(pair[0])):
+            known = [item for item in members if item.usage]
+            if len(known) < 5:
+                continue
+            by_usage: dict[tuple[tuple[str, str | None], ...], list[_Endpoint]] = defaultdict(list)
+            for item in known:
+                by_usage[item.usage].append(item)
+            dominant_usage, dominant_members = max(
+                by_usage.items(), key=lambda pair: (len(pair[1]), pair[0])
+            )
+            if len(dominant_members) / len(known) < 0.8 or len(by_usage) == 1:
+                continue
+            for usage, minority in sorted(by_usage.items()):
+                if usage == dominant_usage:
+                    continue
+                emit(
+                    "signal_usage_peer_outlier",
+                    [role, dominant_usage, usage],
+                    [item.node.key for item in minority],
+                    {
+                        "analysis": "signal_usage_consistency",
+                        "finding_type": "signal_usage_peer_outlier",
+                        "classification": "outlier",
+                        "usage_signatures": [
+                            [{"interpretation": x, "effect": y} for x, y in usage]
+                        ],
+                        "support": _support(known, dominant_members),
+                    },
+                )
+                peer_outliers += 1
+        summaries["signal_usage_consistency"]["peer_outliers"] = peer_outliers  # type: ignore[index]
+
+    if "peer_group_consistency" in analyses:
+        patterns = 0
+        for role, members in sorted(role_groups.items(), key=lambda pair: repr(pair[0])):
+            if len(members) < 5:
+                continue
+            by_signature: dict[tuple[object, ...], list[_Endpoint]] = defaultdict(list)
+            for item in members:
+                by_signature[
+                    (item.runtime.control_type if item.runtime else None, item.datatype, item.usage)
+                ].append(item)
+            dominant_signature, dominant_members = max(
+                by_signature.items(), key=lambda pair: (len(pair[1]), repr(pair[0]))
+            )
+            if len(dominant_members) / len(members) < 0.8:
+                continue
+            emit(
+                "peer_group_pattern",
+                [role, dominant_signature],
+                [item.node.key for item in members],
+                {
+                    "analysis": "peer_group_consistency",
+                    "finding_type": "peer_group_pattern",
+                    "classification": "pattern",
+                    "support": _support(members, dominant_members),
+                },
+            )
+            patterns += 1
+        summaries["peer_group_consistency"] = {"patterns": patterns}
+
+    if "graph_outliers" in analyses:
+        outliers = 0
+        graph_outgoing: dict[str, int] = Counter(
+            edge.source for edge in graph.edges if edge.kind in {"signal", "reference"}
+        )
+        graph_incoming: dict[str, int] = Counter(
+            edge.target for edge in graph.edges if edge.kind in {"signal", "reference"}
+        )
+        for role, members in sorted(role_groups.items(), key=lambda pair: repr(pair[0])):
+            if len(members) < 8:
+                continue
+            metric_sets: dict[str, list[tuple[_Endpoint, int]]] = {
+                "fan_out": [
+                    (
+                        item,
+                        sum(graph_outgoing[key] for key in _descendants(item.block.key, children)),
+                    )
+                    for item in members
+                ],
+                "fan_in": [
+                    (
+                        item,
+                        sum(graph_incoming[key] for key in _descendants(item.block.key, children)),
+                    )
+                    for item in members
+                ],
+            }
+            for metric, metric_values in metric_sets.items():
+                ordered = sorted(metric_value for _, metric_value in metric_values)
+                q1 = ordered[(len(ordered) - 1) // 4]
+                q3 = ordered[((len(ordered) - 1) * 3) // 4]
+                iqr = q3 - q1
+                for item, metric_value in metric_values:
+                    unusual = (
+                        metric_value < q1 - 1.5 * iqr or metric_value > q3 + 1.5 * iqr
+                        if iqr
+                        else abs(metric_value - ordered[len(ordered) // 2]) >= 2
+                    )
+                    if not unusual:
+                        continue
+                    emit(
+                        "graph_metric_outlier",
+                        [role, metric, q1, q3, metric_value],
+                        [item.node.key],
+                        {
+                            "analysis": "graph_outliers",
+                            "finding_type": "graph_metric_outlier",
+                            "classification": "outlier",
+                            "graph_metric": metric,
+                            "graph_value": metric_value,
+                            "graph_q1": q1,
+                            "graph_q3": q3,
+                        },
+                    )
+                    outliers += 1
+        summaries["graph_outliers"] = {"outliers": outliers}
 
     if "project_connectivity" in analyses:
-        adjacency: dict[str, list[GraphEdge]] = defaultdict(list)
+        outgoing: dict[str, list[GraphEdge]] = defaultdict(list)
+        incoming: dict[str, list[GraphEdge]] = defaultdict(list)
         for edge in graph.edges:
             if edge.kind in {"signal", "reference"}:
-                adjacency[edge.source].append(edge)
-                adjacency[edge.target].append(edge)
+                outgoing[edge.source].append(edge)
+                incoming[edge.target].append(edge)
         unresolved = {key for key, _ in graph.unresolved}
         disconnected = ambiguous = 0
         for item in endpoints:
             seed = _descendants(item.block.key, children)
-            has_relation = any(adjacency[key] for key in seed)
+            directional = outgoing if item.direction == "bus_to_loxone" else incoming
+            has_relation = any(directional[key] for key in seed)
             if has_relation:
                 continue
             ids, omitted = _bounded_nodes(seed)
@@ -278,7 +574,7 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
             )
             findings.append(
                 {
-                    "finding_id": _finding_id(finding_type, [item.direction, item.address], ids),
+                    "finding_id": _finding_id(finding_type, [item.direction, item.address], seed),
                     "analysis": "project_connectivity",
                     "finding_type": finding_type,
                     "flow_direction": item.direction,
@@ -291,7 +587,7 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
             ambiguous += finding_type == "project_connectivity_ambiguous"
         summaries["project_connectivity"] = {"unconnected": disconnected, "ambiguous": ambiguous}
 
-    if "technology_paths" in analyses:
+    if "technology_architecture" in analyses:
         counts: Counter[str] = Counter()
         samples: dict[str, list[dict[str, object]]] = defaultdict(list)
         mapped = {
@@ -362,7 +658,53 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
                                     }
                                 )
                     pending.append((other, next_path, depth + 1))
-        summaries["technology_paths"] = {
+        # A Loxone-to-Loxone path is included only when the directed path crosses
+        # a confirmed KNX endpoint; this keeps the KNX scope bounded.
+        for start_key in sorted(mapped):
+            loxone_pending = deque(
+                (key, [key], 0, False) for key in _descendants(start_key, children)
+            )
+            loxone_visited = {key for key, _, _, _ in loxone_pending}
+            while loxone_pending:
+                current, path, depth, crossed_knx = loxone_pending.popleft()
+                if len(loxone_visited) > _MAX_VISITED_PER_START:
+                    truncated_reasons.append("max_path_nodes")
+                    break
+                if depth >= 16:
+                    continue
+                for traversal_edge in downstream[current]:
+                    other = traversal_edge.target
+                    if other in loxone_visited:
+                        continue
+                    loxone_visited.add(other)
+                    next_path = [*path, other]
+                    target_block = _block(nodes[other], nodes, parents)
+                    next_crossed = crossed_knx or bool(
+                        target_block.knx and target_block.knx.object_kind == "endpoint"
+                    )
+                    if (
+                        next_crossed
+                        and target_block.key in mapped
+                        and target_block.key != start_key
+                    ):
+                        identity = ("loxone_to_loxone", start_key, target_block.key)
+                        if identity not in seen_paths:
+                            if len(seen_paths) >= _MAX_PATHS:
+                                truncated_reasons.append("max_paths")
+                                loxone_pending.clear()
+                                break
+                            seen_paths.add(identity)
+                            counts["loxone_to_loxone"] += 1
+                            if len(samples["loxone_to_loxone"]) < 3:
+                                samples["loxone_to_loxone"].append(
+                                    {
+                                        "source_project_node_id": start_key,
+                                        "target_project_node_id": target_block.key,
+                                        "evidence_project_node_ids": next_path,
+                                    }
+                                )
+                    loxone_pending.append((other, next_path, depth + 1, next_crossed))
+        summaries["technology_architecture"] = {
             "counts": dict(sorted(counts.items())),
             "samples": dict(sorted(samples.items())),
         }
@@ -385,8 +727,26 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
             "raw_datatypes": sum(item.datatype is not None for item in endpoints),
             "reviewed_signal_usage": sum(bool(item.usage) for item in endpoints),
             "unresolved_relationships": len(graph.unresolved),
+            "exact_runtime_mappings": sum(item.runtime is not None for item in endpoints),
+            "named_endpoints": sum(bool(item.names) for item in endpoints),
         },
         "summaries": summaries,
+        "limitations": [
+            {
+                "code": "normalized_dpt_unavailable",
+                "count": sum(item.datatype is not None for item in endpoints),
+            },
+            {"code": "semantic_domain_unavailable", "count": len(endpoints)},
+            {
+                "code": "usage_semantics_unreviewed",
+                "count": sum(not item.usage for item in endpoints),
+            },
+            {
+                "code": "runtime_mapping_incomplete",
+                "count": sum(item.runtime is None for item in endpoints),
+            },
+            {"code": "unresolved_relationships", "count": len(graph.unresolved)},
+        ],
         "findings": findings,
         "analysis_truncated": bool(truncated_reasons),
         "truncation_reasons": sorted(set(truncated_reasons)),

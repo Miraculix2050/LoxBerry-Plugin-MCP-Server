@@ -668,20 +668,54 @@ class ProjectAnalysisCoverageData(BaseModel):
     raw_datatypes: int
     reviewed_signal_usage: int
     unresolved_relationships: int
+    exact_runtime_mappings: int = 0
+    named_endpoints: int = 0
+
+
+class ProjectAnalysisSupportData(BaseModel):
+    count: int
+    total: int
+    ratio: float
+
+
+class ProjectAnalysisLimitationData(BaseModel):
+    code: Literal[
+        "normalized_dpt_unavailable",
+        "semantic_domain_unavailable",
+        "usage_semantics_unreviewed",
+        "runtime_mapping_incomplete",
+        "unresolved_relationships",
+    ]
+    count: int
 
 
 class ProjectAnalysisFindingData(BaseModel):
     finding_id: str
     analysis: Literal[
-        "address_patterns", "raw_datatype_reuse", "signal_usage", "project_connectivity"
+        "address_patterns",
+        "naming_consistency",
+        "datatype_consistency",
+        "signal_usage_consistency",
+        "technology_architecture",
+        "graph_outliers",
+        "project_connectivity",
+        "peer_group_consistency",
     ]
     finding_type: Literal[
+        "address_pattern",
         "address_pattern_deviation",
+        "naming_pattern",
+        "naming_deviation",
         "raw_datatype_conflict",
+        "datatype_peer_outlier",
         "mixed_signal_usage",
+        "signal_usage_peer_outlier",
+        "peer_group_pattern",
+        "graph_metric_outlier",
         "no_project_signal_relationship",
         "project_connectivity_ambiguous",
     ]
+    classification: Literal["fact", "pattern", "outlier", "ambiguity"] = "fact"
     flow_direction: Literal["bus_to_loxone", "loxone_to_bus"] | None = None
     address_format: Literal["two_level", "three_level"] | None = None
     raw_datatype: str | None = None
@@ -693,6 +727,15 @@ class ProjectAnalysisFindingData(BaseModel):
     deviation_prefix: list[int] = Field(default_factory=list)
     group_address: str | None = None
     raw_datatypes: list[str] = Field(default_factory=list)
+    dominant_raw_datatype: str | None = None
+    name_source: Literal["knx_title", "knx_internal_name", "runtime_control_name"] | None = None
+    name_shape: list[str] = Field(default_factory=list)
+    dominant_name_shape: list[str] = Field(default_factory=list)
+    support: ProjectAnalysisSupportData | None = None
+    graph_metric: Literal["fan_in", "fan_out"] | None = None
+    graph_value: int | None = None
+    graph_q1: int | None = None
+    graph_q3: int | None = None
     usage_signatures: list[list[dict[Literal["interpretation", "effect"], str | None]]] = Field(
         default_factory=list
     )
@@ -708,14 +751,18 @@ class ProjectAnalysisData(BaseModel):
     analyses: list[
         Literal[
             "address_patterns",
-            "raw_datatype_reuse",
-            "signal_usage",
-            "technology_paths",
+            "naming_consistency",
+            "datatype_consistency",
+            "signal_usage_consistency",
+            "technology_architecture",
+            "graph_outliers",
             "project_connectivity",
+            "peer_group_consistency",
         ]
     ]
     coverage: ProjectAnalysisCoverageData
     summaries: dict[str, JsonValue]
+    limitations: list[ProjectAnalysisLimitationData] = Field(default_factory=list)
     findings: list[ProjectAnalysisFindingData]
     next_cursor: str | None
     analysis_truncated: bool
@@ -2954,10 +3001,13 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
             list[
                 Literal[
                     "address_patterns",
-                    "raw_datatype_reuse",
-                    "signal_usage",
-                    "technology_paths",
+                    "naming_consistency",
+                    "datatype_consistency",
+                    "signal_usage_consistency",
+                    "technology_architecture",
+                    "graph_outliers",
                     "project_connectivity",
+                    "peer_group_consistency",
                 ]
             ]
             | None,
@@ -2973,10 +3023,13 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                 else frozenset(
                     {
                         "address_patterns",
-                        "raw_datatype_reuse",
-                        "signal_usage",
-                        "technology_paths",
+                        "naming_consistency",
+                        "datatype_consistency",
+                        "signal_usage_consistency",
+                        "technology_architecture",
+                        "graph_outliers",
                         "project_connectivity",
+                        "peer_group_consistency",
                     }
                 )
             )

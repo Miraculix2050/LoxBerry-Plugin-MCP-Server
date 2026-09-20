@@ -10,10 +10,11 @@ extracted from the matching version heading.
   Failed option discovery now distinguishes unavailable discovery from an empty
   matching list without changing fail-closed emergency-stop monitoring.
 
-- Add `loxone_analyze_project`, a bounded read-only KNX evidence surface for
-  project-local address patterns, raw datatype reuse, reviewed signal-use
-  differences, static path counts, and absent project relationships. Findings
-  are traceable review facts, never KNX quality ratings or DPT/ETS claims.
+- Expand `loxone_analyze_project` to analysis version 2: bounded source-name
+  patterns, exact UUID-mapped runtime context, local peer and graph outliers,
+  and explicit data-limitations complement address, raw datatype, reviewed
+  signal-use, path, and connection evidence. Findings remain traceable review
+  facts, never KNX quality ratings or DPT/ETS claims.
 
 - Make the MCP Tool Explorer compact on narrow screens and use a three-zone
   request/result workspace on sufficiently wide screens without changing MCP calls;

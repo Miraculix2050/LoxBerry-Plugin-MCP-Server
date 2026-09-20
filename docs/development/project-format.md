@@ -68,16 +68,19 @@ reachability, not a physical device role, bus telegram, or historical cause.
 
 ## KNX project analysis
 
-`loxone_analyze_project` returns bounded, deterministic project-local evidence;
-it never grades a KNX installation. Version 1 aggregates canonical address
-prefix distributions, conflicting raw `EIBType` values on one group address,
-mixed reviewed signal-use observations, static KNX/Loxone path counts, and
-endpoints without an observed project relationship. Raw `EIBType` remains an
-unknown-system source code, so the analysis never claims DPT compatibility.
-Names, room/function domains, ETS data, bus traffic and physical-device use are
-outside this projection. Findings are stable only for an unchanged project model
-and analysis version; they include project-node evidence for follow-up describe
-or trace calls.
+`loxone_analyze_project` version 2 returns bounded, deterministic project-local
+evidence; it never grades a KNX installation. It aggregates canonical-address
+and source-name patterns, conflicting raw `EIBType` values on one group address,
+reviewed signal-use observations, exact runtime-mapping context, local peer and
+graph outliers, static KNX/Loxone paths, and endpoints without an observed
+project relationship. A runtime name, room, category, or control type is used
+only after an exact UUID mapping and is never used to identify a project node.
+Raw `EIBType` remains an unknown-system source code, so the analysis never
+claims DPT compatibility. It reports fixed limitation codes whenever normalized
+DPTs, semantic domains, reviewed usage, or exact runtime mappings are missing.
+ETS data, bus traffic and physical-device use are outside this projection.
+Findings are stable only for an unchanged project model and analysis version;
+they include project-node evidence for follow-up describe or trace calls.
 Source, decoder, parser and graph execute in a disposable subprocess with a
 45-second processing deadline, bounded IPC and Linux address-space/CPU/core-dump
 limits. The separate network download deadline remains 20 seconds.

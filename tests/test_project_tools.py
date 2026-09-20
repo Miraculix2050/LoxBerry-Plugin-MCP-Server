@@ -167,7 +167,7 @@ async def test_project_analysis_is_read_only_bounded_and_cursor_scoped(monkeypat
 
     async def analysis(_view, _selected):
         return {
-            "analysis_version": 1,
+            "analysis_version": 2,
             "project_fingerprint": "a" * 64,
             "model_version": 3,
             "scope": "knx",
@@ -180,11 +180,13 @@ async def test_project_analysis_is_read_only_bounded_and_cursor_scoped(monkeypat
                 "unresolved_relationships": 0,
             },
             "summaries": {"project_connectivity": {"unconnected": 1, "ambiguous": 0}},
+            "limitations": [],
             "findings": [
                 {
                     "finding_id": "knx:1",
                     "analysis": "project_connectivity",
                     "finding_type": "no_project_signal_relationship",
+                    "classification": "fact",
                     "group_address": "1/2/3",
                     "affected_project_node_ids": ["p:1"],
                     "affected_omitted": 0,
