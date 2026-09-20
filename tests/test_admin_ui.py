@@ -75,18 +75,31 @@ def test_admin_responses_emit_no_store_and_frame_protection(tmp_path: Path) -> N
     )
     _assert_admin_security_headers(ajax.stdout)
 
-    auxiliary_request = "action=page_auxiliary_content&ajax=1"
-    auxiliary = subprocess.run(
+    notifications_request = "action=page_notifications&ajax=1"
+    notifications = subprocess.run(
         common,
         check=True,
         capture_output=True,
         text=True,
-        input=auxiliary_request,
-        env={**ajax_environment, "CONTENT_LENGTH": str(len(auxiliary_request))},
+        input=notifications_request,
+        env={**ajax_environment, "CONTENT_LENGTH": str(len(notifications_request))},
     )
-    assert '"ok":true' in auxiliary.stdout
-    assert '"notifications_html"' in auxiliary.stdout
-    assert '"loglist_html"' in auxiliary.stdout
+    assert '"ok":true' in notifications.stdout
+    assert '"notifications_html"' in notifications.stdout
+    assert '"loglist_html"' not in notifications.stdout
+
+    loglist_request = "action=page_loglist&ajax=1"
+    loglist = subprocess.run(
+        common,
+        check=True,
+        capture_output=True,
+        text=True,
+        input=loglist_request,
+        env={**ajax_environment, "CONTENT_LENGTH": str(len(loglist_request))},
+    )
+    assert '"ok":true' in loglist.stdout
+    assert '"loglist_html"' in loglist.stdout
+    assert '"notifications_html"' not in loglist.stdout
 
 
 def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
@@ -95,8 +108,9 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
 
     assert "} elsif ($action eq 'get_config') {" in cgi
     assert "admin_call('get_config', {})" in cgi
-    assert "} elsif ($action eq 'page_auxiliary_content') {" in cgi
+    assert "} elsif ($action eq 'page_notifications') {" in cgi
     assert "notifications_html => LoxBerry::Log::get_notifications_html($lbpplugindir) // ''" in cgi
+    assert "} elsif ($action eq 'page_loglist') {" in cgi
     assert "loglist_html => LoxBerry::Web::loglist_html() // ''" in cgi
     assert "my $config_result" not in cgi
     assert "admin_call('page_state', {})" in cgi
@@ -116,10 +130,22 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     )
     assert "mqtt[name]" not in template
     assert 'id="loxberry-notifications" aria-busy="true" aria-live="polite"' in template
+    assert (
+        '<span class="mcp-status" data-kind="working"><TMPL_VAR AJAX.NOTIFICATIONS_LOADING>'
+        in template
+    )
     assert 'id="plugin-log-list" aria-busy="true" aria-live="polite"' in template
-    assert "const loadPageAuxiliaryContent = async () =>" in template
-    assert "body.set('action', 'page_auxiliary_content')" in template
-    assert "loadPageAuxiliaryContent," in template
+    assert '<span class="mcp-status" data-kind="working"><TMPL_VAR AJAX.WORKING>' in template
+    assert "const loadLoxberryNotifications = async () =>" in template
+    assert "body.set('action', 'page_notifications')" in template
+    assert "const loadPluginLogList = async () =>" in template
+    assert "body.set('action', 'page_loglist')" in template
+    assert "loadLoxberryNotifications," in template
+    assert "loadPluginLogList," in template
+    assert template.index("loadLoxberryNotifications,") < template.index("loadConfiguration,")
+    assert template.index("loadPluginLogList,") > template.index(
+        "() => pollSessions({initial: true}),"
+    )
     assert "<TMPL_VAR LOGLIST>" not in template
     assert 'id="mcp-config-fields" class="mcp-configuration-fields" disabled' in template
     assert 'id="test-connection-fields" class="mcp-configuration-fields" disabled' in template

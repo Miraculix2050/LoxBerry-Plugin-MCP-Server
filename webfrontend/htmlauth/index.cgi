@@ -445,14 +445,32 @@ if ($action ne '') {
             'action=set_service_log_level outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
     } elsif ($action eq 'get_config') {
         $result = admin_call('get_config', {});
-    } elsif ($action eq 'page_auxiliary_content') {
+    } elsif ($action eq 'page_notifications') {
+        my $started = clock_gettime(CLOCK_MONOTONIC);
         $result = {
             ok => JSON::PP::true,
             data => {
                 notifications_html => LoxBerry::Log::get_notifications_html($lbpplugindir) // '',
+            },
+        };
+        admin_log('debug', sprintf(
+            'component=admin_ui request_id=%s action=page_notifications duration_ms=%.1f',
+            $request_id,
+            (clock_gettime(CLOCK_MONOTONIC) - $started) * 1000,
+        ));
+    } elsif ($action eq 'page_loglist') {
+        my $started = clock_gettime(CLOCK_MONOTONIC);
+        $result = {
+            ok => JSON::PP::true,
+            data => {
                 loglist_html => LoxBerry::Web::loglist_html() // '',
             },
         };
+        admin_log('debug', sprintf(
+            'component=admin_ui request_id=%s action=page_loglist duration_ms=%.1f',
+            $request_id,
+            (clock_gettime(CLOCK_MONOTONIC) - $started) * 1000,
+        ));
     } elsif ($action eq 'page_state') {
         $result = admin_call('page_state', {});
     } elsif ($action eq 'emergency_stop_options') {
