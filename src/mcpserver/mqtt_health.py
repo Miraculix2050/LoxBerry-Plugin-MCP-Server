@@ -11,6 +11,7 @@ import os
 import secrets
 import stat
 import subprocess
+import threading
 import time
 from collections.abc import Callable
 from contextlib import suppress
@@ -187,6 +188,93 @@ class MqttGateway:
             return None
 
 
+def mqtt_cleanup_required(previous: PluginConfig, updated: PluginConfig) -> bool:
+    """Return whether a saved MQTT change leaves an old topic tree behind."""
+    if not previous.mqtt_enabled:
+        return False
+    if not updated.mqtt_enabled or previous.mqtt_root_topic != updated.mqtt_root_topic:
+        return True
+    if previous.mqtt_use_loxberry_gateway != updated.mqtt_use_loxberry_gateway:
+        return True
+    return not previous.mqtt_use_loxberry_gateway and (
+        previous.mqtt_host != updated.mqtt_host or previous.mqtt_port != updated.mqtt_port
+    )
+
+
+def mqtt_broker(
+    config: PluginConfig, *, home: Path, password: str | None = None
+) -> MqttGateway | None:
+    """Resolve one broker without persisting or reporting its password."""
+    if config.mqtt_use_loxberry_gateway:
+        return MqttGateway.from_loxberry_home(home)
+    if password is None:
+        return None
+    return MqttGateway(
+        host=config.mqtt_host,
+        port=config.mqtt_port,
+        username=config.mqtt_username,
+        password=password,
+    )
+
+
+def clear_retained_topics(
+    config: PluginConfig,
+    *,
+    broker: MqttGateway,
+    client_factory: Callable[..., Any] | None = None,
+) -> bool:
+    """Best-effort removal of this plugin's retained topics from an old destination."""
+    if client_factory is None:
+        factory: Callable[..., Any] = importlib.import_module("paho.mqtt.client").Client
+    else:
+        factory = client_factory
+    connected = threading.Event()
+    client: Any | None = None
+    loop_started = False
+
+    def on_connect(_client: Any, *_args: Any) -> None:
+        # Paho supplies userdata, flags and a success reason code after the client.
+        if len(_args) >= 3 and _args[2] == 0:
+            connected.set()
+
+    try:
+        client = factory(client_id="loxberry-mcp-retained-cleanup")
+        client.username_pw_set(broker.username, broker.password)
+        if not config.mqtt_use_loxberry_gateway:
+            client.tls_set()
+        client.on_connect = on_connect
+        client.connect_async(broker.host, broker.port, keepalive=60)
+        client.loop_start()
+        loop_started = True
+        if not connected.wait(timeout=5):
+            raise TimeoutError("MQTT cleanup connection timed out")
+        topics = (
+            f"{config.mqtt_root_topic}/health/heartbeat",
+            f"{config.mqtt_root_topic}/health/system_state",
+            f"{config.mqtt_root_topic}/health/substate",
+            f"{config.mqtt_root_topic}/emergency_stop/status",
+        )
+        for topic in topics:
+            publication = client.publish(topic, b"", qos=1, retain=True)
+            wait_for_publish = getattr(publication, "wait_for_publish", None)
+            if callable(wait_for_publish):
+                wait_for_publish(timeout=3)
+            is_published = getattr(publication, "is_published", None)
+            if callable(is_published) and not is_published():
+                raise TimeoutError("MQTT cleanup publication was not acknowledged")
+        return True
+    except Exception:
+        _LOGGER.warning("event=mqtt_retained_cleanup_failed")
+        return False
+    finally:
+        if client is not None:
+            with suppress(Exception):
+                client.disconnect()
+            if loop_started:
+                with suppress(Exception):
+                    client.loop_stop()
+
+
 def loxone_epoch_seconds(now: float | None = None) -> int:
     return int(time.time() if now is None else now) - LOXONE_EPOCH_OFFSET
 
@@ -273,23 +361,18 @@ class MqttHealthPublisher:
             return False
 
     def _broker(self) -> MqttGateway | None:
+        password: str | None = ""
         if self._config.mqtt_use_loxberry_gateway:
-            return MqttGateway.from_loxberry_home(self._home)
+            return mqtt_broker(self._config, home=self._home)
         path_value = os.getenv("MCPSERVER_MQTT_CREDENTIALS", "").strip()
         key_value = os.getenv("MCPSERVER_INSTALL_KEY", "").strip()
-        password = ""
         if path_value and key_value:
             try:
                 password = MqttCredentialStore(Path(path_value), Path(key_value)).load() or ""
             except MqttCredentialStoreError:
                 _LOGGER.warning("event=mqtt_credentials_unavailable")
                 return None
-        return MqttGateway(
-            host=self._config.mqtt_host,
-            port=self._config.mqtt_port,
-            username=self._config.mqtt_username,
-            password=password,
-        )
+        return mqtt_broker(self._config, home=self._home, password=password)
 
     def _create_clients(self, gateway: MqttGateway) -> list[Any]:
         if self._client_factory is None:

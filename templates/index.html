@@ -1223,7 +1223,7 @@
   updateMqttBrokerFields();
   const actionTimeout = (action) => ({
     save_mcp_config: 90000,
-    save_mqtt_config: 75000,
+    save_mqtt_config: 165000,
     set_service_enabled: 75000,
     set_logging: 75000,
     revoke_session: 75000,
@@ -1297,8 +1297,12 @@
         if (sessionActionToken && sessionActionFailures.size > 0) {
           showSessionActionFailure();
         } else {
-          setAjaxStatus('success', '<TMPL_VAR AJAX.SUCCESS ESCAPE=JS>');
-          hideSuccess(status, () => activeSessionActions.size > 0);
+          const cleanupFailed = form.dataset.ajax === 'save_mqtt_config'
+            && result.data.retained_cleanup?.status === 'failed';
+          setAjaxStatus(cleanupFailed ? 'warning' : 'success', cleanupFailed
+            ? '<TMPL_VAR AJAX.MQTT_CLEANUP_WARNING ESCAPE=JS>'
+            : '<TMPL_VAR AJAX.SUCCESS ESCAPE=JS>');
+          if (!cleanupFailed) hideSuccess(status, () => activeSessionActions.size > 0);
         }
         if (result.data.service) {
           renderService(result.data.service, {

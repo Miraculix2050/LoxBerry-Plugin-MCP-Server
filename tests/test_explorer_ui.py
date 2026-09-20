@@ -31,6 +31,30 @@ def test_schema_reference_link_label_is_concise_in_both_languages() -> None:
     assert "SCHEMA_REFERENCE=Open schema reference" in english
 
 
+def test_tool_badges_are_localized_through_the_explorer_template() -> None:
+    german = (ROOT / "templates" / "lang" / "language_de.ini").read_text(encoding="utf-8")
+    english = (ROOT / "templates" / "lang" / "language_en.ini").read_text(encoding="utf-8")
+    template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
+    source = SCRIPT.read_text(encoding="utf-8")
+    render_tools = source[
+        source.index("function renderTools()") : source.index("function draftFor(")
+    ]
+
+    assert "TOOL_BADGE_READ_ONLY=Nur lesen" in german
+    assert "TOOL_BADGE_WRITE=Schreibzugriff" in german
+    assert "TOOL_BADGE_READ_ONLY=Read only" in english
+    assert "TOOL_BADGE_WRITE=Write" in english
+    assert (
+        'data-tool-badge-read-only="<TMPL_VAR EXPLORER.TOOL_BADGE_READ_ONLY ESCAPE=HTML>"'
+        in template
+    )
+    assert 'data-tool-badge-write="<TMPL_VAR EXPLORER.TOOL_BADGE_WRITE ESCAPE=HTML>"' in template
+    assert "label('toolBadgeReadOnly')" in render_tools
+    assert "label('toolBadgeWrite')" in render_tools
+    assert "text: 'read-only'" not in render_tools
+    assert "text: 'write'" not in render_tools
+
+
 def run_core(expression: str) -> object:
     node = shutil.which("node")
     if node is None:

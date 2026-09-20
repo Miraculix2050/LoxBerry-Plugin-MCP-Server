@@ -1089,6 +1089,155 @@ def test_save_mqtt_keeps_custom_password_out_of_configuration(
     assert not credentials.exists()
 
 
+def test_save_mqtt_cleans_an_obsolete_destination_before_starting_the_replacement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    previous = PluginConfig(
+        mqtt_enabled=True,
+        mqtt_root_topic="old",
+        mqtt_use_loxberry_gateway=False,
+        mqtt_host="broker.example",
+        mqtt_username="health",
+    )
+    store.save(previous)
+    key = tmp_path / "data" / "auth" / "install.key"
+    key.parent.mkdir(parents=True)
+    key.write_bytes(b"k" * 32)
+    credentials = key.with_name("mqtt-credentials.json.enc")
+    from mcpserver.mqtt_health import MqttCredentialStore
+
+    MqttCredentialStore(credentials.resolve(), key.resolve()).save("previous-secret")
+    calls: list[str] = []
+
+    def cleanup(config: PluginConfig, **kwargs: object) -> bool:
+        calls.append("cleanup")
+        assert config.mqtt_root_topic == "old"
+        assert config.mqtt_host == "broker.example"
+        assert kwargs["broker"].password == "previous-secret"  # type: ignore[index,union-attr]
+        return True
+
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._service_active", lambda: True)
+    monkeypatch.setattr("mcpserver.admin._stop_service", lambda: calls.append("stop"))
+    monkeypatch.setattr("mcpserver.admin._start_service", lambda: calls.append("start"))
+    monkeypatch.setattr("mcpserver.admin.clear_retained_topics", cleanup)
+    monkeypatch.setattr("mcpserver.admin._service_response", lambda: {"service_active": True})
+    monkeypatch.setenv("MCPSERVER_INSTALL_KEY", str(key.resolve()))
+    monkeypatch.setenv("MCPSERVER_MQTT_CREDENTIALS", str(credentials.resolve()))
+
+    result = _save_mqtt(
+        {
+            "schema_version": 6,
+            "mqtt": {
+                "enabled": True,
+                "root_topic": "new",
+                "heartbeat_seconds": 60,
+                "use_loxberry_gateway": False,
+                "host": "broker.example",
+                "port": 1883,
+                "username": "health",
+            },
+        }
+    )
+
+    assert calls == ["stop", "cleanup", "start"]
+    assert result["retained_cleanup"] == {"status": "completed"}
+    assert store.load().mqtt_root_topic == "new"
+
+
+def test_save_mqtt_cleanup_failure_keeps_the_new_configuration_active(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    store.save(PluginConfig(mqtt_enabled=True, mqtt_root_topic="old"))
+    calls: list[str] = []
+
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._service_active", lambda: True)
+    monkeypatch.setattr("mcpserver.admin._stop_service", lambda: calls.append("stop"))
+    monkeypatch.setattr("mcpserver.admin._start_service", lambda: calls.append("start"))
+    monkeypatch.setattr("mcpserver.admin.clear_retained_topics", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr("mcpserver.admin._service_response", lambda: {"service_active": True})
+    gateway = tmp_path / "config" / "system"
+    gateway.mkdir(parents=True)
+    (gateway / "general.json").write_text(
+        json.dumps(
+            {
+                "Mqtt": {
+                    "Brokerhost": "broker",
+                    "Brokerport": 1883,
+                    "Brokeruser": "u",
+                    "Brokerpass": "p",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LBHOMEDIR", str(tmp_path))
+
+    result = _save_mqtt(
+        {
+            "schema_version": 6,
+            "mqtt": {"enabled": False, "root_topic": "old", "heartbeat_seconds": 60},
+        }
+    )
+
+    assert calls == ["stop", "start"]
+    assert result["retained_cleanup"] == {"status": "failed"}
+    assert store.load().mqtt_enabled is False
+
+
+def test_save_mqtt_credential_change_at_the_same_destination_uses_a_normal_restart(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    previous = PluginConfig(
+        mqtt_enabled=True,
+        mqtt_use_loxberry_gateway=False,
+        mqtt_host="broker.example",
+        mqtt_username="health",
+    )
+    store.save(previous)
+    key = tmp_path / "data" / "auth" / "install.key"
+    key.parent.mkdir(parents=True)
+    key.write_bytes(b"k" * 32)
+    credentials = key.with_name("mqtt-credentials.json.enc")
+    from mcpserver.mqtt_health import MqttCredentialStore
+
+    MqttCredentialStore(credentials.resolve(), key.resolve()).save("previous-secret")
+    restarts: list[str] = []
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._service_active", lambda: True)
+    monkeypatch.setattr("mcpserver.admin._restart_service", lambda: restarts.append("restart"))
+    monkeypatch.setattr(
+        "mcpserver.admin.clear_retained_topics",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("unexpected cleanup")),
+    )
+    monkeypatch.setattr("mcpserver.admin._service_response", lambda: {"service_active": True})
+    monkeypatch.setenv("MCPSERVER_INSTALL_KEY", str(key.resolve()))
+    monkeypatch.setenv("MCPSERVER_MQTT_CREDENTIALS", str(credentials.resolve()))
+
+    result = _save_mqtt(
+        {
+            "schema_version": 6,
+            "mqtt": {
+                "enabled": True,
+                "root_topic": "mcpserver",
+                "heartbeat_seconds": 60,
+                "use_loxberry_gateway": False,
+                "host": "broker.example",
+                "port": 1883,
+                "username": "health",
+            },
+            "mqtt_password": "new-secret",
+        }
+    )
+
+    assert restarts == ["restart"]
+    assert result["retained_cleanup"] == {"status": "not_required"}
+
+
 def test_failed_mqtt_apply_restores_previous_encrypted_password(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1324,6 +1473,7 @@ def test_concurrent_mqtt_saves_keep_broker_and_password_paired(
     monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
     monkeypatch.setattr("mcpserver.admin._service_active", lambda: False)
     monkeypatch.setattr("mcpserver.admin._service_response", lambda: {"service_active": False})
+    monkeypatch.setattr("mcpserver.admin.clear_retained_topics", lambda *_args, **_kwargs: True)
     monkeypatch.setenv("MCPSERVER_INSTALL_KEY", str(key.resolve()))
     monkeypatch.setenv("MCPSERVER_MQTT_CREDENTIALS", str(credentials.resolve()))
 

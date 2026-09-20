@@ -10,6 +10,10 @@ extracted from the matching version heading.
   Failed option discovery now distinguishes unavailable discovery from an empty
   matching list without changing fail-closed emergency-stop monitoring.
 
+- Remove retained MQTT health and emergency-stop topics from an obsolete broker
+  destination after relevant MQTT configuration changes. If the old broker is
+  unavailable, retain the new configuration and show an Admin UI warning.
+
 - Add a documented Windows Python 3.13 development bootstrap and actionable
   diagnostics when a restricted environment cannot execute its interpreter.
 

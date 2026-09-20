@@ -159,7 +159,9 @@ def test_common_actions_update_the_page_without_a_reload() -> None:
     assert "url.searchParams.delete('notice')" in template
     assert "postAjax(body, actionTimeout(form.dataset.ajax))" in template
     assert "save_mcp_config: 90000" in template
-    assert "save_mqtt_config: 75000" in template
+    assert "save_mqtt_config: 165000" in template
+    assert "result.data.retained_cleanup?.status === 'failed'" in template
+    assert "AJAX.MQTT_CLEANUP_WARNING" in template
     assert "revoke_all: 75000" in template
     assert "postAjax(body, 5000)" in template
     assert "new URLSearchParams(new FormData(form))" in template

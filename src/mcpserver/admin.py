@@ -28,7 +28,15 @@ if TYPE_CHECKING:
     from mcpserver.loxone.client import LoxoneClient, MiniserverEndpoint
 
 from mcpserver.config import AtomicConfigStore, PluginConfig
-from mcpserver.mqtt_health import clear_service_restart, request_service_restart
+from mcpserver.mqtt_health import (
+    MqttCredentialStore,
+    MqttCredentialStoreError,
+    clear_retained_topics,
+    clear_service_restart,
+    mqtt_broker,
+    mqtt_cleanup_required,
+    request_service_restart,
+)
 
 _MAX_REQUEST_BYTES: Final = 32 * 1024
 _SERVICE: Final = "loxberry-mcpserver.service"
@@ -280,6 +288,20 @@ def _restart_service() -> None:
         raise AdminError("the service could not be restarted") from exc
 
 
+def _stop_service() -> None:
+    try:
+        _run_service_command("stop")
+    except AdminError as exc:
+        raise AdminError("the service could not be stopped") from exc
+
+
+def _start_service() -> None:
+    try:
+        _run_service_command("start")
+    except AdminError as exc:
+        raise AdminError("the service could not be started") from exc
+
+
 def _optional_path(name: str) -> Path | None:
     value = os.getenv(name, "").strip()
     if not value:
@@ -523,7 +545,6 @@ def _emergency_stop_options() -> dict[str, Any]:
 def _save_mqtt(payload: object) -> dict[str, Any]:
     """Atomically apply MQTT settings and separately protect an optional password."""
     from mcpserver.config import ConfigError, PluginConfig
-    from mcpserver.mqtt_health import MqttCredentialStore, MqttCredentialStoreError
 
     if not isinstance(payload, dict):
         raise AdminError("MQTT configuration payload is invalid")
@@ -544,8 +565,10 @@ def _save_mqtt(payload: object) -> dict[str, Any]:
             raise AdminError("MQTT credential storage is unavailable")
         credentials = MqttCredentialStore(Path(path_value), Path(key_value))
     store = _config_store()
+    cleanup_status = "not_required"
 
     def apply(previous: PluginConfig, save: Callable[[PluginConfig], None]) -> PluginConfig:
+        nonlocal cleanup_status
         previous_password = credentials.load() if credentials is not None else None
         was_active = _service_active()
         updated = replace(
@@ -558,9 +581,32 @@ def _save_mqtt(payload: object) -> dict[str, Any]:
             mqtt_port=candidate.mqtt_port,
             mqtt_username=candidate.mqtt_username,
         )
+        cleanup_required = mqtt_cleanup_required(previous, updated)
+        cleanup_password: str | None = (
+            "" if credentials is not None and previous_password is None else previous_password
+        )
+        cleanup_credentials = credentials
+        if (
+            cleanup_required
+            and not previous.mqtt_use_loxberry_gateway
+            and cleanup_credentials is None
+        ):
+            path_value = os.getenv("MCPSERVER_MQTT_CREDENTIALS", "").strip()
+            key_value = os.getenv("MCPSERVER_INSTALL_KEY", "").strip()
+            if path_value and key_value:
+                try:
+                    cleanup_credentials = MqttCredentialStore(Path(path_value), Path(key_value))
+                    cleanup_password = cleanup_credentials.load() or ""
+                except (MqttCredentialStoreError, ValueError):
+                    cleanup_credentials = None
+        home_value = os.getenv("LBHOMEDIR", "").strip()
+        home = Path(home_value)
+        previous_broker = None
+        if cleanup_required and (not previous.mqtt_use_loxberry_gateway or home.is_absolute()):
+            previous_broker = mqtt_broker(previous, home=home, password=cleanup_password)
         credentials_restore_required = bool(password or clear_password)
         configuration_restore_required = True
-        restart_attempted = False
+        service_transition_attempted = False
         try:
             if password and credentials is not None:
                 credentials.save(password)
@@ -568,8 +614,25 @@ def _save_mqtt(payload: object) -> dict[str, Any]:
                 credentials.delete()
             save(updated)
             if was_active:
-                restart_attempted = True
-                _restart_service()
+                service_transition_attempted = True
+                if cleanup_required:
+                    _stop_service()
+                    cleanup_status = (
+                        "completed"
+                        if previous_broker is not None
+                        and clear_retained_topics(previous, broker=previous_broker)
+                        else "failed"
+                    )
+                    _start_service()
+                else:
+                    _restart_service()
+            elif cleanup_required:
+                cleanup_status = (
+                    "completed"
+                    if previous_broker is not None
+                    and clear_retained_topics(previous, broker=previous_broker)
+                    else "failed"
+                )
             return updated
         except (AdminError, MqttCredentialStoreError, ValueError) as apply_error:
             rollback_error: Exception | None = None
@@ -586,7 +649,7 @@ def _save_mqtt(payload: object) -> dict[str, Any]:
                         credentials.save(previous_password)
                 except MqttCredentialStoreError as exc:
                     rollback_error = rollback_error or exc
-            if rollback_error is None and restart_attempted:
+            if rollback_error is None and service_transition_attempted:
                 try:
                     _restart_service()
                 except AdminError as exc:
@@ -601,6 +664,7 @@ def _save_mqtt(payload: object) -> dict[str, Any]:
     return {
         "configuration": updated.to_document(),
         "mqtt_password_configured": _mqtt_password_configured(),
+        "retained_cleanup": {"status": cleanup_status},
         "applied": True,
     } | _service_response()
 
