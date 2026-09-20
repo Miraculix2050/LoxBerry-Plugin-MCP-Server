@@ -204,7 +204,7 @@ def test_sessions_poll_only_while_visible_and_open_and_patch_changed_rows() -> N
     assert "body.set('action', 'list_sessions')" in template
     assert "window.setTimeout(pollSessions, delay)" in template
     assert (
-        "document.hidden || !sessionsSection.open || sessionActionRunning || sessionPollInFlight"
+        "document.hidden || !sessionsSection.open || activeSessionActions.size > 0 || sessionPollInFlight"
         in template
     )
     assert "sessionsSection.addEventListener('toggle'" in template
@@ -212,13 +212,64 @@ def test_sessions_poll_only_while_visible_and_open_and_patch_changed_rows() -> N
     assert "sessionList.replaceChildren(fragment)" in template
 
 
-def test_session_actions_are_serialized_and_apply_their_snapshot_immediately() -> None:
+def test_session_action_coordinator_allows_only_non_conflicting_actions() -> None:
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    coordinator = re.search(
+        r"// session-action-coordinator-start\n(.*?)// session-action-coordinator-end",
+        template,
+        re.DOTALL,
+    )
+    assert coordinator is not None
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = f"""
+let sessionDataVersion = 0;
+let nextSessionActionToken = 0;
+const activeSessionActions = new Map();
+{coordinator.group(1)}
+const descriptor = (action, sessionId = '', bindingId = '') => ({{
+  action, sessionId, bindingId, key: sessionActionKey(action, sessionId, bindingId),
+}});
+const readA = descriptor('allow_loxberry_read', 'session-a');
+const operateA = descriptor('allow_loxberry_operate', 'session-a');
+const revokeA = descriptor('revoke_session', 'session-a');
+const readB = descriptor('allow_loxberry_read', 'session-b');
+const first = beginSessionAction(readA, null);
+const operate = beginSessionAction(operateA, null);
+const otherSession = beginSessionAction(readB, null);
+const result = {{
+  duplicateBlocked: beginSessionAction(readA, null) === null,
+  sameSessionRevokeBlocked: beginSessionAction(revokeA, null) === null,
+  readAndOperateAllowed: Boolean(first && operate),
+  otherSessionAllowed: Boolean(otherSession),
+  revokeAllBlockedWhileActive: beginSessionAction(descriptor('revoke_all'), null) === null,
+  finalFinishOnly: [finishSessionAction(operate), finishSessionAction(otherSession), finishSessionAction(first)],
+}};
+const readBinding = descriptor('revoke_loxberry_read', '', 'binding-a');
+const otherBinding = descriptor('revoke_loxberry_read', '', 'binding-b');
+const binding = beginSessionAction(readBinding, null);
+result.duplicateBindingBlocked = beginSessionAction(readBinding, null) === null;
+result.otherBindingAllowed = Boolean(beginSessionAction(otherBinding, null));
+for (const token of [...activeSessionActions.keys()]) finishSessionAction(token);
+const revokeAll = beginSessionAction(descriptor('revoke_all'), null);
+result.revokeAllExclusive = Boolean(revokeAll) && beginSessionAction(readA, null) === null;
+result.version = sessionDataVersion;
+console.log(JSON.stringify(result));
+"""
+    result = subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
 
-    assert "const isSessionAction = (action)" in template
-    assert "if (sessionActionRunning) return;" in template
-    assert "setSessionActionControlsDisabled(true);" in template
-    assert "setSessionActionControlsDisabled(false);" in template
+    assert result.stdout.strip() == (
+        '{"duplicateBlocked":true,"sameSessionRevokeBlocked":true,'
+        '"readAndOperateAllowed":true,"otherSessionAllowed":true,'
+        '"revokeAllBlockedWhileActive":true,"finalFinishOnly":[false,false,true],'
+        '"duplicateBindingBlocked":true,"otherBindingAllowed":true,'
+        '"revokeAllExclusive":true,"version":6}'
+    )
+    assert "const activeSessionActions = new Map();" in template
+    assert "const sessionActionsConflict = (left, right)" in template
+    assert "applySuccessfulSessionAction(form, sessionAction);" in template
+    assert "const refreshSessions = finishSessionAction(sessionActionToken);" in template
+    assert "if (refreshSessions) scheduleSessionPoll(0);" in template
     assert "let sessionDataVersion = 0;" in template
     assert "const expectedSessionDataVersion = sessionDataVersion;" in template
     assert "if (expectedSessionDataVersion !== sessionDataVersion) return;" in template
@@ -226,14 +277,10 @@ def test_session_actions_are_serialized_and_apply_their_snapshot_immediately() -
         "scheduleSessionPoll(expectedSessionDataVersion === sessionDataVersion ? 10000 : 0);"
         in template
     )
-    assert "sessionDataVersion += 1;" in template
-    assert (
-        "if (isSessionAction(form.dataset.ajax)) {\n"
-        "          if (Array.isArray(result.data.sessions)) updateSessions(result.data.sessions);"
-        in template
-    )
+    assert "sessionDataVersion += 1;" in coordinator.group(1)
+    assert "setSessionActionControlsDisabled" not in template
+    assert "sessionActionRunning" not in template
     assert "const result = await postAjax(body, 15000);" in template
-    assert "activeSessionActions" not in template
     assert "pendingSessionActionButtons" not in template
 
 
