@@ -80,6 +80,7 @@
       <p id="emergency-stop-status" class="mcp-status" data-kind="info"><TMPL_VAR SETUP.EMERGENCY_STOP_LOADING></p>
       <div id="emergency-stop-runtime" class="mcp-field-stack" aria-live="polite" aria-busy="<TMPL_IF EMERGENCY_STOP_RUNTIME_BUSY>true<TMPL_ELSE>false</TMPL_IF>"
         data-signal-unavailable="<TMPL_VAR SETUP.EMERGENCY_STOP_RUNTIME_SIGNAL_UNAVAILABLE ESCAPE=HTML>"
+        data-not-configured="<TMPL_VAR SETUP.EMERGENCY_STOP_NONE ESCAPE=HTML>"
         data-service-inactive="<TMPL_VAR SETUP.EMERGENCY_STOP_RUNTIME_SERVICE_INACTIVE ESCAPE=HTML>"
         data-unavailable="<TMPL_VAR SETUP.EMERGENCY_STOP_RUNTIME_UNAVAILABLE ESCAPE=HTML>">
         <p class="mcp-help"><strong><TMPL_VAR SETUP.EMERGENCY_STOP_RUNTIME_SIGNAL></strong> <span id="emergency-stop-runtime-signal"><TMPL_VAR EMERGENCY_STOP_RUNTIME_SIGNAL_VALUE ESCAPE=HTML></span> <code id="emergency-stop-runtime-uuid" <TMPL_UNLESS EMERGENCY_STOP_RUNTIME_UUID_VISIBLE>hidden</TMPL_UNLESS>><TMPL_VAR EMERGENCY_STOP_RUNTIME_UUID ESCAPE=HTML></code></p>
@@ -774,12 +775,13 @@
     }
     const signalUuid = typeof runtime.signal_uuid === 'string' ? runtime.signal_uuid : '';
     const signalName = typeof runtime.signal_name === 'string' ? runtime.signal_name : '';
-    emergencyStopRuntimeSignal.textContent = signalName || signalUuid
-      || emergencyStopRuntime.dataset.signalUnavailable;
-    emergencyStopRuntimeUuid.textContent = signalUuid;
-    emergencyStopRuntimeUuid.hidden = signalUuid === '';
     const state = ['not_configured', 'clear', 'active', 'unknown'].includes(runtime.status)
       ? runtime.status : 'unknown';
+    emergencyStopRuntimeSignal.textContent = state === 'not_configured'
+      ? emergencyStopRuntime.dataset.notConfigured
+      : signalName || signalUuid || emergencyStopRuntime.dataset.signalUnavailable;
+    emergencyStopRuntimeUuid.textContent = signalUuid;
+    emergencyStopRuntimeUuid.hidden = signalUuid === '';
     emergencyStopRuntimeState.textContent = state;
     emergencyStopRuntimeState.dataset.kind = ({clear: 'success', active: 'error', unknown: 'warning'})[state]
       || 'inactive';

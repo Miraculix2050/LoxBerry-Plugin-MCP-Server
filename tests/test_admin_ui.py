@@ -384,6 +384,8 @@ def test_emergency_stop_runtime_display_uses_service_data_not_the_form_selection
     assert "const renderEmergencyStopRuntime = (runtime) =>" in template
     assert "runtime?.availability === 'available'" in template
     assert "runtime.status" in template
+    assert "state === 'not_configured'" in template
+    assert "emergencyStopRuntime.dataset.notConfigured" in template
     assert (
         "String(emergencyStopValue.value || '') !== String(runtime.signal_uuid || '')" in template
     )
