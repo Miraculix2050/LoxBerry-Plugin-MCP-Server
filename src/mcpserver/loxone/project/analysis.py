@@ -29,6 +29,7 @@ _MAX_FINDINGS = 10_000
 _MAX_EVIDENCE = 20
 _MAX_PATHS = 5_000
 _MAX_VISITED_PER_START = 2_000
+_MAX_PATH_DEPTH = 16
 _AddressGroupKey = tuple[str, str, str, tuple[tuple[str, str | None], ...]]
 _DirectionalAdjacency = dict[str, list[GraphEdge | SemanticEdge]]
 
@@ -130,18 +131,18 @@ def _name_shape(value: str) -> tuple[str, ...]:
     return tuple("{number}" if part.isdecimal() else part for part in parts)
 
 
-def _role_key(item: _Endpoint) -> tuple[object, ...] | None:
+def _role_key(item: _Endpoint, *, include_usage: bool = True) -> tuple[object, ...] | None:
     """Build a peer key only from exact runtime or reviewed signal evidence."""
 
     runtime_type = item.runtime.control_type if item.runtime is not None else None
     if runtime_type is None and not item.usage:
         return None
-    return (
+    key: tuple[object, ...] = (
         item.direction,
         item.node.knx.source_type if item.node.knx else None,
         runtime_type,
-        item.usage,
     )
+    return (*key, item.usage) if include_usage else key
 
 
 def _support(members: list[_Endpoint], selected: list[_Endpoint]) -> dict[str, object]:
@@ -156,7 +157,15 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
     nodes = {node.key: node for node in graph.nodes}
     children, parents = _children(graph.edges)
     needs_usage = bool(
-        {"address_patterns", "signal_usage_consistency", "peer_group_consistency"} & analyses
+        {
+            "address_patterns",
+            "naming_consistency",
+            "datatype_consistency",
+            "signal_usage_consistency",
+            "graph_outliers",
+            "peer_group_consistency",
+        }
+        & analyses
     )
     needs_directional_adjacency = needs_usage or "technology_architecture" in analyses
     downstream: _DirectionalAdjacency = {}
@@ -424,7 +433,12 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
 
     if "signal_usage_consistency" in analyses:
         peer_outliers = 0
-        for role, members in sorted(role_groups.items(), key=lambda pair: repr(pair[0])):
+        usage_role_groups: dict[tuple[object, ...], list[_Endpoint]] = defaultdict(list)
+        for item in endpoints:
+            role = _role_key(item, include_usage=False)
+            if role is not None:
+                usage_role_groups[role].append(item)
+        for role, members in sorted(usage_role_groups.items(), key=lambda pair: repr(pair[0])):
             known = [item for item in members if item.usage]
             if len(known) < 5:
                 continue
@@ -587,7 +601,10 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
             for key in entry.node_keys
         }
         seen_paths: set[tuple[str, str, str]] = set()
+        path_limit_reached = False
         for start in endpoints:
+            if path_limit_reached:
+                break
             is_downstream = start.direction == "bus_to_loxone"
             path_adjacency = downstream if is_downstream else upstream
             pending = deque((key, [key], 0) for key in _descendants(start.block.key, children))
@@ -597,7 +614,9 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
                 if len(visited) > _MAX_VISITED_PER_START:
                     truncated_reasons.append("max_path_nodes")
                     break
-                if depth >= 16:
+                if depth >= _MAX_PATH_DEPTH:
+                    if path_adjacency[current]:
+                        truncated_reasons.append("max_depth")
                     continue
                 for traversal_edge in path_adjacency[current]:
                     other = traversal_edge.target if is_downstream else traversal_edge.source
@@ -635,6 +654,7 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
                         if identity not in seen_paths:
                             if len(seen_paths) >= _MAX_PATHS:
                                 truncated_reasons.append("max_paths")
+                                path_limit_reached = True
                                 pending.clear()
                                 break
                             seen_paths.add(identity)
@@ -651,10 +671,15 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
                                         ),
                                     }
                                 )
+                    if path_limit_reached:
+                        pending.clear()
+                        break
                     pending.append((other, next_path, depth + 1))
         # A Loxone-to-Loxone path is included only when the directed path crosses
         # a confirmed KNX endpoint; this keeps the KNX scope bounded.
         for start_key in sorted(mapped):
+            if path_limit_reached:
+                break
             loxone_pending = deque(
                 (key, [key], 0, False) for key in _descendants(start_key, children)
             )
@@ -664,7 +689,9 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
                 if len(loxone_visited) > _MAX_VISITED_PER_START:
                     truncated_reasons.append("max_path_nodes")
                     break
-                if depth >= 16:
+                if depth >= _MAX_PATH_DEPTH:
+                    if downstream[current]:
+                        truncated_reasons.append("max_depth")
                     continue
                 for traversal_edge in downstream[current]:
                     other = traversal_edge.target
@@ -689,6 +716,7 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
                         if identity not in seen_paths:
                             if len(seen_paths) >= _MAX_PATHS:
                                 truncated_reasons.append("max_paths")
+                                path_limit_reached = True
                                 loxone_pending.clear()
                                 break
                             seen_paths.add(identity)
@@ -701,6 +729,9 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
                                         "evidence_project_node_ids": next_path,
                                     }
                                 )
+                    if path_limit_reached:
+                        loxone_pending.clear()
+                        break
                     loxone_pending.append((other, next_path, depth + 1, next_crossed))
         summaries["technology_architecture"] = {
             "counts": dict(sorted(counts.items())),

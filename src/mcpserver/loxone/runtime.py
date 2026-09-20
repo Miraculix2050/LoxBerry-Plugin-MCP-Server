@@ -251,6 +251,13 @@ class LoxoneRuntime:
         async with self._parallel:
             yield
 
+    @asynccontextmanager
+    async def worker_slot(self) -> AsyncIterator[None]:
+        """Bound local project workers by the configured global call concurrency."""
+
+        async with self._parallel:
+            yield
+
     @staticmethod
     def _consume_rate(values: deque[float], limit: int, now: float) -> bool:
         while values and values[0] <= now - 60:

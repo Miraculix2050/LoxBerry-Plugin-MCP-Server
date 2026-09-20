@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import pytest
+
 import mcpserver.loxone.project.analysis as project_analysis
 from mcpserver.loxone.project.analysis import analyze_knx
 from mcpserver.loxone.project.graph import ProjectPartSummary, ProjectSnapshot, build_graph
@@ -89,10 +91,57 @@ def test_analysis_skips_signal_usage_when_the_selected_analysis_does_not_need_it
 
     result = project_analysis.analyze_knx(
         _view(b'<P><C Type="EIBsensor" U="sensor" EibAddr="1/2/3"><Co U="out"/></C></P>'),
-        frozenset({"datatype_consistency"}),
+        frozenset({"project_connectivity"}),
     )
 
-    assert result["summaries"]["datatype_consistency"] == {"conflicts": 0, "peer_outliers": 0}
+    assert result["summaries"]["project_connectivity"] == {"unconnected": 1, "ambiguous": 0}
+
+
+@pytest.mark.parametrize(
+    "analysis",
+    ["naming_consistency", "datatype_consistency", "graph_outliers", "peer_group_consistency"],
+)
+def test_role_dependent_analyses_compute_reviewed_signal_usage(monkeypatch, analysis):
+    observed = []
+    original = project_analysis._usage
+
+    def track_usage(*args):
+        observed.append(args[0].key)
+        return original(*args)
+
+    monkeypatch.setattr(project_analysis, "_usage", track_usage)
+
+    project_analysis.analyze_knx(
+        _view(b'<P><C Type="EIBsensor" U="sensor" EibAddr="1/2/3"><Co U="out"/></C></P>'),
+        frozenset({analysis}),
+    )
+
+    assert observed
+
+
+def test_signal_usage_peer_outliers_compare_roles_without_the_usage_signature(monkeypatch):
+    def usage_by_source(node, *_args):
+        return (("minority", None),) if node.source_id == "s4" else (("majority", None),)
+
+    monkeypatch.setattr(project_analysis, "_usage", usage_by_source)
+    project = (
+        b"<P>"
+        + b"".join(
+            f'<C Type="EIBsensor" U="s{index}" EibAddr="1/2/3"><Co U="o{index}"/></C>'.encode()
+            for index in range(5)
+        )
+        + b"</P>"
+    )
+
+    result = analyze_knx(_view(project), frozenset({"signal_usage_consistency"}))
+
+    peer_outliers = [
+        finding
+        for finding in result["findings"]
+        if finding["finding_type"] == "signal_usage_peer_outlier"
+    ]
+    assert len(peer_outliers) == 1
+    assert peer_outliers[0]["support"] == {"count": 4, "total": 5, "ratio": 0.8}
 
 
 def test_technology_path_analysis_never_reverses_at_a_logic_input_merge():
@@ -135,6 +184,55 @@ def test_technology_path_analysis_stops_inside_a_high_fan_out_expansion(monkeypa
 
     assert result["analysis_truncated"] is True
     assert result["truncation_reasons"] == ["max_path_nodes"]
+
+
+def test_technology_path_analysis_reports_a_depth_limit(monkeypatch):
+    monkeypatch.setattr(project_analysis, "_MAX_PATH_DEPTH", 0)
+    result = analyze_knx(
+        _view(
+            b'<P><C Type="EIBsensor" U="sensor" EibAddr="1/2/3"><Co U="source"/></C>'
+            b'<C Type="EIBPush" U="push"><Co K="Tg" U="trigger"><In Input="source"/></Co>'
+            b'<Co K="O" U="output"/></C></P>'
+        ),
+        frozenset({"technology_architecture"}),
+    )
+
+    assert result["analysis_truncated"] is True
+    assert result["truncation_reasons"] == ["max_depth"]
+
+
+def test_technology_path_analysis_stops_all_endpoint_expansion_at_the_global_path_limit(
+    monkeypatch,
+):
+    monkeypatch.setattr(project_analysis, "_MAX_PATHS", 1)
+    observed_descendants = []
+    original = project_analysis._descendants
+
+    def track_descendants(key, children):
+        observed_descendants.append(key)
+        return original(key, children)
+
+    monkeypatch.setattr(project_analysis, "_descendants", track_descendants)
+    view = _view(
+        b'<P><C Type="EIBsensor" U="sensor" EibAddr="1/2/3"><Co U="source"/></C>'
+        b'<C Type="EIBPush" U="push"><Co K="Tg" U="trigger"><In Input="source"/></Co>'
+        b'<Co K="O" U="output"/></C><C Type="EIBactor" U="actor1" EibAddr="1/2/4">'
+        b'<Co U="input1"><In Input="output"/></Co></C>'
+        b'<C Type="EIBactor" U="actor2" EibAddr="1/2/5">'
+        b'<Co U="input2"><In Input="output"/></Co></C></P>'
+    )
+
+    result = analyze_knx(view, frozenset({"technology_architecture"}))
+
+    blocks = {
+        node.source_id: node.key
+        for node in view.snapshot.graph.nodes
+        if node.kind == "block" and node.source_id in {"sensor", "actor1", "actor2"}
+    }
+    assert result["truncation_reasons"] == ["max_paths"]
+    assert observed_descendants.count(blocks["sensor"]) == 1
+    assert observed_descendants.count(blocks["actor1"]) == 0
+    assert observed_descendants.count(blocks["actor2"]) == 0
 
 
 def test_v2_uses_exact_runtime_evidence_for_naming_without_inventing_knx_semantics():

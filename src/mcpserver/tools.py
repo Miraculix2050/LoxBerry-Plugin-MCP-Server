@@ -766,7 +766,7 @@ class ProjectAnalysisData(BaseModel):
     findings: list[ProjectAnalysisFindingData]
     next_cursor: str | None
     analysis_truncated: bool
-    truncation_reasons: list[Literal["max_path_nodes", "max_paths", "max_findings"]]
+    truncation_reasons: list[Literal["max_path_nodes", "max_paths", "max_depth", "max_findings"]]
     page_truncated: bool = False
     page_truncation_reason: Literal["max_response_bytes"] | None = None
 
@@ -3036,7 +3036,10 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
             if not selected or (analyses is not None and len(selected) != len(analyses)):
                 raise ValueError("analyses must be a non-empty unique list")
             project, snapshot = await _project_query(runtime)
-            result = await process_analysis(project.view, selected)
+            if runtime is None:
+                raise RuntimeUnavailable("the service is not configured")
+            async with runtime.worker_slot():
+                result = await process_analysis(project.view, selected)
             analysis_scope = (
                 "project-analysis:"
                 + hashlib.sha256(
@@ -3045,6 +3048,7 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                             scope,
                             result["project_fingerprint"],
                             result["model_version"],
+                            project.view.mapping.structure_fingerprint,
                             sorted(selected),
                         ],
                         separators=(",", ":"),
