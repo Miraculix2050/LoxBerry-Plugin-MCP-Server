@@ -729,7 +729,7 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
             loxone_pending = deque(
                 (key, [key], 0, False) for key in _descendants(start_key, children)
             )
-            loxone_visited = {key for key, _, _, _ in loxone_pending}
+            loxone_visited = {(key, crossed_knx) for key, _, _, crossed_knx in loxone_pending}
             while loxone_pending:
                 current, path, depth, crossed_knx = loxone_pending.popleft()
                 if len(loxone_visited) > _MAX_VISITED_PER_START:
@@ -741,18 +741,19 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
                     continue
                 for traversal_edge in downstream[current]:
                     other = traversal_edge.target
-                    if other in loxone_visited:
-                        continue
-                    if len(loxone_visited) >= _MAX_VISITED_PER_START:
-                        truncated_reasons.append("max_path_nodes")
-                        loxone_pending.clear()
-                        break
-                    loxone_visited.add(other)
                     next_path = [*path, other]
                     target_block = _block(nodes[other], nodes, parents)
                     next_crossed = crossed_knx or bool(
                         target_block.knx and target_block.knx.object_kind == "endpoint"
                     )
+                    visit_key = (other, next_crossed)
+                    if visit_key in loxone_visited:
+                        continue
+                    if len(loxone_visited) >= _MAX_VISITED_PER_START:
+                        truncated_reasons.append("max_path_nodes")
+                        loxone_pending.clear()
+                        break
+                    loxone_visited.add(visit_key)
                     if (
                         next_crossed
                         and target_block.key in mapped
