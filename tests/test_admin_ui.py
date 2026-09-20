@@ -86,7 +86,7 @@ def test_initial_page_renders_configuration_before_loading_dynamic_state() -> No
     assert "SELECTED_EMERGENCY_STOP => $selected_emergency_stop" in cgi
     assert "body.set('action', 'page_state')" in template
     assert "const loadInitialState" in template
-    assert "const backgroundHydrationLimit = 2;" in template
+    assert "const backgroundHydrationLimit = 1;" in template
     assert "const backgroundHydrationQueue = [];" in template
     assert "Promise.resolve()" in template
     assert ".then(task)" in template
@@ -162,10 +162,13 @@ def test_emergency_stop_selection_is_preserved_while_options_load() -> None:
     assert "EMERGENCY_STOP_REFRESH" not in template
     assert "EMERGENCY_STOP_REFRESH" not in german
     assert "EMERGENCY_STOP_REFRESH" not in english
+    assert "EMERGENCY_STOP_LOADING=" in german
+    assert "EMERGENCY_STOP_LOADING=" in english
     assert "emergencyStopSelect.disabled = false;" in template
     assert "emergencyStopValue.value = emergencyStopSelect.value;" in template
     assert "option.textContent = label;" in template
     assert "EMERGENCY_STOP_LOAD_ERROR" in template
+    assert "EMERGENCY_STOP_LOADING" in template
     assert "EMERGENCY_STOP_NO_OPTIONS" in template
     assert "EMERGENCY_STOP_NOT_CONFIGURED" in template
 

@@ -668,6 +668,9 @@
     body.set('ajax', '1');
     emergencyStopSelect.disabled = true;
     emergencyStopSelect.setAttribute('aria-busy', 'true');
+    emergencyStopStatus.textContent = '<TMPL_VAR SETUP.EMERGENCY_STOP_LOADING ESCAPE=JS>';
+    emergencyStopStatus.dataset.kind = 'info';
+    emergencyStopStatus.hidden = false;
     try {
       const result = await postAjax(body, 15000);
       if (generation !== emergencyStopDiscoveryGeneration) return;
@@ -1208,7 +1211,9 @@
   sessionsSection.addEventListener('toggle', () => {
     if (sessionsSection.open) pollSessions();
   });
-  const backgroundHydrationLimit = 2;
+  // The target runs each AJAX action in its own CGI helper. Serial hydration avoids
+  // transient request failures during the resource-constrained initial page load.
+  const backgroundHydrationLimit = 1;
   const backgroundHydrationQueue = [];
   let backgroundHydrationRunning = 0;
   let backgroundHydrationStarted = false;
