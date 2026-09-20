@@ -5,6 +5,9 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Make the MCP Tool Explorer compact on narrow screens and use a three-zone
+  request/result workspace on sufficiently wide screens without changing MCP calls.
+
 - Remove retained MQTT health and emergency-stop topics from an obsolete broker
   destination after relevant MQTT configuration changes. If the old broker is
   unavailable, retain the new configuration and show an Admin UI warning.
