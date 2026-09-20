@@ -205,8 +205,7 @@ def test_sessions_poll_only_while_visible_and_open_and_patch_changed_rows() -> N
     assert "window.setTimeout(pollSessions, delay)" in template
     assert (
         "document.hidden || !sessionsSection.open || activeSessionActions.size > 0 "
-        "|| sessionPollInFlight"
-        in template
+        "|| sessionPollInFlight" in template
     )
     assert "sessionsSection.addEventListener('toggle'" in template
     assert "row.dataset.fingerprint !== sessionFingerprint(session)" in template
