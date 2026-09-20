@@ -92,6 +92,13 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert 'id="mcp-config-fields" class="mcp-configuration-fields" disabled' in template
     assert 'id="test-connection-fields" class="mcp-configuration-fields" disabled' in template
     assert 'id="mqtt-config-fields" class="mcp-configuration-fields" disabled' in template
+    assert 'id="service-enabled-setting-status"' in template
+    assert 'id="mqtt-page-state-status"' in template
+    assert 'id="emergency-stop-select"' in template
+    assert (
+        'aria-describedby="emergency-stop-help emergency-stop-status" disabled aria-busy="true"'
+    ) in template
+    assert "<TMPL_VAR SETUP.EMERGENCY_STOP_LOADING>" in template
     assert "const loadInitialState" in template
     assert "const backgroundHydrationLimit = 1;" in template
     assert "const backgroundHydrationQueue = [];" in template
@@ -127,6 +134,7 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert "const generation = expectedGeneration;" in template
     assert template.count("if (generation !== emergencyStopDiscoveryGeneration) return;") == 3
     assert "component=admin_ui request_id=%s action=%s duration_ms=%.1f" in cgi
+    assert "component=admin_helper request_id=%s action=%s outcome=rejected code=%s" in cgi
     assert "component=admin_ui request_id=%s phase=initial_render duration_ms=%.1f" in cgi
     assert "my $failure_code = delete $result->{data}{discovery_failure_code};" in cgi
     assert "component=emergency_stop outcome=options_unavailable request_id=%s code=%s" in cgi

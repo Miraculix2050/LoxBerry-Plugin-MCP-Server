@@ -37,9 +37,9 @@
     </div>
   </details>
 
-  <form id="service-enable-form" class="mcp-card mcp-form" method="post" action="index.cgi" data-ajax="set_service_enabled" data-service-master data-service-enabled-setting-known="<TMPL_IF SERVICE_ENABLED_SETTING_KNOWN>1<TMPL_ELSE>0</TMPL_IF>">
+  <form id="service-enable-form" class="mcp-card mcp-form" method="post" action="index.cgi" data-ajax="set_service_enabled" data-service-master data-service-enabled-setting-known="<TMPL_IF SERVICE_ENABLED_SETTING_KNOWN>1<TMPL_ELSE>0</TMPL_IF>" aria-busy="true">
     <input type="hidden" name="action" value="set_service_enabled">
-    <label><input id="service-enabled-input" name="service_enabled" type="checkbox" value="1" <TMPL_IF SERVICE_ENABLED_SETTING>checked</TMPL_IF> <TMPL_UNLESS SERVICE_ENABLED_SETTING_KNOWN>disabled</TMPL_UNLESS>> <TMPL_VAR STATUS.ENABLED></label>
+    <label><input id="service-enabled-input" name="service_enabled" type="checkbox" value="1" <TMPL_IF SERVICE_ENABLED_SETTING>checked</TMPL_IF> <TMPL_UNLESS SERVICE_ENABLED_SETTING_KNOWN>disabled</TMPL_UNLESS>> <TMPL_VAR STATUS.ENABLED> <span id="service-enabled-setting-status" class="mcp-inline-status" role="status" aria-live="polite"><TMPL_VAR AJAX.WORKING></span></label>
     <button class="lb-button" type="submit" <TMPL_UNLESS SERVICE_ENABLED_SETTING_KNOWN>disabled</TMPL_UNLESS>><TMPL_VAR ACTION.APPLY_SERVICE_STATUS></button>
     <p class="mcp-help"><TMPL_VAR STATUS.ENABLED_HELP></p>
   </form>
@@ -67,9 +67,9 @@
       </div>
       <label><input name="enabled" type="checkbox" value="1" <TMPL_IF ENABLED>checked</TMPL_IF>> <TMPL_VAR SETUP.ENABLED></label>
       <input id="emergency-stop-value" name="emergency_stop_virtual_status_uuid" type="hidden" value="<TMPL_VAR SELECTED_EMERGENCY_STOP ESCAPE=HTML>">
-      <label class="mcp-field"><span><TMPL_VAR SETUP.EMERGENCY_STOP></span><select id="emergency-stop-select" aria-describedby="emergency-stop-help emergency-stop-status"><option value="" <TMPL_UNLESS SELECTED_EMERGENCY_STOP>selected</TMPL_UNLESS>><TMPL_VAR SETUP.EMERGENCY_STOP_NONE></option><TMPL_IF SELECTED_EMERGENCY_STOP><option value="<TMPL_VAR SELECTED_EMERGENCY_STOP ESCAPE=HTML>" selected><TMPL_VAR SETUP.EMERGENCY_STOP_CURRENT ESCAPE=HTML> (<TMPL_VAR SELECTED_EMERGENCY_STOP ESCAPE=HTML>)</option></TMPL_IF></select></label>
+      <label class="mcp-field"><span><TMPL_VAR SETUP.EMERGENCY_STOP></span><select id="emergency-stop-select" aria-describedby="emergency-stop-help emergency-stop-status" disabled aria-busy="true"><option value="" selected><TMPL_VAR SETUP.EMERGENCY_STOP_LOADING></option></select></label>
       <p id="emergency-stop-help" class="mcp-help"><TMPL_VAR SETUP.EMERGENCY_STOP_HELP></p>
-      <p id="emergency-stop-status" class="mcp-status" hidden></p>
+      <p id="emergency-stop-status" class="mcp-status" data-kind="info"><TMPL_VAR SETUP.EMERGENCY_STOP_LOADING></p>
       <div class="mcp-permission-groups" aria-describedby="permission-policy-hint">
         <section class="mcp-permission-group" aria-labelledby="loxone-permissions-heading">
           <h3 id="loxone-permissions-heading"><TMPL_VAR SETUP.PERMISSIONS_LOXONE></h3>
@@ -151,6 +151,7 @@
         <p class="mcp-help"><TMPL_VAR MQTT.CREDENTIALS_HELP></p>
         <button class="lb-button" type="submit"><TMPL_VAR ACTION.SAVE_MQTT></button>
         </fieldset>
+        <p id="mqtt-page-state-status" class="mcp-status" role="status" hidden></p>
       </form>
     </div>
   </details>
@@ -354,6 +355,7 @@
   const serviceEnableForm = document.getElementById('service-enable-form');
   const serviceEnabledInput = document.getElementById('service-enabled-input');
   const serviceEnabledApplyButton = serviceEnableForm.querySelector('button[type="submit"]');
+  const serviceEnabledSettingStatus = document.getElementById('service-enabled-setting-status');
   const emergencyStopSelect = document.getElementById('emergency-stop-select');
   const emergencyStopValue = document.getElementById('emergency-stop-value');
   const emergencyStopStatus = document.getElementById('emergency-stop-status');
@@ -370,6 +372,7 @@
     username: mqttUsername.value,
   };
   const mqttPasswordStatus = document.getElementById('mqtt-password-status');
+  const mqttPageStateStatus = document.getElementById('mqtt-page-state-status');
   const serviceConfirm = document.getElementById('service-confirm');
   const serviceConfirmMessage = document.getElementById('service-confirm-message');
   const loggingControls = document.getElementById('logging-controls');
@@ -456,7 +459,7 @@
     mqttCustomBroker = {host: mqttHost.value, port: mqttPort.value, username: mqttUsername.value};
     syncMiniserverSelection();
     syncOperateDependency();
-    resetEmergencyStopOptions();
+    resetEmergencyStopOptions({loading: true});
     updateMqttBrokerFields();
     renderLogging(configuration);
   };
@@ -704,6 +707,8 @@
       serviceEnabledSettingLoaded = true;
       serviceEnabledInput.checked = enabled;
     }
+    serviceEnableForm.setAttribute('aria-busy', 'false');
+    serviceEnabledSettingStatus.hidden = true;
     serviceEnabledInput.disabled = serviceActionRunning || !serviceEnabledSettingLoaded;
     serviceEnabledApplyButton.disabled = serviceActionRunning || !serviceEnabledSettingLoaded;
     if (serviceActionRunning) {
@@ -734,12 +739,21 @@
     option.selected = selected;
     emergencyStopSelect.append(option);
   };
-  const resetEmergencyStopOptions = () => {
+  const resetEmergencyStopOptions = ({loading = false} = {}) => {
     emergencyStopDiscoveryGeneration += 1;
-    emergencyStopSelect.disabled = false;
-    emergencyStopSelect.setAttribute('aria-busy', 'false');
     const selectedValue = emergencyStopValue.value;
     emergencyStopSelect.replaceChildren();
+    if (loading) {
+      emergencyStopSelect.disabled = true;
+      emergencyStopSelect.setAttribute('aria-busy', 'true');
+      addEmergencyStopOption('', '<TMPL_VAR SETUP.EMERGENCY_STOP_LOADING ESCAPE=JS>', true);
+      emergencyStopStatus.textContent = '<TMPL_VAR SETUP.EMERGENCY_STOP_LOADING ESCAPE=JS>';
+      emergencyStopStatus.dataset.kind = 'info';
+      emergencyStopStatus.hidden = false;
+      return;
+    }
+    emergencyStopSelect.disabled = false;
+    emergencyStopSelect.setAttribute('aria-busy', 'false');
     addEmergencyStopOption('', '<TMPL_VAR SETUP.EMERGENCY_STOP_NONE ESCAPE=JS>', selectedValue === '');
     if (selectedValue !== '') {
       addEmergencyStopOption(
@@ -800,6 +814,7 @@
       }
     } catch {
       if (generation !== emergencyStopDiscoveryGeneration) return;
+      resetEmergencyStopOptions();
       emergencyStopStatus.textContent = '<TMPL_VAR SETUP.EMERGENCY_STOP_LOAD_ERROR ESCAPE=JS>';
       emergencyStopStatus.dataset.kind = 'error';
       emergencyStopStatus.hidden = false;
@@ -816,13 +831,18 @@
     const body = new URLSearchParams();
     body.set('action', 'page_state');
     body.set('ajax', '1');
+    mqttPageStateStatus.textContent = '<TMPL_VAR AJAX.WORKING ESCAPE=JS>';
+    mqttPageStateStatus.dataset.kind = 'info';
+    mqttPageStateStatus.hidden = false;
     try {
       const result = await postAjax(body, 15000);
       mqttPasswordStatus.hidden = !Boolean(result.data.mqtt_password_configured);
       updateMqttGateway(result.data.mqtt_gateway);
       updateMqttBrokerFields();
+      mqttPageStateStatus.hidden = true;
     } catch {
-      setAjaxStatus('error', '<TMPL_VAR AJAX.ERROR ESCAPE=JS>');
+      mqttPageStateStatus.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
+      mqttPageStateStatus.dataset.kind = 'error';
     }
   };
   const serviceConfirmMessages = {
@@ -872,6 +892,9 @@
         serviceSubState.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
         serviceInstalled.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
         serviceEnabled.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
+        serviceEnableForm.setAttribute('aria-busy', 'false');
+        serviceEnabledSettingStatus.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
+        serviceEnabledSettingStatus.hidden = false;
       }
     } finally {
       servicePollInFlight = false;
@@ -1466,7 +1489,7 @@
         if (form.dataset.ajax === 'save_mcp_config') {
           const savedEndpoint = result.data.configuration.loxone.endpoint;
           emergencyStopValue.value = result.data.configuration.emergency_stop.virtual_status_uuid;
-          resetEmergencyStopOptions();
+          resetEmergencyStopOptions({loading: true});
           const emergencyStopGeneration = emergencyStopDiscoveryGeneration;
           queueBackgroundHydration([
             () => loadEmergencyStopOptions(emergencyStopGeneration),

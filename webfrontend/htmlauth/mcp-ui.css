@@ -23,6 +23,7 @@ details.mcp-explorer-card[open] > summary { border-bottom: 1px solid #d7dadd; }
 .mcp-service-details p { margin: 0; }
 .mcp-form, .mcp-explorer-stack { display: grid; gap: .85rem; }
 .mcp-configuration-fields { border: 0; display: grid; gap: .85rem; margin: 0; min-inline-size: 0; padding: 0; }
+.mcp-inline-status { margin-inline-start: .35rem; }
 .mcp-field { display: grid; gap: .3rem; min-width: 0; }
 .mcp-field-stack { display: grid; gap: .85rem; }
 .mcp-field input, .mcp-field select { box-sizing: border-box; width: 100%; max-width: 100%; min-height: 2.75rem; }
