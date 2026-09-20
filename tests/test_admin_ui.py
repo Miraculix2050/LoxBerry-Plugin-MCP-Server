@@ -374,6 +374,27 @@ def test_service_status_is_first_and_uses_a_lightweight_ajax_contract() -> None:
     assert "service.log&header=html&format=template" in cgi
 
 
+def test_emergency_stop_runtime_display_uses_service_data_not_the_form_selection() -> None:
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+
+    assert 'id="emergency-stop-runtime"' in template
+    assert 'id="emergency-stop-runtime-uuid"' in template
+    assert 'id="emergency-stop-runtime-mismatch"' in template
+    assert "const renderEmergencyStopRuntime = (runtime) =>" in template
+    assert "runtime?.availability === 'available'" in template
+    assert "runtime.status" in template
+    assert "state === 'not_configured'" in template
+    assert "emergencyStopRuntime.dataset.notConfigured" in template
+    assert (
+        "String(emergencyStopValue.value || '') !== String(runtime.signal_uuid || '')" in template
+    )
+    assert "emergencyStopRuntime: result.data.emergency_stop_runtime" in template
+    assert "scheduleServicePoll(0);" in template
+    assert "emergency_stop_runtime" in cgi
+    assert "EMERGENCY_STOP_RUNTIME_MISMATCH" in template
+
+
 def test_sessions_poll_only_while_visible_and_open_and_patch_changed_rows() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
@@ -552,10 +573,7 @@ def test_service_actions_use_an_accessible_confirmation_and_dynamic_controls() -
     assert "serviceState.dataset.kind = kind" in template
     assert "serviceActionRunning = true" in template
     assert "lastService = service;\n    serviceLoaded = true;" in template
-    assert (
-        "renderService(result.data.service, {updateEnabledSetting: !serviceEnabledSettingLoaded});"
-        in template
-    )
+    assert "emergencyStopRuntime: result.data.emergency_stop_runtime" in template
     assert "let serviceEnabledSetting = serviceEnabledInput.checked" in template
     assert (
         "let serviceEnabledSettingLoaded = serviceEnableForm.dataset."

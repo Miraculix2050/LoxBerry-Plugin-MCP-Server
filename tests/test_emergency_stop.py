@@ -8,6 +8,7 @@ from mcpserver.config import PluginConfig
 from mcpserver.emergency_stop import (
     EmergencyStopMonitor,
     _sorted_virtual_status_options,
+    mqtt_emergency_stop_status,
     virtual_status_options,
 )
 
@@ -58,6 +59,27 @@ def test_emergency_stop_enables_only_for_a_confirmed_one_value() -> None:
     assert monitor.allows_tool_calls is False
     monitor.apply("1")
     assert monitor.status == "unknown"
+
+
+def test_runtime_status_uses_the_mqtt_vocabulary_and_service_configuration() -> None:
+    monitor = EmergencyStopMonitor(
+        PluginConfig(emergency_stop_virtual_status_uuid="00112233-4455-6677-8899aabbccddeeff")
+    )
+    monitor.signal_name = "Workshop emergency stop"
+
+    monitor.apply(1)
+    assert monitor.runtime_status() == {
+        "signal_uuid": "00112233-4455-6677-8899aabbccddeeff",
+        "signal_name": "Workshop emergency stop",
+        "status": "clear",
+    }
+    monitor.apply(0)
+    assert monitor.runtime_status()["status"] == "active"
+    monitor.apply("invalid")
+    assert monitor.runtime_status()["status"] == "unknown"
+    assert (
+        mqtt_emergency_stop_status(signal_uuid=None, monitor_status="enabled") == "not_configured"
+    )
 
 
 def test_emergency_stop_provider_receives_the_loxberry_perl_runtime(monkeypatch, tmp_path) -> None:
