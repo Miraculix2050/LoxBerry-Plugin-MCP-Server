@@ -94,7 +94,7 @@ def test_initial_page_renders_configuration_before_loading_dynamic_state() -> No
     assert "emergencyStopDiscoveryGeneration += 1;" in template
     assert "emergencyStopSelect.disabled = false;" in template
     assert "const generation = emergencyStopDiscoveryGeneration;" in template
-    assert "if (generation !== emergencyStopDiscoveryGeneration) return;" in template
+    assert template.count("if (generation !== emergencyStopDiscoveryGeneration) return;") == 3
     assert "component=admin_ui request_id=%s action=%s duration_ms=%.1f" in cgi
     assert "component=admin_ui request_id=%s phase=initial_render duration_ms=%.1f" in cgi
     assert "my $failure_code = delete $result->{data}{discovery_failure_code};" in cgi

@@ -709,6 +709,7 @@
         emergencyStopStatus.hidden = true;
       }
     } catch {
+      if (generation !== emergencyStopDiscoveryGeneration) return;
       emergencyStopStatus.textContent = '<TMPL_VAR SETUP.EMERGENCY_STOP_LOAD_ERROR ESCAPE=JS>';
       emergencyStopStatus.dataset.kind = 'error';
       emergencyStopStatus.hidden = false;
