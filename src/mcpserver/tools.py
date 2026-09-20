@@ -1266,19 +1266,27 @@ def _fit_project_page(
     if len(envelope.model_dump_json().encode("utf-8")) <= PROJECT_RESPONSE_MAX_BYTES:
         return True
     offset = codec.decode(scope, cursor)
-    original_count = len(data.items)
+    items = data.items
+    original_count = len(items)
     had_more = data.next_cursor is not None
-    while (
-        data.items and len(envelope.model_dump_json().encode("utf-8")) > PROJECT_RESPONSE_MAX_BYTES
-    ):
-        data.items.pop()
-    if not data.items:
-        return False
     data.truncated = True
     data.truncation_reason = "max_response_bytes"
-    if len(data.items) < original_count or had_more:
-        data.next_cursor = codec.encode(scope, offset + len(data.items))
-    return True
+    low, high = 0, original_count
+    while low < high:
+        count = (low + high + 1) // 2
+        data.items = items[:count]
+        data.next_cursor = codec.encode(scope, offset + count)
+        if len(envelope.model_dump_json().encode("utf-8")) <= PROJECT_RESPONSE_MAX_BYTES:
+            low = count
+        else:
+            high = count - 1
+    if not low:
+        return False
+    data.items = items[:low]
+    data.next_cursor = (
+        codec.encode(scope, offset + low) if low < original_count or had_more else None
+    )
+    return len(envelope.model_dump_json().encode("utf-8")) <= PROJECT_RESPONSE_MAX_BYTES
 
 
 def _fit_project_trace(envelope: ProjectTraceEnvelope) -> bool:
@@ -1288,26 +1296,34 @@ def _fit_project_trace(envelope: ProjectTraceEnvelope) -> bool:
     data = envelope.data
     if len(envelope.model_dump_json().encode("utf-8")) <= PROJECT_RESPONSE_MAX_BYTES:
         return True
-    removed_unresolved = False
-    while (
-        len(data.nodes) > 1
-        and len(envelope.model_dump_json().encode("utf-8")) > PROJECT_RESPONSE_MAX_BYTES
-    ):
-        data.nodes.pop()
+    nodes = data.nodes
+    edges = data.edges
+    unresolved = data.unresolved_relationships
+
+    def fit(count: int) -> None:
+        data.nodes = nodes[:count]
         retained = {node.project_node_id for node in data.nodes}
-        data.edges = [
-            edge for edge in data.edges if edge.source in retained and edge.target in retained
-        ]
-        before = len(data.unresolved_relationships)
+        data.edges = [edge for edge in edges if edge.source in retained and edge.target in retained]
         data.unresolved_relationships = [
-            item for item in data.unresolved_relationships if item["project_node_id"] in retained
+            item for item in unresolved if item["project_node_id"] in retained
         ]
-        removed_unresolved = removed_unresolved or len(data.unresolved_relationships) < before
-    if len(envelope.model_dump_json().encode("utf-8")) > PROJECT_RESPONSE_MAX_BYTES:
-        return False
+
     data.truncated = True
     data.truncation_reason = "max_response_bytes"
-    data.unresolved_truncated = data.unresolved_truncated or removed_unresolved
+    low, high = 1, len(nodes)
+    while low < high:
+        count = (low + high + 1) // 2
+        fit(count)
+        if len(envelope.model_dump_json().encode("utf-8")) <= PROJECT_RESPONSE_MAX_BYTES:
+            low = count
+        else:
+            high = count - 1
+    fit(low)
+    if len(envelope.model_dump_json().encode("utf-8")) > PROJECT_RESPONSE_MAX_BYTES:
+        return False
+    data.unresolved_truncated = data.unresolved_truncated or len(
+        data.unresolved_relationships
+    ) < len(unresolved)
     return True
 
 
