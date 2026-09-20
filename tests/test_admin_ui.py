@@ -410,6 +410,7 @@ def test_service_actions_use_an_accessible_confirmation_and_dynamic_controls() -
         "serviceEnabledInput.disabled = serviceActionRunning || !serviceEnabledSettingLoaded"
         in template
     )
+    assert "serviceEnabled.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';" in template
     assert (
         "serviceEnabledApplyButton.disabled = serviceActionRunning || !serviceEnabledSettingLoaded"
         in template
