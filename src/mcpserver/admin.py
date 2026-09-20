@@ -539,7 +539,10 @@ def _emergency_stop_options() -> dict[str, Any]:
     from mcpserver.emergency_stop import virtual_status_options
 
     result = asyncio.run(virtual_status_options(_config_store().load()))
-    return {"status": result.status, "options": list(result.options)}
+    response = {"status": result.status, "options": list(result.options)}
+    if result.failure_code is not None:
+        response["discovery_failure_code"] = result.failure_code
+    return response
 
 
 def _save_mqtt(payload: object) -> dict[str, Any]:

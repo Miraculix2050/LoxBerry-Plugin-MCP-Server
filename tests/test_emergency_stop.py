@@ -44,6 +44,7 @@ def test_virtual_status_options_reports_unavailable_without_provider_details(mon
 
     assert result.status == "unavailable"
     assert result.options == ()
+    assert result.failure_code == "credentials"
 
 
 def test_emergency_stop_enables_only_for_a_confirmed_one_value() -> None:

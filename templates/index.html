@@ -371,6 +371,7 @@
   let serviceEnabledSetting = serviceEnabledInput.checked;
   let serviceEnabledSettingLoaded = serviceEnableForm.dataset.serviceEnabledSettingKnown === '1';
   let serviceLoaded = false;
+  let emergencyStopDiscoveryGeneration = 0;
   let sessionDataVersion = 0;
   let sessionsLoaded = false;
   let nextSessionActionToken = 0;
@@ -644,6 +645,11 @@
     emergencyStopSelect.append(option);
   };
   const resetEmergencyStopOptions = () => {
+    emergencyStopDiscoveryGeneration += 1;
+    emergencyStopSelect.disabled = false;
+    emergencyStopSelect.setAttribute('aria-busy', 'false');
+    emergencyStopRefresh.disabled = false;
+    emergencyStopRefresh.removeAttribute('aria-busy');
     const selectedValue = emergencyStopValue.value;
     emergencyStopSelect.replaceChildren();
     addEmergencyStopOption('', '<TMPL_VAR SETUP.EMERGENCY_STOP_NONE ESCAPE=JS>', selectedValue === '');
@@ -657,6 +663,7 @@
     emergencyStopStatus.hidden = true;
   };
   const loadEmergencyStopOptions = async () => {
+    const generation = emergencyStopDiscoveryGeneration;
     const selectedValue = emergencyStopValue.value;
     const body = new URLSearchParams();
     body.set('action', 'emergency_stop_options');
@@ -667,6 +674,7 @@
     emergencyStopSelect.setAttribute('aria-busy', 'true');
     try {
       const result = await postAjax(body, 15000);
+      if (generation !== emergencyStopDiscoveryGeneration) return;
       const options = Array.isArray(result.data.options) ? result.data.options : [];
       const status = result.data.status;
       emergencyStopSelect.replaceChildren();
@@ -705,6 +713,7 @@
       emergencyStopStatus.dataset.kind = 'error';
       emergencyStopStatus.hidden = false;
     } finally {
+      if (generation !== emergencyStopDiscoveryGeneration) return;
       emergencyStopSelect.disabled = false;
       emergencyStopSelect.setAttribute('aria-busy', 'false');
       emergencyStopRefresh.disabled = false;

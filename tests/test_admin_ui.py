@@ -90,8 +90,15 @@ def test_initial_page_renders_configuration_before_loading_dynamic_state() -> No
     assert "pollServiceStatus();" in template
     assert "emergencyStopRefresh.addEventListener('click', loadEmergencyStopOptions);" in template
     assert "loadEmergencyStopOptions();" not in template
+    assert "let emergencyStopDiscoveryGeneration = 0;" in template
+    assert "emergencyStopDiscoveryGeneration += 1;" in template
+    assert "emergencyStopSelect.disabled = false;" in template
+    assert "const generation = emergencyStopDiscoveryGeneration;" in template
+    assert "if (generation !== emergencyStopDiscoveryGeneration) return;" in template
     assert "component=admin_ui request_id=%s action=%s duration_ms=%.1f" in cgi
     assert "component=admin_ui request_id=%s phase=initial_render duration_ms=%.1f" in cgi
+    assert "my $failure_code = delete $result->{data}{discovery_failure_code};" in cgi
+    assert "component=emergency_stop outcome=options_unavailable request_id=%s code=%s" in cgi
     assert "field.addEventListener('input'" in template
     assert "if (!mqttUseLoxberryGateway.checked)" in template
     assert 'aria-busy="true"' in template

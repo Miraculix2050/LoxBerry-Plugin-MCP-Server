@@ -39,6 +39,7 @@ class VirtualStatusOptions:
 
     status: str
     options: tuple[dict[str, str], ...]
+    failure_code: str | None = None
 
 
 @dataclass(slots=True)
@@ -244,12 +245,7 @@ async def virtual_status_options(config: PluginConfig) -> VirtualStatusOptions:
         )
     except Exception as exc:
         reason = f"{stage}_{exc.reason}" if isinstance(exc, _ProviderUnavailable) else stage
-        _LOGGER.warning(
-            "component=emergency_stop outcome=options_unavailable code=%s error_type=%s",
-            reason,
-            type(exc).__name__,
-        )
-        return VirtualStatusOptions(status="unavailable", options=())
+        return VirtualStatusOptions(status="unavailable", options=(), failure_code=reason)
     finally:
         if session is not None:
             await session.close()

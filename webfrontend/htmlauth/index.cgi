@@ -99,6 +99,16 @@ sub admin_call {
         admin_log('error', 'component=admin_helper outcome=invalid_response');
         return {ok => JSON::PP::false, error => {code => 'internal_error', message => 'Administrative action failed'}};
     }
+    if ($action eq 'emergency_stop_options' && $result->{ok} && ref($result->{data}) eq 'HASH') {
+        my $failure_code = delete $result->{data}{discovery_failure_code};
+        if (defined $failure_code && $failure_code =~ /\A[a-z_]{1,128}\z/) {
+            admin_log('warning', sprintf(
+                'component=emergency_stop outcome=options_unavailable request_id=%s code=%s',
+                $request_id,
+                $failure_code,
+            ));
+        }
+    }
     return $result;
 }
 

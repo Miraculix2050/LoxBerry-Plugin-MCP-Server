@@ -434,6 +434,30 @@ def test_emergency_stop_options_distinguishes_empty_available_results(
     }
 
 
+def test_emergency_stop_options_returns_a_fixed_internal_failure_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ConfigStore:
+        def load(self) -> PluginConfig:
+            return PluginConfig(loxone_endpoint="http://miniserver.test")
+
+    async def unavailable(_config: PluginConfig) -> VirtualStatusOptions:
+        return VirtualStatusOptions(
+            status="unavailable",
+            options=(),
+            failure_code="credentials_helper_missing",
+        )
+
+    monkeypatch.setattr("mcpserver.admin._config_store", ConfigStore)
+    monkeypatch.setattr("mcpserver.emergency_stop.virtual_status_options", unavailable)
+
+    assert dispatch({"action": "emergency_stop_options"}) == {
+        "status": "unavailable",
+        "options": [],
+        "discovery_failure_code": "credentials_helper_missing",
+    }
+
+
 @pytest.mark.parametrize("session_count", [0, 10, 100])
 def test_admin_list_responses_use_one_snapshot_per_request(
     session_count: int, monkeypatch: pytest.MonkeyPatch
