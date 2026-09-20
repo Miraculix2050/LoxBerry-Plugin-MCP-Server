@@ -78,6 +78,15 @@
       <label class="mcp-field"><span><TMPL_VAR SETUP.EMERGENCY_STOP></span><select id="emergency-stop-select" <TMPL_IF SERVER_RENDERED_FALLBACK>name="emergency_stop_virtual_status_uuid"<TMPL_ELSE>aria-describedby="emergency-stop-help emergency-stop-status" disabled aria-busy="true"</TMPL_IF>><TMPL_IF SERVER_RENDERED_FALLBACK><option value="" <TMPL_UNLESS SELECTED_EMERGENCY_STOP>selected</TMPL_UNLESS>><TMPL_VAR SETUP.EMERGENCY_STOP_NONE></option><TMPL_IF EMERGENCY_STOP_SELECTED_UNAVAILABLE><option value="<TMPL_VAR SELECTED_EMERGENCY_STOP ESCAPE=HTML>" selected><TMPL_VAR SETUP.EMERGENCY_STOP_CURRENT> (<TMPL_VAR SELECTED_EMERGENCY_STOP ESCAPE=HTML>)</option></TMPL_IF><TMPL_LOOP EMERGENCY_STOP_OPTIONS><option value="<TMPL_VAR uuid ESCAPE=HTML>" <TMPL_IF selected>selected</TMPL_IF>><TMPL_VAR name ESCAPE=HTML></option></TMPL_LOOP><TMPL_ELSE><option value="" selected><TMPL_VAR SETUP.EMERGENCY_STOP_LOADING></option></TMPL_IF></select></label>
       <p id="emergency-stop-help" class="mcp-help"><TMPL_VAR SETUP.EMERGENCY_STOP_HELP></p>
       <p id="emergency-stop-status" class="mcp-status" data-kind="info"><TMPL_VAR SETUP.EMERGENCY_STOP_LOADING></p>
+      <div id="emergency-stop-runtime" class="mcp-field-stack" aria-live="polite" aria-busy="<TMPL_IF EMERGENCY_STOP_RUNTIME_BUSY>true<TMPL_ELSE>false</TMPL_IF>"
+        data-signal-unavailable="<TMPL_VAR SETUP.EMERGENCY_STOP_RUNTIME_SIGNAL_UNAVAILABLE ESCAPE=HTML>"
+        data-not-configured="<TMPL_VAR SETUP.EMERGENCY_STOP_NONE ESCAPE=HTML>"
+        data-service-inactive="<TMPL_VAR SETUP.EMERGENCY_STOP_RUNTIME_SERVICE_INACTIVE ESCAPE=HTML>"
+        data-unavailable="<TMPL_VAR SETUP.EMERGENCY_STOP_RUNTIME_UNAVAILABLE ESCAPE=HTML>">
+        <p class="mcp-help"><strong><TMPL_VAR SETUP.EMERGENCY_STOP_RUNTIME_SIGNAL></strong> <span id="emergency-stop-runtime-signal"><TMPL_VAR EMERGENCY_STOP_RUNTIME_SIGNAL_VALUE ESCAPE=HTML></span> <code id="emergency-stop-runtime-uuid" <TMPL_UNLESS EMERGENCY_STOP_RUNTIME_UUID_VISIBLE>hidden</TMPL_UNLESS>><TMPL_VAR EMERGENCY_STOP_RUNTIME_UUID ESCAPE=HTML></code></p>
+        <p class="mcp-help"><strong><TMPL_VAR SETUP.EMERGENCY_STOP_RUNTIME_STATE></strong> <code id="emergency-stop-runtime-state"><TMPL_VAR EMERGENCY_STOP_RUNTIME_STATE_VALUE ESCAPE=HTML></code></p>
+        <p id="emergency-stop-runtime-mismatch" class="mcp-status" data-kind="warning" hidden><TMPL_VAR SETUP.EMERGENCY_STOP_RUNTIME_MISMATCH></p>
+      </div>
       <div class="mcp-permission-groups" aria-describedby="permission-policy-hint">
         <section class="mcp-permission-group" aria-labelledby="loxone-permissions-heading">
           <h3 id="loxone-permissions-heading"><TMPL_VAR SETUP.PERMISSIONS_LOXONE></h3>
@@ -372,6 +381,11 @@
   const emergencyStopSelect = document.getElementById('emergency-stop-select');
   const emergencyStopValue = document.getElementById('emergency-stop-value');
   const emergencyStopStatus = document.getElementById('emergency-stop-status');
+  const emergencyStopRuntime = document.getElementById('emergency-stop-runtime');
+  const emergencyStopRuntimeSignal = document.getElementById('emergency-stop-runtime-signal');
+  const emergencyStopRuntimeUuid = document.getElementById('emergency-stop-runtime-uuid');
+  const emergencyStopRuntimeState = document.getElementById('emergency-stop-runtime-state');
+  const emergencyStopRuntimeMismatch = document.getElementById('emergency-stop-runtime-mismatch');
   const mqttUseLoxberryGateway = document.getElementById('mqtt-use-loxberry-gateway');
   const mqttHost = document.getElementById('mqtt-host');
   const mqttPort = document.getElementById('mqtt-port');
@@ -411,6 +425,7 @@
   let configurationLoaded = false;
   let configurationLoadInFlight = false;
   let lastService = null;
+  let lastEmergencyStopRuntime = null;
   let pageIsUnloading = false;
   const markPageUnloading = () => { pageIsUnloading = true; };
   window.addEventListener('beforeunload', markPageUnloading);
@@ -471,6 +486,7 @@
     ]) setFormValue(mcpConfigForm, name, limits[name]);
     setFormValue(mcpConfigForm, 'statistics_memory_max_mib', cache.statistics_memory_max_mib);
     emergencyStopValue.value = String(emergencyStop.virtual_status_uuid || '');
+    updateEmergencyStopRuntimeMismatch();
     setFormChecked(mqttConfigForm, 'mqtt_enabled', mqtt.enabled);
     setFormChecked(mqttConfigForm, 'mqtt_use_loxberry_gateway', mqtt.use_loxberry_gateway);
     setFormValue(mqttConfigForm, 'mqtt_host', mqtt.host);
@@ -736,7 +752,42 @@
       certificateLoadInFlight = false;
     }
   };
-  const renderService = (service, {updateEnabledSetting = false} = {}) => {
+  const updateEmergencyStopRuntimeMismatch = () => {
+    const runtime = lastEmergencyStopRuntime;
+    emergencyStopRuntimeMismatch.hidden = !(
+      runtime?.availability === 'available'
+      && String(emergencyStopValue.value || '') !== String(runtime.signal_uuid || '')
+    );
+  };
+  const renderEmergencyStopRuntime = (runtime) => {
+    lastEmergencyStopRuntime = runtime && typeof runtime === 'object' ? runtime : null;
+    const available = runtime?.availability === 'available';
+    emergencyStopRuntime.setAttribute('aria-busy', 'false');
+    if (!available) {
+      const availability = runtime?.availability;
+      emergencyStopRuntimeSignal.textContent = availability === 'service_inactive'
+        ? emergencyStopRuntime.dataset.serviceInactive : emergencyStopRuntime.dataset.unavailable;
+      emergencyStopRuntimeUuid.hidden = true;
+      emergencyStopRuntimeState.textContent = 'unknown';
+      emergencyStopRuntimeState.dataset.kind = 'inactive';
+      updateEmergencyStopRuntimeMismatch();
+      return;
+    }
+    const signalUuid = typeof runtime.signal_uuid === 'string' ? runtime.signal_uuid : '';
+    const signalName = typeof runtime.signal_name === 'string' ? runtime.signal_name : '';
+    const state = ['not_configured', 'clear', 'active', 'unknown'].includes(runtime.status)
+      ? runtime.status : 'unknown';
+    emergencyStopRuntimeSignal.textContent = state === 'not_configured'
+      ? emergencyStopRuntime.dataset.notConfigured
+      : signalName || signalUuid || emergencyStopRuntime.dataset.signalUnavailable;
+    emergencyStopRuntimeUuid.textContent = signalUuid;
+    emergencyStopRuntimeUuid.hidden = signalUuid === '';
+    emergencyStopRuntimeState.textContent = state;
+    emergencyStopRuntimeState.dataset.kind = ({clear: 'success', active: 'error', unknown: 'warning'})[state]
+      || 'inactive';
+    updateEmergencyStopRuntimeMismatch();
+  };
+  const renderService = (service, {updateEnabledSetting = false, emergencyStopRuntime: runtime} = {}) => {
     if (!service || typeof service !== 'object') return;
     lastService = service;
     serviceLoaded = true;
@@ -795,6 +846,8 @@
       if (serviceActionRunning) button.setAttribute('aria-busy', 'true');
       else button.removeAttribute('aria-busy');
     }
+    if (runtime !== undefined) renderEmergencyStopRuntime(runtime);
+    else updateEmergencyStopRuntimeMismatch();
   };
   const addEmergencyStopOption = (value, label, selected = false) => {
     const option = document.createElement('option');
@@ -891,6 +944,7 @@
   };
   emergencyStopSelect.addEventListener('change', () => {
     emergencyStopValue.value = emergencyStopSelect.value;
+    updateEmergencyStopRuntimeMismatch();
   });
   const loadInitialState = async () => {
     const body = new URLSearchParams();
@@ -948,7 +1002,10 @@
       body.set('ajax', '1');
       const result = await postAjax(body, 7000);
       if (serviceInteractionActive()) return;
-      renderService(result.data.service, {updateEnabledSetting: !serviceEnabledSettingLoaded});
+      renderService(result.data.service, {
+        updateEnabledSetting: !serviceEnabledSettingLoaded,
+        emergencyStopRuntime: result.data.emergency_stop_runtime,
+      });
     } catch {
       if (pageIsUnloading) return;
       if (!serviceLoaded) {
@@ -1548,6 +1605,7 @@
         if (result.data.service) {
           renderService(result.data.service, {
             updateEnabledSetting: form.dataset.ajax === 'set_service_enabled',
+            emergencyStopRuntime: result.data.emergency_stop_runtime,
           });
         }
         if (isSessionAction(form.dataset.ajax)) {
@@ -1567,6 +1625,7 @@
           queueBackgroundHydration([
             () => loadEmergencyStopOptions(emergencyStopGeneration),
           ]);
+          scheduleServicePoll(0);
           miniserverEndpoint.value = savedEndpoint;
           explorerLink.href = `${window.location.origin}${explorerPath}`;
           syncTestEndpoint();

@@ -23,6 +23,7 @@ from contextlib import suppress
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
+from urllib.request import Request, urlopen
 from uuid import UUID
 
 from mcpserver import __version__
@@ -41,6 +42,9 @@ _SERVICE: Final = "loxberry-mcpserver.service"
 _SERVICE_ACTIONS: Final = frozenset({"start", "stop", "restart"})
 _SYSTEMD_COMMANDS: Final = frozenset({"enable", "disable", "start", "stop", "restart"})
 _CLIENT_UUID: Final = UUID("3f52f6fe-3af0-4d30-a8bb-f429b9da4465")
+_INTERNAL_EMERGENCY_STOP_STATUS_URL: Final = "http://127.0.0.1:8765/internal/emergency-stop-status"
+_INTERNAL_RESPONSE_MAX_BYTES: Final = 4 * 1024
+_EMERGENCY_STOP_STATES: Final = frozenset({"not_configured", "clear", "active", "unknown"})
 
 
 class AdminError(RuntimeError):
@@ -170,6 +174,54 @@ def _service_active() -> bool:
     return bool(_service_status()["active"])
 
 
+def _emergency_stop_runtime_status(service: dict[str, Any]) -> dict[str, Any]:
+    """Read and validate the running service's own emergency-stop snapshot."""
+    if not service.get("active"):
+        return {"availability": "service_inactive"}
+    try:
+        request = Request(
+            _INTERNAL_EMERGENCY_STOP_STATUS_URL,
+            headers={"Accept": "application/json"},
+        )
+        with urlopen(request, timeout=1) as response:
+            if response.getcode() != 200:
+                raise ValueError("unexpected response status")
+            body = response.read(_INTERNAL_RESPONSE_MAX_BYTES + 1)
+        if len(body) > _INTERNAL_RESPONSE_MAX_BYTES:
+            raise ValueError("oversized response")
+        document = json.loads(body)
+        snapshot = document.get("emergency_stop") if isinstance(document, dict) else None
+        if (
+            not isinstance(document, dict)
+            or document.get("ok") is not True
+            or not isinstance(snapshot, dict)
+        ):
+            raise ValueError("invalid response")
+        signal_uuid = snapshot.get("signal_uuid")
+        signal_name = snapshot.get("signal_name")
+        status = snapshot.get("status")
+        if signal_uuid is not None:
+            if not isinstance(signal_uuid, str):
+                raise ValueError("invalid signal UUID")
+            UUID(signal_uuid)
+        if signal_name is not None and (not isinstance(signal_name, str) or len(signal_name) > 512):
+            raise ValueError("invalid signal name")
+        if not isinstance(status, str) or status not in _EMERGENCY_STOP_STATES:
+            raise ValueError("invalid emergency-stop status")
+        if status == "not_configured" and (signal_uuid is not None or signal_name is not None):
+            raise ValueError("inconsistent unconfigured status")
+        if status != "not_configured" and signal_uuid is None:
+            raise ValueError("missing configured signal")
+        return {
+            "availability": "available",
+            "signal_uuid": signal_uuid,
+            "signal_name": signal_name,
+            "status": status,
+        }
+    except (OSError, ValueError):
+        return {"availability": "unavailable"}
+
+
 def _run_service_command(command: str) -> None:
     if command not in _SYSTEMD_COMMANDS:
         raise AdminError("service action is invalid")
@@ -190,7 +242,11 @@ def _run_service_command(command: str) -> None:
 
 def _service_response() -> dict[str, Any]:
     service = _service_status()
-    return {"service_active": service["active"], "service": service}
+    return {
+        "service_active": service["active"],
+        "service": service,
+        "emergency_stop_runtime": _emergency_stop_runtime_status(service),
+    }
 
 
 def _mqtt_gateway_status() -> dict[str, Any]:

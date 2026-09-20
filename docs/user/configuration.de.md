@@ -21,6 +21,13 @@ Die Seite zeigt die gespeicherte Auswahl sofort. Mit **Verfügbare Signale
 laden** fragst du den konfigurierten Miniserver nach den aktuellen Optionen ab;
 ein vorübergehender Fehler der Abfrage löscht den gespeicherten Wert nicht.
 
+Zusätzlich zeigt die Admin-Oberfläche das vom laufenden Dienst verwendete Signal
+mit Name und UUID sowie dessen Zustand. Die Zustände entsprechen der MQTT-
+Veröffentlichung: `not_configured`, `clear`, `active` und `unknown`. Eine noch
+nicht gespeicherte Auswahl bleibt davon getrennt und wird als noch nicht vom
+Dienst übernommene Änderung kenntlich gemacht. Ist der Dienst nicht erreichbar,
+zeigt die Seite keinen erfundenen Zustand an.
+
 Bei einer Auswahl gilt: Der Wert `1` erlaubt MCP-Tool-Aufrufe, der Wert `0`
 sperrt sie. Ein beim Dienststart noch unbekannter Wert oder ein Verlust der
 Miniserver-Verbindung sperrt ebenfalls sicherheitshalber. Stelle den virtuellen

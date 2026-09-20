@@ -61,6 +61,7 @@ LOG_MAX_BYTES: Final = 512 * 1024
 LOG_BACKUP_COUNT: Final = 2
 LOG_MAX_RECORD_BYTES: Final = 8 * 1024
 LOG_TRUNCATION_SUFFIX: Final = " ... [truncated]"
+_INTERNAL_EMERGENCY_STOP_STATUS_PATH: Final = "/internal/emergency-stop-status"
 _LOG_LEVELS: Final = {
     "off": None,
     "error": logging.ERROR,
@@ -211,7 +212,7 @@ class _DisabledServiceMiddleware(BaseHTTPMiddleware):
     """Keep health available while failing closed for all public protocol routes."""
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        if request.url.path != "/healthz":
+        if request.url.path not in {"/healthz", _INTERNAL_EMERGENCY_STOP_STATUS_PATH}:
             return JSONResponse(
                 {"ok": False, "error": "service_disabled"},
                 status_code=503,
@@ -634,6 +635,21 @@ def create_server(settings: ServerSettings) -> FastMCP:
                 "version": __version__,
             }
         )
+
+    @server.custom_route(  # type: ignore[misc]
+        _INTERNAL_EMERGENCY_STOP_STATUS_PATH,
+        methods=["GET"],
+        include_in_schema=False,
+    )
+    async def emergency_stop_runtime_status(request: Request) -> Response:
+        """Expose the running monitor's sanitized state to the local admin helper."""
+        del request
+        status = (
+            emergency_stop.runtime_status()
+            if emergency_stop is not None
+            else {"signal_uuid": None, "signal_name": None, "status": "not_configured"}
+        )
+        return JSONResponse({"ok": True, "emergency_stop": status})
 
     return server
 
