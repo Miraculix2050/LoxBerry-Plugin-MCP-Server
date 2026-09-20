@@ -18,6 +18,7 @@ dist/
 build/
 tmp/
 .tmp/
+.tmp-*/
 temp/
 
 # Local research notes
