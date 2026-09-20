@@ -392,6 +392,7 @@ def test_service_actions_use_an_accessible_confirmation_and_dynamic_controls() -
     assert "command === 'stop' && active" in template
     assert "serviceState.dataset.kind = kind" in template
     assert "serviceActionRunning = true" in template
+    assert "lastService = service;\n    serviceLoaded = true;" in template
     assert (
         "renderService(result.data.service, {updateEnabledSetting: !serviceEnabledSettingLoaded});"
         in template

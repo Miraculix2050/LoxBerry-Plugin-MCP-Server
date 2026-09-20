@@ -583,6 +583,7 @@
   const renderService = (service, {updateEnabledSetting = false} = {}) => {
     if (!service || typeof service !== 'object') return;
     lastService = service;
+    serviceLoaded = true;
     const installed = Boolean(service.installed);
     const active = Boolean(service.active);
     const activeState = String(service.active_state || 'unknown');
@@ -776,7 +777,6 @@
       const result = await postAjax(body, 7000);
       if (serviceInteractionActive()) return;
       renderService(result.data.service, {updateEnabledSetting: !serviceEnabledSettingLoaded});
-      serviceLoaded = true;
     } catch {
       if (!serviceLoaded) {
         serviceSection.setAttribute('aria-busy', 'false');
