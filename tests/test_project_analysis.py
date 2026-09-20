@@ -122,6 +122,21 @@ def test_technology_path_analysis_never_reverses_at_a_logic_input_merge():
     assert sample["target_project_node_id"] == endpoint_blocks["1/2/4"]
 
 
+def test_technology_path_analysis_stops_inside_a_high_fan_out_expansion(monkeypatch):
+    monkeypatch.setattr(project_analysis, "_MAX_VISITED_PER_START", 3)
+    result = analyze_knx(
+        _view(
+            b'<P><C Type="EIBsensor" U="sensor" EibAddr="1/2/3"><Co U="source"/></C>'
+            b'<C Type="EIBPush" U="push"><Co K="Tg" U="trigger"><In Input="source"/></Co>'
+            b'<Co K="O" U="output"/></C></P>'
+        ),
+        frozenset({"technology_architecture"}),
+    )
+
+    assert result["analysis_truncated"] is True
+    assert result["truncation_reasons"] == ["max_path_nodes"]
+
+
 def test_v2_uses_exact_runtime_evidence_for_naming_without_inventing_knx_semantics():
     identifiers = tuple(f"{index:032x}" for index in range(1, 7))
     project = (

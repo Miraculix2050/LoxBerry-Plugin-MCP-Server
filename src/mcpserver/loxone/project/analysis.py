@@ -603,6 +603,10 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
                     other = traversal_edge.target if is_downstream else traversal_edge.source
                     if other in visited:
                         continue
+                    if len(visited) >= _MAX_VISITED_PER_START:
+                        truncated_reasons.append("max_path_nodes")
+                        pending.clear()
+                        break
                     visited.add(other)
                     next_path = [*path, other]
                     target = nodes[other]
@@ -666,6 +670,10 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
                     other = traversal_edge.target
                     if other in loxone_visited:
                         continue
+                    if len(loxone_visited) >= _MAX_VISITED_PER_START:
+                        truncated_reasons.append("max_path_nodes")
+                        loxone_pending.clear()
+                        break
                     loxone_visited.add(other)
                     next_path = [*path, other]
                     target_block = _block(nodes[other], nodes, parents)
