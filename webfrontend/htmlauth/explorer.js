@@ -1073,8 +1073,8 @@
       group.tools.forEach((tool) => {
       const button = element('button', {type: 'button', className: 'mcp-explorer-tool', 'aria-current': String(state.selectedTool && state.selectedTool.name === tool.name)});
       button.append(element('strong', {text: tool.name}));
-      if (core.toolIsMutating(tool)) button.append(element('span', {className: 'mcp-explorer-badge', 'data-kind': 'danger', text: 'write'}));
-      else button.append(element('span', {className: 'mcp-explorer-badge', text: 'read-only'}));
+      if (core.toolIsMutating(tool)) button.append(element('span', {className: 'mcp-explorer-badge', 'data-kind': 'danger', text: label('toolBadgeWrite')}));
+      else button.append(element('span', {className: 'mcp-explorer-badge', text: label('toolBadgeReadOnly')}));
       button.addEventListener('click', () => selectTool(tool.name));
       elements.tools.append(button);
       });
