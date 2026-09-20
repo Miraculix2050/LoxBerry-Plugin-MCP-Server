@@ -84,6 +84,20 @@ sub admin_call {
     my $stdout = <$child_out> // '';
     my $stderr = <$child_err> // '';
     waitpid($pid, 0);
+    if ($stderr =~ /(?:\A|\n)mcpserver_admin_timing=(\{[^\r\n]{1,2048}\})/) {
+        my $timing = eval { decode_json($1) };
+        if (ref($timing) eq 'HASH') {
+            my %safe_timing = map {
+                ($_ => $timing->{$_})
+            } grep {
+                /\A[a-z_]{1,64}\z/ && defined($timing->{$_}) && $timing->{$_} =~ /\A\d+(?:\.\d+)?\z/
+            } keys %$timing;
+            admin_log('debug', sprintf(
+                'component=admin_helper request_id=%s action=%s timing=%s',
+                $request_id, $action, encode_json(\%safe_timing),
+            )) if %safe_timing;
+        }
+    }
     admin_log('debug', sprintf(
         'component=admin_ui request_id=%s action=%s duration_ms=%.1f',
         $request_id,
@@ -98,6 +112,17 @@ sub admin_call {
     if (!$result || ref($result) ne 'HASH') {
         admin_log('error', 'component=admin_helper outcome=invalid_response');
         return {ok => JSON::PP::false, error => {code => 'internal_error', message => 'Administrative action failed'}};
+    }
+    if (!$result->{ok} && ref($result->{error}) eq 'HASH') {
+        my $code = $result->{error}{code} // '';
+        if ($code =~ /\A[a-z_]{1,128}\z/) {
+            admin_log('warning', sprintf(
+                'component=admin_helper request_id=%s action=%s outcome=rejected code=%s',
+                $request_id,
+                $action,
+                $code,
+            ));
+        }
     }
     if ($action eq 'emergency_stop_options' && $result->{ok} && ref($result->{data}) eq 'HASH') {
         my $failure_code = delete $result->{data}{discovery_failure_code};
@@ -132,12 +157,15 @@ sub security_header_args {
 }
 
 sub print_html_security_headers {
+    my ($template_duration_ms) = @_;
     print "Cache-Control: no-store\n";
     print "Pragma: no-cache\n";
     print "Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'\n";
     print "Referrer-Policy: no-referrer\n";
     print "X-Content-Type-Options: nosniff\n";
     print "X-Frame-Options: DENY\n";
+    printf "Server-Timing: mcp-template;dur=%.1f\n", $template_duration_ms
+        if defined $template_duration_ms;
 }
 
 sub redirect_reply {
@@ -429,6 +457,34 @@ if ($action ne '') {
         $result = admin_call('set_logging', {mode => ($q->{mode} // '')});
         admin_log($result->{ok} ? 'info' : 'warning',
             'action=set_service_log_level outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
+    } elsif ($action eq 'get_config') {
+        $result = admin_call('get_config', {});
+    } elsif ($action eq 'page_notifications') {
+        my $started = clock_gettime(CLOCK_MONOTONIC);
+        $result = {
+            ok => JSON::PP::true,
+            data => {
+                notifications_html => LoxBerry::Log::get_notifications_html($lbpplugindir) // '',
+            },
+        };
+        admin_log('debug', sprintf(
+            'component=admin_ui request_id=%s action=page_notifications duration_ms=%.1f',
+            $request_id,
+            (clock_gettime(CLOCK_MONOTONIC) - $started) * 1000,
+        ));
+    } elsif ($action eq 'page_loglist') {
+        my $started = clock_gettime(CLOCK_MONOTONIC);
+        $result = {
+            ok => JSON::PP::true,
+            data => {
+                loglist_html => LoxBerry::Web::loglist_html() // '',
+            },
+        };
+        admin_log('debug', sprintf(
+            'component=admin_ui request_id=%s action=page_loglist duration_ms=%.1f',
+            $request_id,
+            (clock_gettime(CLOCK_MONOTONIC) - $started) * 1000,
+        ));
     } elsif ($action eq 'page_state') {
         $result = admin_call('page_state', {});
     } elsif ($action eq 'emergency_stop_options') {
@@ -533,20 +589,72 @@ sub format_expiry {
     return defined($formatted) && length($formatted) ? $formatted : $raw;
 }
 
-my $config_result = admin_call('get_config', {});
-my $config = $config_result->{ok} ? ($config_result->{data}{configuration} // {}) : {};
+my $server_rendered_fallback = ($q->{fallback} // '') eq '1';
+my $config = {};
 my $sessions = [];
 my $loxberry_bindings = [];
 my $loxberry_operate_bindings = [];
+my $emergency_stop_options = [];
+my $selected_emergency_stop_unavailable = 0;
+my $fallback_configuration_loaded = 0;
+my $notifications_html = '';
+my $loglist_html = '';
+my $service_enabled_setting_known = 0;
+my $service_enabled_setting = 0;
+my $service = {};
+if ($server_rendered_fallback) {
+    my $config_result = admin_call('get_config', {});
+    $config = $config_result->{data}{configuration}
+        if $config_result->{ok} && ref($config_result->{data}{configuration}) eq 'HASH';
+    $fallback_configuration_loaded = $config_result->{ok} ? 1 : 0;
+    my $service_result = admin_call('service_status', {});
+    if ($service_result->{ok} && ref($service_result->{data}{service}) eq 'HASH') {
+        $service = $service_result->{data}{service};
+        $service_enabled_setting_known = 1;
+        $service_enabled_setting = $service->{enabled} ? 1 : 0;
+    }
+    $notifications_html = LoxBerry::Log::get_notifications_html($lbpplugindir) // '';
+    $loglist_html = LoxBerry::Web::loglist_html() // '';
+    my $sessions_result = admin_call('list_sessions', {});
+    if ($sessions_result->{ok} && ref($sessions_result->{data}) eq 'HASH') {
+        $sessions = $sessions_result->{data}{sessions}
+            if ref($sessions_result->{data}{sessions}) eq 'ARRAY';
+        $loxberry_bindings = $sessions_result->{data}{loxberry_bindings}
+            if ref($sessions_result->{data}{loxberry_bindings}) eq 'ARRAY';
+        $loxberry_operate_bindings = $sessions_result->{data}{loxberry_operate_bindings}
+            if ref($sessions_result->{data}{loxberry_operate_bindings}) eq 'ARRAY';
+    }
+}
 $config->{server} = {} if ref($config->{server}) ne 'HASH';
 $config->{loxone} = {} if ref($config->{loxone}) ne 'HASH';
 $config->{tools} = {} if ref($config->{tools}) ne 'HASH';
 $config->{limits} = {} if ref($config->{limits}) ne 'HASH';
 $config->{logging} = {} if ref($config->{logging}) ne 'HASH';
 $config->{cache} = {} if ref($config->{cache}) ne 'HASH';
+$config->{mqtt} = {} if ref($config->{mqtt}) ne 'HASH';
 $config->{emergency_stop} = {} if ref($config->{emergency_stop}) ne 'HASH';
 my $selected_emergency_stop = $config->{emergency_stop}{virtual_status_uuid} // '';
-my $miniservers = configured_miniservers($config->{loxone}{endpoint});
+if ($server_rendered_fallback) {
+    my $options_result = admin_call('emergency_stop_options', {});
+    my $options = ref($options_result->{data}) eq 'HASH'
+        ? $options_result->{data}{options} : undef;
+    if ($options_result->{ok} && ref($options) eq 'ARRAY') {
+        for my $option (@$options) {
+            next if ref($option) ne 'HASH';
+            my $uuid = $option->{uuid};
+            my $name = $option->{name};
+            next if !defined($uuid) || !defined($name) || ref($uuid) || ref($name);
+            push @$emergency_stop_options, {
+                uuid => $uuid,
+                name => $name,
+                selected => $uuid eq $selected_emergency_stop ? 1 : 0,
+            };
+        }
+        $selected_emergency_stop_unavailable = $selected_emergency_stop ne ''
+            && !grep { $_->{selected} } @$emergency_stop_options;
+    }
+}
+my $miniservers = configured_miniservers($config->{loxone}{endpoint} // '');
 my $has_selected_miniserver = grep { $_->{selected} } @$miniservers;
 my ($selected_miniserver) = grep { $_->{selected} } @$miniservers;
 my $display_endpoint = $config->{loxone}{endpoint} // '';
@@ -554,7 +662,6 @@ $display_endpoint = $selected_miniserver->{endpoint}
     if $display_endpoint eq '' && $selected_miniserver;
 my $public_origin = $config->{server}{public_origin} // '';
 my $certificate = {};
-my $service = {};
 my $renewal = {};
 my $general_config = stored_general_config();
 my $sslport = ref($general_config->{Webserver}) eq 'HASH'
@@ -578,6 +685,13 @@ my $notice_text = $notice_value eq 'success' ? $L{'AJAX.SUCCESS'}
     : $notice_value ne '' ? $L{'AJAX.ERROR'} : '';
 my $notice_kind = $notice_value eq 'success' || $notice_value eq 'certificate_scheduled'
     ? 'success' : 'error';
+my $fallback_url = 'index.cgi?fallback=1';
+$fallback_url .= '&notice=' . $notice_value
+    if $notice_value =~ /\A(?:success|certificate_scheduled|error|forbidden)\z/;
+for my $session (@$sessions) {
+    next if ref($session) ne 'HASH';
+    $session->{expires_display} = format_expiry($session->{expires_at});
+}
 my @service_logs;
 for my $suffix ('', '.1', '.2') {
     my $filename = "service.log$suffix";
@@ -589,8 +703,13 @@ for my $suffix ('', '.1', '.2') {
 }
 $template->param(
     VERSION => $version,
-    SERVICE_ENABLED_SETTING => 0,
-    SERVICE_ENABLED_SETTING_KNOWN => 0,
+    SERVER_RENDERED_FALLBACK => $server_rendered_fallback,
+    FALLBACK_CONFIGURATION_LOADED => $fallback_configuration_loaded,
+    FALLBACK_URL => $fallback_url,
+    NOTIFICATIONS_HTML => $notifications_html,
+    LOGLIST_HTML => $loglist_html,
+    SERVICE_ENABLED_SETTING => $service_enabled_setting,
+    SERVICE_ENABLED_SETTING_KNOWN => $service_enabled_setting_known,
     ENABLED => $config->{server}{enabled} ? 1 : 0,
     MQTT_ENABLED => $config->{mqtt}{enabled} ? 1 : 0,
     MQTT_ROOT_TOPIC => $config->{mqtt}{root_topic} // 'mcpserver',
@@ -627,13 +746,15 @@ $template->param(
     MAX_STRUCTURE_DEPTH => $config->{limits}{max_structure_depth} // 32,
     MAX_STATES_PER_IDENTITY => $config->{limits}{max_states_per_identity} // 20000,
     SELECTED_EMERGENCY_STOP => $selected_emergency_stop,
+    EMERGENCY_STOP_OPTIONS => $emergency_stop_options,
+    EMERGENCY_STOP_SELECTED_UNAVAILABLE => $selected_emergency_stop_unavailable,
     LOG_LEVEL => $config->{logging}{level} // 'warning',
     LOG_LEVEL_OFF => ($config->{logging}{level} // 'warning') eq 'off' ? 1 : 0,
     LOG_LEVEL_ERROR => ($config->{logging}{level} // 'warning') eq 'error' ? 1 : 0,
     LOG_LEVEL_WARNING => ($config->{logging}{level} // 'warning') eq 'warning' ? 1 : 0,
     LOG_LEVEL_INFO => ($config->{logging}{level} // 'warning') eq 'info' ? 1 : 0,
     LOG_LEVEL_DEBUG => ($config->{logging}{level} // 'warning') eq 'debug' ? 1 : 0,
-    SERVICE_ACTIVE => 0,
+    SERVICE_ACTIVE => $service->{active} ? 1 : 0,
     SERVICE_INSTALLED => $service->{installed} ? 1 : 0,
     SERVICE_FAILED => ($service->{active_state} // '') eq 'failed' ? 1 : 0,
     SERVICE_KNOWN => ($service->{active_state} // 'unknown') ne 'unknown' ? 1 : 0,
@@ -663,7 +784,6 @@ $template->param(
     HAS_SESSIONS => scalar(@$sessions) ? 1 : 0,
     NOTICE => $notice_text,
     NOTICE_KIND => $notice_kind,
-    LOGLIST => LoxBerry::Web::loglist_html(),
 );
 
 our %navbar;
@@ -681,9 +801,15 @@ $navbar{50}{Name} = $L{'NAV.HELP'};
 $navbar{50}{URL} = '#help';
 
 my $page = $template->output();
-print_html_security_headers();
+my $template_duration_ms = (clock_gettime(CLOCK_MONOTONIC) - $render_started) * 1000;
+print_html_security_headers($template_duration_ms);
+my $header_started = clock_gettime(CLOCK_MONOTONIC);
 LoxBerry::Web::lbheader($L{'BASIC.TITLE'} . " V$version", '', '', 'nojqm');
-print LoxBerry::Log::get_notifications_html($lbpplugindir);
+admin_log('debug', sprintf(
+    'component=admin_ui request_id=%s phase=loxberry_header duration_ms=%.1f',
+    $request_id,
+    (clock_gettime(CLOCK_MONOTONIC) - $header_started) * 1000,
+));
 print $page;
 LoxBerry::Web::lbfooter();
 admin_log('debug', sprintf(

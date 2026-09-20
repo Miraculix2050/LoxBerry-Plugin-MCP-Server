@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import json
 import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
@@ -42,6 +43,23 @@ from mcpserver.emergency_stop import VirtualStatusOptions
 from mcpserver.loxone.client import LoxoneToken
 from mcpserver.loxone.events import LoxoneProtocolError
 from tools.benchmark_admin_page_state import measure
+
+
+def test_admin_import_defers_mqtt_and_loxone_clients() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import json, sys; import mcpserver.admin; "
+            "print(json.dumps(['mcpserver.mqtt_health' in sys.modules, "
+            "'mcpserver.loxone.client' in sys.modules]))",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert json.loads(result.stdout) == [False, False]
 
 
 def test_diagnostic_contains_no_paths_endpoint_or_identity(
