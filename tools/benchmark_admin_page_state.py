@@ -1,4 +1,4 @@
-"""Measure deterministic admin page-state aggregation with synthetic sessions."""
+"""Measure deterministic deferred Admin session hydration with synthetic sessions."""
 
 from __future__ import annotations
 
@@ -93,16 +93,14 @@ def measure(*, session_count: int, warmups: int, samples: int) -> dict[str, int 
     with (
         patch.object(admin, "_config_store", lambda: _ConfigStore(configuration)),
         patch.object(admin, "_auth_store", lambda: _AuthStore(document)),
-        patch.object(admin, "_service_status", lambda: {"active": True}),
-        patch.object(admin, "_certificate_status", lambda **_kwargs: {"available": False}),
     ):
         for _ in range(warmups):
-            admin.dispatch({"action": "page_state"})
+            admin.dispatch({"action": "list_sessions"})
         durations: list[float] = []
         tracemalloc.start()
         for _ in range(samples):
             start = time.perf_counter()
-            admin.dispatch({"action": "page_state"})
+            admin.dispatch({"action": "list_sessions"})
             durations.append((time.perf_counter() - start) * 1000)
         _, peak_bytes = tracemalloc.get_traced_memory()
         tracemalloc.stop()

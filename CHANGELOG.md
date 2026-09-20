@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Load Admin UI service state independently, defer closed certificate and
+  session sections, and query emergency-stop options only on explicit request.
+  Failed option discovery now distinguishes unavailable discovery from an empty
+  matching list without changing fail-closed emergency-stop monitoring.
+
 - Make the MCP Tool Explorer compact on narrow screens and use a three-zone
   request/result workspace on sufficiently wide screens without changing MCP calls.
 

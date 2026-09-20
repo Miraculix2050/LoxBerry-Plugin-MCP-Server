@@ -5,7 +5,11 @@ import json
 from types import SimpleNamespace
 
 from mcpserver.config import PluginConfig
-from mcpserver.emergency_stop import EmergencyStopMonitor, _sorted_virtual_status_options
+from mcpserver.emergency_stop import (
+    EmergencyStopMonitor,
+    _sorted_virtual_status_options,
+    virtual_status_options,
+)
 
 
 def test_virtual_status_options_are_sorted_case_insensitively_with_a_stable_tie_breaker() -> None:
@@ -14,12 +18,33 @@ def test_virtual_status_options_are_sorted_case_insensitively_with_a_stable_tie_
         {"uuid": "z", "name": "alpha"},
         {"uuid": "a", "name": "Alpha"},
     ]
-
     assert _sorted_virtual_status_options(options) == [
         {"uuid": "a", "name": "Alpha"},
         {"uuid": "z", "name": "alpha"},
         {"uuid": "b", "name": "Zulu"},
     ]
+
+
+def test_virtual_status_options_reports_not_configured_without_discovery() -> None:
+    result = asyncio.run(virtual_status_options(PluginConfig.defaults()))
+
+    assert result.status == "not_configured"
+    assert result.options == ()
+
+
+def test_virtual_status_options_reports_unavailable_without_provider_details(monkeypatch) -> None:
+    async def unavailable(_self: EmergencyStopMonitor) -> tuple[str, str]:
+        raise RuntimeError("private provider failure")
+
+    monkeypatch.setattr(EmergencyStopMonitor, "_credentials", unavailable)
+
+    result = asyncio.run(
+        virtual_status_options(PluginConfig(loxone_endpoint="http://miniserver.test"))
+    )
+
+    assert result.status == "unavailable"
+    assert result.options == ()
+    assert result.failure_code == "credentials"
 
 
 def test_emergency_stop_enables_only_for_a_confirmed_one_value() -> None:

@@ -33,6 +33,15 @@ def _sorted_virtual_status_options(options: list[dict[str, str]]) -> list[dict[s
     return sorted(options, key=lambda option: (option["name"].casefold(), option["uuid"]))
 
 
+@dataclass(frozen=True, slots=True)
+class VirtualStatusOptions:
+    """Bounded, UI-safe result of an on-demand Virtual Status discovery."""
+
+    status: str
+    options: tuple[dict[str, str], ...]
+    failure_code: str | None = None
+
+
 @dataclass(slots=True)
 class EmergencyStopMonitor:
     """Tracks the one trusted status value; no selection means enabled."""
@@ -195,17 +204,19 @@ class EmergencyStopMonitor:
                 await self._task
 
 
-async def virtual_status_options(config: PluginConfig) -> list[dict[str, str]]:
+async def virtual_status_options(config: PluginConfig) -> VirtualStatusOptions:
     """Return selectable visible digital statuses without retaining credentials."""
     if not config.loxone_endpoint:
-        return []
+        return VirtualStatusOptions(status="not_configured", options=())
     monitor = EmergencyStopMonitor(config)
     token = None
     session = None
+    stage = "credentials"
     try:
         username, password = await monitor._credentials()
         from mcpserver.loxone.client import MiniserverEndpoint
 
+        stage = "endpoint"
         client = LoxoneClient(
             MiniserverEndpoint.parse(config.loxone_endpoint),
             client_uuid=uuid5(
@@ -213,19 +224,28 @@ async def virtual_status_options(config: PluginConfig) -> list[dict[str, str]]:
             ),
             timeout_seconds=config.connection_timeout,
         )
+        stage = "token"
         token = await client.acquire_token(username, password)
+        stage = "session"
         session = await client.open_session(token)
+        stage = "structure"
         structure = await session.load_structure()
-        return _sorted_virtual_status_options(
-            [
-                {"uuid": item.uuid, "name": item.name}
-                for item in structure.controls
-                if item.control_type in {"VirtualStatus", "InfoOnlyDigital"}
-                and len(item.state_uuids) == 1
-            ]
+        return VirtualStatusOptions(
+            status="available",
+            options=tuple(
+                _sorted_virtual_status_options(
+                    [
+                        {"uuid": item.uuid, "name": item.name}
+                        for item in structure.controls
+                        if item.control_type in {"VirtualStatus", "InfoOnlyDigital"}
+                        and len(item.state_uuids) == 1
+                    ]
+                )
+            ),
         )
-    except Exception:
-        return []
+    except Exception as exc:
+        reason = f"{stage}_{exc.reason}" if isinstance(exc, _ProviderUnavailable) else stage
+        return VirtualStatusOptions(status="unavailable", options=(), failure_code=reason)
     finally:
         if session is not None:
             await session.close()

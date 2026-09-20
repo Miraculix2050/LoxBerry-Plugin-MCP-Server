@@ -82,14 +82,23 @@ def test_initial_page_renders_configuration_before_loading_dynamic_state() -> No
     assert "admin_call('get_config', {})" in cgi
     assert "admin_call('page_state', {})" in cgi
     assert "my $service_setting_result = admin_call('service_status', {});" not in cgi
-    assert cgi.index("admin_call('service_status', {})") < cgi.index("my $config_result")
-    assert cgi.index("admin_call('emergency_stop_options', {})") < cgi.index("my $config_result")
     assert "SERVICE_ENABLED_SETTING_KNOWN => 0" in cgi
     assert "SELECTED_EMERGENCY_STOP => $selected_emergency_stop" in cgi
     assert "body.set('action', 'page_state')" in template
     assert "const loadInitialState" in template
     assert "loadInitialState();" in template
-    assert "loadEmergencyStopOptions();" in template
+    assert "pollServiceStatus();" in template
+    assert "emergencyStopRefresh.addEventListener('click', loadEmergencyStopOptions);" in template
+    assert "loadEmergencyStopOptions();" not in template
+    assert "let emergencyStopDiscoveryGeneration = 0;" in template
+    assert "emergencyStopDiscoveryGeneration += 1;" in template
+    assert "emergencyStopSelect.disabled = false;" in template
+    assert "const generation = emergencyStopDiscoveryGeneration;" in template
+    assert template.count("if (generation !== emergencyStopDiscoveryGeneration) return;") == 3
+    assert "component=admin_ui request_id=%s action=%s duration_ms=%.1f" in cgi
+    assert "component=admin_ui request_id=%s phase=initial_render duration_ms=%.1f" in cgi
+    assert "my $failure_code = delete $result->{data}{discovery_failure_code};" in cgi
+    assert "component=emergency_stop outcome=options_unavailable request_id=%s code=%s" in cgi
     assert "field.addEventListener('input'" in template
     assert "if (!mqttUseLoxberryGateway.checked)" in template
     assert 'aria-busy="true"' in template
@@ -113,11 +122,14 @@ def test_initial_page_renders_configuration_before_loading_dynamic_state() -> No
         in template
     )
     assert 'id="certificate-unavailable" class="mcp-status" hidden' in template
+    assert "if (certificateSection.open) loadCertificateStatus();" in template
+    assert "if (sessionsSection.open) pollSessions();" in template
+    assert "serviceSection.setAttribute('aria-busy', 'false');" in template
+    assert "sessionsSection.setAttribute('aria-busy', 'false');" in template
     assert "updateCertificate(null);" in template
-    assert (
-        "sessionList.replaceChildren(document.createTextNode('<TMPL_VAR AJAX.ERROR ESCAPE=JS>'))"
-        in template
-    )
+    assert "let serviceLoaded = false;" in template
+    assert "let sessionsLoaded = false;" in template
+    assert "if (!sessionsLoaded)" in template
 
 
 def test_emergency_stop_selection_is_preserved_while_options_load() -> None:
@@ -127,10 +139,13 @@ def test_emergency_stop_selection_is_preserved_while_options_load() -> None:
     assert "SELECTED_EMERGENCY_STOP => $selected_emergency_stop" in cgi
     assert 'id="emergency-stop-value" name="emergency_stop_virtual_status_uuid"' in template
     assert 'id="emergency-stop-select"' in template
+    assert 'id="emergency-stop-refresh"' in template
     assert "emergencyStopSelect.disabled = false;" in template
     assert "emergencyStopValue.value = emergencyStopSelect.value;" in template
     assert "option.textContent = label;" in template
     assert "EMERGENCY_STOP_LOAD_ERROR" in template
+    assert "EMERGENCY_STOP_NO_OPTIONS" in template
+    assert "EMERGENCY_STOP_NOT_CONFIGURED" in template
 
 
 def test_common_actions_update_the_page_without_a_reload() -> None:
@@ -377,6 +392,7 @@ def test_service_actions_use_an_accessible_confirmation_and_dynamic_controls() -
     assert "command === 'stop' && active" in template
     assert "serviceState.dataset.kind = kind" in template
     assert "serviceActionRunning = true" in template
+    assert "lastService = service;\n    serviceLoaded = true;" in template
     assert (
         "renderService(result.data.service, {updateEnabledSetting: !serviceEnabledSettingLoaded});"
         in template
@@ -389,10 +405,12 @@ def test_service_actions_use_an_accessible_confirmation_and_dynamic_controls() -
     assert "serviceEnabledSetting = enabled" in template
     assert "serviceEnabledSettingLoaded = true" in template
     assert "serviceEnabledInput.checked = enabled" in template
+    assert "if (updateEnabledSetting || !serviceEnabledSettingLoaded)" in template
     assert (
         "serviceEnabledInput.disabled = serviceActionRunning || !serviceEnabledSettingLoaded"
         in template
     )
+    assert "serviceEnabled.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';" in template
     assert (
         "serviceEnabledApplyButton.disabled = serviceActionRunning || !serviceEnabledSettingLoaded"
         in template
