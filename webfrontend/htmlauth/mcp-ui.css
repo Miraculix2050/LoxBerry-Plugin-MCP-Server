@@ -32,6 +32,7 @@ details.mcp-card[open] > summary { border-bottom: 1px solid #d7dadd; }
 .mcp-status, .mcp-explorer-status { padding: .65rem; border-left: .3rem solid #6b7280; background: #f3f4f6; }
 .mcp-status[data-kind="success"], .mcp-explorer-status[data-kind="success"] { border-color: #198754; }
 .mcp-status[data-kind="error"], .mcp-explorer-status[data-kind="error"] { border-color: #b91c1c; }
+.mcp-status[data-kind="warning"], .mcp-explorer-status[data-kind="warning"] { border-color: #b45309; }
 .mcp-explorer-status[data-kind="working"] { border-color: #1261a0; }
 .mcp-warning, .mcp-explorer-warning { padding: .65rem; border-left: .3rem solid #b45309; background: #fff7ed; }
 .mcp-table-wrap { max-width: 100%; overflow-x: auto; }
