@@ -2998,7 +2998,10 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                     ).encode()
                 ).hexdigest()
             )
-            page = _page(cursors, analysis_scope, list(result.pop("findings")), cursor, limit)
+            findings = result.pop("findings")
+            if not isinstance(findings, list):
+                raise ProjectError("project_worker_invalid")
+            page = _page(cursors, analysis_scope, findings, cursor, limit)
             page["findings"] = page.pop("items")
             envelope = _result(
                 ProjectAnalysisEnvelope,

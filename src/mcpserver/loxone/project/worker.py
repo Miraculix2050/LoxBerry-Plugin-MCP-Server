@@ -140,8 +140,8 @@ def main() -> None:
             view, analyses = pickle.loads(raw)
             if not isinstance(view, ProjectView) or not isinstance(analyses, frozenset):
                 raise ProjectError("project_worker_invalid")
-            result = analyze_knx(view, analyses)
-            payload = pickle.dumps(result, protocol=5)
+            analysis_result = analyze_knx(view, analyses)
+            payload = pickle.dumps(analysis_result, protocol=5)
             if len(payload) > MAX_RESULT:
                 raise ProjectError("project_worker_limit")
             sys.stdout.buffer.write(payload)

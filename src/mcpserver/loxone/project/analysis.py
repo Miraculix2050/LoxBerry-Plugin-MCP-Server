@@ -24,6 +24,7 @@ _MAX_FINDINGS = 10_000
 _MAX_EVIDENCE = 20
 _MAX_PATHS = 5_000
 _MAX_VISITED_PER_START = 2_000
+_AddressGroupKey = tuple[str, str, str, tuple[tuple[str, str | None], ...]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,15 +88,15 @@ def _usage(
     for edge in graph_edges:
         if edge.kind in {"signal", "reference"}:
             adjacency[edge.target if upstream else edge.source].append(edge)
-    for edge in semantic_edges:
-        adjacency[edge.target if upstream else edge.source].append(edge)
+    for semantic_edge in semantic_edges:
+        adjacency[semantic_edge.target if upstream else semantic_edge.source].append(semantic_edge)
     seen, pending, result = set(seeds), deque(seeds), set[tuple[str, str | None]]()
     while pending:
         current = pending.popleft()
-        for edge in adjacency[current]:
-            other = edge.source if upstream else edge.target
-            if isinstance(edge, SemanticEdge):
-                result.add((edge.interpretation, edge.effect))
+        for relationship in adjacency[current]:
+            other = relationship.source if upstream else relationship.target
+            if isinstance(relationship, SemanticEdge):
+                result.add((relationship.interpretation, relationship.effect))
             if other not in seen:
                 seen.add(other)
                 pending.append(other)
@@ -132,7 +133,7 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
     truncated_reasons: list[str] = []
 
     if "address_patterns" in analyses:
-        groups: dict[tuple[object, ...], list[_Endpoint]] = defaultdict(list)
+        groups: dict[_AddressGroupKey, list[_Endpoint]] = defaultdict(list)
         for item in endpoints:
             if item.address and item.address_format and item.datatype and item.usage:
                 group_key = (item.direction, item.address_format, item.datatype, item.usage)
@@ -189,17 +190,19 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
             if item.address and item.datatype:
                 by_address[item.address].append(item)
         conflicts = 0
-        for address, members in sorted(by_address.items()):
+        for group_address, members in sorted(by_address.items()):
             values = sorted({item.datatype for item in members if item.datatype is not None})
             if len(values) < 2:
                 continue
             ids, omitted = _bounded_nodes([item.node.key for item in members])
             findings.append(
                 {
-                    "finding_id": _finding_id("raw_datatype_conflict", [address, values], ids),
+                    "finding_id": _finding_id(
+                        "raw_datatype_conflict", [group_address, values], ids
+                    ),
                     "analysis": "raw_datatype_reuse",
                     "finding_type": "raw_datatype_conflict",
-                    "group_address": address,
+                    "group_address": group_address,
                     "raw_datatypes": values,
                     "affected_project_node_ids": ids,
                     "affected_omitted": omitted,
@@ -214,17 +217,19 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
             if item.address and item.usage:
                 by_address[item.address].append(item)
         mixed = 0
-        for address, members in sorted(by_address.items()):
+        for group_address, members in sorted(by_address.items()):
             signatures = sorted({item.usage for item in members})
             if len(signatures) < 2:
                 continue
             ids, omitted = _bounded_nodes([item.node.key for item in members])
             findings.append(
                 {
-                    "finding_id": _finding_id("mixed_signal_usage", [address, signatures], ids),
+                    "finding_id": _finding_id(
+                        "mixed_signal_usage", [group_address, signatures], ids
+                    ),
                     "analysis": "signal_usage",
                     "finding_type": "mixed_signal_usage",
-                    "group_address": address,
+                    "group_address": group_address,
                     "usage_signatures": [
                         [{"interpretation": x, "effect": y} for x, y in signature]
                         for signature in signatures
@@ -285,9 +290,9 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
             if edge.kind in {"signal", "reference"}:
                 downstream[edge.source].append(edge)
                 upstream[edge.target].append(edge)
-        for edge in graph.semantic_edges:
-            downstream[edge.source].append(edge)
-            upstream[edge.target].append(edge)
+        for semantic_edge in graph.semantic_edges:
+            downstream[semantic_edge.source].append(semantic_edge)
+            upstream[semantic_edge.target].append(semantic_edge)
         seen_paths: set[tuple[str, str, str]] = set()
         for start in endpoints:
             is_downstream = start.direction == "bus_to_loxone"
