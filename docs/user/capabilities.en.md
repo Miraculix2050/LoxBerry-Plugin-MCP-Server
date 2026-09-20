@@ -21,6 +21,11 @@ Equal group addresses do not create a graph relationship or prove causality. Fin
 only a compact KNX summary; use `loxone_describe_project_object` for the original value, segments,
 names, and raw DPT code. Project find pages and traces are additionally limited to 64 KiB and
 report a size trim through `truncated` and `truncation_reason`.
+Where an exact reviewed block and connector rule is available, describe also returns one or more
+separate KNX signal-use observations, while trace returns separately marked derived connector edges
+and bounded `knx_to_loxone`, `loxone_to_knx`, or `knx_to_knx` paths. Unknown block or connector
+behaviour is not guessed. These are static project paths, not evidence that a bus telegram or
+historical state change caused an action.
 
 `loxone_get_structure_overview` returns a bounded initial map of the rooms,
 categories and control types visible to the signed-in Loxone user. It contains

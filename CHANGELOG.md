@@ -18,7 +18,9 @@ extracted from the matching version heading.
   attributes or inferring DPTs, physical device roles, or graph edges from
   equal group addresses. Search and trace return compact KNX summaries and cap
   their complete response envelopes at 64 KiB; describe retains the detailed
-  KNX source evidence for one object.
+  KNX source evidence for one object. Reviewed internal block rules can now
+  add separately marked signal-use observations and KNX/Loxone boundary paths;
+  unknown block or connector behaviour remains absent rather than guessed.
 
 - Render the Admin UI without waiting for service status or Miniserver emergency-stop
   discovery, while preserving an unavailable configured emergency-stop selection.
