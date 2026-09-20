@@ -55,6 +55,7 @@ def test_admin_responses_emit_no_store_and_frame_protection(tmp_path: Path) -> N
 
     page = subprocess.run(common, check=True, capture_output=True, text=True, env=environment)
     _assert_admin_security_headers(page.stdout)
+    assert "server-timing: mcp-template;dur=" in page.stdout.lower()
 
     ajax_environment = {
         **environment,
@@ -140,6 +141,12 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert "component=admin_ui request_id=%s action=%s duration_ms=%.1f" in cgi
     assert "component=admin_helper request_id=%s action=%s outcome=rejected code=%s" in cgi
     assert "component=admin_ui request_id=%s phase=initial_render duration_ms=%.1f" in cgi
+    assert "Server-Timing: mcp-template;dur=%.1f" in cgi
+    assert "phase=loxberry_header duration_ms=%.1f" in cgi
+    assert "lbheader($L{'BASIC.TITLE'} . \" V$version\", '', '', 'nojqm')" in cgi
+    assert "our %navbar" in cgi
+    assert "mcp-admin-shell-parsed" in template
+    assert "mcp-admin-background-hydration-started" in template
     assert "my $failure_code = delete $result->{data}{discovery_failure_code};" in cgi
     assert "component=emergency_stop outcome=options_unavailable request_id=%s code=%s" in cgi
     assert "field.addEventListener('input'" in template

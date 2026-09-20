@@ -143,12 +143,15 @@ sub security_header_args {
 }
 
 sub print_html_security_headers {
+    my ($template_duration_ms) = @_;
     print "Cache-Control: no-store\n";
     print "Pragma: no-cache\n";
     print "Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'\n";
     print "Referrer-Policy: no-referrer\n";
     print "X-Content-Type-Options: nosniff\n";
     print "X-Frame-Options: DENY\n";
+    printf "Server-Timing: mcp-template;dur=%.1f\n", $template_duration_ms
+        if defined $template_duration_ms;
 }
 
 sub redirect_reply {
@@ -694,8 +697,15 @@ $navbar{50}{Name} = $L{'NAV.HELP'};
 $navbar{50}{URL} = '#help';
 
 my $page = $template->output();
-print_html_security_headers();
+my $template_duration_ms = (clock_gettime(CLOCK_MONOTONIC) - $render_started) * 1000;
+print_html_security_headers($template_duration_ms);
+my $header_started = clock_gettime(CLOCK_MONOTONIC);
 LoxBerry::Web::lbheader($L{'BASIC.TITLE'} . " V$version", '', '', 'nojqm');
+admin_log('debug', sprintf(
+    'component=admin_ui request_id=%s phase=loxberry_header duration_ms=%.1f',
+    $request_id,
+    (clock_gettime(CLOCK_MONOTONIC) - $header_started) * 1000,
+));
 print LoxBerry::Log::get_notifications_html($lbpplugindir);
 print $page;
 LoxBerry::Web::lbfooter();

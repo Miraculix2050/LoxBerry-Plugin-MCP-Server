@@ -1,4 +1,9 @@
 <link rel="stylesheet" href="mcp-ui.css">
+<script>
+  if (window.performance && typeof window.performance.mark === 'function') {
+    window.performance.mark('mcp-admin-shell-parsed');
+  }
+</script>
 
 <main class="mcp-page">
   <TMPL_IF NOTICE><div id="page-notice" class="mcp-status" role="status" data-kind="<TMPL_VAR NOTICE_KIND ESCAPE=HTML>"><TMPL_VAR NOTICE ESCAPE=HTML></div></TMPL_IF>
@@ -1368,6 +1373,9 @@
   const startBackgroundHydration = () => {
     if (backgroundHydrationStarted) return;
     backgroundHydrationStarted = true;
+    if (window.performance && typeof window.performance.mark === 'function') {
+      window.performance.mark('mcp-admin-background-hydration-started');
+    }
     queueBackgroundHydration([
       loadConfiguration,
       loadInitialState,
