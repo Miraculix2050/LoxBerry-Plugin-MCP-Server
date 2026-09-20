@@ -113,5 +113,10 @@ def test_technology_path_analysis_never_reverses_at_a_logic_input_merge():
     assert counts.get("knx_to_loxone", 0) == 0
     assert counts["knx_to_knx"] == 1
     sample = result["summaries"]["technology_paths"]["samples"]["knx_to_knx"][0]
-    assert sample["source_project_node_id"] == "p:1"
-    assert sample["target_project_node_id"] == "p:4"
+    endpoint_blocks = {
+        node.knx.group_address.canonical: node.key
+        for node in view.snapshot.graph.nodes
+        if node.kind == "block" and node.knx and node.knx.group_address
+    }
+    assert sample["source_project_node_id"] == endpoint_blocks["1/2/3"]
+    assert sample["target_project_node_id"] == endpoint_blocks["1/2/4"]
