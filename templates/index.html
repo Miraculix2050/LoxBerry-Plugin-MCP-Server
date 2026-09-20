@@ -371,6 +371,7 @@
   let serviceEnabledSetting = serviceEnabledInput.checked;
   let serviceEnabledSettingLoaded = serviceEnableForm.dataset.serviceEnabledSettingKnown === '1';
   let sessionDataVersion = 0;
+  let sessionsLoaded = false;
   let nextSessionActionToken = 0;
   const activeSessionActions = new Map();
   const sessionActionFailures = new Map();
@@ -571,9 +572,8 @@
       updateCertificate(result.data.certificate);
       certificateLoaded = true;
     } catch {
-      certificateSection.setAttribute('aria-busy', 'false');
+      updateCertificate(null);
       certificateUnavailable.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
-      certificateUnavailable.hidden = false;
     } finally {
       certificateLoadInFlight = false;
     }
@@ -1175,7 +1175,10 @@
       body.set('ajax', '1');
       const result = await postAjax(body, 15000);
       if (expectedSessionDataVersion !== sessionDataVersion) return;
-      if (Array.isArray(result.data.sessions)) updateSessions(result.data.sessions);
+      if (Array.isArray(result.data.sessions)) {
+        updateSessions(result.data.sessions);
+        sessionsLoaded = true;
+      }
       if (Array.isArray(result.data.loxberry_bindings)) {
         updateLoxberryBindings(result.data.loxberry_bindings);
       }
@@ -1183,7 +1186,10 @@
         updateLoxberryOperateBindings(result.data.loxberry_operate_bindings);
       }
     } catch {
-      // Keep the last known table; the next visible and open-section poll retries.
+      if (!sessionsLoaded) {
+        sessionList.replaceChildren(document.createTextNode('<TMPL_VAR AJAX.ERROR ESCAPE=JS>'));
+      }
+      // Keep the last known table after a successful hydration; the next visible and open-section poll retries.
     } finally {
       sessionPollInFlight = false;
       sessionsSection.setAttribute('aria-busy', 'false');

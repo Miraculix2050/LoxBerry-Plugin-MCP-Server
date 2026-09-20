@@ -119,6 +119,9 @@ def test_initial_page_renders_configuration_before_loading_dynamic_state() -> No
     assert "if (sessionsSection.open) pollSessions();" in template
     assert "serviceSection.setAttribute('aria-busy', 'false');" in template
     assert "sessionsSection.setAttribute('aria-busy', 'false');" in template
+    assert "updateCertificate(null);" in template
+    assert "let sessionsLoaded = false;" in template
+    assert "if (!sessionsLoaded)" in template
 
 
 def test_emergency_stop_selection_is_preserved_while_options_load() -> None:
