@@ -75,29 +75,43 @@ def test_admin_responses_emit_no_store_and_frame_protection(tmp_path: Path) -> N
     _assert_admin_security_headers(ajax.stdout)
 
 
-def test_initial_page_renders_configuration_before_loading_dynamic_state() -> None:
+def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
 
+    assert "} elsif ($action eq 'get_config') {" in cgi
     assert "admin_call('get_config', {})" in cgi
+    assert "my $config_result" not in cgi
     assert "admin_call('page_state', {})" in cgi
     assert "my $service_setting_result = admin_call('service_status', {});" not in cgi
     assert "SERVICE_ENABLED_SETTING_KNOWN => 0" in cgi
     assert "SELECTED_EMERGENCY_STOP => $selected_emergency_stop" in cgi
     assert "body.set('action', 'page_state')" in template
+    assert "body.set('action', 'get_config')" in template
+    assert "const loadConfiguration = async () =>" in template
+    assert 'id="mcp-config-fields" class="mcp-configuration-fields" disabled' in template
+    assert 'id="test-connection-fields" class="mcp-configuration-fields" disabled' in template
+    assert 'id="mqtt-config-fields" class="mcp-configuration-fields" disabled' in template
     assert "const loadInitialState" in template
     assert "const backgroundHydrationLimit = 1;" in template
     assert "const backgroundHydrationQueue = [];" in template
     assert "Promise.resolve()" in template
     assert ".then(task)" in template
+    assert "loadConfiguration," in template
     assert "loadInitialState," in template
     assert "() => pollServiceStatus({initial: true})," in template
     assert "loadCertificateStatus," in template
     assert "() => pollSessions({initial: true})," in template
-    assert "() => loadEmergencyStopOptions(emergencyStopGeneration)," in template
+    assert (
+        "queueBackgroundHydration([() => loadEmergencyStopOptions(emergencyStopGeneration)]);"
+        in template
+    )
     assert "window.requestAnimationFrame(() => {" in template
     assert "if (document.hidden) {" in template
     assert "scheduleBackgroundHydration();" in template
+    assert "let initialBackgroundHydrationComplete = false;" in template
+    assert "if (certificateSection.open && initialBackgroundHydrationComplete)" in template
+    assert "if (sessionsSection.open && initialBackgroundHydrationComplete)" in template
     assert "const emergencyStopGeneration = emergencyStopDiscoveryGeneration;" in template
     assert "queueBackgroundHydration([" in template
     assert 'id="emergency-stop-refresh"' not in template
@@ -139,8 +153,8 @@ def test_initial_page_renders_configuration_before_loading_dynamic_state() -> No
         in template
     )
     assert 'id="certificate-unavailable" class="mcp-status" hidden' in template
-    assert "if (certificateSection.open) loadCertificateStatus();" in template
-    assert "if (sessionsSection.open) pollSessions();" in template
+    assert "if (certificateSection.open) loadCertificateStatus();" not in template
+    assert "if (sessionsSection.open) pollSessions();" not in template
     assert "serviceSection.setAttribute('aria-busy', 'false');" in template
     assert "sessionsSection.setAttribute('aria-busy', 'false');" in template
     assert "updateCertificate(null);" in template
@@ -509,7 +523,7 @@ def test_cache_operation_checkbox_tracks_history_dependency() -> None:
     assert "operateEnabled.disabled = !historyEnabled.checked" in template
     assert "if (operateEnabled.disabled) operateEnabled.checked = false" in template
     assert "historyEnabled.addEventListener('change', syncOperateDependency)" in template
-    assert template.count("syncOperateDependency();") == 1
+    assert template.count("syncOperateDependency();") == 2
 
 
 def test_permission_policy_is_localized_in_german_and_english() -> None:

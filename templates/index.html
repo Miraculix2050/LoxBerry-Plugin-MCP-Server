@@ -49,6 +49,7 @@
     <div class="mcp-collapsible-content">
     <form id="mcp-config-form" class="mcp-form" method="post" action="index.cgi" data-ajax="save_mcp_config">
       <input type="hidden" name="action" value="save_mcp_config">
+      <fieldset id="mcp-config-fields" class="mcp-configuration-fields" disabled>
       <label class="mcp-field"><span><TMPL_VAR SETUP.PUBLIC_ORIGIN></span><input name="public_origin" type="url" value="<TMPL_VAR PUBLIC_ORIGIN ESCAPE=HTML>" placeholder="https://loxberry.local" required></label>
       <label class="mcp-field"><span><TMPL_VAR SETUP.MINISERVER_SOURCE></span><select id="miniserver-select" name="miniserver_endpoint"><option value="" <TMPL_IF MANUAL_ENDPOINT>selected</TMPL_IF>><TMPL_VAR SETUP.MANUAL_OPTION></option><TMPL_LOOP MINISERVERS><option value="<TMPL_VAR endpoint ESCAPE=HTML>" <TMPL_IF selected>selected</TMPL_IF>><TMPL_VAR label ESCAPE=HTML></option></TMPL_LOOP></select></label>
       <div id="manual-endpoint-fields" class="mcp-manual-endpoint" <TMPL_UNLESS MANUAL_ENDPOINT>hidden</TMPL_UNLESS>>
@@ -114,11 +115,14 @@
       <div class="mcp-actions">
         <button class="lb-button" type="submit"><TMPL_VAR ACTION.SAVE_MCP></button>
       </div>
+      </fieldset>
     </form>
     <form class="mcp-actions" method="post" action="index.cgi" data-ajax="test_connection">
-      <input type="hidden" name="action" value="test_connection">
-      <input type="hidden" name="endpoint" value="<TMPL_VAR ENDPOINT ESCAPE=HTML>">
-      <button class="lb-button" type="submit"><TMPL_VAR ACTION.TEST></button>
+      <fieldset id="test-connection-fields" class="mcp-configuration-fields" disabled>
+        <input type="hidden" name="action" value="test_connection">
+        <input type="hidden" name="endpoint" value="<TMPL_VAR ENDPOINT ESCAPE=HTML>">
+        <button class="lb-button" type="submit"><TMPL_VAR ACTION.TEST></button>
+      </fieldset>
     </form>
     </div>
   </details>
@@ -128,6 +132,7 @@
     <div class="mcp-collapsible-content">
       <form class="mcp-form" method="post" action="index.cgi" data-ajax="save_mqtt_config">
         <input type="hidden" name="action" value="save_mqtt_config">
+        <fieldset id="mqtt-config-fields" class="mcp-configuration-fields" disabled>
         <label><input name="mqtt_enabled" type="checkbox" value="1" <TMPL_IF MQTT_ENABLED>checked</TMPL_IF>> <TMPL_VAR MQTT.ENABLED></label>
         <label><input id="mqtt-use-loxberry-gateway" name="mqtt_use_loxberry_gateway" type="checkbox" value="1" <TMPL_IF MQTT_USE_LOXBERRY_GATEWAY>checked</TMPL_IF>> <TMPL_VAR MQTT.USE_LOXBERRY_GATEWAY></label>
         <p class="mcp-help"><TMPL_VAR MQTT.GATEWAY_HELP></p>
@@ -145,6 +150,7 @@
         </div>
         <p class="mcp-help"><TMPL_VAR MQTT.CREDENTIALS_HELP></p>
         <button class="lb-button" type="submit"><TMPL_VAR ACTION.SAVE_MQTT></button>
+        </fieldset>
       </form>
     </div>
   </details>
@@ -303,6 +309,13 @@
   const miniserverSelect = document.getElementById('miniserver-select');
   const manualEndpointFields = document.getElementById('manual-endpoint-fields');
   const miniserverEndpoint = document.getElementById('miniserver-endpoint');
+  const mcpConfigForm = document.getElementById('mcp-config-form');
+  const mqttConfigForm = document.querySelector('form[data-ajax="save_mqtt_config"]');
+  const configurationFieldsets = [
+    document.getElementById('mcp-config-fields'),
+    document.getElementById('test-connection-fields'),
+    document.getElementById('mqtt-config-fields'),
+  ];
   const historyEnabled = document.getElementById('loxone-history-enabled');
   const operateEnabled = document.getElementById('loxberry-operate-enabled');
   const testEndpoint = document.querySelector('form[data-ajax="test_connection"] input[name="endpoint"]');
@@ -379,6 +392,8 @@
   let sessionPollTimer = null;
   let certificateLoaded = false;
   let certificateLoadInFlight = false;
+  let configurationLoaded = false;
+  let configurationLoadInFlight = false;
   let lastService = null;
   const serviceInteractionActive = () => serviceActionRunning || pendingServiceForm !== null;
   const renderLogging = (configuration) => {
@@ -389,6 +404,82 @@
     loggingCurrent.textContent = loggingControls.dataset[
       `level${level[0].toUpperCase()}${level.slice(1)}`
     ];
+  };
+  const setConfigurationFieldsDisabled = (disabled) => {
+    for (const fieldset of configurationFieldsets) fieldset.disabled = disabled;
+    mcpConfigForm.setAttribute('aria-busy', String(disabled));
+    mqttConfigForm.setAttribute('aria-busy', String(disabled));
+  };
+  const setFormValue = (form, name, value) => {
+    const field = form.elements.namedItem(name);
+    if (field instanceof HTMLInputElement || field instanceof HTMLSelectElement) {
+      field.value = String(value ?? '');
+    }
+  };
+  const setFormChecked = (form, name, checked) => {
+    const field = form.elements.namedItem(name);
+    if (field instanceof HTMLInputElement) field.checked = Boolean(checked);
+  };
+  const renderConfiguration = (configuration) => {
+    const server = configuration?.server || {};
+    const loxone = configuration?.loxone || {};
+    const tools = configuration?.tools || {};
+    const limits = configuration?.limits || {};
+    const cache = configuration?.cache || {};
+    const mqtt = configuration?.mqtt || {};
+    const emergencyStop = configuration?.emergency_stop || {};
+    setFormValue(mcpConfigForm, 'public_origin', server.public_origin);
+    setFormChecked(mcpConfigForm, 'enabled', server.enabled);
+    setFormValue(mcpConfigForm, 'connection_timeout', loxone.connection_timeout);
+    const endpoint = String(loxone.endpoint || '');
+    miniserverEndpoint.value = endpoint;
+    miniserverSelect.value = [...miniserverSelect.options].some((option) => option.value === endpoint)
+      ? endpoint : '';
+    setFormChecked(mcpConfigForm, 'loxone_history_enabled', tools.loxone_history_enabled);
+    setFormChecked(mcpConfigForm, 'loxone_control_enabled', tools.loxone_control_enabled);
+    setFormChecked(mcpConfigForm, 'loxberry_read_enabled', tools.loxberry_read_enabled);
+    setFormChecked(mcpConfigForm, 'loxberry_operate_enabled', tools.loxberry_operate_enabled);
+    for (const name of [
+      'requests_per_minute', 'control_requests_per_minute', 'loxberry_requests_per_minute',
+      'history_requests_per_minute', 'loxberry_operate_requests_per_minute', 'max_parallel_calls',
+      'structure_refresh_seconds', 'max_active_runtime_sessions', 'runtime_session_idle_seconds',
+      'max_structure_controls', 'max_structure_state_references', 'max_structure_depth',
+      'max_states_per_identity',
+    ]) setFormValue(mcpConfigForm, name, limits[name]);
+    setFormValue(mcpConfigForm, 'statistics_memory_max_mib', cache.statistics_memory_max_mib);
+    emergencyStopValue.value = String(emergencyStop.virtual_status_uuid || '');
+    setFormChecked(mqttConfigForm, 'mqtt_enabled', mqtt.enabled);
+    setFormChecked(mqttConfigForm, 'mqtt_use_loxberry_gateway', mqtt.use_loxberry_gateway);
+    for (const name of ['mqtt_host', 'mqtt_port', 'mqtt_username', 'mqtt_root_topic', 'mqtt_heartbeat_seconds']) {
+      setFormValue(mqttConfigForm, name, mqtt[name]);
+    }
+    mqttCustomBroker = {host: mqttHost.value, port: mqttPort.value, username: mqttUsername.value};
+    syncMiniserverSelection();
+    syncOperateDependency();
+    resetEmergencyStopOptions();
+    updateMqttBrokerFields();
+    renderLogging(configuration);
+  };
+  const loadConfiguration = async () => {
+    if (configurationLoaded || configurationLoadInFlight) return;
+    configurationLoadInFlight = true;
+    setAjaxStatus('', '<TMPL_VAR AJAX.WORKING ESCAPE=JS>');
+    try {
+      const body = new URLSearchParams();
+      body.set('action', 'get_config');
+      body.set('ajax', '1');
+      const result = await postAjax(body, 7000);
+      renderConfiguration(result.data.configuration);
+      configurationLoaded = true;
+      setConfigurationFieldsDisabled(false);
+      status.hidden = true;
+      const emergencyStopGeneration = emergencyStopDiscoveryGeneration;
+      queueBackgroundHydration([() => loadEmergencyStopOptions(emergencyStopGeneration)]);
+    } catch {
+      setAjaxStatus('error', '<TMPL_VAR AJAX.ERROR ESCAPE=JS>');
+    } finally {
+      configurationLoadInFlight = false;
+    }
   };
   const updateMqttGateway = (gateway) => {
     mqttGateway = gateway?.gateway_configured ? gateway : null;
@@ -1206,10 +1297,14 @@
     }
   };
   certificateSection.addEventListener('toggle', () => {
-    if (certificateSection.open) loadCertificateStatus();
+    if (certificateSection.open && initialBackgroundHydrationComplete) {
+      queueBackgroundHydration([loadCertificateStatus]);
+    }
   });
   sessionsSection.addEventListener('toggle', () => {
-    if (sessionsSection.open) pollSessions();
+    if (sessionsSection.open && initialBackgroundHydrationComplete) {
+      queueBackgroundHydration([() => pollSessions()]);
+    }
   });
   // The target runs each AJAX action in its own CGI helper. Serial hydration avoids
   // transient request failures during the resource-constrained initial page load.
@@ -1217,6 +1312,7 @@
   const backgroundHydrationQueue = [];
   let backgroundHydrationRunning = 0;
   let backgroundHydrationStarted = false;
+  let initialBackgroundHydrationComplete = false;
   const drainBackgroundHydration = () => {
     while (backgroundHydrationRunning < backgroundHydrationLimit
         && backgroundHydrationQueue.length > 0) {
@@ -1238,13 +1334,13 @@
   const startBackgroundHydration = () => {
     if (backgroundHydrationStarted) return;
     backgroundHydrationStarted = true;
-    const emergencyStopGeneration = emergencyStopDiscoveryGeneration;
     queueBackgroundHydration([
+      loadConfiguration,
       loadInitialState,
       () => pollServiceStatus({initial: true}),
       loadCertificateStatus,
       () => pollSessions({initial: true}),
-      () => loadEmergencyStopOptions(emergencyStopGeneration),
+      () => { initialBackgroundHydrationComplete = true; },
     ]);
   };
   const scheduleBackgroundHydration = () => {

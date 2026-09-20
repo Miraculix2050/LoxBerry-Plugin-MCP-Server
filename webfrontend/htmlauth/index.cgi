@@ -429,6 +429,8 @@ if ($action ne '') {
         $result = admin_call('set_logging', {mode => ($q->{mode} // '')});
         admin_log($result->{ok} ? 'info' : 'warning',
             'action=set_service_log_level outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
+    } elsif ($action eq 'get_config') {
+        $result = admin_call('get_config', {});
     } elsif ($action eq 'page_state') {
         $result = admin_call('page_state', {});
     } elsif ($action eq 'emergency_stop_options') {
@@ -533,8 +535,7 @@ sub format_expiry {
     return defined($formatted) && length($formatted) ? $formatted : $raw;
 }
 
-my $config_result = admin_call('get_config', {});
-my $config = $config_result->{ok} ? ($config_result->{data}{configuration} // {}) : {};
+my $config = {};
 my $sessions = [];
 my $loxberry_bindings = [];
 my $loxberry_operate_bindings = [];
@@ -544,9 +545,10 @@ $config->{tools} = {} if ref($config->{tools}) ne 'HASH';
 $config->{limits} = {} if ref($config->{limits}) ne 'HASH';
 $config->{logging} = {} if ref($config->{logging}) ne 'HASH';
 $config->{cache} = {} if ref($config->{cache}) ne 'HASH';
+$config->{mqtt} = {} if ref($config->{mqtt}) ne 'HASH';
 $config->{emergency_stop} = {} if ref($config->{emergency_stop}) ne 'HASH';
 my $selected_emergency_stop = $config->{emergency_stop}{virtual_status_uuid} // '';
-my $miniservers = configured_miniservers($config->{loxone}{endpoint});
+my $miniservers = configured_miniservers('');
 my $has_selected_miniserver = grep { $_->{selected} } @$miniservers;
 my ($selected_miniserver) = grep { $_->{selected} } @$miniservers;
 my $display_endpoint = $config->{loxone}{endpoint} // '';
