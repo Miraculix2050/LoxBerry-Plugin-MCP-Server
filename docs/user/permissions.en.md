@@ -20,5 +20,7 @@ Project Intelligence does not add a scope. Every invocation downloads the projec
 bound Loxone identity to verify access; cached processing results never grant access. It exposes
 bounded graph status, search, object descriptions, and upstream/downstream signal or reference
 traces, never raw project files or project modification.
+KNX/EIB metadata is an allowlisted, bounded projection of that same authorized project; it does
+not expose arbitrary project attributes, ETS data, bus monitoring, or configuration writes.
 
 Next: [Capabilities](capabilities.en.md).

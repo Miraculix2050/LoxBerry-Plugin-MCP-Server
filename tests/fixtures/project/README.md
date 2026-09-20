@@ -10,3 +10,9 @@ This is a minimal structural derivative, not an exported project.
 
 Runtime IDs were observed to match C/U exactly after hyphen/case normalization;
 the runtime fixture added with mapping uses the same synthetic identifiers.
+
+observed-knx.xml is an anonymized structural derivative of the KNX/EIB forms
+observed in the same authorized project inspection. All identifiers, labels and
+group addresses were replaced, while the exact `Type`, `EibAddr`, `EIBType`,
+`C`, `Co` and `In` layout needed for semantic classification and graph traversal
+was retained. It is not a raw project export.

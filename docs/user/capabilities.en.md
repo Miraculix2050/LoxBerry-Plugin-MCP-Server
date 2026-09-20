@@ -13,6 +13,14 @@ graph evidence rather than raw XML: a signal or reference trace describes struct
 not an observed historical cause. Results are limited and explicitly report truncation; unknown
 block types and unresolved relationships remain visible without invented semantics. A trace caps
 its unresolved-relationship entries independently and reports that with `unresolved_truncated`.
+Confirmed KNX/EIB project objects add bounded source-backed metadata for bus lines, endpoints and
+KNX logic blocks. Endpoint direction is `bus_to_loxone` or `loxone_to_bus`; it is not a claim
+about the physical device role. Group addresses retain their original text and only expose a
+canonical form when it is valid. `EIBType` remains an unresolved source code, not an inferred DPT.
+Equal group addresses do not create a graph relationship or prove causality. Find and trace return
+only a compact KNX summary; use `loxone_describe_project_object` for the original value, segments,
+names, and raw DPT code. Project find pages and traces are additionally limited to 64 KiB and
+report a size trim through `truncated` and `truncation_reason`.
 
 `loxone_get_structure_overview` returns a bounded initial map of the rooms,
 categories and control types visible to the signed-in Loxone user. It contains

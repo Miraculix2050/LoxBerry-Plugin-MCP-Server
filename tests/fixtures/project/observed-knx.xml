@@ -1,0 +1,11 @@
+<ControlList>
+  <C Type="EIBline" U="knx-line">
+    <C Type="EIBsensor" U="knx-input" Title="Anonymized bus input" IName="knx_input" EibAddr="14/1/5" EIBType="5">
+      <Co K="AQ" U="knx-input-output"/>
+    </C>
+    <C Type="EIBactor" U="knx-output" Title="Anonymized bus output" EibAddr="14/1/6" EIBType="1">
+      <Co K="AI" U="knx-output-input"><In Input="knx-input-output"/></Co>
+    </C>
+    <C Type="EIBPush" U="knx-push" Title="Anonymized KNX logic"/>
+  </C>
+</ControlList>
