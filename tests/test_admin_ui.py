@@ -55,6 +55,7 @@ def test_admin_responses_emit_no_store_and_frame_protection(tmp_path: Path) -> N
 
     page = subprocess.run(common, check=True, capture_output=True, text=True, env=environment)
     _assert_admin_security_headers(page.stdout)
+    assert "server-timing: mcp-template;dur=" in page.stdout.lower()
 
     ajax_environment = {
         **environment,
@@ -74,29 +75,171 @@ def test_admin_responses_emit_no_store_and_frame_protection(tmp_path: Path) -> N
     )
     _assert_admin_security_headers(ajax.stdout)
 
+    notifications_request = "action=page_notifications&ajax=1"
+    notifications = subprocess.run(
+        common,
+        check=True,
+        capture_output=True,
+        text=True,
+        input=notifications_request,
+        env={**ajax_environment, "CONTENT_LENGTH": str(len(notifications_request))},
+    )
+    assert '"ok":true' in notifications.stdout
+    assert '"notifications_html"' in notifications.stdout
+    assert '"loglist_html"' not in notifications.stdout
 
-def test_initial_page_renders_configuration_before_loading_dynamic_state() -> None:
+    loglist_request = "action=page_loglist&ajax=1"
+    loglist = subprocess.run(
+        common,
+        check=True,
+        capture_output=True,
+        text=True,
+        input=loglist_request,
+        env={**ajax_environment, "CONTENT_LENGTH": str(len(loglist_request))},
+    )
+    assert '"ok":true' in loglist.stdout
+    assert '"loglist_html"' in loglist.stdout
+    assert '"notifications_html"' not in loglist.stdout
+
+
+def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
 
+    assert "} elsif ($action eq 'get_config') {" in cgi
     assert "admin_call('get_config', {})" in cgi
+    assert "} elsif ($action eq 'page_notifications') {" in cgi
+    assert "notifications_html => LoxBerry::Log::get_notifications_html($lbpplugindir) // ''" in cgi
+    assert "} elsif ($action eq 'page_loglist') {" in cgi
+    assert "loglist_html => LoxBerry::Web::loglist_html() // ''" in cgi
+    assert "my $server_rendered_fallback = ($q->{fallback} // '') eq '1';" in cgi
+    assert "if ($server_rendered_fallback) {" in cgi
+    assert "my $config_result = admin_call('get_config', {});" in cgi
+    assert "my $sessions_result = admin_call('list_sessions', {});" in cgi
+    assert "my $options_result = admin_call('emergency_stop_options', {});" in cgi
     assert "admin_call('page_state', {})" in cgi
     assert "my $service_setting_result = admin_call('service_status', {});" not in cgi
-    assert "SERVICE_ENABLED_SETTING_KNOWN => 0" in cgi
+    assert "SERVER_RENDERED_FALLBACK => $server_rendered_fallback" in cgi
     assert "SELECTED_EMERGENCY_STOP => $selected_emergency_stop" in cgi
     assert "body.set('action', 'page_state')" in template
+    assert "body.set('action', 'get_config')" in template
+    assert "const loadConfiguration = async () =>" in template
+    assert "const publicOrigin = String(server.public_origin || '')" in template
+    assert "String(loxone.endpoint || miniserverEndpoint.value || '')" in template
+    assert "setFormValue(mqttConfigForm, 'mqtt_host', mqtt.host);" in template
+    assert "setFormValue(mqttConfigForm, 'mqtt_port', mqtt.port);" in template
+    assert "setFormValue(mqttConfigForm, 'mqtt_username', mqtt.username);" in template
+    assert "setFormValue(mqttConfigForm, 'mqtt_root_topic', mqtt.root_topic);" in template
+    assert (
+        "setFormValue(mqttConfigForm, 'mqtt_heartbeat_seconds', mqtt.heartbeat_seconds);"
+        in template
+    )
+    assert "mqtt[name]" not in template
+    assert 'id="loxberry-notifications" aria-busy="true" aria-live="polite"' in template
+    assert (
+        '<span class="mcp-status" data-kind="working"><TMPL_VAR AJAX.NOTIFICATIONS_LOADING>'
+        in template
+    )
+    assert 'id="plugin-log-list" aria-busy="true" aria-live="polite"' in template
+    assert '<span class="mcp-status" data-kind="working"><TMPL_VAR AJAX.WORKING>' in template
+    assert "const loadLoxberryNotifications = async () =>" in template
+    assert "body.set('action', 'page_notifications')" in template
+    assert "const loadPluginLogList = async () =>" in template
+    assert "body.set('action', 'page_loglist')" in template
+    assert "loadLoxberryNotifications," in template
+    assert "loadPluginLogList," in template
+    assert template.index("loadLoxberryNotifications,") < template.index("loadConfiguration,")
+    assert template.index("loadPluginLogList,") > template.index(
+        "() => pollSessions({initial: true}),"
+    )
+    assert "<TMPL_VAR LOGLIST>" not in template
+    assert (
+        '<noscript><meta http-equiv="refresh" content="0;url='
+        '<TMPL_VAR FALLBACK_URL ESCAPE=HTML>"></noscript>' in template
+    )
+    assert "FALLBACK_CONFIGURATION_LOADED => $fallback_configuration_loaded" in cgi
+    assert "NOTIFICATIONS_HTML => $notifications_html" in cgi
+    assert "LOGLIST_HTML => $loglist_html" in cgi
+    assert "mcpserver_admin_timing=" in cgi
+    assert "component=admin_helper request_id=%s action=%s timing=%s" in cgi
+    assert (
+        'id="mcp-config-fields" class="mcp-configuration-fields" '
+        "<TMPL_UNLESS SERVER_RENDERED_FALLBACK>disabled" in template
+    )
+    assert (
+        'id="test-connection-fields" class="mcp-configuration-fields" '
+        "<TMPL_UNLESS SERVER_RENDERED_FALLBACK>disabled" in template
+    )
+    assert (
+        'id="mqtt-config-fields" class="mcp-configuration-fields" '
+        "<TMPL_UNLESS SERVER_RENDERED_FALLBACK>disabled" in template
+    )
+    assert (
+        'id="logging-config-fields" class="mcp-configuration-fields" '
+        "<TMPL_UNLESS SERVER_RENDERED_FALLBACK>disabled" in template
+    )
+    assert "document.getElementById('logging-config-fields')," in template
+    assert "configurationFallbackLink.hidden = false;" in template
+    assert (
+        "if (<TMPL_IF SERVER_RENDERED_FALLBACK>true<TMPL_ELSE>false</TMPL_IF>) return;" in template
+    )
+    assert 'id="service-enabled-setting-status"' in template
+    assert 'id="mqtt-page-state-status"' in template
+    assert 'id="emergency-stop-select"' in template
+    assert (
+        'aria-describedby="emergency-stop-help emergency-stop-status" disabled aria-busy="true"'
+    ) in template
+    assert 'name="emergency_stop_virtual_status_uuid"' in template
+    assert "EMERGENCY_STOP_OPTIONS => $emergency_stop_options" in cgi
+    assert "<TMPL_VAR SETUP.EMERGENCY_STOP_LOADING>" in template
     assert "const loadInitialState" in template
-    assert "loadInitialState();" in template
-    assert "pollServiceStatus();" in template
-    assert "emergencyStopRefresh.addEventListener('click', loadEmergencyStopOptions);" in template
-    assert "loadEmergencyStopOptions();" not in template
+    assert "const backgroundHydrationLimit = 1;" in template
+    assert "const backgroundHydrationQueue = [];" in template
+    assert "Promise.resolve()" in template
+    assert ".then(task)" in template
+    assert "loadConfiguration," in template
+    assert "loadInitialState," in template
+    assert "() => pollServiceStatus({initial: true})," in template
+    assert "loadCertificateStatus," in template
+    assert "() => pollSessions({initial: true})," in template
+    assert (
+        "queueBackgroundHydration([() => loadEmergencyStopOptions(emergencyStopGeneration)]);"
+        in template
+    )
+    assert "window.requestAnimationFrame(() => {" in template
+    assert "if (document.hidden) {" in template
+    assert "scheduleBackgroundHydration();" in template
+    assert "let initialBackgroundHydrationComplete = false;" in template
+    assert "let pageIsUnloading = false;" in template
+    assert "window.addEventListener('beforeunload', markPageUnloading);" in template
+    assert "window.addEventListener('pagehide', markPageUnloading);" in template
+    assert "if (pageIsUnloading) return;" in template
+    assert "if (certificateSection.open && initialBackgroundHydrationComplete)" in template
+    assert "if (sessionsSection.open && initialBackgroundHydrationComplete)" in template
+    assert "const emergencyStopGeneration = emergencyStopDiscoveryGeneration;" in template
+    assert "queueBackgroundHydration([" in template
+    assert 'id="emergency-stop-refresh"' not in template
+    assert "emergencyStopRefresh" not in template
     assert "let emergencyStopDiscoveryGeneration = 0;" in template
     assert "emergencyStopDiscoveryGeneration += 1;" in template
     assert "emergencyStopSelect.disabled = false;" in template
-    assert "const generation = emergencyStopDiscoveryGeneration;" in template
+    assert (
+        "const loadEmergencyStopOptions = async "
+        "(expectedGeneration = emergencyStopDiscoveryGeneration)" in template
+    )
+    assert "if (expectedGeneration !== emergencyStopDiscoveryGeneration) return;" in template
+    assert "const generation = expectedGeneration;" in template
     assert template.count("if (generation !== emergencyStopDiscoveryGeneration) return;") == 3
     assert "component=admin_ui request_id=%s action=%s duration_ms=%.1f" in cgi
+    assert "component=admin_helper request_id=%s action=%s outcome=rejected code=%s" in cgi
     assert "component=admin_ui request_id=%s phase=initial_render duration_ms=%.1f" in cgi
+    assert "Server-Timing: mcp-template;dur=%.1f" in cgi
+    assert "phase=loxberry_header duration_ms=%.1f" in cgi
+    assert "lbheader($L{'BASIC.TITLE'} . \" V$version\", '', '', 'nojqm')" in cgi
+    assert "our %navbar" in cgi
+    assert "mcp-admin-shell-parsed" in template
+    assert "mcp-admin-background-hydration-started" in template
+    assert "print LoxBerry::Log::get_notifications_html($lbpplugindir);" not in cgi
     assert "my $failure_code = delete $result->{data}{discovery_failure_code};" in cgi
     assert "component=emergency_stop outcome=options_unavailable request_id=%s code=%s" in cgi
     assert "field.addEventListener('input'" in template
@@ -122,28 +265,43 @@ def test_initial_page_renders_configuration_before_loading_dynamic_state() -> No
         in template
     )
     assert 'id="certificate-unavailable" class="mcp-status" hidden' in template
-    assert "if (certificateSection.open) loadCertificateStatus();" in template
-    assert "if (sessionsSection.open) pollSessions();" in template
+    assert "if (certificateSection.open) loadCertificateStatus();" not in template
+    assert "if (sessionsSection.open) pollSessions();" not in template
     assert "serviceSection.setAttribute('aria-busy', 'false');" in template
     assert "sessionsSection.setAttribute('aria-busy', 'false');" in template
     assert "updateCertificate(null);" in template
     assert "let serviceLoaded = false;" in template
     assert "let sessionsLoaded = false;" in template
     assert "if (!sessionsLoaded)" in template
+    assert (
+        '<div id="session-list"><TMPL_UNLESS SERVER_RENDERED_FALLBACK>'
+        '<p class="mcp-status" data-kind="working" role="status">' in template
+    )
+    assert (
+        "<TMPL_ELSE><TMPL_IF SERVER_RENDERED_FALLBACK><p><TMPL_VAR SESSIONS.EMPTY></p>" in template
+    )
 
 
 def test_emergency_stop_selection_is_preserved_while_options_load() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    german = (ROOT / "templates/lang/language_de.ini").read_text(encoding="utf-8")
+    english = (ROOT / "templates/lang/language_en.ini").read_text(encoding="utf-8")
 
     assert "SELECTED_EMERGENCY_STOP => $selected_emergency_stop" in cgi
     assert 'id="emergency-stop-value" name="emergency_stop_virtual_status_uuid"' in template
     assert 'id="emergency-stop-select"' in template
-    assert 'id="emergency-stop-refresh"' in template
+    assert 'id="emergency-stop-refresh"' not in template
+    assert "EMERGENCY_STOP_REFRESH" not in template
+    assert "EMERGENCY_STOP_REFRESH" not in german
+    assert "EMERGENCY_STOP_REFRESH" not in english
+    assert "EMERGENCY_STOP_LOADING=" in german
+    assert "EMERGENCY_STOP_LOADING=" in english
     assert "emergencyStopSelect.disabled = false;" in template
     assert "emergencyStopValue.value = emergencyStopSelect.value;" in template
     assert "option.textContent = label;" in template
     assert "EMERGENCY_STOP_LOAD_ERROR" in template
+    assert "EMERGENCY_STOP_LOADING" in template
     assert "EMERGENCY_STOP_NO_OPTIONS" in template
     assert "EMERGENCY_STOP_NOT_CONFIGURED" in template
 
@@ -205,7 +363,9 @@ def test_service_status_is_first_and_uses_a_lightweight_ajax_contract() -> None:
     assert 'data-ajax="set_service_enabled"' in template
     assert "body.set('action', 'service_status')" in template
     assert "window.setTimeout(pollServiceStatus, delay)" in template
-    assert "document.hidden || serviceInteractionActive() || servicePollInFlight" in template
+    assert "const pollServiceStatus = async ({initial = false} = {}) =>" in template
+    assert "(!initial && document.hidden)" in template
+    assert "|| serviceInteractionActive() || servicePollInFlight" in template
     assert "document.addEventListener('visibilitychange'" in template
     assert "admin_call('service_status', {})" in cgi
     assert "admin_call('service_action', {command => $command})" in cgi
@@ -221,10 +381,9 @@ def test_sessions_poll_only_while_visible_and_open_and_patch_changed_rows() -> N
     assert "admin_call('list_sessions', {})" in cgi
     assert "body.set('action', 'list_sessions')" in template
     assert "window.setTimeout(pollSessions, delay)" in template
-    assert (
-        "document.hidden || !sessionsSection.open || activeSessionActions.size > 0 "
-        "|| sessionPollInFlight" in template
-    )
+    assert "const pollSessions = async ({initial = false} = {}) =>" in template
+    assert "(!initial && (document.hidden || !sessionsSection.open))" in template
+    assert "|| activeSessionActions.size > 0 || sessionPollInFlight" in template
     assert "sessionsSection.addEventListener('toggle'" in template
     assert "row.dataset.fingerprint !== sessionFingerprint(session)" in template
     assert "sessionList.replaceChildren(fragment)" in template
@@ -483,7 +642,7 @@ def test_cache_operation_checkbox_tracks_history_dependency() -> None:
     assert "operateEnabled.disabled = !historyEnabled.checked" in template
     assert "if (operateEnabled.disabled) operateEnabled.checked = false" in template
     assert "historyEnabled.addEventListener('change', syncOperateDependency)" in template
-    assert template.count("syncOperateDependency();") == 1
+    assert template.count("syncOperateDependency();") == 2
 
 
 def test_permission_policy_is_localized_in_german_and_english() -> None:

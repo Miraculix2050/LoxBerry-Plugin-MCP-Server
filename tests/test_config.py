@@ -203,6 +203,18 @@ def test_invalid_configuration_is_rejected(document: object) -> None:
         PluginConfig.from_document(document)
 
 
+def test_timed_load_reports_non_negative_lock_and_read_durations(tmp_path: Path) -> None:
+    path = (tmp_path / "mcpserver.json").resolve()
+    store = AtomicConfigStore(path)
+    store.save(PluginConfig.defaults())
+
+    config, timing = store.load_with_timing()
+
+    assert config.to_document() == PluginConfig.defaults().to_document()
+    assert set(timing) == {"config_lock_wait_ms", "config_read_validate_ms"}
+    assert all(value >= 0 for value in timing.values())
+
+
 def test_loxberry_operate_requires_history() -> None:
     with pytest.raises(ConfigError, match="requires loxone history"):
         PluginConfig.from_document(
