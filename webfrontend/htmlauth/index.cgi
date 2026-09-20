@@ -445,6 +445,14 @@ if ($action ne '') {
             'action=set_service_log_level outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
     } elsif ($action eq 'get_config') {
         $result = admin_call('get_config', {});
+    } elsif ($action eq 'page_auxiliary_content') {
+        $result = {
+            ok => JSON::PP::true,
+            data => {
+                notifications_html => LoxBerry::Log::get_notifications_html($lbpplugindir) // '',
+                loglist_html => LoxBerry::Web::loglist_html() // '',
+            },
+        };
     } elsif ($action eq 'page_state') {
         $result = admin_call('page_state', {});
     } elsif ($action eq 'emergency_stop_options') {
@@ -679,7 +687,6 @@ $template->param(
     HAS_SESSIONS => scalar(@$sessions) ? 1 : 0,
     NOTICE => $notice_text,
     NOTICE_KIND => $notice_kind,
-    LOGLIST => LoxBerry::Web::loglist_html(),
 );
 
 our %navbar;
@@ -706,7 +713,6 @@ admin_log('debug', sprintf(
     $request_id,
     (clock_gettime(CLOCK_MONOTONIC) - $header_started) * 1000,
 ));
-print LoxBerry::Log::get_notifications_html($lbpplugindir);
 print $page;
 LoxBerry::Web::lbfooter();
 admin_log('debug', sprintf(
