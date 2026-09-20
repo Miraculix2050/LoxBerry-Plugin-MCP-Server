@@ -575,10 +575,34 @@ sub format_expiry {
     return defined($formatted) && length($formatted) ? $formatted : $raw;
 }
 
+my $server_rendered_fallback = ($q->{fallback} // '') eq '1';
 my $config = {};
 my $sessions = [];
 my $loxberry_bindings = [];
 my $loxberry_operate_bindings = [];
+my $service_enabled_setting_known = 0;
+my $service_enabled_setting = 0;
+my $service = {};
+if ($server_rendered_fallback) {
+    my $config_result = admin_call('get_config', {});
+    $config = $config_result->{data}{configuration}
+        if $config_result->{ok} && ref($config_result->{data}{configuration}) eq 'HASH';
+    my $service_result = admin_call('service_status', {});
+    if ($service_result->{ok} && ref($service_result->{data}{service}) eq 'HASH') {
+        $service = $service_result->{data}{service};
+        $service_enabled_setting_known = 1;
+        $service_enabled_setting = $service->{enabled} ? 1 : 0;
+    }
+    my $sessions_result = admin_call('list_sessions', {});
+    if ($sessions_result->{ok} && ref($sessions_result->{data}) eq 'HASH') {
+        $sessions = $sessions_result->{data}{sessions}
+            if ref($sessions_result->{data}{sessions}) eq 'ARRAY';
+        $loxberry_bindings = $sessions_result->{data}{loxberry_bindings}
+            if ref($sessions_result->{data}{loxberry_bindings}) eq 'ARRAY';
+        $loxberry_operate_bindings = $sessions_result->{data}{loxberry_operate_bindings}
+            if ref($sessions_result->{data}{loxberry_operate_bindings}) eq 'ARRAY';
+    }
+}
 $config->{server} = {} if ref($config->{server}) ne 'HASH';
 $config->{loxone} = {} if ref($config->{loxone}) ne 'HASH';
 $config->{tools} = {} if ref($config->{tools}) ne 'HASH';
@@ -588,7 +612,7 @@ $config->{cache} = {} if ref($config->{cache}) ne 'HASH';
 $config->{mqtt} = {} if ref($config->{mqtt}) ne 'HASH';
 $config->{emergency_stop} = {} if ref($config->{emergency_stop}) ne 'HASH';
 my $selected_emergency_stop = $config->{emergency_stop}{virtual_status_uuid} // '';
-my $miniservers = configured_miniservers('');
+my $miniservers = configured_miniservers($config->{loxone}{endpoint} // '');
 my $has_selected_miniserver = grep { $_->{selected} } @$miniservers;
 my ($selected_miniserver) = grep { $_->{selected} } @$miniservers;
 my $display_endpoint = $config->{loxone}{endpoint} // '';
@@ -596,7 +620,6 @@ $display_endpoint = $selected_miniserver->{endpoint}
     if $display_endpoint eq '' && $selected_miniserver;
 my $public_origin = $config->{server}{public_origin} // '';
 my $certificate = {};
-my $service = {};
 my $renewal = {};
 my $general_config = stored_general_config();
 my $sslport = ref($general_config->{Webserver}) eq 'HASH'
@@ -620,6 +643,10 @@ my $notice_text = $notice_value eq 'success' ? $L{'AJAX.SUCCESS'}
     : $notice_value ne '' ? $L{'AJAX.ERROR'} : '';
 my $notice_kind = $notice_value eq 'success' || $notice_value eq 'certificate_scheduled'
     ? 'success' : 'error';
+for my $session (@$sessions) {
+    next if ref($session) ne 'HASH';
+    $session->{expires_display} = format_expiry($session->{expires_at});
+}
 my @service_logs;
 for my $suffix ('', '.1', '.2') {
     my $filename = "service.log$suffix";
@@ -631,8 +658,9 @@ for my $suffix ('', '.1', '.2') {
 }
 $template->param(
     VERSION => $version,
-    SERVICE_ENABLED_SETTING => 0,
-    SERVICE_ENABLED_SETTING_KNOWN => 0,
+    SERVER_RENDERED_FALLBACK => $server_rendered_fallback,
+    SERVICE_ENABLED_SETTING => $service_enabled_setting,
+    SERVICE_ENABLED_SETTING_KNOWN => $service_enabled_setting_known,
     ENABLED => $config->{server}{enabled} ? 1 : 0,
     MQTT_ENABLED => $config->{mqtt}{enabled} ? 1 : 0,
     MQTT_ROOT_TOPIC => $config->{mqtt}{root_topic} // 'mcpserver',
@@ -675,7 +703,7 @@ $template->param(
     LOG_LEVEL_WARNING => ($config->{logging}{level} // 'warning') eq 'warning' ? 1 : 0,
     LOG_LEVEL_INFO => ($config->{logging}{level} // 'warning') eq 'info' ? 1 : 0,
     LOG_LEVEL_DEBUG => ($config->{logging}{level} // 'warning') eq 'debug' ? 1 : 0,
-    SERVICE_ACTIVE => 0,
+    SERVICE_ACTIVE => $service->{active} ? 1 : 0,
     SERVICE_INSTALLED => $service->{installed} ? 1 : 0,
     SERVICE_FAILED => ($service->{active_state} // '') eq 'failed' ? 1 : 0,
     SERVICE_KNOWN => ($service->{active_state} // 'unknown') ne 'unknown' ? 1 : 0,

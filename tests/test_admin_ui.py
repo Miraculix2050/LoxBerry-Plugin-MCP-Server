@@ -112,10 +112,13 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert "notifications_html => LoxBerry::Log::get_notifications_html($lbpplugindir) // ''" in cgi
     assert "} elsif ($action eq 'page_loglist') {" in cgi
     assert "loglist_html => LoxBerry::Web::loglist_html() // ''" in cgi
-    assert "my $config_result" not in cgi
+    assert "my $server_rendered_fallback = ($q->{fallback} // '') eq '1';" in cgi
+    assert "if ($server_rendered_fallback) {" in cgi
+    assert "my $config_result = admin_call('get_config', {});" in cgi
+    assert "my $sessions_result = admin_call('list_sessions', {});" in cgi
     assert "admin_call('page_state', {})" in cgi
     assert "my $service_setting_result = admin_call('service_status', {});" not in cgi
-    assert "SERVICE_ENABLED_SETTING_KNOWN => 0" in cgi
+    assert "SERVER_RENDERED_FALLBACK => $server_rendered_fallback" in cgi
     assert "SELECTED_EMERGENCY_STOP => $selected_emergency_stop" in cgi
     assert "body.set('action', 'page_state')" in template
     assert "body.set('action', 'get_config')" in template
@@ -147,9 +150,22 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
         "() => pollSessions({initial: true}),"
     )
     assert "<TMPL_VAR LOGLIST>" not in template
-    assert 'id="mcp-config-fields" class="mcp-configuration-fields" disabled' in template
-    assert 'id="test-connection-fields" class="mcp-configuration-fields" disabled' in template
-    assert 'id="mqtt-config-fields" class="mcp-configuration-fields" disabled' in template
+    assert (
+        '<noscript><meta http-equiv="refresh" content="0;url=index.cgi?fallback=1"></noscript>'
+        in template
+    )
+    assert (
+        'id="mcp-config-fields" class="mcp-configuration-fields" '
+        "<TMPL_UNLESS SERVER_RENDERED_FALLBACK>disabled" in template
+    )
+    assert (
+        'id="test-connection-fields" class="mcp-configuration-fields" '
+        "<TMPL_UNLESS SERVER_RENDERED_FALLBACK>disabled" in template
+    )
+    assert (
+        'id="mqtt-config-fields" class="mcp-configuration-fields" '
+        "<TMPL_UNLESS SERVER_RENDERED_FALLBACK>disabled" in template
+    )
     assert 'id="service-enabled-setting-status"' in template
     assert 'id="mqtt-page-state-status"' in template
     assert 'id="emergency-stop-select"' in template
@@ -239,8 +255,11 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert "let sessionsLoaded = false;" in template
     assert "if (!sessionsLoaded)" in template
     assert (
-        '<div id="session-list"><p class="mcp-status" data-kind="working" role="status">'
-        in template
+        '<div id="session-list"><TMPL_UNLESS SERVER_RENDERED_FALLBACK>'
+        '<p class="mcp-status" data-kind="working" role="status">' in template
+    )
+    assert (
+        "<TMPL_ELSE><TMPL_IF SERVER_RENDERED_FALLBACK><p><TMPL_VAR SESSIONS.EMPTY></p>" in template
     )
 
 

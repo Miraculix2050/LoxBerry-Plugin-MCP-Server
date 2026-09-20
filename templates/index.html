@@ -6,6 +6,7 @@
 </script>
 
 <main class="mcp-page">
+  <TMPL_UNLESS SERVER_RENDERED_FALLBACK><noscript><meta http-equiv="refresh" content="0;url=index.cgi?fallback=1"></noscript></TMPL_UNLESS>
   <TMPL_IF NOTICE><div id="page-notice" class="mcp-status" role="status" data-kind="<TMPL_VAR NOTICE_KIND ESCAPE=HTML>"><TMPL_VAR NOTICE ESCAPE=HTML></div></TMPL_IF>
   <div id="ajax-status" class="mcp-status" role="status" aria-live="polite" hidden></div>
   <div id="loxberry-notifications" aria-busy="true" aria-live="polite"><span class="mcp-status" data-kind="working"><TMPL_VAR AJAX.NOTIFICATIONS_LOADING></span></div>
@@ -55,7 +56,7 @@
     <div class="mcp-collapsible-content">
     <form id="mcp-config-form" class="mcp-form" method="post" action="index.cgi" data-ajax="save_mcp_config">
       <input type="hidden" name="action" value="save_mcp_config">
-      <fieldset id="mcp-config-fields" class="mcp-configuration-fields" disabled>
+      <fieldset id="mcp-config-fields" class="mcp-configuration-fields" <TMPL_UNLESS SERVER_RENDERED_FALLBACK>disabled</TMPL_UNLESS>>
       <label class="mcp-field"><span><TMPL_VAR SETUP.PUBLIC_ORIGIN></span><input name="public_origin" type="url" value="<TMPL_VAR PUBLIC_ORIGIN ESCAPE=HTML>" placeholder="https://loxberry.local" required></label>
       <label class="mcp-field"><span><TMPL_VAR SETUP.MINISERVER_SOURCE></span><select id="miniserver-select" name="miniserver_endpoint"><option value="" <TMPL_IF MANUAL_ENDPOINT>selected</TMPL_IF>><TMPL_VAR SETUP.MANUAL_OPTION></option><TMPL_LOOP MINISERVERS><option value="<TMPL_VAR endpoint ESCAPE=HTML>" <TMPL_IF selected>selected</TMPL_IF>><TMPL_VAR label ESCAPE=HTML></option></TMPL_LOOP></select></label>
       <div id="manual-endpoint-fields" class="mcp-manual-endpoint" <TMPL_UNLESS MANUAL_ENDPOINT>hidden</TMPL_UNLESS>>
@@ -124,7 +125,7 @@
       </fieldset>
     </form>
     <form class="mcp-actions" method="post" action="index.cgi" data-ajax="test_connection">
-      <fieldset id="test-connection-fields" class="mcp-configuration-fields" disabled>
+      <fieldset id="test-connection-fields" class="mcp-configuration-fields" <TMPL_UNLESS SERVER_RENDERED_FALLBACK>disabled</TMPL_UNLESS>>
         <input type="hidden" name="action" value="test_connection">
         <input type="hidden" name="endpoint" value="<TMPL_VAR ENDPOINT ESCAPE=HTML>">
         <button class="lb-button" type="submit"><TMPL_VAR ACTION.TEST></button>
@@ -138,7 +139,7 @@
     <div class="mcp-collapsible-content">
       <form class="mcp-form" method="post" action="index.cgi" data-ajax="save_mqtt_config">
         <input type="hidden" name="action" value="save_mqtt_config">
-        <fieldset id="mqtt-config-fields" class="mcp-configuration-fields" disabled>
+        <fieldset id="mqtt-config-fields" class="mcp-configuration-fields" <TMPL_UNLESS SERVER_RENDERED_FALLBACK>disabled</TMPL_UNLESS>>
         <label><input name="mqtt_enabled" type="checkbox" value="1" <TMPL_IF MQTT_ENABLED>checked</TMPL_IF>> <TMPL_VAR MQTT.ENABLED></label>
         <label><input id="mqtt-use-loxberry-gateway" name="mqtt_use_loxberry_gateway" type="checkbox" value="1" <TMPL_IF MQTT_USE_LOXBERRY_GATEWAY>checked</TMPL_IF>> <TMPL_VAR MQTT.USE_LOXBERRY_GATEWAY></label>
         <p class="mcp-help"><TMPL_VAR MQTT.GATEWAY_HELP></p>
@@ -217,13 +218,13 @@
     data-unnamed-label="<TMPL_VAR SESSIONS.UNNAMED ESCAPE=HTML>">
     <summary><TMPL_VAR SESSIONS.TITLE></summary>
     <div class="mcp-collapsible-content">
-    <div id="session-list"><p class="mcp-status" data-kind="working" role="status"><TMPL_VAR AJAX.WORKING></p>
+    <div id="session-list"><TMPL_UNLESS SERVER_RENDERED_FALLBACK><p class="mcp-status" data-kind="working" role="status"><TMPL_VAR AJAX.WORKING></p></TMPL_UNLESS>
     <TMPL_IF HAS_SESSIONS>
       <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.TOKEN></th><th><TMPL_VAR SESSIONS.SCOPES></th><th><TMPL_VAR SESSIONS.EXPIRES></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody>
       <TMPL_LOOP SESSIONS><tr data-session-id="<TMPL_VAR id ESCAPE=HTML>"><td><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML><TMPL_ELSE><TMPL_VAR SESSIONS.UNNAMED></TMPL_IF></td><td><code><TMPL_VAR client ESCAPE=HTML></code></td><td><code><TMPL_VAR identity ESCAPE=HTML></code></td><td data-session-token-state><TMPL_IF loxone_token_confirmation_required><TMPL_VAR SESSIONS.TOKEN_CONFIRMATION_REQUIRED><TMPL_ELSE><TMPL_VAR SESSIONS.TOKEN_ACTIVE></TMPL_IF></td><td><code><TMPL_VAR scopes ESCAPE=HTML></code></td><td><time class="mcp-expiry" data-expires-at="<TMPL_VAR expires_at ESCAPE=HTML>"><TMPL_VAR expires_display ESCAPE=HTML></time></td><td><TMPL_IF loxone_token_confirmation_required><form method="post" action="index.cgi" data-ajax="confirm_loxone_token"><input type="hidden" name="action" value="confirm_loxone_token"><input type="hidden" name="session_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.CONFIRM_LOXONE_TOKEN></button></form></TMPL_IF><TMPL_IF loxberry_read_eligible><TMPL_UNLESS loxberry_read_approved><form method="post" action="index.cgi" data-ajax="allow_loxberry_read"><input type="hidden" name="action" value="allow_loxberry_read"><input type="hidden" name="session_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.ALLOW_LOXBERRY_READ></button></form></TMPL_UNLESS></TMPL_IF><TMPL_IF loxberry_operate_eligible><TMPL_UNLESS loxberry_operate_approved><form method="post" action="index.cgi" data-ajax="allow_loxberry_operate"><input type="hidden" name="action" value="allow_loxberry_operate"><input type="hidden" name="session_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.ALLOW_LOXBERRY_OPERATE></button></form></TMPL_UNLESS></TMPL_IF><form method="post" action="index.cgi" data-ajax="revoke_session"><input type="hidden" name="action" value="revoke_session"><input type="hidden" name="id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form></td></tr></TMPL_LOOP>
       </tbody></table></div>
       <form method="post" action="index.cgi" data-ajax="revoke_all"><input type="hidden" name="action" value="revoke_all"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE_ALL></button></form>
-    <TMPL_ELSE></TMPL_IF>
+    <TMPL_ELSE><TMPL_IF SERVER_RENDERED_FALLBACK><p><TMPL_VAR SESSIONS.EMPTY></p></TMPL_IF></TMPL_IF>
     </div>
     <template id="session-table-template">
       <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.TOKEN></th><th><TMPL_VAR SESSIONS.SCOPES></th><th><TMPL_VAR SESSIONS.EXPIRES></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody></tbody></table></div>
