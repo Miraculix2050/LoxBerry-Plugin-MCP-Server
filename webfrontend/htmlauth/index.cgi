@@ -10,6 +10,7 @@ use JSON::PP qw(decode_json encode_json);
 use POSIX qw(strftime);
 use Socket qw(AF_INET AF_INET6 inet_ntop inet_pton);
 use Symbol qw(gensym);
+use Time::HiRes qw(clock_gettime CLOCK_MONOTONIC);
 use LoxBerry::System;
 use LoxBerry::Web;
 use LoxBerry::Log;
@@ -25,6 +26,8 @@ if (($q->{lang} // '') =~ /\A(?:de|en)\z/) {
 }
 my $version = LoxBerry::System::pluginversion();
 my $admin_log;
+my $render_started = clock_gettime(CLOCK_MONOTONIC);
+my $request_id = sprintf('%x-%x', $$, int($render_started * 1_000_000));
 use constant ADMIN_LOG_MESSAGE_BYTES => 8 * 1024;
 use constant ADMIN_LOG_TRUNCATION_SUFFIX => ' ... [truncated]';
 
@@ -71,6 +74,7 @@ $ENV{MCPSERVER_CERT_STATUS} = "$lbpdatadir/certificate-renewal.json";
 
 sub admin_call {
     my ($action, $payload) = @_;
+    my $started = clock_gettime(CLOCK_MONOTONIC);
     my ($child_in, $child_out);
     my $child_err = gensym;
     my $pid = open3($child_in, $child_out, $child_err, "$lbpbindir/mcpserver-admin");
@@ -80,6 +84,12 @@ sub admin_call {
     my $stdout = <$child_out> // '';
     my $stderr = <$child_err> // '';
     waitpid($pid, 0);
+    admin_log('debug', sprintf(
+        'component=admin_ui request_id=%s action=%s duration_ms=%.1f',
+        $request_id,
+        $action,
+        (clock_gettime(CLOCK_MONOTONIC) - $started) * 1000,
+    ));
     if ($? != 0 || $stdout eq '') {
         admin_log('error', 'component=admin_helper outcome=failed');
         return {ok => JSON::PP::false, error => {code => 'internal_error', message => 'Administrative action failed'}};
@@ -88,6 +98,16 @@ sub admin_call {
     if (!$result || ref($result) ne 'HASH') {
         admin_log('error', 'component=admin_helper outcome=invalid_response');
         return {ok => JSON::PP::false, error => {code => 'internal_error', message => 'Administrative action failed'}};
+    }
+    if ($action eq 'emergency_stop_options' && $result->{ok} && ref($result->{data}) eq 'HASH') {
+        my $failure_code = delete $result->{data}{discovery_failure_code};
+        if (defined $failure_code && $failure_code =~ /\A[a-z_]{1,128}\z/) {
+            admin_log('warning', sprintf(
+                'component=emergency_stop outcome=options_unavailable request_id=%s code=%s',
+                $request_id,
+                $failure_code,
+            ));
+        }
     }
     return $result;
 }
@@ -660,9 +680,15 @@ $navbar{45}{URL} = '#certificate';
 $navbar{50}{Name} = $L{'NAV.HELP'};
 $navbar{50}{URL} = '#help';
 
+my $page = $template->output();
 print_html_security_headers();
 LoxBerry::Web::lbheader($L{'BASIC.TITLE'} . " V$version", '', '', 'nojqm');
 print LoxBerry::Log::get_notifications_html($lbpplugindir);
-print $template->output();
+print $page;
 LoxBerry::Web::lbfooter();
+admin_log('debug', sprintf(
+    'component=admin_ui request_id=%s phase=initial_render duration_ms=%.1f',
+    $request_id,
+    (clock_gettime(CLOCK_MONOTONIC) - $render_started) * 1000,
+));
 exit;

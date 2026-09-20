@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Load Admin UI service state independently, defer closed certificate and
+  session sections, and query emergency-stop options only on explicit request.
+  Failed option discovery now distinguishes unavailable discovery from an empty
+  matching list without changing fail-closed emergency-stop monitoring.
+
 - Add `loxone_analyze_project`, a bounded read-only KNX evidence surface for
   project-local address patterns, raw datatype reuse, reviewed signal-use
   differences, static path counts, and absent project relationships. Findings

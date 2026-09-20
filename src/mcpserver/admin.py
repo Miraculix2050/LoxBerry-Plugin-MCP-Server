@@ -538,7 +538,11 @@ def _save_mcp(payload: object) -> dict[str, Any]:
 def _emergency_stop_options() -> dict[str, Any]:
     from mcpserver.emergency_stop import virtual_status_options
 
-    return {"options": asyncio.run(virtual_status_options(_config_store().load()))}
+    result = asyncio.run(virtual_status_options(_config_store().load()))
+    response = {"status": result.status, "options": list(result.options)}
+    if result.failure_code is not None:
+        response["discovery_failure_code"] = result.failure_code
+    return response
 
 
 def _save_mqtt(payload: object) -> dict[str, Any]:
@@ -1193,19 +1197,10 @@ def dispatch(request: object) -> dict[str, Any]:
     action = request["action"]
     payload = request.get("payload", {})
     if action == "page_state":
-        snapshot = _admin_read_snapshot(require_configuration=True)
-        if snapshot.configuration is None:
-            raise AdminError("plugin storage is not configured")
         return {
-            "configuration": snapshot.configuration.to_document(),
-            "version": __version__,
-            "sessions": _sessions(snapshot),
-            "loxberry_bindings": _loxberry_bindings(snapshot),
-            "loxberry_operate_bindings": _loxberry_operate_bindings(snapshot),
-            "certificate": _certificate_status(configuration=snapshot.configuration),
             "mqtt_gateway": _mqtt_gateway_status(),
             "mqtt_password_configured": _mqtt_password_configured(),
-        } | _service_response()
+        }
     if action == "get_config":
         return {"configuration": _config_store().load().to_document()}
     if action == "save_config":
