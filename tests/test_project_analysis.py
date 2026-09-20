@@ -121,7 +121,8 @@ def test_role_dependent_analyses_compute_reviewed_signal_usage(monkeypatch, anal
 
 def test_signal_usage_peer_outliers_compare_roles_without_the_usage_signature(monkeypatch):
     def usage_by_source(node, *_args):
-        return (("minority", None),) if node.source_id == "s4" else (("majority", None),)
+        usage = (("minority", None),) if node.source_id == "s4" else (("majority", None),)
+        return usage, False
 
     monkeypatch.setattr(project_analysis, "_usage", usage_by_source)
     project = (
@@ -142,6 +143,89 @@ def test_signal_usage_peer_outliers_compare_roles_without_the_usage_signature(mo
     ]
     assert len(peer_outliers) == 1
     assert peer_outliers[0]["support"] == {"count": 4, "total": 5, "ratio": 0.8}
+
+
+def test_usage_analysis_stops_at_the_shared_traversal_budget(monkeypatch):
+    monkeypatch.setattr(project_analysis, "_MAX_USAGE_NODES", 1)
+    result = analyze_knx(
+        _view(
+            b'<P><C Type="EIBsensor" U="sensor" EibAddr="1/2/3"><Co U="source"/></C>'
+            b'<C Type="EIBPush" U="push"><Co K="Tg" U="trigger"><In Input="source"/></Co>'
+            b'<Co K="O" U="output"/></C></P>'
+        ),
+        frozenset({"signal_usage_consistency"}),
+    )
+
+    assert result["analysis_truncated"] is True
+    assert result["truncation_reasons"] == ["max_usage_nodes"]
+    assert result["coverage"]["reviewed_signal_usage"] == 0
+
+
+def test_analysis_uses_runtime_evidence_only_for_a_unique_reverse_mapping():
+    identifier = "a" * 32
+    controls = (
+        SimpleNamespace(
+            uuid=identifier,
+            action_uuid=None,
+            subcontrols=(),
+            name="First name",
+            control_type="Switch",
+            room_uuid=None,
+            category_uuid=None,
+        ),
+        SimpleNamespace(
+            uuid=identifier,
+            action_uuid=None,
+            subcontrols=(),
+            name="Second name",
+            control_type="Dimmer",
+            room_uuid=None,
+            category_uuid=None,
+        ),
+    )
+
+    result = analyze_knx(
+        _view(
+            (
+                f'<P><C Type="EIBsensor" U="{identifier}" EibAddr="1/2/3"><Co U="out"/></C></P>'
+            ).encode(),
+            controls,
+        ),
+        frozenset({"naming_consistency"}),
+    )
+
+    assert result["coverage"]["exact_runtime_mappings"] == 0
+    assert result["coverage"]["named_endpoints"] == 0
+
+
+def test_technology_architecture_does_not_reclassify_mapped_knx_endpoints_as_loxone():
+    sensor_id, actor_id = "a" * 32, "b" * 32
+    controls = tuple(
+        SimpleNamespace(
+            uuid=identifier,
+            action_uuid=None,
+            subcontrols=(),
+            name="Mapped endpoint",
+            control_type="Switch",
+            room_uuid=None,
+            category_uuid=None,
+        )
+        for identifier in (sensor_id, actor_id)
+    )
+    result = analyze_knx(
+        _view(
+            f'<P><C Type="EIBsensor" U="{sensor_id}" EibAddr="1/2/3"><Co U="source"/></C>'
+            f'<C Type="EIBPush" U="push"><Co K="Tg" U="trigger"><In Input="source"/></Co>'
+            f'<Co K="O" U="output"/></C><C Type="EIBactor" U="{actor_id}" EibAddr="1/2/4">'
+            f'<Co U="input"><In Input="output"/></Co></C></P>'.encode(),
+            controls,
+        ),
+        frozenset({"technology_architecture"}),
+    )
+
+    counts = result["summaries"]["technology_architecture"]["counts"]
+    assert counts["knx_to_knx"] == 1
+    assert "loxone_to_loxone" not in counts
 
 
 def test_technology_path_analysis_never_reverses_at_a_logic_input_merge():

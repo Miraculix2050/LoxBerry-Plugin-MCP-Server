@@ -766,7 +766,9 @@ class ProjectAnalysisData(BaseModel):
     findings: list[ProjectAnalysisFindingData]
     next_cursor: str | None
     analysis_truncated: bool
-    truncation_reasons: list[Literal["max_path_nodes", "max_paths", "max_depth", "max_findings"]]
+    truncation_reasons: list[
+        Literal["max_usage_nodes", "max_path_nodes", "max_paths", "max_depth", "max_findings"]
+    ]
     page_truncated: bool = False
     page_truncation_reason: Literal["max_response_bytes"] | None = None
 

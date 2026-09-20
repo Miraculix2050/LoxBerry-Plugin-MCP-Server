@@ -30,6 +30,8 @@ _MAX_EVIDENCE = 20
 _MAX_PATHS = 5_000
 _MAX_VISITED_PER_START = 2_000
 _MAX_PATH_DEPTH = 16
+_MAX_USAGE_NODES_PER_ENDPOINT = 2_000
+_MAX_USAGE_NODES = 100_000
 _AddressGroupKey = tuple[str, str, str, tuple[tuple[str, str | None], ...]]
 _DirectionalAdjacency = dict[str, list[GraphEdge | SemanticEdge]]
 
@@ -46,6 +48,17 @@ class _Endpoint:
     usage: tuple[tuple[str, str | None], ...]
     runtime: RuntimeEvidence | None
     names: tuple[tuple[str, str], ...]
+
+
+@dataclass(slots=True)
+class _UsageBudget:
+    remaining: int = _MAX_USAGE_NODES
+
+    def consume(self) -> bool:
+        if self.remaining <= 0:
+            return False
+        self.remaining -= 1
+        return True
 
 
 def _finding_id(kind: str, basis: object, nodes: list[str]) -> str:
@@ -103,11 +116,22 @@ def _usage(
     node: GraphNode,
     children: dict[str, list[str]],
     adjacency: _DirectionalAdjacency,
-) -> tuple[tuple[str, str | None], ...]:
+    budget: _UsageBudget,
+) -> tuple[tuple[tuple[str, str | None], ...], bool]:
     assert node.knx is not None and node.knx.flow_direction is not None
-    seeds = _descendants(node.key, children)
+    seeds, seed_pending = [], deque([node.key])
+    seen = set[str]()
+    while seed_pending:
+        current = seed_pending.popleft()
+        if current in seen:
+            continue
+        if len(seen) >= _MAX_USAGE_NODES_PER_ENDPOINT or not budget.consume():
+            return (), True
+        seen.add(current)
+        seeds.append(current)
+        seed_pending.extend(child for child in children[current] if child not in seen)
     upstream = node.knx.flow_direction == "loxone_to_bus"
-    seen, pending, result = set(seeds), deque(seeds), set[tuple[str, str | None]]()
+    pending, result = deque(seeds), set[tuple[str, str | None]]()
     while pending:
         current = pending.popleft()
         for relationship in adjacency[current]:
@@ -115,9 +139,11 @@ def _usage(
             if isinstance(relationship, SemanticEdge):
                 result.add((relationship.interpretation, relationship.effect))
             if other not in seen:
+                if len(seen) >= _MAX_USAGE_NODES_PER_ENDPOINT or not budget.consume():
+                    return (), True
                 seen.add(other)
                 pending.append(other)
-    return tuple(sorted(result))
+    return tuple(sorted(result)), False
 
 
 _NAME_PART = re.compile(r"(?<=[a-z])(?=[A-Z])|(?<=[A-Za-z])(?=\d)|(?<=\d)(?=[A-Za-z])|[^\w]+")
@@ -172,12 +198,17 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
     upstream: _DirectionalAdjacency = {}
     if needs_directional_adjacency:
         downstream, upstream = _directional_adjacencies(graph.edges, graph.semantic_edges)
+    runtime_candidates: dict[str, list[RuntimeEvidence]] = defaultdict(list)
+    for entry in view.mapping.entries:
+        if entry.status != "exact" or entry.evidence is None:
+            continue
+        for key in entry.node_keys:
+            runtime_candidates[key].append(entry.evidence)
     runtime_by_node = {
-        key: entry.evidence
-        for entry in view.mapping.entries
-        if entry.status == "exact" and entry.evidence is not None
-        for key in entry.node_keys
+        key: evidence[0] for key, evidence in runtime_candidates.items() if len(evidence) == 1
     }
+    usage_budget = _UsageBudget(_MAX_USAGE_NODES)
+    usage_truncated = False
     endpoints: list[_Endpoint] = []
     for node in graph.nodes:
         knx = node.knx
@@ -185,6 +216,10 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
             continue
         address = knx.group_address
         usage_adjacency = upstream if knx.flow_direction == "loxone_to_bus" else downstream
+        usage, truncated = (
+            _usage(node, children, usage_adjacency, usage_budget) if needs_usage else ((), False)
+        )
+        usage_truncated = usage_truncated or truncated
         runtime = runtime_by_node.get(_block(node, nodes, parents).key)
         names: list[tuple[str, str]] = []
         if knx.title:
@@ -202,14 +237,14 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
                 address.format if address else None,
                 address.segments if address else None,
                 knx.datatype.source_value if knx.datatype else None,
-                _usage(node, children, usage_adjacency) if needs_usage else (),
+                usage,
                 runtime,
                 tuple(names),
             )
         )
     findings: list[dict[str, object]] = []
     summaries: dict[str, object] = {}
-    truncated_reasons: list[str] = []
+    truncated_reasons: list[str] = ["max_usage_nodes"] if usage_truncated else []
 
     def emit(kind: str, basis: object, evidence: list[str], payload: dict[str, object]) -> None:
         """Add one bounded finding while hashing the complete evidence set."""
@@ -594,11 +629,13 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
     if "technology_architecture" in analyses:
         counts: Counter[str] = Counter()
         samples: dict[str, list[dict[str, object]]] = defaultdict(list)
+        endpoint_blocks = {item.block.key for item in endpoints}
         mapped = {
             key
             for entry in view.mapping.entries
             if entry.status == "exact"
             for key in entry.node_keys
+            if key not in endpoint_blocks
         }
         seen_paths: set[tuple[str, str, str]] = set()
         path_limit_reached = False
