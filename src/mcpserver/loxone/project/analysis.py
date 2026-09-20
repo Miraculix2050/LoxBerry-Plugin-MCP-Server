@@ -296,7 +296,7 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
         seen_paths: set[tuple[str, str, str]] = set()
         for start in endpoints:
             is_downstream = start.direction == "bus_to_loxone"
-            adjacency = downstream if is_downstream else upstream
+            path_adjacency = downstream if is_downstream else upstream
             pending = deque((key, [key], 0) for key in _descendants(start.block.key, children))
             visited = {key for key, _, _ in pending}
             while pending:
@@ -306,7 +306,7 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
                     break
                 if depth >= 16:
                     continue
-                for edge in adjacency[current]:
+                for edge in path_adjacency[current]:
                     other = edge.target if is_downstream else edge.source
                     if other in visited:
                         continue
