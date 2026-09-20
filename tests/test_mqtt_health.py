@@ -40,8 +40,9 @@ class _Client:
     def loop_start(self) -> None:
         self.calls.append(("loop_start",))
 
-    def publish(self, *args: object, **kwargs: object) -> None:
+    def publish(self, *args: object, **kwargs: object) -> _Publication:
         self.calls.append(("publish", *args, kwargs))
+        return _Publication()
 
     def disconnect(self) -> None:
         self.calls.append(("disconnect",))
@@ -50,10 +51,27 @@ class _Client:
         self.calls.append(("loop_stop",))
 
 
+class _Publication:
+    def __init__(self, *, published: bool = True) -> None:
+        self.published = published
+
+    def wait_for_publish(self, *, timeout: float) -> None:
+        del timeout
+
+    def is_published(self) -> bool:
+        return self.published
+
+
 class _CleanupClient(_Client):
     def connect_async(self, host: str, port: int, keepalive: int) -> None:
         super().connect_async(host, port, keepalive)
         self.on_connect(self, None, None, 0)
+
+
+class _UnacknowledgedCleanupClient(_CleanupClient):
+    def publish(self, *args: object, **kwargs: object) -> _Publication:
+        super().publish(*args, **kwargs)
+        return _Publication(published=False)
 
 
 def test_retained_cleanup_decision_ignores_credentials_at_the_same_destination() -> None:
@@ -116,6 +134,20 @@ def test_retained_cleanup_failure_is_non_throwing() -> None:
         broker=MqttGateway("broker", 1883, "health", "secret"),
         client_factory=lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("unavailable")),
     )
+
+
+def test_retained_cleanup_rejects_an_unacknowledged_deletion() -> None:
+    clients: list[_UnacknowledgedCleanupClient] = []
+
+    assert not clear_retained_topics(
+        PluginConfig(
+            mqtt_enabled=True, mqtt_use_loxberry_gateway=False, mqtt_host="broker.example"
+        ),
+        broker=MqttGateway("broker.example", 1883, "health", "secret"),
+        client_factory=lambda **kwargs: clients.append(_UnacknowledgedCleanupClient(**kwargs))
+        or clients[-1],
+    )
+    assert len([call for call in clients[0].calls if call[0] == "publish"]) == 1
 
 
 def test_gateway_uses_loxberry_general_json(tmp_path: Path) -> None:

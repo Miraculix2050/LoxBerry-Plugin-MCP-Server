@@ -259,6 +259,9 @@ def clear_retained_topics(
             wait_for_publish = getattr(publication, "wait_for_publish", None)
             if callable(wait_for_publish):
                 wait_for_publish(timeout=3)
+            is_published = getattr(publication, "is_published", None)
+            if callable(is_published) and not is_published():
+                raise TimeoutError("MQTT cleanup publication was not acknowledged")
         return True
     except Exception:
         _LOGGER.warning("event=mqtt_retained_cleanup_failed")
