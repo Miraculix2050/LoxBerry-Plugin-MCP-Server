@@ -371,6 +371,7 @@
   let sessionDataVersion = 0;
   let nextSessionActionToken = 0;
   const activeSessionActions = new Map();
+  const sessionActionFailures = new Map();
   let sessionPollInFlight = false;
   let sessionPollTimer = null;
   let lastService = null;
@@ -1019,6 +1020,7 @@
       || left.action === 'revoke_loxberry_operate';
     const rightIsBindingRevocation = right.action === 'revoke_loxberry_read'
       || right.action === 'revoke_loxberry_operate';
+    if (leftIsBindingRevocation && rightIsBindingRevocation) return true;
     if (leftIsBindingRevocation !== rightIsBindingRevocation) return true;
     return left.sessionId !== '' && left.sessionId === right.sessionId
       && (left.action === 'revoke_session' || right.action === 'revoke_session');
@@ -1036,10 +1038,16 @@
     if ([...activeSessionActions.values()].some(({descriptor: active}) => (
       sessionActionsConflict(descriptor, active)
     ))) return null;
+    if (activeSessionActions.size === 0) sessionActionFailures.clear();
     const token = `session-action-${++nextSessionActionToken}`;
     activeSessionActions.set(token, {descriptor, button});
     sessionDataVersion += 1;
     return token;
+  };
+  const showSessionActionFailure = () => {
+    const failures = [...sessionActionFailures.values()];
+    const failure = failures[failures.length - 1];
+    if (failure) setAjaxStatus('error', failure);
   };
   const finishSessionAction = (token) => {
     activeSessionActions.delete(token);
@@ -1098,6 +1106,7 @@
       return;
     }
     removeBindingRows(descriptor);
+    if (Array.isArray(data.sessions)) updateSessions(data.sessions);
   };
   const scheduleSessionPoll = (delay = 10000) => {
     window.clearTimeout(sessionPollTimer);
@@ -1201,9 +1210,11 @@
       }
       button.disabled = true;
       button.setAttribute('aria-busy', 'true');
-      setAjaxStatus('', (form.dataset.ajax === 'service_action' || form.dataset.ajax === 'set_service_enabled')
-        ? '<TMPL_VAR STATUS.ACTION_RUNNING ESCAPE=JS>'
-        : '<TMPL_VAR AJAX.WORKING ESCAPE=JS>');
+      if (!sessionActionToken || sessionActionFailures.size === 0) {
+        setAjaxStatus('', (form.dataset.ajax === 'service_action' || form.dataset.ajax === 'set_service_enabled')
+          ? '<TMPL_VAR STATUS.ACTION_RUNNING ESCAPE=JS>'
+          : '<TMPL_VAR AJAX.WORKING ESCAPE=JS>');
+      }
       const body = new URLSearchParams(new FormData(form));
       const requestedServiceEnabled = form.dataset.ajax === 'set_service_enabled'
         ? serviceEnabledInput.checked : null;
@@ -1220,8 +1231,12 @@
             throw new Error('<TMPL_VAR STATUS.ERROR_ACTION ESCAPE=JS>');
           }
         }
-        setAjaxStatus('success', '<TMPL_VAR AJAX.SUCCESS ESCAPE=JS>');
-        hideSuccess(status, () => activeSessionActions.size > 0);
+        if (sessionActionToken && sessionActionFailures.size > 0) {
+          showSessionActionFailure();
+        } else {
+          setAjaxStatus('success', '<TMPL_VAR AJAX.SUCCESS ESCAPE=JS>');
+          hideSuccess(status, () => activeSessionActions.size > 0);
+        }
         if (result.data.service) {
           renderService(result.data.service, {
             updateEnabledSetting: form.dataset.ajax === 'set_service_enabled',
@@ -1253,13 +1268,16 @@
         if (form.dataset.ajax === 'set_service_enabled') {
           serviceEnabledInput.checked = serviceEnabledSetting;
         }
-        if (error instanceof DOMException && error.name === 'AbortError') {
-          setAjaxStatus('error', '<TMPL_VAR AJAX.TIMEOUT ESCAPE=JS>');
-        } else if (error instanceof TypeError) {
-          setAjaxStatus('error', '<TMPL_VAR AJAX.NETWORK ESCAPE=JS>');
+        const errorMessage = error instanceof DOMException && error.name === 'AbortError'
+          ? '<TMPL_VAR AJAX.TIMEOUT ESCAPE=JS>'
+          : error instanceof TypeError
+            ? '<TMPL_VAR AJAX.NETWORK ESCAPE=JS>'
+            : error instanceof Error ? error.message : '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
+        if (sessionActionToken) {
+          sessionActionFailures.set(sessionActionToken, errorMessage);
+          showSessionActionFailure();
         } else {
-          setAjaxStatus('error', error instanceof Error
-            ? error.message : '<TMPL_VAR AJAX.ERROR ESCAPE=JS>');
+          setAjaxStatus('error', errorMessage);
         }
       } finally {
         if (form.dataset.ajax === 'service_action' || form.dataset.ajax === 'set_service_enabled') {

@@ -227,6 +227,7 @@ def test_session_action_coordinator_allows_only_non_conflicting_actions() -> Non
 let sessionDataVersion = 0;
 let nextSessionActionToken = 0;
 const activeSessionActions = new Map();
+const sessionActionFailures = new Map();
 {coordinator.group(1)}
 const descriptor = (action, sessionId = '', bindingId = '') => ({{
   action, sessionId, bindingId, key: sessionActionKey(action, sessionId, bindingId),
@@ -254,7 +255,7 @@ const result = {{
 for (const token of [...activeSessionActions.keys()]) finishSessionAction(token);
 const binding = beginSessionAction(readBinding, null);
 result.duplicateBindingBlocked = beginSessionAction(readBinding, null) === null;
-result.otherBindingAllowed = Boolean(beginSessionAction(otherBinding, null));
+result.otherBindingBlocked = beginSessionAction(otherBinding, null) === null;
 result.sessionActionBlockedDuringBindingRevocation = beginSessionAction(readA, null) === null;
 for (const token of [...activeSessionActions.keys()]) finishSessionAction(token);
 const revokeAll = beginSessionAction(descriptor('revoke_all'), null);
@@ -270,9 +271,9 @@ console.log(JSON.stringify(result));
         '"revokeAllBlockedWhileActive":true,'
         '"bindingRevocationBlockedDuringSessionAction":true,'
         '"finalFinishOnly":[false,false,true],'
-        '"duplicateBindingBlocked":true,"otherBindingAllowed":true,'
+        '"duplicateBindingBlocked":true,"otherBindingBlocked":true,'
         '"sessionActionBlockedDuringBindingRevocation":true,'
-        '"revokeAllExclusive":true,"version":6}'
+        '"revokeAllExclusive":true,"version":5}'
     )
     assert "const activeSessionActions = new Map();" in template
     assert "const sessionActionsConflict = (left, right)" in template
@@ -293,7 +294,11 @@ console.log(JSON.stringify(result));
     assert "const mergeLoxberryBindings = (bindings) =>" in template
     assert "const mergeLoxberryOperateBindings = (bindings) =>" in template
     assert "const setAjaxStatus = (kind, message) =>" in template
+    assert "const sessionActionFailures = new Map();" in template
+    assert "const showSessionActionFailure = () =>" in template
     assert "hideSuccess(status, () => activeSessionActions.size > 0);" in template
+    assert "if (leftIsBindingRevocation && rightIsBindingRevocation) return true;" in template
+    assert "if (Array.isArray(data.sessions)) updateSessions(data.sessions);" in template
     assert "pendingSessionActionButtons" not in template
 
 
