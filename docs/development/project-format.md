@@ -50,6 +50,22 @@ kept verbatim and normalized only for validated two- or three-level forms.
 EIS or DPT meaning. Unknown attributes remain internal and are never a raw MCP
 projection. Equal group addresses do not create graph edges.
 
+## Derived KNX signal-use evidence
+
+The graph keeps raw `signal` and `reference` edges separate from reviewed,
+derived internal connector edges. A derived edge exists only for an exact
+allowlisted block type and input/output connector pair. It records a compact
+interpretation such as `level`, `value`, `rising_edge`, or
+`duration_sensitive`, and may retain a separate effect such as `toggle`.
+Unknown block types, connector keys, duplicate connector keys, and incomplete
+rules create no derived edge.
+
+One KNX endpoint can reach several derived edges and therefore has several
+usage observations. A trace may classify a bounded path as `knx_to_loxone`,
+`loxone_to_knx`, or `knx_to_knx` only when its boundary endpoints are confirmed
+KNX endpoints or exact runtime mappings. These paths describe static project
+reachability, not a physical device role, bus telegram, or historical cause.
+
 Source, decoder, parser and graph execute in a disposable subprocess with a
 45-second processing deadline, bounded IPC and Linux address-space/CPU/core-dump
 limits. The separate network download deadline remains 20 seconds.

@@ -23,6 +23,11 @@ Graphbeziehung und beweisen keine Kausalität. Suche und Trace liefern nur eine 
 KNX-Zusammenfassung; den Originalwert, Segmente, Namen und den DPT-Rohwert liefert gezielt
 `loxone_describe_project_object`. Projekt-Suchseiten und Traces sind zusätzlich auf 64 KiB
 begrenzt und melden eine Größenkürzung über `truncated` und `truncation_reason`.
+Wenn eine exakt geprüfte Block-/Connector-Regel vorliegt, liefert Describe zusätzlich eine oder
+mehrere getrennte KNX-Signalnutzungsbeobachtungen. Trace liefert getrennt markierte abgeleitete
+Connectorkanten sowie begrenzte Pfade `knx_to_loxone`, `loxone_to_knx` oder `knx_to_knx`.
+Unbekanntes Block- oder Connector-Verhalten wird nicht geraten. Diese Ergebnisse beschreiben
+statische Projektpfade, keine Bus-Telegramme und keine historische Ursache einer Aktion.
 
 `loxone_get_structure_overview` liefert eine begrenzte erste Übersicht der für
 den angemeldeten Loxone-Benutzer sichtbaren Räume, Kategorien und Control-Typen.

@@ -7,7 +7,7 @@ from mcpserver.loxone.project.parser import parse_project
 from mcpserver.loxone.project.query import ProjectQuery
 
 
-def _query(data: bytes) -> ProjectQuery:
+def _query(data: bytes, controls: tuple[SimpleNamespace, ...] = ()) -> ProjectQuery:
     snapshot = ProjectSnapshot(
         "project",
         2,
@@ -17,7 +17,7 @@ def _query(data: bytes) -> ProjectQuery:
     return ProjectQuery(
         ProjectView(
             snapshot,
-            map_runtime(snapshot, SimpleNamespace(last_modified="v", controls=())),
+            map_runtime(snapshot, SimpleNamespace(last_modified="v", controls=controls)),
         ),
         {},
     )
@@ -52,6 +52,8 @@ def test_knx_endpoints_keep_direction_source_data_and_bounded_address():
             "normalized_code": None,
         },
         "truncated_fields": [],
+        "usage_observations": [],
+        "usage_observations_truncated": False,
     }
     assert actor["flow_direction"] == "loxone_to_bus"
 
@@ -158,3 +160,131 @@ def test_knx_semantics_do_not_create_signal_edges_from_equal_group_addresses():
     assert not [edge for edge in graph.edges if edge.kind == "signal"]
     assert graph.nodes[0].knx is not None
     assert graph.nodes[2].knx is not None
+
+
+def test_knx_technology_paths_never_reverse_the_requested_trace_direction():
+    project = _query(
+        b'<P><C Type="EIBactor" U="actor" EibAddr="1/2/3"><Co U="source"/></C>'
+        b'<C Type="EIBsensor" U="sensor" EibAddr="1/2/4"><Co U="target">'
+        b'<In Input="source"/></Co></C></P>'
+    )
+
+    traced = project.trace(
+        project.resolve("p:1", "project_node_id"),
+        direction="downstream",
+        max_depth=4,
+        max_nodes=20,
+    )
+
+    assert traced["edges"] == [{"kind": "signal", "source": "p:2", "target": "p:4"}]
+    assert traced["technology_paths"] == []
+
+
+def test_knx_technology_paths_cover_exactly_mapped_loxone_endpoints():
+    loxone_output = "a" * 32
+    knx_to_loxone = _query(
+        f'<P><C Type="EIBsensor" U="sensor" EibAddr="1/2/3"><Co U="source"/></C>'
+        f'<C Type="DigitalOutput" U="{loxone_output}"><Co U="target">'
+        f'<In Input="source"/></Co></C></P>'.encode(),
+        (SimpleNamespace(uuid=loxone_output, action_uuid=None, subcontrols=()),),
+    )
+    knx_path = knx_to_loxone.trace(
+        knx_to_loxone.resolve("p:1", "project_node_id"),
+        direction="downstream",
+        max_depth=4,
+        max_nodes=20,
+    )["technology_paths"]
+
+    loxone_input = "b" * 32
+    loxone_to_knx = _query(
+        f'<P><C Type="DigitalInput" U="{loxone_input}"><Co U="source"/></C>'
+        f'<C Type="EIBactor" U="actor" EibAddr="1/2/4"><Co U="target">'
+        f'<In Input="source"/></Co></C></P>'.encode(),
+        (SimpleNamespace(uuid=loxone_input, action_uuid=None, subcontrols=()),),
+    )
+    loxone_path = loxone_to_knx.trace(
+        loxone_to_knx.resolve("p:1", "project_node_id"),
+        direction="downstream",
+        max_depth=4,
+        max_nodes=20,
+    )["technology_paths"]
+
+    assert [
+        (path["classification"], path["source_project_node_id"], path["target_project_node_id"])
+        for path in knx_path
+    ] == [("knx_to_loxone", "p:1", "p:3")]
+    assert [
+        (path["classification"], path["source_project_node_id"], path["target_project_node_id"])
+        for path in loxone_path
+    ] == [("loxone_to_knx", "p:1", "p:3")]
+
+
+def test_knx_usage_observation_and_cross_technology_path_need_a_reviewed_block_rule():
+    project = _query(
+        b'<P><C Type="EIBsensor" U="sensor" EibAddr="1/2/3"><Co K="AQ" U="source"/></C>'
+        b'<C Type="EIBPush" U="push"><Co K="Tg" U="trigger"><In Input="source"/>'
+        b'</Co><Co K="O" U="output"/></C>'
+        b'<C Type="EIBactor" U="actor" EibAddr="1/2/4"><Co K="AI" U="target">'
+        b'<In Input="output"/></Co></C></P>'
+    )
+
+    described = project.describe(project.resolve("p:1", "project_node_id"), limit=20)
+    traced = project.trace(
+        project.resolve("p:1", "project_node_id"),
+        direction="downstream",
+        max_depth=6,
+        max_nodes=20,
+    )
+
+    assert described["knx"]["usage_observations"] == [
+        {
+            "source": "p:4",
+            "target": "p:6",
+            "rule_id": "eib_push_toggle",
+            "interpretation": "rising_edge",
+            "effect": "toggle",
+        }
+    ]
+    assert described["knx"]["usage_observations_truncated"] is False
+    assert traced["semantic_edges"] == described["knx"]["usage_observations"]
+    assert {item["project_node_id"] for item in traced["nodes"]} >= {
+        "p:1",
+        "p:7",
+    }
+    assert traced["technology_paths"] == [
+        {
+            "classification": "knx_to_knx",
+            "source_project_node_id": "p:1",
+            "target_project_node_id": "p:7",
+            "evidence_project_node_ids": ["p:1", "p:2", "p:4", "p:6", "p:8", "p:7"],
+        }
+    ]
+
+    depth_limited = project.trace(
+        project.resolve("p:1", "project_node_id"),
+        direction="downstream",
+        max_depth=1,
+        max_nodes=20,
+    )
+    assert depth_limited["truncated"] is True
+    assert depth_limited["semantic_truncated"] is True
+    assert depth_limited["semantic_edges"] == []
+
+
+def test_unknown_block_connector_pairs_never_create_derived_edges_or_usage():
+    project = _query(
+        b'<P><C Type="EIBsensor" U="sensor" EibAddr="1/2/3"><Co K="AQ" U="source"/></C>'
+        b'<C Type="UnknownLogic" U="logic"><Co K="Tg" U="trigger"><In Input="source"/>'
+        b'</Co><Co K="O" U="output"/></C></P>'
+    )
+
+    described = project.describe(project.resolve("p:1", "project_node_id"), limit=20)
+    traced = project.trace(
+        project.resolve("p:1", "project_node_id"),
+        direction="downstream",
+        max_depth=6,
+        max_nodes=20,
+    )
+
+    assert described["knx"]["usage_observations"] == []
+    assert traced["semantic_edges"] == []
