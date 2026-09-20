@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 
-from .graph import GraphEdge, GraphNode
+from .graph import GraphEdge, GraphNode, SemanticEdge
 from .mapping import ControlMapping, ProjectView
 
 
@@ -22,6 +22,8 @@ class ProjectQuery:
     _nodes: dict[str, GraphNode] = field(init=False, repr=False)
     _mappings: dict[str, ControlMapping] = field(init=False, repr=False)
     _mapped_nodes: dict[str, list[ControlMapping]] = field(init=False, repr=False)
+    _parents: dict[str, str] = field(init=False, repr=False)
+    _children: dict[str, list[str]] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -34,6 +36,82 @@ class ProjectQuery:
             for key in entry.node_keys:
                 mapped_nodes[key].append(entry)
         object.__setattr__(self, "_mapped_nodes", mapped_nodes)
+        parents: dict[str, str] = {}
+        children: dict[str, list[str]] = defaultdict(list)
+        for edge in self.view.snapshot.graph.edges:
+            if edge.kind == "contains":
+                parents[edge.target] = edge.source
+                children[edge.source].append(edge.target)
+        object.__setattr__(self, "_parents", parents)
+        object.__setattr__(self, "_children", children)
+
+    @staticmethod
+    def _semantic_edge_data(edge: SemanticEdge) -> dict[str, object]:
+        return {
+            "source": edge.source,
+            "target": edge.target,
+            "rule_id": edge.rule_id,
+            "interpretation": edge.interpretation,
+            "effect": edge.effect,
+        }
+
+    def _descendants(self, key: str, limit: int) -> tuple[list[str], bool]:
+        result = [key]
+        seen = {key}
+        pending = deque([key])
+        while pending:
+            current = pending.popleft()
+            for child in self._children[current]:
+                if child in seen:
+                    continue
+                if len(result) >= limit:
+                    return result, True
+                seen.add(child)
+                result.append(child)
+                pending.append(child)
+        return result, False
+
+    def _semantic_observations(
+        self, node: GraphNode, limit: int
+    ) -> tuple[list[dict[str, object]], bool]:
+        """Return bounded rule evidence reachable from one KNX endpoint."""
+
+        knx = node.knx
+        if knx is None or knx.object_kind != "endpoint" or knx.flow_direction is None:
+            return [], False
+        upstream = knx.flow_direction == "loxone_to_bus"
+        seeds, truncated = self._descendants(node.key, limit)
+        visited = set(seeds)
+        pending = deque(seeds)
+        adjacency: dict[str, list[GraphEdge | SemanticEdge]] = defaultdict(list)
+        for edge in self.view.snapshot.graph.edges:
+            if edge.kind in {"signal", "reference"}:
+                adjacency[edge.target if upstream else edge.source].append(edge)
+        for semantic_edge in self.view.snapshot.graph.semantic_edges:
+            adjacency[semantic_edge.target if upstream else semantic_edge.source].append(
+                semantic_edge
+            )
+        observations: list[dict[str, object]] = []
+        seen_rules: set[tuple[str, str, str]] = set()
+        while pending and not truncated:
+            current = pending.popleft()
+            for relationship in adjacency[current]:
+                neighbor = relationship.source if upstream else relationship.target
+                if isinstance(relationship, SemanticEdge):
+                    identity = (relationship.rule_id, relationship.source, relationship.target)
+                    if identity not in seen_rules:
+                        if len(observations) >= limit:
+                            truncated = True
+                            break
+                        seen_rules.add(identity)
+                        observations.append(self._semantic_edge_data(relationship))
+                if neighbor not in visited:
+                    if len(visited) >= limit:
+                        truncated = True
+                        break
+                    visited.add(neighbor)
+                    pending.append(neighbor)
+        return observations, truncated
 
     def _summary(self, node: GraphNode) -> dict[str, object]:
         mapping = self._mapped_nodes.get(node.key, [])
@@ -75,12 +153,13 @@ class ProjectQuery:
             ),
         }
 
-    def _detail(self, node: GraphNode) -> dict[str, object]:
+    def _detail(self, node: GraphNode, *, limit: int) -> dict[str, object]:
         """Return the one-object projection including all KNX source evidence."""
         result = self._summary(node)
         knx = node.knx
         if knx is None:
             return result
+        observations, observations_truncated = self._semantic_observations(node, limit)
         result["knx"] = {
             "object_kind": knx.object_kind,
             "flow_direction": knx.flow_direction,
@@ -111,6 +190,8 @@ class ProjectQuery:
                 else None
             ),
             "truncated_fields": list(knx.truncated_fields),
+            "usage_observations": observations,
+            "usage_observations_truncated": observations_truncated,
         }
         return result
 
@@ -258,13 +339,123 @@ class ProjectQuery:
         if len(unresolved) > limit:
             truncated_fields.append("unresolved_relationships")
         return {
-            **self._detail(node),
+            **self._detail(node, limit=limit),
             "parent_project_node_id": contains_in[0] if len(contains_in) == 1 else None,
             "child_project_node_ids": child_ids[:limit],
             "relationships": direct[:limit],
             "unresolved_relationships": unresolved[:limit],
             "truncated_fields": truncated_fields,
         }
+
+    def _endpoint_block(self, key: str) -> GraphNode | None:
+        """Resolve a connector to its containing block without treating containment as flow."""
+
+        node = self._nodes[key]
+        if node.kind == "block":
+            return node
+        parent = self._parents.get(key)
+        return self._nodes.get(parent) if parent is not None else None
+
+    def _endpoint_kind(self, node: GraphNode) -> str | None:
+        knx = node.knx
+        if knx is not None and knx.object_kind == "endpoint":
+            return knx.flow_direction
+        mapping = self._mapped_nodes.get(node.key, [])
+        return "loxone" if len([item for item in mapping if item.status == "exact"]) == 1 else None
+
+    def _technology_paths(
+        self,
+        node: GraphNode,
+        keys: list[str],
+        predecessors: dict[str, str | None],
+        limit: int,
+        direction: str,
+    ) -> tuple[list[dict[str, object]], bool]:
+        """Project only fully identified KNX/Loxone boundary paths."""
+
+        start = self._endpoint_block(node.key)
+        if start is None:
+            return [], False
+        start_kind = self._endpoint_kind(start)
+        if start_kind is None:
+            return [], False
+        paths: list[dict[str, object]] = []
+        identities: set[tuple[str, str, str]] = set()
+        truncated = False
+        included_keys = set(keys)
+        for key in keys:
+            end = self._endpoint_block(key)
+            if end is None or end.key == start.key:
+                continue
+            end_kind = self._endpoint_kind(end)
+            if end_kind is None:
+                continue
+            classification: str | None = None
+            source, target = start, end
+            if direction == "downstream":
+                if start_kind == "bus_to_loxone" and end_kind == "loxone":
+                    classification = "knx_to_loxone"
+                elif start_kind == "loxone" and end_kind == "loxone_to_bus":
+                    classification = "loxone_to_knx"
+                elif start_kind == "bus_to_loxone" and end_kind == "loxone_to_bus":
+                    classification = "knx_to_knx"
+            elif start_kind == "loxone_to_bus" and end_kind == "loxone":
+                classification, source, target = "loxone_to_knx", end, start
+            elif start_kind == "loxone" and end_kind == "bus_to_loxone":
+                classification, source, target = "knx_to_loxone", end, start
+            elif start_kind == "loxone_to_bus" and end_kind == "bus_to_loxone":
+                classification, source, target = "knx_to_knx", end, start
+            if classification is None:
+                continue
+            if source.key not in included_keys or target.key not in included_keys:
+                # Do not return paths whose boundary nodes are absent from the
+                # trace.  The caller marks this as semantically incomplete.
+                truncated = True
+                continue
+            identity = (classification, source.key, target.key)
+            if identity in identities:
+                continue
+            if len(paths) >= limit:
+                truncated = True
+                break
+            identities.add(identity)
+            walked = [key]
+            current = key
+            previous = predecessors.get(current)
+            while previous is not None:
+                current = previous
+                walked.append(current)
+                previous = predecessors.get(current)
+            walked.reverse()
+            if source is not start:
+                walked.reverse()
+            paths.append(
+                {
+                    "classification": classification,
+                    "source_project_node_id": source.key,
+                    "target_project_node_id": target.key,
+                    "evidence_project_node_ids": list(
+                        dict.fromkeys([source.key, *walked, target.key])
+                    ),
+                }
+            )
+        return paths, truncated
+
+    def _append_trace_boundaries(self, keys: list[str], limit: int) -> bool:
+        """Include containing endpoint blocks referenced by technology paths."""
+
+        included_keys = set(keys)
+        truncated = False
+        for key in list(keys):
+            boundary = self._endpoint_block(key)
+            if boundary is None or boundary.key in included_keys:
+                continue
+            if len(keys) >= limit:
+                truncated = True
+                continue
+            included_keys.add(boundary.key)
+            keys.append(boundary.key)
+        return truncated
 
     def trace(
         self, node: GraphNode, *, direction: str, max_depth: int, max_nodes: int
@@ -275,23 +466,22 @@ class ProjectQuery:
             or not 1 <= max_nodes <= 200
         ):
             raise ProjectQueryError("project_query_invalid")
-        adjacency: dict[str, list[GraphEdge]] = defaultdict(list)
+        adjacency: dict[str, list[GraphEdge | SemanticEdge]] = defaultdict(list)
         for edge in self.view.snapshot.graph.edges:
             if edge.kind not in {"signal", "reference"}:
                 continue
             key = edge.target if direction == "upstream" else edge.source
             adjacency[key].append(edge)
-        children: dict[str, list[str]] = defaultdict(list)
-        for edge in self.view.snapshot.graph.edges:
-            if edge.kind == "contains":
-                children[edge.source].append(edge.target)
+        for semantic_edge in self.view.snapshot.graph.semantic_edges:
+            key = semantic_edge.target if direction == "upstream" else semantic_edge.source
+            adjacency[key].append(semantic_edge)
         seeds = [node.key]
         seed_set = {node.key}
         pending = deque([node.key])
         seed_truncated = False
         while pending and not seed_truncated:
             current = pending.popleft()
-            for child in children[current]:
+            for child in self._children[current]:
                 if child in seed_set:
                     continue
                 if len(seeds) >= max_nodes:
@@ -304,6 +494,8 @@ class ProjectQuery:
         queue = deque((key, 0) for key in seeds)
         keys = seeds
         edges: list[dict[str, str]] = []
+        semantic_edges: list[dict[str, object]] = []
+        predecessors: dict[str, str | None] = {key: None for key in seeds}
         truncated = seed_truncated
         reason: str | None = "max_nodes" if seed_truncated else None
         while queue:
@@ -312,24 +504,43 @@ class ProjectQuery:
                 if adjacency[current]:
                     truncated, reason = True, "max_depth"
                 continue
-            for edge in adjacency[current]:
-                neighbor = edge.source if direction == "upstream" else edge.target
+            for relationship in adjacency[current]:
+                neighbor = relationship.source if direction == "upstream" else relationship.target
                 if neighbor in visited:
-                    if len(edges) >= max_nodes:
+                    if len(edges) + len(semantic_edges) >= max_nodes:
                         truncated, reason = True, "max_edges"
                         break
-                    edges.append({"kind": edge.kind, "source": edge.source, "target": edge.target})
+                    if isinstance(relationship, SemanticEdge):
+                        semantic_edges.append(self._semantic_edge_data(relationship))
+                    else:
+                        edges.append(
+                            {
+                                "kind": relationship.kind,
+                                "source": relationship.source,
+                                "target": relationship.target,
+                            }
+                        )
                     continue
                 if len(keys) >= max_nodes:
                     truncated, reason = True, "max_nodes"
                     break
-                if len(edges) >= max_nodes:
+                if len(edges) + len(semantic_edges) >= max_nodes:
                     truncated, reason = True, "max_edges"
                     break
                 visited.add(neighbor)
                 keys.append(neighbor)
                 queue.append((neighbor, depth + 1))
-                edges.append({"kind": edge.kind, "source": edge.source, "target": edge.target})
+                predecessors[neighbor] = current
+                if isinstance(relationship, SemanticEdge):
+                    semantic_edges.append(self._semantic_edge_data(relationship))
+                else:
+                    edges.append(
+                        {
+                            "kind": relationship.kind,
+                            "source": relationship.source,
+                            "target": relationship.target,
+                        }
+                    )
             if truncated:
                 break
         unresolved_relationships: list[dict[str, str]] = []
@@ -341,11 +552,20 @@ class ProjectQuery:
                 unresolved_truncated = True
                 break
             unresolved_relationships.append({"project_node_id": key, "code": code})
+        boundary_truncated = self._append_trace_boundaries(keys, max_nodes)
+        technology_paths, paths_truncated = self._technology_paths(
+            node, keys, predecessors, max_nodes, direction
+        )
         return {
             "start": self._summary(node),
             "direction": direction,
             "nodes": [self._summary(self._nodes[key]) for key in keys],
             "edges": edges,
+            "semantic_edges": semantic_edges,
+            "technology_paths": technology_paths,
+            # A raw traversal limit can hide a semantic edge or a projected
+            # technology path, so semantic output must not claim completeness.
+            "semantic_truncated": truncated or boundary_truncated or paths_truncated,
             "truncated": truncated,
             "truncation_reason": reason,
             "unresolved_relationships": unresolved_relationships,
