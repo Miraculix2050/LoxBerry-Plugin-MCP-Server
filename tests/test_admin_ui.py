@@ -405,6 +405,7 @@ def test_service_actions_use_an_accessible_confirmation_and_dynamic_controls() -
     assert "serviceEnabledSetting = enabled" in template
     assert "serviceEnabledSettingLoaded = true" in template
     assert "serviceEnabledInput.checked = enabled" in template
+    assert "if (updateEnabledSetting || !serviceEnabledSettingLoaded)" in template
     assert (
         "serviceEnabledInput.disabled = serviceActionRunning || !serviceEnabledSettingLoaded"
         in template

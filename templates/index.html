@@ -610,7 +610,7 @@
     serviceInstalled.textContent = installed ? serviceSection.dataset.yes : serviceSection.dataset.no;
     const enabled = Boolean(service.enabled);
     serviceEnabled.textContent = enabled ? serviceSection.dataset.yes : serviceSection.dataset.no;
-    if (updateEnabledSetting) {
+    if (updateEnabledSetting || !serviceEnabledSettingLoaded) {
       serviceEnabledSetting = enabled;
       serviceEnabledSettingLoaded = true;
       serviceEnabledInput.checked = enabled;
