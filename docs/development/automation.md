@@ -31,6 +31,35 @@ invocation a unique repository-local temp directory under `tmp`. This avoids
 relying on a global user temp directory that may be unavailable in a restricted
 local environment and keeps overlapping test runs isolated.
 
+## Windows development environment
+
+Before running local checks on Windows, create the project-local Python 3.13
+environment once:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\setup-development-environment.ps1
+```
+
+The setup script requires an already-installed Python 3.13 interpreter, creates
+`.venv`, installs the locked runtime and development dependencies, and installs
+the project in editable mode. It does not download or install Python. Pass
+`-PythonPath <path-to-python.exe>` when Python 3.13 is installed outside the
+standard locations.
+
+Use the virtual-environment interpreter for every local test command; do not use
+the global `python` command:
+
+```powershell
+& .\.venv\Scripts\python.exe tools\test.py --profile changed --plan
+& .\.venv\Scripts\python.exe tools\test.py --profile changed
+```
+
+In a restricted Codex sandbox, an installed Python interpreter can be visible
+but not executable. Run the setup as an approved elevated command in that case.
+For new Codex worktrees, configure the same Windows setup command as a local
+environment setup script in the ChatGPT desktop app. The generated `.codex`
+configuration is intentionally ignored and must not be edited manually.
+
 ## Packages
 
 - `python tools/build_release_candidate.py --runtime-wheelhouse <cache>` runs Full,
