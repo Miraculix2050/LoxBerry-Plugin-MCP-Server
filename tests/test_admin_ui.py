@@ -87,11 +87,11 @@ def test_initial_page_renders_configuration_before_loading_dynamic_state() -> No
     assert "body.set('action', 'page_state')" in template
     assert "const loadInitialState" in template
     assert "loadInitialState();" in template
-    assert "pollServiceStatus(true);" in template
+    assert "pollServiceStatus();" in template
     assert "emergencyStopRefresh.addEventListener('click', loadEmergencyStopOptions);" in template
     assert "loadEmergencyStopOptions();" not in template
-    assert "component=admin_ui action=%s duration_ms=%.1f" in cgi
-    assert "component=admin_ui phase=initial_render duration_ms=%.1f" in cgi
+    assert "component=admin_ui request_id=%s action=%s duration_ms=%.1f" in cgi
+    assert "component=admin_ui request_id=%s phase=initial_render duration_ms=%.1f" in cgi
     assert "field.addEventListener('input'" in template
     assert "if (!mqttUseLoxberryGateway.checked)" in template
     assert 'aria-busy="true"' in template
@@ -120,6 +120,7 @@ def test_initial_page_renders_configuration_before_loading_dynamic_state() -> No
     assert "serviceSection.setAttribute('aria-busy', 'false');" in template
     assert "sessionsSection.setAttribute('aria-busy', 'false');" in template
     assert "updateCertificate(null);" in template
+    assert "let serviceLoaded = false;" in template
     assert "let sessionsLoaded = false;" in template
     assert "if (!sessionsLoaded)" in template
 

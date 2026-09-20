@@ -27,6 +27,7 @@ if (($q->{lang} // '') =~ /\A(?:de|en)\z/) {
 my $version = LoxBerry::System::pluginversion();
 my $admin_log;
 my $render_started = clock_gettime(CLOCK_MONOTONIC);
+my $request_id = sprintf('%x-%x', $$, int($render_started * 1_000_000));
 use constant ADMIN_LOG_MESSAGE_BYTES => 8 * 1024;
 use constant ADMIN_LOG_TRUNCATION_SUFFIX => ' ... [truncated]';
 
@@ -84,7 +85,8 @@ sub admin_call {
     my $stderr = <$child_err> // '';
     waitpid($pid, 0);
     admin_log('debug', sprintf(
-        'component=admin_ui action=%s duration_ms=%.1f',
+        'component=admin_ui request_id=%s action=%s duration_ms=%.1f',
+        $request_id,
         $action,
         (clock_gettime(CLOCK_MONOTONIC) - $started) * 1000,
     ));
@@ -668,13 +670,15 @@ $navbar{45}{URL} = '#certificate';
 $navbar{50}{Name} = $L{'NAV.HELP'};
 $navbar{50}{URL} = '#help';
 
+my $page = $template->output();
 print_html_security_headers();
-admin_log('debug', sprintf(
-    'component=admin_ui phase=initial_render duration_ms=%.1f',
-    (clock_gettime(CLOCK_MONOTONIC) - $render_started) * 1000,
-));
 LoxBerry::Web::lbheader($L{'BASIC.TITLE'} . " V$version", '', '', 'nojqm');
 print LoxBerry::Log::get_notifications_html($lbpplugindir);
-print $template->output();
+print $page;
 LoxBerry::Web::lbfooter();
+admin_log('debug', sprintf(
+    'component=admin_ui request_id=%s phase=initial_render duration_ms=%.1f',
+    $request_id,
+    (clock_gettime(CLOCK_MONOTONIC) - $render_started) * 1000,
+));
 exit;

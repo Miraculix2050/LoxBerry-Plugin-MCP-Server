@@ -370,6 +370,7 @@
   let servicePollTimer = null;
   let serviceEnabledSetting = serviceEnabledInput.checked;
   let serviceEnabledSettingLoaded = serviceEnableForm.dataset.serviceEnabledSettingKnown === '1';
+  let serviceLoaded = false;
   let sessionDataVersion = 0;
   let sessionsLoaded = false;
   let nextSessionActionToken = 0;
@@ -752,7 +753,7 @@
       servicePollTimer = window.setTimeout(pollServiceStatus, delay);
     }
   };
-  const pollServiceStatus = async (initial = false) => {
+  const pollServiceStatus = async () => {
     if (document.hidden || serviceInteractionActive() || servicePollInFlight) {
       scheduleServicePoll();
       return;
@@ -765,8 +766,9 @@
       const result = await postAjax(body, 7000);
       if (serviceInteractionActive()) return;
       renderService(result.data.service, {updateEnabledSetting: !serviceEnabledSettingLoaded});
+      serviceLoaded = true;
     } catch {
-      if (initial) {
+      if (!serviceLoaded) {
         serviceSection.setAttribute('aria-busy', 'false');
         serviceState.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
         serviceState.dataset.kind = 'error';
@@ -1203,7 +1205,7 @@
     if (sessionsSection.open) pollSessions();
   });
   loadInitialState();
-  pollServiceStatus(true);
+  pollServiceStatus();
   if (certificateSection.open) loadCertificateStatus();
   if (sessionsSection.open) pollSessions();
   for (const field of [mqttHost, mqttPort, mqttUsername]) {
