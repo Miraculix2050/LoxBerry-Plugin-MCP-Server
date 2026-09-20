@@ -449,10 +449,12 @@
     const cache = configuration?.cache || {};
     const mqtt = configuration?.mqtt || {};
     const emergencyStop = configuration?.emergency_stop || {};
-    setFormValue(mcpConfigForm, 'public_origin', server.public_origin);
+    const publicOrigin = String(server.public_origin || '')
+      || String(mcpConfigForm.elements.namedItem('public_origin')?.value || '');
+    setFormValue(mcpConfigForm, 'public_origin', publicOrigin);
     setFormChecked(mcpConfigForm, 'enabled', server.enabled);
     setFormValue(mcpConfigForm, 'connection_timeout', loxone.connection_timeout);
-    const endpoint = String(loxone.endpoint || '');
+    const endpoint = String(loxone.endpoint || miniserverEndpoint.value || '');
     miniserverEndpoint.value = endpoint;
     miniserverSelect.value = [...miniserverSelect.options].some((option) => option.value === endpoint)
       ? endpoint : '';

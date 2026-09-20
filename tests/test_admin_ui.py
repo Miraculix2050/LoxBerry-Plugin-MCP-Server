@@ -124,6 +124,8 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert "body.set('action', 'page_state')" in template
     assert "body.set('action', 'get_config')" in template
     assert "const loadConfiguration = async () =>" in template
+    assert "const publicOrigin = String(server.public_origin || '')" in template
+    assert "String(loxone.endpoint || miniserverEndpoint.value || '')" in template
     assert "setFormValue(mqttConfigForm, 'mqtt_host', mqtt.host);" in template
     assert "setFormValue(mqttConfigForm, 'mqtt_port', mqtt.port);" in template
     assert "setFormValue(mqttConfigForm, 'mqtt_username', mqtt.username);" in template
