@@ -685,9 +685,7 @@ class ProjectAnalysisFindingData(BaseModel):
     flow_direction: Literal["bus_to_loxone", "loxone_to_bus"] | None = None
     address_format: Literal["two_level", "three_level"] | None = None
     raw_datatype: str | None = None
-    usage: list[dict[Literal["interpretation", "effect"], str | None]] = Field(
-        default_factory=list
-    )
+    usage: list[dict[Literal["interpretation", "effect"], str | None]] = Field(default_factory=list)
     prefix_level: int | None = None
     dominant_prefix: list[int] = Field(default_factory=list)
     dominant_count: int | None = None
@@ -695,8 +693,8 @@ class ProjectAnalysisFindingData(BaseModel):
     deviation_prefix: list[int] = Field(default_factory=list)
     group_address: str | None = None
     raw_datatypes: list[str] = Field(default_factory=list)
-    usage_signatures: list[list[dict[Literal["interpretation", "effect"], str | None]]] = (
-        Field(default_factory=list)
+    usage_signatures: list[list[dict[Literal["interpretation", "effect"], str | None]]] = Field(
+        default_factory=list
     )
     affected_project_node_ids: list[str]
     affected_omitted: int
@@ -2942,8 +2940,8 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
     @server.tool(
         name="loxone_analyze_project",
         description=(
-            "Analyze bounded KNX project evidence for project-local patterns and review candidates. "
-            "Findings are facts, not configuration verdicts."
+            "Analyze bounded KNX project evidence for project-local patterns and "
+            "review candidates. Findings are facts, not configuration verdicts."
         ),
         annotations=annotations,
         structured_output=True,
@@ -2969,30 +2967,37 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
         limit: Annotated[int, Field(ge=1, le=50)] = 20,
     ) -> ProjectAnalysisEnvelope:
         try:
-            selected = frozenset(analyses) if analyses is not None else frozenset(
-                {
-                    "address_patterns",
-                    "raw_datatype_reuse",
-                    "signal_usage",
-                    "technology_paths",
-                    "project_connectivity",
-                }
+            selected = (
+                frozenset(analyses)
+                if analyses is not None
+                else frozenset(
+                    {
+                        "address_patterns",
+                        "raw_datatype_reuse",
+                        "signal_usage",
+                        "technology_paths",
+                        "project_connectivity",
+                    }
+                )
             )
             if not selected or (analyses is not None and len(selected) != len(analyses)):
                 raise ValueError("analyses must be a non-empty unique list")
             project, snapshot = await _project_query(runtime)
             result = await process_analysis(project.view, selected)
-            analysis_scope = "project-analysis:" + hashlib.sha256(
-                json.dumps(
-                    [
-                        scope,
-                        result["project_fingerprint"],
-                        result["model_version"],
-                        sorted(selected),
-                    ],
-                    separators=(",", ":"),
-                ).encode()
-            ).hexdigest()
+            analysis_scope = (
+                "project-analysis:"
+                + hashlib.sha256(
+                    json.dumps(
+                        [
+                            scope,
+                            result["project_fingerprint"],
+                            result["model_version"],
+                            sorted(selected),
+                        ],
+                        separators=(",", ":"),
+                    ).encode()
+                ).hexdigest()
+            )
             page = _page(cursors, analysis_scope, list(result.pop("findings")), cursor, limit)
             page["findings"] = page.pop("items")
             envelope = _result(

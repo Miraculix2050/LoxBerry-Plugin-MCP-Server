@@ -13,7 +13,9 @@ def _view(data: bytes, controls: tuple[SimpleNamespace, ...] = ()) -> ProjectVie
         (ProjectPartSummary("p", 1, ()),),
         build_graph((("p", parse_project(data)),)),
     )
-    return ProjectView(snapshot, map_runtime(snapshot, SimpleNamespace(last_modified="v", controls=controls)))
+    return ProjectView(
+        snapshot, map_runtime(snapshot, SimpleNamespace(last_modified="v", controls=controls))
+    )
 
 
 def test_analysis_reports_project_local_datatype_and_usage_facts_deterministically():
@@ -30,7 +32,9 @@ def test_analysis_reports_project_local_datatype_and_usage_facts_deterministical
     second = analyze_knx(view, selected)
 
     assert first == second
-    conflict = next(item for item in first["findings"] if item["finding_type"] == "raw_datatype_conflict")
+    conflict = next(
+        item for item in first["findings"] if item["finding_type"] == "raw_datatype_conflict"
+    )
     assert conflict["group_address"] == "1/2/3"
     assert conflict["raw_datatypes"] == ["1", "5"]
     assert all("incompatible" not in str(item) for item in first["findings"])
@@ -45,12 +49,21 @@ def test_analysis_only_reports_address_deviations_for_strong_evidenced_peer_grou
         ).encode()
         for i in range(5)
     )
-    nodes += b'<C Type="EIBsensor" U="outlier" EibAddr="2/2/9" EIBType="1"><Co K="AQ" U="co9"/></C><C Type="EIBPush" U="p9"><Co K="Tg" U="t9"><In Input="co9"/></Co><Co K="O" U="o9"/></C>'
+    nodes += (
+        b'<C Type="EIBsensor" U="outlier" EibAddr="2/2/9" EIBType="1">'
+        b'<Co K="AQ" U="co9"/></C><C Type="EIBPush" U="p9">'
+        b'<Co K="Tg" U="t9"><In Input="co9"/></Co><Co K="O" U="o9"/></C>'
+    )
 
     result = analyze_knx(_view(b"<P>" + nodes + b"</P>"), frozenset({"address_patterns"}))
 
-    deviations = [item for item in result["findings"] if item["finding_type"] == "address_pattern_deviation"]
-    assert {(item["prefix_level"], tuple(item["dominant_prefix"]), tuple(item["deviation_prefix"])) for item in deviations} == {
+    deviations = [
+        item for item in result["findings"] if item["finding_type"] == "address_pattern_deviation"
+    ]
+    assert {
+        (item["prefix_level"], tuple(item["dominant_prefix"]), tuple(item["deviation_prefix"]))
+        for item in deviations
+    } == {
         (1, (1,), (2,)),
         (2, (1, 2), (2, 2)),
     }
@@ -75,7 +88,7 @@ def test_technology_path_analysis_never_reverses_at_a_logic_input_merge():
         f'<C Type="EIBPush" U="push"><Co K="Tg" U="trigger"><In Input="sensor-out"/></Co>'
         f'<Co K="On" U="on"><In Input="loxone-out"/></Co><Co K="O" U="output"/></C>'
         f'<C Type="EIBactor" U="actor" EibAddr="1/2/4"><Co U="actor-in"><In Input="output"/>'
-        f'</Co></C></P>'.encode(),
+        f"</Co></C></P>".encode(),
         (SimpleNamespace(uuid=loxone_id, action_uuid=None, subcontrols=()),),
     )
 
