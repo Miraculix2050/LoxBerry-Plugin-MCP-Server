@@ -776,6 +776,7 @@
       }
     } finally {
       servicePollInFlight = false;
+      serviceSection.setAttribute('aria-busy', 'false');
       scheduleServicePoll();
     }
   };
@@ -1185,6 +1186,7 @@
       // Keep the last known table; the next visible and open-section poll retries.
     } finally {
       sessionPollInFlight = false;
+      sessionsSection.setAttribute('aria-busy', 'false');
       scheduleSessionPoll(expectedSessionDataVersion === sessionDataVersion ? 10000 : 0);
     }
   };

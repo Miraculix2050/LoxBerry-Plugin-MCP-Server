@@ -117,6 +117,8 @@ def test_initial_page_renders_configuration_before_loading_dynamic_state() -> No
     assert 'id="certificate-unavailable" class="mcp-status" hidden' in template
     assert "if (certificateSection.open) loadCertificateStatus();" in template
     assert "if (sessionsSection.open) pollSessions();" in template
+    assert "serviceSection.setAttribute('aria-busy', 'false');" in template
+    assert "sessionsSection.setAttribute('aria-busy', 'false');" in template
 
 
 def test_emergency_stop_selection_is_preserved_while_options_load() -> None:

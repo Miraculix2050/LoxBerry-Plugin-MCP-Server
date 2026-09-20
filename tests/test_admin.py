@@ -525,7 +525,21 @@ def test_admin_list_responses_use_one_snapshot_per_request(
     assert result["loxberry_operate_bindings"][0]["active"] is (session_count > 0)
 
 
-def test_page_state_benchmark_reports_machine_readable_metrics() -> None:
+def test_deferred_session_benchmark_reports_machine_readable_metrics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tools import benchmark_admin_page_state
+
+    calls: list[str] = []
+    original_dispatch = benchmark_admin_page_state.admin.dispatch
+
+    def dispatch(request: object) -> dict[str, object]:
+        assert isinstance(request, dict)
+        calls.append(str(request["action"]))
+        return original_dispatch(request)
+
+    monkeypatch.setattr(benchmark_admin_page_state.admin, "dispatch", dispatch)
+
     result = measure(session_count=10, warmups=0, samples=2)
 
     assert result["sessions"] == 10
@@ -534,6 +548,7 @@ def test_page_state_benchmark_reports_machine_readable_metrics() -> None:
     assert isinstance(result["p50_ms"], float)
     assert isinstance(result["p95_ms"], float)
     assert isinstance(result["peak_bytes"], int)
+    assert calls == ["list_sessions", "list_sessions"]
 
 
 def test_status_refresh_returns_all_dynamic_admin_ui_data(
