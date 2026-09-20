@@ -100,7 +100,7 @@ def test_initial_page_renders_configuration_before_loading_dynamic_state() -> No
     assert "scheduleBackgroundHydration();" in template
     assert "const emergencyStopGeneration = emergencyStopDiscoveryGeneration;" in template
     assert "queueBackgroundHydration([" in template
-    assert "id=\"emergency-stop-refresh\"" not in template
+    assert 'id="emergency-stop-refresh"' not in template
     assert "emergencyStopRefresh" not in template
     assert "let emergencyStopDiscoveryGeneration = 0;" in template
     assert "emergencyStopDiscoveryGeneration += 1;" in template
