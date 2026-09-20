@@ -48,6 +48,8 @@ def test_explorer_uses_one_compact_mobile_tool_panel_and_adaptive_workspace() ->
     assert 'id="explorer-result"' in template
     assert "@media (min-width: 80rem)" in stylesheet
     assert "@media (max-width: 52rem)" in stylesheet
+    assert "grid-template-columns: minmax(18rem, 22rem) minmax(0, 1fr)" in stylesheet
+    assert "grid-template-columns: minmax(20rem, 24rem) minmax(0, 1fr)" in stylesheet
     assert "grid-template-columns: minmax(22rem, .9fr) minmax(24rem, 1.1fr)" in stylesheet
     assert "details.mcp-explorer-card > summary { padding:" in stylesheet
     assert "details.mcp-explorer-card > summary { display: flex" not in stylesheet
