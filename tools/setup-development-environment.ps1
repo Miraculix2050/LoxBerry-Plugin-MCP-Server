@@ -31,7 +31,15 @@ function Get-Python313Path {
             continue
         }
 
-        $version = & $candidate -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
+        try {
+            $version = & $candidate -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
+            if ($LASTEXITCODE -ne 0) {
+                throw "Python exited with code $LASTEXITCODE."
+            }
+        }
+        catch {
+            throw "Python interpreter '$candidate' was found but could not be executed. In a restricted Codex environment, run this setup as an approved elevated command. Details: $($_.Exception.Message)"
+        }
         if ($LASTEXITCODE -eq 0 -and $version -eq "3.13") {
             return (Resolve-Path -LiteralPath $candidate).Path
         }
@@ -44,7 +52,15 @@ $python = Get-Python313Path -RequestedPath $PythonPath
 $venvPython = Join-Path $VenvPath "Scripts\python.exe"
 
 if (Test-Path -LiteralPath $venvPython -PathType Leaf) {
-    $venvVersion = & $venvPython -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
+    try {
+        $venvVersion = & $venvPython -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
+        if ($LASTEXITCODE -ne 0) {
+            throw "Python exited with code $LASTEXITCODE."
+        }
+    }
+    catch {
+        throw "Existing virtual environment at '$VenvPath' could not be executed. In a restricted Codex environment, run this setup as an approved elevated command. Details: $($_.Exception.Message)"
+    }
     if ($LASTEXITCODE -ne 0 -or $venvVersion -ne "3.13") {
         throw "The existing virtual environment at '$VenvPath' does not use Python 3.13. Remove it manually, then run this script again."
     }
