@@ -117,6 +117,10 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert "if (document.hidden) {" in template
     assert "scheduleBackgroundHydration();" in template
     assert "let initialBackgroundHydrationComplete = false;" in template
+    assert "let pageIsUnloading = false;" in template
+    assert "window.addEventListener('beforeunload', markPageUnloading);" in template
+    assert "window.addEventListener('pagehide', markPageUnloading);" in template
+    assert "if (pageIsUnloading) return;" in template
     assert "if (certificateSection.open && initialBackgroundHydrationComplete)" in template
     assert "if (sessionsSection.open && initialBackgroundHydrationComplete)" in template
     assert "const emergencyStopGeneration = emergencyStopDiscoveryGeneration;" in template

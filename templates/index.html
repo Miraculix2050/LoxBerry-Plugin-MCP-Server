@@ -398,6 +398,11 @@
   let configurationLoaded = false;
   let configurationLoadInFlight = false;
   let lastService = null;
+  let pageIsUnloading = false;
+  const markPageUnloading = () => { pageIsUnloading = true; };
+  window.addEventListener('beforeunload', markPageUnloading);
+  window.addEventListener('pagehide', markPageUnloading);
+  window.addEventListener('pageshow', () => { pageIsUnloading = false; });
   const serviceInteractionActive = () => serviceActionRunning || pendingServiceForm !== null;
   const renderLogging = (configuration) => {
     const configured = configuration && configuration.logging ? configuration.logging : {};
@@ -479,6 +484,7 @@
       const emergencyStopGeneration = emergencyStopDiscoveryGeneration;
       queueBackgroundHydration([() => loadEmergencyStopOptions(emergencyStopGeneration)]);
     } catch {
+      if (pageIsUnloading) return;
       setAjaxStatus('error', '<TMPL_VAR AJAX.ERROR ESCAPE=JS>');
     } finally {
       configurationLoadInFlight = false;
@@ -666,6 +672,7 @@
       updateCertificate(result.data.certificate);
       certificateLoaded = true;
     } catch {
+      if (pageIsUnloading) return;
       updateCertificate(null);
       certificateUnavailable.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
     } finally {
@@ -813,6 +820,7 @@
         emergencyStopStatus.hidden = true;
       }
     } catch {
+      if (pageIsUnloading) return;
       if (generation !== emergencyStopDiscoveryGeneration) return;
       resetEmergencyStopOptions();
       emergencyStopStatus.textContent = '<TMPL_VAR SETUP.EMERGENCY_STOP_LOAD_ERROR ESCAPE=JS>';
@@ -841,6 +849,7 @@
       updateMqttBrokerFields();
       mqttPageStateStatus.hidden = true;
     } catch {
+      if (pageIsUnloading) return;
       mqttPageStateStatus.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
       mqttPageStateStatus.dataset.kind = 'error';
     }
@@ -884,6 +893,7 @@
       if (serviceInteractionActive()) return;
       renderService(result.data.service, {updateEnabledSetting: !serviceEnabledSettingLoaded});
     } catch {
+      if (pageIsUnloading) return;
       if (!serviceLoaded) {
         serviceSection.setAttribute('aria-busy', 'false');
         serviceState.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
@@ -1309,6 +1319,7 @@
         updateLoxberryOperateBindings(result.data.loxberry_operate_bindings);
       }
     } catch {
+      if (pageIsUnloading) return;
       if (!sessionsLoaded) {
         sessionList.replaceChildren(document.createTextNode('<TMPL_VAR AJAX.ERROR ESCAPE=JS>'));
       }
@@ -1506,6 +1517,7 @@
           pollCertificateRenewal(button);
         }
       } catch (error) {
+        if (pageIsUnloading) return;
         if (form.dataset.ajax === 'set_service_enabled') {
           serviceEnabledInput.checked = serviceEnabledSetting;
         }
