@@ -25,6 +25,7 @@ _MAX_EVIDENCE = 20
 _MAX_PATHS = 5_000
 _MAX_VISITED_PER_START = 2_000
 _AddressGroupKey = tuple[str, str, str, tuple[tuple[str, str | None], ...]]
+_DirectionalAdjacency = dict[str, list[GraphEdge | SemanticEdge]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,21 +76,29 @@ def _descendants(key: str, children: dict[str, list[str]]) -> list[str]:
     return result
 
 
+def _directional_adjacencies(
+    graph_edges: tuple[GraphEdge, ...], semantic_edges: tuple[SemanticEdge, ...]
+) -> tuple[_DirectionalAdjacency, _DirectionalAdjacency]:
+    downstream: _DirectionalAdjacency = defaultdict(list)
+    upstream: _DirectionalAdjacency = defaultdict(list)
+    for edge in graph_edges:
+        if edge.kind in {"signal", "reference"}:
+            downstream[edge.source].append(edge)
+            upstream[edge.target].append(edge)
+    for semantic_edge in semantic_edges:
+        downstream[semantic_edge.source].append(semantic_edge)
+        upstream[semantic_edge.target].append(semantic_edge)
+    return downstream, upstream
+
+
 def _usage(
     node: GraphNode,
-    graph_edges: tuple[GraphEdge, ...],
-    semantic_edges: tuple[SemanticEdge, ...],
     children: dict[str, list[str]],
+    adjacency: _DirectionalAdjacency,
 ) -> tuple[tuple[str, str | None], ...]:
     assert node.knx is not None and node.knx.flow_direction is not None
     seeds = _descendants(node.key, children)
     upstream = node.knx.flow_direction == "loxone_to_bus"
-    adjacency: dict[str, list[GraphEdge | SemanticEdge]] = defaultdict(list)
-    for edge in graph_edges:
-        if edge.kind in {"signal", "reference"}:
-            adjacency[edge.target if upstream else edge.source].append(edge)
-    for semantic_edge in semantic_edges:
-        adjacency[semantic_edge.target if upstream else semantic_edge.source].append(semantic_edge)
     seen, pending, result = set(seeds), deque(seeds), set[tuple[str, str | None]]()
     while pending:
         current = pending.popleft()
@@ -110,12 +119,19 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
     graph = view.snapshot.graph
     nodes = {node.key: node for node in graph.nodes}
     children, parents = _children(graph.edges)
+    needs_usage = bool({"address_patterns", "signal_usage"} & analyses)
+    needs_directional_adjacency = needs_usage or "technology_paths" in analyses
+    downstream: _DirectionalAdjacency = {}
+    upstream: _DirectionalAdjacency = {}
+    if needs_directional_adjacency:
+        downstream, upstream = _directional_adjacencies(graph.edges, graph.semantic_edges)
     endpoints: list[_Endpoint] = []
     for node in graph.nodes:
         knx = node.knx
         if knx is None or knx.object_kind != "endpoint" or knx.flow_direction is None:
             continue
         address = knx.group_address
+        usage_adjacency = upstream if knx.flow_direction == "loxone_to_bus" else downstream
         endpoints.append(
             _Endpoint(
                 node,
@@ -125,7 +141,7 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
                 address.format if address else None,
                 address.segments if address else None,
                 knx.datatype.source_value if knx.datatype else None,
-                _usage(node, graph.edges, graph.semantic_edges, children),
+                _usage(node, children, usage_adjacency) if needs_usage else (),
             )
         )
     findings: list[dict[str, object]] = []
@@ -284,15 +300,6 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
             if entry.status == "exact"
             for key in entry.node_keys
         }
-        downstream: dict[str, list[GraphEdge | SemanticEdge]] = defaultdict(list)
-        upstream: dict[str, list[GraphEdge | SemanticEdge]] = defaultdict(list)
-        for edge in graph.edges:
-            if edge.kind in {"signal", "reference"}:
-                downstream[edge.source].append(edge)
-                upstream[edge.target].append(edge)
-        for semantic_edge in graph.semantic_edges:
-            downstream[semantic_edge.source].append(semantic_edge)
-            upstream[semantic_edge.target].append(semantic_edge)
         seen_paths: set[tuple[str, str, str]] = set()
         for start in endpoints:
             is_downstream = start.direction == "bus_to_loxone"
@@ -329,7 +336,12 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
                     elif start.direction == "loxone_to_bus" and target_kind == "bus_to_loxone":
                         kind = "knx_to_knx"
                     if kind:
-                        identity = (kind, start.block.key, target_block.key)
+                        source_block, destination_block = (
+                            (start.block, target_block)
+                            if is_downstream
+                            else (target_block, start.block)
+                        )
+                        identity = (kind, source_block.key, destination_block.key)
                         if identity not in seen_paths:
                             if len(seen_paths) >= _MAX_PATHS:
                                 truncated_reasons.append("max_paths")
@@ -340,9 +352,11 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
                             if len(samples[kind]) < 3:
                                 samples[kind].append(
                                     {
-                                        "source_project_node_id": start.block.key,
-                                        "target_project_node_id": target_block.key,
-                                        "evidence_project_node_ids": next_path,
+                                        "source_project_node_id": source_block.key,
+                                        "target_project_node_id": destination_block.key,
+                                        "evidence_project_node_ids": (
+                                            next_path if is_downstream else list(reversed(next_path))
+                                        ),
                                     }
                                 )
                     pending.append((other, next_path, depth + 1))

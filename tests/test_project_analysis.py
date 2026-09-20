@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import mcpserver.loxone.project.analysis as project_analysis
+
 from mcpserver.loxone.project.analysis import analyze_knx
 from mcpserver.loxone.project.graph import ProjectPartSummary, ProjectSnapshot, build_graph
 from mcpserver.loxone.project.mapping import ProjectView, map_runtime
@@ -80,6 +82,22 @@ def test_analysis_scopes_unconnected_evidence_to_the_project_graph():
     assert "unused" not in str(finding)
 
 
+def test_analysis_skips_signal_usage_when_the_selected_analysis_does_not_need_it(monkeypatch):
+    def usage_should_not_run(*_args):
+        raise AssertionError("signal usage must not be computed")
+
+    monkeypatch.setattr(project_analysis, "_usage", usage_should_not_run)
+
+    result = project_analysis.analyze_knx(
+        _view(
+            b'<P><C Type="EIBsensor" U="sensor" EibAddr="1/2/3"><Co U="out"/></C></P>'
+        ),
+        frozenset({"raw_datatype_reuse"}),
+    )
+
+    assert result["summaries"]["raw_datatype_reuse"] == {"conflicts": 0}
+
+
 def test_technology_path_analysis_never_reverses_at_a_logic_input_merge():
     loxone_id = "a" * 32
     view = _view(
@@ -96,4 +114,7 @@ def test_technology_path_analysis_never_reverses_at_a_logic_input_merge():
 
     counts = result["summaries"]["technology_paths"]["counts"]
     assert counts.get("knx_to_loxone", 0) == 0
-    assert counts.get("knx_to_knx", 0) >= 1
+    assert counts["knx_to_knx"] == 1
+    sample = result["summaries"]["technology_paths"]["samples"]["knx_to_knx"][0]
+    assert sample["source_project_node_id"] == "sensor"
+    assert sample["target_project_node_id"] == "actor"
