@@ -86,10 +86,22 @@ def test_initial_page_renders_configuration_before_loading_dynamic_state() -> No
     assert "SELECTED_EMERGENCY_STOP => $selected_emergency_stop" in cgi
     assert "body.set('action', 'page_state')" in template
     assert "const loadInitialState" in template
-    assert "loadInitialState();" in template
-    assert "pollServiceStatus();" in template
-    assert "emergencyStopRefresh.addEventListener('click', loadEmergencyStopOptions);" in template
-    assert "loadEmergencyStopOptions();" not in template
+    assert "const backgroundHydrationLimit = 2;" in template
+    assert "const backgroundHydrationQueue = [];" in template
+    assert "Promise.resolve()" in template
+    assert ".then(task)" in template
+    assert "loadInitialState," in template
+    assert "() => pollServiceStatus({initial: true})," in template
+    assert "loadCertificateStatus," in template
+    assert "() => pollSessions({initial: true})," in template
+    assert "() => loadEmergencyStopOptions(emergencyStopGeneration)," in template
+    assert "window.requestAnimationFrame(() => {" in template
+    assert "if (document.hidden) {" in template
+    assert "scheduleBackgroundHydration();" in template
+    assert "const emergencyStopGeneration = emergencyStopDiscoveryGeneration;" in template
+    assert "queueBackgroundHydration([" in template
+    assert "id=\"emergency-stop-refresh\"" not in template
+    assert "emergencyStopRefresh" not in template
     assert "let emergencyStopDiscoveryGeneration = 0;" in template
     assert "emergencyStopDiscoveryGeneration += 1;" in template
     assert "emergencyStopSelect.disabled = false;" in template
@@ -135,11 +147,16 @@ def test_initial_page_renders_configuration_before_loading_dynamic_state() -> No
 def test_emergency_stop_selection_is_preserved_while_options_load() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    german = (ROOT / "templates/lang/language_de.ini").read_text(encoding="utf-8")
+    english = (ROOT / "templates/lang/language_en.ini").read_text(encoding="utf-8")
 
     assert "SELECTED_EMERGENCY_STOP => $selected_emergency_stop" in cgi
     assert 'id="emergency-stop-value" name="emergency_stop_virtual_status_uuid"' in template
     assert 'id="emergency-stop-select"' in template
-    assert 'id="emergency-stop-refresh"' in template
+    assert 'id="emergency-stop-refresh"' not in template
+    assert "EMERGENCY_STOP_REFRESH" not in template
+    assert "EMERGENCY_STOP_REFRESH" not in german
+    assert "EMERGENCY_STOP_REFRESH" not in english
     assert "emergencyStopSelect.disabled = false;" in template
     assert "emergencyStopValue.value = emergencyStopSelect.value;" in template
     assert "option.textContent = label;" in template
@@ -205,7 +222,9 @@ def test_service_status_is_first_and_uses_a_lightweight_ajax_contract() -> None:
     assert 'data-ajax="set_service_enabled"' in template
     assert "body.set('action', 'service_status')" in template
     assert "window.setTimeout(pollServiceStatus, delay)" in template
-    assert "document.hidden || serviceInteractionActive() || servicePollInFlight" in template
+    assert "const pollServiceStatus = async ({initial = false} = {}) =>" in template
+    assert "(!initial && document.hidden)" in template
+    assert "|| serviceInteractionActive() || servicePollInFlight" in template
     assert "document.addEventListener('visibilitychange'" in template
     assert "admin_call('service_status', {})" in cgi
     assert "admin_call('service_action', {command => $command})" in cgi
@@ -221,10 +240,9 @@ def test_sessions_poll_only_while_visible_and_open_and_patch_changed_rows() -> N
     assert "admin_call('list_sessions', {})" in cgi
     assert "body.set('action', 'list_sessions')" in template
     assert "window.setTimeout(pollSessions, delay)" in template
-    assert (
-        "document.hidden || !sessionsSection.open || activeSessionActions.size > 0 "
-        "|| sessionPollInFlight" in template
-    )
+    assert "const pollSessions = async ({initial = false} = {}) =>" in template
+    assert "(!initial && (document.hidden || !sessionsSection.open))" in template
+    assert "|| activeSessionActions.size > 0 || sessionPollInFlight" in template
     assert "sessionsSection.addEventListener('toggle'" in template
     assert "row.dataset.fingerprint !== sessionFingerprint(session)" in template
     assert "sessionList.replaceChildren(fragment)" in template

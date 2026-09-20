@@ -69,7 +69,6 @@
       <label class="mcp-field"><span><TMPL_VAR SETUP.EMERGENCY_STOP></span><select id="emergency-stop-select" aria-describedby="emergency-stop-help emergency-stop-status"><option value="" <TMPL_UNLESS SELECTED_EMERGENCY_STOP>selected</TMPL_UNLESS>><TMPL_VAR SETUP.EMERGENCY_STOP_NONE></option><TMPL_IF SELECTED_EMERGENCY_STOP><option value="<TMPL_VAR SELECTED_EMERGENCY_STOP ESCAPE=HTML>" selected><TMPL_VAR SETUP.EMERGENCY_STOP_CURRENT ESCAPE=HTML> (<TMPL_VAR SELECTED_EMERGENCY_STOP ESCAPE=HTML>)</option></TMPL_IF></select></label>
       <p id="emergency-stop-help" class="mcp-help"><TMPL_VAR SETUP.EMERGENCY_STOP_HELP></p>
       <p id="emergency-stop-status" class="mcp-status" hidden></p>
-      <p class="mcp-actions"><button id="emergency-stop-refresh" class="lb-button" type="button"><TMPL_VAR SETUP.EMERGENCY_STOP_REFRESH></button></p>
       <div class="mcp-permission-groups" aria-describedby="permission-policy-hint">
         <section class="mcp-permission-group" aria-labelledby="loxone-permissions-heading">
           <h3 id="loxone-permissions-heading"><TMPL_VAR SETUP.PERMISSIONS_LOXONE></h3>
@@ -345,7 +344,6 @@
   const emergencyStopSelect = document.getElementById('emergency-stop-select');
   const emergencyStopValue = document.getElementById('emergency-stop-value');
   const emergencyStopStatus = document.getElementById('emergency-stop-status');
-  const emergencyStopRefresh = document.getElementById('emergency-stop-refresh');
   const mqttUseLoxberryGateway = document.getElementById('mqtt-use-loxberry-gateway');
   const mqttHost = document.getElementById('mqtt-host');
   const mqttPort = document.getElementById('mqtt-port');
@@ -649,8 +647,6 @@
     emergencyStopDiscoveryGeneration += 1;
     emergencyStopSelect.disabled = false;
     emergencyStopSelect.setAttribute('aria-busy', 'false');
-    emergencyStopRefresh.disabled = false;
-    emergencyStopRefresh.removeAttribute('aria-busy');
     const selectedValue = emergencyStopValue.value;
     emergencyStopSelect.replaceChildren();
     addEmergencyStopOption('', '<TMPL_VAR SETUP.EMERGENCY_STOP_NONE ESCAPE=JS>', selectedValue === '');
@@ -663,14 +659,13 @@
     }
     emergencyStopStatus.hidden = true;
   };
-  const loadEmergencyStopOptions = async () => {
-    const generation = emergencyStopDiscoveryGeneration;
+  const loadEmergencyStopOptions = async (expectedGeneration = emergencyStopDiscoveryGeneration) => {
+    if (expectedGeneration !== emergencyStopDiscoveryGeneration) return;
+    const generation = expectedGeneration;
     const selectedValue = emergencyStopValue.value;
     const body = new URLSearchParams();
     body.set('action', 'emergency_stop_options');
     body.set('ajax', '1');
-    emergencyStopRefresh.disabled = true;
-    emergencyStopRefresh.setAttribute('aria-busy', 'true');
     emergencyStopSelect.disabled = true;
     emergencyStopSelect.setAttribute('aria-busy', 'true');
     try {
@@ -718,11 +713,8 @@
       if (generation !== emergencyStopDiscoveryGeneration) return;
       emergencyStopSelect.disabled = false;
       emergencyStopSelect.setAttribute('aria-busy', 'false');
-      emergencyStopRefresh.disabled = false;
-      emergencyStopRefresh.removeAttribute('aria-busy');
     }
   };
-  emergencyStopRefresh.addEventListener('click', loadEmergencyStopOptions);
   emergencyStopSelect.addEventListener('change', () => {
     emergencyStopValue.value = emergencyStopSelect.value;
   });
@@ -764,8 +756,8 @@
       servicePollTimer = window.setTimeout(pollServiceStatus, delay);
     }
   };
-  const pollServiceStatus = async () => {
-    if (document.hidden || serviceInteractionActive() || servicePollInFlight) {
+  const pollServiceStatus = async ({initial = false} = {}) => {
+    if ((!initial && document.hidden) || serviceInteractionActive() || servicePollInFlight) {
       scheduleServicePoll();
       return;
     }
@@ -1175,8 +1167,9 @@
       sessionPollTimer = window.setTimeout(pollSessions, delay);
     }
   };
-  const pollSessions = async () => {
-    if (document.hidden || !sessionsSection.open || activeSessionActions.size > 0 || sessionPollInFlight) {
+  const pollSessions = async ({initial = false} = {}) => {
+    if ((!initial && (document.hidden || !sessionsSection.open))
+        || activeSessionActions.size > 0 || sessionPollInFlight) {
       scheduleSessionPoll();
       return;
     }
@@ -1215,10 +1208,50 @@
   sessionsSection.addEventListener('toggle', () => {
     if (sessionsSection.open) pollSessions();
   });
-  loadInitialState();
-  pollServiceStatus();
-  if (certificateSection.open) loadCertificateStatus();
-  if (sessionsSection.open) pollSessions();
+  const backgroundHydrationLimit = 2;
+  const backgroundHydrationQueue = [];
+  let backgroundHydrationRunning = 0;
+  let backgroundHydrationStarted = false;
+  const drainBackgroundHydration = () => {
+    while (backgroundHydrationRunning < backgroundHydrationLimit
+        && backgroundHydrationQueue.length > 0) {
+      const task = backgroundHydrationQueue.shift();
+      backgroundHydrationRunning += 1;
+      Promise.resolve()
+        .then(task)
+        .catch(() => undefined)
+        .finally(() => {
+          backgroundHydrationRunning -= 1;
+          drainBackgroundHydration();
+        });
+    }
+  };
+  const queueBackgroundHydration = (tasks) => {
+    backgroundHydrationQueue.push(...tasks);
+    if (backgroundHydrationStarted) drainBackgroundHydration();
+  };
+  const startBackgroundHydration = () => {
+    if (backgroundHydrationStarted) return;
+    backgroundHydrationStarted = true;
+    const emergencyStopGeneration = emergencyStopDiscoveryGeneration;
+    queueBackgroundHydration([
+      loadInitialState,
+      () => pollServiceStatus({initial: true}),
+      loadCertificateStatus,
+      () => pollSessions({initial: true}),
+      () => loadEmergencyStopOptions(emergencyStopGeneration),
+    ]);
+  };
+  const scheduleBackgroundHydration = () => {
+    if (document.hidden) {
+      startBackgroundHydration();
+      return;
+    }
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(startBackgroundHydration);
+    });
+  };
+  scheduleBackgroundHydration();
   for (const field of [mqttHost, mqttPort, mqttUsername]) {
     field.addEventListener('input', () => {
       if (!mqttUseLoxberryGateway.checked) {
@@ -1333,6 +1366,10 @@
           const savedEndpoint = result.data.configuration.loxone.endpoint;
           emergencyStopValue.value = result.data.configuration.emergency_stop.virtual_status_uuid;
           resetEmergencyStopOptions();
+          const emergencyStopGeneration = emergencyStopDiscoveryGeneration;
+          queueBackgroundHydration([
+            () => loadEmergencyStopOptions(emergencyStopGeneration),
+          ]);
           miniserverEndpoint.value = savedEndpoint;
           explorerLink.href = `${window.location.origin}${explorerPath}`;
           syncTestEndpoint();
