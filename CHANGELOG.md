@@ -19,8 +19,9 @@ extracted from the matching version heading.
 - Render the Admin UI without waiting for service status or Miniserver emergency-stop
   discovery, while preserving an unavailable configured emergency-stop selection.
 
-- Update Clients and sessions immediately after a successful session action instead
-  of relying on a follow-up refresh that can fail.
+- Update Clients and sessions immediately after successful session actions and
+  allow non-conflicting approvals or revocations to run in parallel, without
+  relying on a follow-up refresh that can fail.
 
 - Publish an unambiguous retained MQTT emergency-stop state: `not_configured`,
   `clear`, `active`, or `unknown`. Its dedicated MQTT connection now retains

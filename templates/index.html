@@ -207,7 +207,7 @@
     <div id="session-list"><p><TMPL_VAR AJAX.WORKING></p>
     <TMPL_IF HAS_SESSIONS>
       <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.TOKEN></th><th><TMPL_VAR SESSIONS.SCOPES></th><th><TMPL_VAR SESSIONS.EXPIRES></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody>
-      <TMPL_LOOP SESSIONS><tr data-session-id="<TMPL_VAR id ESCAPE=HTML>"><td><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML><TMPL_ELSE><TMPL_VAR SESSIONS.UNNAMED></TMPL_IF></td><td><code><TMPL_VAR client ESCAPE=HTML></code></td><td><code><TMPL_VAR identity ESCAPE=HTML></code></td><td><TMPL_IF loxone_token_confirmation_required><TMPL_VAR SESSIONS.TOKEN_CONFIRMATION_REQUIRED><TMPL_ELSE><TMPL_VAR SESSIONS.TOKEN_ACTIVE></TMPL_IF></td><td><code><TMPL_VAR scopes ESCAPE=HTML></code></td><td><time class="mcp-expiry" data-expires-at="<TMPL_VAR expires_at ESCAPE=HTML>"><TMPL_VAR expires_display ESCAPE=HTML></time></td><td><TMPL_IF loxone_token_confirmation_required><form method="post" action="index.cgi" data-ajax="confirm_loxone_token"><input type="hidden" name="action" value="confirm_loxone_token"><input type="hidden" name="session_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.CONFIRM_LOXONE_TOKEN></button></form></TMPL_IF><TMPL_IF loxberry_read_eligible><TMPL_UNLESS loxberry_read_approved><form method="post" action="index.cgi" data-ajax="allow_loxberry_read"><input type="hidden" name="action" value="allow_loxberry_read"><input type="hidden" name="session_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.ALLOW_LOXBERRY_READ></button></form></TMPL_UNLESS></TMPL_IF><TMPL_IF loxberry_operate_eligible><TMPL_UNLESS loxberry_operate_approved><form method="post" action="index.cgi" data-ajax="allow_loxberry_operate"><input type="hidden" name="action" value="allow_loxberry_operate"><input type="hidden" name="session_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.ALLOW_LOXBERRY_OPERATE></button></form></TMPL_UNLESS></TMPL_IF><form method="post" action="index.cgi" data-ajax="revoke_session"><input type="hidden" name="action" value="revoke_session"><input type="hidden" name="id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form></td></tr></TMPL_LOOP>
+      <TMPL_LOOP SESSIONS><tr data-session-id="<TMPL_VAR id ESCAPE=HTML>"><td><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML><TMPL_ELSE><TMPL_VAR SESSIONS.UNNAMED></TMPL_IF></td><td><code><TMPL_VAR client ESCAPE=HTML></code></td><td><code><TMPL_VAR identity ESCAPE=HTML></code></td><td data-session-token-state><TMPL_IF loxone_token_confirmation_required><TMPL_VAR SESSIONS.TOKEN_CONFIRMATION_REQUIRED><TMPL_ELSE><TMPL_VAR SESSIONS.TOKEN_ACTIVE></TMPL_IF></td><td><code><TMPL_VAR scopes ESCAPE=HTML></code></td><td><time class="mcp-expiry" data-expires-at="<TMPL_VAR expires_at ESCAPE=HTML>"><TMPL_VAR expires_display ESCAPE=HTML></time></td><td><TMPL_IF loxone_token_confirmation_required><form method="post" action="index.cgi" data-ajax="confirm_loxone_token"><input type="hidden" name="action" value="confirm_loxone_token"><input type="hidden" name="session_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.CONFIRM_LOXONE_TOKEN></button></form></TMPL_IF><TMPL_IF loxberry_read_eligible><TMPL_UNLESS loxberry_read_approved><form method="post" action="index.cgi" data-ajax="allow_loxberry_read"><input type="hidden" name="action" value="allow_loxberry_read"><input type="hidden" name="session_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.ALLOW_LOXBERRY_READ></button></form></TMPL_UNLESS></TMPL_IF><TMPL_IF loxberry_operate_eligible><TMPL_UNLESS loxberry_operate_approved><form method="post" action="index.cgi" data-ajax="allow_loxberry_operate"><input type="hidden" name="action" value="allow_loxberry_operate"><input type="hidden" name="session_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.ALLOW_LOXBERRY_OPERATE></button></form></TMPL_UNLESS></TMPL_IF><form method="post" action="index.cgi" data-ajax="revoke_session"><input type="hidden" name="action" value="revoke_session"><input type="hidden" name="id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form></td></tr></TMPL_LOOP>
       </tbody></table></div>
       <form method="post" action="index.cgi" data-ajax="revoke_all"><input type="hidden" name="action" value="revoke_all"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE_ALL></button></form>
     <TMPL_ELSE></TMPL_IF>
@@ -368,8 +368,10 @@
   let servicePollTimer = null;
   let serviceEnabledSetting = serviceEnabledInput.checked;
   let serviceEnabledSettingLoaded = serviceEnableForm.dataset.serviceEnabledSettingKnown === '1';
-  let sessionActionRunning = false;
   let sessionDataVersion = 0;
+  let nextSessionActionToken = 0;
+  const activeSessionActions = new Map();
+  const sessionActionFailures = new Map();
   let sessionPollInFlight = false;
   let sessionPollTimer = null;
   let lastService = null;
@@ -454,9 +456,22 @@
     if (element.dataset.expiresAt) updateExpiry(element, element.dataset.expiresAt);
   }
   const hideStatusTimers = new WeakMap();
-  const hideSuccess = (element) => {
+  const hideSuccess = (element, defer = () => false) => {
     window.clearTimeout(hideStatusTimers.get(element));
-    hideStatusTimers.set(element, window.setTimeout(() => { element.hidden = true; }, 4000));
+    const hide = () => {
+      if (defer()) {
+        hideStatusTimers.set(element, window.setTimeout(hide, 4000));
+        return;
+      }
+      if (element.dataset.kind === 'success') element.hidden = true;
+    };
+    hideStatusTimers.set(element, window.setTimeout(hide, 4000));
+  };
+  const setAjaxStatus = (kind, message) => {
+    window.clearTimeout(hideStatusTimers.get(status));
+    status.hidden = false;
+    status.dataset.kind = kind;
+    status.textContent = message;
   };
   const pageNotice = document.getElementById('page-notice');
   if (pageNotice) {
@@ -773,6 +788,7 @@
       row.append(cell);
     });
     const tokenCell = document.createElement('td');
+    tokenCell.dataset.sessionTokenState = '';
     tokenCell.textContent = session.loxone_token_confirmation_required
       ? '<TMPL_VAR SESSIONS.TOKEN_CONFIRMATION_REQUIRED ESCAPE=JS>'
       : '<TMPL_VAR SESSIONS.TOKEN_ACTIVE ESCAPE=JS>';
@@ -897,13 +913,13 @@
     }
     for (const row of existing.values()) row.remove();
   };
-  const updateLoxberryBindingTable = (bindings, section, body, actionName) => {
-    section.hidden = bindings.length === 0;
+  const loxberryBindingRows = (bindings, section, actionName) => {
     const rows = [];
     for (const binding of bindings) {
       const related = Array.isArray(binding.rows) ? binding.rows : [];
       for (const bindingRow of related) {
         const row = document.createElement('tr');
+        row.dataset.bindingId = String(bindingRow.binding_id || '');
         const clientName = document.createElement('td');
         clientName.textContent = bindingRow.inactive
           ? section.dataset.noActiveLabel
@@ -945,7 +961,21 @@
         rows.push(row);
       }
     }
+    return rows;
+  };
+  const updateLoxberryBindingTable = (bindings, section, body, actionName) => {
+    const rows = loxberryBindingRows(bindings, section, actionName);
+    section.hidden = rows.length === 0;
     body.replaceChildren(...rows);
+  };
+  const mergeLoxberryBindingTable = (bindings, section, body, actionName) => {
+    const rows = loxberryBindingRows(bindings, section, actionName);
+    const bindingIds = new Set(rows.map((row) => row.dataset.bindingId));
+    for (const row of [...body.querySelectorAll('tr[data-binding-id]')]) {
+      if (bindingIds.has(row.dataset.bindingId)) row.remove();
+    }
+    body.append(...rows);
+    section.hidden = !body.querySelector('tr');
   };
   const updateLoxberryBindings = (bindings) => {
     updateLoxberryBindingTable(
@@ -958,25 +988,135 @@
       'revoke_loxberry_operate',
     );
   };
-  const scheduleSessionPoll = (delay = 10000) => {
-    window.clearTimeout(sessionPollTimer);
-    sessionPollTimer = null;
-    if (!document.hidden && sessionsSection.open && !sessionActionRunning) {
-      sessionPollTimer = window.setTimeout(pollSessions, delay);
-    }
+  const mergeLoxberryBindings = (bindings) => {
+    mergeLoxberryBindingTable(
+      bindings, loxberryBindingSection, loxberryBindingList, 'revoke_loxberry_read',
+    );
   };
-  const setSessionActionControlsDisabled = (disabled) => {
+  const mergeLoxberryOperateBindings = (bindings) => {
+    mergeLoxberryBindingTable(
+      bindings, loxberryOperateBindingSection, loxberryOperateBindingList,
+      'revoke_loxberry_operate',
+    );
+  };
+  // session-action-coordinator-start
+  const sessionActionTypes = new Set([
+    'revoke_session', 'revoke_all', 'confirm_loxone_token', 'allow_loxberry_read',
+    'revoke_loxberry_read', 'allow_loxberry_operate', 'revoke_loxberry_operate',
+  ]);
+  const isSessionAction = (action) => sessionActionTypes.has(action);
+  const sessionActionKey = (action, sessionId = '', bindingId = '') => {
+    if (action === 'revoke_all') return 'global:revoke_all';
+    if (action === 'revoke_session' || action === 'confirm_loxone_token'
+        || action === 'allow_loxberry_read' || action === 'allow_loxberry_operate') {
+      return `session:${action}:${sessionId}`;
+    }
+    return `binding:${action}:${bindingId}`;
+  };
+  const sessionActionsConflict = (left, right) => {
+    if (left.action === 'revoke_all' || right.action === 'revoke_all') return true;
+    if (left.key === right.key) return true;
+    const leftIsBindingRevocation = left.action === 'revoke_loxberry_read'
+      || left.action === 'revoke_loxberry_operate';
+    const rightIsBindingRevocation = right.action === 'revoke_loxberry_read'
+      || right.action === 'revoke_loxberry_operate';
+    if (leftIsBindingRevocation && rightIsBindingRevocation) return true;
+    if (leftIsBindingRevocation !== rightIsBindingRevocation) return true;
+    return left.sessionId !== '' && left.sessionId === right.sessionId
+      && (left.action === 'revoke_session' || right.action === 'revoke_session');
+  };
+  const sessionActionDescriptor = (form) => {
+    const action = form.dataset.ajax || '';
+    if (!isSessionAction(action)) return null;
+    const sessionId = action === 'revoke_session'
+      ? form.querySelector('input[name="id"]')?.value || ''
+      : form.querySelector('input[name="session_id"]')?.value || '';
+    const bindingId = form.querySelector('input[name="binding_id"]')?.value || '';
+    return {action, sessionId, bindingId, key: sessionActionKey(action, sessionId, bindingId)};
+  };
+  const beginSessionAction = (descriptor, button) => {
+    if ([...activeSessionActions.values()].some(({descriptor: active}) => (
+      sessionActionsConflict(descriptor, active)
+    ))) return null;
+    if (activeSessionActions.size === 0) sessionActionFailures.clear();
+    const token = `session-action-${++nextSessionActionToken}`;
+    activeSessionActions.set(token, {descriptor, button});
+    sessionDataVersion += 1;
+    return token;
+  };
+  const showSessionActionFailure = () => {
+    const failures = [...sessionActionFailures.values()];
+    const failure = failures[failures.length - 1];
+    if (failure) setAjaxStatus('error', failure);
+  };
+  const finishSessionAction = (token) => {
+    activeSessionActions.delete(token);
+    return activeSessionActions.size === 0;
+  };
+  const updateSessionActionControls = () => {
     for (const form of document.querySelectorAll('form[data-ajax]')) {
-      if (!isSessionAction(form.dataset.ajax)) continue;
+      const descriptor = sessionActionDescriptor(form);
+      if (!descriptor) continue;
       const button = form.querySelector('button[type="submit"]');
       if (!button) continue;
-      button.disabled = disabled;
-      if (disabled) button.setAttribute('aria-busy', 'true');
+      const active = [...activeSessionActions.values()];
+      const ownAction = active.some((entry) => entry.button === button);
+      button.disabled = active.some((entry) => sessionActionsConflict(descriptor, entry.descriptor));
+      if (ownAction) button.setAttribute('aria-busy', 'true');
       else button.removeAttribute('aria-busy');
     }
   };
+  // session-action-coordinator-end
+  const removeBindingRows = (descriptor) => {
+    for (const form of document.querySelectorAll(`form[data-ajax="${descriptor.action}"]`)) {
+      const candidate = sessionActionDescriptor(form);
+      if (candidate?.bindingId === descriptor.bindingId) form.closest('tr')?.remove();
+    }
+    const section = descriptor.action === 'revoke_loxberry_read'
+      ? loxberryBindingSection : loxberryOperateBindingSection;
+    if (!section.querySelector('tbody tr')) section.hidden = true;
+  };
+  const applySuccessfulSessionAction = (form, descriptor, data) => {
+    const row = form.closest('tr[data-session-id]');
+    if (descriptor.action === 'confirm_loxone_token') {
+      const tokenState = row?.querySelector('[data-session-token-state]');
+      if (tokenState) tokenState.textContent = '<TMPL_VAR SESSIONS.TOKEN_ACTIVE ESCAPE=JS>';
+      form.remove();
+      return;
+    }
+    if (descriptor.action === 'allow_loxberry_read') {
+      form.remove();
+      if (Array.isArray(data.loxberry_bindings)) mergeLoxberryBindings(data.loxberry_bindings);
+      return;
+    }
+    if (descriptor.action === 'allow_loxberry_operate') {
+      form.remove();
+      if (Array.isArray(data.loxberry_operate_bindings)) {
+        mergeLoxberryOperateBindings(data.loxberry_operate_bindings);
+      }
+      return;
+    }
+    if (descriptor.action === 'revoke_session') {
+      row?.remove();
+      if (!sessionList.querySelector('tr[data-session-id]')) updateSessions([]);
+      return;
+    }
+    if (descriptor.action === 'revoke_all') {
+      updateSessions([]);
+      return;
+    }
+    removeBindingRows(descriptor);
+    if (Array.isArray(data.sessions)) updateSessions(data.sessions);
+  };
+  const scheduleSessionPoll = (delay = 10000) => {
+    window.clearTimeout(sessionPollTimer);
+    sessionPollTimer = null;
+    if (!document.hidden && sessionsSection.open && activeSessionActions.size === 0) {
+      sessionPollTimer = window.setTimeout(pollSessions, delay);
+    }
+  };
   const pollSessions = async () => {
-    if (document.hidden || !sessionsSection.open || sessionActionRunning || sessionPollInFlight) {
+    if (document.hidden || !sessionsSection.open || activeSessionActions.size > 0 || sessionPollInFlight) {
       scheduleSessionPoll();
       return;
     }
@@ -1030,10 +1170,6 @@
     service_status: 7000,
     list_sessions: 15000,
   })[action] || 15000;
-  const isSessionAction = (action) => [
-    'revoke_session', 'revoke_all', 'confirm_loxone_token', 'allow_loxberry_read', 'revoke_loxberry_read',
-    'allow_loxberry_operate', 'revoke_loxberry_operate',
-  ].includes(action);
   document.addEventListener('submit', async (event) => {
     const form = event.target.closest('form[data-ajax]');
     if (!form) return;
@@ -1052,31 +1188,33 @@
         serviceConfirm.showModal();
         return;
       }
-      delete form.dataset.confirmed;
-      const button = form.querySelector('button[type="submit"]');
-      let keepButtonDisabled = false;
+    delete form.dataset.confirmed;
+    const button = form.querySelector('button[type="submit"]');
+    let keepButtonDisabled = false;
+    let sessionActionToken = null;
+    let sessionAction = null;
       if (form.dataset.ajax === 'service_action' || form.dataset.ajax === 'set_service_enabled') {
         serviceActionRunning = true;
         window.clearTimeout(servicePollTimer);
         servicePollTimer = null;
         renderService(lastService);
-      }
-      if (isSessionAction(form.dataset.ajax)) {
-        if (sessionActionRunning) return;
-        sessionDataVersion += 1;
-        sessionActionRunning = true;
-        window.clearTimeout(sessionPollTimer);
-        sessionPollTimer = null;
-        setSessionActionControlsDisabled(true);
+    }
+    if (isSessionAction(form.dataset.ajax)) {
+      sessionAction = sessionActionDescriptor(form);
+      if (!sessionAction) return;
+      sessionActionToken = beginSessionAction(sessionAction, button);
+      if (!sessionActionToken) return;
+      window.clearTimeout(sessionPollTimer);
+      sessionPollTimer = null;
+      updateSessionActionControls();
       }
       button.disabled = true;
       button.setAttribute('aria-busy', 'true');
-      window.clearTimeout(hideStatusTimers.get(status));
-      status.hidden = false;
-      status.dataset.kind = '';
-      status.textContent = (form.dataset.ajax === 'service_action' || form.dataset.ajax === 'set_service_enabled')
-        ? '<TMPL_VAR STATUS.ACTION_RUNNING ESCAPE=JS>'
-        : '<TMPL_VAR AJAX.WORKING ESCAPE=JS>';
+      if (!sessionActionToken || sessionActionFailures.size === 0) {
+        setAjaxStatus('', (form.dataset.ajax === 'service_action' || form.dataset.ajax === 'set_service_enabled')
+          ? '<TMPL_VAR STATUS.ACTION_RUNNING ESCAPE=JS>'
+          : '<TMPL_VAR AJAX.WORKING ESCAPE=JS>');
+      }
       const body = new URLSearchParams(new FormData(form));
       const requestedServiceEnabled = form.dataset.ajax === 'set_service_enabled'
         ? serviceEnabledInput.checked : null;
@@ -1093,22 +1231,19 @@
             throw new Error('<TMPL_VAR STATUS.ERROR_ACTION ESCAPE=JS>');
           }
         }
-        status.dataset.kind = 'success';
-        status.textContent = '<TMPL_VAR AJAX.SUCCESS ESCAPE=JS>';
-        hideSuccess(status);
+        if (sessionActionToken && sessionActionFailures.size > 0) {
+          showSessionActionFailure();
+        } else {
+          setAjaxStatus('success', '<TMPL_VAR AJAX.SUCCESS ESCAPE=JS>');
+          hideSuccess(status, () => activeSessionActions.size > 0);
+        }
         if (result.data.service) {
           renderService(result.data.service, {
             updateEnabledSetting: form.dataset.ajax === 'set_service_enabled',
           });
         }
         if (isSessionAction(form.dataset.ajax)) {
-          if (Array.isArray(result.data.sessions)) updateSessions(result.data.sessions);
-          if (Array.isArray(result.data.loxberry_bindings)) {
-            updateLoxberryBindings(result.data.loxberry_bindings);
-          }
-          if (Array.isArray(result.data.loxberry_operate_bindings)) {
-            updateLoxberryOperateBindings(result.data.loxberry_operate_bindings);
-          }
+          applySuccessfulSessionAction(form, sessionAction, result.data);
         }
         if (result.data.certificate) updateCertificate(result.data.certificate);
         if (form.dataset.ajax === 'save_mqtt_config') {
@@ -1133,10 +1268,17 @@
         if (form.dataset.ajax === 'set_service_enabled') {
           serviceEnabledInput.checked = serviceEnabledSetting;
         }
-        status.dataset.kind = 'error';
-        if (error instanceof DOMException && error.name === 'AbortError') status.textContent = '<TMPL_VAR AJAX.TIMEOUT ESCAPE=JS>';
-        else if (error instanceof TypeError) status.textContent = '<TMPL_VAR AJAX.NETWORK ESCAPE=JS>';
-        else status.textContent = error instanceof Error ? error.message : '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
+        const errorMessage = error instanceof DOMException && error.name === 'AbortError'
+          ? '<TMPL_VAR AJAX.TIMEOUT ESCAPE=JS>'
+          : error instanceof TypeError
+            ? '<TMPL_VAR AJAX.NETWORK ESCAPE=JS>'
+            : error instanceof Error ? error.message : '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
+        if (sessionActionToken) {
+          sessionActionFailures.set(sessionActionToken, errorMessage);
+          showSessionActionFailure();
+        } else {
+          setAjaxStatus('error', errorMessage);
+        }
       } finally {
         if (form.dataset.ajax === 'service_action' || form.dataset.ajax === 'set_service_enabled') {
           serviceActionRunning = false;
@@ -1144,13 +1286,14 @@
           scheduleServicePoll(0);
         }
         if (isSessionAction(form.dataset.ajax)) {
-          sessionActionRunning = false;
-          setSessionActionControlsDisabled(false);
-          scheduleSessionPoll(0);
+          const refreshSessions = finishSessionAction(sessionActionToken);
+          updateSessionActionControls();
+          if (refreshSessions) scheduleSessionPoll(0);
         }
         if (!keepButtonDisabled) {
           button.disabled = false;
           button.removeAttribute('aria-busy');
+          if (sessionActionToken) updateSessionActionControls();
         }
       }
   });
