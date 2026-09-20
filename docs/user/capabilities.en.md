@@ -30,8 +30,8 @@ historical state change caused an action.
 `loxone_analyze_project` version 2 summarizes bounded project-local KNX evidence: address and
 source-name patterns, raw datatype reuse, reviewed signal-use differences, exact runtime-mapping
 context, local peer and graph outliers, path counts, and endpoints without an observed project
-relationship. Runtime names, rooms, categories, and control types are included only for exact UUID
-mappings; names never establish a mapping. Findings are review facts, not quality ratings. Fixed
+relationship. Runtime names and control types are used only for exact UUID mappings; names never
+establish a mapping. Findings are review facts, not quality ratings. Fixed
 limitation codes show when normalized DPTs, semantic domains, reviewed usage, or runtime mappings
 are unavailable. The tool does not claim DPT compatibility, ETS coverage, bus activity, or physical
 device use; use a returned project-node ID with describe or trace to inspect its evidence.

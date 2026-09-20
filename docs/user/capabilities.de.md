@@ -32,8 +32,8 @@ statische Projektpfade, keine Bus-Telegramme und keine historische Ursache einer
 `loxone_analyze_project` Version 2 fasst begrenzte, projektlokale KNX-Evidenz zusammen:
 Adress- und Quellnamensmuster, Wiederverwendung von Rohdatentypen, geprüfte Unterschiede der
 Signalnutzung, Kontext aus exakten Runtime-Mappings, lokale Peer- und Graph-Ausreißer,
-Pfadzähler und Endpunkte ohne beobachtete Projektbeziehung. Runtime-Namen, Räume, Kategorien und
-Control-Typen werden nur bei exaktem UUID-Mapping verwendet; Namen erzeugen nie ein Mapping.
+Pfadzähler und Endpunkte ohne beobachtete Projektbeziehung. Runtime-Namen und Control-Typen werden
+nur bei exaktem UUID-Mapping verwendet; Namen erzeugen nie ein Mapping.
 Findings sind Prüffakten, keine Qualitätsurteile. Feste Limitierungs-Codes kennzeichnen fehlende
 normalisierte DPTs, Semantikdomänen, geprüfte Signalnutzung oder Runtime-Mappings. Die Analyse
 behauptet weder DPT-Kompatibilität noch ETS-Abdeckung, Busaktivität oder physische

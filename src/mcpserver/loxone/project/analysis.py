@@ -97,6 +97,20 @@ def _descendants(key: str, children: dict[str, list[str]]) -> list[str]:
     return result
 
 
+def _bounded_descendants(
+    key: str, children: dict[str, list[str]], limit: int
+) -> tuple[list[str], bool]:
+    result, pending = [key], deque([key])
+    while pending:
+        current = pending.popleft()
+        for child in children[current]:
+            if len(result) >= limit:
+                return result, True
+            result.append(child)
+            pending.append(child)
+    return result, False
+
+
 def _directional_adjacencies(
     graph_edges: tuple[GraphEdge, ...], semantic_edges: tuple[SemanticEdge, ...]
 ) -> tuple[_DirectionalAdjacency, _DirectionalAdjacency]:
@@ -623,6 +637,9 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
                 {
                     "analysis": "project_connectivity",
                     "finding_type": finding_type,
+                    "classification": "ambiguity"
+                    if finding_type == "project_connectivity_ambiguous"
+                    else "fact",
                     "flow_direction": item.direction,
                     "group_address": item.address,
                 },
@@ -648,7 +665,12 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
                 break
             is_downstream = start.direction == "bus_to_loxone"
             path_adjacency = downstream if is_downstream else upstream
-            pending = deque((key, [key], 0) for key in _descendants(start.block.key, children))
+            seeds, seeds_truncated = _bounded_descendants(
+                start.block.key, children, _MAX_VISITED_PER_START
+            )
+            if seeds_truncated:
+                truncated_reasons.append("max_path_nodes")
+            pending = deque((key, [key], 0) for key in seeds)
             visited = {key for key, _, _ in pending}
             while pending:
                 current, path, depth = pending.popleft()
@@ -726,9 +748,12 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
         for start_key in sorted(mapped):
             if path_limit_reached:
                 break
-            loxone_pending = deque(
-                (key, [key], 0, False) for key in _descendants(start_key, children)
+            seeds, seeds_truncated = _bounded_descendants(
+                start_key, children, _MAX_VISITED_PER_START
             )
+            if seeds_truncated:
+                truncated_reasons.append("max_path_nodes")
+            loxone_pending = deque((key, [key], 0, False) for key in seeds)
             loxone_visited = {(key, crossed_knx) for key, _, _, crossed_knx in loxone_pending}
             while loxone_pending:
                 current, path, depth, crossed_knx = loxone_pending.popleft()
