@@ -602,6 +602,7 @@ my $loglist_html = '';
 my $service_enabled_setting_known = 0;
 my $service_enabled_setting = 0;
 my $service = {};
+my $emergency_stop_runtime = {availability => 'unavailable'};
 if ($server_rendered_fallback) {
     my $config_result = admin_call('get_config', {});
     $config = $config_result->{data}{configuration}
@@ -612,6 +613,9 @@ if ($server_rendered_fallback) {
         $service = $service_result->{data}{service};
         $service_enabled_setting_known = 1;
         $service_enabled_setting = $service->{enabled} ? 1 : 0;
+    }
+    if ($service_result->{ok} && ref($service_result->{data}{emergency_stop_runtime}) eq 'HASH') {
+        $emergency_stop_runtime = $service_result->{data}{emergency_stop_runtime};
     }
     $notifications_html = LoxBerry::Log::get_notifications_html($lbpplugindir) // '';
     $loglist_html = LoxBerry::Web::loglist_html() // '';
@@ -701,6 +705,23 @@ for my $suffix ('', '.1', '.2') {
         url => "/admin/system/tools/logfile.cgi?logfile=plugins/$lbpplugindir/$filename&header=html&format=template",
     };
 }
+my $runtime_availability = $emergency_stop_runtime->{availability} // 'unavailable';
+$runtime_availability = 'unavailable'
+    if $runtime_availability !~ /\A(?:available|service_inactive|unavailable)\z/;
+my $runtime_status = $emergency_stop_runtime->{status} // 'unknown';
+$runtime_status = 'unknown' if $runtime_status !~ /\A(?:not_configured|clear|active|unknown)\z/;
+my $runtime_signal_uuid = $emergency_stop_runtime->{signal_uuid};
+$runtime_signal_uuid = '' if !defined($runtime_signal_uuid) || ref($runtime_signal_uuid);
+my $runtime_signal_name = $emergency_stop_runtime->{signal_name};
+$runtime_signal_name = '' if !defined($runtime_signal_name) || ref($runtime_signal_name);
+my $runtime_signal = $server_rendered_fallback && $runtime_availability eq 'available'
+    ? ($runtime_signal_name ne '' ? $runtime_signal_name
+        : $runtime_signal_uuid ne '' ? $runtime_signal_uuid
+        : $L{'SETUP.EMERGENCY_STOP_NONE'})
+    : $server_rendered_fallback && $runtime_availability eq 'service_inactive'
+        ? $L{'SETUP.EMERGENCY_STOP_RUNTIME_SERVICE_INACTIVE'}
+        : $server_rendered_fallback ? $L{'SETUP.EMERGENCY_STOP_RUNTIME_UNAVAILABLE'}
+        : $L{'SETUP.EMERGENCY_STOP_LOADING'};
 $template->param(
     VERSION => $version,
     SERVER_RENDERED_FALLBACK => $server_rendered_fallback,
@@ -748,6 +769,13 @@ $template->param(
     SELECTED_EMERGENCY_STOP => $selected_emergency_stop,
     EMERGENCY_STOP_OPTIONS => $emergency_stop_options,
     EMERGENCY_STOP_SELECTED_UNAVAILABLE => $selected_emergency_stop_unavailable,
+    EMERGENCY_STOP_RUNTIME_SIGNAL_VALUE => $runtime_signal,
+    EMERGENCY_STOP_RUNTIME_UUID => $runtime_signal_uuid,
+    EMERGENCY_STOP_RUNTIME_UUID_VISIBLE => $server_rendered_fallback
+        && $runtime_availability eq 'available' && $runtime_signal_uuid ne '',
+    EMERGENCY_STOP_RUNTIME_STATE_VALUE => $server_rendered_fallback
+        && $runtime_availability eq 'available' ? $runtime_status : 'unknown',
+    EMERGENCY_STOP_RUNTIME_BUSY => $server_rendered_fallback ? 0 : 1,
     LOG_LEVEL => $config->{logging}{level} // 'warning',
     LOG_LEVEL_OFF => ($config->{logging}{level} // 'warning') eq 'off' ? 1 : 0,
     LOG_LEVEL_ERROR => ($config->{logging}{level} // 'warning') eq 'error' ? 1 : 0,

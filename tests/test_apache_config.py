@@ -17,6 +17,7 @@ def test_apache_proxy_is_narrow_and_loopback_only() -> None:
     assert "timeout=300" in config
     assert "0.0.0.0" not in config
     assert "ProxyPass / " not in config
+    assert "emergency-stop-status" not in config
 
 
 def test_apache_exposes_only_exact_oauth_and_metadata_paths() -> None:

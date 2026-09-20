@@ -177,6 +177,22 @@ def test_health_is_small_and_contains_no_configuration() -> None:
     assert set(response.json()) == {"ok", "service", "version"}
 
 
+def test_internal_emergency_stop_status_is_separate_from_health() -> None:
+    app = create_server(_settings()).streamable_http_app()
+    with TestClient(app, base_url="http://testserver") as client:
+        response = client.get("/internal/emergency-stop-status")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "ok": True,
+        "emergency_stop": {
+            "signal_uuid": None,
+            "signal_name": None,
+            "status": "not_configured",
+        },
+    }
+
+
 def test_streamable_app_starts_the_configured_emergency_stop_monitor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -230,10 +246,33 @@ def test_disabled_service_exposes_only_health(method: str, path: str) -> None:
     assert response.json() == {"ok": False, "error": "service_disabled"}
 
 
+def test_disabled_service_keeps_internal_emergency_stop_status_available() -> None:
+    settings = ServerSettings(
+        host="127.0.0.1",
+        port=8765,
+        allowed_hosts=("testserver",),
+        allowed_origins=(),
+        service_enabled=False,
+    )
+    app = create_server(settings).streamable_http_app()
+    with TestClient(app, base_url="http://testserver") as client:
+        response = client.get("/internal/emergency-stop-status")
+
+    assert response.status_code == 200
+
+
 def test_health_rejects_unknown_host() -> None:
     app = create_server(_settings()).streamable_http_app()
     with TestClient(app, base_url="http://untrusted.example") as client:
         response = client.get("/healthz")
+
+    assert response.status_code == 421
+
+
+def test_internal_emergency_stop_status_rejects_unknown_host() -> None:
+    app = create_server(_settings()).streamable_http_app()
+    with TestClient(app, base_url="http://untrusted.example") as client:
+        response = client.get("/internal/emergency-stop-status")
 
     assert response.status_code == 421
 

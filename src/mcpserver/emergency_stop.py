@@ -33,6 +33,17 @@ def _sorted_virtual_status_options(options: list[dict[str, str]]) -> list[dict[s
     return sorted(options, key=lambda option: (option["name"].casefold(), option["uuid"]))
 
 
+def mqtt_emergency_stop_status(*, signal_uuid: str | None, monitor_status: str) -> str:
+    """Translate the monitor state to the stable MQTT status vocabulary."""
+    if not signal_uuid:
+        return "not_configured"
+    return {
+        "enabled": "clear",
+        "disabled": "active",
+        "unknown": "unknown",
+    }.get(monitor_status, "unknown")
+
+
 @dataclass(frozen=True, slots=True)
 class VirtualStatusOptions:
     """Bounded, UI-safe result of an on-demand Virtual Status discovery."""
@@ -49,6 +60,7 @@ class EmergencyStopMonitor:
     config: PluginConfig
     status: str = "enabled"
     status_changed_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    signal_name: str | None = None
     _task: asyncio.Task[None] | None = None
 
     def __post_init__(self) -> None:
@@ -82,6 +94,17 @@ class EmergencyStopMonitor:
             "status": self.status,
             "observed_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
             "blocked_since": self.status_changed_at.isoformat().replace("+00:00", "Z"),
+        }
+
+    def runtime_status(self) -> dict[str, str | None]:
+        """Return the service's own selected signal and MQTT-compatible state."""
+        return {
+            "signal_uuid": self.config.emergency_stop_virtual_status_uuid or None,
+            "signal_name": self.signal_name,
+            "status": mqtt_emergency_stop_status(
+                signal_uuid=self.config.emergency_stop_virtual_status_uuid,
+                monitor_status=self.status,
+            ),
         }
 
     async def start(self) -> None:
@@ -171,6 +194,7 @@ class EmergencyStopMonitor:
                 )
                 if control is None or len(control.state_uuids) != 1:
                     raise RuntimeError("selected status unavailable")
+                self.signal_name = control.name
                 state_uuid = control.state_uuids[0][1]
                 stage = "subscription"
                 async for batch in session.state_events():

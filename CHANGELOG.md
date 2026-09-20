@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Show the running service's emergency-stop signal and MQTT-compatible state in
+  the Admin UI, including a clear indication when the current form selection
+  has not yet been adopted by the service.
+
 - Load Admin UI service state independently, defer closed certificate and
   session sections, and query emergency-stop options only on explicit request.
   Failed option discovery now distinguishes unavailable discovery from an empty

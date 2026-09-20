@@ -22,6 +22,7 @@ from typing import Any, Final
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from mcpserver.config import PluginConfig
+from mcpserver.emergency_stop import mqtt_emergency_stop_status
 
 LOXONE_EPOCH_OFFSET: Final = 1_230_768_000
 _LOGGER = logging.getLogger("mcpserver.mqtt_health")
@@ -425,13 +426,10 @@ class MqttHealthPublisher:
 
     def _emergency_stop_state(self) -> str:
         """Translate the monitor's access-oriented state into the MQTT contract."""
-        if not self._config.emergency_stop_virtual_status_uuid:
-            return "not_configured"
-        return {
-            "enabled": "clear",
-            "disabled": "active",
-            "unknown": "unknown",
-        }.get(self._emergency_stop_reader(), "unknown")
+        return mqtt_emergency_stop_status(
+            signal_uuid=self._config.emergency_stop_virtual_status_uuid,
+            monitor_status=self._emergency_stop_reader(),
+        )
 
     def _publish_startup_state(self) -> None:
         """Publish the service's own ready state without a systemd start race.
