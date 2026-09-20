@@ -82,6 +82,7 @@ MAX_STATE_UUIDS: Final = 100
 MAX_WEATHER_POINTS: Final = 96
 STRUCTURE_OVERVIEW_MAX_ITEMS: Final = 50
 STRUCTURE_OVERVIEW_MAX_BYTES: Final = 65_536
+PROJECT_RESPONSE_MAX_BYTES: Final = 65_536
 _LOXONE_EPOCH_UNIX: Final = 1_230_768_000
 _MAX_SEMANTIC_JSON_TEXT: Final = 65_536
 _MAX_SEMANTIC_ENTRIES: Final = 100
@@ -529,6 +530,23 @@ class ProjectKnxData(BaseModel):
     ]
 
 
+class ProjectKnxSummaryData(BaseModel):
+    object_kind: Literal["line", "endpoint", "logic_block"]
+    flow_direction: Literal["bus_to_loxone", "loxone_to_bus"] | None
+    source_type: str
+    group_address: dict[Literal["canonical"], str | None] | None
+
+
+class ProjectNodeSummaryData(BaseModel):
+    project_node_id: str
+    kind: Literal["block", "connector"]
+    block_type: str | None
+    source_id: str | None
+    connector_key: str | None
+    runtime_control: ProjectRuntimeControlData | None = None
+    knx: ProjectKnxSummaryData | None = None
+
+
 class ProjectNodeData(BaseModel):
     project_node_id: str
     kind: Literal["block", "connector"]
@@ -551,8 +569,10 @@ class ProjectStatusData(BaseModel):
 
 
 class ProjectObjectPageData(BaseModel):
-    items: list[ProjectNodeData]
+    items: list[ProjectNodeSummaryData]
     next_cursor: str | None
+    truncated: bool = False
+    truncation_reason: Literal["max_response_bytes"] | None = None
 
 
 class ProjectRelationshipData(BaseModel):
@@ -572,12 +592,12 @@ class ProjectDescriptionData(ProjectNodeData):
 
 
 class ProjectTraceData(BaseModel):
-    start: ProjectNodeData
+    start: ProjectNodeSummaryData
     direction: Literal["upstream", "downstream"]
-    nodes: list[ProjectNodeData]
+    nodes: list[ProjectNodeSummaryData]
     edges: list[ProjectRelationshipData]
     truncated: bool
-    truncation_reason: Literal["max_depth", "max_nodes", "max_edges"] | None
+    truncation_reason: Literal["max_depth", "max_nodes", "max_edges", "max_response_bytes"] | None
     unresolved_relationships: list[dict[str, str]]
     unresolved_truncated: bool
 
@@ -1234,6 +1254,61 @@ def _fit_structure_overview(envelope: StructureOverviewEnvelope) -> StructureOve
         selected_breakdown.truncated = selected_breakdown.returned < selected_breakdown.total
         selected_breakdown.complete = not selected_breakdown.truncated
     return envelope
+
+
+def _fit_project_page(
+    envelope: ProjectObjectPageEnvelope, codec: _CursorCodec, scope: str, cursor: str | None
+) -> bool:
+    """Trim a project page deterministically without invalidating its continuation."""
+    if not isinstance(envelope.data, ProjectObjectPageData):
+        return True
+    data = envelope.data
+    if len(envelope.model_dump_json().encode("utf-8")) <= PROJECT_RESPONSE_MAX_BYTES:
+        return True
+    offset = codec.decode(scope, cursor)
+    original_count = len(data.items)
+    had_more = data.next_cursor is not None
+    while (
+        data.items and len(envelope.model_dump_json().encode("utf-8")) > PROJECT_RESPONSE_MAX_BYTES
+    ):
+        data.items.pop()
+    if not data.items:
+        return False
+    data.truncated = True
+    data.truncation_reason = "max_response_bytes"
+    if len(data.items) < original_count or had_more:
+        data.next_cursor = codec.encode(scope, offset + len(data.items))
+    return True
+
+
+def _fit_project_trace(envelope: ProjectTraceEnvelope) -> bool:
+    """Trim a trace at complete node boundaries to preserve graph consistency."""
+    if not isinstance(envelope.data, ProjectTraceData):
+        return True
+    data = envelope.data
+    if len(envelope.model_dump_json().encode("utf-8")) <= PROJECT_RESPONSE_MAX_BYTES:
+        return True
+    removed_unresolved = False
+    while (
+        len(data.nodes) > 1
+        and len(envelope.model_dump_json().encode("utf-8")) > PROJECT_RESPONSE_MAX_BYTES
+    ):
+        data.nodes.pop()
+        retained = {node.project_node_id for node in data.nodes}
+        data.edges = [
+            edge for edge in data.edges if edge.source in retained and edge.target in retained
+        ]
+        before = len(data.unresolved_relationships)
+        data.unresolved_relationships = [
+            item for item in data.unresolved_relationships if item["project_node_id"] in retained
+        ]
+        removed_unresolved = removed_unresolved or len(data.unresolved_relationships) < before
+    if len(envelope.model_dump_json().encode("utf-8")) > PROJECT_RESPONSE_MAX_BYTES:
+        return False
+    data.truncated = True
+    data.truncation_reason = "max_response_bytes"
+    data.unresolved_truncated = data.unresolved_truncated or removed_unresolved
+    return True
 
 
 def _state_observed_at(record: StateRecord) -> str | None:
@@ -2593,11 +2668,18 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                     knx_group_address or "",
                 )
             )
-            return _result(
+            envelope = _result(
                 ProjectObjectPageEnvelope,
                 _page(cursors, scope, values, cursor, limit),
                 stale=not snapshot.connected,
             )
+            if not _fit_project_page(envelope, cursors, scope, cursor):
+                return _error(
+                    ProjectObjectPageEnvelope,
+                    "temporarily_unavailable",
+                    "Project result exceeds the response limit",
+                )
+            return envelope
         except ValueError as exc:
             return _error(ProjectObjectPageEnvelope, "invalid_input", str(exc))
         except PermissionError:
@@ -2677,11 +2759,18 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
         try:
             project, snapshot = await _project_query(runtime)
             node = project.resolve(start_identifier, start_type)
-            return _result(
+            envelope = _result(
                 ProjectTraceEnvelope,
                 project.trace(node, direction=direction, max_depth=max_depth, max_nodes=max_nodes),
                 stale=not snapshot.connected,
             )
+            if not _fit_project_trace(envelope):
+                return _error(
+                    ProjectTraceEnvelope,
+                    "temporarily_unavailable",
+                    "Project result exceeds the response limit",
+                )
+            return envelope
         except PermissionError:
             return _error(
                 ProjectTraceEnvelope,

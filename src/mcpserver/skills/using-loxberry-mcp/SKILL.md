@@ -38,7 +38,8 @@ influence a known control. Call `loxone_get_project_status` first when project
 freshness, mapping coverage, or unresolved relationships matter. Then:
 
 1. Use `loxone_find_project_objects` with narrow exact filters or a bounded
-   query. Follow `next_cursor` while keeping all filters unchanged.
+   query. It returns a compact node summary; follow `next_cursor` while keeping
+   all filters unchanged, and check `truncated` plus `truncation_reason`.
 2. Call `loxone_describe_project_object` for one returned `project_node_id`, or
    for an exact visible `runtime_control_uuid`. If a runtime mapping is
    ambiguous, present the candidates; never choose one.
@@ -56,8 +57,9 @@ For confirmed KNX/EIB objects, use the optional `knx` metadata to distinguish
 bus lines, endpoints, and KNX logic blocks. `bus_to_loxone` and
 `loxone_to_bus` describe bus data flow, not a physical sensor or actuator role.
 Use a canonical group address only when present; equal addresses do not prove a
-program path. Treat `EIBType` as an unresolved source code, not as a guessed
-DPT or EIS meaning.
+program path. Find and trace expose only compact KNX metadata; use describe for
+the original address and `EIBType`. Treat `EIBType` as an unresolved source
+code, not as a guessed DPT or EIS meaning.
 
 ### Inspect one known room
 

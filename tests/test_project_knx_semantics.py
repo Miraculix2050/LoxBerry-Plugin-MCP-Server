@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 from mcpserver.loxone.project.graph import ProjectPartSummary, ProjectSnapshot, build_graph
@@ -53,6 +54,42 @@ def test_knx_endpoints_keep_direction_source_data_and_bounded_address():
         "truncated_fields": [],
     }
     assert actor["flow_direction"] == "loxone_to_bus"
+
+
+def test_observed_knx_fixture_keeps_semantics_and_existing_graph_paths():
+    project = _query(Path("tests/fixtures/project/observed-knx.xml").read_bytes())
+
+    found = project.find(
+        query=None,
+        kind=None,
+        block_type=None,
+        source_id=None,
+        runtime_control_uuid=None,
+        technology="knx_eib",
+        knx_object_kind="endpoint",
+        knx_flow_direction=None,
+        knx_group_address=None,
+    )
+    detailed = project.describe(project.resolve("p:2", "project_node_id"), limit=10)
+
+    assert [item["knx"] for item in found] == [
+        {
+            "object_kind": "endpoint",
+            "flow_direction": "bus_to_loxone",
+            "source_type": "EIBsensor",
+            "group_address": {"canonical": "14/1/5"},
+        },
+        {
+            "object_kind": "endpoint",
+            "flow_direction": "loxone_to_bus",
+            "source_type": "EIBactor",
+            "group_address": {"canonical": "14/1/6"},
+        },
+    ]
+    assert detailed["knx"]["datatype"]["source_value"] == "5"
+    assert project.trace(
+        project.resolve("p:3", "project_node_id"), direction="downstream", max_depth=4, max_nodes=20
+    )["edges"]
 
 
 def test_knx_group_address_never_guesses_invalid_or_line_values():

@@ -62,37 +62,57 @@ class ProjectQuery:
                     "object_kind": knx.object_kind,
                     "flow_direction": knx.flow_direction,
                     "source_type": knx.source_type,
-                    "title": knx.title,
-                    "description": knx.description,
-                    "internal_name": knx.internal_name,
                     "group_address": (
                         {
-                            "original": knx.group_address.original,
                             "canonical": knx.group_address.canonical,
-                            "format": knx.group_address.format,
-                            "segments": list(knx.group_address.segments)
-                            if knx.group_address.segments is not None
-                            else None,
                         }
                         if knx.group_address is not None
                         else None
                     ),
-                    "datatype": (
-                        {
-                            "source_field": knx.datatype.source_field,
-                            "source_value": knx.datatype.source_value,
-                            "system": knx.datatype.system,
-                            "normalized_code": knx.datatype.normalized_code,
-                        }
-                        if knx.datatype is not None
-                        else None
-                    ),
-                    "truncated_fields": list(knx.truncated_fields),
                 }
                 if knx is not None
                 else None
             ),
         }
+
+    def _detail(self, node: GraphNode) -> dict[str, object]:
+        """Return the one-object projection including all KNX source evidence."""
+        result = self._summary(node)
+        knx = node.knx
+        if knx is None:
+            return result
+        result["knx"] = {
+            "object_kind": knx.object_kind,
+            "flow_direction": knx.flow_direction,
+            "source_type": knx.source_type,
+            "title": knx.title,
+            "description": knx.description,
+            "internal_name": knx.internal_name,
+            "group_address": (
+                {
+                    "original": knx.group_address.original,
+                    "canonical": knx.group_address.canonical,
+                    "format": knx.group_address.format,
+                    "segments": list(knx.group_address.segments)
+                    if knx.group_address.segments is not None
+                    else None,
+                }
+                if knx.group_address is not None
+                else None
+            ),
+            "datatype": (
+                {
+                    "source_field": knx.datatype.source_field,
+                    "source_value": knx.datatype.source_value,
+                    "system": knx.datatype.system,
+                    "normalized_code": knx.datatype.normalized_code,
+                }
+                if knx.datatype is not None
+                else None
+            ),
+            "truncated_fields": list(knx.truncated_fields),
+        }
+        return result
 
     def status(self) -> dict[str, object]:
         graph = self.view.snapshot.graph
@@ -238,7 +258,7 @@ class ProjectQuery:
         if len(unresolved) > limit:
             truncated_fields.append("unresolved_relationships")
         return {
-            **self._summary(node),
+            **self._detail(node),
             "parent_project_node_id": contains_in[0] if len(contains_in) == 1 else None,
             "child_project_node_ids": child_ids[:limit],
             "relationships": direct[:limit],

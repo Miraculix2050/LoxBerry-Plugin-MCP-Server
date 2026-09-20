@@ -5,7 +5,7 @@ from mcp.server.fastmcp import FastMCP
 
 import mcpserver.tools as tools_module
 from mcpserver.loxone.project.query import ProjectQueryError
-from mcpserver.tools import register_project_tools
+from mcpserver.tools import PROJECT_RESPONSE_MAX_BYTES, register_project_tools
 
 
 class Query:
@@ -102,3 +102,57 @@ async def test_project_tools_keep_structured_mapping_and_cursor_errors(monkeypat
     assert describe.ok is False
     assert describe.data.error == "ambiguous_mapping"  # type: ignore[union-attr]
     assert invalid_cursor.data.error == "invalid_input"  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+async def test_project_tools_bound_large_find_and_trace_responses(monkeypatch):
+    class LargeQuery(Query):
+        def find(self, **_kwargs):
+            return [
+                {
+                    "project_node_id": f"p:{index}",
+                    "kind": "block",
+                    "block_type": "x" * 2_000,
+                    "source_id": "source",
+                    "connector_key": None,
+                    "runtime_control": None,
+                    "knx": None,
+                }
+                for index in range(100)
+            ]
+
+        def trace(self, _node, **_kwargs):
+            nodes = self.find()
+            return {
+                "start": nodes[0],
+                "direction": "upstream",
+                "nodes": nodes,
+                "edges": [
+                    {"kind": "signal", "source": f"p:{index}", "target": f"p:{index + 1}"}
+                    for index in range(99)
+                ],
+                "truncated": False,
+                "truncation_reason": None,
+                "unresolved_relationships": [],
+                "unresolved_truncated": False,
+            }
+
+    async def project_query(_runtime):
+        return LargeQuery(), SimpleNamespace(connected=True, structure_generation=1)
+
+    monkeypatch.setattr(tools_module, "_project_query", project_query)
+    server = FastMCP("project-tool-size-limit")
+    register_project_tools(server, None)
+
+    found = await server._tool_manager.get_tool("loxone_find_project_objects").fn(limit=100)  # type: ignore[union-attr]
+    traced = await server._tool_manager.get_tool("loxone_trace_project_logic").fn(  # type: ignore[union-attr]
+        "p:0", "project_node_id", "upstream", max_nodes=100
+    )
+
+    assert len(found.model_dump_json().encode("utf-8")) <= PROJECT_RESPONSE_MAX_BYTES
+    assert found.data.truncated is True  # type: ignore[union-attr]
+    assert found.data.truncation_reason == "max_response_bytes"  # type: ignore[union-attr]
+    assert found.data.next_cursor is not None  # type: ignore[union-attr]
+    assert len(traced.model_dump_json().encode("utf-8")) <= PROJECT_RESPONSE_MAX_BYTES
+    assert traced.data.truncated is True  # type: ignore[union-attr]
+    assert traced.data.truncation_reason == "max_response_bytes"  # type: ignore[union-attr]

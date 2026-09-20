@@ -62,4 +62,6 @@ signal/reference traces; it never returns raw XML and does not add a scope.
 Confirmed KNX/EIB nodes add an allowlisted semantic projection to those same
 responses. It preserves source-backed bus direction and bounded group-address
 facts without deriving physical roles, DPT meanings, or graph edges from equal
-addresses.
+addresses. Search and trace use compact node projections and enforce a 64-KiB
+envelope limit with explicit response-size truncation; describe is the detailed
+per-object evidence projection.
