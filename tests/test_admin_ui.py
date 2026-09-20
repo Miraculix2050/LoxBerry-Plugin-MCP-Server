@@ -212,6 +212,10 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert "let serviceLoaded = false;" in template
     assert "let sessionsLoaded = false;" in template
     assert "if (!sessionsLoaded)" in template
+    assert (
+        '<div id="session-list"><p class="mcp-status" data-kind="working" role="status">'
+        in template
+    )
 
 
 def test_emergency_stop_selection_is_preserved_while_options_load() -> None:
