@@ -634,9 +634,14 @@
     originLink: document.getElementById('explorer-origin-link'),
     sessionExpiry: document.getElementById('explorer-session-expiry'),
     sessionExpiryTime: document.getElementById('explorer-session-expiry-time'),
+    toolsPanel: document.getElementById('explorer-tools-panel'),
+    historyPanel: document.getElementById('explorer-history-panel'),
+    selectedTool: document.getElementById('explorer-selected-tool'),
     tools: document.getElementById('explorer-tools'),
     history: document.getElementById('explorer-history'),
     summary: document.getElementById('explorer-tool-summary'),
+    request: document.getElementById('explorer-request'),
+    result: document.getElementById('explorer-result'),
     form: document.getElementById('explorer-form'),
     formTab: document.getElementById('explorer-form-tab'),
     formPanel: document.getElementById('explorer-form-panel'),
@@ -687,6 +692,7 @@
   };
   const logoutChannel = typeof BroadcastChannel === 'function'
     ? new BroadcastChannel('mcp-explorer-session') : null;
+  const narrowViewport = window.matchMedia('(max-width: 52rem)');
   if (logoutChannel) logoutChannel.onmessage = (event) => {
     if (event.data !== 'logout') return;
     core.clearSensitiveState(state);
@@ -706,6 +712,33 @@
     elements.run.disabled = busy || !state.oauth || !state.selectedTool;
     elements.nextPage.disabled = busy || !state.nextPageRequest;
     elements.connect.setAttribute('aria-busy', busy ? 'true' : 'false');
+  }
+
+  function scrollBehavior() {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+  }
+
+  function revealRequest(focus, force) {
+    if (!force && !narrowViewport.matches) return;
+    if (focus) elements.request.focus({preventScroll: true});
+    elements.request.scrollIntoView({behavior: scrollBehavior(), block: 'start'});
+  }
+
+  function revealResult() {
+    elements.result.focus({preventScroll: true});
+    elements.result.scrollIntoView({behavior: scrollBehavior(), block: 'start'});
+  }
+
+  function syncResponsivePanels(event) {
+    if (!narrowViewport.matches) {
+      elements.toolsPanel.open = true;
+      elements.historyPanel.open = true;
+      return;
+    }
+    if (!event || event.matches) {
+      elements.toolsPanel.open = false;
+      elements.historyPanel.open = false;
+    }
   }
 
   function showError(error, fallback) {
@@ -1064,6 +1097,8 @@
 
   function renderTools() {
     elements.tools.replaceChildren();
+    elements.selectedTool.textContent = state.selectedTool ? `— ${state.selectedTool.name}` : '';
+    elements.selectedTool.hidden = !state.selectedTool;
     if (!state.tools.length) {
       elements.tools.append(element('p', {className: 'mcp-explorer-muted', text: label('noTools')}));
       return;
@@ -1075,7 +1110,15 @@
       button.append(element('strong', {text: tool.name}));
       if (core.toolIsMutating(tool)) button.append(element('span', {className: 'mcp-explorer-badge', 'data-kind': 'danger', text: label('toolBadgeWrite')}));
       else button.append(element('span', {className: 'mcp-explorer-badge', text: label('toolBadgeReadOnly')}));
-      button.addEventListener('click', () => selectTool(tool.name));
+      button.addEventListener('click', () => {
+        selectTool(tool.name);
+        if (narrowViewport.matches) {
+          elements.toolsPanel.open = false;
+          revealRequest(true, false);
+        } else {
+          elements.tools.querySelector('[aria-current="true"]')?.focus();
+        }
+      });
       elements.tools.append(button);
       });
     });
@@ -1409,6 +1452,10 @@
       const button = element('button', {type: 'button', text: `${entry.tool} — ${entry.duration} ms — ${entry.ok ? 'OK' : 'ERROR'}`});
       button.addEventListener('click', () => {
         renderResult(entry.result, {tool: entry.tool, arguments: entry.arguments, history: true});
+        if (narrowViewport.matches) {
+          elements.historyPanel.open = false;
+          revealResult();
+        }
       });
       elements.history.append(button);
     });
@@ -1517,7 +1564,7 @@
       const draft = {...core.clone(existing), ...state.transferRecipe.arguments};
       delete draft.cursor;
       selectTool(tool.name, draft);
-      window.scrollTo({top: elements.summary.getBoundingClientRect().top + window.scrollY - 16, behavior: 'smooth'});
+      revealRequest(true, true);
       return;
     }
     const tool = state.tools.find((item) => item.name === elements.transferTool.value);
@@ -1532,7 +1579,7 @@
       draftFor(tool).arguments,
     );
     selectTool(tool.name, draft);
-    window.scrollTo({top: elements.summary.getBoundingClientRect().top + window.scrollY - 16, behavior: 'smooth'});
+    revealRequest(true, true);
   }
 
   function renderAll() {
@@ -1630,8 +1677,11 @@
     const context = state.lastResultContext;
     if (!context || !context.history || !window.confirm(label('restoreHistoryConfirm'))) return;
     selectTool(context.tool, context.arguments);
+    revealRequest(true, false);
   });
 
+  syncResponsivePanels();
+  narrowViewport.addEventListener('change', syncResponsivePanels);
   selectTab(false, false);
   renderAll();
   (async () => {

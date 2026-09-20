@@ -66,7 +66,6 @@ address. Trace keeps raw wiring in `edges` and reports derived internal evidence
 separately in `semantic_edges`. Use `technology_paths` only as static
 reachability evidence, check `semantic_truncated`, and never present a path as
 proof of a bus telegram or a historical cause.
-
 Use `loxone_analyze_project` for a bounded installation-level KNX review before
 retrieving individual traces. Treat its findings as project-local facts and
 check `analysis_truncated`, `truncation_reasons`, and pagination. It does not

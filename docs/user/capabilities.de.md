@@ -29,7 +29,6 @@ mehrere getrennte KNX-Signalnutzungsbeobachtungen. Trace liefert getrennt markie
 Connectorkanten sowie begrenzte Pfade `knx_to_loxone`, `loxone_to_knx` oder `knx_to_knx`.
 Unbekanntes Block- oder Connector-Verhalten wird nicht geraten. Diese Ergebnisse beschreiben
 statische Projektpfade, keine Bus-Telegramme und keine historische Ursache einer Aktion.
-
 `loxone_analyze_project` fasst begrenzte, projektlokale KNX-Evidenz zusammen: Adressmuster,
 Wiederverwendung von Rohdatentypen, geprüfte Unterschiede der Signalnutzung, Pfadzähler und
 Endpunkte ohne beobachtete Projektbeziehung. Findings sind Prüffakten, keine Qualitätsurteile.

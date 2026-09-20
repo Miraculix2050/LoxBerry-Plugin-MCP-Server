@@ -27,7 +27,6 @@ separate KNX signal-use observations, while trace returns separately marked deri
 and bounded `knx_to_loxone`, `loxone_to_knx`, or `knx_to_knx` paths. Unknown block or connector
 behaviour is not guessed. These are static project paths, not evidence that a bus telegram or
 historical state change caused an action.
-
 `loxone_analyze_project` summarizes bounded project-local KNX evidence: address patterns, raw
 datatype reuse, reviewed signal-use differences, path counts, and endpoints without an observed
 project relationship. Findings are review facts, not quality ratings. They do not claim DPT
