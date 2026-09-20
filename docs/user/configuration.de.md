@@ -17,6 +17,10 @@ Das optionale **Notaus-Signal (virtueller Status)** steht im Abschnitt
 virtuellen Status des ausgewählten Miniservers. Die Vorgabe **Kein virtueller
 Status ausgewählt** lässt alle MCP-Tool-Aufrufe zu.
 
+Die Seite zeigt die gespeicherte Auswahl sofort. Mit **Verfügbare Signale
+laden** fragst du den konfigurierten Miniserver nach den aktuellen Optionen ab;
+ein vorübergehender Fehler der Abfrage löscht den gespeicherten Wert nicht.
+
 Bei einer Auswahl gilt: Der Wert `1` erlaubt MCP-Tool-Aufrufe, der Wert `0`
 sperrt sie. Ein beim Dienststart noch unbekannter Wert oder ein Verlust der
 Miniserver-Verbindung sperrt ebenfalls sicherheitshalber. Stelle den virtuellen

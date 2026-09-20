@@ -13,7 +13,6 @@ import pytest
 
 from mcpserver.admin import (
     AdminError,
-    _AdminReadSnapshot,
     _allow_loxberry_operate,
     _allow_loxberry_read,
     _loxberry_bindings,
@@ -39,6 +38,7 @@ from mcpserver.auth.provider import (
 )
 from mcpserver.auth.store import AtomicJsonAuthStore
 from mcpserver.config import AtomicConfigStore, ConfigError, PluginConfig
+from mcpserver.emergency_stop import VirtualStatusOptions
 from mcpserver.loxone.client import LoxoneToken
 from mcpserver.loxone.events import LoxoneProtocolError
 from tools.benchmark_admin_page_state import measure
@@ -389,57 +389,54 @@ def test_loxberry_operate_bindings_ignore_read_only_families(
     assert binding_data["sessions"] == []
 
 
-def test_page_state_aggregates_initial_admin_ui_data(monkeypatch: pytest.MonkeyPatch) -> None:
-    config = PluginConfig.defaults()
-    snapshot = _AdminReadSnapshot(
-        config,
-        {
-            "subject_key": base64.urlsafe_b64encode(b"s" * 32).decode("ascii"),
-            "clients": {},
-            "families": {},
-            "codes": {},
-            "access_tokens": {},
-            "refresh_tokens": {},
-            "schema_version": 1,
-        },
-        b"s" * 32,
-        0,
+def test_page_state_contains_only_fast_local_mqtt_data(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "mcpserver.admin._mqtt_gateway_status", lambda: {"gateway_configured": True}
     )
-    monkeypatch.setattr("mcpserver.admin._admin_read_snapshot", lambda **_kwargs: snapshot)
-    service = {
-        "name": "loxberry-mcpserver.service",
-        "installed": True,
-        "active_state": "active",
-        "sub_state": "running",
-        "pid": 123,
-        "active": True,
-    }
-    monkeypatch.setattr("mcpserver.admin._service_status", lambda: service)
+    monkeypatch.setattr("mcpserver.admin._mqtt_password_configured", lambda: True)
+    monkeypatch.setattr(
+        "mcpserver.admin._admin_read_snapshot",
+        lambda **_kwargs: pytest.fail("page_state must not read session data"),
+    )
+    monkeypatch.setattr(
+        "mcpserver.admin._service_response",
+        lambda: pytest.fail("page_state must not read service status"),
+    )
     monkeypatch.setattr(
         "mcpserver.admin._certificate_status",
-        lambda **_kwargs: {"available": True, "renewal_supported": False},
+        lambda **_kwargs: pytest.fail("page_state must not inspect certificates"),
     )
 
     result = dispatch({"action": "page_state"})
 
     assert result == {
-        "configuration": config.to_document(),
-        "version": result["version"],
-        "service_active": True,
-        "service": service,
-        "sessions": [],
-        "loxberry_bindings": [],
-        "loxberry_operate_bindings": [],
-        "certificate": {"available": True, "renewal_supported": False},
-        "mqtt_gateway": {"gateway_configured": False},
-        "mqtt_password_configured": False,
+        "mqtt_gateway": {"gateway_configured": True},
+        "mqtt_password_configured": True,
     }
 
 
-@pytest.mark.parametrize("action", ["page_state", "list_sessions"])
+def test_emergency_stop_options_distinguishes_empty_available_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ConfigStore:
+        def load(self) -> PluginConfig:
+            return PluginConfig(loxone_endpoint="http://miniserver.test")
+
+    async def empty_available(_config: PluginConfig) -> VirtualStatusOptions:
+        return VirtualStatusOptions(status="available", options=())
+
+    monkeypatch.setattr("mcpserver.admin._config_store", ConfigStore)
+    monkeypatch.setattr("mcpserver.emergency_stop.virtual_status_options", empty_available)
+
+    assert dispatch({"action": "emergency_stop_options"}) == {
+        "status": "available",
+        "options": [],
+    }
+
+
 @pytest.mark.parametrize("session_count", [0, 10, 100])
 def test_admin_list_responses_use_one_snapshot_per_request(
-    action: str, session_count: int, monkeypatch: pytest.MonkeyPatch
+    session_count: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     subject_key = b"s" * 32
     subject_key_text = base64.urlsafe_b64encode(subject_key).decode("ascii")
@@ -513,7 +510,7 @@ def test_admin_list_responses_use_one_snapshot_per_request(
         "mcpserver.admin._certificate_status", lambda **_kwargs: {"available": False}
     )
 
-    result = dispatch({"action": action})
+    result = dispatch({"action": "list_sessions"})
 
     assert config_store.calls == 1
     assert auth_store.calls == 1

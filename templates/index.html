@@ -66,9 +66,10 @@
       </div>
       <label><input name="enabled" type="checkbox" value="1" <TMPL_IF ENABLED>checked</TMPL_IF>> <TMPL_VAR SETUP.ENABLED></label>
       <input id="emergency-stop-value" name="emergency_stop_virtual_status_uuid" type="hidden" value="<TMPL_VAR SELECTED_EMERGENCY_STOP ESCAPE=HTML>">
-      <label class="mcp-field"><span><TMPL_VAR SETUP.EMERGENCY_STOP></span><select id="emergency-stop-select" aria-describedby="emergency-stop-help emergency-stop-status" aria-busy="true" disabled><option value="" <TMPL_UNLESS SELECTED_EMERGENCY_STOP>selected</TMPL_UNLESS>><TMPL_VAR SETUP.EMERGENCY_STOP_NONE></option><TMPL_IF SELECTED_EMERGENCY_STOP><option value="<TMPL_VAR SELECTED_EMERGENCY_STOP ESCAPE=HTML>" selected><TMPL_VAR SETUP.EMERGENCY_STOP_CURRENT ESCAPE=HTML> (<TMPL_VAR SELECTED_EMERGENCY_STOP ESCAPE=HTML>)</option></TMPL_IF></select></label>
+      <label class="mcp-field"><span><TMPL_VAR SETUP.EMERGENCY_STOP></span><select id="emergency-stop-select" aria-describedby="emergency-stop-help emergency-stop-status"><option value="" <TMPL_UNLESS SELECTED_EMERGENCY_STOP>selected</TMPL_UNLESS>><TMPL_VAR SETUP.EMERGENCY_STOP_NONE></option><TMPL_IF SELECTED_EMERGENCY_STOP><option value="<TMPL_VAR SELECTED_EMERGENCY_STOP ESCAPE=HTML>" selected><TMPL_VAR SETUP.EMERGENCY_STOP_CURRENT ESCAPE=HTML> (<TMPL_VAR SELECTED_EMERGENCY_STOP ESCAPE=HTML>)</option></TMPL_IF></select></label>
       <p id="emergency-stop-help" class="mcp-help"><TMPL_VAR SETUP.EMERGENCY_STOP_HELP></p>
       <p id="emergency-stop-status" class="mcp-status" hidden></p>
+      <p class="mcp-actions"><button id="emergency-stop-refresh" class="lb-button" type="button"><TMPL_VAR SETUP.EMERGENCY_STOP_REFRESH></button></p>
       <div class="mcp-permission-groups" aria-describedby="permission-policy-hint">
         <section class="mcp-permission-group" aria-labelledby="loxone-permissions-heading">
           <h3 id="loxone-permissions-heading"><TMPL_VAR SETUP.PERMISSIONS_LOXONE></h3>
@@ -344,6 +345,7 @@
   const emergencyStopSelect = document.getElementById('emergency-stop-select');
   const emergencyStopValue = document.getElementById('emergency-stop-value');
   const emergencyStopStatus = document.getElementById('emergency-stop-status');
+  const emergencyStopRefresh = document.getElementById('emergency-stop-refresh');
   const mqttUseLoxberryGateway = document.getElementById('mqtt-use-loxberry-gateway');
   const mqttHost = document.getElementById('mqtt-host');
   const mqttPort = document.getElementById('mqtt-port');
@@ -374,6 +376,8 @@
   const sessionActionFailures = new Map();
   let sessionPollInFlight = false;
   let sessionPollTimer = null;
+  let certificateLoaded = false;
+  let certificateLoadInFlight = false;
   let lastService = null;
   const serviceInteractionActive = () => serviceActionRunning || pendingServiceForm !== null;
   const renderLogging = (configuration) => {
@@ -555,6 +559,25 @@
       window.clearTimeout(timeout);
     }
   };
+  const loadCertificateStatus = async () => {
+    if (certificateLoaded || certificateLoadInFlight) return;
+    certificateLoadInFlight = true;
+    certificateSection.setAttribute('aria-busy', 'true');
+    try {
+      const body = new URLSearchParams();
+      body.set('action', 'certificate_status');
+      body.set('ajax', '1');
+      const result = await postAjax(body, 5000);
+      updateCertificate(result.data.certificate);
+      certificateLoaded = true;
+    } catch {
+      certificateSection.setAttribute('aria-busy', 'false');
+      certificateUnavailable.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
+      certificateUnavailable.hidden = false;
+    } finally {
+      certificateLoadInFlight = false;
+    }
+  };
   const renderService = (service, {updateEnabledSetting = false} = {}) => {
     if (!service || typeof service !== 'object') return;
     lastService = service;
@@ -619,14 +642,32 @@
     option.selected = selected;
     emergencyStopSelect.append(option);
   };
+  const resetEmergencyStopOptions = () => {
+    const selectedValue = emergencyStopValue.value;
+    emergencyStopSelect.replaceChildren();
+    addEmergencyStopOption('', '<TMPL_VAR SETUP.EMERGENCY_STOP_NONE ESCAPE=JS>', selectedValue === '');
+    if (selectedValue !== '') {
+      addEmergencyStopOption(
+        selectedValue,
+        '<TMPL_VAR SETUP.EMERGENCY_STOP_CURRENT ESCAPE=JS> (' + selectedValue + ')',
+        true,
+      );
+    }
+    emergencyStopStatus.hidden = true;
+  };
   const loadEmergencyStopOptions = async () => {
     const selectedValue = emergencyStopValue.value;
     const body = new URLSearchParams();
     body.set('action', 'emergency_stop_options');
     body.set('ajax', '1');
+    emergencyStopRefresh.disabled = true;
+    emergencyStopRefresh.setAttribute('aria-busy', 'true');
+    emergencyStopSelect.disabled = true;
+    emergencyStopSelect.setAttribute('aria-busy', 'true');
     try {
       const result = await postAjax(body, 15000);
       const options = Array.isArray(result.data.options) ? result.data.options : [];
+      const status = result.data.status;
       emergencyStopSelect.replaceChildren();
       addEmergencyStopOption('', '<TMPL_VAR SETUP.EMERGENCY_STOP_NONE ESCAPE=JS>', selectedValue === '');
       let selectedAvailable = selectedValue === '';
@@ -643,7 +684,21 @@
           true,
         );
       }
-      emergencyStopStatus.hidden = true;
+      if (status === 'available' && options.length === 0) {
+        emergencyStopStatus.textContent = '<TMPL_VAR SETUP.EMERGENCY_STOP_NO_OPTIONS ESCAPE=JS>';
+        emergencyStopStatus.dataset.kind = 'info';
+        emergencyStopStatus.hidden = false;
+      } else if (status === 'not_configured') {
+        emergencyStopStatus.textContent = '<TMPL_VAR SETUP.EMERGENCY_STOP_NOT_CONFIGURED ESCAPE=JS>';
+        emergencyStopStatus.dataset.kind = 'error';
+        emergencyStopStatus.hidden = false;
+      } else if (status !== 'available') {
+        emergencyStopStatus.textContent = '<TMPL_VAR SETUP.EMERGENCY_STOP_LOAD_ERROR ESCAPE=JS>';
+        emergencyStopStatus.dataset.kind = 'error';
+        emergencyStopStatus.hidden = false;
+      } else {
+        emergencyStopStatus.hidden = true;
+      }
     } catch {
       emergencyStopStatus.textContent = '<TMPL_VAR SETUP.EMERGENCY_STOP_LOAD_ERROR ESCAPE=JS>';
       emergencyStopStatus.dataset.kind = 'error';
@@ -651,8 +706,11 @@
     } finally {
       emergencyStopSelect.disabled = false;
       emergencyStopSelect.setAttribute('aria-busy', 'false');
+      emergencyStopRefresh.disabled = false;
+      emergencyStopRefresh.removeAttribute('aria-busy');
     }
   };
+  emergencyStopRefresh.addEventListener('click', loadEmergencyStopOptions);
   emergencyStopSelect.addEventListener('change', () => {
     emergencyStopValue.value = emergencyStopSelect.value;
   });
@@ -662,30 +720,11 @@
     body.set('ajax', '1');
     try {
       const result = await postAjax(body, 15000);
-      renderService(result.data.service, {updateEnabledSetting: !serviceEnabledSettingLoaded});
-      serviceSection.setAttribute('aria-busy', 'false');
-      updateCertificate(result.data.certificate);
       mqttPasswordStatus.hidden = !Boolean(result.data.mqtt_password_configured);
       updateMqttGateway(result.data.mqtt_gateway);
       updateMqttBrokerFields();
-      if (Array.isArray(result.data.sessions)) updateSessions(result.data.sessions);
-      if (Array.isArray(result.data.loxberry_bindings)) updateLoxberryBindings(result.data.loxberry_bindings);
-      if (Array.isArray(result.data.loxberry_operate_bindings)) updateLoxberryOperateBindings(result.data.loxberry_operate_bindings);
-      sessionsSection.setAttribute('aria-busy', 'false');
     } catch {
-      serviceSection.setAttribute('aria-busy', 'false');
-      sessionsSection.setAttribute('aria-busy', 'false');
-      serviceState.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
-      serviceState.dataset.kind = 'error';
-      serviceActiveState.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
-      serviceSubState.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
-      serviceInstalled.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
-      sessionList.replaceChildren(document.createTextNode('<TMPL_VAR AJAX.ERROR ESCAPE=JS>'));
-      updateCertificate(null);
-      certificateUnavailable.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
-    } finally {
-      scheduleServicePoll();
-      scheduleSessionPoll();
+      setAjaxStatus('error', '<TMPL_VAR AJAX.ERROR ESCAPE=JS>');
     }
   };
   const serviceConfirmMessages = {
@@ -713,7 +752,7 @@
       servicePollTimer = window.setTimeout(pollServiceStatus, delay);
     }
   };
-  const pollServiceStatus = async () => {
+  const pollServiceStatus = async (initial = false) => {
     if (document.hidden || serviceInteractionActive() || servicePollInFlight) {
       scheduleServicePoll();
       return;
@@ -727,7 +766,14 @@
       if (serviceInteractionActive()) return;
       renderService(result.data.service, {updateEnabledSetting: !serviceEnabledSettingLoaded});
     } catch {
-      // Keep the last known state; the next visible-page poll retries.
+      if (initial) {
+        serviceSection.setAttribute('aria-busy', 'false');
+        serviceState.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
+        serviceState.dataset.kind = 'error';
+        serviceActiveState.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
+        serviceSubState.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
+        serviceInstalled.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
+      }
     } finally {
       servicePollInFlight = false;
       scheduleServicePoll();
@@ -1142,9 +1188,16 @@
       scheduleSessionPoll(expectedSessionDataVersion === sessionDataVersion ? 10000 : 0);
     }
   };
-  sessionsSection.addEventListener('toggle', () => scheduleSessionPoll(sessionsSection.open ? 0 : 10000));
+  certificateSection.addEventListener('toggle', () => {
+    if (certificateSection.open) loadCertificateStatus();
+  });
+  sessionsSection.addEventListener('toggle', () => {
+    if (sessionsSection.open) pollSessions();
+  });
   loadInitialState();
-  loadEmergencyStopOptions();
+  pollServiceStatus(true);
+  if (certificateSection.open) loadCertificateStatus();
+  if (sessionsSection.open) pollSessions();
   for (const field of [mqttHost, mqttPort, mqttUsername]) {
     field.addEventListener('input', () => {
       if (!mqttUseLoxberryGateway.checked) {
@@ -1253,6 +1306,8 @@
         }
         if (form.dataset.ajax === 'save_mcp_config') {
           const savedEndpoint = result.data.configuration.loxone.endpoint;
+          emergencyStopValue.value = result.data.configuration.emergency_stop.virtual_status_uuid;
+          resetEmergencyStopOptions();
           miniserverEndpoint.value = savedEndpoint;
           explorerLink.href = `${window.location.origin}${explorerPath}`;
           syncTestEndpoint();

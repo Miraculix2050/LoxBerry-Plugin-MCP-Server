@@ -17,6 +17,10 @@ configuration** section. Select only a visible Virtual Status configured as
 digital on the selected Miniserver. The default, **No virtual status selected**,
 allows all MCP tool calls.
 
+The page shows the saved selection immediately. Use **Load available signals**
+when you want to query the configured Miniserver for the current choices; a
+temporary discovery failure never clears the saved value.
+
 When a signal is selected, value `1` permits MCP tool calls and value `0` blocks
 them. An as-yet unknown value during service startup or loss of the Miniserver
 connection also blocks calls fail closed. Set the Virtual Status back to `1`, or

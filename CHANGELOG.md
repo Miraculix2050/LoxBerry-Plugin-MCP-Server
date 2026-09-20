@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Load Admin UI service state independently, defer closed certificate and
+  session sections, and query emergency-stop options only on explicit request.
+  Failed option discovery now distinguishes unavailable discovery from an empty
+  matching list without changing fail-closed emergency-stop monitoring.
+
 - Add a documented Windows Python 3.13 development bootstrap and actionable
   diagnostics when a restricted environment cannot execute its interpreter.
 

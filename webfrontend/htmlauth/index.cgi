@@ -10,6 +10,7 @@ use JSON::PP qw(decode_json encode_json);
 use POSIX qw(strftime);
 use Socket qw(AF_INET AF_INET6 inet_ntop inet_pton);
 use Symbol qw(gensym);
+use Time::HiRes qw(clock_gettime CLOCK_MONOTONIC);
 use LoxBerry::System;
 use LoxBerry::Web;
 use LoxBerry::Log;
@@ -25,6 +26,7 @@ if (($q->{lang} // '') =~ /\A(?:de|en)\z/) {
 }
 my $version = LoxBerry::System::pluginversion();
 my $admin_log;
+my $render_started = clock_gettime(CLOCK_MONOTONIC);
 use constant ADMIN_LOG_MESSAGE_BYTES => 8 * 1024;
 use constant ADMIN_LOG_TRUNCATION_SUFFIX => ' ... [truncated]';
 
@@ -71,6 +73,7 @@ $ENV{MCPSERVER_CERT_STATUS} = "$lbpdatadir/certificate-renewal.json";
 
 sub admin_call {
     my ($action, $payload) = @_;
+    my $started = clock_gettime(CLOCK_MONOTONIC);
     my ($child_in, $child_out);
     my $child_err = gensym;
     my $pid = open3($child_in, $child_out, $child_err, "$lbpbindir/mcpserver-admin");
@@ -80,6 +83,11 @@ sub admin_call {
     my $stdout = <$child_out> // '';
     my $stderr = <$child_err> // '';
     waitpid($pid, 0);
+    admin_log('debug', sprintf(
+        'component=admin_ui action=%s duration_ms=%.1f',
+        $action,
+        (clock_gettime(CLOCK_MONOTONIC) - $started) * 1000,
+    ));
     if ($? != 0 || $stdout eq '') {
         admin_log('error', 'component=admin_helper outcome=failed');
         return {ok => JSON::PP::false, error => {code => 'internal_error', message => 'Administrative action failed'}};
@@ -661,6 +669,10 @@ $navbar{50}{Name} = $L{'NAV.HELP'};
 $navbar{50}{URL} = '#help';
 
 print_html_security_headers();
+admin_log('debug', sprintf(
+    'component=admin_ui phase=initial_render duration_ms=%.1f',
+    (clock_gettime(CLOCK_MONOTONIC) - $render_started) * 1000,
+));
 LoxBerry::Web::lbheader($L{'BASIC.TITLE'} . " V$version", '', '', 'nojqm');
 print LoxBerry::Log::get_notifications_html($lbpplugindir);
 print $template->output();
