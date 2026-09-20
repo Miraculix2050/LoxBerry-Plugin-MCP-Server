@@ -43,11 +43,15 @@ def test_explorer_uses_one_compact_mobile_tool_panel_and_adaptive_workspace() ->
     assert template.count('id="explorer-history"') == 1
     assert '<details id="explorer-tools-panel" class="mcp-explorer-card" open>' in template
     assert '<details id="explorer-history-panel" class="mcp-explorer-card" open>' in template
+    assert 'class="mcp-explorer-panel-label"' in template
     assert 'id="explorer-request"' in template
     assert 'id="explorer-result"' in template
     assert "@media (min-width: 80rem)" in stylesheet
     assert "@media (max-width: 52rem)" in stylesheet
     assert "grid-template-columns: minmax(22rem, .9fr) minmax(24rem, 1.1fr)" in stylesheet
+    assert "details.mcp-explorer-card > summary { padding:" in stylesheet
+    assert "details.mcp-explorer-card > summary { display: flex" not in stylesheet
+    assert ".mcp-explorer-panel-label { display: inline-flex" in stylesheet
     assert "const narrowViewport = window.matchMedia('(max-width: 52rem)')" in source
     assert "elements.toolsPanel.open = false" in responsive_panels
     assert "elements.historyPanel.open = false" in responsive_panels
