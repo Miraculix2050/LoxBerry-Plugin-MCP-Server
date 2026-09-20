@@ -244,12 +244,11 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
                     if prefix == dominant:
                         continue
                     evidence = [item.node.key for item in minority]
-                    ids, omitted = _bounded_nodes(evidence)
-                    findings.append(
+                    emit(
+                        "address_pattern_deviation",
+                        [basis, level, prefix],
+                        evidence,
                         {
-                            "finding_id": _finding_id(
-                                "address_pattern_deviation", [basis, level, prefix], evidence
-                            ),
                             "analysis": "address_patterns",
                             "finding_type": "address_pattern_deviation",
                             "flow_direction": basis[0],
@@ -261,9 +260,7 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
                             "dominant_count": len(dominant_members),
                             "peer_count": len(members),
                             "deviation_prefix": list(prefix),
-                            "affected_project_node_ids": ids,
-                            "affected_omitted": omitted,
-                        }
+                        },
                     )
                     pattern_count += 1
         summaries["address_patterns"] = {
@@ -343,19 +340,16 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
             if len(values) < 2:
                 continue
             evidence = [item.node.key for item in members]
-            ids, omitted = _bounded_nodes(evidence)
-            findings.append(
+            emit(
+                "raw_datatype_conflict",
+                [group_address, values],
+                evidence,
                 {
-                    "finding_id": _finding_id(
-                        "raw_datatype_conflict", [group_address, values], evidence
-                    ),
                     "analysis": "datatype_consistency",
                     "finding_type": "raw_datatype_conflict",
                     "group_address": group_address,
                     "raw_datatypes": values,
-                    "affected_project_node_ids": ids,
-                    "affected_omitted": omitted,
-                }
+                },
             )
             conflicts += 1
         summaries["datatype_consistency"] = {"conflicts": conflicts, "peer_outliers": 0}
@@ -371,12 +365,11 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
             if len(signatures) < 2:
                 continue
             evidence = [item.node.key for item in members]
-            ids, omitted = _bounded_nodes(evidence)
-            findings.append(
+            emit(
+                "mixed_signal_usage",
+                [group_address, signatures],
+                evidence,
                 {
-                    "finding_id": _finding_id(
-                        "mixed_signal_usage", [group_address, signatures], evidence
-                    ),
                     "analysis": "signal_usage_consistency",
                     "finding_type": "mixed_signal_usage",
                     "group_address": group_address,
@@ -384,9 +377,7 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
                         [{"interpretation": x, "effect": y} for x, y in signature]
                         for signature in signatures
                     ],
-                    "affected_project_node_ids": ids,
-                    "affected_omitted": omitted,
-                }
+                },
             )
             mixed += 1
         summaries["signal_usage_consistency"] = {"mixed_group_addresses": mixed, "peer_outliers": 0}
@@ -566,22 +557,21 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
             has_relation = any(directional[key] for key in seed)
             if has_relation:
                 continue
-            ids, omitted = _bounded_nodes(seed)
             finding_type = (
                 "project_connectivity_ambiguous"
                 if any(key in unresolved for key in seed)
                 else "no_project_signal_relationship"
             )
-            findings.append(
+            emit(
+                finding_type,
+                [item.direction, item.address],
+                seed,
                 {
-                    "finding_id": _finding_id(finding_type, [item.direction, item.address], seed),
                     "analysis": "project_connectivity",
                     "finding_type": finding_type,
                     "flow_direction": item.direction,
                     "group_address": item.address,
-                    "affected_project_node_ids": ids,
-                    "affected_omitted": omitted,
-                }
+                },
             )
             disconnected += finding_type == "no_project_signal_relationship"
             ambiguous += finding_type == "project_connectivity_ambiguous"

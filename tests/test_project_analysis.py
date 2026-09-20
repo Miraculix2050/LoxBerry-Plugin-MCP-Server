@@ -159,3 +159,20 @@ def test_v2_uses_exact_runtime_evidence_for_naming_without_inventing_knx_semanti
         "semantic_domain_unavailable",
         "usage_semantics_unreviewed",
     }
+
+
+def test_every_finding_type_honors_the_shared_result_limit(monkeypatch):
+    monkeypatch.setattr(project_analysis, "_MAX_FINDINGS", 1)
+    result = analyze_knx(
+        _view(
+            b'<P><C Type="EIBsensor" U="a" EibAddr="1/2/3" EIBType="1"><Co U="ao"/></C>'
+            b'<C Type="EIBsensor" U="b" EibAddr="1/2/3" EIBType="5"><Co U="bo"/></C>'
+            b'<C Type="EIBsensor" U="c" EibAddr="1/2/4" EIBType="1"><Co U="co"/></C>'
+            b'<C Type="EIBsensor" U="d" EibAddr="1/2/4" EIBType="5"><Co U="do"/></C></P>'
+        ),
+        frozenset({"datatype_consistency"}),
+    )
+
+    assert len(result["findings"]) == 1
+    assert result["analysis_truncated"] is True
+    assert result["truncation_reasons"] == ["max_findings"]
