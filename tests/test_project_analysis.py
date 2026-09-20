@@ -302,13 +302,13 @@ def test_technology_path_analysis_stops_all_endpoint_expansion_at_the_global_pat
 ):
     monkeypatch.setattr(project_analysis, "_MAX_PATHS", 1)
     observed_descendants = []
-    original = project_analysis._descendants
+    original = project_analysis._bounded_descendants
 
-    def track_descendants(key, children):
+    def track_descendants(key, children, limit):
         observed_descendants.append(key)
-        return original(key, children)
+        return original(key, children, limit)
 
-    monkeypatch.setattr(project_analysis, "_descendants", track_descendants)
+    monkeypatch.setattr(project_analysis, "_bounded_descendants", track_descendants)
     view = _view(
         b'<P><C Type="EIBsensor" U="sensor" EibAddr="1/2/3"><Co U="source"/></C>'
         b'<C Type="EIBPush" U="push"><Co K="Tg" U="trigger"><In Input="source"/></Co>'
@@ -334,13 +334,13 @@ def test_technology_path_analysis_stops_all_endpoint_expansion_at_the_global_pat
 def test_technology_path_analysis_stops_when_it_records_the_final_allowed_path(monkeypatch):
     monkeypatch.setattr(project_analysis, "_MAX_PATHS", 1)
     observed_descendants = []
-    original = project_analysis._descendants
+    original = project_analysis._bounded_descendants
 
-    def track_descendants(key, children):
+    def track_descendants(key, children, limit):
         observed_descendants.append(key)
-        return original(key, children)
+        return original(key, children, limit)
 
-    monkeypatch.setattr(project_analysis, "_descendants", track_descendants)
+    monkeypatch.setattr(project_analysis, "_bounded_descendants", track_descendants)
     view = _view(
         b'<P><C Type="EIBsensor" U="sensor" EibAddr="1/2/3"><Co U="source"/></C>'
         b'<C Type="EIBPush" U="push"><Co K="Tg" U="trigger"><In Input="source"/></Co>'
