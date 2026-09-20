@@ -116,6 +116,7 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert "if ($server_rendered_fallback) {" in cgi
     assert "my $config_result = admin_call('get_config', {});" in cgi
     assert "my $sessions_result = admin_call('list_sessions', {});" in cgi
+    assert "my $options_result = admin_call('emergency_stop_options', {});" in cgi
     assert "admin_call('page_state', {})" in cgi
     assert "my $service_setting_result = admin_call('service_status', {});" not in cgi
     assert "SERVER_RENDERED_FALLBACK => $server_rendered_fallback" in cgi
@@ -166,12 +167,23 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
         'id="mqtt-config-fields" class="mcp-configuration-fields" '
         "<TMPL_UNLESS SERVER_RENDERED_FALLBACK>disabled" in template
     )
+    assert (
+        'id="logging-config-fields" class="mcp-configuration-fields" '
+        "<TMPL_UNLESS SERVER_RENDERED_FALLBACK>disabled" in template
+    )
+    assert "document.getElementById('logging-config-fields')," in template
+    assert "configurationFallbackLink.hidden = false;" in template
+    assert (
+        "if (<TMPL_IF SERVER_RENDERED_FALLBACK>true<TMPL_ELSE>false</TMPL_IF>) return;" in template
+    )
     assert 'id="service-enabled-setting-status"' in template
     assert 'id="mqtt-page-state-status"' in template
     assert 'id="emergency-stop-select"' in template
     assert (
         'aria-describedby="emergency-stop-help emergency-stop-status" disabled aria-busy="true"'
     ) in template
+    assert 'name="emergency_stop_virtual_status_uuid"' in template
+    assert "EMERGENCY_STOP_OPTIONS => $emergency_stop_options" in cgi
     assert "<TMPL_VAR SETUP.EMERGENCY_STOP_LOADING>" in template
     assert "const loadInitialState" in template
     assert "const backgroundHydrationLimit = 1;" in template

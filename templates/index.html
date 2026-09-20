@@ -9,6 +9,7 @@
   <TMPL_UNLESS SERVER_RENDERED_FALLBACK><noscript><meta http-equiv="refresh" content="0;url=index.cgi?fallback=1"></noscript></TMPL_UNLESS>
   <TMPL_IF NOTICE><div id="page-notice" class="mcp-status" role="status" data-kind="<TMPL_VAR NOTICE_KIND ESCAPE=HTML>"><TMPL_VAR NOTICE ESCAPE=HTML></div></TMPL_IF>
   <div id="ajax-status" class="mcp-status" role="status" aria-live="polite" hidden></div>
+  <p><a id="configuration-fallback-link" href="index.cgi?fallback=1" hidden><TMPL_VAR AJAX.CONFIGURATION_FALLBACK></a></p>
   <div id="loxberry-notifications" aria-busy="true" aria-live="polite"><span class="mcp-status" data-kind="working"><TMPL_VAR AJAX.NOTIFICATIONS_LOADING></span></div>
 
   <details id="status" class="mcp-card" data-persist-collapse open
@@ -73,8 +74,8 @@
         <label class="mcp-field"><span><TMPL_VAR SETUP.PARALLEL></span><input name="max_parallel_calls" type="number" min="1" max="32" value="<TMPL_VAR MAX_PARALLEL_CALLS ESCAPE=HTML>"></label>
       </div>
       <label><input name="enabled" type="checkbox" value="1" <TMPL_IF ENABLED>checked</TMPL_IF>> <TMPL_VAR SETUP.ENABLED></label>
-      <input id="emergency-stop-value" name="emergency_stop_virtual_status_uuid" type="hidden" value="<TMPL_VAR SELECTED_EMERGENCY_STOP ESCAPE=HTML>">
-      <label class="mcp-field"><span><TMPL_VAR SETUP.EMERGENCY_STOP></span><select id="emergency-stop-select" aria-describedby="emergency-stop-help emergency-stop-status" disabled aria-busy="true"><option value="" selected><TMPL_VAR SETUP.EMERGENCY_STOP_LOADING></option></select></label>
+      <TMPL_UNLESS SERVER_RENDERED_FALLBACK><input id="emergency-stop-value" name="emergency_stop_virtual_status_uuid" type="hidden" value="<TMPL_VAR SELECTED_EMERGENCY_STOP ESCAPE=HTML>"></TMPL_UNLESS>
+      <label class="mcp-field"><span><TMPL_VAR SETUP.EMERGENCY_STOP></span><select id="emergency-stop-select" <TMPL_IF SERVER_RENDERED_FALLBACK>name="emergency_stop_virtual_status_uuid"<TMPL_ELSE>aria-describedby="emergency-stop-help emergency-stop-status" disabled aria-busy="true"</TMPL_IF>><TMPL_IF SERVER_RENDERED_FALLBACK><option value="" <TMPL_UNLESS SELECTED_EMERGENCY_STOP>selected</TMPL_UNLESS>><TMPL_VAR SETUP.EMERGENCY_STOP_NONE></option><TMPL_IF EMERGENCY_STOP_SELECTED_UNAVAILABLE><option value="<TMPL_VAR SELECTED_EMERGENCY_STOP ESCAPE=HTML>" selected><TMPL_VAR SETUP.EMERGENCY_STOP_CURRENT> (<TMPL_VAR SELECTED_EMERGENCY_STOP ESCAPE=HTML>)</option></TMPL_IF><TMPL_LOOP EMERGENCY_STOP_OPTIONS><option value="<TMPL_VAR uuid ESCAPE=HTML>" <TMPL_IF selected>selected</TMPL_IF>><TMPL_VAR name ESCAPE=HTML></option></TMPL_LOOP><TMPL_ELSE><option value="" selected><TMPL_VAR SETUP.EMERGENCY_STOP_LOADING></option></TMPL_IF></select></label>
       <p id="emergency-stop-help" class="mcp-help"><TMPL_VAR SETUP.EMERGENCY_STOP_HELP></p>
       <p id="emergency-stop-status" class="mcp-status" data-kind="info"><TMPL_VAR SETUP.EMERGENCY_STOP_LOADING></p>
       <div class="mcp-permission-groups" aria-describedby="permission-policy-hint">
@@ -258,11 +259,11 @@
       data-level-info="<TMPL_VAR DIAGNOSTICS.LEVEL_INFO ESCAPE=HTML>"
       data-level-debug="<TMPL_VAR DIAGNOSTICS.LEVEL_DEBUG ESCAPE=HTML>">
       <p><TMPL_VAR DIAGNOSTICS.CURRENT_LEVEL>: <strong id="logging-current"><TMPL_IF LOG_LEVEL_OFF><TMPL_VAR DIAGNOSTICS.LEVEL_OFF><TMPL_ELSE><TMPL_IF LOG_LEVEL_ERROR><TMPL_VAR DIAGNOSTICS.LEVEL_ERROR><TMPL_ELSE><TMPL_IF LOG_LEVEL_INFO><TMPL_VAR DIAGNOSTICS.LEVEL_INFO><TMPL_ELSE><TMPL_IF LOG_LEVEL_DEBUG><TMPL_VAR DIAGNOSTICS.LEVEL_DEBUG><TMPL_ELSE><TMPL_VAR DIAGNOSTICS.LEVEL_WARNING></TMPL_IF></TMPL_IF></TMPL_IF></TMPL_IF></strong></p>
-      <form method="post" action="index.cgi" data-ajax="set_logging" class="mcp-form">
+      <form method="post" action="index.cgi" data-ajax="set_logging" class="mcp-form"><fieldset id="logging-config-fields" class="mcp-configuration-fields" <TMPL_UNLESS SERVER_RENDERED_FALLBACK>disabled</TMPL_UNLESS>>
         <input type="hidden" name="action" value="set_logging">
         <label class="mcp-field"><span><TMPL_VAR DIAGNOSTICS.SERVICE_LEVEL></span><select id="logging-level" name="mode"><option value="off" <TMPL_IF LOG_LEVEL_OFF>selected</TMPL_IF>><TMPL_VAR DIAGNOSTICS.LEVEL_OFF></option><option value="error" <TMPL_IF LOG_LEVEL_ERROR>selected</TMPL_IF>><TMPL_VAR DIAGNOSTICS.LEVEL_ERROR></option><option value="warning" <TMPL_IF LOG_LEVEL_WARNING>selected</TMPL_IF>><TMPL_VAR DIAGNOSTICS.LEVEL_WARNING></option><option value="info" <TMPL_IF LOG_LEVEL_INFO>selected</TMPL_IF>><TMPL_VAR DIAGNOSTICS.LEVEL_INFO></option><option value="debug" <TMPL_IF LOG_LEVEL_DEBUG>selected</TMPL_IF>><TMPL_VAR DIAGNOSTICS.LEVEL_DEBUG></option></select></label>
         <button class="lb-button" type="submit"><TMPL_VAR ACTION.SAVE_LOG_LEVEL></button>
-      </form>
+      </fieldset></form>
       <p class="mcp-help"><TMPL_VAR DIAGNOSTICS.LOGGING_HELP></p>
     </div>
     </section>
@@ -288,7 +289,9 @@
 
 <script>
 (() => {
+  if (<TMPL_IF SERVER_RENDERED_FALLBACK>true<TMPL_ELSE>false</TMPL_IF>) return;
   const status = document.getElementById('ajax-status');
+  const configurationFallbackLink = document.getElementById('configuration-fallback-link');
   const loxberryNotifications = document.getElementById('loxberry-notifications');
   const pluginLogList = document.getElementById('plugin-log-list');
   const collapseStorageKey = 'mcpserver.admin.sections.v1';
@@ -325,6 +328,7 @@
     document.getElementById('mcp-config-fields'),
     document.getElementById('test-connection-fields'),
     document.getElementById('mqtt-config-fields'),
+    document.getElementById('logging-config-fields'),
   ];
   const historyEnabled = document.getElementById('loxone-history-enabled');
   const operateEnabled = document.getElementById('loxberry-operate-enabled');
@@ -491,12 +495,14 @@
       renderConfiguration(result.data.configuration);
       configurationLoaded = true;
       setConfigurationFieldsDisabled(false);
+      configurationFallbackLink.hidden = true;
       status.hidden = true;
       const emergencyStopGeneration = emergencyStopDiscoveryGeneration;
       queueBackgroundHydration([() => loadEmergencyStopOptions(emergencyStopGeneration)]);
     } catch {
       if (pageIsUnloading) return;
       setAjaxStatus('error', '<TMPL_VAR AJAX.ERROR ESCAPE=JS>');
+      configurationFallbackLink.hidden = false;
     } finally {
       configurationLoadInFlight = false;
     }

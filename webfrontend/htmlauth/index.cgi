@@ -580,6 +580,8 @@ my $config = {};
 my $sessions = [];
 my $loxberry_bindings = [];
 my $loxberry_operate_bindings = [];
+my $emergency_stop_options = [];
+my $selected_emergency_stop_unavailable = 0;
 my $service_enabled_setting_known = 0;
 my $service_enabled_setting = 0;
 my $service = {};
@@ -612,6 +614,26 @@ $config->{cache} = {} if ref($config->{cache}) ne 'HASH';
 $config->{mqtt} = {} if ref($config->{mqtt}) ne 'HASH';
 $config->{emergency_stop} = {} if ref($config->{emergency_stop}) ne 'HASH';
 my $selected_emergency_stop = $config->{emergency_stop}{virtual_status_uuid} // '';
+if ($server_rendered_fallback) {
+    my $options_result = admin_call('emergency_stop_options', {});
+    my $options = ref($options_result->{data}) eq 'HASH'
+        ? $options_result->{data}{options} : undef;
+    if ($options_result->{ok} && ref($options) eq 'ARRAY') {
+        for my $option (@$options) {
+            next if ref($option) ne 'HASH';
+            my $uuid = $option->{uuid};
+            my $name = $option->{name};
+            next if !defined($uuid) || !defined($name) || ref($uuid) || ref($name);
+            push @$emergency_stop_options, {
+                uuid => $uuid,
+                name => $name,
+                selected => $uuid eq $selected_emergency_stop ? 1 : 0,
+            };
+        }
+        $selected_emergency_stop_unavailable = $selected_emergency_stop ne ''
+            && !grep { $_->{selected} } @$emergency_stop_options;
+    }
+}
 my $miniservers = configured_miniservers($config->{loxone}{endpoint} // '');
 my $has_selected_miniserver = grep { $_->{selected} } @$miniservers;
 my ($selected_miniserver) = grep { $_->{selected} } @$miniservers;
@@ -697,6 +719,8 @@ $template->param(
     MAX_STRUCTURE_DEPTH => $config->{limits}{max_structure_depth} // 32,
     MAX_STATES_PER_IDENTITY => $config->{limits}{max_states_per_identity} // 20000,
     SELECTED_EMERGENCY_STOP => $selected_emergency_stop,
+    EMERGENCY_STOP_OPTIONS => $emergency_stop_options,
+    EMERGENCY_STOP_SELECTED_UNAVAILABLE => $selected_emergency_stop_unavailable,
     LOG_LEVEL => $config->{logging}{level} // 'warning',
     LOG_LEVEL_OFF => ($config->{logging}{level} // 'warning') eq 'off' ? 1 : 0,
     LOG_LEVEL_ERROR => ($config->{logging}{level} // 'warning') eq 'error' ? 1 : 0,
