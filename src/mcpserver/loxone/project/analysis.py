@@ -355,7 +355,9 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
                                         "source_project_node_id": source_block.key,
                                         "target_project_node_id": destination_block.key,
                                         "evidence_project_node_ids": (
-                                            next_path if is_downstream else list(reversed(next_path))
+                                            next_path
+                                            if is_downstream
+                                            else list(reversed(next_path))
                                         ),
                                     }
                                 )

@@ -1,7 +1,6 @@
 from types import SimpleNamespace
 
 import mcpserver.loxone.project.analysis as project_analysis
-
 from mcpserver.loxone.project.analysis import analyze_knx
 from mcpserver.loxone.project.graph import ProjectPartSummary, ProjectSnapshot, build_graph
 from mcpserver.loxone.project.mapping import ProjectView, map_runtime
@@ -89,9 +88,7 @@ def test_analysis_skips_signal_usage_when_the_selected_analysis_does_not_need_it
     monkeypatch.setattr(project_analysis, "_usage", usage_should_not_run)
 
     result = project_analysis.analyze_knx(
-        _view(
-            b'<P><C Type="EIBsensor" U="sensor" EibAddr="1/2/3"><Co U="out"/></C></P>'
-        ),
+        _view(b'<P><C Type="EIBsensor" U="sensor" EibAddr="1/2/3"><Co U="out"/></C></P>'),
         frozenset({"raw_datatype_reuse"}),
     )
 
