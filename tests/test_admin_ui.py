@@ -145,7 +145,8 @@ def test_common_actions_update_the_page_without_a_reload() -> None:
     assert "Array.isArray(result.data.sessions)" in template
     assert "updateSessions(result.data.sessions)" in template
     assert "window.location.reload" not in template
-    assert "window.setTimeout(() => { element.hidden = true; }, 4000)" in template
+    assert "const hideSuccess = (element, defer = () => false) =>" in template
+    assert "if (element.dataset.kind === 'success') element.hidden = true;" in template
     assert "window.clearTimeout(hideStatusTimers.get(status))" in template
     assert "url.searchParams.delete('notice')" in template
     assert "postAjax(body, actionTimeout(form.dataset.ajax))" in template
@@ -234,6 +235,8 @@ const readA = descriptor('allow_loxberry_read', 'session-a');
 const operateA = descriptor('allow_loxberry_operate', 'session-a');
 const revokeA = descriptor('revoke_session', 'session-a');
 const readB = descriptor('allow_loxberry_read', 'session-b');
+const readBinding = descriptor('revoke_loxberry_read', '', 'binding-a');
+const otherBinding = descriptor('revoke_loxberry_read', '', 'binding-b');
 const first = beginSessionAction(readA, null);
 const operate = beginSessionAction(operateA, null);
 const otherSession = beginSessionAction(readB, null);
@@ -243,15 +246,16 @@ const result = {{
   readAndOperateAllowed: Boolean(first && operate),
   otherSessionAllowed: Boolean(otherSession),
   revokeAllBlockedWhileActive: beginSessionAction(descriptor('revoke_all'), null) === null,
+  bindingRevocationBlockedDuringSessionAction: beginSessionAction(readBinding, null) === null,
   finalFinishOnly: [
     finishSessionAction(operate), finishSessionAction(otherSession), finishSessionAction(first),
   ],
 }};
-const readBinding = descriptor('revoke_loxberry_read', '', 'binding-a');
-const otherBinding = descriptor('revoke_loxberry_read', '', 'binding-b');
+for (const token of [...activeSessionActions.keys()]) finishSessionAction(token);
 const binding = beginSessionAction(readBinding, null);
 result.duplicateBindingBlocked = beginSessionAction(readBinding, null) === null;
 result.otherBindingAllowed = Boolean(beginSessionAction(otherBinding, null));
+result.sessionActionBlockedDuringBindingRevocation = beginSessionAction(readA, null) === null;
 for (const token of [...activeSessionActions.keys()]) finishSessionAction(token);
 const revokeAll = beginSessionAction(descriptor('revoke_all'), null);
 result.revokeAllExclusive = Boolean(revokeAll) && beginSessionAction(readA, null) === null;
@@ -263,13 +267,16 @@ console.log(JSON.stringify(result));
     assert result.stdout.strip() == (
         '{"duplicateBlocked":true,"sameSessionRevokeBlocked":true,'
         '"readAndOperateAllowed":true,"otherSessionAllowed":true,'
-        '"revokeAllBlockedWhileActive":true,"finalFinishOnly":[false,false,true],'
+        '"revokeAllBlockedWhileActive":true,'
+        '"bindingRevocationBlockedDuringSessionAction":true,'
+        '"finalFinishOnly":[false,false,true],'
         '"duplicateBindingBlocked":true,"otherBindingAllowed":true,'
+        '"sessionActionBlockedDuringBindingRevocation":true,'
         '"revokeAllExclusive":true,"version":6}'
     )
     assert "const activeSessionActions = new Map();" in template
     assert "const sessionActionsConflict = (left, right)" in template
-    assert "applySuccessfulSessionAction(form, sessionAction);" in template
+    assert "applySuccessfulSessionAction(form, sessionAction, result.data);" in template
     assert "const refreshSessions = finishSessionAction(sessionActionToken);" in template
     assert "if (refreshSessions) scheduleSessionPoll(0);" in template
     assert "let sessionDataVersion = 0;" in template
@@ -283,6 +290,10 @@ console.log(JSON.stringify(result));
     assert "setSessionActionControlsDisabled" not in template
     assert "sessionActionRunning" not in template
     assert "const result = await postAjax(body, 15000);" in template
+    assert "const mergeLoxberryBindings = (bindings) =>" in template
+    assert "const mergeLoxberryOperateBindings = (bindings) =>" in template
+    assert "const setAjaxStatus = (kind, message) =>" in template
+    assert "hideSuccess(status, () => activeSessionActions.size > 0);" in template
     assert "pendingSessionActionButtons" not in template
 
 
