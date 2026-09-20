@@ -33,15 +33,6 @@ if TYPE_CHECKING:
     from mcpserver.loxone.client import LoxoneClient, MiniserverEndpoint
 
 from mcpserver.config import AtomicConfigStore, PluginConfig
-from mcpserver.mqtt_health import (
-    MqttCredentialStore,
-    MqttCredentialStoreError,
-    clear_retained_topics,
-    clear_service_restart,
-    mqtt_broker,
-    mqtt_cleanup_required,
-    request_service_restart,
-)
 
 _MODULE_IMPORT_FINISHED_NS = time.time_ns()
 
@@ -231,6 +222,24 @@ def _mqtt_password_configured() -> bool:
         return MqttCredentialStore(Path(path_value), Path(key_value)).load() is not None
     except (MqttCredentialStoreError, ValueError):
         return False
+
+
+def request_service_restart() -> None:
+    from mcpserver.mqtt_health import request_service_restart as request
+
+    request()
+
+
+def clear_service_restart() -> None:
+    from mcpserver.mqtt_health import clear_service_restart as clear
+
+    clear()
+
+
+def clear_retained_topics(config: PluginConfig, *, broker: Any) -> bool:
+    from mcpserver.mqtt_health import clear_retained_topics as clear
+
+    return clear(config, broker=broker)
 
 
 def _service_action(payload: object) -> dict[str, Any]:
@@ -555,6 +564,12 @@ def _emergency_stop_options() -> dict[str, Any]:
 def _save_mqtt(payload: object) -> dict[str, Any]:
     """Atomically apply MQTT settings and separately protect an optional password."""
     from mcpserver.config import ConfigError, PluginConfig
+    from mcpserver.mqtt_health import (
+        MqttCredentialStore,
+        MqttCredentialStoreError,
+        mqtt_broker,
+        mqtt_cleanup_required,
+    )
 
     if not isinstance(payload, dict):
         raise AdminError("MQTT configuration payload is invalid")

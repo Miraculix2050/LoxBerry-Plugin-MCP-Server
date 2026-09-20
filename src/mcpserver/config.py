@@ -21,7 +21,7 @@ from urllib.parse import urlsplit
 
 import idna
 
-from mcpserver.loxone.client import MiniserverEndpoint
+from mcpserver.loxone.endpoint import MiniserverEndpoint
 
 SCHEMA_VERSION: Final = 8
 DEFAULT_CONNECTION_TIMEOUT: Final = 10.0
