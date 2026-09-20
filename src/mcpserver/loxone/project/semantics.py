@@ -50,6 +50,39 @@ class KnxSemantics:
     truncated_fields: tuple[str, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class SignalUseRule:
+    """One independently reviewed internal block-flow rule.
+
+    The rule is deliberately keyed by the exact project block type and connector
+    keys. Unknown blocks never receive inferred internal signal relationships.
+    """
+
+    rule_id: str
+    input_key: str
+    output_key: str
+    interpretation: str
+    effect: str | None = None
+
+
+# These rules encode only compact, independently stated connector behaviour.
+# They do not package Loxone documentation and must remain backed by fixtures.
+_SIGNAL_USE_RULES: dict[str, tuple[SignalUseRule, ...]] = {
+    "EIBPush": (
+        SignalUseRule("eib_push_toggle", "Tg", "O", "rising_edge", "toggle"),
+        SignalUseRule("eib_push_on", "On", "O", "rising_edge", "set_on"),
+        SignalUseRule("eib_push_off", "Off", "O", "rising_edge", "set_off"),
+        SignalUseRule("eib_push_status", "S", "O", "level"),
+    ),
+}
+
+
+def signal_use_rules(block_type: str | None) -> tuple[SignalUseRule, ...]:
+    """Return reviewed internal-flow rules for one exact project block type."""
+
+    return _SIGNAL_USE_RULES.get(block_type or "", ())
+
+
 def _bounded(value: str | None, field: str, limit: int, truncated: list[str]) -> str | None:
     if value is None:
         return None

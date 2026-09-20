@@ -510,6 +510,16 @@ class ProjectKnxDatatypeData(BaseModel):
     normalized_code: None = None
 
 
+class ProjectSignalUseObservationData(BaseModel):
+    source: str
+    target: str
+    rule_id: str
+    interpretation: Literal[
+        "level", "value", "rising_edge", "falling_edge", "any_edge", "duration_sensitive"
+    ]
+    effect: Literal["toggle", "set_on", "set_off"] | None
+
+
 class ProjectKnxData(BaseModel):
     object_kind: Literal["line", "endpoint", "logic_block"]
     flow_direction: Literal["bus_to_loxone", "loxone_to_bus"] | None
@@ -528,6 +538,8 @@ class ProjectKnxData(BaseModel):
             "datatype.source_value",
         ]
     ]
+    usage_observations: list[ProjectSignalUseObservationData] = Field(default_factory=list)
+    usage_observations_truncated: bool = False
 
 
 class ProjectKnxSummaryData(BaseModel):
@@ -581,6 +593,17 @@ class ProjectRelationshipData(BaseModel):
     target: str
 
 
+class ProjectSemanticRelationshipData(ProjectSignalUseObservationData):
+    pass
+
+
+class ProjectTechnologyPathData(BaseModel):
+    classification: Literal["knx_to_loxone", "loxone_to_knx", "knx_to_knx"]
+    source_project_node_id: str
+    target_project_node_id: str
+    evidence_project_node_ids: list[str]
+
+
 class ProjectDescriptionData(ProjectNodeData):
     parent_project_node_id: str | None
     child_project_node_ids: list[str]
@@ -596,6 +619,9 @@ class ProjectTraceData(BaseModel):
     direction: Literal["upstream", "downstream"]
     nodes: list[ProjectNodeSummaryData]
     edges: list[ProjectRelationshipData]
+    semantic_edges: list[ProjectSemanticRelationshipData] = Field(default_factory=list)
+    technology_paths: list[ProjectTechnologyPathData] = Field(default_factory=list)
+    semantic_truncated: bool = False
     truncated: bool
     truncation_reason: Literal["max_depth", "max_nodes", "max_edges", "max_response_bytes"] | None
     unresolved_relationships: list[dict[str, str]]
@@ -1298,12 +1324,24 @@ def _fit_project_trace(envelope: ProjectTraceEnvelope) -> bool:
         return True
     nodes = data.nodes
     edges = data.edges
+    semantic_edges = data.semantic_edges
+    technology_paths = data.technology_paths
     unresolved = data.unresolved_relationships
 
     def fit(count: int) -> None:
         data.nodes = nodes[:count]
         retained = {node.project_node_id for node in data.nodes}
         data.edges = [edge for edge in edges if edge.source in retained and edge.target in retained]
+        data.semantic_edges = [
+            edge for edge in semantic_edges if edge.source in retained and edge.target in retained
+        ]
+        data.technology_paths = [
+            path
+            for path in technology_paths
+            if path.source_project_node_id in retained
+            and path.target_project_node_id in retained
+            and all(key in retained for key in path.evidence_project_node_ids)
+        ]
         data.unresolved_relationships = [
             item for item in unresolved if item["project_node_id"] in retained
         ]
@@ -1324,6 +1362,11 @@ def _fit_project_trace(envelope: ProjectTraceEnvelope) -> bool:
     data.unresolved_truncated = data.unresolved_truncated or len(
         data.unresolved_relationships
     ) < len(unresolved)
+    data.semantic_truncated = (
+        data.semantic_truncated
+        or len(data.semantic_edges) < len(semantic_edges)
+        or len(data.technology_paths) < len(technology_paths)
+    )
     return True
 
 

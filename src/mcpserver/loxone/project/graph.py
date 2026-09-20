@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from .decoder import decode_loxcc
 from .models import DEFAULT_LIMITS, ProjectBundle, ProjectError, ProjectLimits
 from .parser import ParsedProject, parse_project
-from .semantics import KnxSemantics, classify_knx
+from .semantics import KnxSemantics, classify_knx, signal_use_rules
 
 
 def normalize_id(value: str | None) -> str:
@@ -34,10 +34,27 @@ class GraphEdge:
 
 
 @dataclass(frozen=True, slots=True)
+class SemanticEdge:
+    """A reviewed, derived block-internal signal relationship.
+
+    Unlike ``GraphEdge``, this is not raw project wiring. It is emitted only
+    for an exact allowlisted block/connector rule and stays separate so MCP
+    clients can distinguish source facts from derived semantics.
+    """
+
+    source: str
+    target: str
+    rule_id: str
+    interpretation: str
+    effect: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class ProjectGraph:
     nodes: tuple[GraphNode, ...] = field(repr=False)
     edges: tuple[GraphEdge, ...] = field(repr=False)
     unresolved: tuple[tuple[str, str], ...]
+    semantic_edges: tuple[SemanticEdge, ...] = field(default=(), repr=False)
 
     def traverse(
         self, start: str, *, upstream: bool = False, depth: int = 8, limit: int = 500
@@ -89,6 +106,7 @@ def build_graph(
 ) -> ProjectGraph:
     nodes: list[GraphNode] = []
     edges: set[GraphEdge] = set()
+    semantic_edges: set[SemanticEdge] = set()
     unresolved: list[tuple[str, str]] = []
     node: GraphNode | None
     for namespace, project in projects:
@@ -138,11 +156,57 @@ def build_graph(
                     unresolved.append((destination.key, "signal_unresolved"))
             if len(edges) > limits.edges:
                 raise ProjectError("project_graph_limit")
+        semantic_edges.update(_build_semantic_edges(project, local))
+        if len(semantic_edges) > limits.edges:
+            raise ProjectError("project_graph_limit")
     return ProjectGraph(
         tuple(nodes),
         tuple(sorted(edges, key=lambda e: (e.source, e.target, e.kind))),
         tuple(unresolved),
+        tuple(sorted(semantic_edges, key=lambda e: (e.source, e.target, e.rule_id))),
     )
+
+
+def _build_semantic_edges(project: ParsedProject, local: dict[int, GraphNode]) -> set[SemanticEdge]:
+    """Build only explicit, allowlisted internal connector relationships."""
+
+    result: set[SemanticEdge] = set()
+    children: dict[int, list[int]] = defaultdict(list)
+    for child_index, child in enumerate(project.elements):
+        if child.parent is not None:
+            children[child.parent].append(child_index)
+    for index, element in enumerate(project.elements):
+        if element.tag != "C":
+            continue
+        rules = signal_use_rules(element.value("Type"))
+        if not rules:
+            continue
+        connectors: dict[str, list[GraphNode]] = defaultdict(list)
+        for child_index in children.get(index, []):
+            child = project.elements[child_index]
+            if child.tag != "Co":
+                continue
+            connector = local.get(child_index)
+            key = child.value("K")
+            if connector is not None and key is not None:
+                connectors[key].append(connector)
+        for rule in rules:
+            sources = connectors.get(rule.input_key, [])
+            targets = connectors.get(rule.output_key, [])
+            # Duplicated connector keys are not safely interpretable.
+            if len(sources) != 1 or len(targets) != 1:
+                continue
+            source, target = sources[0], targets[0]
+            result.add(
+                SemanticEdge(
+                    source.key,
+                    target.key,
+                    rule.rule_id,
+                    rule.interpretation,
+                    rule.effect,
+                )
+            )
+    return result
 
 
 def build_snapshot(
@@ -154,6 +218,7 @@ def build_snapshot(
     projects: list[ProjectPartSummary] = []
     nodes: list[GraphNode] = []
     edges: list[GraphEdge] = []
+    semantic_edges: list[SemanticEdge] = []
     unresolved: list[tuple[str, str]] = []
     for member in bundle.files:
         data = decode_loxcc(member.content, limits)
@@ -169,8 +234,13 @@ def build_snapshot(
         part_graph = build_graph(((namespace, project),), limits)
         nodes.extend(part_graph.nodes)
         edges.extend(part_graph.edges)
+        semantic_edges.extend(part_graph.semantic_edges)
         unresolved.extend(part_graph.unresolved)
-        if len(nodes) > limits.elements or len(edges) > limits.edges:
+        if (
+            len(nodes) > limits.elements
+            or len(edges) > limits.edges
+            or len(semantic_edges) > limits.edges
+        ):
             raise ProjectError("project_graph_limit")
         projects.append(
             ProjectPartSummary(
@@ -179,5 +249,5 @@ def build_snapshot(
                 tuple(code for _, code in project.anomalies),
             )
         )
-    graph = ProjectGraph(tuple(nodes), tuple(edges), tuple(unresolved))
-    return ProjectSnapshot(bundle.fingerprint, 2, tuple(projects), graph)
+    graph = ProjectGraph(tuple(nodes), tuple(edges), tuple(unresolved), tuple(semantic_edges))
+    return ProjectSnapshot(bundle.fingerprint, 3, tuple(projects), graph)
