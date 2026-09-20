@@ -2,10 +2,16 @@
 .mcp-explorer { max-width: 92rem; margin: 0 auto; padding: .5rem; overflow-wrap: anywhere; }
 .mcp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: 1rem; }
 .mcp-explorer-grid { display: grid; grid-template-columns: minmax(15rem, 20rem) minmax(0, 1fr); gap: 1rem; align-items: start; }
+.mcp-explorer-workspace { display: grid; min-width: 0; gap: 1rem; align-items: start; }
 .mcp-card, .mcp-explorer-card { min-width: 0; padding: 1rem; border: 1px solid #c9cdd2; border-radius: .4rem; background: #fff; }
 details.mcp-card { padding: 0; }
 details.mcp-card > summary { padding: 1rem; cursor: pointer; font-size: 1.25rem; font-weight: 600; }
 details.mcp-card[open] > summary { border-bottom: 1px solid #d7dadd; }
+details.mcp-explorer-card { padding: 0; }
+details.mcp-explorer-card > summary { display: flex; gap: .45rem; align-items: baseline; padding: 1rem; cursor: pointer; font-size: 1.25rem; font-weight: 600; }
+details.mcp-explorer-card[open] > summary { border-bottom: 1px solid #d7dadd; }
+.mcp-explorer-panel-content { min-width: 0; padding: 1rem; }
+.mcp-explorer-panel-selection { color: #5f6368; font-size: .85rem; font-weight: 400; overflow-wrap: anywhere; }
 .mcp-collapsible-content { min-width: 0; padding: 1rem; }
 .mcp-service-summary { display: inline-flex; flex-wrap: wrap; gap: .75rem; align-items: center; }
 .mcp-service-badge { display: inline-block; padding: .2rem .55rem; border-radius: 999px; background: #6b7280; color: #fff; font-size: .9rem; }
@@ -75,13 +81,17 @@ details.mcp-card[open] > summary { border-bottom: 1px solid #d7dadd; }
 .mcp-explorer-history button { padding: .55rem; text-align: left; border: 1px solid #ddd; background: #fff; }
 .mcp-explorer-muted { color: #5f6368; }
 .mcp-explorer-dialog select { box-sizing: border-box; width: 100%; min-height: 2.75rem; }
+@media (min-width: 80rem) {
+  .mcp-explorer-grid { grid-template-columns: minmax(15rem, 18rem) minmax(0, 1fr); }
+  .mcp-explorer-workspace { grid-template-columns: minmax(22rem, .9fr) minmax(24rem, 1.1fr); }
+}
 @media (max-width: 52rem) {
   .mcp-explorer-grid { grid-template-columns: 1fr; }
-  .mcp-explorer-tool-list { max-height: none; }
+  .mcp-explorer-tool-list { max-height: 50vh; }
 }
 @media (max-width: 30rem) {
-  .mcp-card:not(details), .mcp-explorer-card { padding: .75rem; }
-  details.mcp-card > summary, .mcp-collapsible-content { padding: .75rem; }
+  .mcp-card:not(details), .mcp-explorer-card:not(details) { padding: .75rem; }
+  details.mcp-card > summary, details.mcp-explorer-card > summary, .mcp-collapsible-content, .mcp-explorer-panel-content { padding: .75rem; }
   .mcp-actions > *, .mcp-explorer-actions > button, .mcp-explorer-actions > select { width: 100%; }
   .mcp-copy-row { grid-template-columns: minmax(0, 1fr); }
   .mcp-copy-row button { width: 100%; }

@@ -31,6 +31,32 @@ def test_schema_reference_link_label_is_concise_in_both_languages() -> None:
     assert "SCHEMA_REFERENCE=Open schema reference" in english
 
 
+def test_explorer_uses_one_compact_mobile_tool_panel_and_adaptive_workspace() -> None:
+    template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
+    stylesheet = (ROOT / "webfrontend" / "htmlauth" / "mcp-ui.css").read_text(encoding="utf-8")
+    source = SCRIPT.read_text(encoding="utf-8")
+    responsive_panels = source[
+        source.index("function syncResponsivePanels") : source.index("function showError")
+    ]
+
+    assert template.count('id="explorer-tools"') == 1
+    assert template.count('id="explorer-history"') == 1
+    assert '<details id="explorer-tools-panel" class="mcp-explorer-card" open>' in template
+    assert '<details id="explorer-history-panel" class="mcp-explorer-card" open>' in template
+    assert 'id="explorer-request"' in template
+    assert 'id="explorer-result"' in template
+    assert "@media (min-width: 80rem)" in stylesheet
+    assert "@media (max-width: 52rem)" in stylesheet
+    assert "grid-template-columns: minmax(22rem, .9fr) minmax(24rem, 1.1fr)" in stylesheet
+    assert "const narrowViewport = window.matchMedia('(max-width: 52rem)')" in source
+    assert "elements.toolsPanel.open = false" in responsive_panels
+    assert "elements.historyPanel.open = false" in responsive_panels
+    assert "initializeMcp" not in responsive_panels
+    assert "mcpRequest" not in responsive_panels
+    assert "revealRequest(true, false)" in source
+    assert "revealResult();" in source
+
+
 def test_tool_badges_are_localized_through_the_explorer_template() -> None:
     german = (ROOT / "templates" / "lang" / "language_de.ini").read_text(encoding="utf-8")
     english = (ROOT / "templates" / "lang" / "language_en.ini").read_text(encoding="utf-8")
