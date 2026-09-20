@@ -2,13 +2,17 @@
 
 This repository contains the LoxBerry MCP Server plugin. Apply the mandatory
 rules below to every change. Before implementation, read only the relevant
-sections of `docs/development/implementation-guidelines.md`: sections 3-6 for
-architecture, MCP contracts, security, or configuration; section 7 for UI;
-section 8 for lifecycle; section 9 for logging; and sections 10-11 for tests,
-documentation, or releases. Read the whole document only for cross-cutting or
-unclear changes. Select verification from
+heading in `docs/development/implementation-guidelines.md`: Product and
+architecture; MCP contracts and security; Configuration, UI and lifecycle;
+Logging and diagnostics; or Tests, documentation and releases. Read the whole
+document only for cross-cutting or unclear changes. Select verification from
 `docs/development/test-strategy.md`; do not reread unchanged sections during the
 same task.
+
+For large source or test files, locate relevant symbols, callers and tests first
+and read only the required ranges. Expand context only when dependencies require
+it. Read historical ADRs and superseded plans only when the current change depends
+on their decision or history.
 
 ## Working rules
 
