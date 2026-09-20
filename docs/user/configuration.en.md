@@ -28,6 +28,8 @@ endpoint remain reachable.
 
 MQTT health is disabled by default. By default, the plugin reads host, port, and credentials at runtime from the LoxBerry MQTT gateway. For a custom broker, disable **Use LoxBerry MQTT gateway** and enter its host, port, username, and password. Custom-broker connections always use TLS with normal certificate and hostname validation. The password is stored separately with encryption, is never displayed again, and is never included in diagnostics or logs. Use **Clear saved MQTT password** to remove it deliberately. The default root topic is `mcpserver` and the default heartbeat interval is 60 seconds. Retained topics are `mcpserver/health/heartbeat`, `mcpserver/health/system_state` and `mcpserver/health/substate`. A controlled stop publishes `inactive` and `dead`; an unexpected process or connection loss publishes the retained fallback `unknown`. The timestamp uses Loxone epoch seconds.
 
+When MQTT health is disabled, its root topic changes, or its configured broker endpoint or transport changes, the plugin removes all four retained plugin topics at the previous destination before starting the replacement service. This is best effort: if the previous broker is unavailable, the new configuration remains active and the Admin UI reports that old retained values may remain. Changing only broker credentials at the same endpoint and root does not remove topics because the replacement service remains authoritative for that same topic tree.
+
 When MQTT health is enabled, the plugin additionally publishes the retained
 emergency-stop state with QoS 1 under `<root>/emergency_stop/status`. This topic
 has its own Last Will and is independent of the `health/*` topics: it publishes

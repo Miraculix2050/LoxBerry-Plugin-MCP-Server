@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from dataclasses import replace
 from pathlib import Path
 
 from mcpserver.config import PluginConfig
@@ -10,7 +11,9 @@ from mcpserver.mqtt_health import (
     MqttCredentialStore,
     MqttGateway,
     MqttHealthPublisher,
+    clear_retained_topics,
     loxone_epoch_seconds,
+    mqtt_cleanup_required,
     request_service_restart,
 )
 
@@ -45,6 +48,74 @@ class _Client:
 
     def loop_stop(self) -> None:
         self.calls.append(("loop_stop",))
+
+
+class _CleanupClient(_Client):
+    def connect_async(self, host: str, port: int, keepalive: int) -> None:
+        super().connect_async(host, port, keepalive)
+        self.on_connect(self, None, None, 0)
+
+
+def test_retained_cleanup_decision_ignores_credentials_at_the_same_destination() -> None:
+    previous = PluginConfig(
+        mqtt_enabled=True,
+        mqtt_root_topic="old",
+        mqtt_use_loxberry_gateway=False,
+        mqtt_host="broker.example",
+        mqtt_port=2883,
+        mqtt_username="old-user",
+    )
+
+    assert mqtt_cleanup_required(previous, previous) is False
+    assert mqtt_cleanup_required(previous, replace(previous, mqtt_username="new-user")) is False
+    assert mqtt_cleanup_required(previous, replace(previous, mqtt_root_topic="new")) is True
+    assert mqtt_cleanup_required(previous, replace(previous, mqtt_enabled=False)) is True
+    assert mqtt_cleanup_required(previous, replace(previous, mqtt_host="other.example")) is True
+    assert mqtt_cleanup_required(previous, replace(previous, mqtt_port=1883)) is True
+    assert (
+        mqtt_cleanup_required(previous, replace(previous, mqtt_use_loxberry_gateway=True)) is True
+    )
+
+
+def test_retained_cleanup_removes_only_plugin_topics_with_a_confirmed_connection() -> None:
+    clients: list[_CleanupClient] = []
+
+    assert clear_retained_topics(
+        PluginConfig(
+            mqtt_enabled=True,
+            mqtt_root_topic="old",
+            mqtt_use_loxberry_gateway=False,
+            mqtt_host="broker.example",
+        ),
+        broker=MqttGateway("broker.example", 1883, "health", "secret"),
+        client_factory=lambda **kwargs: clients.append(_CleanupClient(**kwargs)) or clients[-1],
+    )
+
+    calls = clients[0].calls
+    assert ("new", {"client_id": "loxberry-mcp-retained-cleanup"}) in calls
+    assert ("credentials", "health", "secret") in calls
+    assert ("tls",) in calls
+    assert ("connect", "broker.example", 1883, 60) in calls
+    assert {
+        call[1]
+        for call in calls
+        if call[0] == "publish" and call[2:] == (b"", {"qos": 1, "retain": True})
+    } == {
+        "old/health/heartbeat",
+        "old/health/system_state",
+        "old/health/substate",
+        "old/emergency_stop/status",
+    }
+    assert ("disconnect",) in calls
+    assert ("loop_stop",) in calls
+
+
+def test_retained_cleanup_failure_is_non_throwing() -> None:
+    assert not clear_retained_topics(
+        PluginConfig(mqtt_enabled=True),
+        broker=MqttGateway("broker", 1883, "health", "secret"),
+        client_factory=lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("unavailable")),
+    )
 
 
 def test_gateway_uses_loxberry_general_json(tmp_path: Path) -> None:
