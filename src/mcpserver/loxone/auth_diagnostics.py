@@ -10,6 +10,7 @@ import os
 import time
 from collections import deque
 from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, TypeVar
@@ -116,6 +117,11 @@ class MiniserverAuthCoordinator:
             os.fsync(handle.fileno())
         os.replace(temporary, self._path)
         os.chmod(self._path, 0o600)
+
+    def _save_success_best_effort(self) -> None:
+        """Do not turn a completed Miniserver operation into a diagnostics failure."""
+        with suppress(OSError):
+            self._save()
 
     def _delay(self) -> int:
         return int(min(self._initial * (2 ** int(self._state["backoff_level"])), self._maximum))
@@ -380,5 +386,5 @@ class MiniserverAuthCoordinator:
                     provenance=provenance,
                     transition=transition,
                 )
-                self._save()
+                self._save_success_best_effort()
                 return result

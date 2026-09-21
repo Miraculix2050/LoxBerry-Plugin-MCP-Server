@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 from types import SimpleNamespace
+
+import pytest
 
 from mcpserver.config import PluginConfig
 from mcpserver.emergency_stop import (
@@ -11,6 +14,8 @@ from mcpserver.emergency_stop import (
     mqtt_emergency_stop_status,
     virtual_status_options,
 )
+from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
+from mcpserver.loxone.client import LoxoneSourceIpBlocked
 
 
 def test_virtual_status_options_are_sorted_case_insensitively_with_a_stable_tie_breaker() -> None:
@@ -46,6 +51,44 @@ def test_virtual_status_options_reports_unavailable_without_provider_details(mon
     assert result.status == "unavailable"
     assert result.options == ()
     assert result.failure_code == "credentials"
+
+
+def test_virtual_status_options_does_not_bypass_an_open_authentication_breaker(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    coordinator = MiniserverAuthCoordinator(
+        (tmp_path / "auth-diagnostics.json").resolve(), initial_probe_seconds=300
+    )
+
+    async def blocked() -> None:
+        raise LoxoneSourceIpBlocked("blocked")
+
+    with pytest.raises(LoxoneSourceIpBlocked):
+        asyncio.run(coordinator.attempt(blocked, owner="tool_request", phase="token_acquisition"))
+
+    async def credentials(_self: EmergencyStopMonitor) -> tuple[str, str]:
+        return "user", "password"
+
+    calls = 0
+
+    class RecordingLoxoneClient:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        async def acquire_token(self, username: str, password: str) -> None:
+            nonlocal calls
+            calls += 1
+
+    monkeypatch.setattr(EmergencyStopMonitor, "_credentials", credentials)
+    monkeypatch.setattr("mcpserver.emergency_stop.LoxoneClient", RecordingLoxoneClient)
+
+    result = asyncio.run(
+        virtual_status_options(PluginConfig(loxone_endpoint="http://192.168.1.10"), coordinator)
+    )
+
+    assert result.status == "unavailable"
+    assert result.failure_code == "token"
+    assert calls == 0
 
 
 def test_emergency_stop_enables_only_for_a_confirmed_one_value() -> None:

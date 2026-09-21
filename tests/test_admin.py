@@ -41,6 +41,7 @@ from mcpserver.auth.provider import (
 from mcpserver.auth.store import AtomicJsonAuthStore
 from mcpserver.config import AtomicConfigStore, ConfigError, PluginConfig
 from mcpserver.emergency_stop import VirtualStatusOptions
+from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
 from mcpserver.loxone.client import LoxoneToken
 from mcpserver.loxone.events import LoxoneProtocolError
 from tools.benchmark_admin_page_state import measure
@@ -451,6 +452,33 @@ def test_emergency_stop_options_distinguishes_empty_available_results(
         "status": "available",
         "options": [],
     }
+
+
+def test_emergency_stop_options_uses_the_shared_authentication_breaker(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    class ConfigStore:
+        def load(self) -> PluginConfig:
+            return PluginConfig(loxone_endpoint="http://192.168.1.10")
+
+    captured: MiniserverAuthCoordinator | None = None
+
+    async def available(
+        _config: PluginConfig, coordinator: MiniserverAuthCoordinator
+    ) -> VirtualStatusOptions:
+        nonlocal captured
+        captured = coordinator
+        return VirtualStatusOptions(status="available", options=())
+
+    monkeypatch.setenv("MCPSERVER_AUTH_STORE", str((tmp_path / "auth.json").resolve()))
+    monkeypatch.setattr("mcpserver.admin._config_store", ConfigStore)
+    monkeypatch.setattr("mcpserver.emergency_stop.virtual_status_options", available)
+
+    assert dispatch({"action": "emergency_stop_options"}) == {
+        "status": "available",
+        "options": [],
+    }
+    assert isinstance(captured, MiniserverAuthCoordinator)
 
 
 def test_emergency_stop_options_returns_a_fixed_internal_failure_code(
