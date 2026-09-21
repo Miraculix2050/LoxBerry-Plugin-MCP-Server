@@ -1341,6 +1341,7 @@ class LoxBerryReadRuntime:
                     LOXBERRY_READ_SCOPE,
                     access.identity_id,
                     access.miniserver_id,
+                    str(family.get("explorer_origin", "")),
                 )
                 is not None
             )
@@ -1465,6 +1466,7 @@ class LoxBerryOperateRuntime:
                     LOXBERRY_OPERATE_SCOPE,
                     access.identity_id,
                     access.miniserver_id,
+                    str(family.get("explorer_origin", "")),
                 )
                 is not None
             )

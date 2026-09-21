@@ -518,26 +518,64 @@ def create_server(settings: ServerSettings) -> FastMCP:
         if event_history is not None:
             event_history.auth_coordinator = auth_coordinator
 
+        def explorer_read_binding_allowed(
+            explorer_origin: str, identity_id: str, miniserver_id: str
+        ) -> bool:
+            if settings.phase0_auth is None or settings.phase0_auth.config_path is None:
+                return False
+            try:
+                current = AtomicConfigStore(settings.phase0_auth.config_path).load()
+                from mcpserver.explorer_bindings import active_explorer_binding
+
+                return current.loxberry_read_enabled and (
+                    active_explorer_binding(
+                        current,
+                        auth_store,
+                        "loxberry:read",
+                        identity_id,
+                        miniserver_id,
+                        explorer_origin,
+                    )
+                    is not None
+                )
+            except Exception:
+                return False
+
         def loxberry_binding_allowed(client_id: str, identity_id: str, miniserver_id: str) -> bool:
             if settings.phase0_auth is None or settings.phase0_auth.config_path is None:
                 return False
             try:
                 current = AtomicConfigStore(settings.phase0_auth.config_path).load()
-                if client_id == "tool-explorer-v1":
-                    from mcpserver.explorer_bindings import active_explorer_binding
+                binding = auth_store.pseudonym(
+                    "loxberry-read-binding-v1", client_id, identity_id, miniserver_id
+                )
+                return current.loxberry_read_enabled and binding in current.loxberry_read_bindings
+            except Exception:
+                return False
 
-                    allowed = (
-                        active_explorer_binding(
-                            current, auth_store, "loxberry:read", identity_id, miniserver_id
-                        )
-                        is not None
+        def explorer_operate_binding_allowed(
+            explorer_origin: str, identity_id: str, miniserver_id: str
+        ) -> bool:
+            if settings.phase0_auth is None or settings.phase0_auth.config_path is None:
+                return False
+            try:
+                current = AtomicConfigStore(settings.phase0_auth.config_path).load()
+                from mcpserver.explorer_bindings import active_explorer_binding
+
+                allowed = (
+                    active_explorer_binding(
+                        current,
+                        auth_store,
+                        "loxberry:operate",
+                        identity_id,
+                        miniserver_id,
+                        explorer_origin,
                     )
-                else:
-                    binding = auth_store.pseudonym(
-                        "loxberry-read-binding-v1", client_id, identity_id, miniserver_id
-                    )
-                    allowed = binding in current.loxberry_read_bindings
-                return current.loxberry_read_enabled and allowed
+                    is not None
+                )
+                return (
+                    current.loxone_history_enabled and current.loxberry_operate_enabled and allowed
+                )
             except Exception:
                 return False
 
@@ -548,22 +586,13 @@ def create_server(settings: ServerSettings) -> FastMCP:
                 return False
             try:
                 current = AtomicConfigStore(settings.phase0_auth.config_path).load()
-                if client_id == "tool-explorer-v1":
-                    from mcpserver.explorer_bindings import active_explorer_binding
-
-                    allowed = (
-                        active_explorer_binding(
-                            current, auth_store, "loxberry:operate", identity_id, miniserver_id
-                        )
-                        is not None
-                    )
-                else:
-                    binding = auth_store.pseudonym(
-                        "loxberry-operate-binding-v1", client_id, identity_id, miniserver_id
-                    )
-                    allowed = binding in current.loxberry_operate_bindings
+                binding = auth_store.pseudonym(
+                    "loxberry-operate-binding-v1", client_id, identity_id, miniserver_id
+                )
                 return (
-                    current.loxone_history_enabled and current.loxberry_operate_enabled and allowed
+                    current.loxone_history_enabled
+                    and current.loxberry_operate_enabled
+                    and binding in current.loxberry_operate_bindings
                 )
             except Exception:
                 return False
@@ -604,7 +633,12 @@ def create_server(settings: ServerSettings) -> FastMCP:
                 miniserver_id = str(family.get("miniserver_id", ""))
                 if (
                     active_explorer_binding(
-                        config, auth_store, capability, identity_id, miniserver_id
+                        config,
+                        auth_store,
+                        capability,
+                        identity_id,
+                        miniserver_id,
+                        str(family.get("explorer_origin", "")),
                     )
                     is not None
                 ):
@@ -621,9 +655,11 @@ def create_server(settings: ServerSettings) -> FastMCP:
             control_enabled=bool(config and config.loxone_control_enabled),
             loxberry_read_enabled=bool(config and config.loxberry_read_enabled),
             loxberry_read_allowed=loxberry_binding_allowed,
+            explorer_loxberry_read_allowed=explorer_read_binding_allowed,
             history_enabled=bool(config and config.loxone_history_enabled),
             loxberry_operate_enabled=bool(config and config.loxberry_operate_enabled),
             loxberry_operate_allowed=loxberry_operate_binding_allowed,
+            explorer_loxberry_operate_allowed=explorer_operate_binding_allowed,
             explorer_origins=settings.allowed_origins,
         )
         explorer_binding_maintenance = (

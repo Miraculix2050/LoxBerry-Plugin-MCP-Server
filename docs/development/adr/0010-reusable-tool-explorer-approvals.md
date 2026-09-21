@@ -9,7 +9,8 @@ The fixed local Tool Explorer uses the server-defined application identity
 `tool-explorer-v1` for local `loxberry:read` and `loxberry:operate` approvals.
 The identity is assigned only after the existing exact client name, callback
 path and allowed-origin validation. Its approval remains additionally bound by
-an installation-local HMAC to the Loxone identity, Miniserver and capability.
+an installation-local HMAC to the validated Explorer origin, Loxone identity,
+Miniserver and capability.
 
 OAuth registration, PKCE, consent, family and token lifetimes remain unchanged.
 A later validated Explorer login can reactivate its application approval while

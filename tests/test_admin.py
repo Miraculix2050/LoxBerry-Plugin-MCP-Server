@@ -191,6 +191,7 @@ def test_explorer_approval_is_application_bound_and_individually_revocable(
                     "scope": f"{READ_SCOPE} {LOXBERRY_READ_SCOPE}",
                     "client_id": "dynamic-client-a",
                     "client_kind": "tool_explorer",
+                    "explorer_origin": "https://public.example",
                     "identity_id": "identity",
                     "miniserver_id": "miniserver",
                     "created_at": 1_900_000_000,

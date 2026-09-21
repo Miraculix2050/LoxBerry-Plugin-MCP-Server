@@ -414,14 +414,17 @@ async def test_explorer_client_gets_shorter_refresh_family_lifetime(tmp_path: Pa
 
 @pytest.mark.asyncio
 async def test_only_validated_explorer_uses_stable_application_approval(tmp_path: Path) -> None:
-    seen: list[str] = []
+    origins: list[str] = []
+    clients: list[str] = []
     provider = Phase0OAuthProvider(
         AtomicJsonAuthStore(tmp_path / "auth" / "sessions.json"),
         issuer=ISSUER,
         resource=RESOURCE,
         loxberry_read_enabled=True,
-        loxberry_read_allowed=lambda client, *_: seen.append(client)
-        or client == "tool-explorer-v1",
+        explorer_origins=("https://loxberry-alias",),
+        loxberry_read_allowed=lambda client, *_: clients.append(client) or False,
+        explorer_loxberry_read_allowed=lambda origin, *_: origins.append(origin)
+        or origin == "https://public.example",
     )
     explorer = _client_info(
         "dynamic-explorer",
@@ -433,13 +436,21 @@ async def test_only_validated_explorer_uses_stable_application_approval(tmp_path
         client_name=EXPLORER_CLIENT_NAME,
         redirect_uri=REDIRECT,
     )
+    alias = _client_info(
+        "alias-explorer",
+        client_name=EXPLORER_CLIENT_NAME,
+        redirect_uri="https://loxberry-alias/admin/plugins/mcpserver/explorer_callback.cgi",
+    )
     await provider.register_client(explorer)
     await provider.register_client(lookalike)
+    await provider.register_client(alias)
 
     assert provider.loxberry_read_allowed("dynamic-explorer", "identity", "miniserver")
+    assert not provider.loxberry_read_allowed("alias-explorer", "identity", "miniserver")
     assert not provider.loxberry_read_allowed("third-party", "identity", "miniserver")
 
-    assert seen == ["tool-explorer-v1", "third-party"]
+    assert origins == ["https://public.example", "https://loxberry-alias"]
+    assert clients == ["alias-explorer", "third-party"]
 
 
 @pytest.mark.asyncio
@@ -461,7 +472,7 @@ async def test_validated_explorer_keeps_matching_legacy_client_approval(tmp_path
     await provider.register_client(explorer)
 
     assert provider.loxberry_read_allowed("dynamic-explorer", "identity", "miniserver")
-    assert seen == ["tool-explorer-v1", "dynamic-explorer"]
+    assert seen == ["dynamic-explorer"]
 
 
 @pytest.mark.asyncio

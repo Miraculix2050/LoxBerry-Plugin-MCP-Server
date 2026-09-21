@@ -16,12 +16,20 @@ _NAMESPACES: Final = {
 
 
 def explorer_binding_id(
-    auth_store: Any, capability: str, identity_id: str, miniserver_id: str
+    auth_store: Any,
+    capability: str,
+    identity_id: str,
+    miniserver_id: str,
+    explorer_origin: str = "",
 ) -> str:
     """Derive the installation-local application binding without retaining identifiers."""
     return str(
         auth_store.pseudonym(
-            _NAMESPACES[capability], TOOL_EXPLORER_APPLICATION_ID, identity_id, miniserver_id
+            _NAMESPACES[capability],
+            TOOL_EXPLORER_APPLICATION_ID,
+            explorer_origin,
+            identity_id,
+            miniserver_id,
         )
     )
 
@@ -32,10 +40,13 @@ def active_explorer_binding(
     capability: str,
     identity_id: str,
     miniserver_id: str,
+    explorer_origin: str = "",
     *,
     now: int | None = None,
 ) -> ExplorerBindingApproval | None:
-    binding_id = explorer_binding_id(auth_store, capability, identity_id, miniserver_id)
+    binding_id = explorer_binding_id(
+        auth_store, capability, identity_id, miniserver_id, explorer_origin
+    )
     current = int(time.time()) if now is None else now
     retention = config.explorer_binding_retention_hours * 3600
     for approval in config.explorer_bindings:
@@ -60,11 +71,15 @@ def record_explorer_approval(
 ) -> str:
     current = int(time.time()) if now is None else now
     expires_at = int(family.get("expires_at", current))
+    explorer_origin = family.get("explorer_origin")
+    if not isinstance(explorer_origin, str) or not explorer_origin:
+        raise ValueError("validated Explorer origin is unavailable")
     binding_id = explorer_binding_id(
         auth_store,
         capability,
         str(family.get("identity_id", "")),
         str(family.get("miniserver_id", "")),
+        explorer_origin,
     )
 
     def update(config: PluginConfig) -> PluginConfig:
@@ -120,11 +135,15 @@ def maintain_explorer_bindings(
         for capability in _NAMESPACES:
             if capability not in scopes:
                 continue
+            explorer_origin = family.get("explorer_origin")
+            if not isinstance(explorer_origin, str) or not explorer_origin:
+                continue
             binding_id = explorer_binding_id(
                 auth_store,
                 capability,
                 str(family.get("identity_id", "")),
                 str(family.get("miniserver_id", "")),
+                explorer_origin,
             )
             key = (capability, binding_id)
             ended[key] = max(ended.get(key, 0), end)

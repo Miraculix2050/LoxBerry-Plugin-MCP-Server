@@ -12,6 +12,8 @@ from mcpserver.explorer_bindings import (
     record_explorer_approval,
 )
 
+EXPLORER_ORIGIN = "https://public.example"
+
 
 def stores(tmp_path: Path) -> tuple[AtomicConfigStore, AtomicJsonAuthStore]:
     config_store = AtomicConfigStore((tmp_path / "config.json").resolve())
@@ -29,6 +31,7 @@ def family(
     return {
         "client_id": client_id,
         "client_kind": "tool_explorer",
+        "explorer_origin": EXPLORER_ORIGIN,
         "identity_id": identity,
         "miniserver_id": miniserver,
         "scope": "loxone:read loxberry:read",
@@ -46,7 +49,13 @@ def test_new_explorer_client_instance_reuses_same_application_binding(tmp_path: 
     first_id = record_explorer_approval(config_store, auth_store, "loxberry:read", first, now=100)
     assert (
         active_explorer_binding(
-            config_store.load(), auth_store, "loxberry:read", "identity-a", "ms-a", now=150
+            config_store.load(),
+            auth_store,
+            "loxberry:read",
+            "identity-a",
+            "ms-a",
+            EXPLORER_ORIGIN,
+            now=150,
         )
         is not None
     )
@@ -63,16 +72,20 @@ def test_explorer_binding_isolated_by_capability_identity_and_miniserver(tmp_pat
 
     assert (
         active_explorer_binding(
-            config, auth_store, "loxberry:operate", "identity-a", "ms-a", now=150
+            config, auth_store, "loxberry:operate", "identity-a", "ms-a", EXPLORER_ORIGIN, now=150
         )
         is None
     )
     assert (
-        active_explorer_binding(config, auth_store, "loxberry:read", "identity-b", "ms-a", now=150)
+        active_explorer_binding(
+            config, auth_store, "loxberry:read", "identity-b", "ms-a", EXPLORER_ORIGIN, now=150
+        )
         is None
     )
     assert (
-        active_explorer_binding(config, auth_store, "loxberry:read", "identity-a", "ms-b", now=150)
+        active_explorer_binding(
+            config, auth_store, "loxberry:read", "identity-a", "ms-b", EXPLORER_ORIGIN, now=150
+        )
         is None
     )
 
@@ -91,13 +104,21 @@ def test_inactive_retention_is_independent_of_oauth_credentials(tmp_path: Path) 
 
     assert (
         active_explorer_binding(
-            config_store.load(), auth_store, "loxberry:read", "identity-a", "ms-a", now=3799
+            config_store.load(),
+            auth_store,
+            "loxberry:read",
+            "identity-a",
+            "ms-a",
+            EXPLORER_ORIGIN,
+            now=3799,
         )
         is not None
     )
     assert maintain_explorer_bindings(config_store, auth_store, now=3800) == 1
     assert config_store.load().explorer_bindings == ()
-    assert binding == explorer_binding_id(auth_store, "loxberry:read", "identity-a", "ms-a")
+    assert binding == explorer_binding_id(
+        auth_store, "loxberry:read", "identity-a", "ms-a", EXPLORER_ORIGIN
+    )
 
 
 def test_overdue_binding_fails_closed_before_scheduled_cleanup(tmp_path: Path) -> None:
@@ -107,7 +128,38 @@ def test_overdue_binding_fails_closed_before_scheduled_cleanup(tmp_path: Path) -
 
     assert (
         active_explorer_binding(
-            config_store.load(), auth_store, "loxberry:read", "identity-a", "ms-a", now=3800
+            config_store.load(),
+            auth_store,
+            "loxberry:read",
+            "identity-a",
+            "ms-a",
+            EXPLORER_ORIGIN,
+            now=3800,
+        )
+        is None
+    )
+
+
+def test_explorer_binding_isolated_by_validated_origin(tmp_path: Path) -> None:
+    config_store, auth_store = stores(tmp_path)
+    record_explorer_approval(config_store, auth_store, "loxberry:read", family(), now=100)
+    config = config_store.load()
+
+    assert (
+        active_explorer_binding(
+            config, auth_store, "loxberry:read", "identity-a", "ms-a", EXPLORER_ORIGIN, now=150
+        )
+        is not None
+    )
+    assert (
+        active_explorer_binding(
+            config,
+            auth_store,
+            "loxberry:read",
+            "identity-a",
+            "ms-a",
+            "https://alias.example",
+            now=150,
         )
         is None
     )

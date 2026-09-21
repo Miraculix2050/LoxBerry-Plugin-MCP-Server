@@ -943,6 +943,7 @@ def _sessions(snapshot: _AdminReadSnapshot | None = None) -> list[dict[str, Any]
                     "loxberry:read",
                     str(record.get("identity_id", "")),
                     str(record.get("miniserver_id", "")),
+                    str(record.get("explorer_origin", "")),
                     now=int(snapshot.now),
                 )
                 is not None
@@ -954,6 +955,7 @@ def _sessions(snapshot: _AdminReadSnapshot | None = None) -> list[dict[str, Any]
                     "loxberry:operate",
                     str(record.get("identity_id", "")),
                     str(record.get("miniserver_id", "")),
+                    str(record.get("explorer_origin", "")),
                     now=int(snapshot.now),
                 )
                 is not None
@@ -1136,6 +1138,7 @@ def _loxberry_bindings(snapshot: _AdminReadSnapshot | None = None) -> list[dict[
             LOXBERRY_READ_SCOPE,
             str(record.get("identity_id", "")),
             str(record.get("miniserver_id", "")),
+            str(record.get("explorer_origin", "")),
         )
         if binding in explorer_related:
             explorer_related[binding].append(
@@ -1242,6 +1245,7 @@ def _loxberry_operate_bindings(snapshot: _AdminReadSnapshot | None = None) -> li
             LOXBERRY_OPERATE_SCOPE,
             str(record.get("identity_id", "")),
             str(record.get("miniserver_id", "")),
+            str(record.get("explorer_origin", "")),
         )
         if binding in explorer_related:
             explorer_related[binding].append(
@@ -1361,6 +1365,7 @@ def _revoke_loxberry_read(payload: object) -> dict[str, Any]:
                     "loxberry:read",
                     str(record.get("identity_id", "")),
                     str(record.get("miniserver_id", "")),
+                    str(record.get("explorer_origin", "")),
                 )
                 == binding
             )
@@ -1469,6 +1474,7 @@ def _revoke_loxberry_operate(payload: object) -> dict[str, Any]:
                     "loxberry:operate",
                     str(record.get("identity_id", "")),
                     str(record.get("miniserver_id", "")),
+                    str(record.get("explorer_origin", "")),
                 )
                 == binding
             )
