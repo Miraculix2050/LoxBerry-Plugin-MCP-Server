@@ -879,6 +879,90 @@ async def test_loxberry_operate_rate_limits_denied_attempts(
 
 
 @pytest.mark.asyncio
+async def test_event_history_source_removal_rechecks_current_authorization() -> None:
+    source = ("control", "state")
+    allowed = PluginConfig(
+        loxone_history_enabled=True,
+        loxberry_operate_enabled=True,
+        event_history_enabled=True,
+        loxberry_operate_bindings=("binding",),
+        event_history_sources=(source,),
+    )
+    revoked = PluginConfig(event_history_sources=(source,))
+
+    class ConfigStore:
+        def load(self) -> PluginConfig:
+            return allowed
+
+        def mutate(self, operation: object) -> PluginConfig:
+            return operation(revoked)  # type: ignore[operator]
+
+    class AuthStore:
+        def pseudonym(self, *_parts: str) -> str:
+            return "binding"
+
+    class Monitor:
+        async def update_config(self, _config: PluginConfig) -> None:
+            raise AssertionError("revoked source change must not reconfigure the monitor")
+
+    runtime = LoxBerryOperateRuntime(object(), ConfigStore(), AuthStore(), event_history=Monitor())
+
+    with pytest.raises(PermissionError):
+        await runtime.remove_event_history_source(
+            _loxberry_access(READ_SCOPE, HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE), *source
+        )
+
+
+@pytest.mark.asyncio
+async def test_event_history_reconciliation_waits_for_the_monitor_after_cancellation() -> None:
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    class Monitor:
+        async def update_config(self, _config: PluginConfig) -> None:
+            started.set()
+            await release.wait()
+
+    reconciliation = asyncio.create_task(
+        LoxBerryOperateRuntime._reconcile_event_history_config(Monitor(), PluginConfig())
+    )
+    await started.wait()
+    reconciliation.cancel()
+    await asyncio.sleep(0)
+    assert not reconciliation.done()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await reconciliation
+
+
+@pytest.mark.asyncio
+async def test_event_history_source_timeout_returns_an_uncertain_envelope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class TimedOutRuntime:
+        async def add_event_history_source(
+            self, _access: StoredAccessToken, _control_uuid: str, _state_uuid: str
+        ) -> tuple[bool, tuple[str, str, str]]:
+            raise TimeoutError
+
+    server = FastMCP("event-history-source-timeout")
+    register_loxberry_operate_tool(server, TimedOutRuntime())  # type: ignore[arg-type]
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: _loxberry_access(READ_SCOPE, HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE),
+    )
+
+    result = await server._tool_manager.call_tool(
+        "loxberry_add_event_history_source", {"control_uuid": "control", "state_uuid": "state"}
+    )
+
+    assert result.ok is False
+    assert result.data.error == "temporarily_unavailable"  # type: ignore[union-attr]
+    assert result.data.message == "Source change timed out; outcome is unknown"  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
 async def test_cache_clear_denial_and_timeout_are_audited(
     caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:

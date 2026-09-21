@@ -653,6 +653,9 @@ def _clear_event_history() -> dict[str, Any]:
     path = Path(os.getenv("MCPSERVER_EVENT_HISTORY_STORE", ""))
     if not path.is_absolute():
         raise AdminError("local event history is unavailable")
+    was_active = _service_active()
+    if was_active:
+        _stop_service()
     try:
         store = EventHistoryStore(
             path,
@@ -663,11 +666,9 @@ def _clear_event_history() -> dict[str, Any]:
         removed = store.clear()
     except EventHistoryUnavailable as exc:
         raise AdminError("local event history is unavailable") from exc
-    # The recorder owns coverage intervals in the same database.  Restart it
-    # after a reset so that it establishes a fresh interval rather than
-    # continuing with a deleted one.
-    if _service_active():
-        _restart_service()
+    finally:
+        if was_active:
+            _start_service()
     return {"event_history_entries_removed": removed}
 
 

@@ -101,6 +101,7 @@ _AUDIT_LAST: OrderedDict[tuple[str, str], float] = OrderedDict()
 _ERROR_SUPPRESSION_SECONDS: Final = 60.0
 _ERROR_LAST: dict[str, float] = {}
 _CACHE_CLEAR_TIMEOUT_SECONDS: Final = 10.0
+_EVENT_HISTORY_SOURCE_CHANGE_TIMEOUT_SECONDS: Final = 75.0
 
 CursorArgument = Annotated[
     str | None,
@@ -1399,9 +1400,12 @@ class LoxBerryOperateRuntime:
         *,
         event_history: EventHistoryMonitor | None = None,
         clear_timeout_seconds: float = _CACHE_CLEAR_TIMEOUT_SECONDS,
+        event_history_source_change_timeout_seconds: float = (
+            _EVENT_HISTORY_SOURCE_CHANGE_TIMEOUT_SECONDS
+        ),
     ) -> None:
-        if clear_timeout_seconds <= 0:
-            raise ValueError("cache clear timeout must be positive")
+        if clear_timeout_seconds <= 0 or event_history_source_change_timeout_seconds <= 0:
+            raise ValueError("operation timeouts must be positive")
         self._cache = cache
         self._config_store = config_store
         self._auth_store = auth_store
@@ -1409,6 +1413,9 @@ class LoxBerryOperateRuntime:
         self._event_history_lock = asyncio.Lock()
         self._requests: dict[str, list[float]] = {}
         self._clear_timeout_seconds = clear_timeout_seconds
+        self._event_history_source_change_timeout_seconds = (
+            event_history_source_change_timeout_seconds
+        )
 
     def _allowed(self, access: StoredAccessToken) -> None:
         config = self._config_store.load()
@@ -1448,8 +1455,27 @@ class LoxBerryOperateRuntime:
 
     @staticmethod
     async def _reconcile_event_history_config(monitor: EventHistoryMonitor, config: Any) -> None:
-        """Apply persisted source changes even if the MCP request is cancelled."""
-        await asyncio.shield(monitor.update_config(config))
+        """Apply persisted changes before releasing the source-update lock."""
+        task = asyncio.create_task(monitor.update_config(config))
+        cancelled = False
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                cancelled = True
+        await task
+        if cancelled:
+            raise asyncio.CancelledError
+
+    @staticmethod
+    def _event_history_change_allowed(current: Any, binding: str) -> None:
+        if (
+            not current.event_history_enabled
+            or not current.loxone_history_enabled
+            or not current.loxberry_operate_enabled
+            or binding not in current.loxberry_operate_bindings
+        ):
+            raise PermissionError("LoxBerry cache operation is not authorized")
 
     async def list_event_history_sources(
         self, access: StoredAccessToken
@@ -1464,14 +1490,18 @@ class LoxBerryOperateRuntime:
             monitor = self._event_history_allowed(access)
             config = self._config_store.load()
             if (control_uuid, state_uuid) in config.event_history_sources:
-                name, control_type, state_name = await monitor.validate_source(
-                    control_uuid, state_uuid
+                name, control_type, state_name = await asyncio.wait_for(
+                    monitor.validate_source(control_uuid, state_uuid),
+                    timeout=self._event_history_source_change_timeout_seconds,
                 )
                 await self._reconcile_event_history_config(monitor, config)
                 return False, (name, control_type, state_name)
             if len(config.event_history_sources) >= 64:
                 raise ControlOperationError("rate_limited", "event history source capacity reached")
-            name, control_type, state_name = await monitor.validate_source(control_uuid, state_uuid)
+            name, control_type, state_name = await asyncio.wait_for(
+                monitor.validate_source(control_uuid, state_uuid),
+                timeout=self._event_history_source_change_timeout_seconds,
+            )
             binding = self._auth_store.pseudonym(
                 "loxberry-operate-binding-v1",
                 access.client_id,
@@ -1482,13 +1512,7 @@ class LoxBerryOperateRuntime:
 
             def add_source(current: Any) -> Any:
                 nonlocal changed
-                if (
-                    not current.event_history_enabled
-                    or not current.loxone_history_enabled
-                    or not current.loxberry_operate_enabled
-                    or binding not in current.loxberry_operate_bindings
-                ):
-                    raise PermissionError("LoxBerry cache operation is not authorized")
+                self._event_history_change_allowed(current, binding)
                 if (control_uuid, state_uuid) in current.event_history_sources:
                     return current
                 if len(current.event_history_sources) >= 64:
@@ -1504,7 +1528,10 @@ class LoxBerryOperateRuntime:
                     ),
                 )
 
-            updated = await asyncio.to_thread(self._config_store.mutate, add_source)
+            updated = await asyncio.wait_for(
+                asyncio.to_thread(self._config_store.mutate, add_source),
+                timeout=self._event_history_source_change_timeout_seconds,
+            )
             if changed:
                 await self._reconcile_event_history_config(monitor, updated)
             return changed, (name, control_type, state_name)
@@ -1518,8 +1545,15 @@ class LoxBerryOperateRuntime:
             if (control_uuid, state_uuid) not in config.event_history_sources:
                 await self._reconcile_event_history_config(monitor, config)
                 return False
+            binding = self._auth_store.pseudonym(
+                "loxberry-operate-binding-v1",
+                access.client_id,
+                access.identity_id,
+                access.miniserver_id,
+            )
 
             def remove_source(current: Any) -> Any:
+                self._event_history_change_allowed(current, binding)
                 if (control_uuid, state_uuid) not in current.event_history_sources:
                     return current
                 return replace(
@@ -1531,7 +1565,10 @@ class LoxBerryOperateRuntime:
                     ),
                 )
 
-            updated = await asyncio.to_thread(self._config_store.mutate, remove_source)
+            updated = await asyncio.wait_for(
+                asyncio.to_thread(self._config_store.mutate, remove_source),
+                timeout=self._event_history_source_change_timeout_seconds,
+            )
             changed = bool(updated.event_history_sources != config.event_history_sources)
             if changed:
                 await self._reconcile_event_history_config(monitor, updated)
@@ -4252,6 +4289,13 @@ def register_loxberry_operate_tool(server: FastMCP, runtime: LoxBerryOperateRunt
         except ControlOperationError as exc:
             audit_source(access, tool, exc.code)
             return _error(EventHistorySourceChangeEnvelope, exc.code, str(exc))
+        except TimeoutError:
+            audit_source(access, tool, "timed_out_unknown")
+            return _error(
+                EventHistorySourceChangeEnvelope,
+                "temporarily_unavailable",
+                "Source change timed out; outcome is unknown",
+            )
         except asyncio.CancelledError:
             audit_source(access, tool, "cancelled_persisted_unknown")
             raise
