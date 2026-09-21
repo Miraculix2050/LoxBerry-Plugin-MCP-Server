@@ -170,9 +170,7 @@ async def test_cancelled_cooldown_probe_restarts_breaker_interval(tmp_path: Path
         calls += 1
 
     with pytest.raises(MiniserverAuthenticationSuppressed):
-        await coordinator.attempt(
-            must_not_run, owner="tool_request", phase="token_authentication"
-        )
+        await coordinator.attempt(must_not_run, owner="tool_request", phase="token_authentication")
 
     assert calls == 0
 
