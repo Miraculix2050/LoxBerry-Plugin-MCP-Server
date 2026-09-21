@@ -259,8 +259,9 @@ class EventHistoryStore:
         cutoff = now - self.retention_seconds
         deleted = connection.execute("DELETE FROM events WHERE observed_at < ?", (cutoff,)).rowcount
         connection.execute(
-            "UPDATE coverage SET started_at = ? WHERE ended_at IS NULL AND started_at < ?",
-            (cutoff, cutoff),
+            "UPDATE coverage SET started_at = ? WHERE started_at < ? "
+            "AND (ended_at IS NULL OR ended_at > ?)",
+            (cutoff, cutoff, cutoff),
         )
         deleted += connection.execute(
             "DELETE FROM coverage WHERE ended_at IS NOT NULL AND ended_at < ?", (cutoff,)
@@ -427,6 +428,7 @@ class EventHistoryMonitor:
             active: tuple[tuple[str, str], ...] = ()
             coverage_active = False
             try:
+                await asyncio.to_thread(self.store.initialize)
                 username, password = await self.credentials._credentials()
                 from mcpserver.loxone.client import LoxoneClient
 

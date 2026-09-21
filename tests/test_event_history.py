@@ -71,3 +71,17 @@ def test_retention_pruning_keeps_active_coverage(tmp_path, monkeypatch):
     monkeypatch.setattr("mcpserver.loxone.event_history.time.time", lambda: 172800.0)
 
     assert store.page(*source, start=172700.0, end=172800.0, limit=10).coverage == "complete"
+
+
+def test_retention_pruning_limits_completed_coverage_to_retained_window(tmp_path, monkeypatch):
+    store = EventHistoryStore(
+        (tmp_path / "event-history.sqlite3").resolve(), retention_days=1, maximum_mib=16
+    )
+    source = ("00000000-0000-0000-0000000000000001", "00000000-0000-0000-0000000000000002")
+    store.initialize()
+    store.begin_coverage((source,), started_at=0.0)
+    store.end_coverage((source,), ended_at=100000.0, outcome="stopped")
+
+    monkeypatch.setattr("mcpserver.loxone.event_history.time.time", lambda: 172800.0)
+
+    assert store.page(*source, start=80000.0, end=90000.0, limit=10).coverage == "partial_coverage"

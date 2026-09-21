@@ -1446,6 +1446,11 @@ class LoxBerryOperateRuntime:
             raise ControlOperationError("feature_disabled", "Local event history is disabled")
         return self._event_history
 
+    @staticmethod
+    async def _reconcile_event_history_config(monitor: EventHistoryMonitor, config: Any) -> None:
+        """Apply persisted source changes even if the MCP request is cancelled."""
+        await asyncio.shield(monitor.update_config(config))
+
     async def list_event_history_sources(
         self, access: StoredAccessToken
     ) -> tuple[tuple[str, str], ...]:
@@ -1462,6 +1467,7 @@ class LoxBerryOperateRuntime:
                 name, control_type, state_name = await monitor.validate_source(
                     control_uuid, state_uuid
                 )
+                await self._reconcile_event_history_config(monitor, config)
                 return False, (name, control_type, state_name)
             if len(config.event_history_sources) >= 64:
                 raise ControlOperationError("rate_limited", "event history source capacity reached")
@@ -1500,7 +1506,7 @@ class LoxBerryOperateRuntime:
 
             updated = await asyncio.to_thread(self._config_store.mutate, add_source)
             if changed:
-                await monitor.update_config(updated)
+                await self._reconcile_event_history_config(monitor, updated)
             return changed, (name, control_type, state_name)
 
     async def remove_event_history_source(
@@ -1510,6 +1516,7 @@ class LoxBerryOperateRuntime:
             monitor = self._event_history_allowed(access)
             config = self._config_store.load()
             if (control_uuid, state_uuid) not in config.event_history_sources:
+                await self._reconcile_event_history_config(monitor, config)
                 return False
 
             def remove_source(current: Any) -> Any:
@@ -1527,7 +1534,7 @@ class LoxBerryOperateRuntime:
             updated = await asyncio.to_thread(self._config_store.mutate, remove_source)
             changed = bool(updated.event_history_sources != config.event_history_sources)
             if changed:
-                await monitor.update_config(updated)
+                await self._reconcile_event_history_config(monitor, updated)
             return changed
 
 
