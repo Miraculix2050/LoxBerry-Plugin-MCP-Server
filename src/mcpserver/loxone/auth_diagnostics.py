@@ -11,7 +11,7 @@ import sys
 import time
 from collections import deque
 from collections.abc import Awaitable, Callable, Iterator
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, TypeVar
@@ -121,6 +121,7 @@ class MiniserverAuthCoordinator:
         self._lock = asyncio.Lock()
         self._last_suppression_persisted = 0.0
         self._state = self._load()
+        self._retain_open_state = False
 
     def _load(self) -> dict[str, Any]:
         fallback: dict[str, Any] = {
@@ -162,11 +163,20 @@ class MiniserverAuthCoordinator:
             os.fsync(handle.fileno())
         os.replace(temporary, self._path)
         os.chmod(self._path, 0o600)
+        self._retain_open_state = False
 
-    def _save_success_best_effort(self) -> None:
-        """Do not turn a completed Miniserver operation into a diagnostics failure."""
-        with suppress(OSError):
+    def _save_best_effort(self) -> None:
+        """Keep a confirmed in-memory breaker when diagnostics cannot be written."""
+        try:
             self._save()
+        except OSError:
+            self._retain_open_state = self._state["breaker_state"] == "open_source_ip_blocked"
+
+    def _reload_state(self) -> None:
+        """Reload persisted diagnostics unless an unwritten local breaker is stricter."""
+        if self._retain_open_state and self._state["breaker_state"] == "open_source_ip_blocked":
+            return
+        self._state = self._load()
 
     def _delay(self) -> int:
         return int(min(self._initial * (2 ** int(self._state["backoff_level"])), self._maximum))
@@ -353,7 +363,7 @@ class MiniserverAuthCoordinator:
         async with self._lock:
             try:
                 with _interprocess_lock(self._path.with_name(f".{self._path.name}.lock")):
-                    self._state = self._load()
+                    self._reload_state()
                     return await self._attempt_locked(
                         operation,
                         owner=owner,
@@ -401,7 +411,7 @@ class MiniserverAuthCoordinator:
                         outcome="attempt_suppressed",
                         provenance=provenance,
                     )
-                    self._save()
+                    self._save_best_effort()
                     self._last_suppression_persisted = time.monotonic()
                 raise MiniserverAuthenticationSuppressed(
                     "Miniserver authentication is temporarily suppressed"
@@ -413,14 +423,14 @@ class MiniserverAuthCoordinator:
             result = await operation()
         except LoxoneSourceIpBlocked:
             self._open_source_ip_breaker(now=now, owner=owner, phase=phase, provenance=provenance)
-            self._save()
+            self._save_best_effort()
             raise
         except LoxoneCommandRejected as exc:
             if exc.response_code == "4003":
                 self._open_source_ip_breaker(
                     now=now, owner=owner, phase=phase, provenance=provenance
                 )
-                self._save()
+                self._save_best_effort()
                 raise
             if self._state["breaker_state"] == "open_source_ip_blocked":
                 self._refresh_failed_probe(
@@ -437,7 +447,7 @@ class MiniserverAuthCoordinator:
                     outcome="authentication_rejected",
                     provenance=provenance,
                 )
-            self._save()
+            self._save_best_effort()
             raise exc
         except Exception:
             self._refresh_failed_probe(
@@ -447,7 +457,7 @@ class MiniserverAuthCoordinator:
                 outcome="transport_failed",
                 provenance=provenance,
             )
-            self._save()
+            self._save_best_effort()
             raise
         transition = None
         if self._state["breaker_state"] == "open_source_ip_blocked":
@@ -462,5 +472,5 @@ class MiniserverAuthCoordinator:
             provenance=provenance,
             transition=transition,
         )
-        self._save_success_best_effort()
+        self._save_best_effort()
         return result
