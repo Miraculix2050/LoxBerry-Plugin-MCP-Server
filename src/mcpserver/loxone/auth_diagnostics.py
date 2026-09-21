@@ -203,6 +203,15 @@ class MiniserverAuthCoordinator:
             or not 16 <= len(nonce) <= 128
         ):
             return False
+        try:
+            with _interprocess_lock(self._path.with_name(f".{self._path.name}.lock")):
+                self._state = self._load()
+                return self._grant_recovery_locked(binding_id, nonce)
+        except _InterprocessLockUnavailable:
+            return False
+
+    def _grant_recovery_locked(self, binding_id: str, nonce: str) -> bool:
+        """Persist a recovery grant while the shared diagnostics transaction is held."""
         if self._state["breaker_state"] != "open_source_ip_blocked":
             return False
         remembered = self._state.get("recovery_nonces", [])
@@ -378,9 +387,7 @@ class MiniserverAuthCoordinator:
                 and provenance.binding_id
                 and self._recovery_grant_valid(binding_id=provenance.binding_id)
             )
-            cooldown_ready = bool(
-                allow_cooldown_probe and retry_at is not None and now >= retry_at
-            )
+            cooldown_ready = bool(allow_cooldown_probe and retry_at is not None and now >= retry_at)
             if force_probe and not selected_recovery:
                 raise MiniserverAuthenticationSuppressed(
                     "Miniserver authentication recovery is not authorized"

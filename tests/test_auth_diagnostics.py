@@ -67,6 +67,21 @@ async def test_separate_coordinators_reload_a_shared_open_breaker(tmp_path: Path
 
 
 @pytest.mark.asyncio
+async def test_stale_coordinator_reloads_before_granting_recovery(tmp_path: Path) -> None:
+    path = (tmp_path / "auth-diagnostics.json").resolve()
+    service_coordinator = MiniserverAuthCoordinator(path, initial_probe_seconds=300)
+    admin_coordinator = MiniserverAuthCoordinator(path, initial_probe_seconds=300)
+
+    async def blocked() -> None:
+        raise LoxoneSourceIpBlocked("blocked")
+
+    with pytest.raises(LoxoneSourceIpBlocked):
+        await admin_coordinator.attempt(blocked, owner="local_admin", phase="token_acquisition")
+
+    assert service_coordinator.grant_recovery("a" * 64, "n" * 16)
+
+
+@pytest.mark.asyncio
 async def test_interprocess_authentication_attempt_is_suppressed_without_waiting(
     tmp_path: Path,
 ) -> None:
