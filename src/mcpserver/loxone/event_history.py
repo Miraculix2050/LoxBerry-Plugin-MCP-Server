@@ -90,7 +90,7 @@ class EventHistoryStore:
             connection.execute("PRAGMA secure_delete=ON")
             connection.execute("PRAGMA busy_timeout=5000")
             return connection
-        except sqlite3.Error as exc:
+        except (OSError, sqlite3.Error) as exc:
             raise EventHistoryUnavailable("local event history is unavailable") from exc
 
     @contextmanager

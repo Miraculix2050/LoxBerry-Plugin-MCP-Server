@@ -1585,10 +1585,14 @@ class LoxBerryOperateRuntime:
                 access.miniserver_id,
             )
 
+            changed = False
+
             def remove_source(current: Any) -> Any:
+                nonlocal changed
                 self._event_history_change_allowed(current, binding)
                 if (control_uuid, state_uuid) not in current.event_history_sources:
                     return current
+                changed = True
                 return replace(
                     current,
                     event_history_sources=tuple(
@@ -1599,7 +1603,6 @@ class LoxBerryOperateRuntime:
                 )
 
             updated = await self._mutate_event_history_config(monitor, remove_source)
-            changed = bool(updated.event_history_sources != config.event_history_sources)
             if changed:
                 await self._reconcile_event_history_config(monitor, updated)
             return changed
@@ -1636,6 +1639,8 @@ class EventHistoryRuntime:
             raise PermissionError("loxone:history requires administrator activation")
         if not config.event_history_enabled:
             raise ControlOperationError("feature_disabled", "Local event history is disabled")
+        if (control_uuid, state_uuid) not in config.event_history_sources:
+            raise ControlOperationError("not_found", "state is not configured for local history")
         try:
             async with self._runtime.history_call_slot(access):
                 snapshot = await self._runtime.snapshot(access)

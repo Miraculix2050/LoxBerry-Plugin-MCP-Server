@@ -4,7 +4,9 @@ import asyncio
 import json
 import logging
 import time
+from dataclasses import replace
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from mcp.server.fastmcp import FastMCP
@@ -40,6 +42,7 @@ from mcpserver.loxone.runtime import ControlHistoryEntry, RuntimeSnapshot
 from mcpserver.loxone.statistics import StatisticPoint
 from mcpserver.skill_delivery import read_skill_markdown
 from mcpserver.tools import (
+    EventHistoryRuntime,
     LoxBerryOperateRuntime,
     LoxBerryReadRuntime,
     SystemStatusEnvelope,
@@ -912,6 +915,65 @@ async def test_event_history_source_removal_rechecks_current_authorization() -> 
         await runtime.remove_event_history_source(
             _loxberry_access(READ_SCOPE, HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE), *source
         )
+
+
+@pytest.mark.asyncio
+async def test_event_history_source_removal_reports_no_op_when_another_writer_removed_it() -> None:
+    source = ("control-a", "state-a")
+    replacement_source = ("control-b", "state-b")
+    initial = PluginConfig(
+        loxone_history_enabled=True,
+        loxberry_operate_enabled=True,
+        event_history_enabled=True,
+        loxberry_operate_bindings=("binding",),
+        event_history_sources=(source,),
+    )
+    replacement = replace(initial, event_history_sources=(replacement_source,))
+
+    class ConfigStore:
+        def load(self) -> PluginConfig:
+            return initial
+
+        def mutate(self, operation: object) -> PluginConfig:
+            return operation(replacement)  # type: ignore[operator]
+
+    class AuthStore:
+        def pseudonym(self, *_parts: str) -> str:
+            return "binding"
+
+    class Monitor:
+        async def update_config(self, _config: PluginConfig) -> None:
+            raise AssertionError("a no-op must not reconfigure the monitor")
+
+    runtime = LoxBerryOperateRuntime(object(), ConfigStore(), AuthStore(), event_history=Monitor())
+
+    assert not await runtime.remove_event_history_source(
+        _loxberry_access(READ_SCOPE, HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE), *source
+    )
+
+
+@pytest.mark.asyncio
+async def test_event_history_read_rejects_a_visible_state_outside_the_source_allowlist(
+    tmp_path: Path,
+) -> None:
+    source = ("control", "state")
+
+    class ConfigStore:
+        def load(self) -> PluginConfig:
+            return PluginConfig(
+                loxone_history_enabled=True,
+                event_history_enabled=True,
+                event_history_sources=(),
+            )
+
+    runtime = EventHistoryRuntime(object(), ConfigStore(), (tmp_path / "history.sqlite3").resolve())
+
+    with pytest.raises(tools_module.ControlOperationError, match="not configured") as exc_info:
+        await runtime.page(
+            _loxberry_access(HISTORY_SCOPE), *source, start=0.0, end=1.0, limit=1, before=None
+        )
+
+    assert exc_info.value.code == "not_found"
 
 
 @pytest.mark.asyncio

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
-from mcpserver.loxone.event_history import EventHistoryStore
+import pytest
+
+from mcpserver.loxone.event_history import EventHistoryStore, EventHistoryUnavailable
 
 
 def test_store_records_typed_transitions_and_pages_them(tmp_path):
@@ -109,3 +112,19 @@ def test_size_eviction_advances_only_coverage_for_its_source(tmp_path, monkeypat
 
     assert coverage[busy[0]] > 10.0
     assert coverage[quiet[0]] == 0.0
+
+
+def test_store_translates_parent_creation_failures_to_a_store_error(tmp_path, monkeypatch):
+    store = EventHistoryStore(
+        (tmp_path / "unavailable" / "event-history.sqlite3").resolve(),
+        retention_days=90,
+        maximum_mib=16,
+    )
+
+    def fail_mkdir(*_args, **_kwargs):
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(Path, "mkdir", fail_mkdir)
+
+    with pytest.raises(EventHistoryUnavailable, match="history is unavailable"):
+        store.initialize()
