@@ -1,14 +1,19 @@
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from mcp.server.fastmcp import FastMCP
 
 import mcpserver.tools as tools_module
+from mcpserver.loxone.project.models import ProjectError
 from mcpserver.loxone.project.query import ProjectQueryError
 from mcpserver.tools import PROJECT_RESPONSE_MAX_BYTES, register_project_tools
 
 
 class Query:
+    view = SimpleNamespace(mapping=SimpleNamespace(structure_fingerprint="b" * 64))
+
     def status(self):
         return {
             "project_fingerprint": "a" * 64,
@@ -18,6 +23,12 @@ class Query:
             "edges": 2,
             "unresolved_relationships": 0,
             "mapping": {"exact": 1, "ambiguous": 0, "unmapped": 0},
+            "source_diagnostics": {
+                "entries": [],
+                "complete": True,
+                "groups_omitted": 0,
+                "labels_truncated": False,
+            },
         }
 
     def find(self, **_kwargs):
@@ -105,6 +116,22 @@ async def test_project_tools_keep_structured_mapping_and_cursor_errors(monkeypat
 
 
 @pytest.mark.asyncio
+async def test_project_tools_publish_fixed_source_failure_diagnostics(monkeypatch):
+    async def project_query(_runtime):
+        raise ProjectError("project_xml_invalid")
+
+    monkeypatch.setattr(tools_module, "_project_query", project_query)
+    server = FastMCP("project-source-errors")
+    register_project_tools(server, None)
+
+    result = await server._tool_manager.get_tool("loxone_get_project_status").fn()  # type: ignore[union-attr]
+
+    assert result.ok is False
+    assert result.data.error == "temporarily_unavailable"  # type: ignore[union-attr]
+    assert result.data.diagnostic_code == "project_source_invalid"  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
 async def test_project_tools_bound_large_find_and_trace_responses(monkeypatch):
     class LargeQuery(Query):
         def find(self, **_kwargs):
@@ -156,3 +183,76 @@ async def test_project_tools_bound_large_find_and_trace_responses(monkeypatch):
     assert len(traced.model_dump_json().encode("utf-8")) <= PROJECT_RESPONSE_MAX_BYTES
     assert traced.data.truncated is True  # type: ignore[union-attr]
     assert traced.data.truncation_reason == "max_response_bytes"  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+async def test_project_analysis_is_read_only_bounded_and_cursor_scoped(monkeypatch):
+    class Runtime:
+        def __init__(self):
+            self.active_workers = 0
+            self.projects = SimpleNamespace(authorize=AsyncMock())
+
+        @asynccontextmanager
+        async def worker_slot(self):
+            self.active_workers += 1
+            try:
+                yield
+            finally:
+                self.active_workers -= 1
+
+    async def project_query(_runtime):
+        return Query(), SimpleNamespace(connected=True, structure_generation=1)
+
+    runtime = Runtime()
+
+    async def analysis(_view, _selected):
+        assert runtime.active_workers == 1
+        return {
+            "analysis_version": 2,
+            "project_fingerprint": "a" * 64,
+            "model_version": 3,
+            "scope": "knx",
+            "analyses": ["project_connectivity"],
+            "coverage": {
+                "endpoints": 1,
+                "canonical_group_addresses": 1,
+                "raw_datatypes": 0,
+                "reviewed_signal_usage": 0,
+                "unresolved_relationships": 0,
+            },
+            "summaries": {"project_connectivity": {"unconnected": 1, "ambiguous": 0}},
+            "limitations": [],
+            "source_diagnostics": {
+                "entries": [],
+                "complete": True,
+                "groups_omitted": 0,
+                "labels_truncated": False,
+            },
+            "findings": [
+                {
+                    "finding_id": "knx:1",
+                    "analysis": "project_connectivity",
+                    "finding_type": "no_project_signal_relationship",
+                    "classification": "fact",
+                    "group_address": "1/2/3",
+                    "affected_project_node_ids": ["p:1"],
+                    "affected_omitted": 0,
+                }
+            ],
+            "analysis_truncated": False,
+            "truncation_reasons": [],
+        }
+
+    monkeypatch.setattr(tools_module, "_project_query", project_query)
+    monkeypatch.setattr(tools_module, "process_analysis", analysis)
+    monkeypatch.setattr(tools_module, "_access", lambda: SimpleNamespace())
+    server = FastMCP("project-analysis")
+    register_project_tools(server, runtime)
+
+    result = await server._tool_manager.get_tool("loxone_analyze_project").fn()  # type: ignore[union-attr]
+
+    assert result.ok is True
+    assert runtime.active_workers == 0
+    assert result.data.findings[0].finding_id == "knx:1"  # type: ignore[union-attr]
+    assert result.data.next_cursor is None  # type: ignore[union-attr]
+    runtime.projects.authorize.assert_awaited_once()

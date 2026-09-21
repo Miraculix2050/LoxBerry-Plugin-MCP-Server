@@ -7,7 +7,8 @@
 The server reads visible rooms, categories, controls and states. Optional bounded history, statistics, masked LoxBerry diagnostics and documented type-specific actions for visible Gen. 1 controls are available.
 
 `loxone_get_project_status`, `loxone_find_project_objects`,
-`loxone_describe_project_object`, and `loxone_trace_project_logic` provide bounded,
+`loxone_describe_project_object`, `loxone_trace_project_logic`, and
+`loxone_analyze_project` provide bounded,
 read-only Project Intelligence for a project that the bound Loxone identity can load. They expose
 graph evidence rather than raw XML: a signal or reference trace describes structural influence,
 not an observed historical cause. Results are limited and explicitly report truncation; unknown
@@ -26,6 +27,20 @@ separate KNX signal-use observations, while trace returns separately marked deri
 and bounded `knx_to_loxone`, `loxone_to_knx`, or `knx_to_knx` paths. Unknown block or connector
 behaviour is not guessed. These are static project paths, not evidence that a bus telegram or
 historical state change caused an action.
+`loxone_analyze_project` version 2 summarizes bounded project-local KNX evidence: address and
+source-name patterns, raw datatype reuse, reviewed signal-use differences, exact runtime-mapping
+context, local peer and graph outliers, path counts, and endpoints without an observed project
+relationship. Runtime names and control types are used only for exact UUID mappings; names never
+establish a mapping. Findings are review facts, not quality ratings. Fixed
+limitation codes show when normalized DPTs, semantic domains, reviewed usage, or runtime mappings
+are unavailable. The tool does not claim DPT compatibility, ETS coverage, bus activity, or physical
+device use; use a returned project-node ID with describe or trace to inspect its evidence.
+`source_diagnostics` reports bounded source gaps such as parser anomalies, invalid KNX fields
+and unmodeled attributes. They are not configuration verdicts and never expose unknown source
+values: only fixed codes, field names, value shapes and project-node references are returned.
+If the project source cannot be processed at all, the normal error result includes a fixed,
+value-free `diagnostic_code` that distinguishes invalid, unsupported, limited, timed-out and
+otherwise failed source processing.
 
 `loxone_get_structure_overview` returns a bounded initial map of the rooms,
 categories and control types visible to the signed-in Loxone user. It contains

@@ -58,7 +58,12 @@ fetches. Every Project Intelligence call validates the current OAuth identity an
 read scope, uses its existing token for the fixed encrypted HTTP project endpoint,
 and rechecks authorization before releasing data. ZIP processing is bounded and
 memory-only. The public projection offers status, search, description, and bounded
-signal/reference traces; it never returns raw XML and does not add a scope.
+  signal/reference traces, and deterministic analysis; it never returns raw XML
+  and does not add a scope. Analysis version 2 consumes the immutable project
+  view and exact UUID mappings only. It can report source-name patterns, local
+  peer or graph outliers, and mapped runtime context, but names never create a
+  mapping and missing normalized DPT or semantic-domain data is exposed as an
+  explicit limitation rather than inferred.
 Confirmed KNX/EIB nodes add an allowlisted semantic projection to those same
 responses. It preserves source-backed bus direction and bounded group-address
 facts without deriving physical roles, DPT meanings, or graph edges from equal

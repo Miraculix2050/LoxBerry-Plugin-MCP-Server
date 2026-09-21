@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 
 from .graph import GraphEdge, GraphNode, SemanticEdge
 from .mapping import ControlMapping, ProjectView
+from .semantics import signal_use_rules
+
+_KNOWN_KNX_ATTRIBUTES = frozenset({"Type", "U", "Title", "Desc", "IName", "EibAddr", "EIBType"})
+_KNX_MARKER_ATTRIBUTES = frozenset({"EibAddr", "EIBType"})
+_DIAGNOSTIC_LABEL_LIMIT = 100
 
 
 class ProjectQueryError(ValueError):
@@ -156,6 +162,15 @@ class ProjectQuery:
     def _detail(self, node: GraphNode, *, limit: int) -> dict[str, object]:
         """Return the one-object projection including all KNX source evidence."""
         result = self._summary(node)
+        source_diagnostics, labels_truncated, diagnostics_truncated, diagnostics_omitted = (
+            self._node_source_diagnostics(node)
+        )
+        result["source_diagnostics"] = source_diagnostics
+        result["source_diagnostics_labels_truncated"] = labels_truncated
+        result["source_diagnostics_truncated"] = diagnostics_truncated
+        result["source_diagnostics_omitted"] = diagnostics_omitted
+        parser_codes = dict(self.view.snapshot.source_diagnostics.parser_codes_by_node)
+        source_diagnostics.extend({"code": code} for code in parser_codes.get(node.key, ()))
         knx = node.knx
         if knx is None:
             return result
@@ -195,6 +210,98 @@ class ProjectQuery:
         }
         return result
 
+    def _node_source_diagnostics(
+        self, node: GraphNode
+    ) -> tuple[list[dict[str, object]], bool, bool, int]:
+        """Return a value-free diagnostic projection for one authorized node."""
+
+        diagnostics: list[dict[str, object]] = []
+        labels_truncated = False
+
+        def label(value: str) -> str:
+            nonlocal labels_truncated
+            if len(value) <= _DIAGNOSTIC_LABEL_LIMIT:
+                return value
+            labels_truncated = True
+            return value[:80] + "…#" + hashlib.sha256(value.encode()).hexdigest()[:12]
+
+        knx = node.knx
+        if knx is None:
+            markers = sorted(
+                label(key) for key, _ in node.attributes if key in _KNX_MARKER_ATTRIBUTES
+            )
+            if markers:
+                diagnostics.append({"code": "unclassified_knx_candidate", "marker_fields": markers})
+            return diagnostics, labels_truncated, False, 0
+        if knx.object_kind == "endpoint":
+            if knx.group_address is None:
+                diagnostics.append({"code": "missing_group_address"})
+            elif knx.group_address.canonical is None:
+                diagnostics.append({"code": "invalid_group_address"})
+            if knx.datatype is None:
+                diagnostics.append({"code": "missing_raw_datatype"})
+        if knx.object_kind == "logic_block":
+            rules = signal_use_rules(node.block_type)
+            if not rules:
+                diagnostics.append({"code": "unreviewed_knx_logic"})
+            else:
+                connectors: dict[str, int] = defaultdict(int)
+                for child_key in self._children[node.key]:
+                    connector_key = next(
+                        (value for name, value in self._nodes[child_key].attributes if name == "K"),
+                        None,
+                    )
+                    if connector_key is not None:
+                        connectors[connector_key] += 1
+                reviewed = {rule.input_key for rule in rules} | {rule.output_key for rule in rules}
+                for key in sorted(item for item in connectors if item not in reviewed):
+                    diagnostics.append(
+                        {"code": "unreviewed_knx_connector", "attribute_name": label(key)}
+                    )
+                for rule in rules:
+                    if connectors[rule.input_key] != 1 or connectors[rule.output_key] != 1:
+                        diagnostics.append(
+                            {
+                                "code": "incomplete_knx_signal_rule",
+                                "attribute_name": rule.rule_id,
+                            }
+                        )
+        for key, value in node.attributes:
+            if key in _KNOWN_KNX_ATTRIBUTES:
+                continue
+            length = len(value)
+            if not value:
+                shape = "empty"
+            elif value.isdecimal() or (value.startswith(("+", "-")) and value[1:].isdecimal()):
+                shape = "integer"
+            else:
+                try:
+                    float(value)
+                    shape = "decimal"
+                except ValueError:
+                    shape = "text"
+            bucket = (
+                "0"
+                if not value
+                else "1-16"
+                if length <= 16
+                else "17-64"
+                if length <= 64
+                else "65-200"
+                if length <= 200
+                else ">200"
+            )
+            diagnostics.append(
+                {
+                    "code": "unmodeled_knx_attribute",
+                    "attribute_name": label(key),
+                    "value_shape": shape,
+                    "length_bucket": bucket,
+                }
+            )
+        omitted = max(0, len(diagnostics) - 50)
+        return diagnostics[:50], labels_truncated, omitted > 0, omitted
+
     def status(self) -> dict[str, object]:
         graph = self.view.snapshot.graph
         mapping_counts: dict[str, int] = {"exact": 0, "ambiguous": 0, "unmapped": 0}
@@ -208,6 +315,24 @@ class ProjectQuery:
             "edges": len(graph.edges),
             "unresolved_relationships": len(graph.unresolved),
             "mapping": mapping_counts,
+            "source_diagnostics": {
+                "entries": [
+                    {
+                        "code": code,
+                        "count": sum(
+                            item.count
+                            for item in self.view.snapshot.source_diagnostics.entries
+                            if item.code == code
+                        ),
+                    }
+                    for code in sorted(
+                        {item.code for item in self.view.snapshot.source_diagnostics.entries}
+                    )
+                ],
+                "complete": self.view.snapshot.source_diagnostics.complete,
+                "groups_omitted": self.view.snapshot.source_diagnostics.groups_omitted,
+                "labels_truncated": self.view.snapshot.source_diagnostics.labels_truncated,
+            },
         }
 
     def find(

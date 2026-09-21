@@ -66,6 +66,21 @@ usage observations. A trace may classify a bounded path as `knx_to_loxone`,
 KNX endpoints or exact runtime mappings. These paths describe static project
 reachability, not a physical device role, bus telegram, or historical cause.
 
+## KNX project analysis
+
+`loxone_analyze_project` version 2 returns bounded, deterministic project-local
+evidence; it never grades a KNX installation. It aggregates canonical-address
+and source-name patterns, conflicting raw `EIBType` values on one group address,
+reviewed signal-use observations, exact runtime-mapping context, local peer and
+graph outliers, static KNX/Loxone paths, and endpoints without an observed
+project relationship. A runtime name, room, category, or control type is used
+only after an exact UUID mapping and is never used to identify a project node.
+Raw `EIBType` remains an unknown-system source code, so the analysis never
+claims DPT compatibility. It reports fixed limitation codes whenever normalized
+DPTs, semantic domains, reviewed usage, or exact runtime mappings are missing.
+ETS data, bus traffic and physical-device use are outside this projection.
+Findings are stable only for an unchanged project model and analysis version;
+they include project-node evidence for follow-up describe or trace calls.
 Source, decoder, parser and graph execute in a disposable subprocess with a
 45-second processing deadline, bounded IPC and Linux address-space/CPU/core-dump
 limits. The separate network download deadline remains 20 seconds.
@@ -73,6 +88,17 @@ Only project bytes and limits cross into the worker, never authentication tokens
 The service serializes builds and publishes complete immutable snapshots. Its
 identity-isolated RAM cache is capped at eight entries and a conservative 128 MiB
 accounting budget. A cache hit still requires a fresh successful download.
+
+### Source diagnostics
+
+The snapshot records bounded, value-free source diagnostics for parser anomalies,
+missing or invalid KNX fields, unmodeled attributes on confirmed KNX objects and
+attribute-backed unclassified KNX candidates. MCP status returns aggregate counts;
+analysis returns bounded groups and describe returns the selected node's diagnostic
+shape. Diagnostics contain no raw unknown values and are not configuration findings.
+The internal aggregation is capped at 2,048 groups and public analysis at 50 groups;
+both make omissions explicit. Describe returns at most 50 node diagnostics and
+reports its own truncation and omitted-count metadata when that cap applies.
 
 Der Graph unterscheidet Signal-, Referenz- und Hierarchiebeziehungen. Unbekannte
 Referenzen bleiben sichtbar unaufgelöst. Die Verarbeitung läuft in einem

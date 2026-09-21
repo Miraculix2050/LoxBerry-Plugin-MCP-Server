@@ -66,6 +66,23 @@ address. Trace keeps raw wiring in `edges` and reports derived internal evidence
 separately in `semantic_edges`. Use `technology_paths` only as static
 reachability evidence, check `semantic_truncated`, and never present a path as
 proof of a bus telegram or a historical cause.
+Use `loxone_analyze_project` version 2 for a bounded installation-level KNX
+review before retrieving individual traces. It can add source-name patterns,
+exact UUID-mapped runtime context, and local peer or graph outliers to address,
+datatype, usage, path, and connection evidence. Treat all findings as
+project-local facts, check `limitations`, `analysis_truncated`,
+`truncation_reasons`, and pagination, and never turn a pattern or outlier into
+a defect by itself. Runtime names and control types are context only after an
+exact UUID mapping; they never establish a mapping. The
+tool does not grade the configuration, infer DPT meanings, or establish ETS/bus
+evidence. Use an affected `project_node_id` with describe or trace before
+explaining an exception or proposing an improvement.
+Check `source_diagnostics` in project status and analysis before treating an absent KNX result as
+evidence. These diagnostics report bounded parser and schema gaps, not defects. Drill into a
+sample `project_node_id` with describe; unknown source values are intentionally never returned.
+When a project tool returns an error, use its fixed value-free `diagnostic_code` to distinguish
+invalid, unsupported, limited, timed-out and failed source processing before retrying or reporting
+the problem.
 
 ### Inspect one known room
 

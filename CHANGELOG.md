@@ -5,6 +5,14 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Report bounded, value-free KNX project-source diagnostics through project
+  status, analysis and object descriptions. Parser anomalies and unsupported
+  source forms remain visible without exposing raw project attributes or
+  turning incomplete evidence into a configuration verdict.
+- Add fixed value-free diagnostic categories to project-tool source-processing
+  failures, so invalid or unsupported input is distinguishable from limits,
+  timeouts and other processing failures.
+
 - Show the running service's emergency-stop signal and MQTT-compatible state in
   the Admin UI, including a clear indication when the current form selection
   has not yet been adopted by the service.
@@ -13,6 +21,12 @@ extracted from the matching version heading.
   session sections, and query emergency-stop options only on explicit request.
   Failed option discovery now distinguishes unavailable discovery from an empty
   matching list without changing fail-closed emergency-stop monitoring.
+
+- Expand `loxone_analyze_project` to analysis version 2: bounded source-name
+  patterns, exact UUID-mapped runtime context, local peer and graph outliers,
+  and explicit data-limitations complement address, raw datatype, reviewed
+  signal-use, path, and connection evidence. Findings remain traceable review
+  facts, never KNX quality ratings or DPT/ETS claims.
 
 - Make the MCP Tool Explorer compact on narrow screens and use a three-zone
   request/result workspace on sufficiently wide screens without changing MCP calls;
