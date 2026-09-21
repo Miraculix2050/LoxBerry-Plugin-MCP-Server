@@ -18,6 +18,9 @@ VERSION = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["
 
 EXPECTED_TOOLS = {
     "loxberry_clear_statistics_cache",
+    "loxberry_add_event_history_source",
+    "loxberry_list_event_history_sources",
+    "loxberry_remove_event_history_source",
     "loxberry_get_plugin_status",
     "loxberry_get_service_health",
     "loxberry_get_system_status",
@@ -28,6 +31,7 @@ EXPECTED_TOOLS = {
     "loxone_find_controls",
     "loxone_find_project_objects",
     "loxone_get_control_history",
+    "loxone_get_state_history",
     "loxone_get_control_notes",
     "loxone_get_project_status",
     "loxone_get_room_snapshot",

@@ -11,6 +11,7 @@ from mcp.server.fastmcp import FastMCP
 
 from mcpserver.loxone.runtime import LoxoneRuntime
 from mcpserver.tools import (
+    EventHistoryRuntime,
     LoxBerryOperateRuntime,
     LoxBerryReadRuntime,
     register_tool_surface,
@@ -29,6 +30,7 @@ def tool_schema_catalog(version: str) -> dict[str, Any]:
         runtime=cast(LoxoneRuntime, placeholder),
         loxberry_runtime=cast(LoxBerryReadRuntime, placeholder),
         loxberry_operate_runtime=cast(LoxBerryOperateRuntime, placeholder),
+        event_history_runtime=cast(EventHistoryRuntime, placeholder),
         control_enabled=True,
     )
 

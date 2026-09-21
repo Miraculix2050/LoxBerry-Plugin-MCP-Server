@@ -32,6 +32,9 @@ DEFAULT_LOXBERRY_REQUESTS_PER_MINUTE: Final = 30
 DEFAULT_HISTORY_REQUESTS_PER_MINUTE: Final = 12
 DEFAULT_LOXBERRY_OPERATE_REQUESTS_PER_MINUTE: Final = 3
 DEFAULT_STATISTICS_MEMORY_MAX_MIB: Final = 128
+DEFAULT_EVENT_HISTORY_RETENTION_DAYS: Final = 90
+DEFAULT_EVENT_HISTORY_MAXIMUM_MIB: Final = 128
+MAX_EVENT_HISTORY_SOURCES: Final = 64
 DEFAULT_STRUCTURE_REFRESH_SECONDS: Final = 300
 DEFAULT_MAX_ACTIVE_RUNTIME_SESSIONS: Final = 16
 DEFAULT_RUNTIME_SESSION_IDLE_SECONDS: Final = 900
@@ -156,6 +159,22 @@ def _emergency_stop_uuid(value: object) -> str:
     return value
 
 
+def _event_history_sources(value: object) -> tuple[tuple[str, str], ...]:
+    """Validate the deliberately small allowlist of recorded state sources."""
+    if not isinstance(value, list) or len(value) > MAX_EVENT_HISTORY_SOURCES:
+        raise ConfigError("event_history.sources is unsupported")
+    sources: list[tuple[str, str]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise ConfigError("event_history.sources is unsupported")
+        control_uuid = _emergency_stop_uuid(item.get("control_uuid"))
+        state_uuid = _emergency_stop_uuid(item.get("state_uuid"))
+        if not control_uuid or not state_uuid or (control_uuid, state_uuid) in sources:
+            raise ConfigError("event_history.sources is unsupported")
+        sources.append((control_uuid, state_uuid))
+    return tuple(sources)
+
+
 def _bindings(value: object, *, name: str) -> tuple[str, ...]:
     if not isinstance(value, list) or len(value) > MAX_LOXBERRY_BINDINGS:
         raise ConfigError(f"{name} is unsupported")
@@ -196,6 +215,10 @@ class PluginConfig:
     loxberry_read_bindings: tuple[str, ...] = ()
     loxberry_operate_bindings: tuple[str, ...] = ()
     statistics_memory_max_mib: int = DEFAULT_STATISTICS_MEMORY_MAX_MIB
+    event_history_enabled: bool = False
+    event_history_retention_days: int = DEFAULT_EVENT_HISTORY_RETENTION_DAYS
+    event_history_maximum_mib: int = DEFAULT_EVENT_HISTORY_MAXIMUM_MIB
+    event_history_sources: tuple[tuple[str, str], ...] = ()
     structure_refresh_seconds: int = DEFAULT_STRUCTURE_REFRESH_SECONDS
     max_active_runtime_sessions: int = DEFAULT_MAX_ACTIVE_RUNTIME_SESSIONS
     runtime_session_idle_seconds: int = DEFAULT_RUNTIME_SESSION_IDLE_SECONDS
@@ -233,6 +256,7 @@ class PluginConfig:
         logging_config = _mapping(root.get("logging", {}), name="logging")
         mqtt = _mapping(root.get("mqtt", {}), name="mqtt")
         emergency_stop = _mapping(root.get("emergency_stop", {}), name="emergency_stop")
+        event_history = _mapping(root.get("event_history", {}), name="event_history")
 
         enabled = _boolean(server.get("enabled", False), name="server.enabled")
         public_origin_value = server.get("public_origin", "")
@@ -300,6 +324,24 @@ class PluginConfig:
         )
         if loxberry_operate_enabled and not loxone_history_enabled:
             raise ConfigError("tools.loxberry_operate_enabled requires loxone history")
+        event_history_enabled = _boolean(
+            event_history.get("enabled", False), name="event_history.enabled"
+        )
+        if event_history_enabled and not loxone_history_enabled:
+            raise ConfigError("event_history.enabled requires loxone history")
+        event_history_retention_days = _integer(
+            event_history.get("retention_days", DEFAULT_EVENT_HISTORY_RETENTION_DAYS),
+            name="event_history.retention_days",
+            minimum=1,
+            maximum=365,
+        )
+        event_history_maximum_mib = _integer(
+            event_history.get("maximum_mib", DEFAULT_EVENT_HISTORY_MAXIMUM_MIB),
+            name="event_history.maximum_mib",
+            minimum=16,
+            maximum=1024,
+        )
+        event_history_sources = _event_history_sources(event_history.get("sources", []))
         if enabled and not read_enabled:
             raise ConfigError("the Phase 1 service requires tools.loxone_read_enabled")
         if control_enabled and endpoint and MiniserverEndpoint.parse(endpoint).secure:
@@ -462,6 +504,10 @@ class PluginConfig:
             loxberry_read_bindings=loxberry_read_bindings,
             loxberry_operate_bindings=loxberry_operate_bindings,
             statistics_memory_max_mib=cache_max_mib,
+            event_history_enabled=event_history_enabled,
+            event_history_retention_days=event_history_retention_days,
+            event_history_maximum_mib=event_history_maximum_mib,
+            event_history_sources=event_history_sources,
             structure_refresh_seconds=structure_refresh_seconds,
             max_active_runtime_sessions=max_active_runtime_sessions,
             runtime_session_idle_seconds=runtime_session_idle_seconds,
@@ -495,6 +541,7 @@ class PluginConfig:
             "cache",
             "mqtt",
             "emergency_stop",
+            "event_history",
         ):
             current = document.get(key)
             if not isinstance(current, dict):
@@ -536,6 +583,13 @@ class PluginConfig:
         document["cache"].pop("statistics_mode", None)
         document["cache"].pop("statistics_max_mib", None)
         document["cache"]["statistics_memory_max_mib"] = self.statistics_memory_max_mib
+        document["event_history"]["enabled"] = self.event_history_enabled
+        document["event_history"]["retention_days"] = self.event_history_retention_days
+        document["event_history"]["maximum_mib"] = self.event_history_maximum_mib
+        document["event_history"]["sources"] = [
+            {"control_uuid": control_uuid, "state_uuid": state_uuid}
+            for control_uuid, state_uuid in self.event_history_sources
+        ]
         document["mqtt"]["enabled"] = self.mqtt_enabled
         document["mqtt"]["root_topic"] = self.mqtt_root_topic
         document["mqtt"]["heartbeat_seconds"] = self.mqtt_heartbeat_seconds

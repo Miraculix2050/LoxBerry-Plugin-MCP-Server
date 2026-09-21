@@ -45,6 +45,7 @@ from mcpserver.emergency_stop import EmergencyStopMonitor
 from mcpserver.loxberry.diagnostics import LoxBerryDiagnostics
 from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
 from mcpserver.loxone.client import MiniserverEndpoint
+from mcpserver.loxone.event_history import EventHistoryMonitor, EventHistoryStore
 from mcpserver.loxone.project.service import ProjectService
 from mcpserver.loxone.runtime import LoxoneRuntime
 from mcpserver.loxone.statistics import StatisticsCache
@@ -52,6 +53,7 @@ from mcpserver.mqtt_health import MqttHealthPublisher
 from mcpserver.settings import ServerSettings
 from mcpserver.skill_delivery import SERVER_INSTRUCTIONS, register_skill_resource
 from mcpserver.tools import (
+    EventHistoryRuntime,
     LoxBerryOperateRuntime,
     LoxBerryReadRuntime,
     register_tool_surface,
@@ -285,6 +287,7 @@ class _ForwardedHostFastMCP(FastMCP):
     mqtt_health: MqttHealthPublisher | None = None
     emergency_stop: EmergencyStopMonitor | None = None
     auth_coordinator: MiniserverAuthCoordinator | None = None
+    event_history: EventHistoryMonitor | None = None
     live_runtime: LoxoneRuntime | None = None
     remote_revocation: (
         tuple[
@@ -304,6 +307,7 @@ class _ForwardedHostFastMCP(FastMCP):
                     self.live_runtime,
                     self.emergency_stop,
                     self.remote_revocation,
+                    self.event_history,
                 ),
                 session_lifespan(starlette_app),
             ):
@@ -355,6 +359,7 @@ async def _runtime_lifespan(
         MiniserverEndpoint, EncryptedLoxoneTokenStore, float, MiniserverAuthCoordinator | None
     ]
     | None = None,
+    event_history: EventHistoryMonitor | None = None,
 ) -> AsyncIterator[None]:
     """Close all live Miniserver sessions when the HTTP application stops."""
     worker = (
@@ -365,6 +370,8 @@ async def _runtime_lifespan(
     try:
         if emergency_stop is not None:
             await emergency_stop.start()
+        if event_history is not None:
+            await event_history.start()
         yield
     finally:
         if worker is not None:
@@ -375,6 +382,8 @@ async def _runtime_lifespan(
             await runtime.close()
         if emergency_stop is not None:
             await emergency_stop.close()
+        if event_history is not None:
+            await event_history.close()
 
 
 def _miniserver_auth_coordinator(
@@ -418,9 +427,11 @@ def create_server(settings: ServerSettings) -> FastMCP:
     runtime: LoxoneRuntime | None = None
     loxberry_runtime: LoxBerryReadRuntime | None = None
     loxberry_operate_runtime: LoxBerryOperateRuntime | None = None
+    event_history_runtime: EventHistoryRuntime | None = None
     statistics_cache: StatisticsCache | None = None
     mqtt_health: MqttHealthPublisher | None = None
     emergency_stop: EmergencyStopMonitor | None = None
+    event_history: EventHistoryMonitor | None = None
     auth_coordinator: MiniserverAuthCoordinator | None = None
     auth_store: AtomicJsonAuthStore | None = None
     if settings.plugin_config is not None:
@@ -437,6 +448,18 @@ def create_server(settings: ServerSettings) -> FastMCP:
                     emergency_stop.config,
                 )
                 emergency_stop.auth_coordinator = auth_coordinator
+        if settings.plugin_config.event_history_enabled:
+            event_history_path = Path(os.getenv("MCPSERVER_EVENT_HISTORY_STORE", ""))
+            if event_history_path.is_absolute():
+                event_history = EventHistoryMonitor(
+                    settings.plugin_config,
+                    EventHistoryStore(
+                        event_history_path,
+                        retention_days=settings.plugin_config.event_history_retention_days,
+                        maximum_mib=settings.plugin_config.event_history_maximum_mib,
+                    ),
+                    emergency_stop,
+                )
     if settings.plugin_config is not None and settings.plugin_config.mqtt_enabled:
         home = Path(os.getenv("LBHOMEDIR", "/opt/loxberry"))
         if home.is_absolute():
@@ -584,6 +607,13 @@ def create_server(settings: ServerSettings) -> FastMCP:
                 max_structure_depth=(config.max_structure_depth if config is not None else 32),
                 auth_coordinator=auth_coordinator,
             )
+            event_history_path = Path(os.getenv("MCPSERVER_EVENT_HISTORY_STORE", ""))
+            if settings.phase0_auth.config_path is not None and event_history_path.is_absolute():
+                event_history_runtime = EventHistoryRuntime(
+                    runtime,
+                    AtomicConfigStore(settings.phase0_auth.config_path),
+                    event_history_path,
+                )
 
             async def validate_project_access(access: StoredAccessToken) -> bool:
                 current = await provider.load_access_token(access.token)
@@ -615,6 +645,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
                 statistics_cache,
                 AtomicConfigStore(settings.phase0_auth.config_path),
                 auth_store,
+                event_history=event_history,
             )
 
     remote_revocation = (
@@ -645,6 +676,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
     server.mqtt_health = mqtt_health
     server.emergency_stop = emergency_stop
     server.auth_coordinator = auth_coordinator
+    server.event_history = event_history
     server.live_runtime = runtime
     server.remote_revocation = remote_revocation
     control_enabled = bool(
@@ -665,6 +697,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
         runtime=runtime,
         loxberry_runtime=loxberry_runtime,
         loxberry_operate_runtime=loxberry_operate_runtime,
+        event_history_runtime=event_history_runtime,
         control_enabled=control_enabled,
     )
 

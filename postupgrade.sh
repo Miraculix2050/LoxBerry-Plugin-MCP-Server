@@ -102,6 +102,16 @@ if document.get("schema_version") == 5:
     mqtt.setdefault("username", "")
     document["schema_version"] = 6
     changed = True
+if document.get("schema_version") in {6, 8}:
+    event_history = document.setdefault("event_history", {})
+    if not isinstance(event_history, dict):
+        raise SystemExit("event history configuration is not an object")
+    event_history.setdefault("enabled", False)
+    event_history.setdefault("retention_days", 90)
+    event_history.setdefault("maximum_mib", 128)
+    event_history.setdefault("sources", [])
+    document["schema_version"] = 9
+    changed = True
 if changed:
     descriptor, temporary_name = tempfile.mkstemp(prefix=".mcpserver.", dir=path.parent)
     temporary = Path(temporary_name)
@@ -120,6 +130,7 @@ chmod 600 "$plugin_config/mcpserver.json"
 mkdir -p "$plugin_data/auth"
 chmod 700 "$plugin_data/auth"
 prepare_private_directory "$plugin_data/statistics-cache" || exit 2
+prepare_private_directory "$plugin_data/event-history" || exit 2
 
 echo "<OK> Configuration and sessions retained."
 exit 0

@@ -6,6 +6,8 @@
 
 Der Server liest sichtbare Räume, Kategorien, Controls und Zustände. Optional sind begrenzte Historie, Statistiken, maskierte LoxBerry-Diagnosen sowie dokumentierte, typabhängige Aktionen für sichtbare Gen.-1-Controls verfügbar.
 
+Wenn ein Administrator sie aktiviert, kann der Server ausgewählte State-UUIDs zusätzlich als begrenzte lokale Ereignishistorie aufzeichnen. Sie ergänzt die native Loxone-Historie für kurzlebige Wechsel und erweitert nie die Sichtbarkeit der aufrufenden Identität.
+
 `loxone_get_project_status`, `loxone_find_project_objects`,
 `loxone_describe_project_object`, `loxone_trace_project_logic` und
 `loxone_analyze_project` stellen begrenzte,

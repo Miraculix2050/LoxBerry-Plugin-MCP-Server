@@ -57,6 +57,7 @@
     <div class="mcp-collapsible-content">
     <form id="mcp-config-form" class="mcp-form" method="post" action="index.cgi" data-ajax="save_mcp_config">
       <input type="hidden" name="action" value="save_mcp_config">
+      <input id="event-history-sources" type="hidden" name="event_history_sources_json" value="<TMPL_VAR EVENT_HISTORY_SOURCES_JSON ESCAPE=HTML>">
       <fieldset id="mcp-config-fields" class="mcp-configuration-fields" <TMPL_UNLESS SERVER_RENDERED_FALLBACK>disabled<TMPL_ELSE><TMPL_UNLESS FALLBACK_CONFIGURATION_LOADED>disabled</TMPL_UNLESS></TMPL_UNLESS>>
       <label class="mcp-field"><span><TMPL_VAR SETUP.PUBLIC_ORIGIN></span><input name="public_origin" type="url" value="<TMPL_VAR PUBLIC_ORIGIN ESCAPE=HTML>" placeholder="https://loxberry.local" required></label>
       <label class="mcp-field"><span><TMPL_VAR SETUP.MINISERVER_SOURCE></span><select id="miniserver-select" name="miniserver_endpoint"><option value="" <TMPL_IF MANUAL_ENDPOINT>selected</TMPL_IF>><TMPL_VAR SETUP.MANUAL_OPTION></option><TMPL_LOOP MINISERVERS><option value="<TMPL_VAR endpoint ESCAPE=HTML>" <TMPL_IF selected>selected</TMPL_IF>><TMPL_VAR label ESCAPE=HTML></option></TMPL_LOOP></select></label>
@@ -126,15 +127,23 @@
           <label class="mcp-field"><span><TMPL_VAR SETUP.STRUCTURE_CONTROLS></span><input name="max_structure_controls" type="number" min="1000" max="100000" value="<TMPL_VAR MAX_STRUCTURE_CONTROLS ESCAPE=HTML>"></label>
           <label class="mcp-field"><span><TMPL_VAR SETUP.STRUCTURE_STATES></span><input name="max_structure_state_references" type="number" min="10000" max="500000" value="<TMPL_VAR MAX_STRUCTURE_STATE_REFERENCES ESCAPE=HTML>"></label>
           <label class="mcp-field"><span><TMPL_VAR SETUP.STRUCTURE_DEPTH></span><input name="max_structure_depth" type="number" min="4" max="128" value="<TMPL_VAR MAX_STRUCTURE_DEPTH ESCAPE=HTML>"></label>
-          <label class="mcp-field"><span><TMPL_VAR SETUP.CACHE_SIZE></span><input name="statistics_memory_max_mib" type="number" min="16" max="512" value="<TMPL_VAR STATISTICS_MEMORY_MAX_MIB ESCAPE=HTML>"></label>
+           <label class="mcp-field"><span><TMPL_VAR SETUP.CACHE_SIZE></span><input name="statistics_memory_max_mib" type="number" min="16" max="512" value="<TMPL_VAR STATISTICS_MEMORY_MAX_MIB ESCAPE=HTML>"></label>
+           <label class="mcp-field"><span><TMPL_VAR SETUP.EVENT_HISTORY_RETENTION></span><input name="event_history_retention_days" type="number" min="1" max="365" value="<TMPL_VAR EVENT_HISTORY_RETENTION_DAYS ESCAPE=HTML>"></label>
+           <label class="mcp-field"><span><TMPL_VAR SETUP.EVENT_HISTORY_SIZE></span><input name="event_history_maximum_mib" type="number" min="16" max="1024" value="<TMPL_VAR EVENT_HISTORY_MAXIMUM_MIB ESCAPE=HTML>"></label>
           <label class="mcp-field"><span><TMPL_VAR SETUP.CACHED_STATES></span><input name="max_states_per_identity" type="number" min="1000" max="100000" value="<TMPL_VAR MAX_STATES_PER_IDENTITY ESCAPE=HTML>"></label>
         </div>
-        <p class="mcp-help"><TMPL_VAR SETUP.ADVANCED_LIMITS_HELP></p>
+         <p class="mcp-help"><TMPL_VAR SETUP.ADVANCED_LIMITS_HELP></p>
+         <label class="mcp-check"><input id="event-history-enabled" name="event_history_enabled" type="checkbox" value="1"> <span><TMPL_VAR SETUP.EVENT_HISTORY_ENABLED></span></label>
+         <p class="mcp-help"><TMPL_VAR SETUP.EVENT_HISTORY_HELP></p>
       </details>
       <div class="mcp-actions">
         <button class="lb-button" type="submit"><TMPL_VAR ACTION.SAVE_MCP></button>
       </div>
       </fieldset>
+    </form>
+    <form class="mcp-actions" method="post" action="index.cgi" data-ajax="clear_event_history">
+      <input type="hidden" name="action" value="clear_event_history">
+      <button class="lb-button" type="submit"><TMPL_VAR ACTION.CLEAR_EVENT_HISTORY></button>
     </form>
     <form class="mcp-actions" method="post" action="index.cgi" data-ajax="test_connection">
       <fieldset id="test-connection-fields" class="mcp-configuration-fields" <TMPL_UNLESS SERVER_RENDERED_FALLBACK>disabled<TMPL_ELSE><TMPL_UNLESS FALLBACK_CONFIGURATION_LOADED>disabled</TMPL_UNLESS></TMPL_UNLESS>>
@@ -342,6 +351,7 @@
     document.getElementById('logging-config-fields'),
   ];
   const historyEnabled = document.getElementById('loxone-history-enabled');
+  const eventHistoryEnabled = document.getElementById('event-history-enabled');
   const operateEnabled = document.getElementById('loxberry-operate-enabled');
   const testEndpoint = document.querySelector('form[data-ajax="test_connection"] input[name="endpoint"]');
   const explorerLink = document.getElementById('explorer-link');
@@ -466,6 +476,7 @@
     const cache = configuration?.cache || {};
     const mqtt = configuration?.mqtt || {};
     const emergencyStop = configuration?.emergency_stop || {};
+    const eventHistory = configuration?.event_history || {};
     const publicOrigin = String(server.public_origin || '')
       || String(mcpConfigForm.elements.namedItem('public_origin')?.value || '');
     setFormValue(mcpConfigForm, 'public_origin', publicOrigin);
@@ -488,6 +499,10 @@
       'max_states_per_identity',
     ]) setFormValue(mcpConfigForm, name, limits[name]);
     setFormValue(mcpConfigForm, 'statistics_memory_max_mib', cache.statistics_memory_max_mib);
+    setFormChecked(mcpConfigForm, 'event_history_enabled', eventHistory.enabled);
+    setFormValue(mcpConfigForm, 'event_history_retention_days', eventHistory.retention_days);
+    setFormValue(mcpConfigForm, 'event_history_maximum_mib', eventHistory.maximum_mib);
+    document.getElementById('event-history-sources').value = JSON.stringify(eventHistory.sources || []);
     emergencyStopValue.value = String(emergencyStop.virtual_status_uuid || '');
     updateEmergencyStopRuntimeMismatch();
     setFormChecked(mqttConfigForm, 'mqtt_enabled', mqtt.enabled);
@@ -559,6 +574,8 @@
   const syncOperateDependency = () => {
     operateEnabled.disabled = !historyEnabled.checked;
     if (operateEnabled.disabled) operateEnabled.checked = false;
+    eventHistoryEnabled.disabled = !historyEnabled.checked;
+    if (eventHistoryEnabled.disabled) eventHistoryEnabled.checked = false;
   };
   const syncMiniserverSelection = () => {
     const selectedEndpoint = miniserverSelect.value;
@@ -1533,11 +1550,14 @@
     service_action: 75000,
     service_status: 7000,
     list_sessions: 15000,
+    clear_event_history: 30000,
   })[action] || 15000;
   document.addEventListener('submit', async (event) => {
     const form = event.target.closest('form[data-ajax]');
     if (!form) return;
       event.preventDefault();
+      if (form.dataset.ajax === 'clear_event_history'
+          && !window.confirm('<TMPL_VAR STATUS.CONFIRM_CLEAR_EVENT_HISTORY ESCAPE=JS>')) return;
       const serviceCommand = form.dataset.serviceCommand;
       const confirmationKey = form.dataset.ajax === 'set_service_enabled' && !serviceEnabledInput.checked
         ? 'disable' : serviceCommand;

@@ -388,8 +388,14 @@ if ($action ne '') {
 
     my $result;
     if ($action eq 'save_mcp_config') {
+        my $event_history_sources = eval { decode_json($q->{event_history_sources_json} // '[]') };
+        if ($@ || ref($event_history_sources) ne 'ARRAY') {
+            my $failure = {ok => JSON::PP::false, error => {code => 'invalid_request', message => 'Event history sources are invalid'}};
+            json_reply($failure, 400) if $q->{ajax};
+            redirect_reply('index.cgi?notice=invalid_request');
+        }
         my $document = {
-            schema_version => 5,
+            schema_version => 9,
             server => {
                 enabled => $q->{enabled} ? JSON::PP::true : JSON::PP::false,
                 public_origin => $q->{public_origin} // '',
@@ -428,6 +434,13 @@ if ($action ne '') {
             },
             cache => {
                 statistics_memory_max_mib => 0 + ($q->{statistics_memory_max_mib} // 128),
+            },
+            event_history => {
+                enabled => ($q->{event_history_enabled} // '') eq '1'
+                    ? JSON::PP::true : JSON::PP::false,
+                retention_days => 0 + ($q->{event_history_retention_days} // 90),
+                maximum_mib => 0 + ($q->{event_history_maximum_mib} // 128),
+                sources => $event_history_sources,
             },
             emergency_stop => {
                 virtual_status_uuid => $q->{emergency_stop_virtual_status_uuid} // '',
@@ -491,6 +504,10 @@ if ($action ne '') {
         $result = admin_call('page_state', {});
     } elsif ($action eq 'emergency_stop_options') {
         $result = admin_call('emergency_stop_options', {});
+    } elsif ($action eq 'clear_event_history') {
+        $result = admin_call('clear_event_history', {});
+        admin_log($result->{ok} ? 'info' : 'warning',
+            'action=clear_event_history outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
     } elsif ($action eq 'test_connection') {
         $result = admin_call('test_connection', {endpoint => requested_endpoint($q)});
     } elsif ($action eq 'revoke_session') {
@@ -760,6 +777,9 @@ $template->param(
     HISTORY_REQUESTS_PER_MINUTE => $config->{limits}{history_requests_per_minute} // 12,
     LOXBERRY_OPERATE_REQUESTS_PER_MINUTE => $config->{limits}{loxberry_operate_requests_per_minute} // 3,
     STATISTICS_MEMORY_MAX_MIB => $config->{cache}{statistics_memory_max_mib} // 128,
+    EVENT_HISTORY_RETENTION_DAYS => $config->{event_history}{retention_days} // 90,
+    EVENT_HISTORY_MAXIMUM_MIB => $config->{event_history}{maximum_mib} // 128,
+    EVENT_HISTORY_SOURCES_JSON => encode_json($config->{event_history}{sources} // []),
     MAX_PARALLEL_CALLS => $config->{limits}{max_parallel_calls} // 4,
     STRUCTURE_REFRESH_SECONDS => $config->{limits}{structure_refresh_seconds} // 300,
     MAX_ACTIVE_RUNTIME_SESSIONS => $config->{limits}{max_active_runtime_sessions} // 16,

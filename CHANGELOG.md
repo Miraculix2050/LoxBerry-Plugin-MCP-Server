@@ -17,6 +17,11 @@ extracted from the matching version heading.
 - Add fixed value-free diagnostic categories to project-tool source-processing
   failures, so invalid or unsupported input is distinguishable from limits,
   timeouts and other processing failures.
+- Add opt-in, bounded local event history for explicitly selected Loxone state
+  sources. The recorder uses the LoxBerry-managed Miniserver identity, preserves
+  short-lived state changes, reports coverage evidence, and is queried through
+  `loxone_get_state_history`. Approved existing `loxberry:operate` clients can
+  list, add, and remove sources without a new OAuth scope.
 
 - Show the running service's emergency-stop signal and MQTT-compatible state in
   the Admin UI, including a clear indication when the current form selection
