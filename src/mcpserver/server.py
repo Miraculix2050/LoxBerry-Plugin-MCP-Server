@@ -43,6 +43,7 @@ from mcpserver.auth.web import Phase0OAuthWeb
 from mcpserver.config import DEFAULT_LOG_LEVEL, AtomicConfigStore
 from mcpserver.emergency_stop import EmergencyStopMonitor
 from mcpserver.loxberry.diagnostics import LoxBerryDiagnostics
+from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
 from mcpserver.loxone.client import MiniserverEndpoint
 from mcpserver.loxone.project.service import ProjectService
 from mcpserver.loxone.runtime import LoxoneRuntime
@@ -283,6 +284,7 @@ class _ForwardedHostFastMCP(FastMCP):
     advertised_scopes: tuple[str, ...] = ()
     mqtt_health: MqttHealthPublisher | None = None
     emergency_stop: EmergencyStopMonitor | None = None
+    auth_coordinator: MiniserverAuthCoordinator | None = None
     live_runtime: LoxoneRuntime | None = None
     remote_revocation: tuple[MiniserverEndpoint, EncryptedLoxoneTokenStore, float] | None = None
 
@@ -384,6 +386,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
     statistics_cache: StatisticsCache | None = None
     mqtt_health: MqttHealthPublisher | None = None
     emergency_stop: EmergencyStopMonitor | None = None
+    auth_coordinator: MiniserverAuthCoordinator | None = None
     if settings.plugin_config is not None:
         emergency_stop = EmergencyStopMonitor(settings.plugin_config)
     if settings.plugin_config is not None and settings.plugin_config.mqtt_enabled:
@@ -408,6 +411,17 @@ def create_server(settings: ServerSettings) -> FastMCP:
                 settings.phase0_auth.install_key_path,
             )
         config = settings.phase0_auth.plugin_config
+        auth_coordinator = MiniserverAuthCoordinator(
+            settings.phase0_auth.store_path.parent / "miniserver-auth-diagnostics.json",
+            initial_probe_seconds=(
+                config.miniserver_auth_probe_initial_seconds if config is not None else 900
+            ),
+            maximum_probe_seconds=(
+                config.miniserver_auth_probe_max_seconds if config is not None else 86_400
+            ),
+        )
+        if emergency_stop is not None:
+            emergency_stop.auth_coordinator = auth_coordinator
 
         def loxberry_binding_allowed(client_id: str, identity_id: str, miniserver_id: str) -> bool:
             if settings.phase0_auth is None or settings.phase0_auth.config_path is None:
@@ -473,6 +487,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
             issuer=settings.phase0_auth.issuer_url,
             resource=settings.phase0_auth.resource_url,
             loxone_store=loxone_store,
+            auth_coordinator=auth_coordinator,
         )
         oauth_auth = AuthSettings(
             issuer_url=AnyHttpUrl(settings.phase0_auth.issuer_url),
@@ -523,6 +538,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
                     config.max_structure_state_references if config is not None else 100_000
                 ),
                 max_structure_depth=(config.max_structure_depth if config is not None else 32),
+                auth_coordinator=auth_coordinator,
             )
 
             async def validate_project_access(access: StoredAccessToken) -> bool:
@@ -583,6 +599,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
     server.service_enabled = settings.service_enabled
     server.mqtt_health = mqtt_health
     server.emergency_stop = emergency_stop
+    server.auth_coordinator = auth_coordinator
     server.live_runtime = runtime
     server.remote_revocation = remote_revocation
     control_enabled = bool(
@@ -650,6 +667,16 @@ def create_server(settings: ServerSettings) -> FastMCP:
             else {"signal_uuid": None, "signal_name": None, "status": "not_configured"}
         )
         return JSONResponse({"ok": True, "emergency_stop": status})
+
+    @server.custom_route(  # type: ignore[misc]
+        "/internal/miniserver-auth-status", methods=["GET"], include_in_schema=False
+    )
+    async def miniserver_auth_status(request: Request) -> Response:
+        """Return the service-owned, value-free shared breaker status."""
+        del request
+        return JSONResponse(
+            {"ok": True, "miniserver_auth": auth_coordinator.status() if auth_coordinator else None}
+        )
 
     return server
 

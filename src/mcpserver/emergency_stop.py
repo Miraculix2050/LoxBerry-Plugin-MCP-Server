@@ -11,13 +11,23 @@ import subprocess
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 from uuid import NAMESPACE_URL, uuid5
 
 from mcpserver.config import PluginConfig
-from mcpserver.loxone.client import LoxoneClient
+from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
+from mcpserver.loxone.client import LoxoneClient, LoxoneToken, LoxoneWebSocketSession
 
 _LOGGER = logging.getLogger("mcpserver.emergency_stop")
+
+
+async def _acquire_token(client: LoxoneClient, username: str, password: str) -> LoxoneToken:
+    return await client.acquire_token(username, password)
+
+
+async def _open_session(client: LoxoneClient, token: LoxoneToken) -> LoxoneWebSocketSession:
+    return await client.open_session(token)
 
 
 class _ProviderUnavailable(RuntimeError):
@@ -61,6 +71,7 @@ class EmergencyStopMonitor:
     status: str = "enabled"
     status_changed_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     signal_name: str | None = None
+    auth_coordinator: MiniserverAuthCoordinator | None = None
     _task: asyncio.Task[None] | None = None
 
     def __post_init__(self) -> None:
@@ -177,9 +188,22 @@ class EmergencyStopMonitor:
                     timeout_seconds=self.config.connection_timeout,
                 )
                 stage = "token"
-                token = await client.acquire_token(username, password)
+                if self.auth_coordinator is None:
+                    token = await client.acquire_token(username, password)
+                    session = await client.open_session(token)
+                else:
+                    token = await self.auth_coordinator.attempt(
+                        partial(_acquire_token, client, username, password),
+                        owner="runtime_event_stream",
+                        phase="token_acquisition",
+                    )
+                    session = await self.auth_coordinator.attempt(
+                        partial(_open_session, client, token),
+                        owner="runtime_event_stream",
+                        phase="session_establishment",
+                    )
                 stage = "session"
-                session = await client.open_session(token)
+                assert session is not None
                 stage = "structure"
                 structure = await session.load_structure()
                 stage = "selection"

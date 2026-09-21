@@ -18,6 +18,10 @@ from uuid import NAMESPACE_URL, uuid5
 from mcpserver.auth.loxone_health import LoxoneTokenHealthStore
 from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore, LoxoneTokenStoreError
 from mcpserver.auth.provider import CONTROL_SCOPE, HISTORY_SCOPE, READ_SCOPE, StoredAccessToken
+from mcpserver.loxone.auth_diagnostics import (
+    MiniserverAuthCoordinator,
+    MiniserverAuthenticationSuppressed,
+)
 from mcpserver.loxone.cache import UserStateCache
 from mcpserver.loxone.client import (
     LoxoneClient,
@@ -200,6 +204,7 @@ class LoxoneRuntime:
         max_structure_controls: int = 20_000,
         max_structure_state_references: int = 100_000,
         max_structure_depth: int = 32,
+        auth_coordinator: MiniserverAuthCoordinator | None = None,
     ) -> None:
         from mcpserver.loxone.client import MiniserverEndpoint
 
@@ -217,6 +222,7 @@ class LoxoneRuntime:
             max_structure_state_references=max_structure_state_references,
             max_structure_depth=max_structure_depth,
         )
+        self.auth_coordinator = auth_coordinator
         self._initial_state_timeout_seconds = min(timeout_seconds, 2.0)
         self.cache = UserStateCache(max_states_per_user=max_states_per_identity)
         self._records: dict[str, _ConnectionRecord] = {}
@@ -355,7 +361,9 @@ class LoxoneRuntime:
                     "temporarily_unavailable", "Loxone authorization is unavailable"
                 )
             try:
-                command_session = await self.client.open_session(token)
+                command_session = await self._open_session(
+                    token, owner="tool_request", phase="session_establishment"
+                )
             except LoxoneConnectionError as exc:
                 raise ControlOperationError(
                     "loxone_unreachable", "Miniserver connection failed"
@@ -563,7 +571,9 @@ class LoxoneRuntime:
         async with self._parallel:
             session: LoxoneWebSocketSession | None = None
             try:
-                session = await self.client.open_session(token)
+                session = await self._open_session(
+                    token, owner="tool_request", phase="session_establishment"
+                )
                 structure = await session.load_structure()
                 control = self._control(structure, control_uuid, include_hidden=include_hidden)
                 if control is None:
@@ -763,7 +773,9 @@ class LoxoneRuntime:
                     )
                 session: LoxoneWebSocketSession | None = None
                 try:
-                    session = await self.client.open_session(token)
+                    session = await self._open_session(
+                        token, owner="tool_request", phase="session_establishment"
+                    )
                     structure = await session.load_structure()
                     control = self._control(structure, control_uuid, include_hidden=include_hidden)
                     if control is None:
@@ -827,7 +839,13 @@ class LoxoneRuntime:
         if token is None:
             raise RuntimeUnavailable("Loxone authorization is unavailable")
         try:
-            session = await self.client.open_session(token)
+            session = await self._open_session(
+                token, owner="runtime_event_stream", phase="session_establishment"
+            )
+        except MiniserverAuthenticationSuppressed as exc:
+            raise RuntimeUnavailable(
+                "Miniserver authentication is temporarily unavailable"
+            ) from exc
         except LoxoneSourceIpBlocked as exc:
             raise RuntimeUnavailable(
                 "Miniserver temporarily blocked this source IP after failed login attempts"
@@ -916,7 +934,9 @@ class LoxoneRuntime:
             token = self.token_store.get(access.family_id, access.miniserver_id, access.identity_id)
             if token is None:
                 raise LoxoneTokenStoreError("Loxone token is unavailable")
-            session = await self.client.open_session(token)
+            session = await self._open_session(
+                token, owner="tool_request", phase="session_establishment"
+            )
             try:
                 version = await session.structure_version()
                 if version == record.structure.last_modified:
@@ -962,7 +982,9 @@ class LoxoneRuntime:
                     with suppress(asyncio.CancelledError):
                         await events
                     await record.session.close()
-                    refreshed = await self.client.open_session(token)
+                    refreshed = await self._open_session(
+                        token, owner="runtime_event_stream", phase="token_refresh"
+                    )
                     try:
                         await refreshed.refresh_token()
                         self.token_store.put(
@@ -988,6 +1010,17 @@ class LoxoneRuntime:
             with suppress(asyncio.CancelledError, Exception):
                 await events
             await record.session.close()
+
+    async def _open_session(
+        self, token: LoxoneToken, *, owner: str, phase: str
+    ) -> LoxoneWebSocketSession:
+        """Open a session through the shared source-IP breaker when configured."""
+        coordinator = getattr(self, "auth_coordinator", None)
+        if not isinstance(coordinator, MiniserverAuthCoordinator):
+            return await self.client.open_session(token)
+        return await coordinator.attempt(
+            lambda: self.client.open_session(token), owner=owner, phase=phase
+        )
 
     async def _pump_events(self, subject: str, record: _ConnectionRecord) -> None:
         async for event_batch in record.session.state_events():

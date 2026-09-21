@@ -10,6 +10,10 @@ The **Enable service** switch is the saved operating permission. It is enabled a
 
 Configure one local HTTPS origin and exactly one Miniserver target. Selecting a Miniserver stored in LoxBerry does not reuse its credentials. On first setup, the origin is suggested from the LoxBerry hostname and HTTPS port; verify it matches the browser's certificate address. Only **Enable MCP access** releases MCP and OAuth access.
 
+### Authentication recovery
+
+The advanced limits include an initial and maximum delay for one lazy Miniserver authentication recovery probe. Defaults are 15 minutes and 24 hours. After the Miniserver confirms that the source IP is blocked, the service makes no further login attempts until the delay has elapsed and a real tool or runtime request needs a connection. A repeated block doubles the delay up to the configured maximum. These limits are plugin policy, not a claimed Miniserver block duration; changing them does not itself start a login attempt.
+
 ## Emergency-stop signal (Virtual Status)
 
 The optional **Emergency-stop signal (Virtual Status)** is in the **MCP

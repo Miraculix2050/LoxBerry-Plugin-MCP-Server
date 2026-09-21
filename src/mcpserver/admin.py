@@ -577,6 +577,8 @@ def _save_mcp(payload: object) -> dict[str, Any]:
         "structure_refresh_seconds",
         "max_active_runtime_sessions",
         "runtime_session_idle_seconds",
+        "miniserver_auth_probe_initial_seconds",
+        "miniserver_auth_probe_max_seconds",
         "max_structure_controls",
         "max_structure_state_references",
         "max_structure_depth",

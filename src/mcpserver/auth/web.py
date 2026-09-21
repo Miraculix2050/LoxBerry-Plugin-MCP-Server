@@ -45,6 +45,7 @@ from mcpserver.auth.provider import (
     normalize_scopes,
     scope_text,
 )
+from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
 from mcpserver.loxone.client import (
     LoxoneClient,
     LoxoneConnectionError,
@@ -231,12 +232,14 @@ class Phase0OAuthWeb:
         issuer: str,
         resource: str,
         loxone_store: EncryptedLoxoneTokenStore | None = None,
+        auth_coordinator: MiniserverAuthCoordinator | None = None,
     ) -> None:
         self.provider = provider
         self.endpoint = endpoint
         self.issuer = issuer
         self.resource = resource
         self.loxone_store = loxone_store
+        self.auth_coordinator = auth_coordinator
         self.explorer_origin = issuer.rsplit("/plugins/mcpserver/oauth", 1)[0]
         self._explorer_locks: dict[str, asyncio.Lock] = {}
         self.transactions: dict[str, LoginTransaction] = {}
@@ -933,8 +936,20 @@ sync();
         try:
             async with self._login_slots:
                 probe = await client.probe()
-                token = await client.acquire_token(username, password)
-                session = await client.open_session(token)
+                if self.auth_coordinator is None:
+                    token = await client.acquire_token(username, password)
+                    session = await client.open_session(token)
+                else:
+                    token = await self.auth_coordinator.attempt(
+                        lambda: client.acquire_token(username, password),
+                        owner="tool_request",
+                        phase="token_acquisition",
+                    )
+                    session = await self.auth_coordinator.attempt(
+                        lambda: client.open_session(token),
+                        owner="tool_request",
+                        phase="session_establishment",
+                    )
                 try:
                     structure = await session.load_structure()
                 finally:
