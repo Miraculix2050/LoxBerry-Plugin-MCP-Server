@@ -220,6 +220,14 @@ control is readable only with the same explicit `include_hidden=true` mode.
 filters; they narrow its returned bounded result but do not expand the Miniserver
 history fetch.
 
+`loxone_get_state_history` is separate plugin-owned event history. It reports
+capture and coverage evidence, so `not_recorded` and `partial_coverage` are not
+evidence that a state did not occur. Use exact `control_uuid` and `state_uuid`
+from current discovery. An approved client with `loxberry:operate` may list,
+add, or remove recording sources through the fixed event-history source tools;
+never infer or construct UUIDs. These operations do not enable the feature,
+change retention, clear history, or operate a Loxone control.
+
 ## Operate a supported control
 
 Only operate a control when the user has explicitly requested one unambiguous

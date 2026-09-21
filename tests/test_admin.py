@@ -16,6 +16,7 @@ from mcpserver.admin import (
     AdminError,
     _allow_loxberry_operate,
     _allow_loxberry_read,
+    _clear_event_history,
     _emergency_stop_runtime_status,
     _loxberry_bindings,
     _loxberry_operate_bindings,
@@ -62,6 +63,27 @@ def test_admin_import_defers_mqtt_and_loxone_clients() -> None:
     )
 
     assert json.loads(result.stdout) == [False, False]
+
+
+def test_clear_event_history_stops_the_recorder_before_deleting_its_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = PluginConfig(event_history_enabled=True, loxone_history_enabled=True)
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    store.save(config)
+    path = (tmp_path / "data" / "event-history.sqlite3").resolve()
+    calls: list[str] = []
+
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._service_active", lambda: True)
+    monkeypatch.setattr("mcpserver.admin._stop_service", lambda: calls.append("stop"))
+    monkeypatch.setattr("mcpserver.admin._start_service", lambda: calls.append("start"))
+    monkeypatch.setenv("MCPSERVER_EVENT_HISTORY_STORE", str(path))
+
+    result = _clear_event_history()
+
+    assert calls == ["stop", "start"]
+    assert result == {"event_history_entries_removed": 0}
 
 
 def test_diagnostic_contains_no_paths_endpoint_or_identity(

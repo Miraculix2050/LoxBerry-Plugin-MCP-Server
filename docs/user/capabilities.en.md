@@ -6,6 +6,8 @@
 
 The server reads visible rooms, categories, controls and states. Optional bounded history, statistics, masked LoxBerry diagnostics and documented type-specific actions for visible Gen. 1 controls are available.
 
+When enabled by an administrator, selected state UUIDs can additionally be recorded locally as bounded event history. This supplements native Loxone history for short-lived transitions and never grants access beyond the caller's current visible structure.
+
 `loxone_get_project_status`, `loxone_find_project_objects`,
 `loxone_describe_project_object`, `loxone_trace_project_logic`, and
 `loxone_analyze_project` provide bounded,

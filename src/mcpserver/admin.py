@@ -574,6 +574,9 @@ def _save_mcp(payload: object) -> dict[str, Any]:
         "loxberry_operate_requests_per_minute",
         "max_parallel_calls",
         "statistics_memory_max_mib",
+        "event_history_enabled",
+        "event_history_retention_days",
+        "event_history_maximum_mib",
         "structure_refresh_seconds",
         "max_active_runtime_sessions",
         "runtime_session_idle_seconds",
@@ -640,6 +643,33 @@ def _emergency_stop_options() -> dict[str, Any]:
     if result.failure_code is not None:
         response["discovery_failure_code"] = result.failure_code
     return response
+
+
+def _clear_event_history() -> dict[str, Any]:
+    """Delete only plugin-owned local event records through the local Admin UI."""
+    from mcpserver.loxone.event_history import EventHistoryStore, EventHistoryUnavailable
+
+    config = _config_store().load()
+    path = Path(os.getenv("MCPSERVER_EVENT_HISTORY_STORE", ""))
+    if not path.is_absolute():
+        raise AdminError("local event history is unavailable")
+    was_active = _service_active()
+    if was_active:
+        _stop_service()
+    try:
+        store = EventHistoryStore(
+            path,
+            retention_days=config.event_history_retention_days,
+            maximum_mib=config.event_history_maximum_mib,
+        )
+        store.initialize()
+        removed = store.clear()
+    except EventHistoryUnavailable as exc:
+        raise AdminError("local event history is unavailable") from exc
+    finally:
+        if was_active:
+            _start_service()
+    return {"event_history_entries_removed": removed}
 
 
 def _save_mqtt(payload: object) -> dict[str, Any]:
@@ -1320,6 +1350,8 @@ def dispatch(request: object, *, timing: dict[str, float] | None = None) -> dict
         return _save_mqtt(payload)
     if action == "emergency_stop_options":
         return _emergency_stop_options()
+    if action == "clear_event_history":
+        return _clear_event_history()
     if action == "set_logging":
         return _set_logging(payload)
     if action == "status":

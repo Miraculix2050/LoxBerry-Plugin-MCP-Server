@@ -433,6 +433,7 @@ def test_exact_default_read_only_tools_are_published() -> None:
         "loxone_describe_control",
         "loxone_get_control_notes",
         "loxone_get_states",
+        "loxone_get_state_history",
     ]
     assert all(tool["annotations"]["readOnlyHint"] is True for tool in tools)
     assert all(tool["annotations"]["destructiveHint"] is False for tool in tools)

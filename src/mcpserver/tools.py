@@ -13,10 +13,11 @@ import secrets
 import time
 from collections import OrderedDict
 from collections.abc import Mapping
+from dataclasses import replace
 from datetime import UTC, datetime
-from math import ceil, floor
-from typing import Annotated, Any, Final, Literal
-from uuid import uuid4
+from math import ceil, floor, isfinite
+from typing import Annotated, Any, Final, Literal, cast
+from uuid import UUID, uuid4
 
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.fastmcp import FastMCP
@@ -30,8 +31,14 @@ from mcpserver.auth.provider import (
     LOXBERRY_READ_SCOPE,
     StoredAccessToken,
 )
+from mcpserver.config import AtomicConfigStore
 from mcpserver.loxberry.diagnostics import DiagnosticsUnavailable, LoxBerryDiagnostics
 from mcpserver.loxone.control import allowed_actions
+from mcpserver.loxone.event_history import (
+    EventHistoryMonitor,
+    EventHistoryStore,
+    EventHistoryUnavailable,
+)
 from mcpserver.loxone.models import Control, Freshness, StateRecord
 from mcpserver.loxone.presentation import (
     control_matches_query as _control_matches_query,
@@ -94,6 +101,7 @@ _AUDIT_LAST: OrderedDict[tuple[str, str], float] = OrderedDict()
 _ERROR_SUPPRESSION_SECONDS: Final = 60.0
 _ERROR_LAST: dict[str, float] = {}
 _CACHE_CLEAR_TIMEOUT_SECONDS: Final = 10.0
+_EVENT_HISTORY_SOURCE_CHANGE_TIMEOUT_SECONDS: Final = 75.0
 
 CursorArgument = Annotated[
     str | None,
@@ -942,6 +950,32 @@ class ControlHistoryEnvelope(ToolEnvelope):
     data: ControlHistoryData | ErrorData
 
 
+class EventHistoryEntryData(BaseModel):
+    observed_at: str
+    old_value: bool | float | int | str
+    new_value: bool | float | int | str
+    quality: Literal["direct_live_update"]
+
+
+class EventHistoryData(BaseModel):
+    control_uuid: str
+    control_name: str
+    control_type: str
+    state_uuid: str
+    state_name: str
+    start: str
+    end: str
+    outcome: Literal["events", "no_matching_events", "partial_coverage", "not_recorded"]
+    capture_started_at: str | None
+    retained_from: str | None
+    entries: list[EventHistoryEntryData]
+    next_cursor: str | None
+
+
+class EventHistoryEnvelope(ToolEnvelope):
+    data: EventHistoryData | ErrorData
+
+
 class ControlNotesData(BaseModel):
     control_uuid: str
     text: str = Field(max_length=500)
@@ -957,6 +991,32 @@ class CacheClearData(BaseModel):
 
 class CacheClearEnvelope(ToolEnvelope):
     data: CacheClearData | ErrorData
+
+
+class EventHistorySourceData(BaseModel):
+    control_uuid: str
+    state_uuid: str
+
+
+class EventHistorySourcesData(BaseModel):
+    sources: list[EventHistorySourceData]
+
+
+class EventHistorySourcesEnvelope(ToolEnvelope):
+    data: EventHistorySourcesData | ErrorData
+
+
+class EventHistorySourceChangeData(BaseModel):
+    changed: bool
+    control_uuid: str
+    state_uuid: str
+    control_name: str | None = None
+    control_type: str | None = None
+    state_name: str | None = None
+
+
+class EventHistorySourceChangeEnvelope(ToolEnvelope):
+    data: EventHistorySourceChangeData | ErrorData
 
 
 class LoxBerryCpuData(BaseModel):
@@ -1198,6 +1258,13 @@ class _CursorCodec:
     def digest(self, value: bytes) -> str:
         return hmac.new(self._key, value, hashlib.sha256).hexdigest()
 
+    @staticmethod
+    def _finite_float(value: str) -> bool:
+        try:
+            return isfinite(float(value))
+        except ValueError:
+            return False
+
     def encode_anchor(self, scope: str, anchor: tuple[str, int, str, int]) -> str:
         payload: list[str | int] = list(anchor)
         body = json.dumps({"scope": scope, "anchor": payload}, separators=(",", ":")).encode()
@@ -1221,11 +1288,15 @@ class _CursorCodec:
             if (
                 isinstance(anchor, list)
                 and len(anchor) == 4
-                and anchor[0] in {"statistics", "history"}
+                and anchor[0] in {"statistics", "history", "event_history"}
                 and isinstance(anchor[1], int)
                 and not isinstance(anchor[1], bool)
                 and isinstance(anchor[2], str)
-                and len(anchor[2]) == 64
+                and (
+                    len(anchor[2]) == 64
+                    if anchor[0] in {"statistics", "history"}
+                    else bool(anchor[2]) and self._finite_float(anchor[2])
+                )
                 and isinstance(anchor[3], int)
                 and not isinstance(anchor[3], bool)
                 and anchor[3] >= 0
@@ -1327,15 +1398,25 @@ class LoxBerryOperateRuntime:
         config_store: Any,
         auth_store: Any,
         *,
+        event_history: EventHistoryMonitor | None = None,
         clear_timeout_seconds: float = _CACHE_CLEAR_TIMEOUT_SECONDS,
+        event_history_source_change_timeout_seconds: float = (
+            _EVENT_HISTORY_SOURCE_CHANGE_TIMEOUT_SECONDS
+        ),
     ) -> None:
-        if clear_timeout_seconds <= 0:
-            raise ValueError("cache clear timeout must be positive")
+        if clear_timeout_seconds <= 0 or event_history_source_change_timeout_seconds <= 0:
+            raise ValueError("operation timeouts must be positive")
         self._cache = cache
         self._config_store = config_store
         self._auth_store = auth_store
+        self._event_history = event_history
+        self._event_history_lock = asyncio.Lock()
+        self._event_history_reconciliation_tasks: set[asyncio.Task[None]] = set()
         self._requests: dict[str, list[float]] = {}
         self._clear_timeout_seconds = clear_timeout_seconds
+        self._event_history_source_change_timeout_seconds = (
+            event_history_source_change_timeout_seconds
+        )
 
     def _allowed(self, access: StoredAccessToken) -> None:
         config = self._config_store.load()
@@ -1365,6 +1446,238 @@ class LoxBerryOperateRuntime:
         return await asyncio.wait_for(
             asyncio.to_thread(self._cache.clear), timeout=self._clear_timeout_seconds
         )
+
+    def _event_history_allowed(self, access: StoredAccessToken) -> EventHistoryMonitor:
+        self._allowed(access)
+        config = self._config_store.load()
+        if not config.event_history_enabled or self._event_history is None:
+            raise ControlOperationError("feature_disabled", "Local event history is disabled")
+        return self._event_history
+
+    @staticmethod
+    async def _reconcile_event_history_config(monitor: EventHistoryMonitor, config: Any) -> None:
+        """Apply persisted changes before releasing the source-update lock."""
+        task = asyncio.create_task(monitor.update_config(config))
+        cancelled = False
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                cancelled = True
+        await task
+        if cancelled:
+            raise asyncio.CancelledError
+
+    @staticmethod
+    def _event_history_change_allowed(current: Any, binding: str) -> None:
+        if (
+            not current.event_history_enabled
+            or not current.loxone_history_enabled
+            or not current.loxberry_operate_enabled
+            or binding not in current.loxberry_operate_bindings
+        ):
+            raise PermissionError("LoxBerry cache operation is not authorized")
+
+    def _reconcile_completed_event_history_mutation(
+        self, monitor: EventHistoryMonitor, mutation: asyncio.Task[Any]
+    ) -> None:
+        """Reconcile a configuration mutation that completed after its caller left."""
+
+        async def reconcile() -> None:
+            try:
+                await mutation
+                async with self._event_history_lock:
+                    config = await asyncio.to_thread(self._config_store.load)
+                    await self._reconcile_event_history_config(monitor, config)
+            except Exception as exc:
+                _LOGGER.warning(
+                    "component=event_history outcome=late_mutation_reconciliation_failed "
+                    "error_type=%s",
+                    type(exc).__name__,
+                )
+
+        task = asyncio.create_task(reconcile())
+        self._event_history_reconciliation_tasks.add(task)
+        task.add_done_callback(self._event_history_reconciliation_tasks.discard)
+
+    async def _mutate_event_history_config(
+        self, monitor: EventHistoryMonitor, operation: Any
+    ) -> Any:
+        """Bound the caller wait while preserving reconciliation after a late mutation."""
+        mutation = asyncio.create_task(asyncio.to_thread(self._config_store.mutate, operation))
+        try:
+            return await asyncio.wait_for(
+                asyncio.shield(mutation), timeout=self._event_history_source_change_timeout_seconds
+            )
+        except (TimeoutError, asyncio.CancelledError):
+            self._reconcile_completed_event_history_mutation(monitor, mutation)
+            raise
+
+    async def list_event_history_sources(
+        self, access: StoredAccessToken
+    ) -> tuple[tuple[str, str], ...]:
+        self._event_history_allowed(access)
+        return cast(tuple[tuple[str, str], ...], self._config_store.load().event_history_sources)
+
+    async def add_event_history_source(
+        self, access: StoredAccessToken, control_uuid: str, state_uuid: str
+    ) -> tuple[bool, tuple[str, str, str]]:
+        async with self._event_history_lock:
+            monitor = self._event_history_allowed(access)
+            config = self._config_store.load()
+            if (control_uuid, state_uuid) in config.event_history_sources:
+                name, control_type, state_name = await asyncio.wait_for(
+                    monitor.validate_source(control_uuid, state_uuid),
+                    timeout=self._event_history_source_change_timeout_seconds,
+                )
+                await self._reconcile_event_history_config(monitor, config)
+                return False, (name, control_type, state_name)
+            if len(config.event_history_sources) >= 64:
+                raise ControlOperationError("rate_limited", "event history source capacity reached")
+            name, control_type, state_name = await asyncio.wait_for(
+                monitor.validate_source(control_uuid, state_uuid),
+                timeout=self._event_history_source_change_timeout_seconds,
+            )
+            binding = self._auth_store.pseudonym(
+                "loxberry-operate-binding-v1",
+                access.client_id,
+                access.identity_id,
+                access.miniserver_id,
+            )
+            changed = False
+
+            def add_source(current: Any) -> Any:
+                nonlocal changed
+                self._event_history_change_allowed(current, binding)
+                if (control_uuid, state_uuid) in current.event_history_sources:
+                    return current
+                if len(current.event_history_sources) >= 64:
+                    raise ControlOperationError(
+                        "rate_limited", "event history source capacity reached"
+                    )
+                changed = True
+                return replace(
+                    current,
+                    event_history_sources=(
+                        *current.event_history_sources,
+                        (control_uuid, state_uuid),
+                    ),
+                )
+
+            updated = await self._mutate_event_history_config(monitor, add_source)
+            if changed:
+                await self._reconcile_event_history_config(monitor, updated)
+            return changed, (name, control_type, state_name)
+
+    async def remove_event_history_source(
+        self, access: StoredAccessToken, control_uuid: str, state_uuid: str
+    ) -> bool:
+        async with self._event_history_lock:
+            monitor = self._event_history_allowed(access)
+            config = self._config_store.load()
+            if (control_uuid, state_uuid) not in config.event_history_sources:
+                await self._reconcile_event_history_config(monitor, config)
+                return False
+            binding = self._auth_store.pseudonym(
+                "loxberry-operate-binding-v1",
+                access.client_id,
+                access.identity_id,
+                access.miniserver_id,
+            )
+
+            changed = False
+
+            def remove_source(current: Any) -> Any:
+                nonlocal changed
+                self._event_history_change_allowed(current, binding)
+                if (control_uuid, state_uuid) not in current.event_history_sources:
+                    return current
+                changed = True
+                return replace(
+                    current,
+                    event_history_sources=tuple(
+                        source
+                        for source in current.event_history_sources
+                        if source != (control_uuid, state_uuid)
+                    ),
+                )
+
+            updated = await self._mutate_event_history_config(monitor, remove_source)
+            if changed:
+                await self._reconcile_event_history_config(monitor, updated)
+            return changed
+
+
+class EventHistoryRuntime:
+    """Authorize local event-history reads against the caller's live structure."""
+
+    def __init__(
+        self,
+        runtime: LoxoneRuntime,
+        config_store: AtomicConfigStore,
+        store_path: Any,
+    ) -> None:
+        self._runtime = runtime
+        self._config_store = config_store
+        self._store_path = store_path
+
+    async def page(
+        self,
+        access: StoredAccessToken,
+        control_uuid: str,
+        state_uuid: str,
+        *,
+        start: float,
+        end: float,
+        limit: int,
+        before: tuple[float, int] | None,
+    ) -> tuple[Control, str, Any]:
+        if HISTORY_SCOPE not in access.scopes:
+            raise PermissionError("loxone:history is required")
+        config = self._config_store.load()
+        if not config.loxone_history_enabled:
+            raise PermissionError("loxone:history requires administrator activation")
+        if not config.event_history_enabled:
+            raise ControlOperationError("feature_disabled", "Local event history is disabled")
+        if (control_uuid, state_uuid) not in config.event_history_sources:
+            raise ControlOperationError("not_found", "state is not configured for local history")
+        try:
+            async with self._runtime.history_call_slot(access):
+                snapshot = await self._runtime.snapshot(access)
+        except RuntimeUnavailable as exc:
+            raise ControlOperationError("temporarily_unavailable", str(exc)) from exc
+        control = next(
+            (
+                item
+                for item in _flatten_controls(snapshot.structure.controls)
+                if item.uuid == control_uuid
+            ),
+            None,
+        )
+        if control is None:
+            raise ControlOperationError("not_found", "control is not visible")
+        state_name = next((name for name, uuid in control.state_uuids if uuid == state_uuid), None)
+        if state_name is None:
+            raise ControlOperationError("not_found", "state is not visible")
+        store = EventHistoryStore(
+            self._store_path,
+            retention_days=config.event_history_retention_days,
+            maximum_mib=config.event_history_maximum_mib,
+        )
+        try:
+            async with self._runtime.worker_slot():
+                page = await asyncio.to_thread(
+                    store.page,
+                    control_uuid,
+                    state_uuid,
+                    start=start,
+                    end=end,
+                    limit=limit,
+                    before=before,
+                )
+        except EventHistoryUnavailable as exc:
+            raise ControlOperationError("temporarily_unavailable", str(exc)) from exc
+        return control, state_name, page
 
 
 def _page(
@@ -3471,6 +3784,123 @@ def _rfc3339(value: str) -> datetime:
     return normalized
 
 
+def register_event_history_tools(server: FastMCP, runtime: EventHistoryRuntime | None) -> None:
+    """Publish the plugin-owned, evidence-bounded state event history."""
+    cursors = _CursorCodec()
+    annotations = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
+
+    @server.tool(
+        name="loxone_get_state_history",
+        description=(
+            "Read recorded local state transitions for one currently visible configured state. "
+            "Requires loxone:history; this is separate from native Loxone control history."
+        ),
+        annotations=annotations,
+        structured_output=True,
+    )
+    async def get_state_history(
+        control_uuid: Annotated[
+            str, Field(description="Exact visible control UUID.", max_length=128)
+        ],
+        state_uuid: Annotated[
+            str, Field(description="Exact state UUID belonging to control_uuid.", max_length=128)
+        ],
+        start: Annotated[
+            str, Field(description="Inclusive RFC 3339 start timestamp with timezone.")
+        ],
+        end: Annotated[str, Field(description="Inclusive RFC 3339 end timestamp with timezone.")],
+        cursor: CursorArgument = None,
+        limit: LimitArgument = 100,
+    ) -> EventHistoryEnvelope:
+        try:
+            if runtime is None:
+                raise ControlOperationError(
+                    "temporarily_unavailable", "the service is not configured"
+                )
+            start_time = _rfc3339(start)
+            end_time = _rfc3339(end)
+            start_seconds = start_time.timestamp()
+            end_seconds = end_time.timestamp()
+            if start_seconds > end_seconds or end_seconds - start_seconds > 90 * 24 * 60 * 60:
+                raise ValueError("event history range is invalid")
+            access = _access()
+            scope = (
+                "event-history:"
+                + hashlib.sha256(
+                    f"{access.family_id}\0{control_uuid}\0{state_uuid}\0{start}\0{end}".encode()
+                ).hexdigest()
+            )
+            before = None
+            if cursor is not None:
+                anchor = cursors.decode_anchor(scope, cursor)
+                if anchor[0] != "event_history":
+                    raise ValueError("cursor is invalid")
+                before = (float(anchor[2]), anchor[1])
+            control, state_name, page = await runtime.page(
+                access,
+                control_uuid,
+                state_uuid,
+                start=start_seconds,
+                end=end_seconds,
+                limit=limit,
+                before=before,
+            )
+            if page.coverage == "not_recorded":
+                outcome = "not_recorded"
+            elif page.coverage == "partial_coverage":
+                outcome = "partial_coverage"
+            elif page.entries:
+                outcome = "events"
+            else:
+                outcome = "no_matching_events"
+
+            def timestamp(value: float | None) -> str | None:
+                if value is None:
+                    return None
+                return datetime.fromtimestamp(value, UTC).isoformat().replace("+00:00", "Z")
+
+            return _result(
+                EventHistoryEnvelope,
+                {
+                    "control_uuid": control_uuid,
+                    "control_name": control.name,
+                    "control_type": control.control_type,
+                    "state_uuid": state_uuid,
+                    "state_name": state_name,
+                    "start": timestamp(start_seconds),
+                    "end": timestamp(end_seconds),
+                    "outcome": outcome,
+                    "capture_started_at": timestamp(page.capture_started_at),
+                    "retained_from": timestamp(page.retained_from),
+                    "entries": [
+                        {
+                            "observed_at": timestamp(entry.observed_at),
+                            "old_value": entry.old_value,
+                            "new_value": entry.new_value,
+                            "quality": "direct_live_update",
+                        }
+                        for entry in page.entries
+                    ],
+                    "next_cursor": (
+                        cursors.encode_anchor(
+                            scope,
+                            ("event_history", page.next_event_id, str(page.next_event_at), 0),
+                        )
+                        if page.next_event_id is not None and page.next_event_at is not None
+                        else None
+                    ),
+                },
+            )
+        except ValueError as exc:
+            return _error(EventHistoryEnvelope, "invalid_input", str(exc))
+        except PermissionError:
+            return _error(
+                EventHistoryEnvelope, "permission_denied", "History authorization is required"
+            )
+        except ControlOperationError as exc:
+            return _error(EventHistoryEnvelope, exc.code, str(exc))
+
+
 def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> None:
     """Publish the bounded Phase 4 statistic and control-history tools."""
     annotations = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
@@ -3735,12 +4165,46 @@ def register_loxberry_operate_tool(server: FastMCP, runtime: LoxBerryOperateRunt
         idempotentHint=True,
         openWorldHint=False,
     )
+    source_annotations = ToolAnnotations(
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    )
 
     def audit(access: StoredAccessToken | None, outcome: str) -> None:
         _LOGGER.warning(
             "event=loxberry_operation tool=loxberry_clear_statistics_cache outcome=%s "
             "family=%s client=%s identity=%s",
             outcome,
+            _audit_identity(access.family_id) if access is not None else "unknown",
+            _audit_identity(str(access.client_id)) if access is not None else "unknown",
+            _audit_identity(access.identity_id) if access is not None else "unknown",
+            extra={"mcp_audit": True},
+        )
+
+    def audit_source(
+        access: StoredAccessToken | None,
+        tool: str,
+        outcome: str,
+        control_uuid: str | None = None,
+        state_uuid: str | None = None,
+    ) -> None:
+        def source_identifier(value: str | None) -> str:
+            if value is None:
+                return "none"
+            try:
+                return str(UUID(value))
+            except ValueError:
+                return "invalid"
+
+        _LOGGER.warning(
+            "event=loxberry_operation tool=%s outcome=%s control_uuid=%s state_uuid=%s "
+            "family=%s client=%s identity=%s",
+            tool,
+            outcome,
+            source_identifier(control_uuid),
+            source_identifier(state_uuid),
             _audit_identity(access.family_id) if access is not None else "unknown",
             _audit_identity(str(access.client_id)) if access is not None else "unknown",
             _audit_identity(access.identity_id) if access is not None else "unknown",
@@ -3795,6 +4259,143 @@ def register_loxberry_operate_tool(server: FastMCP, runtime: LoxBerryOperateRunt
         except Exception:
             audit(access, "failed")
             return _error(CacheClearEnvelope, "internal_error", "Internal error")
+
+    @server.tool(
+        name="loxberry_list_event_history_sources",
+        description=(
+            "List the configured local event-history sources. Requires loxone:history, "
+            "loxberry:operate and an exact local approval."
+        ),
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False),
+        structured_output=True,
+    )
+    async def list_event_history_sources() -> EventHistorySourcesEnvelope:
+        access: StoredAccessToken | None = None
+        try:
+            access = _access()
+            sources = await runtime.list_event_history_sources(access)
+            return _result(
+                EventHistorySourcesEnvelope,
+                {
+                    "sources": [
+                        {"control_uuid": control_uuid, "state_uuid": state_uuid}
+                        for control_uuid, state_uuid in sources
+                    ]
+                },
+            )
+        except PermissionError:
+            audit_source(access, "loxberry_list_event_history_sources", "permission_denied")
+            return _error(
+                EventHistorySourcesEnvelope, "permission_denied", "Local approval is required"
+            )
+        except ControlOperationError as exc:
+            audit_source(access, "loxberry_list_event_history_sources", exc.code)
+            return _error(EventHistorySourcesEnvelope, exc.code, str(exc))
+        except DiagnosticsUnavailable:
+            audit_source(access, "loxberry_list_event_history_sources", "temporarily_unavailable")
+            return _error(
+                EventHistorySourcesEnvelope, "temporarily_unavailable", "Operation is unavailable"
+            )
+
+    async def _change_event_history_source(
+        *, add: bool, control_uuid: str, state_uuid: str
+    ) -> EventHistorySourceChangeEnvelope:
+        tool = (
+            "loxberry_add_event_history_source" if add else "loxberry_remove_event_history_source"
+        )
+        access: StoredAccessToken | None = None
+        try:
+            access = _access()
+            control_uuid = str(UUID(control_uuid))
+            state_uuid = str(UUID(state_uuid))
+            if add:
+                changed, details = await runtime.add_event_history_source(
+                    access, control_uuid, state_uuid
+                )
+                name, control_type, state_name = details
+                result: dict[str, object] = {
+                    "changed": changed,
+                    "control_uuid": control_uuid,
+                    "state_uuid": state_uuid,
+                    "control_name": name,
+                    "control_type": control_type,
+                    "state_name": state_name,
+                }
+            else:
+                changed = await runtime.remove_event_history_source(
+                    access, control_uuid, state_uuid
+                )
+                result = {
+                    "changed": changed,
+                    "control_uuid": control_uuid,
+                    "state_uuid": state_uuid,
+                }
+            audit_source(
+                access, tool, "completed" if changed else "no_op", control_uuid, state_uuid
+            )
+            return _result(EventHistorySourceChangeEnvelope, result)
+        except PermissionError:
+            audit_source(access, tool, "permission_denied", control_uuid, state_uuid)
+            return _error(
+                EventHistorySourceChangeEnvelope, "permission_denied", "Local approval is required"
+            )
+        except ValueError as exc:
+            audit_source(access, tool, "invalid_input", control_uuid, state_uuid)
+            return _error(EventHistorySourceChangeEnvelope, "invalid_input", str(exc))
+        except ControlOperationError as exc:
+            audit_source(access, tool, exc.code, control_uuid, state_uuid)
+            return _error(EventHistorySourceChangeEnvelope, exc.code, str(exc))
+        except TimeoutError:
+            audit_source(access, tool, "timed_out_unknown", control_uuid, state_uuid)
+            return _error(
+                EventHistorySourceChangeEnvelope,
+                "temporarily_unavailable",
+                "Source change timed out; outcome is unknown",
+            )
+        except asyncio.CancelledError:
+            audit_source(access, tool, "cancelled_persisted_unknown", control_uuid, state_uuid)
+            raise
+        except Exception:
+            audit_source(access, tool, "failed", control_uuid, state_uuid)
+            return _error(
+                EventHistorySourceChangeEnvelope,
+                "temporarily_unavailable",
+                "Operation is unavailable",
+            )
+
+    @server.tool(
+        name="loxberry_add_event_history_source",
+        description=(
+            "Add one exact visible control/state pair to local event recording. Requires "
+            "loxone:history, loxberry:operate and an exact local approval."
+        ),
+        annotations=source_annotations,
+        structured_output=True,
+    )
+    async def add_event_history_source(
+        control_uuid: Annotated[str, Field(max_length=128)],
+        state_uuid: Annotated[str, Field(max_length=128)],
+    ) -> EventHistorySourceChangeEnvelope:
+        return await _change_event_history_source(
+            add=True, control_uuid=control_uuid, state_uuid=state_uuid
+        )
+
+    @server.tool(
+        name="loxberry_remove_event_history_source",
+        description=(
+            "Remove one exact control/state pair from local event recording. Requires "
+            "loxone:history, loxberry:operate and an exact local approval."
+        ),
+        annotations=source_annotations,
+        structured_output=True,
+    )
+    async def remove_event_history_source(
+        control_uuid: Annotated[str, Field(max_length=128)],
+        state_uuid: Annotated[str, Field(max_length=128)],
+    ) -> EventHistorySourceChangeEnvelope:
+        return await _change_event_history_source(
+            add=False, control_uuid=control_uuid, state_uuid=state_uuid
+        )
 
 
 def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> None:
@@ -4018,6 +4619,7 @@ def register_tool_surface(
     runtime: LoxoneRuntime | None,
     loxberry_runtime: LoxBerryReadRuntime | None,
     loxberry_operate_runtime: LoxBerryOperateRuntime | None,
+    event_history_runtime: EventHistoryRuntime | None,
     control_enabled: bool,
 ) -> None:
     """Register one complete live or synthetic MCP tool surface."""
@@ -4027,6 +4629,7 @@ def register_tool_surface(
         register_project_tools(server, runtime)
         register_control_tool(server, runtime)
         register_history_tools(server, runtime)
+    register_event_history_tools(server, event_history_runtime)
     if loxberry_runtime is not None:
         register_loxberry_read_tools(server, loxberry_runtime)
     if loxberry_operate_runtime is not None:

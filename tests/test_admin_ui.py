@@ -337,6 +337,20 @@ def test_common_actions_update_the_page_without_a_reload() -> None:
     assert "for (const row of existing.values()) row.remove()" in template
 
 
+def test_event_history_enablement_is_preserved_in_server_rendered_fallback() -> None:
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+
+    assert "EVENT_HISTORY_ENABLED => $config->{event_history}{enabled} ? 1 : 0" in cgi
+    assert (
+        'MCPSERVER_EVENT_HISTORY_STORE} = "$lbpdatadir/event-history/state-events.sqlite3"' in cgi
+    )
+    assert (
+        'name="event_history_enabled" type="checkbox" value="1" '
+        "<TMPL_IF EVENT_HISTORY_ENABLED>checked</TMPL_IF>"
+    ) in template
+
+
 def test_admin_cards_use_consistent_vertical_spacing() -> None:
     template = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
     explorer = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")

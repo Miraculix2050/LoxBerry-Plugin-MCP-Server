@@ -29,6 +29,10 @@ def test_defaults_are_disabled_and_bounded() -> None:
     assert config.loxberry_read_bindings == ()
     assert config.loxberry_operate_bindings == ()
     assert config.statistics_memory_max_mib == 128
+    assert config.event_history_enabled is False
+    assert config.event_history_retention_days == 90
+    assert config.event_history_maximum_mib == 128
+    assert config.event_history_sources == ()
     assert config.structure_refresh_seconds == 300
     assert config.max_structure_controls == 20_000
     assert config.max_parallel_calls == 4
@@ -120,6 +124,27 @@ def test_phase_four_configuration_uses_only_the_ram_cache_setting() -> None:
     assert config.history_requests_per_minute == 12
     assert config.statistics_memory_max_mib == 64
     assert config.loxberry_operate_bindings == (binding,)
+
+
+def test_event_history_requires_history_and_keeps_exact_sources() -> None:
+    control_uuid = "00000000-0000-0000-0000000000000001"
+    state_uuid = "00000000-0000-0000-0000000000000002"
+    with pytest.raises(ConfigError, match="requires loxone history"):
+        PluginConfig.from_document({"schema_version": 9, "event_history": {"enabled": True}})
+
+    config = PluginConfig.from_document(
+        {
+            "schema_version": 9,
+            "tools": {"loxone_history_enabled": True},
+            "event_history": {
+                "enabled": True,
+                "retention_days": 90,
+                "maximum_mib": 128,
+                "sources": [{"control_uuid": control_uuid, "state_uuid": state_uuid}],
+            },
+        }
+    )
+    assert config.event_history_sources == ((control_uuid, state_uuid),)
 
 
 def test_removed_hybrid_cache_key_is_not_reused() -> None:

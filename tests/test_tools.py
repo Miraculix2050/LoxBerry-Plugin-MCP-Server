@@ -3,7 +3,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
+from dataclasses import replace
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from mcp.server.fastmcp import FastMCP
@@ -39,6 +42,7 @@ from mcpserver.loxone.runtime import ControlHistoryEntry, RuntimeSnapshot
 from mcpserver.loxone.statistics import StatisticPoint
 from mcpserver.skill_delivery import read_skill_markdown
 from mcpserver.tools import (
+    EventHistoryRuntime,
     LoxBerryOperateRuntime,
     LoxBerryReadRuntime,
     SystemStatusEnvelope,
@@ -603,7 +607,7 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert tool.annotations.destructiveHint is False
     assert tool.annotations.openWorldHint is False
     assert result.data.name == "using-loxberry-mcp"  # type: ignore[union-attr]
-    assert result.data.revision == 29  # type: ignore[union-attr]
+    assert result.data.revision == 30  # type: ignore[union-attr]
     assert "`loxone_get_structure_overview`" in result.data.content  # type: ignore[union-attr]
     assert result.data.media_type == "text/markdown"  # type: ignore[union-attr]
     assert result.data.content == read_skill_markdown()  # type: ignore[union-attr]
@@ -876,6 +880,219 @@ async def test_loxberry_operate_rate_limits_denied_attempts(
         await runtime.clear_statistics_cache(access)
     with pytest.raises(tools_module.DiagnosticsUnavailable):
         await runtime.clear_statistics_cache(access)
+
+
+@pytest.mark.asyncio
+async def test_event_history_source_removal_rechecks_current_authorization() -> None:
+    source = ("control", "state")
+    allowed = PluginConfig(
+        loxone_history_enabled=True,
+        loxberry_operate_enabled=True,
+        event_history_enabled=True,
+        loxberry_operate_bindings=("binding",),
+        event_history_sources=(source,),
+    )
+    revoked = PluginConfig(event_history_sources=(source,))
+
+    class ConfigStore:
+        def load(self) -> PluginConfig:
+            return allowed
+
+        def mutate(self, operation: object) -> PluginConfig:
+            return operation(revoked)  # type: ignore[operator]
+
+    class AuthStore:
+        def pseudonym(self, *_parts: str) -> str:
+            return "binding"
+
+    class Monitor:
+        async def update_config(self, _config: PluginConfig) -> None:
+            raise AssertionError("revoked source change must not reconfigure the monitor")
+
+    runtime = LoxBerryOperateRuntime(object(), ConfigStore(), AuthStore(), event_history=Monitor())
+
+    with pytest.raises(PermissionError):
+        await runtime.remove_event_history_source(
+            _loxberry_access(READ_SCOPE, HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE), *source
+        )
+
+
+@pytest.mark.asyncio
+async def test_event_history_source_removal_reports_no_op_when_another_writer_removed_it() -> None:
+    source = ("control-a", "state-a")
+    replacement_source = ("control-b", "state-b")
+    initial = PluginConfig(
+        loxone_history_enabled=True,
+        loxberry_operate_enabled=True,
+        event_history_enabled=True,
+        loxberry_operate_bindings=("binding",),
+        event_history_sources=(source,),
+    )
+    replacement = replace(initial, event_history_sources=(replacement_source,))
+
+    class ConfigStore:
+        def load(self) -> PluginConfig:
+            return initial
+
+        def mutate(self, operation: object) -> PluginConfig:
+            return operation(replacement)  # type: ignore[operator]
+
+    class AuthStore:
+        def pseudonym(self, *_parts: str) -> str:
+            return "binding"
+
+    class Monitor:
+        async def update_config(self, _config: PluginConfig) -> None:
+            raise AssertionError("a no-op must not reconfigure the monitor")
+
+    runtime = LoxBerryOperateRuntime(object(), ConfigStore(), AuthStore(), event_history=Monitor())
+
+    assert not await runtime.remove_event_history_source(
+        _loxberry_access(READ_SCOPE, HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE), *source
+    )
+
+
+@pytest.mark.asyncio
+async def test_event_history_read_rejects_a_visible_state_outside_the_source_allowlist(
+    tmp_path: Path,
+) -> None:
+    source = ("control", "state")
+
+    class ConfigStore:
+        def load(self) -> PluginConfig:
+            return PluginConfig(
+                loxone_history_enabled=True,
+                event_history_enabled=True,
+                event_history_sources=(),
+            )
+
+    runtime = EventHistoryRuntime(object(), ConfigStore(), (tmp_path / "history.sqlite3").resolve())
+
+    with pytest.raises(tools_module.ControlOperationError, match="not configured") as exc_info:
+        await runtime.page(
+            _loxberry_access(HISTORY_SCOPE), *source, start=0.0, end=1.0, limit=1, before=None
+        )
+
+    assert exc_info.value.code == "not_found"
+
+
+@pytest.mark.asyncio
+async def test_event_history_reconciliation_waits_for_the_monitor_after_cancellation() -> None:
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    class Monitor:
+        async def update_config(self, _config: PluginConfig) -> None:
+            started.set()
+            await release.wait()
+
+    reconciliation = asyncio.create_task(
+        LoxBerryOperateRuntime._reconcile_event_history_config(Monitor(), PluginConfig())
+    )
+    await started.wait()
+    reconciliation.cancel()
+    await asyncio.sleep(0)
+    assert not reconciliation.done()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await reconciliation
+
+
+@pytest.mark.asyncio
+async def test_event_history_source_timeout_returns_an_uncertain_envelope(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class TimedOutRuntime:
+        async def add_event_history_source(
+            self, _access: StoredAccessToken, _control_uuid: str, _state_uuid: str
+        ) -> tuple[bool, tuple[str, str, str]]:
+            raise TimeoutError
+
+    server = FastMCP("event-history-source-timeout")
+    register_loxberry_operate_tool(server, TimedOutRuntime())  # type: ignore[arg-type]
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: _loxberry_access(READ_SCOPE, HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE),
+    )
+    caplog.set_level(logging.WARNING, logger="mcpserver.tools")
+
+    result = await server._tool_manager.call_tool(
+        "loxberry_add_event_history_source",
+        {
+            "control_uuid": "00000000-0000-0000-0000-000000000001",
+            "state_uuid": "00000000-0000-0000-0000-000000000002",
+        },
+    )
+
+    assert result.ok is False
+    assert result.data.error == "temporarily_unavailable"  # type: ignore[union-attr]
+    assert result.data.message == "Source change timed out; outcome is unknown"  # type: ignore[union-attr]
+    assert (
+        "control_uuid=00000000-0000-0000-0000-000000000001 "
+        "state_uuid=00000000-0000-0000-0000-000000000002"
+    ) in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_event_history_source_audit_rejects_and_sanitizes_invalid_uuids(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class Runtime:
+        async def remove_event_history_source(self, *_args: object) -> bool:
+            raise AssertionError("invalid UUIDs must be rejected before runtime access")
+
+    server = FastMCP("event-history-source-uuid-audit")
+    register_loxberry_operate_tool(server, Runtime())  # type: ignore[arg-type]
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: _loxberry_access(READ_SCOPE, HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE),
+    )
+    caplog.set_level(logging.WARNING, logger="mcpserver.tools")
+    malicious_uuid = "invalid\nforged=value"
+
+    result = await server._tool_manager.call_tool(
+        "loxberry_remove_event_history_source",
+        {"control_uuid": malicious_uuid, "state_uuid": "also-invalid"},
+    )
+
+    assert result.ok is False
+    assert result.data.error == "invalid_input"  # type: ignore[union-attr]
+    assert malicious_uuid not in caplog.text
+    assert "control_uuid=invalid state_uuid=invalid" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_event_history_source_timeout_reconciles_a_late_mutation() -> None:
+    expected = PluginConfig(event_history_enabled=True)
+    reconciled = asyncio.Event()
+
+    class ConfigStore:
+        def load(self) -> PluginConfig:
+            return expected
+
+        def mutate(self, _operation: object) -> PluginConfig:
+            time.sleep(0.02)
+            return expected
+
+    class Monitor:
+        async def update_config(self, config: PluginConfig) -> None:
+            assert config is expected
+            reconciled.set()
+
+    runtime = LoxBerryOperateRuntime(
+        object(),
+        ConfigStore(),
+        object(),
+        event_history=Monitor(),
+        event_history_source_change_timeout_seconds=0.001,
+    )
+
+    with pytest.raises(TimeoutError):
+        await runtime._mutate_event_history_config(Monitor(), lambda config: config)
+
+    await asyncio.wait_for(reconciled.wait(), timeout=1)
 
 
 @pytest.mark.asyncio

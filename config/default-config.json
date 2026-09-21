@@ -38,7 +38,13 @@
     "username": ""
   },
   "emergency_stop": {"virtual_status_uuid": ""},
-  "schema_version": 8,
+  "event_history": {
+    "enabled": false,
+    "retention_days": 90,
+    "maximum_mib": 128,
+    "sources": []
+  },
+  "schema_version": 9,
   "server": {
     "enabled": false,
     "public_origin": ""

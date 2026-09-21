@@ -423,6 +423,10 @@ def test_postroot_keeps_installer_alive_during_apache_activation() -> None:
     assert (
         "Environment=MCPSERVER_MQTT_CREDENTIALS=@DATA_DIR@/auth/mqtt-credentials.json.enc" in unit
     )
+    assert (
+        "Environment=MCPSERVER_EVENT_HISTORY_STORE=@DATA_DIR@/event-history/state-events.sqlite3"
+        in unit
+    )
     assert "StandardOutput=journal" in unit
     assert "StandardError=journal" in unit
     assert "StandardOutput=append:@LOG_DIR@/service.log" not in unit
