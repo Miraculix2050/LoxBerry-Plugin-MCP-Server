@@ -85,3 +85,27 @@ def test_retention_pruning_limits_completed_coverage_to_retained_window(tmp_path
     monkeypatch.setattr("mcpserver.loxone.event_history.time.time", lambda: 172800.0)
 
     assert store.page(*source, start=80000.0, end=90000.0, limit=10).coverage == "partial_coverage"
+
+
+def test_size_eviction_advances_only_coverage_for_its_source(tmp_path, monkeypatch):
+    store = EventHistoryStore(
+        (tmp_path / "event-history.sqlite3").resolve(), retention_days=90, maximum_mib=16
+    )
+    busy = ("00000000-0000-0000-0000000000000001", "00000000-0000-0000-0000000000000002")
+    quiet = ("00000000-0000-0000-0000-0000000000000003", "00000000-0000-0000-0000-0000000000000004")
+    store.initialize()
+    store.begin_coverage((busy, quiet), started_at=0.0)
+    store.record_transition(*busy, observed_at=10.0, old_value=False, new_value=True)
+    measurements = iter((store.maximum_bytes + 1, 0))
+    monkeypatch.setattr(store, "_used_database_bytes", lambda _connection: next(measurements))
+
+    with store._lock, store._opened() as connection:
+        store._prune(connection, now=100.0)
+        coverage = dict(
+            connection.execute(
+                "SELECT control_uuid, started_at FROM coverage ORDER BY control_uuid"
+            ).fetchall()
+        )
+
+    assert coverage[busy[0]] > 10.0
+    assert coverage[quiet[0]] == 0.0

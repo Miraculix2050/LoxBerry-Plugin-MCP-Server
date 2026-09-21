@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from datetime import UTC, datetime
 
 import pytest
@@ -937,7 +938,7 @@ async def test_event_history_reconciliation_waits_for_the_monitor_after_cancella
 
 @pytest.mark.asyncio
 async def test_event_history_source_timeout_returns_an_uncertain_envelope(
-    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     class TimedOutRuntime:
         async def add_event_history_source(
@@ -952,6 +953,7 @@ async def test_event_history_source_timeout_returns_an_uncertain_envelope(
         "_access",
         lambda: _loxberry_access(READ_SCOPE, HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE),
     )
+    caplog.set_level(logging.WARNING, logger="mcpserver.tools")
 
     result = await server._tool_manager.call_tool(
         "loxberry_add_event_history_source", {"control_uuid": "control", "state_uuid": "state"}
@@ -960,6 +962,39 @@ async def test_event_history_source_timeout_returns_an_uncertain_envelope(
     assert result.ok is False
     assert result.data.error == "temporarily_unavailable"  # type: ignore[union-attr]
     assert result.data.message == "Source change timed out; outcome is unknown"  # type: ignore[union-attr]
+    assert "control_uuid=control state_uuid=state" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_event_history_source_timeout_reconciles_a_late_mutation() -> None:
+    expected = PluginConfig(event_history_enabled=True)
+    reconciled = asyncio.Event()
+
+    class ConfigStore:
+        def load(self) -> PluginConfig:
+            return expected
+
+        def mutate(self, _operation: object) -> PluginConfig:
+            time.sleep(0.02)
+            return expected
+
+    class Monitor:
+        async def update_config(self, config: PluginConfig) -> None:
+            assert config is expected
+            reconciled.set()
+
+    runtime = LoxBerryOperateRuntime(
+        object(),
+        ConfigStore(),
+        object(),
+        event_history=Monitor(),
+        event_history_source_change_timeout_seconds=0.001,
+    )
+
+    with pytest.raises(TimeoutError):
+        await runtime._mutate_event_history_config(Monitor(), lambda config: config)
+
+    await asyncio.wait_for(reconciled.wait(), timeout=1)
 
 
 @pytest.mark.asyncio

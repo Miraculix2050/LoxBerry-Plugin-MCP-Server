@@ -1411,6 +1411,7 @@ class LoxBerryOperateRuntime:
         self._auth_store = auth_store
         self._event_history = event_history
         self._event_history_lock = asyncio.Lock()
+        self._event_history_reconciliation_tasks: set[asyncio.Task[None]] = set()
         self._requests: dict[str, list[float]] = {}
         self._clear_timeout_seconds = clear_timeout_seconds
         self._event_history_source_change_timeout_seconds = (
@@ -1477,6 +1478,41 @@ class LoxBerryOperateRuntime:
         ):
             raise PermissionError("LoxBerry cache operation is not authorized")
 
+    def _reconcile_completed_event_history_mutation(
+        self, monitor: EventHistoryMonitor, mutation: asyncio.Task[Any]
+    ) -> None:
+        """Reconcile a configuration mutation that completed after its caller left."""
+
+        async def reconcile() -> None:
+            try:
+                await mutation
+                async with self._event_history_lock:
+                    config = await asyncio.to_thread(self._config_store.load)
+                    await self._reconcile_event_history_config(monitor, config)
+            except Exception as exc:
+                _LOGGER.warning(
+                    "component=event_history outcome=late_mutation_reconciliation_failed "
+                    "error_type=%s",
+                    type(exc).__name__,
+                )
+
+        task = asyncio.create_task(reconcile())
+        self._event_history_reconciliation_tasks.add(task)
+        task.add_done_callback(self._event_history_reconciliation_tasks.discard)
+
+    async def _mutate_event_history_config(
+        self, monitor: EventHistoryMonitor, operation: Any
+    ) -> Any:
+        """Bound the caller wait while preserving reconciliation after a late mutation."""
+        mutation = asyncio.create_task(asyncio.to_thread(self._config_store.mutate, operation))
+        try:
+            return await asyncio.wait_for(
+                asyncio.shield(mutation), timeout=self._event_history_source_change_timeout_seconds
+            )
+        except (TimeoutError, asyncio.CancelledError):
+            self._reconcile_completed_event_history_mutation(monitor, mutation)
+            raise
+
     async def list_event_history_sources(
         self, access: StoredAccessToken
     ) -> tuple[tuple[str, str], ...]:
@@ -1528,10 +1564,7 @@ class LoxBerryOperateRuntime:
                     ),
                 )
 
-            updated = await asyncio.wait_for(
-                asyncio.to_thread(self._config_store.mutate, add_source),
-                timeout=self._event_history_source_change_timeout_seconds,
-            )
+            updated = await self._mutate_event_history_config(monitor, add_source)
             if changed:
                 await self._reconcile_event_history_config(monitor, updated)
             return changed, (name, control_type, state_name)
@@ -1565,10 +1598,7 @@ class LoxBerryOperateRuntime:
                     ),
                 )
 
-            updated = await asyncio.wait_for(
-                asyncio.to_thread(self._config_store.mutate, remove_source),
-                timeout=self._event_history_source_change_timeout_seconds,
-            )
+            updated = await self._mutate_event_history_config(monitor, remove_source)
             changed = bool(updated.event_history_sources != config.event_history_sources)
             if changed:
                 await self._reconcile_event_history_config(monitor, updated)
@@ -4148,11 +4178,20 @@ def register_loxberry_operate_tool(server: FastMCP, runtime: LoxBerryOperateRunt
             extra={"mcp_audit": True},
         )
 
-    def audit_source(access: StoredAccessToken | None, tool: str, outcome: str) -> None:
+    def audit_source(
+        access: StoredAccessToken | None,
+        tool: str,
+        outcome: str,
+        control_uuid: str | None = None,
+        state_uuid: str | None = None,
+    ) -> None:
         _LOGGER.warning(
-            "event=loxberry_operation tool=%s outcome=%s family=%s client=%s identity=%s",
+            "event=loxberry_operation tool=%s outcome=%s control_uuid=%s state_uuid=%s "
+            "family=%s client=%s identity=%s",
             tool,
             outcome,
+            control_uuid or "none",
+            state_uuid or "none",
             _audit_identity(access.family_id) if access is not None else "unknown",
             _audit_identity(str(access.client_id)) if access is not None else "unknown",
             _audit_identity(access.identity_id) if access is not None else "unknown",
@@ -4276,31 +4315,33 @@ def register_loxberry_operate_tool(server: FastMCP, runtime: LoxBerryOperateRunt
                     "control_uuid": control_uuid,
                     "state_uuid": state_uuid,
                 }
-            audit_source(access, tool, "completed" if changed else "no_op")
+            audit_source(
+                access, tool, "completed" if changed else "no_op", control_uuid, state_uuid
+            )
             return _result(EventHistorySourceChangeEnvelope, result)
         except PermissionError:
-            audit_source(access, tool, "permission_denied")
+            audit_source(access, tool, "permission_denied", control_uuid, state_uuid)
             return _error(
                 EventHistorySourceChangeEnvelope, "permission_denied", "Local approval is required"
             )
         except ValueError as exc:
-            audit_source(access, tool, "invalid_input")
+            audit_source(access, tool, "invalid_input", control_uuid, state_uuid)
             return _error(EventHistorySourceChangeEnvelope, "invalid_input", str(exc))
         except ControlOperationError as exc:
-            audit_source(access, tool, exc.code)
+            audit_source(access, tool, exc.code, control_uuid, state_uuid)
             return _error(EventHistorySourceChangeEnvelope, exc.code, str(exc))
         except TimeoutError:
-            audit_source(access, tool, "timed_out_unknown")
+            audit_source(access, tool, "timed_out_unknown", control_uuid, state_uuid)
             return _error(
                 EventHistorySourceChangeEnvelope,
                 "temporarily_unavailable",
                 "Source change timed out; outcome is unknown",
             )
         except asyncio.CancelledError:
-            audit_source(access, tool, "cancelled_persisted_unknown")
+            audit_source(access, tool, "cancelled_persisted_unknown", control_uuid, state_uuid)
             raise
         except Exception:
-            audit_source(access, tool, "failed")
+            audit_source(access, tool, "failed", control_uuid, state_uuid)
             return _error(
                 EventHistorySourceChangeEnvelope,
                 "temporarily_unavailable",

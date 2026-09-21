@@ -267,6 +267,11 @@ class EventHistoryStore:
             "DELETE FROM coverage WHERE ended_at IS NOT NULL AND ended_at < ?", (cutoff,)
         ).rowcount
         while self._used_database_bytes(connection) > self.maximum_bytes:
+            evicted = connection.execute(
+                "SELECT control_uuid, state_uuid, MAX(observed_at) FROM events WHERE id IN "
+                "(SELECT id FROM events ORDER BY observed_at, id LIMIT 256) "
+                "GROUP BY control_uuid, state_uuid"
+            ).fetchall()
             removed = connection.execute(
                 "DELETE FROM events WHERE id IN "
                 "(SELECT id FROM events ORDER BY observed_at, id LIMIT 256)"
@@ -280,9 +285,14 @@ class EventHistoryStore:
                 if removed <= 0:
                     break
             deleted += removed
-            connection.execute(
-                "UPDATE coverage SET started_at = ? WHERE started_at < ?", (now, now)
-            )
+            for control_uuid, state_uuid, observed_at in evicted:
+                boundary = math.nextafter(float(observed_at), math.inf)
+                connection.execute(
+                    "UPDATE coverage SET started_at = ? WHERE control_uuid = ? "
+                    "AND state_uuid = ? AND started_at < ? "
+                    "AND (ended_at IS NULL OR ended_at > ?)",
+                    (boundary, control_uuid, state_uuid, boundary, boundary),
+                )
         return deleted > 0
 
     def _compact(self, connection: sqlite3.Connection, *, vacuum: bool) -> None:
