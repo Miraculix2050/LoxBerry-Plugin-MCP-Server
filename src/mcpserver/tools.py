@@ -1395,6 +1395,7 @@ class LoxBerryOperateRuntime:
         self._config_store = config_store
         self._auth_store = auth_store
         self._event_history = event_history
+        self._event_history_lock = asyncio.Lock()
         self._requests: dict[str, list[float]] = {}
         self._clear_timeout_seconds = clear_timeout_seconds
 
@@ -1443,40 +1444,44 @@ class LoxBerryOperateRuntime:
     async def add_event_history_source(
         self, access: StoredAccessToken, control_uuid: str, state_uuid: str
     ) -> tuple[bool, tuple[str, str, str]]:
-        monitor = self._event_history_allowed(access)
-        config = self._config_store.load()
-        if (control_uuid, state_uuid) in config.event_history_sources:
+        async with self._event_history_lock:
+            monitor = self._event_history_allowed(access)
+            config = self._config_store.load()
+            if (control_uuid, state_uuid) in config.event_history_sources:
+                name, control_type, state_name = await monitor.validate_source(
+                    control_uuid, state_uuid
+                )
+                return False, (name, control_type, state_name)
+            if len(config.event_history_sources) >= 64:
+                raise ControlOperationError("rate_limited", "event history source capacity reached")
             name, control_type, state_name = await monitor.validate_source(control_uuid, state_uuid)
-            return False, (name, control_type, state_name)
-        if len(config.event_history_sources) >= 64:
-            raise ControlOperationError("rate_limited", "event history source capacity reached")
-        name, control_type, state_name = await monitor.validate_source(control_uuid, state_uuid)
-        updated = replace(
-            config,
-            event_history_sources=(*config.event_history_sources, (control_uuid, state_uuid)),
-        )
-        self._config_store.save(updated)
-        await monitor.update_config(updated)
-        return True, (name, control_type, state_name)
+            updated = replace(
+                config,
+                event_history_sources=(*config.event_history_sources, (control_uuid, state_uuid)),
+            )
+            self._config_store.save(updated)
+            await monitor.update_config(updated)
+            return True, (name, control_type, state_name)
 
     async def remove_event_history_source(
         self, access: StoredAccessToken, control_uuid: str, state_uuid: str
     ) -> bool:
-        monitor = self._event_history_allowed(access)
-        config = self._config_store.load()
-        if (control_uuid, state_uuid) not in config.event_history_sources:
-            return False
-        updated = replace(
-            config,
-            event_history_sources=tuple(
-                source
-                for source in config.event_history_sources
-                if source != (control_uuid, state_uuid)
-            ),
-        )
-        self._config_store.save(updated)
-        await monitor.update_config(updated)
-        return True
+        async with self._event_history_lock:
+            monitor = self._event_history_allowed(access)
+            config = self._config_store.load()
+            if (control_uuid, state_uuid) not in config.event_history_sources:
+                return False
+            updated = replace(
+                config,
+                event_history_sources=tuple(
+                    source
+                    for source in config.event_history_sources
+                    if source != (control_uuid, state_uuid)
+                ),
+            )
+            self._config_store.save(updated)
+            await monitor.update_config(updated)
+            return True
 
 
 class EventHistoryRuntime:
@@ -1501,7 +1506,7 @@ class EventHistoryRuntime:
         start: float,
         end: float,
         limit: int,
-        before_id: int | None,
+        before: tuple[float, int] | None,
     ) -> tuple[Control, str, Any]:
         if HISTORY_SCOPE not in access.scopes:
             raise PermissionError("loxone:history is required")
@@ -1541,7 +1546,7 @@ class EventHistoryRuntime:
                 start=start,
                 end=end,
                 limit=limit,
-                before_id=before_id,
+                before=before,
             )
         except EventHistoryUnavailable as exc:
             raise ControlOperationError("temporarily_unavailable", str(exc)) from exc
@@ -3698,12 +3703,12 @@ def register_event_history_tools(server: FastMCP, runtime: EventHistoryRuntime |
                     f"{access.family_id}\0{control_uuid}\0{state_uuid}\0{start}\0{end}".encode()
                 ).hexdigest()
             )
-            before_id = None
+            before = None
             if cursor is not None:
                 anchor = cursors.decode_anchor(scope, cursor)
                 if anchor[0] != "event_history":
                     raise ValueError("cursor is invalid")
-                before_id = anchor[1]
+                before = (float(anchor[2]), anchor[1])
             control, state_name, page = await runtime.page(
                 access,
                 control_uuid,
@@ -3711,7 +3716,7 @@ def register_event_history_tools(server: FastMCP, runtime: EventHistoryRuntime |
                 start=start_seconds,
                 end=end_seconds,
                 limit=limit,
-                before_id=before_id,
+                before=before,
             )
             if page.coverage == "not_recorded":
                 outcome = "not_recorded"
@@ -3750,8 +3755,11 @@ def register_event_history_tools(server: FastMCP, runtime: EventHistoryRuntime |
                         for entry in page.entries
                     ],
                     "next_cursor": (
-                        cursors.encode_anchor(scope, ("event_history", page.next_event_id, "", 0))
-                        if page.next_event_id is not None
+                        cursors.encode_anchor(
+                            scope,
+                            ("event_history", page.next_event_id, str(page.next_event_at), 0),
+                        )
+                        if page.next_event_id is not None and page.next_event_at is not None
                         else None
                     ),
                 },
@@ -4139,6 +4147,11 @@ def register_loxberry_operate_tool(server: FastMCP, runtime: LoxBerryOperateRunt
         except ControlOperationError as exc:
             audit_source(access, "loxberry_list_event_history_sources", exc.code)
             return _error(EventHistorySourcesEnvelope, exc.code, str(exc))
+        except DiagnosticsUnavailable:
+            audit_source(access, "loxberry_list_event_history_sources", "temporarily_unavailable")
+            return _error(
+                EventHistorySourcesEnvelope, "temporarily_unavailable", "Operation is unavailable"
+            )
 
     async def _change_event_history_source(
         *, add: bool, control_uuid: str, state_uuid: str

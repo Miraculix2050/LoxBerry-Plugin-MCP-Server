@@ -10,7 +10,7 @@ def test_store_records_typed_transitions_and_pages_them(tmp_path):
         (tmp_path / "event-history.sqlite3").resolve(), retention_days=90, maximum_mib=16
     )
     source = ("00000000-0000-0000-0000000000000001", "00000000-0000-0000-0000000000000002")
-    started_at = time.time()
+    started_at = time.time() - 30
     store.initialize()
     store.begin_coverage((source,), started_at=started_at)
     store.record_transition(*source, observed_at=started_at + 10, old_value=False, new_value=True)
@@ -18,7 +18,7 @@ def test_store_records_typed_transitions_and_pages_them(tmp_path):
         *source, observed_at=started_at + 20, old_value="closed", new_value="open"
     )
 
-    page = store.page(*source, start=started_at, end=started_at + 30, limit=10)
+    page = store.page(*source, start=started_at, end=time.time(), limit=10)
 
     assert page.coverage == "complete"
     assert [(item.old_value, item.new_value) for item in page.entries] == [

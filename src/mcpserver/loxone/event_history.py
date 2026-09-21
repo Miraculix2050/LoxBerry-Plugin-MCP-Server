@@ -53,6 +53,7 @@ class EventHistoryPage:
     retained_from: float | None
     coverage: str
     next_event_id: int | None
+    next_event_at: float | None
 
 
 def _value(value: object) -> bool | float | int | str:
@@ -140,9 +141,8 @@ class EventHistoryStore:
                 # A process that did not reach ``end_coverage`` must not make a
                 # later request look continuously recorded across its downtime.
                 connection.execute(
-                    "UPDATE coverage SET ended_at = ?, outcome = 'interrupted' "
+                    "UPDATE coverage SET ended_at = started_at, outcome = 'interrupted' "
                     "WHERE ended_at IS NULL",
-                    (time.time(),),
                 )
                 connection.execute("PRAGMA user_version = 1")
                 connection.execute("COMMIT")
@@ -253,6 +253,10 @@ class EventHistoryStore:
     def _prune(self, connection: sqlite3.Connection, *, now: float) -> bool:
         cutoff = now - self.retention_seconds
         deleted = connection.execute("DELETE FROM events WHERE observed_at < ?", (cutoff,)).rowcount
+        if deleted:
+            connection.execute(
+                "UPDATE coverage SET started_at = ? WHERE started_at < ?", (cutoff, cutoff)
+            )
         deleted += connection.execute(
             "DELETE FROM coverage WHERE ended_at IS NOT NULL AND ended_at < ?", (cutoff,)
         ).rowcount
@@ -270,6 +274,9 @@ class EventHistoryStore:
                 if removed <= 0:
                     break
             deleted += removed
+            connection.execute(
+                "UPDATE coverage SET started_at = ? WHERE started_at < ?", (now, now)
+            )
         return deleted > 0
 
     def _compact(self, connection: sqlite3.Connection, *, vacuum: bool) -> None:
@@ -292,7 +299,7 @@ class EventHistoryStore:
         start: float,
         end: float,
         limit: int,
-        before_id: int | None = None,
+        before: tuple[float, int] | None = None,
     ) -> EventHistoryPage:
         with self._lock, self._opened() as connection:
             try:
@@ -301,7 +308,7 @@ class EventHistoryStore:
                     "SELECT started_at, ended_at FROM coverage WHERE control_uuid = ? "
                     "AND state_uuid = ? "
                     "AND started_at <= ? AND COALESCE(ended_at, ?) >= ? ORDER BY started_at",
-                    (control_uuid, state_uuid, end, end, start),
+                    (control_uuid, state_uuid, end, time.time(), start),
                 ).fetchall()
                 capture = connection.execute(
                     "SELECT MIN(started_at) FROM coverage WHERE control_uuid = ? "
@@ -318,9 +325,9 @@ class EventHistoryStore:
                     "AND observed_at <= ?"
                 )
                 parameters: list[object] = [control_uuid, state_uuid, start, end]
-                if before_id is not None:
-                    query += " AND id < ?"
-                    parameters.append(before_id)
+                if before is not None:
+                    query += " AND (observed_at < ? OR (observed_at = ? AND id < ?))"
+                    parameters.extend((before[0], before[0], before[1]))
                 query += " ORDER BY observed_at DESC, id DESC LIMIT ?"
                 parameters.append(limit + 1)
                 rows = connection.execute(query, parameters).fetchall()
@@ -338,7 +345,9 @@ class EventHistoryStore:
             for started_at, ended_at in coverage_rows:
                 if started_at > covered_until:
                     break
-                covered_until = max(covered_until, end if ended_at is None else ended_at)
+                covered_until = max(
+                    covered_until, min(end, time.time()) if ended_at is None else ended_at
+                )
                 if covered_until >= end:
                     break
             coverage = "complete" if covered_until >= end else "partial_coverage"
@@ -348,6 +357,7 @@ class EventHistoryStore:
             retained_from=retained,
             coverage=coverage,
             next_event_id=selected[-1][0] if len(rows) > limit else None,
+            next_event_at=selected[-1][1] if len(rows) > limit else None,
         )
 
     def clear(self) -> int:
@@ -432,7 +442,7 @@ class EventHistoryMonitor:
                 if not active:
                     self.status = "unavailable"
                     _LOGGER.warning("component=event_history outcome=no_configured_sources_visible")
-                    await asyncio.sleep(5)
+                    await asyncio.sleep(60)
                     continue
                 started_at = time.time()
                 await asyncio.to_thread(self.store.begin_coverage, active, started_at=started_at)
