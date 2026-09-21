@@ -162,9 +162,13 @@ class ProjectQuery:
     def _detail(self, node: GraphNode, *, limit: int) -> dict[str, object]:
         """Return the one-object projection including all KNX source evidence."""
         result = self._summary(node)
-        source_diagnostics, labels_truncated = self._node_source_diagnostics(node)
+        source_diagnostics, labels_truncated, diagnostics_truncated, diagnostics_omitted = (
+            self._node_source_diagnostics(node)
+        )
         result["source_diagnostics"] = source_diagnostics
         result["source_diagnostics_labels_truncated"] = labels_truncated
+        result["source_diagnostics_truncated"] = diagnostics_truncated
+        result["source_diagnostics_omitted"] = diagnostics_omitted
         for item in self.view.snapshot.source_diagnostics.entries:
             if item.code.startswith("parser_") and node.key in item.sample_node_ids:
                 source_diagnostics.append({"code": item.code})
@@ -207,7 +211,9 @@ class ProjectQuery:
         }
         return result
 
-    def _node_source_diagnostics(self, node: GraphNode) -> tuple[list[dict[str, object]], bool]:
+    def _node_source_diagnostics(
+        self, node: GraphNode
+    ) -> tuple[list[dict[str, object]], bool, bool, int]:
         """Return a value-free diagnostic projection for one authorized node."""
 
         diagnostics: list[dict[str, object]] = []
@@ -227,7 +233,7 @@ class ProjectQuery:
             )
             if markers:
                 diagnostics.append({"code": "unclassified_knx_candidate", "marker_fields": markers})
-            return diagnostics, labels_truncated
+            return diagnostics, labels_truncated, False, 0
         if knx.object_kind == "endpoint":
             if knx.group_address is None:
                 diagnostics.append({"code": "missing_group_address"})
@@ -240,19 +246,27 @@ class ProjectQuery:
             if not rules:
                 diagnostics.append({"code": "unreviewed_knx_logic"})
             else:
-                connectors = {
-                    next(
-                        (value for name, value in self._nodes[key].attributes if name == "K"), None
+                connectors: dict[str, int] = defaultdict(int)
+                for child_key in self._children[node.key]:
+                    connector_key = next(
+                        (value for name, value in self._nodes[child_key].attributes if name == "K"),
+                        None,
                     )
-                    for key in self._children[node.key]
-                }
+                    if connector_key is not None:
+                        connectors[connector_key] += 1
                 reviewed = {rule.input_key for rule in rules} | {rule.output_key for rule in rules}
-                for key in sorted(
-                    item for item in connectors if item is not None and item not in reviewed
-                ):
+                for key in sorted(item for item in connectors if item not in reviewed):
                     diagnostics.append(
                         {"code": "unreviewed_knx_connector", "attribute_name": label(key)}
                     )
+                for rule in rules:
+                    if connectors[rule.input_key] != 1 or connectors[rule.output_key] != 1:
+                        diagnostics.append(
+                            {
+                                "code": "incomplete_knx_signal_rule",
+                                "attribute_name": rule.rule_id,
+                            }
+                        )
         for key, value in node.attributes:
             if key in _KNOWN_KNX_ATTRIBUTES:
                 continue
@@ -286,7 +300,8 @@ class ProjectQuery:
                     "length_bucket": bucket,
                 }
             )
-        return diagnostics[:50], labels_truncated
+        omitted = max(0, len(diagnostics) - 50)
+        return diagnostics[:50], labels_truncated, omitted > 0, omitted
 
     def status(self) -> dict[str, object]:
         graph = self.view.snapshot.graph

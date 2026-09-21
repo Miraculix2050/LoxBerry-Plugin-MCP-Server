@@ -72,3 +72,17 @@ def test_source_diagnostics_report_unreviewed_logic_and_bound_labels():
     attribute = next(item for item in diagnostics.entries if item.attribute_name is not None)
     assert len(attribute.attribute_name) <= 100
     assert diagnostics.labels_truncated is True
+
+
+def test_source_diagnostics_sort_mixed_absent_and_present_source_types():
+    parsed = parse_project(b'<P><C Type="EIBsensor" U="one" Duplicate="a"/><C U="two"/></P>')
+    graph = build_graph((("p", parsed),))
+
+    diagnostics = _source_diagnostics(
+        graph, (("p", 1, "duplicate_attribute"), ("p", 2, "duplicate_attribute"))
+    )
+
+    parser_entries = [
+        item for item in diagnostics.entries if item.code == "parser_duplicate_attribute"
+    ]
+    assert [item.source_type for item in parser_entries] == [None, "EIBsensor"]

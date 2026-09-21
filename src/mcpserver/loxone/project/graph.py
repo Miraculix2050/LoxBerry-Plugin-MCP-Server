@@ -361,7 +361,9 @@ def _source_diagnostics(
             if connectors[rule.input_key] != 1 or connectors[rule.output_key] != 1:
                 add("incomplete_knx_signal_rule", node, rule.rule_id)
     entries: list[ProjectSourceDiagnostic] = []
-    for group_key, accumulator in sorted(groups.items()):
+    for group_key, accumulator in sorted(
+        groups.items(), key=lambda item: tuple(value or "" for value in item[0])
+    ):
         code, source_type, attribute_name, shape, bucket = group_key
         count = accumulator.count
         samples = tuple(sorted(accumulator.samples))

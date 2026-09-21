@@ -97,7 +97,8 @@ attribute-backed unclassified KNX candidates. MCP status returns aggregate count
 analysis returns bounded groups and describe returns the selected node's diagnostic
 shape. Diagnostics contain no raw unknown values and are not configuration findings.
 The internal aggregation is capped at 2,048 groups and public analysis at 50 groups;
-both make omissions explicit.
+both make omissions explicit. Describe returns at most 50 node diagnostics and
+reports its own truncation and omitted-count metadata when that cap applies.
 
 Der Graph unterscheidet Signal-, Referenz- und Hierarchiebeziehungen. Unbekannte
 Referenzen bleiben sichtbar unaufgelöst. Die Verarbeitung läuft in einem

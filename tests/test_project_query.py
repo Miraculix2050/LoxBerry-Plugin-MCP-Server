@@ -100,6 +100,30 @@ def test_source_diagnostics_are_available_without_unknown_values():
     assert "secret" not in repr(described["source_diagnostics"])
 
 
+def test_describe_reports_incomplete_rules_and_diagnostic_truncation():
+    attributes = " ".join(f'Extra{index}="x"' for index in range(51))
+    parsed = parse_project(
+        f'<P><C Type="EIBPush" U="push" {attributes}><Co K="Tg" U="trigger"/></C></P>'.encode()
+    )
+    snapshot = ProjectSnapshot(
+        "project", 4, (ProjectPartSummary("p", 3, ()),), build_graph((("p", parsed),))
+    )
+    project = ProjectQuery(
+        ProjectView(
+            snapshot, map_runtime(snapshot, SimpleNamespace(last_modified="v", controls=()))
+        ),
+        {},
+    )
+
+    described = project.describe(project.resolve("p:1", "project_node_id"), limit=10)
+
+    assert any(
+        item["code"] == "incomplete_knx_signal_rule" for item in described["source_diagnostics"]
+    )
+    assert described["source_diagnostics_truncated"] is True
+    assert described["source_diagnostics_omitted"] >= 1
+
+
 def test_trace_excludes_containment_and_reports_limits():
     project = query()
     complete = project.trace(

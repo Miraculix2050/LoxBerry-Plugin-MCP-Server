@@ -640,6 +640,8 @@ class ProjectNodeData(BaseModel):
     knx: ProjectKnxData | None = None
     source_diagnostics: list[ProjectNodeSourceDiagnosticData] = Field(default_factory=list)
     source_diagnostics_labels_truncated: bool = False
+    source_diagnostics_truncated: bool = False
+    source_diagnostics_omitted: int = Field(default=0, ge=0)
 
 
 class ProjectStatusData(BaseModel):
