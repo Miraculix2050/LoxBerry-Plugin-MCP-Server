@@ -1451,6 +1451,7 @@ def _project_error_code(error: ProjectError | ProjectQueryError) -> tuple[str, s
         "project_decoded_limit",
         "project_query_limit",
         "project_worker_limit",
+        "project_worker_resource_limit",
         "loxcc_size_limit",
     }:
         diagnostic_code = "project_source_limit_exceeded"
@@ -3153,10 +3154,12 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
             if not selected or (analyses is not None and len(selected) != len(analyses)):
                 raise ValueError("analyses must be a non-empty unique list")
             project, snapshot = await _project_query(runtime)
-            if runtime is None:
+            if runtime is None or runtime.projects is None:
                 raise RuntimeUnavailable("the service is not configured")
+            projects = runtime.projects
             async with runtime.worker_slot():
                 result = await process_analysis(project.view, selected)
+            await projects.authorize(_access())
             analysis_scope = (
                 "project-analysis:"
                 + hashlib.sha256(

@@ -108,8 +108,10 @@ async def process_analysis(view: ProjectView, analyses: frozenset[str]) -> dict[
                 result.extend(chunk)
                 if len(result) > MAX_RESULT:
                     raise ProjectError("project_worker_limit")
-            if await process.wait() != 0:
-                raise ProjectError("project_worker_failed")
+            if (code := await process.wait()) != 0:
+                raise ProjectError(
+                    "project_worker_resource_limit" if code < 0 else "project_worker_failed"
+                )
             value = pickle.loads(result)
             if isinstance(value, ProjectError):
                 raise value

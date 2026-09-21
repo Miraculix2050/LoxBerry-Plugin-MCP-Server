@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from mcp.server.fastmcp import FastMCP
@@ -189,6 +190,7 @@ async def test_project_analysis_is_read_only_bounded_and_cursor_scoped(monkeypat
     class Runtime:
         def __init__(self):
             self.active_workers = 0
+            self.projects = SimpleNamespace(authorize=AsyncMock())
 
         @asynccontextmanager
         async def worker_slot(self):
@@ -243,6 +245,7 @@ async def test_project_analysis_is_read_only_bounded_and_cursor_scoped(monkeypat
 
     monkeypatch.setattr(tools_module, "_project_query", project_query)
     monkeypatch.setattr(tools_module, "process_analysis", analysis)
+    monkeypatch.setattr(tools_module, "_access", lambda: SimpleNamespace())
     server = FastMCP("project-analysis")
     register_project_tools(server, runtime)
 
@@ -252,3 +255,4 @@ async def test_project_analysis_is_read_only_bounded_and_cursor_scoped(monkeypat
     assert runtime.active_workers == 0
     assert result.data.findings[0].finding_id == "knx:1"  # type: ignore[union-attr]
     assert result.data.next_cursor is None  # type: ignore[union-attr]
+    runtime.projects.authorize.assert_awaited_once()

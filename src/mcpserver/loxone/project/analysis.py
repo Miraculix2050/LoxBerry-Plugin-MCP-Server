@@ -84,7 +84,7 @@ def _children(graph_edges: tuple[GraphEdge, ...]) -> tuple[dict[str, list[str]],
 
 
 def _block(node: GraphNode, nodes: dict[str, GraphNode], parents: dict[str, str]) -> GraphNode:
-    return node if node.kind == "block" else nodes[parents[node.key]]
+    return node if node.kind == "block" else nodes.get(parents.get(node.key, ""), node)
 
 
 def _descendants(key: str, children: dict[str, list[str]]) -> list[str]:

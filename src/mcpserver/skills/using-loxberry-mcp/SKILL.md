@@ -72,8 +72,8 @@ exact UUID-mapped runtime context, and local peer or graph outliers to address,
 datatype, usage, path, and connection evidence. Treat all findings as
 project-local facts, check `limitations`, `analysis_truncated`,
 `truncation_reasons`, and pagination, and never turn a pattern or outlier into
-a defect by itself. Runtime names, rooms, categories, and control types are
-context only after an exact UUID mapping; they never establish a mapping. The
+a defect by itself. Runtime names and control types are context only after an
+exact UUID mapping; they never establish a mapping. The
 tool does not grade the configuration, infer DPT meanings, or establish ETS/bus
 evidence. Use an affected `project_node_id` with describe or trace before
 explaining an exception or proposing an improvement.

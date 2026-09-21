@@ -44,6 +44,10 @@ class ProjectService:
         if self.health.get(access.family_id).confirmation_required:
             raise ProjectError("project_token_confirmation_required")
 
+    async def authorize(self, access: StoredAccessToken) -> None:
+        """Recheck authorization before a separately bounded result is released."""
+        await self._check(access)
+
     async def load_bundle(self, access: StoredAccessToken) -> ProjectBundle:
         result = await self._load(access, bundle_only=True)
         assert isinstance(result, ProjectBundle)

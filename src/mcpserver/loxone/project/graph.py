@@ -119,6 +119,7 @@ class ProjectSourceDiagnostics:
     complete: bool
     groups_omitted: int
     labels_truncated: bool = False
+    parser_codes_by_node: tuple[tuple[str, tuple[str, ...]], ...] = ()
 
 
 @dataclass(slots=True)
@@ -285,7 +286,7 @@ def _source_diagnostics(
     groups: dict[
         tuple[str, str | None, str | None, str | None, str | None], _DiagnosticAccumulator
     ] = {}
-    overflow = 0
+    overflow_groups: set[tuple[str, str | None, str | None, str | None, str | None]] = set()
     labels_truncated = False
 
     def add(
@@ -294,7 +295,7 @@ def _source_diagnostics(
         attribute_name: str | None = None,
         value: str | None = None,
     ) -> None:
-        nonlocal overflow, labels_truncated
+        nonlocal labels_truncated
         source_type, source_type_truncated = _diagnostic_label(node.block_type if node else None)
         attribute_name, attribute_truncated = _diagnostic_label(attribute_name)
         labels_truncated = labels_truncated or source_type_truncated or attribute_truncated
@@ -303,7 +304,7 @@ def _source_diagnostics(
         group = groups.get(key)
         if group is None:
             if len(groups) >= _DIAGNOSTIC_GROUP_LIMIT:
-                overflow += 1
+                overflow_groups.add(key)
                 return
             group = _DiagnosticAccumulator()
             groups[key] = group
@@ -313,8 +314,12 @@ def _source_diagnostics(
 
     nodes = graph.nodes
     by_part_index = {(node.project, node.source_index): node for node in nodes}
+    parser_codes_by_node: dict[str, list[str]] = defaultdict(list)
     for namespace, index, code in anomalies:
-        add(f"parser_{code}", by_part_index.get((namespace, index)) if index is not None else None)
+        node = by_part_index.get((namespace, index)) if index is not None else None
+        if node is not None:
+            parser_codes_by_node[node.key].append(f"parser_{code}")
+        add(f"parser_{code}", node)
 
     for node in nodes:
         if node.knx is None and any(key in _KNX_MARKER_ATTRIBUTES for key, _ in node.attributes):
@@ -379,7 +384,15 @@ def _source_diagnostics(
                 count - len(samples),
             )
         )
-    return ProjectSourceDiagnostics(tuple(entries), overflow == 0, overflow, labels_truncated)
+    return ProjectSourceDiagnostics(
+        tuple(entries),
+        not overflow_groups,
+        len(overflow_groups),
+        labels_truncated,
+        tuple(
+            (key, tuple(sorted(set(codes)))) for key, codes in sorted(parser_codes_by_node.items())
+        ),
+    )
 
 
 def build_snapshot(

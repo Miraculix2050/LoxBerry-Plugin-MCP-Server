@@ -169,9 +169,8 @@ class ProjectQuery:
         result["source_diagnostics_labels_truncated"] = labels_truncated
         result["source_diagnostics_truncated"] = diagnostics_truncated
         result["source_diagnostics_omitted"] = diagnostics_omitted
-        for item in self.view.snapshot.source_diagnostics.entries:
-            if item.code.startswith("parser_") and node.key in item.sample_node_ids:
-                source_diagnostics.append({"code": item.code})
+        parser_codes = dict(self.view.snapshot.source_diagnostics.parser_codes_by_node)
+        source_diagnostics.extend({"code": code} for code in parser_codes.get(node.key, ()))
         knx = node.knx
         if knx is None:
             return result
