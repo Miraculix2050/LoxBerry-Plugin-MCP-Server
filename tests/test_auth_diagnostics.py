@@ -132,6 +132,52 @@ async def test_failed_cooldown_probe_restarts_breaker_interval(tmp_path: Path) -
 
 
 @pytest.mark.asyncio
+async def test_cancelled_cooldown_probe_restarts_breaker_interval(tmp_path: Path) -> None:
+    coordinator = MiniserverAuthCoordinator(
+        (tmp_path / "auth-diagnostics.json").resolve(), initial_probe_seconds=300
+    )
+
+    async def blocked() -> None:
+        raise LoxoneSourceIpBlocked("blocked")
+
+    with pytest.raises(LoxoneSourceIpBlocked):
+        await coordinator.attempt(blocked, owner="tool_request", phase="token_authentication")
+    coordinator._state["opened_at"] = 0
+
+    async def cancelled() -> None:
+        raise asyncio.CancelledError()
+
+    with pytest.raises(asyncio.CancelledError):
+        await coordinator.attempt(
+            cancelled,
+            owner="tool_request",
+            phase="token_authentication",
+            force_probe=True,
+        )
+
+    status = coordinator.status()
+    assert status["breaker_state"] == "open_source_ip_blocked"
+    opened_at = status["opened_at"]
+    retry_not_before = status["retry_not_before"]
+    assert isinstance(opened_at, int) and opened_at > 0
+    assert isinstance(retry_not_before, int)
+    assert retry_not_before > opened_at
+
+    calls = 0
+
+    async def must_not_run() -> None:
+        nonlocal calls
+        calls += 1
+
+    with pytest.raises(MiniserverAuthenticationSuppressed):
+        await coordinator.attempt(
+            must_not_run, owner="tool_request", phase="token_authentication"
+        )
+
+    assert calls == 0
+
+
+@pytest.mark.asyncio
 async def test_successful_attempt_survives_diagnostics_persistence_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

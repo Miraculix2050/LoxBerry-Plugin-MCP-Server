@@ -350,6 +350,16 @@ class MiniserverAuthCoordinator:
                 )
             self._save_best_effort()
             raise exc
+        except asyncio.CancelledError:
+            self._refresh_failed_probe(
+                now=now,
+                owner=owner,
+                phase=phase,
+                outcome="attempt_cancelled",
+                provenance=provenance,
+            )
+            self._save_best_effort()
+            raise
         except Exception:
             self._refresh_failed_probe(
                 now=now,
