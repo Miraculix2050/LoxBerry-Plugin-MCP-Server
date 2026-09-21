@@ -14,6 +14,10 @@ from mcpserver.auth.loxone_store import (
     LoxoneTokenStoreError,
     RemoteRevocation,
 )
+from mcpserver.loxone.auth_diagnostics import (
+    MiniserverAuthCoordinator,
+    MiniserverAuthenticationSuppressed,
+)
 from mcpserver.loxone.client import (
     LoxoneClient,
     LoxoneCommandRejected,
@@ -33,6 +37,7 @@ async def process_remote_revocations(
     endpoint: MiniserverEndpoint,
     store: EncryptedLoxoneTokenStore,
     timeout_seconds: float,
+    auth_coordinator: MiniserverAuthCoordinator | None = None,
 ) -> None:
     """Delete only tokens whose remote killtoken operation succeeded."""
     try:
@@ -50,7 +55,23 @@ async def process_remote_revocations(
     async def process(item: RemoteRevocation) -> bool:
         # Keep identifiers and tokens out of logs.
         try:
-            await asyncio.wait_for(client.kill_token(item.token), timeout=timeout_seconds + 5)
+
+            async def revoke() -> None:
+                await asyncio.wait_for(client.kill_token(item.token), timeout=timeout_seconds + 5)
+
+            if auth_coordinator is None:
+                await revoke()
+            else:
+                await auth_coordinator.attempt(
+                    revoke,
+                    owner="runtime_event_stream",
+                    phase="remote_token_revocation",
+                )
+        except MiniserverAuthenticationSuppressed:
+            store.suspend_remote_revoke(
+                item.family_id, int(time.time()), delay_seconds=_AUTHENTICATION_RETRY_SECONDS
+            )
+            return False
         except LoxoneSourceIpBlocked:
             store.suspend_remote_revoke(
                 item.family_id, int(time.time()), delay_seconds=_AUTHENTICATION_RETRY_SECONDS
@@ -91,8 +112,9 @@ async def run_remote_revocation_worker(
     endpoint: MiniserverEndpoint,
     store: EncryptedLoxoneTokenStore,
     timeout_seconds: float,
+    auth_coordinator: MiniserverAuthCoordinator | None = None,
 ) -> None:
     """Continue deferred cleanup across CGI requests and service restarts."""
     while True:
-        await process_remote_revocations(endpoint, store, timeout_seconds)
+        await process_remote_revocations(endpoint, store, timeout_seconds, auth_coordinator)
         await asyncio.sleep(_POLL_SECONDS)

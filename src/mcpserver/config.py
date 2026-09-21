@@ -23,7 +23,7 @@ import idna
 
 from mcpserver.loxone.endpoint import MiniserverEndpoint
 
-SCHEMA_VERSION: Final = 8
+SCHEMA_VERSION: Final = 9
 DEFAULT_CONNECTION_TIMEOUT: Final = 10.0
 DEFAULT_REQUESTS_PER_MINUTE: Final = 60
 DEFAULT_MAX_PARALLEL_CALLS: Final = 4
@@ -35,6 +35,8 @@ DEFAULT_STATISTICS_MEMORY_MAX_MIB: Final = 128
 DEFAULT_STRUCTURE_REFRESH_SECONDS: Final = 300
 DEFAULT_MAX_ACTIVE_RUNTIME_SESSIONS: Final = 16
 DEFAULT_RUNTIME_SESSION_IDLE_SECONDS: Final = 900
+DEFAULT_MINISERVER_AUTH_PROBE_INITIAL_SECONDS: Final = 900
+DEFAULT_MINISERVER_AUTH_PROBE_MAX_SECONDS: Final = 86_400
 DEFAULT_MAX_STRUCTURE_CONTROLS: Final = 20_000
 DEFAULT_MAX_STRUCTURE_STATE_REFERENCES: Final = 100_000
 DEFAULT_MAX_STRUCTURE_DEPTH: Final = 32
@@ -197,6 +199,8 @@ class PluginConfig:
     structure_refresh_seconds: int = DEFAULT_STRUCTURE_REFRESH_SECONDS
     max_active_runtime_sessions: int = DEFAULT_MAX_ACTIVE_RUNTIME_SESSIONS
     runtime_session_idle_seconds: int = DEFAULT_RUNTIME_SESSION_IDLE_SECONDS
+    miniserver_auth_probe_initial_seconds: int = DEFAULT_MINISERVER_AUTH_PROBE_INITIAL_SECONDS
+    miniserver_auth_probe_max_seconds: int = DEFAULT_MINISERVER_AUTH_PROBE_MAX_SECONDS
     max_structure_controls: int = DEFAULT_MAX_STRUCTURE_CONTROLS
     max_structure_state_references: int = DEFAULT_MAX_STRUCTURE_STATE_REFERENCES
     max_structure_depth: int = DEFAULT_MAX_STRUCTURE_DEPTH
@@ -218,7 +222,7 @@ class PluginConfig:
     @classmethod
     def from_document(cls, document: object) -> PluginConfig:
         root = _mapping(document, name="configuration")
-        if root.get("schema_version") not in {1, 2, 3, 4, 5, 6, SCHEMA_VERSION}:
+        if root.get("schema_version") not in {1, 2, 3, 4, 5, 6, 8, SCHEMA_VERSION}:
             raise ConfigError("schema_version is unsupported")
         server = _mapping(root.get("server", {}), name="server")
         loxone = _mapping(root.get("loxone", {}), name="loxone")
@@ -357,6 +361,25 @@ class PluginConfig:
             minimum=60,
             maximum=86_400,
         )
+        miniserver_auth_probe_initial_seconds = _integer(
+            limits.get(
+                "miniserver_auth_probe_initial_seconds",
+                DEFAULT_MINISERVER_AUTH_PROBE_INITIAL_SECONDS,
+            ),
+            name="limits.miniserver_auth_probe_initial_seconds",
+            minimum=300,
+            maximum=86_400,
+        )
+        miniserver_auth_probe_max_seconds = _integer(
+            limits.get(
+                "miniserver_auth_probe_max_seconds", DEFAULT_MINISERVER_AUTH_PROBE_MAX_SECONDS
+            ),
+            name="limits.miniserver_auth_probe_max_seconds",
+            minimum=900,
+            maximum=604_800,
+        )
+        if miniserver_auth_probe_max_seconds < miniserver_auth_probe_initial_seconds:
+            raise ConfigError("limits.miniserver_auth_probe_max_seconds is below the initial delay")
         max_structure_controls = _integer(
             limits.get("max_structure_controls", DEFAULT_MAX_STRUCTURE_CONTROLS),
             name="limits.max_structure_controls",
@@ -442,6 +465,8 @@ class PluginConfig:
             structure_refresh_seconds=structure_refresh_seconds,
             max_active_runtime_sessions=max_active_runtime_sessions,
             runtime_session_idle_seconds=runtime_session_idle_seconds,
+            miniserver_auth_probe_initial_seconds=miniserver_auth_probe_initial_seconds,
+            miniserver_auth_probe_max_seconds=miniserver_auth_probe_max_seconds,
             max_structure_controls=max_structure_controls,
             max_structure_state_references=max_structure_state_references,
             max_structure_depth=max_structure_depth,
@@ -494,6 +519,12 @@ class PluginConfig:
         document["limits"]["structure_refresh_seconds"] = self.structure_refresh_seconds
         document["limits"]["max_active_runtime_sessions"] = self.max_active_runtime_sessions
         document["limits"]["runtime_session_idle_seconds"] = self.runtime_session_idle_seconds
+        document["limits"]["miniserver_auth_probe_initial_seconds"] = (
+            self.miniserver_auth_probe_initial_seconds
+        )
+        document["limits"]["miniserver_auth_probe_max_seconds"] = (
+            self.miniserver_auth_probe_max_seconds
+        )
         document["limits"]["max_structure_controls"] = self.max_structure_controls
         document["limits"]["max_structure_state_references"] = self.max_structure_state_references
         document["limits"]["max_structure_depth"] = self.max_structure_depth

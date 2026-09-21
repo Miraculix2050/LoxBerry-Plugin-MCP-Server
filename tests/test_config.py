@@ -32,6 +32,8 @@ def test_defaults_are_disabled_and_bounded() -> None:
     assert config.structure_refresh_seconds == 300
     assert config.max_structure_controls == 20_000
     assert config.max_parallel_calls == 4
+    assert config.miniserver_auth_probe_initial_seconds == 900
+    assert config.miniserver_auth_probe_max_seconds == 86_400
     assert config.log_level == "warning"
 
 
@@ -67,7 +69,32 @@ def test_configuration_round_trip_preserves_unknown_keys(tmp_path: Path) -> None
 
     assert store.load().to_document() == config.to_document()
     assert json.loads(store.path.read_text(encoding="utf-8"))["future"] == {"keep": True}
-    assert config.to_document()["schema_version"] == 8
+    assert config.to_document()["schema_version"] == 9
+
+
+def test_authentication_probe_limits_are_bounded_and_related() -> None:
+    config = PluginConfig.from_document(
+        {
+            "schema_version": 9,
+            "limits": {
+                "miniserver_auth_probe_initial_seconds": 900,
+                "miniserver_auth_probe_max_seconds": 7_200,
+            },
+        }
+    )
+
+    assert config.miniserver_auth_probe_initial_seconds == 900
+    assert config.miniserver_auth_probe_max_seconds == 7_200
+    with pytest.raises(ConfigError, match="below the initial delay"):
+        PluginConfig.from_document(
+            {
+                "schema_version": 9,
+                "limits": {
+                    "miniserver_auth_probe_initial_seconds": 3_600,
+                    "miniserver_auth_probe_max_seconds": 900,
+                },
+            }
+        )
 
 
 def test_phase_four_configuration_uses_only_the_ram_cache_setting() -> None:

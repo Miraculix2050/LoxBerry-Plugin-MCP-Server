@@ -10,6 +10,10 @@ Der Schalter **Dienst aktivieren** ist die gespeicherte Betriebsfreigabe. Nach e
 
 Konfiguriere eine lokale HTTPS-Origin und genau ein Miniserver-Ziel. Die Auswahl eines in LoxBerry hinterlegten Miniservers übernimmt keine dort gespeicherten Zugangsdaten. Bei der ersten Einrichtung wird die Origin aus LoxBerry-Hostname und HTTPS-Port vorgeschlagen; prüfe, ob sie zur Zertifikatsadresse im Browser passt. Erst **MCP-Zugriff aktivieren** gibt den MCP- und OAuth-Zugriff frei.
 
+### Wiederherstellung der Authentifizierung
+
+Die erweiterten Grenzen enthalten eine erste und eine maximale Wartezeit für genau einen bedarfsgetriebenen Wiederherstellungsversuch der Miniserver-Authentifizierung. Standard sind 15 Minuten und 24 Stunden. Bestätigt der Miniserver eine Sperre der Quell-IP, startet der Dienst bis zum Ablauf der Frist keine weitere Anmeldung; erst ein tatsächlicher Tool- oder Laufzeitbedarf darf dann einen Versuch auslösen. Bei einer erneuten Sperre verdoppelt sich die Frist bis zum konfigurierten Maximum. Diese Werte sind Plugin-Policy und keine behauptete Sperrdauer des Miniservers; eine Änderung startet selbst keinen Loginversuch.
+
 ## Notaus-Signal (virtueller Status)
 
 Das optionale **Notaus-Signal (virtueller Status)** steht im Abschnitt

@@ -121,6 +121,8 @@
           <label class="mcp-field"><span><TMPL_VAR SETUP.STRUCTURE_REFRESH></span><input name="structure_refresh_seconds" type="number" min="60" max="3600" value="<TMPL_VAR STRUCTURE_REFRESH_SECONDS ESCAPE=HTML>"></label>
           <label class="mcp-field"><span><TMPL_VAR SETUP.RUNTIME_SESSIONS></span><input name="max_active_runtime_sessions" type="number" min="1" max="128" value="<TMPL_VAR MAX_ACTIVE_RUNTIME_SESSIONS ESCAPE=HTML>"></label>
           <label class="mcp-field"><span><TMPL_VAR SETUP.RUNTIME_IDLE></span><input name="runtime_session_idle_seconds" type="number" min="60" max="86400" value="<TMPL_VAR RUNTIME_SESSION_IDLE_SECONDS ESCAPE=HTML>"></label>
+          <label class="mcp-field"><span><TMPL_VAR SETUP.AUTH_PROBE_INITIAL></span><input name="miniserver_auth_probe_initial_seconds" type="number" min="300" max="86400" value="<TMPL_VAR MINISERVER_AUTH_PROBE_INITIAL_SECONDS ESCAPE=HTML>"></label>
+          <label class="mcp-field"><span><TMPL_VAR SETUP.AUTH_PROBE_MAX></span><input name="miniserver_auth_probe_max_seconds" type="number" min="900" max="604800" value="<TMPL_VAR MINISERVER_AUTH_PROBE_MAX_SECONDS ESCAPE=HTML>"></label>
           <label class="mcp-field"><span><TMPL_VAR SETUP.STRUCTURE_CONTROLS></span><input name="max_structure_controls" type="number" min="1000" max="100000" value="<TMPL_VAR MAX_STRUCTURE_CONTROLS ESCAPE=HTML>"></label>
           <label class="mcp-field"><span><TMPL_VAR SETUP.STRUCTURE_STATES></span><input name="max_structure_state_references" type="number" min="10000" max="500000" value="<TMPL_VAR MAX_STRUCTURE_STATE_REFERENCES ESCAPE=HTML>"></label>
           <label class="mcp-field"><span><TMPL_VAR SETUP.STRUCTURE_DEPTH></span><input name="max_structure_depth" type="number" min="4" max="128" value="<TMPL_VAR MAX_STRUCTURE_DEPTH ESCAPE=HTML>"></label>
@@ -481,6 +483,7 @@
       'requests_per_minute', 'control_requests_per_minute', 'loxberry_requests_per_minute',
       'history_requests_per_minute', 'loxberry_operate_requests_per_minute', 'max_parallel_calls',
       'structure_refresh_seconds', 'max_active_runtime_sessions', 'runtime_session_idle_seconds',
+      'miniserver_auth_probe_initial_seconds', 'miniserver_auth_probe_max_seconds',
       'max_structure_controls', 'max_structure_state_references', 'max_structure_depth',
       'max_states_per_identity',
     ]) setFormValue(mcpConfigForm, name, limits[name]);

@@ -40,9 +40,10 @@ from mcpserver.auth.provider import (
 from mcpserver.auth.remote_revocation import run_remote_revocation_worker
 from mcpserver.auth.store import AtomicJsonAuthStore
 from mcpserver.auth.web import Phase0OAuthWeb
-from mcpserver.config import DEFAULT_LOG_LEVEL, AtomicConfigStore
+from mcpserver.config import DEFAULT_LOG_LEVEL, AtomicConfigStore, PluginConfig
 from mcpserver.emergency_stop import EmergencyStopMonitor
 from mcpserver.loxberry.diagnostics import LoxBerryDiagnostics
+from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
 from mcpserver.loxone.client import MiniserverEndpoint
 from mcpserver.loxone.project.service import ProjectService
 from mcpserver.loxone.runtime import LoxoneRuntime
@@ -283,8 +284,14 @@ class _ForwardedHostFastMCP(FastMCP):
     advertised_scopes: tuple[str, ...] = ()
     mqtt_health: MqttHealthPublisher | None = None
     emergency_stop: EmergencyStopMonitor | None = None
+    auth_coordinator: MiniserverAuthCoordinator | None = None
     live_runtime: LoxoneRuntime | None = None
-    remote_revocation: tuple[MiniserverEndpoint, EncryptedLoxoneTokenStore, float] | None = None
+    remote_revocation: (
+        tuple[
+            MiniserverEndpoint, EncryptedLoxoneTokenStore, float, MiniserverAuthCoordinator | None
+        ]
+        | None
+    ) = None
 
     def streamable_http_app(self) -> Starlette:
         app = super().streamable_http_app()
@@ -344,7 +351,10 @@ class _Phase0TokenVerifier(TokenVerifier):
 async def _runtime_lifespan(
     runtime: LoxoneRuntime | None,
     emergency_stop: EmergencyStopMonitor | None = None,
-    remote_revocation: tuple[MiniserverEndpoint, EncryptedLoxoneTokenStore, float] | None = None,
+    remote_revocation: tuple[
+        MiniserverEndpoint, EncryptedLoxoneTokenStore, float, MiniserverAuthCoordinator | None
+    ]
+    | None = None,
 ) -> AsyncIterator[None]:
     """Close all live Miniserver sessions when the HTTP application stops."""
     worker = (
@@ -367,6 +377,33 @@ async def _runtime_lifespan(
             await emergency_stop.close()
 
 
+def _miniserver_auth_coordinator(
+    auth_store: AtomicJsonAuthStore,
+    endpoint: MiniserverEndpoint,
+    config: PluginConfig | None,
+) -> MiniserverAuthCoordinator:
+    """Build the endpoint-bound shared breaker from the installation auth store."""
+    return MiniserverAuthCoordinator(
+        auth_store.path.parent / "miniserver-auth-diagnostics.json",
+        initial_probe_seconds=(
+            config.miniserver_auth_probe_initial_seconds if config is not None else 900
+        ),
+        maximum_probe_seconds=(
+            config.miniserver_auth_probe_max_seconds if config is not None else 86_400
+        ),
+        profile_id=auth_store.pseudonym("miniserver-auth-profile-v1", endpoint.origin),
+    )
+
+
+def _configured_auth_store() -> AtomicJsonAuthStore | None:
+    """Open the fixed installation auth store when it is available to this service."""
+    value = os.getenv("MCPSERVER_AUTH_STORE", "").strip()
+    path = Path(value)
+    if not value or not path.is_absolute() or path.suffix.lower() != ".json":
+        return None
+    return AtomicJsonAuthStore(path)
+
+
 def create_server(settings: ServerSettings) -> FastMCP:
     """Create the MCP server from already validated settings."""
     transport_security = TransportSecuritySettings(
@@ -384,8 +421,22 @@ def create_server(settings: ServerSettings) -> FastMCP:
     statistics_cache: StatisticsCache | None = None
     mqtt_health: MqttHealthPublisher | None = None
     emergency_stop: EmergencyStopMonitor | None = None
+    auth_coordinator: MiniserverAuthCoordinator | None = None
+    auth_store: AtomicJsonAuthStore | None = None
     if settings.plugin_config is not None:
         emergency_stop = EmergencyStopMonitor(settings.plugin_config)
+        if (
+            emergency_stop.config.emergency_stop_virtual_status_uuid
+            and emergency_stop.config.loxone_endpoint
+        ):
+            auth_store = _configured_auth_store()
+            if auth_store is not None:
+                auth_coordinator = _miniserver_auth_coordinator(
+                    auth_store,
+                    MiniserverEndpoint.parse(emergency_stop.config.loxone_endpoint),
+                    emergency_stop.config,
+                )
+                emergency_stop.auth_coordinator = auth_coordinator
     if settings.plugin_config is not None and settings.plugin_config.mqtt_enabled:
         home = Path(os.getenv("LBHOMEDIR", "/opt/loxberry"))
         if home.is_absolute():
@@ -397,7 +448,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
                 ),
             )
     if settings.phase0_auth is not None:
-        auth_store = AtomicJsonAuthStore(settings.phase0_auth.store_path)
+        auth_store = auth_store or AtomicJsonAuthStore(settings.phase0_auth.store_path)
         loxone_store: EncryptedLoxoneTokenStore | None = None
         if (
             settings.phase0_auth.loxone_store_path is not None
@@ -408,6 +459,13 @@ def create_server(settings: ServerSettings) -> FastMCP:
                 settings.phase0_auth.install_key_path,
             )
         config = settings.phase0_auth.plugin_config
+        auth_coordinator = auth_coordinator or _miniserver_auth_coordinator(
+            auth_store,
+            settings.phase0_auth.loxone_endpoint,
+            config,
+        )
+        if emergency_stop is not None:
+            emergency_stop.auth_coordinator = auth_coordinator
 
         def loxberry_binding_allowed(client_id: str, identity_id: str, miniserver_id: str) -> bool:
             if settings.phase0_auth is None or settings.phase0_auth.config_path is None:
@@ -473,6 +531,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
             issuer=settings.phase0_auth.issuer_url,
             resource=settings.phase0_auth.resource_url,
             loxone_store=loxone_store,
+            auth_coordinator=auth_coordinator,
         )
         oauth_auth = AuthSettings(
             issuer_url=AnyHttpUrl(settings.phase0_auth.issuer_url),
@@ -523,6 +582,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
                     config.max_structure_state_references if config is not None else 100_000
                 ),
                 max_structure_depth=(config.max_structure_depth if config is not None else 32),
+                auth_coordinator=auth_coordinator,
             )
 
             async def validate_project_access(access: StoredAccessToken) -> bool:
@@ -562,6 +622,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
             settings.phase0_auth.loxone_endpoint,
             loxone_store,
             config.connection_timeout if config is not None else 10.0,
+            auth_coordinator,
         )
         if settings.phase0_auth is not None and loxone_store is not None
         else None
@@ -583,6 +644,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
     server.service_enabled = settings.service_enabled
     server.mqtt_health = mqtt_health
     server.emergency_stop = emergency_stop
+    server.auth_coordinator = auth_coordinator
     server.live_runtime = runtime
     server.remote_revocation = remote_revocation
     control_enabled = bool(
@@ -650,6 +712,16 @@ def create_server(settings: ServerSettings) -> FastMCP:
             else {"signal_uuid": None, "signal_name": None, "status": "not_configured"}
         )
         return JSONResponse({"ok": True, "emergency_stop": status})
+
+    @server.custom_route(  # type: ignore[misc]
+        "/internal/miniserver-auth-status", methods=["GET"], include_in_schema=False
+    )
+    async def miniserver_auth_status(request: Request) -> Response:
+        """Return the service-owned, value-free shared breaker status."""
+        del request
+        return JSONResponse(
+            {"ok": True, "miniserver_auth": auth_coordinator.status() if auth_coordinator else None}
+        )
 
     return server
 

@@ -220,6 +220,30 @@ def test_streamable_app_starts_the_configured_emergency_stop_monitor(
     assert started is True
 
 
+def test_disabled_service_monitor_uses_the_shared_authentication_breaker(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("MCPSERVER_AUTH_STORE", str((tmp_path / "auth" / "sessions.json").resolve()))
+    settings = ServerSettings(
+        host="127.0.0.1",
+        port=8765,
+        allowed_hosts=("testserver",),
+        allowed_origins=(),
+        service_enabled=False,
+        plugin_config=PluginConfig(
+            enabled=False,
+            loxone_endpoint="http://192.168.255.254",
+            emergency_stop_virtual_status_uuid="00112233-4455-6677-8899aabbccddeeff",
+        ),
+    )
+
+    server = create_server(settings)
+
+    assert server.emergency_stop is not None
+    assert server.emergency_stop.auth_coordinator is not None
+    assert server.auth_coordinator is server.emergency_stop.auth_coordinator
+
+
 @pytest.mark.parametrize(
     ("method", "path"),
     [

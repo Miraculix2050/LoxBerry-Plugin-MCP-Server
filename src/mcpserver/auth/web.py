@@ -45,6 +45,7 @@ from mcpserver.auth.provider import (
     normalize_scopes,
     scope_text,
 )
+from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
 from mcpserver.loxone.client import (
     LoxoneClient,
     LoxoneConnectionError,
@@ -231,12 +232,14 @@ class Phase0OAuthWeb:
         issuer: str,
         resource: str,
         loxone_store: EncryptedLoxoneTokenStore | None = None,
+        auth_coordinator: MiniserverAuthCoordinator | None = None,
     ) -> None:
         self.provider = provider
         self.endpoint = endpoint
         self.issuer = issuer
         self.resource = resource
         self.loxone_store = loxone_store
+        self.auth_coordinator = auth_coordinator
         self.explorer_origin = issuer.rsplit("/plugins/mcpserver/oauth", 1)[0]
         self._explorer_locks: dict[str, asyncio.Lock] = {}
         self.transactions: dict[str, LoginTransaction] = {}
@@ -251,7 +254,15 @@ class Phase0OAuthWeb:
         if token is None:
             return True
         try:
-            await LoxoneClient(self.endpoint, client_uuid=self._client_uuid).kill_token(token)
+            client = LoxoneClient(self.endpoint, client_uuid=self._client_uuid)
+            if self.auth_coordinator is None:
+                await client.kill_token(token)
+            else:
+                await self.auth_coordinator.attempt(
+                    lambda: client.kill_token(token),
+                    owner="tool_request",
+                    phase="token_cleanup",
+                )
         except (LoxoneConnectionError, LoxoneProtocolError):
             token.destroy()
         transaction.loxone_token = None
@@ -933,8 +944,20 @@ sync();
         try:
             async with self._login_slots:
                 probe = await client.probe()
-                token = await client.acquire_token(username, password)
-                session = await client.open_session(token)
+                if self.auth_coordinator is None:
+                    token = await client.acquire_token(username, password)
+                    session = await client.open_session(token)
+                else:
+                    token = await self.auth_coordinator.attempt(
+                        lambda: client.acquire_token(username, password),
+                        owner="tool_request",
+                        phase="token_acquisition",
+                    )
+                    session = await self.auth_coordinator.attempt(
+                        lambda: client.open_session(token),
+                        owner="tool_request",
+                        phase="session_establishment",
+                    )
                 try:
                     structure = await session.load_structure()
                 finally:
@@ -942,7 +965,14 @@ sync();
         except Exception:
             if token is not None:
                 with suppress(LoxoneConnectionError):
-                    await client.kill_token(token)
+                    if self.auth_coordinator is None:
+                        await client.kill_token(token)
+                    else:
+                        await self.auth_coordinator.attempt(
+                            lambda: client.kill_token(token),
+                            owner="tool_request",
+                            phase="token_cleanup",
+                        )
             self._record_login_failure(rate_keys, now)
             transaction.phase = "login"
             return self._login_page(transaction, "Sign-in failed. / Anmeldung fehlgeschlagen.")

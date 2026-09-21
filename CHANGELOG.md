@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add a bounded, persisted shared Miniserver authentication breaker. Confirmed
+  source-IP blocks suppress further service login attempts, while configured
+  15-minute initial and 24-hour maximum lazy recovery delays can be adjusted
+  in the Admin UI without exposing credentials, tokens, endpoints, or IPs.
+
 - Report bounded, value-free KNX project-source diagnostics through project
   status, analysis and object descriptions. Parser anomalies and unsupported
   source forms remain visible without exposing raw project attributes or
