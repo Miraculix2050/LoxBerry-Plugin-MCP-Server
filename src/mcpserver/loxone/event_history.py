@@ -27,6 +27,7 @@ _LOGGER = logging.getLogger("mcpserver.event_history")
 
 _SCHEMA_VERSION: Final = 1
 _MAX_TEXT_BYTES: Final = 4096
+_UNSUPPORTED_SOURCE_CONTROL_TYPES: Final = frozenset({"Daytimer"})
 
 
 class EventHistoryUnavailable(RuntimeError):
@@ -145,6 +146,8 @@ class EventHistoryStore:
                 )
                 connection.execute("PRAGMA user_version = 1")
                 connection.execute("COMMIT")
+                self._prune(connection, now=time.time())
+                self._compact(connection)
             except EventHistoryUnavailable:
                 connection.execute("ROLLBACK")
                 raise
@@ -227,6 +230,7 @@ class EventHistoryStore:
                 )
                 self._prune(connection, now=observed_at)
                 connection.execute("COMMIT")
+                self._compact(connection)
             except ValueError:
                 raise
             except sqlite3.Error as exc:
@@ -240,19 +244,37 @@ class EventHistoryStore:
             if candidate.exists()
         )
 
+    @staticmethod
+    def _used_database_bytes(connection: sqlite3.Connection) -> int:
+        page_count = connection.execute("PRAGMA page_count").fetchone()[0]
+        free_pages = connection.execute("PRAGMA freelist_count").fetchone()[0]
+        page_size = connection.execute("PRAGMA page_size").fetchone()[0]
+        return (int(page_count) - int(free_pages)) * int(page_size)
+
     def _prune(self, connection: sqlite3.Connection, *, now: float) -> None:
         cutoff = now - self.retention_seconds
         connection.execute("DELETE FROM events WHERE observed_at < ?", (cutoff,))
         connection.execute(
             "DELETE FROM coverage WHERE COALESCE(ended_at, started_at) < ?", (cutoff,)
         )
-        while self._size() > self.maximum_bytes:
+        while self._used_database_bytes(connection) > self.maximum_bytes:
             deleted = connection.execute(
                 "DELETE FROM events WHERE id IN "
                 "(SELECT id FROM events ORDER BY observed_at, id LIMIT 256)"
             ).rowcount
             if deleted <= 0:
                 break
+
+    def _compact(self, connection: sqlite3.Connection) -> None:
+        """Reclaim SQLite and WAL pages after bounded logical pruning."""
+        try:
+            connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            connection.execute("VACUUM")
+            connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        except sqlite3.Error as exc:
+            raise EventHistoryUnavailable("local event history maintenance is unavailable") from exc
+        if self._size() > self.maximum_bytes:
+            raise EventHistoryUnavailable("local event history size limit cannot be enforced")
 
     def page(
         self,
@@ -266,6 +288,8 @@ class EventHistoryStore:
     ) -> EventHistoryPage:
         with self._lock, self._opened() as connection:
             try:
+                self._prune(connection, now=time.time())
+                self._compact(connection)
                 coverage_rows = connection.execute(
                     "SELECT started_at, ended_at FROM coverage WHERE control_uuid = ? "
                     "AND state_uuid = ? "
@@ -417,11 +441,18 @@ class EventHistoryMonitor:
                         source = state_sources.get(event.uuid)
                         if source is None:
                             continue
+                        try:
+                            value = _value(event.value)
+                        except ValueError as exc:
+                            self.status = "unavailable"
+                            raise EventHistoryUnavailable(
+                                "configured state does not produce a supported scalar value"
+                            ) from exc
                         previous = baselines.get(event.uuid)
                         if event.uuid not in baselines:
-                            baselines[event.uuid] = event.value
+                            baselines[event.uuid] = value
                             continue
-                        if previous == event.value:
+                        if previous == value:
                             continue
                         try:
                             await asyncio.to_thread(
@@ -430,11 +461,13 @@ class EventHistoryMonitor:
                                 source[1],
                                 observed_at=observed_at,
                                 old_value=previous,
-                                new_value=event.value,
+                                new_value=value,
                             )
-                        except ValueError:
-                            _LOGGER.warning("component=event_history outcome=unsupported_value")
-                        baselines[event.uuid] = event.value
+                        except ValueError as exc:
+                            raise EventHistoryUnavailable(
+                                "configured state does not produce a supported scalar value"
+                            ) from exc
+                        baselines[event.uuid] = value
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -489,6 +522,8 @@ class EventHistoryMonitor:
             )
             if control is None:
                 raise ValueError("configured control is not visible to the service identity")
+            if control.control_type in _UNSUPPORTED_SOURCE_CONTROL_TYPES:
+                raise ValueError("configured control has no supported scalar event states")
             state_name = next(
                 (name for name, uuid in control.state_uuids if uuid == state_uuid), None
             )
