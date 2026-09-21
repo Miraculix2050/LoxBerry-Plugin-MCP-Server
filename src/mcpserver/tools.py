@@ -1550,15 +1550,16 @@ class EventHistoryRuntime:
             maximum_mib=config.event_history_maximum_mib,
         )
         try:
-            page = await asyncio.to_thread(
-                store.page,
-                control_uuid,
-                state_uuid,
-                start=start,
-                end=end,
-                limit=limit,
-                before=before,
-            )
+            async with self._runtime.worker_slot():
+                page = await asyncio.to_thread(
+                    store.page,
+                    control_uuid,
+                    state_uuid,
+                    start=start,
+                    end=end,
+                    limit=limit,
+                    before=before,
+                )
         except EventHistoryUnavailable as exc:
             raise ControlOperationError("temporarily_unavailable", str(exc)) from exc
         return control, state_name, page

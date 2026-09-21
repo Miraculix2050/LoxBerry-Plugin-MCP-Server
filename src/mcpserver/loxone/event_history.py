@@ -255,10 +255,10 @@ class EventHistoryStore:
     def _prune(self, connection: sqlite3.Connection, *, now: float) -> bool:
         cutoff = now - self.retention_seconds
         deleted = connection.execute("DELETE FROM events WHERE observed_at < ?", (cutoff,)).rowcount
-        if deleted:
-            connection.execute(
-                "UPDATE coverage SET started_at = ? WHERE started_at < ?", (cutoff, cutoff)
-            )
+        connection.execute(
+            "UPDATE coverage SET started_at = ? WHERE ended_at IS NULL AND started_at < ?",
+            (cutoff, cutoff),
+        )
         deleted += connection.execute(
             "DELETE FROM coverage WHERE ended_at IS NOT NULL AND ended_at < ?", (cutoff,)
         ).rowcount

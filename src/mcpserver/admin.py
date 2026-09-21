@@ -577,7 +577,6 @@ def _save_mcp(payload: object) -> dict[str, Any]:
         "event_history_enabled",
         "event_history_retention_days",
         "event_history_maximum_mib",
-        "event_history_sources",
         "structure_refresh_seconds",
         "max_active_runtime_sessions",
         "runtime_session_idle_seconds",
