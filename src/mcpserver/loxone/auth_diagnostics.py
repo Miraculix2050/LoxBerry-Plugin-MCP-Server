@@ -156,6 +156,50 @@ class MiniserverAuthCoordinator:
             and item["timestamp"] >= now - _RETENTION_SECONDS
         ]
 
+    def _open_source_ip_breaker(
+        self,
+        *,
+        now: int,
+        owner: str,
+        phase: str,
+        provenance: AttemptProvenance | None,
+    ) -> None:
+        was_open = self._state["breaker_state"] == "open_source_ip_blocked"
+        self._state["breaker_state"] = "open_source_ip_blocked"
+        self._state["opened_at"] = now
+        self._state["backoff_level"] = min(
+            int(self._state["backoff_level"]) + (1 if was_open else 0), 31
+        )
+        self._record(
+            owner=owner,
+            phase=phase,
+            outcome="source_ip_blocked",
+            provenance=provenance,
+            transition="reopened" if was_open else "opened",
+        )
+
+    def _refresh_failed_probe(
+        self,
+        *,
+        now: int,
+        owner: str,
+        phase: str,
+        outcome: str,
+        provenance: AttemptProvenance | None,
+    ) -> None:
+        """Keep a confirmed block gated until a probe succeeds."""
+        transition = None
+        if self._state["breaker_state"] == "open_source_ip_blocked":
+            self._state["opened_at"] = now
+            transition = "probe_failed"
+        self._record(
+            owner=owner,
+            phase=phase,
+            outcome=outcome,
+            provenance=provenance,
+            transition=transition,
+        )
+
     async def attempt(
         self,
         operation: Callable[[], Awaitable[_T]],
@@ -190,41 +234,42 @@ class MiniserverAuthCoordinator:
             try:
                 result = await operation()
             except LoxoneSourceIpBlocked:
-                was_open = self._state["breaker_state"] == "open_source_ip_blocked"
-                self._state["breaker_state"] = "open_source_ip_blocked"
-                self._state["opened_at"] = now
-                self._state["backoff_level"] = min(
-                    int(self._state["backoff_level"]) + (1 if was_open else 0), 31
-                )
-                self._record(
-                    owner=owner,
-                    phase=phase,
-                    outcome="source_ip_blocked",
-                    provenance=provenance,
-                    transition="reopened" if was_open else "opened",
+                self._open_source_ip_breaker(
+                    now=now, owner=owner, phase=phase, provenance=provenance
                 )
                 self._save()
                 raise
             except LoxoneCommandRejected as exc:
+                if exc.response_code == "4003":
+                    self._open_source_ip_breaker(
+                        now=now, owner=owner, phase=phase, provenance=provenance
+                    )
+                    self._save()
+                    raise
                 if self._state["breaker_state"] == "open_source_ip_blocked":
-                    self._state["breaker_state"] = "closed"
-                    self._state["opened_at"] = None
-                    self._state["backoff_level"] = 0
-                    transition = "closed"
+                    self._refresh_failed_probe(
+                        now=now,
+                        owner=owner,
+                        phase=phase,
+                        outcome="authentication_rejected",
+                        provenance=provenance,
+                    )
                 else:
-                    transition = None
-                self._record(
-                    owner=owner,
-                    phase=phase,
-                    outcome="authentication_rejected",
-                    provenance=provenance,
-                    transition=transition,
-                )
+                    self._record(
+                        owner=owner,
+                        phase=phase,
+                        outcome="authentication_rejected",
+                        provenance=provenance,
+                    )
                 self._save()
                 raise exc
             except Exception:
-                self._record(
-                    owner=owner, phase=phase, outcome="transport_failed", provenance=provenance
+                self._refresh_failed_probe(
+                    now=now,
+                    owner=owner,
+                    phase=phase,
+                    outcome="transport_failed",
+                    provenance=provenance,
                 )
                 self._save()
                 raise
