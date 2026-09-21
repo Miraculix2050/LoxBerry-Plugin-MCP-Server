@@ -148,10 +148,12 @@ class EventHistoryStore:
                 connection.execute("COMMIT")
                 self._compact(connection, vacuum=self._prune(connection, now=time.time()))
             except EventHistoryUnavailable:
-                connection.execute("ROLLBACK")
+                if connection.in_transaction:
+                    connection.execute("ROLLBACK")
                 raise
             except sqlite3.Error as exc:
-                connection.execute("ROLLBACK")
+                if connection.in_transaction:
+                    connection.execute("ROLLBACK")
                 raise EventHistoryUnavailable("local event history is unavailable") from exc
         try:
             os.chmod(self.path, 0o600)
@@ -419,6 +421,7 @@ class EventHistoryMonitor:
             token = None
             session = None
             active: tuple[tuple[str, str], ...] = ()
+            coverage_active = False
             try:
                 username, password = await self.credentials._credentials()
                 from mcpserver.loxone.client import LoxoneClient
@@ -444,10 +447,6 @@ class EventHistoryMonitor:
                     _LOGGER.warning("component=event_history outcome=no_configured_sources_visible")
                     await asyncio.sleep(60)
                     continue
-                started_at = time.time()
-                await asyncio.to_thread(self.store.begin_coverage, active, started_at=started_at)
-                self.capture_started_at = started_at
-                self.status = "recording"
                 state_sources = {
                     state_uuid: (control_uuid, state_uuid) for control_uuid, state_uuid in active
                 }
@@ -469,6 +468,8 @@ class EventHistoryMonitor:
                         if event.uuid not in baselines:
                             baselines[event.uuid] = value
                             continue
+                        if not coverage_active:
+                            continue
                         if previous == value:
                             continue
                         try:
@@ -485,6 +486,14 @@ class EventHistoryMonitor:
                                 "configured state does not produce a supported scalar value"
                             ) from exc
                         baselines[event.uuid] = value
+                    if not coverage_active and len(baselines) == len(active):
+                        started_at = observed_at
+                        await asyncio.to_thread(
+                            self.store.begin_coverage, active, started_at=started_at
+                        )
+                        self.capture_started_at = started_at
+                        self.status = "recording"
+                        coverage_active = True
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -495,7 +504,7 @@ class EventHistoryMonitor:
                 )
                 await asyncio.sleep(5)
             finally:
-                if active:
+                if coverage_active:
                     with suppress(EventHistoryUnavailable):
                         await asyncio.to_thread(
                             self.store.end_coverage,

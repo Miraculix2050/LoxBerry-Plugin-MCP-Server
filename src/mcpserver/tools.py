@@ -15,7 +15,7 @@ from collections import OrderedDict
 from collections.abc import Mapping
 from dataclasses import replace
 from datetime import UTC, datetime
-from math import ceil, floor
+from math import ceil, floor, isfinite
 from typing import Annotated, Any, Final, Literal, cast
 from uuid import uuid4
 
@@ -1257,6 +1257,13 @@ class _CursorCodec:
     def digest(self, value: bytes) -> str:
         return hmac.new(self._key, value, hashlib.sha256).hexdigest()
 
+    @staticmethod
+    def _finite_float(value: str) -> bool:
+        try:
+            return isfinite(float(value))
+        except ValueError:
+            return False
+
     def encode_anchor(self, scope: str, anchor: tuple[str, int, str, int]) -> str:
         payload: list[str | int] = list(anchor)
         body = json.dumps({"scope": scope, "anchor": payload}, separators=(",", ":")).encode()
@@ -1280,11 +1287,15 @@ class _CursorCodec:
             if (
                 isinstance(anchor, list)
                 and len(anchor) == 4
-                and anchor[0] in {"statistics", "history"}
+                and anchor[0] in {"statistics", "history", "event_history"}
                 and isinstance(anchor[1], int)
                 and not isinstance(anchor[1], bool)
                 and isinstance(anchor[2], str)
-                and len(anchor[2]) == 64
+                and (
+                    len(anchor[2]) == 64
+                    if anchor[0] in {"statistics", "history"}
+                    else bool(anchor[2]) and self._finite_float(anchor[2])
+                )
                 and isinstance(anchor[3], int)
                 and not isinstance(anchor[3], bool)
                 and anchor[3] >= 0
