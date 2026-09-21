@@ -464,12 +464,10 @@ class EventHistoryMonitor:
                             raise EventHistoryUnavailable(
                                 "configured state does not produce a supported scalar value"
                             ) from exc
-                        previous = baselines.get(event.uuid)
-                        if event.uuid not in baselines:
+                        if not coverage_active:
                             baselines[event.uuid] = value
                             continue
-                        if not coverage_active:
-                            continue
+                        previous = baselines[event.uuid]
                         if previous == value:
                             continue
                         try:
@@ -502,6 +500,15 @@ class EventHistoryMonitor:
                     "component=event_history outcome=subscription_unavailable error_type=%s",
                     type(exc).__name__,
                 )
+                if coverage_active:
+                    with suppress(EventHistoryUnavailable):
+                        await asyncio.to_thread(
+                            self.store.end_coverage,
+                            active,
+                            ended_at=time.time(),
+                            outcome="disconnected",
+                        )
+                    coverage_active = False
                 await asyncio.sleep(5)
             finally:
                 if coverage_active:
