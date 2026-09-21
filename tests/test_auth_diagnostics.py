@@ -152,6 +152,37 @@ async def test_successful_attempt_survives_diagnostics_persistence_failure(
 
 
 @pytest.mark.asyncio
+async def test_source_ip_block_remains_gated_when_persistence_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    coordinator = MiniserverAuthCoordinator(
+        (tmp_path / "auth-diagnostics.json").resolve(), initial_probe_seconds=300
+    )
+
+    def cannot_save() -> None:
+        raise OSError("diagnostics unavailable")
+
+    monkeypatch.setattr(coordinator, "_save", cannot_save)
+
+    async def blocked() -> None:
+        raise LoxoneSourceIpBlocked("blocked")
+
+    with pytest.raises(LoxoneSourceIpBlocked):
+        await coordinator.attempt(blocked, owner="tool_request", phase="token_authentication")
+
+    calls = 0
+
+    async def must_not_run() -> None:
+        nonlocal calls
+        calls += 1
+
+    with pytest.raises(MiniserverAuthenticationSuppressed):
+        await coordinator.attempt(must_not_run, owner="tool_request", phase="token_authentication")
+
+    assert calls == 0
+
+
+@pytest.mark.asyncio
 async def test_only_own_tool_events_are_returned(tmp_path: Path) -> None:
     coordinator = MiniserverAuthCoordinator((tmp_path / "auth-diagnostics.json").resolve())
 
