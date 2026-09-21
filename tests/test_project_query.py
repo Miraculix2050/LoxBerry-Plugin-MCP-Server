@@ -2,7 +2,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from mcpserver.loxone.project.graph import ProjectPartSummary, ProjectSnapshot, build_graph
+from mcpserver.loxone.project.graph import (
+    ProjectPartSummary,
+    ProjectSnapshot,
+    ProjectSourceDiagnostic,
+    ProjectSourceDiagnostics,
+    build_graph,
+)
 from mcpserver.loxone.project.mapping import ProjectView, map_runtime
 from mcpserver.loxone.project.parser import parse_project
 from mcpserver.loxone.project.query import ProjectQuery, ProjectQueryError
@@ -53,6 +59,45 @@ def test_find_status_and_describe_are_deterministic_and_bounded():
         )[0]["block_type"]
         == "Unknown"
     )
+
+
+def test_source_diagnostics_are_available_without_unknown_values():
+    parsed = parse_project(
+        b'<P><C Type="EIBsensor" U="sensor" EibAddr="invalid" Extra="secret"/></P>'
+    )
+    snapshot = ProjectSnapshot(
+        "project",
+        4,
+        (ProjectPartSummary("p", 2, ()),),
+        build_graph((("p", parsed),)),
+        ProjectSourceDiagnostics(
+            (
+                ProjectSourceDiagnostic(
+                    "unmodeled_knx_attribute", 1, "EIBsensor", "Extra", "text", "1-16", ("p:1",), 0
+                ),
+            ),
+            True,
+            0,
+        ),
+    )
+    project = ProjectQuery(
+        ProjectView(
+            snapshot, map_runtime(snapshot, SimpleNamespace(last_modified="v", controls=()))
+        ),
+        {},
+    )
+
+    assert project.status()["source_diagnostics"]["entries"] == [
+        {"code": "unmodeled_knx_attribute", "count": 1}
+    ]
+    described = project.describe(project.resolve("p:1", "project_node_id"), limit=10)
+    unknown = next(
+        item
+        for item in described["source_diagnostics"]
+        if item["code"] == "unmodeled_knx_attribute"
+    )
+    assert unknown["attribute_name"] == "Extra"
+    assert "secret" not in repr(described["source_diagnostics"])
 
 
 def test_trace_excludes_containment_and_reports_limits():

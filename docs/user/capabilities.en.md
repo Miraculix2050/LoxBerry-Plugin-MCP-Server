@@ -35,6 +35,12 @@ establish a mapping. Findings are review facts, not quality ratings. Fixed
 limitation codes show when normalized DPTs, semantic domains, reviewed usage, or runtime mappings
 are unavailable. The tool does not claim DPT compatibility, ETS coverage, bus activity, or physical
 device use; use a returned project-node ID with describe or trace to inspect its evidence.
+`source_diagnostics` reports bounded source gaps such as parser anomalies, invalid KNX fields
+and unmodeled attributes. They are not configuration verdicts and never expose unknown source
+values: only fixed codes, field names, value shapes and project-node references are returned.
+If the project source cannot be processed at all, the normal error result includes a fixed,
+value-free `diagnostic_code` that distinguishes invalid, unsupported, limited, timed-out and
+otherwise failed source processing.
 
 `loxone_get_structure_overview` returns a bounded initial map of the rooms,
 categories and control types visible to the signed-in Loxone user. It contains

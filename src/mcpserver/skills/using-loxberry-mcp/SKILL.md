@@ -77,6 +77,12 @@ context only after an exact UUID mapping; they never establish a mapping. The
 tool does not grade the configuration, infer DPT meanings, or establish ETS/bus
 evidence. Use an affected `project_node_id` with describe or trace before
 explaining an exception or proposing an improvement.
+Check `source_diagnostics` in project status and analysis before treating an absent KNX result as
+evidence. These diagnostics report bounded parser and schema gaps, not defects. Drill into a
+sample `project_node_id` with describe; unknown source values are intentionally never returned.
+When a project tool returns an error, use its fixed value-free `diagnostic_code` to distinguish
+invalid, unsupported, limited, timed-out and failed source processing before retrying or reporting
+the problem.
 
 ### Inspect one known room
 

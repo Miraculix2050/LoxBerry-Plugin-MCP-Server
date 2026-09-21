@@ -39,6 +39,12 @@ normalisierte DPTs, Semantikdomänen, geprüfte Signalnutzung oder Runtime-Mappi
 behauptet weder DPT-Kompatibilität noch ETS-Abdeckung, Busaktivität oder physische
 Geräteverwendung; die Evidenz eines zurückgegebenen Projektknotens lässt sich mit Describe oder
 Trace vertiefen.
+`source_diagnostics` meldet begrenzte Quelllücken wie Parseranomalien, ungültige KNX-Felder und
+nicht modellierte Attribute. Dies sind keine Konfigurationsurteile; unbekannte Quellwerte werden
+nicht ausgegeben, sondern nur feste Codes, Feldnamen, Wertformen und Projektknotenreferenzen.
+Kann die Projektquelle gar nicht verarbeitet werden, enthält das normale Fehlerergebnis einen
+festen, wertfreien `diagnostic_code`, der ungültige, nicht unterstützte, begrenzte, abgelaufene
+und sonst fehlgeschlagene Quellenverarbeitung unterscheidet.
 
 `loxone_get_structure_overview` liefert eine begrenzte erste Übersicht der für
 den angemeldeten Loxone-Benutzer sichtbaren Räume, Kategorien und Control-Typen.

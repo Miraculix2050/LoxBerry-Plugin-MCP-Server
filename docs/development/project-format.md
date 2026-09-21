@@ -89,6 +89,16 @@ The service serializes builds and publishes complete immutable snapshots. Its
 identity-isolated RAM cache is capped at eight entries and a conservative 128 MiB
 accounting budget. A cache hit still requires a fresh successful download.
 
+### Source diagnostics
+
+The snapshot records bounded, value-free source diagnostics for parser anomalies,
+missing or invalid KNX fields, unmodeled attributes on confirmed KNX objects and
+attribute-backed unclassified KNX candidates. MCP status returns aggregate counts;
+analysis returns bounded groups and describe returns the selected node's diagnostic
+shape. Diagnostics contain no raw unknown values and are not configuration findings.
+The internal aggregation is capped at 2,048 groups and public analysis at 50 groups;
+both make omissions explicit.
+
 Der Graph unterscheidet Signal-, Referenz- und Hierarchiebeziehungen. Unbekannte
 Referenzen bleiben sichtbar unaufgelöst. Die Verarbeitung läuft in einem
 abbrechbaren Unterprozess; der Cache ersetzt keine Zugriffsprüfung.

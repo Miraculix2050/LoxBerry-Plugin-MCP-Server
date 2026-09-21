@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from mcpserver.loxone.project.graph import build_graph
+from mcpserver.loxone.project.graph import _source_diagnostics, build_graph
 from mcpserver.loxone.project.models import ProjectError
 from mcpserver.loxone.project.parser import parse_project
 
@@ -36,3 +36,39 @@ def test_duplicate_source_ids_do_not_guess_edges():
     graph = build_graph((("p", project),))
     assert not graph.edges
     assert graph.unresolved
+
+
+def test_source_diagnostics_expose_shapes_not_unknown_values():
+    parsed = parse_project(
+        b'<P><C Type="EIBsensor" U="sensor" EibAddr="invalid" Extra="secret-value"/></P>'
+    )
+    graph = build_graph((("p", parsed),))
+    diagnostics = _source_diagnostics(
+        graph, tuple(("p", index, code) for index, code in parsed.anomalies)
+    )
+
+    codes = {item.code for item in diagnostics.entries}
+    assert {"invalid_group_address", "missing_raw_datatype", "unmodeled_knx_attribute"} <= codes
+    unknown = next(item for item in diagnostics.entries if item.code == "unmodeled_knx_attribute")
+    assert unknown.attribute_name == "Extra"
+    assert unknown.value_shape == "text"
+    assert "secret-value" not in repr(diagnostics)
+
+
+def test_source_diagnostics_report_unreviewed_logic_and_bound_labels():
+    long_attribute = "A" * 120
+    source = (
+        f'<P><C Type="EibDimmer" U="logic" {long_attribute}="x">'
+        '<Co K="extra" U="connector"/></C></P>'
+    )
+    parsed = parse_project(source.encode())
+    graph = build_graph((("p", parsed),))
+    diagnostics = _source_diagnostics(graph, ())
+
+    assert {item.code for item in diagnostics.entries} >= {
+        "unreviewed_knx_logic",
+        "unmodeled_knx_attribute",
+    }
+    attribute = next(item for item in diagnostics.entries if item.attribute_name is not None)
+    assert len(attribute.attribute_name) <= 100
+    assert diagnostics.labels_truncated is True

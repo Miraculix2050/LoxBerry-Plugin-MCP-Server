@@ -5,6 +5,7 @@ import pytest
 from mcp.server.fastmcp import FastMCP
 
 import mcpserver.tools as tools_module
+from mcpserver.loxone.project.models import ProjectError
 from mcpserver.loxone.project.query import ProjectQueryError
 from mcpserver.tools import PROJECT_RESPONSE_MAX_BYTES, register_project_tools
 
@@ -21,6 +22,12 @@ class Query:
             "edges": 2,
             "unresolved_relationships": 0,
             "mapping": {"exact": 1, "ambiguous": 0, "unmapped": 0},
+            "source_diagnostics": {
+                "entries": [],
+                "complete": True,
+                "groups_omitted": 0,
+                "labels_truncated": False,
+            },
         }
 
     def find(self, **_kwargs):
@@ -105,6 +112,22 @@ async def test_project_tools_keep_structured_mapping_and_cursor_errors(monkeypat
     assert describe.ok is False
     assert describe.data.error == "ambiguous_mapping"  # type: ignore[union-attr]
     assert invalid_cursor.data.error == "invalid_input"  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+async def test_project_tools_publish_fixed_source_failure_diagnostics(monkeypatch):
+    async def project_query(_runtime):
+        raise ProjectError("project_xml_invalid")
+
+    monkeypatch.setattr(tools_module, "_project_query", project_query)
+    server = FastMCP("project-source-errors")
+    register_project_tools(server, None)
+
+    result = await server._tool_manager.get_tool("loxone_get_project_status").fn()  # type: ignore[union-attr]
+
+    assert result.ok is False
+    assert result.data.error == "temporarily_unavailable"  # type: ignore[union-attr]
+    assert result.data.diagnostic_code == "project_source_invalid"  # type: ignore[union-attr]
 
 
 @pytest.mark.asyncio
@@ -197,6 +220,12 @@ async def test_project_analysis_is_read_only_bounded_and_cursor_scoped(monkeypat
             },
             "summaries": {"project_connectivity": {"unconnected": 1, "ambiguous": 0}},
             "limitations": [],
+            "source_diagnostics": {
+                "entries": [],
+                "complete": True,
+                "groups_omitted": 0,
+                "labels_truncated": False,
+            },
             "findings": [
                 {
                     "finding_id": "knx:1",

@@ -5,6 +5,14 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Report bounded, value-free KNX project-source diagnostics through project
+  status, analysis and object descriptions. Parser anomalies and unsupported
+  source forms remain visible without exposing raw project attributes or
+  turning incomplete evidence into a configuration verdict.
+- Add fixed value-free diagnostic categories to project-tool source-processing
+  failures, so invalid or unsupported input is distinguishable from limits,
+  timeouts and other processing failures.
+
 - Show the running service's emergency-stop signal and MQTT-compatible state in
   the Admin UI, including a clear indication when the current form selection
   has not yet been adopted by the service.

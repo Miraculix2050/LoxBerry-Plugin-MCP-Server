@@ -125,6 +125,13 @@ StatisticsLimitArgument = Annotated[
 class ErrorData(BaseModel):
     error: str
     message: str
+    diagnostic_code: str | None = Field(
+        default=None,
+        description=(
+            "Fixed, value-free diagnostic category when an operation could not process "
+            "its source. Null when no additional category is available."
+        ),
+    )
 
 
 class NamedGroupData(BaseModel):
@@ -543,6 +550,69 @@ class ProjectKnxData(BaseModel):
     usage_observations_truncated: bool = False
 
 
+class ProjectNodeSourceDiagnosticData(BaseModel):
+    code: Literal[
+        "parser_duplicate_attribute",
+        "parser_attribute_newline",
+        "missing_group_address",
+        "invalid_group_address",
+        "missing_raw_datatype",
+        "unmodeled_knx_attribute",
+        "unclassified_knx_candidate",
+        "unreviewed_knx_logic",
+        "unreviewed_knx_connector",
+        "incomplete_knx_signal_rule",
+    ]
+    attribute_name: str | None = None
+    value_shape: Literal["empty", "integer", "decimal", "text"] | None = None
+    length_bucket: Literal["0", "1-16", "17-64", "65-200", ">200"] | None = None
+    marker_fields: list[str] = Field(default_factory=list)
+
+
+ProjectSourceDiagnosticCode = Literal[
+    "parser_duplicate_attribute",
+    "parser_attribute_newline",
+    "missing_group_address",
+    "invalid_group_address",
+    "missing_raw_datatype",
+    "unmodeled_knx_attribute",
+    "unclassified_knx_candidate",
+    "unreviewed_knx_logic",
+    "unreviewed_knx_connector",
+    "incomplete_knx_signal_rule",
+]
+
+
+class ProjectSourceDiagnosticData(BaseModel):
+    code: ProjectSourceDiagnosticCode
+    count: int
+    source_type: str | None
+    attribute_name: str | None
+    value_shape: Literal["empty", "integer", "decimal", "text"] | None
+    length_bucket: Literal["0", "1-16", "17-64", "65-200", ">200"] | None
+    sample_project_node_ids: list[str]
+    sample_omitted: int
+
+
+class ProjectSourceDiagnosticCountData(BaseModel):
+    code: ProjectSourceDiagnosticCode
+    count: int
+
+
+class ProjectSourceDiagnosticsSummaryData(BaseModel):
+    entries: list[ProjectSourceDiagnosticCountData]
+    complete: bool
+    groups_omitted: int
+    labels_truncated: bool
+
+
+class ProjectSourceDiagnosticsData(BaseModel):
+    entries: list[ProjectSourceDiagnosticData]
+    complete: bool
+    groups_omitted: int
+    labels_truncated: bool
+
+
 class ProjectKnxSummaryData(BaseModel):
     object_kind: Literal["line", "endpoint", "logic_block"]
     flow_direction: Literal["bus_to_loxone", "loxone_to_bus"] | None
@@ -568,6 +638,8 @@ class ProjectNodeData(BaseModel):
     connector_key: str | None
     runtime_control: ProjectRuntimeControlData | None = None
     knx: ProjectKnxData | None = None
+    source_diagnostics: list[ProjectNodeSourceDiagnosticData] = Field(default_factory=list)
+    source_diagnostics_labels_truncated: bool = False
 
 
 class ProjectStatusData(BaseModel):
@@ -579,6 +651,7 @@ class ProjectStatusData(BaseModel):
     unresolved_relationships: int
     mapping: dict[str, int]
     structure_generation: int
+    source_diagnostics: ProjectSourceDiagnosticsSummaryData
 
 
 class ProjectObjectPageData(BaseModel):
@@ -763,6 +836,7 @@ class ProjectAnalysisData(BaseModel):
     coverage: ProjectAnalysisCoverageData
     summaries: dict[str, JsonValue]
     limitations: list[ProjectAnalysisLimitationData] = Field(default_factory=list)
+    source_diagnostics: ProjectSourceDiagnosticsData
     findings: list[ProjectAnalysisFindingData]
     next_cursor: str | None
     analysis_truncated: bool
@@ -1001,6 +1075,7 @@ def _error[EnvelopeT: ToolEnvelope](
     code: str,
     message: str,
     *,
+    diagnostic_code: str | None = None,
     trace_id: str | None = None,
 ) -> EnvelopeT:
     trace_id = trace_id or str(uuid4())
@@ -1022,7 +1097,7 @@ def _error[EnvelopeT: ToolEnvelope](
         )
     return envelope_type(
         ok=False,
-        data={"error": code, "message": message},
+        data={"error": code, "message": message, "diagnostic_code": diagnostic_code},
         observed_at=_now(),
         stale=False,
         trace_id=trace_id,
@@ -1330,7 +1405,7 @@ async def _project_query(runtime: LoxoneRuntime | None) -> tuple[ProjectQuery, R
     return ProjectQuery(view, names), snapshot
 
 
-def _project_error_code(error: ProjectError | ProjectQueryError) -> tuple[str, str]:
+def _project_error_code(error: ProjectError | ProjectQueryError) -> tuple[str, str, str | None]:
     code = str(error)
     if code in {
         "project_access_denied",
@@ -1338,14 +1413,50 @@ def _project_error_code(error: ProjectError | ProjectQueryError) -> tuple[str, s
         "project_permission_denied",
         "project_token_confirmation_required",
     }:
-        return "permission_denied", "Project analysis is not authorized for this identity"
+        return "permission_denied", "Project analysis is not authorized for this identity", None
     if code in {"project_node_unknown"}:
-        return "not_found", "Project object is not available"
+        return "not_found", "Project object is not available", None
     if code in {"project_mapping_ambiguous"}:
-        return "ambiguous_mapping", "Runtime control maps to multiple project objects"
+        return "ambiguous_mapping", "Runtime control maps to multiple project objects", None
     if code in {"project_query_invalid"}:
-        return "invalid_input", "Project query is invalid"
-    return "temporarily_unavailable", "Project analysis is temporarily unavailable"
+        return "invalid_input", "Project query is invalid", None
+    if code in {
+        "project_archive_invalid",
+        "project_archive_without_project",
+        "project_format_invalid",
+        "project_encoding_invalid",
+        "project_character_invalid",
+        "project_entity_invalid",
+        "project_xml_invalid",
+        "loxcc_header_invalid",
+        "loxcc_truncated",
+        "loxcc_reference_invalid",
+        "loxcc_length_invalid",
+        "loxcc_checksum_invalid",
+    }:
+        diagnostic_code = "project_source_invalid"
+    elif code in {
+        "project_archive_unsupported",
+        "project_encoding_unsupported",
+        "project_xml_declaration_unsupported",
+    }:
+        diagnostic_code = "project_source_unsupported"
+    elif code in {
+        "project_download_limit",
+        "project_archive_limit",
+        "project_parse_limit",
+        "project_graph_limit",
+        "project_decoded_limit",
+        "project_query_limit",
+        "project_worker_limit",
+        "loxcc_size_limit",
+    }:
+        diagnostic_code = "project_source_limit_exceeded"
+    elif code in {"project_timeout", "project_worker_timeout"}:
+        diagnostic_code = "project_source_timeout"
+    else:
+        diagnostic_code = "project_source_processing_failed"
+    return "temporarily_unavailable", "Project analysis is temporarily unavailable", diagnostic_code
 
 
 def _fit_structure_overview(envelope: StructureOverviewEnvelope) -> StructureOverviewEnvelope:
@@ -2808,8 +2919,8 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                 "Authentication with loxone:read is required",
             )
         except (ProjectError, ProjectQueryError) as exc:
-            code, message = _project_error_code(exc)
-            return _error(ProjectStatusEnvelope, code, message)
+            code, message, diagnostic_code = _project_error_code(exc)
+            return _error(ProjectStatusEnvelope, code, message, diagnostic_code=diagnostic_code)
         except RuntimeUnavailable as exc:
             return _error(ProjectStatusEnvelope, "temporarily_unavailable", str(exc))
 
@@ -2892,8 +3003,8 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                 "Authentication with loxone:read is required",
             )
         except (ProjectError, ProjectQueryError) as exc:
-            code, message = _project_error_code(exc)
-            return _error(ProjectObjectPageEnvelope, code, message)
+            code, message, diagnostic_code = _project_error_code(exc)
+            return _error(ProjectObjectPageEnvelope, code, message, diagnostic_code=diagnostic_code)
         except RuntimeUnavailable as exc:
             return _error(ProjectObjectPageEnvelope, "temporarily_unavailable", str(exc))
 
@@ -2938,8 +3049,10 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                 "Authentication with loxone:read is required",
             )
         except (ProjectError, ProjectQueryError) as exc:
-            code, message = _project_error_code(exc)
-            return _error(ProjectDescriptionEnvelope, code, message)
+            code, message, diagnostic_code = _project_error_code(exc)
+            return _error(
+                ProjectDescriptionEnvelope, code, message, diagnostic_code=diagnostic_code
+            )
         except RuntimeUnavailable as exc:
             return _error(ProjectDescriptionEnvelope, "temporarily_unavailable", str(exc))
 
@@ -2981,8 +3094,8 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                 "Authentication with loxone:read is required",
             )
         except (ProjectError, ProjectQueryError) as exc:
-            code, message = _project_error_code(exc)
-            return _error(ProjectTraceEnvelope, code, message)
+            code, message, diagnostic_code = _project_error_code(exc)
+            return _error(ProjectTraceEnvelope, code, message, diagnostic_code=diagnostic_code)
         except RuntimeUnavailable as exc:
             return _error(ProjectTraceEnvelope, "temporarily_unavailable", str(exc))
 
@@ -3083,8 +3196,8 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                 "Authentication with loxone:read is required",
             )
         except (ProjectError, ProjectQueryError) as exc:
-            code, message = _project_error_code(exc)
-            return _error(ProjectAnalysisEnvelope, code, message)
+            code, message, diagnostic_code = _project_error_code(exc)
+            return _error(ProjectAnalysisEnvelope, code, message, diagnostic_code=diagnostic_code)
         except RuntimeUnavailable as exc:
             return _error(ProjectAnalysisEnvelope, "temporarily_unavailable", str(exc))
 

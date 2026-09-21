@@ -199,6 +199,7 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
     if not analyses or not analyses <= ANALYSES:
         raise ValueError("project_analysis_invalid")
     graph = view.snapshot.graph
+    source_diagnostics = view.snapshot.source_diagnostics
     nodes = {node.key: node for node in graph.nodes}
     children, parents = _children(graph.edges)
     needs_usage = bool(
@@ -853,6 +854,25 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
             },
             {"code": "unresolved_relationships", "count": len(graph.unresolved)},
         ],
+        "source_diagnostics": {
+            "entries": [
+                {
+                    "code": item.code,
+                    "count": item.count,
+                    "source_type": item.source_type,
+                    "attribute_name": item.attribute_name,
+                    "value_shape": item.value_shape,
+                    "length_bucket": item.length_bucket,
+                    "sample_project_node_ids": list(item.sample_node_ids),
+                    "sample_omitted": item.sample_omitted,
+                }
+                for item in source_diagnostics.entries[:50]
+            ],
+            "complete": source_diagnostics.complete and len(source_diagnostics.entries) <= 50,
+            "groups_omitted": source_diagnostics.groups_omitted
+            + max(0, len(source_diagnostics.entries) - 50),
+            "labels_truncated": source_diagnostics.labels_truncated,
+        },
         "findings": findings,
         "analysis_truncated": bool(truncated_reasons),
         "truncation_reasons": sorted(set(truncated_reasons)),
