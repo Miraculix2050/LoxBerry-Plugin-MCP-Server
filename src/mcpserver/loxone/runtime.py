@@ -264,6 +264,26 @@ class LoxoneRuntime:
         async with self._parallel:
             yield
 
+    @asynccontextmanager
+    async def history_call_slot(self, access: StoredAccessToken) -> AsyncIterator[None]:
+        """Apply the normal and history-specific limits to a local history read."""
+
+        if READ_SCOPE not in access.scopes or HISTORY_SCOPE not in access.scopes:
+            raise ControlOperationError("permission_denied", "loxone:history is required")
+        if not self.history_enabled:
+            raise ControlOperationError(
+                "permission_denied", "Loxone history requires administrator activation"
+            )
+        now = time.monotonic()
+        if not self._consume_rate(
+            self._rate[access.family_id], self._rate_limit, now
+        ) or not self._consume_rate(
+            self._history_rate[access.family_id], self._history_rate_limit, now
+        ):
+            raise ControlOperationError("rate_limited", "history rate limit exceeded")
+        async with self._parallel:
+            yield
+
     @staticmethod
     def _consume_rate(values: deque[float], limit: int, now: float) -> bool:
         while values and values[0] <= now - 60:
@@ -551,13 +571,6 @@ class LoxoneRuntime:
             )
         if not control_uuid or len(control_uuid) > 128:
             raise ControlOperationError("invalid_input", "invalid control identifier")
-        now = time.monotonic()
-        if not self._consume_rate(
-            self._rate[access.family_id], self._rate_limit, now
-        ) or not self._consume_rate(
-            self._history_rate[access.family_id], self._history_rate_limit, now
-        ):
-            raise ControlOperationError("rate_limited", "history rate limit exceeded")
         try:
             token = self.token_store.get(access.family_id, access.miniserver_id, access.identity_id)
         except LoxoneTokenStoreError as exc:
@@ -568,7 +581,7 @@ class LoxoneRuntime:
             raise ControlOperationError(
                 "temporarily_unavailable", "Loxone authorization is unavailable"
             )
-        async with self._parallel:
+        async with self.history_call_slot(access):
             session: LoxoneWebSocketSession | None = None
             try:
                 session = await self._open_session(

@@ -1510,7 +1510,11 @@ class EventHistoryRuntime:
             raise PermissionError("loxone:history requires administrator activation")
         if not config.event_history_enabled:
             raise ControlOperationError("feature_disabled", "Local event history is disabled")
-        snapshot = await self._runtime.snapshot(access)
+        try:
+            async with self._runtime.history_call_slot(access):
+                snapshot = await self._runtime.snapshot(access)
+        except RuntimeUnavailable as exc:
+            raise ControlOperationError("temporarily_unavailable", str(exc)) from exc
         control = next(
             (
                 item

@@ -133,7 +133,7 @@
           <label class="mcp-field"><span><TMPL_VAR SETUP.CACHED_STATES></span><input name="max_states_per_identity" type="number" min="1000" max="100000" value="<TMPL_VAR MAX_STATES_PER_IDENTITY ESCAPE=HTML>"></label>
         </div>
          <p class="mcp-help"><TMPL_VAR SETUP.ADVANCED_LIMITS_HELP></p>
-         <label class="mcp-check"><input id="event-history-enabled" name="event_history_enabled" type="checkbox" value="1"> <span><TMPL_VAR SETUP.EVENT_HISTORY_ENABLED></span></label>
+         <label class="mcp-check"><input id="event-history-enabled" name="event_history_enabled" type="checkbox" value="1" <TMPL_IF EVENT_HISTORY_ENABLED>checked</TMPL_IF>> <span><TMPL_VAR SETUP.EVENT_HISTORY_ENABLED></span></label>
          <p class="mcp-help"><TMPL_VAR SETUP.EVENT_HISTORY_HELP></p>
       </details>
       <div class="mcp-actions">

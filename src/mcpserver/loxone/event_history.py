@@ -136,6 +136,13 @@ class EventHistoryStore:
                     )
                     """
                 )
+                # A process that did not reach ``end_coverage`` must not make a
+                # later request look continuously recorded across its downtime.
+                connection.execute(
+                    "UPDATE coverage SET ended_at = ?, outcome = 'interrupted' "
+                    "WHERE ended_at IS NULL",
+                    (time.time(),),
+                )
                 connection.execute("PRAGMA user_version = 1")
                 connection.execute("COMMIT")
             except EventHistoryUnavailable:

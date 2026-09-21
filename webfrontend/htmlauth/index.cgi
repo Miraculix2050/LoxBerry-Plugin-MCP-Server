@@ -771,6 +771,7 @@ $template->param(
     LOXBERRY_READ_ENABLED => $config->{tools}{loxberry_read_enabled} ? 1 : 0,
     LOXONE_HISTORY_ENABLED => $config->{tools}{loxone_history_enabled} ? 1 : 0,
     LOXBERRY_OPERATE_ENABLED => $config->{tools}{loxberry_operate_enabled} ? 1 : 0,
+    EVENT_HISTORY_ENABLED => $config->{event_history}{enabled} ? 1 : 0,
     REQUESTS_PER_MINUTE => $config->{limits}{requests_per_minute} // 60,
     CONTROL_REQUESTS_PER_MINUTE => $config->{limits}{control_requests_per_minute} // 10,
     LOXBERRY_REQUESTS_PER_MINUTE => $config->{limits}{loxberry_requests_per_minute} // 30,
