@@ -178,7 +178,8 @@ class EventHistoryStore:
                 )
                 connection.execute("COMMIT")
             except sqlite3.Error as exc:
-                connection.execute("ROLLBACK")
+                if connection.in_transaction:
+                    connection.execute("ROLLBACK")
                 raise EventHistoryUnavailable("local event history is unavailable") from exc
 
     def end_coverage(
@@ -200,7 +201,8 @@ class EventHistoryStore:
                 )
                 connection.execute("COMMIT")
             except sqlite3.Error as exc:
-                connection.execute("ROLLBACK")
+                if connection.in_transaction:
+                    connection.execute("ROLLBACK")
                 raise EventHistoryUnavailable("local event history is unavailable") from exc
 
     def record_transition(
@@ -235,7 +237,8 @@ class EventHistoryStore:
             except ValueError:
                 raise
             except sqlite3.Error as exc:
-                connection.execute("ROLLBACK")
+                if connection.in_transaction:
+                    connection.execute("ROLLBACK")
                 raise EventHistoryUnavailable("local event history is unavailable") from exc
 
     def _size(self) -> int:
@@ -372,7 +375,8 @@ class EventHistoryStore:
                 connection.execute("COMMIT")
                 return int(count)
             except sqlite3.Error as exc:
-                connection.execute("ROLLBACK")
+                if connection.in_transaction:
+                    connection.execute("ROLLBACK")
                 raise EventHistoryUnavailable("local event history is unavailable") from exc
 
 

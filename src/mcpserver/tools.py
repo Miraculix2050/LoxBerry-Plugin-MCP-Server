@@ -1466,13 +1466,42 @@ class LoxBerryOperateRuntime:
             if len(config.event_history_sources) >= 64:
                 raise ControlOperationError("rate_limited", "event history source capacity reached")
             name, control_type, state_name = await monitor.validate_source(control_uuid, state_uuid)
-            updated = replace(
-                config,
-                event_history_sources=(*config.event_history_sources, (control_uuid, state_uuid)),
+            binding = self._auth_store.pseudonym(
+                "loxberry-operate-binding-v1",
+                access.client_id,
+                access.identity_id,
+                access.miniserver_id,
             )
-            self._config_store.save(updated)
-            await monitor.update_config(updated)
-            return True, (name, control_type, state_name)
+            changed = False
+
+            def add_source(current: Any) -> Any:
+                nonlocal changed
+                if (
+                    not current.event_history_enabled
+                    or not current.loxone_history_enabled
+                    or not current.loxberry_operate_enabled
+                    or binding not in current.loxberry_operate_bindings
+                ):
+                    raise PermissionError("LoxBerry cache operation is not authorized")
+                if (control_uuid, state_uuid) in current.event_history_sources:
+                    return current
+                if len(current.event_history_sources) >= 64:
+                    raise ControlOperationError(
+                        "rate_limited", "event history source capacity reached"
+                    )
+                changed = True
+                return replace(
+                    current,
+                    event_history_sources=(
+                        *current.event_history_sources,
+                        (control_uuid, state_uuid),
+                    ),
+                )
+
+            updated = await asyncio.to_thread(self._config_store.mutate, add_source)
+            if changed:
+                await monitor.update_config(updated)
+            return changed, (name, control_type, state_name)
 
     async def remove_event_history_source(
         self, access: StoredAccessToken, control_uuid: str, state_uuid: str
@@ -1482,17 +1511,24 @@ class LoxBerryOperateRuntime:
             config = self._config_store.load()
             if (control_uuid, state_uuid) not in config.event_history_sources:
                 return False
-            updated = replace(
-                config,
-                event_history_sources=tuple(
-                    source
-                    for source in config.event_history_sources
-                    if source != (control_uuid, state_uuid)
-                ),
-            )
-            self._config_store.save(updated)
-            await monitor.update_config(updated)
-            return True
+
+            def remove_source(current: Any) -> Any:
+                if (control_uuid, state_uuid) not in current.event_history_sources:
+                    return current
+                return replace(
+                    current,
+                    event_history_sources=tuple(
+                        source
+                        for source in current.event_history_sources
+                        if source != (control_uuid, state_uuid)
+                    ),
+                )
+
+            updated = await asyncio.to_thread(self._config_store.mutate, remove_source)
+            changed = bool(updated.event_history_sources != config.event_history_sources)
+            if changed:
+                await monitor.update_config(updated)
+            return changed
 
 
 class EventHistoryRuntime:
