@@ -112,6 +112,15 @@ if document.get("schema_version") in {6, 8}:
     event_history.setdefault("sources", [])
     document["schema_version"] = 9
     changed = True
+if document.get("schema_version") == 9:
+    limits = document.setdefault("limits", {})
+    policies = document.setdefault("policies", {})
+    if not isinstance(limits, dict) or not isinstance(policies, dict):
+        raise SystemExit("binding policy configuration is not an object")
+    limits.setdefault("explorer_binding_retention_hours", 72)
+    policies.setdefault("explorer_bindings", [])
+    document["schema_version"] = 10
+    changed = True
 if changed:
     descriptor, temporary_name = tempfile.mkstemp(prefix=".mcpserver.", dir=path.parent)
     temporary = Path(temporary_name)

@@ -177,6 +177,51 @@ def test_loxberry_approval_rejects_expired_session(
         _allow_loxberry_read({"session_id": "expired-family"})
 
 
+def test_explorer_approval_is_application_bound_and_individually_revocable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = (tmp_path / "config" / "mcpserver.json").resolve()
+    auth_path = (tmp_path / "data" / "auth" / "sessions.json").resolve()
+    AtomicConfigStore(config_path).save(PluginConfig.defaults())
+    auth_store = AtomicJsonAuthStore(auth_path)
+    auth_store.mutate(
+        lambda document: document["families"].update(
+            {
+                "explorer-family": {
+                    "scope": f"{READ_SCOPE} {LOXBERRY_READ_SCOPE}",
+                    "client_id": "dynamic-client-a",
+                    "client_kind": "tool_explorer",
+                    "identity_id": "identity",
+                    "miniserver_id": "miniserver",
+                    "created_at": 1_900_000_000,
+                    "expires_at": 2_000_000_000,
+                    "pending_loxberry_read": True,
+                    "revoked": False,
+                }
+            }
+        )
+    )
+    monkeypatch.setenv("MCPSERVER_CONFIG", str(config_path))
+    monkeypatch.setenv("MCPSERVER_AUTH_STORE", str(auth_path))
+
+    response = _allow_loxberry_read({"session_id": "explorer-family"})
+    config = AtomicConfigStore(config_path).load()
+
+    assert config.loxberry_read_bindings == ()
+    assert len(config.explorer_bindings) == 1
+    assert response["loxberry_bindings"][0]["active"] is True
+    binding_id = config.explorer_bindings[0].binding_id
+
+    revoked: list[str] = []
+    monkeypatch.setattr(
+        "mcpserver.admin._revoke_many", lambda family_ids, **_kwargs: revoked.extend(family_ids)
+    )
+    _revoke_loxberry_read({"binding_id": binding_id})
+
+    assert AtomicConfigStore(config_path).load().explorer_bindings == ()
+    assert revoked == ["explorer-family"]
+
+
 def test_loxberry_operate_approval_uses_separate_exact_binding(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

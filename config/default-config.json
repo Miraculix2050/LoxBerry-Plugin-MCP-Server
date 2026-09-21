@@ -3,6 +3,7 @@
     "control_requests_per_minute": 10,
     "history_requests_per_minute": 12,
     "loxberry_operate_requests_per_minute": 3,
+    "explorer_binding_retention_hours": 72,
     "loxberry_requests_per_minute": 30,
     "max_parallel_calls": 4,
     "max_active_runtime_sessions": 16,
@@ -22,6 +23,7 @@
     "level": "warning"
   },
   "policies": {
+    "explorer_bindings": [],
     "loxberry_operate_bindings": [],
     "loxberry_read_bindings": []
   },
@@ -44,7 +46,7 @@
     "maximum_mib": 128,
     "sources": []
   },
-  "schema_version": 9,
+  "schema_version": 10,
   "server": {
     "enabled": false,
     "public_origin": ""

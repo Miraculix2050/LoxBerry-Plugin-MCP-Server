@@ -572,6 +572,7 @@ def _save_mcp(payload: object) -> dict[str, Any]:
         "loxberry_requests_per_minute",
         "history_requests_per_minute",
         "loxberry_operate_requests_per_minute",
+        "explorer_binding_retention_hours",
         "max_parallel_calls",
         "statistics_memory_max_mib",
         "event_history_enabled",
@@ -930,6 +931,33 @@ def _sessions(snapshot: _AdminReadSnapshot | None = None) -> list[dict[str, Any]
             else None
         )
         client = clients.get(client_id, {})
+        explorer_read_approved = False
+        explorer_operate_approved = False
+        if record.get("client_kind") == "tool_explorer" and snapshot.configuration is not None:
+            from mcpserver.explorer_bindings import active_explorer_binding
+
+            explorer_read_approved = (
+                active_explorer_binding(
+                    snapshot.configuration,
+                    _auth_store(),
+                    "loxberry:read",
+                    str(record.get("identity_id", "")),
+                    str(record.get("miniserver_id", "")),
+                    now=int(snapshot.now),
+                )
+                is not None
+            )
+            explorer_operate_approved = (
+                active_explorer_binding(
+                    snapshot.configuration,
+                    _auth_store(),
+                    "loxberry:operate",
+                    str(record.get("identity_id", "")),
+                    str(record.get("miniserver_id", "")),
+                    now=int(snapshot.now),
+                )
+                is not None
+            )
         client_name = client.get("client_name", "") if isinstance(client, dict) else ""
         result.append(
             {
@@ -948,10 +976,13 @@ def _sessions(snapshot: _AdminReadSnapshot | None = None) -> list[dict[str, Any]
                 is True
                 and record.get("loxone_token_rejection_kind") == "token_authentication",
                 "loxberry_read_eligible": pending_loxberry_read,
-                "loxberry_read_approved": read_binding in bindings if read_binding else False,
+                "loxberry_read_approved": (
+                    explorer_read_approved or (read_binding in bindings if read_binding else False)
+                ),
                 "loxberry_operate_eligible": pending_loxberry_operate,
                 "loxberry_operate_approved": (
-                    operate_binding in operate_bindings if operate_binding else False
+                    explorer_operate_approved
+                    or (operate_binding in operate_bindings if operate_binding else False)
                 ),
             }
         )
@@ -1014,12 +1045,35 @@ def _binding_rows(binding: str, sessions: list[dict[str, str]]) -> list[dict[str
     ]
 
 
+def _explorer_binding_rows(
+    binding: str,
+    sessions: list[dict[str, str]],
+    *,
+    inactive_since: int | None,
+    expires_at: int | None,
+) -> list[dict[str, Any]]:
+    rows = _binding_rows(binding, sessions)
+    for row in rows:
+        row["explorer_application"] = True
+        row["inactive_login_required"] = not sessions
+        row["inactive_since"] = inactive_since
+        row["retention_expires_at"] = expires_at
+        if not sessions:
+            row["client_name"] = "LoxBerry MCP Tool Explorer"
+    return rows
+
+
 def _loxberry_bindings(snapshot: _AdminReadSnapshot | None = None) -> list[dict[str, Any]]:
     from mcpserver.auth.provider import LOXBERRY_READ_SCOPE
 
     snapshot = snapshot or _admin_read_snapshot()
     bindings = snapshot.configuration.loxberry_read_bindings if snapshot.configuration else ()
-    if not bindings:
+    explorer_approvals = tuple(
+        item
+        for item in (snapshot.configuration.explorer_bindings if snapshot.configuration else ())
+        if item.capability == LOXBERRY_READ_SCOPE
+    )
+    if not bindings and not explorer_approvals:
         return []
     document = snapshot.auth_document
     clients = document.get("clients", {})
@@ -1052,7 +1106,7 @@ def _loxberry_bindings(snapshot: _AdminReadSnapshot | None = None) -> list[dict[
                 "scopes": str(record.get("scope", "")),
             }
         )
-    return [
+    legacy = [
         {
             "id": binding,
             "fingerprint": binding[:12],
@@ -1062,6 +1116,59 @@ def _loxberry_bindings(snapshot: _AdminReadSnapshot | None = None) -> list[dict[
         }
         for binding in bindings
     ]
+    from mcpserver.explorer_bindings import explorer_binding_id
+
+    explorer_related: dict[str, list[dict[str, str]]] = {
+        item.binding_id: [] for item in explorer_approvals
+    }
+    for record in document.get("families", {}).values():
+        if (
+            not isinstance(record, dict)
+            or record.get("client_kind") != "tool_explorer"
+            or record.get("revoked", False)
+            or not isinstance(record.get("expires_at"), int | float)
+            or record["expires_at"] <= snapshot.now
+            or LOXBERRY_READ_SCOPE not in str(record.get("scope", "")).split()
+        ):
+            continue
+        binding = explorer_binding_id(
+            _auth_store(),
+            LOXBERRY_READ_SCOPE,
+            str(record.get("identity_id", "")),
+            str(record.get("miniserver_id", "")),
+        )
+        if binding in explorer_related:
+            explorer_related[binding].append(
+                {
+                    "client": str(record.get("client_id", ""))[:12],
+                    "client_name": "LoxBerry MCP Tool Explorer",
+                    "identity": str(record.get("identity_id", ""))[:12],
+                    "scopes": str(record.get("scope", "")),
+                }
+            )
+    retention = (
+        snapshot.configuration.explorer_binding_retention_hours * 3600
+        if snapshot.configuration
+        else 0
+    )
+    return legacy + [
+        {
+            "id": item.binding_id,
+            "fingerprint": item.binding_id[:12],
+            "active": bool(explorer_related[item.binding_id]),
+            "legacy": False,
+            "sessions": explorer_related[item.binding_id],
+            "rows": _explorer_binding_rows(
+                item.binding_id,
+                explorer_related[item.binding_id],
+                inactive_since=item.inactive_since,
+                expires_at=(
+                    item.inactive_since + retention if item.inactive_since is not None else None
+                ),
+            ),
+        }
+        for item in explorer_approvals
+    ]
 
 
 def _loxberry_operate_bindings(snapshot: _AdminReadSnapshot | None = None) -> list[dict[str, Any]]:
@@ -1069,7 +1176,12 @@ def _loxberry_operate_bindings(snapshot: _AdminReadSnapshot | None = None) -> li
 
     snapshot = snapshot or _admin_read_snapshot()
     bindings = snapshot.configuration.loxberry_operate_bindings if snapshot.configuration else ()
-    if not bindings:
+    explorer_approvals = tuple(
+        item
+        for item in (snapshot.configuration.explorer_bindings if snapshot.configuration else ())
+        if item.capability == LOXBERRY_OPERATE_SCOPE
+    )
+    if not bindings and not explorer_approvals:
         return []
     document = snapshot.auth_document
     related: dict[str, list[dict[str, str]]] = {binding: [] for binding in bindings}
@@ -1100,7 +1212,7 @@ def _loxberry_operate_bindings(snapshot: _AdminReadSnapshot | None = None) -> li
                 "scopes": str(record.get("scope", "")),
             }
         )
-    return [
+    legacy = [
         {
             "id": binding,
             "fingerprint": binding[:12],
@@ -1109,6 +1221,59 @@ def _loxberry_operate_bindings(snapshot: _AdminReadSnapshot | None = None) -> li
             "rows": _binding_rows(binding, related[binding]),
         }
         for binding in bindings
+    ]
+    from mcpserver.explorer_bindings import explorer_binding_id
+
+    explorer_related: dict[str, list[dict[str, str]]] = {
+        item.binding_id: [] for item in explorer_approvals
+    }
+    for record in document.get("families", {}).values():
+        if (
+            not isinstance(record, dict)
+            or record.get("client_kind") != "tool_explorer"
+            or record.get("revoked", False)
+            or not isinstance(record.get("expires_at"), int | float)
+            or record["expires_at"] <= snapshot.now
+            or LOXBERRY_OPERATE_SCOPE not in str(record.get("scope", "")).split()
+        ):
+            continue
+        binding = explorer_binding_id(
+            _auth_store(),
+            LOXBERRY_OPERATE_SCOPE,
+            str(record.get("identity_id", "")),
+            str(record.get("miniserver_id", "")),
+        )
+        if binding in explorer_related:
+            explorer_related[binding].append(
+                {
+                    "client": str(record.get("client_id", ""))[:12],
+                    "client_name": "LoxBerry MCP Tool Explorer",
+                    "identity": str(record.get("identity_id", ""))[:12],
+                    "scopes": str(record.get("scope", "")),
+                }
+            )
+    retention = (
+        snapshot.configuration.explorer_binding_retention_hours * 3600
+        if snapshot.configuration
+        else 0
+    )
+    return legacy + [
+        {
+            "id": item.binding_id,
+            "fingerprint": item.binding_id[:12],
+            "active": bool(explorer_related[item.binding_id]),
+            "legacy": False,
+            "sessions": explorer_related[item.binding_id],
+            "rows": _explorer_binding_rows(
+                item.binding_id,
+                explorer_related[item.binding_id],
+                inactive_since=item.inactive_since,
+                expires_at=(
+                    item.inactive_since + retention if item.inactive_since is not None else None
+                ),
+            ),
+        }
+        for item in explorer_approvals
     ]
 
 
@@ -1129,6 +1294,16 @@ def _allow_loxberry_read(payload: object) -> dict[str, Any]:
         or READ_SCOPE not in str(record.get("scope", "")).split()
     ):
         raise AdminError("pending diagnostic session is unavailable")
+    if record.get("client_kind") == "tool_explorer":
+        from mcpserver.explorer_bindings import record_explorer_approval
+
+        try:
+            record_explorer_approval(
+                _config_store(), _auth_store(), "loxberry:read", record, now=int(time.time())
+            )
+        except ValueError as exc:
+            raise AdminError(str(exc)) from exc
+        return {"loxberry_bindings": _loxberry_bindings(), "sessions": _sessions()}
     binding = _loxberry_binding(record)
 
     def add_binding(previous: PluginConfig) -> PluginConfig:
@@ -1146,18 +1321,28 @@ def _allow_loxberry_read(payload: object) -> dict[str, Any]:
 
 
 def _revoke_loxberry_read(payload: object) -> dict[str, Any]:
+    from mcpserver.explorer_bindings import explorer_binding_id
+
     binding = payload.get("binding_id") if isinstance(payload, dict) else None
     if not isinstance(binding, str) or len(binding) != 64:
         raise AdminError("LoxBerry approval is invalid")
 
     def remove_binding(previous: PluginConfig) -> PluginConfig:
-        if binding not in previous.loxberry_read_bindings:
+        explorer_matches = tuple(
+            item
+            for item in previous.explorer_bindings
+            if not (item.capability == "loxberry:read" and item.binding_id == binding)
+        )
+        if binding not in previous.loxberry_read_bindings and len(explorer_matches) == len(
+            previous.explorer_bindings
+        ):
             raise AdminError("LoxBerry approval is unavailable")
         return replace(
             previous,
             loxberry_read_bindings=tuple(
                 item for item in previous.loxberry_read_bindings if item != binding
             ),
+            explorer_bindings=explorer_matches,
         )
 
     updated_config = _config_store().mutate(remove_binding)
@@ -1167,7 +1352,19 @@ def _revoke_loxberry_read(payload: object) -> dict[str, Any]:
         for family_id, record in document.get("families", {}).items()
         if isinstance(record, dict)
         and not record.get("revoked", False)
-        and _loxberry_binding(record) == binding
+        and (
+            _loxberry_binding(record) == binding
+            or (
+                record.get("client_kind") == "tool_explorer"
+                and explorer_binding_id(
+                    _auth_store(),
+                    "loxberry:read",
+                    str(record.get("identity_id", "")),
+                    str(record.get("miniserver_id", "")),
+                )
+                == binding
+            )
+        )
     ]
     if families:
         _revoke_many(
@@ -1197,6 +1394,19 @@ def _allow_loxberry_operate(payload: object) -> dict[str, Any]:
         or LOXBERRY_OPERATE_SCOPE not in scopes
     ):
         raise AdminError("pending operation session is unavailable")
+    if record.get("client_kind") == "tool_explorer":
+        from mcpserver.explorer_bindings import record_explorer_approval
+
+        try:
+            record_explorer_approval(
+                _config_store(), _auth_store(), "loxberry:operate", record, now=int(time.time())
+            )
+        except ValueError as exc:
+            raise AdminError(str(exc)) from exc
+        return {
+            "sessions": _sessions(),
+            "loxberry_operate_bindings": _loxberry_operate_bindings(),
+        }
     binding = _loxberry_operate_binding(record)
 
     def add_binding(previous: PluginConfig) -> PluginConfig:
@@ -1218,19 +1428,28 @@ def _allow_loxberry_operate(payload: object) -> dict[str, Any]:
 
 def _revoke_loxberry_operate(payload: object) -> dict[str, Any]:
     from mcpserver.auth.provider import LOXBERRY_OPERATE_SCOPE
+    from mcpserver.explorer_bindings import explorer_binding_id
 
     binding = payload.get("binding_id") if isinstance(payload, dict) else None
     if not isinstance(binding, str) or len(binding) != 64:
         raise AdminError("LoxBerry operation approval is invalid")
 
     def remove_binding(previous: PluginConfig) -> PluginConfig:
-        if binding not in previous.loxberry_operate_bindings:
+        explorer_matches = tuple(
+            item
+            for item in previous.explorer_bindings
+            if not (item.capability == "loxberry:operate" and item.binding_id == binding)
+        )
+        if binding not in previous.loxberry_operate_bindings and len(explorer_matches) == len(
+            previous.explorer_bindings
+        ):
             raise AdminError("LoxBerry operation approval is unavailable")
         return replace(
             previous,
             loxberry_operate_bindings=tuple(
                 item for item in previous.loxberry_operate_bindings if item != binding
             ),
+            explorer_bindings=explorer_matches,
         )
 
     updated_config = _config_store().mutate(remove_binding)
@@ -1241,7 +1460,19 @@ def _revoke_loxberry_operate(payload: object) -> dict[str, Any]:
         if isinstance(record, dict)
         and not record.get("revoked", False)
         and LOXBERRY_OPERATE_SCOPE in str(record.get("scope", "")).split()
-        and _loxberry_operate_binding(record) == binding
+        and (
+            _loxberry_operate_binding(record) == binding
+            or (
+                record.get("client_kind") == "tool_explorer"
+                and explorer_binding_id(
+                    _auth_store(),
+                    "loxberry:operate",
+                    str(record.get("identity_id", "")),
+                    str(record.get("miniserver_id", "")),
+                )
+                == binding
+            )
+        )
     ]
     if families:
         _revoke_many(
@@ -1289,6 +1520,7 @@ def _revoke_many(
             if family is None:
                 continue
             family["revoked"] = True
+            family["revoked_at"] = int(time.time())
             revoked.append(target)
             for collection in ("codes", "access_tokens", "refresh_tokens"):
                 for record in document[collection].values():

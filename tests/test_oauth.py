@@ -413,6 +413,58 @@ async def test_explorer_client_gets_shorter_refresh_family_lifetime(tmp_path: Pa
 
 
 @pytest.mark.asyncio
+async def test_only_validated_explorer_uses_stable_application_approval(tmp_path: Path) -> None:
+    seen: list[str] = []
+    provider = Phase0OAuthProvider(
+        AtomicJsonAuthStore(tmp_path / "auth" / "sessions.json"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+        loxberry_read_enabled=True,
+        loxberry_read_allowed=lambda client, *_: seen.append(client)
+        or client == "tool-explorer-v1",
+    )
+    explorer = _client_info(
+        "dynamic-explorer",
+        client_name=EXPLORER_CLIENT_NAME,
+        redirect_uri=EXPLORER_REDIRECT,
+    )
+    lookalike = _client_info(
+        "third-party",
+        client_name=EXPLORER_CLIENT_NAME,
+        redirect_uri=REDIRECT,
+    )
+    await provider.register_client(explorer)
+    await provider.register_client(lookalike)
+
+    assert provider.loxberry_read_allowed("dynamic-explorer", "identity", "miniserver")
+    assert not provider.loxberry_read_allowed("third-party", "identity", "miniserver")
+
+    assert seen == ["tool-explorer-v1", "third-party"]
+
+
+@pytest.mark.asyncio
+async def test_validated_explorer_keeps_matching_legacy_client_approval(tmp_path: Path) -> None:
+    seen: list[str] = []
+    provider = Phase0OAuthProvider(
+        AtomicJsonAuthStore(tmp_path / "auth" / "sessions.json"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+        loxberry_read_enabled=True,
+        loxberry_read_allowed=lambda client, *_: seen.append(client)
+        or client == "dynamic-explorer",
+    )
+    explorer = _client_info(
+        "dynamic-explorer",
+        client_name=EXPLORER_CLIENT_NAME,
+        redirect_uri=EXPLORER_REDIRECT,
+    )
+    await provider.register_client(explorer)
+
+    assert provider.loxberry_read_allowed("dynamic-explorer", "identity", "miniserver")
+    assert seen == ["tool-explorer-v1", "dynamic-explorer"]
+
+
+@pytest.mark.asyncio
 async def test_limited_body_rejects_negative_and_oversized_streams() -> None:
     negative = Request(
         {"type": "http", "method": "POST", "path": "/", "headers": [(b"content-length", b"-1")]}

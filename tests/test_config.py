@@ -73,7 +73,15 @@ def test_configuration_round_trip_preserves_unknown_keys(tmp_path: Path) -> None
 
     assert store.load().to_document() == config.to_document()
     assert json.loads(store.path.read_text(encoding="utf-8"))["future"] == {"keep": True}
-    assert config.to_document()["schema_version"] == 9
+    assert config.to_document()["schema_version"] == 10
+
+
+@pytest.mark.parametrize("value", [0, 721, 1.5, "72"])
+def test_explorer_binding_retention_is_bounded(value: object) -> None:
+    with pytest.raises(ConfigError, match="explorer_binding_retention_hours"):
+        PluginConfig.from_document(
+            {"schema_version": 10, "limits": {"explorer_binding_retention_hours": value}}
+        )
 
 
 def test_authentication_probe_limits_are_bounded_and_related() -> None:

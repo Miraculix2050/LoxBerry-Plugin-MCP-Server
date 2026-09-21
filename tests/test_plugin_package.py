@@ -357,6 +357,10 @@ def test_phase_four_upgrade_migrates_configuration_and_private_cache() -> None:
     assert 'document["schema_version"] = 2' in hook
     assert 'document.get("schema_version") == 5' in hook
     assert 'document["schema_version"] = 6' in hook
+    assert 'document.get("schema_version") == 9' in hook
+    assert 'limits.setdefault("explorer_binding_retention_hours", 72)' in hook
+    assert 'policies.setdefault("explorer_bindings", [])' in hook
+    assert 'document["schema_version"] = 10' in hook
     assert 'prepare_private_directory "$plugin_data/statistics-cache" || exit 2' in hook
     assert 'python3 "$root_path_helper" statistics-cache' in postroot
     assert "os.O_NOFOLLOW" in helper

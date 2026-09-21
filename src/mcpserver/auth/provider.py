@@ -22,6 +22,7 @@ from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from pydantic import AnyUrl
 
 from mcpserver.auth.store import AtomicJsonAuthStore, token_digest
+from mcpserver.explorer_bindings import TOOL_EXPLORER_APPLICATION_ID
 
 READ_SCOPE: Final = "loxone:read"
 CONTROL_SCOPE: Final = "loxone:control"
@@ -141,6 +142,7 @@ class Phase0OAuthProvider(
         resource: str,
         clock: Callable[[], float] = time.time,
         on_family_revoked: Callable[[str], None] | None = None,
+        on_family_started: Callable[[dict[str, Any]], None] | None = None,
         control_enabled: bool = False,
         loxberry_read_enabled: bool = False,
         loxberry_read_allowed: Callable[[str, str, str], bool] | None = None,
@@ -154,6 +156,7 @@ class Phase0OAuthProvider(
         self.resource = resource
         self._clock = clock
         self._on_family_revoked = on_family_revoked
+        self._on_family_started = on_family_started
         self.control_enabled = control_enabled
         self.loxberry_read_enabled = loxberry_read_enabled
         self._loxberry_read_allowed = loxberry_read_allowed
@@ -169,21 +172,27 @@ class Phase0OAuthProvider(
 
     def loxberry_read_allowed(self, client_id: str, identity_id: str, miniserver_id: str) -> bool:
         """Evaluate the locally administered Phase 3 binding live."""
-        return bool(
-            self.loxberry_read_enabled
-            and self._loxberry_read_allowed is not None
-            and self._loxberry_read_allowed(client_id, identity_id, miniserver_id)
-        )
+        client = self.store.snapshot().get("clients", {}).get(client_id, {})
+        if not self.loxberry_read_enabled or self._loxberry_read_allowed is None:
+            return False
+        if self._is_explorer_client(client) and self._loxberry_read_allowed(
+            TOOL_EXPLORER_APPLICATION_ID, identity_id, miniserver_id
+        ):
+            return True
+        return bool(self._loxberry_read_allowed(client_id, identity_id, miniserver_id))
 
     def loxberry_operate_allowed(
         self, client_id: str, identity_id: str, miniserver_id: str
     ) -> bool:
         """Evaluate the locally administered Phase 4 binding live."""
-        return bool(
-            self.loxberry_operate_enabled
-            and self._loxberry_operate_allowed is not None
-            and self._loxberry_operate_allowed(client_id, identity_id, miniserver_id)
-        )
+        client = self.store.snapshot().get("clients", {}).get(client_id, {})
+        if not self.loxberry_operate_enabled or self._loxberry_operate_allowed is None:
+            return False
+        if self._is_explorer_client(client) and self._loxberry_operate_allowed(
+            TOOL_EXPLORER_APPLICATION_ID, identity_id, miniserver_id
+        ):
+            return True
+        return bool(self._loxberry_operate_allowed(client_id, identity_id, miniserver_id))
 
     async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
         record: dict[str, Any] | None = None
@@ -400,6 +409,7 @@ class Phase0OAuthProvider(
                 "scope": scope_text(list(validated_scopes)),
                 "resource": resource,
                 "expires_at": now + family_ttl,
+                "created_at": now,
                 "revoked": False,
                 "pending_loxberry_read": pending_loxberry_read,
                 "pending_loxberry_operate": pending_loxberry_operate,
@@ -407,6 +417,17 @@ class Phase0OAuthProvider(
             }
 
         self.store.mutate(insert)
+        if self._on_family_started is not None:
+            family = self.store.snapshot()["families"].get(family_id)
+            if isinstance(family, dict):
+                try:
+                    self._on_family_started(family)
+                except Exception as exc:
+                    _LOGGER.warning(
+                        "component=explorer_binding severity=WARNING "
+                        "outcome=reactivation_failed error_type=%s",
+                        type(exc).__name__,
+                    )
         return raw_code
 
     @staticmethod
@@ -526,6 +547,7 @@ class Phase0OAuthProvider(
         family = document["families"].get(family_id)
         if family is not None:
             family["revoked"] = True
+            family["revoked_at"] = self.now()
         for collection in ("access_tokens", "refresh_tokens"):
             for record in document[collection].values():
                 if record.get("family_id") == family_id:

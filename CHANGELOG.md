@@ -5,6 +5,12 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Keep local LoxBerry approvals reusable for the same validated Tool Explorer,
+  Loxone identity and Miniserver across ordinary OAuth re-login. OAuth families
+  and credentials retain their short lifetimes; inactive Explorer approvals use
+  a separately configurable 72-hour retention period and remain explicitly
+  revocable in the Admin UI.
+
 - Add a bounded, persisted shared Miniserver authentication breaker. Confirmed
   source-IP blocks suppress further service login attempts, while configured
   15-minute initial and 24-hour maximum lazy recovery delays can be adjusted
