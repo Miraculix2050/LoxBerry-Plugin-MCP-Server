@@ -9,6 +9,7 @@ from mcpserver.loxone.auth_diagnostics import (
     AttemptProvenance,
     MiniserverAuthCoordinator,
     MiniserverAuthenticationSuppressed,
+    _interprocess_lock,
 )
 from mcpserver.loxone.client import (
     LoxoneCommandRejected,
@@ -37,6 +38,51 @@ async def test_source_ip_block_suppresses_before_another_network_attempt(tmp_pat
     assert calls == 1
     assert coordinator.status()["breaker_state"] == "open_source_ip_blocked"
     assert coordinator.status()["backoff_seconds"] == 300
+
+
+@pytest.mark.asyncio
+async def test_separate_coordinators_reload_a_shared_open_breaker(tmp_path: Path) -> None:
+    path = (tmp_path / "auth-diagnostics.json").resolve()
+    service_coordinator = MiniserverAuthCoordinator(path, initial_probe_seconds=300)
+    admin_coordinator = MiniserverAuthCoordinator(path, initial_probe_seconds=300)
+
+    async def blocked() -> None:
+        raise LoxoneSourceIpBlocked("blocked")
+
+    with pytest.raises(LoxoneSourceIpBlocked):
+        await admin_coordinator.attempt(blocked, owner="local_admin", phase="token_acquisition")
+
+    calls = 0
+
+    async def must_not_run() -> None:
+        nonlocal calls
+        calls += 1
+
+    with pytest.raises(MiniserverAuthenticationSuppressed):
+        await service_coordinator.attempt(
+            must_not_run, owner="runtime_event_stream", phase="session_establishment"
+        )
+
+    assert calls == 0
+
+
+@pytest.mark.asyncio
+async def test_interprocess_authentication_attempt_is_suppressed_without_waiting(
+    tmp_path: Path,
+) -> None:
+    path = (tmp_path / "auth-diagnostics.json").resolve()
+    coordinator = MiniserverAuthCoordinator(path)
+    calls = 0
+
+    async def must_not_run() -> None:
+        nonlocal calls
+        calls += 1
+
+    lock_path = path.with_name(f".{path.name}.lock")
+    with _interprocess_lock(lock_path), pytest.raises(MiniserverAuthenticationSuppressed):
+        await coordinator.attempt(must_not_run, owner="tool_request", phase="session_establishment")
+
+    assert calls == 0
 
 
 @pytest.mark.asyncio

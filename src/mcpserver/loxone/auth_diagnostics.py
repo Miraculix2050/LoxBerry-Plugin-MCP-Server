@@ -5,10 +5,11 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
 import time
 from collections import deque
-from collections.abc import Awaitable, Callable
-from contextlib import suppress
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, TypeVar
@@ -23,6 +24,50 @@ _T = TypeVar("_T")
 _MAX_EVENTS: Final = 200
 _RETENTION_SECONDS: Final = 30 * 24 * 60 * 60
 _SCHEMA_VERSION: Final = 1
+
+
+class _InterprocessLockUnavailable(RuntimeError):
+    """Another process is already evaluating an authentication attempt."""
+
+
+@contextmanager
+def _interprocess_lock(path: Path) -> Iterator[None]:
+    """Serialize state reloads and updates across the service and Admin process."""
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    descriptor = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+    with os.fdopen(descriptor, "a+b") as handle:
+        locked = False
+        try:
+            if sys.platform == "win32":  # pragma: win32 cover
+                import msvcrt
+
+                handle.seek(0)
+                if handle.read(1) == b"":
+                    handle.seek(0)
+                    handle.write(b"0")
+                    handle.flush()
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            else:  # pragma: posix cover
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            locked = True
+        except OSError as exc:
+            raise _InterprocessLockUnavailable from exc
+        try:
+            yield
+        finally:
+            if locked:
+                if sys.platform == "win32":  # pragma: win32 cover
+                    import msvcrt
+
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                else:  # pragma: posix cover
+                    import fcntl
+
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 class MiniserverAuthenticationSuppressed(LoxoneConnectionError):
@@ -220,81 +265,103 @@ class MiniserverAuthCoordinator:
         if owner not in {"runtime_event_stream", "tool_request", "local_admin"}:
             raise ValueError("invalid connection owner")
         async with self._lock:
-            now = int(time.time())
-            if self._state["breaker_state"] == "open_source_ip_blocked":
-                retry_at = self._retry_not_before()
-                if not force_probe and (
-                    not allow_cooldown_probe or retry_at is None or now < retry_at
-                ):
-                    self._state["suppressed_attempts"] = int(self._state["suppressed_attempts"]) + 1
-                    if time.monotonic() - self._last_suppression_persisted >= 60:
-                        self._record(
-                            owner=owner,
-                            phase=phase,
-                            outcome="attempt_suppressed",
-                            provenance=provenance,
-                        )
-                        self._save()
-                        self._last_suppression_persisted = time.monotonic()
-                    raise MiniserverAuthenticationSuppressed(
-                        "Miniserver authentication is temporarily suppressed"
-                    )
-            self._record(owner=owner, phase=phase, outcome="attempt_started", provenance=provenance)
             try:
-                result = await operation()
-            except LoxoneSourceIpBlocked:
+                with _interprocess_lock(self._path.with_name(f".{self._path.name}.lock")):
+                    self._state = self._load()
+                    return await self._attempt_locked(
+                        operation,
+                        owner=owner,
+                        phase=phase,
+                        provenance=provenance,
+                        force_probe=force_probe,
+                        allow_cooldown_probe=allow_cooldown_probe,
+                    )
+            except _InterprocessLockUnavailable as exc:
+                raise MiniserverAuthenticationSuppressed(
+                    "Miniserver authentication is already being coordinated"
+                ) from exc
+
+    async def _attempt_locked(
+        self,
+        operation: Callable[[], Awaitable[_T]],
+        *,
+        owner: str,
+        phase: str,
+        provenance: AttemptProvenance | None,
+        force_probe: bool,
+        allow_cooldown_probe: bool,
+    ) -> _T:
+        """Execute one attempt while both coordinator locks are held."""
+        now = int(time.time())
+        if self._state["breaker_state"] == "open_source_ip_blocked":
+            retry_at = self._retry_not_before()
+            if not force_probe and (not allow_cooldown_probe or retry_at is None or now < retry_at):
+                self._state["suppressed_attempts"] = int(self._state["suppressed_attempts"]) + 1
+                if time.monotonic() - self._last_suppression_persisted >= 60:
+                    self._record(
+                        owner=owner,
+                        phase=phase,
+                        outcome="attempt_suppressed",
+                        provenance=provenance,
+                    )
+                    self._save()
+                    self._last_suppression_persisted = time.monotonic()
+                raise MiniserverAuthenticationSuppressed(
+                    "Miniserver authentication is temporarily suppressed"
+                )
+        self._record(owner=owner, phase=phase, outcome="attempt_started", provenance=provenance)
+        try:
+            result = await operation()
+        except LoxoneSourceIpBlocked:
+            self._open_source_ip_breaker(now=now, owner=owner, phase=phase, provenance=provenance)
+            self._save()
+            raise
+        except LoxoneCommandRejected as exc:
+            if exc.response_code == "4003":
                 self._open_source_ip_breaker(
                     now=now, owner=owner, phase=phase, provenance=provenance
                 )
                 self._save()
                 raise
-            except LoxoneCommandRejected as exc:
-                if exc.response_code == "4003":
-                    self._open_source_ip_breaker(
-                        now=now, owner=owner, phase=phase, provenance=provenance
-                    )
-                    self._save()
-                    raise
-                if self._state["breaker_state"] == "open_source_ip_blocked":
-                    self._refresh_failed_probe(
-                        now=now,
-                        owner=owner,
-                        phase=phase,
-                        outcome="authentication_rejected",
-                        provenance=provenance,
-                    )
-                else:
-                    self._record(
-                        owner=owner,
-                        phase=phase,
-                        outcome="authentication_rejected",
-                        provenance=provenance,
-                    )
-                self._save()
-                raise exc
-            except Exception:
+            if self._state["breaker_state"] == "open_source_ip_blocked":
                 self._refresh_failed_probe(
                     now=now,
                     owner=owner,
                     phase=phase,
-                    outcome="transport_failed",
+                    outcome="authentication_rejected",
                     provenance=provenance,
                 )
-                self._save()
-                raise
             else:
-                transition = None
-                if self._state["breaker_state"] == "open_source_ip_blocked":
-                    self._state["breaker_state"] = "closed"
-                    self._state["opened_at"] = None
-                    self._state["backoff_level"] = 0
-                    transition = "closed"
                 self._record(
                     owner=owner,
                     phase=phase,
-                    outcome="recovery_confirmed" if transition else "authenticated",
+                    outcome="authentication_rejected",
                     provenance=provenance,
-                    transition=transition,
                 )
-                self._save_success_best_effort()
-                return result
+            self._save()
+            raise exc
+        except Exception:
+            self._refresh_failed_probe(
+                now=now,
+                owner=owner,
+                phase=phase,
+                outcome="transport_failed",
+                provenance=provenance,
+            )
+            self._save()
+            raise
+        transition = None
+        if self._state["breaker_state"] == "open_source_ip_blocked":
+            self._state["breaker_state"] = "closed"
+            self._state["opened_at"] = None
+            self._state["backoff_level"] = 0
+            transition = "closed"
+        self._record(
+            owner=owner,
+            phase=phase,
+            outcome="recovery_confirmed" if transition else "authenticated",
+            provenance=provenance,
+            transition=transition,
+        )
+        self._save_success_best_effort()
+        return result
