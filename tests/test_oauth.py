@@ -36,8 +36,10 @@ from mcpserver.auth.provider import (
 )
 from mcpserver.auth.store import AtomicJsonAuthStore
 from mcpserver.auth.web import LoginTransaction, Phase0OAuthWeb, _limited_body
+from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
 from mcpserver.loxone.client import (
     LoxoneConnectionError,
+    LoxoneSourceIpBlocked,
     LoxoneToken,
     MiniserverEndpoint,
     ProbeResult,
@@ -1330,6 +1332,56 @@ async def test_expired_login_transaction_is_removed_when_remote_kill_fails(
     assert web.transactions == {}
     assert transaction.loxone_token is None
     assert token.value == ""
+
+
+@pytest.mark.asyncio
+async def test_transaction_cleanup_is_gated_by_authentication_breaker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    coordinator = MiniserverAuthCoordinator(
+        (tmp_path / "auth-diagnostics.json").resolve(), initial_probe_seconds=300
+    )
+
+    async def blocked() -> None:
+        raise LoxoneSourceIpBlocked("blocked")
+
+    with pytest.raises(LoxoneSourceIpBlocked):
+        await coordinator.attempt(blocked, owner="tool_request", phase="token_authentication")
+
+    web = Phase0OAuthWeb(
+        _provider(tmp_path),
+        endpoint=MiniserverEndpoint.parse_gen1("http://192.168.255.254"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+        auth_coordinator=coordinator,
+    )
+    transaction = LoginTransaction(
+        transaction_id="expired",
+        client_id="client",
+        client_name="Client",
+        redirect_uri=REDIRECT,
+        state="state",
+        code_challenge=CHALLENGE,
+        resource=RESOURCE,
+        csrf_token="csrf",
+        created_at=0,
+        loxone_token=LoxoneToken("sensitive-jwt", "user", "key", "SHA256", 1),
+    )
+    calls = 0
+
+    class RecordingLoxoneClient:
+        def __init__(self, endpoint: object, *, client_uuid: object) -> None:
+            pass
+
+        async def kill_token(self, value: LoxoneToken) -> None:
+            nonlocal calls
+            calls += 1
+
+    monkeypatch.setattr("mcpserver.auth.web.LoxoneClient", RecordingLoxoneClient)
+    await web._kill(transaction)
+
+    assert calls == 0
+    assert transaction.loxone_token is None
 
 
 @pytest.mark.asyncio

@@ -254,7 +254,15 @@ class Phase0OAuthWeb:
         if token is None:
             return True
         try:
-            await LoxoneClient(self.endpoint, client_uuid=self._client_uuid).kill_token(token)
+            client = LoxoneClient(self.endpoint, client_uuid=self._client_uuid)
+            if self.auth_coordinator is None:
+                await client.kill_token(token)
+            else:
+                await self.auth_coordinator.attempt(
+                    lambda: client.kill_token(token),
+                    owner="tool_request",
+                    phase="token_cleanup",
+                )
         except (LoxoneConnectionError, LoxoneProtocolError):
             token.destroy()
         transaction.loxone_token = None
