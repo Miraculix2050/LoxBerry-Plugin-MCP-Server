@@ -58,3 +58,16 @@ def test_store_closes_orphaned_coverage_when_a_new_process_initializes(tmp_path,
     second.begin_coverage((source,), started_at=30.0)
 
     assert second.page(*source, start=10.0, end=30.0, limit=10).coverage == "partial_coverage"
+
+
+def test_retention_pruning_keeps_active_coverage(tmp_path, monkeypatch):
+    store = EventHistoryStore(
+        (tmp_path / "event-history.sqlite3").resolve(), retention_days=1, maximum_mib=16
+    )
+    source = ("00000000-0000-0000-0000000000000001", "00000000-0000-0000-0000000000000002")
+    store.initialize()
+    store.begin_coverage((source,), started_at=0.0)
+
+    monkeypatch.setattr("mcpserver.loxone.event_history.time.time", lambda: 172800.0)
+
+    assert store.page(*source, start=172700.0, end=172800.0, limit=10).coverage == "complete"

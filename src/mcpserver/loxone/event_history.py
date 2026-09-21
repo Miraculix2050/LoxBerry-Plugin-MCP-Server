@@ -146,8 +146,7 @@ class EventHistoryStore:
                 )
                 connection.execute("PRAGMA user_version = 1")
                 connection.execute("COMMIT")
-                self._prune(connection, now=time.time())
-                self._compact(connection)
+                self._compact(connection, vacuum=self._prune(connection, now=time.time()))
             except EventHistoryUnavailable:
                 connection.execute("ROLLBACK")
                 raise
@@ -228,9 +227,9 @@ class EventHistoryStore:
                         json.dumps(new, ensure_ascii=False, separators=(",", ":")),
                     ),
                 )
-                self._prune(connection, now=observed_at)
+                pruned = self._prune(connection, now=observed_at)
                 connection.execute("COMMIT")
-                self._compact(connection)
+                self._compact(connection, vacuum=pruned)
             except ValueError:
                 raise
             except sqlite3.Error as exc:
@@ -251,26 +250,35 @@ class EventHistoryStore:
         page_size = connection.execute("PRAGMA page_size").fetchone()[0]
         return (int(page_count) - int(free_pages)) * int(page_size)
 
-    def _prune(self, connection: sqlite3.Connection, *, now: float) -> None:
+    def _prune(self, connection: sqlite3.Connection, *, now: float) -> bool:
         cutoff = now - self.retention_seconds
-        connection.execute("DELETE FROM events WHERE observed_at < ?", (cutoff,))
-        connection.execute(
-            "DELETE FROM coverage WHERE COALESCE(ended_at, started_at) < ?", (cutoff,)
-        )
+        deleted = connection.execute("DELETE FROM events WHERE observed_at < ?", (cutoff,)).rowcount
+        deleted += connection.execute(
+            "DELETE FROM coverage WHERE ended_at IS NOT NULL AND ended_at < ?", (cutoff,)
+        ).rowcount
         while self._used_database_bytes(connection) > self.maximum_bytes:
-            deleted = connection.execute(
+            removed = connection.execute(
                 "DELETE FROM events WHERE id IN "
                 "(SELECT id FROM events ORDER BY observed_at, id LIMIT 256)"
             ).rowcount
-            if deleted <= 0:
-                break
+            if removed <= 0:
+                removed = connection.execute(
+                    "DELETE FROM coverage WHERE id IN "
+                    "(SELECT id FROM coverage WHERE ended_at IS NOT NULL "
+                    "ORDER BY ended_at, id LIMIT 256)"
+                ).rowcount
+                if removed <= 0:
+                    break
+            deleted += removed
+        return deleted > 0
 
-    def _compact(self, connection: sqlite3.Connection) -> None:
+    def _compact(self, connection: sqlite3.Connection, *, vacuum: bool) -> None:
         """Reclaim SQLite and WAL pages after bounded logical pruning."""
         try:
             connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-            connection.execute("VACUUM")
-            connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            if vacuum or self._size() > self.maximum_bytes:
+                connection.execute("VACUUM")
+                connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         except sqlite3.Error as exc:
             raise EventHistoryUnavailable("local event history maintenance is unavailable") from exc
         if self._size() > self.maximum_bytes:
@@ -288,8 +296,7 @@ class EventHistoryStore:
     ) -> EventHistoryPage:
         with self._lock, self._opened() as connection:
             try:
-                self._prune(connection, now=time.time())
-                self._compact(connection)
+                self._compact(connection, vacuum=self._prune(connection, now=time.time()))
                 coverage_rows = connection.execute(
                     "SELECT started_at, ended_at FROM coverage WHERE control_uuid = ? "
                     "AND state_uuid = ? "

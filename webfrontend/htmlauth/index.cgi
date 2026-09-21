@@ -67,6 +67,7 @@ $ENV{MCPSERVER_AUTH_STORE} = "$lbpdatadir/auth/sessions.json";
 $ENV{MCPSERVER_LOXONE_TOKEN_STORE} = "$lbpdatadir/auth/loxone-tokens.json.enc";
 $ENV{MCPSERVER_INSTALL_KEY} = "$lbpdatadir/auth/install.key";
 $ENV{MCPSERVER_MQTT_CREDENTIALS} = "$lbpdatadir/auth/mqtt-credentials.json.enc";
+$ENV{MCPSERVER_EVENT_HISTORY_STORE} = "$lbpdatadir/event-history/state-events.sqlite3";
 $ENV{MCPSERVER_WEB_CERT} = "$lbhomedir/data/system/LoxBerryCA/certs/wwwcert.pem";
 $ENV{MCPSERVER_CA_CERT} = "$lbhomedir/data/system/LoxBerryCA/cacert.pem";
 $ENV{MCPSERVER_CERT_HELPER} = '/usr/local/sbin/loxberry-mcpserver-renew-web-certificate';

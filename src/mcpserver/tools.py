@@ -4184,6 +4184,9 @@ def register_loxberry_operate_tool(server: FastMCP, runtime: LoxBerryOperateRunt
         except ControlOperationError as exc:
             audit_source(access, tool, exc.code)
             return _error(EventHistorySourceChangeEnvelope, exc.code, str(exc))
+        except asyncio.CancelledError:
+            audit_source(access, tool, "cancelled_persisted_unknown")
+            raise
         except Exception:
             audit_source(access, tool, "failed")
             return _error(

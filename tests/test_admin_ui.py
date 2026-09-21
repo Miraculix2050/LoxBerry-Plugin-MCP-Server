@@ -343,6 +343,9 @@ def test_event_history_enablement_is_preserved_in_server_rendered_fallback() -> 
 
     assert "EVENT_HISTORY_ENABLED => $config->{event_history}{enabled} ? 1 : 0" in cgi
     assert (
+        'MCPSERVER_EVENT_HISTORY_STORE} = "$lbpdatadir/event-history/state-events.sqlite3"' in cgi
+    )
+    assert (
         'name="event_history_enabled" type="checkbox" value="1" '
         "<TMPL_IF EVENT_HISTORY_ENABLED>checked</TMPL_IF>"
     ) in template

@@ -212,7 +212,7 @@ try {
         'loxone_list_categories', 'loxone_get_weather',
         'loxone_find_controls', 'loxone_describe_control', 'loxone_get_control_notes',
         'loxone_get_states', 'loxone_list_global_metadata',
-        'loxone_get_skill_guide'
+        'loxone_get_skill_guide', 'loxone_get_state_history'
     )
     $actual = @($toolsResponse.result.tools | ForEach-Object { $_.name } | Sort-Object)
     $optional = @(
@@ -221,7 +221,8 @@ try {
         'loxone_describe_project_object', 'loxone_trace_project_logic',
         'loxberry_get_plugin_status', 'loxberry_get_service_health',
         'loxberry_get_system_status', 'loxberry_list_service_events',
-        'loxberry_clear_statistics_cache'
+        'loxberry_clear_statistics_cache', 'loxberry_list_event_history_sources',
+        'loxberry_add_event_history_source', 'loxberry_remove_event_history_source'
     )
     $controlAdvertised = $actual -contains 'loxone_operate_control'
     if ($ControlFixturePath -and -not $controlAdvertised) {
@@ -243,6 +244,12 @@ try {
                 $tool.annotations.destructiveHint -ne $true -or
                 $tool.annotations.idempotentHint -ne $true) {
                 throw 'MCP cache tool annotations violate the operate contract.'
+            }
+        } elseif ($tool.name -in @('loxberry_add_event_history_source', 'loxberry_remove_event_history_source')) {
+            if ($tool.annotations.readOnlyHint -ne $false -or
+                $tool.annotations.destructiveHint -ne $false -or
+                $tool.annotations.idempotentHint -ne $true) {
+                throw 'MCP event-history source tool annotations violate the operate contract.'
             }
         } elseif ($tool.annotations.readOnlyHint -ne $true -or $tool.annotations.destructiveHint -ne $false) {
             throw 'MCP tool annotations violate the read-only contract.'
