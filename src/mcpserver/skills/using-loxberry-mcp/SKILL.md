@@ -175,6 +175,12 @@ does not expose raw logs, arbitrary files, journal output, credentials, or
 foreign services. If the service is stopped, use the local LoxBerry log viewer
 or an explicitly authorized host diagnosis instead.
 
+`loxberry_list_miniserver_auth_events` exposes only this approved caller's
+value-free authentication attempts and the shared breaker state. Follow its
+`next_cursor` unchanged. It cannot identify another client, disclose a source
+address or credential, or authorize a recovery probe; only the local Admin UI
+can authorize one selected active OAuth session.
+
 Optional scopes may already be present while their administrator policy gate is
 disabled. In that case the relevant tool returns `permission_denied`; explain
 which global or local approval is missing and retry only after the administrator

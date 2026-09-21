@@ -419,8 +419,8 @@ if ($action ne '') {
                 structure_refresh_seconds => 0 + ($q->{structure_refresh_seconds} // 300),
                 max_active_runtime_sessions => 0 + ($q->{max_active_runtime_sessions} // 16),
                 runtime_session_idle_seconds => 0 + ($q->{runtime_session_idle_seconds} // 900),
-                miniserver_auth_probe_initial_seconds => 0 + ($q->{miniserver_auth_probe_initial_seconds} // 900),
-                miniserver_auth_probe_max_seconds => 0 + ($q->{miniserver_auth_probe_max_seconds} // 86400),
+                miniserver_auth_probe_initial_seconds => 60 * (0 + ($q->{miniserver_auth_probe_initial_minutes} // 15)),
+                miniserver_auth_probe_max_seconds => 60 * (0 + ($q->{miniserver_auth_probe_max_minutes} // 1440)),
                 max_structure_controls => 0 + ($q->{max_structure_controls} // 20000),
                 max_structure_state_references => 0 + ($q->{max_structure_state_references} // 100000),
                 max_structure_depth => 0 + ($q->{max_structure_depth} // 32),
@@ -501,6 +501,10 @@ if ($action ne '') {
         $result = admin_call('confirm_loxone_token', {session_id => ($q->{session_id} // '')});
         admin_log($result->{ok} ? 'info' : 'warning',
             'action=confirm_loxone_token outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
+    } elsif ($action eq 'request_miniserver_auth_recovery') {
+        $result = admin_call('request_miniserver_auth_recovery', {session_id => ($q->{session_id} // '')});
+        admin_log($result->{ok} ? 'info' : 'warning',
+            'action=request_miniserver_auth_recovery outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
     } elsif ($action eq 'allow_loxberry_read') {
         $result = admin_call('allow_loxberry_read', {session_id => ($q->{session_id} // '')});
         admin_log($result->{ok} ? 'info' : 'warning',
@@ -764,8 +768,8 @@ $template->param(
     STRUCTURE_REFRESH_SECONDS => $config->{limits}{structure_refresh_seconds} // 300,
     MAX_ACTIVE_RUNTIME_SESSIONS => $config->{limits}{max_active_runtime_sessions} // 16,
     RUNTIME_SESSION_IDLE_SECONDS => $config->{limits}{runtime_session_idle_seconds} // 900,
-    MINISERVER_AUTH_PROBE_INITIAL_SECONDS => $config->{limits}{miniserver_auth_probe_initial_seconds} // 900,
-    MINISERVER_AUTH_PROBE_MAX_SECONDS => $config->{limits}{miniserver_auth_probe_max_seconds} // 86400,
+    MINISERVER_AUTH_PROBE_INITIAL_MINUTES => int(($config->{limits}{miniserver_auth_probe_initial_seconds} // 900) / 60),
+    MINISERVER_AUTH_PROBE_MAX_MINUTES => int(($config->{limits}{miniserver_auth_probe_max_seconds} // 86400) / 60),
     MAX_STRUCTURE_CONTROLS => $config->{limits}{max_structure_controls} // 20000,
     MAX_STRUCTURE_STATE_REFERENCES => $config->{limits}{max_structure_state_references} // 100000,
     MAX_STRUCTURE_DEPTH => $config->{limits}{max_structure_depth} // 32,

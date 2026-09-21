@@ -56,21 +56,23 @@ async def process_remote_revocations(
         # Keep identifiers and tokens out of logs.
         try:
 
-            async def revoke() -> None:
+            async def operation() -> None:
                 await asyncio.wait_for(client.kill_token(item.token), timeout=timeout_seconds + 5)
 
             if auth_coordinator is None:
-                await revoke()
+                await operation()
             else:
                 await auth_coordinator.attempt(
-                    revoke,
+                    operation,
                     owner="runtime_event_stream",
                     phase="remote_token_revocation",
+                    allow_cooldown_probe=False,
                 )
         except MiniserverAuthenticationSuppressed:
             store.suspend_remote_revoke(
                 item.family_id, int(time.time()), delay_seconds=_AUTHENTICATION_RETRY_SECONDS
             )
+            _LOGGER.info("component=remote_revocation outcome=authentication_suppressed")
             return False
         except LoxoneSourceIpBlocked:
             store.suspend_remote_revoke(

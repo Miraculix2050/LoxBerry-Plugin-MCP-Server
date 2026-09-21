@@ -121,8 +121,8 @@
           <label class="mcp-field"><span><TMPL_VAR SETUP.STRUCTURE_REFRESH></span><input name="structure_refresh_seconds" type="number" min="60" max="3600" value="<TMPL_VAR STRUCTURE_REFRESH_SECONDS ESCAPE=HTML>"></label>
           <label class="mcp-field"><span><TMPL_VAR SETUP.RUNTIME_SESSIONS></span><input name="max_active_runtime_sessions" type="number" min="1" max="128" value="<TMPL_VAR MAX_ACTIVE_RUNTIME_SESSIONS ESCAPE=HTML>"></label>
           <label class="mcp-field"><span><TMPL_VAR SETUP.RUNTIME_IDLE></span><input name="runtime_session_idle_seconds" type="number" min="60" max="86400" value="<TMPL_VAR RUNTIME_SESSION_IDLE_SECONDS ESCAPE=HTML>"></label>
-          <label class="mcp-field"><span><TMPL_VAR SETUP.AUTH_PROBE_INITIAL></span><input name="miniserver_auth_probe_initial_seconds" type="number" min="300" max="86400" value="<TMPL_VAR MINISERVER_AUTH_PROBE_INITIAL_SECONDS ESCAPE=HTML>"></label>
-          <label class="mcp-field"><span><TMPL_VAR SETUP.AUTH_PROBE_MAX></span><input name="miniserver_auth_probe_max_seconds" type="number" min="900" max="604800" value="<TMPL_VAR MINISERVER_AUTH_PROBE_MAX_SECONDS ESCAPE=HTML>"></label>
+          <label class="mcp-field"><span><TMPL_VAR SETUP.AUTH_PROBE_INITIAL></span><input name="miniserver_auth_probe_initial_minutes" type="number" min="5" max="1440" value="<TMPL_VAR MINISERVER_AUTH_PROBE_INITIAL_MINUTES ESCAPE=HTML>"></label>
+          <label class="mcp-field"><span><TMPL_VAR SETUP.AUTH_PROBE_MAX></span><input name="miniserver_auth_probe_max_minutes" type="number" min="15" max="10080" value="<TMPL_VAR MINISERVER_AUTH_PROBE_MAX_MINUTES ESCAPE=HTML>"></label>
           <label class="mcp-field"><span><TMPL_VAR SETUP.STRUCTURE_CONTROLS></span><input name="max_structure_controls" type="number" min="1000" max="100000" value="<TMPL_VAR MAX_STRUCTURE_CONTROLS ESCAPE=HTML>"></label>
           <label class="mcp-field"><span><TMPL_VAR SETUP.STRUCTURE_STATES></span><input name="max_structure_state_references" type="number" min="10000" max="500000" value="<TMPL_VAR MAX_STRUCTURE_STATE_REFERENCES ESCAPE=HTML>"></label>
           <label class="mcp-field"><span><TMPL_VAR SETUP.STRUCTURE_DEPTH></span><input name="max_structure_depth" type="number" min="4" max="128" value="<TMPL_VAR MAX_STRUCTURE_DEPTH ESCAPE=HTML>"></label>
@@ -483,7 +483,7 @@
       'requests_per_minute', 'control_requests_per_minute', 'loxberry_requests_per_minute',
       'history_requests_per_minute', 'loxberry_operate_requests_per_minute', 'max_parallel_calls',
       'structure_refresh_seconds', 'max_active_runtime_sessions', 'runtime_session_idle_seconds',
-      'miniserver_auth_probe_initial_seconds', 'miniserver_auth_probe_max_seconds',
+      'miniserver_auth_probe_initial_minutes', 'miniserver_auth_probe_max_minutes',
       'max_structure_controls', 'max_structure_state_references', 'max_structure_depth',
       'max_states_per_identity',
     ]) setFormValue(mcpConfigForm, name, limits[name]);
@@ -1120,6 +1120,23 @@
       confirmForm.append(confirmButton);
       actionCell.append(confirmForm);
     }
+    const recoveryForm = document.createElement('form');
+    recoveryForm.method = 'post';
+    recoveryForm.action = 'index.cgi';
+    recoveryForm.dataset.ajax = 'request_miniserver_auth_recovery';
+    for (const [name, value] of [['action', 'request_miniserver_auth_recovery'], ['session_id', session.id]]) {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = name;
+      input.value = String(value || '');
+      recoveryForm.append(input);
+    }
+    const recoveryButton = document.createElement('button');
+    recoveryButton.className = 'lb-button';
+    recoveryButton.type = 'submit';
+    recoveryButton.textContent = '<TMPL_VAR ACTION.AUTH_RECOVERY ESCAPE=JS>';
+    recoveryForm.append(recoveryButton);
+    actionCell.append(recoveryForm);
     if (session.loxberry_read_eligible && !session.loxberry_read_approved) {
       const allowForm = document.createElement('form');
       allowForm.method = 'post';
@@ -1297,13 +1314,13 @@
   };
   // session-action-coordinator-start
   const sessionActionTypes = new Set([
-    'revoke_session', 'revoke_all', 'confirm_loxone_token', 'allow_loxberry_read',
+    'revoke_session', 'revoke_all', 'confirm_loxone_token', 'request_miniserver_auth_recovery', 'allow_loxberry_read',
     'revoke_loxberry_read', 'allow_loxberry_operate', 'revoke_loxberry_operate',
   ]);
   const isSessionAction = (action) => sessionActionTypes.has(action);
   const sessionActionKey = (action, sessionId = '', bindingId = '') => {
     if (action === 'revoke_all') return 'global:revoke_all';
-    if (action === 'revoke_session' || action === 'confirm_loxone_token'
+    if (action === 'revoke_session' || action === 'confirm_loxone_token' || action === 'request_miniserver_auth_recovery'
         || action === 'allow_loxberry_read' || action === 'allow_loxberry_operate') {
       return `session:${action}:${sessionId}`;
     }

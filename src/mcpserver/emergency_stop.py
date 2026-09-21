@@ -252,7 +252,9 @@ class EmergencyStopMonitor:
                 await self._task
 
 
-async def virtual_status_options(config: PluginConfig) -> VirtualStatusOptions:
+async def virtual_status_options(
+    config: PluginConfig, auth_coordinator: MiniserverAuthCoordinator | None = None
+) -> VirtualStatusOptions:
     """Return selectable visible digital statuses without retaining credentials."""
     if not config.loxone_endpoint:
         return VirtualStatusOptions(status="not_configured", options=())
@@ -273,9 +275,25 @@ async def virtual_status_options(config: PluginConfig) -> VirtualStatusOptions:
             timeout_seconds=config.connection_timeout,
         )
         stage = "token"
-        token = await client.acquire_token(username, password)
+        if auth_coordinator is None:
+            token = await client.acquire_token(username, password)
+        else:
+            token = await auth_coordinator.attempt(
+                partial(_acquire_token, client, username, password),
+                owner="local_admin",
+                phase="token_acquisition",
+                allow_cooldown_probe=False,
+            )
         stage = "session"
-        session = await client.open_session(token)
+        if auth_coordinator is None:
+            session = await client.open_session(token)
+        else:
+            session = await auth_coordinator.attempt(
+                partial(_open_session, client, token),
+                owner="local_admin",
+                phase="session_establishment",
+                allow_cooldown_probe=False,
+            )
         stage = "structure"
         structure = await session.load_structure()
         return VirtualStatusOptions(

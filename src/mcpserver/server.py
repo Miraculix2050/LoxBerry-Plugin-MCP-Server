@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import logging
 import os
@@ -43,7 +44,11 @@ from mcpserver.auth.web import Phase0OAuthWeb
 from mcpserver.config import DEFAULT_LOG_LEVEL, AtomicConfigStore
 from mcpserver.emergency_stop import EmergencyStopMonitor
 from mcpserver.loxberry.diagnostics import LoxBerryDiagnostics
-from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
+from mcpserver.loxone.auth_diagnostics import (
+    MiniserverAuthCoordinator,
+    recovery_request_key,
+    recovery_request_signature,
+)
 from mcpserver.loxone.client import MiniserverEndpoint
 from mcpserver.loxone.project.service import ProjectService
 from mcpserver.loxone.runtime import LoxoneRuntime
@@ -63,6 +68,8 @@ LOG_BACKUP_COUNT: Final = 2
 LOG_MAX_RECORD_BYTES: Final = 8 * 1024
 LOG_TRUNCATION_SUFFIX: Final = " ... [truncated]"
 _INTERNAL_EMERGENCY_STOP_STATUS_PATH: Final = "/internal/emergency-stop-status"
+_INTERNAL_MINISERVER_AUTH_STATUS_PATH: Final = "/internal/miniserver-auth-status"
+_INTERNAL_MINISERVER_AUTH_RECOVERY_PATH: Final = "/internal/miniserver-auth-recovery"
 _LOG_LEVELS: Final = {
     "off": None,
     "error": logging.ERROR,
@@ -213,7 +220,12 @@ class _DisabledServiceMiddleware(BaseHTTPMiddleware):
     """Keep health available while failing closed for all public protocol routes."""
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        if request.url.path not in {"/healthz", _INTERNAL_EMERGENCY_STOP_STATUS_PATH}:
+        if request.url.path not in {
+            "/healthz",
+            _INTERNAL_EMERGENCY_STOP_STATUS_PATH,
+            _INTERNAL_MINISERVER_AUTH_STATUS_PATH,
+            _INTERNAL_MINISERVER_AUTH_RECOVERY_PATH,
+        }:
             return JSONResponse(
                 {"ok": False, "error": "service_disabled"},
                 status_code=503,
@@ -395,6 +407,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
     mqtt_health: MqttHealthPublisher | None = None
     emergency_stop: EmergencyStopMonitor | None = None
     auth_coordinator: MiniserverAuthCoordinator | None = None
+    recovery_key: bytes | None = None
     if settings.plugin_config is not None:
         emergency_stop = EmergencyStopMonitor(settings.plugin_config)
     if settings.plugin_config is not None and settings.plugin_config.mqtt_enabled:
@@ -431,6 +444,13 @@ def create_server(settings: ServerSettings) -> FastMCP:
                 "miniserver-auth-profile-v1", settings.phase0_auth.loxone_endpoint.origin
             ),
         )
+        if settings.phase0_auth.install_key_path is not None:
+            try:
+                recovery_key = recovery_request_key(
+                    settings.phase0_auth.install_key_path.read_bytes()
+                )
+            except OSError:
+                recovery_key = None
         if emergency_stop is not None:
             emergency_stop.auth_coordinator = auth_coordinator
 
@@ -465,6 +485,14 @@ def create_server(settings: ServerSettings) -> FastMCP:
                 return False
 
         runtime_ref: dict[str, LoxoneRuntime] = {}
+
+        def miniserver_auth_binding(access: StoredAccessToken) -> str:
+            return auth_store.pseudonym(
+                "miniserver-auth-binding-v1",
+                access.client_id,
+                access.identity_id,
+                access.miniserver_id,
+            )
 
         def on_family_revoked(family_id: str) -> None:
             if loxone_store is not None:
@@ -550,6 +578,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
                 ),
                 max_structure_depth=(config.max_structure_depth if config is not None else 32),
                 auth_coordinator=auth_coordinator,
+                auth_binding=miniserver_auth_binding,
             )
 
             async def validate_project_access(access: StoredAccessToken) -> bool:
@@ -576,6 +605,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
                     LoxBerryDiagnostics(home),
                     AtomicConfigStore(settings.phase0_auth.config_path),
                     auth_store,
+                    auth_coordinator,
                 )
         if config and settings.phase0_auth.config_path is not None and statistics_cache is not None:
             loxberry_operate_runtime = LoxBerryOperateRuntime(
@@ -681,14 +711,61 @@ def create_server(settings: ServerSettings) -> FastMCP:
         return JSONResponse({"ok": True, "emergency_stop": status})
 
     @server.custom_route(  # type: ignore[misc]
-        "/internal/miniserver-auth-status", methods=["GET"], include_in_schema=False
+        _INTERNAL_MINISERVER_AUTH_STATUS_PATH, methods=["GET"], include_in_schema=False
     )
     async def miniserver_auth_status(request: Request) -> Response:
         """Return the service-owned, value-free shared breaker status."""
         del request
         return JSONResponse(
-            {"ok": True, "miniserver_auth": auth_coordinator.status() if auth_coordinator else None}
+            {
+                "ok": True,
+                "miniserver_auth": auth_coordinator.status() if auth_coordinator else None,
+                "events": auth_coordinator.admin_events() if auth_coordinator else [],
+            }
         )
+
+    @server.custom_route(  # type: ignore[misc]
+        _INTERNAL_MINISERVER_AUTH_RECOVERY_PATH, methods=["POST"], include_in_schema=False
+    )
+    async def miniserver_auth_recovery(request: Request) -> Response:
+        """Accept one authenticated local-admin grant for a selected OAuth binding."""
+        client = request.client
+        if client is None or client.host not in {"127.0.0.1", "::1"} or recovery_key is None:
+            return JSONResponse({"ok": False, "error": "not_authorized"}, status_code=403)
+        if request.headers.get("content-type", "").split(";", 1)[0] != "application/json":
+            return JSONResponse({"ok": False, "error": "invalid_request"}, status_code=400)
+        raw = await request.body()
+        if len(raw) > 1024:
+            return JSONResponse({"ok": False, "error": "invalid_request"}, status_code=400)
+        try:
+            payload = json.loads(raw)
+            binding = payload.get("binding_id")
+            expires_at = payload.get("expires_at")
+            nonce = payload.get("nonce")
+            signature = request.headers.get("x-mcpserver-recovery-signature", "")
+            valid = (
+                isinstance(binding, str)
+                and len(binding) == 64
+                and isinstance(expires_at, int)
+                and isinstance(nonce, str)
+                and 16 <= len(nonce) <= 128
+                and abs(int(time.time()) - expires_at) <= 60
+                and hmac.compare_digest(
+                    signature,
+                    recovery_request_signature(
+                        recovery_key, binding_id=binding, expires_at=expires_at, nonce=nonce
+                    ),
+                )
+            )
+        except (TypeError, ValueError, json.JSONDecodeError):
+            valid = False
+        if (
+            not valid
+            or auth_coordinator is None
+            or not auth_coordinator.grant_recovery(binding, nonce)
+        ):
+            return JSONResponse({"ok": False, "error": "recovery_unavailable"}, status_code=409)
+        return JSONResponse({"ok": True, "miniserver_auth": auth_coordinator.status()})
 
     return server
 

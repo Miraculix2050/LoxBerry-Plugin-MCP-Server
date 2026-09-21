@@ -12,7 +12,7 @@ Konfiguriere eine lokale HTTPS-Origin und genau ein Miniserver-Ziel. Die Auswahl
 
 ### Wiederherstellung der Authentifizierung
 
-Die erweiterten Grenzen enthalten eine erste und eine maximale Wartezeit für genau einen bedarfsgetriebenen Wiederherstellungsversuch der Miniserver-Authentifizierung. Standard sind 15 Minuten und 24 Stunden. Bestätigt der Miniserver eine Sperre der Quell-IP, startet der Dienst bis zum Ablauf der Frist keine weitere Anmeldung; erst ein tatsächlicher Tool- oder Laufzeitbedarf darf dann einen Versuch auslösen. Bei einer erneuten Sperre verdoppelt sich die Frist bis zum konfigurierten Maximum. Diese Werte sind Plugin-Policy und keine behauptete Sperrdauer des Miniservers; eine Änderung startet selbst keinen Loginversuch.
+Die erweiterten Grenzen enthalten eine erste und eine maximale Wartezeit für genau einen bedarfsgetriebenen Wiederherstellungsversuch der Miniserver-Authentifizierung. Standard sind 15 Minuten und 24 Stunden. Bestätigt der Miniserver eine Sperre der Quell-IP, startet der Dienst bis zum Ablauf der Frist keine weitere Anmeldung; erst ein tatsächlicher Tool- oder Laufzeitbedarf darf dann einen Versuch auslösen. Bei einer erneuten Sperre verdoppelt sich die Frist bis zum konfigurierten Maximum. Diese Werte sind Plugin-Policy und keine behauptete Sperrdauer des Miniservers; eine Änderung startet selbst keinen Loginversuch. Die Admin-Oberfläche zeigt Minuten, die kompatible Konfiguration speichert weiterhin Sekunden. Ein lokaler Administrator kann einen vorgezogenen Probeversuch für genau eine aktive OAuth-Sitzung freigeben; andere Clients werden dadurch nicht entsperrt.
 
 ## Notaus-Signal (virtueller Status)
 

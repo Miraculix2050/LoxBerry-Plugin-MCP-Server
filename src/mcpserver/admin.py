@@ -15,6 +15,7 @@ import hmac
 import json
 import os
 import re
+import secrets
 import socket
 import subprocess
 import sys
@@ -43,6 +44,12 @@ _SERVICE_ACTIONS: Final = frozenset({"start", "stop", "restart"})
 _SYSTEMD_COMMANDS: Final = frozenset({"enable", "disable", "start", "stop", "restart"})
 _CLIENT_UUID: Final = UUID("3f52f6fe-3af0-4d30-a8bb-f429b9da4465")
 _INTERNAL_EMERGENCY_STOP_STATUS_URL: Final = "http://127.0.0.1:8765/internal/emergency-stop-status"
+_INTERNAL_MINISERVER_AUTH_STATUS_URL: Final = (
+    "http://127.0.0.1:8765/internal/miniserver-auth-status"
+)
+_INTERNAL_MINISERVER_AUTH_RECOVERY_URL: Final = (
+    "http://127.0.0.1:8765/internal/miniserver-auth-recovery"
+)
 _INTERNAL_RESPONSE_MAX_BYTES: Final = 4 * 1024
 _EMERGENCY_STOP_STATES: Final = frozenset({"not_configured", "clear", "active", "unknown"})
 
@@ -246,7 +253,48 @@ def _service_response() -> dict[str, Any]:
         "service_active": service["active"],
         "service": service,
         "emergency_stop_runtime": _emergency_stop_runtime_status(service),
+        "miniserver_auth_runtime": _miniserver_auth_runtime_status(service),
     }
+
+
+def _miniserver_auth_runtime_status(service: dict[str, Any]) -> dict[str, Any]:
+    """Read only the bounded service-owned breaker view over loopback."""
+    if not service.get("active"):
+        return {"availability": "unavailable"}
+    try:
+        with urlopen(_INTERNAL_MINISERVER_AUTH_STATUS_URL, timeout=2) as response:
+            raw = response.read(_INTERNAL_RESPONSE_MAX_BYTES + 1)
+        if len(raw) > _INTERNAL_RESPONSE_MAX_BYTES:
+            raise ValueError("response too large")
+        payload = json.loads(raw)
+        status = payload.get("miniserver_auth") if isinstance(payload, dict) else None
+        events = payload.get("events") if isinstance(payload, dict) else None
+        if not isinstance(status, dict) or not isinstance(events, list):
+            raise ValueError("invalid response")
+        if status.get("breaker_state") not in {"closed", "open_source_ip_blocked"}:
+            raise ValueError("invalid breaker state")
+        safe_events = []
+        for event in events[:50]:
+            if not isinstance(event, dict):
+                raise ValueError("invalid event")
+            safe_events.append(
+                {
+                    key: event[key]
+                    for key in (
+                        "timestamp",
+                        "sequence",
+                        "connection_owner",
+                        "phase",
+                        "outcome",
+                        "breaker_transition",
+                        "trace_id",
+                    )
+                    if key in event and isinstance(event[key], int | str)
+                }
+            )
+        return {"availability": "available", "status": status, "events": safe_events}
+    except (OSError, ValueError, json.JSONDecodeError):
+        return {"availability": "unavailable"}
 
 
 def _mqtt_gateway_status() -> dict[str, Any]:
@@ -611,8 +659,24 @@ def _save_mcp(payload: object) -> dict[str, Any]:
 
 def _emergency_stop_options() -> dict[str, Any]:
     from mcpserver.emergency_stop import virtual_status_options
+    from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
 
-    result = asyncio.run(virtual_status_options(_config_store().load()))
+    config = _config_store().load()
+    store_path = os.getenv("MCPSERVER_AUTH_STORE", "").strip()
+    coordinator = (
+        MiniserverAuthCoordinator(
+            Path(store_path).parent / "miniserver-auth-diagnostics.json",
+            initial_probe_seconds=config.miniserver_auth_probe_initial_seconds,
+            maximum_probe_seconds=config.miniserver_auth_probe_max_seconds,
+        )
+        if Path(store_path).is_absolute() and Path(store_path).suffix == ".json"
+        else None
+    )
+    result = asyncio.run(
+        virtual_status_options(config, coordinator)
+        if coordinator is not None
+        else virtual_status_options(config)
+    )
     response = {"status": result.status, "options": list(result.options)}
     if result.failure_code is not None:
         response["discovery_failure_code"] = result.failure_code
@@ -914,6 +978,58 @@ def _confirm_loxone_token(payload: object) -> dict[str, Any]:
     if not LoxoneTokenHealthStore(_auth_store()).confirm_retry(family_id):
         raise AdminError("Loxone token confirmation is unavailable")
     return {"sessions": _sessions()}
+
+
+def _request_miniserver_auth_recovery(payload: object) -> dict[str, Any]:
+    """Authorize one signed, one-shot service probe for a live OAuth family."""
+    family_id = payload.get("session_id") if isinstance(payload, dict) else None
+    if not isinstance(family_id, str) or len(family_id) > 128:
+        raise AdminError("session identifier is invalid")
+    snapshot = _admin_read_snapshot()
+    record = snapshot.auth_document.get("families", {}).get(family_id)
+    if (
+        not isinstance(record, dict)
+        or record.get("revoked")
+        or not isinstance(record.get("expires_at"), int | float)
+        or record["expires_at"] <= snapshot.now
+        or snapshot.subject_key is None
+    ):
+        raise AdminError("active session is unavailable")
+    from mcpserver.loxone.auth_diagnostics import recovery_request_key, recovery_request_signature
+
+    try:
+        key = recovery_request_key(_path("MCPSERVER_INSTALL_KEY", suffix=".key").read_bytes())
+    except (OSError, ValueError) as exc:
+        raise AdminError("recovery authorization is unavailable") from exc
+    binding = _binding_pseudonym(snapshot.subject_key, "miniserver-auth-binding-v1", record)
+    expires_at = int(time.time()) + 30
+    nonce = secrets.token_urlsafe(24)
+    body = json.dumps(
+        {"binding_id": binding, "expires_at": expires_at, "nonce": nonce},
+        separators=(",", ":"),
+    ).encode("utf-8")
+    request = Request(
+        _INTERNAL_MINISERVER_AUTH_RECOVERY_URL,
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "X-MCPServer-Recovery-Signature": recovery_request_signature(
+                key, binding_id=binding, expires_at=expires_at, nonce=nonce
+            ),
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=2) as response:
+            raw = response.read(_INTERNAL_RESPONSE_MAX_BYTES + 1)
+        if len(raw) > _INTERNAL_RESPONSE_MAX_BYTES:
+            raise ValueError("response too large")
+        answer = json.loads(raw)
+        if not isinstance(answer, dict) or answer.get("ok") is not True:
+            raise ValueError("recovery rejected")
+    except (OSError, ValueError, json.JSONDecodeError):
+        raise AdminError("recovery authorization is unavailable") from None
+    return _service_response() | {"sessions": _sessions(snapshot)}
 
 
 def _loxberry_binding(record: dict[str, Any], *, subject_key: bytes | None = None) -> str:
@@ -1335,6 +1451,8 @@ def dispatch(request: object, *, timing: dict[str, float] | None = None) -> dict
         return {"revoked": _revoke(family_id), "sessions": _sessions()}
     if action == "confirm_loxone_token":
         return _confirm_loxone_token(payload)
+    if action == "request_miniserver_auth_recovery":
+        return _request_miniserver_auth_recovery(payload)
     if action == "revoke_all":
         return {"revoked": _revoke(None), "sessions": _sessions()}
     if action == "diagnostic":

@@ -9,7 +9,7 @@ import math
 import struct
 import time
 from collections import defaultdict, deque
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -19,6 +19,7 @@ from mcpserver.auth.loxone_health import LoxoneTokenHealthStore
 from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore, LoxoneTokenStoreError
 from mcpserver.auth.provider import CONTROL_SCOPE, HISTORY_SCOPE, READ_SCOPE, StoredAccessToken
 from mcpserver.loxone.auth_diagnostics import (
+    AttemptProvenance,
     MiniserverAuthCoordinator,
     MiniserverAuthenticationSuppressed,
 )
@@ -205,6 +206,7 @@ class LoxoneRuntime:
         max_structure_state_references: int = 100_000,
         max_structure_depth: int = 32,
         auth_coordinator: MiniserverAuthCoordinator | None = None,
+        auth_binding: Callable[[StoredAccessToken], str] | None = None,
     ) -> None:
         from mcpserver.loxone.client import MiniserverEndpoint
 
@@ -223,6 +225,7 @@ class LoxoneRuntime:
             max_structure_depth=max_structure_depth,
         )
         self.auth_coordinator = auth_coordinator
+        self.auth_binding = auth_binding
         self._initial_state_timeout_seconds = min(timeout_seconds, 2.0)
         self.cache = UserStateCache(max_states_per_user=max_states_per_identity)
         self._records: dict[str, _ConnectionRecord] = {}
@@ -362,7 +365,7 @@ class LoxoneRuntime:
                 )
             try:
                 command_session = await self._open_session(
-                    token, owner="tool_request", phase="session_establishment"
+                    token, owner="tool_request", phase="session_establishment", access=access
                 )
             except LoxoneConnectionError as exc:
                 raise ControlOperationError(
@@ -572,7 +575,7 @@ class LoxoneRuntime:
             session: LoxoneWebSocketSession | None = None
             try:
                 session = await self._open_session(
-                    token, owner="tool_request", phase="session_establishment"
+                    token, owner="tool_request", phase="session_establishment", access=access
                 )
                 structure = await session.load_structure()
                 control = self._control(structure, control_uuid, include_hidden=include_hidden)
@@ -774,7 +777,7 @@ class LoxoneRuntime:
                 session: LoxoneWebSocketSession | None = None
                 try:
                     session = await self._open_session(
-                        token, owner="tool_request", phase="session_establishment"
+                        token, owner="tool_request", phase="session_establishment", access=access
                     )
                     structure = await session.load_structure()
                     control = self._control(structure, control_uuid, include_hidden=include_hidden)
@@ -935,7 +938,7 @@ class LoxoneRuntime:
             if token is None:
                 raise LoxoneTokenStoreError("Loxone token is unavailable")
             session = await self._open_session(
-                token, owner="tool_request", phase="session_establishment"
+                token, owner="tool_request", phase="session_establishment", access=access
             )
             try:
                 version = await session.structure_version()
@@ -1012,14 +1015,18 @@ class LoxoneRuntime:
             await record.session.close()
 
     async def _open_session(
-        self, token: LoxoneToken, *, owner: str, phase: str
+        self, token: LoxoneToken, *, owner: str, phase: str, access: StoredAccessToken | None = None
     ) -> LoxoneWebSocketSession:
         """Open a session through the shared source-IP breaker when configured."""
         coordinator = getattr(self, "auth_coordinator", None)
         if not isinstance(coordinator, MiniserverAuthCoordinator):
             return await self.client.open_session(token)
+        provenance = None
+        binding = getattr(self, "auth_binding", None)
+        if owner == "tool_request" and access is not None and callable(binding):
+            provenance = AttemptProvenance(binding_id=binding(access))
         return await coordinator.attempt(
-            lambda: self.client.open_session(token), owner=owner, phase=phase
+            lambda: self.client.open_session(token), owner=owner, phase=phase, provenance=provenance
         )
 
     async def _pump_events(self, subject: str, record: _ConnectionRecord) -> None:

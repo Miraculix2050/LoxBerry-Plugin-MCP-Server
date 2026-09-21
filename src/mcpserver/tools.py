@@ -1048,6 +1048,38 @@ class LoxBerryServiceEventsEnvelope(ToolEnvelope):
     data: LoxBerryServiceEventsData | LoxBerryErrorData
 
 
+class MiniserverAuthEventData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    timestamp: int
+    sequence: int
+    connection_owner: Literal["tool_request"]
+    phase: str
+    outcome: str
+    breaker_transition: Literal["opened", "reopened", "closed"] | None = None
+    trace_id: str | None = None
+
+
+class MiniserverAuthStatusData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    breaker_state: Literal["closed", "open_source_ip_blocked"]
+    opened_at: int | None = None
+    retry_not_before: int | None = None
+    backoff_seconds: int | None = None
+    suppressed_attempts: int
+
+
+class MiniserverAuthEventsData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: MiniserverAuthStatusData
+    events: list[MiniserverAuthEventData]
+    next_cursor: str | None = None
+
+
+class MiniserverAuthEventsEnvelope(ToolEnvelope):
+    model_config = ConfigDict(extra="forbid")
+    data: MiniserverAuthEventsData | LoxBerryErrorData
+
+
 def _now() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
@@ -1247,11 +1279,16 @@ class LoxBerryReadRuntime:
     """Live policy check and bounded access to the fixed diagnostics adapter."""
 
     def __init__(
-        self, diagnostics: LoxBerryDiagnostics, config_store: Any, auth_store: Any
+        self,
+        diagnostics: LoxBerryDiagnostics,
+        config_store: Any,
+        auth_store: Any,
+        auth_coordinator: Any = None,
     ) -> None:
         self._diagnostics = diagnostics
         self._config_store = config_store
         self._auth_store = auth_store
+        self._auth_coordinator = auth_coordinator
         self._requests: dict[str, list[float]] = {}
 
     def _allowed(self, access: StoredAccessToken) -> Any:
@@ -1316,6 +1353,18 @@ class LoxBerryReadRuntime:
             start=start,
             end=end,
         )
+
+    async def miniserver_auth_events(
+        self, access: StoredAccessToken
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        self._allowed(access)
+        coordinator = self._auth_coordinator
+        if coordinator is None:
+            raise DiagnosticsUnavailable("diagnostics are temporarily unavailable")
+        binding = self._auth_store.pseudonym(
+            "miniserver-auth-binding-v1", access.client_id, access.identity_id, access.miniserver_id
+        )
+        return coordinator.status(), coordinator.events_for(binding)
 
 
 class LoxBerryOperateRuntime:
@@ -3454,6 +3503,84 @@ def register_loxberry_read_tools(server: FastMCP, runtime: LoxBerryReadRuntime) 
                 "internal_error",
                 "Internal error",
                 trace_id=call_trace_id,
+            )
+
+    @server.tool(
+        name="loxberry_list_miniserver_auth_events",
+        description=(
+            "List the caller's value-free Miniserver authentication diagnostics and "
+            "the shared breaker state. It never returns credentials, tokens, source "
+            "addresses, other clients, or raw Miniserver responses."
+        ),
+        annotations=annotations,
+        structured_output=True,
+    )
+    async def list_miniserver_auth_events(
+        cursor: CursorArgument = None,
+        limit: Annotated[
+            int, Field(description="Events to return, from 1 to 100.", ge=1, le=100)
+        ] = 50,
+    ) -> MiniserverAuthEventsEnvelope:
+        trace_id = str(uuid4())
+        try:
+            access = _access()
+            status, events = await runtime.miniserver_auth_events(access)
+            scope = (
+                "miniserver-auth-events:"
+                + hashlib.sha256(access.family_id.encode("utf-8")).hexdigest()
+            )
+            page = _page(cursors, scope, list(reversed(events)), cursor, limit)
+            exposed_status = {
+                key: value
+                for key, value in status.items()
+                if key
+                in {
+                    "breaker_state",
+                    "opened_at",
+                    "retry_not_before",
+                    "backoff_seconds",
+                    "suppressed_attempts",
+                }
+            }
+            return _result(
+                MiniserverAuthEventsEnvelope,
+                {
+                    "status": exposed_status,
+                    "events": list(reversed(page["items"])),
+                    "next_cursor": page["next_cursor"],
+                },
+                trace_id=trace_id,
+            )
+        except ValueError as exc:
+            return _error(
+                MiniserverAuthEventsEnvelope, "invalid_input", str(exc), trace_id=trace_id
+            )
+        except PermissionError:
+            return _error(
+                MiniserverAuthEventsEnvelope,
+                "permission_denied",
+                "LoxBerry diagnostics require loxberry:read and local approval",
+                trace_id=trace_id,
+            )
+        except DiagnosticsUnavailable:
+            return _error(
+                MiniserverAuthEventsEnvelope,
+                "temporarily_unavailable",
+                "Miniserver authentication diagnostics are temporarily unavailable",
+                trace_id=trace_id,
+            )
+        except Exception as exc:
+            _LOGGER.error(
+                "component=tools trace_id=%s outcome=internal_error "
+                "tool=loxberry_list_miniserver_auth_events error_type=%s",
+                trace_id,
+                type(exc).__name__,
+            )
+            return _error(
+                MiniserverAuthEventsEnvelope,
+                "internal_error",
+                "Internal error",
+                trace_id=trace_id,
             )
 
 

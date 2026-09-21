@@ -127,11 +127,14 @@ def test_loxberry_tool_contracts_have_closed_output_schemas() -> None:
         "loxberry_get_plugin_status",
         "loxberry_get_service_health",
         "loxberry_list_service_events",
+        "loxberry_list_miniserver_auth_events",
     }
     for name, tool in published.items():
         assert set(tool.parameters["properties"]) == (
             {"trace_id", "component", "severity", "start", "end", "cursor", "limit"}
             if name == "loxberry_list_service_events"
+            else {"cursor", "limit"}
+            if name == "loxberry_list_miniserver_auth_events"
             else set()
         )
         assert tool.annotations is not None
@@ -603,7 +606,7 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert tool.annotations.destructiveHint is False
     assert tool.annotations.openWorldHint is False
     assert result.data.name == "using-loxberry-mcp"  # type: ignore[union-attr]
-    assert result.data.revision == 29  # type: ignore[union-attr]
+    assert result.data.revision == 30  # type: ignore[union-attr]
     assert "`loxone_get_structure_overview`" in result.data.content  # type: ignore[union-attr]
     assert result.data.media_type == "text/markdown"  # type: ignore[union-attr]
     assert result.data.content == read_skill_markdown()  # type: ignore[union-attr]

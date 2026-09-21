@@ -615,6 +615,10 @@ def test_status_refresh_returns_all_dynamic_admin_ui_data(
         "status": "not_configured",
     }
     monkeypatch.setattr("mcpserver.admin._emergency_stop_runtime_status", lambda _service: runtime)
+    monkeypatch.setattr(
+        "mcpserver.admin._miniserver_auth_runtime_status",
+        lambda _service: {"availability": "unavailable"},
+    )
     monkeypatch.setattr("mcpserver.admin._sessions", lambda: sessions)
     monkeypatch.setattr("mcpserver.admin._certificate_status", lambda: certificate)
 
@@ -625,6 +629,7 @@ def test_status_refresh_returns_all_dynamic_admin_ui_data(
         "service_active": True,
         "service": service,
         "emergency_stop_runtime": runtime,
+        "miniserver_auth_runtime": {"availability": "unavailable"},
         "sessions": sessions,
         "certificate": certificate,
     }
@@ -798,6 +803,10 @@ def test_service_action_uses_only_the_fixed_unit(
         "mcpserver.admin._emergency_stop_runtime_status",
         lambda _service: {"availability": "unavailable"},
     )
+    monkeypatch.setattr(
+        "mcpserver.admin._miniserver_auth_runtime_status",
+        lambda _service: {"availability": "unavailable"},
+    )
     monkeypatch.setattr("mcpserver.admin.request_service_restart", lambda: None)
 
     result = dispatch({"action": "service_action", "payload": {"command": command}})
@@ -810,6 +819,7 @@ def test_service_action_uses_only_the_fixed_unit(
         "service_active": True,
         "service": service,
         "emergency_stop_runtime": {"availability": "unavailable"},
+        "miniserver_auth_runtime": {"availability": "unavailable"},
     }
 
 

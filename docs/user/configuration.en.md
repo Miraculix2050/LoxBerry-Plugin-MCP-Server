@@ -12,7 +12,7 @@ Configure one local HTTPS origin and exactly one Miniserver target. Selecting a 
 
 ### Authentication recovery
 
-The advanced limits include an initial and maximum delay for one lazy Miniserver authentication recovery probe. Defaults are 15 minutes and 24 hours. After the Miniserver confirms that the source IP is blocked, the service makes no further login attempts until the delay has elapsed and a real tool or runtime request needs a connection. A repeated block doubles the delay up to the configured maximum. These limits are plugin policy, not a claimed Miniserver block duration; changing them does not itself start a login attempt.
+The advanced limits include an initial and maximum delay for one lazy Miniserver authentication recovery probe. Defaults are 15 minutes and 24 hours. After the Miniserver confirms that the source IP is blocked, the service makes no further login attempts until the delay has elapsed and a real tool or runtime request needs a connection. A repeated block doubles the delay up to the configured maximum. These limits are plugin policy, not a claimed Miniserver block duration; changing them does not itself start a login attempt. The Admin UI shows minutes while retaining the compatible seconds-based configuration format. A local administrator may authorize one early probe for one active OAuth session; it never globally unlocks other clients.
 
 ## Emergency-stop signal (Virtual Status)
 
