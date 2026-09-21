@@ -1053,6 +1053,38 @@ def test_first_complete_configuration_does_not_enable_mcp_access(
     assert result["configuration"]["server"]["enabled"] is False
 
 
+def test_partial_config_save_preserves_explorer_approvals(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mcpserver.config import ExplorerBindingApproval
+
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    approval = ExplorerBindingApproval(
+        binding_id="a" * 64,
+        capability="loxberry:read",
+        application_id="tool-explorer-v1",
+        version=1,
+        created_at=100,
+        last_active_at=100,
+        last_active_until=200,
+    )
+    store.save(replace(PluginConfig.defaults(), explorer_bindings=(approval,)))
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._restart_service", lambda: None)
+    monkeypatch.setattr("mcpserver.admin._sessions", lambda: [])
+    monkeypatch.setattr("mcpserver.admin._service_response", lambda: {"service_active": True})
+
+    _save(
+        {
+            "schema_version": 10,
+            "server": {"enabled": False, "public_origin": "https://loxberry.example"},
+            "loxone": {"endpoint": "http://192.168.10.20"},
+        }
+    )
+
+    assert store.load().explorer_bindings == (approval,)
+
+
 def test_section_saves_are_atomic_and_preserve_the_other_configuration(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

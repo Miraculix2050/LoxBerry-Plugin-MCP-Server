@@ -159,9 +159,17 @@ def maintain_explorer_bindings(
         for item in config.explorer_bindings:
             key = (item.capability, item.binding_id)
             if key in active:
-                entries.append(replace(item, inactive_since=None))
-                continue
-            inactive_since = ended.get(key, item.inactive_since or item.last_active_until)
+                inactive_since = item.inactive_since
+                if inactive_since is None and item.last_active_until <= current:
+                    inactive_since = item.last_active_until
+                if inactive_since is None or inactive_since + retention > current:
+                    entries.append(replace(item, inactive_since=None))
+                    continue
+                # A new pending OAuth family must not extend an approval that
+                # has already expired before the administrator re-approves it.
+                inactive_since = inactive_since or item.last_active_until
+            else:
+                inactive_since = ended.get(key, item.inactive_since or item.last_active_until)
             if inactive_since + retention <= current:
                 removed += 1
                 continue

@@ -178,3 +178,19 @@ def test_active_family_prevents_cleanup_until_last_family_ends(tmp_path: Path) -
     auth_store.mutate(insert)
     assert maintain_explorer_bindings(config_store, auth_store, now=10_000) == 0
     assert config_store.load().explorer_bindings[0].inactive_since is None
+
+
+def test_pending_family_does_not_extend_an_expired_approval(tmp_path: Path) -> None:
+    config_store, auth_store = stores(tmp_path)
+    config_store.save(replace(config_store.load(), explorer_binding_retention_hours=1))
+    record_explorer_approval(config_store, auth_store, "loxberry:read", family(), now=100)
+    pending = family(client_id="pending-client")
+    pending["expires_at"] = 20_000
+
+    def insert(document: dict[str, object]) -> None:
+        document["families"]["pending"] = pending  # type: ignore[index]
+
+    auth_store.mutate(insert)
+
+    assert maintain_explorer_bindings(config_store, auth_store, now=3_800) == 1
+    assert config_store.load().explorer_bindings == ()

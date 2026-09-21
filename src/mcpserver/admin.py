@@ -472,6 +472,7 @@ def _save(payload: object) -> dict[str, Any]:
             config,
             loxberry_read_bindings=previous.loxberry_read_bindings,
             loxberry_operate_bindings=previous.loxberry_operate_bindings,
+            explorer_bindings=previous.explorer_bindings,
         )
     control_families: list[str] = []
     if previous.loxone_control_enabled and not config.loxone_control_enabled:
