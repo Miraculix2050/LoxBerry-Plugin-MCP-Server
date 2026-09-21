@@ -286,7 +286,12 @@ class _ForwardedHostFastMCP(FastMCP):
     emergency_stop: EmergencyStopMonitor | None = None
     auth_coordinator: MiniserverAuthCoordinator | None = None
     live_runtime: LoxoneRuntime | None = None
-    remote_revocation: tuple[MiniserverEndpoint, EncryptedLoxoneTokenStore, float] | None = None
+    remote_revocation: (
+        tuple[
+            MiniserverEndpoint, EncryptedLoxoneTokenStore, float, MiniserverAuthCoordinator | None
+        ]
+        | None
+    ) = None
 
     def streamable_http_app(self) -> Starlette:
         app = super().streamable_http_app()
@@ -346,7 +351,10 @@ class _Phase0TokenVerifier(TokenVerifier):
 async def _runtime_lifespan(
     runtime: LoxoneRuntime | None,
     emergency_stop: EmergencyStopMonitor | None = None,
-    remote_revocation: tuple[MiniserverEndpoint, EncryptedLoxoneTokenStore, float] | None = None,
+    remote_revocation: tuple[
+        MiniserverEndpoint, EncryptedLoxoneTokenStore, float, MiniserverAuthCoordinator | None
+    ]
+    | None = None,
 ) -> AsyncIterator[None]:
     """Close all live Miniserver sessions when the HTTP application stops."""
     worker = (
@@ -418,6 +426,9 @@ def create_server(settings: ServerSettings) -> FastMCP:
             ),
             maximum_probe_seconds=(
                 config.miniserver_auth_probe_max_seconds if config is not None else 86_400
+            ),
+            profile_id=auth_store.pseudonym(
+                "miniserver-auth-profile-v1", settings.phase0_auth.loxone_endpoint.origin
             ),
         )
         if emergency_stop is not None:
@@ -578,6 +589,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
             settings.phase0_auth.loxone_endpoint,
             loxone_store,
             config.connection_timeout if config is not None else 10.0,
+            auth_coordinator,
         )
         if settings.phase0_auth is not None and loxone_store is not None
         else None

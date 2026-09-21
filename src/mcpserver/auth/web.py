@@ -957,7 +957,14 @@ sync();
         except Exception:
             if token is not None:
                 with suppress(LoxoneConnectionError):
-                    await client.kill_token(token)
+                    if self.auth_coordinator is None:
+                        await client.kill_token(token)
+                    else:
+                        await self.auth_coordinator.attempt(
+                            lambda: client.kill_token(token),
+                            owner="tool_request",
+                            phase="token_cleanup",
+                        )
             self._record_login_failure(rate_keys, now)
             transaction.phase = "login"
             return self._login_page(transaction, "Sign-in failed. / Anmeldung fehlgeschlagen.")

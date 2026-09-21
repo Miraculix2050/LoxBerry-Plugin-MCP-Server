@@ -12,7 +12,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, TypeVar
 
-from mcpserver.loxone.client import LoxoneCommandRejected, LoxoneSourceIpBlocked
+from mcpserver.loxone.client import (
+    LoxoneCommandRejected,
+    LoxoneConnectionError,
+    LoxoneSourceIpBlocked,
+)
 
 _T = TypeVar("_T")
 _MAX_EVENTS: Final = 200
@@ -20,7 +24,7 @@ _RETENTION_SECONDS: Final = 30 * 24 * 60 * 60
 _SCHEMA_VERSION: Final = 1
 
 
-class MiniserverAuthenticationSuppressed(RuntimeError):
+class MiniserverAuthenticationSuppressed(LoxoneConnectionError):
     """A confirmed source-IP block deliberately prevented a new login."""
 
 
@@ -41,13 +45,16 @@ class MiniserverAuthCoordinator:
         *,
         initial_probe_seconds: int = 900,
         maximum_probe_seconds: int = 86_400,
+        profile_id: str = "default",
     ) -> None:
         if initial_probe_seconds < 300 or maximum_probe_seconds < initial_probe_seconds:
             raise ValueError("invalid Miniserver authentication probe limits")
         self._path = path
         self._initial = initial_probe_seconds
         self._maximum = maximum_probe_seconds
+        self._profile_id = profile_id
         self._lock = asyncio.Lock()
+        self._last_suppression_persisted = 0.0
         self._state = self._load()
 
     def _load(self) -> dict[str, Any]:
@@ -59,12 +66,17 @@ class MiniserverAuthCoordinator:
             "suppressed_attempts": 0,
             "sequence": 0,
             "events": [],
+            "profile_id": self._profile_id,
         }
         try:
             value = json.loads(self._path.read_text(encoding="utf-8"))
         except (OSError, ValueError, UnicodeError):
             return fallback
-        if not isinstance(value, dict) or value.get("schema_version") != _SCHEMA_VERSION:
+        if (
+            not isinstance(value, dict)
+            or value.get("schema_version") != _SCHEMA_VERSION
+            or value.get("profile_id") != self._profile_id
+        ):
             return fallback
         for key, default in fallback.items():
             value.setdefault(key, default)
@@ -162,13 +174,15 @@ class MiniserverAuthCoordinator:
                 retry_at = self._retry_not_before()
                 if not force_probe and (retry_at is None or now < retry_at):
                     self._state["suppressed_attempts"] = int(self._state["suppressed_attempts"]) + 1
-                    self._record(
-                        owner=owner,
-                        phase=phase,
-                        outcome="attempt_suppressed",
-                        provenance=provenance,
-                    )
-                    self._save()
+                    if time.monotonic() - self._last_suppression_persisted >= 60:
+                        self._record(
+                            owner=owner,
+                            phase=phase,
+                            outcome="attempt_suppressed",
+                            provenance=provenance,
+                        )
+                        self._save()
+                        self._last_suppression_persisted = time.monotonic()
                     raise MiniserverAuthenticationSuppressed(
                         "Miniserver authentication is temporarily suppressed"
                     )
