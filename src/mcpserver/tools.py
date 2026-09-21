@@ -17,7 +17,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from math import ceil, floor, isfinite
 from typing import Annotated, Any, Final, Literal, cast
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.fastmcp import FastMCP
@@ -4190,13 +4190,21 @@ def register_loxberry_operate_tool(server: FastMCP, runtime: LoxBerryOperateRunt
         control_uuid: str | None = None,
         state_uuid: str | None = None,
     ) -> None:
+        def source_identifier(value: str | None) -> str:
+            if value is None:
+                return "none"
+            try:
+                return str(UUID(value))
+            except ValueError:
+                return "invalid"
+
         _LOGGER.warning(
             "event=loxberry_operation tool=%s outcome=%s control_uuid=%s state_uuid=%s "
             "family=%s client=%s identity=%s",
             tool,
             outcome,
-            control_uuid or "none",
-            state_uuid or "none",
+            source_identifier(control_uuid),
+            source_identifier(state_uuid),
             _audit_identity(access.family_id) if access is not None else "unknown",
             _audit_identity(str(access.client_id)) if access is not None else "unknown",
             _audit_identity(access.identity_id) if access is not None else "unknown",
@@ -4298,6 +4306,8 @@ def register_loxberry_operate_tool(server: FastMCP, runtime: LoxBerryOperateRunt
         access: StoredAccessToken | None = None
         try:
             access = _access()
+            control_uuid = str(UUID(control_uuid))
+            state_uuid = str(UUID(state_uuid))
             if add:
                 changed, details = await runtime.add_event_history_source(
                     access, control_uuid, state_uuid

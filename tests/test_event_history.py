@@ -206,6 +206,20 @@ async def test_monitor_records_updates_following_the_initial_baseline_in_one_bat
         async def _credentials(self) -> tuple[str, str]:
             return "service", "password"
 
+    attempts: list[tuple[str, str, bool]] = []
+
+    class Coordinator:
+        async def attempt(
+            self,
+            operation: object,
+            *,
+            owner: str,
+            phase: str,
+            allow_cooldown_probe: bool = True,
+        ) -> object:
+            attempts.append((owner, phase, allow_cooldown_probe))
+            return await operation()  # type: ignore[operator]
+
     monkeypatch.setattr("mcpserver.loxone.client.LoxoneClient", lambda *_args, **_kwargs: Client())
     monitor = EventHistoryMonitor(
         PluginConfig(
@@ -215,6 +229,7 @@ async def test_monitor_records_updates_following_the_initial_baseline_in_one_bat
         ),
         Store(),  # type: ignore[arg-type]
         Credentials(),
+        Coordinator(),  # type: ignore[arg-type]
     )
     task = asyncio.create_task(monitor._run())
 
@@ -223,3 +238,10 @@ async def test_monitor_records_updates_following_the_initial_baseline_in_one_bat
     with pytest.raises(asyncio.CancelledError):
         await task
     assert recorded == [(0.0, 1.0)]
+    assert await monitor.validate_source(*source) == ("Control", "Switch", "State")
+    assert attempts == [
+        ("runtime_event_stream", "token_acquisition", True),
+        ("runtime_event_stream", "session_establishment", True),
+        ("local_admin", "token_acquisition", False),
+        ("local_admin", "session_establishment", False),
+    ]

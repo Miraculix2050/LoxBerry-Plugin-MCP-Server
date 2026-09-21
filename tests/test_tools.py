@@ -1018,13 +1018,49 @@ async def test_event_history_source_timeout_returns_an_uncertain_envelope(
     caplog.set_level(logging.WARNING, logger="mcpserver.tools")
 
     result = await server._tool_manager.call_tool(
-        "loxberry_add_event_history_source", {"control_uuid": "control", "state_uuid": "state"}
+        "loxberry_add_event_history_source",
+        {
+            "control_uuid": "00000000-0000-0000-0000-000000000001",
+            "state_uuid": "00000000-0000-0000-0000-000000000002",
+        },
     )
 
     assert result.ok is False
     assert result.data.error == "temporarily_unavailable"  # type: ignore[union-attr]
     assert result.data.message == "Source change timed out; outcome is unknown"  # type: ignore[union-attr]
-    assert "control_uuid=control state_uuid=state" in caplog.text
+    assert (
+        "control_uuid=00000000-0000-0000-0000-000000000001 "
+        "state_uuid=00000000-0000-0000-0000-000000000002"
+    ) in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_event_history_source_audit_rejects_and_sanitizes_invalid_uuids(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class Runtime:
+        async def remove_event_history_source(self, *_args: object) -> bool:
+            raise AssertionError("invalid UUIDs must be rejected before runtime access")
+
+    server = FastMCP("event-history-source-uuid-audit")
+    register_loxberry_operate_tool(server, Runtime())  # type: ignore[arg-type]
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: _loxberry_access(READ_SCOPE, HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE),
+    )
+    caplog.set_level(logging.WARNING, logger="mcpserver.tools")
+    malicious_uuid = "invalid\nforged=value"
+
+    result = await server._tool_manager.call_tool(
+        "loxberry_remove_event_history_source",
+        {"control_uuid": malicious_uuid, "state_uuid": "also-invalid"},
+    )
+
+    assert result.ok is False
+    assert result.data.error == "invalid_input"  # type: ignore[union-attr]
+    assert malicious_uuid not in caplog.text
+    assert "control_uuid=invalid state_uuid=invalid" in caplog.text
 
 
 @pytest.mark.asyncio

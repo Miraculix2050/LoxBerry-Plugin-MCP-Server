@@ -13,12 +13,15 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, Protocol
 from uuid import NAMESPACE_URL, uuid5
 
 if TYPE_CHECKING:
     from mcpserver.config import PluginConfig
+    from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
+    from mcpserver.loxone.client import LoxoneClient, LoxoneToken, LoxoneWebSocketSession
     from mcpserver.loxone.models import Control
 
 
@@ -36,6 +39,14 @@ class EventHistoryUnavailable(RuntimeError):
 
 class _LoxBerryCredentials(Protocol):
     async def _credentials(self) -> tuple[str, str]: ...
+
+
+async def _acquire_token(client: LoxoneClient, username: str, password: str) -> LoxoneToken:
+    return await client.acquire_token(username, password)
+
+
+async def _open_session(client: LoxoneClient, token: LoxoneToken) -> LoxoneWebSocketSession:
+    return await client.open_session(token)
 
 
 @dataclass(frozen=True, slots=True)
@@ -405,11 +416,16 @@ class EventHistoryMonitor:
     """Use the LoxBerry-owned identity to record only explicitly selected states."""
 
     def __init__(
-        self, config: PluginConfig, store: EventHistoryStore, credentials: _LoxBerryCredentials
+        self,
+        config: PluginConfig,
+        store: EventHistoryStore,
+        credentials: _LoxBerryCredentials,
+        auth_coordinator: MiniserverAuthCoordinator | None = None,
     ) -> None:
         self.config = config
         self.store = store
         self.credentials = credentials
+        self.auth_coordinator = auth_coordinator
         self._task: asyncio.Task[None] | None = None
         self.status = "disabled" if not config.event_history_enabled else "unknown"
         self.capture_started_at: float | None = None
@@ -449,8 +465,22 @@ class EventHistoryMonitor:
                     ),
                     timeout_seconds=self.config.connection_timeout,
                 )
-                token = await client.acquire_token(username, password)
-                session = await client.open_session(token)
+                if self.auth_coordinator is None:
+                    token = await client.acquire_token(username, password)
+                    session = await client.open_session(token)
+                else:
+                    acquired_token = await self.auth_coordinator.attempt(
+                        partial(_acquire_token, client, username, password),
+                        owner="runtime_event_stream",
+                        phase="token_acquisition",
+                    )
+                    token = acquired_token
+                    opened_session = await self.auth_coordinator.attempt(
+                        partial(_open_session, client, acquired_token),
+                        owner="runtime_event_stream",
+                        phase="session_establishment",
+                    )
+                    session = opened_session
                 structure = await session.load_structure()
                 visible = {
                     (control.uuid, state_uuid)
@@ -563,8 +593,24 @@ class EventHistoryMonitor:
                 ),
                 timeout_seconds=self.config.connection_timeout,
             )
-            token = await client.acquire_token(username, password)
-            session = await client.open_session(token)
+            if self.auth_coordinator is None:
+                token = await client.acquire_token(username, password)
+                session = await client.open_session(token)
+            else:
+                acquired_token = await self.auth_coordinator.attempt(
+                    partial(_acquire_token, client, username, password),
+                    owner="local_admin",
+                    phase="token_acquisition",
+                    allow_cooldown_probe=False,
+                )
+                token = acquired_token
+                opened_session = await self.auth_coordinator.attempt(
+                    partial(_open_session, client, acquired_token),
+                    owner="local_admin",
+                    phase="session_establishment",
+                    allow_cooldown_probe=False,
+                )
+                session = opened_session
             structure = await session.load_structure()
             control = next(
                 (item for item in _controls(structure.controls) if item.uuid == control_uuid), None

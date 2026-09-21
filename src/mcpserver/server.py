@@ -459,6 +459,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
                         maximum_mib=settings.plugin_config.event_history_maximum_mib,
                     ),
                     emergency_stop,
+                    auth_coordinator,
                 )
     if settings.plugin_config is not None and settings.plugin_config.mqtt_enabled:
         home = Path(os.getenv("LBHOMEDIR", "/opt/loxberry"))
@@ -489,6 +490,8 @@ def create_server(settings: ServerSettings) -> FastMCP:
         )
         if emergency_stop is not None:
             emergency_stop.auth_coordinator = auth_coordinator
+        if event_history is not None:
+            event_history.auth_coordinator = auth_coordinator
 
         def loxberry_binding_allowed(client_id: str, identity_id: str, miniserver_id: str) -> bool:
             if settings.phase0_auth is None or settings.phase0_auth.config_path is None:
