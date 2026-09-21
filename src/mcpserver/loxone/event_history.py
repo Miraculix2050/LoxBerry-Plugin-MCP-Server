@@ -482,6 +482,14 @@ class EventHistoryMonitor:
                             ) from exc
                         if not coverage_active:
                             baselines[event.uuid] = value
+                            if len(baselines) == len(active):
+                                started_at = observed_at
+                                await asyncio.to_thread(
+                                    self.store.begin_coverage, active, started_at=started_at
+                                )
+                                self.capture_started_at = started_at
+                                self.status = "recording"
+                                coverage_active = True
                             continue
                         previous = baselines[event.uuid]
                         if previous == value:
@@ -500,14 +508,6 @@ class EventHistoryMonitor:
                                 "configured state does not produce a supported scalar value"
                             ) from exc
                         baselines[event.uuid] = value
-                    if not coverage_active and len(baselines) == len(active):
-                        started_at = observed_at
-                        await asyncio.to_thread(
-                            self.store.begin_coverage, active, started_at=started_at
-                        )
-                        self.capture_started_at = started_at
-                        self.status = "recording"
-                        coverage_active = True
             except asyncio.CancelledError:
                 raise
             except Exception as exc:

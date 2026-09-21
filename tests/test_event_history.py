@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+import asyncio
+import threading
 import time
 from pathlib import Path
 
 import pytest
 
-from mcpserver.loxone.event_history import EventHistoryStore, EventHistoryUnavailable
+from mcpserver.config import PluginConfig
+from mcpserver.loxone.event_history import (
+    EventHistoryMonitor,
+    EventHistoryStore,
+    EventHistoryUnavailable,
+)
+from mcpserver.loxone.events import StateEvent
+from mcpserver.loxone.models import Control, LoxoneIdentity, LoxoneStructure
 
 
 def test_store_records_typed_transitions_and_pages_them(tmp_path):
@@ -128,3 +137,89 @@ def test_store_translates_parent_creation_failures_to_a_store_error(tmp_path, mo
 
     with pytest.raises(EventHistoryUnavailable, match="history is unavailable"):
         store.initialize()
+
+
+@pytest.mark.asyncio
+async def test_monitor_records_updates_following_the_initial_baseline_in_one_batch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = ("control", "state")
+    recorded: list[tuple[object, object]] = []
+    transition_recorded = threading.Event()
+
+    class Store:
+        def initialize(self) -> None:
+            pass
+
+        def begin_coverage(self, _sources: object, *, started_at: float) -> None:
+            assert started_at > 0
+
+        def record_transition(
+            self,
+            _control_uuid: str,
+            _state_uuid: str,
+            *,
+            old_value: object,
+            new_value: object,
+            **_: object,
+        ) -> None:
+            recorded.append((old_value, new_value))
+            transition_recorded.set()
+
+        def end_coverage(self, _sources: object, *, ended_at: float, outcome: str) -> None:
+            assert ended_at > 0
+            assert outcome == "disconnected"
+
+    class Token:
+        def destroy(self) -> None:
+            pass
+
+    class Session:
+        async def load_structure(self) -> LoxoneStructure:
+            return LoxoneStructure(
+                identity=LoxoneIdentity("service", "serial"),
+                last_modified="",
+                rooms=(),
+                categories=(),
+                controls=(
+                    Control(
+                        *source[:1], "Control", "Switch", None, None, None, (("State", source[1]),)
+                    ),
+                ),
+            )
+
+        async def state_events(self):
+            yield (StateEvent(uuid="state", value=0.0), StateEvent(uuid="state", value=1.0))
+            await asyncio.Future()
+
+        async def close(self) -> None:
+            pass
+
+    class Client:
+        async def acquire_token(self, _username: str, _password: str) -> Token:
+            return Token()
+
+        async def open_session(self, _token: Token) -> Session:
+            return Session()
+
+    class Credentials:
+        async def _credentials(self) -> tuple[str, str]:
+            return "service", "password"
+
+    monkeypatch.setattr("mcpserver.loxone.client.LoxoneClient", lambda *_args, **_kwargs: Client())
+    monitor = EventHistoryMonitor(
+        PluginConfig(
+            loxone_endpoint="https://miniserver.example",
+            event_history_enabled=True,
+            event_history_sources=(source,),
+        ),
+        Store(),  # type: ignore[arg-type]
+        Credentials(),
+    )
+    task = asyncio.create_task(monitor._run())
+
+    assert await asyncio.to_thread(transition_recorded.wait, 1)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert recorded == [(0.0, 1.0)]
