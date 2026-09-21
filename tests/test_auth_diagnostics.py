@@ -86,6 +86,26 @@ async def test_failed_cooldown_probe_restarts_breaker_interval(tmp_path: Path) -
 
 
 @pytest.mark.asyncio
+async def test_successful_attempt_survives_diagnostics_persistence_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    coordinator = MiniserverAuthCoordinator((tmp_path / "auth-diagnostics.json").resolve())
+
+    def cannot_save() -> None:
+        raise OSError("diagnostics unavailable")
+
+    monkeypatch.setattr(coordinator, "_save", cannot_save)
+
+    async def succeeds() -> str:
+        return "session"
+
+    assert (
+        await coordinator.attempt(succeeds, owner="tool_request", phase="session_establishment")
+        == "session"
+    )
+
+
+@pytest.mark.asyncio
 async def test_only_own_tool_events_are_returned(tmp_path: Path) -> None:
     coordinator = MiniserverAuthCoordinator((tmp_path / "auth-diagnostics.json").resolve())
 

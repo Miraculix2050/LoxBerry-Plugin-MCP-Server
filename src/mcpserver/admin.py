@@ -610,9 +610,32 @@ def _save_mcp(payload: object) -> dict[str, Any]:
 
 
 def _emergency_stop_options() -> dict[str, Any]:
+    from mcpserver.auth.store import AtomicJsonAuthStore
     from mcpserver.emergency_stop import virtual_status_options
+    from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
+    from mcpserver.loxone.client import MiniserverEndpoint
 
-    result = asyncio.run(virtual_status_options(_config_store().load()))
+    config = _config_store().load()
+    store_path = os.getenv("MCPSERVER_AUTH_STORE", "").strip()
+    coordinator = None
+    if (
+        Path(store_path).is_absolute()
+        and Path(store_path).suffix == ".json"
+        and config.loxone_endpoint
+    ):
+        auth_store = AtomicJsonAuthStore(Path(store_path))
+        endpoint = MiniserverEndpoint.parse(config.loxone_endpoint)
+        coordinator = MiniserverAuthCoordinator(
+            Path(store_path).parent / "miniserver-auth-diagnostics.json",
+            initial_probe_seconds=config.miniserver_auth_probe_initial_seconds,
+            maximum_probe_seconds=config.miniserver_auth_probe_max_seconds,
+            profile_id=auth_store.pseudonym("miniserver-auth-profile-v1", endpoint.origin),
+        )
+    result = asyncio.run(
+        virtual_status_options(config, coordinator)
+        if coordinator is not None
+        else virtual_status_options(config)
+    )
     response = {"status": result.status, "options": list(result.options)}
     if result.failure_code is not None:
         response["discovery_failure_code"] = result.failure_code

@@ -8,6 +8,7 @@ import os
 import time
 from collections import deque
 from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, TypeVar
@@ -95,6 +96,11 @@ class MiniserverAuthCoordinator:
             os.fsync(handle.fileno())
         os.replace(temporary, self._path)
         os.chmod(self._path, 0o600)
+
+    def _save_success_best_effort(self) -> None:
+        """Do not turn a completed Miniserver operation into a diagnostics failure."""
+        with suppress(OSError):
+            self._save()
 
     def _delay(self) -> int:
         return int(min(self._initial * (2 ** int(self._state["backoff_level"])), self._maximum))
@@ -208,15 +214,18 @@ class MiniserverAuthCoordinator:
         phase: str,
         provenance: AttemptProvenance | None = None,
         force_probe: bool = False,
+        allow_cooldown_probe: bool = True,
     ) -> _T:
         """Run one authorized authentication attempt, or fail before networking."""
-        if owner not in {"runtime_event_stream", "tool_request"}:
+        if owner not in {"runtime_event_stream", "tool_request", "local_admin"}:
             raise ValueError("invalid connection owner")
         async with self._lock:
             now = int(time.time())
             if self._state["breaker_state"] == "open_source_ip_blocked":
                 retry_at = self._retry_not_before()
-                if not force_probe and (retry_at is None or now < retry_at):
+                if not force_probe and (
+                    not allow_cooldown_probe or retry_at is None or now < retry_at
+                ):
                     self._state["suppressed_attempts"] = int(self._state["suppressed_attempts"]) + 1
                     if time.monotonic() - self._last_suppression_persisted >= 60:
                         self._record(
@@ -287,5 +296,5 @@ class MiniserverAuthCoordinator:
                     provenance=provenance,
                     transition=transition,
                 )
-                self._save()
+                self._save_success_best_effort()
                 return result
