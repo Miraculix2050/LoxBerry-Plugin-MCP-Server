@@ -26,6 +26,7 @@ EXPECTED_TOOLS = {
     "loxberry_get_system_status",
     "loxberry_list_service_events",
     "loxone_analyze_project",
+    "loxone_analyze_observability",
     "loxone_describe_control",
     "loxone_describe_project_object",
     "loxone_find_controls",

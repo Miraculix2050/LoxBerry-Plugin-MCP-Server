@@ -37,6 +37,12 @@ establish a mapping. Findings are review facts, not quality ratings. Fixed
 limitation codes show when normalized DPTs, semantic domains, reviewed usage, or runtime mappings
 are unavailable. The tool does not claim DPT compatibility, ETS coverage, bus activity, or physical
 device use; use a returned project-node ID with describe or trace to inspect its evidence.
+`loxone_analyze_observability` separately assesses a bounded, explicitly requested
+time range for a project target. It combines exact UUID-mapped structural reachability,
+current-state availability, advertised native statistic series, and local event-history
+coverage. Reachability is not proof of a historical cause; configured statistic series are
+reported as not time-checked, and absent or partial local coverage never proves that a state
+did not occur.
 `source_diagnostics` reports bounded source gaps such as parser anomalies, invalid KNX fields
 and unmodeled attributes. They are not configuration verdicts and never expose unknown source
 values: only fixed codes, field names, value shapes and project-node references are returned.

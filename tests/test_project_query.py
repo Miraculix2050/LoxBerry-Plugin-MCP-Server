@@ -61,6 +61,27 @@ def test_find_status_and_describe_are_deterministic_and_bounded():
     )
 
 
+def test_observable_controls_keep_only_exact_runtime_mappings():
+    project = query()
+
+    result = project.observable_controls(
+        project.resolve("p:4", "project_node_id"),
+        direction="both",
+        max_depth=6,
+        max_nodes=100,
+    )
+
+    assert result["target"]["project_node_id"] == "p:4"
+    assert result["controls"] == [
+        {
+            "control_uuid": "b" * 32,
+            "project_node_ids": ["p:3"],
+            "directions": ["upstream", "downstream"],
+        }
+    ]
+    assert result["truncated"] is False
+
+
 def test_source_diagnostics_are_available_without_unknown_values():
     parsed = parse_project(
         b'<P><C Type="EIBsensor" U="sensor" EibAddr="invalid" Extra="secret"/></P>'

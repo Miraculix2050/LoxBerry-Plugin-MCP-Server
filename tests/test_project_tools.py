@@ -6,13 +6,30 @@ import pytest
 from mcp.server.fastmcp import FastMCP
 
 import mcpserver.tools as tools_module
+from mcpserver.auth.provider import HISTORY_SCOPE, READ_SCOPE
+from mcpserver.loxone.event_history import EventHistoryCoverage
+from mcpserver.loxone.models import (
+    Control,
+    Freshness,
+    LoxoneIdentity,
+    LoxoneStructure,
+    StateRecord,
+    StatisticSeries,
+)
 from mcpserver.loxone.project.models import ProjectError
 from mcpserver.loxone.project.query import ProjectQueryError
-from mcpserver.tools import PROJECT_RESPONSE_MAX_BYTES, register_project_tools
+from mcpserver.tools import (
+    PROJECT_RESPONSE_MAX_BYTES,
+    register_observability_tools,
+    register_project_tools,
+)
 
 
 class Query:
-    view = SimpleNamespace(mapping=SimpleNamespace(structure_fingerprint="b" * 64))
+    view = SimpleNamespace(
+        mapping=SimpleNamespace(structure_fingerprint="b" * 64),
+        snapshot=SimpleNamespace(fingerprint="a" * 64, model_version=1),
+    )
 
     def status(self):
         return {
@@ -70,6 +87,22 @@ class Query:
             "unresolved_truncated": False,
         }
 
+    def observable_controls(self, _node, **_kwargs):
+        return {
+            "target": self.find()[0],
+            "controls": [
+                {
+                    "control_uuid": "control",
+                    "project_node_ids": ["p:1"],
+                    "directions": ["upstream"],
+                }
+            ],
+            "truncated": False,
+            "truncation_reasons": [],
+            "unresolved_relationships": 0,
+            "unresolved_truncated": False,
+        }
+
 
 @pytest.mark.asyncio
 async def test_project_tools_publish_bounded_read_only_contracts(monkeypatch):
@@ -113,6 +146,89 @@ async def test_project_tools_keep_structured_mapping_and_cursor_errors(monkeypat
     assert describe.ok is False
     assert describe.data.error == "ambiguous_mapping"  # type: ignore[union-attr]
     assert invalid_cursor.data.error == "invalid_input"  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+async def test_observability_reports_current_sources_and_explicit_history_gaps(monkeypatch):
+    control = Control(
+        "control",
+        "Temperature",
+        "Switch",
+        None,
+        None,
+        None,
+        (("value", "state-complete"), ("window", "state-missing")),
+        statistic_series=(
+            StatisticSeries("series", "statistic_v2", "group", "output", "Trend", "°C"),
+        ),
+    )
+    structure = LoxoneStructure(LoxoneIdentity("user", "serial"), "modified", (), (), (control,))
+    snapshot = SimpleNamespace(connected=True, structure=structure, structure_generation=1)
+
+    async def project_query(_runtime):
+        return Query(), snapshot
+
+    class Runtime:
+        def state(self, _snapshot, state_uuid):
+            return StateRecord(
+                state_uuid,
+                21.5 if state_uuid == "state-complete" else None,
+                Freshness.CURRENT if state_uuid == "state-complete" else Freshness.UNKNOWN,
+                100.0 if state_uuid == "state-complete" else None,
+            )
+
+    class EventHistory:
+        async def coverage(self, _access, _sources, **_kwargs):
+            return True, {
+                ("control", "state-complete"): EventHistoryCoverage(1.0, 1.0, "complete", True)
+            }
+
+    monkeypatch.setattr(tools_module, "_project_query", project_query)
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: SimpleNamespace(scopes=frozenset((READ_SCOPE, HISTORY_SCOPE)), family_id="family"),
+    )
+    server = FastMCP("observability")
+    register_observability_tools(server, Runtime(), EventHistory())  # type: ignore[arg-type]
+
+    result = await server._tool_manager.get_tool("loxone_analyze_observability").fn(  # type: ignore[union-attr]
+        "control",
+        "runtime_control_uuid",
+        "upstream",
+        "2026-09-01T00:00:00Z",
+        "2026-09-02T00:00:00Z",
+    )
+
+    assert result.ok is True
+    data = result.data
+    assert data.controls[0].current_states[0].available is True
+    assert data.controls[0].native_statistics[0].temporal_coverage == "not_checked"
+    assert data.controls[0].local_event_history[0].status == "complete"
+    assert data.controls[0].local_event_history[1].status == "not_configured"
+    assert data.controls[0].historical_status == "complete"
+
+
+@pytest.mark.asyncio
+async def test_observability_requires_history_scope(monkeypatch):
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: SimpleNamespace(scopes=frozenset((READ_SCOPE,)), family_id="family"),
+    )
+    server = FastMCP("observability-scope")
+    register_observability_tools(server, None, None)
+
+    result = await server._tool_manager.get_tool("loxone_analyze_observability").fn(  # type: ignore[union-attr]
+        "control",
+        "runtime_control_uuid",
+        "upstream",
+        "2026-09-01T00:00:00Z",
+        "2026-09-02T00:00:00Z",
+    )
+
+    assert result.ok is False
+    assert result.data.error == "permission_denied"
 
 
 @pytest.mark.asyncio

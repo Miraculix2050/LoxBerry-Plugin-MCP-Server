@@ -57,6 +57,29 @@ def test_store_reports_not_recorded_and_removes_data(tmp_path):
     )
 
 
+def test_store_reports_batched_coverage_without_exposing_event_values(tmp_path):
+    store = EventHistoryStore(
+        (tmp_path / "event-history.sqlite3").resolve(), retention_days=90, maximum_mib=16
+    )
+    complete = ("control-complete", "state-complete")
+    partial = ("control-partial", "state-partial")
+    missing = ("control-missing", "state-missing")
+    now = time.time()
+    store.initialize()
+    store.begin_coverage((complete,), started_at=now - 30)
+    store.begin_coverage((partial,), started_at=now - 5)
+    store.record_transition(*complete, observed_at=now - 10, old_value=False, new_value=True)
+
+    coverage = store.coverage_many((complete, partial, missing), start=now - 20, end=now)
+
+    assert coverage[complete].coverage == "complete"
+    assert coverage[complete].has_events is True
+    assert coverage[partial].coverage == "partial_coverage"
+    assert coverage[partial].has_events is False
+    assert coverage[missing].coverage == "not_recorded"
+    assert coverage[missing].capture_started_at is None
+
+
 def test_store_closes_orphaned_coverage_when_a_new_process_initializes(tmp_path, monkeypatch):
     path = (tmp_path / "event-history.sqlite3").resolve()
     source = ("00000000-0000-0000-0000000000000001", "00000000-0000-0000-0000000000000002")
