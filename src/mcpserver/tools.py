@@ -1329,13 +1329,39 @@ class LoxBerryReadRuntime:
         if LOXBERRY_READ_SCOPE not in access.scopes:
             raise PermissionError("LoxBerry diagnostics are not authorized")
         config = self._config_store.load()
-        binding = self._auth_store.pseudonym(
-            "loxberry-read-binding-v1",
-            access.client_id,
-            access.identity_id,
-            access.miniserver_id,
-        )
-        if not config.loxberry_read_enabled or binding not in config.loxberry_read_bindings:
+        snapshot = getattr(self._auth_store, "snapshot", None)
+        family = snapshot().get("families", {}).get(access.family_id, {}) if snapshot else {}
+        if isinstance(family, dict) and family.get("client_kind") == "tool_explorer":
+            from mcpserver.explorer_bindings import active_explorer_binding
+
+            allowed = (
+                active_explorer_binding(
+                    config,
+                    self._auth_store,
+                    LOXBERRY_READ_SCOPE,
+                    access.identity_id,
+                    access.miniserver_id,
+                    str(family.get("explorer_origin", "")),
+                )
+                is not None
+            )
+            if not allowed:
+                legacy_binding = self._auth_store.pseudonym(
+                    "loxberry-read-binding-v1",
+                    access.client_id,
+                    access.identity_id,
+                    access.miniserver_id,
+                )
+                allowed = legacy_binding in config.loxberry_read_bindings
+        else:
+            binding = self._auth_store.pseudonym(
+                "loxberry-read-binding-v1",
+                access.client_id,
+                access.identity_id,
+                access.miniserver_id,
+            )
+            allowed = binding in config.loxberry_read_bindings
+        if not config.loxberry_read_enabled or not allowed:
             raise PermissionError("LoxBerry diagnostics are not authorized")
         now = time.monotonic()
         entries = [item for item in self._requests.get(access.family_id, []) if item > now - 60]
@@ -1428,17 +1454,39 @@ class LoxBerryOperateRuntime:
         self._requests[access.family_id] = entries
         if LOXBERRY_OPERATE_SCOPE not in access.scopes or HISTORY_SCOPE not in access.scopes:
             raise PermissionError("LoxBerry cache operation is not authorized")
-        binding = self._auth_store.pseudonym(
-            "loxberry-operate-binding-v1",
-            access.client_id,
-            access.identity_id,
-            access.miniserver_id,
-        )
-        if (
-            not config.loxone_history_enabled
-            or not config.loxberry_operate_enabled
-            or binding not in config.loxberry_operate_bindings
-        ):
+        snapshot = getattr(self._auth_store, "snapshot", None)
+        family = snapshot().get("families", {}).get(access.family_id, {}) if snapshot else {}
+        if isinstance(family, dict) and family.get("client_kind") == "tool_explorer":
+            from mcpserver.explorer_bindings import active_explorer_binding
+
+            allowed = (
+                active_explorer_binding(
+                    config,
+                    self._auth_store,
+                    LOXBERRY_OPERATE_SCOPE,
+                    access.identity_id,
+                    access.miniserver_id,
+                    str(family.get("explorer_origin", "")),
+                )
+                is not None
+            )
+            if not allowed:
+                legacy_binding = self._auth_store.pseudonym(
+                    "loxberry-operate-binding-v1",
+                    access.client_id,
+                    access.identity_id,
+                    access.miniserver_id,
+                )
+                allowed = legacy_binding in config.loxberry_operate_bindings
+        else:
+            binding = self._auth_store.pseudonym(
+                "loxberry-operate-binding-v1",
+                access.client_id,
+                access.identity_id,
+                access.miniserver_id,
+            )
+            allowed = binding in config.loxberry_operate_bindings
+        if not config.loxone_history_enabled or not config.loxberry_operate_enabled or not allowed:
             raise PermissionError("LoxBerry cache operation is not authorized")
 
     async def clear_statistics_cache(self, access: StoredAccessToken) -> Any:

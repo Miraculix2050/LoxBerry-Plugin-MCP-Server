@@ -141,12 +141,16 @@ class Phase0OAuthProvider(
         resource: str,
         clock: Callable[[], float] = time.time,
         on_family_revoked: Callable[[str], None] | None = None,
+        on_family_started: Callable[[dict[str, Any]], None] | None = None,
+        on_family_expired: Callable[[dict[str, Any]], None] | None = None,
         control_enabled: bool = False,
         loxberry_read_enabled: bool = False,
         loxberry_read_allowed: Callable[[str, str, str], bool] | None = None,
+        explorer_loxberry_read_allowed: Callable[[str, str, str], bool] | None = None,
         history_enabled: bool = False,
         loxberry_operate_enabled: bool = False,
         loxberry_operate_allowed: Callable[[str, str, str], bool] | None = None,
+        explorer_loxberry_operate_allowed: Callable[[str, str, str], bool] | None = None,
         explorer_origins: tuple[str, ...] = (),
     ) -> None:
         self.store = store
@@ -154,12 +158,16 @@ class Phase0OAuthProvider(
         self.resource = resource
         self._clock = clock
         self._on_family_revoked = on_family_revoked
+        self._on_family_started = on_family_started
+        self._on_family_expired = on_family_expired
         self.control_enabled = control_enabled
         self.loxberry_read_enabled = loxberry_read_enabled
         self._loxberry_read_allowed = loxberry_read_allowed
+        self._explorer_loxberry_read_allowed = explorer_loxberry_read_allowed
         self.history_enabled = history_enabled
         self.loxberry_operate_enabled = loxberry_operate_enabled
         self._loxberry_operate_allowed = loxberry_operate_allowed
+        self._explorer_loxberry_operate_allowed = explorer_loxberry_operate_allowed
         canonical_origin = issuer.rsplit("/plugins/mcpserver/oauth", 1)[0]
         self.explorer_origins = frozenset((canonical_origin, *explorer_origins))
         self.store.mutate(self._garbage_collect)
@@ -169,9 +177,18 @@ class Phase0OAuthProvider(
 
     def loxberry_read_allowed(self, client_id: str, identity_id: str, miniserver_id: str) -> bool:
         """Evaluate the locally administered Phase 3 binding live."""
+        client = self.store.snapshot().get("clients", {}).get(client_id, {})
+        if not self.loxberry_read_enabled:
+            return False
+        explorer_origin = self._explorer_origin(client)
+        if (
+            explorer_origin is not None
+            and self._explorer_loxberry_read_allowed is not None
+            and self._explorer_loxberry_read_allowed(explorer_origin, identity_id, miniserver_id)
+        ):
+            return True
         return bool(
-            self.loxberry_read_enabled
-            and self._loxberry_read_allowed is not None
+            self._loxberry_read_allowed
             and self._loxberry_read_allowed(client_id, identity_id, miniserver_id)
         )
 
@@ -179,9 +196,18 @@ class Phase0OAuthProvider(
         self, client_id: str, identity_id: str, miniserver_id: str
     ) -> bool:
         """Evaluate the locally administered Phase 4 binding live."""
+        client = self.store.snapshot().get("clients", {}).get(client_id, {})
+        if not self.loxberry_operate_enabled:
+            return False
+        explorer_origin = self._explorer_origin(client)
+        if (
+            explorer_origin is not None
+            and self._explorer_loxberry_operate_allowed is not None
+            and self._explorer_loxberry_operate_allowed(explorer_origin, identity_id, miniserver_id)
+        ):
+            return True
         return bool(
-            self.loxberry_operate_enabled
-            and self._loxberry_operate_allowed is not None
+            self._loxberry_operate_allowed
             and self._loxberry_operate_allowed(client_id, identity_id, miniserver_id)
         )
 
@@ -246,6 +272,9 @@ class Phase0OAuthProvider(
             client = document["clients"].get(family.get("client_id"), {})
             if family.get("client_kind") == "tool_explorer" or self._is_explorer_client(client):
                 family["client_kind"] = "tool_explorer"
+                explorer_origin = self._explorer_origin(client)
+                if explorer_origin is not None:
+                    family["explorer_origin"] = explorer_origin
                 family["expires_at"] = min(
                     int(family.get("expires_at", 0)), now + EXPLORER_REFRESH_FAMILY_TTL
                 )
@@ -255,6 +284,9 @@ class Phase0OAuthProvider(
             if record.get("expires_at", 0) <= now
         }
         for family_id in expired_families:
+            family = document["families"].get(family_id)
+            if isinstance(family, dict) and self._on_family_expired is not None:
+                self._on_family_expired(dict(family))
             document["families"].pop(family_id, None)
             if self._on_family_revoked is not None:
                 self._on_family_revoked(family_id)
@@ -301,6 +333,15 @@ class Phase0OAuthProvider(
             and not redirect.fragment
             and origin in self.explorer_origins
         )
+
+    def _explorer_origin(self, client: dict[str, Any]) -> str | None:
+        if not self._is_explorer_client(client):
+            return None
+        redirects = client.get("redirect_uris")
+        if not isinstance(redirects, list) or not isinstance(redirects[0], str):
+            return None
+        redirect = urlsplit(redirects[0])
+        return f"{redirect.scheme}://{redirect.netloc}"
 
     def is_explorer_client(self, client: OAuthClientInformationFull) -> bool:
         """Return whether a registered public client is the fixed local Explorer."""
@@ -392,6 +433,7 @@ class Phase0OAuthProvider(
                 raise TokenError("invalid_request", "Client session capacity reached")
             document["codes"][digest] = record
             is_explorer = self._is_explorer_client(client_record)
+            explorer_origin = self._explorer_origin(client_record)
             family_ttl = EXPLORER_REFRESH_FAMILY_TTL if is_explorer else REFRESH_FAMILY_TTL
             document["families"][family_id] = {
                 "client_id": client_id,
@@ -400,13 +442,26 @@ class Phase0OAuthProvider(
                 "scope": scope_text(list(validated_scopes)),
                 "resource": resource,
                 "expires_at": now + family_ttl,
+                "created_at": now,
                 "revoked": False,
                 "pending_loxberry_read": pending_loxberry_read,
                 "pending_loxberry_operate": pending_loxberry_operate,
                 **({"client_kind": "tool_explorer"} if is_explorer else {}),
+                **({"explorer_origin": explorer_origin} if explorer_origin is not None else {}),
             }
 
         self.store.mutate(insert)
+        if self._on_family_started is not None:
+            family = self.store.snapshot()["families"].get(family_id)
+            if isinstance(family, dict):
+                try:
+                    self._on_family_started(family)
+                except Exception as exc:
+                    _LOGGER.warning(
+                        "component=explorer_binding severity=WARNING "
+                        "outcome=reactivation_failed error_type=%s",
+                        type(exc).__name__,
+                    )
         return raw_code
 
     @staticmethod
@@ -526,6 +581,7 @@ class Phase0OAuthProvider(
         family = document["families"].get(family_id)
         if family is not None:
             family["revoked"] = True
+            family["revoked_at"] = self.now()
         for collection in ("access_tokens", "refresh_tokens"):
             for record in document[collection].values():
                 if record.get("family_id") == family_id:

@@ -422,6 +422,7 @@ if ($action ne '') {
                 loxberry_requests_per_minute => 0 + ($q->{loxberry_requests_per_minute} // 30),
                 history_requests_per_minute => 0 + ($q->{history_requests_per_minute} // 12),
                 loxberry_operate_requests_per_minute => 0 + ($q->{loxberry_operate_requests_per_minute} // 3),
+                explorer_binding_retention_hours => 0 + ($q->{explorer_binding_retention_hours} // 72),
                 max_parallel_calls => 0 + ($q->{max_parallel_calls} // 4),
                 structure_refresh_seconds => 0 + ($q->{structure_refresh_seconds} // 300),
                 max_active_runtime_sessions => 0 + ($q->{max_active_runtime_sessions} // 16),
@@ -716,6 +717,16 @@ for my $session (@$sessions) {
     next if ref($session) ne 'HASH';
     $session->{expires_display} = format_expiry($session->{expires_at});
 }
+for my $bindings ($loxberry_bindings, $loxberry_operate_bindings) {
+    next if ref($bindings) ne 'ARRAY';
+    for my $binding (@$bindings) {
+        next if ref($binding) ne 'HASH' || ref($binding->{rows}) ne 'ARRAY';
+        for my $row (@{$binding->{rows}}) {
+            next if ref($row) ne 'HASH' || !$row->{retention_expires_at};
+            $row->{retention_expires_display} = format_expiry($row->{retention_expires_at});
+        }
+    }
+}
 my @service_logs;
 for my $suffix ('', '.1', '.2') {
     my $filename = "service.log$suffix";
@@ -778,6 +789,7 @@ $template->param(
     LOXBERRY_REQUESTS_PER_MINUTE => $config->{limits}{loxberry_requests_per_minute} // 30,
     HISTORY_REQUESTS_PER_MINUTE => $config->{limits}{history_requests_per_minute} // 12,
     LOXBERRY_OPERATE_REQUESTS_PER_MINUTE => $config->{limits}{loxberry_operate_requests_per_minute} // 3,
+    EXPLORER_BINDING_RETENTION_HOURS => $config->{limits}{explorer_binding_retention_hours} // 72,
     STATISTICS_MEMORY_MAX_MIB => $config->{cache}{statistics_memory_max_mib} // 128,
     EVENT_HISTORY_RETENTION_DAYS => $config->{event_history}{retention_days} // 90,
     EVENT_HISTORY_MAXIMUM_MIB => $config->{event_history}{maximum_mib} // 128,

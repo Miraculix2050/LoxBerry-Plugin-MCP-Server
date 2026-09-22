@@ -23,7 +23,7 @@ import idna
 
 from mcpserver.loxone.endpoint import MiniserverEndpoint
 
-SCHEMA_VERSION: Final = 9
+SCHEMA_VERSION: Final = 10
 DEFAULT_CONNECTION_TIMEOUT: Final = 10.0
 DEFAULT_REQUESTS_PER_MINUTE: Final = 60
 DEFAULT_MAX_PARALLEL_CALLS: Final = 4
@@ -31,6 +31,7 @@ DEFAULT_CONTROL_REQUESTS_PER_MINUTE: Final = 10
 DEFAULT_LOXBERRY_REQUESTS_PER_MINUTE: Final = 30
 DEFAULT_HISTORY_REQUESTS_PER_MINUTE: Final = 12
 DEFAULT_LOXBERRY_OPERATE_REQUESTS_PER_MINUTE: Final = 3
+DEFAULT_EXPLORER_BINDING_RETENTION_HOURS: Final = 72
 DEFAULT_STATISTICS_MEMORY_MAX_MIB: Final = 128
 DEFAULT_EVENT_HISTORY_RETENTION_DAYS: Final = 90
 DEFAULT_EVENT_HISTORY_MAXIMUM_MIB: Final = 128
@@ -193,6 +194,86 @@ def _bindings(value: object, *, name: str) -> tuple[str, ...]:
 
 
 @dataclass(frozen=True, slots=True)
+class ExplorerBindingApproval:
+    """Pseudonymous, reusable approval for the fixed local Tool Explorer."""
+
+    binding_id: str
+    capability: str
+    application_id: str
+    version: int
+    created_at: int
+    last_active_at: int
+    last_active_until: int
+    inactive_since: int | None = None
+
+
+def _explorer_bindings(value: object) -> tuple[ExplorerBindingApproval, ...]:
+    if not isinstance(value, list) or len(value) > 128:
+        raise ConfigError("policies.explorer_bindings must be a bounded list")
+    result: list[ExplorerBindingApproval] = []
+    seen: set[tuple[str, str]] = set()
+    for index, item in enumerate(value):
+        name = f"policies.explorer_bindings[{index}]"
+        record = _mapping(item, name=name)
+        if set(record) != {
+            "binding_id",
+            "capability",
+            "application_id",
+            "version",
+            "created_at",
+            "last_active_at",
+            "last_active_until",
+            "inactive_since",
+        }:
+            raise ConfigError(f"{name} has unsupported fields")
+        binding_id = record.get("binding_id")
+        if not isinstance(binding_id, str) or len(binding_id) != 64:
+            raise ConfigError(f"{name}.binding_id must be a lowercase SHA-256 value")
+        try:
+            int(binding_id, 16)
+        except ValueError as exc:
+            raise ConfigError(f"{name}.binding_id must be a lowercase SHA-256 value") from exc
+        if binding_id.lower() != binding_id:
+            raise ConfigError(f"{name}.binding_id must be a lowercase SHA-256 value")
+        capability = record.get("capability")
+        if capability not in {"loxberry:read", "loxberry:operate"}:
+            raise ConfigError(f"{name}.capability is unsupported")
+        if record.get("application_id") != "tool-explorer-v1" or record.get("version") != 1:
+            raise ConfigError(f"{name} application identity is unsupported")
+        timestamps: dict[str, int] = {}
+        for field in ("created_at", "last_active_at", "last_active_until"):
+            timestamps[field] = _integer(
+                record.get(field), name=f"{name}.{field}", minimum=0, maximum=2**63 - 1
+            )
+        inactive = record.get("inactive_since")
+        if inactive is not None:
+            inactive = _integer(
+                inactive, name=f"{name}.inactive_since", minimum=0, maximum=2**63 - 1
+            )
+        if timestamps["last_active_at"] < timestamps["created_at"]:
+            raise ConfigError(f"{name} timestamps are inconsistent")
+        if timestamps["last_active_until"] < timestamps["last_active_at"]:
+            raise ConfigError(f"{name} timestamps are inconsistent")
+        key = (capability, binding_id)
+        if key in seen:
+            raise ConfigError(f"{name} is duplicated")
+        seen.add(key)
+        result.append(
+            ExplorerBindingApproval(
+                binding_id=binding_id,
+                capability=capability,
+                application_id="tool-explorer-v1",
+                version=1,
+                created_at=timestamps["created_at"],
+                last_active_at=timestamps["last_active_at"],
+                last_active_until=timestamps["last_active_until"],
+                inactive_since=inactive,
+            )
+        )
+    return tuple(result)
+
+
+@dataclass(frozen=True, slots=True)
 class PluginConfig:
     """The small public Phase 1 configuration contract."""
 
@@ -210,10 +291,12 @@ class PluginConfig:
     loxberry_requests_per_minute: int = DEFAULT_LOXBERRY_REQUESTS_PER_MINUTE
     history_requests_per_minute: int = DEFAULT_HISTORY_REQUESTS_PER_MINUTE
     loxberry_operate_requests_per_minute: int = DEFAULT_LOXBERRY_OPERATE_REQUESTS_PER_MINUTE
+    explorer_binding_retention_hours: int = DEFAULT_EXPLORER_BINDING_RETENTION_HOURS
     max_parallel_calls: int = DEFAULT_MAX_PARALLEL_CALLS
     log_level: str = DEFAULT_LOG_LEVEL
     loxberry_read_bindings: tuple[str, ...] = ()
     loxberry_operate_bindings: tuple[str, ...] = ()
+    explorer_bindings: tuple[ExplorerBindingApproval, ...] = ()
     statistics_memory_max_mib: int = DEFAULT_STATISTICS_MEMORY_MAX_MIB
     event_history_enabled: bool = False
     event_history_retention_days: int = DEFAULT_EVENT_HISTORY_RETENTION_DAYS
@@ -245,7 +328,7 @@ class PluginConfig:
     @classmethod
     def from_document(cls, document: object) -> PluginConfig:
         root = _mapping(document, name="configuration")
-        if root.get("schema_version") not in {1, 2, 3, 4, 5, 6, 8, SCHEMA_VERSION}:
+        if root.get("schema_version") not in {1, 2, 3, 4, 5, 6, 8, 9, SCHEMA_VERSION}:
             raise ConfigError("schema_version is unsupported")
         server = _mapping(root.get("server", {}), name="server")
         loxone = _mapping(root.get("loxone", {}), name="loxone")
@@ -379,6 +462,15 @@ class PluginConfig:
             minimum=1,
             maximum=30,
         )
+        explorer_binding_retention_hours = _integer(
+            limits.get(
+                "explorer_binding_retention_hours",
+                DEFAULT_EXPLORER_BINDING_RETENTION_HOURS,
+            ),
+            name="limits.explorer_binding_retention_hours",
+            minimum=1,
+            maximum=720,
+        )
         parallel = _integer(
             limits.get("max_parallel_calls", DEFAULT_MAX_PARALLEL_CALLS),
             name="limits.max_parallel_calls",
@@ -454,6 +546,7 @@ class PluginConfig:
             policies.get("loxberry_operate_bindings", []),
             name="policies.loxberry_operate_bindings",
         )
+        explorer_bindings = _explorer_bindings(policies.get("explorer_bindings", []))
         cache_max_mib = _integer(
             cache.get("statistics_memory_max_mib", DEFAULT_STATISTICS_MEMORY_MAX_MIB),
             name="cache.statistics_memory_max_mib",
@@ -499,10 +592,12 @@ class PluginConfig:
             loxberry_requests_per_minute=loxberry_requests,
             history_requests_per_minute=history_requests,
             loxberry_operate_requests_per_minute=operate_requests,
+            explorer_binding_retention_hours=explorer_binding_retention_hours,
             max_parallel_calls=parallel,
             log_level=log_level,
             loxberry_read_bindings=loxberry_read_bindings,
             loxberry_operate_bindings=loxberry_operate_bindings,
+            explorer_bindings=explorer_bindings,
             statistics_memory_max_mib=cache_max_mib,
             event_history_enabled=event_history_enabled,
             event_history_retention_days=event_history_retention_days,
@@ -562,6 +657,9 @@ class PluginConfig:
         document["limits"]["loxberry_operate_requests_per_minute"] = (
             self.loxberry_operate_requests_per_minute
         )
+        document["limits"]["explorer_binding_retention_hours"] = (
+            self.explorer_binding_retention_hours
+        )
         document["limits"]["max_parallel_calls"] = self.max_parallel_calls
         document["limits"]["structure_refresh_seconds"] = self.structure_refresh_seconds
         document["limits"]["max_active_runtime_sessions"] = self.max_active_runtime_sessions
@@ -580,6 +678,19 @@ class PluginConfig:
         document["logging"].pop("debug_until", None)
         document["policies"]["loxberry_read_bindings"] = list(self.loxberry_read_bindings)
         document["policies"]["loxberry_operate_bindings"] = list(self.loxberry_operate_bindings)
+        document["policies"]["explorer_bindings"] = [
+            {
+                "binding_id": item.binding_id,
+                "capability": item.capability,
+                "application_id": item.application_id,
+                "version": item.version,
+                "created_at": item.created_at,
+                "last_active_at": item.last_active_at,
+                "last_active_until": item.last_active_until,
+                "inactive_since": item.inactive_since,
+            }
+            for item in self.explorer_bindings
+        ]
         document["cache"].pop("statistics_mode", None)
         document["cache"].pop("statistics_max_mib", None)
         document["cache"]["statistics_memory_max_mib"] = self.statistics_memory_max_mib

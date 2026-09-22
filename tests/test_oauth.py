@@ -269,6 +269,34 @@ def _provider(
     )
 
 
+def test_expired_explorer_family_is_reported_before_cleanup(tmp_path: Path) -> None:
+    clock = Clock()
+    store = AtomicJsonAuthStore(tmp_path / "auth" / "sessions.json")
+    family = {
+        "client_kind": "tool_explorer",
+        "explorer_origin": "https://public.example",
+        "identity_id": "identity",
+        "miniserver_id": "miniserver",
+        "scope": f"{READ_SCOPE} {LOXBERRY_READ_SCOPE}",
+        "expires_at": clock.value,
+        "revoked": True,
+        "revoked_at": clock.value - 10,
+    }
+    store.mutate(lambda document: document["families"].update({"expired": family}))
+    expired: list[dict[str, Any]] = []
+
+    Phase0OAuthProvider(
+        store,
+        issuer=ISSUER,
+        resource=RESOURCE,
+        clock=clock,
+        on_family_expired=expired.append,
+    )
+
+    assert expired == [family]
+    assert store.snapshot()["families"] == {}
+
+
 async def _client(provider: Phase0OAuthProvider) -> OAuthClientInformationFull:
     client = OAuthClientInformationFull(
         client_id="public-client",
@@ -410,6 +438,69 @@ async def test_explorer_client_gets_shorter_refresh_family_lifetime(tmp_path: Pa
         provider.store.snapshot()["families"]["explorer-family"]["expires_at"]
         == clock.value + EXPLORER_REFRESH_FAMILY_TTL
     )
+
+
+@pytest.mark.asyncio
+async def test_only_validated_explorer_uses_stable_application_approval(tmp_path: Path) -> None:
+    origins: list[str] = []
+    clients: list[str] = []
+    provider = Phase0OAuthProvider(
+        AtomicJsonAuthStore(tmp_path / "auth" / "sessions.json"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+        loxberry_read_enabled=True,
+        explorer_origins=("https://loxberry-alias",),
+        loxberry_read_allowed=lambda client, *_: clients.append(client) or False,
+        explorer_loxberry_read_allowed=lambda origin, *_: origins.append(origin)
+        or origin == "https://public.example",
+    )
+    explorer = _client_info(
+        "dynamic-explorer",
+        client_name=EXPLORER_CLIENT_NAME,
+        redirect_uri=EXPLORER_REDIRECT,
+    )
+    lookalike = _client_info(
+        "third-party",
+        client_name=EXPLORER_CLIENT_NAME,
+        redirect_uri=REDIRECT,
+    )
+    alias = _client_info(
+        "alias-explorer",
+        client_name=EXPLORER_CLIENT_NAME,
+        redirect_uri="https://loxberry-alias/admin/plugins/mcpserver/explorer_callback.cgi",
+    )
+    await provider.register_client(explorer)
+    await provider.register_client(lookalike)
+    await provider.register_client(alias)
+
+    assert provider.loxberry_read_allowed("dynamic-explorer", "identity", "miniserver")
+    assert not provider.loxberry_read_allowed("alias-explorer", "identity", "miniserver")
+    assert not provider.loxberry_read_allowed("third-party", "identity", "miniserver")
+
+    assert origins == ["https://public.example", "https://loxberry-alias"]
+    assert clients == ["alias-explorer", "third-party"]
+
+
+@pytest.mark.asyncio
+async def test_validated_explorer_keeps_matching_legacy_client_approval(tmp_path: Path) -> None:
+    seen: list[str] = []
+    provider = Phase0OAuthProvider(
+        AtomicJsonAuthStore(tmp_path / "auth" / "sessions.json"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+        loxberry_read_enabled=True,
+        loxberry_read_allowed=lambda client, *_: seen.append(client)
+        or client == "dynamic-explorer",
+    )
+    explorer = _client_info(
+        "dynamic-explorer",
+        client_name=EXPLORER_CLIENT_NAME,
+        redirect_uri=EXPLORER_REDIRECT,
+    )
+    await provider.register_client(explorer)
+
+    assert provider.loxberry_read_allowed("dynamic-explorer", "identity", "miniserver")
+    assert seen == ["dynamic-explorer"]
 
 
 @pytest.mark.asyncio

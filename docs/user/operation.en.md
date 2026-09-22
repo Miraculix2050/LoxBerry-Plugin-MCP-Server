@@ -8,7 +8,7 @@ The Plugin Manager discovers regular updates through the stable release source. 
 
 ## Sessions and approvals
 
-Under **Clients and sessions**, administrators can inspect and revoke sessions and local diagnostic or operate approvals. Revocation ends matching sessions.
+Under **Clients and sessions**, administrators can inspect and revoke sessions and local diagnostic or operate approvals. Revoking an approval ends matching sessions. Disconnecting the Tool Explorer revokes only its OAuth session; its local approval can reactivate for the same Loxone identity and Miniserver until the displayed deadline. The inactive retention is configurable from 1 to 720 hours and defaults to 72 hours.
 
 ## Tool Explorer
 

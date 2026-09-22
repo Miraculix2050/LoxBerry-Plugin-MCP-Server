@@ -177,6 +177,52 @@ def test_loxberry_approval_rejects_expired_session(
         _allow_loxberry_read({"session_id": "expired-family"})
 
 
+def test_explorer_approval_is_application_bound_and_individually_revocable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = (tmp_path / "config" / "mcpserver.json").resolve()
+    auth_path = (tmp_path / "data" / "auth" / "sessions.json").resolve()
+    AtomicConfigStore(config_path).save(PluginConfig.defaults())
+    auth_store = AtomicJsonAuthStore(auth_path)
+    auth_store.mutate(
+        lambda document: document["families"].update(
+            {
+                "explorer-family": {
+                    "scope": f"{READ_SCOPE} {LOXBERRY_READ_SCOPE}",
+                    "client_id": "dynamic-client-a",
+                    "client_kind": "tool_explorer",
+                    "explorer_origin": "https://public.example",
+                    "identity_id": "identity",
+                    "miniserver_id": "miniserver",
+                    "created_at": 1_900_000_000,
+                    "expires_at": 2_000_000_000,
+                    "pending_loxberry_read": True,
+                    "revoked": False,
+                }
+            }
+        )
+    )
+    monkeypatch.setenv("MCPSERVER_CONFIG", str(config_path))
+    monkeypatch.setenv("MCPSERVER_AUTH_STORE", str(auth_path))
+
+    response = _allow_loxberry_read({"session_id": "explorer-family"})
+    config = AtomicConfigStore(config_path).load()
+
+    assert config.loxberry_read_bindings == ()
+    assert len(config.explorer_bindings) == 1
+    assert response["loxberry_bindings"][0]["active"] is True
+    binding_id = config.explorer_bindings[0].binding_id
+
+    revoked: list[str] = []
+    monkeypatch.setattr(
+        "mcpserver.admin._revoke_many", lambda family_ids, **_kwargs: revoked.extend(family_ids)
+    )
+    _revoke_loxberry_read({"binding_id": binding_id})
+
+    assert AtomicConfigStore(config_path).load().explorer_bindings == ()
+    assert revoked == ["explorer-family"]
+
+
 def test_loxberry_operate_approval_uses_separate_exact_binding(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1005,6 +1051,38 @@ def test_first_complete_configuration_does_not_enable_mcp_access(
 
     assert store.load().enabled is False
     assert result["configuration"]["server"]["enabled"] is False
+
+
+def test_partial_config_save_preserves_explorer_approvals(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mcpserver.config import ExplorerBindingApproval
+
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    approval = ExplorerBindingApproval(
+        binding_id="a" * 64,
+        capability="loxberry:read",
+        application_id="tool-explorer-v1",
+        version=1,
+        created_at=100,
+        last_active_at=100,
+        last_active_until=200,
+    )
+    store.save(replace(PluginConfig.defaults(), explorer_bindings=(approval,)))
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._restart_service", lambda: None)
+    monkeypatch.setattr("mcpserver.admin._sessions", lambda: [])
+    monkeypatch.setattr("mcpserver.admin._service_response", lambda: {"service_active": True})
+
+    _save(
+        {
+            "schema_version": 10,
+            "server": {"enabled": False, "public_origin": "https://loxberry.example"},
+            "loxone": {"endpoint": "http://192.168.10.20"},
+        }
+    )
+
+    assert store.load().explorer_bindings == (approval,)
 
 
 def test_section_saves_are_atomic_and_preserve_the_other_configuration(

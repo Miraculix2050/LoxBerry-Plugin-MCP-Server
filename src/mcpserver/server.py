@@ -11,7 +11,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
 
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.routes import create_protected_resource_routes
@@ -295,6 +295,7 @@ class _ForwardedHostFastMCP(FastMCP):
         ]
         | None
     ) = None
+    explorer_binding_maintenance: tuple[AtomicConfigStore, AtomicJsonAuthStore] | None = None
 
     def streamable_http_app(self) -> Starlette:
         app = super().streamable_http_app()
@@ -308,6 +309,7 @@ class _ForwardedHostFastMCP(FastMCP):
                     self.emergency_stop,
                     self.remote_revocation,
                     self.event_history,
+                    self.explorer_binding_maintenance,
                 ),
                 session_lifespan(starlette_app),
             ):
@@ -360,6 +362,7 @@ async def _runtime_lifespan(
     ]
     | None = None,
     event_history: EventHistoryMonitor | None = None,
+    explorer_binding_maintenance: tuple[AtomicConfigStore, AtomicJsonAuthStore] | None = None,
 ) -> AsyncIterator[None]:
     """Close all live Miniserver sessions when the HTTP application stops."""
     worker = (
@@ -367,6 +370,23 @@ async def _runtime_lifespan(
         if remote_revocation is not None
         else None
     )
+    binding_worker: asyncio.Task[None] | None = None
+    if explorer_binding_maintenance is not None:
+        from mcpserver.explorer_bindings import maintain_explorer_bindings
+
+        async def maintain() -> None:
+            while True:
+                try:
+                    maintain_explorer_bindings(*explorer_binding_maintenance)
+                except Exception as exc:
+                    logging.getLogger("mcpserver.explorer_binding").warning(
+                        "component=explorer_binding severity=WARNING "
+                        "outcome=maintenance_failed error_type=%s",
+                        type(exc).__name__,
+                    )
+                await asyncio.sleep(60)
+
+        binding_worker = asyncio.create_task(maintain())
     try:
         if emergency_stop is not None:
             await emergency_stop.start()
@@ -378,6 +398,10 @@ async def _runtime_lifespan(
             worker.cancel()
             with suppress(asyncio.CancelledError):
                 await worker
+        if binding_worker is not None:
+            binding_worker.cancel()
+            with suppress(asyncio.CancelledError):
+                await binding_worker
         if runtime is not None:
             await runtime.close()
         if emergency_stop is not None:
@@ -434,6 +458,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
     event_history: EventHistoryMonitor | None = None
     auth_coordinator: MiniserverAuthCoordinator | None = None
     auth_store: AtomicJsonAuthStore | None = None
+    explorer_binding_maintenance: tuple[AtomicConfigStore, AtomicJsonAuthStore] | None = None
     if settings.plugin_config is not None:
         emergency_stop = EmergencyStopMonitor(settings.plugin_config)
         if (
@@ -493,6 +518,29 @@ def create_server(settings: ServerSettings) -> FastMCP:
         if event_history is not None:
             event_history.auth_coordinator = auth_coordinator
 
+        def explorer_read_binding_allowed(
+            explorer_origin: str, identity_id: str, miniserver_id: str
+        ) -> bool:
+            if settings.phase0_auth is None or settings.phase0_auth.config_path is None:
+                return False
+            try:
+                current = AtomicConfigStore(settings.phase0_auth.config_path).load()
+                from mcpserver.explorer_bindings import active_explorer_binding
+
+                return current.loxberry_read_enabled and (
+                    active_explorer_binding(
+                        current,
+                        auth_store,
+                        "loxberry:read",
+                        identity_id,
+                        miniserver_id,
+                        explorer_origin,
+                    )
+                    is not None
+                )
+            except Exception:
+                return False
+
         def loxberry_binding_allowed(client_id: str, identity_id: str, miniserver_id: str) -> bool:
             if settings.phase0_auth is None or settings.phase0_auth.config_path is None:
                 return False
@@ -502,6 +550,32 @@ def create_server(settings: ServerSettings) -> FastMCP:
                     "loxberry-read-binding-v1", client_id, identity_id, miniserver_id
                 )
                 return current.loxberry_read_enabled and binding in current.loxberry_read_bindings
+            except Exception:
+                return False
+
+        def explorer_operate_binding_allowed(
+            explorer_origin: str, identity_id: str, miniserver_id: str
+        ) -> bool:
+            if settings.phase0_auth is None or settings.phase0_auth.config_path is None:
+                return False
+            try:
+                current = AtomicConfigStore(settings.phase0_auth.config_path).load()
+                from mcpserver.explorer_bindings import active_explorer_binding
+
+                allowed = (
+                    active_explorer_binding(
+                        current,
+                        auth_store,
+                        "loxberry:operate",
+                        identity_id,
+                        miniserver_id,
+                        explorer_origin,
+                    )
+                    is not None
+                )
+                return (
+                    current.loxone_history_enabled and current.loxberry_operate_enabled and allowed
+                )
             except Exception:
                 return False
 
@@ -538,18 +612,70 @@ def create_server(settings: ServerSettings) -> FastMCP:
                 # Startup cleanup has no running event loop; the token was still removed.
                 return
 
+        def on_family_started(family: dict[str, Any]) -> None:
+            if (
+                family.get("client_kind") != "tool_explorer"
+                or settings.phase0_auth is None
+                or settings.phase0_auth.config_path is None
+            ):
+                return
+            from mcpserver.explorer_bindings import (
+                active_explorer_binding,
+                record_explorer_approval,
+            )
+
+            config_store = AtomicConfigStore(settings.phase0_auth.config_path)
+            config = config_store.load()
+            for capability in ("loxberry:read", "loxberry:operate"):
+                if capability not in str(family.get("scope", "")).split():
+                    continue
+                identity_id = str(family.get("identity_id", ""))
+                miniserver_id = str(family.get("miniserver_id", ""))
+                if (
+                    active_explorer_binding(
+                        config,
+                        auth_store,
+                        capability,
+                        identity_id,
+                        miniserver_id,
+                        str(family.get("explorer_origin", "")),
+                    )
+                    is not None
+                ):
+                    record_explorer_approval(
+                        config_store, auth_store, capability, family, now=int(time.time())
+                    )
+
+        def on_family_expired(family: dict[str, Any]) -> None:
+            if settings.phase0_auth is None or settings.phase0_auth.config_path is None:
+                return
+            from mcpserver.explorer_bindings import record_explorer_family_end
+
+            record_explorer_family_end(
+                AtomicConfigStore(settings.phase0_auth.config_path), auth_store, family
+            )
+
         provider = Phase0OAuthProvider(
             auth_store,
             issuer=settings.phase0_auth.issuer_url,
             resource=settings.phase0_auth.resource_url,
             on_family_revoked=on_family_revoked,
+            on_family_started=on_family_started,
+            on_family_expired=on_family_expired,
             control_enabled=bool(config and config.loxone_control_enabled),
             loxberry_read_enabled=bool(config and config.loxberry_read_enabled),
             loxberry_read_allowed=loxberry_binding_allowed,
+            explorer_loxberry_read_allowed=explorer_read_binding_allowed,
             history_enabled=bool(config and config.loxone_history_enabled),
             loxberry_operate_enabled=bool(config and config.loxberry_operate_enabled),
             loxberry_operate_allowed=loxberry_operate_binding_allowed,
+            explorer_loxberry_operate_allowed=explorer_operate_binding_allowed,
             explorer_origins=settings.allowed_origins,
+        )
+        explorer_binding_maintenance = (
+            (AtomicConfigStore(settings.phase0_auth.config_path), auth_store)
+            if settings.phase0_auth.config_path is not None
+            else None
         )
         oauth_web = Phase0OAuthWeb(
             provider,
@@ -673,6 +799,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
         auth=oauth_auth,
         transport_security=transport_security,
     )
+    server.explorer_binding_maintenance = explorer_binding_maintenance
     server.forwarded_allowed_hosts = settings.allowed_hosts
     server.transport_guard = transport_guard
     server.service_enabled = settings.service_enabled

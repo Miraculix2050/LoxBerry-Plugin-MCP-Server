@@ -14,7 +14,7 @@ Use a separate Loxone account for each assistant. The server only exposes elemen
 | `loxberry:read` | optional, local approval | Read masked plugin and system diagnostics |
 | `loxberry:operate` | optional, with `loxone:history` and local approval | Clear the plugin-owned statistics cache and manage explicitly configured local event-history sources |
 
-Control is disabled by default. Local LoxBerry approvals are bound exactly to client, Loxone identity and Miniserver; they never replace Loxone rights or OAuth consent.
+Control is disabled by default. Local LoxBerry approvals are bound to the client application, Loxone identity, Miniserver, and exact capability; they never replace Loxone rights or OAuth consent. For the strictly validated local Tool Explorer, a new OAuth login can reuse its application approval until the displayed inactive-retention deadline. Other dynamically registered clients remain bound to their exact OAuth client identifier.
 
 Project Intelligence does not add a scope. Every invocation downloads the project again with the
 bound Loxone identity to verify access; cached processing results never grant access. It exposes

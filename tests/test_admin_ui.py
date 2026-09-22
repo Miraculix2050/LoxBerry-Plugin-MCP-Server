@@ -844,6 +844,22 @@ def test_sessions_show_client_name_before_the_stable_instance_identifier() -> No
     )
 
 
+def test_explorer_approval_retention_and_inactive_states_are_visible_in_both_languages() -> None:
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    german = (ROOT / "templates/lang/language_de.ini").read_text(encoding="utf-8")
+    english = (ROOT / "templates/lang/language_en.ini").read_text(encoding="utf-8")
+
+    assert 'name="explorer_binding_retention_hours" type="number" min="1" max="720"' in template
+    assert "bindingRow.inactive_login_required" in template
+    assert "bindingRow.retention_expires_at" in template
+    assert "explorer_binding_retention_hours => 0 +" in cgi
+    assert "INACTIVE_LOGIN_REQUIRED=Inaktiv — erneute Anmeldung erforderlich" in german
+    assert "LEGACY_INACTIVE=Legacy inactive approval" in english
+    assert "OAuth-Sitzung trennen" in german
+    assert "Disconnect OAuth session" in english
+
+
 def test_perl_expiry_formatter_rejects_out_of_range_values_safely() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     constant = re.search(r"use constant MAX_EXPIRY_EPOCH => [^;]+;", cgi)
