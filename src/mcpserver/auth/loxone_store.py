@@ -326,8 +326,8 @@ class EncryptedLoxoneTokenStore:
                 )
         return tuple(pending)
 
-    def remote_revocation_counts(self, now: int) -> tuple[int, int]:
-        """Count all queued records, including those scheduled for later."""
+    def remote_revocation_counts(self, now: int) -> tuple[int, int, int | None]:
+        """Count queued records and return their earliest scheduled attempt."""
         with self._locked():
             records = self._read()["tokens"].values()
             pending = [
@@ -335,13 +335,19 @@ class EncryptedLoxoneTokenStore:
                 for item in records
                 if isinstance(item, dict) and item.get("remote_revoke_pending") is True
             ]
-        return len(pending), sum(
-            isinstance(item.get("remote_revoke_after"), int) and item["remote_revoke_after"] > now
+        scheduled = [
+            item["remote_revoke_after"]
             for item in pending
+            if isinstance(item.get("remote_revoke_after"), int)
+        ]
+        return (
+            len(pending),
+            sum(retry_after > now for retry_after in scheduled),
+            min(scheduled) if scheduled else None,
         )
 
-    def record_remote_revoke_failure(self, family_id: str, retry_after: int) -> int:
-        """Record one actual network attempt and its next due time."""
+    def reserve_remote_revoke_attempt(self, family_id: str, retry_after: int) -> int:
+        """Persist one attempt and cooldown before it can use the network."""
         with self._locked():
             document = self._read()
             record = document["tokens"].get(family_id)
@@ -354,6 +360,21 @@ class EncryptedLoxoneTokenStore:
             record["remote_revoke_after"] = retry_after
             self._write(document)
             return attempts
+
+    def release_suppressed_remote_revoke_attempt(
+        self, family_id: str, *, reserved_attempts: int, previous_retry_after: int
+    ) -> None:
+        """Undo a reservation only when the coordinator suppressed network use."""
+        with self._locked():
+            document = self._read()
+            record = document["tokens"].get(family_id)
+            if not isinstance(record, dict) or record.get("remote_revoke_pending") is not True:
+                return
+            if record.get("remote_revoke_attempts") != reserved_attempts:
+                raise LoxoneTokenStoreError("remote revoke reservation changed")
+            record["remote_revoke_attempts"] = reserved_attempts - 1
+            record["remote_revoke_after"] = previous_retry_after
+            self._write(document)
 
     def defer_remote_revoke(self, family_id: str, now: int) -> None:
         with self._locked():

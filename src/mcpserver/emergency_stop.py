@@ -332,9 +332,10 @@ async def virtual_status_options(
             reason = "connection_failed"
         else:
             reason = "structure_failed" if stage == "structure" else "connection_failed"
+        breaker = auth_coordinator.current_status() if auth_coordinator is not None else None
         retry_at = (
-            auth_coordinator.current_status().get("retry_not_before")
-            if reason == "authentication_suppressed" and auth_coordinator is not None
+            breaker.get("retry_not_before")
+            if breaker is not None and breaker.get("breaker_state") != "closed"
             else None
         )
         return VirtualStatusOptions(

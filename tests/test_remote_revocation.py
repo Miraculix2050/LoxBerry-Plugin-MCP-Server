@@ -12,7 +12,10 @@ from mcpserver.auth.remote_revocation import (
     RemoteRevocationStateError,
     process_remote_revocations,
 )
-from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
+from mcpserver.loxone.auth_diagnostics import (
+    MiniserverAuthCoordinator,
+    MiniserverAuthenticationSuppressed,
+)
 from mcpserver.loxone.client import (
     LoxoneCommandRejected,
     LoxoneSourceIpBlocked,
@@ -107,6 +110,19 @@ def test_new_and_staggered_items_cannot_bypass_queue_cooldown(
     assert store.remote_revocation_counts(now[0])[0] == 2
 
 
+def test_status_reports_earliest_record_retry_when_queue_cooldown_has_ended(
+    tmp_path: Path,
+) -> None:
+    store = _store(tmp_path)
+    now = 2_000_000_000
+    _queue(store, "later", now)
+    store.reserve_remote_revoke_attempt("later", now + 600)
+    status = RemoteRevocationState(store.path).summary(store, now)
+    assert status["pending"] == 1
+    assert status["retryable"] == 1
+    assert status["not_before"] == now + 600
+
+
 @pytest.mark.parametrize(
     "error",
     [
@@ -177,7 +193,7 @@ def test_success_and_nominal_expiry_have_distinct_outcomes(
     asyncio.run(process_remote_revocations(_ENDPOINT, store, 1))
     asyncio.run(process_remote_revocations(_ENDPOINT, store, 1))
     assert calls == 1
-    assert store.remote_revocation_counts(now) == (0, 0)
+    assert store.remote_revocation_counts(now) == (0, 0, None)
     totals = RemoteRevocationState(store.path).read()["totals"]
     assert totals["confirmed_killed"] == 1
     assert totals["expired_without_confirmation"] == 1
@@ -204,6 +220,43 @@ def test_corrupt_status_fail_closes_without_network(
     assert store.remote_revocation_counts(2_000_000_000)[0] == 1
 
 
+def test_failed_post_attempt_status_write_preserves_attempt_and_cooldown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = _store(tmp_path)
+    now = 2_000_000_000
+    _queue(store, "family", now)
+    calls = 0
+    writes = 0
+    original_write = RemoteRevocationState.write
+
+    def flaky_write(self: RemoteRevocationState, value: dict[str, object]) -> None:
+        nonlocal writes
+        writes += 1
+        if writes == 2:
+            raise RemoteRevocationStateError("disk unavailable")
+        original_write(self, value)
+
+    class Client:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        async def kill_token(self, _token: LoxoneToken) -> None:
+            nonlocal calls
+            calls += 1
+            raise TimeoutError()
+
+    monkeypatch.setattr("mcpserver.auth.remote_revocation.LoxoneClient", Client)
+    monkeypatch.setattr(RemoteRevocationState, "write", flaky_write)
+    monkeypatch.setattr("mcpserver.auth.remote_revocation.time.time", lambda: now)
+    asyncio.run(process_remote_revocations(_ENDPOINT, store, 1))
+    asyncio.run(process_remote_revocations(_ENDPOINT, store, 1))
+    assert calls == 1
+    item = store.pending_remote_revocations(now + 300)[0]
+    assert item.attempts == 1
+    assert item.retry_after == now + 300
+
+
 def test_open_breaker_prevents_cleanup_probe(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -227,3 +280,20 @@ def test_open_breaker_prevents_cleanup_probe(
     monkeypatch.setattr("mcpserver.auth.remote_revocation.LoxoneClient", Client)
     asyncio.run(process_remote_revocations(_ENDPOINT, store, 1, coordinator))
     assert store.remote_revocation_counts(int(time.time()))[0] == 1
+
+
+def test_coordinator_suppression_does_not_consume_network_attempt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = _store(tmp_path)
+    now = 2_000_000_000
+    _queue(store, "family", now)
+    coordinator = MiniserverAuthCoordinator(tmp_path / "auth-status.json")
+
+    async def suppress(*_args: object, **_kwargs: object) -> None:
+        raise MiniserverAuthenticationSuppressed("suppressed")
+
+    monkeypatch.setattr(coordinator, "attempt", suppress)
+    monkeypatch.setattr("mcpserver.auth.remote_revocation.time.time", lambda: now)
+    asyncio.run(process_remote_revocations(_ENDPOINT, store, 1, coordinator))
+    assert store.pending_remote_revocations(now + 300)[0].attempts == 0

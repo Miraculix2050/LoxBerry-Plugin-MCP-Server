@@ -102,6 +102,46 @@ def test_virtual_status_options_does_not_bypass_an_open_authentication_breaker(
     assert calls == 0
 
 
+def test_failed_manual_probe_keeps_new_breaker_retry_visible(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    coordinator = MiniserverAuthCoordinator(
+        (tmp_path / "auth-diagnostics.json").resolve(), initial_probe_seconds=300
+    )
+
+    async def blocked() -> None:
+        raise LoxoneSourceIpBlocked("blocked")
+
+    with pytest.raises(LoxoneSourceIpBlocked):
+        asyncio.run(coordinator.attempt(blocked, owner="local_admin", phase="token_acquisition"))
+    first_retry = coordinator.status()["retry_not_before"]
+    assert isinstance(first_retry, int)
+    monkeypatch.setattr("mcpserver.loxone.auth_diagnostics.time.time", lambda: first_retry)
+
+    async def credentials(_self: EmergencyStopMonitor) -> tuple[str, str]:
+        return "user", "password"
+
+    class FailingClient:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        async def acquire_token(self, username: str, password: str) -> None:
+            raise TimeoutError()
+
+    monkeypatch.setattr(EmergencyStopMonitor, "_credentials", credentials)
+    monkeypatch.setattr("mcpserver.emergency_stop.LoxoneClient", FailingClient)
+    result = asyncio.run(
+        virtual_status_options(
+            PluginConfig(loxone_endpoint="http://192.168.1.10"),
+            coordinator,
+            manual_retry=True,
+        )
+    )
+    assert result.failure_code == "connection_failed"
+    assert isinstance(result.retry_not_before, int)
+    assert result.retry_not_before > first_retry
+
+
 def test_emergency_stop_enables_only_for_a_confirmed_one_value() -> None:
     monitor = EmergencyStopMonitor(
         PluginConfig(emergency_stop_virtual_status_uuid="00112233-4455-6677-8899aabbccddeeff")

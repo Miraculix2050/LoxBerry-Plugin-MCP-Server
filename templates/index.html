@@ -1050,8 +1050,7 @@
     if (status.breaker_state === 'open_source_ip_blocked') {
       notices.push(remoteCleanupWarning.dataset.breakerLabel);
     }
-    if (Number.isInteger(status.pending) && status.pending > 0
-        && status.last_failure_category) {
+    if (Number.isInteger(status.pending) && status.pending > 0) {
       notices.push(remoteCleanupWarning.dataset.pendingLabel + ' ' + status.pending);
       if (Number.isInteger(status.retryable) && status.retryable > 0) {
         notices.push(remoteCleanupWarning.dataset.retryableLabel + ' ' + status.retryable);

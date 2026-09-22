@@ -146,7 +146,8 @@ class RemoteRevocationState:
 
     def summary(self, store: EncryptedLoxoneTokenStore, now: int) -> dict[str, Any]:
         value = self.read()
-        pending, retryable = store.remote_revocation_counts(now)
+        pending, retryable, scheduled = store.remote_revocation_counts(now)
+        next_attempt = max(now, value["not_before"], scheduled or 0) if pending else None
         return {
             "pending": pending,
             "retryable": retryable,
@@ -154,7 +155,7 @@ class RemoteRevocationState:
                 item["outcome"] == "unconfirmed" and item["expires_at"] > now
                 for item in value["tombstones"]
             ),
-            "not_before": value["not_before"] or None,
+            "not_before": next_attempt,
             "last_failure_category": value["last_failure_category"],
             "last_failure_at": value["last_failure_at"],
         }
@@ -217,6 +218,19 @@ async def process_remote_revocations(
                 item.token.valid_until,
             )
             return
+        if item.attempts >= _MAX_ATTEMPTS:
+            _terminal(
+                state, value, store, item.family_id, "unconfirmed", now, item.token.valid_until
+            )
+            return
+        # Reserve the attempt and cooldown in both durable stores before authentication.
+        # A later status or token-store failure must never create an uncounted retry.
+        reserved_delay = _RETRY_DELAYS[min(item.attempts, 4)]
+        value["not_before"] = now + reserved_delay
+        state.write(value)
+        attempts = store.reserve_remote_revoke_attempt(item.family_id, now + reserved_delay)
+        if attempts == 0:
+            return
         client = LoxoneClient(endpoint, client_uuid=_CLIENT_UUID, timeout_seconds=timeout_seconds)
 
         async def revoke() -> None:
@@ -233,8 +247,18 @@ async def process_remote_revocations(
                     allow_cooldown_probe=False,
                 )
         except MiniserverAuthenticationSuppressed:
-            value["not_before"] = max(now + _POLL_SECONDS, value["not_before"])
+            retry_at = (
+                auth_coordinator.current_status()["retry_not_before"]
+                if auth_coordinator is not None
+                else None
+            )
+            value["not_before"] = max(now + _POLL_SECONDS, retry_at or now)
             state.write(value)
+            store.release_suppressed_remote_revoke_attempt(
+                item.family_id,
+                reserved_attempts=attempts,
+                previous_retry_after=item.retry_after,
+            )
             return
         except LoxoneTokenAuthenticationRejected:
             value["invalid_streak"] += 1
@@ -257,7 +281,6 @@ async def process_remote_revocations(
             )
             value["last_failure_category"] = category
             value["last_failure_at"] = now
-            attempts = item.attempts + 1
             delay = _RETRY_DELAYS[min(attempts - 1, 4)]
             if category == "source_ip_blocked":
                 delay = max(delay, 3600)
@@ -271,7 +294,7 @@ async def process_remote_revocations(
                 )
                 return
             state.write(value)
-            store.record_remote_revoke_failure(item.family_id, now + delay)
+            store.suspend_remote_revoke(item.family_id, now, delay_seconds=delay)
             _LOGGER.warning("component=remote_revocation outcome=%s", category)
             return
         value["invalid_streak"] = 0

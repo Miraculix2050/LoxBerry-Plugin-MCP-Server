@@ -308,6 +308,7 @@ def test_emergency_stop_selection_is_preserved_while_options_load() -> None:
     assert "body.set('action', manualRetry ? 'emergency_stop_retry'" in template
     assert "result.data.failure_text" in template
     assert "retry_not_before" in template
+    assert "Number.isInteger(status.pending) && status.pending > 0)" in template
     assert "emergencyStopValue.value = emergencyStopSelect.value;" in template
     for key in (
         "EMERGENCY_STOP_AUTH_SUPPRESSED",
