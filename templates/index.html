@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="mcp-ui.css">
+<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-nav">
 <script>
   if (window.performance && typeof window.performance.mark === 'function') {
     window.performance.mark('mcp-admin-shell-parsed');
@@ -11,6 +11,16 @@
   <div id="ajax-status" class="mcp-status" role="status" aria-live="polite" hidden></div>
   <p><a id="configuration-fallback-link" href="index.cgi?fallback=1" hidden><TMPL_VAR AJAX.CONFIGURATION_FALLBACK></a></p>
   <div id="loxberry-notifications" aria-busy="true" aria-live="polite"><TMPL_IF SERVER_RENDERED_FALLBACK><TMPL_VAR NOTIFICATIONS_HTML><TMPL_ELSE><span class="mcp-status" data-kind="working"><TMPL_VAR AJAX.NOTIFICATIONS_LOADING></span></TMPL_IF></div>
+
+  <nav class="mcp-section-nav" aria-label="<TMPL_VAR NAV.SECTIONS ESCAPE=HTML>">
+    <a href="#status"><TMPL_VAR STATUS.TITLE ESCAPE=HTML></a>
+    <a href="#configuration"><TMPL_VAR SETUP.TITLE ESCAPE=HTML></a>
+    <a href="#access"><TMPL_VAR ACCESS.TITLE ESCAPE=HTML></a>
+    <a href="#sessions"><TMPL_VAR SESSIONS.TITLE ESCAPE=HTML></a>
+    <a href="#mqtt"><TMPL_VAR MQTT.TITLE ESCAPE=HTML></a>
+    <a href="#diagnostics"><TMPL_VAR DIAGNOSTICS.TITLE ESCAPE=HTML></a>
+    <a href="#help"><TMPL_VAR HELP.TITLE ESCAPE=HTML></a>
+  </nav>
 
   <details id="status" class="mcp-card" data-persist-collapse open
     data-state-active="<TMPL_VAR STATUS.ACTIVE ESCAPE=HTML>"

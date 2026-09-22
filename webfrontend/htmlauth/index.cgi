@@ -852,22 +852,6 @@ $template->param(
     NOTICE_KIND => $notice_kind,
 );
 
-our %navbar;
-my @navbar_sections = (
-    ['status', 'STATUS.TITLE'],
-    ['configuration', 'SETUP.TITLE'],
-    ['access', 'ACCESS.TITLE'],
-    ['sessions', 'SESSIONS.TITLE'],
-    ['mqtt', 'MQTT.TITLE'],
-    ['diagnostics', 'DIAGNOSTICS.TITLE'],
-    ['help', 'HELP.TITLE'],
-);
-for my $index (0 .. $#navbar_sections) {
-    my ($id, $label_key) = @{$navbar_sections[$index]};
-    $navbar{($index + 1) * 10}{Name} = $L{$label_key};
-    $navbar{($index + 1) * 10}{URL} = "#$id";
-}
-
 my $page = $template->output();
 my $template_duration_ms = (clock_gettime(CLOCK_MONOTONIC) - $render_started) * 1000;
 print_html_security_headers($template_duration_ms);

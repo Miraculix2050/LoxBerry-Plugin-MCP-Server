@@ -236,7 +236,7 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert "Server-Timing: mcp-template;dur=%.1f" in cgi
     assert "phase=loxberry_header duration_ms=%.1f" in cgi
     assert "lbheader($L{'BASIC.TITLE'} . \" V$version\", '', '', 'nojqm')" in cgi
-    assert "our %navbar" in cgi
+    assert 'class="mcp-section-nav"' in template
     assert "mcp-admin-shell-parsed" in template
     assert "mcp-admin-background-hydration-started" in template
     assert "print LoxBerry::Log::get_notifications_html($lbpplugindir);" not in cgi
@@ -356,7 +356,7 @@ def test_admin_cards_use_consistent_vertical_spacing() -> None:
     explorer = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
     stylesheet = (ROOT / "webfrontend" / "htmlauth" / "mcp-ui.css").read_text(encoding="utf-8")
 
-    assert '<link rel="stylesheet" href="mcp-ui.css">' in template
+    assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-nav"' in template
     assert '<link rel="stylesheet" href="mcp-ui.css">' in explorer
     assert "<style>" not in template
     assert "<style>" not in explorer
@@ -630,6 +630,7 @@ def test_admin_sections_are_native_persistent_collapsibles() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
 
+    assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-nav"' in template
     expected_sections = [
         ("status", "STATUS.TITLE"),
         ("configuration", "SETUP.TITLE"),
@@ -655,8 +656,13 @@ def test_admin_sections_are_native_persistent_collapsibles() -> None:
     assert "element.addEventListener('toggle', persistCollapsibles)" in template
     assert "window.addEventListener('hashchange', () => openHashSection())" in template
     assert "target instanceof HTMLDetailsElement" in template
-    navbar = cgi[cgi.index("my @navbar_sections") : cgi.index("for my $index")]
-    assert re.findall(r"\['([^']+)', '([^']+)'\]", navbar) == expected_sections
+    navbar = template[template.index('<nav class="mcp-section-nav"') : template.index("</nav>")]
+    assert 'aria-label="<TMPL_VAR NAV.SECTIONS ESCAPE=HTML>"' in navbar
+    assert (
+        re.findall(r'<a href="#([^"]+)"><TMPL_VAR ([A-Z.]+) ESCAPE=HTML></a>', navbar)
+        == expected_sections
+    )
+    assert "our %navbar" not in cgi
     assert re.findall(
         r'<details id="([^"]+)" class="mcp-card" data-persist-collapse', template
     ) == [section for section, _label_key in expected_sections]

@@ -1,4 +1,7 @@
 .mcp-page { display: grid; gap: 1rem; max-width: 76rem; margin: 0 auto; padding: .5rem; overflow-wrap: anywhere; }
+.mcp-section-nav { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); gap: .4rem; }
+.mcp-section-nav a { display: flex; align-items: center; min-height: 2.75rem; padding: .45rem .7rem; border: 1px solid #c9cdd2; border-radius: .4rem; background: #fff; color: #1261a0; text-decoration: none; }
+.mcp-section-nav a:hover { background: #eef5fb; text-decoration: underline; }
 .mcp-explorer { max-width: 92rem; margin: 0 auto; padding: .5rem; overflow-wrap: anywhere; }
 .mcp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: 1rem; }
 .mcp-explorer-grid { display: grid; grid-template-columns: minmax(18rem, 22rem) minmax(0, 1fr); gap: 1rem; align-items: start; }
@@ -94,6 +97,7 @@ details.mcp-explorer-card[open] > summary { border-bottom: 1px solid #d7dadd; }
   .mcp-explorer-tool-list { max-height: 50vh; }
 }
 @media (max-width: 30rem) {
+  .mcp-section-nav { grid-template-columns: 1fr; }
   .mcp-card:not(details), .mcp-explorer-card:not(details) { padding: .75rem; }
   details.mcp-card > summary, details.mcp-explorer-card > summary, .mcp-collapsible-content, .mcp-explorer-panel-content { padding: .75rem; }
   .mcp-actions > *, .mcp-explorer-actions > button, .mcp-explorer-actions > select { width: 100%; }
