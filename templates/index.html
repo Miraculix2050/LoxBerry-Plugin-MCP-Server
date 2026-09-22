@@ -214,7 +214,7 @@
     data-unnamed-label="<TMPL_VAR SESSIONS.UNNAMED ESCAPE=HTML>">
     <summary><TMPL_VAR SESSIONS.TITLE></summary>
     <div class="mcp-collapsible-content">
-    <p id="remote-cleanup-warning" class="mcp-status" data-kind="warning" role="status" hidden
+    <p id="remote-cleanup-warning" class="mcp-status" data-kind="warning" role="status" <TMPL_UNLESS REMOTE_CLEANUP_WARNING_VISIBLE>hidden</TMPL_UNLESS>
       data-breaker-label="<TMPL_VAR SESSIONS.REMOTE_BREAKER_WARNING ESCAPE=HTML>"
       data-pending-label="<TMPL_VAR SESSIONS.REMOTE_PENDING_WARNING ESCAPE=HTML>"
       data-retryable-label="<TMPL_VAR SESSIONS.REMOTE_RETRYABLE_WARNING ESCAPE=HTML>"
@@ -224,7 +224,7 @@
       data-blocked-label="<TMPL_VAR SESSIONS.REMOTE_BLOCKED ESCAPE=HTML>"
       data-transport-label="<TMPL_VAR SESSIONS.REMOTE_TRANSPORT ESCAPE=HTML>"
       data-command-label="<TMPL_VAR SESSIONS.REMOTE_COMMAND ESCAPE=HTML>"
-      data-unavailable-label="<TMPL_VAR SESSIONS.REMOTE_STATUS_UNAVAILABLE ESCAPE=HTML>"></p>
+      data-unavailable-label="<TMPL_VAR SESSIONS.REMOTE_STATUS_UNAVAILABLE ESCAPE=HTML>"><TMPL_VAR REMOTE_CLEANUP_WARNING ESCAPE=HTML></p>
     <div id="session-list"><TMPL_UNLESS SERVER_RENDERED_FALLBACK><p class="mcp-status" data-kind="working" role="status"><TMPL_VAR AJAX.WORKING></p></TMPL_UNLESS>
     <TMPL_IF HAS_SESSIONS>
       <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.TOKEN></th><th><TMPL_VAR SESSIONS.SCOPES></th><th><TMPL_VAR SESSIONS.EXPIRES></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody>

@@ -90,6 +90,7 @@ class RemoteRevocation:
     token: LoxoneToken
     attempts: int = 0
     retry_after: int = 0
+    terminal_outcome: str | None = None
 
 
 def _encoded(value: bytes) -> str:
@@ -334,6 +335,7 @@ class EncryptedLoxoneTokenStore:
                         token,
                         attempts if isinstance(attempts, int) and attempts >= 0 else 0,
                         record["remote_revoke_after"],
+                        record.get("remote_revoke_terminal_outcome"),
                     )
                 )
         return tuple(pending)
@@ -387,6 +389,34 @@ class EncryptedLoxoneTokenStore:
             record["remote_revoke_attempts"] = reserved_attempts - 1
             record["remote_revoke_after"] = previous_retry_after
             self._write(document)
+
+    def mark_remote_revoke_terminal(
+        self, family_id: str, outcome: str, expires_at: int
+    ) -> tuple[str, str, int]:
+        """Persist an anonymous receipt before cross-file terminal bookkeeping."""
+        with self._locked():
+            document = self._read()
+            record = document["tokens"].get(family_id)
+            if not isinstance(record, dict) or record.get("remote_revoke_pending") is not True:
+                raise LoxoneTokenStoreError("remote revoke record is unavailable")
+            prior = record.get("remote_revoke_terminal_outcome")
+            if prior is not None:
+                receipt = record.get("remote_revoke_terminal_receipt")
+                prior_expiry = record.get("remote_revoke_terminal_expires_at")
+                if (
+                    not isinstance(prior, str)
+                    or not isinstance(receipt, str)
+                    or len(receipt) != 32
+                    or type(prior_expiry) is not int
+                ):
+                    raise LoxoneTokenStoreError("remote revoke terminal marker is invalid")
+                return prior, receipt, prior_expiry
+            receipt = secrets.token_hex(16)
+            record["remote_revoke_terminal_outcome"] = outcome
+            record["remote_revoke_terminal_receipt"] = receipt
+            record["remote_revoke_terminal_expires_at"] = expires_at
+            self._write(document)
+            return outcome, receipt, expires_at
 
     def defer_remote_revoke(self, family_id: str, now: int) -> None:
         with self._locked():

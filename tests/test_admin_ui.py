@@ -309,9 +309,14 @@ def test_emergency_stop_selection_is_preserved_while_options_load() -> None:
     assert "result.data.failure_text" in template
     assert "retry_not_before" in template
     assert "Number.isInteger(status.pending) && status.pending > 0)" in template
+    assert "REMOTE_CLEANUP_WARNING_VISIBLE" in template
+    assert "REMOTE_CLEANUP_WARNING ESCAPE=HTML" in template
+    assert "REMOTE_CLEANUP_WARNING => $remote_cleanup_warning" in cgi
+    assert "authentication_busy => 'EMERGENCY_STOP_AUTH_BUSY'" in cgi
     assert "emergencyStopValue.value = emergencyStopSelect.value;" in template
     for key in (
         "EMERGENCY_STOP_AUTH_SUPPRESSED",
+        "EMERGENCY_STOP_AUTH_BUSY",
         "EMERGENCY_STOP_CREDENTIALS_UNAVAILABLE",
         "EMERGENCY_STOP_CONNECTION_FAILED",
         "EMERGENCY_STOP_STRUCTURE_FAILED",

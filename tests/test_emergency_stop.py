@@ -14,7 +14,10 @@ from mcpserver.emergency_stop import (
     mqtt_emergency_stop_status,
     virtual_status_options,
 )
-from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
+from mcpserver.loxone.auth_diagnostics import (
+    MiniserverAuthCoordinator,
+    MiniserverAuthenticationSuppressed,
+)
 from mcpserver.loxone.client import LoxoneSourceIpBlocked
 
 
@@ -140,6 +143,26 @@ def test_failed_manual_probe_keeps_new_breaker_retry_visible(
     assert result.failure_code == "connection_failed"
     assert isinstance(result.retry_not_before, int)
     assert result.retry_not_before > first_retry
+
+
+def test_busy_coordinator_offers_short_manual_retry(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    coordinator = MiniserverAuthCoordinator(tmp_path / "auth-diagnostics.json")
+
+    async def credentials(_self: EmergencyStopMonitor) -> tuple[str, str]:
+        return "user", "password"
+
+    async def busy(*_args: object, **_kwargs: object) -> None:
+        raise MiniserverAuthenticationSuppressed("busy")
+
+    monkeypatch.setattr(EmergencyStopMonitor, "_credentials", credentials)
+    monkeypatch.setattr(coordinator, "attempt", busy)
+    result = asyncio.run(
+        virtual_status_options(PluginConfig(loxone_endpoint="http://192.168.1.10"), coordinator)
+    )
+    assert result.failure_code == "authentication_busy"
+    assert isinstance(result.retry_not_before, int)
 
 
 def test_emergency_stop_enables_only_for_a_confirmed_one_value() -> None:

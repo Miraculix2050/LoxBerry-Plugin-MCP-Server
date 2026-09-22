@@ -81,6 +81,39 @@ def test_rejected_token_is_terminal_and_staggers_other_work(
     )
 
 
+def test_terminal_record_is_idempotent_if_token_deletion_fails_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = _store(tmp_path)
+    now = 2_000_000_000
+    store.put(
+        "family",
+        "miniserver",
+        "identity",
+        LoxoneToken("jwt", "user", "key", "SHA256", now - _EPOCH - 1),
+    )
+    store.schedule_remote_revoke("family")
+    original_complete = store.complete_remote_revoke
+    calls = 0
+
+    def flaky_complete(family_id: str) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise OSError("disk unavailable")
+        original_complete(family_id)
+
+    monkeypatch.setattr(store, "complete_remote_revoke", flaky_complete)
+    monkeypatch.setattr("mcpserver.auth.remote_revocation.time.time", lambda: now)
+    with pytest.raises(OSError):
+        asyncio.run(process_remote_revocations(_ENDPOINT, store, 1))
+    asyncio.run(process_remote_revocations(_ENDPOINT, store, 1))
+    value = RemoteRevocationState(store.path).read()
+    assert value["totals"]["expired_without_confirmation"] == 1
+    assert len(value["tombstones"]) == 1
+    assert store.remote_revocation_counts(now)[0] == 0
+
+
 def test_new_and_staggered_items_cannot_bypass_queue_cooldown(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

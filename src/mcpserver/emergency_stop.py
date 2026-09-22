@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import subprocess
+import time
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -322,8 +323,13 @@ async def virtual_status_options(
             ),
         )
     except Exception as exc:
+        breaker = auth_coordinator.current_status() if auth_coordinator is not None else None
         if isinstance(exc, MiniserverAuthenticationSuppressed):
-            reason = "authentication_suppressed"
+            reason = (
+                "authentication_suppressed"
+                if breaker is not None and breaker.get("breaker_state") != "closed"
+                else "authentication_busy"
+            )
         elif stage == "credentials" or isinstance(exc, _ProviderUnavailable):
             reason = "credentials_unavailable"
         elif stage == "structure":
@@ -332,10 +338,11 @@ async def virtual_status_options(
             reason = "connection_failed"
         else:
             reason = "structure_failed" if stage == "structure" else "connection_failed"
-        breaker = auth_coordinator.current_status() if auth_coordinator is not None else None
         retry_at = (
             breaker.get("retry_not_before")
             if breaker is not None and breaker.get("breaker_state") != "closed"
+            else int(time.time()) + 5
+            if reason == "authentication_busy"
             else None
         )
         return VirtualStatusOptions(

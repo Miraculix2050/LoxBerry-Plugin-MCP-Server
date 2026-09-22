@@ -108,11 +108,16 @@ class RemoteRevocationState:
         for item in tombstones:
             if (
                 not isinstance(item, dict)
-                or set(item) != {"outcome", "expires_at"}
+                or set(item)
+                not in ({"outcome", "expires_at"}, {"outcome", "expires_at", "receipt"})
                 or not isinstance(item["outcome"], str)
                 or item["outcome"] not in _OUTCOMES
                 or type(item["expires_at"]) is not int
                 or item["expires_at"] < 0
+                or (
+                    "receipt" in item
+                    and (not isinstance(item["receipt"], str) or len(item["receipt"]) != 32)
+                )
             ):
                 raise RemoteRevocationStateError("cleanup status is invalid")
         return value
@@ -175,16 +180,27 @@ def _terminal(
     now: int,
     valid_until: int,
 ) -> None:
+    if outcome not in _OUTCOMES:
+        raise RemoteRevocationStateError("remote revoke outcome is invalid")
     if outcome == "already_invalid":
         expires_at = now + 30 * _DAY
     elif outcome == "unconfirmed":
         expires_at = min(max(now + _DAY, valid_until + _LOXONE_EPOCH + _DAY), now + 180 * _DAY)
     else:
         expires_at = now + _DAY
-    value["tombstones"] = [item for item in value["tombstones"] if item["expires_at"] > now][-9999:]
-    value["tombstones"].append({"outcome": outcome, "expires_at": expires_at})
-    value["totals"][outcome] += 1
-    state.write(value)
+    outcome, receipt, expires_at = store.mark_remote_revoke_terminal(family_id, outcome, expires_at)
+    if outcome not in _OUTCOMES:
+        raise RemoteRevocationStateError("remote revoke outcome is invalid")
+    if not any(item.get("receipt") == receipt for item in value["tombstones"]):
+        value["tombstones"] = [item for item in value["tombstones"] if item["expires_at"] > now][
+            -9999:
+        ]
+        if expires_at > now:
+            value["tombstones"].append(
+                {"outcome": outcome, "expires_at": expires_at, "receipt": receipt}
+            )
+        value["totals"][outcome] += 1
+        state.write(value)
     store.complete_remote_revoke(family_id)
 
 
@@ -216,6 +232,17 @@ async def process_remote_revocations(
                 state.write(value)
                 return
         item = pending[0]
+        if item.terminal_outcome is not None:
+            _terminal(
+                state,
+                value,
+                store,
+                item.family_id,
+                item.terminal_outcome,
+                now,
+                item.token.valid_until,
+            )
+            return
         if item.token.valid_until + _LOXONE_EPOCH <= now:
             _terminal(
                 state,

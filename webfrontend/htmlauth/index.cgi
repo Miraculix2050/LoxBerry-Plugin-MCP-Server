@@ -132,6 +132,7 @@ sub admin_call {
         if (defined $failure_code && $failure_code =~ /\A[a-z_]{1,128}\z/) {
             my %labels = (
                 authentication_suppressed => 'EMERGENCY_STOP_AUTH_SUPPRESSED',
+                authentication_busy => 'EMERGENCY_STOP_AUTH_BUSY',
                 credentials_unavailable => 'EMERGENCY_STOP_CREDENTIALS_UNAVAILABLE',
                 connection_failed => 'EMERGENCY_STOP_CONNECTION_FAILED',
                 structure_failed => 'EMERGENCY_STOP_STRUCTURE_FAILED',
@@ -624,6 +625,7 @@ sub format_expiry {
 my $server_rendered_fallback = ($q->{fallback} // '') eq '1';
 my $config = {};
 my $sessions = [];
+my $remote_cleanup = {available => 0};
 my $loxberry_bindings = [];
 my $loxberry_operate_bindings = [];
 my $emergency_stop_options = [];
@@ -653,6 +655,8 @@ if ($server_rendered_fallback) {
     $loglist_html = LoxBerry::Web::loglist_html() // '';
     my $sessions_result = admin_call('list_sessions', {});
     if ($sessions_result->{ok} && ref($sessions_result->{data}) eq 'HASH') {
+        $remote_cleanup = $sessions_result->{data}{remote_cleanup}
+            if ref($sessions_result->{data}{remote_cleanup}) eq 'HASH';
         $sessions = $sessions_result->{data}{sessions}
             if ref($sessions_result->{data}{sessions}) eq 'ARRAY';
         $loxberry_bindings = $sessions_result->{data}{loxberry_bindings}
@@ -756,6 +760,41 @@ my $runtime_signal_uuid = $emergency_stop_runtime->{signal_uuid};
 $runtime_signal_uuid = '' if !defined($runtime_signal_uuid) || ref($runtime_signal_uuid);
 my $runtime_signal_name = $emergency_stop_runtime->{signal_name};
 $runtime_signal_name = '' if !defined($runtime_signal_name) || ref($runtime_signal_name);
+my @remote_cleanup_notices;
+if ($server_rendered_fallback) {
+    if (!$remote_cleanup->{available}) {
+        push @remote_cleanup_notices, $L{'SESSIONS.REMOTE_STATUS_UNAVAILABLE'};
+    } else {
+        push @remote_cleanup_notices, $L{'SESSIONS.REMOTE_BREAKER_WARNING'}
+            if ($remote_cleanup->{breaker_state} // '') eq 'open_source_ip_blocked';
+        for my $entry (
+            ['pending', 'SESSIONS.REMOTE_PENDING_WARNING'],
+            ['retryable', 'SESSIONS.REMOTE_RETRYABLE_WARNING'],
+            ['unconfirmed', 'SESSIONS.REMOTE_UNCONFIRMED_WARNING'],
+        ) {
+            my ($field, $label) = @$entry;
+            my $count = $remote_cleanup->{$field};
+            push @remote_cleanup_notices, "$L{$label} $count"
+                if defined($count) && !ref($count) && $count =~ /\A[0-9]+\z/ && $count > 0;
+        }
+        my %failure_labels = (
+            authentication_rejected => 'SESSIONS.REMOTE_REJECTED',
+            source_ip_blocked => 'SESSIONS.REMOTE_BLOCKED',
+            transport_failed => 'SESSIONS.REMOTE_TRANSPORT',
+            command_rejected => 'SESSIONS.REMOTE_COMMAND',
+        );
+        my $category = $remote_cleanup->{last_failure_category} // '';
+        my $at = $remote_cleanup->{last_failure_at};
+        if (@remote_cleanup_notices && exists $failure_labels{$category}
+            && defined($at) && !ref($at) && $at =~ /\A[0-9]+\z/) {
+            my $failure_label = $failure_labels{$category};
+            push @remote_cleanup_notices,
+                $L{'SESSIONS.REMOTE_LAST_FAILURE'} . ' '
+                . $L{$failure_label} . ', ' . format_expiry($at);
+        }
+    }
+}
+my $remote_cleanup_warning = join(' ', @remote_cleanup_notices);
 my $runtime_signal = $server_rendered_fallback && $runtime_availability eq 'available'
     ? ($runtime_signal_name ne '' ? $runtime_signal_name
         : $runtime_signal_uuid ne '' ? $runtime_signal_uuid
@@ -856,6 +895,8 @@ $template->param(
     CERTIFICATE_RENEWAL_STATE => $renewal_labels{$renewal_state}
         // $L{'CERTIFICATE.STATE_ERROR'},
     SESSIONS => $sessions,
+    REMOTE_CLEANUP_WARNING_VISIBLE => length($remote_cleanup_warning) ? 1 : 0,
+    REMOTE_CLEANUP_WARNING => $remote_cleanup_warning,
     LOXBERRY_BINDINGS => $loxberry_bindings,
     LOXBERRY_OPERATE_BINDINGS => $loxberry_operate_bindings,
     HAS_SESSIONS => scalar(@$sessions) ? 1 : 0,
