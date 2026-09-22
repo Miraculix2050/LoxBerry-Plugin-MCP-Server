@@ -644,7 +644,7 @@ def test_admin_sections_are_native_persistent_collapsibles() -> None:
         assert f'<details id="{section}" class="mcp-card" data-persist-collapse' in template
         section_markup = template[template.index(f'id="{section}"') :]
         assert re.search(
-            rf"<summary>.*?<TMPL_VAR {re.escape(label_key)}",
+            rf"<summary(?: [^>]*)?>.*?<TMPL_VAR {re.escape(label_key)}",
             section_markup,
             re.DOTALL,
         )
@@ -666,6 +666,12 @@ def test_admin_sections_are_native_persistent_collapsibles() -> None:
     assert re.findall(
         r'<details id="([^"]+)" class="mcp-card" data-persist-collapse', template
     ) == [section for section, _label_key in expected_sections]
+    for section in ("access", "sessions", "diagnostics", "help"):
+        assert re.search(
+            rf'<details id="{section}" class="mcp-card" data-persist-collapse '
+            r"<TMPL_IF SERVER_RENDERED_FALLBACK>open</TMPL_IF>",
+            template,
+        )
 
 
 def test_admin_collapse_state_preserves_existing_preferences() -> None:
@@ -737,10 +743,12 @@ def test_admin_hash_navigation_reopens_a_manually_closed_section() -> None:
         "class HTMLDetailsElement { constructor() { this.open = false; } }\n"
         "class Element { closest() { return { hash: '#access' }; } }\n"
         "const section = new HTMLDetailsElement();\n"
+        "const configuration = new HTMLDetailsElement();\n"
         "const listeners = {};\n"
         "const window = { location: { hash: '#access' }, "
         "addEventListener: (type, callback) => { listeners[type] = callback; } };\n"
-        "const document = { getElementById: (id) => id === 'access' ? section : null, "
+        "const document = { getElementById: (id) => "
+        "({ access: section, configuration })[id] || null, "
         "addEventListener: (type, callback) => { listeners[type] = callback; } };\n"
         "let persistCount = 0;\n"
         "const persistCollapsibles = () => { persistCount += 1; };\n"
@@ -753,7 +761,14 @@ assert.equal(section.open, true);
 section.open = false;
 listeners.hashchange({ type: 'hashchange' });
 assert.equal(section.open, true);
-assert.equal(persistCount, 3);
+window.location.hash = '#setup';
+listeners.hashchange({ type: 'hashchange' });
+assert.equal(configuration.open, true);
+section.open = false;
+window.location.hash = '#certificate';
+listeners.hashchange({ type: 'hashchange' });
+assert.equal(section.open, true);
+assert.equal(persistCount, 5);
 """
     )
     subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
@@ -772,8 +787,10 @@ def test_admin_access_section_groups_connection_urls_and_certificate_controls() 
     assert 'id="schema-reference-link"' not in access
     assert 'id="explorer-link"' in help_section
     assert 'id="schema-reference-link"' in help_section
-    assert 'id="setup"' not in template
-    assert 'id="certificate"' not in template
+    assert '<summary id="setup"><TMPL_VAR SETUP.TITLE>' in template
+    assert '<summary id="certificate"><TMPL_VAR ACCESS.TITLE>' in template
+    assert '<details id="setup"' not in template
+    assert '<details id="certificate"' not in template
     assert "const accessSection = document.getElementById('access');" in template
     assert "const certificatePanel = document.getElementById('certificate-panel');" in template
 

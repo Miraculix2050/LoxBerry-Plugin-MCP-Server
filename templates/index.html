@@ -63,7 +63,7 @@
   </form>
 
   <details id="configuration" class="mcp-card" data-persist-collapse open>
-    <summary><TMPL_VAR SETUP.TITLE></summary>
+    <summary id="setup"><TMPL_VAR SETUP.TITLE></summary>
     <div class="mcp-collapsible-content">
     <form id="mcp-config-form" class="mcp-form" method="post" action="index.cgi" data-ajax="save_mcp_config">
       <input type="hidden" name="action" value="save_mcp_config">
@@ -167,8 +167,8 @@
     </div>
   </details>
 
-  <details id="access" class="mcp-card" data-persist-collapse>
-    <summary><TMPL_VAR ACCESS.TITLE></summary>
+  <details id="access" class="mcp-card" data-persist-collapse <TMPL_IF SERVER_RENDERED_FALLBACK>open</TMPL_IF>>
+    <summary id="certificate"><TMPL_VAR ACCESS.TITLE></summary>
     <div class="mcp-collapsible-content">
       <div class="mcp-field-stack">
         <label class="mcp-field"><span><TMPL_VAR ACCESS.MCP_HOSTNAME></span><span class="mcp-copy-row"><input id="mcp-url-hostname" type="text" readonly value="<TMPL_VAR HOSTNAME_MCP_URL ESCAPE=HTML>"><button class="lb-button" type="button" data-copy-target="mcp-url-hostname"><TMPL_VAR ACTION.COPY></button></span></label>
@@ -208,7 +208,7 @@
     </div>
   </details>
 
-  <details id="sessions" class="mcp-card" data-persist-collapse aria-busy="true"
+  <details id="sessions" class="mcp-card" data-persist-collapse <TMPL_IF SERVER_RENDERED_FALLBACK>open</TMPL_IF> aria-busy="true"
     data-empty-label="<TMPL_VAR SESSIONS.EMPTY ESCAPE=HTML>"
     data-unnamed-label="<TMPL_VAR SESSIONS.UNNAMED ESCAPE=HTML>">
     <summary><TMPL_VAR SESSIONS.TITLE></summary>
@@ -266,7 +266,7 @@
     </div>
   </details>
 
-  <details id="diagnostics" class="mcp-card" data-persist-collapse>
+  <details id="diagnostics" class="mcp-card" data-persist-collapse <TMPL_IF SERVER_RENDERED_FALLBACK>open</TMPL_IF>>
     <summary><TMPL_VAR DIAGNOSTICS.TITLE></summary>
     <div class="mcp-collapsible-content mcp-form">
     <p><TMPL_VAR DIAGNOSTICS.TEXT></p>
@@ -298,7 +298,7 @@
     </div>
   </details>
 
-  <details id="help" class="mcp-card" data-persist-collapse>
+  <details id="help" class="mcp-card" data-persist-collapse <TMPL_IF SERVER_RENDERED_FALLBACK>open</TMPL_IF>>
     <summary><TMPL_VAR HELP.TITLE></summary>
     <div class="mcp-collapsible-content">
       <p><TMPL_VAR HELP.TOOL_ACCESS></p>
@@ -363,7 +363,9 @@
     element.addEventListener('toggle', persistCollapsibles);
   }
   const openHashSection = (hash = window.location.hash) => {
-    const target = document.getElementById(hash.slice(1));
+    const fragment = hash.slice(1);
+    const sectionId = { setup: 'configuration', certificate: 'access' }[fragment] || fragment;
+    const target = document.getElementById(sectionId);
     if (target instanceof HTMLDetailsElement && !target.open) {
       target.open = true;
       persistCollapsibles();
