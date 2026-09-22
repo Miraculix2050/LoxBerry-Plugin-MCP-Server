@@ -1888,6 +1888,20 @@ async def _project_query(runtime: LoxoneRuntime | None) -> tuple[ProjectQuery, R
     return ProjectQuery(view, names), snapshot
 
 
+async def _history_project_query(
+    runtime: LoxoneRuntime | None, access: StoredAccessToken
+) -> tuple[ProjectQuery, RuntimeSnapshot]:
+    """Load one project view through the history authorization and rate gate."""
+
+    if runtime is None or runtime.projects is None:
+        raise RuntimeUnavailable("the project service is not configured")
+    async with runtime.history_call_slot(access):
+        snapshot = await runtime.snapshot(access)
+        view = await runtime.projects.view(access, snapshot)
+    names = {control.uuid: control.name for control in _visible_controls(snapshot.structure)}
+    return ProjectQuery(view, names), snapshot
+
+
 def _project_error_code(error: ProjectError | ProjectQueryError) -> tuple[str, str, str | None]:
     code = str(error)
     if code in {
@@ -3776,7 +3790,7 @@ def register_observability_tools(
             end_seconds = end_time.timestamp()
             if start_seconds > end_seconds or end_seconds - start_seconds > 90 * 24 * 60 * 60:
                 raise ValueError("observability interval is invalid")
-            project, snapshot = await _project_query(runtime)
+            project, snapshot = await _history_project_query(runtime, access)
             target = project.resolve(target_identifier, target_type)
             analysis = project.observable_controls(
                 target, direction=direction, max_depth=max_depth, max_nodes=max_nodes

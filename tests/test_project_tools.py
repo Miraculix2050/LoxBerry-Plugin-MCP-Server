@@ -165,7 +165,8 @@ async def test_observability_reports_current_sources_and_explicit_history_gaps(m
     structure = LoxoneStructure(LoxoneIdentity("user", "serial"), "modified", (), (), (control,))
     snapshot = SimpleNamespace(connected=True, structure=structure, structure_generation=1)
 
-    async def project_query(_runtime):
+    async def history_project_query(_runtime, access):
+        assert HISTORY_SCOPE in access.scopes
         return Query(), snapshot
 
     class Runtime:
@@ -183,7 +184,7 @@ async def test_observability_reports_current_sources_and_explicit_history_gaps(m
                 ("control", "state-complete"): EventHistoryCoverage(1.0, 1.0, "complete", True)
             }
 
-    monkeypatch.setattr(tools_module, "_project_query", project_query)
+    monkeypatch.setattr(tools_module, "_history_project_query", history_project_query)
     monkeypatch.setattr(
         tools_module,
         "_access",
