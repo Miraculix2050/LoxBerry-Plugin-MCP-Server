@@ -307,6 +307,45 @@ async def test_observability_unavailable_history_remains_unverified(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_observability_bounds_state_name_metadata(monkeypatch):
+    state_name = "ä" * 101
+    control = Control(
+        "control", "Long state name", "Switch", None, None, None, ((state_name, "state"),)
+    )
+    structure = LoxoneStructure(LoxoneIdentity("user", "serial"), "modified", (), (), (control,))
+    snapshot = SimpleNamespace(connected=True, structure=structure, structure_generation=1)
+
+    async def history_project_query(_runtime, _access):
+        return Query(), snapshot
+
+    class Runtime:
+        def state(self, _snapshot, state_uuid):
+            return StateRecord(state_uuid, None, Freshness.UNKNOWN, None)
+
+    monkeypatch.setattr(tools_module, "_history_project_query", history_project_query)
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: SimpleNamespace(scopes=frozenset((READ_SCOPE, HISTORY_SCOPE)), family_id="family"),
+    )
+    server = FastMCP("observability-state-name")
+    register_observability_tools(server, Runtime(), None)  # type: ignore[arg-type]
+
+    result = await server._tool_manager.get_tool("loxone_analyze_observability").fn(  # type: ignore[union-attr]
+        "control",
+        "runtime_control_uuid",
+        "upstream",
+        "2026-09-01T00:00:00Z",
+        "2026-09-02T00:00:00Z",
+    )
+
+    assert result.ok is True
+    state = result.data.controls[0].current_states[0]
+    assert len(state.name.encode("utf-8")) == 200
+    assert result.data.controls[0].state_names_truncated is True
+
+
+@pytest.mark.asyncio
 async def test_observability_requires_history_scope(monkeypatch):
     monkeypatch.setattr(
         tools_module,

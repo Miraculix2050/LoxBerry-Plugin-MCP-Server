@@ -105,6 +105,7 @@ _CACHE_CLEAR_TIMEOUT_SECONDS: Final = 10.0
 _EVENT_HISTORY_SOURCE_CHANGE_TIMEOUT_SECONDS: Final = 75.0
 _OBSERVABILITY_MAX_STATES_PER_CONTROL: Final = 20
 _OBSERVABILITY_MAX_STATISTICS_PER_CONTROL: Final = 20
+_OBSERVABILITY_MAX_STATE_NAME_BYTES: Final = 200
 
 CursorArgument = Annotated[
     str | None,
@@ -905,6 +906,7 @@ class ObservabilityControlData(BaseModel):
     directions: list[Literal["upstream", "downstream"]]
     current_states: list[ObservabilityCurrentStateData]
     states_truncated: bool = False
+    state_names_truncated: bool = False
     native_statistics: list[ObservabilityStatisticSeriesData]
     native_statistics_truncated: bool = False
     local_event_history: list[ObservabilityEventHistoryData]
@@ -1198,6 +1200,15 @@ class LoxBerryServiceEventsEnvelope(ToolEnvelope):
 
 def _now() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _truncate_utf8(value: str, maximum_bytes: int) -> tuple[str, bool]:
+    """Return a UTF-8-safe bounded value and whether source text was omitted."""
+
+    encoded = value.encode("utf-8")
+    if len(encoded) <= maximum_bytes:
+        return value, False
+    return encoded[:maximum_bytes].decode("utf-8", errors="ignore"), True
 
 
 def _result[EnvelopeT: ToolEnvelope](
@@ -3872,7 +3883,16 @@ def register_observability_tools(
                 "historical_unverified": 0,
             }
             for control, candidate in source_controls:
-                state_pairs = control.state_uuids[:_OBSERVABILITY_MAX_STATES_PER_CONTROL]
+                state_pairs: list[tuple[str, str]] = []
+                state_names_truncated = False
+                for state_name, state_uuid in control.state_uuids[
+                    :_OBSERVABILITY_MAX_STATES_PER_CONTROL
+                ]:
+                    bounded_name, state_name_truncated = _truncate_utf8(
+                        state_name, _OBSERVABILITY_MAX_STATE_NAME_BYTES
+                    )
+                    state_pairs.append((bounded_name, state_uuid))
+                    state_names_truncated = state_names_truncated or state_name_truncated
                 current_states = []
                 for state_name, state_uuid in state_pairs:
                     record = (
@@ -3984,6 +4004,7 @@ def register_observability_tools(
                         "directions": directions if isinstance(directions, list) else [],
                         "current_states": current_states,
                         "states_truncated": states_truncated,
+                        "state_names_truncated": state_names_truncated,
                         "native_statistics": native_statistics,
                         "native_statistics_truncated": native_statistics_truncated,
                         "local_event_history": local_event_history,

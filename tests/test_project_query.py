@@ -18,7 +18,7 @@ def control(uuid, action=None, children=()):
     return SimpleNamespace(uuid=uuid, action_uuid=action, subcontrols=children)
 
 
-def query() -> ProjectQuery:
+def query(*, shared_mapping: bool = False) -> ProjectQuery:
     source, target, source_connector = "a" * 32, "b" * 32, "c" * 32
     parsed = parse_project(
         (
@@ -31,7 +31,12 @@ def query() -> ProjectQuery:
     snapshot = ProjectSnapshot(
         "project", 1, (ProjectPartSummary("p", 8, ()),), build_graph((("p", parsed),))
     )
-    structure = SimpleNamespace(last_modified="v1", controls=(control(target),))
+    controls = (
+        (control("first", target), control("second", target))
+        if shared_mapping
+        else (control(target),)
+    )
+    structure = SimpleNamespace(last_modified="v1", controls=controls)
     return ProjectQuery(
         ProjectView(snapshot, map_runtime(snapshot, structure)), {target: "Living room"}
     )
@@ -80,6 +85,30 @@ def test_observable_controls_keep_only_exact_runtime_mappings():
         }
     ]
     assert result["truncated"] is False
+
+
+def test_observable_controls_include_all_exact_shared_mappings():
+    project = query(shared_mapping=True)
+
+    result = project.observable_controls(
+        project.resolve("first", "runtime_control_uuid"),
+        direction="both",
+        max_depth=6,
+        max_nodes=100,
+    )
+
+    assert result["controls"] == [
+        {
+            "control_uuid": "first",
+            "project_node_ids": ["p:3"],
+            "directions": ["upstream", "downstream"],
+        },
+        {
+            "control_uuid": "second",
+            "project_node_ids": ["p:3"],
+            "directions": ["upstream", "downstream"],
+        },
+    ]
 
 
 def test_observable_controls_preserve_semantic_truncation_and_deduplicate_unresolved(

@@ -98,8 +98,9 @@ reports current-state availability, advertised native statistic-series metadata,
 event-history coverage for the requested period. Structural reachability is not a causal
 claim; advertised statistics are deliberately not fetched and report `not_checked` temporal
 coverage. At most 20 statistic series per control are returned; `native_statistics_truncated`
-marks omitted metadata. Missing or partial local coverage is an evidence gap, never proof of
-non-occurrence.
+marks omitted metadata. State names are capped at 200 UTF-8 bytes and
+`state_names_truncated` marks omitted text. Missing or partial local coverage is an evidence gap,
+never proof of non-occurrence.
 
 ### Source diagnostics
 

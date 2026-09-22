@@ -751,29 +751,30 @@ class ProjectQuery:
             for item in nodes:
                 if not isinstance(item, dict):
                     continue
-                runtime = item.get("runtime_control")
                 node_key = item.get("project_node_id")
-                if (
-                    not isinstance(runtime, dict)
-                    or not isinstance(runtime.get("uuid"), str)
-                    or not isinstance(node_key, str)
-                ):
+                if not isinstance(node_key, str):
                     continue
-                control_uuid = runtime["uuid"]
-                record = controls.setdefault(
-                    control_uuid,
-                    {
-                        "control_uuid": control_uuid,
-                        "project_node_ids": [],
-                        "directions": [],
-                    },
-                )
-                project_node_ids = record["project_node_ids"]
-                if isinstance(project_node_ids, list) and node_key not in project_node_ids:
-                    project_node_ids.append(node_key)
-                record_directions = record["directions"]
-                if isinstance(record_directions, list) and trace_direction not in record_directions:
-                    record_directions.append(trace_direction)
+                for mapping in self._mapped_nodes.get(node_key, ()):
+                    if mapping.status != "exact":
+                        continue
+                    control_uuid = mapping.control_uuid
+                    record = controls.setdefault(
+                        control_uuid,
+                        {
+                            "control_uuid": control_uuid,
+                            "project_node_ids": [],
+                            "directions": [],
+                        },
+                    )
+                    project_node_ids = record["project_node_ids"]
+                    if isinstance(project_node_ids, list) and node_key not in project_node_ids:
+                        project_node_ids.append(node_key)
+                    record_directions = record["directions"]
+                    if (
+                        isinstance(record_directions, list)
+                        and trace_direction not in record_directions
+                    ):
+                        record_directions.append(trace_direction)
         return {
             "target": self._summary(node),
             "controls": [controls[key] for key in sorted(controls)],
