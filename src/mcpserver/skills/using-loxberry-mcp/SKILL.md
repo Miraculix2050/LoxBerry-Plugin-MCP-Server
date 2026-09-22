@@ -234,7 +234,8 @@ direction, and the requested RFC-3339 range. It returns only exact UUID-mapped
 reachable controls, current-state availability, advertised statistic-series
 metadata, and local event-history coverage. A project path is not a historical
 cause; `temporal_coverage: not_checked` means statistics were not retrieved;
-and `not_recorded` or `partial_coverage` never proves that a state did not occur.
+`native_statistics_truncated` marks omitted statistic metadata; and
+`not_recorded` or `partial_coverage` never proves that a state did not occur.
 Use `loxone_get_statistics` only when an advertised series needs direct evidence
 for the same period. Do not add history sources automatically; recording advice
 is outside this tool.

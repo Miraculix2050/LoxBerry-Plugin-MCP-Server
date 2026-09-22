@@ -97,7 +97,9 @@ downstream, or combined structural reachability and keeps only exact UUID mappin
 reports current-state availability, advertised native statistic-series metadata, and local
 event-history coverage for the requested period. Structural reachability is not a causal
 claim; advertised statistics are deliberately not fetched and report `not_checked` temporal
-coverage. Missing or partial local coverage is an evidence gap, never proof of non-occurrence.
+coverage. At most 20 statistic series per control are returned; `native_statistics_truncated`
+marks omitted metadata. Missing or partial local coverage is an evidence gap, never proof of
+non-occurrence.
 
 ### Source diagnostics
 

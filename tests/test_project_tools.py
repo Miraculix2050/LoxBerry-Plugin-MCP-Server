@@ -158,8 +158,11 @@ async def test_observability_reports_current_sources_and_explicit_history_gaps(m
         None,
         None,
         (("value", "state-complete"), ("window", "state-missing")),
-        statistic_series=(
-            StatisticSeries("series", "statistic_v2", "group", "output", "Trend", "°C"),
+        statistic_series=tuple(
+            StatisticSeries(
+                f"series-{index}", "statistic_v2", "group", "output", f"Trend {index}", "°C"
+            )
+            for index in range(21)
         ),
     )
     structure = LoxoneStructure(LoxoneIdentity("user", "serial"), "modified", (), (), (control,))
@@ -205,6 +208,8 @@ async def test_observability_reports_current_sources_and_explicit_history_gaps(m
     data = result.data
     assert data.controls[0].current_states[0].available is True
     assert data.controls[0].native_statistics[0].temporal_coverage == "not_checked"
+    assert len(data.controls[0].native_statistics) == 20
+    assert data.controls[0].native_statistics_truncated is True
     assert data.controls[0].local_event_history[0].status == "complete"
     assert data.controls[0].local_event_history[1].status == "not_configured"
     assert data.controls[0].historical_status == "partial"

@@ -104,6 +104,7 @@ _ERROR_LAST: dict[str, float] = {}
 _CACHE_CLEAR_TIMEOUT_SECONDS: Final = 10.0
 _EVENT_HISTORY_SOURCE_CHANGE_TIMEOUT_SECONDS: Final = 75.0
 _OBSERVABILITY_MAX_STATES_PER_CONTROL: Final = 20
+_OBSERVABILITY_MAX_STATISTICS_PER_CONTROL: Final = 20
 
 CursorArgument = Annotated[
     str | None,
@@ -905,6 +906,7 @@ class ObservabilityControlData(BaseModel):
     current_states: list[ObservabilityCurrentStateData]
     states_truncated: bool = False
     native_statistics: list[ObservabilityStatisticSeriesData]
+    native_statistics_truncated: bool = False
     local_event_history: list[ObservabilityEventHistoryData]
     historical_status: Literal["complete", "partial", "missing", "unverified"]
 
@@ -3890,6 +3892,9 @@ def register_observability_tools(
                     stale = stale or record.freshness is not Freshness.CURRENT
                 if any(item["available"] for item in current_states):
                     summary["current_state_controls"] += 1
+                statistic_series = control.statistic_series[
+                    :_OBSERVABILITY_MAX_STATISTICS_PER_CONTROL
+                ]
                 native_statistics = [
                     {
                         "series_id": series.series_id,
@@ -3898,8 +3903,9 @@ def register_observability_tools(
                         "format": series.format,
                         "accumulated": series.accumulated,
                     }
-                    for series in control.statistic_series
+                    for series in statistic_series
                 ]
+                native_statistics_truncated = len(control.statistic_series) > len(statistic_series)
                 if native_statistics:
                     summary["native_statistics_configured"] += 1
                 local_event_history = []
@@ -3979,6 +3985,7 @@ def register_observability_tools(
                         "current_states": current_states,
                         "states_truncated": states_truncated,
                         "native_statistics": native_statistics,
+                        "native_statistics_truncated": native_statistics_truncated,
                         "local_event_history": local_event_history,
                         "historical_status": historical_status,
                     }
