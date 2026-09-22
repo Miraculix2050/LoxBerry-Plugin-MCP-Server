@@ -712,7 +712,7 @@ class ProjectQuery:
         controls: dict[str, dict[str, object]] = {}
         truncated = False
         truncation_reasons: list[str] = []
-        unresolved_relationship_keys: set[tuple[str, str]] = set()
+        unresolved_relationship_counts: dict[tuple[str, str], int] = {}
         unresolved_truncated = False
         for trace_direction in directions:
             trace = self.trace(
@@ -732,13 +732,18 @@ class ProjectQuery:
                 truncation_reasons.append("semantic_incomplete")
             unresolved = trace["unresolved_relationships"]
             if isinstance(unresolved, list):
+                trace_unresolved_counts: defaultdict[tuple[str, str], int] = defaultdict(int)
                 for relationship in unresolved:
                     if not isinstance(relationship, dict):
                         continue
                     node_key = relationship.get("project_node_id")
                     code = relationship.get("code")
                     if isinstance(node_key, str) and isinstance(code, str):
-                        unresolved_relationship_keys.add((node_key, code))
+                        trace_unresolved_counts[(node_key, code)] += 1
+                for key, count in trace_unresolved_counts.items():
+                    unresolved_relationship_counts[key] = max(
+                        unresolved_relationship_counts.get(key, 0), count
+                    )
             unresolved_truncated = unresolved_truncated or bool(trace["unresolved_truncated"])
             nodes = trace["nodes"]
             if not isinstance(nodes, list):
@@ -774,6 +779,6 @@ class ProjectQuery:
             "controls": [controls[key] for key in sorted(controls)],
             "truncated": truncated,
             "truncation_reasons": truncation_reasons,
-            "unresolved_relationships": len(unresolved_relationship_keys),
+            "unresolved_relationships": sum(unresolved_relationship_counts.values()),
             "unresolved_truncated": unresolved_truncated,
         }

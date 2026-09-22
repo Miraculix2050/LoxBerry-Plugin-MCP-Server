@@ -94,7 +94,10 @@ def test_observable_controls_preserve_semantic_truncation_and_deduplicate_unreso
             "truncated": False,
             "semantic_truncated": True,
             "truncation_reason": None,
-            "unresolved_relationships": [{"project_node_id": "p:1", "code": "unresolved_signal"}],
+            "unresolved_relationships": [
+                {"project_node_id": "p:1", "code": "unresolved_signal"},
+                {"project_node_id": "p:1", "code": "unresolved_signal"},
+            ],
             "unresolved_truncated": False,
         }
 
@@ -109,7 +112,7 @@ def test_observable_controls_preserve_semantic_truncation_and_deduplicate_unreso
 
     assert result["truncated"] is True
     assert result["truncation_reasons"] == ["semantic_incomplete"]
-    assert result["unresolved_relationships"] == 1
+    assert result["unresolved_relationships"] == 2
 
 
 def test_source_diagnostics_are_available_without_unknown_values():

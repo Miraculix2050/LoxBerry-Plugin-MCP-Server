@@ -213,6 +213,56 @@ async def test_observability_reports_current_sources_and_explicit_history_gaps(m
 
 
 @pytest.mark.asyncio
+async def test_observability_state_truncation_without_history_remains_missing(monkeypatch):
+    control = Control(
+        "control",
+        "Many states",
+        "Switch",
+        None,
+        None,
+        None,
+        tuple((f"state-{index}", f"uuid-{index}") for index in range(21)),
+    )
+    structure = LoxoneStructure(LoxoneIdentity("user", "serial"), "modified", (), (), (control,))
+    snapshot = SimpleNamespace(connected=True, structure=structure, structure_generation=1)
+
+    async def history_project_query(_runtime, _access):
+        return Query(), snapshot
+
+    class Runtime:
+        def state(self, _snapshot, state_uuid):
+            return StateRecord(state_uuid, None, Freshness.UNKNOWN, None)
+
+    class EventHistory:
+        async def coverage(self, _access, _sources, **_kwargs):
+            return False, {}
+
+    monkeypatch.setattr(tools_module, "_history_project_query", history_project_query)
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: SimpleNamespace(scopes=frozenset((READ_SCOPE, HISTORY_SCOPE)), family_id="family"),
+    )
+    server = FastMCP("observability-state-truncation")
+    register_observability_tools(server, Runtime(), EventHistory())  # type: ignore[arg-type]
+
+    result = await server._tool_manager.get_tool("loxone_analyze_observability").fn(  # type: ignore[union-attr]
+        "control",
+        "runtime_control_uuid",
+        "upstream",
+        "2026-09-01T00:00:00Z",
+        "2026-09-02T00:00:00Z",
+    )
+
+    assert result.ok is True
+    data = result.data
+    assert data.controls[0].states_truncated is True
+    assert data.controls[0].historical_status == "missing"
+    assert data.summary.local_history_missing == 1
+    assert data.summary.historical_missing == 1
+
+
+@pytest.mark.asyncio
 async def test_observability_requires_history_scope(monkeypatch):
     monkeypatch.setattr(
         tools_module,

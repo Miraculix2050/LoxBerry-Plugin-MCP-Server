@@ -3945,7 +3945,7 @@ def register_observability_tools(
                     and all(status == "complete" for status in local_statuses)
                     and not states_truncated
                 )
-                local_partial = states_truncated or any(
+                local_partial = any(
                     status in {"complete", "partial_coverage"} for status in local_statuses
                 )
                 if local_complete:
