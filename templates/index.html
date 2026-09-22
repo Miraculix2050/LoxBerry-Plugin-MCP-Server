@@ -321,12 +321,29 @@
   const pluginLogList = document.getElementById('plugin-log-list');
   const collapseStorageKey = 'mcpserver.admin.sections.v2';
   const collapsibles = [...document.querySelectorAll('details[data-persist-collapse]')];
-  let storedCollapseState = {};
-  try {
-    storedCollapseState = JSON.parse(window.localStorage.getItem(collapseStorageKey) || '{}');
-  } catch {
-    storedCollapseState = {};
-  }
+  // collapse-state-migration-start
+  const readCollapseState = () => {
+    try {
+      const storage = window.localStorage;
+      const current = storage.getItem(collapseStorageKey);
+      if (current !== null) {
+        const state = JSON.parse(current);
+        return state && typeof state === 'object' && !Array.isArray(state) ? state : {};
+      }
+      const legacy = JSON.parse(storage.getItem('mcpserver.admin.sections.v1') || '{}');
+      if (!legacy || typeof legacy !== 'object' || Array.isArray(legacy)) return {};
+      const migrated = { ...legacy };
+      if (typeof legacy.setup === 'boolean') migrated.configuration = legacy.setup;
+      if (typeof legacy.certificate === 'boolean' || typeof legacy.help === 'boolean') {
+        migrated.access = legacy.certificate === true || legacy.help === true;
+      }
+      return migrated;
+    } catch {
+      return {};
+    }
+  };
+  // collapse-state-migration-end
+  const storedCollapseState = readCollapseState();
   const persistCollapsibles = () => {
     const state = Object.fromEntries(collapsibles.map((element) => [element.id, element.open]));
     try { window.localStorage.setItem(collapseStorageKey, JSON.stringify(state)); } catch { /* Defaults remain usable. */ }
@@ -335,14 +352,18 @@
     if (typeof storedCollapseState[element.id] === 'boolean') element.open = storedCollapseState[element.id];
     element.addEventListener('toggle', persistCollapsibles);
   }
-  const openHashSection = () => {
-    const target = document.getElementById(window.location.hash.slice(1));
+  const openHashSection = (hash = window.location.hash) => {
+    const target = document.getElementById(hash.slice(1));
     if (target instanceof HTMLDetailsElement && !target.open) {
       target.open = true;
       persistCollapsibles();
     }
   };
-  window.addEventListener('hashchange', openHashSection);
+  window.addEventListener('hashchange', () => openHashSection());
+  document.addEventListener('click', (event) => {
+    const anchor = event.target instanceof Element ? event.target.closest('a[href^="#"]') : null;
+    if (anchor) openHashSection(anchor.hash);
+  });
   openHashSection();
   const miniserverSelect = document.getElementById('miniserver-select');
   const manualEndpointFields = document.getElementById('manual-endpoint-fields');

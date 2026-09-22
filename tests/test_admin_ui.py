@@ -650,16 +650,107 @@ def test_admin_sections_are_native_persistent_collapsibles() -> None:
     assert '<details id="status" class="mcp-card" data-persist-collapse open' in template
     assert '<details id="configuration" class="mcp-card" data-persist-collapse open' in template
     assert "mcpserver.admin.sections.v2" in template
-    assert "window.localStorage.getItem(collapseStorageKey)" in template
+    assert "const storedCollapseState = readCollapseState();" in template
     assert "window.localStorage.setItem(collapseStorageKey" in template
     assert "element.addEventListener('toggle', persistCollapsibles)" in template
-    assert "window.addEventListener('hashchange', openHashSection)" in template
+    assert "window.addEventListener('hashchange', () => openHashSection())" in template
     assert "target instanceof HTMLDetailsElement" in template
     navbar = cgi[cgi.index("my @navbar_sections") : cgi.index("for my $index")]
     assert re.findall(r"\['([^']+)', '([^']+)'\]", navbar) == expected_sections
     assert re.findall(
         r'<details id="([^"]+)" class="mcp-card" data-persist-collapse', template
     ) == [section for section, _label_key in expected_sections]
+
+
+def test_admin_collapse_state_preserves_existing_preferences() -> None:
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    migration = re.search(
+        r"// collapse-state-migration-start\n(.*?)// collapse-state-migration-end",
+        template,
+        re.DOTALL,
+    )
+    assert migration is not None
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = (
+        "const assert = require('node:assert/strict');\n"
+        "const collapseStorageKey = 'mcpserver.admin.sections.v2';\n"
+        + migration.group(1)
+        + """
+const storage = (values) => ({ getItem: (key) => values[key] ?? null });
+const read = (values) => {
+  global.window = { localStorage: storage(values) };
+  return readCollapseState();
+};
+assert.deepEqual(read({
+  'mcpserver.admin.sections.v1': JSON.stringify({
+    status: false, setup: false, certificate: true, sessions: true, mqtt: false, help: true,
+  }),
+}), {
+  status: false, setup: false, certificate: true, sessions: true, mqtt: false, help: true,
+  configuration: false, access: true,
+});
+assert.deepEqual(read({
+  'mcpserver.admin.sections.v1': JSON.stringify({ setup: false }),
+  'mcpserver.admin.sections.v2': JSON.stringify({ configuration: true, access: false }),
+}), { configuration: true, access: false });
+assert.equal(read({
+  'mcpserver.admin.sections.v1': JSON.stringify({ help: true, certificate: false }),
+}).access, true);
+assert.equal(read({
+  'mcpserver.admin.sections.v1': JSON.stringify({ help: false, certificate: false }),
+}).access, false);
+assert.deepEqual(read({
+  'mcpserver.admin.sections.v1': 'null',
+}), {});
+assert.deepEqual(read({
+  'mcpserver.admin.sections.v1': '{',
+}), {});
+global.window = { localStorage: { getItem: () => { throw new Error('disabled'); } } };
+assert.deepEqual(readCollapseState(), {});
+global.window = {};
+Object.defineProperty(window, 'localStorage', { get: () => { throw new Error('disabled'); } });
+assert.deepEqual(readCollapseState(), {});
+"""
+    )
+    subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
+
+
+def test_admin_hash_navigation_reopens_a_manually_closed_section() -> None:
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    navigation = re.search(
+        r"  const openHashSection = .*?^  openHashSection\(\);",
+        template,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert navigation is not None
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = (
+        "const assert = require('node:assert/strict');\n"
+        "class HTMLDetailsElement { constructor() { this.open = false; } }\n"
+        "class Element { closest() { return { hash: '#access' }; } }\n"
+        "const section = new HTMLDetailsElement();\n"
+        "const listeners = {};\n"
+        "const window = { location: { hash: '#access' }, "
+        "addEventListener: (type, callback) => { listeners[type] = callback; } };\n"
+        "const document = { getElementById: (id) => id === 'access' ? section : null, "
+        "addEventListener: (type, callback) => { listeners[type] = callback; } };\n"
+        "let persistCount = 0;\n"
+        "const persistCollapsibles = () => { persistCount += 1; };\n"
+        + navigation.group(0)
+        + """
+assert.equal(section.open, true);
+section.open = false;
+listeners.click({ target: new Element() });
+assert.equal(section.open, true);
+section.open = false;
+listeners.hashchange({ type: 'hashchange' });
+assert.equal(section.open, true);
+assert.equal(persistCount, 3);
+"""
+    )
+    subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
 
 
 def test_admin_access_section_groups_connection_urls_and_certificate_controls() -> None:
