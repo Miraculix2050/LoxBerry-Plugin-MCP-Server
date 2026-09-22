@@ -852,20 +852,6 @@ $template->param(
     NOTICE_KIND => $notice_kind,
 );
 
-our %navbar;
-$navbar{10}{Name} = $L{'NAV.STATUS'};
-$navbar{10}{URL} = '#status';
-$navbar{20}{Name} = $L{'NAV.SETUP'};
-$navbar{20}{URL} = '#setup';
-$navbar{30}{Name} = $L{'NAV.SESSIONS'};
-$navbar{30}{URL} = '#sessions';
-$navbar{40}{Name} = $L{'NAV.DIAGNOSTICS'};
-$navbar{40}{URL} = '#diagnostics';
-$navbar{45}{Name} = $L{'NAV.CERTIFICATE'};
-$navbar{45}{URL} = '#certificate';
-$navbar{50}{Name} = $L{'NAV.HELP'};
-$navbar{50}{URL} = '#help';
-
 my $page = $template->output();
 my $template_duration_ms = (clock_gettime(CLOCK_MONOTONIC) - $render_started) * 1000;
 print_html_security_headers($template_duration_ms);

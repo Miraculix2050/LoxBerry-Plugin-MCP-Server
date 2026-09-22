@@ -214,7 +214,7 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert "window.addEventListener('beforeunload', markPageUnloading);" in template
     assert "window.addEventListener('pagehide', markPageUnloading);" in template
     assert "if (pageIsUnloading) return;" in template
-    assert "if (certificateSection.open && initialBackgroundHydrationComplete)" in template
+    assert "if (accessSection.open && initialBackgroundHydrationComplete)" in template
     assert "if (sessionsSection.open && initialBackgroundHydrationComplete)" in template
     assert "const emergencyStopGeneration = emergencyStopDiscoveryGeneration;" in template
     assert "queueBackgroundHydration([" in template
@@ -236,7 +236,7 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert "Server-Timing: mcp-template;dur=%.1f" in cgi
     assert "phase=loxberry_header duration_ms=%.1f" in cgi
     assert "lbheader($L{'BASIC.TITLE'} . \" V$version\", '', '', 'nojqm')" in cgi
-    assert "our %navbar" in cgi
+    assert 'class="mcp-section-nav"' in template
     assert "mcp-admin-shell-parsed" in template
     assert "mcp-admin-background-hydration-started" in template
     assert "print LoxBerry::Log::get_notifications_html($lbpplugindir);" not in cgi
@@ -265,7 +265,7 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
         in template
     )
     assert 'id="certificate-unavailable" class="mcp-status" hidden' in template
-    assert "if (certificateSection.open) loadCertificateStatus();" not in template
+    assert "if (accessSection.open) loadCertificateStatus();" not in template
     assert "if (sessionsSection.open) pollSessions();" not in template
     assert "serviceSection.setAttribute('aria-busy', 'false');" in template
     assert "sessionsSection.setAttribute('aria-busy', 'false');" in template
@@ -356,7 +356,7 @@ def test_admin_cards_use_consistent_vertical_spacing() -> None:
     explorer = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
     stylesheet = (ROOT / "webfrontend" / "htmlauth" / "mcp-ui.css").read_text(encoding="utf-8")
 
-    assert '<link rel="stylesheet" href="mcp-ui.css">' in template
+    assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-nav"' in template
     assert '<link rel="stylesheet" href="mcp-ui.css">' in explorer
     assert "<style>" not in template
     assert "<style>" not in explorer
@@ -370,7 +370,7 @@ def test_service_status_is_first_and_uses_a_lightweight_ajax_contract() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
 
-    assert template.index('id="status"') < template.index('id="setup"')
+    assert template.index('id="status"') < template.index('id="configuration"')
     assert 'data-ajax="service_status"' not in template
     for command in ("start", "stop", "restart"):
         assert f'data-service-command="{command}"' in template
@@ -627,18 +627,172 @@ def test_service_actions_use_an_accessible_confirmation_and_dynamic_controls() -
 
 
 def test_admin_sections_are_native_persistent_collapsibles() -> None:
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
 
-    for section in ("status", "setup", "mqtt", "help", "certificate", "sessions", "diagnostics"):
+    assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-nav"' in template
+    expected_sections = [
+        ("status", "STATUS.TITLE"),
+        ("configuration", "SETUP.TITLE"),
+        ("access", "ACCESS.TITLE"),
+        ("sessions", "SESSIONS.TITLE"),
+        ("mqtt", "MQTT.TITLE"),
+        ("diagnostics", "DIAGNOSTICS.TITLE"),
+        ("help", "HELP.TITLE"),
+    ]
+    for section, label_key in expected_sections:
         assert f'<details id="{section}" class="mcp-card" data-persist-collapse' in template
+        section_markup = template[template.index(f'id="{section}"') :]
+        assert re.search(
+            rf"<summary(?: [^>]*)?>.*?<TMPL_VAR {re.escape(label_key)}",
+            section_markup,
+            re.DOTALL,
+        )
     assert '<details id="status" class="mcp-card" data-persist-collapse open' in template
-    assert '<details id="setup" class="mcp-card" data-persist-collapse open' in template
-    assert "mcpserver.admin.sections.v1" in template
-    assert "window.localStorage.getItem(collapseStorageKey)" in template
+    assert '<details id="configuration" class="mcp-card" data-persist-collapse open' in template
+    assert "mcpserver.admin.sections.v2" in template
+    assert "const storedCollapseState = readCollapseState();" in template
     assert "window.localStorage.setItem(collapseStorageKey" in template
     assert "element.addEventListener('toggle', persistCollapsibles)" in template
-    assert "window.addEventListener('hashchange', openHashSection)" in template
+    assert "window.addEventListener('hashchange', () => openHashSection())" in template
     assert "target instanceof HTMLDetailsElement" in template
+    navbar = template[template.index('<nav class="mcp-section-nav"') : template.index("</nav>")]
+    assert 'aria-label="<TMPL_VAR NAV.SECTIONS ESCAPE=HTML>"' in navbar
+    assert (
+        re.findall(r'<a href="#([^"]+)"><TMPL_VAR ([A-Z.]+) ESCAPE=HTML></a>', navbar)
+        == expected_sections
+    )
+    assert "our %navbar" not in cgi
+    assert re.findall(
+        r'<details id="([^"]+)" class="mcp-card" data-persist-collapse', template
+    ) == [section for section, _label_key in expected_sections]
+    for section in ("access", "sessions", "diagnostics", "help"):
+        assert re.search(
+            rf'<details id="{section}" class="mcp-card" data-persist-collapse '
+            r"<TMPL_IF SERVER_RENDERED_FALLBACK>open</TMPL_IF>",
+            template,
+        )
+
+
+def test_admin_collapse_state_preserves_existing_preferences() -> None:
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    migration = re.search(
+        r"// collapse-state-migration-start\n(.*?)// collapse-state-migration-end",
+        template,
+        re.DOTALL,
+    )
+    assert migration is not None
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = (
+        "const assert = require('node:assert/strict');\n"
+        "const collapseStorageKey = 'mcpserver.admin.sections.v2';\n"
+        + migration.group(1)
+        + """
+const storage = (values) => ({ getItem: (key) => values[key] ?? null });
+const read = (values) => {
+  global.window = { localStorage: storage(values) };
+  return readCollapseState();
+};
+assert.deepEqual(read({
+  'mcpserver.admin.sections.v1': JSON.stringify({
+    status: false, setup: false, certificate: true, sessions: true, mqtt: false, help: true,
+  }),
+}), {
+  status: false, setup: false, certificate: true, sessions: true, mqtt: false, help: true,
+  configuration: false, access: true,
+});
+assert.deepEqual(read({
+  'mcpserver.admin.sections.v1': JSON.stringify({ setup: false }),
+  'mcpserver.admin.sections.v2': JSON.stringify({ configuration: true, access: false }),
+}), { configuration: true, access: false });
+assert.equal(read({
+  'mcpserver.admin.sections.v1': JSON.stringify({ help: true, certificate: false }),
+}).access, true);
+assert.equal(read({
+  'mcpserver.admin.sections.v1': JSON.stringify({ help: false, certificate: false }),
+}).access, false);
+assert.deepEqual(read({
+  'mcpserver.admin.sections.v1': 'null',
+}), {});
+assert.deepEqual(read({
+  'mcpserver.admin.sections.v1': '{',
+}), {});
+global.window = { localStorage: { getItem: () => { throw new Error('disabled'); } } };
+assert.deepEqual(readCollapseState(), {});
+global.window = {};
+Object.defineProperty(window, 'localStorage', { get: () => { throw new Error('disabled'); } });
+assert.deepEqual(readCollapseState(), {});
+"""
+    )
+    subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
+
+
+def test_admin_hash_navigation_reopens_a_manually_closed_section() -> None:
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    navigation = re.search(
+        r"  const openHashSection = .*?^  openHashSection\(\);",
+        template,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert navigation is not None
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = (
+        "const assert = require('node:assert/strict');\n"
+        "class HTMLDetailsElement { constructor() { this.open = false; } }\n"
+        "class Element { closest() { return { hash: '#access' }; } }\n"
+        "const section = new HTMLDetailsElement();\n"
+        "const configuration = new HTMLDetailsElement();\n"
+        "const listeners = {};\n"
+        "const window = { location: { hash: '#access' }, "
+        "addEventListener: (type, callback) => { listeners[type] = callback; } };\n"
+        "const document = { getElementById: (id) => "
+        "({ access: section, configuration })[id] || null, "
+        "addEventListener: (type, callback) => { listeners[type] = callback; } };\n"
+        "let persistCount = 0;\n"
+        "const persistCollapsibles = () => { persistCount += 1; };\n"
+        + navigation.group(0)
+        + """
+assert.equal(section.open, true);
+section.open = false;
+listeners.click({ target: new Element() });
+assert.equal(section.open, true);
+section.open = false;
+listeners.hashchange({ type: 'hashchange' });
+assert.equal(section.open, true);
+window.location.hash = '#setup';
+listeners.hashchange({ type: 'hashchange' });
+assert.equal(configuration.open, true);
+section.open = false;
+window.location.hash = '#certificate';
+listeners.hashchange({ type: 'hashchange' });
+assert.equal(section.open, true);
+assert.equal(persistCount, 5);
+"""
+    )
+    subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
+
+
+def test_admin_access_section_groups_connection_urls_and_certificate_controls() -> None:
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+
+    access = template[template.index('id="access"') : template.index('id="sessions"')]
+    help_section = template[template.index('id="help"') : template.index("</main>")]
+    assert 'id="mcp-url-hostname"' in access
+    assert 'id="mcp-url-ip"' in access
+    assert 'id="certificate-panel"' in access
+    assert 'data-ajax="renew_certificate"' in access
+    assert 'id="explorer-link"' not in access
+    assert 'id="schema-reference-link"' not in access
+    assert 'id="explorer-link"' in help_section
+    assert 'id="schema-reference-link"' in help_section
+    assert '<summary id="setup"><TMPL_VAR SETUP.TITLE>' in template
+    assert '<summary id="certificate"><TMPL_VAR ACCESS.TITLE>' in template
+    assert '<details id="setup"' not in template
+    assert '<details id="certificate"' not in template
+    assert "const accessSection = document.getElementById('access');" in template
+    assert "const certificatePanel = document.getElementById('certificate-panel');" in template
 
 
 def test_permission_policy_uses_grouped_scope_labeled_checkboxes() -> None:

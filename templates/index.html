@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="mcp-ui.css">
+<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-nav">
 <script>
   if (window.performance && typeof window.performance.mark === 'function') {
     window.performance.mark('mcp-admin-shell-parsed');
@@ -11,6 +11,16 @@
   <div id="ajax-status" class="mcp-status" role="status" aria-live="polite" hidden></div>
   <p><a id="configuration-fallback-link" href="index.cgi?fallback=1" hidden><TMPL_VAR AJAX.CONFIGURATION_FALLBACK></a></p>
   <div id="loxberry-notifications" aria-busy="true" aria-live="polite"><TMPL_IF SERVER_RENDERED_FALLBACK><TMPL_VAR NOTIFICATIONS_HTML><TMPL_ELSE><span class="mcp-status" data-kind="working"><TMPL_VAR AJAX.NOTIFICATIONS_LOADING></span></TMPL_IF></div>
+
+  <nav class="mcp-section-nav" aria-label="<TMPL_VAR NAV.SECTIONS ESCAPE=HTML>">
+    <a href="#status"><TMPL_VAR STATUS.TITLE ESCAPE=HTML></a>
+    <a href="#configuration"><TMPL_VAR SETUP.TITLE ESCAPE=HTML></a>
+    <a href="#access"><TMPL_VAR ACCESS.TITLE ESCAPE=HTML></a>
+    <a href="#sessions"><TMPL_VAR SESSIONS.TITLE ESCAPE=HTML></a>
+    <a href="#mqtt"><TMPL_VAR MQTT.TITLE ESCAPE=HTML></a>
+    <a href="#diagnostics"><TMPL_VAR DIAGNOSTICS.TITLE ESCAPE=HTML></a>
+    <a href="#help"><TMPL_VAR HELP.TITLE ESCAPE=HTML></a>
+  </nav>
 
   <details id="status" class="mcp-card" data-persist-collapse open
     data-state-active="<TMPL_VAR STATUS.ACTIVE ESCAPE=HTML>"
@@ -52,8 +62,8 @@
     <p class="mcp-help"><TMPL_VAR STATUS.ENABLED_HELP></p>
   </form>
 
-  <details id="setup" class="mcp-card" data-persist-collapse open>
-    <summary><TMPL_VAR SETUP.TITLE></summary>
+  <details id="configuration" class="mcp-card" data-persist-collapse open>
+    <summary id="setup"><TMPL_VAR SETUP.TITLE></summary>
     <div class="mcp-collapsible-content">
     <form id="mcp-config-form" class="mcp-form" method="post" action="index.cgi" data-ajax="save_mcp_config">
       <input type="hidden" name="action" value="save_mcp_config">
@@ -157,6 +167,76 @@
     </div>
   </details>
 
+  <details id="access" class="mcp-card" data-persist-collapse <TMPL_IF SERVER_RENDERED_FALLBACK>open</TMPL_IF>>
+    <summary id="certificate"><TMPL_VAR ACCESS.TITLE></summary>
+    <div class="mcp-collapsible-content">
+      <div class="mcp-field-stack">
+        <label class="mcp-field"><span><TMPL_VAR ACCESS.MCP_HOSTNAME></span><span class="mcp-copy-row"><input id="mcp-url-hostname" type="text" readonly value="<TMPL_VAR HOSTNAME_MCP_URL ESCAPE=HTML>"><button class="lb-button" type="button" data-copy-target="mcp-url-hostname"><TMPL_VAR ACTION.COPY></button></span></label>
+        <label class="mcp-field"><span><TMPL_VAR ACCESS.MCP_IP></span><span class="mcp-copy-row"><input id="mcp-url-ip" type="text" readonly value="<TMPL_VAR IP_MCP_URL ESCAPE=HTML>"><button class="lb-button" type="button" data-copy-target="mcp-url-ip"><TMPL_VAR ACTION.COPY></button></span></label>
+      </div>
+      <p class="mcp-help"><TMPL_VAR ACCESS.MCP_CERTIFICATE_HINT></p>
+      <section id="certificate-panel" aria-labelledby="certificate-heading" aria-busy="true"
+        data-state-scheduled="<TMPL_VAR CERTIFICATE.STATE_SCHEDULED ESCAPE=HTML>"
+        data-state-running="<TMPL_VAR CERTIFICATE.STATE_RUNNING ESCAPE=HTML>"
+        data-state-success="<TMPL_VAR CERTIFICATE.STATE_SUCCESS ESCAPE=HTML>"
+        data-state-error="<TMPL_VAR CERTIFICATE.STATE_ERROR ESCAPE=HTML>"
+        data-yes="<TMPL_VAR CERTIFICATE.YES ESCAPE=HTML>"
+        data-no="<TMPL_VAR CERTIFICATE.NO ESCAPE=HTML>"
+        data-not-configured="<TMPL_VAR CERTIFICATE.NOT_CONFIGURED ESCAPE=HTML>">
+      <h3 id="certificate-heading"><TMPL_VAR CERTIFICATE.TITLE></h3>
+      <p><TMPL_VAR CERTIFICATE.TEXT></p>
+      <div id="certificate-details" class="mcp-grid">
+        <p><TMPL_VAR CERTIFICATE.SOURCE>: <strong id="certificate-source"><TMPL_VAR AJAX.WORKING></strong></p>
+        <p><TMPL_VAR CERTIFICATE.EXPIRES>: <time id="certificate-expiry" class="mcp-expiry"><TMPL_VAR AJAX.WORKING></time></p>
+        <p><TMPL_VAR CERTIFICATE.DNS_SANS>: <strong id="certificate-dns-count"><TMPL_VAR AJAX.WORKING></strong></p>
+        <p><TMPL_VAR CERTIFICATE.IP_SANS>: <strong id="certificate-ip-count"><TMPL_VAR AJAX.WORKING></strong></p>
+        <p><TMPL_VAR CERTIFICATE.ORIGIN_MATCH>: <strong id="certificate-origin-match"><TMPL_VAR AJAX.WORKING></strong></p>
+        <p><TMPL_VAR CERTIFICATE.HOSTNAME_MATCH>: <strong id="certificate-hostname-match"><TMPL_VAR AJAX.WORKING></strong></p>
+      </div>
+      <p id="certificate-warning" class="mcp-warning" hidden><TMPL_VAR CERTIFICATE.WARNING></p>
+      <p id="certificate-renewal-info" hidden><TMPL_VAR CERTIFICATE.RENEWAL_STATE>: <strong id="certificate-renewal-state"></strong></p>
+        <form id="certificate-renewal-form" class="mcp-form" method="post" action="index.cgi" data-ajax="renew_certificate" data-certificate-renewal hidden>
+          <input type="hidden" name="action" value="renew_certificate">
+          <p class="mcp-warning"><TMPL_VAR CERTIFICATE.RENEW_TEXT></p>
+          <label class="mcp-field"><span><TMPL_VAR CERTIFICATE.PIN></span><input name="securepin" type="password" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" autocomplete="off" required></label>
+          <label><input name="renew_confirmation" type="checkbox" value="renew" required> <TMPL_VAR CERTIFICATE.CONFIRM></label>
+          <div class="mcp-actions"><button class="lb-button" type="submit"><TMPL_VAR ACTION.RENEW_CERTIFICATE></button><a class="lb-button" href="/admin/system/services.php"><TMPL_VAR ACTION.DOWNLOAD_CA_CERTIFICATE></a></div>
+        </form>
+      <p id="certificate-unsupported" class="mcp-help" hidden><TMPL_VAR CERTIFICATE.UNSUPPORTED></p>
+      <p id="certificate-unavailable" class="mcp-status" hidden><TMPL_VAR CERTIFICATE.UNAVAILABLE></p>
+      </section>
+    </div>
+  </details>
+
+  <details id="sessions" class="mcp-card" data-persist-collapse <TMPL_IF SERVER_RENDERED_FALLBACK>open</TMPL_IF> aria-busy="true"
+    data-empty-label="<TMPL_VAR SESSIONS.EMPTY ESCAPE=HTML>"
+    data-unnamed-label="<TMPL_VAR SESSIONS.UNNAMED ESCAPE=HTML>">
+    <summary><TMPL_VAR SESSIONS.TITLE></summary>
+    <div class="mcp-collapsible-content">
+    <div id="session-list"><TMPL_UNLESS SERVER_RENDERED_FALLBACK><p class="mcp-status" data-kind="working" role="status"><TMPL_VAR AJAX.WORKING></p></TMPL_UNLESS>
+    <TMPL_IF HAS_SESSIONS>
+      <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.TOKEN></th><th><TMPL_VAR SESSIONS.SCOPES></th><th><TMPL_VAR SESSIONS.EXPIRES></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody>
+      <TMPL_LOOP SESSIONS><tr data-session-id="<TMPL_VAR id ESCAPE=HTML>"><td><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML><TMPL_ELSE><TMPL_VAR SESSIONS.UNNAMED></TMPL_IF></td><td><code><TMPL_VAR client ESCAPE=HTML></code></td><td><code><TMPL_VAR identity ESCAPE=HTML></code></td><td data-session-token-state><TMPL_IF loxone_token_confirmation_required><TMPL_VAR SESSIONS.TOKEN_CONFIRMATION_REQUIRED><TMPL_ELSE><TMPL_VAR SESSIONS.TOKEN_ACTIVE></TMPL_IF></td><td><code><TMPL_VAR scopes ESCAPE=HTML></code></td><td><time class="mcp-expiry" data-expires-at="<TMPL_VAR expires_at ESCAPE=HTML>"><TMPL_VAR expires_display ESCAPE=HTML></time></td><td><TMPL_IF loxone_token_confirmation_required><form method="post" action="index.cgi" data-ajax="confirm_loxone_token"><input type="hidden" name="action" value="confirm_loxone_token"><input type="hidden" name="session_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.CONFIRM_LOXONE_TOKEN></button></form></TMPL_IF><TMPL_IF loxberry_read_eligible><TMPL_UNLESS loxberry_read_approved><form method="post" action="index.cgi" data-ajax="allow_loxberry_read"><input type="hidden" name="action" value="allow_loxberry_read"><input type="hidden" name="session_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.ALLOW_LOXBERRY_READ></button></form></TMPL_UNLESS></TMPL_IF><TMPL_IF loxberry_operate_eligible><TMPL_UNLESS loxberry_operate_approved><form method="post" action="index.cgi" data-ajax="allow_loxberry_operate"><input type="hidden" name="action" value="allow_loxberry_operate"><input type="hidden" name="session_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.ALLOW_LOXBERRY_OPERATE></button></form></TMPL_UNLESS></TMPL_IF><form method="post" action="index.cgi" data-ajax="revoke_session"><input type="hidden" name="action" value="revoke_session"><input type="hidden" name="id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form></td></tr></TMPL_LOOP>
+      </tbody></table></div>
+      <form method="post" action="index.cgi" data-ajax="revoke_all"><input type="hidden" name="action" value="revoke_all"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE_ALL></button></form>
+    <TMPL_ELSE><TMPL_IF SERVER_RENDERED_FALLBACK><p><TMPL_VAR SESSIONS.EMPTY></p></TMPL_IF></TMPL_IF>
+    </div>
+    <template id="session-table-template">
+      <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.TOKEN></th><th><TMPL_VAR SESSIONS.SCOPES></th><th><TMPL_VAR SESSIONS.EXPIRES></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody></tbody></table></div>
+      <form method="post" action="index.cgi" data-ajax="revoke_all"><input type="hidden" name="action" value="revoke_all"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE_ALL></button></form>
+    </template>
+    <section id="loxberry-binding-section" data-unnamed-label="<TMPL_VAR SESSIONS.UNNAMED ESCAPE=HTML>" data-no-active-label="<TMPL_VAR SESSIONS.NO_ACTIVE_SESSION ESCAPE=HTML>" data-no-identity-label="<TMPL_VAR SESSIONS.NO_IDENTITY ESCAPE=HTML>" <TMPL_UNLESS LOXBERRY_BINDINGS>hidden</TMPL_UNLESS>>
+      <h3><TMPL_VAR SESSIONS.LOXBERRY_APPROVALS></h3>
+      <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.BINDING_ID></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody id="loxberry-binding-list"><TMPL_LOOP LOXBERRY_BINDINGS><TMPL_LOOP rows><tr><td><TMPL_IF inactive><TMPL_IF inactive_login_required><TMPL_VAR SESSIONS.INACTIVE_LOGIN_REQUIRED><TMPL_ELSE><TMPL_VAR SESSIONS.LEGACY_INACTIVE></TMPL_IF><TMPL_IF retention_expires_display><div class="mcp-help"><TMPL_VAR SESSIONS.REMOVAL_SCHEDULED> <TMPL_VAR retention_expires_display ESCAPE=HTML></div></TMPL_IF><TMPL_ELSE><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML><TMPL_ELSE><TMPL_VAR SESSIONS.UNNAMED></TMPL_IF></TMPL_IF></td><td><code><TMPL_VAR client ESCAPE=HTML></code></td><td><TMPL_IF inactive><TMPL_VAR SESSIONS.NO_IDENTITY><TMPL_ELSE><code><TMPL_VAR identity ESCAPE=HTML></code></TMPL_IF></td><td><code><TMPL_VAR fingerprint ESCAPE=HTML></code></td><td><form method="post" action="index.cgi" data-ajax="revoke_loxberry_read"><input type="hidden" name="action" value="revoke_loxberry_read"><input type="hidden" name="binding_id" value="<TMPL_VAR binding_id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form></td></tr></TMPL_LOOP></TMPL_LOOP></tbody></table></div>
+      <p class="mcp-help"><TMPL_VAR SESSIONS.LOXBERRY_REVOKE_HINT></p>
+    </section>
+    <section id="loxberry-operate-binding-section" data-unnamed-label="<TMPL_VAR SESSIONS.UNNAMED ESCAPE=HTML>" data-no-active-label="<TMPL_VAR SESSIONS.NO_ACTIVE_SESSION ESCAPE=HTML>" data-no-identity-label="<TMPL_VAR SESSIONS.NO_IDENTITY ESCAPE=HTML>" <TMPL_UNLESS LOXBERRY_OPERATE_BINDINGS>hidden</TMPL_UNLESS>>
+      <h3><TMPL_VAR SESSIONS.LOXBERRY_OPERATE_APPROVALS></h3>
+      <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.BINDING_ID></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody id="loxberry-operate-binding-list"><TMPL_LOOP LOXBERRY_OPERATE_BINDINGS><TMPL_LOOP rows><tr><td><TMPL_IF inactive><TMPL_IF inactive_login_required><TMPL_VAR SESSIONS.INACTIVE_LOGIN_REQUIRED><TMPL_ELSE><TMPL_VAR SESSIONS.LEGACY_INACTIVE></TMPL_IF><TMPL_IF retention_expires_display><div class="mcp-help"><TMPL_VAR SESSIONS.REMOVAL_SCHEDULED> <TMPL_VAR retention_expires_display ESCAPE=HTML></div></TMPL_IF><TMPL_ELSE><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML><TMPL_ELSE><TMPL_VAR SESSIONS.UNNAMED></TMPL_IF></TMPL_IF></td><td><code><TMPL_VAR client ESCAPE=HTML></code></td><td><TMPL_IF inactive><TMPL_VAR SESSIONS.NO_IDENTITY><TMPL_ELSE><code><TMPL_VAR identity ESCAPE=HTML></code></TMPL_IF></td><td><code><TMPL_VAR fingerprint ESCAPE=HTML></code></td><td><form method="post" action="index.cgi" data-ajax="revoke_loxberry_operate"><input type="hidden" name="action" value="revoke_loxberry_operate"><input type="hidden" name="binding_id" value="<TMPL_VAR binding_id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form></td></tr></TMPL_LOOP></TMPL_LOOP></tbody></table></div>
+    </section>
+    </div>
+  </details>
+
   <details id="mqtt" class="mcp-card" data-persist-collapse open>
     <summary><TMPL_VAR MQTT.TITLE></summary>
     <div class="mcp-collapsible-content">
@@ -186,86 +266,7 @@
     </div>
   </details>
 
-  <details id="help" class="mcp-card" data-persist-collapse>
-    <summary><TMPL_VAR HELP.TITLE></summary>
-    <div class="mcp-collapsible-content">
-      <p><TMPL_VAR HELP.TOOL_ACCESS></p>
-      <div class="mcp-field-stack">
-        <label class="mcp-field"><span><TMPL_VAR HELP.MCP_HOSTNAME></span><span class="mcp-copy-row"><input id="mcp-url-hostname" type="text" readonly value="<TMPL_VAR HOSTNAME_MCP_URL ESCAPE=HTML>"><button class="lb-button" type="button" data-copy-target="mcp-url-hostname"><TMPL_VAR ACTION.COPY></button></span></label>
-        <label class="mcp-field"><span><TMPL_VAR HELP.MCP_IP></span><span class="mcp-copy-row"><input id="mcp-url-ip" type="text" readonly value="<TMPL_VAR IP_MCP_URL ESCAPE=HTML>"><button class="lb-button" type="button" data-copy-target="mcp-url-ip"><TMPL_VAR ACTION.COPY></button></span></label>
-      </div>
-      <p class="mcp-help"><TMPL_VAR HELP.MCP_CERTIFICATE_HINT></p>
-      <p class="mcp-actions">
-        <a id="explorer-link" class="lb-button" href="<TMPL_VAR EXPLORER_URL ESCAPE=HTML>" target="_blank" rel="noopener"><TMPL_VAR ACTION.EXPLORER></a>
-        <a id="schema-reference-link" class="lb-button" href="<TMPL_VAR SCHEMA_REFERENCE_URL ESCAPE=HTML>" target="_blank" rel="noopener"><TMPL_VAR ACTION.SCHEMA_REFERENCE></a>
-      </p>
-      <p><a href="https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server" target="_blank" rel="noopener"><TMPL_VAR HELP.PROJECT></a></p>
-    </div>
-  </details>
-
-  <details id="certificate" class="mcp-card" data-persist-collapse aria-busy="true"
-    data-state-scheduled="<TMPL_VAR CERTIFICATE.STATE_SCHEDULED ESCAPE=HTML>"
-    data-state-running="<TMPL_VAR CERTIFICATE.STATE_RUNNING ESCAPE=HTML>"
-    data-state-success="<TMPL_VAR CERTIFICATE.STATE_SUCCESS ESCAPE=HTML>"
-    data-state-error="<TMPL_VAR CERTIFICATE.STATE_ERROR ESCAPE=HTML>"
-    data-yes="<TMPL_VAR CERTIFICATE.YES ESCAPE=HTML>"
-    data-no="<TMPL_VAR CERTIFICATE.NO ESCAPE=HTML>"
-    data-not-configured="<TMPL_VAR CERTIFICATE.NOT_CONFIGURED ESCAPE=HTML>">
-    <summary><TMPL_VAR CERTIFICATE.TITLE></summary>
-    <div class="mcp-collapsible-content">
-    <p><TMPL_VAR CERTIFICATE.TEXT></p>
-      <div id="certificate-details" class="mcp-grid">
-        <p><TMPL_VAR CERTIFICATE.SOURCE>: <strong id="certificate-source"><TMPL_VAR AJAX.WORKING></strong></p>
-        <p><TMPL_VAR CERTIFICATE.EXPIRES>: <time id="certificate-expiry" class="mcp-expiry"><TMPL_VAR AJAX.WORKING></time></p>
-        <p><TMPL_VAR CERTIFICATE.DNS_SANS>: <strong id="certificate-dns-count"><TMPL_VAR AJAX.WORKING></strong></p>
-        <p><TMPL_VAR CERTIFICATE.IP_SANS>: <strong id="certificate-ip-count"><TMPL_VAR AJAX.WORKING></strong></p>
-        <p><TMPL_VAR CERTIFICATE.ORIGIN_MATCH>: <strong id="certificate-origin-match"><TMPL_VAR AJAX.WORKING></strong></p>
-        <p><TMPL_VAR CERTIFICATE.HOSTNAME_MATCH>: <strong id="certificate-hostname-match"><TMPL_VAR AJAX.WORKING></strong></p>
-      </div>
-      <p id="certificate-warning" class="mcp-warning" hidden><TMPL_VAR CERTIFICATE.WARNING></p>
-      <p id="certificate-renewal-info" hidden><TMPL_VAR CERTIFICATE.RENEWAL_STATE>: <strong id="certificate-renewal-state"></strong></p>
-        <form id="certificate-renewal-form" class="mcp-form" method="post" action="index.cgi" data-ajax="renew_certificate" data-certificate-renewal hidden>
-          <input type="hidden" name="action" value="renew_certificate">
-          <p class="mcp-warning"><TMPL_VAR CERTIFICATE.RENEW_TEXT></p>
-          <label class="mcp-field"><span><TMPL_VAR CERTIFICATE.PIN></span><input name="securepin" type="password" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" autocomplete="off" required></label>
-          <label><input name="renew_confirmation" type="checkbox" value="renew" required> <TMPL_VAR CERTIFICATE.CONFIRM></label>
-          <div class="mcp-actions"><button class="lb-button" type="submit"><TMPL_VAR ACTION.RENEW_CERTIFICATE></button><a class="lb-button" href="/admin/system/services.php"><TMPL_VAR ACTION.DOWNLOAD_CA_CERTIFICATE></a></div>
-        </form>
-      <p id="certificate-unsupported" class="mcp-help" hidden><TMPL_VAR CERTIFICATE.UNSUPPORTED></p>
-      <p id="certificate-unavailable" class="mcp-status" hidden><TMPL_VAR CERTIFICATE.UNAVAILABLE></p>
-    </div>
-  </details>
-
-  <details id="sessions" class="mcp-card" data-persist-collapse aria-busy="true"
-    data-empty-label="<TMPL_VAR SESSIONS.EMPTY ESCAPE=HTML>"
-    data-unnamed-label="<TMPL_VAR SESSIONS.UNNAMED ESCAPE=HTML>">
-    <summary><TMPL_VAR SESSIONS.TITLE></summary>
-    <div class="mcp-collapsible-content">
-    <div id="session-list"><TMPL_UNLESS SERVER_RENDERED_FALLBACK><p class="mcp-status" data-kind="working" role="status"><TMPL_VAR AJAX.WORKING></p></TMPL_UNLESS>
-    <TMPL_IF HAS_SESSIONS>
-      <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.TOKEN></th><th><TMPL_VAR SESSIONS.SCOPES></th><th><TMPL_VAR SESSIONS.EXPIRES></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody>
-      <TMPL_LOOP SESSIONS><tr data-session-id="<TMPL_VAR id ESCAPE=HTML>"><td><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML><TMPL_ELSE><TMPL_VAR SESSIONS.UNNAMED></TMPL_IF></td><td><code><TMPL_VAR client ESCAPE=HTML></code></td><td><code><TMPL_VAR identity ESCAPE=HTML></code></td><td data-session-token-state><TMPL_IF loxone_token_confirmation_required><TMPL_VAR SESSIONS.TOKEN_CONFIRMATION_REQUIRED><TMPL_ELSE><TMPL_VAR SESSIONS.TOKEN_ACTIVE></TMPL_IF></td><td><code><TMPL_VAR scopes ESCAPE=HTML></code></td><td><time class="mcp-expiry" data-expires-at="<TMPL_VAR expires_at ESCAPE=HTML>"><TMPL_VAR expires_display ESCAPE=HTML></time></td><td><TMPL_IF loxone_token_confirmation_required><form method="post" action="index.cgi" data-ajax="confirm_loxone_token"><input type="hidden" name="action" value="confirm_loxone_token"><input type="hidden" name="session_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.CONFIRM_LOXONE_TOKEN></button></form></TMPL_IF><TMPL_IF loxberry_read_eligible><TMPL_UNLESS loxberry_read_approved><form method="post" action="index.cgi" data-ajax="allow_loxberry_read"><input type="hidden" name="action" value="allow_loxberry_read"><input type="hidden" name="session_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.ALLOW_LOXBERRY_READ></button></form></TMPL_UNLESS></TMPL_IF><TMPL_IF loxberry_operate_eligible><TMPL_UNLESS loxberry_operate_approved><form method="post" action="index.cgi" data-ajax="allow_loxberry_operate"><input type="hidden" name="action" value="allow_loxberry_operate"><input type="hidden" name="session_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.ALLOW_LOXBERRY_OPERATE></button></form></TMPL_UNLESS></TMPL_IF><form method="post" action="index.cgi" data-ajax="revoke_session"><input type="hidden" name="action" value="revoke_session"><input type="hidden" name="id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form></td></tr></TMPL_LOOP>
-      </tbody></table></div>
-      <form method="post" action="index.cgi" data-ajax="revoke_all"><input type="hidden" name="action" value="revoke_all"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE_ALL></button></form>
-    <TMPL_ELSE><TMPL_IF SERVER_RENDERED_FALLBACK><p><TMPL_VAR SESSIONS.EMPTY></p></TMPL_IF></TMPL_IF>
-    </div>
-    <template id="session-table-template">
-      <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.TOKEN></th><th><TMPL_VAR SESSIONS.SCOPES></th><th><TMPL_VAR SESSIONS.EXPIRES></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody></tbody></table></div>
-      <form method="post" action="index.cgi" data-ajax="revoke_all"><input type="hidden" name="action" value="revoke_all"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE_ALL></button></form>
-    </template>
-    <section id="loxberry-binding-section" data-unnamed-label="<TMPL_VAR SESSIONS.UNNAMED ESCAPE=HTML>" data-no-active-label="<TMPL_VAR SESSIONS.NO_ACTIVE_SESSION ESCAPE=HTML>" data-no-identity-label="<TMPL_VAR SESSIONS.NO_IDENTITY ESCAPE=HTML>" <TMPL_UNLESS LOXBERRY_BINDINGS>hidden</TMPL_UNLESS>>
-      <h3><TMPL_VAR SESSIONS.LOXBERRY_APPROVALS></h3>
-      <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.BINDING_ID></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody id="loxberry-binding-list"><TMPL_LOOP LOXBERRY_BINDINGS><TMPL_LOOP rows><tr><td><TMPL_IF inactive><TMPL_IF inactive_login_required><TMPL_VAR SESSIONS.INACTIVE_LOGIN_REQUIRED><TMPL_ELSE><TMPL_VAR SESSIONS.LEGACY_INACTIVE></TMPL_IF><TMPL_IF retention_expires_display><div class="mcp-help"><TMPL_VAR SESSIONS.REMOVAL_SCHEDULED> <TMPL_VAR retention_expires_display ESCAPE=HTML></div></TMPL_IF><TMPL_ELSE><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML><TMPL_ELSE><TMPL_VAR SESSIONS.UNNAMED></TMPL_IF></TMPL_IF></td><td><code><TMPL_VAR client ESCAPE=HTML></code></td><td><TMPL_IF inactive><TMPL_VAR SESSIONS.NO_IDENTITY><TMPL_ELSE><code><TMPL_VAR identity ESCAPE=HTML></code></TMPL_IF></td><td><code><TMPL_VAR fingerprint ESCAPE=HTML></code></td><td><form method="post" action="index.cgi" data-ajax="revoke_loxberry_read"><input type="hidden" name="action" value="revoke_loxberry_read"><input type="hidden" name="binding_id" value="<TMPL_VAR binding_id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form></td></tr></TMPL_LOOP></TMPL_LOOP></tbody></table></div>
-      <p class="mcp-help"><TMPL_VAR SESSIONS.LOXBERRY_REVOKE_HINT></p>
-    </section>
-    <section id="loxberry-operate-binding-section" data-unnamed-label="<TMPL_VAR SESSIONS.UNNAMED ESCAPE=HTML>" data-no-active-label="<TMPL_VAR SESSIONS.NO_ACTIVE_SESSION ESCAPE=HTML>" data-no-identity-label="<TMPL_VAR SESSIONS.NO_IDENTITY ESCAPE=HTML>" <TMPL_UNLESS LOXBERRY_OPERATE_BINDINGS>hidden</TMPL_UNLESS>>
-      <h3><TMPL_VAR SESSIONS.LOXBERRY_OPERATE_APPROVALS></h3>
-      <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.BINDING_ID></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody id="loxberry-operate-binding-list"><TMPL_LOOP LOXBERRY_OPERATE_BINDINGS><TMPL_LOOP rows><tr><td><TMPL_IF inactive><TMPL_IF inactive_login_required><TMPL_VAR SESSIONS.INACTIVE_LOGIN_REQUIRED><TMPL_ELSE><TMPL_VAR SESSIONS.LEGACY_INACTIVE></TMPL_IF><TMPL_IF retention_expires_display><div class="mcp-help"><TMPL_VAR SESSIONS.REMOVAL_SCHEDULED> <TMPL_VAR retention_expires_display ESCAPE=HTML></div></TMPL_IF><TMPL_ELSE><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML><TMPL_ELSE><TMPL_VAR SESSIONS.UNNAMED></TMPL_IF></TMPL_IF></td><td><code><TMPL_VAR client ESCAPE=HTML></code></td><td><TMPL_IF inactive><TMPL_VAR SESSIONS.NO_IDENTITY><TMPL_ELSE><code><TMPL_VAR identity ESCAPE=HTML></code></TMPL_IF></td><td><code><TMPL_VAR fingerprint ESCAPE=HTML></code></td><td><form method="post" action="index.cgi" data-ajax="revoke_loxberry_operate"><input type="hidden" name="action" value="revoke_loxberry_operate"><input type="hidden" name="binding_id" value="<TMPL_VAR binding_id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form></td></tr></TMPL_LOOP></TMPL_LOOP></tbody></table></div>
-    </section>
-    </div>
-  </details>
-
-  <details id="diagnostics" class="mcp-card" data-persist-collapse>
+  <details id="diagnostics" class="mcp-card" data-persist-collapse <TMPL_IF SERVER_RENDERED_FALLBACK>open</TMPL_IF>>
     <summary><TMPL_VAR DIAGNOSTICS.TITLE></summary>
     <div class="mcp-collapsible-content mcp-form">
     <p><TMPL_VAR DIAGNOSTICS.TEXT></p>
@@ -296,6 +297,18 @@
     </section>
     </div>
   </details>
+
+  <details id="help" class="mcp-card" data-persist-collapse <TMPL_IF SERVER_RENDERED_FALLBACK>open</TMPL_IF>>
+    <summary><TMPL_VAR HELP.TITLE></summary>
+    <div class="mcp-collapsible-content">
+      <p><TMPL_VAR HELP.TOOL_ACCESS></p>
+      <p class="mcp-actions">
+        <a id="explorer-link" class="lb-button" href="<TMPL_VAR EXPLORER_URL ESCAPE=HTML>" target="_blank" rel="noopener"><TMPL_VAR ACTION.EXPLORER></a>
+        <a id="schema-reference-link" class="lb-button" href="<TMPL_VAR SCHEMA_REFERENCE_URL ESCAPE=HTML>" target="_blank" rel="noopener"><TMPL_VAR ACTION.SCHEMA_REFERENCE></a>
+      </p>
+      <p><a href="https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server" target="_blank" rel="noopener"><TMPL_VAR HELP.PROJECT></a></p>
+    </div>
+  </details>
 </main>
 
 <dialog id="service-confirm" class="mcp-dialog" aria-labelledby="service-confirm-title">
@@ -316,14 +329,31 @@
   const configurationFallbackLink = document.getElementById('configuration-fallback-link');
   const loxberryNotifications = document.getElementById('loxberry-notifications');
   const pluginLogList = document.getElementById('plugin-log-list');
-  const collapseStorageKey = 'mcpserver.admin.sections.v1';
+  const collapseStorageKey = 'mcpserver.admin.sections.v2';
   const collapsibles = [...document.querySelectorAll('details[data-persist-collapse]')];
-  let storedCollapseState = {};
-  try {
-    storedCollapseState = JSON.parse(window.localStorage.getItem(collapseStorageKey) || '{}');
-  } catch {
-    storedCollapseState = {};
-  }
+  // collapse-state-migration-start
+  const readCollapseState = () => {
+    try {
+      const storage = window.localStorage;
+      const current = storage.getItem(collapseStorageKey);
+      if (current !== null) {
+        const state = JSON.parse(current);
+        return state && typeof state === 'object' && !Array.isArray(state) ? state : {};
+      }
+      const legacy = JSON.parse(storage.getItem('mcpserver.admin.sections.v1') || '{}');
+      if (!legacy || typeof legacy !== 'object' || Array.isArray(legacy)) return {};
+      const migrated = { ...legacy };
+      if (typeof legacy.setup === 'boolean') migrated.configuration = legacy.setup;
+      if (typeof legacy.certificate === 'boolean' || typeof legacy.help === 'boolean') {
+        migrated.access = legacy.certificate === true || legacy.help === true;
+      }
+      return migrated;
+    } catch {
+      return {};
+    }
+  };
+  // collapse-state-migration-end
+  const storedCollapseState = readCollapseState();
   const persistCollapsibles = () => {
     const state = Object.fromEntries(collapsibles.map((element) => [element.id, element.open]));
     try { window.localStorage.setItem(collapseStorageKey, JSON.stringify(state)); } catch { /* Defaults remain usable. */ }
@@ -332,14 +362,20 @@
     if (typeof storedCollapseState[element.id] === 'boolean') element.open = storedCollapseState[element.id];
     element.addEventListener('toggle', persistCollapsibles);
   }
-  const openHashSection = () => {
-    const target = document.getElementById(window.location.hash.slice(1));
+  const openHashSection = (hash = window.location.hash) => {
+    const fragment = hash.slice(1);
+    const sectionId = { setup: 'configuration', certificate: 'access' }[fragment] || fragment;
+    const target = document.getElementById(sectionId);
     if (target instanceof HTMLDetailsElement && !target.open) {
       target.open = true;
       persistCollapsibles();
     }
   };
-  window.addEventListener('hashchange', openHashSection);
+  window.addEventListener('hashchange', () => openHashSection());
+  document.addEventListener('click', (event) => {
+    const anchor = event.target instanceof Element ? event.target.closest('a[href^="#"]') : null;
+    if (anchor) openHashSection(anchor.hash);
+  });
   openHashSection();
   const miniserverSelect = document.getElementById('miniserver-select');
   const manualEndpointFields = document.getElementById('manual-endpoint-fields');
@@ -359,7 +395,8 @@
   const explorerLink = document.getElementById('explorer-link');
   const explorerPath = '/admin/plugins/mcpserver/explorer.cgi';
   explorerLink.href = `${window.location.origin}${explorerPath}`;
-  const certificateSection = document.getElementById('certificate');
+  const accessSection = document.getElementById('access');
+  const certificatePanel = document.getElementById('certificate-panel');
   const certificateDetails = document.getElementById('certificate-details');
   const certificateSource = document.getElementById('certificate-source');
   const certificateUnavailable = document.getElementById('certificate-unavailable');
@@ -659,15 +696,15 @@
       window.setTimeout(() => { button.textContent = previous; }, 2000);
     });
   }
-  const certificateStateLabels = certificateSection ? {
-    scheduled: certificateSection.dataset.stateScheduled,
-    running: certificateSection.dataset.stateRunning,
-    success: certificateSection.dataset.stateSuccess,
-    error: certificateSection.dataset.stateError,
+  const certificateStateLabels = certificatePanel ? {
+    scheduled: certificatePanel.dataset.stateScheduled,
+    running: certificatePanel.dataset.stateRunning,
+    success: certificatePanel.dataset.stateSuccess,
+    error: certificatePanel.dataset.stateError,
   } : {};
   const updateCertificate = (certificate) => {
     const available = Boolean(certificate?.available);
-    certificateSection.setAttribute('aria-busy', 'false');
+    certificatePanel.setAttribute('aria-busy', 'false');
     certificateDetails.hidden = !available;
     certificateUnavailable.hidden = available;
     if (!available) {
@@ -683,10 +720,10 @@
     if (certificateDnsCount) certificateDnsCount.textContent = String(certificate.dns_san_count);
     if (certificateIpCount) certificateIpCount.textContent = String(certificate.ip_san_count);
     if (certificateOriginMatch) certificateOriginMatch.textContent = certificate.origin_configured
-      ? (certificate.origin_matches ? certificateSection.dataset.yes : certificateSection.dataset.no)
-      : certificateSection.dataset.notConfigured;
+      ? (certificate.origin_matches ? certificatePanel.dataset.yes : certificatePanel.dataset.no)
+      : certificatePanel.dataset.notConfigured;
     if (certificateHostnameMatch) certificateHostnameMatch.textContent = certificate.hostname_matches
-      ? certificateSection.dataset.yes : certificateSection.dataset.no;
+      ? certificatePanel.dataset.yes : certificatePanel.dataset.no;
     if (certificateWarning) certificateWarning.hidden = certificate.origin_matches && certificate.hostname_matches;
     const expiresAt = parseExpiry(String(certificate.expires_at));
     if (certificateExpiry && expiresAt !== null) {
@@ -759,7 +796,7 @@
   const loadCertificateStatus = async () => {
     if (certificateLoaded || certificateLoadInFlight) return;
     certificateLoadInFlight = true;
-    certificateSection.setAttribute('aria-busy', 'true');
+    certificatePanel.setAttribute('aria-busy', 'true');
     try {
       const body = new URLSearchParams();
       body.set('action', 'certificate_status');
@@ -1476,8 +1513,8 @@
       scheduleSessionPoll(expectedSessionDataVersion === sessionDataVersion ? 10000 : 0);
     }
   };
-  certificateSection.addEventListener('toggle', () => {
-    if (certificateSection.open && initialBackgroundHydrationComplete) {
+  accessSection.addEventListener('toggle', () => {
+    if (accessSection.open && initialBackgroundHydrationComplete) {
       queueBackgroundHydration([loadCertificateStatus]);
     }
   });

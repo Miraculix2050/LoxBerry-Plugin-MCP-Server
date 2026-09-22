@@ -17,6 +17,6 @@
 4. Test the connection, enable **MCP access** and save the MCP configuration.
 5. Connect a client to `https://<loxberry>/plugins/mcpserver/mcp` and complete OAuth login.
 
-The HTTPS address must match the web-server certificate. Plugin help provides copyable hostname and IP addresses.
+The HTTPS address must match the web-server certificate. **MCP access & HTTPS** provides copyable hostname and IP addresses.
 
 Next: [Configuration](configuration.en.md) and [client setup](../clients/README.md).
