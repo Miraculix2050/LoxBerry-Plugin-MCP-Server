@@ -269,6 +269,34 @@ def _provider(
     )
 
 
+def test_expired_explorer_family_is_reported_before_cleanup(tmp_path: Path) -> None:
+    clock = Clock()
+    store = AtomicJsonAuthStore(tmp_path / "auth" / "sessions.json")
+    family = {
+        "client_kind": "tool_explorer",
+        "explorer_origin": "https://public.example",
+        "identity_id": "identity",
+        "miniserver_id": "miniserver",
+        "scope": f"{READ_SCOPE} {LOXBERRY_READ_SCOPE}",
+        "expires_at": clock.value,
+        "revoked": True,
+        "revoked_at": clock.value - 10,
+    }
+    store.mutate(lambda document: document["families"].update({"expired": family}))
+    expired: list[dict[str, Any]] = []
+
+    Phase0OAuthProvider(
+        store,
+        issuer=ISSUER,
+        resource=RESOURCE,
+        clock=clock,
+        on_family_expired=expired.append,
+    )
+
+    assert expired == [family]
+    assert store.snapshot()["families"] == {}
+
+
 async def _client(provider: Phase0OAuthProvider) -> OAuthClientInformationFull:
     client = OAuthClientInformationFull(
         client_id="public-client",

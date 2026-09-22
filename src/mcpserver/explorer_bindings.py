@@ -119,6 +119,50 @@ def record_explorer_approval(
     return binding_id
 
 
+def record_explorer_family_end(
+    config_store: AtomicConfigStore, auth_store: Any, family: dict[str, Any]
+) -> None:
+    """Persist an expired Explorer family's last known end before auth cleanup."""
+    if family.get("client_kind") != "tool_explorer":
+        return
+    explorer_origin = family.get("explorer_origin")
+    if not isinstance(explorer_origin, str) or not explorer_origin:
+        return
+    end = min(int(family.get("expires_at", 0)), int(family.get("revoked_at", 2**63 - 1)))
+    scopes = set(str(family.get("scope", "")).split())
+    binding_ids = {
+        (
+            capability,
+            explorer_binding_id(
+                auth_store,
+                capability,
+                str(family.get("identity_id", "")),
+                str(family.get("miniserver_id", "")),
+                explorer_origin,
+            ),
+        )
+        for capability in _NAMESPACES
+        if capability in scopes
+    }
+    if not binding_ids:
+        return
+
+    def update(config: PluginConfig) -> PluginConfig:
+        entries = tuple(
+            replace(item, inactive_since=max(item.inactive_since or end, end))
+            if (item.capability, item.binding_id) in binding_ids
+            else item
+            for item in config.explorer_bindings
+        )
+        return (
+            config
+            if entries == config.explorer_bindings
+            else replace(config, explorer_bindings=entries)
+        )
+
+    config_store.mutate(update)
+
+
 def maintain_explorer_bindings(
     config_store: AtomicConfigStore, auth_store: Any, *, now: int | None = None
 ) -> int:

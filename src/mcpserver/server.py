@@ -646,12 +646,22 @@ def create_server(settings: ServerSettings) -> FastMCP:
                         config_store, auth_store, capability, family, now=int(time.time())
                     )
 
+        def on_family_expired(family: dict[str, Any]) -> None:
+            if settings.phase0_auth is None or settings.phase0_auth.config_path is None:
+                return
+            from mcpserver.explorer_bindings import record_explorer_family_end
+
+            record_explorer_family_end(
+                AtomicConfigStore(settings.phase0_auth.config_path), auth_store, family
+            )
+
         provider = Phase0OAuthProvider(
             auth_store,
             issuer=settings.phase0_auth.issuer_url,
             resource=settings.phase0_auth.resource_url,
             on_family_revoked=on_family_revoked,
             on_family_started=on_family_started,
+            on_family_expired=on_family_expired,
             control_enabled=bool(config and config.loxone_control_enabled),
             loxberry_read_enabled=bool(config and config.loxberry_read_enabled),
             loxberry_read_allowed=loxberry_binding_allowed,

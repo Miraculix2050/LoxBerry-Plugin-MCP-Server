@@ -142,6 +142,7 @@ class Phase0OAuthProvider(
         clock: Callable[[], float] = time.time,
         on_family_revoked: Callable[[str], None] | None = None,
         on_family_started: Callable[[dict[str, Any]], None] | None = None,
+        on_family_expired: Callable[[dict[str, Any]], None] | None = None,
         control_enabled: bool = False,
         loxberry_read_enabled: bool = False,
         loxberry_read_allowed: Callable[[str, str, str], bool] | None = None,
@@ -158,6 +159,7 @@ class Phase0OAuthProvider(
         self._clock = clock
         self._on_family_revoked = on_family_revoked
         self._on_family_started = on_family_started
+        self._on_family_expired = on_family_expired
         self.control_enabled = control_enabled
         self.loxberry_read_enabled = loxberry_read_enabled
         self._loxberry_read_allowed = loxberry_read_allowed
@@ -282,6 +284,9 @@ class Phase0OAuthProvider(
             if record.get("expires_at", 0) <= now
         }
         for family_id in expired_families:
+            family = document["families"].get(family_id)
+            if isinstance(family, dict) and self._on_family_expired is not None:
+                self._on_family_expired(dict(family))
             document["families"].pop(family_id, None)
             if self._on_family_revoked is not None:
                 self._on_family_revoked(family_id)

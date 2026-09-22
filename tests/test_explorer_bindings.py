@@ -10,6 +10,7 @@ from mcpserver.explorer_bindings import (
     explorer_binding_id,
     maintain_explorer_bindings,
     record_explorer_approval,
+    record_explorer_family_end,
 )
 
 EXPLORER_ORIGIN = "https://public.example"
@@ -193,4 +194,20 @@ def test_pending_family_does_not_extend_an_expired_approval(tmp_path: Path) -> N
     auth_store.mutate(insert)
 
     assert maintain_explorer_bindings(config_store, auth_store, now=3_800) == 1
+    assert config_store.load().explorer_bindings == ()
+
+
+def test_expired_family_records_revocation_before_auth_cleanup(tmp_path: Path) -> None:
+    config_store, auth_store = stores(tmp_path)
+    config_store.save(replace(config_store.load(), explorer_binding_retention_hours=1))
+    record_explorer_approval(config_store, auth_store, "loxberry:read", family(), now=100)
+    expired = family()
+    expired["revoked"] = True
+    expired["revoked_at"] = 110
+
+    record_explorer_family_end(config_store, auth_store, expired)
+
+    approval = config_store.load().explorer_bindings[0]
+    assert approval.inactive_since == 110
+    assert maintain_explorer_bindings(config_store, auth_store, now=3_710) == 1
     assert config_store.load().explorer_bindings == ()
