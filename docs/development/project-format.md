@@ -89,6 +89,20 @@ The service serializes builds and publishes complete immutable snapshots. Its
 identity-isolated RAM cache is capped at eight entries and a conservative 128 MiB
 accounting budget. A cache hit still requires a fresh successful download.
 
+## Observability analysis
+
+`loxone_analyze_observability` is a separate, time-bounded read-only projection for one
+project node or exact runtime-control mapping. It traces only the requested upstream,
+downstream, or combined structural reachability and keeps only exact UUID mappings. It then
+reports current-state availability, advertised native statistic-series metadata, and local
+event-history coverage for the requested period. Structural reachability is not a causal
+claim; advertised statistics are deliberately not fetched and report `not_checked` temporal
+coverage. At most 20 statistic series per control are returned; `native_statistics_truncated`
+marks omitted metadata. State names are capped at 200 UTF-8 bytes and
+`state_names_truncated` marks omitted text. Control names and types use the same cap and
+`control_metadata_truncated` marks omitted text. Missing or partial local coverage is an evidence
+gap, never proof of non-occurrence.
+
 ### Source diagnostics
 
 The snapshot records bounded, value-free source diagnostics for parser anomalies,

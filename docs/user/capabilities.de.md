@@ -41,6 +41,15 @@ normalisierte DPTs, Semantikdomänen, geprüfte Signalnutzung oder Runtime-Mappi
 behauptet weder DPT-Kompatibilität noch ETS-Abdeckung, Busaktivität oder physische
 Geräteverwendung; die Evidenz eines zurückgegebenen Projektknotens lässt sich mit Describe oder
 Trace vertiefen.
+`loxone_analyze_observability` bewertet getrennt einen begrenzten, ausdrücklich angefragten
+Zeitraum für ein Projektziel. Es verbindet nur exakte UUID-gemappte strukturelle Erreichbarkeit,
+Verfügbarkeit aktueller States, beworbene native Statistikserien und die Abdeckung der lokalen
+Ereignishistorie. Erreichbarkeit beweist keine historische Ursache; konfigurierte Statistikserien
+sind zeitlich nicht geprüft, und fehlende oder partielle lokale Abdeckung beweist nicht, dass ein
+State nicht eingetreten ist. Pro Control werden höchstens 20 Statistikserien zurückgegeben;
+ausgelassene Metadaten markiert `native_statistics_truncated`. State-Namen sind auf 200 UTF-8-
+Bytes begrenzt; ausgelassenen Text markiert `state_names_truncated`. Control-Namen und -Typen
+haben dieselbe Begrenzung; ausgelassenen Text markiert `control_metadata_truncated`.
 `source_diagnostics` meldet begrenzte Quelllücken wie Parseranomalien, ungültige KNX-Felder und
 nicht modellierte Attribute. Dies sind keine Konfigurationsurteile; unbekannte Quellwerte werden
 nicht ausgegeben, sondern nur feste Codes, Feldnamen, Wertformen und Projektknotenreferenzen.

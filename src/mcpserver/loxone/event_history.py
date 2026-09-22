@@ -67,6 +67,16 @@ class EventHistoryPage:
     next_event_at: float | None
 
 
+@dataclass(frozen=True, slots=True)
+class EventHistoryCoverage:
+    """Bounded coverage metadata without exposing stored event values."""
+
+    capture_started_at: float | None
+    retained_from: float | None
+    coverage: str
+    has_events: bool
+
+
 def _value(value: object) -> bool | float | int | str:
     if isinstance(value, bool):
         return value
@@ -365,19 +375,7 @@ class EventHistoryStore:
             EventHistoryEntry(row[0], row[1], json.loads(row[2]), json.loads(row[3]))
             for row in selected
         )
-        if not coverage_rows:
-            coverage = "not_recorded"
-        else:
-            covered_until = start
-            for started_at, ended_at in coverage_rows:
-                if started_at > covered_until:
-                    break
-                covered_until = max(
-                    covered_until, min(end, time.time()) if ended_at is None else ended_at
-                )
-                if covered_until >= end:
-                    break
-            coverage = "complete" if covered_until >= end else "partial_coverage"
+        coverage = self._coverage_status(coverage_rows, start=start, end=end, now=time.time())
         return EventHistoryPage(
             entries=entries,
             capture_started_at=capture,
@@ -386,6 +384,67 @@ class EventHistoryStore:
             next_event_id=selected[-1][0] if len(rows) > limit else None,
             next_event_at=selected[-1][1] if len(rows) > limit else None,
         )
+
+    @staticmethod
+    def _coverage_status(
+        coverage_rows: list[tuple[float, float | None]], *, start: float, end: float, now: float
+    ) -> str:
+        if not coverage_rows:
+            return "not_recorded"
+        covered_until = start
+        for started_at, ended_at in coverage_rows:
+            if started_at > covered_until:
+                break
+            covered_until = max(covered_until, min(end, now) if ended_at is None else ended_at)
+            if covered_until >= end:
+                break
+        return "complete" if covered_until >= end else "partial_coverage"
+
+    def coverage_many(
+        self, sources: tuple[tuple[str, str], ...], *, start: float, end: float
+    ) -> dict[tuple[str, str], EventHistoryCoverage]:
+        """Return coverage evidence for configured sources in one bounded SQLite operation."""
+
+        if not sources:
+            return {}
+        now = time.time()
+        with self._lock, self._opened() as connection:
+            try:
+                self._compact(connection, vacuum=self._prune(connection, now=now))
+                result = {}
+                for control_uuid, state_uuid in sources:
+                    coverage_rows = connection.execute(
+                        "SELECT started_at, ended_at FROM coverage WHERE control_uuid = ? "
+                        "AND state_uuid = ? "
+                        "AND started_at <= ? AND COALESCE(ended_at, ?) >= ? ORDER BY started_at",
+                        (control_uuid, state_uuid, end, now, start),
+                    ).fetchall()
+                    capture = connection.execute(
+                        "SELECT MIN(started_at) FROM coverage WHERE control_uuid = ? "
+                        "AND state_uuid = ?",
+                        (control_uuid, state_uuid),
+                    ).fetchone()[0]
+                    retained = connection.execute(
+                        "SELECT MIN(observed_at) FROM events WHERE control_uuid = ? "
+                        "AND state_uuid = ?",
+                        (control_uuid, state_uuid),
+                    ).fetchone()[0]
+                    has_events = connection.execute(
+                        "SELECT EXISTS(SELECT 1 FROM events WHERE control_uuid = ? "
+                        "AND state_uuid = ? AND observed_at >= ? AND observed_at <= ?)",
+                        (control_uuid, state_uuid, start, end),
+                    ).fetchone()[0]
+                    result[control_uuid, state_uuid] = EventHistoryCoverage(
+                        capture_started_at=capture,
+                        retained_from=retained,
+                        coverage=self._coverage_status(
+                            coverage_rows, start=start, end=end, now=now
+                        ),
+                        has_events=bool(has_events),
+                    )
+                return result
+            except sqlite3.Error as exc:
+                raise EventHistoryUnavailable("local event history is unavailable") from exc
 
     def clear(self) -> int:
         with self._lock, self._opened() as connection:

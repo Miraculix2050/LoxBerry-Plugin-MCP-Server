@@ -696,3 +696,90 @@ class ProjectQuery:
             "unresolved_relationships": unresolved_relationships,
             "unresolved_truncated": unresolved_truncated,
         }
+
+    def observable_controls(
+        self, node: GraphNode, *, direction: str, max_depth: int, max_nodes: int
+    ) -> dict[str, object]:
+        """Collect exact runtime controls from bounded structural traces.
+
+        The result deliberately reports reachability only.  It does not assign a
+        state-level role or claim that a reachable signal caused an observation.
+        """
+
+        if direction not in {"upstream", "downstream", "both"}:
+            raise ProjectQueryError("project_query_invalid")
+        directions = ("upstream", "downstream") if direction == "both" else (direction,)
+        controls: dict[str, dict[str, object]] = {}
+        truncated = False
+        truncation_reasons: list[str] = []
+        unresolved_relationship_counts: dict[tuple[str, str], int] = {}
+        unresolved_truncated = False
+        for trace_direction in directions:
+            trace = self.trace(
+                node, direction=trace_direction, max_depth=max_depth, max_nodes=max_nodes
+            )
+            trace_truncated = bool(trace["truncated"])
+            semantic_truncated = bool(trace.get("semantic_truncated", trace_truncated))
+            truncated = truncated or trace_truncated or semantic_truncated
+            reason = trace["truncation_reason"]
+            if isinstance(reason, str) and reason not in truncation_reasons:
+                truncation_reasons.append(reason)
+            if (
+                semantic_truncated
+                and not trace_truncated
+                and "semantic_incomplete" not in truncation_reasons
+            ):
+                truncation_reasons.append("semantic_incomplete")
+            unresolved = trace["unresolved_relationships"]
+            if isinstance(unresolved, list):
+                trace_unresolved_counts: defaultdict[tuple[str, str], int] = defaultdict(int)
+                for relationship in unresolved:
+                    if not isinstance(relationship, dict):
+                        continue
+                    node_key = relationship.get("project_node_id")
+                    code = relationship.get("code")
+                    if isinstance(node_key, str) and isinstance(code, str):
+                        trace_unresolved_counts[(node_key, code)] += 1
+                for key, count in trace_unresolved_counts.items():
+                    unresolved_relationship_counts[key] = max(
+                        unresolved_relationship_counts.get(key, 0), count
+                    )
+            unresolved_truncated = unresolved_truncated or bool(trace["unresolved_truncated"])
+            nodes = trace["nodes"]
+            if not isinstance(nodes, list):
+                continue
+            for item in nodes:
+                if not isinstance(item, dict):
+                    continue
+                node_key = item.get("project_node_id")
+                if not isinstance(node_key, str):
+                    continue
+                for mapping in self._mapped_nodes.get(node_key, ()):
+                    if mapping.status != "exact":
+                        continue
+                    control_uuid = mapping.control_uuid
+                    record = controls.setdefault(
+                        control_uuid,
+                        {
+                            "control_uuid": control_uuid,
+                            "project_node_ids": [],
+                            "directions": [],
+                        },
+                    )
+                    project_node_ids = record["project_node_ids"]
+                    if isinstance(project_node_ids, list) and node_key not in project_node_ids:
+                        project_node_ids.append(node_key)
+                    record_directions = record["directions"]
+                    if (
+                        isinstance(record_directions, list)
+                        and trace_direction not in record_directions
+                    ):
+                        record_directions.append(trace_direction)
+        return {
+            "target": self._summary(node),
+            "controls": [controls[key] for key in sorted(controls)],
+            "truncated": truncated,
+            "truncation_reasons": truncation_reasons,
+            "unresolved_relationships": sum(unresolved_relationship_counts.values()),
+            "unresolved_truncated": unresolved_truncated,
+        }

@@ -11,6 +11,12 @@ extracted from the matching version heading.
   Tool Explorer, schema reference, and project guides. The section navigation
   renders independently of the LoxBerry header's JavaScript.
 
+- Add `loxone_analyze_observability`, a bounded read-only assessment of current
+  state availability, configured native statistic series and local event-history
+  coverage for exact UUID-mapped controls structurally reachable from one project
+  target. It reports gaps and uncertainty explicitly; graph reachability and
+  configured statistics do not claim a historical cause or data coverage.
+
 - Keep local LoxBerry approvals reusable for the same validated Tool Explorer,
   Loxone identity and Miniserver across ordinary OAuth re-login. OAuth families
   and credentials retain their short lifetimes; inactive Explorer approvals use

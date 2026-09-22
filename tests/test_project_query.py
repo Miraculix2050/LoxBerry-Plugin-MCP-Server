@@ -18,7 +18,7 @@ def control(uuid, action=None, children=()):
     return SimpleNamespace(uuid=uuid, action_uuid=action, subcontrols=children)
 
 
-def query() -> ProjectQuery:
+def query(*, shared_mapping: bool = False) -> ProjectQuery:
     source, target, source_connector = "a" * 32, "b" * 32, "c" * 32
     parsed = parse_project(
         (
@@ -31,7 +31,12 @@ def query() -> ProjectQuery:
     snapshot = ProjectSnapshot(
         "project", 1, (ProjectPartSummary("p", 8, ()),), build_graph((("p", parsed),))
     )
-    structure = SimpleNamespace(last_modified="v1", controls=(control(target),))
+    controls = (
+        (control("first", target), control("second", target))
+        if shared_mapping
+        else (control(target),)
+    )
+    structure = SimpleNamespace(last_modified="v1", controls=controls)
     return ProjectQuery(
         ProjectView(snapshot, map_runtime(snapshot, structure)), {target: "Living room"}
     )
@@ -59,6 +64,84 @@ def test_find_status_and_describe_are_deterministic_and_bounded():
         )[0]["block_type"]
         == "Unknown"
     )
+
+
+def test_observable_controls_keep_only_exact_runtime_mappings():
+    project = query()
+
+    result = project.observable_controls(
+        project.resolve("p:4", "project_node_id"),
+        direction="both",
+        max_depth=6,
+        max_nodes=100,
+    )
+
+    assert result["target"]["project_node_id"] == "p:4"
+    assert result["controls"] == [
+        {
+            "control_uuid": "b" * 32,
+            "project_node_ids": ["p:3"],
+            "directions": ["upstream", "downstream"],
+        }
+    ]
+    assert result["truncated"] is False
+
+
+def test_observable_controls_include_all_exact_shared_mappings():
+    project = query(shared_mapping=True)
+
+    result = project.observable_controls(
+        project.resolve("first", "runtime_control_uuid"),
+        direction="both",
+        max_depth=6,
+        max_nodes=100,
+    )
+
+    assert result["controls"] == [
+        {
+            "control_uuid": "first",
+            "project_node_ids": ["p:3"],
+            "directions": ["upstream", "downstream"],
+        },
+        {
+            "control_uuid": "second",
+            "project_node_ids": ["p:3"],
+            "directions": ["upstream", "downstream"],
+        },
+    ]
+
+
+def test_observable_controls_preserve_semantic_truncation_and_deduplicate_unresolved(
+    monkeypatch,
+):
+    project = query()
+    mapped = project.resolve("p:3", "project_node_id")
+
+    def semantic_boundary_trace(self, _node, *, direction, max_depth, max_nodes):
+        return {
+            "nodes": [self._summary(mapped)],
+            "truncated": False,
+            "semantic_truncated": True,
+            "truncation_reason": None,
+            "unresolved_relationships": [
+                {"project_node_id": "p:1", "code": "unresolved_signal"},
+                {"project_node_id": "p:1", "code": "unresolved_signal"},
+            ],
+            "unresolved_truncated": False,
+        }
+
+    monkeypatch.setattr(ProjectQuery, "trace", semantic_boundary_trace)
+
+    result = project.observable_controls(
+        project.resolve("p:4", "project_node_id"),
+        direction="both",
+        max_depth=6,
+        max_nodes=100,
+    )
+
+    assert result["truncated"] is True
+    assert result["truncation_reasons"] == ["semantic_incomplete"]
+    assert result["unresolved_relationships"] == 2
 
 
 def test_source_diagnostics_are_available_without_unknown_values():

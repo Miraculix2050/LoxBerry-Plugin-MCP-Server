@@ -35,6 +35,7 @@ from mcpserver.config import AtomicConfigStore
 from mcpserver.loxberry.diagnostics import DiagnosticsUnavailable, LoxBerryDiagnostics
 from mcpserver.loxone.control import allowed_actions
 from mcpserver.loxone.event_history import (
+    EventHistoryCoverage,
     EventHistoryMonitor,
     EventHistoryStore,
     EventHistoryUnavailable,
@@ -102,6 +103,9 @@ _ERROR_SUPPRESSION_SECONDS: Final = 60.0
 _ERROR_LAST: dict[str, float] = {}
 _CACHE_CLEAR_TIMEOUT_SECONDS: Final = 10.0
 _EVENT_HISTORY_SOURCE_CHANGE_TIMEOUT_SECONDS: Final = 75.0
+_OBSERVABILITY_MAX_STATES_PER_CONTROL: Final = 20
+_OBSERVABILITY_MAX_STATISTICS_PER_CONTROL: Final = 20
+_OBSERVABILITY_MAX_STATE_NAME_BYTES: Final = 200
 
 CursorArgument = Annotated[
     str | None,
@@ -861,6 +865,93 @@ class ProjectAnalysisEnvelope(ToolEnvelope):
     data: ProjectAnalysisData | ErrorData
 
 
+class ObservabilityCurrentStateData(BaseModel):
+    uuid: str
+    name: str
+    available: bool
+    freshness: Literal["current", "stale", "unknown", "unavailable"]
+    observed_at: str | None
+
+
+class ObservabilityStatisticSeriesData(BaseModel):
+    series_id: str
+    source: Literal["statistic_v2", "legacy"]
+    title: str
+    format: str
+    accumulated: bool
+    temporal_coverage: Literal["not_checked"] = "not_checked"
+
+
+class ObservabilityEventHistoryData(BaseModel):
+    state_uuid: str
+    state_name: str
+    status: Literal[
+        "complete",
+        "partial_coverage",
+        "not_recorded",
+        "not_configured",
+        "feature_disabled",
+        "unavailable",
+    ]
+    capture_started_at: str | None = None
+    retained_from: str | None = None
+    has_recorded_events: bool | None = None
+
+
+class ObservabilityControlData(BaseModel):
+    control_uuid: str
+    control_name: str
+    control_type: str
+    control_metadata_truncated: bool = False
+    project_node_ids: list[str]
+    directions: list[Literal["upstream", "downstream"]]
+    current_states: list[ObservabilityCurrentStateData]
+    states_truncated: bool = False
+    state_names_truncated: bool = False
+    native_statistics: list[ObservabilityStatisticSeriesData]
+    native_statistics_truncated: bool = False
+    local_event_history: list[ObservabilityEventHistoryData]
+    historical_status: Literal["complete", "partial", "missing", "unverified"]
+
+
+class ObservabilitySummaryData(BaseModel):
+    relevant_controls: int
+    current_state_controls: int
+    native_statistics_configured: int
+    local_history_complete: int
+    local_history_partial: int
+    local_history_missing: int
+    historical_complete: int
+    historical_partial: int
+    historical_missing: int
+    historical_unverified: int
+
+
+class ObservabilityData(BaseModel):
+    analysis_version: Literal[1] = 1
+    project_fingerprint: str
+    model_version: int
+    target: ProjectNodeSummaryData
+    direction: Literal["upstream", "downstream", "both"]
+    start: str
+    end: str
+    summary: ObservabilitySummaryData
+    controls: list[ObservabilityControlData]
+    next_cursor: str | None
+    graph_truncated: bool
+    graph_truncation_reasons: list[
+        Literal["max_nodes", "max_edges", "max_depth", "semantic_incomplete"]
+    ]
+    unresolved_relationships: int
+    unresolved_relationships_truncated: bool
+    page_truncated: bool = False
+    page_truncation_reason: Literal["max_response_bytes"] | None = None
+
+
+class ObservabilityEnvelope(ToolEnvelope):
+    data: ObservabilityData | ErrorData
+
+
 class RoomPageEnvelope(ToolEnvelope):
     data: RoomPageData | ErrorData
 
@@ -1110,6 +1201,15 @@ class LoxBerryServiceEventsEnvelope(ToolEnvelope):
 
 def _now() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _truncate_utf8(value: str, maximum_bytes: int) -> tuple[str, bool]:
+    """Return a UTF-8-safe bounded value and whether source text was omitted."""
+
+    encoded = value.encode("utf-8")
+    if len(encoded) <= maximum_bytes:
+        return value, False
+    return encoded[:maximum_bytes].decode("utf-8", errors="ignore"), True
 
 
 def _result[EnvelopeT: ToolEnvelope](
@@ -1727,6 +1827,40 @@ class EventHistoryRuntime:
             raise ControlOperationError("temporarily_unavailable", str(exc)) from exc
         return control, state_name, page
 
+    async def coverage(
+        self,
+        access: StoredAccessToken,
+        sources: tuple[tuple[str, str], ...],
+        *,
+        start: float,
+        end: float,
+    ) -> tuple[bool, dict[tuple[str, str], EventHistoryCoverage]]:
+        """Read only local coverage for sources already authorized by the caller's snapshot."""
+
+        if HISTORY_SCOPE not in access.scopes:
+            raise PermissionError("loxone:history is required")
+        config = self._config_store.load()
+        if not config.loxone_history_enabled:
+            raise PermissionError("loxone:history requires administrator activation")
+        if not config.event_history_enabled:
+            return False, {}
+        configured = tuple(source for source in sources if source in config.event_history_sources)
+        if not configured:
+            return True, {}
+        store = EventHistoryStore(
+            self._store_path,
+            retention_days=config.event_history_retention_days,
+            maximum_mib=config.event_history_maximum_mib,
+        )
+        try:
+            async with self._runtime.worker_slot():
+                coverage = await asyncio.to_thread(
+                    store.coverage_many, configured, start=start, end=end
+                )
+        except EventHistoryUnavailable as exc:
+            raise ControlOperationError("temporarily_unavailable", str(exc)) from exc
+        return True, coverage
+
 
 def _page(
     codec: _CursorCodec, scope: str, items: list[Any], cursor: str | None, limit: int
@@ -1762,6 +1896,20 @@ async def _project_query(runtime: LoxoneRuntime | None) -> tuple[ProjectQuery, R
         raise RuntimeUnavailable("the project service is not configured")
     access = _access()
     async with runtime.call_slot(access):
+        snapshot = await runtime.snapshot(access)
+        view = await runtime.projects.view(access, snapshot)
+    names = {control.uuid: control.name for control in _visible_controls(snapshot.structure)}
+    return ProjectQuery(view, names), snapshot
+
+
+async def _history_project_query(
+    runtime: LoxoneRuntime | None, access: StoredAccessToken
+) -> tuple[ProjectQuery, RuntimeSnapshot]:
+    """Load one project view through the history authorization and rate gate."""
+
+    if runtime is None or runtime.projects is None:
+        raise RuntimeUnavailable("the project service is not configured")
+    async with runtime.history_call_slot(access):
         snapshot = await runtime.snapshot(access)
         view = await runtime.projects.view(access, snapshot)
     names = {control.uuid: control.name for control in _visible_controls(snapshot.structure)}
@@ -1985,6 +2133,36 @@ def _fit_project_analysis_page(
     if not low:
         return False
     data.findings = findings[:low]
+    data.next_cursor = codec.encode(scope, offset + low)
+    return len(envelope.model_dump_json().encode("utf-8")) <= PROJECT_RESPONSE_MAX_BYTES
+
+
+def _fit_observability_page(
+    envelope: ObservabilityEnvelope, codec: _CursorCodec, scope: str, cursor: str | None
+) -> bool:
+    """Trim complete control records without changing the signed continuation scope."""
+
+    if not isinstance(envelope.data, ObservabilityData):
+        return True
+    data = envelope.data
+    if len(envelope.model_dump_json().encode("utf-8")) <= PROJECT_RESPONSE_MAX_BYTES:
+        return True
+    offset = codec.decode(scope, cursor)
+    controls = data.controls
+    data.page_truncated = True
+    data.page_truncation_reason = "max_response_bytes"
+    low, high = 0, len(controls)
+    while low < high:
+        count = (low + high + 1) // 2
+        data.controls = controls[:count]
+        data.next_cursor = codec.encode(scope, offset + count)
+        if len(envelope.model_dump_json().encode("utf-8")) <= PROJECT_RESPONSE_MAX_BYTES:
+            low = count
+        else:
+            high = count - 1
+    if not low:
+        return False
+    data.controls = controls[:low]
     data.next_cursor = codec.encode(scope, offset + low)
     return len(envelope.model_dump_json().encode("utf-8")) <= PROJECT_RESPONSE_MAX_BYTES
 
@@ -3568,6 +3746,325 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
             return _error(ProjectAnalysisEnvelope, "temporarily_unavailable", str(exc))
 
 
+def register_observability_tools(
+    server: FastMCP,
+    runtime: LoxoneRuntime | None,
+    event_history_runtime: EventHistoryRuntime | None,
+) -> None:
+    """Publish bounded historical-evidence analysis for one project context."""
+
+    annotations = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
+    cursors = _CursorCodec()
+
+    @server.tool(
+        name="loxone_analyze_observability",
+        description=(
+            "Assess bounded current-state and history-source evidence for exact runtime controls "
+            "structurally reachable from one authorized project target. Graph reachability is not "
+            "historical causation. Requires loxone:read and loxone:history."
+        ),
+        annotations=annotations,
+        structured_output=True,
+    )
+    async def analyze_observability(
+        target_identifier: Annotated[str, Field(min_length=1, max_length=200)],
+        target_type: Annotated[
+            Literal["project_node_id", "runtime_control_uuid"],
+            Field(
+                description=(
+                    "Whether target_identifier is a project node ID or visible "
+                    "runtime control UUID."
+                )
+            ),
+        ],
+        direction: Annotated[
+            Literal["upstream", "downstream", "both"],
+            Field(description="Structural direction used to collect relevant runtime controls."),
+        ],
+        start: Annotated[
+            str,
+            Field(description="Inclusive RFC 3339 diagnosis start timestamp with timezone."),
+        ],
+        end: Annotated[
+            str,
+            Field(description="Inclusive RFC 3339 diagnosis end timestamp with timezone."),
+        ],
+        max_depth: Annotated[int, Field(ge=1, le=16)] = 6,
+        max_nodes: Annotated[int, Field(ge=1, le=200)] = 100,
+        cursor: CursorArgument = None,
+        limit: Annotated[int, Field(ge=1, le=50)] = 20,
+    ) -> ObservabilityEnvelope:
+        try:
+            access = _access()
+            if HISTORY_SCOPE not in access.scopes:
+                raise PermissionError("loxone:history is required")
+            start_time = _rfc3339(start)
+            end_time = _rfc3339(end)
+            start_seconds = start_time.timestamp()
+            end_seconds = end_time.timestamp()
+            if start_seconds > end_seconds or end_seconds - start_seconds > 90 * 24 * 60 * 60:
+                raise ValueError("observability interval is invalid")
+            project, snapshot = await _history_project_query(runtime, access)
+            target = project.resolve(target_identifier, target_type)
+            analysis = project.observable_controls(
+                target, direction=direction, max_depth=max_depth, max_nodes=max_nodes
+            )
+            candidates = analysis["controls"]
+            if not isinstance(candidates, list):
+                raise ProjectQueryError("project_query_invalid")
+            scope = (
+                "observability:"
+                + hashlib.sha256(
+                    json.dumps(
+                        [
+                            access.family_id,
+                            project.view.snapshot.fingerprint,
+                            project.view.mapping.structure_fingerprint,
+                            target_identifier,
+                            target_type,
+                            direction,
+                            start,
+                            end,
+                            max_depth,
+                            max_nodes,
+                        ],
+                        separators=(",", ":"),
+                    ).encode()
+                ).hexdigest()
+            )
+            source_controls: list[tuple[Control, dict[str, object]]] = []
+            visible = {control.uuid: control for control in _visible_controls(snapshot.structure)}
+            for candidate in candidates:
+                if not isinstance(candidate, dict):
+                    continue
+                control_uuid = candidate.get("control_uuid")
+                if not isinstance(control_uuid, str):
+                    continue
+                control = visible.get(control_uuid)
+                if control is not None:
+                    source_controls.append((control, candidate))
+
+            event_sources = tuple(
+                (control.uuid, state_uuid)
+                for control, _candidate in source_controls
+                for _state_name, state_uuid in control.state_uuids[
+                    :_OBSERVABILITY_MAX_STATES_PER_CONTROL
+                ]
+            )
+            event_history_enabled: bool | None = None
+            coverage: dict[tuple[str, str], EventHistoryCoverage] = {}
+            if event_history_runtime is not None:
+                try:
+                    event_history_enabled, coverage = await event_history_runtime.coverage(
+                        access, event_sources, start=start_seconds, end=end_seconds
+                    )
+                except ControlOperationError as exc:
+                    if exc.code != "temporarily_unavailable":
+                        raise
+
+            def timestamp(value: float | None) -> str | None:
+                return (
+                    datetime.fromtimestamp(value, UTC).isoformat().replace("+00:00", "Z")
+                    if value is not None
+                    else None
+                )
+
+            controls: list[dict[str, object]] = []
+            stale = not snapshot.connected
+            summary = {
+                "relevant_controls": len(source_controls),
+                "current_state_controls": 0,
+                "native_statistics_configured": 0,
+                "local_history_complete": 0,
+                "local_history_partial": 0,
+                "local_history_missing": 0,
+                "historical_complete": 0,
+                "historical_partial": 0,
+                "historical_missing": 0,
+                "historical_unverified": 0,
+            }
+            for control, candidate in source_controls:
+                control_name, control_name_truncated = _truncate_utf8(
+                    control.name, _OBSERVABILITY_MAX_STATE_NAME_BYTES
+                )
+                control_type, control_type_truncated = _truncate_utf8(
+                    control.control_type, _OBSERVABILITY_MAX_STATE_NAME_BYTES
+                )
+                state_pairs: list[tuple[str, str]] = []
+                state_names_truncated = False
+                for state_name, state_uuid in control.state_uuids[
+                    :_OBSERVABILITY_MAX_STATES_PER_CONTROL
+                ]:
+                    bounded_name, state_name_truncated = _truncate_utf8(
+                        state_name, _OBSERVABILITY_MAX_STATE_NAME_BYTES
+                    )
+                    state_pairs.append((bounded_name, state_uuid))
+                    state_names_truncated = state_names_truncated or state_name_truncated
+                current_states = []
+                for state_name, state_uuid in state_pairs:
+                    record = (
+                        runtime.state(snapshot, state_uuid)
+                        if runtime is not None
+                        else StateRecord(state_uuid, None, Freshness.UNKNOWN, None)
+                    )
+                    current_states.append(
+                        {
+                            "uuid": state_uuid,
+                            "name": state_name,
+                            "available": record.value is not None,
+                            "freshness": record.freshness.value,
+                            "observed_at": _state_observed_at(record),
+                        }
+                    )
+                    stale = stale or record.freshness is not Freshness.CURRENT
+                if any(item["available"] for item in current_states):
+                    summary["current_state_controls"] += 1
+                statistic_series = control.statistic_series[
+                    :_OBSERVABILITY_MAX_STATISTICS_PER_CONTROL
+                ]
+                native_statistics = [
+                    {
+                        "series_id": series.series_id,
+                        "source": series.source,
+                        "title": series.title,
+                        "format": series.format,
+                        "accumulated": series.accumulated,
+                    }
+                    for series in statistic_series
+                ]
+                native_statistics_truncated = len(control.statistic_series) > len(statistic_series)
+                if native_statistics:
+                    summary["native_statistics_configured"] += 1
+                local_event_history = []
+                local_statuses: list[str] = []
+                for state_name, state_uuid in state_pairs:
+                    item = coverage.get((control.uuid, state_uuid))
+                    if item is not None:
+                        status = item.coverage
+                        history = {
+                            "state_uuid": state_uuid,
+                            "state_name": state_name,
+                            "status": status,
+                            "capture_started_at": timestamp(item.capture_started_at),
+                            "retained_from": timestamp(item.retained_from),
+                            "has_recorded_events": item.has_events,
+                        }
+                    elif event_history_enabled is False:
+                        status = "feature_disabled"
+                        history = {
+                            "state_uuid": state_uuid,
+                            "state_name": state_name,
+                            "status": status,
+                        }
+                    elif event_history_enabled is True:
+                        status = "not_configured"
+                        history = {
+                            "state_uuid": state_uuid,
+                            "state_name": state_name,
+                            "status": status,
+                        }
+                    else:
+                        status = "unavailable"
+                        history = {
+                            "state_uuid": state_uuid,
+                            "state_name": state_name,
+                            "status": status,
+                        }
+                    local_statuses.append(status)
+                    local_event_history.append(history)
+                states_truncated = len(control.state_uuids) > len(state_pairs)
+                local_complete = (
+                    bool(local_statuses)
+                    and all(status == "complete" for status in local_statuses)
+                    and not states_truncated
+                )
+                local_partial = any(
+                    status in {"complete", "partial_coverage"} for status in local_statuses
+                )
+                if local_complete:
+                    summary["local_history_complete"] += 1
+                elif local_partial:
+                    summary["local_history_partial"] += 1
+                elif local_statuses:
+                    summary["local_history_missing"] += 1
+                if local_complete:
+                    historical_status = "complete"
+                elif local_partial:
+                    historical_status = "partial"
+                elif (
+                    local_statuses and all(status == "unavailable" for status in local_statuses)
+                ) or (native_statistics):
+                    historical_status = "unverified"
+                else:
+                    historical_status = "missing"
+                summary[f"historical_{historical_status}"] += 1
+                project_node_ids = candidate.get("project_node_ids")
+                directions = candidate.get("directions")
+                controls.append(
+                    {
+                        "control_uuid": control.uuid,
+                        "control_name": control_name,
+                        "control_type": control_type,
+                        "control_metadata_truncated": (
+                            control_name_truncated or control_type_truncated
+                        ),
+                        "project_node_ids": project_node_ids
+                        if isinstance(project_node_ids, list)
+                        else [],
+                        "directions": directions if isinstance(directions, list) else [],
+                        "current_states": current_states,
+                        "states_truncated": states_truncated,
+                        "state_names_truncated": state_names_truncated,
+                        "native_statistics": native_statistics,
+                        "native_statistics_truncated": native_statistics_truncated,
+                        "local_event_history": local_event_history,
+                        "historical_status": historical_status,
+                    }
+                )
+            page = _page(cursors, scope, controls, cursor, limit)
+            result = _result(
+                ObservabilityEnvelope,
+                {
+                    "project_fingerprint": project.view.snapshot.fingerprint,
+                    "model_version": project.view.snapshot.model_version,
+                    "target": analysis["target"],
+                    "direction": direction,
+                    "start": start_time.isoformat().replace("+00:00", "Z"),
+                    "end": end_time.isoformat().replace("+00:00", "Z"),
+                    "summary": summary,
+                    "controls": page["items"],
+                    "next_cursor": page["next_cursor"],
+                    "graph_truncated": analysis["truncated"],
+                    "graph_truncation_reasons": analysis["truncation_reasons"],
+                    "unresolved_relationships": analysis["unresolved_relationships"],
+                    "unresolved_relationships_truncated": analysis["unresolved_truncated"],
+                },
+                stale=stale,
+            )
+            if not _fit_observability_page(result, cursors, scope, cursor):
+                return _error(
+                    ObservabilityEnvelope,
+                    "temporarily_unavailable",
+                    "Observability result exceeds the response limit",
+                )
+            return result
+        except ValueError as exc:
+            return _error(ObservabilityEnvelope, "invalid_input", str(exc))
+        except PermissionError:
+            return _error(
+                ObservabilityEnvelope,
+                "permission_denied",
+                "History authorization is required",
+            )
+        except (ProjectError, ProjectQueryError) as exc:
+            code, message, diagnostic_code = _project_error_code(exc)
+            return _error(ObservabilityEnvelope, code, message, diagnostic_code=diagnostic_code)
+        except RuntimeUnavailable as exc:
+            return _error(ObservabilityEnvelope, "temporarily_unavailable", str(exc))
+        except ControlOperationError as exc:
+            return _error(ObservabilityEnvelope, exc.code, str(exc))
+
+
 def register_loxberry_read_tools(server: FastMCP, runtime: LoxBerryReadRuntime) -> None:
     """Publish the optional, fixed Phase 3 LoxBerry diagnostics surface."""
     annotations = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
@@ -4675,6 +5172,7 @@ def register_tool_surface(
     register_read_tools(server, runtime, control_enabled=control_enabled)
     if runtime is not None:
         register_project_tools(server, runtime)
+        register_observability_tools(server, runtime, event_history_runtime)
         register_control_tool(server, runtime)
         register_history_tools(server, runtime)
     register_event_history_tools(server, event_history_runtime)
