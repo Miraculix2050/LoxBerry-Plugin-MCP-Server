@@ -902,6 +902,7 @@ class ObservabilityControlData(BaseModel):
     control_uuid: str
     control_name: str
     control_type: str
+    control_metadata_truncated: bool = False
     project_node_ids: list[str]
     directions: list[Literal["upstream", "downstream"]]
     current_states: list[ObservabilityCurrentStateData]
@@ -3883,6 +3884,12 @@ def register_observability_tools(
                 "historical_unverified": 0,
             }
             for control, candidate in source_controls:
+                control_name, control_name_truncated = _truncate_utf8(
+                    control.name, _OBSERVABILITY_MAX_STATE_NAME_BYTES
+                )
+                control_type, control_type_truncated = _truncate_utf8(
+                    control.control_type, _OBSERVABILITY_MAX_STATE_NAME_BYTES
+                )
                 state_pairs: list[tuple[str, str]] = []
                 state_names_truncated = False
                 for state_name, state_uuid in control.state_uuids[
@@ -3996,8 +4003,11 @@ def register_observability_tools(
                 controls.append(
                     {
                         "control_uuid": control.uuid,
-                        "control_name": control.name,
-                        "control_type": control.control_type,
+                        "control_name": control_name,
+                        "control_type": control_type,
+                        "control_metadata_truncated": (
+                            control_name_truncated or control_type_truncated
+                        ),
                         "project_node_ids": project_node_ids
                         if isinstance(project_node_ids, list)
                         else [],

@@ -307,11 +307,9 @@ async def test_observability_unavailable_history_remains_unverified(monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_observability_bounds_state_name_metadata(monkeypatch):
+async def test_observability_bounds_control_and_state_metadata(monkeypatch):
     state_name = "ä" * 101
-    control = Control(
-        "control", "Long state name", "Switch", None, None, None, ((state_name, "state"),)
-    )
+    control = Control("control", "ö" * 101, "ü" * 101, None, None, None, ((state_name, "state"),))
     structure = LoxoneStructure(LoxoneIdentity("user", "serial"), "modified", (), (), (control,))
     snapshot = SimpleNamespace(connected=True, structure=structure, structure_generation=1)
 
@@ -343,6 +341,9 @@ async def test_observability_bounds_state_name_metadata(monkeypatch):
     state = result.data.controls[0].current_states[0]
     assert len(state.name.encode("utf-8")) == 200
     assert result.data.controls[0].state_names_truncated is True
+    assert len(result.data.controls[0].control_name.encode("utf-8")) == 200
+    assert len(result.data.controls[0].control_type.encode("utf-8")) == 200
+    assert result.data.controls[0].control_metadata_truncated is True
 
 
 @pytest.mark.asyncio

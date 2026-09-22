@@ -235,7 +235,8 @@ reachable controls, current-state availability, advertised statistic-series
 metadata, and local event-history coverage. A project path is not a historical
 cause; `temporal_coverage: not_checked` means statistics were not retrieved;
 `native_statistics_truncated` marks omitted statistic metadata;
-`state_names_truncated` marks omitted state-name text; and
+`state_names_truncated` marks omitted state-name text;
+`control_metadata_truncated` marks omitted control-name and type text; and
 `not_recorded` or `partial_coverage` never proves that a state did not occur.
 Use `loxone_get_statistics` only when an advertised series needs direct evidence
 for the same period. Do not add history sources automatically; recording advice

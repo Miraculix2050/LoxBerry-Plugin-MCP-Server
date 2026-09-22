@@ -99,8 +99,9 @@ event-history coverage for the requested period. Structural reachability is not 
 claim; advertised statistics are deliberately not fetched and report `not_checked` temporal
 coverage. At most 20 statistic series per control are returned; `native_statistics_truncated`
 marks omitted metadata. State names are capped at 200 UTF-8 bytes and
-`state_names_truncated` marks omitted text. Missing or partial local coverage is an evidence gap,
-never proof of non-occurrence.
+`state_names_truncated` marks omitted text. Control names and types use the same cap and
+`control_metadata_truncated` marks omitted text. Missing or partial local coverage is an evidence
+gap, never proof of non-occurrence.
 
 ### Source diagnostics
 
