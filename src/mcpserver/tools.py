@@ -3921,15 +3921,24 @@ def register_observability_tools(
                         }
                     local_statuses.append(status)
                     local_event_history.append(history)
-                if "complete" in local_statuses:
+                states_truncated = len(control.state_uuids) > len(state_pairs)
+                local_complete = (
+                    bool(local_statuses)
+                    and all(status == "complete" for status in local_statuses)
+                    and not states_truncated
+                )
+                local_partial = states_truncated or any(
+                    status in {"complete", "partial_coverage"} for status in local_statuses
+                )
+                if local_complete:
                     summary["local_history_complete"] += 1
-                elif "partial_coverage" in local_statuses:
+                elif local_partial:
                     summary["local_history_partial"] += 1
                 elif local_statuses:
                     summary["local_history_missing"] += 1
-                if "complete" in local_statuses:
+                if local_complete:
                     historical_status = "complete"
-                elif "partial_coverage" in local_statuses:
+                elif local_partial:
                     historical_status = "partial"
                 elif native_statistics:
                     historical_status = "unverified"
@@ -3948,7 +3957,7 @@ def register_observability_tools(
                         else [],
                         "directions": directions if isinstance(directions, list) else [],
                         "current_states": current_states,
-                        "states_truncated": len(control.state_uuids) > len(state_pairs),
+                        "states_truncated": states_truncated,
                         "native_statistics": native_statistics,
                         "local_event_history": local_event_history,
                         "historical_status": historical_status,
