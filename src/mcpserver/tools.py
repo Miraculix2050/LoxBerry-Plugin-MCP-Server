@@ -3842,6 +3842,7 @@ def register_observability_tools(
                 )
 
             controls: list[dict[str, object]] = []
+            stale = not snapshot.connected
             summary = {
                 "relevant_controls": len(source_controls),
                 "current_state_controls": 0,
@@ -3872,6 +3873,7 @@ def register_observability_tools(
                             "observed_at": _state_observed_at(record),
                         }
                     )
+                    stale = stale or record.freshness is not Freshness.CURRENT
                 if any(item["available"] for item in current_states):
                     summary["current_state_controls"] += 1
                 native_statistics = [
@@ -3983,7 +3985,7 @@ def register_observability_tools(
                     "unresolved_relationships": analysis["unresolved_relationships"],
                     "unresolved_relationships_truncated": analysis["unresolved_truncated"],
                 },
-                stale=not snapshot.connected,
+                stale=stale,
             )
             if not _fit_observability_page(result, cursors, scope, cursor):
                 return _error(

@@ -208,6 +208,7 @@ async def test_observability_reports_current_sources_and_explicit_history_gaps(m
     assert data.controls[0].local_event_history[1].status == "not_configured"
     assert data.controls[0].historical_status == "partial"
     assert data.summary.local_history_partial == 1
+    assert result.stale is True
 
 
 @pytest.mark.asyncio
