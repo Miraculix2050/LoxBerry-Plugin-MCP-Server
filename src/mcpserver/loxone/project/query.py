@@ -712,19 +712,33 @@ class ProjectQuery:
         controls: dict[str, dict[str, object]] = {}
         truncated = False
         truncation_reasons: list[str] = []
-        unresolved_relationships = 0
+        unresolved_relationship_keys: set[tuple[str, str]] = set()
         unresolved_truncated = False
         for trace_direction in directions:
             trace = self.trace(
                 node, direction=trace_direction, max_depth=max_depth, max_nodes=max_nodes
             )
-            truncated = truncated or bool(trace["truncated"])
+            trace_truncated = bool(trace["truncated"])
+            semantic_truncated = bool(trace.get("semantic_truncated", trace_truncated))
+            truncated = truncated or trace_truncated or semantic_truncated
             reason = trace["truncation_reason"]
             if isinstance(reason, str) and reason not in truncation_reasons:
                 truncation_reasons.append(reason)
+            if (
+                semantic_truncated
+                and not trace_truncated
+                and "semantic_incomplete" not in truncation_reasons
+            ):
+                truncation_reasons.append("semantic_incomplete")
             unresolved = trace["unresolved_relationships"]
             if isinstance(unresolved, list):
-                unresolved_relationships += len(unresolved)
+                for relationship in unresolved:
+                    if not isinstance(relationship, dict):
+                        continue
+                    node_key = relationship.get("project_node_id")
+                    code = relationship.get("code")
+                    if isinstance(node_key, str) and isinstance(code, str):
+                        unresolved_relationship_keys.add((node_key, code))
             unresolved_truncated = unresolved_truncated or bool(trace["unresolved_truncated"])
             nodes = trace["nodes"]
             if not isinstance(nodes, list):
@@ -760,6 +774,6 @@ class ProjectQuery:
             "controls": [controls[key] for key in sorted(controls)],
             "truncated": truncated,
             "truncation_reasons": truncation_reasons,
-            "unresolved_relationships": unresolved_relationships,
+            "unresolved_relationships": len(unresolved_relationship_keys),
             "unresolved_truncated": unresolved_truncated,
         }

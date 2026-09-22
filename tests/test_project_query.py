@@ -82,6 +82,36 @@ def test_observable_controls_keep_only_exact_runtime_mappings():
     assert result["truncated"] is False
 
 
+def test_observable_controls_preserve_semantic_truncation_and_deduplicate_unresolved(
+    monkeypatch,
+):
+    project = query()
+    mapped = project.resolve("p:3", "project_node_id")
+
+    def semantic_boundary_trace(self, _node, *, direction, max_depth, max_nodes):
+        return {
+            "nodes": [self._summary(mapped)],
+            "truncated": False,
+            "semantic_truncated": True,
+            "truncation_reason": None,
+            "unresolved_relationships": [{"project_node_id": "p:1", "code": "unresolved_signal"}],
+            "unresolved_truncated": False,
+        }
+
+    monkeypatch.setattr(ProjectQuery, "trace", semantic_boundary_trace)
+
+    result = project.observable_controls(
+        project.resolve("p:4", "project_node_id"),
+        direction="both",
+        max_depth=6,
+        max_nodes=100,
+    )
+
+    assert result["truncated"] is True
+    assert result["truncation_reasons"] == ["semantic_incomplete"]
+    assert result["unresolved_relationships"] == 1
+
+
 def test_source_diagnostics_are_available_without_unknown_values():
     parsed = parse_project(
         b'<P><C Type="EIBsensor" U="sensor" EibAddr="invalid" Extra="secret"/></P>'

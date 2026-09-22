@@ -934,7 +934,9 @@ class ObservabilityData(BaseModel):
     controls: list[ObservabilityControlData]
     next_cursor: str | None
     graph_truncated: bool
-    graph_truncation_reasons: list[Literal["max_nodes", "max_edges", "max_depth"]]
+    graph_truncation_reasons: list[
+        Literal["max_nodes", "max_edges", "max_depth", "semantic_incomplete"]
+    ]
     unresolved_relationships: int
     unresolved_relationships_truncated: bool
     page_truncated: bool = False
