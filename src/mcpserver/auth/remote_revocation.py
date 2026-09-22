@@ -14,7 +14,11 @@ from pathlib import Path
 from typing import Any, Final
 from uuid import UUID
 
-from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore, LoxoneTokenStoreError
+from mcpserver.auth.loxone_store import (
+    EncryptedLoxoneTokenStore,
+    LoxoneTokenStoreError,
+    _fsync_parent_directory,
+)
 from mcpserver.loxone.auth_diagnostics import (
     MiniserverAuthCoordinator,
     MiniserverAuthenticationSuppressed,
@@ -139,6 +143,7 @@ class RemoteRevocationState:
             os.chmod(temporary, 0o600)
             os.replace(temporary, self.path)
             os.chmod(self.path, 0o600)
+            _fsync_parent_directory(self.path)
         except OSError as exc:
             with suppress(OSError):
                 temporary.unlink(missing_ok=True)
@@ -194,6 +199,10 @@ async def process_remote_revocations(
     state = RemoteRevocationState(store.path)
     try:
         value = state.read()
+        active_tombstones = [item for item in value["tombstones"] if item["expires_at"] > now]
+        if len(active_tombstones) != len(value["tombstones"]):
+            value["tombstones"] = active_tombstones
+            state.write(value)
         if value["not_before"] > now:
             return
         pending = store.pending_remote_revocations(now)
@@ -252,13 +261,13 @@ async def process_remote_revocations(
                 if auth_coordinator is not None
                 else None
             )
-            value["not_before"] = max(now + _POLL_SECONDS, retry_at or now)
-            state.write(value)
             store.release_suppressed_remote_revoke_attempt(
                 item.family_id,
                 reserved_attempts=attempts,
                 previous_retry_after=item.retry_after,
             )
+            value["not_before"] = max(now + _POLL_SECONDS, retry_at or now)
+            state.write(value)
             return
         except LoxoneTokenAuthenticationRejected:
             value["invalid_streak"] += 1

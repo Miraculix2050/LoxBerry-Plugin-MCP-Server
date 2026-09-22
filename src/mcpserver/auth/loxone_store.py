@@ -54,6 +54,17 @@ class LoxoneTokenStoreError(RuntimeError):
     """The encrypted Loxone token store cannot be used safely."""
 
 
+def _fsync_parent_directory(path: Path) -> None:
+    """Make an atomic replacement durable on the POSIX deployment target."""
+    if os.name != "posix":  # pragma: win32 cover
+        return
+    descriptor = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
 @dataclass(frozen=True)
 class ExplorerSession:
     """Encrypted server-side credentials for one browser Explorer session."""
@@ -194,6 +205,7 @@ class EncryptedLoxoneTokenStore:
             os.chmod(temporary, 0o600)
             os.replace(temporary, self.path)
             os.chmod(self.path, 0o600)
+            _fsync_parent_directory(self.path)
         except OSError as exc:
             with suppress(OSError):
                 temporary.unlink(missing_ok=True)

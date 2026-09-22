@@ -199,6 +199,23 @@ def test_success_and_nominal_expiry_have_distinct_outcomes(
     assert totals["expired_without_confirmation"] == 1
 
 
+def test_expired_anonymous_tombstones_are_pruned_without_network(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = _store(tmp_path)
+    state = RemoteRevocationState(store.path)
+    now = 2_000_000_000
+    value = state.read()
+    value["tombstones"] = [
+        {"outcome": "already_invalid", "expires_at": now - 1},
+        {"outcome": "unconfirmed", "expires_at": now + 10},
+    ]
+    state.write(value)
+    monkeypatch.setattr("mcpserver.auth.remote_revocation.time.time", lambda: now)
+    asyncio.run(process_remote_revocations(_ENDPOINT, store, 1))
+    assert state.read()["tombstones"] == [{"outcome": "unconfirmed", "expires_at": now + 10}]
+
+
 def test_corrupt_status_fail_closes_without_network(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -294,6 +311,34 @@ def test_coordinator_suppression_does_not_consume_network_attempt(
         raise MiniserverAuthenticationSuppressed("suppressed")
 
     monkeypatch.setattr(coordinator, "attempt", suppress)
+    monkeypatch.setattr("mcpserver.auth.remote_revocation.time.time", lambda: now)
+    asyncio.run(process_remote_revocations(_ENDPOINT, store, 1, coordinator))
+    assert store.pending_remote_revocations(now + 300)[0].attempts == 0
+
+
+def test_suppression_release_precedes_sidecar_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = _store(tmp_path)
+    now = 2_000_000_000
+    _queue(store, "family", now)
+    coordinator = MiniserverAuthCoordinator(tmp_path / "auth-status.json")
+
+    async def suppress(*_args: object, **_kwargs: object) -> None:
+        raise MiniserverAuthenticationSuppressed("suppressed")
+
+    writes = 0
+    original_write = RemoteRevocationState.write
+
+    def flaky_write(self: RemoteRevocationState, value: dict[str, object]) -> None:
+        nonlocal writes
+        writes += 1
+        if writes == 2:
+            raise RemoteRevocationStateError("disk unavailable")
+        original_write(self, value)
+
+    monkeypatch.setattr(coordinator, "attempt", suppress)
+    monkeypatch.setattr(RemoteRevocationState, "write", flaky_write)
     monkeypatch.setattr("mcpserver.auth.remote_revocation.time.time", lambda: now)
     asyncio.run(process_remote_revocations(_ENDPOINT, store, 1, coordinator))
     assert store.pending_remote_revocations(now + 300)[0].attempts == 0
