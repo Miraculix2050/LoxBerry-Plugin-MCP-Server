@@ -853,18 +853,20 @@ $template->param(
 );
 
 our %navbar;
-$navbar{10}{Name} = $L{'NAV.STATUS'};
-$navbar{10}{URL} = '#status';
-$navbar{20}{Name} = $L{'NAV.SETUP'};
-$navbar{20}{URL} = '#setup';
-$navbar{30}{Name} = $L{'NAV.SESSIONS'};
-$navbar{30}{URL} = '#sessions';
-$navbar{40}{Name} = $L{'NAV.DIAGNOSTICS'};
-$navbar{40}{URL} = '#diagnostics';
-$navbar{45}{Name} = $L{'NAV.CERTIFICATE'};
-$navbar{45}{URL} = '#certificate';
-$navbar{50}{Name} = $L{'NAV.HELP'};
-$navbar{50}{URL} = '#help';
+my @navbar_sections = (
+    ['status', 'STATUS.TITLE'],
+    ['configuration', 'SETUP.TITLE'],
+    ['access', 'ACCESS.TITLE'],
+    ['sessions', 'SESSIONS.TITLE'],
+    ['mqtt', 'MQTT.TITLE'],
+    ['diagnostics', 'DIAGNOSTICS.TITLE'],
+    ['help', 'HELP.TITLE'],
+);
+for my $index (0 .. $#navbar_sections) {
+    my ($id, $label_key) = @{$navbar_sections[$index]};
+    $navbar{($index + 1) * 10}{Name} = $L{$label_key};
+    $navbar{($index + 1) * 10}{URL} = "#$id";
+}
 
 my $page = $template->output();
 my $template_duration_ms = (clock_gettime(CLOCK_MONOTONIC) - $render_started) * 1000;

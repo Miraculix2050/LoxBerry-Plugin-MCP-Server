@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Align the Admin UI navigation and page order around status, configuration,
+  MCP access and HTTPS, clients, MQTT health, diagnostics, and help. Connection
+  URLs and certificate actions now share the MCP access section; Help keeps the
+  Tool Explorer, schema reference, and project guides.
+
 - Keep local LoxBerry approvals reusable for the same validated Tool Explorer,
   Loxone identity and Miniserver across ordinary OAuth re-login. OAuth families
   and credentials retain their short lifetimes; inactive Explorer approvals use

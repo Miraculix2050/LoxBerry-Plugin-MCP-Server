@@ -214,7 +214,7 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert "window.addEventListener('beforeunload', markPageUnloading);" in template
     assert "window.addEventListener('pagehide', markPageUnloading);" in template
     assert "if (pageIsUnloading) return;" in template
-    assert "if (certificateSection.open && initialBackgroundHydrationComplete)" in template
+    assert "if (accessSection.open && initialBackgroundHydrationComplete)" in template
     assert "if (sessionsSection.open && initialBackgroundHydrationComplete)" in template
     assert "const emergencyStopGeneration = emergencyStopDiscoveryGeneration;" in template
     assert "queueBackgroundHydration([" in template
@@ -265,7 +265,7 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
         in template
     )
     assert 'id="certificate-unavailable" class="mcp-status" hidden' in template
-    assert "if (certificateSection.open) loadCertificateStatus();" not in template
+    assert "if (accessSection.open) loadCertificateStatus();" not in template
     assert "if (sessionsSection.open) pollSessions();" not in template
     assert "serviceSection.setAttribute('aria-busy', 'false');" in template
     assert "sessionsSection.setAttribute('aria-busy', 'false');" in template
@@ -370,7 +370,7 @@ def test_service_status_is_first_and_uses_a_lightweight_ajax_contract() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
 
-    assert template.index('id="status"') < template.index('id="setup"')
+    assert template.index('id="status"') < template.index('id="configuration"')
     assert 'data-ajax="service_status"' not in template
     for command in ("start", "stop", "restart"):
         assert f'data-service-command="{command}"' in template
@@ -627,18 +627,58 @@ def test_service_actions_use_an_accessible_confirmation_and_dynamic_controls() -
 
 
 def test_admin_sections_are_native_persistent_collapsibles() -> None:
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
 
-    for section in ("status", "setup", "mqtt", "help", "certificate", "sessions", "diagnostics"):
+    expected_sections = [
+        ("status", "STATUS.TITLE"),
+        ("configuration", "SETUP.TITLE"),
+        ("access", "ACCESS.TITLE"),
+        ("sessions", "SESSIONS.TITLE"),
+        ("mqtt", "MQTT.TITLE"),
+        ("diagnostics", "DIAGNOSTICS.TITLE"),
+        ("help", "HELP.TITLE"),
+    ]
+    for section, label_key in expected_sections:
         assert f'<details id="{section}" class="mcp-card" data-persist-collapse' in template
+        section_markup = template[template.index(f'id="{section}"') :]
+        assert re.search(
+            rf"<summary>.*?<TMPL_VAR {re.escape(label_key)}",
+            section_markup,
+            re.DOTALL,
+        )
     assert '<details id="status" class="mcp-card" data-persist-collapse open' in template
-    assert '<details id="setup" class="mcp-card" data-persist-collapse open' in template
-    assert "mcpserver.admin.sections.v1" in template
+    assert '<details id="configuration" class="mcp-card" data-persist-collapse open' in template
+    assert "mcpserver.admin.sections.v2" in template
     assert "window.localStorage.getItem(collapseStorageKey)" in template
     assert "window.localStorage.setItem(collapseStorageKey" in template
     assert "element.addEventListener('toggle', persistCollapsibles)" in template
     assert "window.addEventListener('hashchange', openHashSection)" in template
     assert "target instanceof HTMLDetailsElement" in template
+    navbar = cgi[cgi.index("my @navbar_sections") : cgi.index("for my $index")]
+    assert re.findall(r"\['([^']+)', '([^']+)'\]", navbar) == expected_sections
+    assert re.findall(
+        r'<details id="([^"]+)" class="mcp-card" data-persist-collapse', template
+    ) == [section for section, _label_key in expected_sections]
+
+
+def test_admin_access_section_groups_connection_urls_and_certificate_controls() -> None:
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+
+    access = template[template.index('id="access"') : template.index('id="sessions"')]
+    help_section = template[template.index('id="help"') : template.index("</main>")]
+    assert 'id="mcp-url-hostname"' in access
+    assert 'id="mcp-url-ip"' in access
+    assert 'id="certificate-panel"' in access
+    assert 'data-ajax="renew_certificate"' in access
+    assert 'id="explorer-link"' not in access
+    assert 'id="schema-reference-link"' not in access
+    assert 'id="explorer-link"' in help_section
+    assert 'id="schema-reference-link"' in help_section
+    assert 'id="setup"' not in template
+    assert 'id="certificate"' not in template
+    assert "const accessSection = document.getElementById('access');" in template
+    assert "const certificatePanel = document.getElementById('certificate-panel');" in template
 
 
 def test_permission_policy_uses_grouped_scope_labeled_checkboxes() -> None:
