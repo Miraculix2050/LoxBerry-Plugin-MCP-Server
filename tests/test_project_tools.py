@@ -263,6 +263,45 @@ async def test_observability_state_truncation_without_history_remains_missing(mo
 
 
 @pytest.mark.asyncio
+async def test_observability_unavailable_history_remains_unverified(monkeypatch):
+    control = Control(
+        "control", "Unavailable history", "Switch", None, None, None, (("value", "state"),)
+    )
+    structure = LoxoneStructure(LoxoneIdentity("user", "serial"), "modified", (), (), (control,))
+    snapshot = SimpleNamespace(connected=True, structure=structure, structure_generation=1)
+
+    async def history_project_query(_runtime, _access):
+        return Query(), snapshot
+
+    class Runtime:
+        def state(self, _snapshot, state_uuid):
+            return StateRecord(state_uuid, None, Freshness.UNKNOWN, None)
+
+    monkeypatch.setattr(tools_module, "_history_project_query", history_project_query)
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: SimpleNamespace(scopes=frozenset((READ_SCOPE, HISTORY_SCOPE)), family_id="family"),
+    )
+    server = FastMCP("observability-unavailable-history")
+    register_observability_tools(server, Runtime(), None)  # type: ignore[arg-type]
+
+    result = await server._tool_manager.get_tool("loxone_analyze_observability").fn(  # type: ignore[union-attr]
+        "control",
+        "runtime_control_uuid",
+        "upstream",
+        "2026-09-01T00:00:00Z",
+        "2026-09-02T00:00:00Z",
+    )
+
+    assert result.ok is True
+    data = result.data
+    assert data.controls[0].local_event_history[0].status == "unavailable"
+    assert data.controls[0].historical_status == "unverified"
+    assert data.summary.historical_unverified == 1
+
+
+@pytest.mark.asyncio
 async def test_observability_requires_history_scope(monkeypatch):
     monkeypatch.setattr(
         tools_module,

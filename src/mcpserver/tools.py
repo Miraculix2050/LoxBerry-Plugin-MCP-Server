@@ -3958,7 +3958,9 @@ def register_observability_tools(
                     historical_status = "complete"
                 elif local_partial:
                     historical_status = "partial"
-                elif native_statistics:
+                elif (
+                    local_statuses and all(status == "unavailable" for status in local_statuses)
+                ) or (native_statistics):
                     historical_status = "unverified"
                 else:
                     historical_status = "missing"
