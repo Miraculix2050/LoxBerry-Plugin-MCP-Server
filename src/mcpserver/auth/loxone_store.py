@@ -77,6 +77,8 @@ class RemoteRevocation:
     miniserver_id: str
     identity_id: str
     token: LoxoneToken
+    attempts: int = 0
+    retry_after: int = 0
 
 
 def _encoded(value: bytes) -> str:
@@ -311,8 +313,47 @@ class EncryptedLoxoneTokenStore:
                 raise LoxoneTokenStoreError("encrypted token binding is invalid")
             token = self.get(family_id, miniserver_id, identity_id)
             if token is not None:
-                pending.append(RemoteRevocation(family_id, miniserver_id, identity_id, token))
+                attempts = record.get("remote_revoke_attempts", 0)
+                pending.append(
+                    RemoteRevocation(
+                        family_id,
+                        miniserver_id,
+                        identity_id,
+                        token,
+                        attempts if isinstance(attempts, int) and attempts >= 0 else 0,
+                        record["remote_revoke_after"],
+                    )
+                )
         return tuple(pending)
+
+    def remote_revocation_counts(self, now: int) -> tuple[int, int]:
+        """Count all queued records, including those scheduled for later."""
+        with self._locked():
+            records = self._read()["tokens"].values()
+            pending = [
+                item
+                for item in records
+                if isinstance(item, dict) and item.get("remote_revoke_pending") is True
+            ]
+        return len(pending), sum(
+            isinstance(item.get("remote_revoke_after"), int) and item["remote_revoke_after"] > now
+            for item in pending
+        )
+
+    def record_remote_revoke_failure(self, family_id: str, retry_after: int) -> int:
+        """Record one actual network attempt and its next due time."""
+        with self._locked():
+            document = self._read()
+            record = document["tokens"].get(family_id)
+            if not isinstance(record, dict) or record.get("remote_revoke_pending") is not True:
+                return 0
+            attempts = record.get("remote_revoke_attempts", 0)
+            attempts = attempts if isinstance(attempts, int) and attempts >= 0 else 0
+            attempts += 1
+            record["remote_revoke_attempts"] = attempts
+            record["remote_revoke_after"] = retry_after
+            self._write(document)
+            return attempts
 
     def defer_remote_revoke(self, family_id: str, now: int) -> None:
         with self._locked():

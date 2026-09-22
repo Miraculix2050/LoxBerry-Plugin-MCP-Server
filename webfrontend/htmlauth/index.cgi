@@ -28,6 +28,7 @@ my $version = LoxBerry::System::pluginversion();
 my $admin_log;
 my $render_started = clock_gettime(CLOCK_MONOTONIC);
 my $request_id = sprintf('%x-%x', $$, int($render_started * 1_000_000));
+my %L;
 use constant ADMIN_LOG_MESSAGE_BYTES => 8 * 1024;
 use constant ADMIN_LOG_TRUNCATION_SUFFIX => ' ... [truncated]';
 
@@ -125,9 +126,17 @@ sub admin_call {
             ));
         }
     }
-    if ($action eq 'emergency_stop_options' && $result->{ok} && ref($result->{data}) eq 'HASH') {
+    if (($action eq 'emergency_stop_options' || $action eq 'emergency_stop_retry')
+        && $result->{ok} && ref($result->{data}) eq 'HASH') {
         my $failure_code = delete $result->{data}{discovery_failure_code};
         if (defined $failure_code && $failure_code =~ /\A[a-z_]{1,128}\z/) {
+            my %labels = (
+                authentication_suppressed => 'EMERGENCY_STOP_AUTH_SUPPRESSED',
+                credentials_unavailable => 'EMERGENCY_STOP_CREDENTIALS_UNAVAILABLE',
+                connection_failed => 'EMERGENCY_STOP_CONNECTION_FAILED',
+                structure_failed => 'EMERGENCY_STOP_STRUCTURE_FAILED',
+            );
+            $result->{data}{failure_text} = $L{'SETUP.' . ($labels{$failure_code} // 'EMERGENCY_STOP_LOAD_ERROR')};
             admin_log('warning', sprintf(
                 'component=emergency_stop outcome=options_unavailable request_id=%s code=%s',
                 $request_id,
@@ -359,7 +368,7 @@ my $template = HTML::Template->new_scalar_ref(
     loop_context_vars => 1,
     die_on_bad_params => 0,
 );
-my %L = LoxBerry::System::readlanguage($template, 'language.ini');
+%L = LoxBerry::System::readlanguage($template, 'language.ini');
 
 sub localize_admin_error {
     my ($result) = @_;
@@ -506,6 +515,8 @@ if ($action ne '') {
         $result = admin_call('page_state', {});
     } elsif ($action eq 'emergency_stop_options') {
         $result = admin_call('emergency_stop_options', {});
+    } elsif ($action eq 'emergency_stop_retry') {
+        $result = admin_call('emergency_stop_retry', {});
     } elsif ($action eq 'clear_event_history') {
         $result = admin_call('clear_event_history', {});
         admin_log($result->{ok} ? 'info' : 'warning',

@@ -224,12 +224,12 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert "emergencyStopDiscoveryGeneration += 1;" in template
     assert "emergencyStopSelect.disabled = false;" in template
     assert (
-        "const loadEmergencyStopOptions = async "
-        "(expectedGeneration = emergencyStopDiscoveryGeneration)" in template
+        "const loadEmergencyStopOptions = async (" in template
+        and "expectedGeneration = emergencyStopDiscoveryGeneration, manualRetry = false" in template
     )
     assert "if (expectedGeneration !== emergencyStopDiscoveryGeneration) return;" in template
     assert "const generation = expectedGeneration;" in template
-    assert template.count("if (generation !== emergencyStopDiscoveryGeneration) return;") == 3
+    assert template.count("if (generation !== emergencyStopDiscoveryGeneration) return;") == 4
     assert "component=admin_ui request_id=%s action=%s duration_ms=%.1f" in cgi
     assert "component=admin_helper request_id=%s action=%s outcome=rejected code=%s" in cgi
     assert "component=admin_ui request_id=%s phase=initial_render duration_ms=%.1f" in cgi
@@ -304,6 +304,19 @@ def test_emergency_stop_selection_is_preserved_while_options_load() -> None:
     assert "EMERGENCY_STOP_LOADING" in template
     assert "EMERGENCY_STOP_NO_OPTIONS" in template
     assert "EMERGENCY_STOP_NOT_CONFIGURED" in template
+    assert 'id="emergency-stop-retry"' in template
+    assert "body.set('action', manualRetry ? 'emergency_stop_retry'" in template
+    assert "result.data.failure_text" in template
+    assert "retry_not_before" in template
+    assert "emergencyStopValue.value = emergencyStopSelect.value;" in template
+    for key in (
+        "EMERGENCY_STOP_AUTH_SUPPRESSED",
+        "EMERGENCY_STOP_CREDENTIALS_UNAVAILABLE",
+        "EMERGENCY_STOP_CONNECTION_FAILED",
+        "EMERGENCY_STOP_STRUCTURE_FAILED",
+        "EMERGENCY_STOP_RETRY",
+    ):
+        assert key in german and key in english
 
 
 def test_common_actions_update_the_page_without_a_reload() -> None:

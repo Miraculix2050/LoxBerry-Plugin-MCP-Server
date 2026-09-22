@@ -5,6 +5,12 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Bound remote Loxone token cleanup after local OAuth revocation to five network
+  attempts per token and a persisted profile-wide cooldown. Cleanup no longer
+  probes an open Miniserver authentication breaker. The Admin UI shows sanitized
+  aggregate cleanup warnings and distinguishes emergency-stop discovery failures,
+  with a manually initiated retry after the breaker's earliest retry time.
+
 - Align the Admin UI navigation and page order around status, configuration,
   MCP access and HTTPS, clients, MQTT health, diagnostics, and help. Connection
   URLs and certificate actions now share the MCP access section; Help keeps the

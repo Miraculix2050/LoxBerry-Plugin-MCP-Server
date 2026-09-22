@@ -91,6 +91,7 @@
       <label class="mcp-field"><span><TMPL_VAR SETUP.EMERGENCY_STOP></span><select id="emergency-stop-select" <TMPL_IF SERVER_RENDERED_FALLBACK>name="emergency_stop_virtual_status_uuid"<TMPL_ELSE>aria-describedby="emergency-stop-help emergency-stop-status" disabled aria-busy="true"</TMPL_IF>><TMPL_IF SERVER_RENDERED_FALLBACK><option value="" <TMPL_UNLESS SELECTED_EMERGENCY_STOP>selected</TMPL_UNLESS>><TMPL_VAR SETUP.EMERGENCY_STOP_NONE></option><TMPL_IF EMERGENCY_STOP_SELECTED_UNAVAILABLE><option value="<TMPL_VAR SELECTED_EMERGENCY_STOP ESCAPE=HTML>" selected><TMPL_VAR SETUP.EMERGENCY_STOP_CURRENT> (<TMPL_VAR SELECTED_EMERGENCY_STOP ESCAPE=HTML>)</option></TMPL_IF><TMPL_LOOP EMERGENCY_STOP_OPTIONS><option value="<TMPL_VAR uuid ESCAPE=HTML>" <TMPL_IF selected>selected</TMPL_IF>><TMPL_VAR name ESCAPE=HTML></option></TMPL_LOOP><TMPL_ELSE><option value="" selected><TMPL_VAR SETUP.EMERGENCY_STOP_LOADING></option></TMPL_IF></select></label>
       <p id="emergency-stop-help" class="mcp-help"><TMPL_VAR SETUP.EMERGENCY_STOP_HELP></p>
       <p id="emergency-stop-status" class="mcp-status" data-kind="info"><TMPL_VAR SETUP.EMERGENCY_STOP_LOADING></p>
+      <button id="emergency-stop-retry" class="lb-button" type="button" hidden disabled><TMPL_VAR SETUP.EMERGENCY_STOP_RETRY></button>
       <div id="emergency-stop-runtime" class="mcp-field-stack" aria-live="polite" aria-busy="<TMPL_IF EMERGENCY_STOP_RUNTIME_BUSY>true<TMPL_ELSE>false</TMPL_IF>"
         data-signal-unavailable="<TMPL_VAR SETUP.EMERGENCY_STOP_RUNTIME_SIGNAL_UNAVAILABLE ESCAPE=HTML>"
         data-not-configured="<TMPL_VAR SETUP.EMERGENCY_STOP_NONE ESCAPE=HTML>"
@@ -213,6 +214,17 @@
     data-unnamed-label="<TMPL_VAR SESSIONS.UNNAMED ESCAPE=HTML>">
     <summary><TMPL_VAR SESSIONS.TITLE></summary>
     <div class="mcp-collapsible-content">
+    <p id="remote-cleanup-warning" class="mcp-status" data-kind="warning" role="status" hidden
+      data-breaker-label="<TMPL_VAR SESSIONS.REMOTE_BREAKER_WARNING ESCAPE=HTML>"
+      data-pending-label="<TMPL_VAR SESSIONS.REMOTE_PENDING_WARNING ESCAPE=HTML>"
+      data-retryable-label="<TMPL_VAR SESSIONS.REMOTE_RETRYABLE_WARNING ESCAPE=HTML>"
+      data-unconfirmed-label="<TMPL_VAR SESSIONS.REMOTE_UNCONFIRMED_WARNING ESCAPE=HTML>"
+      data-failure-label="<TMPL_VAR SESSIONS.REMOTE_LAST_FAILURE ESCAPE=HTML>"
+      data-rejected-label="<TMPL_VAR SESSIONS.REMOTE_REJECTED ESCAPE=HTML>"
+      data-blocked-label="<TMPL_VAR SESSIONS.REMOTE_BLOCKED ESCAPE=HTML>"
+      data-transport-label="<TMPL_VAR SESSIONS.REMOTE_TRANSPORT ESCAPE=HTML>"
+      data-command-label="<TMPL_VAR SESSIONS.REMOTE_COMMAND ESCAPE=HTML>"
+      data-unavailable-label="<TMPL_VAR SESSIONS.REMOTE_STATUS_UNAVAILABLE ESCAPE=HTML>"></p>
     <div id="session-list"><TMPL_UNLESS SERVER_RENDERED_FALLBACK><p class="mcp-status" data-kind="working" role="status"><TMPL_VAR AJAX.WORKING></p></TMPL_UNLESS>
     <TMPL_IF HAS_SESSIONS>
       <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.TOKEN></th><th><TMPL_VAR SESSIONS.SCOPES></th><th><TMPL_VAR SESSIONS.EXPIRES></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody>
@@ -432,6 +444,8 @@
   const emergencyStopSelect = document.getElementById('emergency-stop-select');
   const emergencyStopValue = document.getElementById('emergency-stop-value');
   const emergencyStopStatus = document.getElementById('emergency-stop-status');
+  const emergencyStopRetry = document.getElementById('emergency-stop-retry');
+  const remoteCleanupWarning = document.getElementById('remote-cleanup-warning');
   const emergencyStopRuntime = document.getElementById('emergency-stop-runtime');
   const emergencyStopRuntimeSignal = document.getElementById('emergency-stop-runtime-signal');
   const emergencyStopRuntimeUuid = document.getElementById('emergency-stop-runtime-uuid');
@@ -941,18 +955,22 @@
     }
     emergencyStopStatus.hidden = true;
   };
-  const loadEmergencyStopOptions = async (expectedGeneration = emergencyStopDiscoveryGeneration) => {
+  const loadEmergencyStopOptions = async (
+    expectedGeneration = emergencyStopDiscoveryGeneration, manualRetry = false,
+  ) => {
     if (expectedGeneration !== emergencyStopDiscoveryGeneration) return;
     const generation = expectedGeneration;
     const selectedValue = emergencyStopValue.value;
     const body = new URLSearchParams();
-    body.set('action', 'emergency_stop_options');
+    body.set('action', manualRetry ? 'emergency_stop_retry' : 'emergency_stop_options');
     body.set('ajax', '1');
     emergencyStopSelect.disabled = true;
     emergencyStopSelect.setAttribute('aria-busy', 'true');
     emergencyStopStatus.textContent = '<TMPL_VAR SETUP.EMERGENCY_STOP_LOADING ESCAPE=JS>';
     emergencyStopStatus.dataset.kind = 'info';
     emergencyStopStatus.hidden = false;
+    emergencyStopRetry.hidden = true;
+    emergencyStopRetry.disabled = true;
     try {
       const result = await postAjax(body, 15000);
       if (generation !== emergencyStopDiscoveryGeneration) return;
@@ -983,9 +1001,22 @@
         emergencyStopStatus.dataset.kind = 'error';
         emergencyStopStatus.hidden = false;
       } else if (status !== 'available') {
-        emergencyStopStatus.textContent = '<TMPL_VAR SETUP.EMERGENCY_STOP_LOAD_ERROR ESCAPE=JS>';
+        emergencyStopStatus.textContent = result.data.failure_text
+          || '<TMPL_VAR SETUP.EMERGENCY_STOP_LOAD_ERROR ESCAPE=JS>';
         emergencyStopStatus.dataset.kind = 'error';
         emergencyStopStatus.hidden = false;
+        if (result.data.status === 'unavailable'
+            && Number.isInteger(result.data.retry_not_before)) {
+          const retryAt = result.data.retry_not_before * 1000;
+          emergencyStopStatus.textContent += ' ' + new Date(retryAt).toLocaleString();
+          emergencyStopRetry.hidden = false;
+          const enableRetry = () => {
+            if (generation !== emergencyStopDiscoveryGeneration) return;
+            emergencyStopRetry.disabled = Date.now() < retryAt;
+          };
+          enableRetry();
+          window.setTimeout(enableRetry, Math.max(0, retryAt - Date.now()));
+        }
       } else {
         emergencyStopStatus.hidden = true;
       }
@@ -1006,6 +1037,45 @@
     emergencyStopValue.value = emergencyStopSelect.value;
     updateEmergencyStopRuntimeMismatch();
   });
+  emergencyStopRetry.addEventListener('click', () => {
+    if (!emergencyStopRetry.disabled) loadEmergencyStopOptions(emergencyStopDiscoveryGeneration, true);
+  });
+  const renderRemoteCleanup = (status) => {
+    if (!status || status.available !== true) {
+      remoteCleanupWarning.textContent = remoteCleanupWarning.dataset.unavailableLabel;
+      remoteCleanupWarning.hidden = false;
+      return;
+    }
+    const notices = [];
+    if (status.breaker_state === 'open_source_ip_blocked') {
+      notices.push(remoteCleanupWarning.dataset.breakerLabel);
+    }
+    if (Number.isInteger(status.pending) && status.pending > 0
+        && status.last_failure_category) {
+      notices.push(remoteCleanupWarning.dataset.pendingLabel + ' ' + status.pending);
+      if (Number.isInteger(status.retryable) && status.retryable > 0) {
+        notices.push(remoteCleanupWarning.dataset.retryableLabel + ' ' + status.retryable);
+      }
+    }
+    if (Number.isInteger(status.unconfirmed) && status.unconfirmed > 0) {
+      notices.push(remoteCleanupWarning.dataset.unconfirmedLabel + ' ' + status.unconfirmed);
+    }
+    if (notices.length && Number.isInteger(status.last_failure_at)) {
+      const labels = {
+        authentication_rejected: remoteCleanupWarning.dataset.rejectedLabel,
+        source_ip_blocked: remoteCleanupWarning.dataset.blockedLabel,
+        transport_failed: remoteCleanupWarning.dataset.transportLabel,
+        command_rejected: remoteCleanupWarning.dataset.commandLabel,
+      };
+      const category = labels[status.last_failure_category];
+      if (category) {
+        notices.push(remoteCleanupWarning.dataset.failureLabel + ' ' + category + ', '
+          + new Date(status.last_failure_at * 1000).toLocaleString());
+      }
+    }
+    remoteCleanupWarning.textContent = notices.join(' ');
+    remoteCleanupWarning.hidden = notices.length === 0;
+  };
   const loadInitialState = async () => {
     const body = new URLSearchParams();
     body.set('action', 'page_state');
@@ -1495,6 +1565,7 @@
         updateSessions(result.data.sessions);
         sessionsLoaded = true;
       }
+      renderRemoteCleanup(result.data.remote_cleanup);
       if (Array.isArray(result.data.loxberry_bindings)) {
         updateLoxberryBindings(result.data.loxberry_bindings);
       }

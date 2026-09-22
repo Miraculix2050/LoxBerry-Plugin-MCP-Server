@@ -50,7 +50,7 @@ def test_virtual_status_options_reports_unavailable_without_provider_details(mon
 
     assert result.status == "unavailable"
     assert result.options == ()
-    assert result.failure_code == "credentials"
+    assert result.failure_code == "credentials_unavailable"
 
 
 def test_virtual_status_options_does_not_bypass_an_open_authentication_breaker(
@@ -87,7 +87,18 @@ def test_virtual_status_options_does_not_bypass_an_open_authentication_breaker(
     )
 
     assert result.status == "unavailable"
-    assert result.failure_code == "token"
+    assert result.failure_code == "authentication_suppressed"
+    assert isinstance(result.retry_not_before, int)
+    assert calls == 0
+
+    manual = asyncio.run(
+        virtual_status_options(
+            PluginConfig(loxone_endpoint="http://192.168.1.10"),
+            coordinator,
+            manual_retry=True,
+        )
+    )
+    assert manual.failure_code == "authentication_suppressed"
     assert calls == 0
 
 

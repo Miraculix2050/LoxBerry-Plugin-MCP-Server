@@ -71,6 +71,10 @@ class LoxoneCommandRejected(LoxoneConnectionError):
         self.response_code = response_code
 
 
+class LoxoneTokenAuthenticationRejected(LoxoneCommandRejected):
+    """The Miniserver rejected authwithtoken, rather than a later command."""
+
+
 class LoxoneSourceIpBlocked(LoxoneConnectionError):
     """The Miniserver temporarily blocked this source after failed logins."""
 
@@ -531,10 +535,17 @@ class LoxoneWebSocketSession:
             session_key = self._encryptor.encrypted_session_key(self._public_key)
             await self._command(f"jdev/sys/keyexchange/{session_key}")
         credential = await self._token_credential()
-        await self._command(
-            f"authwithtoken/{credential}/{quote(self._token.username, safe='')}",
-            encrypted=not self._secure_transport,
-        )
+        try:
+            await self._command(
+                f"authwithtoken/{credential}/{quote(self._token.username, safe='')}",
+                encrypted=not self._secure_transport,
+            )
+        except LoxoneCommandRejected as exc:
+            if exc.response_code != "401":
+                raise
+            raise LoxoneTokenAuthenticationRejected(
+                "Miniserver rejected token authentication", response_code=exc.response_code
+            ) from None
 
     async def _token_credential(self) -> str:
         if not self._secure_transport:
