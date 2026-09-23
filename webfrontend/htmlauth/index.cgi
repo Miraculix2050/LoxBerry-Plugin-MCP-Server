@@ -55,6 +55,15 @@ sub ascii_html_text {
     return $value;
 }
 
+sub native_loglist_html {
+    my $html = LoxBerry::Web::loglist_html() // '';
+    return $html if $html =~ /\S/;
+    return sprintf(
+        '<p class="mcp-status" role="status">%s</p>',
+        ascii_html_text($L{'DIAGNOSTICS.LOGLIST_EMPTY'}),
+    );
+}
+
 sub admin_log {
     my ($severity, $message) = @_;
     my %threshold = (error => 3, warning => 4, info => 6, debug => 7);
@@ -517,7 +526,7 @@ if ($action ne '') {
         $result = {
             ok => JSON::PP::true,
             data => {
-                loglist_html => LoxBerry::Web::loglist_html() // '',
+                loglist_html => native_loglist_html(),
             },
         };
         admin_log('debug', sprintf(
@@ -674,7 +683,7 @@ if ($server_rendered_fallback) {
         $emergency_stop_runtime = $service_result->{data}{emergency_stop_runtime};
     }
     $notifications_html = LoxBerry::Log::get_notifications_html($lbpplugindir) // '';
-    $loglist_html = LoxBerry::Web::loglist_html() // '';
+    $loglist_html = native_loglist_html();
     my $sessions_result = admin_call('list_sessions', {});
     if ($sessions_result->{ok} && ref($sessions_result->{data}) eq 'HASH') {
         $remote_cleanup = $sessions_result->{data}{remote_cleanup}
