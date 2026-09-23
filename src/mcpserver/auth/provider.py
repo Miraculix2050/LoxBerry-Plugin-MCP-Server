@@ -282,7 +282,14 @@ class Phase0OAuthProvider(
             # Run it only after mutate has released the store's file lock.
             if self._on_family_expired is not None:
                 for family in expired:
-                    self._on_family_expired(family)
+                    try:
+                        self._on_family_expired(family)
+                    except Exception as exc:
+                        _LOGGER.warning(
+                            "component=explorer_binding severity=WARNING "
+                            "outcome=expiration_record_failed error_type=%s",
+                            type(exc).__name__,
+                        )
 
     def _garbage_collect(
         self, document: dict[str, Any], *, preserve_client_ids: frozenset[str] = frozenset()

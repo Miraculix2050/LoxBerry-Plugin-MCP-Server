@@ -297,6 +297,47 @@ def test_expired_explorer_family_is_reported_before_cleanup(tmp_path: Path) -> N
     assert store.snapshot()["families"] == {}
 
 
+@pytest.mark.asyncio
+async def test_expiry_callback_failure_does_not_hide_committed_code_exchange(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    def fail_expiry(_family: dict[str, Any]) -> None:
+        raise RuntimeError("private callback detail")
+
+    clock = Clock()
+    store = AtomicJsonAuthStore(tmp_path / "auth" / "sessions.json")
+    provider = Phase0OAuthProvider(
+        store,
+        issuer=ISSUER,
+        resource=RESOURCE,
+        clock=clock,
+        on_family_expired=fail_expiry,
+    )
+    client = await _client(provider)
+    raw_code = provider.issue_authorization_code(
+        client_id=client.client_id or "",
+        redirect_uri=REDIRECT,
+        code_challenge=CHALLENGE,
+        resource=RESOURCE,
+        identity_id="identity",
+        miniserver_id="miniserver",
+    )
+    code = await provider.load_authorization_code(client, raw_code)
+    assert code is not None
+    store.mutate(
+        lambda document: document["families"].update(
+            {"expired": {"client_kind": "tool_explorer", "expires_at": clock.value - 1}}
+        )
+    )
+
+    token = await provider.exchange_authorization_code(client, code)
+
+    assert await provider.load_access_token(token.access_token) is not None
+    assert store.snapshot()["families"].get("expired") is None
+    assert "outcome=expiration_record_failed error_type=RuntimeError" in caplog.text
+    assert "private callback detail" not in caplog.text
+
+
 async def _client(provider: Phase0OAuthProvider) -> OAuthClientInformationFull:
     client = OAuthClientInformationFull(
         client_id="public-client",
