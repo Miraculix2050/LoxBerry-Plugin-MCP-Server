@@ -531,46 +531,116 @@ def test_session_action_coordinator_allows_only_non_conflicting_actions() -> Non
     assert coordinator is not None
     node = shutil.which("node")
     assert node is not None, "Node.js is required for the complete deterministic gate"
-    script = f"""
+    script = (
+        """
 let sessionDataVersion = 0;
 let nextSessionActionToken = 0;
 const activeSessionActions = new Map();
 const sessionActionFailures = new Map();
-{coordinator.group(1)}
-const descriptor = (action, sessionId = '', bindingId = '') => ({{
+"""
+        + coordinator.group(1)
+        + """
+const descriptor = (action, sessionId = '', bindingId = '') => ({
   action, sessionId, bindingId, key: sessionActionKey(action, sessionId, bindingId),
-}});
+});
 const readA = descriptor('allow_loxberry_read', 'session-a');
 const operateA = descriptor('allow_loxberry_operate', 'session-a');
 const revokeA = descriptor('revoke_session', 'session-a');
 const readB = descriptor('allow_loxberry_read', 'session-b');
-const readBinding = descriptor('revoke_loxberry_read', '', 'binding-a');
-const otherBinding = descriptor('revoke_loxberry_read', '', 'binding-b');
 const first = beginSessionAction(readA, null);
 const operate = beginSessionAction(operateA, null);
 const otherSession = beginSessionAction(readB, null);
-const result = {{
+const result = {
   duplicateBlocked: beginSessionAction(readA, null) === null,
   sameSessionRevokeBlocked: beginSessionAction(revokeA, null) === null,
   readAndOperateAllowed: Boolean(first && operate),
   otherSessionAllowed: Boolean(otherSession),
   revokeAllBlockedWhileActive: beginSessionAction(descriptor('revoke_all'), null) === null,
-  bindingRevocationBlockedDuringSessionAction: beginSessionAction(readBinding, null) === null,
+  bindingRevocationBlockedDuringSessionAction: beginSessionAction(
+    descriptor('revoke_loxberry_read', '', 'binding-a'), null,
+  ) === null,
   finalFinishOnly: [
     finishSessionAction(operate), finishSessionAction(otherSession), finishSessionAction(first),
   ],
-}};
+};
 for (const token of [...activeSessionActions.keys()]) finishSessionAction(token);
-const binding = beginSessionAction(readBinding, null);
-result.duplicateBindingBlocked = beginSessionAction(readBinding, null) === null;
-result.otherBindingBlocked = beginSessionAction(otherBinding, null) === null;
-result.sessionActionBlockedDuringBindingRevocation = beginSessionAction(readA, null) === null;
+
+const createForm = (action, sessionId = '', bindingId = '') => {
+  const attributes = new Map();
+  const button = {
+    disabled: false,
+    setAttribute: (name, value) => attributes.set(name, value),
+    removeAttribute: (name) => attributes.delete(name),
+    hasAttribute: (name) => attributes.has(name),
+  };
+  return {
+    button,
+    form: {
+      dataset: {ajax: action},
+      querySelector: (selector) => {
+        if (selector === 'button[type="submit"]') return button;
+        if (selector === 'input[name="id"]') return action === 'revoke_session'
+          ? {value: sessionId} : null;
+        if (selector === 'input[name="session_id"]') return action === 'revoke_session'
+          ? null : {value: sessionId};
+        if (selector === 'input[name="binding_id"]') return bindingId
+          ? {value: bindingId} : null;
+        return null;
+      },
+    },
+  };
+};
+const readBindingA = createForm('revoke_loxberry_read', '', 'binding-a');
+const readBindingB = createForm('revoke_loxberry_read', '', 'binding-b');
+const operateBindingA = createForm('revoke_loxberry_operate', '', 'binding-a');
+const operateBindingB = createForm('revoke_loxberry_operate', '', 'binding-c');
+const sessionForm = createForm('allow_loxberry_read', 'session-c');
+const revokeAllForm = createForm('revoke_all');
+const forms = [
+  readBindingA.form, readBindingB.form, operateBindingA.form, operateBindingB.form,
+  sessionForm.form, revokeAllForm.form,
+];
+const document = {querySelectorAll: () => forms};
+const bindingA = beginSessionAction(
+  sessionActionDescriptor(readBindingA.form), readBindingA.button,
+);
+updateSessionActionControls();
+result.activeBindingBusy = readBindingA.button.disabled
+  && readBindingA.button.hasAttribute('aria-busy');
+result.differentReadEnabled = !readBindingB.button.disabled
+  && !readBindingB.button.hasAttribute('aria-busy');
+result.differentOperateEnabled = !operateBindingB.button.disabled
+  && !operateBindingB.button.hasAttribute('aria-busy');
+result.sameBindingAcrossScopesBlocked = operateBindingA.button.disabled;
+result.revokeAllBlockedDuringBindingRevocation = revokeAllForm.button.disabled;
+result.sessionActionBlockedDuringBindingRevocation = sessionForm.button.disabled;
+result.duplicateBindingBlocked = beginSessionAction(
+  sessionActionDescriptor(readBindingA.form), readBindingA.button,
+) === null;
+result.sameBindingAcrossScopesRejected = beginSessionAction(
+  sessionActionDescriptor(operateBindingA.form), operateBindingA.button,
+) === null;
+const bindingB = beginSessionAction(
+  sessionActionDescriptor(readBindingB.form), readBindingB.button,
+);
+const operateB = beginSessionAction(
+  sessionActionDescriptor(operateBindingB.form), operateBindingB.button,
+);
+result.differentBindingsAllowed = Boolean(bindingA && bindingB && operateB);
 for (const token of [...activeSessionActions.keys()]) finishSessionAction(token);
-const revokeAll = beginSessionAction(descriptor('revoke_all'), null);
+updateSessionActionControls();
+result.controlsRecovered = forms.every(({querySelector}) => {
+  const button = querySelector('button[type="submit"]');
+  return !button.disabled && !button.hasAttribute('aria-busy');
+});
+const revokeAll = beginSessionAction(
+  sessionActionDescriptor(revokeAllForm.form), revokeAllForm.button,
+);
 result.revokeAllExclusive = Boolean(revokeAll) && beginSessionAction(readA, null) === null;
 result.version = sessionDataVersion;
 console.log(JSON.stringify(result));
 """
+    )
     result = subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
 
     assert result.stdout.strip() == (
@@ -579,9 +649,13 @@ console.log(JSON.stringify(result));
         '"revokeAllBlockedWhileActive":true,'
         '"bindingRevocationBlockedDuringSessionAction":true,'
         '"finalFinishOnly":[false,false,true],'
-        '"duplicateBindingBlocked":true,"otherBindingBlocked":true,'
+        '"activeBindingBusy":true,"differentReadEnabled":true,'
+        '"differentOperateEnabled":true,"sameBindingAcrossScopesBlocked":true,'
+        '"revokeAllBlockedDuringBindingRevocation":true,'
         '"sessionActionBlockedDuringBindingRevocation":true,'
-        '"revokeAllExclusive":true,"version":5}'
+        '"duplicateBindingBlocked":true,"sameBindingAcrossScopesRejected":true,'
+        '"differentBindingsAllowed":true,"controlsRecovered":true,'
+        '"revokeAllExclusive":true,"version":7}'
     )
     assert "const activeSessionActions = new Map();" in template
     assert "const sessionActionsConflict = (left, right)" in template
@@ -605,7 +679,8 @@ console.log(JSON.stringify(result));
     assert "const sessionActionFailures = new Map();" in template
     assert "const showSessionActionFailure = () =>" in template
     assert "hideSuccess(status, () => activeSessionActions.size > 0);" in template
-    assert "if (leftIsBindingRevocation && rightIsBindingRevocation) return true;" in template
+    assert "return `binding:${bindingId}`;" in template
+    assert "if (leftIsBindingRevocation && rightIsBindingRevocation) return true;" not in template
     assert "if (Array.isArray(data.sessions)) updateSessions(data.sessions);" in template
     assert "pendingSessionActionButtons" not in template
 

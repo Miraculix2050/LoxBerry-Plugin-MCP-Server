@@ -1446,7 +1446,7 @@
         || action === 'allow_loxberry_read' || action === 'allow_loxberry_operate') {
       return `session:${action}:${sessionId}`;
     }
-    return `binding:${action}:${bindingId}`;
+    return `binding:${bindingId}`;
   };
   const sessionActionsConflict = (left, right) => {
     if (left.action === 'revoke_all' || right.action === 'revoke_all') return true;
@@ -1455,7 +1455,6 @@
       || left.action === 'revoke_loxberry_operate';
     const rightIsBindingRevocation = right.action === 'revoke_loxberry_read'
       || right.action === 'revoke_loxberry_operate';
-    if (leftIsBindingRevocation && rightIsBindingRevocation) return true;
     if (leftIsBindingRevocation !== rightIsBindingRevocation) return true;
     return left.sessionId !== '' && left.sessionId === right.sessionId
       && (left.action === 'revoke_session' || right.action === 'revoke_session');
