@@ -890,7 +890,7 @@ def test_admin_logmanager_registration_requires_an_actual_event(tmp_path: Path) 
     environment["LB_TEST_LOG_EVENTS_PATH"] = str(marker)
     cgi = ROOT / "webfrontend" / "htmlauth" / "index.cgi"
 
-    def request(action: str) -> None:
+    def request(action: str, *, log_level: int = 3) -> None:
         body = f"action={action}&ajax=1"
         subprocess.run(
             [perl, f"-I{ROOT / 'tests' / 'perl_stubs'}", str(cgi)],
@@ -905,10 +905,11 @@ def test_admin_logmanager_registration_requires_an_actual_event(tmp_path: Path) 
                 "CONTENT_LENGTH": str(len(body)),
                 "HTTP_ORIGIN": "https://loxberry.example",
                 "HTTP_HOST": "loxberry.example",
+                "LB_TEST_PLUGIN_LOGLEVEL": str(log_level),
             },
         )
 
-    request("page_loglist")
+    request("page_loglist", log_level=7)
     assert not marker.exists()
     (tmp_path / "mcpserver-admin").write_text(
         "#!/usr/bin/env perl\nmy $request = <STDIN>;\n", encoding="utf-8"

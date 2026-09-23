@@ -546,18 +546,12 @@ if ($action ne '') {
             (clock_gettime(CLOCK_MONOTONIC) - $started) * 1000,
         ));
     } elsif ($action eq 'page_loglist') {
-        my $started = clock_gettime(CLOCK_MONOTONIC);
         $result = {
             ok => JSON::PP::true,
             data => {
                 loglist_html => native_loglist_html(),
             },
         };
-        admin_log('debug', sprintf(
-            'component=admin_ui request_id=%s action=page_loglist duration_ms=%.1f',
-            $request_id,
-            (clock_gettime(CLOCK_MONOTONIC) - $started) * 1000,
-        ));
     } elsif ($action eq 'page_state') {
         $result = admin_call('page_state', {});
     } elsif ($action eq 'emergency_stop_options') {
