@@ -40,6 +40,7 @@ _DirectionalAdjacency = dict[str, list[GraphEdge | SemanticEdge]]
 class _Endpoint:
     node: GraphNode
     block: GraphNode
+    blocks: tuple[GraphNode, ...]
     direction: str
     address: str | None
     address_format: str | None
@@ -95,6 +96,11 @@ def _descendants(key: str, children: dict[str, list[str]]) -> list[str]:
             result.append(child)
             pending.append(child)
     return result
+
+
+def _endpoint_descendants(item: _Endpoint, children: dict[str, list[str]]) -> list[str]:
+    """Return graph evidence for every source occurrence of one logical endpoint."""
+    return sorted({key for block in item.blocks for key in _descendants(block.key, children)})
 
 
 def _bounded_descendants(
@@ -235,10 +241,23 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
         if knx is None or knx.object_kind != "endpoint" or knx.flow_direction is None:
             continue
         address = knx.group_address
-        usage_adjacency = upstream if knx.flow_direction == "loxone_to_bus" else downstream
-        usage, truncated = (
-            _usage(node, children, usage_adjacency, usage_budget) if needs_usage else ((), False)
+        occurrences = tuple(
+            nodes[key] for key in view.snapshot.occurrence_keys_for(node.key) if key in nodes
+        ) or (node,)
+        blocks = tuple(
+            dict.fromkeys(_block(occurrence, nodes, parents) for occurrence in occurrences)
         )
+        usage_adjacency = upstream if knx.flow_direction == "loxone_to_bus" else downstream
+        usages: set[tuple[str, str | None]] = set()
+        truncated = False
+        if needs_usage:
+            for occurrence in occurrences:
+                occurrence_usage, occurrence_truncated = _usage(
+                    occurrence, children, usage_adjacency, usage_budget
+                )
+                usages.update(occurrence_usage)
+                truncated = truncated or occurrence_truncated
+        usage = tuple(sorted(usages))
         usage_truncated = usage_truncated or truncated
         runtime = runtime_by_node.get(_block(node, nodes, parents).key)
         names: list[tuple[str, str]] = []
@@ -251,7 +270,8 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
         endpoints.append(
             _Endpoint(
                 node,
-                _block(node, nodes, parents),
+                blocks[0],
+                blocks,
                 knx.flow_direction,
                 address.canonical if address else None,
                 address.format if address else None,
@@ -569,14 +589,14 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
                 "fan_out": [
                     (
                         item,
-                        sum(graph_outgoing[key] for key in _descendants(item.block.key, children)),
+                        sum(graph_outgoing[key] for key in _endpoint_descendants(item, children)),
                     )
                     for item in members
                 ],
                 "fan_in": [
                     (
                         item,
-                        sum(graph_incoming[key] for key in _descendants(item.block.key, children)),
+                        sum(graph_incoming[key] for key in _endpoint_descendants(item, children)),
                     )
                     for item in members
                 ],
@@ -621,7 +641,7 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
         unresolved = {key for key, _ in graph.unresolved}
         disconnected = ambiguous = 0
         for item in endpoints:
-            seed = _descendants(item.block.key, children)
+            seed = _endpoint_descendants(item, children)
             directional = outgoing if item.direction == "bus_to_loxone" else incoming
             has_relation = any(directional[key] for key in seed)
             if has_relation:

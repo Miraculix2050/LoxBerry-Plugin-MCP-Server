@@ -2,7 +2,9 @@
 
 import hashlib
 from collections import defaultdict, deque
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from types import MappingProxyType
 
 from .decoder import decode_loxcc
 from .models import DEFAULT_LIMITS, ProjectBundle, ProjectError, ProjectLimits
@@ -139,16 +141,32 @@ class ProjectSnapshot:
     )
     logical_aliases: tuple[tuple[str, str], ...] = field(default=(), repr=False)
     logical_source_ids: tuple[tuple[str, tuple[str, ...]], ...] = field(default=(), repr=False)
+    _logical_alias_lookup: Mapping[str, str] = field(
+        default_factory=dict, repr=False, compare=False
+    )
+    _logical_source_lookup: Mapping[str, tuple[str, ...]] = field(
+        default_factory=dict, repr=False, compare=False
+    )
+    _logical_nodes: tuple[GraphNode, ...] = field(default=(), repr=False, compare=False)
 
     def canonical_node_key(self, key: str) -> str:
-        return dict(self.logical_aliases).get(key, key)
+        aliases = self._logical_alias_lookup or dict(self.logical_aliases)
+        return aliases.get(key, key)
 
     def source_ids_for(self, key: str) -> tuple[str, ...]:
         canonical = self.canonical_node_key(key)
-        return dict(self.logical_source_ids).get(canonical, ())
+        sources = self._logical_source_lookup or dict(self.logical_source_ids)
+        return sources.get(canonical, ())
+
+    def occurrence_keys_for(self, key: str) -> tuple[str, ...]:
+        canonical = self.canonical_node_key(key)
+        aliases = self._logical_alias_lookup or dict(self.logical_aliases)
+        return tuple(alias for alias, target in aliases.items() if target == canonical) or (key,)
 
     def logical_nodes(self) -> tuple[GraphNode, ...]:
-        aliases = dict(self.logical_aliases)
+        if self._logical_nodes:
+            return self._logical_nodes
+        aliases = self._logical_alias_lookup or dict(self.logical_aliases)
         return tuple(
             node for node in self.graph.nodes if aliases.get(node.key, node.key) == node.key
         )
@@ -490,6 +508,11 @@ def build_snapshot(
         )
     graph = ProjectGraph(tuple(nodes), tuple(edges), tuple(unresolved), tuple(semantic_edges))
     logical_aliases, logical_source_ids = _logical_knx_nodes(graph)
+    alias_lookup = MappingProxyType(dict(logical_aliases))
+    source_lookup = MappingProxyType(dict(logical_source_ids))
+    logical_nodes = tuple(
+        node for node in graph.nodes if alias_lookup.get(node.key, node.key) == node.key
+    )
     return ProjectSnapshot(
         bundle.fingerprint,
         5,
@@ -498,4 +521,7 @@ def build_snapshot(
         _source_diagnostics(graph, tuple(anomalies)),
         logical_aliases,
         logical_source_ids,
+        alias_lookup,
+        source_lookup,
+        logical_nodes,
     )

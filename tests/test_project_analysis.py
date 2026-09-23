@@ -73,6 +73,34 @@ def test_analysis_uses_logical_knx_endpoints_and_keeps_source_occurrence_count()
     assert result["coverage"]["endpoint_source_occurrences"] == 4
 
 
+def test_logical_endpoint_connectivity_aggregates_all_source_occurrences():
+    first = parse_project(b'<P><C Type="EIBactor" U="actor" EibAddr="1/2/3"/></P>')
+    second = parse_project(
+        b'<P><C Type="Logic" U="logic"><Co U="output"/></C>'
+        b'<C Type="EIBactor" U="actor" EibAddr="1/2/3">'
+        b'<Co U="actor-input"><In Input="output"/></Co></C></P>'
+    )
+    graph = build_graph((("one", first), ("two", second)))
+    aliases, source_ids = _logical_knx_nodes(graph)
+    snapshot = ProjectSnapshot(
+        "project",
+        5,
+        (ProjectPartSummary("one", 1, ()), ProjectPartSummary("two", 3, ())),
+        graph,
+        logical_aliases=aliases,
+        logical_source_ids=source_ids,
+    )
+    view = ProjectView(
+        snapshot, map_runtime(snapshot, SimpleNamespace(last_modified="v", controls=()))
+    )
+
+    result = analyze_knx(view, frozenset({"project_connectivity"}))
+
+    assert result["coverage"]["endpoints"] == 1
+    assert result["coverage"]["endpoint_source_occurrences"] == 2
+    assert result["summaries"]["project_connectivity"] == {"unconnected": 0, "ambiguous": 0}
+
+
 def test_analysis_only_reports_address_deviations_for_strong_evidenced_peer_groups():
     nodes = b"".join(
         (
