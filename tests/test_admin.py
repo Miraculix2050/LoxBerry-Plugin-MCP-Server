@@ -20,6 +20,7 @@ from mcpserver.admin import (
     _emergency_stop_runtime_status,
     _loxberry_bindings,
     _loxberry_operate_bindings,
+    _remote_cleanup_status,
     _renew_certificate,
     _revoke,
     _revoke_loxberry_operate,
@@ -31,7 +32,7 @@ from mcpserver.admin import (
     _set_logging,
     dispatch,
 )
-from mcpserver.auth.loxone_store import LoxoneTokenStoreError
+from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore, LoxoneTokenStoreError
 from mcpserver.auth.provider import (
     CONTROL_SCOPE,
     HISTORY_SCOPE,
@@ -39,6 +40,7 @@ from mcpserver.auth.provider import (
     LOXBERRY_READ_SCOPE,
     READ_SCOPE,
 )
+from mcpserver.auth.remote_revocation import RemoteRevocationState
 from mcpserver.auth.store import AtomicJsonAuthStore
 from mcpserver.config import AtomicConfigStore, ConfigError, PluginConfig
 from mcpserver.emergency_stop import VirtualStatusOptions
@@ -571,6 +573,32 @@ def test_emergency_stop_options_returns_a_fixed_internal_failure_code(
         "options": [],
         "discovery_failure_code": "credentials_helper_missing",
     }
+
+
+def test_admin_manual_emergency_stop_retry_is_explicit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    class ConfigStore:
+        def load(self) -> PluginConfig:
+            return PluginConfig(loxone_endpoint="http://192.168.1.10")
+
+    seen: list[bool] = []
+
+    async def options(
+        _config: PluginConfig,
+        _coordinator: MiniserverAuthCoordinator,
+        *,
+        manual_retry: bool = False,
+    ) -> VirtualStatusOptions:
+        seen.append(manual_retry)
+        return VirtualStatusOptions(status="available", options=())
+
+    monkeypatch.setenv("MCPSERVER_AUTH_STORE", str((tmp_path / "auth.json").resolve()))
+    monkeypatch.setattr("mcpserver.admin._config_store", ConfigStore)
+    monkeypatch.setattr("mcpserver.emergency_stop.virtual_status_options", options)
+    dispatch({"action": "emergency_stop_options"})
+    dispatch({"action": "emergency_stop_retry"})
+    assert seen == [False, True]
 
 
 @pytest.mark.parametrize("session_count", [0, 10, 100])
@@ -1980,6 +2008,40 @@ def test_session_list_excludes_revoked_families(
     assert [session["id"] for session in result["sessions"]] == ["active-family"]
     assert result["sessions"][0]["client_name"] == "Claude Desktop"
     assert result["sessions"][0]["client"] == "active-clien"
+
+
+def test_remote_cleanup_admin_status_is_aggregate_and_value_free(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    key = tmp_path / "install.key"
+    key.write_bytes(b"k" * 32)
+    token_store = EncryptedLoxoneTokenStore(tmp_path / "tokens.enc", key)
+    token_store.put(
+        "private-family",
+        "private-miniserver",
+        "private-identity",
+        LoxoneToken("private-jwt", "private-user", "private-key", "SHA256", 2_000_000_000),
+    )
+    token_store.schedule_remote_revoke("private-family")
+    sidecar = RemoteRevocationState(token_store.path)
+    value = sidecar.read()
+    value["last_failure_category"] = "transport_failed"
+    value["last_failure_at"] = 123
+    sidecar.write(value)
+
+    class Config:
+        def load(self) -> PluginConfig:
+            return PluginConfig.defaults()
+
+    monkeypatch.setattr("mcpserver.admin._token_store", lambda: token_store)
+    monkeypatch.setattr("mcpserver.admin._config_store", Config)
+    status = _remote_cleanup_status()
+    assert status["available"] is True
+    assert status["pending"] == 1
+    assert status["last_failure_category"] == "transport_failed"
+    rendered = json.dumps(status)
+    for secret in ("private-family", "private-miniserver", "private-identity", "private-jwt"):
+        assert secret not in rendered
 
 
 def test_admin_can_confirm_a_faulty_loxone_token_once(

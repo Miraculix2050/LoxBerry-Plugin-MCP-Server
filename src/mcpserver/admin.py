@@ -614,7 +614,7 @@ def _save_mcp(payload: object) -> dict[str, Any]:
     return {"configuration": updated.to_document(), "applied": True} | _service_response()
 
 
-def _emergency_stop_options() -> dict[str, Any]:
+def _emergency_stop_options(*, manual_retry: bool = False) -> dict[str, Any]:
     from mcpserver.auth.store import AtomicJsonAuthStore
     from mcpserver.emergency_stop import virtual_status_options
     from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
@@ -636,15 +636,48 @@ def _emergency_stop_options() -> dict[str, Any]:
             maximum_probe_seconds=config.miniserver_auth_probe_max_seconds,
             profile_id=auth_store.pseudonym("miniserver-auth-profile-v1", endpoint.origin),
         )
-    result = asyncio.run(
-        virtual_status_options(config, coordinator)
-        if coordinator is not None
-        else virtual_status_options(config)
-    )
-    response = {"status": result.status, "options": list(result.options)}
+    if coordinator is None:
+        discovery = virtual_status_options(config)
+    elif manual_retry:
+        discovery = virtual_status_options(config, coordinator, manual_retry=True)
+    else:
+        discovery = virtual_status_options(config, coordinator)
+    result = asyncio.run(discovery)
+    response: dict[str, Any] = {"status": result.status, "options": list(result.options)}
     if result.failure_code is not None:
         response["discovery_failure_code"] = result.failure_code
+    if result.retry_not_before is not None:
+        response["retry_not_before"] = result.retry_not_before
     return response
+
+
+def _remote_cleanup_status() -> dict[str, Any]:
+    """Return only fixed, aggregate cleanup and breaker fields to local admins."""
+    from mcpserver.auth.loxone_store import LoxoneTokenStoreError
+    from mcpserver.auth.remote_revocation import RemoteRevocationState, RemoteRevocationStateError
+    from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
+    from mcpserver.loxone.client import MiniserverEndpoint
+
+    try:
+        store = _token_store()
+        result = RemoteRevocationState(store.path).summary(store, int(time.time()))
+        config = _config_store().load()
+        if config.loxone_endpoint:
+            auth_store = _auth_store()
+            endpoint = MiniserverEndpoint.parse(config.loxone_endpoint)
+            coordinator = MiniserverAuthCoordinator(
+                auth_store.path.parent / "miniserver-auth-diagnostics.json",
+                initial_probe_seconds=config.miniserver_auth_probe_initial_seconds,
+                maximum_probe_seconds=config.miniserver_auth_probe_max_seconds,
+                profile_id=auth_store.pseudonym("miniserver-auth-profile-v1", endpoint.origin),
+            )
+            result["breaker_state"] = coordinator.current_status()["breaker_state"]
+        else:
+            result["breaker_state"] = "closed"
+        result["available"] = True
+        return result
+    except (AdminError, LoxoneTokenStoreError, RemoteRevocationStateError, ValueError):
+        return {"available": False}
 
 
 def _clear_event_history() -> dict[str, Any]:
@@ -1589,6 +1622,8 @@ def dispatch(request: object, *, timing: dict[str, float] | None = None) -> dict
         return _save_mqtt(payload)
     if action == "emergency_stop_options":
         return _emergency_stop_options()
+    if action == "emergency_stop_retry":
+        return _emergency_stop_options(manual_retry=True)
     if action == "clear_event_history":
         return _clear_event_history()
     if action == "set_logging":
@@ -1613,6 +1648,7 @@ def dispatch(request: object, *, timing: dict[str, float] | None = None) -> dict
             "sessions": _sessions(snapshot),
             "loxberry_bindings": _loxberry_bindings(snapshot),
             "loxberry_operate_bindings": _loxberry_operate_bindings(snapshot),
+            "remote_cleanup": _remote_cleanup_status(),
         }
     if action == "allow_loxberry_read":
         return _allow_loxberry_read(payload)

@@ -173,6 +173,11 @@ class MiniserverAuthCoordinator:
             "suppressed_attempts": int(self._state["suppressed_attempts"]),
         }
 
+    def current_status(self) -> dict[str, int | str | None]:
+        """Refresh the shared on-disk state before a read-only gate check."""
+        self._reload_state()
+        return self.status()
+
     def events_for(self, binding_id: str | None) -> list[dict[str, Any]]:
         if not binding_id:
             return []

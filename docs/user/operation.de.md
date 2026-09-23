@@ -10,6 +10,11 @@ Der Plugin Manager erkennt reguläre Updates über die stabile Releasequelle. Vo
 
 Unter **Clients und Sitzungen** können Administratoren Sitzungen und lokale Diagnose- oder Operate-Freigaben prüfen und widerrufen. Der Widerruf einer Freigabe beendet passende Sitzungen. Das Trennen des Tool Explorers widerruft nur dessen OAuth-Sitzung; seine lokale Freigabe kann für dieselbe Loxone-Identität und denselben Miniserver bis zur angezeigten Frist reaktiviert werden. Die inaktive Aufbewahrung ist von 1 bis 720 Stunden konfigurierbar und beträgt standardmäßig 72 Stunden.
 
+Ein Sitzungswiderruf sperrt den MCP-Zugriff sofort. Die anschließende Loxone-Tokenbereinigung läuft im Hintergrund. Der Abschnitt zeigt aggregierte Warnungen, wenn die Bereinigung aussteht, der Miniserver Anmeldungen blockiert oder der Remote-Widerruf nach begrenzten Versuchen unbestätigt bleibt. Bei unbestätigtem Ergebnis kann ein Administrator die Loxone-Benutzerverwaltung prüfen; die Warnung nennt keine betroffene Identität.
+
+Wenn die Notaus-Optionen wegen einer Miniserver-Anmeldesperre nicht geladen werden, zeigt die Oberfläche den frühesten erneuten Versuch an. **Erneut versuchen** wird danach freigeschaltet und führt höchstens einen koordinierten Anmeldeversuch aus. Der gespeicherte Notaus-Wert bleibt bei jedem Ladefehler erhalten.
+Ist lediglich eine andere Anmeldung im Gange, erscheint stattdessen ein kurzer Wiederholungszeitpunkt. Auch die servergerenderte Fallback-Ansicht zeigt aggregierte Bereinigungswarnungen.
+
 ## Tool Explorer
 
 Der [MCP Tool Explorer](https://loxberry/admin/plugins/mcpserver/explorer.cgi) ist ein lokaler administrativer Testclient. Er meldet sich mit einem Loxone-Benutzer an und erhält keine Rechte aus der LoxBerry-Admin-Sitzung. Ersetze `loxberry` im Link bei Bedarf durch den Hostnamen deiner Installation. Ändernde Aufrufe verlangen vor dem Senden eine Bestätigung.

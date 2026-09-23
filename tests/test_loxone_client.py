@@ -17,6 +17,7 @@ from mcpserver.loxone.client import (
     LoxoneConnectionError,
     LoxoneSourceIpBlocked,
     LoxoneToken,
+    LoxoneTokenAuthenticationRejected,
     LoxoneWebSocketSession,
     MiniserverEndpoint,
     _close_websocket,
@@ -911,6 +912,38 @@ async def test_gen2_session_authentication_retains_negotiated_token_hash_algorit
         ("jdev/sys/getkey", False),
         (f"authwithtoken/{expected}/reader", False),
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("response_code", "expected"),
+    [
+        ("401", LoxoneTokenAuthenticationRejected),
+        ("4003", LoxoneCommandRejected),
+        ("500", LoxoneCommandRejected),
+    ],
+)
+async def test_only_authwithtoken_401_is_conclusive_token_rejection(
+    monkeypatch: pytest.MonkeyPatch, response_code: str, expected: type[Exception]
+) -> None:
+    session = LoxoneWebSocketSession(
+        cast(Any, object()),
+        public_key="",
+        token=LoxoneToken("jwt-secret", "reader", "key", "SHA256", 100),
+        timeout_seconds=1,
+        max_payload_bytes=100,
+        secure_transport=True,
+    )
+
+    async def fake_command(command: str, *, encrypted: bool = False) -> object:
+        if command == "jdev/sys/getkey":
+            return "aabbccdd"
+        raise LoxoneCommandRejected("rejected", response_code=response_code)
+
+    monkeypatch.setattr(session, "_command", fake_command)
+    with pytest.raises(expected) as rejected:
+        await session.authenticate()
+    assert type(rejected.value) is expected
 
 
 @pytest.mark.asyncio

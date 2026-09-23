@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import subprocess
+import time
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -16,8 +17,16 @@ from pathlib import Path
 from uuid import NAMESPACE_URL, uuid5
 
 from mcpserver.config import PluginConfig
-from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
-from mcpserver.loxone.client import LoxoneClient, LoxoneToken, LoxoneWebSocketSession
+from mcpserver.loxone.auth_diagnostics import (
+    MiniserverAuthCoordinator,
+    MiniserverAuthenticationSuppressed,
+)
+from mcpserver.loxone.client import (
+    LoxoneClient,
+    LoxoneConnectionError,
+    LoxoneToken,
+    LoxoneWebSocketSession,
+)
 
 _LOGGER = logging.getLogger("mcpserver.emergency_stop")
 
@@ -61,6 +70,7 @@ class VirtualStatusOptions:
     status: str
     options: tuple[dict[str, str], ...]
     failure_code: str | None = None
+    retry_not_before: int | None = None
 
 
 @dataclass(slots=True)
@@ -253,7 +263,10 @@ class EmergencyStopMonitor:
 
 
 async def virtual_status_options(
-    config: PluginConfig, auth_coordinator: MiniserverAuthCoordinator | None = None
+    config: PluginConfig,
+    auth_coordinator: MiniserverAuthCoordinator | None = None,
+    *,
+    manual_retry: bool = False,
 ) -> VirtualStatusOptions:
     """Return selectable visible digital statuses without retaining credentials."""
     if not config.loxone_endpoint:
@@ -282,7 +295,7 @@ async def virtual_status_options(
                 partial(_acquire_token, client, username, password),
                 owner="local_admin",
                 phase="token_acquisition",
-                allow_cooldown_probe=False,
+                allow_cooldown_probe=manual_retry,
             )
         stage = "session"
         if auth_coordinator is None:
@@ -292,7 +305,7 @@ async def virtual_status_options(
                 partial(_open_session, client, token),
                 owner="local_admin",
                 phase="session_establishment",
-                allow_cooldown_probe=False,
+                allow_cooldown_probe=manual_retry,
             )
         stage = "structure"
         structure = await session.load_structure()
@@ -310,8 +323,34 @@ async def virtual_status_options(
             ),
         )
     except Exception as exc:
-        reason = f"{stage}_{exc.reason}" if isinstance(exc, _ProviderUnavailable) else stage
-        return VirtualStatusOptions(status="unavailable", options=(), failure_code=reason)
+        breaker = auth_coordinator.current_status() if auth_coordinator is not None else None
+        if isinstance(exc, MiniserverAuthenticationSuppressed):
+            reason = (
+                "authentication_suppressed"
+                if breaker is not None and breaker.get("breaker_state") != "closed"
+                else "authentication_busy"
+            )
+        elif stage == "credentials" or isinstance(exc, _ProviderUnavailable):
+            reason = "credentials_unavailable"
+        elif stage == "structure":
+            reason = "structure_failed"
+        elif isinstance(exc, LoxoneConnectionError | TimeoutError | OSError):
+            reason = "connection_failed"
+        else:
+            reason = "structure_failed" if stage == "structure" else "connection_failed"
+        retry_at = (
+            breaker.get("retry_not_before")
+            if breaker is not None and breaker.get("breaker_state") != "closed"
+            else int(time.time()) + 5
+            if reason == "authentication_busy"
+            else None
+        )
+        return VirtualStatusOptions(
+            status="unavailable",
+            options=(),
+            failure_code=reason,
+            retry_not_before=retry_at if isinstance(retry_at, int) else None,
+        )
     finally:
         if session is not None:
             await session.close()

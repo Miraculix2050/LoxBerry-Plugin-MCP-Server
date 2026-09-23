@@ -116,7 +116,7 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert "if ($server_rendered_fallback) {" in cgi
     assert "my $config_result = admin_call('get_config', {});" in cgi
     assert "my $sessions_result = admin_call('list_sessions', {});" in cgi
-    assert "my $options_result = admin_call('emergency_stop_options', {});" in cgi
+    assert "// admin_call('emergency_stop_options', {});" in cgi
     assert "admin_call('page_state', {})" in cgi
     assert "my $service_setting_result = admin_call('service_status', {});" not in cgi
     assert "SERVER_RENDERED_FALLBACK => $server_rendered_fallback" in cgi
@@ -224,12 +224,12 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert "emergencyStopDiscoveryGeneration += 1;" in template
     assert "emergencyStopSelect.disabled = false;" in template
     assert (
-        "const loadEmergencyStopOptions = async "
-        "(expectedGeneration = emergencyStopDiscoveryGeneration)" in template
+        "const loadEmergencyStopOptions = async (" in template
+        and "expectedGeneration = emergencyStopDiscoveryGeneration, manualRetry = false" in template
     )
     assert "if (expectedGeneration !== emergencyStopDiscoveryGeneration) return;" in template
     assert "const generation = expectedGeneration;" in template
-    assert template.count("if (generation !== emergencyStopDiscoveryGeneration) return;") == 3
+    assert template.count("if (generation !== emergencyStopDiscoveryGeneration) return;") == 4
     assert "component=admin_ui request_id=%s action=%s duration_ms=%.1f" in cgi
     assert "component=admin_helper request_id=%s action=%s outcome=rejected code=%s" in cgi
     assert "component=admin_ui request_id=%s phase=initial_render duration_ms=%.1f" in cgi
@@ -304,6 +304,25 @@ def test_emergency_stop_selection_is_preserved_while_options_load() -> None:
     assert "EMERGENCY_STOP_LOADING" in template
     assert "EMERGENCY_STOP_NO_OPTIONS" in template
     assert "EMERGENCY_STOP_NOT_CONFIGURED" in template
+    assert 'id="emergency-stop-retry"' in template
+    assert "body.set('action', manualRetry ? 'emergency_stop_retry'" in template
+    assert "result.data.failure_text" in template
+    assert "retry_not_before" in template
+    assert "Number.isInteger(status.pending) && status.pending > 0)" in template
+    assert "REMOTE_CLEANUP_WARNING_VISIBLE" in template
+    assert "REMOTE_CLEANUP_WARNING ESCAPE=HTML" in template
+    assert "REMOTE_CLEANUP_WARNING => $remote_cleanup_warning" in cgi
+    assert "authentication_busy => 'EMERGENCY_STOP_AUTH_BUSY'" in cgi
+    assert "emergencyStopValue.value = emergencyStopSelect.value;" in template
+    for key in (
+        "EMERGENCY_STOP_AUTH_SUPPRESSED",
+        "EMERGENCY_STOP_AUTH_BUSY",
+        "EMERGENCY_STOP_CREDENTIALS_UNAVAILABLE",
+        "EMERGENCY_STOP_CONNECTION_FAILED",
+        "EMERGENCY_STOP_STRUCTURE_FAILED",
+        "EMERGENCY_STOP_RETRY",
+    ):
+        assert key in german and key in english
 
 
 def test_common_actions_update_the_page_without_a_reload() -> None:
@@ -349,6 +368,84 @@ def test_event_history_enablement_is_preserved_in_server_rendered_fallback() -> 
         'name="event_history_enabled" type="checkbox" value="1" '
         "<TMPL_IF EVENT_HISTORY_ENABLED>checked</TMPL_IF>"
     ) in template
+
+
+def test_server_rendered_emergency_stop_status_is_terminal_after_discovery() -> None:
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+
+    assert "if (@$emergency_stop_options) {" in cgi
+    assert "$emergency_stop_status_visible = 0;" in cgi
+    assert "EMERGENCY_STOP_NO_OPTIONS" in cgi
+    assert "EMERGENCY_STOP_NOT_CONFIGURED" in cgi
+    assert "$options_data->{failure_text}" in cgi
+    assert "EMERGENCY_STOP_STATUS_TEXT => $emergency_stop_status_text" in cgi
+    assert "EMERGENCY_STOP_STATUS_KIND => $emergency_stop_status_kind" in cgi
+    assert "EMERGENCY_STOP_STATUS_VISIBLE => $emergency_stop_status_visible" in cgi
+    assert (
+        'id="emergency-stop-status" class="mcp-status" '
+        'data-kind="<TMPL_VAR EMERGENCY_STOP_STATUS_KIND ESCAPE=HTML>" '
+        "<TMPL_UNLESS EMERGENCY_STOP_STATUS_VISIBLE>hidden</TMPL_UNLESS>"
+    ) in template
+    assert "<TMPL_VAR EMERGENCY_STOP_STATUS_TEXT ESCAPE=HTML>" in template
+
+
+def test_server_rendered_emergency_stop_retry_uses_one_explicit_probe() -> None:
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    german = (ROOT / "templates/lang/language_de.ini").read_text(encoding="utf-8")
+    english = (ROOT / "templates/lang/language_en.ini").read_text(encoding="utf-8")
+
+    assert "my $fallback_retry_result;" in cgi
+    assert "if ($action eq 'emergency_stop_retry' && ($q->{fallback} // '') eq '1')" in cgi
+    assert "$fallback_retry_result = $result;" in cgi
+    assert "$fallback_retry_result\n        // admin_call('emergency_stop_options', {});" in cgi
+    assert "$emergency_stop_retry_enabled = time() >= $retry_at ? 1 : 0;" in cgi
+    assert 'name="fallback" value="1"' in template
+    assert 'name="action" value="emergency_stop_retry"' in template
+    assert 'form="fallback-emergency-stop-retry-form"' in template
+    assert template.index(
+        "</form>\n    <TMPL_IF SERVER_RENDERED_FALLBACK>"
+        '<form id="fallback-emergency-stop-retry-form"'
+    ) > template.index('id="mcp-config-form"')
+    assert "<TMPL_UNLESS EMERGENCY_STOP_RETRY_ENABLED>disabled</TMPL_UNLESS>" in template
+    assert 'href="index.cgi?fallback=1"' in template
+    assert "EMERGENCY_STOP_RELOAD=" in german
+    assert "EMERGENCY_STOP_RELOAD=" in english
+
+
+def test_server_rendered_option_names_escape_unicode_without_raw_bytes() -> None:
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    assert "name_html => ascii_html_text($name)" in cgi
+    assert "<TMPL_VAR name_html></option>" in template
+    assert "<TMPL_VAR name ESCAPE=HTML></option>" not in template
+
+    perl = shutil.which("perl")
+    if perl is None:
+        return
+    helper = re.search(r"(?ms)^sub ascii_html_text \{\n.*?^\}", cgi)
+    assert helper is not None
+    program = (
+        helper.group(0)
+        + "\n"
+        + 'my $name = chr(0xFC) . q|<script>alert("x")</script> & \'|;\n'
+        + "my $escaped = ascii_html_text($name);\n"
+        + "utf8::upgrade($name);\n"
+        + "die q(Unicode flag changed escaping) if ascii_html_text($name) ne $escaped;\n"
+        + "my $source = q|<option><TMPL_VAR NAME_HTML></option>|;\n"
+        + "my $template = HTML::Template->new_scalar_ref(\\$source);\n"
+        + "$template->param(NAME_HTML => $escaped);\n"
+        + "print $template->output();\n"
+    )
+    result = subprocess.run(
+        [perl, "-MHTML::Template", "-e", program],
+        check=True,
+        capture_output=True,
+    )
+    assert result.stdout == (
+        b"<option>&#xFC;&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; &#39;</option>"
+    )
 
 
 def test_admin_cards_use_consistent_vertical_spacing() -> None:
@@ -782,6 +879,8 @@ def test_admin_access_section_groups_connection_urls_and_certificate_controls() 
     assert 'id="mcp-url-hostname"' in access
     assert 'id="mcp-url-ip"' in access
     assert 'id="certificate-panel"' in access
+    assert 'data-state-idle="<TMPL_VAR CERTIFICATE.STATE_IDLE ESCAPE=HTML>"' in access
+    assert "idle: certificatePanel.dataset.stateIdle," in template
     assert 'data-ajax="renew_certificate"' in access
     assert 'id="explorer-link"' not in access
     assert 'id="schema-reference-link"' not in access
@@ -793,6 +892,28 @@ def test_admin_access_section_groups_connection_urls_and_certificate_controls() 
     assert '<details id="certificate"' not in template
     assert "const accessSection = document.getElementById('access');" in template
     assert "const certificatePanel = document.getElementById('certificate-panel');" in template
+
+
+def test_certificate_idle_status_does_not_use_failure_label() -> None:
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    labels = re.search(
+        r"  const certificateStateLabels = certificatePanel \? \{.*?\} : \{\};",
+        template,
+        re.DOTALL,
+    )
+    assert labels is not None
+    assert 'data-state-idle="<TMPL_VAR CERTIFICATE.STATE_IDLE ESCAPE=HTML>"' in template
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = (
+        "const assert = require('node:assert/strict');\n"
+        "const certificatePanel = {dataset: {stateIdle: 'Not started', "
+        "stateError: 'Reissue failed'}};\n"
+        + labels.group(0)
+        + "\nassert.equal(certificateStateLabels.idle, 'Not started');\n"
+        "assert.notEqual(certificateStateLabels.idle, certificateStateLabels.error);\n"
+    )
+    subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
 
 
 def test_permission_policy_uses_grouped_scope_labeled_checkboxes() -> None:

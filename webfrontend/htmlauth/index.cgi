@@ -28,6 +28,7 @@ my $version = LoxBerry::System::pluginversion();
 my $admin_log;
 my $render_started = clock_gettime(CLOCK_MONOTONIC);
 my $request_id = sprintf('%x-%x', $$, int($render_started * 1_000_000));
+my %L;
 use constant ADMIN_LOG_MESSAGE_BYTES => 8 * 1024;
 use constant ADMIN_LOG_TRUNCATION_SUFFIX => ' ... [truncated]';
 
@@ -40,6 +41,18 @@ sub bounded_admin_message {
     return $message if length($encoded) <= ADMIN_LOG_MESSAGE_BYTES;
     my $prefix = substr($encoded, 0, ADMIN_LOG_MESSAGE_BYTES - length($suffix));
     return decode('UTF-8', $prefix, FB_DEFAULT) . ADMIN_LOG_TRUNCATION_SUFFIX;
+}
+
+sub ascii_html_text {
+    my ($value) = @_;
+    return '' if !defined($value) || ref($value);
+    $value =~ s/&/&amp;/g;
+    $value =~ s/</&lt;/g;
+    $value =~ s/>/&gt;/g;
+    $value =~ s/"/&quot;/g;
+    $value =~ s/'/&#39;/g;
+    $value =~ s/([^\x20-\x7E])/sprintf('&#x%X;', ord($1))/ge;
+    return $value;
 }
 
 sub admin_log {
@@ -125,9 +138,18 @@ sub admin_call {
             ));
         }
     }
-    if ($action eq 'emergency_stop_options' && $result->{ok} && ref($result->{data}) eq 'HASH') {
+    if (($action eq 'emergency_stop_options' || $action eq 'emergency_stop_retry')
+        && $result->{ok} && ref($result->{data}) eq 'HASH') {
         my $failure_code = delete $result->{data}{discovery_failure_code};
         if (defined $failure_code && $failure_code =~ /\A[a-z_]{1,128}\z/) {
+            my %labels = (
+                authentication_suppressed => 'EMERGENCY_STOP_AUTH_SUPPRESSED',
+                authentication_busy => 'EMERGENCY_STOP_AUTH_BUSY',
+                credentials_unavailable => 'EMERGENCY_STOP_CREDENTIALS_UNAVAILABLE',
+                connection_failed => 'EMERGENCY_STOP_CONNECTION_FAILED',
+                structure_failed => 'EMERGENCY_STOP_STRUCTURE_FAILED',
+            );
+            $result->{data}{failure_text} = $L{'SETUP.' . ($labels{$failure_code} // 'EMERGENCY_STOP_LOAD_ERROR')};
             admin_log('warning', sprintf(
                 'component=emergency_stop outcome=options_unavailable request_id=%s code=%s',
                 $request_id,
@@ -359,7 +381,7 @@ my $template = HTML::Template->new_scalar_ref(
     loop_context_vars => 1,
     die_on_bad_params => 0,
 );
-my %L = LoxBerry::System::readlanguage($template, 'language.ini');
+%L = LoxBerry::System::readlanguage($template, 'language.ini');
 
 sub localize_admin_error {
     my ($result) = @_;
@@ -380,6 +402,7 @@ sub localize_admin_error {
 }
 
 my $action = $q->{action} // '';
+my $fallback_retry_result;
 if ($action ne '') {
     if (!same_origin_post()) {
         my $failure = {ok => JSON::PP::false, error => {code => 'forbidden', message => 'Same-origin POST required'}};
@@ -506,6 +529,8 @@ if ($action ne '') {
         $result = admin_call('page_state', {});
     } elsif ($action eq 'emergency_stop_options') {
         $result = admin_call('emergency_stop_options', {});
+    } elsif ($action eq 'emergency_stop_retry') {
+        $result = admin_call('emergency_stop_retry', {});
     } elsif ($action eq 'clear_event_history') {
         $result = admin_call('clear_event_history', {});
         admin_log($result->{ok} ? 'info' : 'warning',
@@ -593,7 +618,11 @@ if ($action ne '') {
     my $notice = $result->{ok}
         ? ($action eq 'renew_certificate' ? 'certificate_scheduled' : 'success')
         : 'error';
-    redirect_reply("index.cgi?notice=$notice");
+    if ($action eq 'emergency_stop_retry' && ($q->{fallback} // '') eq '1') {
+        $fallback_retry_result = $result;
+    } else {
+        redirect_reply("index.cgi?notice=$notice");
+    }
 }
 
 use constant MAX_EXPIRY_EPOCH => 4_102_444_799;
@@ -613,10 +642,16 @@ sub format_expiry {
 my $server_rendered_fallback = ($q->{fallback} // '') eq '1';
 my $config = {};
 my $sessions = [];
+my $remote_cleanup = {available => 0};
 my $loxberry_bindings = [];
 my $loxberry_operate_bindings = [];
 my $emergency_stop_options = [];
 my $selected_emergency_stop_unavailable = 0;
+my $emergency_stop_status_text = $L{'SETUP.EMERGENCY_STOP_LOADING'};
+my $emergency_stop_status_kind = 'info';
+my $emergency_stop_status_visible = 1;
+my $emergency_stop_retry_visible = 0;
+my $emergency_stop_retry_enabled = 0;
 my $fallback_configuration_loaded = 0;
 my $notifications_html = '';
 my $loglist_html = '';
@@ -642,6 +677,8 @@ if ($server_rendered_fallback) {
     $loglist_html = LoxBerry::Web::loglist_html() // '';
     my $sessions_result = admin_call('list_sessions', {});
     if ($sessions_result->{ok} && ref($sessions_result->{data}) eq 'HASH') {
+        $remote_cleanup = $sessions_result->{data}{remote_cleanup}
+            if ref($sessions_result->{data}{remote_cleanup}) eq 'HASH';
         $sessions = $sessions_result->{data}{sessions}
             if ref($sessions_result->{data}{sessions}) eq 'ARRAY';
         $loxberry_bindings = $sessions_result->{data}{loxberry_bindings}
@@ -660,9 +697,11 @@ $config->{mqtt} = {} if ref($config->{mqtt}) ne 'HASH';
 $config->{emergency_stop} = {} if ref($config->{emergency_stop}) ne 'HASH';
 my $selected_emergency_stop = $config->{emergency_stop}{virtual_status_uuid} // '';
 if ($server_rendered_fallback) {
-    my $options_result = admin_call('emergency_stop_options', {});
-    my $options = ref($options_result->{data}) eq 'HASH'
-        ? $options_result->{data}{options} : undef;
+    my $options_result = $fallback_retry_result
+        // admin_call('emergency_stop_options', {});
+    my $options_data = ref($options_result->{data}) eq 'HASH'
+        ? $options_result->{data} : {};
+    my $options = $options_data->{options};
     if ($options_result->{ok} && ref($options) eq 'ARRAY') {
         for my $option (@$options) {
             next if ref($option) ne 'HASH';
@@ -671,12 +710,38 @@ if ($server_rendered_fallback) {
             next if !defined($uuid) || !defined($name) || ref($uuid) || ref($name);
             push @$emergency_stop_options, {
                 uuid => $uuid,
-                name => $name,
+                name_html => ascii_html_text($name),
                 selected => $uuid eq $selected_emergency_stop ? 1 : 0,
             };
         }
         $selected_emergency_stop_unavailable = $selected_emergency_stop ne ''
             && !grep { $_->{selected} } @$emergency_stop_options;
+        my $status = $options_data->{status} // '';
+        if ($status eq 'available') {
+            if (@$emergency_stop_options) {
+                $emergency_stop_status_visible = 0;
+            } else {
+                $emergency_stop_status_text = $L{'SETUP.EMERGENCY_STOP_NO_OPTIONS'};
+            }
+        } elsif ($status eq 'not_configured') {
+            $emergency_stop_status_text = $L{'SETUP.EMERGENCY_STOP_NOT_CONFIGURED'};
+            $emergency_stop_status_kind = 'error';
+        } else {
+            $emergency_stop_status_text = $options_data->{failure_text}
+                // $L{'SETUP.EMERGENCY_STOP_LOAD_ERROR'};
+            $emergency_stop_status_kind = 'error';
+            my $retry_at = $options_data->{retry_not_before};
+            if ($status eq 'unavailable' && defined($retry_at)
+                && "$retry_at" =~ /\A[0-9]{1,10}\z/
+                && $retry_at <= MAX_EXPIRY_EPOCH) {
+                $emergency_stop_status_text .= ' ' . format_expiry($retry_at);
+                $emergency_stop_retry_visible = 1;
+                $emergency_stop_retry_enabled = time() >= $retry_at ? 1 : 0;
+            }
+        }
+    } else {
+        $emergency_stop_status_text = $L{'SETUP.EMERGENCY_STOP_LOAD_ERROR'};
+        $emergency_stop_status_kind = 'error';
     }
 }
 my $miniservers = configured_miniservers($config->{loxone}{endpoint} // '');
@@ -745,6 +810,41 @@ my $runtime_signal_uuid = $emergency_stop_runtime->{signal_uuid};
 $runtime_signal_uuid = '' if !defined($runtime_signal_uuid) || ref($runtime_signal_uuid);
 my $runtime_signal_name = $emergency_stop_runtime->{signal_name};
 $runtime_signal_name = '' if !defined($runtime_signal_name) || ref($runtime_signal_name);
+my @remote_cleanup_notices;
+if ($server_rendered_fallback) {
+    if (!$remote_cleanup->{available}) {
+        push @remote_cleanup_notices, $L{'SESSIONS.REMOTE_STATUS_UNAVAILABLE'};
+    } else {
+        push @remote_cleanup_notices, $L{'SESSIONS.REMOTE_BREAKER_WARNING'}
+            if ($remote_cleanup->{breaker_state} // '') eq 'open_source_ip_blocked';
+        for my $entry (
+            ['pending', 'SESSIONS.REMOTE_PENDING_WARNING'],
+            ['retryable', 'SESSIONS.REMOTE_RETRYABLE_WARNING'],
+            ['unconfirmed', 'SESSIONS.REMOTE_UNCONFIRMED_WARNING'],
+        ) {
+            my ($field, $label) = @$entry;
+            my $count = $remote_cleanup->{$field};
+            push @remote_cleanup_notices, "$L{$label} $count"
+                if defined($count) && !ref($count) && $count =~ /\A[0-9]+\z/ && $count > 0;
+        }
+        my %failure_labels = (
+            authentication_rejected => 'SESSIONS.REMOTE_REJECTED',
+            source_ip_blocked => 'SESSIONS.REMOTE_BLOCKED',
+            transport_failed => 'SESSIONS.REMOTE_TRANSPORT',
+            command_rejected => 'SESSIONS.REMOTE_COMMAND',
+        );
+        my $category = $remote_cleanup->{last_failure_category} // '';
+        my $at = $remote_cleanup->{last_failure_at};
+        if (@remote_cleanup_notices && exists $failure_labels{$category}
+            && defined($at) && !ref($at) && $at =~ /\A[0-9]+\z/) {
+            my $failure_label = $failure_labels{$category};
+            push @remote_cleanup_notices,
+                $L{'SESSIONS.REMOTE_LAST_FAILURE'} . ' '
+                . $L{$failure_label} . ', ' . format_expiry($at);
+        }
+    }
+}
+my $remote_cleanup_warning = join(' ', @remote_cleanup_notices);
 my $runtime_signal = $server_rendered_fallback && $runtime_availability eq 'available'
     ? ($runtime_signal_name ne '' ? $runtime_signal_name
         : $runtime_signal_uuid ne '' ? $runtime_signal_uuid
@@ -807,6 +907,11 @@ $template->param(
     SELECTED_EMERGENCY_STOP => $selected_emergency_stop,
     EMERGENCY_STOP_OPTIONS => $emergency_stop_options,
     EMERGENCY_STOP_SELECTED_UNAVAILABLE => $selected_emergency_stop_unavailable,
+    EMERGENCY_STOP_STATUS_TEXT => $emergency_stop_status_text,
+    EMERGENCY_STOP_STATUS_KIND => $emergency_stop_status_kind,
+    EMERGENCY_STOP_STATUS_VISIBLE => $emergency_stop_status_visible,
+    EMERGENCY_STOP_RETRY_VISIBLE => $emergency_stop_retry_visible,
+    EMERGENCY_STOP_RETRY_ENABLED => $emergency_stop_retry_enabled,
     EMERGENCY_STOP_RUNTIME_SIGNAL_VALUE => $runtime_signal,
     EMERGENCY_STOP_RUNTIME_UUID => $runtime_signal_uuid,
     EMERGENCY_STOP_RUNTIME_UUID_VISIBLE => $server_rendered_fallback
@@ -845,6 +950,8 @@ $template->param(
     CERTIFICATE_RENEWAL_STATE => $renewal_labels{$renewal_state}
         // $L{'CERTIFICATE.STATE_ERROR'},
     SESSIONS => $sessions,
+    REMOTE_CLEANUP_WARNING_VISIBLE => length($remote_cleanup_warning) ? 1 : 0,
+    REMOTE_CLEANUP_WARNING => $remote_cleanup_warning,
     LOXBERRY_BINDINGS => $loxberry_bindings,
     LOXBERRY_OPERATE_BINDINGS => $loxberry_operate_bindings,
     HAS_SESSIONS => scalar(@$sessions) ? 1 : 0,
