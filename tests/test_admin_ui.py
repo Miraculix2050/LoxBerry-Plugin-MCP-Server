@@ -1096,9 +1096,15 @@ def test_miniserver_selection_uses_local_sanitized_loxberry_metadata() -> None:
     assert 'id="miniserver-select"' in template
     assert "<TMPL_LOOP MINISERVERS>" in template
     assert 'id="manual-endpoint-fields"' in template
-    assert "<TMPL_UNLESS MANUAL_ENDPOINT>hidden</TMPL_UNLESS>" in template
+    assert (
+        "<TMPL_UNLESS SERVER_RENDERED_FALLBACK><TMPL_UNLESS MANUAL_ENDPOINT>"
+        "hidden</TMPL_UNLESS></TMPL_UNLESS>" in template
+    )
     assert 'id="miniserver-endpoint"' in template
-    assert "<TMPL_IF MANUAL_ENDPOINT>required<TMPL_ELSE>readonly</TMPL_IF>" in template
+    assert (
+        "<TMPL_UNLESS SERVER_RENDERED_FALLBACK><TMPL_IF MANUAL_ENDPOINT>"
+        "required<TMPL_ELSE>readonly</TMPL_IF></TMPL_UNLESS>" in template
+    )
     assert "miniserverEndpoint.readOnly = Boolean(selectedEndpoint)" in template
     assert "miniserverEndpoint.required = !selectedEndpoint" in template
     assert "manualEndpointFields.hidden = Boolean(selectedEndpoint)" in template
@@ -1187,6 +1193,10 @@ def test_connection_test_uses_unsaved_form_endpoint_in_fallback() -> None:
     assert 'name="endpoint" type="url"' in template
     assert 'name="action" value="test_connection" formnovalidate' in template
     assert "$result = admin_call('test_connection', {endpoint => requested_endpoint($q)})" in cgi
+    assert (
+        'id="manual-endpoint-fields" class="mcp-manual-endpoint" '
+        "<TMPL_UNLESS SERVER_RENDERED_FALLBACK>" in template
+    )
     perl = shutil.which("perl")
     assert perl is not None
     script = (

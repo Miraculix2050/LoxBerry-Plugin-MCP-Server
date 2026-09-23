@@ -71,8 +71,8 @@
       <h3><TMPL_VAR SETUP.CONNECTION></h3>
       <label class="mcp-field"><span><TMPL_VAR SETUP.PUBLIC_ORIGIN></span><input name="public_origin" type="url" value="<TMPL_VAR PUBLIC_ORIGIN ESCAPE=HTML>" placeholder="https://loxberry.local" required></label>
       <label class="mcp-field"><span><TMPL_VAR SETUP.MINISERVER_SOURCE></span><select id="miniserver-select" name="miniserver_endpoint"><option value="" <TMPL_IF MANUAL_ENDPOINT>selected</TMPL_IF>><TMPL_VAR SETUP.MANUAL_OPTION></option><TMPL_LOOP MINISERVERS><option value="<TMPL_VAR endpoint ESCAPE=HTML>" <TMPL_IF selected>selected</TMPL_IF>><TMPL_VAR label ESCAPE=HTML></option></TMPL_LOOP></select></label>
-      <div id="manual-endpoint-fields" class="mcp-manual-endpoint" <TMPL_UNLESS MANUAL_ENDPOINT>hidden</TMPL_UNLESS>>
-        <label class="mcp-field"><span><TMPL_VAR SETUP.ENDPOINT></span><input id="miniserver-endpoint" name="endpoint" type="url" value="<TMPL_VAR ENDPOINT ESCAPE=HTML>" placeholder="http://192.168.1.20" aria-describedby="endpoint-help" <TMPL_IF MANUAL_ENDPOINT>required<TMPL_ELSE>readonly</TMPL_IF>></label>
+      <div id="manual-endpoint-fields" class="mcp-manual-endpoint" <TMPL_UNLESS SERVER_RENDERED_FALLBACK><TMPL_UNLESS MANUAL_ENDPOINT>hidden</TMPL_UNLESS></TMPL_UNLESS>>
+        <label class="mcp-field"><span><TMPL_VAR SETUP.ENDPOINT></span><input id="miniserver-endpoint" name="endpoint" type="url" value="<TMPL_VAR ENDPOINT ESCAPE=HTML>" placeholder="http://192.168.1.20" aria-describedby="endpoint-help" <TMPL_UNLESS SERVER_RENDERED_FALLBACK><TMPL_IF MANUAL_ENDPOINT>required<TMPL_ELSE>readonly</TMPL_IF></TMPL_UNLESS>></label>
         <p id="endpoint-help" class="mcp-help"><TMPL_VAR SETUP.ENDPOINT_HELP></p>
       </div>
       <div class="mcp-actions">
