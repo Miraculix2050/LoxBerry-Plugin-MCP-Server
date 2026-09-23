@@ -50,6 +50,11 @@ did not occur. At most 20 statistic series per control are returned; omitted met
 by `native_statistics_truncated`. State names are capped at 200 UTF-8 bytes and
 `state_names_truncated` marks omitted text. Control names and types use the same cap;
 `control_metadata_truncated` marks omitted text.
+The bundled `using-loxberry-mcp` guide combines these existing tools into a
+diagnostic workflow: identify the target, check current observations and their
+timestamps, verify historical coverage for the requested period, and distinguish
+structural paths from evidence of events and possible causes. A value observed
+after reconnect does not reveal when it changed while disconnected.
 For each state without complete local coverage, `recommendations` suggests
 native statistics, local on-change recording, or `undetermined` from observable
 value and control metadata.

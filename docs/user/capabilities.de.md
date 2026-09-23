@@ -54,6 +54,12 @@ State nicht eingetreten ist. Pro Control werden höchstens 20 Statistikserien zu
 ausgelassene Metadaten markiert `native_statistics_truncated`. State-Namen sind auf 200 UTF-8-
 Bytes begrenzt; ausgelassenen Text markiert `state_names_truncated`. Control-Namen und -Typen
 haben dieselbe Begrenzung; ausgelassenen Text markiert `control_metadata_truncated`.
+Die mitgelieferte Anleitung `using-loxberry-mcp` verbindet diese vorhandenen Tools
+zu einem Diagnoseablauf: Ziel bestimmen, aktuelle Beobachtungen samt Zeitstempel
+prüfen, historische Abdeckung für den angefragten Zeitraum belegen und strukturelle
+Pfade von Ereignisbelegen und möglichen Ursachen trennen. Ein nach der
+Wiederverbindung beobachteter Wert verrät nicht, wann er während der Unterbrechung
+gewechselt hat.
 Für jeden State ohne vollständige lokale Abdeckung empfiehlt `recommendations`
 anhand beobachtbarer Werte und Control-Metadaten native Statistik, lokale
 Aufzeichnung bei Änderung oder `undetermined`.
