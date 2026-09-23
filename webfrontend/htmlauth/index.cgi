@@ -206,8 +206,20 @@ sub redirect_reply {
     exit;
 }
 
+sub json_unicode_text {
+    my ($value) = @_;
+    return $value if !defined($value) || ref($value) || is_utf8($value);
+    return decode('UTF-8', $value, FB_DEFAULT);
+}
+
 sub json_reply {
     my ($result, $status) = @_;
+    if (ref($result->{data}) eq 'HASH' && defined($result->{data}{failure_text})) {
+        $result->{data}{failure_text} = json_unicode_text($result->{data}{failure_text});
+    }
+    if (ref($result->{error}) eq 'HASH' && defined($result->{error}{message})) {
+        $result->{error}{message} = json_unicode_text($result->{error}{message});
+    }
     print $cgi->header(
         -type => 'application/json',
         -charset => 'utf-8',

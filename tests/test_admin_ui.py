@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -118,6 +119,48 @@ def test_admin_responses_emit_no_store_and_frame_protection(tmp_path: Path) -> N
     assert "native-log" in populated_loglist.stdout
     assert "admin-ui" in populated_loglist.stdout
     assert "No native plugin logs are available yet." not in populated_loglist.stdout
+
+
+def test_admin_ajax_localized_messages_are_utf8(tmp_path: Path) -> None:
+    perl = shutil.which("perl")
+    if perl is None or os.name == "nt":
+        return
+    environment = _admin_cgi_environment(tmp_path)
+    (tmp_path / "mcpserver-admin").write_text(
+        "#!/usr/bin/env perl\n"
+        "my $request = <STDIN>;\n"
+        "if ($request =~ /emergency_stop_options/) {\n"
+        '  print q({"ok":true,"data":{"status":"unavailable","options":[],'
+        '"discovery_failure_code":"authentication_busy"}});\n'
+        "} else {\n"
+        '  print q({"ok":false,"error":{"code":"service_action_failed"}});\n'
+        "}\n",
+        encoding="utf-8",
+    )
+    cgi = ROOT / "webfrontend" / "htmlauth" / "index.cgi"
+    for action, field, expected in (
+        ("emergency_stop_options", "failure_text", "Anmeldung läuft."),
+        ("status", "message", "Aktion für Dienst fehlgeschlagen."),
+    ):
+        request = f"action={action}&ajax=1"
+        response = subprocess.run(
+            [perl, f"-I{ROOT / 'tests' / 'perl_stubs'}", str(cgi)],
+            check=True,
+            capture_output=True,
+            text=True,
+            input=request,
+            env={
+                **environment,
+                "REQUEST_METHOD": "POST",
+                "CONTENT_TYPE": "application/x-www-form-urlencoded",
+                "CONTENT_LENGTH": str(len(request)),
+                "HTTP_ORIGIN": "https://loxberry.example",
+                "HTTP_HOST": "loxberry.example",
+            },
+        )
+        payload = json.loads(response.stdout.partition("\n\n")[2])
+        detail = payload["data"] if field == "failure_text" else payload["error"]
+        assert detail[field] == expected
 
 
 def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:

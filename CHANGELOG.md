@@ -8,6 +8,9 @@ extracted from the matching version heading.
 - Run expired Tool Explorer binding cleanup after releasing the OAuth store lock,
   so a stored expired session cannot block service startup or Admin data loading.
 
+- Correct UTF-8 encoding of localized Admin AJAX error messages, including
+  emergency-stop option loading warnings.
+
 - Stack client sessions and LoxBerry approval bindings before their columns
   become cramped on narrow screens; show Loxone permission details as stacked
   records at intermediate widths. Keep a deliberately closed Admin section
