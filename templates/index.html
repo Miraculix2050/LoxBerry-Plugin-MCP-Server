@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-sessions">
+<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-sessions-v2">
 <script>
   if (window.performance && typeof window.performance.mark === 'function') {
     window.performance.mark('mcp-admin-shell-parsed');
@@ -380,9 +380,10 @@
     if (typeof storedCollapseState[element.id] === 'boolean') element.open = storedCollapseState[element.id];
     element.addEventListener('toggle', persistCollapsibles);
   }
-  const openHashSection = (hash = window.location.hash) => {
+  const openHashSection = (hash = window.location.hash, respectClosedState = false) => {
     const fragment = hash.slice(1);
     const sectionId = { setup: 'configuration', certificate: 'access' }[fragment] || fragment;
+    if (respectClosedState && storedCollapseState[sectionId] === false) return;
     const target = document.getElementById(sectionId);
     if (target instanceof HTMLDetailsElement && !target.open) {
       target.open = true;
@@ -394,7 +395,10 @@
     const anchor = event.target instanceof Element ? event.target.closest('a[href^="#"]') : null;
     if (anchor) openHashSection(anchor.hash);
   });
-  openHashSection();
+  openHashSection(
+    window.location.hash,
+    window.performance?.getEntriesByType?.('navigation')?.[0]?.type === 'reload',
+  );
   const miniserverSelect = document.getElementById('miniserver-select');
   const manualEndpointFields = document.getElementById('manual-endpoint-fields');
   const miniserverEndpoint = document.getElementById('miniserver-endpoint');

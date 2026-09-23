@@ -468,7 +468,7 @@ def test_admin_cards_use_consistent_vertical_spacing() -> None:
     explorer = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
     stylesheet = (ROOT / "webfrontend" / "htmlauth" / "mcp-ui.css").read_text(encoding="utf-8")
 
-    assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-sessions"' in template
+    assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-sessions-v2"' in template
     assert '<link rel="stylesheet" href="mcp-ui.css">' in explorer
     assert "<style>" not in template
     assert "<style>" not in explorer
@@ -834,7 +834,7 @@ def test_admin_sections_are_native_persistent_collapsibles() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
 
-    assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-sessions"' in template
+    assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-sessions-v2"' in template
     expected_sections = [
         ("status", "STATUS.TITLE"),
         ("configuration", "SETUP.TITLE"),
@@ -932,14 +932,11 @@ assert.deepEqual(readCollapseState(), {});
     subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
 
 
-def test_admin_hash_navigation_reopens_a_manually_closed_section() -> None:
+def test_admin_hash_navigation_preserves_closed_reload_and_opens_new_links() -> None:
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
-    navigation = re.search(
-        r"  const openHashSection = .*?^  openHashSection\(\);",
-        template,
-        re.MULTILINE | re.DOTALL,
-    )
-    assert navigation is not None
+    navigation = template[
+        template.index("  const openHashSection =") : template.index("  const miniserverSelect =")
+    ]
     node = shutil.which("node")
     assert node is not None, "Node.js is required for the complete deterministic gate"
     script = (
@@ -948,21 +945,24 @@ def test_admin_hash_navigation_reopens_a_manually_closed_section() -> None:
         "class Element { closest() { return { hash: '#access' }; } }\n"
         "const section = new HTMLDetailsElement();\n"
         "const configuration = new HTMLDetailsElement();\n"
+        "const mqtt = new HTMLDetailsElement();\n"
+        "const storedCollapseState = {mqtt: false};\n"
         "const listeners = {};\n"
-        "const window = { location: { hash: '#access' }, "
+        "const window = { location: { hash: '#mqtt' }, "
+        "performance: {getEntriesByType: () => [{type: 'reload'}]}, "
         "addEventListener: (type, callback) => { listeners[type] = callback; } };\n"
         "const document = { getElementById: (id) => "
-        "({ access: section, configuration })[id] || null, "
+        "({ access: section, configuration, mqtt })[id] || null, "
         "addEventListener: (type, callback) => { listeners[type] = callback; } };\n"
         "let persistCount = 0;\n"
         "const persistCollapsibles = () => { persistCount += 1; };\n"
-        + navigation.group(0)
+        + navigation
         + """
-assert.equal(section.open, true);
-section.open = false;
+assert.equal(mqtt.open, false);
 listeners.click({ target: new Element() });
 assert.equal(section.open, true);
 section.open = false;
+window.location.hash = '#access';
 listeners.hashchange({ type: 'hashchange' });
 assert.equal(section.open, true);
 window.location.hash = '#setup';
@@ -972,7 +972,18 @@ section.open = false;
 window.location.hash = '#certificate';
 listeners.hashchange({ type: 'hashchange' });
 assert.equal(section.open, true);
+assert.equal(persistCount, 4);
+openHashSection('#mqtt', true);
+assert.equal(mqtt.open, false);
+assert.equal(persistCount, 4);
+openHashSection('#mqtt');
+assert.equal(mqtt.open, true);
 assert.equal(persistCount, 5);
+storedCollapseState.mqtt = true;
+mqtt.open = false;
+openHashSection('#mqtt', true);
+assert.equal(mqtt.open, true);
+assert.equal(persistCount, 6);
 """
     )
     subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
@@ -1373,7 +1384,9 @@ def test_session_tables_have_matching_mobile_labels_in_fallback_and_ajax_rows() 
         assert tuple(fallback_labels) == expected
         assert tuple(js_labels) == expected
 
-    assert "#sessions .mcp-session-table-wrap { overflow-x: visible; }" in css
+    assert "@media (max-width: 48rem)" in css
+    assert ".mcp-permission-table td, .mcp-permission-table td:first-child { width: 100%;" in css
+    assert "#sessions .mcp-session-table-wrap { box-sizing: border-box; width: 100%;" in css
     assert '#sessions form[data-ajax^="revoke"] .lb-button' in css
     assert "data-session-token-state" in template
     assert "const updateSessionActionControls = () =>" in template
