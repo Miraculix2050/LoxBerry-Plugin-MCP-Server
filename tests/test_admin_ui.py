@@ -116,7 +116,7 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert "if ($server_rendered_fallback) {" in cgi
     assert "my $config_result = admin_call('get_config', {});" in cgi
     assert "my $sessions_result = admin_call('list_sessions', {});" in cgi
-    assert "my $options_result = admin_call('emergency_stop_options', {});" in cgi
+    assert "// admin_call('emergency_stop_options', {});" in cgi
     assert "admin_call('page_state', {})" in cgi
     assert "my $service_setting_result = admin_call('service_status', {});" not in cgi
     assert "SERVER_RENDERED_FALLBACK => $server_rendered_fallback" in cgi
@@ -388,6 +388,30 @@ def test_server_rendered_emergency_stop_status_is_terminal_after_discovery() -> 
         "<TMPL_UNLESS EMERGENCY_STOP_STATUS_VISIBLE>hidden</TMPL_UNLESS>"
     ) in template
     assert "<TMPL_VAR EMERGENCY_STOP_STATUS_TEXT ESCAPE=HTML>" in template
+
+
+def test_server_rendered_emergency_stop_retry_uses_one_explicit_probe() -> None:
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    german = (ROOT / "templates/lang/language_de.ini").read_text(encoding="utf-8")
+    english = (ROOT / "templates/lang/language_en.ini").read_text(encoding="utf-8")
+
+    assert "my $fallback_retry_result;" in cgi
+    assert "if ($action eq 'emergency_stop_retry' && ($q->{fallback} // '') eq '1')" in cgi
+    assert "$fallback_retry_result = $result;" in cgi
+    assert "$fallback_retry_result\n        // admin_call('emergency_stop_options', {});" in cgi
+    assert "$emergency_stop_retry_enabled = time() >= $retry_at ? 1 : 0;" in cgi
+    assert 'name="fallback" value="1"' in template
+    assert 'name="action" value="emergency_stop_retry"' in template
+    assert 'form="fallback-emergency-stop-retry-form"' in template
+    assert template.index(
+        "</form>\n    <TMPL_IF SERVER_RENDERED_FALLBACK>"
+        '<form id="fallback-emergency-stop-retry-form"'
+    ) > template.index('id="mcp-config-form"')
+    assert "<TMPL_UNLESS EMERGENCY_STOP_RETRY_ENABLED>disabled</TMPL_UNLESS>" in template
+    assert 'href="index.cgi?fallback=1"' in template
+    assert "EMERGENCY_STOP_RELOAD=" in german
+    assert "EMERGENCY_STOP_RELOAD=" in english
 
 
 def test_admin_cards_use_consistent_vertical_spacing() -> None:

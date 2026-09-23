@@ -390,6 +390,7 @@ sub localize_admin_error {
 }
 
 my $action = $q->{action} // '';
+my $fallback_retry_result;
 if ($action ne '') {
     if (!same_origin_post()) {
         my $failure = {ok => JSON::PP::false, error => {code => 'forbidden', message => 'Same-origin POST required'}};
@@ -605,7 +606,11 @@ if ($action ne '') {
     my $notice = $result->{ok}
         ? ($action eq 'renew_certificate' ? 'certificate_scheduled' : 'success')
         : 'error';
-    redirect_reply("index.cgi?notice=$notice");
+    if ($action eq 'emergency_stop_retry' && ($q->{fallback} // '') eq '1') {
+        $fallback_retry_result = $result;
+    } else {
+        redirect_reply("index.cgi?notice=$notice");
+    }
 }
 
 use constant MAX_EXPIRY_EPOCH => 4_102_444_799;
@@ -633,6 +638,8 @@ my $selected_emergency_stop_unavailable = 0;
 my $emergency_stop_status_text = $L{'SETUP.EMERGENCY_STOP_LOADING'};
 my $emergency_stop_status_kind = 'info';
 my $emergency_stop_status_visible = 1;
+my $emergency_stop_retry_visible = 0;
+my $emergency_stop_retry_enabled = 0;
 my $fallback_configuration_loaded = 0;
 my $notifications_html = '';
 my $loglist_html = '';
@@ -678,7 +685,8 @@ $config->{mqtt} = {} if ref($config->{mqtt}) ne 'HASH';
 $config->{emergency_stop} = {} if ref($config->{emergency_stop}) ne 'HASH';
 my $selected_emergency_stop = $config->{emergency_stop}{virtual_status_uuid} // '';
 if ($server_rendered_fallback) {
-    my $options_result = admin_call('emergency_stop_options', {});
+    my $options_result = $fallback_retry_result
+        // admin_call('emergency_stop_options', {});
     my $options_data = ref($options_result->{data}) eq 'HASH'
         ? $options_result->{data} : {};
     my $options = $options_data->{options};
@@ -715,6 +723,8 @@ if ($server_rendered_fallback) {
                 && "$retry_at" =~ /\A[0-9]{1,10}\z/
                 && $retry_at <= MAX_EXPIRY_EPOCH) {
                 $emergency_stop_status_text .= ' ' . format_expiry($retry_at);
+                $emergency_stop_retry_visible = 1;
+                $emergency_stop_retry_enabled = time() >= $retry_at ? 1 : 0;
             }
         }
     } else {
@@ -888,6 +898,8 @@ $template->param(
     EMERGENCY_STOP_STATUS_TEXT => $emergency_stop_status_text,
     EMERGENCY_STOP_STATUS_KIND => $emergency_stop_status_kind,
     EMERGENCY_STOP_STATUS_VISIBLE => $emergency_stop_status_visible,
+    EMERGENCY_STOP_RETRY_VISIBLE => $emergency_stop_retry_visible,
+    EMERGENCY_STOP_RETRY_ENABLED => $emergency_stop_retry_enabled,
     EMERGENCY_STOP_RUNTIME_SIGNAL_VALUE => $runtime_signal,
     EMERGENCY_STOP_RUNTIME_UUID => $runtime_signal_uuid,
     EMERGENCY_STOP_RUNTIME_UUID_VISIBLE => $server_rendered_fallback
