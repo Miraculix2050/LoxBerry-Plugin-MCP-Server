@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Recognize documented `InfoOnlyDigital` 0/1 states as discrete for observability
+  recommendations when `is_analog` is absent; retain uncertainty for conflicting
+  metadata or values.
+
 - Extend `loxone_analyze_observability` with bounded per-state history-source
   recommendations based on observable value and control metadata. Reuse
   advertised native statistics, disclose unknown state mapping and period

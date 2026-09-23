@@ -2240,6 +2240,9 @@ def _observability_recommendation(
         and control.step > 0
         and 0 <= (control.maximum - control.minimum) / control.step <= 16
     )
+    documented_digital_state = control.control_type == "InfoOnlyDigital" and any(
+        name in {"active", "value"} and uuid == state_uuid for name, uuid in control.state_uuids
+    )
 
     limitations: list[str] = []
     native_configured = bool(control.statistic_series)
@@ -2278,14 +2281,23 @@ def _observability_recommendation(
             "Local recording configuration is unavailable; avoid recommending a duplicate source."
         )
         confidence = "low"
-    elif value_type == "numeric" and control.is_analog is True:
+    elif value_type == "numeric" and control.is_analog is True and not documented_digital_state:
         source = "native_statistics"
         strategy = "configure_native_statistics_for_diagnostic_need"
         reason = "A numeric current value and analog control metadata support sampled history."
         confidence = "high" if record.freshness is Freshness.CURRENT else "medium"
     elif (value_type == "boolean" and control.is_analog is not True) or (
         value_type == "numeric"
-        and (control.is_analog is False or (control.is_analog is None and discrete_numeric_range))
+        and (
+            (control.is_analog is False and (not documented_digital_state or value in {0, 1}))
+            or (
+                control.is_analog is None
+                and (
+                    (not documented_digital_state and discrete_numeric_range)
+                    or (documented_digital_state and value in {0, 1})
+                )
+            )
+        )
     ):
         source = "local_on_change"
         strategy = "record_on_change"

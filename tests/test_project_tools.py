@@ -294,6 +294,61 @@ def test_observability_recommendation_uses_small_numeric_range_and_unknown_cover
     assert "local_coverage_unavailable" in unavailable["limitations"]
 
 
+@pytest.mark.parametrize(
+    ("state_name", "value", "analog", "expected_source"),
+    [
+        ("active", 0.0, None, "local_on_change"),
+        ("value", 1.0, None, "local_on_change"),
+        ("active", 2.0, None, "undetermined"),
+        ("active", 1.0, True, "undetermined"),
+        ("other", 1.0, None, "undetermined"),
+    ],
+)
+def test_observability_recommendation_uses_documented_digital_state_only(
+    state_name, value, analog, expected_source
+):
+    control = Control(
+        "control",
+        "Arbitrary label",
+        "InfoOnlyDigital",
+        None,
+        None,
+        None,
+        ((state_name, "state"),),
+        is_analog=analog,
+    )
+    result = tools_module._observability_recommendation(
+        control,
+        "state",
+        StateRecord("state", value, Freshness.CURRENT, 100.0),
+        "not_configured",
+    )
+    assert result["history_source"] == expected_source
+    assert result["strategy"] == (
+        "record_on_change" if expected_source == "local_on_change" else "inspect_signal_metadata"
+    )
+    if value == 2.0:
+        ranged_control = Control(
+            "control",
+            "Arbitrary label",
+            "InfoOnlyDigital",
+            None,
+            None,
+            None,
+            ((state_name, "state"),),
+            minimum=0.0,
+            maximum=2.0,
+            step=1.0,
+        )
+        ranged = tools_module._observability_recommendation(
+            ranged_control,
+            "state",
+            StateRecord("state", value, Freshness.CURRENT, 100.0),
+            "not_configured",
+        )
+        assert ranged["history_source"] == "undetermined"
+
+
 @pytest.mark.asyncio
 async def test_observability_state_truncation_without_history_remains_missing(monkeypatch):
     control = Control(

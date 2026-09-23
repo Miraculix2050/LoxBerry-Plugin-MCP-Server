@@ -111,6 +111,9 @@ gap, never proof of non-occurrence.
 Each returned control also carries bounded, per-state `recommendations` for
 incomplete local coverage. They classify from the observed value and explicit
 control metadata, never from names; ambiguous behavior remains `undetermined`.
+The documented `InfoOnlyDigital` `active`/`value` state is treated as discrete
+only when its observed numeric value is exactly 0 or 1 and no analog flag
+contradicts it; other state keys or values remain unclassified.
 Advertised native series are control-level evidence only, so recommendations
 favor reuse but mark state mapping and period coverage unverified. Existing
 partial local recording is continued when no native series is advertised.

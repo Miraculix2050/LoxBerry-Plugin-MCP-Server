@@ -244,7 +244,10 @@ cause; `temporal_coverage: not_checked` means statistics were not retrieved;
 `control_metadata_truncated` marks omitted control-name and type text; and
 `not_recorded` or `partial_coverage` never proves that a state did not occur.
 The per-state `recommendations` explain how to close incomplete history gaps.
-They use observable value and control metadata, not signal names. A configured
+They use observable value and control metadata, not signal names. An
+`InfoOnlyDigital` state with documented `active`/`value` key and observed 0/1
+value can support on-change recording without an `is_analog` flag; conflicting
+metadata or values remain uncertain. A configured
 native series belongs to the control; verify its state mapping and requested
 period before claiming coverage. A partial local recording needs more capture
 time; a configured native series takes precedence without creating a duplicate

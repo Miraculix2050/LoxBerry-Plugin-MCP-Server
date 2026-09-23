@@ -56,8 +56,11 @@ Bytes begrenzt; ausgelassenen Text markiert `state_names_truncated`. Control-Nam
 haben dieselbe Begrenzung; ausgelassenen Text markiert `control_metadata_truncated`.
 Für jeden State ohne vollständige lokale Abdeckung empfiehlt `recommendations`
 anhand beobachtbarer Werte und Control-Metadaten native Statistik, lokale
-Aufzeichnung bei Änderung oder `undetermined`. Vorhandene native Serien haben
-Vorrang; ihre Zuordnung zu einem bestimmten State und ihre zeitliche Abdeckung
+Aufzeichnung bei Änderung oder `undetermined`.
+Für `InfoOnlyDigital` mit dokumentiertem State-Schlüssel `active` oder `value`
+und beobachtetem Wert 0/1 kann eine Aufzeichnung bei Änderung auch ohne
+`is_analog` empfohlen werden. Vorhandene native Serien haben Vorrang; ihre
+Zuordnung zu einem bestimmten State und ihre zeitliche Abdeckung
 müssen geprüft werden. Teilweise lokale Aufzeichnung ist eine Abdeckungslücke,
 kein Anlass für eine zweite Quelle. Ohne Nachweis der Signaldynamik nennt die
 Intervall-Empfehlung keine festen Minutenwerte. Das Tool ändert keine
