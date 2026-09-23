@@ -370,6 +370,26 @@ def test_event_history_enablement_is_preserved_in_server_rendered_fallback() -> 
     ) in template
 
 
+def test_server_rendered_emergency_stop_status_is_terminal_after_discovery() -> None:
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+
+    assert "if (@$emergency_stop_options) {" in cgi
+    assert "$emergency_stop_status_visible = 0;" in cgi
+    assert "EMERGENCY_STOP_NO_OPTIONS" in cgi
+    assert "EMERGENCY_STOP_NOT_CONFIGURED" in cgi
+    assert "$options_data->{failure_text}" in cgi
+    assert "EMERGENCY_STOP_STATUS_TEXT => $emergency_stop_status_text" in cgi
+    assert "EMERGENCY_STOP_STATUS_KIND => $emergency_stop_status_kind" in cgi
+    assert "EMERGENCY_STOP_STATUS_VISIBLE => $emergency_stop_status_visible" in cgi
+    assert (
+        'id="emergency-stop-status" class="mcp-status" '
+        'data-kind="<TMPL_VAR EMERGENCY_STOP_STATUS_KIND ESCAPE=HTML>" '
+        "<TMPL_UNLESS EMERGENCY_STOP_STATUS_VISIBLE>hidden</TMPL_UNLESS>"
+    ) in template
+    assert "<TMPL_VAR EMERGENCY_STOP_STATUS_TEXT ESCAPE=HTML>" in template
+
+
 def test_admin_cards_use_consistent_vertical_spacing() -> None:
     template = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
     explorer = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")

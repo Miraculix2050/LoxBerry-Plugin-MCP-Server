@@ -630,6 +630,9 @@ my $loxberry_bindings = [];
 my $loxberry_operate_bindings = [];
 my $emergency_stop_options = [];
 my $selected_emergency_stop_unavailable = 0;
+my $emergency_stop_status_text = $L{'SETUP.EMERGENCY_STOP_LOADING'};
+my $emergency_stop_status_kind = 'info';
+my $emergency_stop_status_visible = 1;
 my $fallback_configuration_loaded = 0;
 my $notifications_html = '';
 my $loglist_html = '';
@@ -676,8 +679,9 @@ $config->{emergency_stop} = {} if ref($config->{emergency_stop}) ne 'HASH';
 my $selected_emergency_stop = $config->{emergency_stop}{virtual_status_uuid} // '';
 if ($server_rendered_fallback) {
     my $options_result = admin_call('emergency_stop_options', {});
-    my $options = ref($options_result->{data}) eq 'HASH'
-        ? $options_result->{data}{options} : undef;
+    my $options_data = ref($options_result->{data}) eq 'HASH'
+        ? $options_result->{data} : {};
+    my $options = $options_data->{options};
     if ($options_result->{ok} && ref($options) eq 'ARRAY') {
         for my $option (@$options) {
             next if ref($option) ne 'HASH';
@@ -692,6 +696,30 @@ if ($server_rendered_fallback) {
         }
         $selected_emergency_stop_unavailable = $selected_emergency_stop ne ''
             && !grep { $_->{selected} } @$emergency_stop_options;
+        my $status = $options_data->{status} // '';
+        if ($status eq 'available') {
+            if (@$emergency_stop_options) {
+                $emergency_stop_status_visible = 0;
+            } else {
+                $emergency_stop_status_text = $L{'SETUP.EMERGENCY_STOP_NO_OPTIONS'};
+            }
+        } elsif ($status eq 'not_configured') {
+            $emergency_stop_status_text = $L{'SETUP.EMERGENCY_STOP_NOT_CONFIGURED'};
+            $emergency_stop_status_kind = 'error';
+        } else {
+            $emergency_stop_status_text = $options_data->{failure_text}
+                // $L{'SETUP.EMERGENCY_STOP_LOAD_ERROR'};
+            $emergency_stop_status_kind = 'error';
+            my $retry_at = $options_data->{retry_not_before};
+            if ($status eq 'unavailable' && defined($retry_at)
+                && "$retry_at" =~ /\A[0-9]{1,10}\z/
+                && $retry_at <= MAX_EXPIRY_EPOCH) {
+                $emergency_stop_status_text .= ' ' . format_expiry($retry_at);
+            }
+        }
+    } else {
+        $emergency_stop_status_text = $L{'SETUP.EMERGENCY_STOP_LOAD_ERROR'};
+        $emergency_stop_status_kind = 'error';
     }
 }
 my $miniservers = configured_miniservers($config->{loxone}{endpoint} // '');
@@ -857,6 +885,9 @@ $template->param(
     SELECTED_EMERGENCY_STOP => $selected_emergency_stop,
     EMERGENCY_STOP_OPTIONS => $emergency_stop_options,
     EMERGENCY_STOP_SELECTED_UNAVAILABLE => $selected_emergency_stop_unavailable,
+    EMERGENCY_STOP_STATUS_TEXT => $emergency_stop_status_text,
+    EMERGENCY_STOP_STATUS_KIND => $emergency_stop_status_kind,
+    EMERGENCY_STOP_STATUS_VISIBLE => $emergency_stop_status_visible,
     EMERGENCY_STOP_RUNTIME_SIGNAL_VALUE => $runtime_signal,
     EMERGENCY_STOP_RUNTIME_UUID => $runtime_signal_uuid,
     EMERGENCY_STOP_RUNTIME_UUID_VISIBLE => $server_rendered_fallback
