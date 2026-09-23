@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+from threading import Thread
 
+from mcpserver.auth.provider import Phase0OAuthProvider
 from mcpserver.auth.store import AtomicJsonAuthStore
 from mcpserver.config import AtomicConfigStore, PluginConfig
 from mcpserver.explorer_bindings import (
@@ -211,3 +213,34 @@ def test_expired_family_records_revocation_before_auth_cleanup(tmp_path: Path) -
     assert approval.inactive_since == 110
     assert maintain_explorer_bindings(config_store, auth_store, now=3_710) == 1
     assert config_store.load().explorer_bindings == ()
+
+
+def test_expired_explorer_cleanup_releases_auth_lock_before_binding_update(tmp_path: Path) -> None:
+    config_store, auth_store = stores(tmp_path)
+    expired = family()
+    record_explorer_approval(config_store, auth_store, "loxberry:read", expired, now=100)
+    auth_store.mutate(lambda document: document["families"].update({"expired": expired}))
+    errors: list[BaseException] = []
+
+    def start_provider() -> None:
+        try:
+            Phase0OAuthProvider(
+                auth_store,
+                issuer="https://public.example/plugins/mcpserver/oauth",
+                resource="https://public.example/plugins/mcpserver/mcp",
+                clock=lambda: 300,
+                on_family_expired=lambda ended: record_explorer_family_end(
+                    config_store, auth_store, ended
+                ),
+            )
+        except BaseException as exc:
+            errors.append(exc)
+
+    worker = Thread(target=start_provider, daemon=True)
+    worker.start()
+    worker.join(timeout=5)
+
+    assert not worker.is_alive(), "Explorer cleanup must not reacquire a held auth-store lock"
+    assert not errors
+    assert auth_store.snapshot()["families"] == {}
+    assert config_store.load().explorer_bindings[0].inactive_since == 200

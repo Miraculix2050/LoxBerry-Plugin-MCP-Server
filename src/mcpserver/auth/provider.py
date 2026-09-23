@@ -6,7 +6,7 @@ import logging
 import secrets
 import time
 from collections.abc import Callable
-from typing import Any, Final
+from typing import Any, Final, TypeVar
 from urllib.parse import parse_qs, urlsplit
 
 from mcp.server.auth.provider import (
@@ -52,6 +52,7 @@ _MAX_FAMILIES_PER_CLIENT: Final = 16
 # sustained unauthenticated registration flood cannot consume all 256 slots.
 # A client becomes durable once it is referenced by an authorization flow.
 _UNUSED_CLIENT_TTL: Final = 60 * 60
+_Result = TypeVar("_Result")
 
 
 class StoredAuthorizationCode(AuthorizationCode):
@@ -170,7 +171,7 @@ class Phase0OAuthProvider(
         self._explorer_loxberry_operate_allowed = explorer_loxberry_operate_allowed
         canonical_origin = issuer.rsplit("/plugins/mcpserver/oauth", 1)[0]
         self.explorer_origins = frozenset((canonical_origin, *explorer_origins))
-        self.store.mutate(self._garbage_collect)
+        self._mutate_with_cleanup(lambda document: None)
 
     def now(self) -> int:
         return int(self._clock())
@@ -216,10 +217,9 @@ class Phase0OAuthProvider(
 
         def load(document: dict[str, Any]) -> None:
             nonlocal record
-            self._garbage_collect(document)
             record = document["clients"].get(client_id)
 
-        self.store.mutate(load)
+        self._mutate_with_cleanup(load)
         return OAuthClientInformationFull.model_validate(record) if record is not None else None
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
@@ -251,7 +251,6 @@ class Phase0OAuthProvider(
         record["scope"] = scope_text(list(scopes))
 
         def insert(document: dict[str, Any]) -> None:
-            self._garbage_collect(document)
             if client_info.client_id in document["clients"]:
                 raise RegistrationError(
                     "invalid_client_metadata", "Client identifier already exists"
@@ -262,12 +261,34 @@ class Phase0OAuthProvider(
                 )
             document["clients"][client_info.client_id] = record
 
-        self.store.mutate(insert)
+        self._mutate_with_cleanup(insert)
+
+    def _mutate_with_cleanup(
+        self,
+        operation: Callable[[dict[str, Any]], _Result],
+        *,
+        preserve_client_ids: frozenset[str] = frozenset(),
+    ) -> _Result:
+        expired: list[dict[str, Any]] = []
+
+        def apply(document: dict[str, Any]) -> _Result:
+            expired.extend(self._garbage_collect(document, preserve_client_ids=preserve_client_ids))
+            return operation(document)
+
+        try:
+            return self.store.mutate(apply)
+        finally:
+            # The callback may read the auth store to derive Explorer binding IDs.
+            # Run it only after mutate has released the store's file lock.
+            if self._on_family_expired is not None:
+                for family in expired:
+                    self._on_family_expired(family)
 
     def _garbage_collect(
         self, document: dict[str, Any], *, preserve_client_ids: frozenset[str] = frozenset()
-    ) -> None:
+    ) -> list[dict[str, Any]]:
         now = self.now()
+        expired: list[dict[str, Any]] = []
         for family in document["families"].values():
             client = document["clients"].get(family.get("client_id"), {})
             if family.get("client_kind") == "tool_explorer" or self._is_explorer_client(client):
@@ -285,8 +306,8 @@ class Phase0OAuthProvider(
         }
         for family_id in expired_families:
             family = document["families"].get(family_id)
-            if isinstance(family, dict) and self._on_family_expired is not None:
-                self._on_family_expired(dict(family))
+            if isinstance(family, dict):
+                expired.append(dict(family))
             document["families"].pop(family_id, None)
             if self._on_family_revoked is not None:
                 self._on_family_revoked(family_id)
@@ -318,6 +339,7 @@ class Phase0OAuthProvider(
             or client_id in preserve_client_ids
             or int(record.get("client_id_issued_at", now)) + _UNUSED_CLIENT_TTL > now
         }
+        return expired
 
     def _is_explorer_client(self, client: dict[str, Any]) -> bool:
         redirects = client.get("redirect_uris")
@@ -417,7 +439,6 @@ class Phase0OAuthProvider(
             # The browser validated this client at authorization start. Preserve
             # it through the short consent flow even if its unused-registration
             # lifetime elapses before the authorization code is committed.
-            self._garbage_collect(document, preserve_client_ids=frozenset({client_id}))
             client_record = document["clients"].get(client_id)
             if client_record is None:
                 raise TokenError("invalid_client", "Client registration is unavailable")
@@ -450,7 +471,7 @@ class Phase0OAuthProvider(
                 **({"explorer_origin": explorer_origin} if explorer_origin is not None else {}),
             }
 
-        self.store.mutate(insert)
+        self._mutate_with_cleanup(insert, preserve_client_ids=frozenset({client_id}))
         if self._on_family_started is not None:
             family = self.store.snapshot()["families"].get(family_id)
             if isinstance(family, dict):
@@ -541,7 +562,6 @@ class Phase0OAuthProvider(
 
         def exchange(document: dict[str, Any]) -> None:
             nonlocal access_expires_at, raw_access, raw_refresh
-            self._garbage_collect(document)
             digest = token_digest(authorization_code.code)
             record = document["codes"].get(digest)
             if (
@@ -568,7 +588,7 @@ class Phase0OAuthProvider(
             document["refresh_tokens"][token_digest(raw_refresh)] = refresh
             access_expires_at = access["expires_at"]
 
-        self.store.mutate(exchange)
+        self._mutate_with_cleanup(exchange)
         return OAuthToken(
             access_token=raw_access,
             token_type="Bearer",
@@ -616,7 +636,6 @@ class Phase0OAuthProvider(
 
         def load(document: dict[str, Any]) -> None:
             nonlocal result
-            self._garbage_collect(document)
             record = document["refresh_tokens"].get(token_digest(refresh_token))
             if record is None or record.get("client_id") != client.client_id:
                 return
@@ -634,7 +653,7 @@ class Phase0OAuthProvider(
                 return
             result = self._refresh_model(refresh_token, record)
 
-        self.store.mutate(load)
+        self._mutate_with_cleanup(load)
         return result
 
     async def exchange_refresh_token(
@@ -652,7 +671,6 @@ class Phase0OAuthProvider(
 
         def exchange(document: dict[str, Any]) -> None:
             nonlocal access_expires_at, failure, raw_access, raw_refresh
-            self._garbage_collect(document)
             record = document["refresh_tokens"].get(token_digest(refresh_token.token))
             if record is None or record.get("client_id") != client.client_id:
                 failure = "Refresh token is invalid"
@@ -679,7 +697,7 @@ class Phase0OAuthProvider(
             document["refresh_tokens"][token_digest(raw_refresh)] = refresh
             access_expires_at = access["expires_at"]
 
-        self.store.mutate(exchange)
+        self._mutate_with_cleanup(exchange)
         if failure is not None:
             raise TokenError("invalid_grant", failure)
         return OAuthToken(
@@ -695,10 +713,9 @@ class Phase0OAuthProvider(
 
         def load(current: dict[str, Any]) -> None:
             nonlocal document
-            self._garbage_collect(current)
             document = current
 
-        self.store.mutate(load)
+        self._mutate_with_cleanup(load)
         record = document["access_tokens"].get(token_digest(token))
         if record is None or record.get("status") != "active" or record["expires_at"] <= self.now():
             return None
