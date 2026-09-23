@@ -4,7 +4,6 @@ import hashlib
 from collections import defaultdict, deque
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from types import MappingProxyType
 
 from .decoder import decode_loxcc
 from .models import DEFAULT_LIMITS, ProjectBundle, ProjectError, ProjectLimits
@@ -508,8 +507,11 @@ def build_snapshot(
         )
     graph = ProjectGraph(tuple(nodes), tuple(edges), tuple(unresolved), tuple(semantic_edges))
     logical_aliases, logical_source_ids = _logical_knx_nodes(graph)
-    alias_lookup = MappingProxyType(dict(logical_aliases))
-    source_lookup = MappingProxyType(dict(logical_source_ids))
+    # These private dicts are constructed once with the immutable snapshot and
+    # never exposed to callers. They must remain pickle-compatible because the
+    # isolated project worker returns snapshots over its local IPC boundary.
+    alias_lookup = dict(logical_aliases)
+    source_lookup = dict(logical_source_ids)
     logical_nodes = tuple(
         node for node in graph.nodes if alias_lookup.get(node.key, node.key) == node.key
     )
