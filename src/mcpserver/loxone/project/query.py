@@ -120,8 +120,7 @@ class ProjectQuery:
         return observations, truncated
 
     def _summary(self, node: GraphNode) -> dict[str, object]:
-        node = self._nodes[self.view.snapshot.canonical_node_key(node.key)]
-        mapping = self._mapped_nodes.get(node.key, [])
+        mapping = self._mapped_nodes.get(self.view.snapshot.canonical_node_key(node.key), [])
         exact = [item for item in mapping if item.status == "exact"]
         runtime_control = exact[0] if len(exact) == 1 else None
         connector_key = next((value for key, value in node.attributes if key == "K"), None)
@@ -431,7 +430,7 @@ class ProjectQuery:
 
     def resolve(self, identifier: str, identifier_type: str) -> GraphNode:
         if identifier_type == "project_node_id":
-            node = self._nodes.get(self.view.snapshot.canonical_node_key(identifier))
+            node = self._nodes.get(identifier)
             if node is None:
                 raise ProjectQueryError("project_node_unknown")
             return node
@@ -763,7 +762,9 @@ class ProjectQuery:
                 node_key = item.get("project_node_id")
                 if not isinstance(node_key, str):
                     continue
-                for mapping in self._mapped_nodes.get(node_key, ()):
+                for mapping in self._mapped_nodes.get(
+                    self.view.snapshot.canonical_node_key(node_key), ()
+                ):
                     if mapping.status != "exact":
                         continue
                     control_uuid = mapping.control_uuid

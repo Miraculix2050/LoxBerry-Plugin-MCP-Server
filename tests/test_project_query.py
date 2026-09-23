@@ -107,6 +107,34 @@ def test_find_projects_logical_knx_objects_with_source_provenance():
     ]
 
 
+def test_describe_preserves_a_raw_occurrence_id_for_its_diagnostics():
+    first = parse_project(b'<P><C Type="EIBactor" U="actor" EibAddr="1/2/3"/></P>')
+    second = parse_project(
+        b'<P><C Type="EIBactor" U="actor" EibAddr="1/2/3" Extra="source-only"/></P>'
+    )
+    graph = build_graph((("one", first), ("two", second)))
+    aliases, source_ids = _logical_knx_nodes(graph)
+    snapshot = ProjectSnapshot(
+        "project",
+        5,
+        (ProjectPartSummary("one", 2, ()), ProjectPartSummary("two", 2, ())),
+        graph,
+        logical_aliases=aliases,
+        logical_source_ids=source_ids,
+    )
+    project = ProjectQuery(
+        ProjectView(
+            snapshot, map_runtime(snapshot, SimpleNamespace(last_modified="v", controls=()))
+        ),
+        {},
+    )
+
+    described = project.describe(project.resolve("two:1", "project_node_id"), limit=10)
+
+    assert described["project_node_id"] == "two:1"
+    assert "unmodeled_knx_attribute" in {item["code"] for item in described["source_diagnostics"]}
+
+
 def test_observable_controls_keep_only_exact_runtime_mappings():
     project = query()
 
