@@ -15,6 +15,10 @@ Ein Sitzungswiderruf sperrt den MCP-Zugriff sofort. Die anschließende Loxone-To
 Wenn die Notaus-Optionen wegen einer Miniserver-Anmeldesperre nicht geladen werden, zeigt die Oberfläche den frühesten erneuten Versuch an. **Erneut versuchen** wird danach freigeschaltet und führt höchstens einen koordinierten Anmeldeversuch aus. Der gespeicherte Notaus-Wert bleibt bei jedem Ladefehler erhalten.
 Ist lediglich eine andere Anmeldung im Gange, erscheint stattdessen ein kurzer Wiederholungszeitpunkt. Auch die servergerenderte Fallback-Ansicht zeigt aggregierte Bereinigungswarnungen.
 
+## Diagnose und Logs
+
+Das Service-Log bleibt unter **Diagnose und Logs** direkt erreichbar. Der LoxBerry LogManager zeigt native Plugin-Logs erst, wenn ein tatsächliches Admin-Ereignis protokolliert und registriert wurde. Die Admin-Seite unterscheidet einen leeren LogManager-Eintrag von einem nicht erreichbaren LogManager und einem fehlgeschlagenen Nachladeaufruf. Das Öffnen der Logliste erzeugt keinen Logeintrag.
+
 ## Tool Explorer
 
 Der [MCP Tool Explorer](https://loxberry/admin/plugins/mcpserver/explorer.cgi) ist ein lokaler administrativer Testclient. Er meldet sich mit einem Loxone-Benutzer an und erhält keine Rechte aus der LoxBerry-Admin-Sitzung. Ersetze `loxberry` im Link bei Bedarf durch den Hostnamen deiner Installation. Ändernde Aufrufe verlangen vor dem Senden eine Bestätigung.

@@ -101,8 +101,52 @@ def test_admin_responses_emit_no_store_and_frame_protection(tmp_path: Path) -> N
     assert '"ok":true' in loglist.stdout
     assert '"loglist_html"' in loglist.stdout
     assert '"notifications_html"' not in loglist.stdout
-    assert "No native plugin logs are available yet." in loglist.stdout
+    assert "No LogManager entry is registered for this plugin." in loglist.stdout
     assert 'role=\\"status\\"' in loglist.stdout
+
+    empty_shell = subprocess.run(
+        common,
+        check=True,
+        capture_output=True,
+        text=True,
+        input=loglist_request,
+        env={
+            **ajax_environment,
+            "CONTENT_LENGTH": str(len(loglist_request)),
+            "LB_TEST_LOGLIST_HTML": "<style>.native { display: block }</style>",
+        },
+    )
+    assert "No LogManager entry is registered for this plugin." in empty_shell.stdout
+
+    localized_empty = subprocess.run(
+        common,
+        check=True,
+        capture_output=True,
+        text=True,
+        input=loglist_request,
+        env={
+            **ajax_environment,
+            "CONTENT_LENGTH": str(len(loglist_request)),
+            "LB_TEST_LOG_TEXT_BYTES": "1",
+        },
+    )
+    assert "Keine Logeintr&#xE4;ge." in localized_empty.stdout
+    assert "&#xC3;&#xA4;" not in localized_empty.stdout
+
+    unavailable_loglist = subprocess.run(
+        common,
+        check=True,
+        capture_output=True,
+        text=True,
+        input=loglist_request,
+        env={
+            **ajax_environment,
+            "CONTENT_LENGTH": str(len(loglist_request)),
+            "LB_TEST_LOGLIST_UNAVAILABLE": "1",
+        },
+    )
+    assert "The LogManager is unavailable." in unavailable_loglist.stdout
+    assert "No LogManager entry is registered" not in unavailable_loglist.stdout
 
     populated_loglist = subprocess.run(
         common,
@@ -113,12 +157,15 @@ def test_admin_responses_emit_no_store_and_frame_protection(tmp_path: Path) -> N
         env={
             **ajax_environment,
             "CONTENT_LENGTH": str(len(loglist_request)),
-            "LB_TEST_LOGLIST_HTML": '<ul id="native-log"><li>admin-ui</li></ul>',
+            "LB_TEST_LOGLIST_HTML": (
+                '<ul id="native-log"><li><a href="/admin/system/logfile.cgi?log=1">'
+                "admin-ui</a></li></ul>"
+            ),
         },
     )
     assert "native-log" in populated_loglist.stdout
     assert "admin-ui" in populated_loglist.stdout
-    assert "No native plugin logs are available yet." not in populated_loglist.stdout
+    assert "No LogManager entry is registered" not in populated_loglist.stdout
 
 
 def test_admin_ajax_localized_messages_are_utf8(tmp_path: Path) -> None:
@@ -803,6 +850,8 @@ def test_read_only_ajax_polling_does_not_create_admin_log_files() -> None:
     assert "nosession => 1" not in cgi
     assert "LoxBerry::System::pluginloglevel($lbpplugindir)" in cgi
     assert "name => 'admin-ui'" in cgi
+    assert "$admin_log->LOGSTART('Admin UI event') if $admin_log;" in cgi
+    assert "$admin_log->LOGEND('Admin UI request finished') if $admin_log;" in cgi
     assert "ADMIN_LOG_MESSAGE_BYTES => 8 * 1024" in cgi
     assert "LOGSTART('Administrative action')" not in cgi
     assert "LOGEND('Administrative action finished')" not in cgi
@@ -821,11 +870,51 @@ def test_empty_native_log_list_has_localized_accessible_status() -> None:
     german = (ROOT / "templates/lang/language_de.ini").read_text(encoding="utf-8")
     english = (ROOT / "templates/lang/language_en.ini").read_text(encoding="utf-8")
 
-    assert "return $html if $html =~ /\\S/;" in cgi
-    assert '<p class="mcp-status" role="status">%s</p>' in cgi
-    assert "LOGLIST_EMPTY=Es sind noch keine nativen Plugin-Logs verfügbar." in german
-    assert "LOGLIST_EMPTY=No native plugin logs are available yet." in english
+    assert "return $html if defined($html) && $html =~ /logfile\\.cgi\\?/;" in cgi
+    assert '<p class="mcp-status" data-kind="%s" role="status">%s</p>' in cgi
+    assert "LOGLIST_EMPTY=Der LoxBerry LogManager hat derzeit keinen Logeintrag" in german
+    assert "LOGLIST_EMPTY=The LoxBerry LogManager currently has no log entry" in english
+    assert "LOGLIST_UNAVAILABLE=Der LoxBerry LogManager ist derzeit nicht erreichbar." in german
+    assert "LOGLIST_UNAVAILABLE=The LoxBerry LogManager is currently unavailable." in english
+    assert "LOGLIST_ERROR=Die Plugin-Logliste konnte nicht geladen werden." in german
+    assert "LOGLIST_ERROR=The plugin log list could not be loaded." in english
     assert 'id="plugin-log-list" aria-busy="true" aria-live="polite"' in template
+
+
+def test_admin_logmanager_registration_requires_an_actual_event(tmp_path: Path) -> None:
+    perl = shutil.which("perl")
+    if perl is None or os.name == "nt":
+        return
+    environment = _admin_cgi_environment(tmp_path)
+    marker = tmp_path / "log-events.txt"
+    environment["LB_TEST_LOG_EVENTS_PATH"] = str(marker)
+    cgi = ROOT / "webfrontend" / "htmlauth" / "index.cgi"
+
+    def request(action: str) -> None:
+        body = f"action={action}&ajax=1"
+        subprocess.run(
+            [perl, f"-I{ROOT / 'tests' / 'perl_stubs'}", str(cgi)],
+            check=True,
+            capture_output=True,
+            text=True,
+            input=body,
+            env={
+                **environment,
+                "REQUEST_METHOD": "POST",
+                "CONTENT_TYPE": "application/x-www-form-urlencoded",
+                "CONTENT_LENGTH": str(len(body)),
+                "HTTP_ORIGIN": "https://loxberry.example",
+                "HTTP_HOST": "loxberry.example",
+            },
+        )
+
+    request("page_loglist")
+    assert not marker.exists()
+    (tmp_path / "mcpserver-admin").write_text(
+        "#!/usr/bin/env perl\nmy $request = <STDIN>;\n", encoding="utf-8"
+    )
+    request("status")
+    assert marker.read_text(encoding="utf-8").splitlines() == ["start", "error", "end"]
 
 
 def test_diagnostics_offer_dedicated_persistent_service_logging_controls() -> None:

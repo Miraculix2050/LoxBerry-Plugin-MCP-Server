@@ -15,6 +15,10 @@ Session revocation blocks MCP access immediately. Loxone token cleanup then runs
 If a Miniserver sign-in block prevents emergency-stop options from loading, the page shows the earliest retry time. **Try again** becomes available afterward and makes at most one coordinated sign-in attempt. Loading errors preserve the saved emergency-stop selection.
 If another sign-in is merely in progress, the page instead shows a short retry time. The server-rendered fallback also displays aggregate cleanup warnings.
 
+## Diagnostics and logs
+
+The service log remains directly available under **Diagnostics and logs**. The LoxBerry LogManager lists native plugin logs after an actual Admin event has been recorded and registered. The Admin page distinguishes an empty LogManager list from an unavailable LogManager and a failed refresh request. Opening the log list does not create a log entry.
+
 ## Tool Explorer
 
 The [MCP Tool Explorer](https://loxberry/admin/plugins/mcpserver/explorer.cgi) is a local administrative test client. It signs in with a Loxone user and receives no rights from the LoxBerry admin session. Replace `loxberry` in the link with your installation's hostname when necessary. Mutating calls require confirmation before sending.

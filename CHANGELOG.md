@@ -11,6 +11,9 @@ extracted from the matching version heading.
 - Correct UTF-8 encoding of localized Admin AJAX error messages, including
   emergency-stop option loading warnings.
 
+- Register actual Admin UI events with the native LoxBerry LogManager and show
+  distinct empty-list and unavailable-service messages without logging on reads.
+
 - Stack client sessions and LoxBerry approval bindings before their columns
   become cramped on narrow screens; show Loxone permission details as stacked
   records at intermediate widths. Keep a deliberately closed Admin section
