@@ -360,6 +360,17 @@ class EncryptedLoxoneTokenStore:
             min(scheduled) if scheduled else None,
         )
 
+    def pending_terminal_receipts(self) -> set[str]:
+        """Return opaque receipts that still need token-store removal."""
+        with self._locked():
+            records = self._read()["tokens"].values()
+            return {
+                receipt
+                for record in records
+                if isinstance(record, dict) and record.get("remote_revoke_pending") is True
+                if isinstance(receipt := record.get("remote_revoke_terminal_receipt"), str)
+            }
+
     def reserve_remote_revoke_attempt(self, family_id: str, retry_after: int) -> int:
         """Persist one attempt and cooldown before it can use the network."""
         with self._locked():

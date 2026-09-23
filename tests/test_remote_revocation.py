@@ -115,6 +115,43 @@ def test_terminal_record_is_idempotent_if_token_deletion_fails_once(
     assert value["totals"]["expired_without_confirmation"] == 1
     assert len(value["tombstones"]) == (0 if retry_delay else 1)
     assert store.remote_revocation_counts(clock[0])[0] == 0
+    asyncio.run(process_remote_revocations(_ENDPOINT, store, 1))
+    assert RemoteRevocationState(store.path).read()["acknowledged_receipts"] == []
+
+
+def test_unacknowledged_terminal_marker_is_recorded_after_display_expiry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = _store(tmp_path)
+    now = 2_000_000_000
+    store.put(
+        "family",
+        "miniserver",
+        "identity",
+        LoxoneToken("jwt", "user", "key", "SHA256", now - _EPOCH - 1),
+    )
+    store.schedule_remote_revoke("family")
+    original_write = RemoteRevocationState.write
+    writes = 0
+
+    def flaky_write(self: RemoteRevocationState, value: dict[str, object]) -> None:
+        nonlocal writes
+        writes += 1
+        if writes == 1:
+            raise RemoteRevocationStateError("disk unavailable")
+        original_write(self, value)
+
+    clock = [now]
+    monkeypatch.setattr(RemoteRevocationState, "write", flaky_write)
+    monkeypatch.setattr("mcpserver.auth.remote_revocation.time.time", lambda: clock[0])
+    asyncio.run(process_remote_revocations(_ENDPOINT, store, 1))
+    assert store.remote_revocation_counts(now)[0] == 1
+    clock[0] += 86_401
+    asyncio.run(process_remote_revocations(_ENDPOINT, store, 1))
+    value = RemoteRevocationState(store.path).read()
+    assert value["totals"]["expired_without_confirmation"] == 1
+    assert value["tombstones"] == []
+    assert store.remote_revocation_counts(clock[0])[0] == 0
 
 
 def test_new_and_staggered_items_cannot_bypass_queue_cooldown(

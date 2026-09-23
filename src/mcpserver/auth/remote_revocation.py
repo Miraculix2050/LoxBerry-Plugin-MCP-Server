@@ -69,10 +69,15 @@ class RemoteRevocationState:
             "last_failure_at": None,
             "totals": {outcome: 0 for outcome in _OUTCOMES},
             "tombstones": [],
+            "acknowledged_receipts": [],
         }
 
     @staticmethod
     def _validate(value: object) -> dict[str, Any]:
+        if isinstance(value, dict) and set(value) == set(RemoteRevocationState._empty()) - {
+            "acknowledged_receipts"
+        }:
+            value["acknowledged_receipts"] = []
         if not isinstance(value, dict) or set(value) != set(RemoteRevocationState._empty()):
             raise RemoteRevocationStateError("cleanup status is invalid")
         if (
@@ -104,6 +109,14 @@ class RemoteRevocationState:
         ):
             raise RemoteRevocationStateError("cleanup status is invalid")
         if not isinstance(tombstones, list) or len(tombstones) > 10_000:
+            raise RemoteRevocationStateError("cleanup status is invalid")
+        receipts = value["acknowledged_receipts"]
+        if (
+            not isinstance(receipts, list)
+            or len(receipts) > 10_000
+            or any(not isinstance(receipt, str) or len(receipt) != 32 for receipt in receipts)
+            or len(receipts) != len(set(receipts))
+        ):
             raise RemoteRevocationStateError("cleanup status is invalid")
         for item in tombstones:
             if (
@@ -191,18 +204,15 @@ def _terminal(
     outcome, receipt, expires_at = store.mark_remote_revoke_terminal(family_id, outcome, expires_at)
     if outcome not in _OUTCOMES:
         raise RemoteRevocationStateError("remote revoke outcome is invalid")
-    if expires_at <= now:
-        # A persisted terminal marker can outlive its display tombstone when
-        # token deletion fails; never count or publish it a second time.
-        store.complete_remote_revoke(family_id)
-        return
-    if not any(item.get("receipt") == receipt for item in value["tombstones"]):
+    if receipt not in value["acknowledged_receipts"]:
         value["tombstones"] = [item for item in value["tombstones"] if item["expires_at"] > now][
             -9999:
         ]
-        value["tombstones"].append(
-            {"outcome": outcome, "expires_at": expires_at, "receipt": receipt}
-        )
+        if expires_at > now:
+            value["tombstones"].append(
+                {"outcome": outcome, "expires_at": expires_at, "receipt": receipt}
+            )
+        value["acknowledged_receipts"].append(receipt)
         value["totals"][outcome] += 1
         state.write(value)
     store.complete_remote_revoke(family_id)
@@ -220,8 +230,15 @@ async def process_remote_revocations(
     try:
         value = state.read()
         active_tombstones = [item for item in value["tombstones"] if item["expires_at"] > now]
-        if len(active_tombstones) != len(value["tombstones"]):
+        pending_receipts = store.pending_terminal_receipts()
+        active_receipts = [
+            receipt for receipt in value["acknowledged_receipts"] if receipt in pending_receipts
+        ]
+        if len(active_tombstones) != len(value["tombstones"]) or len(active_receipts) != len(
+            value["acknowledged_receipts"]
+        ):
             value["tombstones"] = active_tombstones
+            value["acknowledged_receipts"] = active_receipts
             state.write(value)
         if value["not_before"] > now:
             return
