@@ -50,6 +50,12 @@ kept verbatim and normalized only for validated two- or three-level forms.
 EIS or DPT meaning. Unknown attributes remain internal and are never a raw MCP
 projection. Equal group addresses do not create graph edges.
 
+When identical confirmed KNX blocks occur in distinct internal model sources,
+the public projection uses one logical object. Its normalized source identity,
+block type, and KNX projection must agree; equal titles or addresses alone never
+merge objects. The raw graph remains internal provenance, while bounded opaque
+model-source IDs and an occurrence count disclose multiplicity.
+
 ## Derived KNX signal-use evidence
 
 The graph keeps raw `signal` and `reference` edges separate from reviewed,
@@ -68,7 +74,7 @@ reachability, not a physical device role, bus telegram, or historical cause.
 
 ## KNX project analysis
 
-`loxone_analyze_project` version 2 returns bounded, deterministic project-local
+`loxone_analyze_project` version 3 returns bounded, deterministic project-local
 evidence; it never grades a KNX installation. It aggregates canonical-address
 and source-name patterns, conflicting raw `EIBType` values on one group address,
 reviewed signal-use observations, exact runtime-mapping context, local peer and

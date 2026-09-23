@@ -26,12 +26,16 @@ Graphbeziehung und beweisen keine Kausalität. Suche und Trace liefern nur eine 
 KNX-Zusammenfassung; den Originalwert, Segmente, Namen und den DPT-Rohwert liefert gezielt
 `loxone_describe_project_object`. Projekt-Suchseiten und Traces sind zusätzlich auf 64 KiB
 begrenzt und melden eine Größenkürzung über `truncated` und `truncation_reason`.
+`project_parts` zählt intern eingelesene Modellquellen, nicht Loxone-Config-Projekte. Status
+liefert opake `model_sources`; identische KNX-Quellvorkommen aus getrennten Modellquellen werden
+einmal als logisches Objekt mit `source_occurrence_count` und `model_source_ids` dargestellt.
+Gleiche Titel oder Gruppenadressen führen nie zu einer solchen Zusammenführung.
 Wenn eine exakt geprüfte Block-/Connector-Regel vorliegt, liefert Describe zusätzlich eine oder
 mehrere getrennte KNX-Signalnutzungsbeobachtungen. Trace liefert getrennt markierte abgeleitete
 Connectorkanten sowie begrenzte Pfade `knx_to_loxone`, `loxone_to_knx` oder `knx_to_knx`.
 Unbekanntes Block- oder Connector-Verhalten wird nicht geraten. Diese Ergebnisse beschreiben
 statische Projektpfade, keine Bus-Telegramme und keine historische Ursache einer Aktion.
-`loxone_analyze_project` Version 2 fasst begrenzte, projektlokale KNX-Evidenz zusammen:
+`loxone_analyze_project` Version 3 fasst begrenzte, projektlokale KNX-Evidenz zusammen:
 Adress- und Quellnamensmuster, Wiederverwendung von Rohdatentypen, geprüfte Unterschiede der
 Signalnutzung, Kontext aus exakten Runtime-Mappings, lokale Peer- und Graph-Ausreißer,
 Pfadzähler und Endpunkte ohne beobachtete Projektbeziehung. Runtime-Namen und Control-Typen werden

@@ -638,6 +638,8 @@ class ProjectNodeSummaryData(BaseModel):
     block_type: str | None
     source_id: str | None
     connector_key: str | None
+    source_occurrence_count: int = Field(default=1, ge=1, le=32)
+    model_source_ids: list[str] = Field(default_factory=list, max_length=32)
     runtime_control: ProjectRuntimeControlData | None = None
     knx: ProjectKnxSummaryData | None = None
 
@@ -648,6 +650,8 @@ class ProjectNodeData(BaseModel):
     block_type: str | None
     source_id: str | None
     connector_key: str | None
+    source_occurrence_count: int = Field(default=1, ge=1, le=32)
+    model_source_ids: list[str] = Field(default_factory=list, max_length=32)
     runtime_control: ProjectRuntimeControlData | None = None
     knx: ProjectKnxData | None = None
     source_diagnostics: list[ProjectNodeSourceDiagnosticData] = Field(default_factory=list)
@@ -656,10 +660,16 @@ class ProjectNodeData(BaseModel):
     source_diagnostics_omitted: int = Field(default=0, ge=0)
 
 
+class ProjectModelSourceData(BaseModel):
+    model_source_id: str
+    element_count: int = Field(ge=0)
+
+
 class ProjectStatusData(BaseModel):
     project_fingerprint: str
     model_version: int
     project_parts: int
+    model_sources: list[ProjectModelSourceData] = Field(default_factory=list, max_length=32)
     nodes: int
     edges: int
     unresolved_relationships: int
@@ -751,6 +761,7 @@ class ProjectTraceEnvelope(ToolEnvelope):
 
 class ProjectAnalysisCoverageData(BaseModel):
     endpoints: int
+    endpoint_source_occurrences: int = Field(default=0, ge=0)
     canonical_group_addresses: int
     raw_datatypes: int
     reviewed_signal_usage: int

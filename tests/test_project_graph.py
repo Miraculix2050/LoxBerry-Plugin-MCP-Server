@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from mcpserver.loxone.project.graph import _source_diagnostics, build_graph
+from mcpserver.loxone.project.graph import _logical_knx_nodes, _source_diagnostics, build_graph
 from mcpserver.loxone.project.models import ProjectError
 from mcpserver.loxone.project.parser import parse_project
 
@@ -36,6 +36,24 @@ def test_duplicate_source_ids_do_not_guess_edges():
     graph = build_graph((("p", project),))
     assert not graph.edges
     assert graph.unresolved
+
+
+def test_logical_knx_nodes_merge_only_identical_cross_source_occurrences():
+    first = parse_project(
+        b'<P><C Type="EIBline" U="line"/><C Type="EIBactor" U="actor" EibAddr="1/2/3"/>'
+        b'<C Type="EIBactor" U="other" EibAddr="1/2/3"/></P>'
+    )
+    second = parse_project(
+        b'<P><C Type="EIBline" U="line"/><C Type="EIBactor" U="actor" EibAddr="1/2/3"/>'
+        b'<C Type="EIBactor" U="other" EibAddr="1/2/4"/></P>'
+    )
+
+    aliases, sources = _logical_knx_nodes(build_graph((("one", first), ("two", second))))
+
+    grouped = {key: values for key, values in sources}
+    assert len(grouped) == 2
+    assert set(grouped.values()) == {("one", "two")}
+    assert len(aliases) == 4
 
 
 def test_source_diagnostics_expose_shapes_not_unknown_values():

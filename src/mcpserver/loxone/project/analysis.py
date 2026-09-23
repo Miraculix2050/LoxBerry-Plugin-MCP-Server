@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from .graph import GraphEdge, GraphNode, SemanticEdge
 from .mapping import ProjectView, RuntimeEvidence
 
-ANALYSIS_VERSION = 2
+ANALYSIS_VERSION = 3
 ANALYSES = frozenset(
     {
         "address_patterns",
@@ -230,7 +230,7 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
     usage_budget = _UsageBudget(_MAX_USAGE_NODES)
     usage_truncated = False
     endpoints: list[_Endpoint] = []
-    for node in graph.nodes:
+    for node in view.snapshot.logical_nodes():
         knx = node.knx
         if knx is None or knx.object_kind != "endpoint" or knx.flow_direction is None:
             continue
@@ -830,6 +830,9 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
         "analyses": sorted(analyses),
         "coverage": {
             "endpoints": len(endpoints),
+            "endpoint_source_occurrences": sum(
+                len(view.snapshot.source_ids_for(endpoint.node.key)) or 1 for endpoint in endpoints
+            ),
             "canonical_group_addresses": sum(item.address is not None for item in endpoints),
             "raw_datatypes": sum(item.datatype is not None for item in endpoints),
             "reviewed_signal_usage": sum(bool(item.usage) for item in endpoints),

@@ -120,6 +120,7 @@ class ProjectQuery:
         return observations, truncated
 
     def _summary(self, node: GraphNode) -> dict[str, object]:
+        node = self._nodes[self.view.snapshot.canonical_node_key(node.key)]
         mapping = self._mapped_nodes.get(node.key, [])
         exact = [item for item in mapping if item.status == "exact"]
         runtime_control = exact[0] if len(exact) == 1 else None
@@ -131,6 +132,10 @@ class ProjectQuery:
             "block_type": node.block_type,
             "source_id": node.source_id,
             "connector_key": connector_key,
+            "source_occurrence_count": len(self.view.snapshot.source_ids_for(node.key)) or 1,
+            "model_source_ids": list(
+                self.view.snapshot.source_ids_for(node.key) or (node.project,)
+            ),
             "runtime_control": (
                 {
                     "uuid": runtime_control.control_uuid,
@@ -311,6 +316,10 @@ class ProjectQuery:
             "project_fingerprint": self.view.snapshot.fingerprint,
             "model_version": self.view.snapshot.model_version,
             "project_parts": len(self.view.snapshot.projects),
+            "model_sources": [
+                {"model_source_id": part.namespace, "element_count": part.element_count}
+                for part in self.view.snapshot.projects
+            ],
             "nodes": len(graph.nodes),
             "edges": len(graph.edges),
             "unresolved_relationships": len(graph.unresolved),
@@ -372,7 +381,7 @@ class ProjectQuery:
             candidates = None
         needle = query.casefold().strip() if query else None
         result = []
-        for node in self.view.snapshot.graph.nodes:
+        for node in self.view.snapshot.logical_nodes():
             knx = node.knx
             if candidates is not None and node.key not in candidates:
                 continue
@@ -422,7 +431,7 @@ class ProjectQuery:
 
     def resolve(self, identifier: str, identifier_type: str) -> GraphNode:
         if identifier_type == "project_node_id":
-            node = self._nodes.get(identifier)
+            node = self._nodes.get(self.view.snapshot.canonical_node_key(identifier))
             if node is None:
                 raise ProjectQueryError("project_node_unknown")
             return node
