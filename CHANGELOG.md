@@ -5,6 +5,9 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Show the idle web-certificate reissue status as "Not started" instead of
+  incorrectly reporting a failed reissue when no attempt was recorded.
+
 - Bound remote Loxone token cleanup after local OAuth revocation to five network
   attempts per token and a persisted profile-wide cooldown. Cleanup no longer
   probes an open Miniserver authentication breaker. The Admin UI shows sanitized

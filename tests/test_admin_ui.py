@@ -879,6 +879,8 @@ def test_admin_access_section_groups_connection_urls_and_certificate_controls() 
     assert 'id="mcp-url-hostname"' in access
     assert 'id="mcp-url-ip"' in access
     assert 'id="certificate-panel"' in access
+    assert 'data-state-idle="<TMPL_VAR CERTIFICATE.STATE_IDLE ESCAPE=HTML>"' in access
+    assert "idle: certificatePanel.dataset.stateIdle," in template
     assert 'data-ajax="renew_certificate"' in access
     assert 'id="explorer-link"' not in access
     assert 'id="schema-reference-link"' not in access
@@ -890,6 +892,28 @@ def test_admin_access_section_groups_connection_urls_and_certificate_controls() 
     assert '<details id="certificate"' not in template
     assert "const accessSection = document.getElementById('access');" in template
     assert "const certificatePanel = document.getElementById('certificate-panel');" in template
+
+
+def test_certificate_idle_status_does_not_use_failure_label() -> None:
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    labels = re.search(
+        r"  const certificateStateLabels = certificatePanel \? \{.*?\} : \{\};",
+        template,
+        re.DOTALL,
+    )
+    assert labels is not None
+    assert 'data-state-idle="<TMPL_VAR CERTIFICATE.STATE_IDLE ESCAPE=HTML>"' in template
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = (
+        "const assert = require('node:assert/strict');\n"
+        "const certificatePanel = {dataset: {stateIdle: 'Not started', "
+        "stateError: 'Reissue failed'}};\n"
+        + labels.group(0)
+        + "\nassert.equal(certificateStateLabels.idle, 'Not started');\n"
+        "assert.notEqual(certificateStateLabels.idle, certificateStateLabels.error);\n"
+    )
+    subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
 
 
 def test_permission_policy_uses_grouped_scope_labeled_checkboxes() -> None:

@@ -179,6 +179,7 @@
       </div>
       <p class="mcp-help"><TMPL_VAR ACCESS.MCP_CERTIFICATE_HINT></p>
       <section id="certificate-panel" aria-labelledby="certificate-heading" aria-busy="true"
+        data-state-idle="<TMPL_VAR CERTIFICATE.STATE_IDLE ESCAPE=HTML>"
         data-state-scheduled="<TMPL_VAR CERTIFICATE.STATE_SCHEDULED ESCAPE=HTML>"
         data-state-running="<TMPL_VAR CERTIFICATE.STATE_RUNNING ESCAPE=HTML>"
         data-state-success="<TMPL_VAR CERTIFICATE.STATE_SUCCESS ESCAPE=HTML>"
@@ -713,6 +714,7 @@
     });
   }
   const certificateStateLabels = certificatePanel ? {
+    idle: certificatePanel.dataset.stateIdle,
     scheduled: certificatePanel.dataset.stateScheduled,
     running: certificatePanel.dataset.stateRunning,
     success: certificatePanel.dataset.stateSuccess,
