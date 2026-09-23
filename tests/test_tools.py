@@ -21,7 +21,7 @@ from mcpserver.auth.provider import (
     READ_SCOPE,
     StoredAccessToken,
 )
-from mcpserver.config import PluginConfig
+from mcpserver.config import AtomicConfigStore, PluginConfig
 from mcpserver.loxone.models import (
     Control,
     Freshness,
@@ -1032,6 +1032,80 @@ async def test_event_history_source_timeout_returns_an_uncertain_envelope(
         "control_uuid=00000000-0000-0000-0000-000000000001 "
         "state_uuid=00000000-0000-0000-0000-000000000002"
     ) in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_event_history_source_tools_preserve_loxone_uuids_through_config_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    control_uuid = "00000000-0000-0000-0000000000000001"
+    state_uuid = "00000000-0000-0000-0000000000000002"
+    standard_control_uuid = "00000000-0000-0000-0000-000000000001"
+    standard_state_uuid = "00000000-0000-0000-0000-000000000002"
+    binding = "b" * 64
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    store.save(
+        PluginConfig(
+            loxone_history_enabled=True,
+            loxberry_operate_enabled=True,
+            loxberry_operate_requests_per_minute=10,
+            event_history_enabled=True,
+            loxberry_operate_bindings=(binding,),
+        )
+    )
+
+    class Monitor:
+        def __init__(self) -> None:
+            self.configs: list[PluginConfig] = []
+
+        async def validate_source(self, control: str, state: str) -> tuple[str, str, str]:
+            assert (control, state) == (control_uuid, state_uuid)
+            return "Visible control", "Switch", "active"
+
+        async def update_config(self, config: PluginConfig) -> None:
+            self.configs.append(config)
+
+    class AuthStore:
+        def pseudonym(self, *_parts: str) -> str:
+            return binding
+
+    monitor = Monitor()
+    runtime = LoxBerryOperateRuntime(object(), store, AuthStore(), event_history=monitor)
+    server = FastMCP("event-history-source-uuid-round-trip")
+    register_loxberry_operate_tool(server, runtime)
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: _loxberry_access(READ_SCOPE, HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE),
+    )
+
+    added = await server._tool_manager.call_tool(
+        "loxberry_add_event_history_source",
+        {"control_uuid": standard_control_uuid, "state_uuid": standard_state_uuid},
+    )
+    repeated = await server._tool_manager.call_tool(
+        "loxberry_add_event_history_source",
+        {"control_uuid": control_uuid, "state_uuid": state_uuid},
+    )
+    listed = await server._tool_manager.call_tool("loxberry_list_event_history_sources", {})
+    removed = await server._tool_manager.call_tool(
+        "loxberry_remove_event_history_source",
+        {"control_uuid": standard_control_uuid, "state_uuid": standard_state_uuid},
+    )
+
+    assert added.ok and added.data.changed is True  # type: ignore[union-attr]
+    assert repeated.ok and repeated.data.changed is False  # type: ignore[union-attr]
+    assert listed.ok
+    assert [item.model_dump() for item in listed.data.sources] == [  # type: ignore[union-attr]
+        {"control_uuid": control_uuid, "state_uuid": state_uuid}
+    ]
+    assert removed.ok and removed.data.changed is True  # type: ignore[union-attr]
+    assert store.load().event_history_sources == ()
+    assert [config.event_history_sources for config in monitor.configs] == [
+        ((control_uuid, state_uuid),),
+        ((control_uuid, state_uuid),),
+        (),
+    ]
 
 
 @pytest.mark.asyncio

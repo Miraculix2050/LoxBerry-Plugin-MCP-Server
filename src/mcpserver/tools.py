@@ -78,6 +78,7 @@ from mcpserver.loxone.runtime import (
     RuntimeUnavailable,
 )
 from mcpserver.loxone.statistics import StatisticPoint
+from mcpserver.loxone.uuid import normalize_loxone_uuid
 from mcpserver.skill_delivery import (
     SKILL_MIME_TYPE,
     SKILL_NAME,
@@ -4862,8 +4863,8 @@ def register_loxberry_operate_tool(server: FastMCP, runtime: LoxBerryOperateRunt
         access: StoredAccessToken | None = None
         try:
             access = _access()
-            control_uuid = str(UUID(control_uuid))
-            state_uuid = str(UUID(state_uuid))
+            control_uuid = normalize_loxone_uuid(control_uuid)
+            state_uuid = normalize_loxone_uuid(state_uuid)
             if add:
                 changed, details = await runtime.add_event_history_source(
                     access, control_uuid, state_uuid

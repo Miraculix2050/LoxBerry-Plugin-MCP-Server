@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Preserve Loxone's canonical UUID representation when managing local event-history
+  sources, so discovered control and state identifiers work unchanged across add,
+  list, remove, and history reads.
+
 - Initialize the native `admin-ui` LoxBerry Log Manager entry during both fresh
   installations and upgrades, preserving existing retention. The Admin UI now
   shows a localized empty state when no native plugin logs are available while
