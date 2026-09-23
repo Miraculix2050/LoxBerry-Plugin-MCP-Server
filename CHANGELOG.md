@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Consolidate the existing MCP skill's diagnostic workflow: separate current
+  observations, verified historical coverage, structural paths, and causal
+  hypotheses; disclose gaps and uncertain transition times.
+
 - Recognize documented analog `value` states without an `analog` detail and
   preserve uncertainty when an explicit flag contradicts the control type.
 
