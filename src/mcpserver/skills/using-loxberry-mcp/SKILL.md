@@ -142,8 +142,9 @@ the problem.
 3. For a structural question, inspect the exact project target with the project
    tools above. For a time-bounded coverage question, use
    `loxone_analyze_observability` with that target, the needed direction, and
-   the requested `start` and `end`. Follow `next_cursor` and check graph and
-   page truncation before treating the set of signals as complete. Project
+   the requested `start` and `end`. Follow `next_cursor` and check graph, page,
+   and each control's `states_truncated` indicators before treating the set of
+   signals as complete. Project
    paths identify possible influences; advertised statistics are not
    time-checked. Retrieve a relevant native series separately when evidence
    for that period is needed.
