@@ -850,8 +850,8 @@ def test_read_only_ajax_polling_does_not_create_admin_log_files() -> None:
     assert "nosession => 1" not in cgi
     assert "LoxBerry::System::pluginloglevel($lbpplugindir)" in cgi
     assert "name => 'admin-ui'" in cgi
-    assert "$admin_log->LOGSTART('Admin UI event') if $admin_log;" in cgi
-    assert "$admin_log->LOGEND('Admin UI request finished') if $admin_log;" in cgi
+    assert "$admin_log->LOGSTART(sprintf(" in cgi
+    assert "$admin_log->LOGEND(sprintf(" in cgi
     assert "ADMIN_LOG_MESSAGE_BYTES => 8 * 1024" in cgi
     assert "LOGSTART('Administrative action')" not in cgi
     assert "LOGEND('Administrative action finished')" not in cgi
@@ -915,7 +915,18 @@ def test_admin_logmanager_registration_requires_an_actual_event(tmp_path: Path) 
         "#!/usr/bin/env perl\nmy $request = <STDIN>;\n", encoding="utf-8"
     )
     request("status")
-    assert marker.read_text(encoding="utf-8").splitlines() == ["start", "error", "end"]
+    events = marker.read_text(encoding="utf-8").splitlines()
+    assert len(events) == 3
+    started = re.fullmatch(
+        r"start:component=admin_ui request_id=([0-9a-f]+-[0-9a-f]+) "
+        r"severity=info outcome=started",
+        events[0],
+    )
+    assert started is not None
+    assert events[1] == "error:component=admin_helper outcome=failed"
+    assert events[2] == (
+        f"end:component=admin_ui request_id={started.group(1)} severity=info outcome=finished"
+    )
 
 
 def test_diagnostics_offer_dedicated_persistent_service_logging_controls() -> None:

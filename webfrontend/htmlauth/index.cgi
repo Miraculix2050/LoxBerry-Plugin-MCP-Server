@@ -85,14 +85,18 @@ sub admin_log {
             package => $lbpplugindir,
             addtime => 1,
         );
-        $admin_log->LOGSTART('Admin UI event') if $admin_log;
+        $admin_log->LOGSTART(sprintf(
+            'component=admin_ui request_id=%s severity=info outcome=started', $request_id,
+        )) if $admin_log;
     }
     my $log_method = $method{$severity};
     $admin_log->$log_method($message) if $admin_log;
 }
 
 END {
-    $admin_log->LOGEND('Admin UI request finished') if $admin_log;
+    $admin_log->LOGEND(sprintf(
+        'component=admin_ui request_id=%s severity=info outcome=finished', $request_id,
+    )) if $admin_log;
 }
 
 $ENV{LBPDATA} = $lbpdatadir;
