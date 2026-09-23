@@ -468,7 +468,7 @@ def test_admin_cards_use_consistent_vertical_spacing() -> None:
     explorer = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
     stylesheet = (ROOT / "webfrontend" / "htmlauth" / "mcp-ui.css").read_text(encoding="utf-8")
 
-    assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-nav"' in template
+    assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-sessions-v2"' in template
     assert '<link rel="stylesheet" href="mcp-ui.css">' in explorer
     assert "<style>" not in template
     assert "<style>" not in explorer
@@ -476,6 +476,19 @@ def test_admin_cards_use_consistent_vertical_spacing() -> None:
     assert ".mcp-field-stack { display: grid; gap: .85rem; }" in stylesheet
     assert ".mcp-explorer { max-width: 92rem;" in stylesheet
     assert '<div class="mcp-field-stack">' in template
+
+
+def test_admin_top_notices_do_not_leave_empty_grid_rows() -> None:
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    top = template[
+        template.index('<main class="mcp-page">') : template.index('<nav class="mcp-section-nav"')
+    ]
+
+    assert '<p><a id="configuration-fallback-link"' not in top
+    assert '<a id="configuration-fallback-link" href="index.cgi?fallback=1" hidden>' in top
+    assert "<TMPL_UNLESS NOTIFICATIONS_HTML>hidden</TMPL_UNLESS>" in top
+    assert "loxberryNotifications.hidden = !loxberryNotifications.innerHTML.trim();" in template
+    assert "loxberryNotifications.hidden = false;" in template
 
 
 def test_service_status_is_first_and_uses_a_lightweight_ajax_contract() -> None:
@@ -834,7 +847,7 @@ def test_admin_sections_are_native_persistent_collapsibles() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
 
-    assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-nav"' in template
+    assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-sessions-v2"' in template
     expected_sections = [
         ("status", "STATUS.TITLE"),
         ("configuration", "SETUP.TITLE"),
@@ -932,14 +945,11 @@ assert.deepEqual(readCollapseState(), {});
     subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
 
 
-def test_admin_hash_navigation_reopens_a_manually_closed_section() -> None:
+def test_admin_hash_navigation_preserves_closed_reload_and_opens_new_links() -> None:
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
-    navigation = re.search(
-        r"  const openHashSection = .*?^  openHashSection\(\);",
-        template,
-        re.MULTILINE | re.DOTALL,
-    )
-    assert navigation is not None
+    navigation = template[
+        template.index("  const openHashSection =") : template.index("  const miniserverSelect =")
+    ]
     node = shutil.which("node")
     assert node is not None, "Node.js is required for the complete deterministic gate"
     script = (
@@ -948,21 +958,29 @@ def test_admin_hash_navigation_reopens_a_manually_closed_section() -> None:
         "class Element { closest() { return { hash: '#access' }; } }\n"
         "const section = new HTMLDetailsElement();\n"
         "const configuration = new HTMLDetailsElement();\n"
+        "const mqtt = new HTMLDetailsElement();\n"
+        "const status = new HTMLDetailsElement();\n"
+        "const sessions = new HTMLDetailsElement();\n"
+        "const diagnostics = new HTMLDetailsElement();\n"
+        "const help = new HTMLDetailsElement();\n"
+        "const storedCollapseState = {mqtt: false};\n"
         "const listeners = {};\n"
-        "const window = { location: { hash: '#access' }, "
+        "const window = { location: { hash: '#mqtt' }, "
+        "performance: {getEntriesByType: () => [{type: 'reload'}]}, "
         "addEventListener: (type, callback) => { listeners[type] = callback; } };\n"
         "const document = { getElementById: (id) => "
-        "({ access: section, configuration })[id] || null, "
+        "({ access: section, configuration, mqtt, status, "
+        "sessions, diagnostics, help })[id] || null, "
         "addEventListener: (type, callback) => { listeners[type] = callback; } };\n"
         "let persistCount = 0;\n"
         "const persistCollapsibles = () => { persistCount += 1; };\n"
-        + navigation.group(0)
+        + navigation
         + """
-assert.equal(section.open, true);
-section.open = false;
+assert.equal(mqtt.open, false);
 listeners.click({ target: new Element() });
 assert.equal(section.open, true);
 section.open = false;
+window.location.hash = '#access';
 listeners.hashchange({ type: 'hashchange' });
 assert.equal(section.open, true);
 window.location.hash = '#setup';
@@ -972,7 +990,40 @@ section.open = false;
 window.location.hash = '#certificate';
 listeners.hashchange({ type: 'hashchange' });
 assert.equal(section.open, true);
+assert.equal(persistCount, 4);
+openHashSection('#mqtt', true);
+assert.equal(mqtt.open, false);
+assert.equal(persistCount, 4);
+openHashSection('#mqtt');
+assert.equal(mqtt.open, true);
 assert.equal(persistCount, 5);
+storedCollapseState.mqtt = true;
+mqtt.open = false;
+openHashSection('#mqtt', true);
+assert.equal(mqtt.open, true);
+assert.equal(persistCount, 6);
+for (const id of ['status', 'configuration', 'access', 'sessions', 'mqtt', 'diagnostics', 'help']) {
+  const target = document.getElementById(id);
+  target.open = false;
+  storedCollapseState[id] = false;
+  const before = persistCount;
+  openHashSection(`#${id}`, true);
+  assert.equal(target.open, false, `${id} reopens on reload`);
+  assert.equal(persistCount, before);
+  openHashSection(`#${id}`);
+  assert.equal(target.open, true, `${id} does not open on a new link`);
+  assert.equal(persistCount, before + 1);
+}
+configuration.open = false;
+section.open = false;
+openHashSection('#setup', true);
+openHashSection('#certificate', true);
+assert.equal(configuration.open, false);
+assert.equal(section.open, false);
+openHashSection('#setup');
+openHashSection('#certificate');
+assert.equal(configuration.open, true);
+assert.equal(section.open, true);
 """
     )
     subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
@@ -1329,6 +1380,56 @@ def test_sessions_show_client_name_before_the_stable_instance_identifier() -> No
             template.index('id="loxberry-binding-section"') : template.index('id="diagnostics"')
         ]
     )
+
+
+def test_session_tables_have_matching_mobile_labels_in_fallback_and_ajax_rows() -> None:
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    css = (ROOT / "webfrontend/htmlauth/mcp-ui.css").read_text(encoding="utf-8")
+    assert template.count('class="mcp-table mcp-session-table"') == 4
+    assert template.count('class="mcp-table-wrap mcp-session-table-wrap"') == 4
+
+    cases = (
+        (
+            "<TMPL_LOOP SESSIONS><tr",
+            "const createSessionRow =",
+            "const updateSessions =",
+            ("CLIENT", "INSTANCE", "IDENTITY", "TOKEN", "SCOPES", "EXPIRES", "ACTION"),
+        ),
+        (
+            "<TMPL_LOOP LOXBERRY_BINDINGS><TMPL_LOOP rows><tr",
+            "const loxberryBindingRows =",
+            "const updateLoxberryBindingTable =",
+            ("CLIENT", "INSTANCE", "IDENTITY", "BINDING_ID", "ACTION"),
+        ),
+        (
+            "<TMPL_LOOP LOXBERRY_OPERATE_BINDINGS><TMPL_LOOP rows><tr",
+            "const loxberryBindingRows =",
+            "const updateLoxberryBindingTable =",
+            ("CLIENT", "INSTANCE", "IDENTITY", "BINDING_ID", "ACTION"),
+        ),
+    )
+    for fallback_start, js_start, js_end, expected in cases:
+        row = template[template.index(fallback_start) :]
+        row = row[: row.index("</tr>")]
+        fallback_labels = re.findall(
+            r'<td data-label="<TMPL_VAR SESSIONS\.(\w+) ESCAPE=HTML>"', row
+        )
+        js = template[template.index(js_start) : template.index(js_end)]
+        js_labels = re.findall(r"dataset\.label = '<TMPL_VAR SESSIONS\.(\w+) ESCAPE=JS>'", js)
+        if js_start == "const createSessionRow =":
+            leading = js[
+                js.index("const labels = [") : js.index("];", js.index("const labels = ["))
+            ]
+            js_labels = re.findall(r"SESSIONS\.(\w+) ESCAPE=JS", leading) + js_labels
+        assert tuple(fallback_labels) == expected
+        assert tuple(js_labels) == expected
+
+    assert "@media (max-width: 48rem)" in css
+    assert ".mcp-permission-table td, .mcp-permission-table td:first-child { width: 100%;" in css
+    assert "#sessions .mcp-session-table-wrap { box-sizing: border-box; width: 100%;" in css
+    assert '#sessions form[data-ajax^="revoke"] .lb-button' in css
+    assert "data-session-token-state" in template
+    assert "const updateSessionActionControls = () =>" in template
 
 
 def test_explorer_approval_retention_and_inactive_states_are_visible_in_both_languages() -> None:

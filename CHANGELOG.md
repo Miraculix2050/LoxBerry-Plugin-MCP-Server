@@ -5,6 +5,12 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Stack client sessions and LoxBerry approval bindings before their columns
+  become cramped on narrow screens; show Loxone permission details as stacked
+  records at intermediate widths. Keep a deliberately closed Admin section
+  closed after reloading its hash URL while newly followed section links open it.
+  Remove empty placeholders above the Admin section menu after notifications load.
+
 - Consolidate the existing MCP skill's diagnostic workflow: separate current
   observations, verified historical coverage, structural paths, and causal
   hypotheses; disclose gaps and uncertain transition times.

@@ -51,6 +51,8 @@ details.mcp-explorer-card[open] > summary { border-bottom: 1px solid #d7dadd; }
 .mcp-table-wrap { max-width: 100%; overflow-x: auto; }
 .mcp-table { width: 100%; border-collapse: collapse; }
 .mcp-table th, .mcp-table td { padding: .5rem; text-align: left; border-bottom: 1px solid #ddd; }
+#sessions form[data-ajax^="revoke"] .lb-button { border: 1px solid #b91c1c; background: #fff; color: #991b1b; }
+#sessions form[data-ajax^="revoke"] .lb-button:disabled { opacity: .55; }
 .mcp-permission-groups { display: grid; gap: 1rem; }
 .mcp-permission-group { display: grid; gap: .45rem; min-width: 0; }
 .mcp-permission-group h3 { margin: 0; font-size: 1.1rem; }
@@ -96,6 +98,20 @@ details.mcp-explorer-card[open] > summary { border-bottom: 1px solid #d7dadd; }
   .mcp-explorer-grid { grid-template-columns: 1fr; }
   .mcp-explorer-tool-list { max-height: 50vh; }
 }
+@media (max-width: 48rem) {
+  .mcp-permission-table thead, #sessions .mcp-session-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .mcp-permission-table, .mcp-permission-table tbody, .mcp-permission-table tr, .mcp-permission-table td { display: block; box-sizing: border-box; width: 100%; }
+  .mcp-permission-table tr { padding: .4rem 0; border-bottom: 1px solid #ddd; }
+  .mcp-permission-table td, .mcp-permission-table td:first-child { width: 100%; padding: .3rem 0; border: 0; text-align: left; overflow-wrap: anywhere; }
+  .mcp-permission-table td[data-label]::before, #sessions .mcp-session-table td[data-label]::before { content: attr(data-label); display: block; margin-bottom: .15rem; color: #4b5563; font-size: .85rem; font-weight: 600; }
+  #sessions .mcp-session-table-wrap { box-sizing: border-box; width: 100%; min-width: 0; overflow-x: visible; }
+  #sessions .mcp-session-table, #sessions .mcp-session-table tbody { display: block; box-sizing: border-box; width: 100%; }
+  #sessions .mcp-session-table tr { display: block; box-sizing: border-box; width: 100%; min-width: 0; margin-bottom: .75rem; padding: .5rem; border: 1px solid #c9cdd2; border-radius: .4rem; }
+  #sessions .mcp-session-table td { display: block; box-sizing: border-box; width: 100%; min-width: 0; padding: .35rem; border: 0; overflow-wrap: anywhere; }
+  #sessions .mcp-session-table td code { white-space: normal; overflow-wrap: anywhere; }
+  #sessions .mcp-session-table td:last-child form { margin: .4rem 0 0; }
+  #sessions .mcp-session-table td:last-child button { max-width: 100%; min-height: 2.75rem; }
+}
 @media (max-width: 30rem) {
   .mcp-section-nav { grid-template-columns: 1fr; }
   .mcp-card:not(details), .mcp-explorer-card:not(details) { padding: .75rem; }
@@ -108,10 +124,5 @@ details.mcp-explorer-card[open] > summary { border-bottom: 1px solid #d7dadd; }
   #diagnostics .lb-table tr { padding: .35rem 0; border-bottom: 1px solid #ddd; }
   #diagnostics .lb-table td { padding: .25rem 0; border: 0; overflow-wrap: anywhere; }
   #diagnostics .lb-table td:first-child, #diagnostics .lb-table td:last-child { display: none; }
-  .mcp-permission-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-  .mcp-permission-table, .mcp-permission-table tbody, .mcp-permission-table tr, .mcp-permission-table td { display: block; box-sizing: border-box; width: 100%; }
-  .mcp-permission-table tr { padding: .4rem 0; border-bottom: 1px solid #ddd; }
-  .mcp-permission-table td, .mcp-permission-table td:first-child { padding: .3rem 0; border: 0; text-align: left; }
-  .mcp-permission-table td[data-label]::before { content: attr(data-label); display: block; margin-bottom: .15rem; color: #4b5563; font-size: .85rem; font-weight: 600; }
   .mcp-explorer-tabs button { flex: 1; }
 }
