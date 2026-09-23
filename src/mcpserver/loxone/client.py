@@ -37,6 +37,7 @@ from mcpserver.loxone.security import (
     token_hmac,
 )
 from mcpserver.loxone.structure import LoxoneStructureError, normalize_structure
+from mcpserver.loxone.uuid import normalize_loxone_uuid
 
 _LOGGER = logging.getLogger(__name__)
 _MAX_RESPONSE_BYTES: Final = 8 * 1024 * 1024
@@ -85,8 +86,7 @@ class _WebSocketIdleTimeout(TimeoutError):
 
 def _loxone_uuid(value: UUID) -> str:
     """Serialize a standard UUID using Loxone's 8-4-4-16 representation."""
-    first, second, third, fourth, fifth = str(value).split("-")
-    return f"{first}-{second}-{third}-{fourth}{fifth}"
+    return normalize_loxone_uuid(value)
 
 
 @dataclass(frozen=True, slots=True)

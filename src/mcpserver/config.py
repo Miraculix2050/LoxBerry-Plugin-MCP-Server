@@ -22,6 +22,7 @@ from urllib.parse import urlsplit
 import idna
 
 from mcpserver.loxone.endpoint import MiniserverEndpoint
+from mcpserver.loxone.uuid import normalize_loxone_uuid
 
 SCHEMA_VERSION: Final = 10
 DEFAULT_CONNECTION_TIMEOUT: Final = 10.0
@@ -168,8 +169,15 @@ def _event_history_sources(value: object) -> tuple[tuple[str, str], ...]:
     for item in value:
         if not isinstance(item, dict):
             raise ConfigError("event_history.sources is unsupported")
-        control_uuid = _emergency_stop_uuid(item.get("control_uuid"))
-        state_uuid = _emergency_stop_uuid(item.get("state_uuid"))
+        control_value = item.get("control_uuid")
+        state_value = item.get("state_uuid")
+        if not isinstance(control_value, str) or not isinstance(state_value, str):
+            raise ConfigError("event_history.sources is unsupported")
+        try:
+            control_uuid = normalize_loxone_uuid(control_value)
+            state_uuid = normalize_loxone_uuid(state_value)
+        except ValueError as exc:
+            raise ConfigError("event_history.sources is unsupported") from exc
         if not control_uuid or not state_uuid or (control_uuid, state_uuid) in sources:
             raise ConfigError("event_history.sources is unsupported")
         sources.append((control_uuid, state_uuid))
