@@ -2,6 +2,7 @@
 
 import hashlib
 from collections import defaultdict, deque
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from .decoder import decode_loxcc
@@ -137,6 +138,69 @@ class ProjectSnapshot:
     source_diagnostics: ProjectSourceDiagnostics = field(
         default_factory=lambda: ProjectSourceDiagnostics((), True, 0), repr=False
     )
+    logical_aliases: tuple[tuple[str, str], ...] = field(default=(), repr=False)
+    logical_source_ids: tuple[tuple[str, tuple[str, ...]], ...] = field(default=(), repr=False)
+    _logical_alias_lookup: Mapping[str, str] = field(
+        default_factory=dict, repr=False, compare=False
+    )
+    _logical_source_lookup: Mapping[str, tuple[str, ...]] = field(
+        default_factory=dict, repr=False, compare=False
+    )
+    _logical_nodes: tuple[GraphNode, ...] = field(default=(), repr=False, compare=False)
+
+    def canonical_node_key(self, key: str) -> str:
+        aliases = self._logical_alias_lookup or dict(self.logical_aliases)
+        return aliases.get(key, key)
+
+    def source_ids_for(self, key: str) -> tuple[str, ...]:
+        canonical = self.canonical_node_key(key)
+        sources = self._logical_source_lookup or dict(self.logical_source_ids)
+        return sources.get(canonical, ())
+
+    def occurrence_keys_for(self, key: str) -> tuple[str, ...]:
+        canonical = self.canonical_node_key(key)
+        aliases = self._logical_alias_lookup or dict(self.logical_aliases)
+        return tuple(alias for alias, target in aliases.items() if target == canonical) or (key,)
+
+    def logical_nodes(self) -> tuple[GraphNode, ...]:
+        if self._logical_nodes:
+            return self._logical_nodes
+        aliases = self._logical_alias_lookup or dict(self.logical_aliases)
+        return tuple(
+            node for node in self.graph.nodes if aliases.get(node.key, node.key) == node.key
+        )
+
+
+def _logical_knx_nodes(
+    graph: ProjectGraph,
+) -> tuple[tuple[tuple[str, str], ...], tuple[tuple[str, tuple[str, ...]], ...]]:
+    """Group identical KNX blocks from separate internal model sources.
+
+    A source UUID is the only identity input. Equal names or group addresses are
+    deliberately insufficient. Keeping the raw graph intact lets callers retain
+    provenance while query and analysis consumers use one deterministic
+    representative for each verified logical object.
+    """
+    candidates: dict[tuple[str, str, object], list[GraphNode]] = defaultdict(list)
+    for node in graph.nodes:
+        if node.kind != "block" or node.knx is None:
+            continue
+        source_id = normalize_id(node.source_id)
+        if not source_id:
+            continue
+        candidates[(source_id, node.block_type or "", node.knx)].append(node)
+
+    aliases: list[tuple[str, str]] = []
+    sources: list[tuple[str, tuple[str, ...]]] = []
+    for occurrences in candidates.values():
+        # Repeated IDs inside one model source are ambiguous source data and
+        # must not silently become a logical object.
+        if len(occurrences) < 2 or len({node.project for node in occurrences}) != len(occurrences):
+            continue
+        canonical = min(occurrences, key=lambda node: (node.project, node.source_index, node.key))
+        aliases.extend((node.key, canonical.key) for node in occurrences)
+        sources.append((canonical.key, tuple(sorted(node.project for node in occurrences))))
+    return tuple(sorted(aliases)), tuple(sorted(sources))
 
 
 def build_graph(
@@ -442,10 +506,24 @@ def build_snapshot(
             )
         )
     graph = ProjectGraph(tuple(nodes), tuple(edges), tuple(unresolved), tuple(semantic_edges))
+    logical_aliases, logical_source_ids = _logical_knx_nodes(graph)
+    # These private dicts are constructed once with the immutable snapshot and
+    # never exposed to callers. They must remain pickle-compatible because the
+    # isolated project worker returns snapshots over its local IPC boundary.
+    alias_lookup = dict(logical_aliases)
+    source_lookup = dict(logical_source_ids)
+    logical_nodes = tuple(
+        node for node in graph.nodes if alias_lookup.get(node.key, node.key) == node.key
+    )
     return ProjectSnapshot(
         bundle.fingerprint,
-        4,
+        5,
         tuple(projects),
         graph,
         _source_diagnostics(graph, tuple(anomalies)),
+        logical_aliases,
+        logical_source_ids,
+        alias_lookup,
+        source_lookup,
+        logical_nodes,
     )

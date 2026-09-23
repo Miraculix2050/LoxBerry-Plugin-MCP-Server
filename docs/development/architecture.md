@@ -62,7 +62,7 @@ read scope, uses its existing token for the fixed encrypted HTTP project endpoin
 and rechecks authorization before releasing data. ZIP processing is bounded and
 memory-only. The public projection offers status, search, description, and bounded
   signal/reference traces, and deterministic analysis; it never returns raw XML
-  and does not add a scope. Analysis version 2 consumes the immutable project
+  and does not add a scope. Analysis version 3 consumes the immutable project
   view and exact UUID mappings only. It can report source-name patterns, local
   peer or graph outliers, and mapped runtime context, but names never create a
   mapping and missing normalized DPT or semantic-domain data is exposed as an

@@ -4,7 +4,12 @@ import pytest
 
 import mcpserver.loxone.project.analysis as project_analysis
 from mcpserver.loxone.project.analysis import analyze_knx
-from mcpserver.loxone.project.graph import ProjectPartSummary, ProjectSnapshot, build_graph
+from mcpserver.loxone.project.graph import (
+    ProjectPartSummary,
+    ProjectSnapshot,
+    _logical_knx_nodes,
+    build_graph,
+)
 from mcpserver.loxone.project.mapping import ProjectView, map_runtime
 from mcpserver.loxone.project.parser import parse_project
 
@@ -41,6 +46,59 @@ def test_analysis_reports_project_local_datatype_and_usage_facts_deterministical
     assert conflict["group_address"] == "1/2/3"
     assert conflict["raw_datatypes"] == ["1", "5"]
     assert all("incompatible" not in str(item) for item in first["findings"])
+
+
+def test_analysis_uses_logical_knx_endpoints_and_keeps_source_occurrence_count():
+    parsed = parse_project(
+        b'<P><C Type="EIBactor" U="actor" EibAddr="1/2/3"/>'
+        b'<C Type="EIBsensor" U="sensor" EibAddr="1/2/4" EIBType="1"/></P>'
+    )
+    graph = build_graph((("one", parsed), ("two", parsed)))
+    aliases, source_ids = _logical_knx_nodes(graph)
+    snapshot = ProjectSnapshot(
+        "project",
+        5,
+        (ProjectPartSummary("one", 3, ()), ProjectPartSummary("two", 3, ())),
+        graph,
+        logical_aliases=aliases,
+        logical_source_ids=source_ids,
+    )
+    view = ProjectView(
+        snapshot, map_runtime(snapshot, SimpleNamespace(last_modified="v", controls=()))
+    )
+
+    result = analyze_knx(view, frozenset({"project_connectivity"}))
+
+    assert result["coverage"]["endpoints"] == 2
+    assert result["coverage"]["endpoint_source_occurrences"] == 4
+
+
+def test_logical_endpoint_connectivity_aggregates_all_source_occurrences():
+    first = parse_project(b'<P><C Type="EIBactor" U="actor" EibAddr="1/2/3"/></P>')
+    second = parse_project(
+        b'<P><C Type="Logic" U="logic"><Co U="output"/></C>'
+        b'<C Type="EIBactor" U="actor" EibAddr="1/2/3">'
+        b'<Co U="actor-input"><In Input="output"/></Co></C></P>'
+    )
+    graph = build_graph((("one", first), ("two", second)))
+    aliases, source_ids = _logical_knx_nodes(graph)
+    snapshot = ProjectSnapshot(
+        "project",
+        5,
+        (ProjectPartSummary("one", 1, ()), ProjectPartSummary("two", 3, ())),
+        graph,
+        logical_aliases=aliases,
+        logical_source_ids=source_ids,
+    )
+    view = ProjectView(
+        snapshot, map_runtime(snapshot, SimpleNamespace(last_modified="v", controls=()))
+    )
+
+    result = analyze_knx(view, frozenset({"project_connectivity"}))
+
+    assert result["coverage"]["endpoints"] == 1
+    assert result["coverage"]["endpoint_source_occurrences"] == 2
+    assert result["summaries"]["project_connectivity"] == {"unconnected": 0, "ambiguous": 0}
 
 
 def test_analysis_only_reports_address_deviations_for_strong_evidenced_peer_groups():
@@ -417,7 +475,7 @@ def test_v2_uses_exact_runtime_evidence_for_naming_without_inventing_knx_semanti
 
     result = analyze_knx(_view(project, controls), frozenset({"naming_consistency"}))
 
-    assert result["analysis_version"] == 2
+    assert result["analysis_version"] == 3
     assert result["coverage"]["exact_runtime_mappings"] == 6
     assert result["coverage"]["reviewed_signal_usage"] == 0
     assert any(item["finding_type"] == "naming_deviation" for item in result["findings"])

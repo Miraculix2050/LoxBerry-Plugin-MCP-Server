@@ -24,12 +24,16 @@ Equal group addresses do not create a graph relationship or prove causality. Fin
 only a compact KNX summary; use `loxone_describe_project_object` for the original value, segments,
 names, and raw DPT code. Project find pages and traces are additionally limited to 64 KiB and
 report a size trim through `truncated` and `truncation_reason`.
+`project_parts` counts internally ingested model sources rather than Loxone Config projects.
+Status exposes opaque `model_sources`; identical KNX source occurrences from separate model
+sources are presented once as a logical object with `source_occurrence_count` and
+`model_source_ids`. Equal titles or group addresses never cause such a merge.
 Where an exact reviewed block and connector rule is available, describe also returns one or more
 separate KNX signal-use observations, while trace returns separately marked derived connector edges
 and bounded `knx_to_loxone`, `loxone_to_knx`, or `knx_to_knx` paths. Unknown block or connector
 behaviour is not guessed. These are static project paths, not evidence that a bus telegram or
 historical state change caused an action.
-`loxone_analyze_project` version 2 summarizes bounded project-local KNX evidence: address and
+`loxone_analyze_project` version 3 summarizes bounded project-local KNX evidence: address and
 source-name patterns, raw datatype reuse, reviewed signal-use differences, exact runtime-mapping
 context, local peer and graph outliers, path counts, and endpoints without an observed project
 relationship. Runtime names and control types are used only for exact UUID mappings; names never

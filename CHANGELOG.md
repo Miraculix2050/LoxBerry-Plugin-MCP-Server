@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Deduplicate identical KNX blocks from separate internal model sources for
+  Project Intelligence search, runtime mapping, and analysis. Project status
+  now distinguishes opaque model sources from `project_parts`; logical KNX
+  objects and analysis coverage disclose bounded source-occurrence provenance.
+
 - Show the idle web-certificate reissue status as "Not started" instead of
   incorrectly reporting a failed reissue when no attempt was recorded.
 

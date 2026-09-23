@@ -57,7 +57,7 @@ def map_runtime(snapshot: ProjectSnapshot, structure: LoxoneStructure) -> Runtim
     for node in snapshot.graph.nodes:
         source_id = _uuid_id(node.source_id)
         if node.kind == "block" and source_id is not None:
-            index[source_id].append(node.key)
+            index[source_id].append(snapshot.canonical_node_key(node.key))
     entries: list[ControlMapping] = []
     rooms = {room.uuid: room.name for room in getattr(structure, "rooms", ())}
     categories = {category.uuid: category.name for category in getattr(structure, "categories", ())}
