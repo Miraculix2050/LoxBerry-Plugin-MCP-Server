@@ -43,6 +43,18 @@ sub bounded_admin_message {
     return decode('UTF-8', $prefix, FB_DEFAULT) . ADMIN_LOG_TRUNCATION_SUFFIX;
 }
 
+sub ascii_html_text {
+    my ($value) = @_;
+    return '' if !defined($value) || ref($value);
+    $value =~ s/&/&amp;/g;
+    $value =~ s/</&lt;/g;
+    $value =~ s/>/&gt;/g;
+    $value =~ s/"/&quot;/g;
+    $value =~ s/'/&#39;/g;
+    $value =~ s/([^\x20-\x7E])/sprintf('&#x%X;', ord($1))/ge;
+    return $value;
+}
+
 sub admin_log {
     my ($severity, $message) = @_;
     my %threshold = (error => 3, warning => 4, info => 6, debug => 7);
@@ -698,7 +710,7 @@ if ($server_rendered_fallback) {
             next if !defined($uuid) || !defined($name) || ref($uuid) || ref($name);
             push @$emergency_stop_options, {
                 uuid => $uuid,
-                name => $name,
+                name_html => ascii_html_text($name),
                 selected => $uuid eq $selected_emergency_stop ? 1 : 0,
             };
         }

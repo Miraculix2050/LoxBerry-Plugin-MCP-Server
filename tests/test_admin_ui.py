@@ -414,6 +414,40 @@ def test_server_rendered_emergency_stop_retry_uses_one_explicit_probe() -> None:
     assert "EMERGENCY_STOP_RELOAD=" in english
 
 
+def test_server_rendered_option_names_escape_unicode_without_raw_bytes() -> None:
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    assert "name_html => ascii_html_text($name)" in cgi
+    assert "<TMPL_VAR name_html></option>" in template
+    assert "<TMPL_VAR name ESCAPE=HTML></option>" not in template
+
+    perl = shutil.which("perl")
+    if perl is None:
+        return
+    helper = re.search(r"(?ms)^sub ascii_html_text \{\n.*?^\}", cgi)
+    assert helper is not None
+    program = (
+        helper.group(0)
+        + "\n"
+        + 'my $name = chr(0xFC) . q|<script>alert("x")</script> & \'|;\n'
+        + "my $escaped = ascii_html_text($name);\n"
+        + "utf8::upgrade($name);\n"
+        + "die q(Unicode flag changed escaping) if ascii_html_text($name) ne $escaped;\n"
+        + "my $source = q|<option><TMPL_VAR NAME_HTML></option>|;\n"
+        + "my $template = HTML::Template->new_scalar_ref(\\$source);\n"
+        + "$template->param(NAME_HTML => $escaped);\n"
+        + "print $template->output();\n"
+    )
+    result = subprocess.run(
+        [perl, "-MHTML::Template", "-e", program],
+        check=True,
+        capture_output=True,
+    )
+    assert result.stdout == (
+        b"<option>&#xFC;&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; &#39;</option>"
+    )
+
+
 def test_admin_cards_use_consistent_vertical_spacing() -> None:
     template = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
     explorer = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
