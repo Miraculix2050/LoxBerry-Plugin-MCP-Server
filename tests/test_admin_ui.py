@@ -468,7 +468,7 @@ def test_admin_cards_use_consistent_vertical_spacing() -> None:
     explorer = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
     stylesheet = (ROOT / "webfrontend" / "htmlauth" / "mcp-ui.css").read_text(encoding="utf-8")
 
-    assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-sessions-v2"' in template
+    assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-sessions-v3"' in template
     assert '<link rel="stylesheet" href="mcp-ui.css">' in explorer
     assert "<style>" not in template
     assert "<style>" not in explorer
@@ -601,10 +601,17 @@ const createForm = (action, sessionId = '', bindingId = '') => {
     removeAttribute: (name) => attributes.delete(name),
     hasAttribute: (name) => attributes.has(name),
   };
+  const rowAttributes = new Set();
+  const row = {
+    toggleAttribute: (name, enabled) => enabled
+      ? rowAttributes.add(name) : rowAttributes.delete(name),
+    hasAttribute: (name) => rowAttributes.has(name),
+  };
   return {
-    button,
+    button, row,
     form: {
       dataset: {ajax: action},
+      closest: (selector) => selector === 'tr' ? row : null,
       querySelector: (selector) => {
         if (selector === 'button[type="submit"]') return button;
         if (selector === 'input[name="id"]') return action === 'revoke_session'
@@ -623,10 +630,11 @@ const readBindingB = createForm('revoke_loxberry_read', '', 'binding-b');
 const operateBindingA = createForm('revoke_loxberry_operate', '', 'binding-a');
 const operateBindingB = createForm('revoke_loxberry_operate', '', 'binding-c');
 const sessionForm = createForm('allow_loxberry_read', 'session-c');
+const revokeSessionForm = createForm('revoke_session', 'session-d');
 const revokeAllForm = createForm('revoke_all');
 const forms = [
   readBindingA.form, readBindingB.form, operateBindingA.form, operateBindingB.form,
-  sessionForm.form, revokeAllForm.form,
+  sessionForm.form, revokeSessionForm.form, revokeAllForm.form,
 ];
 const document = {querySelectorAll: () => forms};
 const bindingA = beginSessionAction(
@@ -635,6 +643,9 @@ const bindingA = beginSessionAction(
 updateSessionActionControls();
 result.activeBindingBusy = readBindingA.button.disabled
   && readBindingA.button.hasAttribute('aria-busy');
+result.activeBindingRowDimmed = readBindingA.row.hasAttribute('data-revoking');
+result.otherBindingRowNotDimmed = !readBindingB.row.hasAttribute('data-revoking');
+result.blockedSessionRowNotDimmed = !revokeSessionForm.row.hasAttribute('data-revoking');
 result.differentReadEnabled = !readBindingB.button.disabled
   && !readBindingB.button.hasAttribute('aria-busy');
 result.differentOperateEnabled = !operateBindingB.button.disabled
@@ -661,6 +672,17 @@ result.controlsRecovered = forms.every(({querySelector}) => {
   const button = querySelector('button[type="submit"]');
   return !button.disabled && !button.hasAttribute('aria-busy');
 });
+result.bindingRowsRecovered = [readBindingA, readBindingB, operateBindingA, operateBindingB]
+  .every(({row}) => !row.hasAttribute('data-revoking'));
+const sessionRevoke = beginSessionAction(
+  sessionActionDescriptor(revokeSessionForm.form), revokeSessionForm.button,
+);
+updateSessionActionControls();
+result.sessionRowDimmed = revokeSessionForm.row.hasAttribute('data-revoking');
+result.otherSessionRowNotDimmed = !sessionForm.row.hasAttribute('data-revoking');
+finishSessionAction(sessionRevoke);
+updateSessionActionControls();
+result.sessionRowRecovered = !revokeSessionForm.row.hasAttribute('data-revoking');
 const revokeAll = beginSessionAction(
   sessionActionDescriptor(revokeAllForm.form), revokeAllForm.button,
 );
@@ -677,13 +699,17 @@ console.log(JSON.stringify(result));
         '"revokeAllBlockedWhileActive":true,'
         '"bindingRevocationBlockedDuringSessionAction":true,'
         '"finalFinishOnly":[false,false,true],'
-        '"activeBindingBusy":true,"differentReadEnabled":true,'
+        '"activeBindingBusy":true,"activeBindingRowDimmed":true,'
+        '"otherBindingRowNotDimmed":true,"blockedSessionRowNotDimmed":true,'
+        '"differentReadEnabled":true,'
         '"differentOperateEnabled":true,"sameBindingAcrossScopesBlocked":true,'
         '"revokeAllBlockedDuringBindingRevocation":true,'
         '"sessionActionBlockedDuringBindingRevocation":true,'
         '"duplicateBindingBlocked":true,"sameBindingAcrossScopesRejected":true,'
         '"differentBindingsAllowed":true,"controlsRecovered":true,'
-        '"revokeAllExclusive":true,"version":7}'
+        '"bindingRowsRecovered":true,"sessionRowDimmed":true,'
+        '"otherSessionRowNotDimmed":true,"sessionRowRecovered":true,'
+        '"revokeAllExclusive":true,"version":8}'
     )
     assert "const activeSessionActions = new Map();" in template
     assert "const sessionActionsConflict = (left, right)" in template
@@ -847,7 +873,7 @@ def test_admin_sections_are_native_persistent_collapsibles() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
 
-    assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-sessions-v2"' in template
+    assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-sessions-v3"' in template
     expected_sections = [
         ("status", "STATUS.TITLE"),
         ("configuration", "SETUP.TITLE"),
@@ -1428,6 +1454,7 @@ def test_session_tables_have_matching_mobile_labels_in_fallback_and_ajax_rows() 
     assert ".mcp-permission-table td, .mcp-permission-table td:first-child { width: 100%;" in css
     assert "#sessions .mcp-session-table-wrap { box-sizing: border-box; width: 100%;" in css
     assert '#sessions form[data-ajax^="revoke"] .lb-button' in css
+    assert "#sessions .mcp-session-table tr[data-revoking] { opacity: .55; }" in css
     assert "data-session-token-state" in template
     assert "const updateSessionActionControls = () =>" in template
 

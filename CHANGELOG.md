@@ -13,6 +13,7 @@ extracted from the matching version heading.
   records at intermediate widths. Keep a deliberately closed Admin section
   closed after reloading its hash URL while newly followed section links open it.
   Remove empty placeholders above the Admin section menu after notifications load.
+  Dim the affected session or approval row while its revocation is running.
 
 - Consolidate the existing MCP skill's diagnostic workflow: separate current
   observations, verified historical coverage, structural paths, and causal
