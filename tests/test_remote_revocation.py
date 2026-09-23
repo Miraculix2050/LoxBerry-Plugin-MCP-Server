@@ -81,8 +81,9 @@ def test_rejected_token_is_terminal_and_staggers_other_work(
     )
 
 
+@pytest.mark.parametrize("retry_delay", [0, 86_401])
 def test_terminal_record_is_idempotent_if_token_deletion_fails_once(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, retry_delay: int
 ) -> None:
     store = _store(tmp_path)
     now = 2_000_000_000
@@ -104,14 +105,16 @@ def test_terminal_record_is_idempotent_if_token_deletion_fails_once(
         original_complete(family_id)
 
     monkeypatch.setattr(store, "complete_remote_revoke", flaky_complete)
-    monkeypatch.setattr("mcpserver.auth.remote_revocation.time.time", lambda: now)
+    clock = [now]
+    monkeypatch.setattr("mcpserver.auth.remote_revocation.time.time", lambda: clock[0])
     with pytest.raises(OSError):
         asyncio.run(process_remote_revocations(_ENDPOINT, store, 1))
+    clock[0] += retry_delay
     asyncio.run(process_remote_revocations(_ENDPOINT, store, 1))
     value = RemoteRevocationState(store.path).read()
     assert value["totals"]["expired_without_confirmation"] == 1
-    assert len(value["tombstones"]) == 1
-    assert store.remote_revocation_counts(now)[0] == 0
+    assert len(value["tombstones"]) == (0 if retry_delay else 1)
+    assert store.remote_revocation_counts(clock[0])[0] == 0
 
 
 def test_new_and_staggered_items_cannot_bypass_queue_cooldown(

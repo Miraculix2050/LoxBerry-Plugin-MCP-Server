@@ -191,14 +191,18 @@ def _terminal(
     outcome, receipt, expires_at = store.mark_remote_revoke_terminal(family_id, outcome, expires_at)
     if outcome not in _OUTCOMES:
         raise RemoteRevocationStateError("remote revoke outcome is invalid")
+    if expires_at <= now:
+        # A persisted terminal marker can outlive its display tombstone when
+        # token deletion fails; never count or publish it a second time.
+        store.complete_remote_revoke(family_id)
+        return
     if not any(item.get("receipt") == receipt for item in value["tombstones"]):
         value["tombstones"] = [item for item in value["tombstones"] if item["expires_at"] > now][
             -9999:
         ]
-        if expires_at > now:
-            value["tombstones"].append(
-                {"outcome": outcome, "expires_at": expires_at, "receipt": receipt}
-            )
+        value["tombstones"].append(
+            {"outcome": outcome, "expires_at": expires_at, "receipt": receipt}
+        )
         value["totals"][outcome] += 1
         state.write(value)
     store.complete_remote_revoke(family_id)
