@@ -4380,6 +4380,8 @@ def register_event_history_tools(server: FastMCP, runtime: EventHistoryRuntime |
             end_seconds = end_time.timestamp()
             if start_seconds > end_seconds or end_seconds - start_seconds > 90 * 24 * 60 * 60:
                 raise ValueError("event history range is invalid")
+            control_uuid = normalize_loxone_uuid(control_uuid)
+            state_uuid = normalize_loxone_uuid(state_uuid)
             access = _access()
             scope = (
                 "event-history:"

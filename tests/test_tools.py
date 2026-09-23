@@ -7,6 +7,7 @@ import time
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from mcp.server.fastmcp import FastMCP
@@ -52,6 +53,7 @@ from mcpserver.tools import (
     _result,
     _rfc3339,
     register_control_tool,
+    register_event_history_tools,
     register_history_tools,
     register_loxberry_operate_tool,
     register_loxberry_read_tools,
@@ -974,6 +976,64 @@ async def test_event_history_read_rejects_a_visible_state_outside_the_source_all
         )
 
     assert exc_info.value.code == "not_found"
+
+
+@pytest.mark.asyncio
+async def test_state_history_normalizes_standard_uuid_input_before_runtime_access(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    control_uuid = "00000000-0000-0000-0000000000000001"
+    state_uuid = "00000000-0000-0000-0000000000000002"
+    control = Control(
+        uuid=control_uuid,
+        name="Visible control",
+        control_type="Switch",
+        room_uuid=None,
+        category_uuid=None,
+        action_uuid=None,
+        state_uuids=(("active", state_uuid),),
+    )
+
+    class Runtime:
+        arguments: tuple[str, str] | None = None
+
+        async def page(
+            self, _access: object, control: str, state: str, **_kwargs: object
+        ) -> object:
+            self.arguments = (control, state)
+            return (
+                control_object,
+                "active",
+                SimpleNamespace(
+                    coverage="not_recorded",
+                    entries=(),
+                    capture_started_at=None,
+                    retained_from=None,
+                    next_event_id=None,
+                    next_event_at=None,
+                ),
+            )
+
+    control_object = control
+    runtime = Runtime()
+    server = FastMCP("event-history-uuid-normalization")
+    register_event_history_tools(server, runtime)  # type: ignore[arg-type]
+    monkeypatch.setattr(tools_module, "_access", lambda: _loxberry_access(HISTORY_SCOPE))
+
+    result = await server._tool_manager.call_tool(
+        "loxone_get_state_history",
+        {
+            "control_uuid": "00000000-0000-0000-0000-000000000001",
+            "state_uuid": "00000000-0000-0000-0000-000000000002",
+            "start": "2026-09-01T00:00:00Z",
+            "end": "2026-09-01T01:00:00Z",
+        },
+    )
+
+    assert result.ok
+    assert runtime.arguments == (control_uuid, state_uuid)
+    assert result.data.control_uuid == control_uuid  # type: ignore[union-attr]
+    assert result.data.state_uuid == state_uuid  # type: ignore[union-attr]
 
 
 @pytest.mark.asyncio
