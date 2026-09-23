@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-nav">
+<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-sessions">
 <script>
   if (window.performance && typeof window.performance.mark === 'function') {
     window.performance.mark('mcp-admin-shell-parsed');
@@ -233,24 +233,24 @@
       data-unavailable-label="<TMPL_VAR SESSIONS.REMOTE_STATUS_UNAVAILABLE ESCAPE=HTML>"><TMPL_VAR REMOTE_CLEANUP_WARNING ESCAPE=HTML></p>
     <div id="session-list"><TMPL_UNLESS SERVER_RENDERED_FALLBACK><p class="mcp-status" data-kind="working" role="status"><TMPL_VAR AJAX.WORKING></p></TMPL_UNLESS>
     <TMPL_IF HAS_SESSIONS>
-      <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.TOKEN></th><th><TMPL_VAR SESSIONS.SCOPES></th><th><TMPL_VAR SESSIONS.EXPIRES></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody>
-      <TMPL_LOOP SESSIONS><tr data-session-id="<TMPL_VAR id ESCAPE=HTML>"><td><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML><TMPL_ELSE><TMPL_VAR SESSIONS.UNNAMED></TMPL_IF></td><td><code><TMPL_VAR client ESCAPE=HTML></code></td><td><code><TMPL_VAR identity ESCAPE=HTML></code></td><td data-session-token-state><TMPL_IF loxone_token_confirmation_required><TMPL_VAR SESSIONS.TOKEN_CONFIRMATION_REQUIRED><TMPL_ELSE><TMPL_VAR SESSIONS.TOKEN_ACTIVE></TMPL_IF></td><td><code><TMPL_VAR scopes ESCAPE=HTML></code></td><td><time class="mcp-expiry" data-expires-at="<TMPL_VAR expires_at ESCAPE=HTML>"><TMPL_VAR expires_display ESCAPE=HTML></time></td><td><TMPL_IF loxone_token_confirmation_required><form method="post" action="index.cgi" data-ajax="confirm_loxone_token"><input type="hidden" name="action" value="confirm_loxone_token"><input type="hidden" name="session_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.CONFIRM_LOXONE_TOKEN></button></form></TMPL_IF><TMPL_IF loxberry_read_eligible><TMPL_UNLESS loxberry_read_approved><form method="post" action="index.cgi" data-ajax="allow_loxberry_read"><input type="hidden" name="action" value="allow_loxberry_read"><input type="hidden" name="session_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.ALLOW_LOXBERRY_READ></button></form></TMPL_UNLESS></TMPL_IF><TMPL_IF loxberry_operate_eligible><TMPL_UNLESS loxberry_operate_approved><form method="post" action="index.cgi" data-ajax="allow_loxberry_operate"><input type="hidden" name="action" value="allow_loxberry_operate"><input type="hidden" name="session_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.ALLOW_LOXBERRY_OPERATE></button></form></TMPL_UNLESS></TMPL_IF><form method="post" action="index.cgi" data-ajax="revoke_session"><input type="hidden" name="action" value="revoke_session"><input type="hidden" name="id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form></td></tr></TMPL_LOOP>
+      <div class="mcp-table-wrap mcp-session-table-wrap"><table class="mcp-table mcp-session-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.TOKEN></th><th><TMPL_VAR SESSIONS.SCOPES></th><th><TMPL_VAR SESSIONS.EXPIRES></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody>
+      <TMPL_LOOP SESSIONS><tr data-session-id="<TMPL_VAR id ESCAPE=HTML>"><td data-label="<TMPL_VAR SESSIONS.CLIENT ESCAPE=HTML>"><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML><TMPL_ELSE><TMPL_VAR SESSIONS.UNNAMED></TMPL_IF></td><td data-label="<TMPL_VAR SESSIONS.INSTANCE ESCAPE=HTML>"><code><TMPL_VAR client ESCAPE=HTML></code></td><td data-label="<TMPL_VAR SESSIONS.IDENTITY ESCAPE=HTML>"><code><TMPL_VAR identity ESCAPE=HTML></code></td><td data-label="<TMPL_VAR SESSIONS.TOKEN ESCAPE=HTML>" data-session-token-state><TMPL_IF loxone_token_confirmation_required><TMPL_VAR SESSIONS.TOKEN_CONFIRMATION_REQUIRED><TMPL_ELSE><TMPL_VAR SESSIONS.TOKEN_ACTIVE></TMPL_IF></td><td data-label="<TMPL_VAR SESSIONS.SCOPES ESCAPE=HTML>"><code><TMPL_VAR scopes ESCAPE=HTML></code></td><td data-label="<TMPL_VAR SESSIONS.EXPIRES ESCAPE=HTML>"><time class="mcp-expiry" data-expires-at="<TMPL_VAR expires_at ESCAPE=HTML>"><TMPL_VAR expires_display ESCAPE=HTML></time></td><td data-label="<TMPL_VAR SESSIONS.ACTION ESCAPE=HTML>"><TMPL_IF loxone_token_confirmation_required><form method="post" action="index.cgi" data-ajax="confirm_loxone_token"><input type="hidden" name="action" value="confirm_loxone_token"><input type="hidden" name="session_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.CONFIRM_LOXONE_TOKEN></button></form></TMPL_IF><TMPL_IF loxberry_read_eligible><TMPL_UNLESS loxberry_read_approved><form method="post" action="index.cgi" data-ajax="allow_loxberry_read"><input type="hidden" name="action" value="allow_loxberry_read"><input type="hidden" name="session_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.ALLOW_LOXBERRY_READ></button></form></TMPL_UNLESS></TMPL_IF><TMPL_IF loxberry_operate_eligible><TMPL_UNLESS loxberry_operate_approved><form method="post" action="index.cgi" data-ajax="allow_loxberry_operate"><input type="hidden" name="action" value="allow_loxberry_operate"><input type="hidden" name="session_id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.ALLOW_LOXBERRY_OPERATE></button></form></TMPL_UNLESS></TMPL_IF><form method="post" action="index.cgi" data-ajax="revoke_session"><input type="hidden" name="action" value="revoke_session"><input type="hidden" name="id" value="<TMPL_VAR id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form></td></tr></TMPL_LOOP>
       </tbody></table></div>
       <form method="post" action="index.cgi" data-ajax="revoke_all"><input type="hidden" name="action" value="revoke_all"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE_ALL></button></form>
     <TMPL_ELSE><TMPL_IF SERVER_RENDERED_FALLBACK><p><TMPL_VAR SESSIONS.EMPTY></p></TMPL_IF></TMPL_IF>
     </div>
     <template id="session-table-template">
-      <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.TOKEN></th><th><TMPL_VAR SESSIONS.SCOPES></th><th><TMPL_VAR SESSIONS.EXPIRES></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody></tbody></table></div>
+      <div class="mcp-table-wrap mcp-session-table-wrap"><table class="mcp-table mcp-session-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.TOKEN></th><th><TMPL_VAR SESSIONS.SCOPES></th><th><TMPL_VAR SESSIONS.EXPIRES></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody></tbody></table></div>
       <form method="post" action="index.cgi" data-ajax="revoke_all"><input type="hidden" name="action" value="revoke_all"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE_ALL></button></form>
     </template>
     <section id="loxberry-binding-section" data-unnamed-label="<TMPL_VAR SESSIONS.UNNAMED ESCAPE=HTML>" data-no-active-label="<TMPL_VAR SESSIONS.NO_ACTIVE_SESSION ESCAPE=HTML>" data-no-identity-label="<TMPL_VAR SESSIONS.NO_IDENTITY ESCAPE=HTML>" <TMPL_UNLESS LOXBERRY_BINDINGS>hidden</TMPL_UNLESS>>
       <h3><TMPL_VAR SESSIONS.LOXBERRY_APPROVALS></h3>
-      <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.BINDING_ID></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody id="loxberry-binding-list"><TMPL_LOOP LOXBERRY_BINDINGS><TMPL_LOOP rows><tr><td><TMPL_IF inactive><TMPL_IF inactive_login_required><TMPL_VAR SESSIONS.INACTIVE_LOGIN_REQUIRED><TMPL_ELSE><TMPL_VAR SESSIONS.LEGACY_INACTIVE></TMPL_IF><TMPL_IF retention_expires_display><div class="mcp-help"><TMPL_VAR SESSIONS.REMOVAL_SCHEDULED> <TMPL_VAR retention_expires_display ESCAPE=HTML></div></TMPL_IF><TMPL_ELSE><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML><TMPL_ELSE><TMPL_VAR SESSIONS.UNNAMED></TMPL_IF></TMPL_IF></td><td><code><TMPL_VAR client ESCAPE=HTML></code></td><td><TMPL_IF inactive><TMPL_VAR SESSIONS.NO_IDENTITY><TMPL_ELSE><code><TMPL_VAR identity ESCAPE=HTML></code></TMPL_IF></td><td><code><TMPL_VAR fingerprint ESCAPE=HTML></code></td><td><form method="post" action="index.cgi" data-ajax="revoke_loxberry_read"><input type="hidden" name="action" value="revoke_loxberry_read"><input type="hidden" name="binding_id" value="<TMPL_VAR binding_id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form></td></tr></TMPL_LOOP></TMPL_LOOP></tbody></table></div>
+      <div class="mcp-table-wrap mcp-session-table-wrap"><table class="mcp-table mcp-session-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.BINDING_ID></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody id="loxberry-binding-list"><TMPL_LOOP LOXBERRY_BINDINGS><TMPL_LOOP rows><tr><td data-label="<TMPL_VAR SESSIONS.CLIENT ESCAPE=HTML>"><TMPL_IF inactive><TMPL_IF inactive_login_required><TMPL_VAR SESSIONS.INACTIVE_LOGIN_REQUIRED><TMPL_ELSE><TMPL_VAR SESSIONS.LEGACY_INACTIVE></TMPL_IF><TMPL_IF retention_expires_display><div class="mcp-help"><TMPL_VAR SESSIONS.REMOVAL_SCHEDULED> <TMPL_VAR retention_expires_display ESCAPE=HTML></div></TMPL_IF><TMPL_ELSE><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML><TMPL_ELSE><TMPL_VAR SESSIONS.UNNAMED></TMPL_IF></TMPL_IF></td><td data-label="<TMPL_VAR SESSIONS.INSTANCE ESCAPE=HTML>"><code><TMPL_VAR client ESCAPE=HTML></code></td><td data-label="<TMPL_VAR SESSIONS.IDENTITY ESCAPE=HTML>"><TMPL_IF inactive><TMPL_VAR SESSIONS.NO_IDENTITY><TMPL_ELSE><code><TMPL_VAR identity ESCAPE=HTML></code></TMPL_IF></td><td data-label="<TMPL_VAR SESSIONS.BINDING_ID ESCAPE=HTML>"><code><TMPL_VAR fingerprint ESCAPE=HTML></code></td><td data-label="<TMPL_VAR SESSIONS.ACTION ESCAPE=HTML>"><form method="post" action="index.cgi" data-ajax="revoke_loxberry_read"><input type="hidden" name="action" value="revoke_loxberry_read"><input type="hidden" name="binding_id" value="<TMPL_VAR binding_id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form></td></tr></TMPL_LOOP></TMPL_LOOP></tbody></table></div>
       <p class="mcp-help"><TMPL_VAR SESSIONS.LOXBERRY_REVOKE_HINT></p>
     </section>
     <section id="loxberry-operate-binding-section" data-unnamed-label="<TMPL_VAR SESSIONS.UNNAMED ESCAPE=HTML>" data-no-active-label="<TMPL_VAR SESSIONS.NO_ACTIVE_SESSION ESCAPE=HTML>" data-no-identity-label="<TMPL_VAR SESSIONS.NO_IDENTITY ESCAPE=HTML>" <TMPL_UNLESS LOXBERRY_OPERATE_BINDINGS>hidden</TMPL_UNLESS>>
       <h3><TMPL_VAR SESSIONS.LOXBERRY_OPERATE_APPROVALS></h3>
-      <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.BINDING_ID></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody id="loxberry-operate-binding-list"><TMPL_LOOP LOXBERRY_OPERATE_BINDINGS><TMPL_LOOP rows><tr><td><TMPL_IF inactive><TMPL_IF inactive_login_required><TMPL_VAR SESSIONS.INACTIVE_LOGIN_REQUIRED><TMPL_ELSE><TMPL_VAR SESSIONS.LEGACY_INACTIVE></TMPL_IF><TMPL_IF retention_expires_display><div class="mcp-help"><TMPL_VAR SESSIONS.REMOVAL_SCHEDULED> <TMPL_VAR retention_expires_display ESCAPE=HTML></div></TMPL_IF><TMPL_ELSE><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML><TMPL_ELSE><TMPL_VAR SESSIONS.UNNAMED></TMPL_IF></TMPL_IF></td><td><code><TMPL_VAR client ESCAPE=HTML></code></td><td><TMPL_IF inactive><TMPL_VAR SESSIONS.NO_IDENTITY><TMPL_ELSE><code><TMPL_VAR identity ESCAPE=HTML></code></TMPL_IF></td><td><code><TMPL_VAR fingerprint ESCAPE=HTML></code></td><td><form method="post" action="index.cgi" data-ajax="revoke_loxberry_operate"><input type="hidden" name="action" value="revoke_loxberry_operate"><input type="hidden" name="binding_id" value="<TMPL_VAR binding_id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form></td></tr></TMPL_LOOP></TMPL_LOOP></tbody></table></div>
+      <div class="mcp-table-wrap mcp-session-table-wrap"><table class="mcp-table mcp-session-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.BINDING_ID></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody id="loxberry-operate-binding-list"><TMPL_LOOP LOXBERRY_OPERATE_BINDINGS><TMPL_LOOP rows><tr><td data-label="<TMPL_VAR SESSIONS.CLIENT ESCAPE=HTML>"><TMPL_IF inactive><TMPL_IF inactive_login_required><TMPL_VAR SESSIONS.INACTIVE_LOGIN_REQUIRED><TMPL_ELSE><TMPL_VAR SESSIONS.LEGACY_INACTIVE></TMPL_IF><TMPL_IF retention_expires_display><div class="mcp-help"><TMPL_VAR SESSIONS.REMOVAL_SCHEDULED> <TMPL_VAR retention_expires_display ESCAPE=HTML></div></TMPL_IF><TMPL_ELSE><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML><TMPL_ELSE><TMPL_VAR SESSIONS.UNNAMED></TMPL_IF></TMPL_IF></td><td data-label="<TMPL_VAR SESSIONS.INSTANCE ESCAPE=HTML>"><code><TMPL_VAR client ESCAPE=HTML></code></td><td data-label="<TMPL_VAR SESSIONS.IDENTITY ESCAPE=HTML>"><TMPL_IF inactive><TMPL_VAR SESSIONS.NO_IDENTITY><TMPL_ELSE><code><TMPL_VAR identity ESCAPE=HTML></code></TMPL_IF></td><td data-label="<TMPL_VAR SESSIONS.BINDING_ID ESCAPE=HTML>"><code><TMPL_VAR fingerprint ESCAPE=HTML></code></td><td data-label="<TMPL_VAR SESSIONS.ACTION ESCAPE=HTML>"><form method="post" action="index.cgi" data-ajax="revoke_loxberry_operate"><input type="hidden" name="action" value="revoke_loxberry_operate"><input type="hidden" name="binding_id" value="<TMPL_VAR binding_id ESCAPE=HTML>"><button class="lb-button" type="submit"><TMPL_VAR ACTION.REVOKE></button></form></td></tr></TMPL_LOOP></TMPL_LOOP></tbody></table></div>
     </section>
     </div>
   </details>
@@ -1204,31 +1204,41 @@
     row.dataset.sessionId = String(session.id);
     row.dataset.fingerprint = sessionFingerprint(session);
     const values = [session.client_name || sessionsSection.dataset.unnamedLabel, session.client, session.identity];
+    const labels = [
+      '<TMPL_VAR SESSIONS.CLIENT ESCAPE=JS>',
+      '<TMPL_VAR SESSIONS.INSTANCE ESCAPE=JS>',
+      '<TMPL_VAR SESSIONS.IDENTITY ESCAPE=JS>',
+    ];
     values.forEach((value, index) => {
       const cell = document.createElement('td');
+      cell.dataset.label = labels[index];
       const content = index === 0 ? document.createTextNode(String(value ?? '')) : document.createElement('code');
       if (index !== 0) content.textContent = String(value ?? '');
       cell.append(content);
       row.append(cell);
     });
     const tokenCell = document.createElement('td');
+    tokenCell.dataset.label = '<TMPL_VAR SESSIONS.TOKEN ESCAPE=JS>';
     tokenCell.dataset.sessionTokenState = '';
     tokenCell.textContent = session.loxone_token_confirmation_required
       ? '<TMPL_VAR SESSIONS.TOKEN_CONFIRMATION_REQUIRED ESCAPE=JS>'
       : '<TMPL_VAR SESSIONS.TOKEN_ACTIVE ESCAPE=JS>';
     row.append(tokenCell);
     const scopesCell = document.createElement('td');
+    scopesCell.dataset.label = '<TMPL_VAR SESSIONS.SCOPES ESCAPE=JS>';
     const scopes = document.createElement('code');
     scopes.textContent = String(session.scopes || '');
     scopesCell.append(scopes);
     row.append(scopesCell);
     const expiryCell = document.createElement('td');
+    expiryCell.dataset.label = '<TMPL_VAR SESSIONS.EXPIRES ESCAPE=JS>';
     const expiry = document.createElement('time');
     expiry.className = 'mcp-expiry';
     updateExpiry(expiry, session.expires_at);
     expiryCell.append(expiry);
     row.append(expiryCell);
     const actionCell = document.createElement('td');
+    actionCell.dataset.label = '<TMPL_VAR SESSIONS.ACTION ESCAPE=JS>';
     if (session.loxone_token_confirmation_required) {
       const confirmForm = document.createElement('form');
       confirmForm.method = 'post';
@@ -1345,6 +1355,7 @@
         const row = document.createElement('tr');
         row.dataset.bindingId = String(bindingRow.binding_id || '');
         const clientName = document.createElement('td');
+        clientName.dataset.label = '<TMPL_VAR SESSIONS.CLIENT ESCAPE=JS>';
         clientName.textContent = bindingRow.inactive
           ? (bindingRow.inactive_login_required
             ? '<TMPL_VAR SESSIONS.INACTIVE_LOGIN_REQUIRED ESCAPE=JS>'
@@ -1358,10 +1369,12 @@
           clientName.append(expiry);
         }
         const client = document.createElement('td');
+        client.dataset.label = '<TMPL_VAR SESSIONS.INSTANCE ESCAPE=JS>';
         const clientCode = document.createElement('code');
         clientCode.textContent = String(bindingRow.client || '');
         client.append(clientCode);
         const identity = document.createElement('td');
+        identity.dataset.label = '<TMPL_VAR SESSIONS.IDENTITY ESCAPE=JS>';
         if (bindingRow.inactive) identity.textContent = section.dataset.noIdentityLabel;
         else {
           const identityCode = document.createElement('code');
@@ -1369,10 +1382,12 @@
           identity.append(identityCode);
         }
         const fingerprint = document.createElement('td');
+        fingerprint.dataset.label = '<TMPL_VAR SESSIONS.BINDING_ID ESCAPE=JS>';
         const fingerprintCode = document.createElement('code');
         fingerprintCode.textContent = String(bindingRow.fingerprint || '');
         fingerprint.append(fingerprintCode);
         const actionCell = document.createElement('td');
+        actionCell.dataset.label = '<TMPL_VAR SESSIONS.ACTION ESCAPE=JS>';
         const revokeForm = document.createElement('form');
         revokeForm.method = 'post';
         revokeForm.action = 'index.cgi';

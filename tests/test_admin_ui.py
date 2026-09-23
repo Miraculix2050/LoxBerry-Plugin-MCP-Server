@@ -468,7 +468,7 @@ def test_admin_cards_use_consistent_vertical_spacing() -> None:
     explorer = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
     stylesheet = (ROOT / "webfrontend" / "htmlauth" / "mcp-ui.css").read_text(encoding="utf-8")
 
-    assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-nav"' in template
+    assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-sessions"' in template
     assert '<link rel="stylesheet" href="mcp-ui.css">' in explorer
     assert "<style>" not in template
     assert "<style>" not in explorer
@@ -834,7 +834,7 @@ def test_admin_sections_are_native_persistent_collapsibles() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
 
-    assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-nav"' in template
+    assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-sessions"' in template
     expected_sections = [
         ("status", "STATUS.TITLE"),
         ("configuration", "SETUP.TITLE"),
@@ -1329,6 +1329,54 @@ def test_sessions_show_client_name_before_the_stable_instance_identifier() -> No
             template.index('id="loxberry-binding-section"') : template.index('id="diagnostics"')
         ]
     )
+
+
+def test_session_tables_have_matching_mobile_labels_in_fallback_and_ajax_rows() -> None:
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    css = (ROOT / "webfrontend/htmlauth/mcp-ui.css").read_text(encoding="utf-8")
+    assert template.count('class="mcp-table mcp-session-table"') == 4
+    assert template.count('class="mcp-table-wrap mcp-session-table-wrap"') == 4
+
+    cases = (
+        (
+            "<TMPL_LOOP SESSIONS><tr",
+            "const createSessionRow =",
+            "const updateSessions =",
+            ("CLIENT", "INSTANCE", "IDENTITY", "TOKEN", "SCOPES", "EXPIRES", "ACTION"),
+        ),
+        (
+            "<TMPL_LOOP LOXBERRY_BINDINGS><TMPL_LOOP rows><tr",
+            "const loxberryBindingRows =",
+            "const updateLoxberryBindingTable =",
+            ("CLIENT", "INSTANCE", "IDENTITY", "BINDING_ID", "ACTION"),
+        ),
+        (
+            "<TMPL_LOOP LOXBERRY_OPERATE_BINDINGS><TMPL_LOOP rows><tr",
+            "const loxberryBindingRows =",
+            "const updateLoxberryBindingTable =",
+            ("CLIENT", "INSTANCE", "IDENTITY", "BINDING_ID", "ACTION"),
+        ),
+    )
+    for fallback_start, js_start, js_end, expected in cases:
+        row = template[template.index(fallback_start) :]
+        row = row[: row.index("</tr>")]
+        fallback_labels = re.findall(
+            r'<td data-label="<TMPL_VAR SESSIONS\.(\w+) ESCAPE=HTML>"', row
+        )
+        js = template[template.index(js_start) : template.index(js_end)]
+        js_labels = re.findall(r"dataset\.label = '<TMPL_VAR SESSIONS\.(\w+) ESCAPE=JS>'", js)
+        if js_start == "const createSessionRow =":
+            leading = js[
+                js.index("const labels = [") : js.index("];", js.index("const labels = ["))
+            ]
+            js_labels = re.findall(r"SESSIONS\.(\w+) ESCAPE=JS", leading) + js_labels
+        assert tuple(fallback_labels) == expected
+        assert tuple(js_labels) == expected
+
+    assert "#sessions .mcp-session-table-wrap { overflow-x: visible; }" in css
+    assert '#sessions form[data-ajax^="revoke"] .lb-button' in css
+    assert "data-session-token-state" in template
+    assert "const updateSessionActionControls = () =>" in template
 
 
 def test_explorer_approval_retention_and_inactive_states_are_visible_in_both_languages() -> None:
