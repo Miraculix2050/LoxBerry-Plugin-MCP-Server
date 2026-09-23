@@ -14,13 +14,15 @@ BEGIN {
     $lbplogdir = $ENV{LB_TEST_LOG_DIR} // '';
 }
 sub pluginversion { return 'test'; }
-sub pluginloglevel { return 3; }
+sub pluginloglevel { return $ENV{LB_TEST_PLUGIN_LOGLEVEL} // 3; }
 sub lbhostname { return 'localhost'; }
 sub get_localip { return '127.0.0.1'; }
 sub read_file { return ''; }
 sub readlanguage {
     return (
-        'DIAGNOSTICS.LOGLIST_EMPTY' => 'No native plugin logs are available yet.',
+        'DIAGNOSTICS.LOGLIST_EMPTY' => $ENV{LB_TEST_LOG_TEXT_BYTES}
+            ? "Keine Logeintr\xC3\xA4ge." : 'No LogManager entry is registered for this plugin.',
+        'DIAGNOSTICS.LOGLIST_UNAVAILABLE' => 'The LogManager is unavailable.',
         'SETUP.EMERGENCY_STOP_AUTH_BUSY' => "Anmeldung l\xC3\xA4uft.",
         'STATUS.ERROR_ACTION' => "Aktion f\xC3\xBCr Dienst fehlgeschlagen.",
     );

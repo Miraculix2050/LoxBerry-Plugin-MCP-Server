@@ -56,11 +56,16 @@ sub ascii_html_text {
 }
 
 sub native_loglist_html {
-    my $html = LoxBerry::Web::loglist_html() // '';
-    return $html if $html =~ /\S/;
+    my $html = LoxBerry::Web::loglist_html();
+    return $html if defined($html) && $html =~ /logfile\.cgi\?/;
+    my $unavailable = !defined($html);
+    my $label = $L{$unavailable ? 'DIAGNOSTICS.LOGLIST_UNAVAILABLE' : 'DIAGNOSTICS.LOGLIST_EMPTY'};
+    $label = '' if !defined($label);
+    $label = decode('UTF-8', $label, FB_DEFAULT) if !is_utf8($label);
     return sprintf(
-        '<p class="mcp-status" role="status">%s</p>',
-        ascii_html_text($L{'DIAGNOSTICS.LOGLIST_EMPTY'}),
+        '<p class="mcp-status" data-kind="%s" role="status">%s</p>',
+        $unavailable ? 'error' : 'warning',
+        ascii_html_text($label),
     );
 }
 
@@ -74,13 +79,24 @@ sub admin_log {
     return if $plugin_level == 0 || $threshold{$severity} > $plugin_level;
 
     $message = bounded_admin_message($message);
-    $admin_log //= LoxBerry::Log->new(
-        name => 'admin-ui',
-        package => $lbpplugindir,
-        addtime => 1,
-    );
+    if (!$admin_log) {
+        $admin_log = LoxBerry::Log->new(
+            name => 'admin-ui',
+            package => $lbpplugindir,
+            addtime => 1,
+        );
+        $admin_log->LOGSTART(sprintf(
+            'component=admin_ui request_id=%s severity=info outcome=started', $request_id,
+        )) if $admin_log;
+    }
     my $log_method = $method{$severity};
     $admin_log->$log_method($message) if $admin_log;
+}
+
+END {
+    $admin_log->LOGEND(sprintf(
+        'component=admin_ui request_id=%s severity=info outcome=finished', $request_id,
+    )) if $admin_log;
 }
 
 $ENV{LBPDATA} = $lbpdatadir;
@@ -534,18 +550,12 @@ if ($action ne '') {
             (clock_gettime(CLOCK_MONOTONIC) - $started) * 1000,
         ));
     } elsif ($action eq 'page_loglist') {
-        my $started = clock_gettime(CLOCK_MONOTONIC);
         $result = {
             ok => JSON::PP::true,
             data => {
                 loglist_html => native_loglist_html(),
             },
         };
-        admin_log('debug', sprintf(
-            'component=admin_ui request_id=%s action=page_loglist duration_ms=%.1f',
-            $request_id,
-            (clock_gettime(CLOCK_MONOTONIC) - $started) * 1000,
-        ));
     } elsif ($action eq 'page_state') {
         $result = admin_call('page_state', {});
     } elsif ($action eq 'emergency_stop_options') {
