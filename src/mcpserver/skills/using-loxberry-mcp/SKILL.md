@@ -247,6 +247,10 @@ The per-state `recommendations` explain how to close incomplete history gaps.
 They use observable value and control metadata, not signal names. An
 documented digital state with observed 0/1 value can support on-change recording
 without an `is_analog` flag; conflicting metadata or values remain uncertain.
+Documented `value` states of `InfoOnlyAnalog`, `UpDownAnalog`,
+`LeftRightAnalog`, and `Slider` supply analog evidence without that flag; a
+small range is not proof of a digital state. An explicit contradictory flag
+keeps the recommendation uncertain.
 For `Daytimer`, the analog flag applies only to `value`, and local event-history
 sources are unsupported. A native series is
 recommended for reuse only when its output maps to the state; disabled series

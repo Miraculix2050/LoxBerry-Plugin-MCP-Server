@@ -392,6 +392,60 @@ def test_observability_uses_documented_state_semantics(
     assert result["history_source"] == expected
 
 
+@pytest.mark.parametrize(
+    "control_type", ["InfoOnlyAnalog", "UpDownAnalog", "Slider", "LeftRightAnalog"]
+)
+def test_observability_uses_documented_analog_value_with_small_range(control_type):
+    control = Control(
+        "control",
+        "Arbitrary label",
+        control_type,
+        None,
+        None,
+        None,
+        (("value", "value-state"), ("error", "error-state")),
+        minimum=0.0,
+        maximum=1.0,
+        step=1.0,
+    )
+    value = tools_module._observability_recommendation(
+        control,
+        "value-state",
+        StateRecord("value-state", 1.0, Freshness.CURRENT, 100.0),
+        "not_configured",
+    )
+    error = tools_module._observability_recommendation(
+        control,
+        "error-state",
+        StateRecord("error-state", 1.0, Freshness.CURRENT, 100.0),
+        "not_configured",
+    )
+    assert value["history_source"] == "native_statistics"
+    assert value["is_analog"] is True
+    assert error["history_source"] == "undetermined"
+
+    conflicting = tools_module._observability_recommendation(
+        Control(
+            "control",
+            "Arbitrary label",
+            control_type,
+            None,
+            None,
+            None,
+            (("value", "value-state"),),
+            is_analog=False,
+            minimum=0.0,
+            maximum=1.0,
+            step=1.0,
+        ),
+        "value-state",
+        StateRecord("value-state", 1.0, Freshness.CURRENT, 100.0),
+        "not_configured",
+    )
+    assert conflicting["history_source"] == "undetermined"
+    assert "analog_metadata_conflict" in conflicting["limitations"]
+
+
 def test_observability_statistics_match_the_state_before_reuse():
     series = (StatisticSeries("v2:1:actual", "statistic_v2", "1", "actual", "Actual", "kW"),)
     control = Control(

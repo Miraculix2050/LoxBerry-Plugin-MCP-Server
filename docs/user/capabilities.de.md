@@ -60,6 +60,11 @@ Aufzeichnung bei Änderung oder `undetermined`.
 Für dokumentierte Schaltzustände von `InfoOnlyDigital`, `Switch`, `Pushbutton`,
 `PresenceDetector` und weiteren unterstützten Control-Typen kann bei beobachtetem
 Wert 0/1 eine Aufzeichnung bei Änderung auch ohne `is_analog` empfohlen werden.
+Der dokumentierte `value`-State von `InfoOnlyAnalog`, `UpDownAnalog`,
+`LeftRightAnalog` und `Slider` wird auch ohne `details.analog` als analog
+behandelt; ein kleiner Wertebereich macht ihn nicht zu einem digitalen State.
+Widerspricht ein ausdrücklich gesetztes `details.analog=false`, bleibt die
+Empfehlung unbestimmt.
 Beim `Daytimer` gilt `is_analog` nur für den State `value`, nicht für Modus oder
 Zeitwerte. Für `Daytimer` wird keine lokale Aufzeichnung empfohlen, weil lokale
 Event-History-Quellen diesen Control-Typ nicht unterstützen. Eine aktive native Serie hat nur dann Vorrang, wenn ihr Output dem

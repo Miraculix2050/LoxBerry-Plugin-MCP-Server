@@ -5,6 +5,9 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Recognize documented analog `value` states without an `analog` detail and
+  preserve uncertainty when an explicit flag contradicts the control type.
+
 - Match native statistic outputs to their states before recommending reuse, ignore
   disabled statistic groups, and classify documented digital states individually.
   Restrict the `Daytimer` analog flag to its value state.

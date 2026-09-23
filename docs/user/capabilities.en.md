@@ -56,6 +56,11 @@ value and control metadata.
 Documented digital states of `InfoOnlyDigital`, `Switch`, `Pushbutton`,
 `PresenceDetector`, and other supported control types can be recommended for
 on-change recording with observed 0/1 values even without `is_analog`.
+The documented `value` state of `InfoOnlyAnalog`, `UpDownAnalog`,
+`LeftRightAnalog`, and `Slider` is treated as analog even without
+`details.analog`; a small value range does not make it a digital state.
+An explicit conflicting `details.analog=false` leaves the recommendation
+undetermined.
 For a `Daytimer`, `is_analog` applies only to the `value` state, not its mode or
 time values. Local recording is not recommended for `Daytimer` because local
 event-history sources do not support this control type. An active native series is preferred only when its output maps to

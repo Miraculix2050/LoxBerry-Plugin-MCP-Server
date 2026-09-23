@@ -116,6 +116,11 @@ numeric value is exactly 0 or 1 and no applicable analog flag contradicts it.
 `Daytimer.details.analog` applies to `value` only. Local recording is not recommended
 for `Daytimer` because event-history sources reject that control type. Control-level range metadata
 can support `value` but does not classify unrelated states.
+The documented `value` state of `InfoOnlyAnalog`, `UpDownAnalog`,
+`LeftRightAnalog`, and `Slider` supplies analog evidence even when
+`details.analog` is absent. An explicit conflicting digital flag remains
+`undetermined`; the documented analog type takes priority over the small-range
+discrete heuristic.
 Native StatisticV2 outputs map by state key and legacy outputs by their documented
 UUID. Disabled groups or frequencies are omitted. A legacy output without a
 state UUID keeps the recommendation `undetermined`; mapped series still have

@@ -2235,9 +2235,18 @@ def _observability_recommendation(
     matching_names = tuple(name for name, uuid in control.state_uuids if uuid == state_uuid)
     state_names = set(matching_names)
     state_name = matching_names[0] if matching_names else None
+    documented_analog_state = state_name == "value" and control.control_type in {
+        "InfoOnlyAnalog",
+        "UpDownAnalog",
+        "LeftRightAnalog",
+        "Slider",
+    }
+    analog_metadata_conflict = documented_analog_state and control.is_analog is False
     effective_analog = (
         control.is_analog if control.control_type != "Daytimer" or state_name == "value" else None
     )
+    if documented_analog_state and effective_analog is None:
+        effective_analog = True
     discrete_numeric_range = (
         value_type == "numeric"
         and state_name == "value"
@@ -2280,6 +2289,8 @@ def _observability_recommendation(
         limitations.append("statistics_period_not_checked")
     elif unmapped_series:
         limitations.append("series_state_mapping_unverified")
+    if analog_metadata_conflict:
+        limitations.append("analog_metadata_conflict")
     if record.freshness is not Freshness.CURRENT:
         limitations.append("current_value_not_fresh")
     if history_status == "unavailable":
@@ -2319,6 +2330,11 @@ def _observability_recommendation(
         reason = (
             "Local recording configuration is unavailable; avoid recommending a duplicate source."
         )
+        confidence = "low"
+    elif analog_metadata_conflict:
+        source = "undetermined"
+        strategy = "inspect_signal_metadata"
+        reason = "The documented analog state conflicts with the control's digital metadata."
         confidence = "low"
     elif value_type == "numeric" and effective_analog is True and not documented_digital_state:
         source = "native_statistics"
