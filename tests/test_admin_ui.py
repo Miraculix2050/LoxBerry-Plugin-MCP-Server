@@ -478,6 +478,19 @@ def test_admin_cards_use_consistent_vertical_spacing() -> None:
     assert '<div class="mcp-field-stack">' in template
 
 
+def test_admin_top_notices_do_not_leave_empty_grid_rows() -> None:
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    top = template[
+        template.index('<main class="mcp-page">') : template.index('<nav class="mcp-section-nav"')
+    ]
+
+    assert '<p><a id="configuration-fallback-link"' not in top
+    assert '<a id="configuration-fallback-link" href="index.cgi?fallback=1" hidden>' in top
+    assert "<TMPL_UNLESS NOTIFICATIONS_HTML>hidden</TMPL_UNLESS>" in top
+    assert "loxberryNotifications.hidden = !loxberryNotifications.innerHTML.trim();" in template
+    assert "loxberryNotifications.hidden = false;" in template
+
+
 def test_service_status_is_first_and_uses_a_lightweight_ajax_contract() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
