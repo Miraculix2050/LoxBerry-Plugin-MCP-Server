@@ -57,11 +57,15 @@ haben dieselbe Begrenzung; ausgelassenen Text markiert `control_metadata_truncat
 Für jeden State ohne vollständige lokale Abdeckung empfiehlt `recommendations`
 anhand beobachtbarer Werte und Control-Metadaten native Statistik, lokale
 Aufzeichnung bei Änderung oder `undetermined`.
-Für `InfoOnlyDigital` mit dokumentiertem State-Schlüssel `active` oder `value`
-und beobachtetem Wert 0/1 kann eine Aufzeichnung bei Änderung auch ohne
-`is_analog` empfohlen werden. Vorhandene native Serien haben Vorrang; ihre
-Zuordnung zu einem bestimmten State und ihre zeitliche Abdeckung
-müssen geprüft werden. Teilweise lokale Aufzeichnung ist eine Abdeckungslücke,
+Für dokumentierte Schaltzustände von `InfoOnlyDigital`, `Switch`, `Pushbutton`,
+`PresenceDetector` und weiteren unterstützten Control-Typen kann bei beobachtetem
+Wert 0/1 eine Aufzeichnung bei Änderung auch ohne `is_analog` empfohlen werden.
+Beim `Daytimer` gilt `is_analog` nur für den State `value`, nicht für Modus oder
+Zeitwerte. Für `Daytimer` wird keine lokale Aufzeichnung empfohlen, weil lokale
+Event-History-Quellen diesen Control-Typ nicht unterstützen. Eine aktive native Serie hat nur dann Vorrang, wenn ihr Output dem
+State zugeordnet werden kann. Fehlt bei einer Legacy-Serie die State-UUID,
+bleibt die Empfehlung unbestimmt. Die zeitliche Abdeckung muss weiterhin geprüft
+werden. Teilweise lokale Aufzeichnung ist eine Abdeckungslücke,
 kein Anlass für eine zweite Quelle. Ohne Nachweis der Signaldynamik nennt die
 Intervall-Empfehlung keine festen Minutenwerte. Das Tool ändert keine
 Aufzeichnungseinstellungen.

@@ -2232,22 +2232,54 @@ def _observability_recommendation(
         value_type = "structured"
     else:
         value_type = "unknown"
+    matching_names = tuple(name for name, uuid in control.state_uuids if uuid == state_uuid)
+    state_names = set(matching_names)
+    state_name = matching_names[0] if matching_names else None
+    effective_analog = (
+        control.is_analog if control.control_type != "Daytimer" or state_name == "value" else None
+    )
     discrete_numeric_range = (
         value_type == "numeric"
+        and state_name == "value"
         and control.minimum is not None
         and control.maximum is not None
         and control.step is not None
         and control.step > 0
         and 0 <= (control.maximum - control.minimum) / control.step <= 16
     )
-    documented_digital_state = control.control_type == "InfoOnlyDigital" and any(
-        name in {"active", "value"} and uuid == state_uuid for name, uuid in control.state_uuids
+    documented_digital_state = (
+        (control.control_type == "InfoOnlyDigital" and bool(state_names & {"active", "value"}))
+        or (
+            control.control_type == "Daytimer"
+            and bool(state_names & {"resetActive", "needsActivation"})
+        )
+        or (
+            control.control_type == "Daytimer"
+            and effective_analog is False
+            and state_name == "value"
+        )
+        or (control.control_type == "Switch" and bool(state_names & {"active", "lockedOn"}))
+        or (control.control_type == "Pushbutton" and "active" in state_names)
+        or (control.control_type == "PresenceDetector" and bool(state_names & {"active", "locked"}))
+        or (control.control_type == "Hourcounter" and "active" in state_names)
+        or (control.control_type == "PulseAt" and "isActive" in state_names)
     )
 
     limitations: list[str] = []
     native_configured = bool(control.statistic_series)
-    if native_configured:
-        limitations.extend(("series_state_mapping_unverified", "statistics_period_not_checked"))
+    matching_series = any(
+        (series.source == "statistic_v2" and series.output in state_names)
+        or (series.source == "legacy" and series.state_uuid == state_uuid)
+        for series in control.statistic_series
+    )
+    unmapped_series = any(
+        series.source == "legacy" and series.state_uuid is None
+        for series in control.statistic_series
+    )
+    if matching_series:
+        limitations.append("statistics_period_not_checked")
+    elif unmapped_series:
+        limitations.append("series_state_mapping_unverified")
     if record.freshness is not Freshness.CURRENT:
         limitations.append("current_value_not_fresh")
     if history_status == "unavailable":
@@ -2259,14 +2291,13 @@ def _observability_recommendation(
     elif history_status == "partial_coverage":
         limitations.append("requested_period_partially_recorded")
 
-    if native_configured:
+    if matching_series:
         source = "native_statistics"
         strategy = "reuse_configured_statistics"
         reason = (
-            "Native statistics are advertised for this control; inspect the series "
-            "for this state and period."
+            "A native statistic series maps to this state; check coverage of the requested period."
         )
-        confidence = "low"
+        confidence = "medium"
     elif history_status in {"partial_coverage", "not_recorded"}:
         source = "local_on_change"
         strategy = "continue_local_recording"
@@ -2274,6 +2305,14 @@ def _observability_recommendation(
             "Local on-change recording is configured; the requested period lacks full coverage."
         )
         confidence = "high"
+    elif unmapped_series:
+        source = "undetermined"
+        strategy = "inspect_signal_metadata"
+        reason = (
+            "Legacy statistics lack a verified state UUID; inspect their output "
+            "before adding a source."
+        )
+        confidence = "low"
     elif history_status == "unavailable":
         source = "undetermined"
         strategy = "inspect_signal_metadata"
@@ -2281,17 +2320,26 @@ def _observability_recommendation(
             "Local recording configuration is unavailable; avoid recommending a duplicate source."
         )
         confidence = "low"
-    elif value_type == "numeric" and control.is_analog is True and not documented_digital_state:
+    elif value_type == "numeric" and effective_analog is True and not documented_digital_state:
         source = "native_statistics"
         strategy = "configure_native_statistics_for_diagnostic_need"
         reason = "A numeric current value and analog control metadata support sampled history."
         confidence = "high" if record.freshness is Freshness.CURRENT else "medium"
-    elif (value_type == "boolean" and control.is_analog is not True) or (
+    elif control.control_type == "Daytimer":
+        source = "undetermined"
+        strategy = "inspect_signal_metadata"
+        reason = (
+            "Local event-history sources do not support Daytimer controls; "
+            "inspect a state-specific native source."
+        )
+        confidence = "low"
+        limitations.append("local_recording_unsupported_for_control")
+    elif (value_type == "boolean" and effective_analog is not True) or (
         value_type == "numeric"
         and (
-            (control.is_analog is False and (not documented_digital_state or value in {0, 1}))
+            (effective_analog is False and (not documented_digital_state or value in {0, 1}))
             or (
-                control.is_analog is None
+                effective_analog is None
                 and (
                     (not documented_digital_state and discrete_numeric_range)
                     or (documented_digital_state and value in {0, 1})
@@ -2316,7 +2364,7 @@ def _observability_recommendation(
         "control_uuid": control.uuid,
         "state_uuid": state_uuid,
         "value_type": value_type,
-        "is_analog": control.is_analog,
+        "is_analog": effective_analog,
         "minimum": control.minimum,
         "maximum": control.maximum,
         "step": control.step,

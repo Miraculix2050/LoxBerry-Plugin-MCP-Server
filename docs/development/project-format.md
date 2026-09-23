@@ -111,11 +111,15 @@ gap, never proof of non-occurrence.
 Each returned control also carries bounded, per-state `recommendations` for
 incomplete local coverage. They classify from the observed value and explicit
 control metadata, never from names; ambiguous behavior remains `undetermined`.
-The documented `InfoOnlyDigital` `active`/`value` state is treated as discrete
-only when its observed numeric value is exactly 0 or 1 and no analog flag
-contradicts it; other state keys or values remain unclassified.
-Advertised native series are control-level evidence only, so recommendations
-favor reuse but mark state mapping and period coverage unverified. Existing
+Documented digital state keys are treated as discrete only when their observed
+numeric value is exactly 0 or 1 and no applicable analog flag contradicts it.
+`Daytimer.details.analog` applies to `value` only. Local recording is not recommended
+for `Daytimer` because event-history sources reject that control type. Control-level range metadata
+can support `value` but does not classify unrelated states.
+Native StatisticV2 outputs map by state key and legacy outputs by their documented
+UUID. Disabled groups or frequencies are omitted. A legacy output without a
+state UUID keeps the recommendation `undetermined`; mapped series still have
+unverified period coverage. Existing
 partial local recording is continued when no native series is advertised.
 Suggested native sampling intervals remain qualitative because the structure does not establish
 the signal dynamics or diagnostic resolution.

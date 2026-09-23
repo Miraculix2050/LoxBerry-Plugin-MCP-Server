@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Match native statistic outputs to their states before recommending reuse, ignore
+  disabled statistic groups, and classify documented digital states individually.
+  Restrict the `Daytimer` analog flag to its value state.
+
 - Recognize documented `InfoOnlyDigital` 0/1 states as discrete for observability
   recommendations when `is_analog` is absent; retain uncertainty for conflicting
   metadata or values.

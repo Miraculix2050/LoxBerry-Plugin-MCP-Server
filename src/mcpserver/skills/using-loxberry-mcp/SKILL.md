@@ -245,10 +245,12 @@ cause; `temporal_coverage: not_checked` means statistics were not retrieved;
 `not_recorded` or `partial_coverage` never proves that a state did not occur.
 The per-state `recommendations` explain how to close incomplete history gaps.
 They use observable value and control metadata, not signal names. An
-`InfoOnlyDigital` state with documented `active`/`value` key and observed 0/1
-value can support on-change recording without an `is_analog` flag; conflicting
-metadata or values remain uncertain. A configured
-native series belongs to the control; verify its state mapping and requested
+documented digital state with observed 0/1 value can support on-change recording
+without an `is_analog` flag; conflicting metadata or values remain uncertain.
+For `Daytimer`, the analog flag applies only to `value`, and local event-history
+sources are unsupported. A native series is
+recommended for reuse only when its output maps to the state; disabled series
+are ignored, and an unmapped legacy output remains uncertain. Verify the requested
 period before claiming coverage. A partial local recording needs more capture
 time; a configured native series takes precedence without creating a duplicate
 source. `undetermined` means the available metadata does
