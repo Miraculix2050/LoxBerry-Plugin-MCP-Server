@@ -108,6 +108,14 @@ marks omitted metadata. State names are capped at 200 UTF-8 bytes and
 `state_names_truncated` marks omitted text. Control names and types use the same cap and
 `control_metadata_truncated` marks omitted text. Missing or partial local coverage is an evidence
 gap, never proof of non-occurrence.
+Each returned control also carries bounded, per-state `recommendations` for
+incomplete local coverage. They classify from the observed value and explicit
+control metadata, never from names; ambiguous behavior remains `undetermined`.
+Advertised native series are control-level evidence only, so recommendations
+favor reuse but mark state mapping and period coverage unverified. Existing
+partial local recording is continued when no native series is advertised.
+Suggested native sampling intervals remain qualitative because the structure does not establish
+the signal dynamics or diagnostic resolution.
 
 ### Source diagnostics
 

@@ -54,6 +54,14 @@ State nicht eingetreten ist. Pro Control werden höchstens 20 Statistikserien zu
 ausgelassene Metadaten markiert `native_statistics_truncated`. State-Namen sind auf 200 UTF-8-
 Bytes begrenzt; ausgelassenen Text markiert `state_names_truncated`. Control-Namen und -Typen
 haben dieselbe Begrenzung; ausgelassenen Text markiert `control_metadata_truncated`.
+Für jeden State ohne vollständige lokale Abdeckung empfiehlt `recommendations`
+anhand beobachtbarer Werte und Control-Metadaten native Statistik, lokale
+Aufzeichnung bei Änderung oder `undetermined`. Vorhandene native Serien haben
+Vorrang; ihre Zuordnung zu einem bestimmten State und ihre zeitliche Abdeckung
+müssen geprüft werden. Teilweise lokale Aufzeichnung ist eine Abdeckungslücke,
+kein Anlass für eine zweite Quelle. Ohne Nachweis der Signaldynamik nennt die
+Intervall-Empfehlung keine festen Minutenwerte. Das Tool ändert keine
+Aufzeichnungseinstellungen.
 `source_diagnostics` meldet begrenzte Quelllücken wie Parseranomalien, ungültige KNX-Felder und
 nicht modellierte Attribute. Dies sind keine Konfigurationsurteile; unbekannte Quellwerte werden
 nicht ausgegeben, sondern nur feste Codes, Feldnamen, Wertformen und Projektknotenreferenzen.

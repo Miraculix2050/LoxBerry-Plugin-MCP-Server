@@ -910,6 +910,29 @@ class ObservabilityEventHistoryData(BaseModel):
     has_recorded_events: bool | None = None
 
 
+class ObservabilityRecommendationData(BaseModel):
+    control_uuid: str
+    state_uuid: str
+    value_type: Literal["boolean", "numeric", "text", "structured", "unknown"]
+    is_analog: bool | None
+    minimum: float | None
+    maximum: float | None
+    step: float | None
+    native_statistics_configured_for_control: bool
+    history_source: Literal["native_statistics", "local_on_change", "undetermined"]
+    strategy: Literal[
+        "reuse_configured_statistics",
+        "configure_native_statistics_for_diagnostic_need",
+        "record_on_change",
+        "continue_local_recording",
+        "inspect_signal_metadata",
+    ]
+    reason: str
+    confidence: Literal["high", "medium", "low"]
+    interval_guidance: str | None
+    limitations: list[str]
+
+
 class ObservabilityControlData(BaseModel):
     control_uuid: str
     control_name: str
@@ -923,6 +946,7 @@ class ObservabilityControlData(BaseModel):
     native_statistics: list[ObservabilityStatisticSeriesData]
     native_statistics_truncated: bool = False
     local_event_history: list[ObservabilityEventHistoryData]
+    recommendations: list[ObservabilityRecommendationData] = Field(default_factory=list)
     historical_status: Literal["complete", "partial", "missing", "unverified"]
 
 
@@ -2185,6 +2209,120 @@ def _state_observed_at(record: StateRecord) -> str | None:
         if record.observed_at is not None
         else None
     )
+
+
+def _observability_recommendation(
+    control: Control,
+    state_uuid: str,
+    record: StateRecord,
+    history_status: str,
+) -> dict[str, object] | None:
+    """Recommend a source from bounded metadata, never from signal names."""
+
+    if history_status == "complete":
+        return None
+    value = record.value
+    if isinstance(value, bool):
+        value_type = "boolean"
+    elif isinstance(value, int | float) and isfinite(value):
+        value_type = "numeric"
+    elif isinstance(value, str):
+        value_type = "text"
+    elif isinstance(value, tuple | dict):
+        value_type = "structured"
+    else:
+        value_type = "unknown"
+    discrete_numeric_range = (
+        value_type == "numeric"
+        and control.minimum is not None
+        and control.maximum is not None
+        and control.step is not None
+        and control.step > 0
+        and 0 <= (control.maximum - control.minimum) / control.step <= 16
+    )
+
+    limitations: list[str] = []
+    native_configured = bool(control.statistic_series)
+    if native_configured:
+        limitations.extend(("series_state_mapping_unverified", "statistics_period_not_checked"))
+    if record.freshness is not Freshness.CURRENT:
+        limitations.append("current_value_not_fresh")
+    if history_status == "unavailable":
+        limitations.append("local_coverage_unavailable")
+    elif history_status == "feature_disabled":
+        limitations.append("local_history_disabled")
+    elif history_status == "not_recorded":
+        limitations.append("requested_period_not_recorded")
+    elif history_status == "partial_coverage":
+        limitations.append("requested_period_partially_recorded")
+
+    if native_configured:
+        source = "native_statistics"
+        strategy = "reuse_configured_statistics"
+        reason = (
+            "Native statistics are advertised for this control; inspect the series "
+            "for this state and period."
+        )
+        confidence = "low"
+    elif history_status in {"partial_coverage", "not_recorded"}:
+        source = "local_on_change"
+        strategy = "continue_local_recording"
+        reason = (
+            "Local on-change recording is configured; the requested period lacks full coverage."
+        )
+        confidence = "high"
+    elif history_status == "unavailable":
+        source = "undetermined"
+        strategy = "inspect_signal_metadata"
+        reason = (
+            "Local recording configuration is unavailable; avoid recommending a duplicate source."
+        )
+        confidence = "low"
+    elif value_type == "numeric" and control.is_analog is True:
+        source = "native_statistics"
+        strategy = "configure_native_statistics_for_diagnostic_need"
+        reason = "A numeric current value and analog control metadata support sampled history."
+        confidence = "high" if record.freshness is Freshness.CURRENT else "medium"
+    elif (value_type == "boolean" and control.is_analog is not True) or (
+        value_type == "numeric"
+        and (control.is_analog is False or (control.is_analog is None and discrete_numeric_range))
+    ):
+        source = "local_on_change"
+        strategy = "record_on_change"
+        reason = "The observed value and control metadata support discrete change recording."
+        confidence = "medium"
+    else:
+        source = "undetermined"
+        strategy = "inspect_signal_metadata"
+        reason = (
+            "Available value and control metadata do not establish continuous or discrete behavior."
+        )
+        confidence = "low"
+        limitations.append("signal_behavior_unknown")
+
+    return {
+        "control_uuid": control.uuid,
+        "state_uuid": state_uuid,
+        "value_type": value_type,
+        "is_analog": control.is_analog,
+        "minimum": control.minimum,
+        "maximum": control.maximum,
+        "step": control.step,
+        "native_statistics_configured_for_control": native_configured,
+        "history_source": source,
+        "strategy": strategy,
+        "reason": reason,
+        "confidence": confidence,
+        "interval_guidance": (
+            "Choose a sampling interval for the diagnostic question and signal dynamics; "
+            "no fixed interval is established by available metadata."
+            if source == "native_statistics"
+            else "Record each observed change."
+            if source == "local_on_change"
+            else None
+        ),
+        "limitations": limitations,
+    }
 
 
 class _SemanticValueError(ValueError):
@@ -3771,7 +3909,8 @@ def register_observability_tools(
     @server.tool(
         name="loxone_analyze_observability",
         description=(
-            "Assess bounded current-state and history-source evidence for exact runtime controls "
+            "Assess bounded current-state and history-source evidence and suggest recording "
+            "strategies for exact runtime controls "
             "structurally reachable from one authorized project target. Graph reachability is not "
             "historical causation. Requires loxone:read and loxone:history."
         ),
@@ -3913,12 +4052,14 @@ def register_observability_tools(
                     state_pairs.append((bounded_name, state_uuid))
                     state_names_truncated = state_names_truncated or state_name_truncated
                 current_states = []
+                state_records: dict[str, StateRecord] = {}
                 for state_name, state_uuid in state_pairs:
                     record = (
                         runtime.state(snapshot, state_uuid)
                         if runtime is not None
                         else StateRecord(state_uuid, None, Freshness.UNKNOWN, None)
                     )
+                    state_records[state_uuid] = record
                     current_states.append(
                         {
                             "uuid": state_uuid,
@@ -3949,6 +4090,7 @@ def register_observability_tools(
                     summary["native_statistics_configured"] += 1
                 local_event_history = []
                 local_statuses: list[str] = []
+                recommendations: list[dict[str, object]] = []
                 for state_name, state_uuid in state_pairs:
                     item = coverage.get((control.uuid, state_uuid))
                     if item is not None:
@@ -3984,6 +4126,11 @@ def register_observability_tools(
                         }
                     local_statuses.append(status)
                     local_event_history.append(history)
+                    recommendation = _observability_recommendation(
+                        control, state_uuid, state_records[state_uuid], status
+                    )
+                    if recommendation is not None:
+                        recommendations.append(recommendation)
                 states_truncated = len(control.state_uuids) > len(state_pairs)
                 local_complete = (
                     bool(local_statuses)
@@ -4030,6 +4177,7 @@ def register_observability_tools(
                         "native_statistics": native_statistics,
                         "native_statistics_truncated": native_statistics_truncated,
                         "local_event_history": local_event_history,
+                        "recommendations": recommendations,
                         "historical_status": historical_status,
                     }
                 )

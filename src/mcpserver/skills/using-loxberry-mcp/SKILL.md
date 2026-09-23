@@ -243,9 +243,16 @@ cause; `temporal_coverage: not_checked` means statistics were not retrieved;
 `state_names_truncated` marks omitted state-name text;
 `control_metadata_truncated` marks omitted control-name and type text; and
 `not_recorded` or `partial_coverage` never proves that a state did not occur.
-Use `loxone_get_statistics` only when an advertised series needs direct evidence
-for the same period. Do not add history sources automatically; recording advice
-is outside this tool.
+The per-state `recommendations` explain how to close incomplete history gaps.
+They use observable value and control metadata, not signal names. A configured
+native series belongs to the control; verify its state mapping and requested
+period before claiming coverage. A partial local recording needs more capture
+time; a configured native series takes precedence without creating a duplicate
+source. `undetermined` means the available metadata does
+not establish continuous or discrete behavior. Native sampling intervals are
+qualitative advice based on the diagnostic need, not promised rates. Use
+`loxone_get_statistics` only when an advertised series needs direct evidence
+for the same period. Do not add history sources automatically.
 
 ## Operate a supported control
 

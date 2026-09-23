@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Extend `loxone_analyze_observability` with bounded per-state history-source
+  recommendations based on observable value and control metadata. Reuse
+  advertised native statistics, disclose unknown state mapping and period
+  coverage, and avoid fixed sampling rates or automatic configuration changes.
+
 - Preserve Loxone's canonical UUID representation when managing local event-history
   sources, so discovered control and state identifiers work unchanged across add,
   list, remove, and history reads.

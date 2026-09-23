@@ -50,6 +50,13 @@ did not occur. At most 20 statistic series per control are returned; omitted met
 by `native_statistics_truncated`. State names are capped at 200 UTF-8 bytes and
 `state_names_truncated` marks omitted text. Control names and types use the same cap;
 `control_metadata_truncated` marks omitted text.
+For each state without complete local coverage, `recommendations` suggests
+native statistics, local on-change recording, or `undetermined` from observable
+value and control metadata. Existing native series are preferred, but their
+mapping to a particular state and coverage of the requested period must be
+checked. Partial local recording is reported as a coverage gap, not a request
+to add another source. Native sampling advice has no fixed interval without
+evidence about signal dynamics; the tool never changes recording settings.
 `source_diagnostics` reports bounded source gaps such as parser anomalies, invalid KNX fields
 and unmodeled attributes. They are not configuration verdicts and never expose unknown source
 values: only fixed codes, field names, value shapes and project-node references are returned.

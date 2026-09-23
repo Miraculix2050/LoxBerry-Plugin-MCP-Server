@@ -213,8 +213,85 @@ async def test_observability_reports_current_sources_and_explicit_history_gaps(m
     assert data.controls[0].local_event_history[0].status == "complete"
     assert data.controls[0].local_event_history[1].status == "not_configured"
     assert data.controls[0].historical_status == "partial"
+    assert data.controls[0].recommendations[0].strategy == "reuse_configured_statistics"
+    assert data.controls[0].recommendations[0].native_statistics_configured_for_control
+    assert "series_state_mapping_unverified" in data.controls[0].recommendations[0].limitations
+    assert data.controls[0].recommendations[0].state_uuid == "state-missing"
+    assert "minute" not in data.controls[0].recommendations[0].interval_guidance
     assert data.summary.local_history_partial == 1
     assert result.stale is True
+
+
+@pytest.mark.parametrize(
+    ("value", "analog", "status", "expected_source", "expected_strategy"),
+    [
+        (
+            21.5,
+            True,
+            "not_configured",
+            "native_statistics",
+            "configure_native_statistics_for_diagnostic_need",
+        ),
+        (True, False, "not_configured", "local_on_change", "record_on_change"),
+        (1.0, False, "not_configured", "local_on_change", "record_on_change"),
+        (True, True, "not_configured", "undetermined", "inspect_signal_metadata"),
+        (None, None, "not_configured", "undetermined", "inspect_signal_metadata"),
+        (21.5, True, "partial_coverage", "local_on_change", "continue_local_recording"),
+        (21.5, True, "not_recorded", "local_on_change", "continue_local_recording"),
+    ],
+)
+def test_observability_recommendations_use_value_and_control_metadata(
+    value, analog, status, expected_source, expected_strategy
+):
+    control = Control(
+        "control",
+        "Window temperature",
+        "Switch",
+        None,
+        None,
+        None,
+        (("value", "state"),),
+        is_analog=analog,
+        minimum=0.0,
+        maximum=100.0,
+        step=0.5,
+    )
+    record = StateRecord("state", value, Freshness.CURRENT, 100.0)
+    result = tools_module._observability_recommendation(control, "state", record, status)
+    assert result is not None
+    assert result["history_source"] == expected_source
+    assert result["strategy"] == expected_strategy
+    assert result["control_uuid"] == "control"
+    assert result["state_uuid"] == "state"
+    assert result["minimum"] == 0.0
+    assert result["maximum"] == 100.0
+    assert result["step"] == 0.5
+    assert tools_module._observability_recommendation(control, "state", record, "complete") is None
+
+
+def test_observability_recommendation_uses_small_numeric_range_and_unknown_coverage():
+    control = Control(
+        "control",
+        "Measurement",
+        "Switch",
+        None,
+        None,
+        None,
+        (("value", "state"),),
+        minimum=0.0,
+        maximum=1.0,
+        step=1.0,
+    )
+    record = StateRecord("state", 1.0, Freshness.CURRENT, 100.0)
+    discrete = tools_module._observability_recommendation(
+        control, "state", record, "not_configured"
+    )
+    unavailable = tools_module._observability_recommendation(
+        control, "state", record, "unavailable"
+    )
+    assert discrete["history_source"] == "local_on_change"
+    assert unavailable["history_source"] == "undetermined"
+    assert "local_coverage_unavailable" in unavailable["limitations"]
 
 
 @pytest.mark.asyncio
@@ -366,6 +443,75 @@ async def test_observability_requires_history_scope(monkeypatch):
 
     assert result.ok is False
     assert result.data.error == "permission_denied"
+
+
+@pytest.mark.asyncio
+async def test_observability_recommendations_remain_bounded_and_paginated(monkeypatch):
+    controls = tuple(
+        Control(
+            f"control-{index}",
+            "measurement",
+            "value",
+            None,
+            None,
+            None,
+            tuple((f"state-{part}", f"uuid-{index}-{part}") for part in range(20)),
+            is_analog=True,
+        )
+        for index in range(30)
+    )
+    structure = LoxoneStructure(LoxoneIdentity("user", "serial"), "modified", (), (), controls)
+    snapshot = SimpleNamespace(connected=True, structure=structure, structure_generation=1)
+
+    class ManyQuery(Query):
+        def observable_controls(self, _node, **_kwargs):
+            result = super().observable_controls(_node, **_kwargs)
+            result["controls"] = [
+                {
+                    "control_uuid": control.uuid,
+                    "project_node_ids": ["p:1"],
+                    "directions": ["upstream"],
+                }
+                for control in controls
+            ]
+            return result
+
+    class Runtime:
+        def state(self, _snapshot, state_uuid):
+            return StateRecord(state_uuid, 21.5, Freshness.CURRENT, 100.0)
+
+        async def get_statistics(self, *_args, **_kwargs):
+            pytest.fail("analysis must not fetch statistics")
+
+    async def history_project_query(_runtime, _access):
+        return ManyQuery(), snapshot
+
+    monkeypatch.setattr(tools_module, "_history_project_query", history_project_query)
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: SimpleNamespace(scopes=frozenset((READ_SCOPE, HISTORY_SCOPE)), family_id="family"),
+    )
+    server = FastMCP("observability-pages")
+    register_observability_tools(server, Runtime(), None)  # type: ignore[arg-type]
+    tool = server._tool_manager.get_tool("loxone_analyze_observability")
+    arguments = (
+        "control-0",
+        "runtime_control_uuid",
+        "upstream",
+        "2026-09-01T00:00:00Z",
+        "2026-09-02T00:00:00Z",
+    )
+    first = await tool.fn(*arguments, limit=50)  # type: ignore[union-attr]
+    assert first.ok
+    assert 0 < len(first.data.controls) < 30
+    assert len(first.data.controls[0].recommendations) == 20
+    assert first.data.next_cursor is not None
+    assert len(first.model_dump_json().encode("utf-8")) <= PROJECT_RESPONSE_MAX_BYTES
+    second = await tool.fn(*arguments, cursor=first.data.next_cursor, limit=50)  # type: ignore[union-attr]
+    assert second.ok
+    assert second.data.controls[0].control_uuid != first.data.controls[0].control_uuid
+    assert len(second.model_dump_json().encode("utf-8")) <= PROJECT_RESPONSE_MAX_BYTES
 
 
 @pytest.mark.asyncio
