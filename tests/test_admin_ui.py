@@ -946,13 +946,17 @@ def test_admin_hash_navigation_preserves_closed_reload_and_opens_new_links() -> 
         "const section = new HTMLDetailsElement();\n"
         "const configuration = new HTMLDetailsElement();\n"
         "const mqtt = new HTMLDetailsElement();\n"
+        "const status = new HTMLDetailsElement();\n"
+        "const sessions = new HTMLDetailsElement();\n"
+        "const diagnostics = new HTMLDetailsElement();\n"
+        "const help = new HTMLDetailsElement();\n"
         "const storedCollapseState = {mqtt: false};\n"
         "const listeners = {};\n"
         "const window = { location: { hash: '#mqtt' }, "
         "performance: {getEntriesByType: () => [{type: 'reload'}]}, "
         "addEventListener: (type, callback) => { listeners[type] = callback; } };\n"
         "const document = { getElementById: (id) => "
-        "({ access: section, configuration, mqtt })[id] || null, "
+        "({ access: section, configuration, mqtt, status, sessions, diagnostics, help })[id] || null, "
         "addEventListener: (type, callback) => { listeners[type] = callback; } };\n"
         "let persistCount = 0;\n"
         "const persistCollapsibles = () => { persistCount += 1; };\n"
@@ -984,6 +988,28 @@ mqtt.open = false;
 openHashSection('#mqtt', true);
 assert.equal(mqtt.open, true);
 assert.equal(persistCount, 6);
+for (const id of ['status', 'configuration', 'access', 'sessions', 'mqtt', 'diagnostics', 'help']) {
+  const target = document.getElementById(id);
+  target.open = false;
+  storedCollapseState[id] = false;
+  const before = persistCount;
+  openHashSection(`#${id}`, true);
+  assert.equal(target.open, false, `${id} reopens on reload`);
+  assert.equal(persistCount, before);
+  openHashSection(`#${id}`);
+  assert.equal(target.open, true, `${id} does not open on a new link`);
+  assert.equal(persistCount, before + 1);
+}
+configuration.open = false;
+section.open = false;
+openHashSection('#setup', true);
+openHashSection('#certificate', true);
+assert.equal(configuration.open, false);
+assert.equal(section.open, false);
+openHashSection('#setup');
+openHashSection('#certificate');
+assert.equal(configuration.open, true);
+assert.equal(section.open, true);
 """
     )
     subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
