@@ -160,7 +160,7 @@ async def test_observability_reports_current_sources_and_explicit_history_gaps(m
         (("value", "state-complete"), ("window", "state-missing")),
         statistic_series=tuple(
             StatisticSeries(
-                f"series-{index}", "statistic_v2", "group", "output", f"Trend {index}", "°C"
+                f"series-{index}", "statistic_v2", "group", "window", f"Trend {index}", "°C"
             )
             for index in range(21)
         ),
@@ -213,8 +213,318 @@ async def test_observability_reports_current_sources_and_explicit_history_gaps(m
     assert data.controls[0].local_event_history[0].status == "complete"
     assert data.controls[0].local_event_history[1].status == "not_configured"
     assert data.controls[0].historical_status == "partial"
+    assert data.controls[0].recommendations[0].strategy == "reuse_configured_statistics"
+    assert data.controls[0].recommendations[0].native_statistics_configured_for_control
+    assert "statistics_period_not_checked" in data.controls[0].recommendations[0].limitations
+    assert "series_state_mapping_unverified" not in data.controls[0].recommendations[0].limitations
+    assert data.controls[0].recommendations[0].state_uuid == "state-missing"
+    assert "minute" not in data.controls[0].recommendations[0].interval_guidance
     assert data.summary.local_history_partial == 1
     assert result.stale is True
+
+
+@pytest.mark.parametrize(
+    ("value", "analog", "status", "expected_source", "expected_strategy"),
+    [
+        (
+            21.5,
+            True,
+            "not_configured",
+            "native_statistics",
+            "configure_native_statistics_for_diagnostic_need",
+        ),
+        (True, False, "not_configured", "local_on_change", "record_on_change"),
+        (1.0, False, "not_configured", "local_on_change", "record_on_change"),
+        (True, True, "not_configured", "undetermined", "inspect_signal_metadata"),
+        (None, None, "not_configured", "undetermined", "inspect_signal_metadata"),
+        (21.5, True, "partial_coverage", "local_on_change", "continue_local_recording"),
+        (21.5, True, "not_recorded", "local_on_change", "continue_local_recording"),
+    ],
+)
+def test_observability_recommendations_use_value_and_control_metadata(
+    value, analog, status, expected_source, expected_strategy
+):
+    control = Control(
+        "control",
+        "Window temperature",
+        "Switch",
+        None,
+        None,
+        None,
+        (("value", "state"),),
+        is_analog=analog,
+        minimum=0.0,
+        maximum=100.0,
+        step=0.5,
+    )
+    record = StateRecord("state", value, Freshness.CURRENT, 100.0)
+    result = tools_module._observability_recommendation(control, "state", record, status)
+    assert result is not None
+    assert result["history_source"] == expected_source
+    assert result["strategy"] == expected_strategy
+    assert result["control_uuid"] == "control"
+    assert result["state_uuid"] == "state"
+    assert result["minimum"] == 0.0
+    assert result["maximum"] == 100.0
+    assert result["step"] == 0.5
+    assert tools_module._observability_recommendation(control, "state", record, "complete") is None
+
+
+def test_observability_recommendation_uses_small_numeric_range_and_unknown_coverage():
+    control = Control(
+        "control",
+        "Measurement",
+        "Switch",
+        None,
+        None,
+        None,
+        (("value", "state"),),
+        minimum=0.0,
+        maximum=1.0,
+        step=1.0,
+    )
+    record = StateRecord("state", 1.0, Freshness.CURRENT, 100.0)
+    discrete = tools_module._observability_recommendation(
+        control, "state", record, "not_configured"
+    )
+    unavailable = tools_module._observability_recommendation(
+        control, "state", record, "unavailable"
+    )
+    assert discrete["history_source"] == "local_on_change"
+    assert unavailable["history_source"] == "undetermined"
+    assert "local_coverage_unavailable" in unavailable["limitations"]
+
+
+@pytest.mark.parametrize(
+    ("state_name", "value", "analog", "expected_source"),
+    [
+        ("active", 0.0, None, "local_on_change"),
+        ("value", 1.0, None, "local_on_change"),
+        ("active", 2.0, None, "undetermined"),
+        ("active", 1.0, True, "undetermined"),
+        ("other", 1.0, None, "undetermined"),
+    ],
+)
+def test_observability_recommendation_uses_documented_digital_state_only(
+    state_name, value, analog, expected_source
+):
+    control = Control(
+        "control",
+        "Arbitrary label",
+        "InfoOnlyDigital",
+        None,
+        None,
+        None,
+        ((state_name, "state"),),
+        is_analog=analog,
+    )
+    result = tools_module._observability_recommendation(
+        control,
+        "state",
+        StateRecord("state", value, Freshness.CURRENT, 100.0),
+        "not_configured",
+    )
+    assert result["history_source"] == expected_source
+    assert result["strategy"] == (
+        "record_on_change" if expected_source == "local_on_change" else "inspect_signal_metadata"
+    )
+    if value == 2.0:
+        ranged_control = Control(
+            "control",
+            "Arbitrary label",
+            "InfoOnlyDigital",
+            None,
+            None,
+            None,
+            ((state_name, "state"),),
+            minimum=0.0,
+            maximum=2.0,
+            step=1.0,
+        )
+        ranged = tools_module._observability_recommendation(
+            ranged_control,
+            "state",
+            StateRecord("state", value, Freshness.CURRENT, 100.0),
+            "not_configured",
+        )
+        assert ranged["history_source"] == "undetermined"
+
+
+@pytest.mark.parametrize(
+    ("control_type", "state_name", "value", "analog", "expected"),
+    [
+        ("Switch", "active", 1.0, None, "local_on_change"),
+        ("Switch", "lockedOn", 0.0, None, "local_on_change"),
+        ("Pushbutton", "active", 1.0, None, "local_on_change"),
+        ("PresenceDetector", "active", 1.0, None, "local_on_change"),
+        ("PresenceDetector", "locked", 0.0, None, "local_on_change"),
+        ("PresenceDetector", "activeSince", 1.0, None, "undetermined"),
+        ("Hourcounter", "active", 1.0, None, "local_on_change"),
+        ("PulseAt", "isActive", 1.0, None, "local_on_change"),
+        ("Daytimer", "value", 1.0, False, "undetermined"),
+        ("Daytimer", "value", 22.5, True, "native_statistics"),
+        ("Daytimer", "mode", 1.0, True, "undetermined"),
+        ("Daytimer", "override", 120.0, False, "undetermined"),
+        ("Daytimer", "resetActive", 1.0, True, "undetermined"),
+        ("Daytimer", "needsActivation", 0.0, False, "undetermined"),
+        ("Switch", "active", 2.0, None, "undetermined"),
+    ],
+)
+def test_observability_uses_documented_state_semantics(
+    control_type, state_name, value, analog, expected
+):
+    control = Control(
+        "control",
+        "Arbitrary label",
+        control_type,
+        None,
+        None,
+        None,
+        ((state_name, "state"),),
+        is_analog=analog,
+    )
+    result = tools_module._observability_recommendation(
+        control,
+        "state",
+        StateRecord("state", value, Freshness.CURRENT, 100.0),
+        "not_configured",
+    )
+    assert result["history_source"] == expected
+
+
+@pytest.mark.parametrize(
+    "control_type", ["InfoOnlyAnalog", "UpDownAnalog", "Slider", "LeftRightAnalog"]
+)
+def test_observability_uses_documented_analog_value_with_small_range(control_type):
+    control = Control(
+        "control",
+        "Arbitrary label",
+        control_type,
+        None,
+        None,
+        None,
+        (("value", "value-state"), ("error", "error-state")),
+        minimum=0.0,
+        maximum=1.0,
+        step=1.0,
+    )
+    value = tools_module._observability_recommendation(
+        control,
+        "value-state",
+        StateRecord("value-state", 1.0, Freshness.CURRENT, 100.0),
+        "not_configured",
+    )
+    error = tools_module._observability_recommendation(
+        control,
+        "error-state",
+        StateRecord("error-state", 1.0, Freshness.CURRENT, 100.0),
+        "not_configured",
+    )
+    assert value["history_source"] == "native_statistics"
+    assert value["is_analog"] is True
+    assert error["history_source"] == "undetermined"
+
+    conflicting = tools_module._observability_recommendation(
+        Control(
+            "control",
+            "Arbitrary label",
+            control_type,
+            None,
+            None,
+            None,
+            (("value", "value-state"),),
+            is_analog=False,
+            minimum=0.0,
+            maximum=1.0,
+            step=1.0,
+        ),
+        "value-state",
+        StateRecord("value-state", 1.0, Freshness.CURRENT, 100.0),
+        "not_configured",
+    )
+    assert conflicting["history_source"] == "undetermined"
+    assert "analog_metadata_conflict" in conflicting["limitations"]
+
+
+def test_observability_statistics_match_the_state_before_reuse():
+    series = (StatisticSeries("v2:1:actual", "statistic_v2", "1", "actual", "Actual", "kW"),)
+    control = Control(
+        "control",
+        "Arbitrary label",
+        "Meter",
+        None,
+        None,
+        None,
+        (("actual", "actual-uuid"), ("total", "total-uuid")),
+        statistic_series=series,
+    )
+
+    def recommendation(state_uuid):
+        return tools_module._observability_recommendation(
+            control,
+            state_uuid,
+            StateRecord(state_uuid, 2.0, Freshness.CURRENT, 100.0),
+            "not_configured",
+        )
+
+    assert recommendation("actual-uuid")["strategy"] == "reuse_configured_statistics"
+    unmatched = recommendation("total-uuid")
+    assert unmatched["history_source"] == "undetermined"
+    assert unmatched["native_statistics_configured_for_control"] is True
+
+    legacy = Control(
+        "control",
+        "Arbitrary label",
+        "Meter",
+        None,
+        None,
+        None,
+        (("actual", "actual-uuid"), ("total", "total-uuid")),
+        statistic_series=(
+            StatisticSeries(
+                "legacy:0",
+                "legacy",
+                "0",
+                "0",
+                "Actual",
+                "kW",
+                state_uuid="actual-uuid",
+            ),
+        ),
+    )
+    result = tools_module._observability_recommendation(
+        legacy,
+        "actual-uuid",
+        StateRecord("actual-uuid", 2.0, Freshness.CURRENT, 100.0),
+        "not_configured",
+    )
+    assert result["strategy"] == "reuse_configured_statistics"
+
+    unknown_mapping = Control(
+        "control",
+        "Arbitrary label",
+        "Meter",
+        None,
+        None,
+        None,
+        (("actual", "actual-uuid"),),
+        statistic_series=(StatisticSeries("legacy:0", "legacy", "0", "0", "Actual", "kW"),),
+    )
+    unknown = tools_module._observability_recommendation(
+        unknown_mapping,
+        "actual-uuid",
+        StateRecord("actual-uuid", 2.0, Freshness.CURRENT, 100.0),
+        "not_configured",
+    )
+    assert unknown["history_source"] == "undetermined"
+    assert "series_state_mapping_unverified" in unknown["limitations"]
+    partial = tools_module._observability_recommendation(
+        unknown_mapping,
+        "actual-uuid",
+        StateRecord("actual-uuid", 2.0, Freshness.CURRENT, 100.0),
+        "partial_coverage",
+    )
+    assert partial["strategy"] == "continue_local_recording"
 
 
 @pytest.mark.asyncio
@@ -366,6 +676,75 @@ async def test_observability_requires_history_scope(monkeypatch):
 
     assert result.ok is False
     assert result.data.error == "permission_denied"
+
+
+@pytest.mark.asyncio
+async def test_observability_recommendations_remain_bounded_and_paginated(monkeypatch):
+    controls = tuple(
+        Control(
+            f"control-{index}",
+            "measurement",
+            "value",
+            None,
+            None,
+            None,
+            tuple((f"state-{part}", f"uuid-{index}-{part}") for part in range(20)),
+            is_analog=True,
+        )
+        for index in range(30)
+    )
+    structure = LoxoneStructure(LoxoneIdentity("user", "serial"), "modified", (), (), controls)
+    snapshot = SimpleNamespace(connected=True, structure=structure, structure_generation=1)
+
+    class ManyQuery(Query):
+        def observable_controls(self, _node, **_kwargs):
+            result = super().observable_controls(_node, **_kwargs)
+            result["controls"] = [
+                {
+                    "control_uuid": control.uuid,
+                    "project_node_ids": ["p:1"],
+                    "directions": ["upstream"],
+                }
+                for control in controls
+            ]
+            return result
+
+    class Runtime:
+        def state(self, _snapshot, state_uuid):
+            return StateRecord(state_uuid, 21.5, Freshness.CURRENT, 100.0)
+
+        async def get_statistics(self, *_args, **_kwargs):
+            pytest.fail("analysis must not fetch statistics")
+
+    async def history_project_query(_runtime, _access):
+        return ManyQuery(), snapshot
+
+    monkeypatch.setattr(tools_module, "_history_project_query", history_project_query)
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: SimpleNamespace(scopes=frozenset((READ_SCOPE, HISTORY_SCOPE)), family_id="family"),
+    )
+    server = FastMCP("observability-pages")
+    register_observability_tools(server, Runtime(), None)  # type: ignore[arg-type]
+    tool = server._tool_manager.get_tool("loxone_analyze_observability")
+    arguments = (
+        "control-0",
+        "runtime_control_uuid",
+        "upstream",
+        "2026-09-01T00:00:00Z",
+        "2026-09-02T00:00:00Z",
+    )
+    first = await tool.fn(*arguments, limit=50)  # type: ignore[union-attr]
+    assert first.ok
+    assert 0 < len(first.data.controls) < 30
+    assert len(first.data.controls[0].recommendations) == 20
+    assert first.data.next_cursor is not None
+    assert len(first.model_dump_json().encode("utf-8")) <= PROJECT_RESPONSE_MAX_BYTES
+    second = await tool.fn(*arguments, cursor=first.data.next_cursor, limit=50)  # type: ignore[union-attr]
+    assert second.ok
+    assert second.data.controls[0].control_uuid != first.data.controls[0].control_uuid
+    assert len(second.model_dump_json().encode("utf-8")) <= PROJECT_RESPONSE_MAX_BYTES
 
 
 @pytest.mark.asyncio

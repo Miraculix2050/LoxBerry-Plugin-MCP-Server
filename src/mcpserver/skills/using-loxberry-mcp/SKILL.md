@@ -243,9 +243,25 @@ cause; `temporal_coverage: not_checked` means statistics were not retrieved;
 `state_names_truncated` marks omitted state-name text;
 `control_metadata_truncated` marks omitted control-name and type text; and
 `not_recorded` or `partial_coverage` never proves that a state did not occur.
-Use `loxone_get_statistics` only when an advertised series needs direct evidence
-for the same period. Do not add history sources automatically; recording advice
-is outside this tool.
+The per-state `recommendations` explain how to close incomplete history gaps.
+They use observable value and control metadata, not signal names. An
+documented digital state with observed 0/1 value can support on-change recording
+without an `is_analog` flag; conflicting metadata or values remain uncertain.
+Documented `value` states of `InfoOnlyAnalog`, `UpDownAnalog`,
+`LeftRightAnalog`, and `Slider` supply analog evidence without that flag; a
+small range is not proof of a digital state. An explicit contradictory flag
+keeps the recommendation uncertain.
+For `Daytimer`, the analog flag applies only to `value`, and local event-history
+sources are unsupported. A native series is
+recommended for reuse only when its output maps to the state; disabled series
+are ignored, and an unmapped legacy output remains uncertain. Verify the requested
+period before claiming coverage. A partial local recording needs more capture
+time; a configured native series takes precedence without creating a duplicate
+source. `undetermined` means the available metadata does
+not establish continuous or discrete behavior. Native sampling intervals are
+qualitative advice based on the diagnostic need, not promised rates. Use
+`loxone_get_statistics` only when an advertised series needs direct evidence
+for the same period. Do not add history sources automatically.
 
 ## Operate a supported control
 

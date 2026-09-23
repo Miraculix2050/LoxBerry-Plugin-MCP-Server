@@ -392,6 +392,7 @@ def test_structure_extracts_only_bounded_phase_four_capabilities() -> None:
                     "groups": [
                         {
                             "id": 1,
+                            "mode": 1,
                             "accumulated": True,
                             "dataPoints": [
                                 {"output": "value", "title": "Energy", "format": "%.1f kWh"},
@@ -534,7 +535,12 @@ def test_structure_exposes_documented_legacy_statistic_outputs() -> None:
                 "statistic": {
                     "frequency": 10,
                     "outputs": [
-                        {"id": 0, "name": "Temperature", "format": "%.1f °C"},
+                        {
+                            "id": 0,
+                            "name": "Temperature",
+                            "format": "%.1f °C",
+                            "uuid": "state-value",
+                        },
                         {"id": 1, "name": "Average", "format": "%.1f °C"},
                     ],
                 },
@@ -551,6 +557,51 @@ def test_structure_exposes_documented_legacy_statistic_outputs() -> None:
         ("legacy:0", "legacy", 0, 2),
         ("legacy:1", "legacy", 1, 2),
     ]
+    assert [item.state_uuid for item in series] == ["state-value", None]
+
+
+def test_structure_omits_disabled_native_statistic_series() -> None:
+    raw = {
+        "lastModified": "now",
+        "msInfo": {"serialNr": "000000000000"},
+        "rooms": {},
+        "cats": {},
+        "controls": {
+            "v2": {
+                "name": "V2",
+                "type": "Meter",
+                "states": {"actual": "actual-state"},
+                "statisticV2": {
+                    "groups": [
+                        {
+                            "id": 1,
+                            "mode": 0,
+                            "dataPoints": [{"output": "actual", "title": "Disabled"}],
+                        },
+                        {
+                            "id": 2,
+                            "mode": 1,
+                            "dataPoints": [{"output": "actual", "title": "Enabled"}],
+                        },
+                    ]
+                },
+            },
+            "legacy": {
+                "name": "Legacy",
+                "type": "Meter",
+                "states": {"actual": "legacy-state"},
+                "statistic": {
+                    "frequency": 0,
+                    "outputs": [{"id": 0, "name": "Disabled", "uuid": "legacy-state"}],
+                },
+            },
+        },
+    }
+    controls = {
+        control.uuid: control for control in normalize_structure(raw, username="reader").controls
+    }
+    assert [series.series_id for series in controls["v2"].statistic_series] == ["v2:2:actual"]
+    assert controls["legacy"].statistic_series == ()
 
 
 @pytest.mark.parametrize(

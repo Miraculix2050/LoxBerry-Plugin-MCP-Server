@@ -108,6 +108,26 @@ marks omitted metadata. State names are capped at 200 UTF-8 bytes and
 `state_names_truncated` marks omitted text. Control names and types use the same cap and
 `control_metadata_truncated` marks omitted text. Missing or partial local coverage is an evidence
 gap, never proof of non-occurrence.
+Each returned control also carries bounded, per-state `recommendations` for
+incomplete local coverage. They classify from the observed value and explicit
+control metadata, never from names; ambiguous behavior remains `undetermined`.
+Documented digital state keys are treated as discrete only when their observed
+numeric value is exactly 0 or 1 and no applicable analog flag contradicts it.
+`Daytimer.details.analog` applies to `value` only. Local recording is not recommended
+for `Daytimer` because event-history sources reject that control type. Control-level range metadata
+can support `value` but does not classify unrelated states.
+The documented `value` state of `InfoOnlyAnalog`, `UpDownAnalog`,
+`LeftRightAnalog`, and `Slider` supplies analog evidence even when
+`details.analog` is absent. An explicit conflicting digital flag remains
+`undetermined`; the documented analog type takes priority over the small-range
+discrete heuristic.
+Native StatisticV2 outputs map by state key and legacy outputs by their documented
+UUID. Disabled groups or frequencies are omitted. A legacy output without a
+state UUID keeps the recommendation `undetermined`; mapped series still have
+unverified period coverage. Existing
+partial local recording is continued when no native series is advertised.
+Suggested native sampling intervals remain qualitative because the structure does not establish
+the signal dynamics or diagnostic resolution.
 
 ### Source diagnostics
 

@@ -50,6 +50,25 @@ did not occur. At most 20 statistic series per control are returned; omitted met
 by `native_statistics_truncated`. State names are capped at 200 UTF-8 bytes and
 `state_names_truncated` marks omitted text. Control names and types use the same cap;
 `control_metadata_truncated` marks omitted text.
+For each state without complete local coverage, `recommendations` suggests
+native statistics, local on-change recording, or `undetermined` from observable
+value and control metadata.
+Documented digital states of `InfoOnlyDigital`, `Switch`, `Pushbutton`,
+`PresenceDetector`, and other supported control types can be recommended for
+on-change recording with observed 0/1 values even without `is_analog`.
+The documented `value` state of `InfoOnlyAnalog`, `UpDownAnalog`,
+`LeftRightAnalog`, and `Slider` is treated as analog even without
+`details.analog`; a small value range does not make it a digital state.
+An explicit conflicting `details.analog=false` leaves the recommendation
+undetermined.
+For a `Daytimer`, `is_analog` applies only to the `value` state, not its mode or
+time values. Local recording is not recommended for `Daytimer` because local
+event-history sources do not support this control type. An active native series is preferred only when its output maps to
+the state. A legacy series without a state UUID leaves the recommendation
+undetermined. Coverage of the requested period still needs checking. Partial local recording
+is reported as a coverage gap, not a request to add another source. Native
+sampling advice has no fixed interval without
+evidence about signal dynamics; the tool never changes recording settings.
 `source_diagnostics` reports bounded source gaps such as parser anomalies, invalid KNX fields
 and unmodeled attributes. They are not configuration verdicts and never expose unknown source
 values: only fixed codes, field names, value shapes and project-node references are returned.

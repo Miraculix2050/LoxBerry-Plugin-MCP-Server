@@ -54,6 +54,26 @@ State nicht eingetreten ist. Pro Control werden höchstens 20 Statistikserien zu
 ausgelassene Metadaten markiert `native_statistics_truncated`. State-Namen sind auf 200 UTF-8-
 Bytes begrenzt; ausgelassenen Text markiert `state_names_truncated`. Control-Namen und -Typen
 haben dieselbe Begrenzung; ausgelassenen Text markiert `control_metadata_truncated`.
+Für jeden State ohne vollständige lokale Abdeckung empfiehlt `recommendations`
+anhand beobachtbarer Werte und Control-Metadaten native Statistik, lokale
+Aufzeichnung bei Änderung oder `undetermined`.
+Für dokumentierte Schaltzustände von `InfoOnlyDigital`, `Switch`, `Pushbutton`,
+`PresenceDetector` und weiteren unterstützten Control-Typen kann bei beobachtetem
+Wert 0/1 eine Aufzeichnung bei Änderung auch ohne `is_analog` empfohlen werden.
+Der dokumentierte `value`-State von `InfoOnlyAnalog`, `UpDownAnalog`,
+`LeftRightAnalog` und `Slider` wird auch ohne `details.analog` als analog
+behandelt; ein kleiner Wertebereich macht ihn nicht zu einem digitalen State.
+Widerspricht ein ausdrücklich gesetztes `details.analog=false`, bleibt die
+Empfehlung unbestimmt.
+Beim `Daytimer` gilt `is_analog` nur für den State `value`, nicht für Modus oder
+Zeitwerte. Für `Daytimer` wird keine lokale Aufzeichnung empfohlen, weil lokale
+Event-History-Quellen diesen Control-Typ nicht unterstützen. Eine aktive native Serie hat nur dann Vorrang, wenn ihr Output dem
+State zugeordnet werden kann. Fehlt bei einer Legacy-Serie die State-UUID,
+bleibt die Empfehlung unbestimmt. Die zeitliche Abdeckung muss weiterhin geprüft
+werden. Teilweise lokale Aufzeichnung ist eine Abdeckungslücke,
+kein Anlass für eine zweite Quelle. Ohne Nachweis der Signaldynamik nennt die
+Intervall-Empfehlung keine festen Minutenwerte. Das Tool ändert keine
+Aufzeichnungseinstellungen.
 `source_diagnostics` meldet begrenzte Quelllücken wie Parseranomalien, ungültige KNX-Felder und
 nicht modellierte Attribute. Dies sind keine Konfigurationsurteile; unbekannte Quellwerte werden
 nicht ausgegeben, sondern nur feste Codes, Feldnamen, Wertformen und Projektknotenreferenzen.

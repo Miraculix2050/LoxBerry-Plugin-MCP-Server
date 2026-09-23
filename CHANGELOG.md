@@ -5,6 +5,22 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Recognize documented analog `value` states without an `analog` detail and
+  preserve uncertainty when an explicit flag contradicts the control type.
+
+- Match native statistic outputs to their states before recommending reuse, ignore
+  disabled statistic groups, and classify documented digital states individually.
+  Restrict the `Daytimer` analog flag to its value state.
+
+- Recognize documented `InfoOnlyDigital` 0/1 states as discrete for observability
+  recommendations when `is_analog` is absent; retain uncertainty for conflicting
+  metadata or values.
+
+- Extend `loxone_analyze_observability` with bounded per-state history-source
+  recommendations based on observable value and control metadata. Reuse
+  advertised native statistics, disclose unknown state mapping and period
+  coverage, and avoid fixed sampling rates or automatic configuration changes.
+
 - Preserve Loxone's canonical UUID representation when managing local event-history
   sources, so discovered control and state identifiers work unchanged across add,
   list, remove, and history reads.

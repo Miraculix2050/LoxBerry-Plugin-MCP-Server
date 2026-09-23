@@ -560,6 +560,9 @@ def _statistic_v2_series(value: Mapping[str, object]) -> tuple[StatisticSeries, 
     for group in groups:
         if not isinstance(group, Mapping):
             continue
+        mode = group.get("mode")
+        if not isinstance(mode, int) or isinstance(mode, bool) or mode <= 0:
+            continue
         group_id = group.get("id")
         normalized_group = (
             str(group_id)
@@ -606,6 +609,9 @@ def _legacy_statistic_series(value: object) -> tuple[StatisticSeries, ...]:
     """Expose documented legacy statistic outputs when StatisticV2 is absent."""
     if not isinstance(value, Mapping):
         return ()
+    frequency = value.get("frequency")
+    if not isinstance(frequency, int) or isinstance(frequency, bool) or frequency <= 0:
+        return ()
     outputs = value.get("outputs")
     if not isinstance(outputs, list) or not 1 <= len(outputs) <= 16:
         return ()
@@ -637,6 +643,7 @@ def _legacy_statistic_series(value: object) -> tuple[StatisticSeries, ...]:
                 format=format_value,
                 legacy_output_index=index,
                 legacy_output_count=len(outputs),
+                state_uuid=_optional_uuid(output.get("uuid")),
             )
         )
     return tuple(result)

@@ -49,6 +49,7 @@ class StatisticSeries:
     accumulated: bool = False
     legacy_output_index: int | None = None
     legacy_output_count: int | None = None
+    state_uuid: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
