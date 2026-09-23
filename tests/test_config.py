@@ -175,6 +175,23 @@ def test_event_history_sources_normalize_standard_uuid_input() -> None:
     )
 
 
+def test_event_history_sources_reject_non_string_uuid_input() -> None:
+    with pytest.raises(ConfigError, match="event_history.sources is unsupported"):
+        PluginConfig.from_document(
+            {
+                "schema_version": 9,
+                "event_history": {
+                    "sources": [
+                        {
+                            "control_uuid": 12345678901234567890123456789012,
+                            "state_uuid": "00000000-0000-0000-0000000000000002",
+                        }
+                    ]
+                },
+            }
+        )
+
+
 def test_removed_hybrid_cache_key_is_not_reused() -> None:
     config = PluginConfig.from_document({"schema_version": 3, "cache": {"statistics_max_mib": 64}})
 
