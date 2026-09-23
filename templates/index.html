@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-sessions-v2">
+<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-sessions-v4">
 <script>
   if (window.performance && typeof window.performance.mark === 'function') {
     window.performance.mark('mcp-admin-shell-parsed');
@@ -1517,6 +1517,13 @@
       button.disabled = active.some((entry) => sessionActionsConflict(descriptor, entry.descriptor));
       if (ownAction) button.setAttribute('aria-busy', 'true');
       else button.removeAttribute('aria-busy');
+      if (descriptor.action === 'revoke_session' || descriptor.action === 'revoke_loxberry_read'
+          || descriptor.action === 'revoke_loxberry_operate') {
+        const sameBindingRevocation = descriptor.bindingId && active.some(({descriptor: pending}) => (
+          pending.action === descriptor.action && pending.bindingId === descriptor.bindingId
+        ));
+        form.closest('tr')?.toggleAttribute('data-revoking', ownAction || sameBindingRevocation);
+      }
     }
   };
   // session-action-coordinator-end

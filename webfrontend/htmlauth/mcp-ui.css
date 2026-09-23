@@ -52,7 +52,8 @@ details.mcp-explorer-card[open] > summary { border-bottom: 1px solid #d7dadd; }
 .mcp-table { width: 100%; border-collapse: collapse; }
 .mcp-table th, .mcp-table td { padding: .5rem; text-align: left; border-bottom: 1px solid #ddd; }
 #sessions form[data-ajax^="revoke"] .lb-button { border: 1px solid #b91c1c; background: #fff; color: #991b1b; }
-#sessions form[data-ajax^="revoke"] .lb-button:disabled { opacity: .55; }
+#sessions form[data-ajax^="revoke"] .lb-button:disabled { border-color: #9ca3af; background: #f3f4f6; color: #7f1d1d; }
+#sessions .mcp-session-table tr[data-revoking] { background: #e5e7eb; }
 .mcp-permission-groups { display: grid; gap: 1rem; }
 .mcp-permission-group { display: grid; gap: .45rem; min-width: 0; }
 .mcp-permission-group h3 { margin: 0; font-size: 1.1rem; }
