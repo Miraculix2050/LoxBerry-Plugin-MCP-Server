@@ -4,11 +4,11 @@
 
 ## Basic settings
 
-The **Enable service** switch is the saved operating permission. It is enabled after a new installation, while MCP and MQTT health are separately disabled. Enabling it starts the service immediately and at the next system boot. Disabling it stops the service immediately and prevents it from starting at the next system boot; this choice is preserved across upgrades. The **Start**, **Stop** and **Restart** status actions are available only while this permission is enabled and affect only the current runtime state, never the boot behavior.
+In **Status & operation**, **Service operation and autostart** shows the saved operating permission. It is enabled after a new installation, while MCP and MQTT health are separately disabled. Applying the enabled permission starts the service immediately and at the next system boot. Disabling it stops the service immediately and prevents it from starting at the next system boot; this choice is preserved across upgrades. The **Start**, **Stop** and **Restart** status actions are available only while this permission is enabled and affect only the current runtime state, never the boot behavior.
 
 ## MCP configuration
 
-Configure one local HTTPS origin and exactly one Miniserver target. Selecting a Miniserver stored in LoxBerry does not reuse its credentials. On first setup, the origin is suggested from the LoxBerry hostname and HTTPS port; verify it matches the browser's certificate address. Only **Enable MCP access** releases MCP and OAuth access.
+Under **Connection**, configure one local HTTPS origin and exactly one Miniserver target. Selecting a Miniserver stored in LoxBerry does not reuse its credentials. On first setup, the origin is suggested from the LoxBerry hostname and HTTPS port; verify it matches the browser's certificate address. **Test connection** uses the currently selected or manually entered target without saving the configuration. Only **Enable MCP endpoint access** releases MCP and OAuth access. Permissions and local event history remain visible; rate, runtime, structure, and cache settings are under **Advanced settings**. Their values are saved even while that section is closed.
 
 ### Authentication recovery
 

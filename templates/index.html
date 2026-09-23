@@ -46,6 +46,12 @@
         <p><TMPL_VAR STATUS.INSTALLED>: <strong id="service-installed"><TMPL_VAR AJAX.WORKING></strong></p>
         <p><TMPL_VAR STATUS.ENABLED>: <strong id="service-enabled"><TMPL_VAR AJAX.WORKING></strong></p>
       </div>
+      <form id="service-enable-form" class="mcp-form" method="post" action="index.cgi" data-ajax="set_service_enabled" data-service-master data-service-enabled-setting-known="<TMPL_IF SERVICE_ENABLED_SETTING_KNOWN>1<TMPL_ELSE>0</TMPL_IF>" aria-busy="true">
+        <input type="hidden" name="action" value="set_service_enabled">
+        <label><input id="service-enabled-input" name="service_enabled" type="checkbox" value="1" <TMPL_IF SERVICE_ENABLED_SETTING>checked</TMPL_IF> <TMPL_UNLESS SERVICE_ENABLED_SETTING_KNOWN>disabled</TMPL_UNLESS>> <TMPL_VAR STATUS.ENABLED_SETTING> <span id="service-enabled-setting-status" class="mcp-inline-status" role="status" aria-live="polite"><TMPL_VAR AJAX.WORKING></span></label>
+        <button class="lb-button" type="submit" <TMPL_UNLESS SERVICE_ENABLED_SETTING_KNOWN>disabled</TMPL_UNLESS>><TMPL_VAR ACTION.APPLY_SERVICE_STATUS></button>
+        <p class="mcp-help"><TMPL_VAR STATUS.ENABLED_HELP></p>
+      </form>
       <div class="mcp-actions" id="service-actions">
         <form method="post" action="index.cgi" data-ajax="service_action" data-service-command="start" hidden><input type="hidden" name="action" value="service_action"><input type="hidden" name="command" value="start"><button class="lb-button" type="submit"><TMPL_VAR ACTION.START></button></form>
         <form method="post" action="index.cgi" data-ajax="service_action" data-service-command="stop" hidden><input type="hidden" name="action" value="service_action"><input type="hidden" name="command" value="stop"><button class="lb-button" type="submit"><TMPL_VAR ACTION.STOP></button></form>
@@ -55,37 +61,24 @@
     </div>
   </details>
 
-  <form id="service-enable-form" class="mcp-card mcp-form" method="post" action="index.cgi" data-ajax="set_service_enabled" data-service-master data-service-enabled-setting-known="<TMPL_IF SERVICE_ENABLED_SETTING_KNOWN>1<TMPL_ELSE>0</TMPL_IF>" aria-busy="true">
-    <input type="hidden" name="action" value="set_service_enabled">
-    <label><input id="service-enabled-input" name="service_enabled" type="checkbox" value="1" <TMPL_IF SERVICE_ENABLED_SETTING>checked</TMPL_IF> <TMPL_UNLESS SERVICE_ENABLED_SETTING_KNOWN>disabled</TMPL_UNLESS>> <TMPL_VAR STATUS.ENABLED> <span id="service-enabled-setting-status" class="mcp-inline-status" role="status" aria-live="polite"><TMPL_VAR AJAX.WORKING></span></label>
-    <button class="lb-button" type="submit" <TMPL_UNLESS SERVICE_ENABLED_SETTING_KNOWN>disabled</TMPL_UNLESS>><TMPL_VAR ACTION.APPLY_SERVICE_STATUS></button>
-    <p class="mcp-help"><TMPL_VAR STATUS.ENABLED_HELP></p>
-  </form>
-
   <details id="configuration" class="mcp-card" data-persist-collapse open>
     <summary id="setup"><TMPL_VAR SETUP.TITLE></summary>
     <div class="mcp-collapsible-content">
     <form id="mcp-config-form" class="mcp-form" method="post" action="index.cgi" data-ajax="save_mcp_config">
-      <input type="hidden" name="action" value="save_mcp_config">
       <input id="event-history-sources" type="hidden" name="event_history_sources_json" value="<TMPL_VAR EVENT_HISTORY_SOURCES_JSON ESCAPE=HTML>">
       <fieldset id="mcp-config-fields" class="mcp-configuration-fields" <TMPL_UNLESS SERVER_RENDERED_FALLBACK>disabled<TMPL_ELSE><TMPL_UNLESS FALLBACK_CONFIGURATION_LOADED>disabled</TMPL_UNLESS></TMPL_UNLESS>>
+      <input type="submit" name="action" value="save_mcp_config" hidden aria-hidden="true" tabindex="-1">
+      <h3><TMPL_VAR SETUP.CONNECTION></h3>
       <label class="mcp-field"><span><TMPL_VAR SETUP.PUBLIC_ORIGIN></span><input name="public_origin" type="url" value="<TMPL_VAR PUBLIC_ORIGIN ESCAPE=HTML>" placeholder="https://loxberry.local" required></label>
       <label class="mcp-field"><span><TMPL_VAR SETUP.MINISERVER_SOURCE></span><select id="miniserver-select" name="miniserver_endpoint"><option value="" <TMPL_IF MANUAL_ENDPOINT>selected</TMPL_IF>><TMPL_VAR SETUP.MANUAL_OPTION></option><TMPL_LOOP MINISERVERS><option value="<TMPL_VAR endpoint ESCAPE=HTML>" <TMPL_IF selected>selected</TMPL_IF>><TMPL_VAR label ESCAPE=HTML></option></TMPL_LOOP></select></label>
       <div id="manual-endpoint-fields" class="mcp-manual-endpoint" <TMPL_UNLESS MANUAL_ENDPOINT>hidden</TMPL_UNLESS>>
         <label class="mcp-field"><span><TMPL_VAR SETUP.ENDPOINT></span><input id="miniserver-endpoint" name="endpoint" type="url" value="<TMPL_VAR ENDPOINT ESCAPE=HTML>" placeholder="http://192.168.1.20" aria-describedby="endpoint-help" <TMPL_IF MANUAL_ENDPOINT>required<TMPL_ELSE>readonly</TMPL_IF>></label>
         <p id="endpoint-help" class="mcp-help"><TMPL_VAR SETUP.ENDPOINT_HELP></p>
       </div>
-      <div class="mcp-grid">
-        <label class="mcp-field"><span><TMPL_VAR SETUP.TIMEOUT></span><input name="connection_timeout" type="number" min="1" max="60" value="<TMPL_VAR CONNECTION_TIMEOUT ESCAPE=HTML>"></label>
-        <label class="mcp-field"><span><TMPL_VAR SETUP.RATE></span><input name="requests_per_minute" type="number" min="1" max="600" value="<TMPL_VAR REQUESTS_PER_MINUTE ESCAPE=HTML>"></label>
-        <label class="mcp-field"><span><TMPL_VAR SETUP.CONTROL_RATE></span><input name="control_requests_per_minute" type="number" min="1" max="60" value="<TMPL_VAR CONTROL_REQUESTS_PER_MINUTE ESCAPE=HTML>"></label>
-        <label class="mcp-field"><span><TMPL_VAR SETUP.LOXBERRY_RATE></span><input name="loxberry_requests_per_minute" type="number" min="1" max="60" value="<TMPL_VAR LOXBERRY_REQUESTS_PER_MINUTE ESCAPE=HTML>"></label>
-        <label class="mcp-field"><span><TMPL_VAR SETUP.HISTORY_RATE></span><input name="history_requests_per_minute" type="number" min="1" max="60" value="<TMPL_VAR HISTORY_REQUESTS_PER_MINUTE ESCAPE=HTML>"></label>
-        <label class="mcp-field"><span><TMPL_VAR SETUP.OPERATE_RATE></span><input name="loxberry_operate_requests_per_minute" type="number" min="1" max="30" value="<TMPL_VAR LOXBERRY_OPERATE_REQUESTS_PER_MINUTE ESCAPE=HTML>"></label>
-        <label class="mcp-field"><span><TMPL_VAR SETUP.EXPLORER_BINDING_RETENTION></span><input name="explorer_binding_retention_hours" type="number" min="1" max="720" value="<TMPL_VAR EXPLORER_BINDING_RETENTION_HOURS ESCAPE=HTML>"></label>
-        <p class="mcp-help"><TMPL_VAR SETUP.EXPLORER_BINDING_RETENTION_HELP></p>
-        <label class="mcp-field"><span><TMPL_VAR SETUP.PARALLEL></span><input name="max_parallel_calls" type="number" min="1" max="32" value="<TMPL_VAR MAX_PARALLEL_CALLS ESCAPE=HTML>"></label>
+      <div class="mcp-actions">
+        <button class="lb-button" type="submit" name="action" value="test_connection" formnovalidate><TMPL_VAR ACTION.TEST></button>
       </div>
+      <h3><TMPL_VAR SETUP.ACCESS_SAFETY></h3>
       <label><input name="enabled" type="checkbox" value="1" <TMPL_IF ENABLED>checked</TMPL_IF>> <TMPL_VAR SETUP.ENABLED></label>
       <TMPL_UNLESS SERVER_RENDERED_FALLBACK><input id="emergency-stop-value" name="emergency_stop_virtual_status_uuid" type="hidden" value="<TMPL_VAR SELECTED_EMERGENCY_STOP ESCAPE=HTML>"></TMPL_UNLESS>
       <label class="mcp-field"><span><TMPL_VAR SETUP.EMERGENCY_STOP></span><select id="emergency-stop-select" <TMPL_IF SERVER_RENDERED_FALLBACK>name="emergency_stop_virtual_status_uuid"<TMPL_ELSE>aria-describedby="emergency-stop-help emergency-stop-status" disabled aria-busy="true"</TMPL_IF>><TMPL_IF SERVER_RENDERED_FALLBACK><option value="" <TMPL_UNLESS SELECTED_EMERGENCY_STOP>selected</TMPL_UNLESS>><TMPL_VAR SETUP.EMERGENCY_STOP_NONE></option><TMPL_IF EMERGENCY_STOP_SELECTED_UNAVAILABLE><option value="<TMPL_VAR SELECTED_EMERGENCY_STOP ESCAPE=HTML>" selected><TMPL_VAR SETUP.EMERGENCY_STOP_CURRENT> (<TMPL_VAR SELECTED_EMERGENCY_STOP ESCAPE=HTML>)</option></TMPL_IF><TMPL_LOOP EMERGENCY_STOP_OPTIONS><option value="<TMPL_VAR uuid ESCAPE=HTML>" <TMPL_IF selected>selected</TMPL_IF>><TMPL_VAR name_html></option></TMPL_LOOP><TMPL_ELSE><option value="" selected><TMPL_VAR SETUP.EMERGENCY_STOP_LOADING></option></TMPL_IF></select></label>
@@ -102,6 +95,9 @@
         <p class="mcp-help"><strong><TMPL_VAR SETUP.EMERGENCY_STOP_RUNTIME_STATE></strong> <code id="emergency-stop-runtime-state"><TMPL_VAR EMERGENCY_STOP_RUNTIME_STATE_VALUE ESCAPE=HTML></code></p>
         <p id="emergency-stop-runtime-mismatch" class="mcp-status" data-kind="warning" hidden><TMPL_VAR SETUP.EMERGENCY_STOP_RUNTIME_MISMATCH></p>
       </div>
+      <h3><TMPL_VAR SETUP.PERMISSIONS></h3>
+      <label class="mcp-check"><input id="event-history-enabled" name="event_history_enabled" type="checkbox" value="1" <TMPL_IF EVENT_HISTORY_ENABLED>checked</TMPL_IF>> <span><TMPL_VAR SETUP.EVENT_HISTORY_ENABLED></span></label>
+      <p class="mcp-help"><TMPL_VAR SETUP.EVENT_HISTORY_HELP></p>
       <div class="mcp-permission-groups" aria-describedby="permission-policy-hint">
         <section class="mcp-permission-group" aria-labelledby="loxone-permissions-heading">
           <h3 id="loxone-permissions-heading"><TMPL_VAR SETUP.PERMISSIONS_LOXONE></h3>
@@ -131,7 +127,21 @@
       </div>
       <p id="permission-policy-hint" class="mcp-help"><TMPL_VAR SETUP.PERMISSIONS_HINT></p>
       <details class="mcp-persistent-section">
-        <summary><TMPL_VAR SETUP.ADVANCED_LIMITS></summary>
+        <summary><TMPL_VAR SETUP.ADVANCED_SETTINGS></summary>
+        <h4><TMPL_VAR SETUP.ADVANCED_CONNECTION></h4>
+        <div class="mcp-grid">
+          <label class="mcp-field"><span><TMPL_VAR SETUP.TIMEOUT></span><input name="connection_timeout" type="number" min="1" max="60" value="<TMPL_VAR CONNECTION_TIMEOUT ESCAPE=HTML>"></label>
+          <label class="mcp-field"><span><TMPL_VAR SETUP.PARALLEL></span><input name="max_parallel_calls" type="number" min="1" max="32" value="<TMPL_VAR MAX_PARALLEL_CALLS ESCAPE=HTML>"></label>
+        </div>
+        <h4><TMPL_VAR SETUP.ADVANCED_RATES></h4>
+        <div class="mcp-grid">
+          <label class="mcp-field"><span><TMPL_VAR SETUP.RATE></span><input name="requests_per_minute" type="number" min="1" max="600" value="<TMPL_VAR REQUESTS_PER_MINUTE ESCAPE=HTML>"></label>
+          <label class="mcp-field"><span><TMPL_VAR SETUP.CONTROL_RATE></span><input name="control_requests_per_minute" type="number" min="1" max="60" value="<TMPL_VAR CONTROL_REQUESTS_PER_MINUTE ESCAPE=HTML>"></label>
+          <label class="mcp-field"><span><TMPL_VAR SETUP.LOXBERRY_RATE></span><input name="loxberry_requests_per_minute" type="number" min="1" max="60" value="<TMPL_VAR LOXBERRY_REQUESTS_PER_MINUTE ESCAPE=HTML>"></label>
+          <label class="mcp-field"><span><TMPL_VAR SETUP.HISTORY_RATE></span><input name="history_requests_per_minute" type="number" min="1" max="60" value="<TMPL_VAR HISTORY_REQUESTS_PER_MINUTE ESCAPE=HTML>"></label>
+          <label class="mcp-field"><span><TMPL_VAR SETUP.OPERATE_RATE></span><input name="loxberry_operate_requests_per_minute" type="number" min="1" max="30" value="<TMPL_VAR LOXBERRY_OPERATE_REQUESTS_PER_MINUTE ESCAPE=HTML>"></label>
+        </div>
+        <h4><TMPL_VAR SETUP.ADVANCED_LIMITS></h4>
         <div class="mcp-grid">
           <label class="mcp-field"><span><TMPL_VAR SETUP.STRUCTURE_REFRESH></span><input name="structure_refresh_seconds" type="number" min="60" max="3600" value="<TMPL_VAR STRUCTURE_REFRESH_SECONDS ESCAPE=HTML>"></label>
           <label class="mcp-field"><span><TMPL_VAR SETUP.RUNTIME_SESSIONS></span><input name="max_active_runtime_sessions" type="number" min="1" max="128" value="<TMPL_VAR MAX_ACTIVE_RUNTIME_SESSIONS ESCAPE=HTML>"></label>
@@ -144,14 +154,14 @@
            <label class="mcp-field"><span><TMPL_VAR SETUP.CACHE_SIZE></span><input name="statistics_memory_max_mib" type="number" min="16" max="512" value="<TMPL_VAR STATISTICS_MEMORY_MAX_MIB ESCAPE=HTML>"></label>
            <label class="mcp-field"><span><TMPL_VAR SETUP.EVENT_HISTORY_RETENTION></span><input name="event_history_retention_days" type="number" min="1" max="365" value="<TMPL_VAR EVENT_HISTORY_RETENTION_DAYS ESCAPE=HTML>"></label>
            <label class="mcp-field"><span><TMPL_VAR SETUP.EVENT_HISTORY_SIZE></span><input name="event_history_maximum_mib" type="number" min="16" max="1024" value="<TMPL_VAR EVENT_HISTORY_MAXIMUM_MIB ESCAPE=HTML>"></label>
-          <label class="mcp-field"><span><TMPL_VAR SETUP.CACHED_STATES></span><input name="max_states_per_identity" type="number" min="1000" max="100000" value="<TMPL_VAR MAX_STATES_PER_IDENTITY ESCAPE=HTML>"></label>
+           <label class="mcp-field"><span><TMPL_VAR SETUP.CACHED_STATES></span><input name="max_states_per_identity" type="number" min="1000" max="100000" value="<TMPL_VAR MAX_STATES_PER_IDENTITY ESCAPE=HTML>"></label>
+           <label class="mcp-field"><span><TMPL_VAR SETUP.EXPLORER_BINDING_RETENTION></span><input name="explorer_binding_retention_hours" type="number" min="1" max="720" value="<TMPL_VAR EXPLORER_BINDING_RETENTION_HOURS ESCAPE=HTML>"></label>
         </div>
+         <p class="mcp-help"><TMPL_VAR SETUP.EXPLORER_BINDING_RETENTION_HELP></p>
          <p class="mcp-help"><TMPL_VAR SETUP.ADVANCED_LIMITS_HELP></p>
-         <label class="mcp-check"><input id="event-history-enabled" name="event_history_enabled" type="checkbox" value="1" <TMPL_IF EVENT_HISTORY_ENABLED>checked</TMPL_IF>> <span><TMPL_VAR SETUP.EVENT_HISTORY_ENABLED></span></label>
-         <p class="mcp-help"><TMPL_VAR SETUP.EVENT_HISTORY_HELP></p>
       </details>
       <div class="mcp-actions">
-        <button class="lb-button" type="submit"><TMPL_VAR ACTION.SAVE_MCP></button>
+        <button class="lb-button" type="submit" name="action" value="save_mcp_config"><TMPL_VAR ACTION.SAVE_MCP></button>
       </div>
       </fieldset>
     </form>
@@ -159,13 +169,6 @@
     <form class="mcp-actions" method="post" action="index.cgi" data-ajax="clear_event_history">
       <input type="hidden" name="action" value="clear_event_history">
       <button class="lb-button" type="submit"><TMPL_VAR ACTION.CLEAR_EVENT_HISTORY></button>
-    </form>
-    <form class="mcp-actions" method="post" action="index.cgi" data-ajax="test_connection">
-      <fieldset id="test-connection-fields" class="mcp-configuration-fields" <TMPL_UNLESS SERVER_RENDERED_FALLBACK>disabled<TMPL_ELSE><TMPL_UNLESS FALLBACK_CONFIGURATION_LOADED>disabled</TMPL_UNLESS></TMPL_UNLESS>>
-        <input type="hidden" name="action" value="test_connection">
-        <input type="hidden" name="endpoint" value="<TMPL_VAR ENDPOINT ESCAPE=HTML>">
-        <button class="lb-button" type="submit"><TMPL_VAR ACTION.TEST></button>
-      </fieldset>
     </form>
     </div>
   </details>
@@ -399,14 +402,12 @@
   const mqttConfigForm = document.querySelector('form[data-ajax="save_mqtt_config"]');
   const configurationFieldsets = [
     document.getElementById('mcp-config-fields'),
-    document.getElementById('test-connection-fields'),
     document.getElementById('mqtt-config-fields'),
     document.getElementById('logging-config-fields'),
   ];
   const historyEnabled = document.getElementById('loxone-history-enabled');
   const eventHistoryEnabled = document.getElementById('event-history-enabled');
   const operateEnabled = document.getElementById('loxberry-operate-enabled');
-  const testEndpoint = document.querySelector('form[data-ajax="test_connection"] input[name="endpoint"]');
   const explorerLink = document.getElementById('explorer-link');
   const explorerPath = '/admin/plugins/mcpserver/explorer.cgi';
   explorerLink.href = `${window.location.origin}${explorerPath}`;
@@ -627,7 +628,6 @@
       field.disabled = useGateway;
     }
   };
-  const syncTestEndpoint = () => { testEndpoint.value = miniserverEndpoint.value; };
   const syncOperateDependency = () => {
     operateEnabled.disabled = !historyEnabled.checked;
     if (operateEnabled.disabled) operateEnabled.checked = false;
@@ -640,10 +640,8 @@
     miniserverEndpoint.readOnly = Boolean(selectedEndpoint);
     miniserverEndpoint.required = !selectedEndpoint;
     manualEndpointFields.hidden = Boolean(selectedEndpoint);
-    syncTestEndpoint();
   };
   miniserverSelect.addEventListener('change', syncMiniserverSelection);
-  miniserverEndpoint.addEventListener('input', syncTestEndpoint);
   historyEnabled.addEventListener('change', syncOperateDependency);
   syncMiniserverSelection();
   syncOperateDependency();
@@ -1695,7 +1693,8 @@
         return;
       }
     delete form.dataset.confirmed;
-    const button = form.querySelector('button[type="submit"]');
+    const button = event.submitter || form.querySelector('button[type="submit"]');
+    const submittedAction = form === mcpConfigForm ? button.value : form.dataset.ajax;
     let keepButtonDisabled = false;
     let sessionActionToken = null;
     let sessionAction = null;
@@ -1722,6 +1721,7 @@
           : '<TMPL_VAR AJAX.WORKING ESCAPE=JS>');
       }
       const body = new URLSearchParams(new FormData(form));
+      if (form === mcpConfigForm) body.set('action', submittedAction);
       const requestedServiceEnabled = form.dataset.ajax === 'set_service_enabled'
         ? serviceEnabledInput.checked : null;
       if (requestedServiceEnabled !== null) {
@@ -1729,7 +1729,7 @@
       }
       body.set('ajax', '1');
       try {
-        const result = await postAjax(body, actionTimeout(form.dataset.ajax));
+        const result = await postAjax(body, actionTimeout(submittedAction));
         if (requestedServiceEnabled !== null) {
           const service = result.data.service;
           if (!service || Boolean(service.enabled) !== requestedServiceEnabled
@@ -1762,7 +1762,7 @@
           mqttClearPassword.checked = false;
           mqttPasswordStatus.hidden = !Boolean(result.data.mqtt_password_configured);
         }
-        if (form.dataset.ajax === 'save_mcp_config') {
+        if (submittedAction === 'save_mcp_config') {
           const savedEndpoint = result.data.configuration.loxone.endpoint;
           emergencyStopValue.value = result.data.configuration.emergency_stop.virtual_status_uuid;
           resetEmergencyStopOptions({loading: true});
@@ -1773,7 +1773,6 @@
           scheduleServicePoll(0);
           miniserverEndpoint.value = savedEndpoint;
           explorerLink.href = `${window.location.origin}${explorerPath}`;
-          syncTestEndpoint();
         }
         if (form.dataset.ajax === 'set_logging') renderLogging(result.data.configuration);
         if (form.dataset.ajax === 'renew_certificate') {

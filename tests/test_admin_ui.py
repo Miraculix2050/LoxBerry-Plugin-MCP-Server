@@ -186,10 +186,6 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
         "<TMPL_UNLESS SERVER_RENDERED_FALLBACK>disabled" in template
     )
     assert (
-        'id="test-connection-fields" class="mcp-configuration-fields" '
-        "<TMPL_UNLESS SERVER_RENDERED_FALLBACK>disabled" in template
-    )
-    assert (
         'id="mqtt-config-fields" class="mcp-configuration-fields" '
         "<TMPL_UNLESS SERVER_RENDERED_FALLBACK>disabled" in template
     )
@@ -360,7 +356,7 @@ def test_common_actions_update_the_page_without_a_reload() -> None:
     assert "if (element.dataset.kind === 'success') element.hidden = true;" in template
     assert "window.clearTimeout(hideStatusTimers.get(status))" in template
     assert "url.searchParams.delete('notice')" in template
-    assert "postAjax(body, actionTimeout(form.dataset.ajax))" in template
+    assert "postAjax(body, actionTimeout(submittedAction))" in template
     assert "save_mcp_config: 90000" in template
     assert "save_mqtt_config: 165000" in template
     assert "result.data.retained_cleanup?.status === 'failed'" in template
@@ -1106,7 +1102,102 @@ def test_miniserver_selection_uses_local_sanitized_loxberry_metadata() -> None:
     assert "miniserverEndpoint.readOnly = Boolean(selectedEndpoint)" in template
     assert "miniserverEndpoint.required = !selectedEndpoint" in template
     assert "manualEndpointFields.hidden = Boolean(selectedEndpoint)" in template
-    assert "miniserverEndpoint.addEventListener('input', syncTestEndpoint)" in template
+    assert (
+        "const submittedAction = form === mcpConfigForm ? button.value : form.dataset.ajax"
+        in template
+    )
+
+
+def test_status_and_progressive_configuration_keep_existing_form_contracts() -> None:
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    german = (ROOT / "templates/lang/language_de.ini").read_text(encoding="utf-8")
+    english = (ROOT / "templates/lang/language_en.ini").read_text(encoding="utf-8")
+
+    status = template[template.index('<details id="status"') : template.index("</details>")]
+    assert status.count('id="service-enable-form"') == 1
+    assert status.index('id="service-enable-form"') < status.index('id="service-actions"')
+    assert 'data-ajax="set_service_enabled"' in status
+    assert 'name="service_enabled"' in status
+    assert "SERVICE_ENABLED_SETTING_KNOWN" in status
+    assert "STATUS.ENABLED_SETTING" in status
+
+    configuration = template[
+        template.index('id="mcp-config-form"') : template.index(
+            'id="fallback-emergency-stop-retry-form"'
+        )
+    ]
+    advanced = configuration[configuration.index('<details class="mcp-persistent-section">') :]
+    assert configuration.count('<details class="mcp-persistent-section">') == 1
+    assert configuration.index("SETUP.CONNECTION") < configuration.index("SETUP.ACCESS_SAFETY")
+    assert configuration.index("SETUP.ACCESS_SAFETY") < configuration.index("SETUP.PERMISSIONS")
+    assert configuration.index("SETUP.PERMISSIONS") < configuration.index("SETUP.ADVANCED_SETTINGS")
+    assert configuration.index('name="event_history_enabled"') < configuration.index(
+        "SETUP.ADVANCED_SETTINGS"
+    )
+    for name in (
+        "connection_timeout",
+        "max_parallel_calls",
+        "requests_per_minute",
+        "control_requests_per_minute",
+        "loxberry_requests_per_minute",
+        "history_requests_per_minute",
+        "loxberry_operate_requests_per_minute",
+        "explorer_binding_retention_hours",
+        "structure_refresh_seconds",
+        "max_active_runtime_sessions",
+        "runtime_session_idle_seconds",
+        "max_structure_controls",
+        "max_structure_state_references",
+        "max_structure_depth",
+        "max_states_per_identity",
+        "statistics_memory_max_mib",
+        "event_history_retention_days",
+        "event_history_maximum_mib",
+    ):
+        assert configuration.count(f'name="{name}"') == 1
+        assert f'name="{name}"' in advanced
+        assert re.search(rf'name="{name}" type="number" min="\d+" max="\d+"', advanced)
+    assert 'name="action" value="save_mcp_config"' in configuration
+    assert 'name="action" value="test_connection" formnovalidate' in configuration
+    assert configuration.index('name="action" value="test_connection"') < configuration.index(
+        "SETUP.ACCESS_SAFETY"
+    )
+    assert 'id="test-connection-fields"' not in template
+    assert "if (form === mcpConfigForm) body.set('action', submittedAction)" in template
+    assert "if (submittedAction === 'save_mcp_config')" in template
+    for key in (
+        "CONNECTION",
+        "ACCESS_SAFETY",
+        "PERMISSIONS",
+        "ADVANCED_SETTINGS",
+        "ADVANCED_CONNECTION",
+        "ADVANCED_RATES",
+        "ENABLED_SETTING",
+    ):
+        assert re.search(rf"^{key}=", german, re.MULTILINE)
+        assert re.search(rf"^{key}=", english, re.MULTILINE)
+
+
+def test_connection_test_uses_unsaved_form_endpoint_in_fallback() -> None:
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    endpoint_function = re.search(r"sub requested_endpoint \{.*?^\}", cgi, re.MULTILINE | re.DOTALL)
+    assert endpoint_function is not None
+    assert 'name="miniserver_endpoint"' in template
+    assert 'name="endpoint" type="url"' in template
+    assert 'name="action" value="test_connection" formnovalidate' in template
+    assert "$result = admin_call('test_connection', {endpoint => requested_endpoint($q)})" in cgi
+    perl = shutil.which("perl")
+    assert perl is not None
+    script = (
+        f"{endpoint_function.group(0)}\n"
+        "print requested_endpoint({miniserver_endpoint => 'https://unsaved-selected', "
+        "endpoint => 'https://saved'}), \"\\n\";\n"
+        "print requested_endpoint({miniserver_endpoint => '', "
+        "endpoint => 'https://unsaved-manual'}), \"\\n\";\n"
+    )
+    result = subprocess.run([perl, "-e", script], capture_output=True, text=True, check=True)
+    assert result.stdout.splitlines() == ["https://unsaved-selected", "https://unsaved-manual"]
 
 
 def test_miniserver_endpoint_builder_rejects_unsafe_metadata() -> None:

@@ -9,6 +9,10 @@ extracted from the matching version heading.
   observations, verified historical coverage, structural paths, and causal
   hypotheses; disclose gaps and uncertain transition times.
 
+- Group service operation and autostart controls with service status, and move
+  technical MCP tuning into Advanced settings. The connection test now uses the
+  current unsaved Miniserver selection without saving the configuration.
+
 - Recognize documented analog `value` states without an `analog` detail and
   preserve uncertainty when an explicit flag contradicts the control type.
 

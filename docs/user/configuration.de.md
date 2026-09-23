@@ -4,11 +4,11 @@
 
 ## Grundeinstellungen
 
-Der Schalter **Dienst aktivieren** ist die gespeicherte Betriebsfreigabe. Nach einer Neuinstallation ist er aktiviert, MCP und MQTT-Health sind jedoch getrennt und jeweils deaktiviert. Aktivieren startet den Dienst sofort und beim nächsten Systemstart. Deaktivieren stoppt ihn sofort und verhindert seinen Start beim nächsten Systemstart; diese Wahl bleibt auch bei Updates erhalten. Die Statusaktionen **Starten**, **Stoppen** und **Neu starten** sind nur bei aktivierter Betriebsfreigabe verfügbar und ändern ausschließlich den aktuellen Laufzeitstatus, nicht das Verhalten beim Systemstart.
+Im Bereich **Status & Betrieb** zeigt **Dienstbetrieb und Autostart** die gespeicherte Betriebsfreigabe. Nach einer Neuinstallation ist sie aktiviert, MCP und MQTT-Health sind jedoch getrennt und jeweils deaktiviert. Das Anwenden der aktivierten Freigabe startet den Dienst sofort und beim nächsten Systemstart. Das Deaktivieren stoppt ihn sofort und verhindert seinen Start beim nächsten Systemstart; diese Wahl bleibt auch bei Updates erhalten. Die Statusaktionen **Starten**, **Stoppen** und **Neu starten** sind nur bei aktivierter Betriebsfreigabe verfügbar und ändern ausschließlich den aktuellen Laufzeitstatus, nicht das Verhalten beim Systemstart.
 
 ## MCP-Konfiguration
 
-Konfiguriere eine lokale HTTPS-Origin und genau ein Miniserver-Ziel. Die Auswahl eines in LoxBerry hinterlegten Miniservers übernimmt keine dort gespeicherten Zugangsdaten. Bei der ersten Einrichtung wird die Origin aus LoxBerry-Hostname und HTTPS-Port vorgeschlagen; prüfe, ob sie zur Zertifikatsadresse im Browser passt. Erst **MCP-Zugriff aktivieren** gibt den MCP- und OAuth-Zugriff frei.
+Konfiguriere unter **Verbindung** eine lokale HTTPS-Origin und genau ein Miniserver-Ziel. Die Auswahl eines in LoxBerry hinterlegten Miniservers übernimmt keine dort gespeicherten Zugangsdaten. Bei der ersten Einrichtung wird die Origin aus LoxBerry-Hostname und HTTPS-Port vorgeschlagen; prüfe, ob sie zur Zertifikatsadresse im Browser passt. **Verbindung testen** verwendet das aktuell ausgewählte oder manuell eingegebene Ziel, ohne die Konfiguration zu speichern. Erst **MCP-Endpunktzugriff aktivieren** gibt den MCP- und OAuth-Zugriff frei. Die Berechtigungen und die lokale Ereignishistorie bleiben direkt sichtbar; Aufrufgrenzen, Laufzeit-, Struktur- und Cache-Einstellungen stehen unter **Erweiterte Einstellungen**. Deren Werte werden auch bei geschlossenem Abschnitt gespeichert.
 
 ### Wiederherstellung der Authentifizierung
 
