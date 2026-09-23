@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Let Administrators revoke distinct local LoxBerry bindings concurrently in the
+  Clients and sessions UI, including one `loxberry:read` and one
+  `loxberry:operate` binding. Duplicate, same-binding, session-conflicting, and
+  global revocations remain serialized.
+
 - Deduplicate identical KNX blocks from separate internal model sources for
   Project Intelligence search, runtime mapping, and analysis. Project status
   now distinguishes opaque model sources from `project_parts`; logical KNX
