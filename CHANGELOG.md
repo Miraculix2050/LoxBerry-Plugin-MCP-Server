@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Initialize the native `admin-ui` LoxBerry Log Manager entry during both fresh
+  installations and upgrades, preserving existing retention. The Admin UI now
+  shows a localized empty state when no native plugin logs are available while
+  keeping the mandatory `service.log` separate.
+
 - Let Administrators revoke distinct local LoxBerry bindings concurrently in the
   Clients and sessions UI, including one `loxberry:read` and one
   `loxberry:operate` binding. Duplicate, same-binding, session-conflicting, and

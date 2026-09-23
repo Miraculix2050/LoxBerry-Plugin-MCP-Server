@@ -100,6 +100,24 @@ def test_admin_responses_emit_no_store_and_frame_protection(tmp_path: Path) -> N
     assert '"ok":true' in loglist.stdout
     assert '"loglist_html"' in loglist.stdout
     assert '"notifications_html"' not in loglist.stdout
+    assert "No native plugin logs are available yet." in loglist.stdout
+    assert 'role=\\"status\\"' in loglist.stdout
+
+    populated_loglist = subprocess.run(
+        common,
+        check=True,
+        capture_output=True,
+        text=True,
+        input=loglist_request,
+        env={
+            **ajax_environment,
+            "CONTENT_LENGTH": str(len(loglist_request)),
+            "LB_TEST_LOGLIST_HTML": '<ul id="native-log"><li>admin-ui</li></ul>',
+        },
+    )
+    assert "native-log" in populated_loglist.stdout
+    assert "admin-ui" in populated_loglist.stdout
+    assert "No native plugin logs are available yet." not in populated_loglist.stdout
 
 
 def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
@@ -111,7 +129,7 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert "} elsif ($action eq 'page_notifications') {" in cgi
     assert "notifications_html => LoxBerry::Log::get_notifications_html($lbpplugindir) // ''" in cgi
     assert "} elsif ($action eq 'page_loglist') {" in cgi
-    assert "loglist_html => LoxBerry::Web::loglist_html() // ''" in cgi
+    assert "loglist_html => native_loglist_html()" in cgi
     assert "my $server_rendered_fallback = ($q->{fallback} // '') eq '1';" in cgi
     assert "if ($server_rendered_fallback) {" in cgi
     assert "my $config_result = admin_call('get_config', {});" in cgi
@@ -160,6 +178,7 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert "FALLBACK_CONFIGURATION_LOADED => $fallback_configuration_loaded" in cgi
     assert "NOTIFICATIONS_HTML => $notifications_html" in cgi
     assert "LOGLIST_HTML => $loglist_html" in cgi
+    assert "$loglist_html = native_loglist_html();" in cgi
     assert "mcpserver_admin_timing=" in cgi
     assert "component=admin_helper request_id=%s action=%s timing=%s" in cgi
     assert (
@@ -704,6 +723,23 @@ def test_read_only_ajax_polling_does_not_create_admin_log_files() -> None:
     assert "action=service_$command outcome=completed" in cgi
     assert "component=admin_helper outcome=failed" in cgi
     assert "component=miniserver_config outcome=invalid" in cgi
+    assert "sub native_loglist_html" in cgi
+    assert "LoxBerry::Web::loglist_html()" in cgi
+    assert "DIAGNOSTICS.LOGLIST_EMPTY" in cgi
+    assert cgi.count("LoxBerry::Log->new") == 1
+
+
+def test_empty_native_log_list_has_localized_accessible_status() -> None:
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    german = (ROOT / "templates/lang/language_de.ini").read_text(encoding="utf-8")
+    english = (ROOT / "templates/lang/language_en.ini").read_text(encoding="utf-8")
+
+    assert "return $html if $html =~ /\\S/;" in cgi
+    assert '<p class="mcp-status" role="status">%s</p>' in cgi
+    assert "LOGLIST_EMPTY=Es sind noch keine nativen Plugin-Logs verfügbar." in german
+    assert "LOGLIST_EMPTY=No native plugin logs are available yet." in english
+    assert 'id="plugin-log-list" aria-busy="true" aria-live="polite"' in template
 
 
 def test_diagnostics_offer_dedicated_persistent_service_logging_controls() -> None:
