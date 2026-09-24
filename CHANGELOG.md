@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Show local timestamps and redacted argument summaries in Tool Explorer call
+  history, keep MCP protocol details in a separate debug panel, and report each
+  call's progress and outcome next to Run.
+
 - Keep the Admin emergency-stop retry button visible after a failed signal load
   and offer another refresh after a successful load, while honoring a supplied
   Miniserver retry time.

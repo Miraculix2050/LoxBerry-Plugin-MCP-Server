@@ -1042,7 +1042,7 @@ def test_explorer_session_clear_removes_sensitive_dom_content() -> None:
         transferEmpty:{hidden:true},transferApply:{disabled:false},transfer:dialog(),
         resultContext:text(),historyArguments:list(),restoreHistory:{hidden:false},
         resultTree:list(),resultRaw:text(),rawDetails:{open:true},
-        validation:text()};
+        validation:text(),callFeedback:text()};
       core.clearSensitiveDom(elements);
       return {
         json:elements.json.value,confirmTool:elements.confirmTool.textContent,
@@ -1064,6 +1064,8 @@ def test_explorer_session_clear_removes_sensitive_dom_content() -> None:
         rawOpen:elements.rawDetails.open,
         validation:elements.validation.textContent,
         validationHidden:elements.validation.hidden,
+        callFeedback:elements.callFeedback.textContent,
+        callFeedbackHidden:elements.callFeedback.hidden,
       };
     })()"""
     assert run_core(expression) == {
@@ -1089,6 +1091,8 @@ def test_explorer_session_clear_removes_sensitive_dom_content() -> None:
         "rawOpen": False,
         "validation": "",
         "validationHidden": True,
+        "callFeedback": "",
+        "callFeedbackHidden": True,
     }
 
 
@@ -1172,7 +1176,7 @@ def test_session_clear_prevents_call_artifacts_from_being_recreated() -> None:
     assert run.index("if (state.oauth !== oauth || Date.now() >= oauth.resumeUntil)") < run.index(
         "const tool = state.selectedTool"
     )
-    assert "if (!sessionCleared) showError(error, label('error'));" in run
+    assert "if (!sessionCleared) setCallFeedback(" in run
 
 
 def test_explorer_keeps_refresh_credentials_out_of_browser_storage() -> None:
@@ -1303,6 +1307,72 @@ def test_explorer_redacts_secret_shaped_arguments() -> None:
         "credential": "[redacted]",
         "access_token": "[redacted]",
     }
+
+
+def test_explorer_history_summary_is_schema_bound_redacted_and_short() -> None:
+    schema = {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string"},
+            "limit": {"type": "integer"},
+            "options": {
+                "type": "object",
+                "properties": {
+                    "region": {"type": "string"},
+                    "credential": {"type": "string", "writeOnly": True},
+                },
+            },
+            "password": {"type": "string"},
+        },
+    }
+    value = {
+        "query": "Rollladen" * 30,
+        "limit": 20,
+        "options": {"region": "north", "credential": "nested-secret", "unknown": "hidden"},
+        "password": "top-secret",
+        "unknown": "hidden-too",
+    }
+    summary = run_core(f"core.summarizeArguments({json.dumps(value)},{json.dumps(schema)})")
+    assert isinstance(summary, str)
+    assert summary.startswith('query="Rollladen')
+    assert "limit=20" in summary
+    assert "[redacted]" in summary
+    assert len(summary) <= 120
+    for secret in ("nested-secret", "top-secret", "hidden", "hidden-too"):
+        assert secret not in summary
+    assert run_core(f"core.summarizeArguments({json.dumps(value)},null)") == ""
+
+
+def test_explorer_history_and_call_feedback_are_separate_from_connection() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
+    run = source[
+        source.index("async function runSelectedTool") : source.index("function openTransfer")
+    ]
+    history = source[
+        source.index("function renderHistory") : source.index("async function runSelectedTool")
+    ]
+
+    assert "at: Date.now()" in run
+    assert "new Date(entry.at).toLocaleTimeString()" in history
+    assert "core.summarizeArguments(entry.arguments" in history
+    assert "setCallFeedback(label('working'), 'working')" in run
+    assert "setCallFeedback(`${label(ok ? 'callCompleted' : 'error')}" in run
+    assert "setStatus(" not in run
+    assert 'id="explorer-call-feedback"' in template
+    assert 'role="status" aria-live="polite" hidden' in template
+    assert template.index('id="explorer-result"') < template.index(
+        'id="explorer-transcript-details"'
+    )
+    assert template.index("</section>", template.index('id="explorer-result"')) < template.index(
+        'id="explorer-transcript-details"'
+    )
+    assert "TRANSCRIPT=MCP protocol / debug" in (ROOT / "templates/lang/language_en.ini").read_text(
+        encoding="utf-8"
+    )
+    assert "TRANSCRIPT=MCP-Protokoll / Debug" in (
+        ROOT / "templates/lang/language_de.ini"
+    ).read_text(encoding="utf-8")
 
 
 def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
