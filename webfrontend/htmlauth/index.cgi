@@ -62,7 +62,10 @@ sub native_loglist_html {
         # failure during concurrent page hydration is worth one short retry.
         select(undef, undef, undef, 0.2);
         $html = LoxBerry::Web::loglist_html();
-        admin_log('warning', 'component=logmanager outcome=unavailable attempts=2')
+        admin_log('warning', sprintf(
+            'component=logmanager request_id=%s outcome=unavailable attempts=2',
+            $request_id,
+        ))
             if !defined($html);
     }
     return $html if defined($html) && $html =~ /logfile\.cgi\?/;

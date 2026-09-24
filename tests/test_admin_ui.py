@@ -1307,6 +1307,43 @@ def test_empty_native_log_list_has_localized_accessible_status() -> None:
     assert 'id="plugin-log-list" aria-busy="true" aria-live="polite"' in template
 
 
+def test_unavailable_logmanager_warning_has_request_id_without_private_details(
+    tmp_path: Path,
+) -> None:
+    perl = shutil.which("perl")
+    if perl is None or os.name == "nt":
+        return
+    environment = _admin_cgi_environment(tmp_path)
+    marker = tmp_path / "log-events.txt"
+    body = "action=page_loglist&ajax=1"
+    result = subprocess.run(
+        [perl, f"-I{ROOT / 'tests' / 'perl_stubs'}", str(ROOT / "webfrontend/htmlauth/index.cgi")],
+        check=True,
+        capture_output=True,
+        text=True,
+        input=body,
+        env={
+            **environment,
+            "REQUEST_METHOD": "POST",
+            "CONTENT_TYPE": "application/x-www-form-urlencoded",
+            "CONTENT_LENGTH": str(len(body)),
+            "HTTP_ORIGIN": "https://loxberry.example",
+            "HTTP_HOST": "loxberry.example",
+            "LB_TEST_LOG_EVENTS_PATH": str(marker),
+            "LB_TEST_PLUGIN_LOGLEVEL": "4",
+            "LB_TEST_LOGLIST_UNAVAILABLE": "private-detail",
+        },
+    )
+    assert '"ok":true' in result.stdout
+    events = marker.read_text(encoding="utf-8")
+    assert re.search(
+        r"warning:component=logmanager request_id=[0-9a-f]+-[0-9a-f]+ "
+        r"outcome=unavailable attempts=2",
+        events,
+    )
+    assert "private-detail" not in events
+
+
 def test_admin_logmanager_registration_requires_an_actual_event(tmp_path: Path) -> None:
     perl = shutil.which("perl")
     if perl is None or os.name == "nt":
