@@ -734,6 +734,7 @@
   if (logoutChannel) logoutChannel.onmessage = (event) => {
     if (event.data !== 'logout') return;
     core.clearSensitiveState(state);
+    setBusy(false);
     renderAll();
     setStatus(label('disconnected'), '');
   };
@@ -1035,6 +1036,7 @@
   }
 
   async function mcpRequest(method, params, notification) {
+    const oauth = state.oauth;
     const selected = method === 'tools/call' ? state.tools.find((tool) => tool.name === params.name) : null;
     const safeParams = selected ? {...params, arguments: core.redactArguments(params.arguments, selected.inputSchema)} : core.clone(params);
     const request = {jsonrpc: '2.0', method, params: params || {}};
@@ -1045,6 +1047,11 @@
     let status = 0;
     try {
       const token = await accessToken();
+      if (state.oauth !== oauth || Date.now() >= oauth.resumeUntil) {
+        const error = new Error(label('tokenExpired'));
+        error.sessionCleared = true;
+        throw error;
+      }
       const http = await fetchWithTimeout('/plugins/mcpserver/mcp', {
         method: 'POST',
         cache: 'no-store',
@@ -1058,6 +1065,11 @@
       }, 70000);
       status = http.status;
       const text = await http.text();
+      if (state.oauth !== oauth || Date.now() >= oauth.resumeUntil) {
+        const error = new Error(label('tokenExpired'));
+        error.sessionCleared = true;
+        throw error;
+      }
       response = parseMcpBody(text, http.headers.get('content-type') || '');
       addTranscript(method, safeRequest, safeMcpResponse(response, selected), status, Math.round(performance.now() - started));
       if (!http.ok || (response && response.error)) {
@@ -1068,6 +1080,7 @@
       }
       return response ? response.result : null;
     } catch (error) {
+      if (state.oauth !== oauth && error) error.sessionCleared = true;
       if (!(error && error.sessionCleared === true) &&
         (!state.transcript.length || state.transcript[state.transcript.length - 1].request !== safeRequest)) {
         addTranscript(method, safeRequest, response || {error: error instanceof Error ? error.message : 'request failed'}, status, Math.round(performance.now() - started));
@@ -1104,13 +1117,18 @@
     elements.transferEmpty.hidden = false;
     elements.transferApply.disabled = true;
     if (elements.transfer.open) elements.transfer.close();
+    setBusy(false);
   }
 
   function renderConnection() {
     if (sessionExpiryTimer !== null) window.clearTimeout(sessionExpiryTimer);
     sessionExpiryTimer = null;
     const connected = Boolean(state.oauth && state.oauth.resumeUntil > Date.now());
-    if (!connected && state.oauth) core.clearSensitiveState(state);
+    if (!connected && state.oauth) {
+      core.clearSensitiveState(state);
+      setBusy(false);
+    }
+    if (!connected && elements.confirm.open) elements.confirm.close('cancel');
     elements.connect.disabled = state.busy || connected;
     elements.disconnect.disabled = state.busy || !connected;
     elements.run.disabled = state.busy || !connected || !state.selectedTool;
@@ -1135,6 +1153,7 @@
       }
       sessionExpiryTimer = window.setTimeout(() => {
         core.clearSensitiveState(state);
+        setBusy(false);
         renderAll();
         if (logoutChannel) logoutChannel.postMessage('logout');
       }, Math.max(0, state.oauth.resumeUntil - Date.now()));
@@ -1537,6 +1556,7 @@
 
   async function runSelectedTool() {
     if (!validateDraft(true) || !state.selectedTool) return;
+    const oauth = state.oauth;
     const requiredMutationScope = state.selectedTool.name === 'loxberry_clear_statistics_cache'
       ? 'loxberry:operate'
       : 'loxone:control';
@@ -1546,6 +1566,10 @@
       return;
     }
     if (!(await confirmMutation(state.selectedTool, state.arguments))) return;
+    if (state.oauth !== oauth || Date.now() >= oauth.resumeUntil) {
+      renderAll();
+      return;
+    }
     const tool = state.selectedTool;
     const args = core.clone(state.arguments);
     setBusy(true);
@@ -1568,21 +1592,21 @@
       }
       setStatus(ok ? label('ready') : label('error'), ok ? 'success' : 'error');
     } catch (error) {
-      sessionCleared = Boolean(error && error.sessionCleared === true);
+      sessionCleared = Boolean(error && error.sessionCleared === true) || state.oauth !== oauth;
       if (!sessionCleared) {
         result = error && error.mcpResult
           ? core.clone(error.mcpResult)
           : {error: error instanceof Error ? error.message : label('error')};
         renderResult(result, {tool: tool.name, arguments: args});
       }
-      showError(error, label('error'));
+      if (!sessionCleared) showError(error, label('error'));
     } finally {
       if (!sessionCleared) {
         state.history.push({tool: tool.name, arguments: args, result, ok, duration: Math.round(performance.now() - started)});
         if (state.history.length > core.MAX_CALL_HISTORY) state.history.splice(0, state.history.length - core.MAX_CALL_HISTORY);
         renderHistory();
       }
-      setBusy(false);
+      if (state.oauth === oauth) setBusy(false);
     }
   }
 

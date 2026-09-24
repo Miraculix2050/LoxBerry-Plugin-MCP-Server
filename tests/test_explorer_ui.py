@@ -872,8 +872,23 @@ def test_session_clear_prevents_call_artifacts_from_being_recreated() -> None:
 
     assert "error.sessionCleared = true" in source
     assert "!(error && error.sessionCleared === true)" in source
-    assert "sessionCleared = Boolean(error && error.sessionCleared === true)" in source
+    assert (
+        "sessionCleared = Boolean(error && error.sessionCleared === true) || state.oauth !== oauth"
+        in source
+    )
     assert source.count("if (!sessionCleared) {") >= 2
+    assert "if (!connected && elements.confirm.open) elements.confirm.close('cancel');" in source
+    request = source[
+        source.index("async function mcpRequest") : source.index("async function initializeMcp")
+    ]
+    assert request.count("state.oauth !== oauth || Date.now() >= oauth.resumeUntil") == 2
+    run = source[
+        source.index("async function runSelectedTool") : source.index("function openTransfer")
+    ]
+    assert run.index("if (state.oauth !== oauth || Date.now() >= oauth.resumeUntil)") < run.index(
+        "const tool = state.selectedTool"
+    )
+    assert "if (!sessionCleared) showError(error, label('error'));" in run
 
 
 def test_explorer_keeps_refresh_credentials_out_of_browser_storage() -> None:
