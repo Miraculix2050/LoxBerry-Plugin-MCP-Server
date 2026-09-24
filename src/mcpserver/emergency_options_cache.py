@@ -11,12 +11,16 @@ import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, Protocol, cast
 
 _SCHEMA: Final = 1
 _MAX_BYTES: Final = 2 * 1024 * 1024
 _MAX_OPTIONS: Final = 20_000
 _LOCK_WAIT_SECONDS: Final = 95
+
+
+class _UidProvider(Protocol):
+    def geteuid(self) -> int: ...
 
 
 def _valid_options(value: object) -> bool:
@@ -55,7 +59,9 @@ class EmergencyOptionsCache:
             if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > _MAX_BYTES:
                 return None
             if os.name != "nt":
-                current_uid = os.getuid()  # type: ignore[attr-defined]
+                import posix
+
+                current_uid = cast(_UidProvider, posix).geteuid()
                 if metadata.st_mode & 0o077 or metadata.st_uid != current_uid:
                     return None
             document = json.loads(self.path.read_text(encoding="utf-8"))
