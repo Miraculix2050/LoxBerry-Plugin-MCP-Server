@@ -432,6 +432,35 @@ def test_explorer_filters_tools_locally_by_name_description_and_group() -> None:
     assert filtered("", "loxberryRead")[0]["tools"][0]["name"] == "loxberry_get_system_status"
 
 
+def test_explorer_scope_filters_include_all_published_history_and_operate_tools() -> None:
+    history_names = [
+        "loxone_get_statistics",
+        "loxone_get_control_history",
+        "loxone_get_state_history",
+        "loxone_analyze_observability",
+    ]
+    operate_names = [
+        "loxberry_clear_statistics_cache",
+        "loxberry_list_event_history_sources",
+        "loxberry_add_event_history_source",
+        "loxberry_remove_event_history_source",
+    ]
+    tools = [
+        {"name": name, "annotations": {"readOnlyHint": True, "destructiveHint": False}}
+        for name in history_names + operate_names
+    ]
+    encoded = json.dumps(tools)
+
+    def names_for(group: str) -> list[str]:
+        groups = run_core(f"core.filteredToolGroups({encoded},'',{json.dumps(group)})")
+        return [tool["name"] for entry in groups for tool in entry["tools"]]
+
+    assert set(names_for("loxoneHistory")) == set(history_names)
+    assert set(names_for("loxberryOperate")) == set(operate_names)
+    assert names_for("loxoneRead") == []
+    assert names_for("loxberryRead") == []
+
+
 def test_explorer_discovery_controls_preserve_selection_and_drafts() -> None:
     source = SCRIPT.read_text(encoding="utf-8")
     template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")

@@ -33,19 +33,27 @@
     set_value: ['value'], start_override: ['value', 'duration_seconds'],
     start_fan_override: ['duration_seconds'], start_mode_override: ['value', 'duration_seconds'],
   };
+  const LOXONE_HISTORY_TOOLS = [
+    'loxone_get_statistics', 'loxone_get_control_history', 'loxone_get_state_history',
+    'loxone_analyze_observability',
+  ];
+  const LOXBERRY_OPERATE_TOOLS = [
+    'loxberry_clear_statistics_cache', 'loxberry_list_event_history_sources',
+    'loxberry_add_event_history_source', 'loxberry_remove_event_history_source',
+  ];
   const TOOL_GROUPS = [
     {id: 'loxoneRead', names: [
       'loxone_get_skill_guide', 'loxone_get_system_status', 'loxone_list_rooms',
       'loxone_list_categories', 'loxone_find_controls', 'loxone_describe_control',
       'loxone_get_control_notes', 'loxone_get_states',
     ]},
-    {id: 'loxoneHistory', names: ['loxone_get_statistics', 'loxone_get_control_history']},
+    {id: 'loxoneHistory', names: LOXONE_HISTORY_TOOLS},
     {id: 'loxoneControl', names: ['loxone_operate_control']},
     {id: 'loxberryRead', names: [
       'loxberry_get_system_status', 'loxberry_get_plugin_status', 'loxberry_get_service_health',
       'loxberry_list_service_events',
     ]},
-    {id: 'loxberryOperate', names: ['loxberry_clear_statistics_cache']},
+    {id: 'loxberryOperate', names: LOXBERRY_OPERATE_TOOLS},
   ];
 
   function clone(value) {
@@ -54,9 +62,9 @@
 
   function toolGroup(tool) {
     const name = tool && tool.name || '';
-    if (name === 'loxone_get_statistics' || name === 'loxone_get_control_history') return 'loxoneHistory';
+    if (LOXONE_HISTORY_TOOLS.includes(name)) return 'loxoneHistory';
     if (name.startsWith('loxone_')) return toolIsMutating(tool) ? 'loxoneControl' : 'loxoneRead';
-    if (name === 'loxberry_clear_statistics_cache') return 'loxberryOperate';
+    if (LOXBERRY_OPERATE_TOOLS.includes(name)) return 'loxberryOperate';
     return 'loxberryRead';
   }
 
