@@ -98,6 +98,7 @@ _TEXT_NAMES: Final = {
     "bin/root-lifecycle-paths.py",
 }
 _REQUIRED_PROJECT_WHEEL_ENTRIES: Final = {
+    "mcpserver/auth/scopes.py",
     "mcpserver/skills/using-loxberry-mcp/SKILL.md",
     "mcpserver/skills/using-loxberry-mcp/agents/openai.yaml",
 }

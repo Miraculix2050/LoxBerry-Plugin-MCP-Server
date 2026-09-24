@@ -68,6 +68,51 @@ def test_admin_import_defers_mqtt_and_loxone_clients() -> None:
     assert json.loads(result.stdout) == [False, False]
 
 
+def test_list_sessions_does_not_import_oauth_provider() -> None:
+    script = """
+import json
+import sys
+from mcpserver import admin
+from mcpserver.config import PluginConfig
+
+document = {
+    "clients": {},
+    "families": {
+        "family": {
+            "scope": "loxone:read loxberry:read",
+            "expires_at": 2_000_000_000,
+            "pending_loxberry_read": True,
+            "revoked": False,
+        },
+    },
+}
+snapshot = admin._AdminReadSnapshot(PluginConfig.defaults(), document, None, 1_000_000_000)
+admin._admin_read_snapshot = lambda: snapshot
+result = admin.dispatch({"action": "list_sessions"})
+print(json.dumps({
+    "provider_loaded": "mcpserver.auth.provider" in sys.modules,
+    "session_count": len(result["sessions"]),
+    "read_eligible": result["sessions"][0]["loxberry_read_eligible"],
+    "read_bindings": result["loxberry_bindings"],
+    "operate_bindings": result["loxberry_operate_bindings"],
+}))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert json.loads(result.stdout) == {
+        "provider_loaded": False,
+        "session_count": 1,
+        "read_eligible": True,
+        "read_bindings": [],
+        "operate_bindings": [],
+    }
+
+
 def test_clear_event_history_stops_the_recorder_before_deleting_its_store(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

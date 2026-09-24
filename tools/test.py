@@ -63,6 +63,7 @@ _TEST_GROUPS: Final = (
     (
         (
             "src/mcpserver/admin.py",
+            "src/mcpserver/auth/scopes.py",
             "templates/index.html",
             "webfrontend/htmlauth/admin/**",
             "webfrontend/htmlauth/mcp-ui.css",

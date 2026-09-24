@@ -165,9 +165,13 @@ def test_project_wheel_source_verification_ignores_line_endings(tmp_path: Path) 
     source = source_root / "mcpserver" / "module.py"
     source.parent.mkdir(parents=True)
     source.write_bytes(b'"""Module."""\r\n')
+    scopes = source_root / "mcpserver" / "auth" / "scopes.py"
+    scopes.parent.mkdir()
+    scopes.write_bytes(b'"""Scope names."""\r\n')
     wheel = tmp_path / "project.whl"
     with zipfile.ZipFile(wheel, "w") as archive:
         archive.writestr("mcpserver/module.py", b'"""Module."""\n')
+        archive.writestr("mcpserver/auth/scopes.py", b'"""Scope names."""\n')
         archive.writestr("mcpserver/skills/using-loxberry-mcp/SKILL.md", b"skill\n")
         archive.writestr(
             "mcpserver/skills/using-loxberry-mcp/agents/openai.yaml", b"interface: {}\n"
