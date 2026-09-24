@@ -112,6 +112,130 @@ def run_core_async(expression: str) -> object:
     return json.loads(result.stdout)
 
 
+def run_inspector(scenario: str) -> object:
+    dom = """(() => {
+      class Node {
+        constructor(tag) {
+          this.tag = tag; this.children = []; this.attrs = {}; this.handlers = {};
+          this.textContent = ''; this.hidden = false; this.className = '';
+        }
+        append(...nodes) { this.children.push(...nodes); }
+        replaceChildren(...nodes) { this.children = nodes; }
+        remove() {
+          if (this.parent) this.parent.children = this.parent.children.filter(n => n !== this);
+        }
+        setAttribute(key, value) { this.attrs[key] = value; }
+        getAttribute(key) { return this.attrs[key]; }
+        addEventListener(key, handler) { this.handlers[key] = handler; }
+        click() { this.handlers.click(); }
+      }
+      const document = {createElement: tag => new Node(tag)};
+      const originalAppend = Node.prototype.append;
+      Node.prototype.append = function (...nodes) {
+        nodes.forEach(child => { child.parent = this; }); originalAppend.apply(this, nodes);
+      };
+      const walk = root => [root, ...root.children.flatMap(walk)];
+      const labels = {selectValue:'Select',expandResult:'Expand',
+        collapseResult:'Collapse',moreResults:'Show more'};
+      const transfers = [];
+      const inspect = value => core.createResultInspector(document, value, labels,
+        (selected, path) => transfers.push({selected, path}));
+    """
+    return run_core(dom + scenario + "})()")
+
+
+def test_result_inspector_bounds_initial_dom_and_reaches_all_array_items() -> None:
+    result = run_inspector("""
+      const tree = inspect(Array.from({length:1000}, (_, i) => ({value:i})));
+      const count = () => walk(tree).filter(node =>
+        node.className === 'mcp-explorer-tree-entry').length;
+      const initial = count();
+      for (let i = 0; i < 9; i++) {
+        walk(tree).find(node => node.className === 'mcp-explorer-tree-more').click();
+      }
+      return {initial, final:count(), more:walk(tree).filter(node =>
+        node.className === 'mcp-explorer-tree-more').length,
+        last:walk(tree).some(node => node.tag === 'button' &&
+          node.textContent.endsWith('999 {1}'))};
+    """)
+    assert result == {"initial": 100, "final": 1000, "more": 0, "last": True}
+
+
+def test_result_inspector_shallow_budget_disclosure_and_exact_transfer_path() -> None:
+    result = run_inspector("""
+      const many = Object.fromEntries(Array.from({length:150}, (_, i) =>
+        [`field${i}`, {value:i, other:true}]));
+      const budgetTree = inspect(many);
+      const budget = walk(budgetTree).filter(node =>
+        node.className === 'mcp-explorer-tree-entry').length;
+      const tree = inspect({metadata:{cursor:'next'},items:[{id:'exact'}]});
+      const before = walk(tree).filter(node =>
+        node.className === 'mcp-explorer-tree-entry').length;
+      const toggle = walk(tree).find(node => node.className === 'mcp-explorer-tree-toggle'
+        && node.textContent.includes('items'));
+      const collapsed = toggle.getAttribute('aria-expanded');
+      toggle.click();
+      const expanded = toggle.getAttribute('aria-expanded');
+      const index = walk(tree).find(node => node.className === 'mcp-explorer-tree-toggle'
+        && node.textContent.includes('0 {1}'));
+      index.click();
+      walk(tree).find(node => node.tag === 'button' && node.textContent === 'id: "exact"').click();
+      toggle.click();
+      return {budget, before, collapsed, expanded, closed:toggle.getAttribute('aria-expanded'),
+        after:walk(tree).filter(node =>
+          node.className === 'mcp-explorer-tree-entry').length, transfers};
+    """)
+    assert result == {
+        "budget": 200,
+        "before": 3,
+        "collapsed": "false",
+        "expanded": "true",
+        "closed": "false",
+        "after": 5,
+        "transfers": [{"selected": "exact", "path": ["items", 0, "id"]}],
+    }
+
+
+def test_result_inspector_empty_scalar_and_error_values() -> None:
+    result = run_inspector("""
+      const values = [inspect(null),inspect([]),inspect({}),inspect({isError:true,
+        content:[{type:'text',text:'failed'}]})];
+      return values.map(tree => ({text:walk(tree).map(node => node.textContent).filter(Boolean),
+        items:walk(tree).filter(node =>
+          node.className === 'mcp-explorer-tree-entry').length}));
+    """)
+    assert result[0]["items"] == 1
+    assert result[1]["text"] == ["[0]"]
+    assert result[2]["text"] == ["{0}"]
+    assert result[3]["items"] >= 2
+
+
+def test_result_inspector_uses_the_same_history_path_and_lazy_complete_json() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
+    german = (ROOT / "templates" / "lang" / "language_de.ini").read_text(encoding="utf-8")
+    english = (ROOT / "templates" / "lang" / "language_en.ini").read_text(encoding="utf-8")
+    render_result = source[
+        source.index("function renderResult(") : source.index("function transcriptEntry(")
+    ]
+    render_history = source[
+        source.index("function renderHistory(") : source.index("async function runSelectedTool(")
+    ]
+
+    assert "core.createResultInspector(document, displayed" in render_result
+    assert (
+        "renderResult(entry.result, {tool: entry.tool, arguments: entry.arguments, history: true})"
+        in render_history
+    )
+    assert "elements.resultRaw.textContent = JSON.stringify(result" not in render_result
+    assert "elements.resultRaw.textContent = JSON.stringify(state.lastResult, null, 2)" in source
+    assert "navigator.clipboard.writeText(JSON.stringify(state.lastResult, null, 2))" in source
+    for key in ("EXPAND_RESULT", "COLLAPSE_RESULT", "MORE_RESULTS", "SELECT_VALUE"):
+        assert f"EXPLORER.{key} ESCAPE=HTML" in template
+        assert f"{key}=" in german
+        assert f"{key}=" in english
+
+
 def test_explorer_preserves_structured_mcp_error_details() -> None:
     response = {
         "jsonrpc": "2.0",
@@ -485,7 +609,7 @@ def test_explorer_discovery_controls_preserve_selection_and_drafts() -> None:
     assert template.count('type="checkbox" data-tool-group="') == 6
     assert 'id="explorer-tool-filter-count"' in template
     assert "core.filteredToolGroups(state.tools, state.toolSearch, state.toolGroups)" in source
-    assert 'src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-connection-badge-v1"' in template
+    assert 'src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-result-inspector-v1"' in template
     assert "label('noMatchingTools')" in source
     assert "label('noTools')" in source
     assert "state.toolSearch = elements.toolSearch.value" in handlers
@@ -803,6 +927,7 @@ def test_explorer_disconnect_clears_all_in_memory_session_data() -> None:
         "history": [],
         "transcript": [],
         "lastResult": None,
+        "hasResult": False,
         "lastResultContext": None,
         "nextPageRequest": None,
         "transferPath": "",
@@ -824,6 +949,7 @@ def test_explorer_session_clear_removes_sensitive_dom_content() -> None:
         transferContext:text(),transferTool:list(),transferField:list(),
         transferEmpty:{hidden:true},transferApply:{disabled:false},transfer:dialog(),
         resultContext:text(),historyArguments:list(),restoreHistory:{hidden:false},
+        resultTree:list(),resultRaw:text(),rawDetails:{open:true},
         validation:text()};
       core.clearSensitiveDom(elements);
       return {
@@ -841,6 +967,9 @@ def test_explorer_session_clear_removes_sensitive_dom_content() -> None:
         historyArguments:elements.historyArguments.children,
         historyArgumentsHidden:elements.historyArguments.hidden,
         restoreHistory:elements.restoreHistory.hidden,
+        resultTree:elements.resultTree.children,
+        resultRaw:elements.resultRaw.textContent,
+        rawOpen:elements.rawDetails.open,
         validation:elements.validation.textContent,
         validationHidden:elements.validation.hidden,
       };
@@ -863,6 +992,9 @@ def test_explorer_session_clear_removes_sensitive_dom_content() -> None:
         "historyArguments": [],
         "historyArgumentsHidden": True,
         "restoreHistory": True,
+        "resultTree": [],
+        "resultRaw": "",
+        "rawOpen": False,
         "validation": "",
         "validationHidden": True,
     }

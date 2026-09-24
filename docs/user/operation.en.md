@@ -31,6 +31,10 @@ Search the available tools by name or description and combine the search with
 one or more groups in the expandable filter. **All** clears the group selection.
 Filtering is local and keeps the selected tool and
 its unsent draft.
+Results and history entries appear as an expandable tree. Large branches show
+100 entries at a time; **Show more** loads the next batch. The disclosure arrow
+opens a branch, while the separate value button reuses its unchanged value and path.
+The complete response remains available under **JSON** and through **Copy JSON**.
 
 MCP clients receive the tool descriptions published by the specific installation, including their input and output schemas, through the MCP method `tools/list`. The Tool Explorer reads and visualizes that exact response. **Help** also provides a static HTML reference for the complete tool contract of this plugin version and the same data as a JSON download.
 

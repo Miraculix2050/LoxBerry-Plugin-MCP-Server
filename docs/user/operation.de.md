@@ -31,6 +31,10 @@ Die verfügbaren Werkzeuge lassen sich nach Name oder Beschreibung durchsuchen
 und im aufklappbaren Filter nach einer oder mehreren Gruppen filtern. **Alle**
 setzt die Gruppenauswahl zurück. Die Filterung erfolgt lokal;
 das ausgewählte Werkzeug und sein ungesendeter Entwurf bleiben erhalten.
+Ergebnisse und Verlaufseinträge erscheinen als aufklappbarer Baum. Große Zweige zeigen
+jeweils 100 Einträge; **Weitere anzeigen** lädt die nächsten. Der Pfeil öffnet einen
+Zweig, die separate Wert-Schaltfläche übernimmt dessen unveränderten Wert und Pfad.
+Die vollständige Antwort bleibt unter **JSON** sichtbar und über **JSON kopieren** verfügbar.
 
 MCP-Clients erhalten die auf der konkreten Installation veröffentlichten Werkzeugbeschreibungen sowie deren Ein- und Ausgabeschemas über die MCP-Methode `tools/list`. Der Tool Explorer liest genau diese Antwort und visualisiert sie. Unter **Hilfe** stehen außerdem eine statische HTML-Referenz des vollständigen Werkzeugvertrags dieser Plugin-Version und dieselben Daten als JSON-Download bereit.
 

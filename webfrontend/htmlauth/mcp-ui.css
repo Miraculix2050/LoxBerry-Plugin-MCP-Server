@@ -100,6 +100,10 @@ details.mcp-explorer-card[open] > summary { border-bottom: 1px solid #d7dadd; }
 .mcp-explorer-tree { max-height: 30rem; overflow: auto; padding: .5rem; border: 1px solid #ddd; }
 .mcp-explorer-tree ul { margin: .2rem 0 .2rem 1rem; padding-left: .8rem; border-left: 1px solid #ddd; }
 .mcp-explorer-tree li { margin: .25rem 0; list-style: none; }
+.mcp-explorer-tree-row { display: flex; align-items: baseline; gap: .3rem; }
+.mcp-explorer-tree-toggle, .mcp-explorer-tree-more { padding: .15rem .3rem; border: 1px solid transparent; background: transparent; text-align: left; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; cursor: pointer; }
+.mcp-explorer-tree-toggle:hover, .mcp-explorer-tree-more:hover { border-color: #1261a0; }
+.mcp-explorer-tree-select { flex: none; }
 .mcp-explorer-value { padding: .15rem .3rem; border: 1px solid transparent; background: transparent; text-align: left; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .mcp-explorer-value:hover { border-color: #1261a0; }
 .mcp-explorer-history { display: grid; gap: .35rem; max-height: 18rem; overflow-y: auto; }

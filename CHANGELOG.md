@@ -13,6 +13,9 @@ extracted from the matching version heading.
   with a compact multi-select group dropdown while retaining tool grouping,
   selection, and unsent drafts.
 
+- Make Tool Explorer results and call history expandable, load large branches in
+  batches, and keep complete raw JSON available on demand.
+
 - Run expired Tool Explorer binding cleanup after releasing the OAuth store lock,
   so a stored expired session cannot block service startup or Admin data loading.
 

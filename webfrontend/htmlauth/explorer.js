@@ -523,6 +523,107 @@
     return parts.reduce((text, part) => typeof part === 'number' ? `${text}[${part}]` : `${text}.${part}`, '$');
   }
 
+  function createResultInspector(document, value, labels, onTransfer) {
+    const BATCH_SIZE = 100;
+    const INITIAL_LIMIT = 200;
+    const SHALLOW_LIMIT = 10;
+    const keys = new WeakMap();
+    let initialCount = 0;
+    const node = (tag, className, text) => {
+      const result = document.createElement(tag);
+      if (className) result.className = className;
+      if (text !== undefined) result.textContent = text;
+      return result;
+    };
+    const entries = (item) => {
+      if (Array.isArray(item)) return item.length;
+      if (!keys.has(item)) keys.set(item, Object.keys(item));
+      return keys.get(item).length;
+    };
+    const childAt = (item, index) => {
+      const key = Array.isArray(item) ? index : keys.get(item)[index];
+      return [key, item[key]];
+    };
+    const structured = (item) => item !== null && typeof item === 'object';
+    const summary = (item) => Array.isArray(item) ? `[${entries(item)}]` : `{${entries(item)}}`;
+
+    function renderList(item, path, depth, initial) {
+      const list = node('ul');
+      const count = entries(item);
+      let rendered = 0;
+      const more = node('button', 'mcp-explorer-tree-more', labels.moreResults);
+      const moreRow = node('li', 'mcp-explorer-tree-more-row');
+      moreRow.append(more);
+      more.type = 'button';
+      const addBatch = (initialBatch) => {
+        const limit = Math.min(count, rendered + BATCH_SIZE);
+        while (rendered < limit && (!initialBatch || initialCount < INITIAL_LIMIT)) {
+          const [key, child] = childAt(item, rendered);
+          rendered += 1;
+          if (initialBatch) initialCount += 1;
+          list.append(renderEntry(key, child, [...path, key], depth + 1,
+            initialBatch && !Array.isArray(item)));
+        }
+        if (rendered < count) list.append(moreRow);
+        else moreRow.remove();
+        more.textContent = `${labels.moreResults} (${count - rendered})`;
+      };
+      more.addEventListener('click', () => { moreRow.remove(); addBatch(false); });
+      addBatch(initial);
+      return list;
+    }
+
+    function renderEntry(key, item, path, depth, initial) {
+      const row = node('li', 'mcp-explorer-tree-entry');
+      const controls = node('div', 'mcp-explorer-tree-row');
+      row.append(controls);
+      if (!structured(item) || entries(item) === 0) {
+        const choose = node('button', 'mcp-explorer-value',
+          `${String(key)}: ${structured(item) ? summary(item) : JSON.stringify(item)}`);
+        choose.type = 'button';
+        choose.title = labels.selectValue;
+        choose.addEventListener('click', () => onTransfer(item, path));
+        controls.append(choose);
+        return row;
+      }
+      const disclosure = node('button', 'mcp-explorer-tree-toggle');
+      disclosure.type = 'button';
+      disclosure.setAttribute('aria-expanded', 'false');
+      const updateDisclosure = (open) => {
+        disclosure.textContent = `${open ? '▾' : '▸'} ${String(key)} ${summary(item)}`;
+        disclosure.setAttribute('aria-expanded', String(open));
+        disclosure.setAttribute('aria-label', `${open ? labels.collapseResult : labels.expandResult}: ${String(key)} ${summary(item)}`);
+      };
+      updateDisclosure(false);
+      disclosure.addEventListener('click', () => {
+        const open = disclosure.getAttribute('aria-expanded') !== 'true';
+        if (open && row.children.length === 1) row.append(renderList(item, path, depth, false));
+        if (row.children.length > 1) row.children[1].hidden = !open;
+        updateDisclosure(open);
+      });
+      const choose = node('button', 'mcp-explorer-value mcp-explorer-tree-select', '↗');
+      choose.type = 'button';
+      choose.title = labels.selectValue;
+      choose.setAttribute('aria-label', `${labels.selectValue}: ${String(key)}`);
+      choose.addEventListener('click', () => onTransfer(item, path));
+      controls.append(disclosure, choose);
+      if (initial && depth === 1 && !Array.isArray(item) && entries(item) <= SHALLOW_LIMIT &&
+          INITIAL_LIMIT - initialCount >= entries(item)) {
+        row.append(renderList(item, path, depth, true));
+        updateDisclosure(true);
+      }
+      return row;
+    }
+
+    if (structured(value)) {
+      if (entries(value) === 0) return node('p', 'mcp-explorer-muted', summary(value));
+      return renderList(value, [], 0, true);
+    }
+    const list = node('ul');
+    list.append(renderEntry('$', value, [], 0, true));
+    return list;
+  }
+
   function base64Url(bytes) {
     let binary = '';
     bytes.forEach((value) => { binary += String.fromCharCode(value); });
@@ -555,6 +656,7 @@
     state.history = [];
     state.transcript = [];
     state.lastResult = null;
+    state.hasResult = false;
     state.lastResultContext = null;
     state.nextPageRequest = null;
     state.transferValue = undefined;
@@ -579,6 +681,9 @@
     elements.resultContext.hidden = true;
     elements.historyArguments.replaceChildren();
     elements.historyArguments.hidden = true;
+    elements.resultTree.replaceChildren();
+    elements.resultRaw.textContent = '';
+    elements.rawDetails.open = false;
     elements.restoreHistory.hidden = true;
     elements.validation.textContent = '';
     elements.validation.hidden = true;
@@ -653,6 +758,7 @@
     nextPageArguments,
     schemaSupportedForReuse,
     formatPath,
+    createResultInspector,
     base64Url,
     toolIsMutating,
     acceptOAuthPayload,
@@ -717,6 +823,7 @@
     historyArguments: document.getElementById('explorer-history-arguments'),
     restoreHistory: document.getElementById('explorer-restore-history'),
     resultTree: document.getElementById('explorer-result-tree'),
+    rawDetails: document.getElementById('explorer-raw-details'),
     resultRaw: document.getElementById('explorer-result-raw'),
     transcript: document.getElementById('explorer-transcript'),
     confirm: document.getElementById('explorer-confirm'),
@@ -742,6 +849,7 @@
     history: [],
     transcript: [],
     lastResult: null,
+    hasResult: false,
     lastResultContext: null,
     nextPageRequest: null,
     transferValue: undefined,
@@ -1494,32 +1602,9 @@
     return result;
   }
 
-  function renderTreeNode(value, path) {
-    const list = element('ul');
-    if (value && typeof value === 'object') {
-      const entries = Array.isArray(value) ? value.map((item, index) => [index, item]) : Object.entries(value);
-      entries.forEach(([key, child]) => {
-        const childPath = [...path, key];
-        const item = element('li');
-        const choose = element('button', {type: 'button', className: 'mcp-explorer-value', text: `${String(key)}: ${child && typeof child === 'object' ? (Array.isArray(child) ? '[…]' : '{…}') : JSON.stringify(child)}`});
-        choose.title = label('selectValue');
-        choose.addEventListener('click', () => openTransfer(child, childPath));
-        item.append(choose);
-        if (child && typeof child === 'object') item.append(renderTreeNode(child, childPath));
-        list.append(item);
-      });
-    } else {
-      const item = element('li');
-      const choose = element('button', {type: 'button', className: 'mcp-explorer-value', text: JSON.stringify(value)});
-      choose.addEventListener('click', () => openTransfer(value, path));
-      item.append(choose);
-      list.append(item);
-    }
-    return list;
-  }
-
   function renderResult(result, context) {
     state.lastResult = result;
+    state.hasResult = true;
     state.lastResultContext = context ? core.clone(context) : null;
     const displayed = displayValue(result);
     const sourceTool = context && state.tools.find((tool) => tool.name === context.tool);
@@ -1545,8 +1630,14 @@
         element('pre', {className: 'mcp-explorer-pre', text: JSON.stringify(argumentsValue, null, 2)}),
       );
     }
-    elements.resultRaw.textContent = JSON.stringify(result, null, 2);
-    elements.resultTree.replaceChildren(renderTreeNode(displayed, []));
+    elements.rawDetails.open = false;
+    elements.resultRaw.textContent = '';
+    elements.resultTree.replaceChildren(core.createResultInspector(document, displayed, {
+      selectValue: label('selectValue'),
+      expandResult: label('expandResult'),
+      collapseResult: label('collapseResult'),
+      moreResults: label('moreResults'),
+    }, openTransfer));
     elements.copy.disabled = false;
   }
 
@@ -1722,9 +1813,10 @@
     renderSelectedTool();
     renderHistory();
     renderTranscript();
-    if (!state.lastResult) {
+    if (!state.hasResult) {
       elements.resultTree.replaceChildren(element('p', {className: 'mcp-explorer-muted', text: label('emptyResult')}));
-      elements.resultRaw.textContent = '{}';
+      elements.resultRaw.textContent = '';
+      elements.rawDetails.open = false;
       elements.copy.disabled = true;
       elements.nextPage.hidden = true;
       elements.nextPage.disabled = true;
@@ -1812,6 +1904,11 @@
   elements.copy.addEventListener('click', async () => {
     try { await navigator.clipboard.writeText(JSON.stringify(state.lastResult, null, 2)); setStatus(label('copied'), 'success'); }
     catch (error) { showError(error, label('error')); }
+  });
+  elements.rawDetails.addEventListener('toggle', () => {
+    if (elements.rawDetails.open && state.hasResult && !elements.resultRaw.textContent) {
+      elements.resultRaw.textContent = JSON.stringify(state.lastResult, null, 2);
+    }
   });
   elements.nextPage.addEventListener('click', async () => {
     if (!state.nextPageRequest) return;
