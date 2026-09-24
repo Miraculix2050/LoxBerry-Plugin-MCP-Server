@@ -53,7 +53,7 @@ def test_admin_modules_load_in_order_with_versioned_localized_assets() -> None:
         assert "<TMPL_" not in source
         assert (
             f'<script defer src="admin/{name}?v='
-            '<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v2"></script>'
+            '<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v8"></script>'
         ) in markup
         subprocess.run(
             [node, "--check", str(ROOT / "webfrontend/htmlauth/admin" / name)],
@@ -225,6 +225,20 @@ def test_admin_responses_emit_no_store_and_frame_protection(tmp_path: Path) -> N
     assert "No LogManager entry is registered for this plugin." in loglist.stdout
     assert 'role=\\"status\\"' in loglist.stdout
 
+    auxiliary_request = "action=page_auxiliary&ajax=1"
+    auxiliary = subprocess.run(
+        common,
+        check=True,
+        capture_output=True,
+        text=True,
+        input=auxiliary_request,
+        env={**ajax_environment, "CONTENT_LENGTH": str(len(auxiliary_request))},
+    )
+    assert '"page_notifications"' in auxiliary.stdout
+    assert '"page_loglist"' in auxiliary.stdout
+    assert '"notifications_html"' in auxiliary.stdout
+    assert '"loglist_html"' in auxiliary.stdout
+
     empty_shell = subprocess.run(
         common,
         check=True,
@@ -268,6 +282,22 @@ def test_admin_responses_emit_no_store_and_frame_protection(tmp_path: Path) -> N
     )
     assert "The LogManager is unavailable." in unavailable_loglist.stdout
     assert "No LogManager entry is registered" not in unavailable_loglist.stdout
+
+    transient_loglist = subprocess.run(
+        common,
+        check=True,
+        capture_output=True,
+        text=True,
+        input=loglist_request,
+        env={
+            **ajax_environment,
+            "CONTENT_LENGTH": str(len(loglist_request)),
+            "LB_TEST_LOGLIST_FAIL_ONCE": "1",
+            "LB_TEST_LOGLIST_HTML": ('<a href="/admin/system/logfile.cgi?log=1">admin-ui</a>'),
+        },
+    )
+    assert "admin-ui" in transient_loglist.stdout
+    assert "The LogManager is unavailable." not in transient_loglist.stdout
 
     populated_loglist = subprocess.run(
         common,
@@ -352,7 +382,7 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert "SELECTED_EMERGENCY_STOP => $selected_emergency_stop" in cgi
     assert "body.set('action', 'page_state')" in template
     assert "body.set('action', 'get_config')" in template
-    assert "const loadConfiguration = async () =>" in template
+    assert "const loadConfiguration = async (suppliedResult) =>" in template
     assert "const publicOrigin = String(server.public_origin || '')" in template
     assert "String(loxone.endpoint || miniserverEndpoint.value || '')" in template
     assert "setFormValue(mqttConfigForm, 'mqtt_host', mqtt.host);" in template
@@ -371,17 +401,18 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     )
     assert 'id="plugin-log-list" aria-busy="true" aria-live="polite"' in template
     assert '<span class="mcp-status" data-kind="working"><TMPL_VAR AJAX.WORKING>' in template
-    assert "const loadLoxberryNotifications = async () =>" in template
+    assert "const loadLoxberryNotifications = async (suppliedResult) =>" in template
     assert "body.set('action', 'page_notifications')" in template
-    assert "const loadPluginLogList = async () =>" in template
+    assert "const loadPluginLogList = async (suppliedResult) =>" in template
     assert "body.set('action', 'page_loglist')" in template
-    assert "loadLoxberryNotifications," in template
-    assert "loadPluginLogList," in template
     hydration = _admin_script("page.js")
-    assert hydration.index("loadLoxberryNotifications,") < hydration.index("loadConfiguration,")
-    assert hydration.index("loadPluginLogList,") > hydration.index(
-        "() => pollSessions({initial: true}),"
-    )
+    assert "body.set('action', 'page_snapshot')" in hydration
+    assert "body.set('action', 'page_auxiliary')" in hydration
+    assert "postAjax(body, 60000)" in hydration
+    assert "postAjax(body, 35000)" in hydration
+    assert "await Promise.allSettled([loadSnapshot(), loadAuxiliary()])" in hydration
+    assert "await loadLoxberryNotifications(sections?.page_notifications)" in hydration
+    assert "await loadPluginLogList(sections?.page_loglist)" in hydration
     assert "<TMPL_VAR LOGLIST>" not in template
     assert (
         '<noscript><meta http-equiv="refresh" content="0;url='
@@ -422,15 +453,19 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert "const backgroundHydrationQueue = [];" in template
     assert "Promise.resolve()" in template
     assert ".then(task)" in template
-    assert "loadConfiguration," in template
-    assert "loadInitialState," in template
-    assert "() => pollServiceStatus({initial: true})," in template
-    assert "loadCertificateStatus," in template
-    assert "() => pollSessions({initial: true})," in template
+    assert "await loadConfiguration(sections?.get_config);" in template
+    assert "await loadInitialState(sections?.page_state);" in template
     assert (
-        "queueBackgroundHydration([() => loadEmergencyStopOptions(emergencyStopGeneration)]);"
+        "await pollServiceStatus({initial: true, suppliedResult: sections?.service_status});"
         in template
     )
+    assert "await loadCertificateStatus(sections?.certificate_status);" in template
+    assert (
+        "await pollSessions({initial: true, suppliedResult: sections?.list_sessions});" in template
+    )
+    assert "queueBackgroundHydration([() => loadEmergencyStopOptions" not in template
+    assert "emergencyStopRetry.textContent = label('SETUP.EMERGENCY_STOP_LOAD');" in template
+    assert "emergencyStopRetry.hidden = false;" in template
     assert "window.requestAnimationFrame(() => {" in template
     assert "if (document.hidden) {" in template
     assert "scheduleBackgroundHydration();" in template
@@ -441,7 +476,7 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert "if (pageIsUnloading) return;" in template
     assert "if (accessSection.open && initialBackgroundHydrationComplete)" in template
     assert "if (sessionsSection.open && initialBackgroundHydrationComplete)" in template
-    assert "const emergencyStopGeneration = emergencyStopDiscoveryGeneration;" in template
+    assert "emergencyStopRetry.dataset.retry === 'true'" in template
     assert "queueBackgroundHydration([" in template
     assert 'id="emergency-stop-refresh"' not in template
     assert "emergencyStopRefresh" not in template
@@ -517,9 +552,9 @@ def test_emergency_stop_selection_is_preserved_while_options_load() -> None:
     assert 'id="emergency-stop-value" name="emergency_stop_virtual_status_uuid"' in template
     assert 'id="emergency-stop-select"' in template
     assert 'id="emergency-stop-refresh"' not in template
-    assert "EMERGENCY_STOP_REFRESH" not in template
-    assert "EMERGENCY_STOP_REFRESH" not in german
-    assert "EMERGENCY_STOP_REFRESH" not in english
+    assert "EMERGENCY_STOP_REFRESH" in template
+    assert "EMERGENCY_STOP_REFRESH=" in german
+    assert "EMERGENCY_STOP_REFRESH=" in english
     assert "EMERGENCY_STOP_LOADING=" in german
     assert "EMERGENCY_STOP_LOADING=" in english
     assert "emergencyStopSelect.disabled = false;" in template
@@ -715,7 +750,7 @@ def test_service_status_is_first_and_uses_a_lightweight_ajax_contract() -> None:
     assert 'data-ajax="set_service_enabled"' in template
     assert "body.set('action', 'service_status')" in template
     assert "window.setTimeout(pollServiceStatus, delay)" in template
-    assert "const pollServiceStatus = async ({initial = false} = {}) =>" in template
+    assert "const pollServiceStatus = async ({initial = false, suppliedResult} = {}) =>" in template
     assert "(!initial && document.hidden)" in template
     assert "|| serviceInteractionActive() || servicePollInFlight" in template
     assert "document.addEventListener('visibilitychange'" in template
@@ -754,7 +789,7 @@ def test_sessions_poll_while_visible_and_patch_changed_rows() -> None:
     assert "admin_call('list_sessions', {})" in cgi
     assert "body.set('action', 'list_sessions')" in template
     assert "window.setTimeout(pollSessions, delay)" in template
-    assert "const pollSessions = async ({initial = false} = {}) =>" in template
+    assert "const pollSessions = async ({initial = false, suppliedResult} = {}) =>" in template
     assert "(!initial && document.hidden)" in template
     assert "if (!document.hidden && activeSessionActions.size === 0)" in template
     assert "|| activeSessionActions.size > 0 || sessionPollInFlight" in template
@@ -1272,6 +1307,43 @@ def test_empty_native_log_list_has_localized_accessible_status() -> None:
     assert 'id="plugin-log-list" aria-busy="true" aria-live="polite"' in template
 
 
+def test_unavailable_logmanager_warning_has_request_id_without_private_details(
+    tmp_path: Path,
+) -> None:
+    perl = shutil.which("perl")
+    if perl is None or os.name == "nt":
+        return
+    environment = _admin_cgi_environment(tmp_path)
+    marker = tmp_path / "log-events.txt"
+    body = "action=page_loglist&ajax=1"
+    result = subprocess.run(
+        [perl, f"-I{ROOT / 'tests' / 'perl_stubs'}", str(ROOT / "webfrontend/htmlauth/index.cgi")],
+        check=True,
+        capture_output=True,
+        text=True,
+        input=body,
+        env={
+            **environment,
+            "REQUEST_METHOD": "POST",
+            "CONTENT_TYPE": "application/x-www-form-urlencoded",
+            "CONTENT_LENGTH": str(len(body)),
+            "HTTP_ORIGIN": "https://loxberry.example",
+            "HTTP_HOST": "loxberry.example",
+            "LB_TEST_LOG_EVENTS_PATH": str(marker),
+            "LB_TEST_PLUGIN_LOGLEVEL": "4",
+            "LB_TEST_LOGLIST_UNAVAILABLE": "private-detail",
+        },
+    )
+    assert '"ok":true' in result.stdout
+    events = marker.read_text(encoding="utf-8")
+    assert re.search(
+        r"warning:component=logmanager request_id=[0-9a-f]+-[0-9a-f]+ "
+        r"outcome=unavailable attempts=2",
+        events,
+    )
+    assert "private-detail" not in events
+
+
 def test_admin_logmanager_registration_requires_an_actual_event(tmp_path: Path) -> None:
     perl = shutil.which("perl")
     if perl is None or os.name == "nt":
@@ -1301,6 +1373,8 @@ def test_admin_logmanager_registration_requires_an_actual_event(tmp_path: Path) 
         )
 
     request("page_loglist", log_level=7)
+    request("service_status", log_level=7)
+    request("list_sessions", log_level=7)
     assert not marker.exists()
     (tmp_path / "mcpserver-admin").write_text(
         "#!/usr/bin/env perl\nmy $request = <STDIN>;\n", encoding="utf-8"
@@ -1318,6 +1392,88 @@ def test_admin_logmanager_registration_requires_an_actual_event(tmp_path: Path) 
     assert events[2] == (
         f"end:component=admin_ui request_id={started.group(1)} severity=info outcome=finished"
     )
+
+
+def test_snapshot_section_failure_is_logged_without_error_details(tmp_path: Path) -> None:
+    perl = shutil.which("perl")
+    if perl is None or os.name == "nt":
+        return
+    environment = _admin_cgi_environment(tmp_path)
+    marker = tmp_path / "log-events.txt"
+    response = {
+        "ok": True,
+        "data": {
+            "get_config": {
+                "ok": False,
+                "error": {"code": "internal_error", "message": "private-detail"},
+            }
+        },
+    }
+    (tmp_path / "mcpserver-admin").write_text(
+        f"#!/usr/bin/env perl\nmy $request = <STDIN>;\nprint q({json.dumps(response)});\n",
+        encoding="utf-8",
+    )
+    body = "action=page_snapshot&ajax=1"
+    result = subprocess.run(
+        [perl, f"-I{ROOT / 'tests' / 'perl_stubs'}", str(ROOT / "webfrontend/htmlauth/index.cgi")],
+        check=True,
+        capture_output=True,
+        text=True,
+        input=body,
+        env={
+            **environment,
+            "REQUEST_METHOD": "POST",
+            "CONTENT_TYPE": "application/x-www-form-urlencoded",
+            "CONTENT_LENGTH": str(len(body)),
+            "HTTP_ORIGIN": "https://loxberry.example",
+            "HTTP_HOST": "loxberry.example",
+            "LB_TEST_LOG_EVENTS_PATH": str(marker),
+        },
+    )
+    assert '"ok":true' in result.stdout
+    events = marker.read_text(encoding="utf-8")
+    assert "section=get_config outcome=rejected code=internal_error" in events
+    assert "private-detail" not in events
+
+
+def test_auxiliary_section_failures_are_logged_without_error_details(tmp_path: Path) -> None:
+    perl = shutil.which("perl")
+    if perl is None or os.name == "nt":
+        return
+    environment = _admin_cgi_environment(tmp_path)
+    marker = tmp_path / "log-events.txt"
+    body = "action=page_auxiliary&ajax=1"
+    cgi = ROOT / "webfrontend/htmlauth/index.cgi"
+
+    for failure_flag, failed_section, healthy_section in (
+        ("LB_TEST_NOTIFICATIONS_DIE", "page_notifications", "page_loglist"),
+        ("LB_TEST_LOGLIST_DIE", "page_loglist", "page_notifications"),
+    ):
+        result = subprocess.run(
+            [perl, f"-I{ROOT / 'tests' / 'perl_stubs'}", str(cgi)],
+            check=True,
+            capture_output=True,
+            text=True,
+            input=body,
+            env={
+                **environment,
+                "REQUEST_METHOD": "POST",
+                "CONTENT_TYPE": "application/x-www-form-urlencoded",
+                "CONTENT_LENGTH": str(len(body)),
+                "HTTP_ORIGIN": "https://loxberry.example",
+                "HTTP_HOST": "loxberry.example",
+                "LB_TEST_LOG_EVENTS_PATH": str(marker),
+                failure_flag: "1",
+            },
+        )
+        payload = json.loads(result.stdout.partition("\n\n")[2])
+        assert payload["ok"] is True
+        assert payload["data"][failed_section]["error"]["code"] == "internal_error"
+        assert payload["data"][healthy_section]["ok"] is True
+        events = marker.read_text(encoding="utf-8")
+        assert f"section={failed_section} outcome=rejected code=internal_error" in events
+        assert "private-detail" not in events
+        marker.unlink()
 
 
 def test_diagnostics_offer_dedicated_persistent_service_logging_controls() -> None:
@@ -1673,9 +1829,94 @@ def test_slow_admin_reads_have_bounded_browser_timeout_headroom() -> None:
         script = _admin_script(script_name)
         section_start = script.index(start)
         section = script[section_start : script.index(end, section_start + len(start))]
-        match = re.search(r"postAjax\(body, (\d+)\)", section)
+        match = re.search(r"postAjax\(body, (\d+)(?:, suppliedResult)?\)", section)
         assert match is not None
         assert minimum_ms <= int(match.group(1)) <= 180_000
+
+
+def test_emergency_stop_load_keeps_retry_and_refresh_available() -> None:
+    node = shutil.which("node")
+    assert node is not None
+    for language in ("de", "en"):
+        source = (ROOT / f"templates/lang/language_{language}.ini").read_text(encoding="utf-8")
+        assert "EMERGENCY_STOP_REFRESH=" in source
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const start = source.indexOf('  const addEmergencyStopOption =');
+const end = source.indexOf("  emergencyStopSelect.addEventListener('change'", start);
+assert(start >= 0 && end > start);
+const options = [];
+const emergencyStopSelect = {
+  disabled: false,
+  setAttribute() {},
+  replaceChildren() { options.length = 0; },
+  append(option) { options.push(option); },
+};
+const emergencyStopValue = {value: 'saved'};
+const emergencyStopStatus = {dataset: {}, hidden: true, textContent: ''};
+const emergencyStopRetry = {dataset: {}, hidden: false, disabled: false, textContent: ''};
+let emergencyStopDiscoveryGeneration = 0;
+const document = {createElement: () => ({})};
+const timers = [];
+const window = {setTimeout: (callback) => { timers.push(callback); }};
+const core = {unloading: false};
+const label = (key) => key;
+let response = {data: {status: 'unavailable', options: [], failure_text: 'connection failed'}};
+const actions = [];
+let postAjax = async (body) => { actions.push(body.get('action')); return response; };
+eval(source.slice(start, end) + `
+(async () => {
+  await loadEmergencyStopOptions();
+  assert.equal(emergencyStopStatus.textContent, 'connection failed');
+  assert.equal(emergencyStopRetry.hidden, false);
+  assert.equal(emergencyStopRetry.disabled, false);
+  assert.equal(emergencyStopRetry.dataset.retry, 'true');
+  assert.equal(emergencyStopRetry.textContent, 'SETUP.EMERGENCY_STOP_RETRY');
+  assert(options.some((option) => option.value === 'saved' && option.selected));
+
+  response = {data: {status: 'unavailable', options: [],
+    retry_not_before: Math.floor(Date.now() / 1000) + 60}};
+  await loadEmergencyStopOptions();
+  assert.equal(emergencyStopRetry.hidden, false);
+  assert.equal(emergencyStopRetry.disabled, true);
+  assert.equal(timers.length, 1);
+
+  postAjax = async () => { throw new Error('network'); };
+  await loadEmergencyStopOptions();
+  assert.equal(emergencyStopRetry.hidden, false);
+  assert.equal(emergencyStopRetry.disabled, false);
+  assert.equal(emergencyStopRetry.textContent, 'SETUP.EMERGENCY_STOP_RETRY');
+  assert(options.some((option) => option.value === 'saved' && option.selected));
+
+  response = {data: {status: 'available',
+    options: [{uuid: 'saved', name: 'Saved signal'}]}};
+  postAjax = async (body) => { actions.push(body.get('action')); return response; };
+  await loadEmergencyStopOptions();
+  assert.equal(emergencyStopRetry.hidden, false);
+  assert.equal(emergencyStopRetry.disabled, false);
+  assert.equal(emergencyStopRetry.dataset.retry, 'false');
+  assert.equal(emergencyStopRetry.textContent, 'SETUP.EMERGENCY_STOP_REFRESH');
+  assert(options.some((option) => option.value === 'saved' && option.selected));
+
+  response = {data: {status: 'available', options: []}};
+  await loadEmergencyStopOptions(
+    emergencyStopDiscoveryGeneration, emergencyStopRetry.dataset.retry === 'true',
+  );
+  assert.equal(actions.at(-1), 'emergency_stop_options');
+  assert.equal(emergencyStopRetry.hidden, false);
+  assert.equal(emergencyStopRetry.textContent, 'SETUP.EMERGENCY_STOP_REFRESH');
+  assert(options.some((option) => option.value === 'saved' && option.selected));
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+`);
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/admin/configuration.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
 
 
 def test_permission_policy_uses_grouped_scope_labeled_checkboxes() -> None:

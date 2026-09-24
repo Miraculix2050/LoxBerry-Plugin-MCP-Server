@@ -138,7 +138,11 @@ window.McpAdmin.createCore = () => {
       window.setTimeout(() => { button.textContent = previous; }, 2000);
     });
   }
-  const postAjax = async (body, timeoutMs) => {
+  const postAjax = async (body, timeoutMs, suppliedResult) => {
+    if (suppliedResult !== undefined) {
+      if (!suppliedResult?.ok) throw new Error(label('AJAX.ERROR'));
+      return suppliedResult;
+    }
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -167,12 +171,12 @@ window.McpAdmin.createCore = () => {
     element.dataset.kind = 'error';
     element.setAttribute('aria-busy', 'false');
   };
-  const loadLoxberryNotifications = async () => {
+  const loadLoxberryNotifications = async (suppliedResult) => {
     const body = new URLSearchParams();
     body.set('action', 'page_notifications');
     body.set('ajax', '1');
     try {
-      const result = await postAjax(body, 15000);
+      const result = await postAjax(body, 15000, suppliedResult);
       if (pageIsUnloading) return;
       updatePageAuxiliaryContent(loxberryNotifications, result.data.notifications_html);
       loxberryNotifications.hidden = !loxberryNotifications.innerHTML.trim();
@@ -182,12 +186,12 @@ window.McpAdmin.createCore = () => {
       showPageAuxiliaryError(loxberryNotifications, label('AJAX.NOTIFICATIONS_ERROR'));
     }
   };
-  const loadPluginLogList = async () => {
+  const loadPluginLogList = async (suppliedResult) => {
     const body = new URLSearchParams();
     body.set('action', 'page_loglist');
     body.set('ajax', '1');
     try {
-      const result = await postAjax(body, 15000);
+      const result = await postAjax(body, 15000, suppliedResult);
       if (pageIsUnloading) return;
       updatePageAuxiliaryContent(pluginLogList, result.data.loglist_html);
     } catch {

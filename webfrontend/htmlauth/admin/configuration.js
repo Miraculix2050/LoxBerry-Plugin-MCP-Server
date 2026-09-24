@@ -1,5 +1,5 @@
 window.McpAdmin.createConfiguration = (
-  core, queueBackgroundHydration, certificate, service,
+  core, certificate, service,
 ) => {
   const {label, postAjax, setAjaxStatus, setSummaryBadge, status} = core;
   const updateEmergencyStopRuntimeMismatch = service.updateMismatch;
@@ -130,11 +130,11 @@ window.McpAdmin.createConfiguration = (
     mqttCustomBroker = {host: mqttHost.value, port: mqttPort.value, username: mqttUsername.value};
     syncMiniserverSelection();
     syncOperateDependency();
-    resetEmergencyStopOptions({loading: true});
+    resetEmergencyStopOptions();
     updateMqttBrokerFields();
     renderLogging(configuration);
   };
-  const loadConfiguration = async () => {
+  const loadConfiguration = async (suppliedResult) => {
     if (configurationLoaded || configurationLoadInFlight) return;
     configurationLoadInFlight = true;
     setAjaxStatus('', label('AJAX.WORKING'));
@@ -142,14 +142,12 @@ window.McpAdmin.createConfiguration = (
       const body = new URLSearchParams();
       body.set('action', 'get_config');
       body.set('ajax', '1');
-      const result = await postAjax(body, 7000);
+      const result = await postAjax(body, 7000, suppliedResult);
       renderConfiguration(result.data.configuration);
       configurationLoaded = true;
       setConfigurationFieldsDisabled(false);
       configurationFallbackLink.hidden = true;
       status.hidden = true;
-      const emergencyStopGeneration = emergencyStopDiscoveryGeneration;
-      queueBackgroundHydration([() => loadEmergencyStopOptions(emergencyStopGeneration)]);
     } catch {
       if (core.unloading) return;
       renderConfigurationBadges(null);
@@ -210,30 +208,25 @@ window.McpAdmin.createConfiguration = (
     option.selected = selected;
     emergencyStopSelect.append(option);
   };
-  const resetEmergencyStopOptions = ({loading = false} = {}) => {
+  const resetEmergencyStopOptions = () => {
     emergencyStopDiscoveryGeneration += 1;
     const selectedValue = emergencyStopValue.value;
     emergencyStopSelect.replaceChildren();
-    if (loading) {
-      emergencyStopSelect.disabled = true;
-      emergencyStopSelect.setAttribute('aria-busy', 'true');
-      addEmergencyStopOption('', label('SETUP.EMERGENCY_STOP_LOADING'), true);
-      emergencyStopStatus.textContent = label('SETUP.EMERGENCY_STOP_LOADING');
-      emergencyStopStatus.dataset.kind = 'info';
-      emergencyStopStatus.hidden = false;
-      return;
-    }
     emergencyStopSelect.disabled = false;
     emergencyStopSelect.setAttribute('aria-busy', 'false');
     addEmergencyStopOption('', label('SETUP.EMERGENCY_STOP_NONE'), selectedValue === '');
     if (selectedValue !== '') {
       addEmergencyStopOption(
         selectedValue,
-        label('SETUP.EMERGENCY_STOP_CURRENT') + ' (' + selectedValue + ')',
+        label('SETUP.EMERGENCY_STOP_SELECTED') + ' (' + selectedValue + ')',
         true,
       );
     }
     emergencyStopStatus.hidden = true;
+    emergencyStopRetry.dataset.retry = 'false';
+    emergencyStopRetry.textContent = label('SETUP.EMERGENCY_STOP_LOAD');
+    emergencyStopRetry.hidden = false;
+    emergencyStopRetry.disabled = false;
   };
   const loadEmergencyStopOptions = async (
     expectedGeneration = emergencyStopDiscoveryGeneration, manualRetry = false,
@@ -276,20 +269,20 @@ window.McpAdmin.createConfiguration = (
         emergencyStopStatus.textContent = label('SETUP.EMERGENCY_STOP_NO_OPTIONS');
         emergencyStopStatus.dataset.kind = 'info';
         emergencyStopStatus.hidden = false;
-      } else if (status === 'not_configured') {
-        emergencyStopStatus.textContent = label('SETUP.EMERGENCY_STOP_NOT_CONFIGURED');
-        emergencyStopStatus.dataset.kind = 'error';
-        emergencyStopStatus.hidden = false;
       } else if (status !== 'available') {
-        emergencyStopStatus.textContent = result.data.failure_text
-          || label('SETUP.EMERGENCY_STOP_LOAD_ERROR');
+        emergencyStopStatus.textContent = status === 'not_configured'
+          ? label('SETUP.EMERGENCY_STOP_NOT_CONFIGURED')
+          : result.data.failure_text || label('SETUP.EMERGENCY_STOP_LOAD_ERROR');
         emergencyStopStatus.dataset.kind = 'error';
         emergencyStopStatus.hidden = false;
+        emergencyStopRetry.dataset.retry = 'true';
+        emergencyStopRetry.textContent = label('SETUP.EMERGENCY_STOP_RETRY');
+        emergencyStopRetry.hidden = false;
+        emergencyStopRetry.disabled = false;
         if (result.data.status === 'unavailable'
             && Number.isInteger(result.data.retry_not_before)) {
           const retryAt = result.data.retry_not_before * 1000;
           emergencyStopStatus.textContent += ' ' + new Date(retryAt).toLocaleString();
-          emergencyStopRetry.hidden = false;
           const enableRetry = () => {
             if (generation !== emergencyStopDiscoveryGeneration) return;
             emergencyStopRetry.disabled = Date.now() < retryAt;
@@ -300,6 +293,12 @@ window.McpAdmin.createConfiguration = (
       } else {
         emergencyStopStatus.hidden = true;
       }
+      if (status === 'available') {
+        emergencyStopRetry.dataset.retry = 'false';
+        emergencyStopRetry.textContent = label('SETUP.EMERGENCY_STOP_REFRESH');
+        emergencyStopRetry.hidden = false;
+        emergencyStopRetry.disabled = false;
+      }
     } catch {
       if (core.unloading) return;
       if (generation !== emergencyStopDiscoveryGeneration) return;
@@ -307,6 +306,8 @@ window.McpAdmin.createConfiguration = (
       emergencyStopStatus.textContent = label('SETUP.EMERGENCY_STOP_LOAD_ERROR');
       emergencyStopStatus.dataset.kind = 'error';
       emergencyStopStatus.hidden = false;
+      emergencyStopRetry.dataset.retry = 'true';
+      emergencyStopRetry.textContent = label('SETUP.EMERGENCY_STOP_RETRY');
     } finally {
       if (generation !== emergencyStopDiscoveryGeneration) return;
       emergencyStopSelect.disabled = false;
@@ -318,9 +319,13 @@ window.McpAdmin.createConfiguration = (
     updateEmergencyStopRuntimeMismatch();
   });
   emergencyStopRetry.addEventListener('click', () => {
-    if (!emergencyStopRetry.disabled) loadEmergencyStopOptions(emergencyStopDiscoveryGeneration, true);
+    if (!emergencyStopRetry.disabled) {
+      loadEmergencyStopOptions(
+        emergencyStopDiscoveryGeneration, emergencyStopRetry.dataset.retry === 'true',
+      );
+    }
   });
-  const loadInitialState = async () => {
+  const loadInitialState = async (suppliedResult) => {
     const body = new URLSearchParams();
     body.set('action', 'page_state');
     body.set('ajax', '1');
@@ -328,7 +333,7 @@ window.McpAdmin.createConfiguration = (
     mqttPageStateStatus.dataset.kind = 'info';
     mqttPageStateStatus.hidden = false;
     try {
-      const result = await postAjax(body, 15000);
+      const result = await postAjax(body, 15000, suppliedResult);
       mqttPasswordStatus.hidden = !Boolean(result.data.mqtt_password_configured);
       updateMqttGateway(result.data.mqtt_gateway);
       updateMqttBrokerFields();
@@ -359,9 +364,7 @@ window.McpAdmin.createConfiguration = (
     renderConfigurationBadges(data.configuration);
     const savedEndpoint = data.configuration.loxone.endpoint;
     emergencyStopValue.value = data.configuration.emergency_stop.virtual_status_uuid;
-    resetEmergencyStopOptions({loading: true});
-    const generation = emergencyStopDiscoveryGeneration;
-    queueBackgroundHydration([() => loadEmergencyStopOptions(generation)]);
+    resetEmergencyStopOptions();
     service.scheduleServicePoll(0);
     miniserverEndpoint.value = savedEndpoint;
     explorerLink.href = `${window.location.origin}${explorerPath}`;

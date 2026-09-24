@@ -446,7 +446,7 @@ window.McpAdmin.createSessions = (core) => {
       sessionPollTimer = window.setTimeout(pollSessions, delay);
     }
   };
-  const pollSessions = async ({initial = false} = {}) => {
+  const pollSessions = async ({initial = false, suppliedResult} = {}) => {
     if ((!initial && document.hidden)
         || activeSessionActions.size > 0 || sessionPollInFlight) {
       scheduleSessionPoll();
@@ -458,7 +458,7 @@ window.McpAdmin.createSessions = (core) => {
       const body = new URLSearchParams();
       body.set('action', 'list_sessions');
       body.set('ajax', '1');
-      const result = await postAjax(body, 15000);
+      const result = await postAjax(body, 15000, suppliedResult);
       if (expectedSessionDataVersion !== sessionDataVersion) return;
       if (Array.isArray(result.data.sessions)) {
         updateSessions(result.data.sessions);

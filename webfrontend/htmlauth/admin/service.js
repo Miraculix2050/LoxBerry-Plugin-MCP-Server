@@ -152,7 +152,7 @@ window.McpAdmin.createService = (core) => {
       servicePollTimer = window.setTimeout(pollServiceStatus, delay);
     }
   };
-  const pollServiceStatus = async ({initial = false} = {}) => {
+  const pollServiceStatus = async ({initial = false, suppliedResult} = {}) => {
     if ((!initial && document.hidden) || serviceInteractionActive() || servicePollInFlight) {
       scheduleServicePoll();
       return;
@@ -162,7 +162,7 @@ window.McpAdmin.createService = (core) => {
     const body = new URLSearchParams();
       body.set('action', 'service_status');
       body.set('ajax', '1');
-      const result = await postAjax(body, 7000);
+      const result = await postAjax(body, 7000, suppliedResult);
       if (serviceInteractionActive()) return;
       renderService(result.data.service, {
         updateEnabledSetting: !serviceEnabledSettingLoaded,

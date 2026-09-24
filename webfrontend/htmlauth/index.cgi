@@ -57,6 +57,17 @@ sub ascii_html_text {
 
 sub native_loglist_html {
     my $html = LoxBerry::Web::loglist_html();
+    if (!defined($html)) {
+        # The native LogManager is an independent loopback CGI. A transient
+        # failure during concurrent page hydration is worth one short retry.
+        select(undef, undef, undef, 0.2);
+        $html = LoxBerry::Web::loglist_html();
+        admin_log('warning', sprintf(
+            'component=logmanager request_id=%s outcome=unavailable attempts=2',
+            $request_id,
+        ))
+            if !defined($html);
+    }
     return $html if defined($html) && $html =~ /logfile\.cgi\?/;
     my $unavailable = !defined($html);
     my $label = $L{$unavailable ? 'DIAGNOSTICS.LOGLIST_UNAVAILABLE' : 'DIAGNOSTICS.LOGLIST_EMPTY'};
@@ -114,6 +125,7 @@ $ENV{MCPSERVER_CERT_STATUS} = "$lbpdatadir/certificate-renewal.json";
 sub admin_call {
     my ($action, $payload) = @_;
     my $started = clock_gettime(CLOCK_MONOTONIC);
+    my $routine_poll = $action eq 'service_status' || $action eq 'list_sessions';
     my ($child_in, $child_out);
     my $child_err = gensym;
     my $pid = open3($child_in, $child_out, $child_err, "$lbpbindir/mcpserver-admin");
@@ -134,15 +146,22 @@ sub admin_call {
             admin_log('debug', sprintf(
                 'component=admin_helper request_id=%s action=%s timing=%s',
                 $request_id, $action, encode_json(\%safe_timing),
-            )) if %safe_timing;
+            )) if %safe_timing && !$routine_poll;
         }
     }
-    admin_log('debug', sprintf(
-        'component=admin_ui request_id=%s action=%s duration_ms=%.1f',
-        $request_id,
-        $action,
-        (clock_gettime(CLOCK_MONOTONIC) - $started) * 1000,
-    ));
+    my $duration_ms = (clock_gettime(CLOCK_MONOTONIC) - $started) * 1000;
+    if ($routine_poll) {
+        my $slow_threshold_ms = $action eq 'service_status' ? 5000 : 10000;
+        admin_log('warning', sprintf(
+            'component=admin_ui request_id=%s action=%s outcome=slow duration_ms=%.1f',
+            $request_id, $action, $duration_ms,
+        )) if $duration_ms >= $slow_threshold_ms;
+    } else {
+        admin_log('debug', sprintf(
+            'component=admin_ui request_id=%s action=%s duration_ms=%.1f',
+            $request_id, $action, $duration_ms,
+        ));
+    }
     if ($? != 0 || $stdout eq '') {
         admin_log('error', 'component=admin_helper outcome=failed');
         return {ok => JSON::PP::false, error => {code => 'internal_error', message => 'Administrative action failed'}};
@@ -160,6 +179,18 @@ sub admin_call {
                 $request_id,
                 $action,
                 $code,
+            ));
+        }
+    }
+    if ($action eq 'page_snapshot' && $result->{ok} && ref($result->{data}) eq 'HASH') {
+        for my $section (qw(get_config page_state service_status certificate_status list_sessions)) {
+            my $entry = $result->{data}{$section};
+            next if ref($entry) ne 'HASH' || $entry->{ok};
+            my $code = ref($entry->{error}) eq 'HASH' ? ($entry->{error}{code} // '') : '';
+            $code = 'internal_error' if $code !~ /\A[a-z_]{1,128}\z/;
+            admin_log($code eq 'internal_error' ? 'error' : 'warning', sprintf(
+                'component=admin_helper request_id=%s action=page_snapshot section=%s outcome=rejected code=%s',
+                $request_id, $section, $code,
             ));
         }
     }
@@ -419,6 +450,7 @@ my $template = HTML::Template->new_scalar_ref(
     die_on_bad_params => 0,
 );
 %L = LoxBerry::System::readlanguage($template, 'language.ini');
+my $template_setup_ms = (clock_gettime(CLOCK_MONOTONIC) - $render_started) * 1000;
 
 sub localize_admin_error {
     my ($result) = @_;
@@ -536,6 +568,52 @@ if ($action ne '') {
             'action=set_service_log_level outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
     } elsif ($action eq 'get_config') {
         $result = admin_call('get_config', {});
+    } elsif ($action eq 'page_snapshot') {
+        $result = admin_call('page_snapshot', {});
+        admin_log('debug', sprintf(
+            'component=admin_ui request_id=%s action=page_snapshot template_setup_ms=%.1f',
+            $request_id, $template_setup_ms,
+        ));
+    } elsif ($action eq 'page_auxiliary') {
+        my $aux_started = clock_gettime(CLOCK_MONOTONIC);
+        my ($notifications, $loglist);
+        my $notifications_ok = eval {
+            $notifications = LoxBerry::Log::get_notifications_html($lbpplugindir) // '';
+            1;
+        };
+        my $notification_duration_ms = (clock_gettime(CLOCK_MONOTONIC) - $aux_started) * 1000;
+        admin_log('error', sprintf(
+            'component=admin_ui request_id=%s action=page_auxiliary section=page_notifications outcome=rejected code=internal_error',
+            $request_id,
+        )) if !$notifications_ok;
+        my $loglist_started = clock_gettime(CLOCK_MONOTONIC);
+        my $loglist_ok = eval {
+            $loglist = native_loglist_html();
+            1;
+        };
+        admin_log('error', sprintf(
+            'component=admin_ui request_id=%s action=page_auxiliary section=page_loglist outcome=rejected code=internal_error',
+            $request_id,
+        )) if !$loglist_ok;
+        admin_log('debug', sprintf(
+            'component=admin_ui request_id=%s action=page_auxiliary duration_ms=%.1f notifications_ms=%.1f loglist_ms=%.1f template_setup_ms=%.1f',
+            $request_id,
+            (clock_gettime(CLOCK_MONOTONIC) - $aux_started) * 1000,
+            $notification_duration_ms,
+            (clock_gettime(CLOCK_MONOTONIC) - $loglist_started) * 1000,
+            $template_setup_ms,
+        ));
+        $result = {
+            ok => JSON::PP::true,
+            data => {
+                page_notifications => $notifications_ok
+                    ? {ok => JSON::PP::true, data => {notifications_html => $notifications}}
+                    : {ok => JSON::PP::false, error => {code => 'internal_error'}},
+                page_loglist => $loglist_ok
+                    ? {ok => JSON::PP::true, data => {loglist_html => $loglist}}
+                    : {ok => JSON::PP::false, error => {code => 'internal_error'}},
+            },
+        };
     } elsif ($action eq 'page_notifications') {
         my $started = clock_gettime(CLOCK_MONOTONIC);
         $result = {

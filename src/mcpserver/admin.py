@@ -1609,6 +1609,39 @@ def dispatch(request: object, *, timing: dict[str, float] | None = None) -> dict
         raise AdminError("request is invalid")
     action = request["action"]
     payload = request.get("payload", {})
+    if action == "page_snapshot":
+        sections: dict[str, dict[str, Any]] = {}
+        for section_action in (
+            "get_config",
+            "page_state",
+            "service_status",
+            "certificate_status",
+            "list_sessions",
+        ):
+            section_started = time.perf_counter_ns()
+            try:
+                sections[section_action] = {
+                    "ok": True,
+                    "data": dispatch({"action": section_action}, timing=timing),
+                }
+            except AdminError as exc:
+                sections[section_action] = {
+                    "ok": False,
+                    "error": {"code": exc.code, "message": str(exc)},
+                }
+            except Exception:
+                sections[section_action] = {
+                    "ok": False,
+                    "error": {
+                        "code": "internal_error",
+                        "message": "administrative action failed",
+                    },
+                }
+            if timing is not None:
+                timing[f"{section_action}_ms"] = (
+                    time.perf_counter_ns() - section_started
+                ) / 1_000_000
+        return sections
     if action == "page_state":
         return {
             "mqtt_gateway": _mqtt_gateway_status(),
@@ -1705,7 +1738,7 @@ def main() -> None:
             "error": {"code": "internal_error", "message": "administrative action failed"},
         }
     sys.stdout.write(json.dumps(response, ensure_ascii=True, separators=(",", ":")) + "\n")
-    if action == "get_config":
+    if action in ("get_config", "page_snapshot"):
         helper_started = os.getenv("MCPSERVER_ADMIN_STARTED_NS", "")
         try:
             bootstrap_ms = (int(_MODULE_IMPORT_STARTED_NS) - int(helper_started)) / 1_000_000

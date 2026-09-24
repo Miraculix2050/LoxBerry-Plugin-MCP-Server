@@ -83,7 +83,7 @@ window.McpAdmin.createCertificate = (core, queueBackgroundHydration) => {
     certificateRenewalForm.hidden = !certificate.renewal_supported;
     certificateUnsupported.hidden = Boolean(certificate.renewal_supported);
   };
-  const loadCertificateStatus = async () => {
+  const loadCertificateStatus = async (suppliedResult) => {
     if (certificateLoaded || certificateLoadInFlight) return;
     certificateLoadInFlight = true;
     const requestVersion = certificateStatusVersion;
@@ -92,7 +92,7 @@ window.McpAdmin.createCertificate = (core, queueBackgroundHydration) => {
       const body = new URLSearchParams();
       body.set('action', 'certificate_status');
       body.set('ajax', '1');
-      const result = await postAjax(body, 15000);
+      const result = await postAjax(body, 15000, suppliedResult);
       if (requestVersion !== certificateStatusVersion) return;
       updateCertificate(result.data.certificate);
       certificateLoaded = true;

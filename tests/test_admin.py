@@ -68,6 +68,38 @@ def test_admin_import_defers_mqtt_and_loxone_clients() -> None:
     assert json.loads(result.stdout) == [False, False]
 
 
+def test_page_state_does_not_import_emergency_stop_runtime() -> None:
+    script = """
+import json
+import os
+import sys
+from mcpserver import admin
+
+os.environ.pop("LBHOMEDIR", None)
+os.environ.pop("MCPSERVER_MQTT_CREDENTIALS", None)
+result = admin.dispatch({"action": "page_state"})
+print(json.dumps({
+    "mqtt_loaded": "mcpserver.mqtt_health" in sys.modules,
+    "emergency_stop_loaded": "mcpserver.emergency_stop" in sys.modules,
+    "gateway_configured": result["mqtt_gateway"]["gateway_configured"],
+    "password_configured": result["mqtt_password_configured"],
+}))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert json.loads(result.stdout) == {
+        "mqtt_loaded": True,
+        "emergency_stop_loaded": False,
+        "gateway_configured": False,
+        "password_configured": False,
+    }
+
+
 def test_list_sessions_does_not_import_oauth_provider() -> None:
     script = """
 import json
@@ -168,6 +200,50 @@ def test_diagnostic_contains_no_paths_endpoint_or_identity(
 def test_admin_rejects_unknown_actions() -> None:
     with pytest.raises(Exception, match="not supported"):
         dispatch({"action": "delete_everything"})
+
+
+def test_page_snapshot_reuses_one_dispatch_and_keeps_section_failures_independent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from mcpserver import admin
+
+    original_dispatch = admin.dispatch
+    calls: list[str] = []
+
+    def section_dispatch(
+        request: object, *, timing: dict[str, float] | None = None
+    ) -> dict[str, object]:
+        assert isinstance(request, dict)
+        action = request["action"]
+        assert isinstance(action, str)
+        if action == "page_snapshot":
+            return original_dispatch(request, timing=timing)
+        calls.append(action)
+        if action == "page_state":
+            raise AdminError("MQTT unavailable", code="mqtt_unavailable")
+        return {"section": action}
+
+    monkeypatch.setattr(admin, "dispatch", section_dispatch)
+    timing: dict[str, float] = {}
+    result = admin.dispatch({"action": "page_snapshot"}, timing=timing)
+
+    assert calls == [
+        "get_config",
+        "page_state",
+        "service_status",
+        "certificate_status",
+        "list_sessions",
+    ]
+    assert result["get_config"] == {"ok": True, "data": {"section": "get_config"}}
+    assert result["page_state"] == {
+        "ok": False,
+        "error": {"code": "mqtt_unavailable", "message": "MQTT unavailable"},
+    }
+    assert result["list_sessions"] == {
+        "ok": True,
+        "data": {"section": "list_sessions"},
+    }
+    assert set(timing) == {f"{action}_ms" for action in calls}
 
 
 def test_loxberry_approval_accepts_pending_control_scoped_session(
