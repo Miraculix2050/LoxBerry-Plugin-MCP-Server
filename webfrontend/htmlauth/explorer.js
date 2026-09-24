@@ -15,6 +15,13 @@
   const EXPLORER_SCOPE_ORDER = [
     'loxone:read', 'loxone:history', 'loxone:control', 'loxberry:read', 'loxberry:operate',
   ];
+  function grantedScopes(scope) {
+    if (typeof scope !== 'string' || !scope.trim()) return null;
+    const values = scope.trim().split(/\s+/);
+    if (values.some((value) => !EXPLORER_SCOPE_ORDER.includes(value)) ||
+        new Set(values).size !== values.length) return null;
+    return new Set(values);
+  }
   const SECRET_NAME = /(?:password|passwd|secret|token|api[_-]?key|private[_-]?key)/i;
   const JSON_TYPES = new Set(['null', 'boolean', 'object', 'array', 'number', 'string', 'integer']);
   const REUSE_SCHEMA_KEYS = new Set([
@@ -596,6 +603,7 @@
     MAX_TRANSCRIPT,
     EXPLORER_SESSION_MS,
     EXPLORER_SCOPE_ORDER,
+    grantedScopes,
     clone,
     resolveRef,
     effectiveSchema,
@@ -655,6 +663,9 @@
     originLink: document.getElementById('explorer-origin-link'),
     sessionExpiry: document.getElementById('explorer-session-expiry'),
     sessionExpiryTime: document.getElementById('explorer-session-expiry-time'),
+    accessScopes: document.getElementById('explorer-access-scopes'),
+    scopeList: document.getElementById('explorer-scope-list'),
+    scopeUnavailable: document.getElementById('explorer-scope-unavailable'),
     toolsPanel: document.getElementById('explorer-tools-panel'),
     historyPanel: document.getElementById('explorer-history-panel'),
     selectedTool: document.getElementById('explorer-selected-tool'),
@@ -719,6 +730,7 @@
   const logoutChannel = typeof BroadcastChannel === 'function'
     ? new BroadcastChannel('mcp-explorer-session') : null;
   const narrowViewport = window.matchMedia('(max-width: 52rem)');
+  let sessionExpiryTimer = null;
   if (logoutChannel) logoutChannel.onmessage = (event) => {
     if (event.data !== 'logout') return;
     core.clearSensitiveState(state);
@@ -962,7 +974,7 @@
     return {
       metadata: discovered.authorizationMetadata,
       resource: discovered.resourceMetadata.resource,
-      scope: token.scope || scope,
+      scope: typeof token.scope === 'string' ? token.scope : '',
       accessToken: token.access_token,
       expiresAt: Date.now() + Math.max(0, Number(token.expires_in || 0) - 15) * 1000,
       resumeUntil: Number(token.expires_at || resumeUntil) * 1000,
@@ -974,9 +986,10 @@
     const token = await explorerSession(state.oauth.metadata, {action: 'access'});
     if (!token.access_token) throw new Error('Explorer session response is incomplete');
     state.oauth.accessToken = token.access_token;
-    state.oauth.scope = token.scope || state.oauth.scope;
+    state.oauth.scope = typeof token.scope === 'string' ? token.scope : '';
     state.oauth.expiresAt = Date.now() + Math.max(0, Number(token.expires_in || 0) - 15) * 1000;
     state.oauth.resumeUntil = Number(token.expires_at || 0) * 1000;
+    renderConnection();
   }
 
   async function accessToken() {
@@ -1077,9 +1090,11 @@
 
   async function revokeAndClear() {
     const oauth = state.oauth;
+    core.clearSensitiveState(state);
+    renderAll();
+    if (logoutChannel) logoutChannel.postMessage('logout');
     try { if (oauth) await explorerSession(oauth.metadata, {action: 'logout'}); }
     catch (_error) { /* Server-side expiry remains the fail-safe. */ }
-    core.clearSensitiveState(state);
     elements.json.value = '{}';
     elements.confirmTool.textContent = '';
     elements.confirmArguments.textContent = '';
@@ -1089,21 +1104,42 @@
     elements.transferEmpty.hidden = false;
     elements.transferApply.disabled = true;
     if (elements.transfer.open) elements.transfer.close();
-    renderAll();
-    if (logoutChannel) logoutChannel.postMessage('logout');
   }
 
   function renderConnection() {
-    const connected = Boolean(state.oauth);
-    elements.connect.disabled = connected;
-    elements.disconnect.disabled = !connected;
-    elements.run.disabled = !connected || !state.selectedTool;
+    if (sessionExpiryTimer !== null) window.clearTimeout(sessionExpiryTimer);
+    sessionExpiryTimer = null;
+    const connected = Boolean(state.oauth && state.oauth.resumeUntil > Date.now());
+    if (!connected && state.oauth) core.clearSensitiveState(state);
+    elements.connect.disabled = state.busy || connected;
+    elements.disconnect.disabled = state.busy || !connected;
+    elements.run.disabled = state.busy || !connected || !state.selectedTool;
     elements.sessionExpiry.hidden = !connected;
+    elements.accessScopes.hidden = !connected;
+    elements.scopeList.replaceChildren();
     if (connected) {
       const expiry = new Date(state.oauth.resumeUntil);
       elements.sessionExpiryTime.dateTime = expiry.toISOString();
       elements.sessionExpiryTime.textContent = expiry.toLocaleString();
+      const granted = core.grantedScopes(state.oauth.scope);
+      elements.scopeUnavailable.hidden = granted !== null;
+      if (granted !== null) {
+        for (const scope of core.EXPLORER_SCOPE_ORDER) {
+          const isGranted = granted.has(scope);
+          const item = element('li', {className: 'mcp-explorer-scope'}, [
+            element('code', {text: scope}),
+            element('span', {text: label(isGranted ? 'scopeGranted' : 'scopeNotGranted')}),
+          ]);
+          elements.scopeList.append(item);
+        }
+      }
+      sessionExpiryTimer = window.setTimeout(() => {
+        core.clearSensitiveState(state);
+        renderAll();
+        if (logoutChannel) logoutChannel.postMessage('logout');
+      }, Math.max(0, state.oauth.resumeUntil - Date.now()));
     } else {
+      elements.scopeUnavailable.hidden = true;
       elements.sessionExpiryTime.removeAttribute('datetime');
       elements.sessionExpiryTime.textContent = '';
     }
@@ -1504,7 +1540,8 @@
     const requiredMutationScope = state.selectedTool.name === 'loxberry_clear_statistics_cache'
       ? 'loxberry:operate'
       : 'loxone:control';
-    if (core.toolIsMutating(state.selectedTool) && !(state.oauth && state.oauth.scope.split(/\s+/).includes(requiredMutationScope))) {
+    const granted = state.oauth && core.grantedScopes(state.oauth.scope);
+    if (core.toolIsMutating(state.selectedTool) && !(granted && granted.has(requiredMutationScope))) {
       showError(new Error(label(requiredMutationScope === 'loxberry:operate' ? 'operateRequired' : 'controlRequired')), label('error'));
       return;
     }

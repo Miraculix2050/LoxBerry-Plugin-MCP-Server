@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-tool-filters-v3">
+<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-scope-summary-v1">
 
 <main id="mcp-explorer" class="mcp-explorer mcp-explorer-stack"
   data-ready="<TMPL_VAR EXPLORER.READY ESCAPE=HTML>"
@@ -6,6 +6,8 @@
   data-error="<TMPL_VAR EXPLORER.ERROR ESCAPE=HTML>"
   data-connected="<TMPL_VAR EXPLORER.CONNECTED ESCAPE=HTML>"
   data-disconnected="<TMPL_VAR EXPLORER.DISCONNECTED ESCAPE=HTML>"
+  data-scope-granted="<TMPL_VAR EXPLORER.SCOPE_GRANTED ESCAPE=HTML>"
+  data-scope-not-granted="<TMPL_VAR EXPLORER.SCOPE_NOT_GRANTED ESCAPE=HTML>"
   data-no-tools="<TMPL_VAR EXPLORER.NO_TOOLS ESCAPE=HTML>"
   data-no-matching-tools="<TMPL_VAR EXPLORER.NO_MATCHING_TOOLS ESCAPE=HTML>"
   data-invalid-json="<TMPL_VAR EXPLORER.INVALID_JSON ESCAPE=HTML>"
@@ -86,6 +88,11 @@
     <div id="explorer-status" class="mcp-explorer-status" role="status" aria-live="polite"><TMPL_VAR EXPLORER.DISCONNECTED></div>
     <p class="mcp-explorer-muted"><TMPL_VAR EXPLORER.SESSION_POLICY></p>
     <p id="explorer-session-expiry" hidden><strong><TMPL_VAR EXPLORER.SESSION_EXPIRES></strong> <time id="explorer-session-expiry-time"></time></p>
+    <div id="explorer-access-scopes" hidden>
+      <strong><TMPL_VAR EXPLORER.GRANTED_OAUTH_SCOPES></strong>
+      <p id="explorer-scope-unavailable" class="mcp-explorer-muted" hidden><TMPL_VAR EXPLORER.SCOPE_UNAVAILABLE></p>
+      <ul id="explorer-scope-list" class="mcp-explorer-scope-list"></ul>
+    </div>
   </section>
 
   <div class="mcp-explorer-grid">
@@ -187,4 +194,4 @@
   </form>
 </dialog>
 
-<script src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-tool-filters-v2"></script>
+<script src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-scope-summary-v1"></script>

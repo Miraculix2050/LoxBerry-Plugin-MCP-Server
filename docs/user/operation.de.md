@@ -22,6 +22,7 @@ Das Service-Log bleibt unter **Diagnose und Logs** direkt erreichbar. Der LoxBer
 ## Tool Explorer
 
 Der [MCP Tool Explorer](https://loxberry/admin/plugins/mcpserver/explorer.cgi) ist ein lokaler administrativer Testclient. Er meldet sich mit einem Loxone-Benutzer an und erhält keine Rechte aus der LoxBerry-Admin-Sitzung. Ersetze `loxberry` im Link bei Bedarf durch den Hostnamen deiner Installation. Ändernde Aufrufe verlangen vor dem Senden eine Bestätigung.
+Nach der Anmeldung zeigt die Verbindungskarte die tatsächlich gewährten OAuth-Scopes der Sitzung. Als **Nicht gewährt** markierte Scopes wurden dieser Sitzung nicht gewährt; lokale LoxBerry-Freigaben und weitere Berechtigungsprüfungen bleiben getrennt. Beim Ende der Sitzung verschwindet die Liste.
 RFC-3339-Zeitfelder werden als lokale Datum-/Zeitfelder angezeigt und als UTC übermittelt.
 Zeitbereich-Schnellwahl und Referenzen aus bisherigen Ergebnissen erleichtern häufige
 Abfragen; technische Seitenparameter stehen unter **Erweiterte Optionen**.

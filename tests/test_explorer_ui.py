@@ -484,7 +484,7 @@ def test_explorer_discovery_controls_preserve_selection_and_drafts() -> None:
     assert template.count('type="checkbox" data-tool-group="') == 6
     assert 'id="explorer-tool-filter-count"' in template
     assert "core.filteredToolGroups(state.tools, state.toolSearch, state.toolGroups)" in source
-    assert "-tool-filters-v2" in template
+    assert 'src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-scope-summary-v1"' in template
     assert "label('noMatchingTools')" in source
     assert "label('noTools')" in source
     assert "state.toolSearch = elements.toolSearch.value" in handlers
@@ -810,6 +810,63 @@ def test_explorer_disconnect_clears_all_in_memory_session_data() -> None:
     }
 
 
+def test_explorer_granted_scopes_are_exact_and_fail_closed() -> None:
+    expression = """(() => {
+      const scopes = core.EXPLORER_SCOPE_ORDER;
+      const all = core.grantedScopes(scopes.join(' '));
+      const partial = core.grantedScopes('loxone:read loxone:history loxberry:read');
+      return {
+        all: scopes.map(scope => all.has(scope)),
+        partial: scopes.map(scope => partial.has(scope)),
+        absent: core.grantedScopes(undefined),
+        empty: core.grantedScopes('  '),
+        unknown: core.grantedScopes('loxone:read unrelated:admin'),
+        duplicate: core.grantedScopes('loxone:read loxone:read'),
+      };
+    })()"""
+    assert run_core(expression) == {
+        "all": [True] * 5,
+        "partial": [True, True, False, True, False],
+        "absent": None,
+        "empty": None,
+        "unknown": None,
+        "duplicate": None,
+    }
+
+
+def test_explorer_scope_display_tracks_session_lifecycle() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
+    german = (ROOT / "templates" / "lang" / "language_de.ini").read_text(encoding="utf-8")
+    english = (ROOT / "templates" / "lang" / "language_en.ini").read_text(encoding="utf-8")
+
+    assert 'id="explorer-access-scopes" hidden' in template
+    assert 'id="explorer-scope-list"' in template
+    assert "core.grantedScopes(state.oauth.scope)" in source
+    assert "core.EXPLORER_SCOPE_ORDER" in source
+    assert "token.scope || scope" not in source
+    assert "token.scope || state.oauth.scope" not in source
+    refresh = source[
+        source.index("async function refreshAccessToken") : source.index(
+            "async function accessToken"
+        )
+    ]
+    assert "state.oauth.scope = typeof token.scope === 'string' ? token.scope : '';" in refresh
+    assert "renderConnection();" in refresh
+    logout = source[
+        source.index("async function revokeAndClear") : source.index("function renderConnection")
+    ]
+    assert logout.index("core.clearSensitiveState(state)") < logout.index("action: 'logout'")
+    assert logout.index("renderAll()") < logout.index("action: 'logout'")
+    assert "sessionExpiryTimer = window.setTimeout" in source
+    assert "if (logoutChannel) logoutChannel.postMessage('logout');" in source
+    for text in (german, english):
+        assert "GRANTED_OAUTH_SCOPES=" in text
+        assert "SCOPE_GRANTED=" in text
+        assert "SCOPE_NOT_GRANTED=" in text
+        assert "SCOPE_UNAVAILABLE=" in text
+
+
 def test_session_clear_prevents_call_artifacts_from_being_recreated() -> None:
     source = SCRIPT.read_text(encoding="utf-8")
 
@@ -950,8 +1007,8 @@ def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
     assert "data-tool-group-loxone-history=" in template
     assert 'data-help-control-type="<TMPL_VAR EXPLORER.HELP_CONTROL_TYPE ESCAPE=HTML>"' in template
     assert "const description = helpKey ? label(helpKey) : effective.description" in source
-    assert 'id="explorer-access-scopes"' not in template
-    assert 'id="explorer-scope-' not in template
+    assert 'id="explorer-access-scopes" hidden' in template
+    assert 'id="explorer-scope-list"' in template
     assert "<TMPL_VAR EXPLORER.PERMISSIONS_AFTER_LOGIN>" in template
     assert 'id="explorer-origin-warning"' in template
     assert 'id="explorer-origin-link"' in template
