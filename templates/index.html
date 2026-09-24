@@ -980,7 +980,7 @@
     emergencyStopRetry.hidden = true;
     emergencyStopRetry.disabled = true;
     try {
-      const result = await postAjax(body, 45000);
+      const result = await postAjax(body, 180000);
       if (generation !== emergencyStopDiscoveryGeneration) return;
       const options = Array.isArray(result.data.options) ? result.data.options : [];
       const status = result.data.status;
@@ -1183,7 +1183,7 @@
           const body = new URLSearchParams();
           body.set('action', 'certificate_status');
           body.set('ajax', '1');
-          const result = await postAjax(body, 5000);
+          const result = await postAjax(body, 15000);
           const state = result.data.certificate?.renewal?.state || 'error';
           certificateRenewalState.textContent = certificateStateLabels[state] || certificateStateLabels.error;
           if (state === 'success') updateCertificate(result.data.certificate);

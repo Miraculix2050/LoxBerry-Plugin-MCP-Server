@@ -452,7 +452,7 @@ def test_common_actions_update_the_page_without_a_reload() -> None:
     assert "result.data.retained_cleanup?.status === 'failed'" in template
     assert "AJAX.MQTT_CLEANUP_WARNING" in template
     assert "revoke_all: 75000" in template
-    assert "postAjax(body, 5000)" in template
+    assert "postAjax(body, 15000)" in template
     assert "new URLSearchParams(new FormData(form))" in template
     assert "const body = new FormData" not in template
     assert "if (result.data.certificate) updateCertificate" in template
@@ -1256,12 +1256,14 @@ def test_slow_admin_reads_have_bounded_browser_timeout_headroom() -> None:
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
     for start, end, minimum_ms in (
         ("const loadCertificateStatus = async", "const updateEmergencyStopRuntimeMismatch", 10_000),
-        ("const loadEmergencyStopOptions = async", "emergencyStopSelect.addEventListener", 30_000),
+        ("const pollCertificateRenewal = async", "const sessionFingerprint", 10_000),
+        ("const loadEmergencyStopOptions = async", "emergencyStopSelect.addEventListener", 160_000),
     ):
-        section = template[template.index(start) : template.index(end)]
+        section_start = template.index(start)
+        section = template[section_start : template.index(end, section_start + len(start))]
         match = re.search(r"postAjax\(body, (\d+)\)", section)
         assert match is not None
-        assert minimum_ms <= int(match.group(1)) <= 60_000
+        assert minimum_ms <= int(match.group(1)) <= 180_000
 
 
 def test_permission_policy_uses_grouped_scope_labeled_checkboxes() -> None:

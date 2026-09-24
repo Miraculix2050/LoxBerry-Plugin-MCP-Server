@@ -45,6 +45,7 @@ _CLIENT_UUID: Final = UUID("3f52f6fe-3af0-4d30-a8bb-f429b9da4465")
 _INTERNAL_EMERGENCY_STOP_STATUS_URL: Final = "http://127.0.0.1:8765/internal/emergency-stop-status"
 _INTERNAL_RESPONSE_MAX_BYTES: Final = 4 * 1024
 _EMERGENCY_STOP_STATES: Final = frozenset({"not_configured", "clear", "active", "unknown"})
+_EMERGENCY_STOP_DISCOVERY_DEADLINE_SECONDS: Final = 90
 
 
 class AdminError(RuntimeError):
@@ -616,7 +617,7 @@ def _save_mcp(payload: object) -> dict[str, Any]:
 
 def _emergency_stop_options(*, manual_retry: bool = False) -> dict[str, Any]:
     from mcpserver.auth.store import AtomicJsonAuthStore
-    from mcpserver.emergency_stop import virtual_status_options
+    from mcpserver.emergency_stop import VirtualStatusOptions, virtual_status_options
     from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
     from mcpserver.loxone.client import MiniserverEndpoint
 
@@ -642,7 +643,14 @@ def _emergency_stop_options(*, manual_retry: bool = False) -> dict[str, Any]:
         discovery = virtual_status_options(config, coordinator, manual_retry=True)
     else:
         discovery = virtual_status_options(config, coordinator)
-    result = asyncio.run(discovery)
+    try:
+        result = asyncio.run(
+            asyncio.wait_for(discovery, timeout=_EMERGENCY_STOP_DISCOVERY_DEADLINE_SECONDS)
+        )
+    except TimeoutError:
+        result = VirtualStatusOptions(
+            status="unavailable", options=(), failure_code="connection_failed"
+        )
     response: dict[str, Any] = {"status": result.status, "options": list(result.options)}
     if result.failure_code is not None:
         response["discovery_failure_code"] = result.failure_code

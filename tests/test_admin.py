@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -573,6 +574,35 @@ def test_emergency_stop_options_returns_a_fixed_internal_failure_code(
         "options": [],
         "discovery_failure_code": "credentials_helper_missing",
     }
+
+
+def test_emergency_stop_discovery_deadline_cancels_and_returns_fixed_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ConfigStore:
+        def load(self) -> PluginConfig:
+            return PluginConfig(loxone_endpoint="http://miniserver.test")
+
+    cancelled = False
+
+    async def slow_discovery(_config: PluginConfig) -> VirtualStatusOptions:
+        nonlocal cancelled
+        try:
+            await asyncio.sleep(1)
+        finally:
+            cancelled = True
+        return VirtualStatusOptions(status="available", options=())
+
+    monkeypatch.setattr("mcpserver.admin._config_store", ConfigStore)
+    monkeypatch.setattr("mcpserver.admin._EMERGENCY_STOP_DISCOVERY_DEADLINE_SECONDS", 0.001)
+    monkeypatch.setattr("mcpserver.emergency_stop.virtual_status_options", slow_discovery)
+
+    assert dispatch({"action": "emergency_stop_options"}) == {
+        "status": "unavailable",
+        "options": [],
+        "discovery_failure_code": "connection_failed",
+    }
+    assert cancelled
 
 
 def test_admin_manual_emergency_stop_retry_is_explicit(
