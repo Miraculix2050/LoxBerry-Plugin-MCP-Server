@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="mcp-ui.css">
+<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-tool-filters-v2">
 
 <main id="mcp-explorer" class="mcp-explorer mcp-explorer-stack"
   data-ready="<TMPL_VAR EXPLORER.READY ESCAPE=HTML>"
@@ -55,6 +55,7 @@
   data-tool-group-loxone-control="<TMPL_VAR EXPLORER.TOOL_GROUP_LOXONE_CONTROL ESCAPE=HTML>"
   data-tool-group-loxberry-read="<TMPL_VAR EXPLORER.TOOL_GROUP_LOXBERRY_READ ESCAPE=HTML>"
   data-tool-group-loxberry-operate="<TMPL_VAR EXPLORER.TOOL_GROUP_LOXBERRY_OPERATE ESCAPE=HTML>"
+  data-filter-all="<TMPL_VAR EXPLORER.FILTER_ALL ESCAPE=HTML>"
   data-tool-badge-read-only="<TMPL_VAR EXPLORER.TOOL_BADGE_READ_ONLY ESCAPE=HTML>"
   data-tool-badge-write="<TMPL_VAR EXPLORER.TOOL_BADGE_WRITE ESCAPE=HTML>"
   data-result-current-call="<TMPL_VAR EXPLORER.RESULT_CURRENT_CALL ESCAPE=HTML>"
@@ -95,14 +96,17 @@
           <div class="mcp-explorer-discovery">
             <label for="explorer-tool-search"><TMPL_VAR EXPLORER.SEARCH_TOOLS></label>
             <input id="explorer-tool-search" type="search" placeholder="<TMPL_VAR EXPLORER.SEARCH_TOOLS_PLACEHOLDER ESCAPE=HTML>" autocomplete="off">
-            <div id="explorer-tool-filters" class="mcp-explorer-tool-filters" role="group" aria-label="<TMPL_VAR EXPLORER.FILTER_TOOLS ESCAPE=HTML>">
-              <button type="button" data-tool-group="all" aria-pressed="true"><TMPL_VAR EXPLORER.FILTER_ALL></button>
-              <button type="button" data-tool-group="loxoneRead" aria-pressed="false"><TMPL_VAR EXPLORER.TOOL_GROUP_LOXONE_READ></button>
-              <button type="button" data-tool-group="loxoneHistory" aria-pressed="false"><TMPL_VAR EXPLORER.TOOL_GROUP_LOXONE_HISTORY></button>
-              <button type="button" data-tool-group="loxoneControl" aria-pressed="false"><TMPL_VAR EXPLORER.TOOL_GROUP_LOXONE_CONTROL></button>
-              <button type="button" data-tool-group="loxberryRead" aria-pressed="false"><TMPL_VAR EXPLORER.TOOL_GROUP_LOXBERRY_READ></button>
-              <button type="button" data-tool-group="loxberryOperate" aria-pressed="false"><TMPL_VAR EXPLORER.TOOL_GROUP_LOXBERRY_OPERATE></button>
-            </div>
+            <details id="explorer-tool-filters" class="mcp-explorer-tool-filters">
+              <summary><TMPL_VAR EXPLORER.FILTER_TOOLS> <span id="explorer-tool-filter-count">(<TMPL_VAR EXPLORER.FILTER_ALL>)</span></summary>
+              <div class="mcp-explorer-tool-filter-options" role="group" aria-label="<TMPL_VAR EXPLORER.FILTER_TOOLS ESCAPE=HTML>">
+                <label><input type="checkbox" data-tool-group="all" checked> <TMPL_VAR EXPLORER.FILTER_ALL></label>
+                <label><input type="checkbox" data-tool-group="loxoneRead"> <TMPL_VAR EXPLORER.TOOL_GROUP_LOXONE_READ></label>
+                <label><input type="checkbox" data-tool-group="loxoneHistory"> <TMPL_VAR EXPLORER.TOOL_GROUP_LOXONE_HISTORY></label>
+                <label><input type="checkbox" data-tool-group="loxoneControl"> <TMPL_VAR EXPLORER.TOOL_GROUP_LOXONE_CONTROL></label>
+                <label><input type="checkbox" data-tool-group="loxberryRead"> <TMPL_VAR EXPLORER.TOOL_GROUP_LOXBERRY_READ></label>
+                <label><input type="checkbox" data-tool-group="loxberryOperate"> <TMPL_VAR EXPLORER.TOOL_GROUP_LOXBERRY_OPERATE></label>
+              </div>
+            </details>
           </div>
           <div id="explorer-tools" class="mcp-explorer-tool-list"><p class="mcp-explorer-muted"><TMPL_VAR EXPLORER.NO_TOOLS></p></div>
         </div>
@@ -183,4 +187,4 @@
   </form>
 </dialog>
 
-<script src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>"></script>
+<script src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-tool-filters-v2"></script>

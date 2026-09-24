@@ -82,10 +82,11 @@
     }).filter((group) => group.tools.length);
   }
 
-  function filteredToolGroups(tools, search, groupId) {
+  function filteredToolGroups(tools, search, groupIds) {
     const query = String(search || '').trim().toLowerCase();
+    const selectedGroups = new Set(groupIds || []);
     const matches = (tools || []).filter((tool) => {
-      if (groupId && groupId !== 'all' && toolGroup(tool) !== groupId) return false;
+      if (selectedGroups.size && !selectedGroups.has(toolGroup(tool))) return false;
       return !query || `${tool.name || ''} ${tool.description || ''}`.toLowerCase().includes(query);
     });
     return sortedToolGroups(matches);
@@ -542,7 +543,7 @@
     state.tools = [];
     state.selectedTool = null;
     state.toolSearch = '';
-    state.toolGroup = 'all';
+    state.toolGroups = [];
     state.arguments = {};
     state.history = [];
     state.transcript = [];
@@ -659,6 +660,7 @@
     selectedTool: document.getElementById('explorer-selected-tool'),
     toolSearch: document.getElementById('explorer-tool-search'),
     toolFilters: document.getElementById('explorer-tool-filters'),
+    toolFilterCount: document.getElementById('explorer-tool-filter-count'),
     tools: document.getElementById('explorer-tools'),
     history: document.getElementById('explorer-history'),
     summary: document.getElementById('explorer-tool-summary'),
@@ -700,7 +702,7 @@
     tools: [],
     selectedTool: null,
     toolSearch: '',
-    toolGroup: 'all',
+    toolGroups: [],
     arguments: {},
     history: [],
     transcript: [],
@@ -1122,16 +1124,19 @@
   function renderTools() {
     elements.tools.replaceChildren();
     if (elements.toolSearch.value !== state.toolSearch) elements.toolSearch.value = state.toolSearch;
-    elements.toolFilters.querySelectorAll('button[data-tool-group]').forEach((button) => {
-      button.setAttribute('aria-pressed', String(button.dataset.toolGroup === state.toolGroup));
+    elements.toolFilters.querySelectorAll('input[data-tool-group]').forEach((input) => {
+      input.checked = input.dataset.toolGroup === 'all'
+        ? state.toolGroups.length === 0 : state.toolGroups.includes(input.dataset.toolGroup);
     });
+    elements.toolFilterCount.textContent = state.toolGroups.length
+      ? `(${state.toolGroups.length})` : `(${label('filterAll')})`;
     elements.selectedTool.textContent = state.selectedTool ? `— ${state.selectedTool.name}` : '';
     elements.selectedTool.hidden = !state.selectedTool;
     if (!state.tools.length) {
       elements.tools.append(element('p', {className: 'mcp-explorer-muted', text: label('noTools')}));
       return;
     }
-    const groups = core.filteredToolGroups(state.tools, state.toolSearch, state.toolGroup);
+    const groups = core.filteredToolGroups(state.tools, state.toolSearch, state.toolGroups);
     if (!groups.length) {
       elements.tools.append(element('p', {className: 'mcp-explorer-muted', role: 'status', text: label('noMatchingTools')}));
       return;
@@ -1687,10 +1692,13 @@
     state.toolSearch = elements.toolSearch.value;
     renderTools();
   });
-  elements.toolFilters.addEventListener('click', (event) => {
-    const button = event.target.closest('button[data-tool-group]');
-    if (!button || !elements.toolFilters.contains(button)) return;
-    state.toolGroup = button.dataset.toolGroup;
+  elements.toolFilters.addEventListener('change', (event) => {
+    const input = event.target;
+    if (!input.matches('input[data-tool-group]')) return;
+    const group = input.dataset.toolGroup;
+    if (group === 'all') state.toolGroups = [];
+    else if (input.checked) state.toolGroups = [...state.toolGroups, group];
+    else state.toolGroups = state.toolGroups.filter((selected) => selected !== group);
     renderTools();
   });
   elements.run.addEventListener('click', runSelectedTool);

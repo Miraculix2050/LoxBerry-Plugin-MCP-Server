@@ -71,9 +71,11 @@ details.mcp-explorer-card[open] > summary { border-bottom: 1px solid #d7dadd; }
 .mcp-explorer-tool-list { display: grid; gap: .45rem; max-height: 55vh; overflow-y: auto; }
 .mcp-explorer-discovery { display: grid; gap: .45rem; margin-bottom: .8rem; min-width: 0; }
 .mcp-explorer-discovery input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 2.75rem; }
-.mcp-explorer-tool-filters { display: flex; flex-wrap: wrap; gap: .35rem; min-width: 0; }
-.mcp-explorer-tool-filters button { min-height: 2.75rem; max-width: 100%; padding: .35rem .55rem; border: 1px solid #c9cdd2; border-radius: .3rem; background: #fff; overflow-wrap: anywhere; }
-.mcp-explorer-tool-filters button[aria-pressed="true"] { border-color: #1261a0; background: #eef5fb; color: #094b7d; }
+.mcp-explorer-tool-filters { min-width: 0; border: 1px solid #c9cdd2; border-radius: .3rem; background: #fff; }
+.mcp-explorer-tool-filters > summary { box-sizing: border-box; min-height: 2.75rem; padding: .65rem .75rem; cursor: pointer; }
+.mcp-explorer-tool-filter-options { display: grid; gap: .15rem; padding: .3rem; border-top: 1px solid #c9cdd2; }
+.mcp-explorer-tool-filter-options label { display: flex; align-items: center; gap: .5rem; min-height: 2.5rem; padding: .2rem .45rem; cursor: pointer; overflow-wrap: anywhere; }
+.mcp-explorer-tool-filter-options input { width: auto; min-height: auto; margin: 0; }
 .mcp-explorer-tool-group { margin: .65rem 0 0; font-size: .9rem; color: #4b5563; }
 .mcp-explorer-tool-group:first-child { margin-top: 0; }
 .mcp-explorer-tool { width: 100%; padding: .7rem; border: 1px solid #c9cdd2; border-radius: .3rem; background: #fff; text-align: left; overflow-wrap: anywhere; }

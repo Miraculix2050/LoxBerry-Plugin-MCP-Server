@@ -559,7 +559,10 @@ def test_admin_cards_use_consistent_vertical_spacing() -> None:
     stylesheet = (ROOT / "webfrontend" / "htmlauth" / "mcp-ui.css").read_text(encoding="utf-8")
 
     assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-sessions-v4"' in template
-    assert '<link rel="stylesheet" href="mcp-ui.css">' in explorer
+    assert (
+        '<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-tool-filters-v2">'
+        in explorer
+    )
     assert "<style>" not in template
     assert "<style>" not in explorer
     assert ".mcp-page { display: grid; gap: 1rem;" in stylesheet

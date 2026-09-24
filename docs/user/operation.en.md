@@ -26,7 +26,8 @@ RFC-3339 time fields are shown as local date/time fields and sent as UTC.
 Time-range shortcuts and references from earlier results simplify common queries;
 technical page parameters are available under **Advanced options**.
 Search the available tools by name or description and combine the search with
-the existing scope filters. Filtering is local and keeps the selected tool and
+one or more groups in the expandable filter. **All** clears the group selection.
+Filtering is local and keeps the selected tool and
 its unsent draft.
 
 MCP clients receive the tool descriptions published by the specific installation, including their input and output schemas, through the MCP method `tools/list`. The Tool Explorer reads and visualizes that exact response. **Help** also provides a static HTML reference for the complete tool contract of this plugin version and the same data as a JSON download.
