@@ -501,6 +501,8 @@ def test_explorer_discovery_controls_preserve_selection_and_drafts() -> None:
     for language in (german, english):
         for key in ("SEARCH_TOOLS=", "FILTER_TOOLS=", "FILTER_ALL=", "NO_MATCHING_TOOLS="):
             assert key in language
+    assert "FILTER_TOOLS=Gruppen filtern" in german
+    assert "FILTER_TOOLS=Filter groups" in english
 
 
 def test_explorer_sorts_tools_and_prepares_statistics_transfer() -> None:

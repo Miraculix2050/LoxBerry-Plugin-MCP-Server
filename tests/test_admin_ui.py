@@ -560,7 +560,7 @@ def test_admin_cards_use_consistent_vertical_spacing() -> None:
 
     assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-sessions-v4"' in template
     assert (
-        '<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-tool-filters-v2">'
+        '<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-tool-filters-v3">'
         in explorer
     )
     assert "<style>" not in template
