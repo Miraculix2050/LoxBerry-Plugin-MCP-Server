@@ -684,6 +684,8 @@ my $emergency_stop_status_visible = 1;
 my $emergency_stop_retry_visible = 0;
 my $emergency_stop_retry_enabled = 0;
 my $fallback_configuration_loaded = 0;
+my $fallback_summary_configuration_loaded = 0;
+my $fallback_summary_sessions_loaded = 0;
 my $notifications_html = '';
 my $loglist_html = '';
 my $service_enabled_setting_known = 0;
@@ -695,6 +697,8 @@ if ($server_rendered_fallback) {
     $config = $config_result->{data}{configuration}
         if $config_result->{ok} && ref($config_result->{data}{configuration}) eq 'HASH';
     $fallback_configuration_loaded = $config_result->{ok} ? 1 : 0;
+    $fallback_summary_configuration_loaded =
+        $config_result->{ok} && ref($config_result->{data}{configuration}) eq 'HASH' ? 1 : 0;
     my $service_result = admin_call('service_status', {});
     if ($service_result->{ok} && ref($service_result->{data}{service}) eq 'HASH') {
         $service = $service_result->{data}{service};
@@ -711,6 +715,8 @@ if ($server_rendered_fallback) {
         $remote_cleanup = $sessions_result->{data}{remote_cleanup}
             if ref($sessions_result->{data}{remote_cleanup}) eq 'HASH';
         $sessions = $sessions_result->{data}{sessions}
+            if ref($sessions_result->{data}{sessions}) eq 'ARRAY';
+        $fallback_summary_sessions_loaded = 1
             if ref($sessions_result->{data}{sessions}) eq 'ARRAY';
         $loxberry_bindings = $sessions_result->{data}{loxberry_bindings}
             if ref($sessions_result->{data}{loxberry_bindings}) eq 'ARRAY';
@@ -813,6 +819,17 @@ for my $session (@$sessions) {
     next if ref($session) ne 'HASH';
     $session->{expires_display} = format_expiry($session->{expires_at});
 }
+my $fallback_approval_count = 0;
+if ($fallback_summary_sessions_loaded) {
+    for my $session (@$sessions) {
+        next if ref($session) ne 'HASH';
+        $fallback_approval_count++ if $session->{loxone_token_confirmation_required};
+        $fallback_approval_count++
+            if $session->{loxberry_read_eligible} && !$session->{loxberry_read_approved};
+        $fallback_approval_count++
+            if $session->{loxberry_operate_eligible} && !$session->{loxberry_operate_approved};
+    }
+}
 for my $bindings ($loxberry_bindings, $loxberry_operate_bindings) {
     next if ref($bindings) ne 'ARRAY';
     for my $binding (@$bindings) {
@@ -888,6 +905,11 @@ $template->param(
     VERSION => $version,
     SERVER_RENDERED_FALLBACK => $server_rendered_fallback,
     FALLBACK_CONFIGURATION_LOADED => $fallback_configuration_loaded,
+    FALLBACK_SUMMARY_CONFIGURATION_LOADED => $fallback_summary_configuration_loaded,
+    FALLBACK_SUMMARY_SESSIONS_LOADED => $fallback_summary_sessions_loaded,
+    FALLBACK_SESSION_COUNT => scalar(@$sessions),
+    FALLBACK_APPROVAL_COUNT => $fallback_approval_count,
+    FALLBACK_HAS_APPROVALS => $fallback_approval_count > 0 ? 1 : 0,
     FALLBACK_URL => $fallback_url,
     NOTIFICATIONS_HTML => $notifications_html,
     LOGLIST_HTML => $loglist_html,

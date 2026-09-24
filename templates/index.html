@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-sessions-v4">
+<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-summary-badges-v1">
 <script>
   if (window.performance && typeof window.performance.mark === 'function') {
     window.performance.mark('mcp-admin-shell-parsed');
@@ -62,7 +62,7 @@
   </details>
 
   <details id="configuration" class="mcp-card" data-persist-collapse open>
-    <summary id="setup"><TMPL_VAR SETUP.TITLE></summary>
+    <summary id="setup"><span class="mcp-service-summary"><span><TMPL_VAR SETUP.TITLE></span><span id="configuration-summary-badge" class="mcp-service-badge" <TMPL_IF SERVER_RENDERED_FALLBACK><TMPL_IF FALLBACK_SUMMARY_CONFIGURATION_LOADED><TMPL_IF ENABLED>data-kind="success"<TMPL_ELSE>data-kind="inactive"</TMPL_IF></TMPL_IF></TMPL_IF>><TMPL_IF SERVER_RENDERED_FALLBACK><TMPL_IF FALLBACK_SUMMARY_CONFIGURATION_LOADED><TMPL_IF ENABLED><TMPL_VAR SUMMARY.ENABLED><TMPL_ELSE><TMPL_VAR SUMMARY.DISABLED></TMPL_IF><TMPL_ELSE><TMPL_VAR SUMMARY.UNKNOWN></TMPL_IF><TMPL_ELSE><TMPL_VAR AJAX.WORKING></TMPL_IF></span></span></summary>
     <div class="mcp-collapsible-content">
     <form id="mcp-config-form" class="mcp-form" method="post" action="index.cgi" data-ajax="save_mcp_config">
       <input id="event-history-sources" type="hidden" name="event_history_sources_json" value="<TMPL_VAR EVENT_HISTORY_SOURCES_JSON ESCAPE=HTML>">
@@ -174,7 +174,7 @@
   </details>
 
   <details id="access" class="mcp-card" data-persist-collapse <TMPL_IF SERVER_RENDERED_FALLBACK>open</TMPL_IF>>
-    <summary id="certificate"><TMPL_VAR ACCESS.TITLE></summary>
+    <summary id="certificate"><span class="mcp-service-summary"><span><TMPL_VAR ACCESS.TITLE></span><span id="certificate-summary-badge" class="mcp-service-badge"><TMPL_IF SERVER_RENDERED_FALLBACK><TMPL_VAR SUMMARY.UNKNOWN><TMPL_ELSE><TMPL_VAR AJAX.WORKING></TMPL_IF></span></span></summary>
     <div class="mcp-collapsible-content">
       <div class="mcp-field-stack">
         <label class="mcp-field"><span><TMPL_VAR ACCESS.MCP_HOSTNAME></span><span class="mcp-copy-row"><input id="mcp-url-hostname" type="text" readonly value="<TMPL_VAR HOSTNAME_MCP_URL ESCAPE=HTML>"><button class="lb-button" type="button" data-copy-target="mcp-url-hostname"><TMPL_VAR ACTION.COPY></button></span></label>
@@ -218,7 +218,7 @@
   <details id="sessions" class="mcp-card" data-persist-collapse <TMPL_IF SERVER_RENDERED_FALLBACK>open</TMPL_IF> aria-busy="true"
     data-empty-label="<TMPL_VAR SESSIONS.EMPTY ESCAPE=HTML>"
     data-unnamed-label="<TMPL_VAR SESSIONS.UNNAMED ESCAPE=HTML>">
-    <summary><TMPL_VAR SESSIONS.TITLE></summary>
+    <summary><span class="mcp-service-summary"><span><TMPL_VAR SESSIONS.TITLE></span><span id="sessions-summary-badge" class="mcp-service-badge"><TMPL_IF SERVER_RENDERED_FALLBACK><TMPL_IF FALLBACK_SUMMARY_SESSIONS_LOADED><TMPL_VAR SUMMARY.SESSIONS>: <TMPL_VAR FALLBACK_SESSION_COUNT><TMPL_ELSE><TMPL_VAR SUMMARY.UNKNOWN></TMPL_IF><TMPL_ELSE><TMPL_VAR AJAX.WORKING></TMPL_IF></span><span id="approvals-summary-badge" class="mcp-service-badge" <TMPL_UNLESS FALLBACK_HAS_APPROVALS>hidden</TMPL_UNLESS> <TMPL_IF FALLBACK_HAS_APPROVALS>data-kind="error"</TMPL_IF>><TMPL_IF FALLBACK_HAS_APPROVALS><TMPL_VAR SUMMARY.APPROVALS>: <TMPL_VAR FALLBACK_APPROVAL_COUNT></TMPL_IF></span></span></summary>
     <div class="mcp-collapsible-content">
     <p id="remote-cleanup-warning" class="mcp-status" data-kind="warning" role="status" <TMPL_UNLESS REMOTE_CLEANUP_WARNING_VISIBLE>hidden</TMPL_UNLESS>
       data-breaker-label="<TMPL_VAR SESSIONS.REMOTE_BREAKER_WARNING ESCAPE=HTML>"
@@ -256,7 +256,7 @@
   </details>
 
   <details id="mqtt" class="mcp-card" data-persist-collapse open>
-    <summary><TMPL_VAR MQTT.TITLE></summary>
+    <summary><span class="mcp-service-summary"><span><TMPL_VAR MQTT.TITLE></span><span id="mqtt-summary-badge" class="mcp-service-badge" <TMPL_IF SERVER_RENDERED_FALLBACK><TMPL_IF FALLBACK_SUMMARY_CONFIGURATION_LOADED><TMPL_IF MQTT_ENABLED>data-kind="success"<TMPL_ELSE>data-kind="inactive"</TMPL_IF></TMPL_IF></TMPL_IF>><TMPL_IF SERVER_RENDERED_FALLBACK><TMPL_IF FALLBACK_SUMMARY_CONFIGURATION_LOADED><TMPL_IF MQTT_ENABLED><TMPL_VAR SUMMARY.ENABLED><TMPL_ELSE><TMPL_VAR SUMMARY.DISABLED></TMPL_IF><TMPL_ELSE><TMPL_VAR SUMMARY.UNKNOWN></TMPL_IF><TMPL_ELSE><TMPL_VAR AJAX.WORKING></TMPL_IF></span></span></summary>
     <div class="mcp-collapsible-content">
       <form class="mcp-form" method="post" action="index.cgi" data-ajax="save_mqtt_config">
         <input type="hidden" name="action" value="save_mqtt_config">
@@ -416,6 +416,11 @@
   const explorerPath = '/admin/plugins/mcpserver/explorer.cgi';
   explorerLink.href = `${window.location.origin}${explorerPath}`;
   const accessSection = document.getElementById('access');
+  const configurationSummaryBadge = document.getElementById('configuration-summary-badge');
+  const mqttSummaryBadge = document.getElementById('mqtt-summary-badge');
+  const certificateSummaryBadge = document.getElementById('certificate-summary-badge');
+  const sessionsSummaryBadge = document.getElementById('sessions-summary-badge');
+  const approvalsSummaryBadge = document.getElementById('approvals-summary-badge');
   const certificatePanel = document.getElementById('certificate-panel');
   const certificateDetails = document.getElementById('certificate-details');
   const certificateSource = document.getElementById('certificate-source');
@@ -495,8 +500,10 @@
   let sessionPollTimer = null;
   let certificateLoaded = false;
   let certificateLoadInFlight = false;
+  let certificateStatusVersion = 0;
   let configurationLoaded = false;
   let configurationLoadInFlight = false;
+  let savedPublicOrigin = null;
   let lastService = null;
   let lastEmergencyStopRuntime = null;
   let pageIsUnloading = false;
@@ -529,6 +536,20 @@
     const field = form.elements.namedItem(name);
     if (field instanceof HTMLInputElement) field.checked = Boolean(checked);
   };
+  const setSummaryBadge = (badge, label, kind = '') => {
+    badge.textContent = label;
+    if (kind) badge.dataset.kind = kind;
+    else delete badge.dataset.kind;
+  };
+  const renderConfigurationBadges = (configuration) => {
+    const enabled = (value) => value === true
+      ? ['<TMPL_VAR SUMMARY.ENABLED ESCAPE=JS>', 'success']
+      : value === false
+        ? ['<TMPL_VAR SUMMARY.DISABLED ESCAPE=JS>', 'inactive']
+        : ['<TMPL_VAR SUMMARY.UNKNOWN ESCAPE=JS>', ''];
+    setSummaryBadge(configurationSummaryBadge, ...enabled(configuration?.server?.enabled));
+    setSummaryBadge(mqttSummaryBadge, ...enabled(configuration?.mqtt?.enabled));
+  };
   const renderConfiguration = (configuration) => {
     const server = configuration?.server || {};
     const loxone = configuration?.loxone || {};
@@ -540,6 +561,8 @@
     const eventHistory = configuration?.event_history || {};
     const publicOrigin = String(server.public_origin || '')
       || String(mcpConfigForm.elements.namedItem('public_origin')?.value || '');
+    savedPublicOrigin = String(server.public_origin || '');
+    renderConfigurationBadges(configuration);
     setFormValue(mcpConfigForm, 'public_origin', publicOrigin);
     setFormChecked(mcpConfigForm, 'enabled', server.enabled);
     setFormValue(mcpConfigForm, 'connection_timeout', loxone.connection_timeout);
@@ -599,6 +622,7 @@
       queueBackgroundHydration([() => loadEmergencyStopOptions(emergencyStopGeneration)]);
     } catch {
       if (pageIsUnloading) return;
+      renderConfigurationBadges(null);
       setAjaxStatus('error', '<TMPL_VAR AJAX.ERROR ESCAPE=JS>');
       configurationFallbackLink.hidden = false;
     } finally {
@@ -722,8 +746,29 @@
     success: certificatePanel.dataset.stateSuccess,
     error: certificatePanel.dataset.stateError,
   } : {};
+  const certificateBadgeState = (certificate, nowSeconds = Date.now() / 1000) => {
+    if (certificate?.available !== true) {
+      return certificate?.available === false
+        ? ['<TMPL_VAR SUMMARY.UNAVAILABLE ESCAPE=JS>', '']
+        : ['<TMPL_VAR SUMMARY.UNKNOWN ESCAPE=JS>', ''];
+    }
+    const validUntil = certificate.expires_at;
+    if (typeof certificate.origin_configured !== 'boolean'
+        || typeof certificate.origin_matches !== 'boolean'
+        || typeof certificate.hostname_matches !== 'boolean'
+        || typeof validUntil !== 'number' || !Number.isFinite(validUntil)) {
+      return ['<TMPL_VAR SUMMARY.UNKNOWN ESCAPE=JS>', ''];
+    }
+    const checksPass = certificate.origin_configured === true
+      && certificate.origin_matches === true && certificate.hostname_matches === true
+      && validUntil > nowSeconds;
+    return checksPass
+      ? ['<TMPL_VAR SUMMARY.OK ESCAPE=JS>', 'success']
+      : ['<TMPL_VAR SUMMARY.WARNING ESCAPE=JS>', 'error'];
+  };
   const updateCertificate = (certificate) => {
     const available = Boolean(certificate?.available);
+    setSummaryBadge(certificateSummaryBadge, ...certificateBadgeState(certificate));
     certificatePanel.setAttribute('aria-busy', 'false');
     certificateDetails.hidden = !available;
     certificateUnavailable.hidden = available;
@@ -818,21 +863,34 @@
   const loadCertificateStatus = async () => {
     if (certificateLoaded || certificateLoadInFlight) return;
     certificateLoadInFlight = true;
+    const requestVersion = certificateStatusVersion;
     certificatePanel.setAttribute('aria-busy', 'true');
     try {
       const body = new URLSearchParams();
       body.set('action', 'certificate_status');
       body.set('ajax', '1');
       const result = await postAjax(body, 15000);
+      if (requestVersion !== certificateStatusVersion) return;
       updateCertificate(result.data.certificate);
       certificateLoaded = true;
     } catch {
       if (pageIsUnloading) return;
+      if (requestVersion !== certificateStatusVersion) return;
       updateCertificate(null);
+      setSummaryBadge(certificateSummaryBadge, '<TMPL_VAR SUMMARY.UNKNOWN ESCAPE=JS>');
       certificateUnavailable.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';
     } finally {
       certificateLoadInFlight = false;
+      if (requestVersion !== certificateStatusVersion) {
+        queueBackgroundHydration([loadCertificateStatus]);
+      }
     }
+  };
+  const refreshCertificateAfterOriginChange = () => {
+    certificateStatusVersion += 1;
+    certificateLoaded = false;
+    setSummaryBadge(certificateSummaryBadge, '<TMPL_VAR AJAX.WORKING ESCAPE=JS>');
+    queueBackgroundHydration([loadCertificateStatus]);
   };
   const updateEmergencyStopRuntimeMismatch = () => {
     const runtime = lastEmergencyStopRuntime;
@@ -1186,13 +1244,16 @@
           const result = await postAjax(body, 15000);
           const state = result.data.certificate?.renewal?.state || 'error';
           certificateRenewalState.textContent = certificateStateLabels[state] || certificateStateLabels.error;
-          if (state === 'success') updateCertificate(result.data.certificate);
+          if (state === 'success' || state === 'error' || state === 'idle') {
+            updateCertificate(result.data.certificate);
+          }
           if (state === 'success' || state === 'error' || state === 'idle') return;
         } catch {
           // Apache restarts while the LoxBerry Core installs the new certificate.
         }
       }
       if (certificateRenewalState) certificateRenewalState.textContent = certificateStateLabels.error;
+      setSummaryBadge(certificateSummaryBadge, '<TMPL_VAR SUMMARY.UNKNOWN ESCAPE=JS>');
     } finally {
       button.disabled = false;
       button.removeAttribute('aria-busy');
@@ -1325,11 +1386,27 @@
     row.append(actionCell);
     return row;
   };
+  const updateSessionSummaryBadges = () => {
+    const sessionCount = sessionList.querySelectorAll('tr[data-session-id]').length;
+    const approvalCount = sessionList.querySelectorAll(
+      'tr[data-session-id] form[data-ajax="confirm_loxone_token"], '
+      + 'tr[data-session-id] form[data-ajax="allow_loxberry_read"], '
+      + 'tr[data-session-id] form[data-ajax="allow_loxberry_operate"]',
+    ).length;
+    setSummaryBadge(sessionsSummaryBadge,
+      `<TMPL_VAR SUMMARY.SESSIONS ESCAPE=JS>: ${sessionCount}`);
+    approvalsSummaryBadge.hidden = approvalCount === 0;
+    if (approvalCount > 0) {
+      setSummaryBadge(approvalsSummaryBadge,
+        `<TMPL_VAR SUMMARY.APPROVALS ESCAPE=JS>: ${approvalCount}`, 'error');
+    }
+  };
   const updateSessions = (sessions) => {
     if (!sessions.length) {
       const empty = document.createElement('p');
       empty.textContent = sessionsSection.dataset.emptyLabel;
       sessionList.replaceChildren(empty);
+      updateSessionSummaryBadges();
       return;
     }
     let body = sessionList.querySelector('tbody');
@@ -1352,6 +1429,7 @@
       existing.delete(key);
     }
     for (const row of existing.values()) row.remove();
+    updateSessionSummaryBadges();
   };
   const loxberryBindingRows = (bindings, section, actionName) => {
     const rows = [];
@@ -1571,12 +1649,12 @@
   const scheduleSessionPoll = (delay = 10000) => {
     window.clearTimeout(sessionPollTimer);
     sessionPollTimer = null;
-    if (!document.hidden && sessionsSection.open && activeSessionActions.size === 0) {
+    if (!document.hidden && activeSessionActions.size === 0) {
       sessionPollTimer = window.setTimeout(pollSessions, delay);
     }
   };
   const pollSessions = async ({initial = false} = {}) => {
-    if ((!initial && (document.hidden || !sessionsSection.open))
+    if ((!initial && document.hidden)
         || activeSessionActions.size > 0 || sessionPollInFlight) {
       scheduleSessionPoll();
       return;
@@ -1602,6 +1680,8 @@
       }
     } catch {
       if (pageIsUnloading) return;
+      setSummaryBadge(sessionsSummaryBadge, '<TMPL_VAR SUMMARY.UNKNOWN ESCAPE=JS>');
+      approvalsSummaryBadge.hidden = true;
       if (!sessionsLoaded) {
         sessionList.replaceChildren(document.createTextNode('<TMPL_VAR AJAX.ERROR ESCAPE=JS>'));
       }
@@ -1783,6 +1863,7 @@
         }
         if (isSessionAction(form.dataset.ajax)) {
           applySuccessfulSessionAction(form, sessionAction, result.data);
+          updateSessionSummaryBadges();
         }
         if (result.data.certificate) updateCertificate(result.data.certificate);
         if (form.dataset.ajax === 'save_mqtt_config') {
@@ -1791,6 +1872,10 @@
           mqttPasswordStatus.hidden = !Boolean(result.data.mqtt_password_configured);
         }
         if (submittedAction === 'save_mcp_config') {
+          const nextPublicOrigin = String(result.data.configuration.server.public_origin || '');
+          if (savedPublicOrigin !== nextPublicOrigin) refreshCertificateAfterOriginChange();
+          savedPublicOrigin = nextPublicOrigin;
+          renderConfigurationBadges(result.data.configuration);
           const savedEndpoint = result.data.configuration.loxone.endpoint;
           emergencyStopValue.value = result.data.configuration.emergency_stop.virtual_status_uuid;
           resetEmergencyStopOptions({loading: true});
@@ -1803,10 +1888,14 @@
           explorerLink.href = `${window.location.origin}${explorerPath}`;
         }
         if (form.dataset.ajax === 'set_logging') renderLogging(result.data.configuration);
+        if (form.dataset.ajax === 'save_mqtt_config') {
+          renderConfigurationBadges(result.data.configuration);
+        }
         if (form.dataset.ajax === 'renew_certificate') {
           keepButtonDisabled = true;
           form.querySelector('input[name="securepin"]').value = '';
           certificateRenewalState.textContent = certificateStateLabels.scheduled;
+          setSummaryBadge(certificateSummaryBadge, '<TMPL_VAR AJAX.WORKING ESCAPE=JS>');
           pollCertificateRenewal(button);
         }
       } catch (error) {

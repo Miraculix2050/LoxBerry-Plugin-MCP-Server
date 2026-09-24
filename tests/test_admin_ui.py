@@ -558,7 +558,7 @@ def test_admin_cards_use_consistent_vertical_spacing() -> None:
     explorer = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
     stylesheet = (ROOT / "webfrontend" / "htmlauth" / "mcp-ui.css").read_text(encoding="utf-8")
 
-    assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-sessions-v4"' in template
+    assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-summary-badges-v1"' in template
     assert (
         '<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-tool-filters-v3">'
         in explorer
@@ -627,7 +627,7 @@ def test_emergency_stop_runtime_display_uses_service_data_not_the_form_selection
     assert "EMERGENCY_STOP_RUNTIME_MISMATCH" in template
 
 
-def test_sessions_poll_only_while_visible_and_open_and_patch_changed_rows() -> None:
+def test_sessions_poll_while_visible_and_patch_changed_rows() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
 
@@ -635,11 +635,282 @@ def test_sessions_poll_only_while_visible_and_open_and_patch_changed_rows() -> N
     assert "body.set('action', 'list_sessions')" in template
     assert "window.setTimeout(pollSessions, delay)" in template
     assert "const pollSessions = async ({initial = false} = {}) =>" in template
-    assert "(!initial && (document.hidden || !sessionsSection.open))" in template
+    assert "(!initial && document.hidden)" in template
+    assert "if (!document.hidden && activeSessionActions.size === 0)" in template
     assert "|| activeSessionActions.size > 0 || sessionPollInFlight" in template
     assert "sessionsSection.addEventListener('toggle'" in template
     assert "row.dataset.fingerprint !== sessionFingerprint(session)" in template
     assert "sessionList.replaceChildren(fragment)" in template
+
+
+def test_admin_summary_badges_follow_authoritative_ui_state() -> None:
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    css = (ROOT / "webfrontend/htmlauth/mcp-ui.css").read_text(encoding="utf-8")
+    for badge_id in (
+        "configuration-summary-badge",
+        "mqtt-summary-badge",
+        "certificate-summary-badge",
+        "sessions-summary-badge",
+        "approvals-summary-badge",
+    ):
+        assert f'id="{badge_id}"' in template
+    assert ".mcp-service-badge[hidden] { display: none; }" in css
+    assert "renderConfiguration(result.data.configuration);" in template
+    assert "renderConfigurationBadges(result.data.configuration);" in template
+    assert (
+        "if (savedPublicOrigin !== nextPublicOrigin) refreshCertificateAfterOriginChange();"
+        in template
+    )
+    assert "if (requestVersion !== certificateStatusVersion) return;" in template
+    assert "updateSessionSummaryBadges();" in template
+    for action in ("confirm_loxone_token", "allow_loxberry_read", "allow_loxberry_operate"):
+        assert f'tr[data-session-id] form[data-ajax="{action}"]' in template
+    assert (
+        "applySuccessfulSessionAction(form, sessionAction, result.data);\n"
+        "          updateSessionSummaryBadges();"
+    ) in template
+    assert "if (expectedSessionDataVersion !== sessionDataVersion) return;" in template
+    assert "activeSessionActions.size > 0 || sessionPollInFlight" in template
+    for language in ("de", "en"):
+        translations = (ROOT / f"templates/lang/language_{language}.ini").read_text(
+            encoding="utf-8"
+        )
+        summary = translations.split("[SUMMARY]\n", 1)[1].split("\n[", 1)[0]
+        for key in (
+            "ENABLED",
+            "DISABLED",
+            "UNKNOWN",
+            "UNAVAILABLE",
+            "OK",
+            "WARNING",
+            "SESSIONS",
+            "APPROVALS",
+        ):
+            assert f"{key}=" in summary
+
+
+def test_admin_summary_badge_calculations() -> None:
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    functions = []
+    for name in (
+        "setSummaryBadge",
+        "renderConfigurationBadges",
+        "certificateBadgeState",
+        "updateSessionSummaryBadges",
+        "scheduleSessionPoll",
+    ):
+        match = re.search(rf"  const {name} = .*?\n  }};", template, re.DOTALL)
+        assert match is not None
+        functions.append(match.group(0))
+    script = "\n".join(functions)
+    script = re.sub(
+        r"<TMPL_VAR SUMMARY\.([A-Z]+) ESCAPE=JS>",
+        lambda match: match.group(1),
+        script,
+    )
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    result = subprocess.run(
+        [
+            node,
+            "-e",
+            """
+const configurationSummaryBadge = {dataset: {}};
+const mqttSummaryBadge = {dataset: {}};
+const certificateSummaryBadge = {dataset: {}};
+const sessionsSummaryBadge = {dataset: {}};
+const approvalsSummaryBadge = {dataset: {}, hidden: true};
+let sessions = 3;
+let approvals = 4;
+const sessionList = {querySelectorAll: (selector) =>
+  Array(selector.includes('form[data-ajax=') ? approvals : sessions).fill({})};
+const document = {hidden: false};
+const activeSessionActions = new Map();
+let sessionPollTimer = null;
+let scheduledDelay = null;
+const pollSessions = () => {};
+const window = {clearTimeout: () => {}, setTimeout: (_callback, delay) => {
+  scheduledDelay = delay;
+  return 1;
+}};
+"""
+            + script
+            + """
+renderConfigurationBadges({server: {enabled: true}, mqtt: {enabled: false}});
+if (configurationSummaryBadge.textContent !== 'ENABLED'
+    || mqttSummaryBadge.textContent !== 'DISABLED') throw Error('saved configuration');
+renderConfigurationBadges(null);
+if (configurationSummaryBadge.textContent !== 'UNKNOWN'
+    || mqttSummaryBadge.textContent !== 'UNKNOWN') throw Error('unknown configuration');
+const good = {available: true, origin_configured: true, origin_matches: true,
+  hostname_matches: true, expires_at: 200};
+if (certificateBadgeState(good, 100)[0] !== 'OK') throw Error('certificate OK');
+for (const bad of [
+  {...good, origin_configured: false}, {...good, origin_matches: false},
+  {...good, hostname_matches: false}, {...good, expires_at: 100},
+]) if (certificateBadgeState(bad, 100)[0] !== 'WARNING') throw Error('certificate warning');
+if (certificateBadgeState({available: false}, 100)[0] !== 'UNAVAILABLE')
+  throw Error('certificate unavailable');
+if (certificateBadgeState({available: true}, 100)[0] !== 'UNKNOWN')
+  throw Error('incomplete certificate checks');
+updateSessionSummaryBadges();
+if (sessionsSummaryBadge.textContent !== 'SESSIONS: 3'
+    || approvalsSummaryBadge.textContent !== 'APPROVALS: 4'
+    || approvalsSummaryBadge.hidden) throw Error('session and approval counts');
+sessions = 0;
+approvals = 0;
+updateSessionSummaryBadges();
+if (sessionsSummaryBadge.textContent !== 'SESSIONS: 0'
+    || !approvalsSummaryBadge.hidden) throw Error('empty sessions');
+scheduleSessionPoll(10000);
+if (scheduledDelay !== 10000) throw Error('closed section did not poll');
+document.hidden = true;
+scheduledDelay = null;
+scheduleSessionPoll(10000);
+if (scheduledDelay !== null) throw Error('hidden page polled');
+document.hidden = false;
+activeSessionActions.set('running', {});
+scheduleSessionPoll(10000);
+if (scheduledDelay !== null) throw Error('poll overlapped an action');
+""",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_certificate_summary_discards_response_from_previous_origin() -> None:
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    functions = []
+    for name in ("loadCertificateStatus", "refreshCertificateAfterOriginChange"):
+        match = re.search(rf"  const {name} = .*?\n  }};", template, re.DOTALL)
+        assert match is not None
+        functions.append(match.group(0))
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = "\n".join(functions)
+    result = subprocess.run(
+        [
+            node,
+            "-e",
+            """
+let certificateLoaded = false;
+let certificateLoadInFlight = false;
+let certificateStatusVersion = 0;
+let pageIsUnloading = false;
+let resolveOld;
+let calls = 0;
+const updates = [];
+const queued = [];
+const certificatePanel = {setAttribute: () => {}};
+const certificateUnavailable = {};
+const certificateSummaryBadge = {};
+const updateCertificate = certificate => updates.push(certificate.marker);
+const setSummaryBadge = (badge, text) => { badge.textContent = text; };
+const queueBackgroundHydration = tasks => queued.push(...tasks);
+const postAjax = () => calls++ === 0
+  ? new Promise(resolve => { resolveOld = resolve; })
+  : Promise.resolve({data: {certificate: {marker: 'current'}}});
+"""
+            + script
+            + """
+(async () => {
+  const stale = loadCertificateStatus();
+  refreshCertificateAfterOriginChange();
+  resolveOld({data: {certificate: {marker: 'stale'}}});
+  await stale;
+  while (queued.length) await queued.shift()();
+  if (updates.join(',') !== 'current' || !certificateLoaded || calls !== 2)
+    throw Error('stale certificate response replaced current origin checks');
+})().catch(error => { console.error(error); process.exitCode = 1; });
+""",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_fallback_summary_badges_use_server_rendered_data() -> None:
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    snippets = re.findall(r"<summary(?: [^>]*)?>.*?</summary>", template, re.DOTALL)
+    badge_markup = "\n".join(snippet for snippet in snippets if "-summary-badge" in snippet)
+    assert badge_markup.count("-summary-badge") == 5
+    for parameter in (
+        "FALLBACK_SUMMARY_CONFIGURATION_LOADED",
+        "FALLBACK_SUMMARY_SESSIONS_LOADED",
+        "FALLBACK_SESSION_COUNT",
+        "FALLBACK_APPROVAL_COUNT",
+        "FALLBACK_HAS_APPROVALS",
+    ):
+        assert f"{parameter} =>" in cgi
+    assert "$fallback_approval_count++ if $session->{loxone_token_confirmation_required};" in cgi
+    assert "$session->{loxberry_read_eligible} && !$session->{loxberry_read_approved}" in cgi
+    assert "$session->{loxberry_operate_eligible} && !$session->{loxberry_operate_approved}" in cgi
+    perl = shutil.which("perl")
+    assert perl is not None, "Perl is required for the complete deterministic gate"
+    program = (
+        "use strict; use warnings; use HTML::Template; use JSON::PP; "
+        "my $source = do { local $/; <STDIN> }; "
+        "my $template = HTML::Template->new_scalar_ref(\\$source, die_on_bad_params => 0); "
+        "my $params = decode_json($ENV{SUMMARY_PARAMS}); "
+        "$template->param(%$params); print $template->output();"
+    )
+    translations = {
+        "SETUP.TITLE": "MCP configuration",
+        "ACCESS.TITLE": "MCP access & HTTPS",
+        "SESSIONS.TITLE": "Clients and sessions",
+        "MQTT.TITLE": "MQTT",
+        "SUMMARY.ENABLED": "Enabled",
+        "SUMMARY.DISABLED": "Disabled",
+        "SUMMARY.UNKNOWN": "Unknown",
+        "SUMMARY.SESSIONS": "Sessions",
+        "SUMMARY.APPROVALS": "Approval actions",
+        "AJAX.WORKING": "Working",
+    }
+    for parameters, expected, absent in (
+        (
+            {
+                "SERVER_RENDERED_FALLBACK": 1,
+                "FALLBACK_SUMMARY_CONFIGURATION_LOADED": 1,
+                "FALLBACK_SUMMARY_SESSIONS_LOADED": 1,
+                "FALLBACK_SESSION_COUNT": 3,
+                "FALLBACK_APPROVAL_COUNT": 2,
+                "FALLBACK_HAS_APPROVALS": 1,
+                "ENABLED": 1,
+                "MQTT_ENABLED": 0,
+            },
+            ("Enabled", "Disabled", "Sessions: 3", "Approval actions: 2", "Unknown"),
+            ("Working",),
+        ),
+        (
+            {"SERVER_RENDERED_FALLBACK": 1},
+            ("Unknown",),
+            ("Working", "Sessions: 0", "Approval actions: 0"),
+        ),
+        (
+            {"SERVER_RENDERED_FALLBACK": 0},
+            ("Working",),
+            ("Sessions: 3", "Approval actions: 2"),
+        ),
+    ):
+        result = subprocess.run(
+            [perl, "-e", program],
+            input=badge_markup,
+            capture_output=True,
+            text=True,
+            check=False,
+            env={**os.environ, "SUMMARY_PARAMS": json.dumps(translations | parameters)},
+        )
+        assert result.returncode == 0, result.stderr
+        for value in expected:
+            assert value in result.stdout
+        for value in absent:
+            assert value not in result.stdout
 
 
 def test_session_action_coordinator_allows_only_non_conflicting_actions() -> None:
@@ -1028,7 +1299,7 @@ def test_admin_sections_are_native_persistent_collapsibles() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
 
-    assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-sessions-v4"' in template
+    assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-summary-badges-v1"' in template
     expected_sections = [
         ("status", "STATUS.TITLE"),
         ("configuration", "SETUP.TITLE"),
@@ -1225,8 +1496,14 @@ def test_admin_access_section_groups_connection_urls_and_certificate_controls() 
     assert 'id="schema-reference-link"' not in access
     assert 'id="explorer-link"' in help_section
     assert 'id="schema-reference-link"' in help_section
-    assert '<summary id="setup"><TMPL_VAR SETUP.TITLE>' in template
-    assert '<summary id="certificate"><TMPL_VAR ACCESS.TITLE>' in template
+    assert (
+        '<summary id="setup"><span class="mcp-service-summary"><span><TMPL_VAR SETUP.TITLE>'
+        in template
+    )
+    assert (
+        '<summary id="certificate"><span class="mcp-service-summary"><span><TMPL_VAR ACCESS.TITLE>'
+        in template
+    )
     assert '<details id="setup"' not in template
     assert '<details id="certificate"' not in template
     assert "const accessSection = document.getElementById('access');" in template

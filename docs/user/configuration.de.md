@@ -8,6 +8,8 @@ Im Bereich **Status & Betrieb** zeigt **Dienstbetrieb und Autostart** die gespei
 
 ## MCP-Konfiguration
 
+Die Überschriften der Admin-Bereiche zeigen den zuletzt erfolgreich geladenen, gespeicherten MCP- und MQTT-Status sowie die aktuelle Sitzungszahl und Zahl ausstehender Freigabeaktionen. Auch bei geschlossenem Sitzungsbereich wird die Liste alle zehn Sekunden aktualisiert, solange die Seite sichtbar ist. Der HTTPS-Hinweis beruht auf den Zertifikats-, Origin- und Hostnamenprüfungen; während des Ladens oder bei fehlenden Daten erscheint ein neutraler Status. Ein geänderter Formularwert beeinflusst die Badges erst nach erfolgreichem Speichern.
+
 Konfiguriere unter **Verbindung** eine lokale HTTPS-Origin und genau ein Miniserver-Ziel. Die Auswahl eines in LoxBerry hinterlegten Miniservers übernimmt keine dort gespeicherten Zugangsdaten. Bei der ersten Einrichtung wird die Origin aus LoxBerry-Hostname und HTTPS-Port vorgeschlagen; prüfe, ob sie zur Zertifikatsadresse im Browser passt. **Verbindung testen** verwendet das aktuell ausgewählte oder manuell eingegebene Ziel, ohne die Konfiguration zu speichern. Erst **MCP-Endpunktzugriff aktivieren** gibt den MCP- und OAuth-Zugriff frei. Die Berechtigungen und die lokale Ereignishistorie bleiben direkt sichtbar; Aufrufgrenzen, Laufzeit-, Struktur- und Cache-Einstellungen stehen unter **Erweiterte Einstellungen**. Deren Werte werden auch bei geschlossenem Abschnitt gespeichert.
 
 ### Wiederherstellung der Authentifizierung
