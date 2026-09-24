@@ -689,6 +689,7 @@
     scopeList: document.getElementById('explorer-scope-list'),
     scopeUnavailable: document.getElementById('explorer-scope-unavailable'),
     connectionPanel: document.getElementById('explorer-connection-panel'),
+    connectionBadge: document.getElementById('explorer-connection-badge'),
     toolsPanel: document.getElementById('explorer-tools-panel'),
     historyPanel: document.getElementById('explorer-history-panel'),
     selectedTool: document.getElementById('explorer-selected-tool'),
@@ -1164,6 +1165,8 @@
     elements.connect.disabled = state.busy || connected;
     elements.disconnect.disabled = state.busy || !connected;
     elements.run.disabled = state.busy || !connected || !state.selectedTool;
+    elements.connectionBadge.textContent = label(connected ? 'connected' : 'disconnected');
+    elements.connectionBadge.dataset.kind = connected ? 'success' : 'inactive';
     elements.sessionExpiry.hidden = !connected;
     elements.accessScopes.hidden = !connected;
     elements.scopeList.replaceChildren();

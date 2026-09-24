@@ -484,7 +484,7 @@ def test_explorer_discovery_controls_preserve_selection_and_drafts() -> None:
     assert template.count('type="checkbox" data-tool-group="') == 6
     assert 'id="explorer-tool-filter-count"' in template
     assert "core.filteredToolGroups(state.tools, state.toolSearch, state.toolGroups)" in source
-    assert 'src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-disclosure-state-v1"' in template
+    assert 'src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-connection-badge-v1"' in template
     assert "label('noMatchingTools')" in source
     assert "label('noTools')" in source
     assert "state.toolSearch = elements.toolSearch.value" in handlers
@@ -980,6 +980,28 @@ def test_explorer_connection_and_scopes_are_independent_persistent_disclosures()
         "persistDisclosure(elements.connectionPanel, 'mcp-explorer-connection-open-v1')" in source
     )
     assert "persistDisclosure(elements.accessScopes, 'mcp-explorer-scopes-open-v1')" in source
+
+
+def test_explorer_connection_summary_shows_live_status_badge() -> None:
+    template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
+    stylesheet = (ROOT / "webfrontend" / "htmlauth" / "mcp-ui.css").read_text(encoding="utf-8")
+    source = SCRIPT.read_text(encoding="utf-8")
+    summary = template[
+        template.index('<details id="explorer-connection-panel"') : template.index(
+            '<div class="mcp-explorer-panel-content',
+        )
+    ]
+
+    assert 'id="explorer-title"' in summary
+    assert 'id="explorer-connection-badge" class="mcp-service-badge"' in summary
+    assert 'data-kind="inactive"><TMPL_VAR EXPLORER.DISCONNECTED>' in summary
+    assert "#explorer-connection-badge { margin-inline-start:" in stylesheet
+    assert "connectionBadge: document.getElementById('explorer-connection-badge')" in source
+    render_connection = source[
+        source.index("function renderConnection") : source.index("function element")
+    ]
+    assert "label(connected ? 'connected' : 'disconnected')" in render_connection
+    assert "connected ? 'success' : 'inactive'" in render_connection
 
 
 def test_explorer_generated_field_ids_are_unique_and_labelled() -> None:

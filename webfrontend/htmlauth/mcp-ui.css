@@ -16,6 +16,7 @@ details.mcp-explorer-card[open] > summary { border-bottom: 1px solid #d7dadd; }
 .mcp-explorer-panel-content { min-width: 0; padding: 1rem; }
 .mcp-explorer-header-links { margin: 0; }
 #explorer-connection-panel > summary h1 { display: inline; margin: 0; font: inherit; }
+#explorer-connection-badge { margin-inline-start: .5rem; vertical-align: middle; }
 #explorer-access-scopes > summary { cursor: pointer; font-weight: 600; }
 .mcp-explorer-panel-label { display: inline-flex; gap: .45rem; align-items: baseline; }
 .mcp-explorer-panel-selection { color: #5f6368; font-size: .85rem; font-weight: 400; overflow-wrap: anywhere; }

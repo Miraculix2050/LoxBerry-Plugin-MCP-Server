@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-collapsible-connection-v1">
+<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-connection-badge-v1">
 
 <main id="mcp-explorer" class="mcp-explorer mcp-explorer-stack"
   data-ready="<TMPL_VAR EXPLORER.READY ESCAPE=HTML>"
@@ -74,7 +74,7 @@
     <a class="lb-button" href="tool-schema-reference.html" target="_blank" rel="noopener"><TMPL_VAR ACTION.SCHEMA_REFERENCE></a>
   </p>
   <details id="explorer-connection-panel" class="mcp-explorer-card" open>
-    <summary><h1 id="explorer-title"><TMPL_VAR EXPLORER.TITLE></h1></summary>
+    <summary><h1 id="explorer-title"><TMPL_VAR EXPLORER.TITLE></h1> <span id="explorer-connection-badge" class="mcp-service-badge" data-kind="inactive"><TMPL_VAR EXPLORER.DISCONNECTED></span></summary>
     <div class="mcp-explorer-panel-content mcp-explorer-stack">
       <p><TMPL_VAR EXPLORER.INTRO></p>
       <p class="mcp-explorer-muted"><TMPL_VAR EXPLORER.PERMISSIONS_AFTER_LOGIN></p>
@@ -196,4 +196,4 @@
   </form>
 </dialog>
 
-<script src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-disclosure-state-v1"></script>
+<script src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-connection-badge-v1"></script>
