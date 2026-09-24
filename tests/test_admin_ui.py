@@ -53,7 +53,7 @@ def test_admin_modules_load_in_order_with_versioned_localized_assets() -> None:
         assert "<TMPL_" not in source
         assert (
             f'<script defer src="admin/{name}?v='
-            '<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v3"></script>'
+            '<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v4"></script>'
         ) in markup
         subprocess.run(
             [node, "--check", str(ROOT / "webfrontend/htmlauth/admin" / name)],
@@ -283,6 +283,22 @@ def test_admin_responses_emit_no_store_and_frame_protection(tmp_path: Path) -> N
     assert "The LogManager is unavailable." in unavailable_loglist.stdout
     assert "No LogManager entry is registered" not in unavailable_loglist.stdout
 
+    transient_loglist = subprocess.run(
+        common,
+        check=True,
+        capture_output=True,
+        text=True,
+        input=loglist_request,
+        env={
+            **ajax_environment,
+            "CONTENT_LENGTH": str(len(loglist_request)),
+            "LB_TEST_LOGLIST_FAIL_ONCE": "1",
+            "LB_TEST_LOGLIST_HTML": ('<a href="/admin/system/logfile.cgi?log=1">admin-ui</a>'),
+        },
+    )
+    assert "admin-ui" in transient_loglist.stdout
+    assert "The LogManager is unavailable." not in transient_loglist.stdout
+
     populated_loglist = subprocess.run(
         common,
         check=True,
@@ -392,6 +408,8 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     hydration = _admin_script("page.js")
     assert "body.set('action', 'page_snapshot')" in hydration
     assert "body.set('action', 'page_auxiliary')" in hydration
+    assert "postAjax(body, 60000)" in hydration
+    assert "postAjax(body, 20000)" in hydration
     assert "await Promise.allSettled([loadSnapshot(), loadAuxiliary()])" in hydration
     assert "await loadLoxberryNotifications(sections?.page_notifications)" in hydration
     assert "await loadPluginLogList(sections?.page_loglist)" in hydration
@@ -1338,6 +1356,48 @@ def test_admin_logmanager_registration_requires_an_actual_event(tmp_path: Path) 
     assert events[2] == (
         f"end:component=admin_ui request_id={started.group(1)} severity=info outcome=finished"
     )
+
+
+def test_snapshot_section_failure_is_logged_without_error_details(tmp_path: Path) -> None:
+    perl = shutil.which("perl")
+    if perl is None or os.name == "nt":
+        return
+    environment = _admin_cgi_environment(tmp_path)
+    marker = tmp_path / "log-events.txt"
+    response = {
+        "ok": True,
+        "data": {
+            "get_config": {
+                "ok": False,
+                "error": {"code": "internal_error", "message": "private-detail"},
+            }
+        },
+    }
+    (tmp_path / "mcpserver-admin").write_text(
+        f"#!/usr/bin/env perl\nmy $request = <STDIN>;\nprint q({json.dumps(response)});\n",
+        encoding="utf-8",
+    )
+    body = "action=page_snapshot&ajax=1"
+    result = subprocess.run(
+        [perl, f"-I{ROOT / 'tests' / 'perl_stubs'}", str(ROOT / "webfrontend/htmlauth/index.cgi")],
+        check=True,
+        capture_output=True,
+        text=True,
+        input=body,
+        env={
+            **environment,
+            "REQUEST_METHOD": "POST",
+            "CONTENT_TYPE": "application/x-www-form-urlencoded",
+            "CONTENT_LENGTH": str(len(body)),
+            "HTTP_ORIGIN": "https://loxberry.example",
+            "HTTP_HOST": "loxberry.example",
+            "LB_TEST_LOG_EVENTS_PATH": str(marker),
+        },
+    )
+    assert '"ok":true' in result.stdout
+    events = marker.read_text(encoding="utf-8")
+    assert "section=get_config outcome=rejected code=internal_error" in events
+    assert "private-detail" not in events
 
 
 def test_diagnostics_offer_dedicated_persistent_service_logging_controls() -> None:

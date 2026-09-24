@@ -64,7 +64,9 @@
         const body = new URLSearchParams();
         body.set('action', 'page_snapshot');
         body.set('ajax', '1');
-        sections = (await postAjax(body, 20000)).data;
+        // The helper performs five reads in sequence. Allow their combined
+        // budget before falling back to the individual endpoints.
+        sections = (await postAjax(body, 60000)).data;
       } catch {
         // An older or temporarily unavailable helper falls back to individual reads.
       }
@@ -80,7 +82,7 @@
         const body = new URLSearchParams();
         body.set('action', 'page_auxiliary');
         body.set('ajax', '1');
-        sections = (await postAjax(body, 15000)).data;
+        sections = (await postAjax(body, 20000)).data;
       } catch {
         // Preserve the existing independent fallback for either Perl view.
       }

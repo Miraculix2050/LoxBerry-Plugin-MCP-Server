@@ -57,6 +57,14 @@ sub ascii_html_text {
 
 sub native_loglist_html {
     my $html = LoxBerry::Web::loglist_html();
+    if (!defined($html)) {
+        # The native LogManager is an independent loopback CGI. A transient
+        # failure during concurrent page hydration is worth one short retry.
+        select(undef, undef, undef, 0.2);
+        $html = LoxBerry::Web::loglist_html();
+        admin_log('warning', 'component=logmanager outcome=unavailable attempts=2')
+            if !defined($html);
+    }
     return $html if defined($html) && $html =~ /logfile\.cgi\?/;
     my $unavailable = !defined($html);
     my $label = $L{$unavailable ? 'DIAGNOSTICS.LOGLIST_UNAVAILABLE' : 'DIAGNOSTICS.LOGLIST_EMPTY'};
@@ -168,6 +176,18 @@ sub admin_call {
                 $request_id,
                 $action,
                 $code,
+            ));
+        }
+    }
+    if ($action eq 'page_snapshot' && $result->{ok} && ref($result->{data}) eq 'HASH') {
+        for my $section (qw(get_config page_state service_status certificate_status list_sessions)) {
+            my $entry = $result->{data}{$section};
+            next if ref($entry) ne 'HASH' || $entry->{ok};
+            my $code = ref($entry->{error}) eq 'HASH' ? ($entry->{error}{code} // '') : '';
+            $code = 'internal_error' if $code !~ /\A[a-z_]{1,128}\z/;
+            admin_log($code eq 'internal_error' ? 'error' : 'warning', sprintf(
+                'component=admin_helper request_id=%s action=page_snapshot section=%s outcome=rejected code=%s',
+                $request_id, $section, $code,
             ));
         }
     }
