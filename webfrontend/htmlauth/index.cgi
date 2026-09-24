@@ -447,6 +447,7 @@ my $template = HTML::Template->new_scalar_ref(
     die_on_bad_params => 0,
 );
 %L = LoxBerry::System::readlanguage($template, 'language.ini');
+my $template_setup_ms = (clock_gettime(CLOCK_MONOTONIC) - $render_started) * 1000;
 
 sub localize_admin_error {
     my ($result) = @_;
@@ -566,6 +567,10 @@ if ($action ne '') {
         $result = admin_call('get_config', {});
     } elsif ($action eq 'page_snapshot') {
         $result = admin_call('page_snapshot', {});
+        admin_log('debug', sprintf(
+            'component=admin_ui request_id=%s action=page_snapshot template_setup_ms=%.1f',
+            $request_id, $template_setup_ms,
+        ));
     } elsif ($action eq 'page_auxiliary') {
         my $aux_started = clock_gettime(CLOCK_MONOTONIC);
         my ($notifications, $loglist);
@@ -580,11 +585,12 @@ if ($action ne '') {
             1;
         };
         admin_log('debug', sprintf(
-            'component=admin_ui request_id=%s action=page_auxiliary duration_ms=%.1f notifications_ms=%.1f loglist_ms=%.1f',
+            'component=admin_ui request_id=%s action=page_auxiliary duration_ms=%.1f notifications_ms=%.1f loglist_ms=%.1f template_setup_ms=%.1f',
             $request_id,
             (clock_gettime(CLOCK_MONOTONIC) - $aux_started) * 1000,
             $notification_duration_ms,
             (clock_gettime(CLOCK_MONOTONIC) - $loglist_started) * 1000,
+            $template_setup_ms,
         ));
         $result = {
             ok => JSON::PP::true,

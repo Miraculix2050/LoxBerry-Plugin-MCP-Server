@@ -68,6 +68,38 @@ def test_admin_import_defers_mqtt_and_loxone_clients() -> None:
     assert json.loads(result.stdout) == [False, False]
 
 
+def test_page_state_does_not_import_emergency_stop_runtime() -> None:
+    script = """
+import json
+import os
+import sys
+from mcpserver import admin
+
+os.environ.pop("LBHOMEDIR", None)
+os.environ.pop("MCPSERVER_MQTT_CREDENTIALS", None)
+result = admin.dispatch({"action": "page_state"})
+print(json.dumps({
+    "mqtt_loaded": "mcpserver.mqtt_health" in sys.modules,
+    "emergency_stop_loaded": "mcpserver.emergency_stop" in sys.modules,
+    "gateway_configured": result["mqtt_gateway"]["gateway_configured"],
+    "password_configured": result["mqtt_password_configured"],
+}))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert json.loads(result.stdout) == {
+        "mqtt_loaded": True,
+        "emergency_stop_loaded": False,
+        "gateway_configured": False,
+        "password_configured": False,
+    }
+
+
 def test_list_sessions_does_not_import_oauth_provider() -> None:
     script = """
 import json
