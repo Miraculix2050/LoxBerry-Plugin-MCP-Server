@@ -8,6 +8,127 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+ADMIN_SCRIPTS = (
+    "core.js",
+    "configuration.js",
+    "service.js",
+    "certificate.js",
+    "sessions.js",
+    "page.js",
+)
+
+
+def _admin_script(name: str) -> str:
+    return (ROOT / "webfrontend/htmlauth/admin" / name).read_text(encoding="utf-8")
+
+
+def _admin_source() -> str:
+    """Read the rendered template contract and its static Admin scripts together."""
+    markup = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    return markup + "\n" + "\n".join(_admin_script(name) for name in ADMIN_SCRIPTS)
+
+
+def test_admin_modules_load_in_order_with_versioned_localized_assets() -> None:
+    markup = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    browser_scripts = re.findall(r'<script defer src="(admin/[^"?]+\.js)\?v=', markup)
+    assert browser_scripts == [
+        f"admin/{name}"
+        for name in (
+            "core.js",
+            "certificate.js",
+            "sessions.js",
+            "service.js",
+            "configuration.js",
+            "page.js",
+        )
+    ]
+    assert markup.index(
+        '<TMPL_UNLESS SERVER_RENDERED_FALLBACK>\n<div id="admin-labels"'
+    ) < markup.index('<script defer src="admin/core.js')
+    assert markup.index('<script defer src="admin/page.js') < markup.rindex("</TMPL_UNLESS>")
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    for name in ADMIN_SCRIPTS:
+        source = _admin_script(name)
+        assert "<TMPL_" not in source
+        assert (
+            f'<script defer src="admin/{name}?v='
+            '<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v2"></script>'
+        ) in markup
+        subprocess.run(
+            [node, "--check", str(ROOT / "webfrontend/htmlauth/admin" / name)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        for key in set(re.findall(r"label\('([A-Z][A-Z0-9_.]+)'\)", source)):
+            attribute = "data-l-" + key.lower().replace(".", "-").replace("_", "-")
+            assert f'{attribute}="<TMPL_VAR {key} ESCAPE=HTML>"' in markup
+
+
+def test_certificate_module_renders_a_valid_expiry() -> None:
+    node = shutil.which("node")
+    assert node is not None
+    script = r"""
+const fs = require('node:fs');
+const vm = require('node:vm');
+const elements = new Map();
+const element = (id) => {
+  if (id === 'page-notice') return null;
+  if (!elements.has(id)) elements.set(id, {
+    dataset: {stateIdle: 'idle', yes: 'yes', no: 'no'},
+    hidden: false,
+    textContent: '',
+    getAttribute: () => 'label',
+    setAttribute() {},
+  });
+  return elements.get(id);
+};
+const context = {
+  window: {
+    location: {hash: ''},
+    localStorage: {getItem: () => null},
+    performance: {getEntriesByType: () => []},
+    addEventListener() {},
+  },
+  document: {
+    documentElement: {lang: 'de'},
+    getElementById: element,
+    querySelectorAll: () => [],
+    addEventListener() {},
+  },
+  HTMLDetailsElement: class {},
+};
+vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8'), context);
+const core = context.window.McpAdmin.createCore();
+vm.runInNewContext(fs.readFileSync(process.argv[2], 'utf8'), context);
+const certificate = context.window.McpAdmin.createCertificate(core, () => {});
+certificate.updateCertificate({
+  available: true,
+  source: 'loxberry_ca',
+  expires_at: 2000000000,
+  origin_configured: true,
+  origin_matches: true,
+  hostname_matches: true,
+  dns_san_count: 1,
+  ip_san_count: 1,
+  renewal_supported: false,
+});
+if (!element('certificate-expiry').textContent) process.exit(1);
+if (element('certificate-summary-badge').textContent !== 'label') process.exit(1);
+"""
+    subprocess.run(
+        [
+            node,
+            "-e",
+            script,
+            str(ROOT / "webfrontend/htmlauth/admin/core.js"),
+            str(ROOT / "webfrontend/htmlauth/admin/certificate.js"),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
 
 
 def _admin_cgi_environment(tmp_path: Path) -> dict[str, str]:
@@ -212,7 +333,7 @@ def test_admin_ajax_localized_messages_are_utf8(tmp_path: Path) -> None:
 
 def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
 
     assert "} elsif ($action eq 'get_config') {" in cgi
     assert "admin_call('get_config', {})" in cgi
@@ -256,8 +377,9 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert "body.set('action', 'page_loglist')" in template
     assert "loadLoxberryNotifications," in template
     assert "loadPluginLogList," in template
-    assert template.index("loadLoxberryNotifications,") < template.index("loadConfiguration,")
-    assert template.index("loadPluginLogList,") > template.index(
+    hydration = _admin_script("page.js")
+    assert hydration.index("loadLoxberryNotifications,") < hydration.index("loadConfiguration,")
+    assert hydration.index("loadPluginLogList,") > hydration.index(
         "() => pollSessions({initial: true}),"
     )
     assert "<TMPL_VAR LOGLIST>" not in template
@@ -285,9 +407,7 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     )
     assert "document.getElementById('logging-config-fields')," in template
     assert "configurationFallbackLink.hidden = false;" in template
-    assert (
-        "if (<TMPL_IF SERVER_RENDERED_FALLBACK>true<TMPL_ELSE>false</TMPL_IF>) return;" in template
-    )
+    assert '<TMPL_UNLESS SERVER_RENDERED_FALLBACK>\n<div id="admin-labels"' in template
     assert 'id="service-enabled-setting-status"' in template
     assert 'id="mqtt-page-state-status"' in template
     assert 'id="emergency-stop-select"' in template
@@ -389,7 +509,7 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
 
 def test_emergency_stop_selection_is_preserved_while_options_load() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
     german = (ROOT / "templates/lang/language_de.ini").read_text(encoding="utf-8")
     english = (ROOT / "templates/lang/language_en.ini").read_text(encoding="utf-8")
 
@@ -431,7 +551,7 @@ def test_emergency_stop_selection_is_preserved_while_options_load() -> None:
 
 
 def test_common_actions_update_the_page_without_a_reload() -> None:
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
 
     assert 'data-ajax="save_mcp_config"' in template
     assert 'data-ajax="save_mqtt_config"' in template
@@ -455,7 +575,7 @@ def test_common_actions_update_the_page_without_a_reload() -> None:
     assert "postAjax(body, 15000)" in template
     assert "new URLSearchParams(new FormData(form))" in template
     assert "const body = new FormData" not in template
-    assert "if (result.data.certificate) updateCertificate" in template
+    assert "if (result.data.certificate) certificate.updateCertificate" in template
     assert 'id="session-table-template"' in template
     assert "row.dataset.fingerprint !== sessionFingerprint(session)" in template
     assert "for (const row of existing.values()) row.remove()" in template
@@ -463,7 +583,7 @@ def test_common_actions_update_the_page_without_a_reload() -> None:
 
 def test_event_history_enablement_is_preserved_in_server_rendered_fallback() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
 
     assert "EVENT_HISTORY_ENABLED => $config->{event_history}{enabled} ? 1 : 0" in cgi
     assert (
@@ -477,7 +597,7 @@ def test_event_history_enablement_is_preserved_in_server_rendered_fallback() -> 
 
 def test_server_rendered_emergency_stop_status_is_terminal_after_discovery() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
 
     assert "if (@$emergency_stop_options) {" in cgi
     assert "$emergency_stop_status_visible = 0;" in cgi
@@ -497,7 +617,7 @@ def test_server_rendered_emergency_stop_status_is_terminal_after_discovery() -> 
 
 def test_server_rendered_emergency_stop_retry_uses_one_explicit_probe() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
     german = (ROOT / "templates/lang/language_de.ini").read_text(encoding="utf-8")
     english = (ROOT / "templates/lang/language_en.ini").read_text(encoding="utf-8")
 
@@ -521,7 +641,7 @@ def test_server_rendered_emergency_stop_retry_uses_one_explicit_probe() -> None:
 
 def test_server_rendered_option_names_escape_unicode_without_raw_bytes() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
     assert "name_html => ascii_html_text($name)" in cgi
     assert "<TMPL_VAR name_html></option>" in template
     assert "<TMPL_VAR name ESCAPE=HTML></option>" not in template
@@ -572,7 +692,7 @@ def test_admin_cards_use_consistent_vertical_spacing() -> None:
 
 
 def test_admin_top_notices_do_not_leave_empty_grid_rows() -> None:
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
     top = template[
         template.index('<main class="mcp-page">') : template.index('<nav class="mcp-section-nav"')
     ]
@@ -586,7 +706,7 @@ def test_admin_top_notices_do_not_leave_empty_grid_rows() -> None:
 
 def test_service_status_is_first_and_uses_a_lightweight_ajax_contract() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
 
     assert template.index('id="status"') < template.index('id="configuration"')
     assert 'data-ajax="service_status"' not in template
@@ -608,7 +728,7 @@ def test_service_status_is_first_and_uses_a_lightweight_ajax_contract() -> None:
 
 def test_emergency_stop_runtime_display_uses_service_data_not_the_form_selection() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
 
     assert 'id="emergency-stop-runtime"' in template
     assert 'id="emergency-stop-runtime-uuid"' in template
@@ -629,7 +749,7 @@ def test_emergency_stop_runtime_display_uses_service_data_not_the_form_selection
 
 def test_sessions_poll_while_visible_and_patch_changed_rows() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
 
     assert "admin_call('list_sessions', {})" in cgi
     assert "body.set('action', 'list_sessions')" in template
@@ -644,7 +764,7 @@ def test_sessions_poll_while_visible_and_patch_changed_rows() -> None:
 
 
 def test_admin_summary_badges_follow_authoritative_ui_state() -> None:
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
     css = (ROOT / "webfrontend/htmlauth/mcp-ui.css").read_text(encoding="utf-8")
     for badge_id in (
         "configuration-summary-badge",
@@ -656,9 +776,9 @@ def test_admin_summary_badges_follow_authoritative_ui_state() -> None:
         assert f'id="{badge_id}"' in template
     assert ".mcp-service-badge[hidden] { display: none; }" in css
     assert "renderConfiguration(result.data.configuration);" in template
-    assert "renderConfigurationBadges(result.data.configuration);" in template
+    assert "renderConfigurationBadges(data.configuration);" in template
     assert (
-        "if (savedPublicOrigin !== nextPublicOrigin) refreshCertificateAfterOriginChange();"
+        "if (savedPublicOrigin !== nextPublicOrigin) certificate.refreshAfterOriginChange();"
         in template
     )
     assert "if (requestVersion !== certificateStatusVersion) return;" in template
@@ -666,8 +786,8 @@ def test_admin_summary_badges_follow_authoritative_ui_state() -> None:
     for action in ("confirm_loxone_token", "allow_loxberry_read", "allow_loxberry_operate"):
         assert f'tr[data-session-id] form[data-ajax="{action}"]' in template
     assert (
-        "applySuccessfulSessionAction(form, sessionAction, result.data);\n"
-        "          updateSessionSummaryBadges();"
+        "applySuccessfulSessionAction(form, action.descriptor, data);\n"
+        "    updateSessionSummaryBadges();"
     ) in template
     assert "if (expectedSessionDataVersion !== sessionDataVersion) return;" in template
     assert "activeSessionActions.size > 0 || sessionPollInFlight" in template
@@ -690,7 +810,7 @@ def test_admin_summary_badges_follow_authoritative_ui_state() -> None:
 
 
 def test_admin_summary_badge_calculations() -> None:
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
     functions = []
     for name in (
         "setSummaryBadge",
@@ -703,11 +823,6 @@ def test_admin_summary_badge_calculations() -> None:
         assert match is not None
         functions.append(match.group(0))
     script = "\n".join(functions)
-    script = re.sub(
-        r"<TMPL_VAR SUMMARY\.([A-Z]+) ESCAPE=JS>",
-        lambda match: match.group(1),
-        script,
-    )
     node = shutil.which("node")
     assert node is not None, "Node.js is required for the complete deterministic gate"
     result = subprocess.run(
@@ -716,6 +831,7 @@ def test_admin_summary_badge_calculations() -> None:
             "-e",
             """
 const configurationSummaryBadge = {dataset: {}};
+const label = key => key.split('.').at(-1);
 const mqttSummaryBadge = {dataset: {}};
 const certificateSummaryBadge = {dataset: {}};
 const sessionsSummaryBadge = {dataset: {}};
@@ -782,7 +898,7 @@ if (scheduledDelay !== null) throw Error('poll overlapped an action');
 
 
 def test_certificate_summary_discards_response_from_previous_origin() -> None:
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
     functions = []
     for name in ("loadCertificateStatus", "refreshCertificateAfterOriginChange"):
         match = re.search(rf"  const {name} = .*?\n  }};", template, re.DOTALL)
@@ -799,7 +915,8 @@ def test_certificate_summary_discards_response_from_previous_origin() -> None:
 let certificateLoaded = false;
 let certificateLoadInFlight = false;
 let certificateStatusVersion = 0;
-let pageIsUnloading = false;
+const core = {unloading: false};
+const label = key => key.split('.').at(-1);
 let resolveOld;
 let calls = 0;
 const updates = [];
@@ -835,7 +952,7 @@ const postAjax = () => calls++ === 0
 
 
 def test_fallback_summary_badges_use_server_rendered_data() -> None:
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     snippets = re.findall(r"<summary(?: [^>]*)?>.*?</summary>", template, re.DOTALL)
     badge_markup = "\n".join(snippet for snippet in snippets if "-summary-badge" in snippet)
@@ -914,7 +1031,7 @@ def test_fallback_summary_badges_use_server_rendered_data() -> None:
 
 
 def test_session_action_coordinator_allows_only_non_conflicting_actions() -> None:
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
     coordinator = re.search(
         r"// session-action-coordinator-start\n(.*?)// session-action-coordinator-end",
         template,
@@ -1085,9 +1202,9 @@ console.log(JSON.stringify(result));
     )
     assert "const activeSessionActions = new Map();" in template
     assert "const sessionActionsConflict = (left, right)" in template
-    assert "applySuccessfulSessionAction(form, sessionAction, result.data);" in template
-    assert "const refreshSessions = finishSessionAction(sessionActionToken);" in template
-    assert "if (refreshSessions) scheduleSessionPoll(0);" in template
+    assert "applySuccessfulSessionAction(form, action.descriptor, data);" in template
+    assert "const refresh = finishSessionAction(action.token);" in template
+    assert "if (refresh) scheduleSessionPoll(0);" in template
     assert "let sessionDataVersion = 0;" in template
     assert "const expectedSessionDataVersion = sessionDataVersion;" in template
     assert "if (expectedSessionDataVersion !== sessionDataVersion) return;" in template
@@ -1104,7 +1221,7 @@ console.log(JSON.stringify(result));
     assert "const setAjaxStatus = (kind, message) =>" in template
     assert "const sessionActionFailures = new Map();" in template
     assert "const showSessionActionFailure = () =>" in template
-    assert "hideSuccess(status, () => activeSessionActions.size > 0);" in template
+    assert "hideSuccess(status, () => sessions.activeActions > 0);" in template
     assert "return `binding:${bindingId}`;" in template
     assert "if (leftIsBindingRevocation && rightIsBindingRevocation) return true;" not in template
     assert "if (Array.isArray(data.sessions)) updateSessions(data.sessions);" in template
@@ -1140,7 +1257,7 @@ def test_read_only_ajax_polling_does_not_create_admin_log_files() -> None:
 
 def test_empty_native_log_list_has_localized_accessible_status() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
     german = (ROOT / "templates/lang/language_de.ini").read_text(encoding="utf-8")
     english = (ROOT / "templates/lang/language_en.ini").read_text(encoding="utf-8")
 
@@ -1205,7 +1322,7 @@ def test_admin_logmanager_registration_requires_an_actual_event(tmp_path: Path) 
 
 def test_diagnostics_offer_dedicated_persistent_service_logging_controls() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
 
     assert "admin_call('set_logging', {mode => ($q->{mode} // '')})" in cgi
     assert 'data-ajax="set_logging"' in template
@@ -1244,11 +1361,11 @@ def test_first_setup_prefills_https_origin_from_loxberry_hostname() -> None:
 
 
 def test_service_actions_use_an_accessible_confirmation_and_dynamic_controls() -> None:
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
 
     assert '<dialog id="service-confirm"' in template
     assert 'aria-labelledby="service-confirm-title"' in template
-    assert "serviceConfirmMessages[confirmationKey]" in template
+    assert "serviceConfirmMessages[key]" in template
     assert "form.dataset.confirmed = 'true'" in template
     assert "form.requestSubmit()" in template
     assert "command === 'start' && !active" in template
@@ -1270,7 +1387,7 @@ def test_service_actions_use_an_accessible_confirmation_and_dynamic_controls() -
         "serviceEnabledInput.disabled = serviceActionRunning || !serviceEnabledSettingLoaded"
         in template
     )
-    assert "serviceEnabled.textContent = '<TMPL_VAR AJAX.ERROR ESCAPE=JS>';" in template
+    assert "serviceEnabled.textContent = label('AJAX.ERROR');" in template
     assert (
         "serviceEnabledApplyButton.disabled = serviceActionRunning || !serviceEnabledSettingLoaded"
         in template
@@ -1282,8 +1399,8 @@ def test_service_actions_use_an_accessible_confirmation_and_dynamic_controls() -
     assert "form.hidden = !visible" in template
     assert "serviceEnabledInput.checked = serviceEnabledSetting" in template
     assert "body.set('service_enabled', requestedServiceEnabled ? '1' : '0')" in template
-    assert "Boolean(service.enabled) !== requestedServiceEnabled" in template
-    assert "Boolean(service.active) !== requestedServiceEnabled" in template
+    assert "Boolean(value.enabled) !== requested" in template
+    assert "Boolean(value.active) !== requested" in template
     assert (
         "const serviceInteractionActive = () => serviceActionRunning || pendingServiceForm !== null"
         in template
@@ -1297,7 +1414,7 @@ def test_service_actions_use_an_accessible_confirmation_and_dynamic_controls() -
 
 def test_admin_sections_are_native_persistent_collapsibles() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
 
     assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-summary-badges-v1"' in template
     expected_sections = [
@@ -1344,7 +1461,7 @@ def test_admin_sections_are_native_persistent_collapsibles() -> None:
 
 
 def test_admin_collapse_state_preserves_existing_preferences() -> None:
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
     migration = re.search(
         r"// collapse-state-migration-start\n(.*?)// collapse-state-migration-end",
         template,
@@ -1398,9 +1515,9 @@ assert.deepEqual(readCollapseState(), {});
 
 
 def test_admin_hash_navigation_preserves_closed_reload_and_opens_new_links() -> None:
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
-    navigation = template[
-        template.index("  const openHashSection =") : template.index("  const miniserverSelect =")
+    core = _admin_script("core.js")
+    navigation = core[
+        core.index("  const openHashSection =") : core.index("  let pageIsUnloading =")
     ]
     node = shutil.which("node")
     assert node is not None, "Node.js is required for the complete deterministic gate"
@@ -1482,7 +1599,7 @@ assert.equal(section.open, true);
 
 
 def test_admin_access_section_groups_connection_urls_and_certificate_controls() -> None:
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
 
     access = template[template.index('id="access"') : template.index('id="sessions"')]
     help_section = template[template.index('id="help"') : template.index("</main>")]
@@ -1511,7 +1628,7 @@ def test_admin_access_section_groups_connection_urls_and_certificate_controls() 
 
 
 def test_certificate_idle_status_does_not_use_failure_label() -> None:
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
     labels = re.search(
         r"  const certificateStateLabels = certificatePanel \? \{.*?\} : \{\};",
         template,
@@ -1533,14 +1650,29 @@ def test_certificate_idle_status_does_not_use_failure_label() -> None:
 
 
 def test_slow_admin_reads_have_bounded_browser_timeout_headroom() -> None:
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
-    for start, end, minimum_ms in (
-        ("const loadCertificateStatus = async", "const updateEmergencyStopRuntimeMismatch", 10_000),
-        ("const pollCertificateRenewal = async", "const sessionFingerprint", 10_000),
-        ("const loadEmergencyStopOptions = async", "emergencyStopSelect.addEventListener", 160_000),
+    for script_name, start, end, minimum_ms in (
+        (
+            "certificate.js",
+            "const loadCertificateStatus = async",
+            "const refreshCertificateAfterOriginChange",
+            10_000,
+        ),
+        (
+            "certificate.js",
+            "const pollCertificateRenewal = async",
+            "const onRenewScheduled",
+            10_000,
+        ),
+        (
+            "configuration.js",
+            "const loadEmergencyStopOptions = async",
+            "emergencyStopSelect.addEventListener",
+            160_000,
+        ),
     ):
-        section_start = template.index(start)
-        section = template[section_start : template.index(end, section_start + len(start))]
+        script = _admin_script(script_name)
+        section_start = script.index(start)
+        section = script[section_start : script.index(end, section_start + len(start))]
         match = re.search(r"postAjax\(body, (\d+)\)", section)
         assert match is not None
         assert minimum_ms <= int(match.group(1)) <= 180_000
@@ -1548,7 +1680,7 @@ def test_slow_admin_reads_have_bounded_browser_timeout_headroom() -> None:
 
 def test_permission_policy_uses_grouped_scope_labeled_checkboxes() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
 
     assert template.index('id="loxone-permissions-heading"') < template.index(
         'id="loxberry-permissions-heading"'
@@ -1572,7 +1704,7 @@ def test_permission_policy_uses_grouped_scope_labeled_checkboxes() -> None:
 
 
 def test_cache_operation_checkbox_tracks_history_dependency() -> None:
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
 
     assert 'id="loxone-history-enabled"' in template
     assert 'id="loxberry-operate-enabled"' in template
@@ -1606,7 +1738,7 @@ def test_permission_policy_is_localized_in_german_and_english() -> None:
 
 def test_miniserver_selection_uses_local_sanitized_loxberry_metadata() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
 
     assert '"$lbhomedir/config/system/general.json"' in cgi
     assert "LoxBerry::System::get_miniservers()" not in cgi
@@ -1632,13 +1764,13 @@ def test_miniserver_selection_uses_local_sanitized_loxberry_metadata() -> None:
     assert "miniserverEndpoint.required = !selectedEndpoint" in template
     assert "manualEndpointFields.hidden = Boolean(selectedEndpoint)" in template
     assert (
-        "const submittedAction = form === mcpConfigForm ? button.value : form.dataset.ajax"
-        in template
+        "const submittedAction = form === configuration.mcpConfigForm ? "
+        "button.value : form.dataset.ajax" in template
     )
 
 
 def test_status_and_progressive_configuration_keep_existing_form_contracts() -> None:
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
     german = (ROOT / "templates/lang/language_de.ini").read_text(encoding="utf-8")
     english = (ROOT / "templates/lang/language_en.ini").read_text(encoding="utf-8")
 
@@ -1692,7 +1824,9 @@ def test_status_and_progressive_configuration_keep_existing_form_contracts() -> 
         "SETUP.ACCESS_SAFETY"
     )
     assert 'id="test-connection-fields"' not in template
-    assert "if (form === mcpConfigForm) body.set('action', submittedAction)" in template
+    assert (
+        "if (form === configuration.mcpConfigForm) body.set('action', submittedAction)" in template
+    )
     assert "if (submittedAction === 'save_mcp_config')" in template
     for key in (
         "CONNECTION",
@@ -1709,7 +1843,7 @@ def test_status_and_progressive_configuration_keep_existing_form_contracts() -> 
 
 def test_connection_test_uses_unsaved_form_endpoint_in_fallback() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
     endpoint_function = re.search(r"sub requested_endpoint \{.*?^\}", cgi, re.MULTILINE | re.DOTALL)
     assert endpoint_function is not None
     assert 'name="miniserver_endpoint"' in template
@@ -1814,7 +1948,7 @@ for my $case (@cases) {{ print((local_mcp_url(@$case) // '') . "\n"); }}
 
 
 def test_session_expiry_is_rendered_as_a_local_date_and_time() -> None:
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
 
     assert 'class="mcp-expiry"' in template
     assert 'data-expires-at="<TMPL_VAR expires_at ESCAPE=HTML>"' in template
@@ -1825,7 +1959,7 @@ def test_session_expiry_is_rendered_as_a_local_date_and_time() -> None:
 
 
 def test_sessions_show_client_name_before_the_stable_instance_identifier() -> None:
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
     german = (ROOT / "templates/lang/language_de.ini").read_text(encoding="utf-8")
     english = (ROOT / "templates/lang/language_en.ini").read_text(encoding="utf-8")
 
@@ -1855,7 +1989,7 @@ def test_sessions_show_client_name_before_the_stable_instance_identifier() -> No
 
 
 def test_session_tables_have_matching_mobile_labels_in_fallback_and_ajax_rows() -> None:
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
     css = (ROOT / "webfrontend/htmlauth/mcp-ui.css").read_text(encoding="utf-8")
     assert template.count('class="mcp-table mcp-session-table"') == 4
     assert template.count('class="mcp-table-wrap mcp-session-table-wrap"') == 4
@@ -1887,12 +2021,12 @@ def test_session_tables_have_matching_mobile_labels_in_fallback_and_ajax_rows() 
             r'<td data-label="<TMPL_VAR SESSIONS\.(\w+) ESCAPE=HTML>"', row
         )
         js = template[template.index(js_start) : template.index(js_end)]
-        js_labels = re.findall(r"dataset\.label = '<TMPL_VAR SESSIONS\.(\w+) ESCAPE=JS>'", js)
+        js_labels = re.findall(r"dataset\.label = label\('SESSIONS\.(\w+)'\)", js)
         if js_start == "const createSessionRow =":
             leading = js[
                 js.index("const labels = [") : js.index("];", js.index("const labels = ["))
             ]
-            js_labels = re.findall(r"SESSIONS\.(\w+) ESCAPE=JS", leading) + js_labels
+            js_labels = re.findall(r"label\('SESSIONS\.(\w+)'\)", leading) + js_labels
         assert tuple(fallback_labels) == expected
         assert tuple(js_labels) == expected
 
@@ -1907,7 +2041,7 @@ def test_session_tables_have_matching_mobile_labels_in_fallback_and_ajax_rows() 
 
 
 def test_explorer_approval_retention_and_inactive_states_are_visible_in_both_languages() -> None:
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     german = (ROOT / "templates/lang/language_de.ini").read_text(encoding="utf-8")
     english = (ROOT / "templates/lang/language_en.ini").read_text(encoding="utf-8")
@@ -1965,7 +2099,7 @@ print format_expiry(undef), "\\n";
 
 
 def test_browser_expiry_parser_uses_the_same_bounds() -> None:
-    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    template = _admin_source()
     parser = re.search(
         r"const MAX_EXPIRY_EPOCH = .*?^  \};",
         template,

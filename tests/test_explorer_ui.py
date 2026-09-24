@@ -9,6 +9,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "webfrontend" / "htmlauth" / "explorer.js"
+ADMIN_SCRIPTS = ROOT / "webfrontend" / "htmlauth" / "admin"
 
 
 def test_help_and_explorer_link_to_static_schema_reference() -> None:
@@ -935,10 +936,11 @@ def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
     assert "navigator.sendBeacon" not in source
     assert 'target="_blank"' in (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
     index_template = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+    configuration = (ADMIN_SCRIPTS / "configuration.js").read_text(encoding="utf-8")
     index_cgi = (ROOT / "webfrontend" / "htmlauth" / "index.cgi").read_text(encoding="utf-8")
     assert 'id="explorer-link"' in index_template
     assert 'href="<TMPL_VAR EXPLORER_URL ESCAPE=HTML>"' in index_template
-    assert "explorerLink.href = `${window.location.origin}${explorerPath}`" in index_template
+    assert "explorerLink.href = `${window.location.origin}${explorerPath}`" in configuration
     assert "EXPLORER_URL => 'explorer.cgi'" in index_cgi
     assert "savedOrigin" not in index_template
     assert "@media (max-width: 52rem)" in stylesheet
@@ -1002,7 +1004,7 @@ def test_explorer_login_failure_remains_visible_after_connection_render() -> Non
 
 
 def test_session_refresh_preserves_pending_loxberry_approval_action() -> None:
-    source = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+    source = (ADMIN_SCRIPTS / "sessions.js").read_text(encoding="utf-8")
 
     assert "session.loxberry_read_eligible && !session.loxberry_read_approved" in source
     assert "allowForm.dataset.ajax = 'allow_loxberry_read'" in source
@@ -1010,9 +1012,10 @@ def test_session_refresh_preserves_pending_loxberry_approval_action() -> None:
 
 
 def test_session_refresh_updates_related_loxberry_bindings() -> None:
-    source = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+    markup = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+    source = (ADMIN_SCRIPTS / "sessions.js").read_text(encoding="utf-8")
 
-    assert 'id="loxberry-binding-list"' in source
+    assert 'id="loxberry-binding-list"' in markup
     assert "const updateLoxberryBindings = (bindings) =>" in source
     assert "const updateLoxberryBindingTable = (bindings, section, body, actionName) =>" in source
     assert "result.data.loxberry_bindings" in source
@@ -1022,9 +1025,10 @@ def test_session_refresh_updates_related_loxberry_bindings() -> None:
 
 
 def test_session_refresh_updates_separate_loxberry_operate_bindings() -> None:
-    source = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+    markup = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+    source = (ADMIN_SCRIPTS / "sessions.js").read_text(encoding="utf-8")
 
-    assert 'id="loxberry-operate-binding-list"' in source
+    assert 'id="loxberry-operate-binding-list"' in markup
     assert "const updateLoxberryOperateBindings = (bindings) =>" in source
     assert "result.data.loxberry_operate_bindings" in source
     assert "bindingRow.inactive" in source

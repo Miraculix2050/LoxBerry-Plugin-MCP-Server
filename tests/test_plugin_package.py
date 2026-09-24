@@ -213,6 +213,12 @@ def test_v4_package_manifest_is_present() -> None:
         "webfrontend/htmlauth/explorer.cgi",
         "webfrontend/htmlauth/explorer_callback.cgi",
         "webfrontend/htmlauth/explorer.js",
+        "webfrontend/htmlauth/admin/core.js",
+        "webfrontend/htmlauth/admin/configuration.js",
+        "webfrontend/htmlauth/admin/service.js",
+        "webfrontend/htmlauth/admin/certificate.js",
+        "webfrontend/htmlauth/admin/sessions.js",
+        "webfrontend/htmlauth/admin/page.js",
         "webfrontend/htmlauth/mcp-ui.css",
         "templates/index.html",
         "templates/explorer.html",
@@ -530,7 +536,9 @@ def test_ui_is_nojqm_responsive_and_progressively_enhanced() -> None:
     assert "$LoxBerry::Web::lang = $q->{lang}" in cgi
     assert "ajax-generic.php" not in cgi + template
     assert 'method="post"' in template
-    assert "fetch('index.cgi'" in template
+    assert "fetch('index.cgi'" in (ROOT / "webfrontend/htmlauth/admin/core.js").read_text(
+        encoding="utf-8"
+    )
     assert "overflow-x: auto" in stylesheet
     assert "@media (max-width: 30rem)" in stylesheet
     assert "#diagnostics .lb-table-scroll { overflow-x: visible; }" in stylesheet
