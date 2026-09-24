@@ -834,6 +834,85 @@ const postAjax = () => calls++ === 0
     assert result.returncode == 0, result.stderr
 
 
+def test_fallback_summary_badges_use_server_rendered_data() -> None:
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    snippets = re.findall(r"<summary(?: [^>]*)?>.*?</summary>", template, re.DOTALL)
+    badge_markup = "\n".join(snippet for snippet in snippets if "-summary-badge" in snippet)
+    assert badge_markup.count("-summary-badge") == 5
+    for parameter in (
+        "FALLBACK_SUMMARY_CONFIGURATION_LOADED",
+        "FALLBACK_SUMMARY_SESSIONS_LOADED",
+        "FALLBACK_SESSION_COUNT",
+        "FALLBACK_APPROVAL_COUNT",
+        "FALLBACK_HAS_APPROVALS",
+    ):
+        assert f"{parameter} =>" in cgi
+    assert "$fallback_approval_count++ if $session->{loxone_token_confirmation_required};" in cgi
+    assert "$session->{loxberry_read_eligible} && !$session->{loxberry_read_approved}" in cgi
+    assert "$session->{loxberry_operate_eligible} && !$session->{loxberry_operate_approved}" in cgi
+    perl = shutil.which("perl")
+    assert perl is not None, "Perl is required for the complete deterministic gate"
+    program = (
+        "use strict; use warnings; use HTML::Template; use JSON::PP; "
+        "my $source = do { local $/; <STDIN> }; "
+        "my $template = HTML::Template->new_scalar_ref(\\$source, die_on_bad_params => 0); "
+        "my $params = decode_json($ENV{SUMMARY_PARAMS}); "
+        "$template->param(%$params); print $template->output();"
+    )
+    translations = {
+        "SETUP.TITLE": "MCP configuration",
+        "ACCESS.TITLE": "MCP access & HTTPS",
+        "SESSIONS.TITLE": "Clients and sessions",
+        "MQTT.TITLE": "MQTT",
+        "SUMMARY.ENABLED": "Enabled",
+        "SUMMARY.DISABLED": "Disabled",
+        "SUMMARY.UNKNOWN": "Unknown",
+        "SUMMARY.SESSIONS": "Sessions",
+        "SUMMARY.APPROVALS": "Approval actions",
+        "AJAX.WORKING": "Working",
+    }
+    for parameters, expected, absent in (
+        (
+            {
+                "SERVER_RENDERED_FALLBACK": 1,
+                "FALLBACK_SUMMARY_CONFIGURATION_LOADED": 1,
+                "FALLBACK_SUMMARY_SESSIONS_LOADED": 1,
+                "FALLBACK_SESSION_COUNT": 3,
+                "FALLBACK_APPROVAL_COUNT": 2,
+                "FALLBACK_HAS_APPROVALS": 1,
+                "ENABLED": 1,
+                "MQTT_ENABLED": 0,
+            },
+            ("Enabled", "Disabled", "Sessions: 3", "Approval actions: 2", "Unknown"),
+            ("Working",),
+        ),
+        (
+            {"SERVER_RENDERED_FALLBACK": 1},
+            ("Unknown",),
+            ("Working", "Sessions: 0", "Approval actions: 0"),
+        ),
+        (
+            {"SERVER_RENDERED_FALLBACK": 0},
+            ("Working",),
+            ("Sessions: 3", "Approval actions: 2"),
+        ),
+    ):
+        result = subprocess.run(
+            [perl, "-e", program],
+            input=badge_markup,
+            capture_output=True,
+            text=True,
+            check=False,
+            env={**os.environ, "SUMMARY_PARAMS": json.dumps(translations | parameters)},
+        )
+        assert result.returncode == 0, result.stderr
+        for value in expected:
+            assert value in result.stdout
+        for value in absent:
+            assert value not in result.stdout
+
+
 def test_session_action_coordinator_allows_only_non_conflicting_actions() -> None:
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
     coordinator = re.search(

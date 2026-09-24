@@ -62,7 +62,7 @@
   </details>
 
   <details id="configuration" class="mcp-card" data-persist-collapse open>
-    <summary id="setup"><span class="mcp-service-summary"><span><TMPL_VAR SETUP.TITLE></span><span id="configuration-summary-badge" class="mcp-service-badge"><TMPL_VAR AJAX.WORKING></span></span></summary>
+    <summary id="setup"><span class="mcp-service-summary"><span><TMPL_VAR SETUP.TITLE></span><span id="configuration-summary-badge" class="mcp-service-badge" <TMPL_IF SERVER_RENDERED_FALLBACK><TMPL_IF FALLBACK_SUMMARY_CONFIGURATION_LOADED><TMPL_IF ENABLED>data-kind="success"<TMPL_ELSE>data-kind="inactive"</TMPL_IF></TMPL_IF></TMPL_IF>><TMPL_IF SERVER_RENDERED_FALLBACK><TMPL_IF FALLBACK_SUMMARY_CONFIGURATION_LOADED><TMPL_IF ENABLED><TMPL_VAR SUMMARY.ENABLED><TMPL_ELSE><TMPL_VAR SUMMARY.DISABLED></TMPL_IF><TMPL_ELSE><TMPL_VAR SUMMARY.UNKNOWN></TMPL_IF><TMPL_ELSE><TMPL_VAR AJAX.WORKING></TMPL_IF></span></span></summary>
     <div class="mcp-collapsible-content">
     <form id="mcp-config-form" class="mcp-form" method="post" action="index.cgi" data-ajax="save_mcp_config">
       <input id="event-history-sources" type="hidden" name="event_history_sources_json" value="<TMPL_VAR EVENT_HISTORY_SOURCES_JSON ESCAPE=HTML>">
@@ -174,7 +174,7 @@
   </details>
 
   <details id="access" class="mcp-card" data-persist-collapse <TMPL_IF SERVER_RENDERED_FALLBACK>open</TMPL_IF>>
-    <summary id="certificate"><span class="mcp-service-summary"><span><TMPL_VAR ACCESS.TITLE></span><span id="certificate-summary-badge" class="mcp-service-badge"><TMPL_VAR AJAX.WORKING></span></span></summary>
+    <summary id="certificate"><span class="mcp-service-summary"><span><TMPL_VAR ACCESS.TITLE></span><span id="certificate-summary-badge" class="mcp-service-badge"><TMPL_IF SERVER_RENDERED_FALLBACK><TMPL_VAR SUMMARY.UNKNOWN><TMPL_ELSE><TMPL_VAR AJAX.WORKING></TMPL_IF></span></span></summary>
     <div class="mcp-collapsible-content">
       <div class="mcp-field-stack">
         <label class="mcp-field"><span><TMPL_VAR ACCESS.MCP_HOSTNAME></span><span class="mcp-copy-row"><input id="mcp-url-hostname" type="text" readonly value="<TMPL_VAR HOSTNAME_MCP_URL ESCAPE=HTML>"><button class="lb-button" type="button" data-copy-target="mcp-url-hostname"><TMPL_VAR ACTION.COPY></button></span></label>
@@ -218,7 +218,7 @@
   <details id="sessions" class="mcp-card" data-persist-collapse <TMPL_IF SERVER_RENDERED_FALLBACK>open</TMPL_IF> aria-busy="true"
     data-empty-label="<TMPL_VAR SESSIONS.EMPTY ESCAPE=HTML>"
     data-unnamed-label="<TMPL_VAR SESSIONS.UNNAMED ESCAPE=HTML>">
-    <summary><span class="mcp-service-summary"><span><TMPL_VAR SESSIONS.TITLE></span><span id="sessions-summary-badge" class="mcp-service-badge"><TMPL_VAR AJAX.WORKING></span><span id="approvals-summary-badge" class="mcp-service-badge" hidden></span></span></summary>
+    <summary><span class="mcp-service-summary"><span><TMPL_VAR SESSIONS.TITLE></span><span id="sessions-summary-badge" class="mcp-service-badge"><TMPL_IF SERVER_RENDERED_FALLBACK><TMPL_IF FALLBACK_SUMMARY_SESSIONS_LOADED><TMPL_VAR SUMMARY.SESSIONS>: <TMPL_VAR FALLBACK_SESSION_COUNT><TMPL_ELSE><TMPL_VAR SUMMARY.UNKNOWN></TMPL_IF><TMPL_ELSE><TMPL_VAR AJAX.WORKING></TMPL_IF></span><span id="approvals-summary-badge" class="mcp-service-badge" <TMPL_UNLESS FALLBACK_HAS_APPROVALS>hidden</TMPL_UNLESS> <TMPL_IF FALLBACK_HAS_APPROVALS>data-kind="error"</TMPL_IF>><TMPL_IF FALLBACK_HAS_APPROVALS><TMPL_VAR SUMMARY.APPROVALS>: <TMPL_VAR FALLBACK_APPROVAL_COUNT></TMPL_IF></span></span></summary>
     <div class="mcp-collapsible-content">
     <p id="remote-cleanup-warning" class="mcp-status" data-kind="warning" role="status" <TMPL_UNLESS REMOTE_CLEANUP_WARNING_VISIBLE>hidden</TMPL_UNLESS>
       data-breaker-label="<TMPL_VAR SESSIONS.REMOTE_BREAKER_WARNING ESCAPE=HTML>"
@@ -256,7 +256,7 @@
   </details>
 
   <details id="mqtt" class="mcp-card" data-persist-collapse open>
-    <summary><span class="mcp-service-summary"><span><TMPL_VAR MQTT.TITLE></span><span id="mqtt-summary-badge" class="mcp-service-badge"><TMPL_VAR AJAX.WORKING></span></span></summary>
+    <summary><span class="mcp-service-summary"><span><TMPL_VAR MQTT.TITLE></span><span id="mqtt-summary-badge" class="mcp-service-badge" <TMPL_IF SERVER_RENDERED_FALLBACK><TMPL_IF FALLBACK_SUMMARY_CONFIGURATION_LOADED><TMPL_IF MQTT_ENABLED>data-kind="success"<TMPL_ELSE>data-kind="inactive"</TMPL_IF></TMPL_IF></TMPL_IF>><TMPL_IF SERVER_RENDERED_FALLBACK><TMPL_IF FALLBACK_SUMMARY_CONFIGURATION_LOADED><TMPL_IF MQTT_ENABLED><TMPL_VAR SUMMARY.ENABLED><TMPL_ELSE><TMPL_VAR SUMMARY.DISABLED></TMPL_IF><TMPL_ELSE><TMPL_VAR SUMMARY.UNKNOWN></TMPL_IF><TMPL_ELSE><TMPL_VAR AJAX.WORKING></TMPL_IF></span></span></summary>
     <div class="mcp-collapsible-content">
       <form class="mcp-form" method="post" action="index.cgi" data-ajax="save_mqtt_config">
         <input type="hidden" name="action" value="save_mqtt_config">
