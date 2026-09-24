@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-scope-summary-v1">
+<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-collapsible-connection-v1">
 
 <main id="mcp-explorer" class="mcp-explorer mcp-explorer-stack"
   data-ready="<TMPL_VAR EXPLORER.READY ESCAPE=HTML>"
@@ -69,31 +69,33 @@
   data-fields="<TMPL_VAR EXPLORER.FIELDS ESCAPE=HTML>"
   data-origin-mismatch="<TMPL_VAR EXPLORER.ORIGIN_MISMATCH ESCAPE=HTML>">
 
-  <section class="mcp-explorer-card" aria-labelledby="explorer-title">
-    <p class="mcp-explorer-actions">
-      <a class="lb-button" href="index.cgi"><TMPL_VAR EXPLORER.BACK></a>
-      <a class="lb-button" href="tool-schema-reference.html" target="_blank" rel="noopener"><TMPL_VAR ACTION.SCHEMA_REFERENCE></a>
-    </p>
-    <h1 id="explorer-title"><TMPL_VAR EXPLORER.TITLE></h1>
-    <p><TMPL_VAR EXPLORER.INTRO></p>
-    <p class="mcp-explorer-muted"><TMPL_VAR EXPLORER.PERMISSIONS_AFTER_LOGIN></p>
-    <div class="mcp-explorer-actions">
-      <button id="explorer-connect" class="lb-button" type="button"><TMPL_VAR EXPLORER.CONNECT></button>
-      <button id="explorer-disconnect" class="lb-button" type="button" disabled><TMPL_VAR EXPLORER.DISCONNECT></button>
+  <p class="mcp-explorer-actions mcp-explorer-header-links">
+    <a class="lb-button" href="index.cgi"><TMPL_VAR EXPLORER.BACK></a>
+    <a class="lb-button" href="tool-schema-reference.html" target="_blank" rel="noopener"><TMPL_VAR ACTION.SCHEMA_REFERENCE></a>
+  </p>
+  <details id="explorer-connection-panel" class="mcp-explorer-card" open>
+    <summary><h1 id="explorer-title"><TMPL_VAR EXPLORER.TITLE></h1></summary>
+    <div class="mcp-explorer-panel-content mcp-explorer-stack">
+      <p><TMPL_VAR EXPLORER.INTRO></p>
+      <p class="mcp-explorer-muted"><TMPL_VAR EXPLORER.PERMISSIONS_AFTER_LOGIN></p>
+      <div class="mcp-explorer-actions">
+        <button id="explorer-connect" class="lb-button" type="button"><TMPL_VAR EXPLORER.CONNECT></button>
+        <button id="explorer-disconnect" class="lb-button" type="button" disabled><TMPL_VAR EXPLORER.DISCONNECT></button>
+      </div>
+      <p id="explorer-origin-warning" class="mcp-explorer-warning" hidden>
+        <TMPL_VAR EXPLORER.ORIGIN_MISMATCH>
+        <a id="explorer-origin-link" class="lb-button" rel="noopener"><TMPL_VAR EXPLORER.OPEN_CANONICAL></a>
+      </p>
+      <div id="explorer-status" class="mcp-explorer-status" role="status" aria-live="polite"><TMPL_VAR EXPLORER.DISCONNECTED></div>
+      <p class="mcp-explorer-muted"><TMPL_VAR EXPLORER.SESSION_POLICY></p>
+      <p id="explorer-session-expiry" hidden><strong><TMPL_VAR EXPLORER.SESSION_EXPIRES></strong> <time id="explorer-session-expiry-time"></time></p>
+      <details id="explorer-access-scopes" hidden>
+        <summary><TMPL_VAR EXPLORER.GRANTED_OAUTH_SCOPES></summary>
+        <p id="explorer-scope-unavailable" class="mcp-explorer-muted" hidden><TMPL_VAR EXPLORER.SCOPE_UNAVAILABLE></p>
+        <ul id="explorer-scope-list" class="mcp-explorer-scope-list"></ul>
+      </details>
     </div>
-    <p id="explorer-origin-warning" class="mcp-explorer-warning" hidden>
-      <TMPL_VAR EXPLORER.ORIGIN_MISMATCH>
-      <a id="explorer-origin-link" class="lb-button" rel="noopener"><TMPL_VAR EXPLORER.OPEN_CANONICAL></a>
-    </p>
-    <div id="explorer-status" class="mcp-explorer-status" role="status" aria-live="polite"><TMPL_VAR EXPLORER.DISCONNECTED></div>
-    <p class="mcp-explorer-muted"><TMPL_VAR EXPLORER.SESSION_POLICY></p>
-    <p id="explorer-session-expiry" hidden><strong><TMPL_VAR EXPLORER.SESSION_EXPIRES></strong> <time id="explorer-session-expiry-time"></time></p>
-    <div id="explorer-access-scopes" hidden>
-      <strong><TMPL_VAR EXPLORER.GRANTED_OAUTH_SCOPES></strong>
-      <p id="explorer-scope-unavailable" class="mcp-explorer-muted" hidden><TMPL_VAR EXPLORER.SCOPE_UNAVAILABLE></p>
-      <ul id="explorer-scope-list" class="mcp-explorer-scope-list"></ul>
-    </div>
-  </section>
+  </details>
 
   <div class="mcp-explorer-grid">
     <aside class="mcp-explorer-stack">
@@ -194,4 +196,4 @@
   </form>
 </dialog>
 
-<script src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-scope-summary-v1"></script>
+<script src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-disclosure-state-v1"></script>

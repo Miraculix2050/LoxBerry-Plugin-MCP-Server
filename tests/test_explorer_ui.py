@@ -484,7 +484,7 @@ def test_explorer_discovery_controls_preserve_selection_and_drafts() -> None:
     assert template.count('type="checkbox" data-tool-group="') == 6
     assert 'id="explorer-tool-filter-count"' in template
     assert "core.filteredToolGroups(state.tools, state.toolSearch, state.toolGroups)" in source
-    assert 'src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-scope-summary-v1"' in template
+    assert 'src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-disclosure-state-v1"' in template
     assert "label('noMatchingTools')" in source
     assert "label('noTools')" in source
     assert "state.toolSearch = elements.toolSearch.value" in handlers
@@ -898,8 +898,29 @@ def test_explorer_keeps_refresh_credentials_out_of_browser_storage() -> None:
     assert "credentials: 'same-origin'" in source
     assert "BroadcastChannel" in source
     assert "sessionStorage" not in source
-    assert "localStorage" not in source
+    assert source.count("window.localStorage.getItem(key)") == 1
+    assert source.count("window.localStorage.setItem(key, String(element.open))") == 1
+    assert "mcp-explorer-connection-open-v1" in source
+    assert "mcp-explorer-scopes-open-v1" in source
     assert "refreshToken" not in source
+
+
+def test_explorer_connection_and_scopes_are_independent_persistent_disclosures() -> None:
+    template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
+    source = SCRIPT.read_text(encoding="utf-8")
+
+    links = template.index('href="index.cgi"')
+    panel = template.index('id="explorer-connection-panel"')
+    scopes = template.index('id="explorer-access-scopes"')
+    assert links < panel < scopes
+    assert '<details id="explorer-connection-panel" class="mcp-explorer-card" open>' in template
+    assert '<details id="explorer-access-scopes" hidden>' in template
+    assert '<summary><h1 id="explorer-title">' in template
+    assert "<summary><TMPL_VAR EXPLORER.GRANTED_OAUTH_SCOPES></summary>" in template
+    assert (
+        "persistDisclosure(elements.connectionPanel, 'mcp-explorer-connection-open-v1')" in source
+    )
+    assert "persistDisclosure(elements.accessScopes, 'mcp-explorer-scopes-open-v1')" in source
 
 
 def test_explorer_generated_field_ids_are_unique_and_labelled() -> None:
@@ -1000,7 +1021,7 @@ def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
     assert "fetchWithTimeout('/plugins/mcpserver/mcp'" in source
     assert "}, 70000)" in source
     assert "sessionStorage" not in source
-    assert "localStorage" not in source
+    assert "window.localStorage.setItem(key, String(element.open))" in source
     assert "navigator.locks.request" not in source
     assert "await refreshAccessToken();" in source
     assert "window.addEventListener('pagehide'" not in source

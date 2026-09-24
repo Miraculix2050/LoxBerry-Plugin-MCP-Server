@@ -666,6 +666,7 @@
     accessScopes: document.getElementById('explorer-access-scopes'),
     scopeList: document.getElementById('explorer-scope-list'),
     scopeUnavailable: document.getElementById('explorer-scope-unavailable'),
+    connectionPanel: document.getElementById('explorer-connection-panel'),
     toolsPanel: document.getElementById('explorer-tools-panel'),
     historyPanel: document.getElementById('explorer-history-panel'),
     selectedTool: document.getElementById('explorer-selected-tool'),
@@ -731,6 +732,18 @@
     ? new BroadcastChannel('mcp-explorer-session') : null;
   const narrowViewport = window.matchMedia('(max-width: 52rem)');
   let sessionExpiryTimer = null;
+  function persistDisclosure(element, key) {
+    try {
+      const saved = window.localStorage.getItem(key);
+      if (saved === 'true' || saved === 'false') element.open = saved === 'true';
+    } catch (_error) { /* Browser storage may be unavailable. */ }
+    element.addEventListener('toggle', () => {
+      try { window.localStorage.setItem(key, String(element.open)); }
+      catch (_error) { /* The disclosure still works for this tab. */ }
+    });
+  }
+  persistDisclosure(elements.connectionPanel, 'mcp-explorer-connection-open-v1');
+  persistDisclosure(elements.accessScopes, 'mcp-explorer-scopes-open-v1');
   if (logoutChannel) logoutChannel.onmessage = (event) => {
     if (event.data !== 'logout') return;
     core.clearSensitiveState(state);
