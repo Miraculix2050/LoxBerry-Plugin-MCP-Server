@@ -1605,9 +1605,9 @@
       scopes.append(element('span', {text: label('toolScopesUnknown')}));
     }
     elements.summary.append(scopes);
-    elements.summary.append(element('p', {className: 'mcp-explorer-hint-notice', text: label('toolHintsNotice')}));
     const technical = element('details', {className: 'mcp-explorer-technical'});
     technical.append(element('summary', {text: label('toolTechnicalMetadata')}));
+    technical.append(element('p', {className: 'mcp-explorer-hint-notice', text: label('toolHintsNotice')}));
     technical.append(element('pre', {className: 'mcp-explorer-pre',
       text: JSON.stringify(state.selectedTool.annotations || {}, null, 2)}));
     elements.summary.append(technical);
