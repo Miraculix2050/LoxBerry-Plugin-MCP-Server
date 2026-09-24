@@ -269,22 +269,20 @@ window.McpAdmin.createConfiguration = (
         emergencyStopStatus.textContent = label('SETUP.EMERGENCY_STOP_NO_OPTIONS');
         emergencyStopStatus.dataset.kind = 'info';
         emergencyStopStatus.hidden = false;
-      } else if (status === 'not_configured') {
-        emergencyStopStatus.textContent = label('SETUP.EMERGENCY_STOP_NOT_CONFIGURED');
-        emergencyStopStatus.dataset.kind = 'error';
-        emergencyStopStatus.hidden = false;
       } else if (status !== 'available') {
-        emergencyStopStatus.textContent = result.data.failure_text
-          || label('SETUP.EMERGENCY_STOP_LOAD_ERROR');
+        emergencyStopStatus.textContent = status === 'not_configured'
+          ? label('SETUP.EMERGENCY_STOP_NOT_CONFIGURED')
+          : result.data.failure_text || label('SETUP.EMERGENCY_STOP_LOAD_ERROR');
         emergencyStopStatus.dataset.kind = 'error';
         emergencyStopStatus.hidden = false;
+        emergencyStopRetry.dataset.retry = 'true';
+        emergencyStopRetry.textContent = label('SETUP.EMERGENCY_STOP_RETRY');
+        emergencyStopRetry.hidden = false;
+        emergencyStopRetry.disabled = false;
         if (result.data.status === 'unavailable'
             && Number.isInteger(result.data.retry_not_before)) {
           const retryAt = result.data.retry_not_before * 1000;
           emergencyStopStatus.textContent += ' ' + new Date(retryAt).toLocaleString();
-          emergencyStopRetry.dataset.retry = 'true';
-          emergencyStopRetry.textContent = label('SETUP.EMERGENCY_STOP_RETRY');
-          emergencyStopRetry.hidden = false;
           const enableRetry = () => {
             if (generation !== emergencyStopDiscoveryGeneration) return;
             emergencyStopRetry.disabled = Date.now() < retryAt;
@@ -302,6 +300,8 @@ window.McpAdmin.createConfiguration = (
       emergencyStopStatus.textContent = label('SETUP.EMERGENCY_STOP_LOAD_ERROR');
       emergencyStopStatus.dataset.kind = 'error';
       emergencyStopStatus.hidden = false;
+      emergencyStopRetry.dataset.retry = 'true';
+      emergencyStopRetry.textContent = label('SETUP.EMERGENCY_STOP_RETRY');
     } finally {
       if (generation !== emergencyStopDiscoveryGeneration) return;
       emergencyStopSelect.disabled = false;

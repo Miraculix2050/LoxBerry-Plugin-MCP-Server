@@ -5,6 +5,9 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Keep the Admin emergency-stop retry button visible after a failed signal load,
+  while honoring a supplied Miniserver retry time.
+
 - Show required OAuth scopes beside each selected Tool Explorer tool and compact
   the tool summary, with expandable long descriptions and a smaller arguments heading.
 

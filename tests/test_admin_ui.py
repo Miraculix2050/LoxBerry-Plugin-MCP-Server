@@ -53,7 +53,7 @@ def test_admin_modules_load_in_order_with_versioned_localized_assets() -> None:
         assert "<TMPL_" not in source
         assert (
             f'<script defer src="admin/{name}?v='
-            '<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v6"></script>'
+            '<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v7"></script>'
         ) in markup
         subprocess.run(
             [node, "--check", str(ROOT / "webfrontend/htmlauth/admin" / name)],
@@ -1795,6 +1795,74 @@ def test_slow_admin_reads_have_bounded_browser_timeout_headroom() -> None:
         match = re.search(r"postAjax\(body, (\d+)(?:, suppliedResult)?\)", section)
         assert match is not None
         assert minimum_ms <= int(match.group(1)) <= 180_000
+
+
+def test_emergency_stop_load_error_keeps_retry_button_available() -> None:
+    node = shutil.which("node")
+    assert node is not None
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const start = source.indexOf('  const addEmergencyStopOption =');
+const end = source.indexOf("  emergencyStopSelect.addEventListener('change'", start);
+assert(start >= 0 && end > start);
+const options = [];
+const emergencyStopSelect = {
+  disabled: false,
+  setAttribute() {},
+  replaceChildren() { options.length = 0; },
+  append(option) { options.push(option); },
+};
+const emergencyStopValue = {value: 'saved'};
+const emergencyStopStatus = {dataset: {}, hidden: true, textContent: ''};
+const emergencyStopRetry = {dataset: {}, hidden: false, disabled: false, textContent: ''};
+let emergencyStopDiscoveryGeneration = 0;
+const document = {createElement: () => ({})};
+const timers = [];
+const window = {setTimeout: (callback) => { timers.push(callback); }};
+const core = {unloading: false};
+const label = (key) => key;
+let response = {data: {status: 'unavailable', options: [], failure_text: 'connection failed'}};
+let postAjax = async () => response;
+eval(source.slice(start, end) + `
+(async () => {
+  await loadEmergencyStopOptions();
+  assert.equal(emergencyStopStatus.textContent, 'connection failed');
+  assert.equal(emergencyStopRetry.hidden, false);
+  assert.equal(emergencyStopRetry.disabled, false);
+  assert.equal(emergencyStopRetry.dataset.retry, 'true');
+  assert.equal(emergencyStopRetry.textContent, 'SETUP.EMERGENCY_STOP_RETRY');
+  assert(options.some((option) => option.value === 'saved' && option.selected));
+
+  response = {data: {status: 'unavailable', options: [],
+    retry_not_before: Math.floor(Date.now() / 1000) + 60}};
+  await loadEmergencyStopOptions();
+  assert.equal(emergencyStopRetry.hidden, false);
+  assert.equal(emergencyStopRetry.disabled, true);
+  assert.equal(timers.length, 1);
+
+  postAjax = async () => { throw new Error('network'); };
+  await loadEmergencyStopOptions();
+  assert.equal(emergencyStopRetry.hidden, false);
+  assert.equal(emergencyStopRetry.disabled, false);
+  assert.equal(emergencyStopRetry.textContent, 'SETUP.EMERGENCY_STOP_RETRY');
+  assert(options.some((option) => option.value === 'saved' && option.selected));
+
+  postAjax = async () => ({data: {status: 'available',
+    options: [{uuid: 'saved', name: 'Saved signal'}]}});
+  await loadEmergencyStopOptions();
+  assert.equal(emergencyStopRetry.hidden, true);
+  assert(options.some((option) => option.value === 'saved' && option.selected));
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+`);
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/admin/configuration.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
 
 
 def test_permission_policy_uses_grouped_scope_labeled_checkboxes() -> None:
