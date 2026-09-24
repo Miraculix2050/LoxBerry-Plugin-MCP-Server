@@ -12,7 +12,7 @@ Under **Clients and sessions**, administrators can inspect and revoke sessions a
 
 Session revocation blocks MCP access immediately. Loxone token cleanup then runs in the background. The section shows aggregate warnings when cleanup is pending, the Miniserver blocks sign-ins, or remote revocation remains unconfirmed after bounded attempts. For an unconfirmed result, an administrator can inspect Loxone user management; the warning does not identify a user.
 
-The emergency-stop option list loads directly from the Miniserver using the credentials configured in LoxBerry. This can take several seconds. If a Miniserver sign-in block prevents the options from loading, the page shows the earliest retry time. **Try again** becomes available afterward and makes at most one coordinated sign-in attempt. Loading errors preserve the saved emergency-stop selection.
+The last loaded emergency-stop signals appear immediately from the local cache when the page opens; this does not start a new Miniserver sign-in. **Refresh emergency-stop signals** explicitly reloads the list using the credentials configured in LoxBerry. This can take several seconds. Concurrent Admin requests wait for the same result. If a Miniserver sign-in block prevents the refresh, the page shows the earliest retry time. **Try again** becomes available afterward and makes at most one coordinated sign-in attempt. The last loaded signals are marked as potentially stale, and errors preserve the saved emergency-stop selection.
 If another sign-in is merely in progress, the page instead shows a short retry time. The server-rendered fallback also displays aggregate cleanup warnings.
 
 ## Diagnostics and logs

@@ -11,6 +11,10 @@ extracted from the matching version heading.
   local date and time in compact metadata rows; history summaries prioritize
   changed arguments.
 
+- Cache the last loaded emergency-stop signal options across Admin requests and
+  share one explicit Miniserver refresh among concurrent administrators. Page
+  reloads read only the local cache, including the server-rendered fallback.
+
 - Keep the Admin emergency-stop retry button visible after a failed signal load
   and offer another refresh after a successful load, while honoring a supplied
   Miniserver retry time.

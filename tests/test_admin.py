@@ -646,6 +646,56 @@ def test_emergency_stop_options_distinguishes_empty_available_results(
     }
 
 
+def test_cached_emergency_stop_options_never_discover_from_miniserver(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from mcpserver.emergency_options_cache import EmergencyOptionsCache
+
+    class ConfigStore:
+        def load(self) -> PluginConfig:
+            return PluginConfig(loxone_endpoint="http://miniserver.test")
+
+    cache = EmergencyOptionsCache(tmp_path / "auth.json", "profile")
+    option = {"uuid": "00000000-0000-0000-0000-000000000123", "name": "Signal"}
+    cache.refresh(lambda: {"status": "available", "options": [option]})
+    monkeypatch.setattr("mcpserver.admin._config_store", ConfigStore)
+    monkeypatch.setattr("mcpserver.admin._emergency_stop_cache", lambda _config: cache)
+
+    async def forbidden(*_args: object, **_kwargs: object) -> VirtualStatusOptions:
+        raise AssertionError("cached page load must not contact the Miniserver")
+
+    monkeypatch.setattr("mcpserver.emergency_stop.virtual_status_options", forbidden)
+    assert dispatch({"action": "emergency_stop_cached_options"}) == {
+        "status": "available",
+        "options": [option],
+        "cached": True,
+        "stale": False,
+    }
+
+
+def test_emergency_stop_cache_changes_with_configured_identity(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from mcpserver.admin import _emergency_stop_cache
+    from mcpserver.emergency_stop import EmergencyStopMonitor
+
+    credentials = ["admin", "first-password"]
+
+    async def configured_credentials(_self: EmergencyStopMonitor) -> tuple[str, str]:
+        return credentials[0], credentials[1]
+
+    monkeypatch.setattr(EmergencyStopMonitor, "_credentials", configured_credentials)
+    monkeypatch.setenv("MCPSERVER_AUTH_STORE", str((tmp_path / "auth.json").resolve()))
+    config = PluginConfig(loxone_endpoint="http://miniserver.test")
+    first = _emergency_stop_cache(config)
+    assert first is not None
+    first.refresh(lambda: {"status": "available", "options": []})
+    credentials[1] = "second-password"
+    second = _emergency_stop_cache(config)
+    assert second is not None
+    assert second.read() is None
+
+
 def test_emergency_stop_options_uses_the_shared_authentication_breaker(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
