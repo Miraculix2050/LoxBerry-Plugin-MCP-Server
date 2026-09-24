@@ -5,6 +5,8 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Allow slow read-only Admin certificate and emergency-stop discovery requests to finish instead of aborting before the target responds.
+
 - Run expired Tool Explorer binding cleanup after releasing the OAuth store lock,
   so a stored expired session cannot block service startup or Admin data loading.
 

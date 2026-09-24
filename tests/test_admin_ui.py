@@ -1252,6 +1252,18 @@ def test_certificate_idle_status_does_not_use_failure_label() -> None:
     subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
 
 
+def test_slow_admin_reads_have_bounded_browser_timeout_headroom() -> None:
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    for start, end, minimum_ms in (
+        ("const loadCertificateStatus = async", "const updateEmergencyStopRuntimeMismatch", 10_000),
+        ("const loadEmergencyStopOptions = async", "emergencyStopSelect.addEventListener", 30_000),
+    ):
+        section = template[template.index(start) : template.index(end)]
+        match = re.search(r"postAjax\(body, (\d+)\)", section)
+        assert match is not None
+        assert minimum_ms <= int(match.group(1)) <= 60_000
+
+
 def test_permission_policy_uses_grouped_scope_labeled_checkboxes() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
