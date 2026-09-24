@@ -22,6 +22,8 @@ The service log remains directly available under **Diagnostics and logs**. The L
 ## Tool Explorer
 
 The [MCP Tool Explorer](https://loxberry/admin/plugins/mcpserver/explorer.cgi) is a local administrative test client. It signs in with a Loxone user and receives no rights from the LoxBerry admin session. Replace `loxberry` in the link with your installation's hostname when necessary. Mutating calls require confirmation before sending.
+After sign-in, the connection card shows which OAuth scopes the session actually granted. Scopes marked **Not granted** were not granted to this session; local LoxBerry approvals and other authorization checks remain separate. The list clears when the session ends.
+The connection card starts open so sign-in is immediately available. It can be collapsed after sign-in to make more room for the tool workspace. Its OAuth scope list starts collapsed, and the setup and schema-reference links remain visible above the card. Both disclosure choices persist across reloads and new tabs in the same browser.
 RFC-3339 time fields are shown as local date/time fields and sent as UTC.
 Time-range shortcuts and references from earlier results simplify common queries;
 technical page parameters are available under **Advanced options**.

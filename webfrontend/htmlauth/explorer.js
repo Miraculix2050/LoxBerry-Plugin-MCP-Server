@@ -15,6 +15,13 @@
   const EXPLORER_SCOPE_ORDER = [
     'loxone:read', 'loxone:history', 'loxone:control', 'loxberry:read', 'loxberry:operate',
   ];
+  function grantedScopes(scope) {
+    if (typeof scope !== 'string' || !scope.trim()) return null;
+    const values = scope.trim().split(/\s+/);
+    if (values.some((value) => !EXPLORER_SCOPE_ORDER.includes(value)) ||
+        new Set(values).size !== values.length) return null;
+    return new Set(values);
+  }
   const SECRET_NAME = /(?:password|passwd|secret|token|api[_-]?key|private[_-]?key)/i;
   const JSON_TYPES = new Set(['null', 'boolean', 'object', 'array', 'number', 'string', 'integer']);
   const REUSE_SCHEMA_KEYS = new Set([
@@ -556,6 +563,27 @@
     state.drafts = {};
   }
 
+  function clearSensitiveDom(elements) {
+    elements.json.value = '{}';
+    elements.confirmTool.textContent = '';
+    elements.confirmArguments.textContent = '';
+    if (elements.confirm.open) elements.confirm.close('cancel');
+    elements.transferSource.textContent = '';
+    elements.transferContext.textContent = '';
+    elements.transferTool.replaceChildren();
+    elements.transferField.replaceChildren();
+    elements.transferEmpty.hidden = false;
+    elements.transferApply.disabled = true;
+    if (elements.transfer.open) elements.transfer.close();
+    elements.resultContext.textContent = '';
+    elements.resultContext.hidden = true;
+    elements.historyArguments.replaceChildren();
+    elements.historyArguments.hidden = true;
+    elements.restoreHistory.hidden = true;
+    elements.validation.textContent = '';
+    elements.validation.hidden = true;
+  }
+
   function mcpFailure(response, fallback) {
     const protocolError = response && response.error;
     if (protocolError && typeof protocolError === 'object') {
@@ -596,6 +624,7 @@
     MAX_TRANSCRIPT,
     EXPLORER_SESSION_MS,
     EXPLORER_SCOPE_ORDER,
+    grantedScopes,
     clone,
     resolveRef,
     effectiveSchema,
@@ -630,6 +659,7 @@
     acceptOAuthMessage,
     mcpFailure,
     clearSensitiveState,
+    clearSensitiveDom,
     fieldControlId,
     canonicalExplorerUrl,
     httpsExplorerUrl,
@@ -655,6 +685,11 @@
     originLink: document.getElementById('explorer-origin-link'),
     sessionExpiry: document.getElementById('explorer-session-expiry'),
     sessionExpiryTime: document.getElementById('explorer-session-expiry-time'),
+    accessScopes: document.getElementById('explorer-access-scopes'),
+    scopeList: document.getElementById('explorer-scope-list'),
+    scopeUnavailable: document.getElementById('explorer-scope-unavailable'),
+    connectionPanel: document.getElementById('explorer-connection-panel'),
+    connectionBadge: document.getElementById('explorer-connection-badge'),
     toolsPanel: document.getElementById('explorer-tools-panel'),
     historyPanel: document.getElementById('explorer-history-panel'),
     selectedTool: document.getElementById('explorer-selected-tool'),
@@ -719,9 +754,23 @@
   const logoutChannel = typeof BroadcastChannel === 'function'
     ? new BroadcastChannel('mcp-explorer-session') : null;
   const narrowViewport = window.matchMedia('(max-width: 52rem)');
+  let sessionExpiryTimer = null;
+  function persistDisclosure(element, key) {
+    try {
+      const saved = window.localStorage.getItem(key);
+      if (saved === 'true' || saved === 'false') element.open = saved === 'true';
+    } catch (_error) { /* Browser storage may be unavailable. */ }
+    element.addEventListener('toggle', () => {
+      try { window.localStorage.setItem(key, String(element.open)); }
+      catch (_error) { /* The disclosure still works for this tab. */ }
+    });
+  }
+  persistDisclosure(elements.connectionPanel, 'mcp-explorer-connection-open-v1');
+  persistDisclosure(elements.accessScopes, 'mcp-explorer-scopes-open-v1');
   if (logoutChannel) logoutChannel.onmessage = (event) => {
     if (event.data !== 'logout') return;
-    core.clearSensitiveState(state);
+    clearExplorerState();
+    setBusy(false);
     renderAll();
     setStatus(label('disconnected'), '');
   };
@@ -962,7 +1011,7 @@
     return {
       metadata: discovered.authorizationMetadata,
       resource: discovered.resourceMetadata.resource,
-      scope: token.scope || scope,
+      scope: typeof token.scope === 'string' ? token.scope : '',
       accessToken: token.access_token,
       expiresAt: Date.now() + Math.max(0, Number(token.expires_in || 0) - 15) * 1000,
       resumeUntil: Number(token.expires_at || resumeUntil) * 1000,
@@ -974,9 +1023,10 @@
     const token = await explorerSession(state.oauth.metadata, {action: 'access'});
     if (!token.access_token) throw new Error('Explorer session response is incomplete');
     state.oauth.accessToken = token.access_token;
-    state.oauth.scope = token.scope || state.oauth.scope;
+    state.oauth.scope = typeof token.scope === 'string' ? token.scope : '';
     state.oauth.expiresAt = Date.now() + Math.max(0, Number(token.expires_in || 0) - 15) * 1000;
     state.oauth.resumeUntil = Number(token.expires_at || 0) * 1000;
+    renderConnection();
   }
 
   async function accessToken() {
@@ -1022,6 +1072,7 @@
   }
 
   async function mcpRequest(method, params, notification) {
+    const oauth = state.oauth;
     const selected = method === 'tools/call' ? state.tools.find((tool) => tool.name === params.name) : null;
     const safeParams = selected ? {...params, arguments: core.redactArguments(params.arguments, selected.inputSchema)} : core.clone(params);
     const request = {jsonrpc: '2.0', method, params: params || {}};
@@ -1032,6 +1083,11 @@
     let status = 0;
     try {
       const token = await accessToken();
+      if (state.oauth !== oauth || Date.now() >= oauth.resumeUntil) {
+        const error = new Error(label('tokenExpired'));
+        error.sessionCleared = true;
+        throw error;
+      }
       const http = await fetchWithTimeout('/plugins/mcpserver/mcp', {
         method: 'POST',
         cache: 'no-store',
@@ -1045,6 +1101,11 @@
       }, 70000);
       status = http.status;
       const text = await http.text();
+      if (state.oauth !== oauth || Date.now() >= oauth.resumeUntil) {
+        const error = new Error(label('tokenExpired'));
+        error.sessionCleared = true;
+        throw error;
+      }
       response = parseMcpBody(text, http.headers.get('content-type') || '');
       addTranscript(method, safeRequest, safeMcpResponse(response, selected), status, Math.round(performance.now() - started));
       if (!http.ok || (response && response.error)) {
@@ -1055,6 +1116,7 @@
       }
       return response ? response.result : null;
     } catch (error) {
+      if (state.oauth !== oauth && error) error.sessionCleared = true;
       if (!(error && error.sessionCleared === true) &&
         (!state.transcript.length || state.transcript[state.transcript.length - 1].request !== safeRequest)) {
         addTranscript(method, safeRequest, response || {error: error instanceof Error ? error.message : 'request failed'}, status, Math.round(performance.now() - started));
@@ -1077,33 +1139,61 @@
 
   async function revokeAndClear() {
     const oauth = state.oauth;
-    try { if (oauth) await explorerSession(oauth.metadata, {action: 'logout'}); }
-    catch (_error) { /* Server-side expiry remains the fail-safe. */ }
-    core.clearSensitiveState(state);
-    elements.json.value = '{}';
-    elements.confirmTool.textContent = '';
-    elements.confirmArguments.textContent = '';
-    elements.transferSource.textContent = '';
-    elements.transferTool.replaceChildren();
-    elements.transferField.replaceChildren();
-    elements.transferEmpty.hidden = false;
-    elements.transferApply.disabled = true;
-    if (elements.transfer.open) elements.transfer.close();
+    clearExplorerState();
     renderAll();
     if (logoutChannel) logoutChannel.postMessage('logout');
+    try { if (oauth) await explorerSession(oauth.metadata, {action: 'logout'}); }
+    catch (_error) { /* Server-side expiry remains the fail-safe. */ }
+    setBusy(false);
+  }
+
+  function clearExplorerState() {
+    core.clearSensitiveState(state);
+    core.clearSensitiveDom(elements);
   }
 
   function renderConnection() {
-    const connected = Boolean(state.oauth);
-    elements.connect.disabled = connected;
-    elements.disconnect.disabled = !connected;
-    elements.run.disabled = !connected || !state.selectedTool;
+    if (sessionExpiryTimer !== null) window.clearTimeout(sessionExpiryTimer);
+    sessionExpiryTimer = null;
+    const connected = Boolean(state.oauth && state.oauth.resumeUntil > Date.now());
+    if (!connected && state.oauth) {
+      clearExplorerState();
+      setBusy(false);
+      renderAll();
+      return;
+    }
+    elements.connect.disabled = state.busy || connected;
+    elements.disconnect.disabled = state.busy || !connected;
+    elements.run.disabled = state.busy || !connected || !state.selectedTool;
+    elements.connectionBadge.textContent = label(connected ? 'connected' : 'disconnected');
+    elements.connectionBadge.dataset.kind = connected ? 'success' : 'inactive';
     elements.sessionExpiry.hidden = !connected;
+    elements.accessScopes.hidden = !connected;
+    elements.scopeList.replaceChildren();
     if (connected) {
       const expiry = new Date(state.oauth.resumeUntil);
       elements.sessionExpiryTime.dateTime = expiry.toISOString();
       elements.sessionExpiryTime.textContent = expiry.toLocaleString();
+      const granted = core.grantedScopes(state.oauth.scope);
+      elements.scopeUnavailable.hidden = granted !== null;
+      if (granted !== null) {
+        for (const scope of core.EXPLORER_SCOPE_ORDER) {
+          const isGranted = granted.has(scope);
+          const item = element('li', {className: 'mcp-explorer-scope'}, [
+            element('code', {text: scope}),
+            element('span', {text: label(isGranted ? 'scopeGranted' : 'scopeNotGranted')}),
+          ]);
+          elements.scopeList.append(item);
+        }
+      }
+      sessionExpiryTimer = window.setTimeout(() => {
+        clearExplorerState();
+        setBusy(false);
+        renderAll();
+        if (logoutChannel) logoutChannel.postMessage('logout');
+      }, Math.max(0, state.oauth.resumeUntil - Date.now()));
     } else {
+      elements.scopeUnavailable.hidden = true;
       elements.sessionExpiryTime.removeAttribute('datetime');
       elements.sessionExpiryTime.textContent = '';
     }
@@ -1501,14 +1591,20 @@
 
   async function runSelectedTool() {
     if (!validateDraft(true) || !state.selectedTool) return;
+    const oauth = state.oauth;
     const requiredMutationScope = state.selectedTool.name === 'loxberry_clear_statistics_cache'
       ? 'loxberry:operate'
       : 'loxone:control';
-    if (core.toolIsMutating(state.selectedTool) && !(state.oauth && state.oauth.scope.split(/\s+/).includes(requiredMutationScope))) {
+    const granted = state.oauth && core.grantedScopes(state.oauth.scope);
+    if (core.toolIsMutating(state.selectedTool) && !(granted && granted.has(requiredMutationScope))) {
       showError(new Error(label(requiredMutationScope === 'loxberry:operate' ? 'operateRequired' : 'controlRequired')), label('error'));
       return;
     }
     if (!(await confirmMutation(state.selectedTool, state.arguments))) return;
+    if (state.oauth !== oauth || Date.now() >= oauth.resumeUntil) {
+      renderAll();
+      return;
+    }
     const tool = state.selectedTool;
     const args = core.clone(state.arguments);
     setBusy(true);
@@ -1531,21 +1627,21 @@
       }
       setStatus(ok ? label('ready') : label('error'), ok ? 'success' : 'error');
     } catch (error) {
-      sessionCleared = Boolean(error && error.sessionCleared === true);
+      sessionCleared = Boolean(error && error.sessionCleared === true) || state.oauth !== oauth;
       if (!sessionCleared) {
         result = error && error.mcpResult
           ? core.clone(error.mcpResult)
           : {error: error instanceof Error ? error.message : label('error')};
         renderResult(result, {tool: tool.name, arguments: args});
       }
-      showError(error, label('error'));
+      if (!sessionCleared) showError(error, label('error'));
     } finally {
       if (!sessionCleared) {
         state.history.push({tool: tool.name, arguments: args, result, ok, duration: Math.round(performance.now() - started)});
         if (state.history.length > core.MAX_CALL_HISTORY) state.history.splice(0, state.history.length - core.MAX_CALL_HISTORY);
         renderHistory();
       }
-      setBusy(false);
+      if (state.oauth === oauth) setBusy(false);
     }
   }
 
@@ -1675,7 +1771,7 @@
     } catch (error) {
       try { authorizationPopup?.close(); } catch (_closeError) { /* already gone */ }
       if (state.oauth) await revokeAndClear();
-      else core.clearSensitiveState(state);
+      else clearExplorerState();
       renderAll();
       // renderAll() resets the connection status. Render first so the actual
       // OAuth failure remains visible instead of being replaced by "disconnected".
@@ -1753,7 +1849,7 @@
     } catch (_error) {
       const canonicalOriginMismatch = _error instanceof Error
         && typeof _error.canonicalUrl === 'string';
-      core.clearSensitiveState(state);
+      clearExplorerState();
       renderAll();
       if (canonicalOriginMismatch) {
         showConnectionError(_error, label('error'));

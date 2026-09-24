@@ -14,6 +14,10 @@ details.mcp-explorer-card { padding: 0; }
 details.mcp-explorer-card > summary { padding: 1rem; cursor: pointer; font-size: 1.25rem; font-weight: 600; }
 details.mcp-explorer-card[open] > summary { border-bottom: 1px solid #d7dadd; }
 .mcp-explorer-panel-content { min-width: 0; padding: 1rem; }
+.mcp-explorer-header-links { margin: 0; }
+#explorer-connection-panel > summary h1 { display: inline; margin: 0; font: inherit; }
+#explorer-connection-badge { margin-inline-start: .5rem; vertical-align: middle; }
+#explorer-access-scopes > summary { cursor: pointer; font-weight: 600; }
 .mcp-explorer-panel-label { display: inline-flex; gap: .45rem; align-items: baseline; }
 .mcp-explorer-panel-selection { color: #5f6368; font-size: .85rem; font-weight: 400; overflow-wrap: anywhere; }
 .mcp-collapsible-content { min-width: 0; padding: 1rem; }
@@ -48,6 +52,9 @@ details.mcp-explorer-card[open] > summary { border-bottom: 1px solid #d7dadd; }
 .mcp-status[data-kind="warning"], .mcp-explorer-status[data-kind="warning"] { border-color: #b45309; }
 .mcp-status[data-kind="working"] { border-color: #1261a0; }
 .mcp-explorer-status[data-kind="working"] { border-color: #1261a0; }
+.mcp-explorer-scope-list { display: grid; gap: .25rem; margin: .4rem 0 0; padding: 0; list-style: none; }
+.mcp-explorer-scope { display: flex; flex-wrap: wrap; gap: .25rem .75rem; justify-content: space-between; }
+.mcp-explorer-scope code { overflow-wrap: anywhere; }
 .mcp-warning, .mcp-explorer-warning { padding: .65rem; border-left: .3rem solid #b45309; background: #fff7ed; }
 .mcp-table-wrap { max-width: 100%; overflow-x: auto; }
 .mcp-table { width: 100%; border-collapse: collapse; }
