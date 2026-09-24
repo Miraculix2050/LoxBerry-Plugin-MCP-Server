@@ -31,6 +31,10 @@ Search the available tools by name or description and combine the search with
 one or more groups in the expandable filter. **All** clears the group selection.
 Filtering is local and keeps the selected tool and
 its unsent draft.
+For the selected tool, the Explorer shows its read/write classification and
+explicit MCP hints. Incomplete or contradictory metadata is conservatively
+marked **May write**. Hints are not a safety guarantee; the complete annotations
+are available under **Technical MCP metadata**.
 Results and history entries appear as an expandable tree. Large branches show
 100 entries at a time; **Show more** loads the next batch. The disclosure arrow
 opens a branch, while the separate value button reuses its unchanged value and path.

@@ -90,6 +90,10 @@ details.mcp-explorer-card[open] > summary { border-bottom: 1px solid #d7dadd; }
 .mcp-explorer-tool[aria-current="true"] { border-color: #1261a0; box-shadow: inset .25rem 0 #1261a0; }
 .mcp-explorer-badge { display: inline-block; margin: .25rem .25rem 0 0; padding: .15rem .4rem; border-radius: 1rem; background: #e5e7eb; font-size: .82em; }
 .mcp-explorer-badge[data-kind="danger"] { color: #8b1111; background: #fee2e2; }
+.mcp-explorer-metadata { display: flex; flex-wrap: wrap; gap: .35rem; }
+.mcp-explorer-metadata .mcp-explorer-badge { margin: 0; }
+.mcp-explorer-technical > summary { cursor: pointer; }
+.mcp-explorer-technical > .mcp-explorer-pre { margin: .5rem 0 0; }
 .mcp-explorer-field { display: grid; gap: .35rem; min-width: 0; padding: .65rem; border: 1px solid #ddd; border-radius: .3rem; }
 .mcp-explorer-field input:not([type="checkbox"]), .mcp-explorer-field select, .mcp-explorer-field textarea, .mcp-explorer-json { box-sizing: border-box; width: 100%; max-width: 100%; min-height: 2.75rem; font: inherit; }
 .mcp-explorer-json { min-height: 14rem; padding: .65rem; resize: vertical; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }

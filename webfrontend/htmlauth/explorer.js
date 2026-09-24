@@ -635,6 +635,25 @@
     return !(annotations.readOnlyHint === true && annotations.destructiveHint === false);
   }
 
+  function toolMetadataLabels(tool) {
+    const annotations = tool && tool.annotations || {};
+    const mutating = toolIsMutating(tool);
+    const contradictory = annotations.readOnlyHint === true && annotations.destructiveHint === true;
+    const labels = [mutating
+      ? (annotations.readOnlyHint === false ? 'toolBadgeWrite' : 'toolBadgeWritePossible')
+      : 'toolBadgeReadOnly'];
+    if (contradictory) return labels;
+    if (annotations.readOnlyHint === false) {
+      if (annotations.destructiveHint === true) labels.push('toolHintDestructive');
+      if (annotations.destructiveHint === false) labels.push('toolHintAdditive');
+      if (annotations.idempotentHint === true) labels.push('toolHintIdempotent');
+      if (annotations.idempotentHint === false) labels.push('toolHintRepeatEffect');
+    }
+    if (annotations.openWorldHint === true) labels.push('toolHintOpenWorld');
+    if (annotations.openWorldHint === false) labels.push('toolHintClosedWorld');
+    return labels;
+  }
+
   function acceptOAuthPayload(data, expectedState) {
     return Boolean(
       data && data.type === 'mcp-explorer-oauth' && data.state === expectedState &&
@@ -761,6 +780,7 @@
     createResultInspector,
     base64Url,
     toolIsMutating,
+    toolMetadataLabels,
     acceptOAuthPayload,
     acceptOAuthMessage,
     mcpFailure,
@@ -1344,8 +1364,9 @@
       group.tools.forEach((tool) => {
       const button = element('button', {type: 'button', className: 'mcp-explorer-tool', 'aria-current': String(state.selectedTool && state.selectedTool.name === tool.name)});
       button.append(element('strong', {text: tool.name}));
-      if (core.toolIsMutating(tool)) button.append(element('span', {className: 'mcp-explorer-badge', 'data-kind': 'danger', text: label('toolBadgeWrite')}));
-      else button.append(element('span', {className: 'mcp-explorer-badge', text: label('toolBadgeReadOnly')}));
+      const accessLabel = core.toolMetadataLabels(tool)[0];
+      button.append(element('span', {className: 'mcp-explorer-badge',
+        'data-kind': core.toolIsMutating(tool) ? 'danger' : 'read', text: label(accessLabel)}));
       button.addEventListener('click', () => {
         selectTool(tool.name);
         if (narrowViewport.matches) {
@@ -1538,8 +1559,19 @@
     }
     elements.summary.append(element('h2', {text: state.selectedTool.name}));
     elements.summary.append(element('p', {text: state.selectedTool.description || ''}));
-    const annotations = state.selectedTool.annotations || {};
-    elements.summary.append(element('code', {text: JSON.stringify(annotations)}));
+    const badges = element('div', {className: 'mcp-explorer-metadata'});
+    core.toolMetadataLabels(state.selectedTool).forEach((key, index) => {
+      badges.append(element('span', {className: 'mcp-explorer-badge',
+        'data-kind': index === 0 && core.toolIsMutating(state.selectedTool) ? 'danger' : 'read',
+        text: label(key)}));
+    });
+    elements.summary.append(badges);
+    elements.summary.append(element('p', {className: 'mcp-explorer-muted', text: label('toolHintsNotice')}));
+    const technical = element('details', {className: 'mcp-explorer-technical'});
+    technical.append(element('summary', {text: label('toolTechnicalMetadata')}));
+    technical.append(element('pre', {className: 'mcp-explorer-pre',
+      text: JSON.stringify(state.selectedTool.annotations || {}, null, 2)}));
+    elements.summary.append(technical);
     const schema = state.selectedTool.inputSchema || {type: 'object'};
     const required = new Set(schema.required || []);
     let supported = true;

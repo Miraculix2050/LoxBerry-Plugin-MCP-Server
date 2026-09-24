@@ -5,6 +5,9 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Show localized MCP tool hints and the conservative read/write classification
+  in the Tool Explorer, with complete annotations in a technical disclosure.
+
 - Show factual Admin summary badges for saved MCP/MQTT settings, sessions and pending approvals, and HTTPS certificate checks; keep session counts current while the page is visible.
 
 - Allow slow read-only Admin certificate and emergency-stop discovery requests to finish instead of aborting before the target responds.

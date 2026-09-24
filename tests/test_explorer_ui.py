@@ -82,10 +82,36 @@ def test_tool_badges_are_localized_through_the_explorer_template() -> None:
         in template
     )
     assert 'data-tool-badge-write="<TMPL_VAR EXPLORER.TOOL_BADGE_WRITE ESCAPE=HTML>"' in template
-    assert "label('toolBadgeReadOnly')" in render_tools
-    assert "label('toolBadgeWrite')" in render_tools
+    assert "core.toolMetadataLabels(tool)[0]" in render_tools
+    assert "core.toolIsMutating(tool)" in render_tools
     assert "text: 'read-only'" not in render_tools
     assert "text: 'write'" not in render_tools
+
+
+def test_tool_metadata_labels_are_localized_and_inspectable() -> None:
+    german = (ROOT / "templates" / "lang" / "language_de.ini").read_text(encoding="utf-8")
+    english = (ROOT / "templates" / "lang" / "language_en.ini").read_text(encoding="utf-8")
+    template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
+    source = SCRIPT.read_text(encoding="utf-8")
+    keys = [
+        "TOOL_BADGE_WRITE_POSSIBLE",
+        "TOOL_HINT_DESTRUCTIVE",
+        "TOOL_HINT_ADDITIVE",
+        "TOOL_HINT_IDEMPOTENT",
+        "TOOL_HINT_REPEAT_EFFECT",
+        "TOOL_HINT_OPEN_WORLD",
+        "TOOL_HINT_CLOSED_WORLD",
+        "TOOL_HINTS_NOTICE",
+        "TOOL_TECHNICAL_METADATA",
+    ]
+    for key in keys:
+        attribute = key.lower().replace("_", "-")
+        assert f"{key}=" in german
+        assert f"{key}=" in english
+        assert f'data-{attribute}="<TMPL_VAR EXPLORER.{key} ESCAPE=HTML>"' in template
+    assert "core.toolMetadataLabels(state.selectedTool)" in source
+    assert "JSON.stringify(state.selectedTool.annotations || {}, null, 2)" in source
+    assert "element('details', {className: 'mcp-explorer-technical'})" in source
 
 
 def run_core(expression: str) -> object:
@@ -873,6 +899,42 @@ def test_explorer_write_classification_fails_closed() -> None:
     assert run_core(f"core.toolIsMutating({json.dumps(safe)})") is False
     for tool in cases:
         assert run_core(f"core.toolIsMutating({json.dumps(tool)})") is True
+
+
+def test_tool_metadata_labels_follow_explicit_hints_without_inventing_safety() -> None:
+    cases = [
+        (
+            {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
+            ["toolBadgeReadOnly", "toolHintClosedWorld"],
+        ),
+        (
+            {
+                "readOnlyHint": False,
+                "destructiveHint": True,
+                "idempotentHint": False,
+                "openWorldHint": True,
+            },
+            ["toolBadgeWrite", "toolHintDestructive", "toolHintRepeatEffect", "toolHintOpenWorld"],
+        ),
+        (
+            {
+                "readOnlyHint": False,
+                "destructiveHint": False,
+                "idempotentHint": True,
+                "openWorldHint": False,
+            },
+            ["toolBadgeWrite", "toolHintAdditive", "toolHintIdempotent", "toolHintClosedWorld"],
+        ),
+        (
+            {"readOnlyHint": True, "destructiveHint": True, "openWorldHint": False},
+            ["toolBadgeWritePossible"],
+        ),
+        ({"readOnlyHint": True}, ["toolBadgeWritePossible"]),
+        ({}, ["toolBadgeWritePossible"]),
+    ]
+    for hints, expected in cases:
+        tool = {"annotations": hints}
+        assert run_core(f"core.toolMetadataLabels({json.dumps(tool)})") == expected
 
 
 def test_explorer_oauth_guards_and_resource_binding() -> None:
