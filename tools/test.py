@@ -64,6 +64,7 @@ _TEST_GROUPS: Final = (
         (
             "src/mcpserver/admin.py",
             "templates/index.html",
+            "webfrontend/htmlauth/admin/**",
             "webfrontend/htmlauth/mcp-ui.css",
             "tools/benchmark_admin_page_state.py",
             "templates/lang/**",
@@ -73,6 +74,7 @@ _TEST_GROUPS: Final = (
             "tests/test_admin.py",
             "tests/test_admin_ui.py",
             "tests/test_apache_config.py",
+            "tests/test_explorer_ui.py",
         ),
     ),
     (
