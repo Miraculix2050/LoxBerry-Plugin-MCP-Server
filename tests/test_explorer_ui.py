@@ -810,6 +810,63 @@ def test_explorer_disconnect_clears_all_in_memory_session_data() -> None:
     }
 
 
+def test_explorer_session_clear_removes_sensitive_dom_content() -> None:
+    expression = """(() => {
+      const text = () => ({textContent:'secret',hidden:false});
+      const list = () => ({children:['secret'],hidden:false,
+        replaceChildren(){this.children=[];}});
+      const dialog = () => ({open:true,returnValue:'',close(value){
+        this.open=false; this.returnValue=value || '';
+      }});
+      const elements={json:{value:'{"token":"secret"}'},confirmTool:text(),
+        confirmArguments:text(),confirm:dialog(),transferSource:text(),
+        transferContext:text(),transferTool:list(),transferField:list(),
+        transferEmpty:{hidden:true},transferApply:{disabled:false},transfer:dialog(),
+        resultContext:text(),historyArguments:list(),restoreHistory:{hidden:false},
+        validation:text()};
+      core.clearSensitiveDom(elements);
+      return {
+        json:elements.json.value,confirmTool:elements.confirmTool.textContent,
+        confirmArguments:elements.confirmArguments.textContent,
+        confirmOpen:elements.confirm.open,confirmReturn:elements.confirm.returnValue,
+        transferSource:elements.transferSource.textContent,
+        transferContext:elements.transferContext.textContent,
+        transferTool:elements.transferTool.children,
+        transferField:elements.transferField.children,
+        transferEmpty:elements.transferEmpty.hidden,
+        transferApply:elements.transferApply.disabled,transferOpen:elements.transfer.open,
+        resultContext:elements.resultContext.textContent,
+        resultContextHidden:elements.resultContext.hidden,
+        historyArguments:elements.historyArguments.children,
+        historyArgumentsHidden:elements.historyArguments.hidden,
+        restoreHistory:elements.restoreHistory.hidden,
+        validation:elements.validation.textContent,
+        validationHidden:elements.validation.hidden,
+      };
+    })()"""
+    assert run_core(expression) == {
+        "json": "{}",
+        "confirmTool": "",
+        "confirmArguments": "",
+        "confirmOpen": False,
+        "confirmReturn": "cancel",
+        "transferSource": "",
+        "transferContext": "",
+        "transferTool": [],
+        "transferField": [],
+        "transferEmpty": False,
+        "transferApply": True,
+        "transferOpen": False,
+        "resultContext": "",
+        "resultContextHidden": True,
+        "historyArguments": [],
+        "historyArgumentsHidden": True,
+        "restoreHistory": True,
+        "validation": "",
+        "validationHidden": True,
+    }
+
+
 def test_explorer_granted_scopes_are_exact_and_fail_closed() -> None:
     expression = """(() => {
       const scopes = core.EXPLORER_SCOPE_ORDER;
@@ -856,8 +913,10 @@ def test_explorer_scope_display_tracks_session_lifecycle() -> None:
     logout = source[
         source.index("async function revokeAndClear") : source.index("function renderConnection")
     ]
-    assert logout.index("core.clearSensitiveState(state)") < logout.index("action: 'logout'")
+    assert logout.index("clearExplorerState()") < logout.index("action: 'logout'")
     assert logout.index("renderAll()") < logout.index("action: 'logout'")
+    assert "core.clearSensitiveDom(elements);" in logout
+    assert source.count("clearExplorerState();") >= 6
     assert "sessionExpiryTimer = window.setTimeout" in source
     assert "if (logoutChannel) logoutChannel.postMessage('logout');" in source
     for text in (german, english):
@@ -877,7 +936,7 @@ def test_session_clear_prevents_call_artifacts_from_being_recreated() -> None:
         in source
     )
     assert source.count("if (!sessionCleared) {") >= 2
-    assert "if (!connected && elements.confirm.open) elements.confirm.close('cancel');" in source
+    assert "if (elements.confirm.open) elements.confirm.close('cancel');" in source
     request = source[
         source.index("async function mcpRequest") : source.index("async function initializeMcp")
     ]

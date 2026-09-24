@@ -563,6 +563,27 @@
     state.drafts = {};
   }
 
+  function clearSensitiveDom(elements) {
+    elements.json.value = '{}';
+    elements.confirmTool.textContent = '';
+    elements.confirmArguments.textContent = '';
+    if (elements.confirm.open) elements.confirm.close('cancel');
+    elements.transferSource.textContent = '';
+    elements.transferContext.textContent = '';
+    elements.transferTool.replaceChildren();
+    elements.transferField.replaceChildren();
+    elements.transferEmpty.hidden = false;
+    elements.transferApply.disabled = true;
+    if (elements.transfer.open) elements.transfer.close();
+    elements.resultContext.textContent = '';
+    elements.resultContext.hidden = true;
+    elements.historyArguments.replaceChildren();
+    elements.historyArguments.hidden = true;
+    elements.restoreHistory.hidden = true;
+    elements.validation.textContent = '';
+    elements.validation.hidden = true;
+  }
+
   function mcpFailure(response, fallback) {
     const protocolError = response && response.error;
     if (protocolError && typeof protocolError === 'object') {
@@ -638,6 +659,7 @@
     acceptOAuthMessage,
     mcpFailure,
     clearSensitiveState,
+    clearSensitiveDom,
     fieldControlId,
     canonicalExplorerUrl,
     httpsExplorerUrl,
@@ -746,7 +768,7 @@
   persistDisclosure(elements.accessScopes, 'mcp-explorer-scopes-open-v1');
   if (logoutChannel) logoutChannel.onmessage = (event) => {
     if (event.data !== 'logout') return;
-    core.clearSensitiveState(state);
+    clearExplorerState();
     setBusy(false);
     renderAll();
     setStatus(label('disconnected'), '');
@@ -1116,21 +1138,17 @@
 
   async function revokeAndClear() {
     const oauth = state.oauth;
-    core.clearSensitiveState(state);
+    clearExplorerState();
     renderAll();
     if (logoutChannel) logoutChannel.postMessage('logout');
     try { if (oauth) await explorerSession(oauth.metadata, {action: 'logout'}); }
     catch (_error) { /* Server-side expiry remains the fail-safe. */ }
-    elements.json.value = '{}';
-    elements.confirmTool.textContent = '';
-    elements.confirmArguments.textContent = '';
-    elements.transferSource.textContent = '';
-    elements.transferTool.replaceChildren();
-    elements.transferField.replaceChildren();
-    elements.transferEmpty.hidden = false;
-    elements.transferApply.disabled = true;
-    if (elements.transfer.open) elements.transfer.close();
     setBusy(false);
+  }
+
+  function clearExplorerState() {
+    core.clearSensitiveState(state);
+    core.clearSensitiveDom(elements);
   }
 
   function renderConnection() {
@@ -1138,10 +1156,11 @@
     sessionExpiryTimer = null;
     const connected = Boolean(state.oauth && state.oauth.resumeUntil > Date.now());
     if (!connected && state.oauth) {
-      core.clearSensitiveState(state);
+      clearExplorerState();
       setBusy(false);
+      renderAll();
+      return;
     }
-    if (!connected && elements.confirm.open) elements.confirm.close('cancel');
     elements.connect.disabled = state.busy || connected;
     elements.disconnect.disabled = state.busy || !connected;
     elements.run.disabled = state.busy || !connected || !state.selectedTool;
@@ -1165,7 +1184,7 @@
         }
       }
       sessionExpiryTimer = window.setTimeout(() => {
-        core.clearSensitiveState(state);
+        clearExplorerState();
         setBusy(false);
         renderAll();
         if (logoutChannel) logoutChannel.postMessage('logout');
@@ -1749,7 +1768,7 @@
     } catch (error) {
       try { authorizationPopup?.close(); } catch (_closeError) { /* already gone */ }
       if (state.oauth) await revokeAndClear();
-      else core.clearSensitiveState(state);
+      else clearExplorerState();
       renderAll();
       // renderAll() resets the connection status. Render first so the actual
       // OAuth failure remains visible instead of being replaced by "disconnected".
@@ -1827,7 +1846,7 @@
     } catch (_error) {
       const canonicalOriginMismatch = _error instanceof Error
         && typeof _error.canonicalUrl === 'string';
-      core.clearSensitiveState(state);
+      clearExplorerState();
       renderAll();
       if (canonicalOriginMismatch) {
         showConnectionError(_error, label('error'));
