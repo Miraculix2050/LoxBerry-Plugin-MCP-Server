@@ -3,9 +3,12 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import tomllib
 from pathlib import Path
 
 import pytest
+
+from mcpserver.schema_reference import tool_schema_catalog
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "webfrontend" / "htmlauth" / "explorer.js"
@@ -82,10 +85,40 @@ def test_tool_badges_are_localized_through_the_explorer_template() -> None:
         in template
     )
     assert 'data-tool-badge-write="<TMPL_VAR EXPLORER.TOOL_BADGE_WRITE ESCAPE=HTML>"' in template
-    assert "label('toolBadgeReadOnly')" in render_tools
-    assert "label('toolBadgeWrite')" in render_tools
+    assert "core.toolMetadataLabels(tool)[0]" in render_tools
+    assert "core.toolIsMutating(tool)" in render_tools
     assert "text: 'read-only'" not in render_tools
     assert "text: 'write'" not in render_tools
+
+
+def test_tool_metadata_labels_are_localized_and_inspectable() -> None:
+    german = (ROOT / "templates" / "lang" / "language_de.ini").read_text(encoding="utf-8")
+    english = (ROOT / "templates" / "lang" / "language_en.ini").read_text(encoding="utf-8")
+    template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
+    source = SCRIPT.read_text(encoding="utf-8")
+    keys = [
+        "TOOL_BADGE_WRITE_POSSIBLE",
+        "TOOL_HINT_DESTRUCTIVE",
+        "TOOL_HINT_ADDITIVE",
+        "TOOL_HINT_IDEMPOTENT",
+        "TOOL_HINT_REPEAT_EFFECT",
+        "TOOL_HINT_OPEN_WORLD",
+        "TOOL_HINT_CLOSED_WORLD",
+        "TOOL_HINTS_NOTICE",
+        "TOOL_DESCRIPTION",
+        "TOOL_REQUIRED_SCOPES",
+        "TOOL_SCOPES_UNKNOWN",
+        "TOOL_TECHNICAL_METADATA",
+    ]
+    for key in keys:
+        attribute = key.lower().replace("_", "-")
+        assert f"{key}=" in german
+        assert f"{key}=" in english
+        assert f'data-{attribute}="<TMPL_VAR EXPLORER.{key} ESCAPE=HTML>"' in template
+    assert "core.toolMetadataLabels(state.selectedTool)" in source
+    assert "core.toolRequiredScopes(state.selectedTool)" in source
+    assert "JSON.stringify(state.selectedTool.annotations || {}, null, 2)" in source
+    assert "element('details', {className: 'mcp-explorer-technical'})" in source
 
 
 def run_core(expression: str) -> object:
@@ -873,6 +906,65 @@ def test_explorer_write_classification_fails_closed() -> None:
     assert run_core(f"core.toolIsMutating({json.dumps(safe)})") is False
     for tool in cases:
         assert run_core(f"core.toolIsMutating({json.dumps(tool)})") is True
+
+
+def test_tool_metadata_labels_follow_explicit_hints_without_inventing_safety() -> None:
+    cases = [
+        (
+            {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
+            ["toolBadgeReadOnly", "toolHintClosedWorld"],
+        ),
+        (
+            {
+                "readOnlyHint": False,
+                "destructiveHint": True,
+                "idempotentHint": False,
+                "openWorldHint": True,
+            },
+            ["toolBadgeWrite", "toolHintDestructive", "toolHintRepeatEffect", "toolHintOpenWorld"],
+        ),
+        (
+            {
+                "readOnlyHint": False,
+                "destructiveHint": False,
+                "idempotentHint": True,
+                "openWorldHint": False,
+            },
+            ["toolBadgeWrite", "toolHintAdditive", "toolHintIdempotent", "toolHintClosedWorld"],
+        ),
+        (
+            {"readOnlyHint": True, "destructiveHint": True, "openWorldHint": False},
+            ["toolBadgeWritePossible"],
+        ),
+        ({"readOnlyHint": True}, ["toolBadgeWritePossible"]),
+        ({}, ["toolBadgeWritePossible"]),
+    ]
+    for hints, expected in cases:
+        tool = {"annotations": hints}
+        assert run_core(f"core.toolMetadataLabels({json.dumps(tool)})") == expected
+
+
+def test_required_scopes_cover_current_tools_and_leave_unknown_tools_unmapped() -> None:
+    version = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"][
+        "version"
+    ]
+    names = [tool["name"] for tool in tool_schema_catalog(version)["tools"]]
+    mapped = run_core(
+        f"Object.fromEntries({json.dumps(names)}.map(name => "
+        "[name,core.toolRequiredScopes({name})]))"
+    )
+    assert set(mapped) == set(names)
+    assert all(scopes and scopes[0] == "loxone:read" for scopes in mapped.values())
+    assert mapped["loxone_get_system_status"] == ["loxone:read"]
+    assert mapped["loxone_get_statistics"] == ["loxone:read", "loxone:history"]
+    assert mapped["loxone_operate_control"] == ["loxone:read", "loxone:control"]
+    assert mapped["loxberry_get_service_health"] == ["loxone:read", "loxberry:read"]
+    assert mapped["loxberry_add_event_history_source"] == [
+        "loxone:read",
+        "loxone:history",
+        "loxberry:operate",
+    ]
+    assert run_core("core.toolRequiredScopes({name:'future_tool'})") is None
 
 
 def test_explorer_oauth_guards_and_resource_binding() -> None:

@@ -62,6 +62,11 @@
     ]},
     {id: 'loxberryOperate', names: LOXBERRY_OPERATE_TOOLS},
   ];
+  const ADDITIONAL_LOXONE_READ_TOOLS = new Set([
+    'loxone_get_structure_overview', 'loxone_get_room_snapshot', 'loxone_list_global_metadata',
+    'loxone_get_weather', 'loxone_get_project_status', 'loxone_find_project_objects',
+    'loxone_describe_project_object', 'loxone_trace_project_logic', 'loxone_analyze_project',
+  ]);
 
   function clone(value) {
     return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
@@ -635,6 +640,40 @@
     return !(annotations.readOnlyHint === true && annotations.destructiveHint === false);
   }
 
+  function toolMetadataLabels(tool) {
+    const annotations = tool && tool.annotations || {};
+    const mutating = toolIsMutating(tool);
+    const contradictory = annotations.readOnlyHint === true && annotations.destructiveHint === true;
+    const labels = [mutating
+      ? (annotations.readOnlyHint === false ? 'toolBadgeWrite' : 'toolBadgeWritePossible')
+      : 'toolBadgeReadOnly'];
+    if (contradictory) return labels;
+    if (annotations.readOnlyHint === false) {
+      if (annotations.destructiveHint === true) labels.push('toolHintDestructive');
+      if (annotations.destructiveHint === false) labels.push('toolHintAdditive');
+      if (annotations.idempotentHint === true) labels.push('toolHintIdempotent');
+      if (annotations.idempotentHint === false) labels.push('toolHintRepeatEffect');
+    }
+    if (annotations.openWorldHint === true) labels.push('toolHintOpenWorld');
+    if (annotations.openWorldHint === false) labels.push('toolHintClosedWorld');
+    return labels;
+  }
+
+  function toolRequiredScopes(tool) {
+    const name = tool && tool.name;
+    const inGroup = (id) => TOOL_GROUPS.some((group) => group.id === id && group.names.includes(name));
+    if (LOXONE_HISTORY_TOOLS.includes(name)) return ['loxone:read', 'loxone:history'];
+    if (name === 'loxone_operate_control') return ['loxone:read', 'loxone:control'];
+    if (LOXBERRY_OPERATE_TOOLS.includes(name)) {
+      return ['loxone:read', 'loxone:history', 'loxberry:operate'];
+    }
+    if (inGroup('loxoneRead') || ADDITIONAL_LOXONE_READ_TOOLS.has(name)) {
+      return ['loxone:read'];
+    }
+    if (inGroup('loxberryRead')) return ['loxone:read', 'loxberry:read'];
+    return null;
+  }
+
   function acceptOAuthPayload(data, expectedState) {
     return Boolean(
       data && data.type === 'mcp-explorer-oauth' && data.state === expectedState &&
@@ -761,6 +800,8 @@
     createResultInspector,
     base64Url,
     toolIsMutating,
+    toolMetadataLabels,
+    toolRequiredScopes,
     acceptOAuthPayload,
     acceptOAuthMessage,
     mcpFailure,
@@ -1344,8 +1385,9 @@
       group.tools.forEach((tool) => {
       const button = element('button', {type: 'button', className: 'mcp-explorer-tool', 'aria-current': String(state.selectedTool && state.selectedTool.name === tool.name)});
       button.append(element('strong', {text: tool.name}));
-      if (core.toolIsMutating(tool)) button.append(element('span', {className: 'mcp-explorer-badge', 'data-kind': 'danger', text: label('toolBadgeWrite')}));
-      else button.append(element('span', {className: 'mcp-explorer-badge', text: label('toolBadgeReadOnly')}));
+      const accessLabel = core.toolMetadataLabels(tool)[0];
+      button.append(element('span', {className: 'mcp-explorer-badge',
+        'data-kind': core.toolIsMutating(tool) ? 'danger' : 'read', text: label(accessLabel)}));
       button.addEventListener('click', () => {
         selectTool(tool.name);
         if (narrowViewport.matches) {
@@ -1537,9 +1579,38 @@
       return;
     }
     elements.summary.append(element('h2', {text: state.selectedTool.name}));
-    elements.summary.append(element('p', {text: state.selectedTool.description || ''}));
-    const annotations = state.selectedTool.annotations || {};
-    elements.summary.append(element('code', {text: JSON.stringify(annotations)}));
+    const description = state.selectedTool.description || '';
+    if (description.length > 180) {
+      const excerpt = description.slice(0, 100).replace(/\s+\S*$/, '').trimEnd();
+      const descriptionDetails = element('details', {className: 'mcp-explorer-description'});
+      descriptionDetails.append(element('summary', {text: `${label('toolDescription')}: ${excerpt}…`}));
+      descriptionDetails.append(element('p', {text: description}));
+      elements.summary.append(descriptionDetails);
+    } else {
+      elements.summary.append(element('p', {text: description}));
+    }
+    const badges = element('div', {className: 'mcp-explorer-metadata'});
+    core.toolMetadataLabels(state.selectedTool).forEach((key, index) => {
+      badges.append(element('span', {className: 'mcp-explorer-badge',
+        'data-kind': index === 0 && core.toolIsMutating(state.selectedTool) ? 'danger' : 'read',
+        text: label(key)}));
+    });
+    elements.summary.append(badges);
+    const scopes = element('p', {className: 'mcp-explorer-required-scopes'});
+    scopes.append(element('span', {text: `${label('toolRequiredScopes')}:`}));
+    const requiredScopes = core.toolRequiredScopes(state.selectedTool);
+    if (requiredScopes) {
+      requiredScopes.forEach((scope) => scopes.append(element('code', {text: scope})));
+    } else {
+      scopes.append(element('span', {text: label('toolScopesUnknown')}));
+    }
+    elements.summary.append(scopes);
+    const technical = element('details', {className: 'mcp-explorer-technical'});
+    technical.append(element('summary', {text: label('toolTechnicalMetadata')}));
+    technical.append(element('p', {className: 'mcp-explorer-hint-notice', text: label('toolHintsNotice')}));
+    technical.append(element('pre', {className: 'mcp-explorer-pre',
+      text: JSON.stringify(state.selectedTool.annotations || {}, null, 2)}));
+    elements.summary.append(technical);
     const schema = state.selectedTool.inputSchema || {type: 'object'};
     const required = new Set(schema.required || []);
     let supported = true;
