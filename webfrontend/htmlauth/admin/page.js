@@ -50,7 +50,7 @@
   const sessions = window.McpAdmin.createSessions(core);
   const service = window.McpAdmin.createService(core);
   const configuration = window.McpAdmin.createConfiguration(
-    core, queueBackgroundHydration, certificate, service,
+    core, certificate, service,
   );
   const {loadCertificateStatus} = certificate;
   const {pollSessions} = sessions;

@@ -53,7 +53,7 @@ def test_admin_modules_load_in_order_with_versioned_localized_assets() -> None:
         assert "<TMPL_" not in source
         assert (
             f'<script defer src="admin/{name}?v='
-            '<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v4"></script>'
+            '<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v5"></script>'
         ) in markup
         subprocess.run(
             [node, "--check", str(ROOT / "webfrontend/htmlauth/admin" / name)],
@@ -463,10 +463,9 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert (
         "await pollSessions({initial: true, suppliedResult: sections?.list_sessions});" in template
     )
-    assert (
-        "queueBackgroundHydration([() => loadEmergencyStopOptions(emergencyStopGeneration)]);"
-        in template
-    )
+    assert "queueBackgroundHydration([() => loadEmergencyStopOptions" not in template
+    assert "emergencyStopRetry.textContent = label('SETUP.EMERGENCY_STOP_LOAD');" in template
+    assert "emergencyStopRetry.hidden = false;" in template
     assert "window.requestAnimationFrame(() => {" in template
     assert "if (document.hidden) {" in template
     assert "scheduleBackgroundHydration();" in template
@@ -477,7 +476,7 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert "if (pageIsUnloading) return;" in template
     assert "if (accessSection.open && initialBackgroundHydrationComplete)" in template
     assert "if (sessionsSection.open && initialBackgroundHydrationComplete)" in template
-    assert "const emergencyStopGeneration = emergencyStopDiscoveryGeneration;" in template
+    assert "emergencyStopRetry.dataset.retry === 'true'" in template
     assert "queueBackgroundHydration([" in template
     assert 'id="emergency-stop-refresh"' not in template
     assert "emergencyStopRefresh" not in template
