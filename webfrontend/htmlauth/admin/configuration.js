@@ -293,6 +293,12 @@ window.McpAdmin.createConfiguration = (
       } else {
         emergencyStopStatus.hidden = true;
       }
+      if (status === 'available') {
+        emergencyStopRetry.dataset.retry = 'false';
+        emergencyStopRetry.textContent = label('SETUP.EMERGENCY_STOP_REFRESH');
+        emergencyStopRetry.hidden = false;
+        emergencyStopRetry.disabled = false;
+      }
     } catch {
       if (core.unloading) return;
       if (generation !== emergencyStopDiscoveryGeneration) return;

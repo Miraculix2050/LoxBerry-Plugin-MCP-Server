@@ -53,7 +53,7 @@ def test_admin_modules_load_in_order_with_versioned_localized_assets() -> None:
         assert "<TMPL_" not in source
         assert (
             f'<script defer src="admin/{name}?v='
-            '<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v7"></script>'
+            '<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v8"></script>'
         ) in markup
         subprocess.run(
             [node, "--check", str(ROOT / "webfrontend/htmlauth/admin" / name)],
@@ -552,9 +552,9 @@ def test_emergency_stop_selection_is_preserved_while_options_load() -> None:
     assert 'id="emergency-stop-value" name="emergency_stop_virtual_status_uuid"' in template
     assert 'id="emergency-stop-select"' in template
     assert 'id="emergency-stop-refresh"' not in template
-    assert "EMERGENCY_STOP_REFRESH" not in template
-    assert "EMERGENCY_STOP_REFRESH" not in german
-    assert "EMERGENCY_STOP_REFRESH" not in english
+    assert "EMERGENCY_STOP_REFRESH" in template
+    assert "EMERGENCY_STOP_REFRESH=" in german
+    assert "EMERGENCY_STOP_REFRESH=" in english
     assert "EMERGENCY_STOP_LOADING=" in german
     assert "EMERGENCY_STOP_LOADING=" in english
     assert "emergencyStopSelect.disabled = false;" in template
@@ -1797,9 +1797,12 @@ def test_slow_admin_reads_have_bounded_browser_timeout_headroom() -> None:
         assert minimum_ms <= int(match.group(1)) <= 180_000
 
 
-def test_emergency_stop_load_error_keeps_retry_button_available() -> None:
+def test_emergency_stop_load_keeps_retry_and_refresh_available() -> None:
     node = shutil.which("node")
     assert node is not None
+    for language in ("de", "en"):
+        source = (ROOT / f"templates/lang/language_{language}.ini").read_text(encoding="utf-8")
+        assert "EMERGENCY_STOP_REFRESH=" in source
     script = r"""
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -1824,7 +1827,8 @@ const window = {setTimeout: (callback) => { timers.push(callback); }};
 const core = {unloading: false};
 const label = (key) => key;
 let response = {data: {status: 'unavailable', options: [], failure_text: 'connection failed'}};
-let postAjax = async () => response;
+const actions = [];
+let postAjax = async (body) => { actions.push(body.get('action')); return response; };
 eval(source.slice(start, end) + `
 (async () => {
   await loadEmergencyStopOptions();
@@ -1849,10 +1853,23 @@ eval(source.slice(start, end) + `
   assert.equal(emergencyStopRetry.textContent, 'SETUP.EMERGENCY_STOP_RETRY');
   assert(options.some((option) => option.value === 'saved' && option.selected));
 
-  postAjax = async () => ({data: {status: 'available',
-    options: [{uuid: 'saved', name: 'Saved signal'}]}});
+  response = {data: {status: 'available',
+    options: [{uuid: 'saved', name: 'Saved signal'}]}};
+  postAjax = async (body) => { actions.push(body.get('action')); return response; };
   await loadEmergencyStopOptions();
-  assert.equal(emergencyStopRetry.hidden, true);
+  assert.equal(emergencyStopRetry.hidden, false);
+  assert.equal(emergencyStopRetry.disabled, false);
+  assert.equal(emergencyStopRetry.dataset.retry, 'false');
+  assert.equal(emergencyStopRetry.textContent, 'SETUP.EMERGENCY_STOP_REFRESH');
+  assert(options.some((option) => option.value === 'saved' && option.selected));
+
+  response = {data: {status: 'available', options: []}};
+  await loadEmergencyStopOptions(
+    emergencyStopDiscoveryGeneration, emergencyStopRetry.dataset.retry === 'true',
+  );
+  assert.equal(actions.at(-1), 'emergency_stop_options');
+  assert.equal(emergencyStopRetry.hidden, false);
+  assert.equal(emergencyStopRetry.textContent, 'SETUP.EMERGENCY_STOP_REFRESH');
   assert(options.some((option) => option.value === 'saved' && option.selected));
 })().catch((error) => { console.error(error); process.exitCode = 1; });
 `);
