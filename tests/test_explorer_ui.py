@@ -383,6 +383,88 @@ def test_explorer_transfer_uses_the_target_tool_draft_and_invalidates_cursor() -
     ) == {"control_uuid": "new", "series_id": "series"}
 
 
+def test_explorer_filters_tools_locally_by_name_description_and_group() -> None:
+    tools = [
+        {
+            "name": "loxone_find_controls",
+            "description": "Find visible controls",
+            "annotations": {"readOnlyHint": True, "destructiveHint": False},
+        },
+        {
+            "name": "loxone_get_control_history",
+            "description": "Read archived events",
+            "annotations": {"readOnlyHint": True, "destructiveHint": False},
+        },
+        {
+            "name": "loxone_operate_control",
+            "description": "Set a control",
+            "annotations": {"readOnlyHint": False, "destructiveHint": False},
+        },
+        {
+            "name": "loxberry_get_system_status",
+            "description": "Read host health",
+            "annotations": {"readOnlyHint": True, "destructiveHint": False},
+        },
+    ]
+    encoded = json.dumps(tools)
+
+    def filtered(search: str, group: str) -> list[dict[str, object]]:
+        return run_core(
+            f"core.filteredToolGroups({encoded},{json.dumps(search)},{json.dumps(group)})"
+        )
+
+    assert [group["id"] for group in filtered("", "all")] == [
+        "loxoneRead",
+        "loxoneHistory",
+        "loxoneControl",
+        "loxberryRead",
+    ]
+    assert [
+        tool["name"] for group in filtered("FIND_CONTROLS", "all") for tool in group["tools"]
+    ] == ["loxone_find_controls"]
+    assert [
+        tool["name"] for group in filtered("  ARCHIVED  ", "all") for tool in group["tools"]
+    ] == ["loxone_get_control_history"]
+    assert [
+        tool["name"] for group in filtered("control", "loxoneHistory") for tool in group["tools"]
+    ] == ["loxone_get_control_history"]
+    assert filtered("host", "loxoneRead") == []
+    assert filtered("", "loxberryRead")[0]["tools"][0]["name"] == "loxberry_get_system_status"
+
+
+def test_explorer_discovery_controls_preserve_selection_and_drafts() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
+    stylesheet = (ROOT / "webfrontend" / "htmlauth" / "mcp-ui.css").read_text(encoding="utf-8")
+    german = (ROOT / "templates" / "lang" / "language_de.ini").read_text(encoding="utf-8")
+    english = (ROOT / "templates" / "lang" / "language_en.ini").read_text(encoding="utf-8")
+    handlers = source[
+        source.index("elements.toolSearch.addEventListener('input'") : source.index(
+            "elements.run.addEventListener('click'"
+        )
+    ]
+
+    assert '<input id="explorer-tool-search" type="search"' in template
+    assert 'id="explorer-tool-filters"' in template
+    assert template.count('data-tool-group="') == 6
+    assert template.count('aria-pressed="') == 6
+    assert "core.filteredToolGroups(state.tools, state.toolSearch, state.toolGroup)" in source
+    assert "label('noMatchingTools')" in source
+    assert "label('noTools')" in source
+    assert "state.toolSearch = elements.toolSearch.value" in handlers
+    assert "state.toolGroup = button.dataset.toolGroup" in handlers
+    assert "renderTools();" in handlers
+    assert "mcpRequest(" not in handlers
+    assert "selectTool(" not in handlers
+    assert "state.drafts" not in handlers
+    assert "state.toolSearch = '';" in source
+    assert "state.toolGroup = 'all';" in source
+    assert "flex-wrap: wrap" in stylesheet
+    for language in (german, english):
+        for key in ("SEARCH_TOOLS=", "FILTER_TOOLS=", "FILTER_ALL=", "NO_MATCHING_TOOLS="):
+            assert key in language
+
+
 def test_explorer_sorts_tools_and_prepares_statistics_transfer() -> None:
     tools = [
         {
@@ -674,6 +756,8 @@ def test_explorer_disconnect_clears_all_in_memory_session_data() -> None:
         "oauth": None,
         "tools": [],
         "selectedTool": None,
+        "toolSearch": "",
+        "toolGroup": "all",
         "arguments": {},
         "history": [],
         "transcript": [],

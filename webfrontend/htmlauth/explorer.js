@@ -74,6 +74,15 @@
     }).filter((group) => group.tools.length);
   }
 
+  function filteredToolGroups(tools, search, groupId) {
+    const query = String(search || '').trim().toLowerCase();
+    const matches = (tools || []).filter((tool) => {
+      if (groupId && groupId !== 'all' && toolGroup(tool) !== groupId) return false;
+      return !query || `${tool.name || ''} ${tool.description || ''}`.toLowerCase().includes(query);
+    });
+    return sortedToolGroups(matches);
+  }
+
   function dateTimeLocalToRfc3339(value) {
     if (typeof value !== 'string' || !value) return '';
     const date = new Date(value);
@@ -524,6 +533,8 @@
     state.oauth = null;
     state.tools = [];
     state.selectedTool = null;
+    state.toolSearch = '';
+    state.toolGroup = 'all';
     state.arguments = {};
     state.history = [];
     state.transcript = [];
@@ -589,6 +600,7 @@
     compatibleTargets,
     toolGroup,
     sortedToolGroups,
+    filteredToolGroups,
     dateTimeLocalToRfc3339,
     rfc3339ToDateTimeLocal,
     statisticsTransfer,
@@ -637,6 +649,8 @@
     toolsPanel: document.getElementById('explorer-tools-panel'),
     historyPanel: document.getElementById('explorer-history-panel'),
     selectedTool: document.getElementById('explorer-selected-tool'),
+    toolSearch: document.getElementById('explorer-tool-search'),
+    toolFilters: document.getElementById('explorer-tool-filters'),
     tools: document.getElementById('explorer-tools'),
     history: document.getElementById('explorer-history'),
     summary: document.getElementById('explorer-tool-summary'),
@@ -677,6 +691,8 @@
     oauth: null,
     tools: [],
     selectedTool: null,
+    toolSearch: '',
+    toolGroup: 'all',
     arguments: {},
     history: [],
     transcript: [],
@@ -1097,13 +1113,22 @@
 
   function renderTools() {
     elements.tools.replaceChildren();
+    if (elements.toolSearch.value !== state.toolSearch) elements.toolSearch.value = state.toolSearch;
+    elements.toolFilters.querySelectorAll('button[data-tool-group]').forEach((button) => {
+      button.setAttribute('aria-pressed', String(button.dataset.toolGroup === state.toolGroup));
+    });
     elements.selectedTool.textContent = state.selectedTool ? `— ${state.selectedTool.name}` : '';
     elements.selectedTool.hidden = !state.selectedTool;
     if (!state.tools.length) {
       elements.tools.append(element('p', {className: 'mcp-explorer-muted', text: label('noTools')}));
       return;
     }
-    core.sortedToolGroups(state.tools).forEach((group) => {
+    const groups = core.filteredToolGroups(state.tools, state.toolSearch, state.toolGroup);
+    if (!groups.length) {
+      elements.tools.append(element('p', {className: 'mcp-explorer-muted', role: 'status', text: label('noMatchingTools')}));
+      return;
+    }
+    groups.forEach((group) => {
       elements.tools.append(element('h3', {className: 'mcp-explorer-tool-group', text: label(`toolGroup${group.id[0].toUpperCase()}${group.id.slice(1)}`)}));
       group.tools.forEach((tool) => {
       const button = element('button', {type: 'button', className: 'mcp-explorer-tool', 'aria-current': String(state.selectedTool && state.selectedTool.name === tool.name)});
@@ -1649,6 +1674,16 @@
     await revokeAndClear();
     setBusy(false);
     setStatus(label('disconnected'), '');
+  });
+  elements.toolSearch.addEventListener('input', () => {
+    state.toolSearch = elements.toolSearch.value;
+    renderTools();
+  });
+  elements.toolFilters.addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-tool-group]');
+    if (!button || !elements.toolFilters.contains(button)) return;
+    state.toolGroup = button.dataset.toolGroup;
+    renderTools();
   });
   elements.run.addEventListener('click', runSelectedTool);
   elements.resetDraft.addEventListener('click', () => {

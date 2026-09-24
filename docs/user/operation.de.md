@@ -25,6 +25,9 @@ Der [MCP Tool Explorer](https://loxberry/admin/plugins/mcpserver/explorer.cgi) i
 RFC-3339-Zeitfelder werden als lokale Datum-/Zeitfelder angezeigt und als UTC übermittelt.
 Zeitbereich-Schnellwahl und Referenzen aus bisherigen Ergebnissen erleichtern häufige
 Abfragen; technische Seitenparameter stehen unter **Erweiterte Optionen**.
+Die verfügbaren Werkzeuge lassen sich nach Name oder Beschreibung durchsuchen
+und zusätzlich nach den vorhandenen Gruppen filtern. Die Filterung erfolgt lokal;
+das ausgewählte Werkzeug und sein ungesendeter Entwurf bleiben erhalten.
 
 MCP-Clients erhalten die auf der konkreten Installation veröffentlichten Werkzeugbeschreibungen sowie deren Ein- und Ausgabeschemas über die MCP-Methode `tools/list`. Der Tool Explorer liest genau diese Antwort und visualisiert sie. Unter **Hilfe** stehen außerdem eine statische HTML-Referenz des vollständigen Werkzeugvertrags dieser Plugin-Version und dieselben Daten als JSON-Download bereit.
 

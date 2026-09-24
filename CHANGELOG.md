@@ -7,6 +7,9 @@ extracted from the matching version heading.
 
 - Allow slow read-only Admin certificate and emergency-stop discovery requests to finish instead of aborting before the target responds.
 
+- Add local name and description search and scope filters to the Tool Explorer,
+  while retaining tool grouping, selection, and unsent drafts.
+
 - Run expired Tool Explorer binding cleanup after releasing the OAuth store lock,
   so a stored expired session cannot block service startup or Admin data loading.
 

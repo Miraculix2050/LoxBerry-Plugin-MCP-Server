@@ -7,6 +7,7 @@
   data-connected="<TMPL_VAR EXPLORER.CONNECTED ESCAPE=HTML>"
   data-disconnected="<TMPL_VAR EXPLORER.DISCONNECTED ESCAPE=HTML>"
   data-no-tools="<TMPL_VAR EXPLORER.NO_TOOLS ESCAPE=HTML>"
+  data-no-matching-tools="<TMPL_VAR EXPLORER.NO_MATCHING_TOOLS ESCAPE=HTML>"
   data-invalid-json="<TMPL_VAR EXPLORER.INVALID_JSON ESCAPE=HTML>"
   data-invalid-arguments="<TMPL_VAR EXPLORER.INVALID_ARGUMENTS ESCAPE=HTML>"
   data-invalid-output="<TMPL_VAR EXPLORER.INVALID_OUTPUT ESCAPE=HTML>"
@@ -91,6 +92,18 @@
       <details id="explorer-tools-panel" class="mcp-explorer-card" open>
         <summary><span class="mcp-explorer-panel-label"><TMPL_VAR EXPLORER.TOOLS> <span id="explorer-selected-tool" class="mcp-explorer-panel-selection" hidden></span></span></summary>
         <div class="mcp-explorer-panel-content">
+          <div class="mcp-explorer-discovery">
+            <label for="explorer-tool-search"><TMPL_VAR EXPLORER.SEARCH_TOOLS></label>
+            <input id="explorer-tool-search" type="search" placeholder="<TMPL_VAR EXPLORER.SEARCH_TOOLS_PLACEHOLDER ESCAPE=HTML>" autocomplete="off">
+            <div id="explorer-tool-filters" class="mcp-explorer-tool-filters" role="group" aria-label="<TMPL_VAR EXPLORER.FILTER_TOOLS ESCAPE=HTML>">
+              <button type="button" data-tool-group="all" aria-pressed="true"><TMPL_VAR EXPLORER.FILTER_ALL></button>
+              <button type="button" data-tool-group="loxoneRead" aria-pressed="false"><TMPL_VAR EXPLORER.TOOL_GROUP_LOXONE_READ></button>
+              <button type="button" data-tool-group="loxoneHistory" aria-pressed="false"><TMPL_VAR EXPLORER.TOOL_GROUP_LOXONE_HISTORY></button>
+              <button type="button" data-tool-group="loxoneControl" aria-pressed="false"><TMPL_VAR EXPLORER.TOOL_GROUP_LOXONE_CONTROL></button>
+              <button type="button" data-tool-group="loxberryRead" aria-pressed="false"><TMPL_VAR EXPLORER.TOOL_GROUP_LOXBERRY_READ></button>
+              <button type="button" data-tool-group="loxberryOperate" aria-pressed="false"><TMPL_VAR EXPLORER.TOOL_GROUP_LOXBERRY_OPERATE></button>
+            </div>
+          </div>
           <div id="explorer-tools" class="mcp-explorer-tool-list"><p class="mcp-explorer-muted"><TMPL_VAR EXPLORER.NO_TOOLS></p></div>
         </div>
       </details>
