@@ -383,6 +383,128 @@ def test_explorer_transfer_uses_the_target_tool_draft_and_invalidates_cursor() -
     ) == {"control_uuid": "new", "series_id": "series"}
 
 
+def test_explorer_filters_tools_locally_by_name_description_and_group() -> None:
+    tools = [
+        {
+            "name": "loxone_find_controls",
+            "description": "Find visible controls",
+            "annotations": {"readOnlyHint": True, "destructiveHint": False},
+        },
+        {
+            "name": "loxone_get_control_history",
+            "description": "Read archived events",
+            "annotations": {"readOnlyHint": True, "destructiveHint": False},
+        },
+        {
+            "name": "loxone_operate_control",
+            "description": "Set a control",
+            "annotations": {"readOnlyHint": False, "destructiveHint": False},
+        },
+        {
+            "name": "loxberry_get_system_status",
+            "description": "Read host health",
+            "annotations": {"readOnlyHint": True, "destructiveHint": False},
+        },
+    ]
+    encoded = json.dumps(tools)
+
+    def filtered(search: str, groups: list[str]) -> list[dict[str, object]]:
+        return run_core(
+            f"core.filteredToolGroups({encoded},{json.dumps(search)},{json.dumps(groups)})"
+        )
+
+    assert [group["id"] for group in filtered("", [])] == [
+        "loxoneRead",
+        "loxoneHistory",
+        "loxoneControl",
+        "loxberryRead",
+    ]
+    assert [tool["name"] for group in filtered("FIND_CONTROLS", []) for tool in group["tools"]] == [
+        "loxone_find_controls"
+    ]
+    assert [tool["name"] for group in filtered("  ARCHIVED  ", []) for tool in group["tools"]] == [
+        "loxone_get_control_history"
+    ]
+    assert [
+        tool["name"] for group in filtered("control", ["loxoneHistory"]) for tool in group["tools"]
+    ] == ["loxone_get_control_history"]
+    assert filtered("host", ["loxoneRead"]) == []
+    assert filtered("", ["loxberryRead"])[0]["tools"][0]["name"] == "loxberry_get_system_status"
+    assert [group["id"] for group in filtered("", ["loxoneHistory", "loxberryRead"])] == [
+        "loxoneHistory",
+        "loxberryRead",
+    ]
+    assert filtered("host", ["loxoneHistory", "loxberryRead"])[0]["id"] == "loxberryRead"
+
+
+def test_explorer_scope_filters_include_all_published_history_and_operate_tools() -> None:
+    history_names = [
+        "loxone_get_statistics",
+        "loxone_get_control_history",
+        "loxone_get_state_history",
+        "loxone_analyze_observability",
+    ]
+    operate_names = [
+        "loxberry_clear_statistics_cache",
+        "loxberry_list_event_history_sources",
+        "loxberry_add_event_history_source",
+        "loxberry_remove_event_history_source",
+    ]
+    tools = [
+        {"name": name, "annotations": {"readOnlyHint": True, "destructiveHint": False}}
+        for name in history_names + operate_names
+    ]
+    encoded = json.dumps(tools)
+
+    def names_for(group: str) -> list[str]:
+        groups = run_core(f"core.filteredToolGroups({encoded},'',{json.dumps([group])})")
+        return [tool["name"] for entry in groups for tool in entry["tools"]]
+
+    assert set(names_for("loxoneHistory")) == set(history_names)
+    assert set(names_for("loxberryOperate")) == set(operate_names)
+    assert names_for("loxoneRead") == []
+    assert names_for("loxberryRead") == []
+
+
+def test_explorer_discovery_controls_preserve_selection_and_drafts() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
+    stylesheet = (ROOT / "webfrontend" / "htmlauth" / "mcp-ui.css").read_text(encoding="utf-8")
+    german = (ROOT / "templates" / "lang" / "language_de.ini").read_text(encoding="utf-8")
+    english = (ROOT / "templates" / "lang" / "language_en.ini").read_text(encoding="utf-8")
+    handlers = source[
+        source.index("elements.toolSearch.addEventListener('input'") : source.index(
+            "elements.run.addEventListener('click'"
+        )
+    ]
+
+    assert '<input id="explorer-tool-search" type="search"' in template
+    assert '<details id="explorer-tool-filters"' in template
+    assert template.count('data-tool-group="') == 6
+    assert template.count('type="checkbox" data-tool-group="') == 6
+    assert 'id="explorer-tool-filter-count"' in template
+    assert "core.filteredToolGroups(state.tools, state.toolSearch, state.toolGroups)" in source
+    assert "-tool-filters-v2" in template
+    assert "label('noMatchingTools')" in source
+    assert "label('noTools')" in source
+    assert "state.toolSearch = elements.toolSearch.value" in handlers
+    assert "state.toolGroups = [...state.toolGroups, group]" in handlers
+    assert "state.toolGroups = state.toolGroups.filter(" in handlers
+    assert "if (group === 'all') state.toolGroups = []" in handlers
+    assert "renderTools();" in handlers
+    assert "mcpRequest(" not in handlers
+    assert "selectTool(" not in handlers
+    assert "state.drafts" not in handlers
+    assert "state.toolSearch = '';" in source
+    assert "state.toolGroups = [];" in source
+    assert ".mcp-explorer-tool-filter-options" in stylesheet
+    for language in (german, english):
+        for key in ("SEARCH_TOOLS=", "FILTER_TOOLS=", "FILTER_ALL=", "NO_MATCHING_TOOLS="):
+            assert key in language
+    assert "FILTER_TOOLS=Gruppen filtern" in german
+    assert "FILTER_TOOLS=Filter groups" in english
+
+
 def test_explorer_sorts_tools_and_prepares_statistics_transfer() -> None:
     tools = [
         {
@@ -674,6 +796,8 @@ def test_explorer_disconnect_clears_all_in_memory_session_data() -> None:
         "oauth": None,
         "tools": [],
         "selectedTool": None,
+        "toolSearch": "",
+        "toolGroups": [],
         "arguments": {},
         "history": [],
         "transcript": [],

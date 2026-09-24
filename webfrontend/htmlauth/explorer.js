@@ -33,19 +33,27 @@
     set_value: ['value'], start_override: ['value', 'duration_seconds'],
     start_fan_override: ['duration_seconds'], start_mode_override: ['value', 'duration_seconds'],
   };
+  const LOXONE_HISTORY_TOOLS = [
+    'loxone_get_statistics', 'loxone_get_control_history', 'loxone_get_state_history',
+    'loxone_analyze_observability',
+  ];
+  const LOXBERRY_OPERATE_TOOLS = [
+    'loxberry_clear_statistics_cache', 'loxberry_list_event_history_sources',
+    'loxberry_add_event_history_source', 'loxberry_remove_event_history_source',
+  ];
   const TOOL_GROUPS = [
     {id: 'loxoneRead', names: [
       'loxone_get_skill_guide', 'loxone_get_system_status', 'loxone_list_rooms',
       'loxone_list_categories', 'loxone_find_controls', 'loxone_describe_control',
       'loxone_get_control_notes', 'loxone_get_states',
     ]},
-    {id: 'loxoneHistory', names: ['loxone_get_statistics', 'loxone_get_control_history']},
+    {id: 'loxoneHistory', names: LOXONE_HISTORY_TOOLS},
     {id: 'loxoneControl', names: ['loxone_operate_control']},
     {id: 'loxberryRead', names: [
       'loxberry_get_system_status', 'loxberry_get_plugin_status', 'loxberry_get_service_health',
       'loxberry_list_service_events',
     ]},
-    {id: 'loxberryOperate', names: ['loxberry_clear_statistics_cache']},
+    {id: 'loxberryOperate', names: LOXBERRY_OPERATE_TOOLS},
   ];
 
   function clone(value) {
@@ -54,9 +62,9 @@
 
   function toolGroup(tool) {
     const name = tool && tool.name || '';
-    if (name === 'loxone_get_statistics' || name === 'loxone_get_control_history') return 'loxoneHistory';
+    if (LOXONE_HISTORY_TOOLS.includes(name)) return 'loxoneHistory';
     if (name.startsWith('loxone_')) return toolIsMutating(tool) ? 'loxoneControl' : 'loxoneRead';
-    if (name === 'loxberry_clear_statistics_cache') return 'loxberryOperate';
+    if (LOXBERRY_OPERATE_TOOLS.includes(name)) return 'loxberryOperate';
     return 'loxberryRead';
   }
 
@@ -72,6 +80,16 @@
         }),
       };
     }).filter((group) => group.tools.length);
+  }
+
+  function filteredToolGroups(tools, search, groupIds) {
+    const query = String(search || '').trim().toLowerCase();
+    const selectedGroups = new Set(groupIds || []);
+    const matches = (tools || []).filter((tool) => {
+      if (selectedGroups.size && !selectedGroups.has(toolGroup(tool))) return false;
+      return !query || `${tool.name || ''} ${tool.description || ''}`.toLowerCase().includes(query);
+    });
+    return sortedToolGroups(matches);
   }
 
   function dateTimeLocalToRfc3339(value) {
@@ -524,6 +542,8 @@
     state.oauth = null;
     state.tools = [];
     state.selectedTool = null;
+    state.toolSearch = '';
+    state.toolGroups = [];
     state.arguments = {};
     state.history = [];
     state.transcript = [];
@@ -589,6 +609,7 @@
     compatibleTargets,
     toolGroup,
     sortedToolGroups,
+    filteredToolGroups,
     dateTimeLocalToRfc3339,
     rfc3339ToDateTimeLocal,
     statisticsTransfer,
@@ -637,6 +658,9 @@
     toolsPanel: document.getElementById('explorer-tools-panel'),
     historyPanel: document.getElementById('explorer-history-panel'),
     selectedTool: document.getElementById('explorer-selected-tool'),
+    toolSearch: document.getElementById('explorer-tool-search'),
+    toolFilters: document.getElementById('explorer-tool-filters'),
+    toolFilterCount: document.getElementById('explorer-tool-filter-count'),
     tools: document.getElementById('explorer-tools'),
     history: document.getElementById('explorer-history'),
     summary: document.getElementById('explorer-tool-summary'),
@@ -677,6 +701,8 @@
     oauth: null,
     tools: [],
     selectedTool: null,
+    toolSearch: '',
+    toolGroups: [],
     arguments: {},
     history: [],
     transcript: [],
@@ -1097,13 +1123,25 @@
 
   function renderTools() {
     elements.tools.replaceChildren();
+    if (elements.toolSearch.value !== state.toolSearch) elements.toolSearch.value = state.toolSearch;
+    elements.toolFilters.querySelectorAll('input[data-tool-group]').forEach((input) => {
+      input.checked = input.dataset.toolGroup === 'all'
+        ? state.toolGroups.length === 0 : state.toolGroups.includes(input.dataset.toolGroup);
+    });
+    elements.toolFilterCount.textContent = state.toolGroups.length
+      ? `(${state.toolGroups.length})` : `(${label('filterAll')})`;
     elements.selectedTool.textContent = state.selectedTool ? `— ${state.selectedTool.name}` : '';
     elements.selectedTool.hidden = !state.selectedTool;
     if (!state.tools.length) {
       elements.tools.append(element('p', {className: 'mcp-explorer-muted', text: label('noTools')}));
       return;
     }
-    core.sortedToolGroups(state.tools).forEach((group) => {
+    const groups = core.filteredToolGroups(state.tools, state.toolSearch, state.toolGroups);
+    if (!groups.length) {
+      elements.tools.append(element('p', {className: 'mcp-explorer-muted', role: 'status', text: label('noMatchingTools')}));
+      return;
+    }
+    groups.forEach((group) => {
       elements.tools.append(element('h3', {className: 'mcp-explorer-tool-group', text: label(`toolGroup${group.id[0].toUpperCase()}${group.id.slice(1)}`)}));
       group.tools.forEach((tool) => {
       const button = element('button', {type: 'button', className: 'mcp-explorer-tool', 'aria-current': String(state.selectedTool && state.selectedTool.name === tool.name)});
@@ -1649,6 +1687,19 @@
     await revokeAndClear();
     setBusy(false);
     setStatus(label('disconnected'), '');
+  });
+  elements.toolSearch.addEventListener('input', () => {
+    state.toolSearch = elements.toolSearch.value;
+    renderTools();
+  });
+  elements.toolFilters.addEventListener('change', (event) => {
+    const input = event.target;
+    if (!input.matches('input[data-tool-group]')) return;
+    const group = input.dataset.toolGroup;
+    if (group === 'all') state.toolGroups = [];
+    else if (input.checked) state.toolGroups = [...state.toolGroups, group];
+    else state.toolGroups = state.toolGroups.filter((selected) => selected !== group);
+    renderTools();
   });
   elements.run.addEventListener('click', runSelectedTool);
   elements.resetDraft.addEventListener('click', () => {
