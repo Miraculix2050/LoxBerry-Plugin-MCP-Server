@@ -8,6 +8,8 @@ In **Status & operation**, **Service operation and autostart** shows the saved o
 
 ## MCP configuration
 
+Admin section headings show the last successfully loaded, saved MCP and MQTT settings, the current session count, and the number of pending approval actions. The session list refreshes every ten seconds while the page is visible, even when its section is closed. The HTTPS badge reflects certificate, origin, and hostname checks; loading or missing data has a neutral label. Editing a form does not change a badge until the save succeeds.
+
 Under **Connection**, configure one local HTTPS origin and exactly one Miniserver target. Selecting a Miniserver stored in LoxBerry does not reuse its credentials. On first setup, the origin is suggested from the LoxBerry hostname and HTTPS port; verify it matches the browser's certificate address. **Test connection** uses the currently selected or manually entered target without saving the configuration. Only **Enable MCP endpoint access** releases MCP and OAuth access. Permissions and local event history remain visible; rate, runtime, structure, and cache settings are under **Advanced settings**. Their values are saved even while that section is closed.
 
 ### Authentication recovery

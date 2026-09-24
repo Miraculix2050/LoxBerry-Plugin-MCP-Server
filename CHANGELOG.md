@@ -5,6 +5,8 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Show factual Admin summary badges for saved MCP/MQTT settings, sessions and pending approvals, and HTTPS certificate checks; keep session counts current while the page is visible.
+
 - Allow slow read-only Admin certificate and emergency-stop discovery requests to finish instead of aborting before the target responds.
 
 - Add local name and description search and scope filters to the Tool Explorer,

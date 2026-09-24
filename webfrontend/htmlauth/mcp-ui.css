@@ -19,6 +19,7 @@ details.mcp-explorer-card[open] > summary { border-bottom: 1px solid #d7dadd; }
 .mcp-collapsible-content { min-width: 0; padding: 1rem; }
 .mcp-service-summary { display: inline-flex; flex-wrap: wrap; gap: .75rem; align-items: center; }
 .mcp-service-badge { display: inline-block; padding: .2rem .55rem; border-radius: 999px; background: #6b7280; color: #fff; font-size: .9rem; }
+.mcp-service-badge[hidden] { display: none; }
 .mcp-service-badge[data-kind="success"] { background: #198754; }
 .mcp-service-badge[data-kind="error"] { background: #b91c1c; }
 .mcp-service-badge[data-kind="inactive"] { background: #6b7280; }
