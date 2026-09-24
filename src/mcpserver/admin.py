@@ -453,7 +453,7 @@ def _renew_certificate(payload: object) -> dict[str, Any]:
 
 
 def _save(payload: object) -> dict[str, Any]:
-    from mcpserver.auth.provider import (
+    from mcpserver.auth.scopes import (
         CONTROL_SCOPE,
         HISTORY_SCOPE,
         LOXBERRY_OPERATE_SCOPE,
@@ -928,7 +928,7 @@ def _binding_pseudonym(subject_key: bytes, namespace: str, record: dict[str, Any
 
 
 def _sessions(snapshot: _AdminReadSnapshot | None = None) -> list[dict[str, Any]]:
-    from mcpserver.auth.provider import READ_SCOPE
+    from mcpserver.auth.scopes import READ_SCOPE
 
     snapshot = snapshot or _admin_read_snapshot()
     document = snapshot.auth_document
@@ -1108,7 +1108,7 @@ def _explorer_binding_rows(
 
 
 def _loxberry_bindings(snapshot: _AdminReadSnapshot | None = None) -> list[dict[str, Any]]:
-    from mcpserver.auth.provider import LOXBERRY_READ_SCOPE
+    from mcpserver.auth.scopes import LOXBERRY_READ_SCOPE
 
     snapshot = snapshot or _admin_read_snapshot()
     bindings = snapshot.configuration.loxberry_read_bindings if snapshot.configuration else ()
@@ -1217,7 +1217,7 @@ def _loxberry_bindings(snapshot: _AdminReadSnapshot | None = None) -> list[dict[
 
 
 def _loxberry_operate_bindings(snapshot: _AdminReadSnapshot | None = None) -> list[dict[str, Any]]:
-    from mcpserver.auth.provider import LOXBERRY_OPERATE_SCOPE
+    from mcpserver.auth.scopes import LOXBERRY_OPERATE_SCOPE
 
     snapshot = snapshot or _admin_read_snapshot()
     bindings = snapshot.configuration.loxberry_operate_bindings if snapshot.configuration else ()
@@ -1324,7 +1324,7 @@ def _loxberry_operate_bindings(snapshot: _AdminReadSnapshot | None = None) -> li
 
 
 def _allow_loxberry_read(payload: object) -> dict[str, Any]:
-    from mcpserver.auth.provider import READ_SCOPE
+    from mcpserver.auth.scopes import READ_SCOPE
 
     session_id = payload.get("session_id") if isinstance(payload, dict) else None
     if not isinstance(session_id, str) or len(session_id) > 128:
@@ -1423,7 +1423,7 @@ def _revoke_loxberry_read(payload: object) -> dict[str, Any]:
 
 
 def _allow_loxberry_operate(payload: object) -> dict[str, Any]:
-    from mcpserver.auth.provider import HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE
+    from mcpserver.auth.scopes import HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE
 
     session_id = payload.get("session_id") if isinstance(payload, dict) else None
     if not isinstance(session_id, str) or len(session_id) > 128:
@@ -1474,7 +1474,7 @@ def _allow_loxberry_operate(payload: object) -> dict[str, Any]:
 
 
 def _revoke_loxberry_operate(payload: object) -> dict[str, Any]:
-    from mcpserver.auth.provider import LOXBERRY_OPERATE_SCOPE
+    from mcpserver.auth.scopes import LOXBERRY_OPERATE_SCOPE
     from mcpserver.explorer_bindings import explorer_binding_id
 
     binding = payload.get("binding_id") if isinstance(payload, dict) else None

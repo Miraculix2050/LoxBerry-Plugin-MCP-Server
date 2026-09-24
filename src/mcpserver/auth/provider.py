@@ -21,22 +21,15 @@ from mcp.server.auth.provider import (
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from pydantic import AnyUrl
 
+from mcpserver.auth.scopes import CONTROL_SCOPE as CONTROL_SCOPE
+from mcpserver.auth.scopes import HISTORY_SCOPE as HISTORY_SCOPE
+from mcpserver.auth.scopes import LOXBERRY_OPERATE_SCOPE as LOXBERRY_OPERATE_SCOPE
+from mcpserver.auth.scopes import LOXBERRY_READ_SCOPE as LOXBERRY_READ_SCOPE
+from mcpserver.auth.scopes import READ_SCOPE as READ_SCOPE
+from mcpserver.auth.scopes import SCOPE as SCOPE
+from mcpserver.auth.scopes import SUPPORTED_SCOPES as SUPPORTED_SCOPES
 from mcpserver.auth.store import AtomicJsonAuthStore, token_digest
 
-READ_SCOPE: Final = "loxone:read"
-CONTROL_SCOPE: Final = "loxone:control"
-LOXBERRY_READ_SCOPE: Final = "loxberry:read"
-HISTORY_SCOPE: Final = "loxone:history"
-LOXBERRY_OPERATE_SCOPE: Final = "loxberry:operate"
-# Retained as the Phase 1 source-level alias used by existing integrations.
-SCOPE: Final = READ_SCOPE
-SUPPORTED_SCOPES: Final = (
-    READ_SCOPE,
-    HISTORY_SCOPE,
-    CONTROL_SCOPE,
-    LOXBERRY_READ_SCOPE,
-    LOXBERRY_OPERATE_SCOPE,
-)
 _LOGGER = logging.getLogger("mcpserver.auth.provider")
 AUTHORIZATION_CODE_TTL: Final = 5 * 60
 ACCESS_TOKEN_TTL: Final = 10 * 60

@@ -19,6 +19,7 @@ from starlette.requests import Request
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
+from mcpserver.auth import scopes
 from mcpserver.auth import web as auth_web
 from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore
 from mcpserver.auth.provider import (
@@ -31,6 +32,7 @@ from mcpserver.auth.provider import (
     READ_SCOPE,
     REFRESH_FAMILY_TTL,
     SCOPE,
+    SUPPORTED_SCOPES,
     Phase0OAuthProvider,
     normalize_scopes,
 )
@@ -48,6 +50,18 @@ from mcpserver.loxone.events import LoxoneProtocolError
 
 ISSUER = "https://public.example/plugins/mcpserver/oauth"
 RESOURCE = "https://public.example/plugins/mcpserver/mcp"
+
+
+def test_provider_preserves_scope_exports_and_order() -> None:
+    expected = (
+        READ_SCOPE,
+        HISTORY_SCOPE,
+        CONTROL_SCOPE,
+        LOXBERRY_READ_SCOPE,
+        LOXBERRY_OPERATE_SCOPE,
+    )
+    assert scopes.SUPPORTED_SCOPES == SUPPORTED_SCOPES == expected
+    assert SCOPE == scopes.SCOPE == READ_SCOPE
 
 
 def test_control_scope_is_additive_and_never_granted_alone() -> None:
