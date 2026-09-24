@@ -36,6 +36,9 @@ explizit gemeldete MCP-Hinweise. Bei unvollständigen oder widersprüchlichen An
 erscheint vorsichtig **Schreibzugriff möglich**. Die Hinweise sind keine
 Sicherheitsgarantie; die vollständigen Annotationen stehen unter
 **Technische MCP-Metadaten**.
+Daneben stehen die für bekannte Werkzeuge benötigten OAuth-Scopes. Die tatsächlich
+gewährten Scopes dieser Sitzung bleiben in der Verbindungskarte sichtbar.
+Lange Werkzeugbeschreibungen lassen sich in der kompakten Zusammenfassung aufklappen.
 Ergebnisse und Verlaufseinträge erscheinen als aufklappbarer Baum. Große Zweige zeigen
 jeweils 100 Einträge; **Weitere anzeigen** lädt die nächsten. Der Pfeil öffnet einen
 Zweig, die separate Wert-Schaltfläche übernimmt dessen unveränderten Wert und Pfad.

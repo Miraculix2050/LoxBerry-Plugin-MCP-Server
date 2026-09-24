@@ -5,6 +5,9 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Show required OAuth scopes beside each selected Tool Explorer tool and compact
+  the tool summary, with expandable long descriptions and a smaller arguments heading.
+
 - Show localized MCP tool hints and the conservative read/write classification
   in the Tool Explorer, with complete annotations in a technical disclosure.
 

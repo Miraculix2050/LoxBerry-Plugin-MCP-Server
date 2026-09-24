@@ -3,9 +3,12 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import tomllib
 from pathlib import Path
 
 import pytest
+
+from mcpserver.schema_reference import tool_schema_catalog
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "webfrontend" / "htmlauth" / "explorer.js"
@@ -102,6 +105,9 @@ def test_tool_metadata_labels_are_localized_and_inspectable() -> None:
         "TOOL_HINT_OPEN_WORLD",
         "TOOL_HINT_CLOSED_WORLD",
         "TOOL_HINTS_NOTICE",
+        "TOOL_DESCRIPTION",
+        "TOOL_REQUIRED_SCOPES",
+        "TOOL_SCOPES_UNKNOWN",
         "TOOL_TECHNICAL_METADATA",
     ]
     for key in keys:
@@ -110,6 +116,7 @@ def test_tool_metadata_labels_are_localized_and_inspectable() -> None:
         assert f"{key}=" in english
         assert f'data-{attribute}="<TMPL_VAR EXPLORER.{key} ESCAPE=HTML>"' in template
     assert "core.toolMetadataLabels(state.selectedTool)" in source
+    assert "core.toolRequiredScopes(state.selectedTool)" in source
     assert "JSON.stringify(state.selectedTool.annotations || {}, null, 2)" in source
     assert "element('details', {className: 'mcp-explorer-technical'})" in source
 
@@ -935,6 +942,29 @@ def test_tool_metadata_labels_follow_explicit_hints_without_inventing_safety() -
     for hints, expected in cases:
         tool = {"annotations": hints}
         assert run_core(f"core.toolMetadataLabels({json.dumps(tool)})") == expected
+
+
+def test_required_scopes_cover_current_tools_and_leave_unknown_tools_unmapped() -> None:
+    version = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"][
+        "version"
+    ]
+    names = [tool["name"] for tool in tool_schema_catalog(version)["tools"]]
+    mapped = run_core(
+        f"Object.fromEntries({json.dumps(names)}.map(name => "
+        "[name,core.toolRequiredScopes({name})]))"
+    )
+    assert set(mapped) == set(names)
+    assert all(scopes and scopes[0] == "loxone:read" for scopes in mapped.values())
+    assert mapped["loxone_get_system_status"] == ["loxone:read"]
+    assert mapped["loxone_get_statistics"] == ["loxone:read", "loxone:history"]
+    assert mapped["loxone_operate_control"] == ["loxone:read", "loxone:control"]
+    assert mapped["loxberry_get_service_health"] == ["loxone:read", "loxberry:read"]
+    assert mapped["loxberry_add_event_history_source"] == [
+        "loxone:read",
+        "loxone:history",
+        "loxberry:operate",
+    ]
+    assert run_core("core.toolRequiredScopes({name:'future_tool'})") is None
 
 
 def test_explorer_oauth_guards_and_resource_binding() -> None:

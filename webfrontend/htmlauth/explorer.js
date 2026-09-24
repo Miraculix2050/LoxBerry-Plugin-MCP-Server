@@ -62,6 +62,11 @@
     ]},
     {id: 'loxberryOperate', names: LOXBERRY_OPERATE_TOOLS},
   ];
+  const ADDITIONAL_LOXONE_READ_TOOLS = new Set([
+    'loxone_get_structure_overview', 'loxone_get_room_snapshot', 'loxone_list_global_metadata',
+    'loxone_get_weather', 'loxone_get_project_status', 'loxone_find_project_objects',
+    'loxone_describe_project_object', 'loxone_trace_project_logic', 'loxone_analyze_project',
+  ]);
 
   function clone(value) {
     return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
@@ -654,6 +659,21 @@
     return labels;
   }
 
+  function toolRequiredScopes(tool) {
+    const name = tool && tool.name;
+    const inGroup = (id) => TOOL_GROUPS.some((group) => group.id === id && group.names.includes(name));
+    if (LOXONE_HISTORY_TOOLS.includes(name)) return ['loxone:read', 'loxone:history'];
+    if (name === 'loxone_operate_control') return ['loxone:read', 'loxone:control'];
+    if (LOXBERRY_OPERATE_TOOLS.includes(name)) {
+      return ['loxone:read', 'loxone:history', 'loxberry:operate'];
+    }
+    if (inGroup('loxoneRead') || ADDITIONAL_LOXONE_READ_TOOLS.has(name)) {
+      return ['loxone:read'];
+    }
+    if (inGroup('loxberryRead')) return ['loxone:read', 'loxberry:read'];
+    return null;
+  }
+
   function acceptOAuthPayload(data, expectedState) {
     return Boolean(
       data && data.type === 'mcp-explorer-oauth' && data.state === expectedState &&
@@ -781,6 +801,7 @@
     base64Url,
     toolIsMutating,
     toolMetadataLabels,
+    toolRequiredScopes,
     acceptOAuthPayload,
     acceptOAuthMessage,
     mcpFailure,
@@ -1558,7 +1579,16 @@
       return;
     }
     elements.summary.append(element('h2', {text: state.selectedTool.name}));
-    elements.summary.append(element('p', {text: state.selectedTool.description || ''}));
+    const description = state.selectedTool.description || '';
+    if (description.length > 180) {
+      const excerpt = description.slice(0, 100).replace(/\s+\S*$/, '').trimEnd();
+      const descriptionDetails = element('details', {className: 'mcp-explorer-description'});
+      descriptionDetails.append(element('summary', {text: `${label('toolDescription')}: ${excerpt}…`}));
+      descriptionDetails.append(element('p', {text: description}));
+      elements.summary.append(descriptionDetails);
+    } else {
+      elements.summary.append(element('p', {text: description}));
+    }
     const badges = element('div', {className: 'mcp-explorer-metadata'});
     core.toolMetadataLabels(state.selectedTool).forEach((key, index) => {
       badges.append(element('span', {className: 'mcp-explorer-badge',
@@ -1566,7 +1596,16 @@
         text: label(key)}));
     });
     elements.summary.append(badges);
-    elements.summary.append(element('p', {className: 'mcp-explorer-muted', text: label('toolHintsNotice')}));
+    const scopes = element('p', {className: 'mcp-explorer-required-scopes'});
+    scopes.append(element('span', {text: `${label('toolRequiredScopes')}:`}));
+    const requiredScopes = core.toolRequiredScopes(state.selectedTool);
+    if (requiredScopes) {
+      requiredScopes.forEach((scope) => scopes.append(element('code', {text: scope})));
+    } else {
+      scopes.append(element('span', {text: label('toolScopesUnknown')}));
+    }
+    elements.summary.append(scopes);
+    elements.summary.append(element('p', {className: 'mcp-explorer-hint-notice', text: label('toolHintsNotice')}));
     const technical = element('details', {className: 'mcp-explorer-technical'});
     technical.append(element('summary', {text: label('toolTechnicalMetadata')}));
     technical.append(element('pre', {className: 'mcp-explorer-pre',
