@@ -579,11 +579,19 @@ if ($action ne '') {
             1;
         };
         my $notification_duration_ms = (clock_gettime(CLOCK_MONOTONIC) - $aux_started) * 1000;
+        admin_log('error', sprintf(
+            'component=admin_ui request_id=%s action=page_auxiliary section=page_notifications outcome=rejected code=internal_error',
+            $request_id,
+        )) if !$notifications_ok;
         my $loglist_started = clock_gettime(CLOCK_MONOTONIC);
         my $loglist_ok = eval {
             $loglist = native_loglist_html();
             1;
         };
+        admin_log('error', sprintf(
+            'component=admin_ui request_id=%s action=page_auxiliary section=page_loglist outcome=rejected code=internal_error',
+            $request_id,
+        )) if !$loglist_ok;
         admin_log('debug', sprintf(
             'component=admin_ui request_id=%s action=page_auxiliary duration_ms=%.1f notifications_ms=%.1f loglist_ms=%.1f template_setup_ms=%.1f',
             $request_id,

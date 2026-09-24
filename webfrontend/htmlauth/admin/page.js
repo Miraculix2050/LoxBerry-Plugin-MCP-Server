@@ -82,7 +82,8 @@
         const body = new URLSearchParams();
         body.set('action', 'page_auxiliary');
         body.set('ajax', '1');
-        sections = (await postAjax(body, 20000)).data;
+        // Both Perl reads run in sequence and each has a 15-second fallback budget.
+        sections = (await postAjax(body, 35000)).data;
       } catch {
         // Preserve the existing independent fallback for either Perl view.
       }

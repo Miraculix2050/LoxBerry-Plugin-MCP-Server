@@ -53,7 +53,7 @@ def test_admin_modules_load_in_order_with_versioned_localized_assets() -> None:
         assert "<TMPL_" not in source
         assert (
             f'<script defer src="admin/{name}?v='
-            '<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v5"></script>'
+            '<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v6"></script>'
         ) in markup
         subprocess.run(
             [node, "--check", str(ROOT / "webfrontend/htmlauth/admin" / name)],
@@ -409,7 +409,7 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert "body.set('action', 'page_snapshot')" in hydration
     assert "body.set('action', 'page_auxiliary')" in hydration
     assert "postAjax(body, 60000)" in hydration
-    assert "postAjax(body, 20000)" in hydration
+    assert "postAjax(body, 35000)" in hydration
     assert "await Promise.allSettled([loadSnapshot(), loadAuxiliary()])" in hydration
     assert "await loadLoxberryNotifications(sections?.page_notifications)" in hydration
     assert "await loadPluginLogList(sections?.page_loglist)" in hydration
@@ -1397,6 +1397,46 @@ def test_snapshot_section_failure_is_logged_without_error_details(tmp_path: Path
     events = marker.read_text(encoding="utf-8")
     assert "section=get_config outcome=rejected code=internal_error" in events
     assert "private-detail" not in events
+
+
+def test_auxiliary_section_failures_are_logged_without_error_details(tmp_path: Path) -> None:
+    perl = shutil.which("perl")
+    if perl is None or os.name == "nt":
+        return
+    environment = _admin_cgi_environment(tmp_path)
+    marker = tmp_path / "log-events.txt"
+    body = "action=page_auxiliary&ajax=1"
+    cgi = ROOT / "webfrontend/htmlauth/index.cgi"
+
+    for failure_flag, failed_section, healthy_section in (
+        ("LB_TEST_NOTIFICATIONS_DIE", "page_notifications", "page_loglist"),
+        ("LB_TEST_LOGLIST_DIE", "page_loglist", "page_notifications"),
+    ):
+        result = subprocess.run(
+            [perl, f"-I{ROOT / 'tests' / 'perl_stubs'}", str(cgi)],
+            check=True,
+            capture_output=True,
+            text=True,
+            input=body,
+            env={
+                **environment,
+                "REQUEST_METHOD": "POST",
+                "CONTENT_TYPE": "application/x-www-form-urlencoded",
+                "CONTENT_LENGTH": str(len(body)),
+                "HTTP_ORIGIN": "https://loxberry.example",
+                "HTTP_HOST": "loxberry.example",
+                "LB_TEST_LOG_EVENTS_PATH": str(marker),
+                failure_flag: "1",
+            },
+        )
+        payload = json.loads(result.stdout.partition("\n\n")[2])
+        assert payload["ok"] is True
+        assert payload["data"][failed_section]["error"]["code"] == "internal_error"
+        assert payload["data"][healthy_section]["ok"] is True
+        events = marker.read_text(encoding="utf-8")
+        assert f"section={failed_section} outcome=rejected code=internal_error" in events
+        assert "private-detail" not in events
+        marker.unlink()
 
 
 def test_diagnostics_offer_dedicated_persistent_service_logging_controls() -> None:
