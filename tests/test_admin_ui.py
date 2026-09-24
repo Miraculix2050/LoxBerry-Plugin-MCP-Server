@@ -53,7 +53,7 @@ def test_admin_modules_load_in_order_with_versioned_localized_assets() -> None:
         assert "<TMPL_" not in source
         assert (
             f'<script defer src="admin/{name}?v='
-            '<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v2"></script>'
+            '<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v3"></script>'
         ) in markup
         subprocess.run(
             [node, "--check", str(ROOT / "webfrontend/htmlauth/admin" / name)],
@@ -225,6 +225,20 @@ def test_admin_responses_emit_no_store_and_frame_protection(tmp_path: Path) -> N
     assert "No LogManager entry is registered for this plugin." in loglist.stdout
     assert 'role=\\"status\\"' in loglist.stdout
 
+    auxiliary_request = "action=page_auxiliary&ajax=1"
+    auxiliary = subprocess.run(
+        common,
+        check=True,
+        capture_output=True,
+        text=True,
+        input=auxiliary_request,
+        env={**ajax_environment, "CONTENT_LENGTH": str(len(auxiliary_request))},
+    )
+    assert '"page_notifications"' in auxiliary.stdout
+    assert '"page_loglist"' in auxiliary.stdout
+    assert '"notifications_html"' in auxiliary.stdout
+    assert '"loglist_html"' in auxiliary.stdout
+
     empty_shell = subprocess.run(
         common,
         check=True,
@@ -352,7 +366,7 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert "SELECTED_EMERGENCY_STOP => $selected_emergency_stop" in cgi
     assert "body.set('action', 'page_state')" in template
     assert "body.set('action', 'get_config')" in template
-    assert "const loadConfiguration = async () =>" in template
+    assert "const loadConfiguration = async (suppliedResult) =>" in template
     assert "const publicOrigin = String(server.public_origin || '')" in template
     assert "String(loxone.endpoint || miniserverEndpoint.value || '')" in template
     assert "setFormValue(mqttConfigForm, 'mqtt_host', mqtt.host);" in template
@@ -371,17 +385,16 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     )
     assert 'id="plugin-log-list" aria-busy="true" aria-live="polite"' in template
     assert '<span class="mcp-status" data-kind="working"><TMPL_VAR AJAX.WORKING>' in template
-    assert "const loadLoxberryNotifications = async () =>" in template
+    assert "const loadLoxberryNotifications = async (suppliedResult) =>" in template
     assert "body.set('action', 'page_notifications')" in template
-    assert "const loadPluginLogList = async () =>" in template
+    assert "const loadPluginLogList = async (suppliedResult) =>" in template
     assert "body.set('action', 'page_loglist')" in template
-    assert "loadLoxberryNotifications," in template
-    assert "loadPluginLogList," in template
     hydration = _admin_script("page.js")
-    assert hydration.index("loadLoxberryNotifications,") < hydration.index("loadConfiguration,")
-    assert hydration.index("loadPluginLogList,") > hydration.index(
-        "() => pollSessions({initial: true}),"
-    )
+    assert "body.set('action', 'page_snapshot')" in hydration
+    assert "body.set('action', 'page_auxiliary')" in hydration
+    assert "await Promise.allSettled([loadSnapshot(), loadAuxiliary()])" in hydration
+    assert "await loadLoxberryNotifications(sections?.page_notifications)" in hydration
+    assert "await loadPluginLogList(sections?.page_loglist)" in hydration
     assert "<TMPL_VAR LOGLIST>" not in template
     assert (
         '<noscript><meta http-equiv="refresh" content="0;url='
@@ -422,11 +435,16 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert "const backgroundHydrationQueue = [];" in template
     assert "Promise.resolve()" in template
     assert ".then(task)" in template
-    assert "loadConfiguration," in template
-    assert "loadInitialState," in template
-    assert "() => pollServiceStatus({initial: true})," in template
-    assert "loadCertificateStatus," in template
-    assert "() => pollSessions({initial: true})," in template
+    assert "await loadConfiguration(sections?.get_config);" in template
+    assert "await loadInitialState(sections?.page_state);" in template
+    assert (
+        "await pollServiceStatus({initial: true, suppliedResult: sections?.service_status});"
+        in template
+    )
+    assert "await loadCertificateStatus(sections?.certificate_status);" in template
+    assert (
+        "await pollSessions({initial: true, suppliedResult: sections?.list_sessions});" in template
+    )
     assert (
         "queueBackgroundHydration([() => loadEmergencyStopOptions(emergencyStopGeneration)]);"
         in template
@@ -715,7 +733,7 @@ def test_service_status_is_first_and_uses_a_lightweight_ajax_contract() -> None:
     assert 'data-ajax="set_service_enabled"' in template
     assert "body.set('action', 'service_status')" in template
     assert "window.setTimeout(pollServiceStatus, delay)" in template
-    assert "const pollServiceStatus = async ({initial = false} = {}) =>" in template
+    assert "const pollServiceStatus = async ({initial = false, suppliedResult} = {}) =>" in template
     assert "(!initial && document.hidden)" in template
     assert "|| serviceInteractionActive() || servicePollInFlight" in template
     assert "document.addEventListener('visibilitychange'" in template
@@ -754,7 +772,7 @@ def test_sessions_poll_while_visible_and_patch_changed_rows() -> None:
     assert "admin_call('list_sessions', {})" in cgi
     assert "body.set('action', 'list_sessions')" in template
     assert "window.setTimeout(pollSessions, delay)" in template
-    assert "const pollSessions = async ({initial = false} = {}) =>" in template
+    assert "const pollSessions = async ({initial = false, suppliedResult} = {}) =>" in template
     assert "(!initial && document.hidden)" in template
     assert "if (!document.hidden && activeSessionActions.size === 0)" in template
     assert "|| activeSessionActions.size > 0 || sessionPollInFlight" in template
@@ -1301,6 +1319,8 @@ def test_admin_logmanager_registration_requires_an_actual_event(tmp_path: Path) 
         )
 
     request("page_loglist", log_level=7)
+    request("service_status", log_level=7)
+    request("list_sessions", log_level=7)
     assert not marker.exists()
     (tmp_path / "mcpserver-admin").write_text(
         "#!/usr/bin/env perl\nmy $request = <STDIN>;\n", encoding="utf-8"
@@ -1673,7 +1693,7 @@ def test_slow_admin_reads_have_bounded_browser_timeout_headroom() -> None:
         script = _admin_script(script_name)
         section_start = script.index(start)
         section = script[section_start : script.index(end, section_start + len(start))]
-        match = re.search(r"postAjax\(body, (\d+)\)", section)
+        match = re.search(r"postAjax\(body, (\d+)(?:, suppliedResult)?\)", section)
         assert match is not None
         assert minimum_ms <= int(match.group(1)) <= 180_000
 

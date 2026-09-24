@@ -170,6 +170,50 @@ def test_admin_rejects_unknown_actions() -> None:
         dispatch({"action": "delete_everything"})
 
 
+def test_page_snapshot_reuses_one_dispatch_and_keeps_section_failures_independent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from mcpserver import admin
+
+    original_dispatch = admin.dispatch
+    calls: list[str] = []
+
+    def section_dispatch(
+        request: object, *, timing: dict[str, float] | None = None
+    ) -> dict[str, object]:
+        assert isinstance(request, dict)
+        action = request["action"]
+        assert isinstance(action, str)
+        if action == "page_snapshot":
+            return original_dispatch(request, timing=timing)
+        calls.append(action)
+        if action == "page_state":
+            raise AdminError("MQTT unavailable", code="mqtt_unavailable")
+        return {"section": action}
+
+    monkeypatch.setattr(admin, "dispatch", section_dispatch)
+    timing: dict[str, float] = {}
+    result = admin.dispatch({"action": "page_snapshot"}, timing=timing)
+
+    assert calls == [
+        "get_config",
+        "page_state",
+        "service_status",
+        "certificate_status",
+        "list_sessions",
+    ]
+    assert result["get_config"] == {"ok": True, "data": {"section": "get_config"}}
+    assert result["page_state"] == {
+        "ok": False,
+        "error": {"code": "mqtt_unavailable", "message": "MQTT unavailable"},
+    }
+    assert result["list_sessions"] == {
+        "ok": True,
+        "data": {"section": "list_sessions"},
+    }
+    assert set(timing) == {f"{action}_ms" for action in calls}
+
+
 def test_loxberry_approval_accepts_pending_control_scoped_session(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

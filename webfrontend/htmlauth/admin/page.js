@@ -1,8 +1,8 @@
 (() => {
   const core = window.McpAdmin.createCore();
   const {label, postAjax, setAjaxStatus, hideSuccess, status} = core;
-  // The target runs each AJAX action in its own CGI helper. Serial hydration avoids
-  // transient request failures during the resource-constrained initial page load.
+  // Keep follow-up reads serial; the initial page uses one Python helper and one
+  // independent Perl CGI request so cold process startup is paid only once.
   const backgroundHydrationLimit = 1;
   const backgroundHydrationQueue = [];
   let backgroundHydrationRunning = 0;
@@ -33,13 +33,7 @@
       window.performance.mark('mcp-admin-background-hydration-started');
     }
     queueBackgroundHydration([
-      loadLoxberryNotifications,
-      loadConfiguration,
-      loadInitialState,
-      () => pollServiceStatus({initial: true}),
-      loadCertificateStatus,
-      () => pollSessions({initial: true}),
-      loadPluginLogList,
+      loadInitialPage,
       () => { initialBackgroundHydrationComplete = true; },
     ]);
   };
@@ -63,6 +57,38 @@
   const {pollServiceStatus} = service;
   const {loadConfiguration, loadInitialState} = configuration;
   const {loadLoxberryNotifications, loadPluginLogList} = core;
+  const loadInitialPage = async () => {
+    const loadSnapshot = async () => {
+      let sections;
+      try {
+        const body = new URLSearchParams();
+        body.set('action', 'page_snapshot');
+        body.set('ajax', '1');
+        sections = (await postAjax(body, 20000)).data;
+      } catch {
+        // An older or temporarily unavailable helper falls back to individual reads.
+      }
+      await loadConfiguration(sections?.get_config);
+      await loadInitialState(sections?.page_state);
+      await pollServiceStatus({initial: true, suppliedResult: sections?.service_status});
+      await loadCertificateStatus(sections?.certificate_status);
+      await pollSessions({initial: true, suppliedResult: sections?.list_sessions});
+    };
+    const loadAuxiliary = async () => {
+      let sections;
+      try {
+        const body = new URLSearchParams();
+        body.set('action', 'page_auxiliary');
+        body.set('ajax', '1');
+        sections = (await postAjax(body, 15000)).data;
+      } catch {
+        // Preserve the existing independent fallback for either Perl view.
+      }
+      await loadLoxberryNotifications(sections?.page_notifications);
+      await loadPluginLogList(sections?.page_loglist);
+    };
+    await Promise.allSettled([loadSnapshot(), loadAuxiliary()]);
+  };
   const accessSection = document.getElementById('access');
   const sessionsSection = document.getElementById('sessions');
   accessSection.addEventListener('toggle', () => {

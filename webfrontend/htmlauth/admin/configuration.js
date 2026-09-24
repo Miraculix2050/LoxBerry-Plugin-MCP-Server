@@ -134,7 +134,7 @@ window.McpAdmin.createConfiguration = (
     updateMqttBrokerFields();
     renderLogging(configuration);
   };
-  const loadConfiguration = async () => {
+  const loadConfiguration = async (suppliedResult) => {
     if (configurationLoaded || configurationLoadInFlight) return;
     configurationLoadInFlight = true;
     setAjaxStatus('', label('AJAX.WORKING'));
@@ -142,7 +142,7 @@ window.McpAdmin.createConfiguration = (
       const body = new URLSearchParams();
       body.set('action', 'get_config');
       body.set('ajax', '1');
-      const result = await postAjax(body, 7000);
+      const result = await postAjax(body, 7000, suppliedResult);
       renderConfiguration(result.data.configuration);
       configurationLoaded = true;
       setConfigurationFieldsDisabled(false);
@@ -320,7 +320,7 @@ window.McpAdmin.createConfiguration = (
   emergencyStopRetry.addEventListener('click', () => {
     if (!emergencyStopRetry.disabled) loadEmergencyStopOptions(emergencyStopDiscoveryGeneration, true);
   });
-  const loadInitialState = async () => {
+  const loadInitialState = async (suppliedResult) => {
     const body = new URLSearchParams();
     body.set('action', 'page_state');
     body.set('ajax', '1');
@@ -328,7 +328,7 @@ window.McpAdmin.createConfiguration = (
     mqttPageStateStatus.dataset.kind = 'info';
     mqttPageStateStatus.hidden = false;
     try {
-      const result = await postAjax(body, 15000);
+      const result = await postAjax(body, 15000, suppliedResult);
       mqttPasswordStatus.hidden = !Boolean(result.data.mqtt_password_configured);
       updateMqttGateway(result.data.mqtt_gateway);
       updateMqttBrokerFields();
