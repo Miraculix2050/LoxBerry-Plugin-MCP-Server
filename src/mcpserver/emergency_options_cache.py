@@ -14,7 +14,8 @@ from pathlib import Path
 from typing import Any, Final, Protocol, cast
 
 _SCHEMA: Final = 1
-_MAX_BYTES: Final = 2 * 1024 * 1024
+_MAX_BYTES: Final = 4 * 1024 * 1024
+_MAX_OPTIONS_BYTES: Final = _MAX_BYTES - 4096
 _MAX_OPTIONS: Final = 20_000
 _LOCK_WAIT_SECONDS: Final = 95
 
@@ -40,7 +41,13 @@ def _valid_options(value: object) -> bool:
             or len(name) > 512
         ):
             return False
-    return True
+    try:
+        return (
+            len(json.dumps(value, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
+            <= _MAX_OPTIONS_BYTES
+        )
+    except UnicodeError:
+        return False
 
 
 class EmergencyOptionsCache:

@@ -678,6 +678,35 @@ def test_cached_emergency_stop_options_never_discover_from_miniserver(
     }
 
 
+@pytest.mark.parametrize("failure", [TimeoutError(), OSError(), ValueError()])
+def test_emergency_stop_cache_failure_marks_retained_options_stale(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, failure: Exception
+) -> None:
+    from mcpserver.emergency_options_cache import EmergencyOptionsCache
+
+    class ConfigStore:
+        def load(self) -> PluginConfig:
+            return PluginConfig(loxone_endpoint="http://miniserver.test")
+
+    cache = EmergencyOptionsCache(tmp_path / "auth.json", "profile")
+    option = {"uuid": "control-1", "name": "Signal"}
+    cache.refresh(lambda: {"status": "available", "options": [option]})
+    monkeypatch.setattr("mcpserver.admin._config_store", ConfigStore)
+    monkeypatch.setattr("mcpserver.admin._emergency_stop_cache", lambda _config: cache)
+
+    def fail(_discover: object) -> dict[str, object]:
+        raise failure
+
+    monkeypatch.setattr(cache, "refresh", fail)
+    response = dispatch({"action": "emergency_stop_options"})
+    assert response["status"] == "unavailable"
+    assert response["options"] == [option]
+    assert response["cached"] is True
+    assert response["stale"] is True
+    if isinstance(failure, TimeoutError):
+        assert response["discovery_failure_code"] == "authentication_busy"
+
+
 def test_emergency_stop_cache_changes_with_configured_identity(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

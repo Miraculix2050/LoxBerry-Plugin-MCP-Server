@@ -116,6 +116,22 @@ def test_opaque_structure_identifiers_are_preserved(tmp_path: Path) -> None:
     ]
 
 
+def test_largest_ordinary_option_list_fits_and_oversized_list_is_rejected(tmp_path: Path) -> None:
+    cache = EmergencyOptionsCache(tmp_path / "auth.json", "profile-a")
+    options = [{"uuid": f"{number:036d}", "name": "Signal " + "x" * 43} for number in range(20_000)]
+    assert (
+        cache.refresh(lambda: {"status": "available", "options": options})["status"] == "available"
+    )
+    assert len(cache.read()["options"]) == 20_000
+    oversized = [{"uuid": f"{number:036d}", "name": "x" * 512} for number in range(20_000)]
+    with pytest.raises(ValueError, match="invalid emergency-stop discovery options"):
+        cache.refresh(lambda: {"status": "available", "options": oversized})
+    with pytest.raises(ValueError, match="invalid emergency-stop discovery options"):
+        cache.refresh(
+            lambda: {"status": "available", "options": [{"uuid": _UUID, "name": "\ud800"}]}
+        )
+
+
 def test_crashed_refresh_worker_releases_cross_process_lock(tmp_path: Path) -> None:
     context = multiprocessing.get_context("spawn")
     acquired = context.Event()

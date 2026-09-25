@@ -703,16 +703,22 @@ def _emergency_stop_options(*, manual_retry: bool = False) -> dict[str, Any]:
         return cache.refresh(discover)
     except TimeoutError:
         existing = cache.read()
+        retained = bool(existing and existing["has_options"])
         return {
             "status": "unavailable",
-            "options": existing["options"] if existing and existing["has_options"] else [],
+            "options": existing["options"] if existing and retained else [],
+            "cached": retained,
+            "stale": retained,
             "discovery_failure_code": "authentication_busy",
         }
     except (OSError, ValueError):
         existing = cache.read()
+        retained = bool(existing and existing["has_options"])
         return {
             "status": "unavailable",
-            "options": existing["options"] if existing and existing["has_options"] else [],
+            "options": existing["options"] if existing and retained else [],
+            "cached": retained,
+            "stale": retained,
         }
 
 
