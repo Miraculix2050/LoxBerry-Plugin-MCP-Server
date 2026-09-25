@@ -13,7 +13,8 @@ extracted from the matching version heading.
 
 - Cache the last loaded emergency-stop signal options across Admin requests and
   share one explicit Miniserver refresh among concurrent administrators. Page
-  reloads read only the local cache, including the server-rendered fallback.
+  reloads read only the local cache, including the server-rendered fallback. The
+  initial Admin snapshot includes the cached list without a second CGI request.
 
 - Keep the Admin emergency-stop retry button visible after a failed signal load
   and offer another refresh after a successful load, while honoring a supplied
