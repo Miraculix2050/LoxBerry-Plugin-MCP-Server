@@ -12,7 +12,7 @@ Nutze für jeden Assistenten ein eigenes Loxone-Konto. Der Server zeigt nur Elem
 | `loxone:history` | optional | Historie und Statistiken lesen |
 | `loxone:control` | optional | dokumentierte sichtbare Controls bedienen |
 | `loxberry:read` | optional, lokal freigeben | maskierte Plugin- und Systemdiagnosen |
-| `loxberry:operate` | optional, mit `loxone:history` und lokaler Freigabe | plugin-eigenen Statistik-Cache löschen und ausdrücklich konfigurierte Quellen der lokalen Ereignishistorie verwalten |
+| `loxberry:operate` | optional, mit `loxone:history` und lokaler Freigabe | plugin-eigenen Statistik-Cache löschen, Quellen der lokalen Ereignishistorie verwalten und gespeicherte Historie einer inaktiven Quelle ausdrücklich endgültig löschen |
 
 Steuerung ist standardmäßig deaktiviert. Lokale LoxBerry-Freigaben sind an Client-Anwendung, Loxone-Identität, Miniserver und die konkrete Capability gebunden und ersetzen weder Loxone-Rechte noch OAuth-Zustimmung. Beim streng geprüften lokalen Tool Explorer kann eine neue OAuth-Anmeldung dessen Anwendungsfreigabe bis zur angezeigten Aufbewahrungsfrist wiederverwenden. Andere dynamisch registrierte Clients bleiben an ihre exakte OAuth-Clientkennung gebunden.
 

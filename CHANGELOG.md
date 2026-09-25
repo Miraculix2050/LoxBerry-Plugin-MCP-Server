@@ -8,6 +8,15 @@ extracted from the matching version heading.
 - Keep Tool Explorer-specific presentation hints and workflows in a static registry.
   Unknown tools appear under Other tools and remain callable from their MCP schemas.
 
+- Keep retained local event history readable after source removal when the caller
+  can still see the state. Report recording status separately from period coverage,
+  preserve re-addition gaps, and add a confirmed per-source purge for inactive
+  sources without changing global retention limits. An enabled recorder with no
+  configured sources no longer opens idle Miniserver connections. If removal
+  metadata cannot be confirmed after recording stops, report an unknown outcome;
+  a later manual remove can repair the marker without guessing its end time.
+  Post-commit purge maintenance failures also report an unknown outcome.
+
 - Show local timestamps and redacted argument summaries in Tool Explorer call
   history, keep MCP protocol details in a separate debug panel, and report each
   call's progress and outcome next to Run. Expanded protocol entries show the

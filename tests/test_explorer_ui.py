@@ -620,6 +620,7 @@ def test_explorer_scope_filters_include_all_published_history_and_operate_tools(
         "loxberry_list_event_history_sources",
         "loxberry_add_event_history_source",
         "loxberry_remove_event_history_source",
+        "loxberry_purge_event_history_source",
     ]
     tools = [
         {"name": name, "annotations": {"readOnlyHint": True, "destructiveHint": False}}
@@ -1077,6 +1078,11 @@ def test_required_scopes_cover_current_tools_and_leave_unknown_tools_unmapped() 
     assert mapped["loxone_operate_control"] == ["loxone:read", "loxone:control"]
     assert mapped["loxberry_get_service_health"] == ["loxone:read", "loxberry:read"]
     assert mapped["loxberry_add_event_history_source"] == [
+        "loxone:read",
+        "loxone:history",
+        "loxberry:operate",
+    ]
+    assert mapped["loxberry_purge_event_history_source"] == [
         "loxone:read",
         "loxone:history",
         "loxberry:operate",

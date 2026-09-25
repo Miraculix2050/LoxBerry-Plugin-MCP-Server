@@ -1093,8 +1093,12 @@ class EventHistoryData(BaseModel):
     start: str
     end: str
     outcome: Literal["events", "no_matching_events", "partial_coverage", "not_recorded"]
+    coverage: Literal["complete", "partial_coverage", "not_recorded"]
     capture_started_at: str | None
     retained_from: str | None
+    recording_status: Literal["active", "removed"]
+    recording_ended_at: str | None
+    recording_notice: str | None
     entries: list[EventHistoryEntryData]
     next_cursor: str | None
 
@@ -1144,6 +1148,15 @@ class EventHistorySourceChangeData(BaseModel):
 
 class EventHistorySourceChangeEnvelope(ToolEnvelope):
     data: EventHistorySourceChangeData | ErrorData
+
+
+class EventHistoryPurgeData(BaseModel):
+    deleted_events: int
+    coverage_removed: bool
+
+
+class EventHistoryPurgeEnvelope(ToolEnvelope):
+    data: EventHistoryPurgeData | ErrorData
 
 
 class LoxBerryCpuData(BaseModel):
@@ -1561,6 +1574,7 @@ class LoxBerryOperateRuntime:
         auth_store: Any,
         *,
         event_history: EventHistoryMonitor | None = None,
+        loxone_runtime: LoxoneRuntime | None = None,
         clear_timeout_seconds: float = _CACHE_CLEAR_TIMEOUT_SECONDS,
         event_history_source_change_timeout_seconds: float = (
             _EVENT_HISTORY_SOURCE_CHANGE_TIMEOUT_SECONDS
@@ -1572,7 +1586,9 @@ class LoxBerryOperateRuntime:
         self._config_store = config_store
         self._auth_store = auth_store
         self._event_history = event_history
+        self._loxone_runtime = loxone_runtime
         self._event_history_lock = asyncio.Lock()
+        self._event_history_purges: set[tuple[str, str]] = set()
         self._event_history_reconciliation_tasks: set[asyncio.Task[None]] = set()
         self._requests: dict[str, list[float]] = {}
         self._clear_timeout_seconds = clear_timeout_seconds
@@ -1590,6 +1606,14 @@ class LoxBerryOperateRuntime:
         self._requests[access.family_id] = entries
         if LOXBERRY_OPERATE_SCOPE not in access.scopes or HISTORY_SCOPE not in access.scopes:
             raise PermissionError("LoxBerry cache operation is not authorized")
+        if (
+            not config.loxone_history_enabled
+            or not config.loxberry_operate_enabled
+            or not self._operate_binding_allowed(config, access)
+        ):
+            raise PermissionError("LoxBerry cache operation is not authorized")
+
+    def _operate_binding_allowed(self, config: Any, access: StoredAccessToken) -> bool:
         snapshot = getattr(self._auth_store, "snapshot", None)
         family = snapshot().get("families", {}).get(access.family_id, {}) if snapshot else {}
         if isinstance(family, dict) and family.get("client_kind") == "tool_explorer":
@@ -1622,8 +1646,7 @@ class LoxBerryOperateRuntime:
                 access.miniserver_id,
             )
             allowed = binding in config.loxberry_operate_bindings
-        if not config.loxone_history_enabled or not config.loxberry_operate_enabled or not allowed:
-            raise PermissionError("LoxBerry cache operation is not authorized")
+        return allowed
 
     async def clear_statistics_cache(self, access: StoredAccessToken) -> Any:
         self._allowed(access)
@@ -1652,13 +1675,14 @@ class LoxBerryOperateRuntime:
         if cancelled:
             raise asyncio.CancelledError
 
-    @staticmethod
-    def _event_history_change_allowed(current: Any, binding: str) -> None:
+    def _event_history_change_allowed(self, current: Any, access: StoredAccessToken) -> None:
         if (
             not current.event_history_enabled
             or not current.loxone_history_enabled
             or not current.loxberry_operate_enabled
-            or binding not in current.loxberry_operate_bindings
+            or LOXBERRY_OPERATE_SCOPE not in access.scopes
+            or HISTORY_SCOPE not in access.scopes
+            or not self._operate_binding_allowed(current, access)
         ):
             raise PermissionError("LoxBerry cache operation is not authorized")
 
@@ -1707,6 +1731,10 @@ class LoxBerryOperateRuntime:
         self, access: StoredAccessToken, control_uuid: str, state_uuid: str
     ) -> tuple[bool, tuple[str, str, str]]:
         async with self._event_history_lock:
+            if (control_uuid, state_uuid) in self._event_history_purges:
+                raise ControlOperationError(
+                    "temporarily_unavailable", "Source purge is in progress"
+                )
             monitor = self._event_history_allowed(access)
             config = self._config_store.load()
             if (control_uuid, state_uuid) in config.event_history_sources:
@@ -1722,17 +1750,11 @@ class LoxBerryOperateRuntime:
                 monitor.validate_source(control_uuid, state_uuid),
                 timeout=self._event_history_source_change_timeout_seconds,
             )
-            binding = self._auth_store.pseudonym(
-                "loxberry-operate-binding-v1",
-                access.client_id,
-                access.identity_id,
-                access.miniserver_id,
-            )
             changed = False
 
             def add_source(current: Any) -> Any:
                 nonlocal changed
-                self._event_history_change_allowed(current, binding)
+                self._event_history_change_allowed(current, access)
                 if (control_uuid, state_uuid) in current.event_history_sources:
                     return current
                 if len(current.event_history_sources) >= 64:
@@ -1759,37 +1781,99 @@ class LoxBerryOperateRuntime:
         async with self._event_history_lock:
             monitor = self._event_history_allowed(access)
             config = self._config_store.load()
+            self._event_history_change_allowed(config, access)
+            changed = False
             if (control_uuid, state_uuid) not in config.event_history_sources:
                 await self._reconcile_event_history_config(monitor, config)
-                return False
-            binding = self._auth_store.pseudonym(
-                "loxberry-operate-binding-v1",
-                access.client_id,
-                access.identity_id,
-                access.miniserver_id,
-            )
+            else:
 
-            changed = False
+                def remove_source(current: Any) -> Any:
+                    nonlocal changed
+                    self._event_history_change_allowed(current, access)
+                    if (control_uuid, state_uuid) not in current.event_history_sources:
+                        return current
+                    changed = True
+                    return replace(
+                        current,
+                        event_history_sources=tuple(
+                            source
+                            for source in current.event_history_sources
+                            if source != (control_uuid, state_uuid)
+                        ),
+                    )
 
-            def remove_source(current: Any) -> Any:
-                nonlocal changed
-                self._event_history_change_allowed(current, binding)
-                if (control_uuid, state_uuid) not in current.event_history_sources:
-                    return current
-                changed = True
-                return replace(
-                    current,
-                    event_history_sources=tuple(
-                        source
-                        for source in current.event_history_sources
-                        if source != (control_uuid, state_uuid)
-                    ),
-                )
-
-            updated = await self._mutate_event_history_config(monitor, remove_source)
-            if changed:
+                updated = await self._mutate_event_history_config(monitor, remove_source)
                 await self._reconcile_event_history_config(monitor, updated)
+            try:
+                await asyncio.to_thread(
+                    monitor.store.mark_removed,
+                    control_uuid,
+                    state_uuid,
+                    removed_at=time.time() if changed else None,
+                )
+            except EventHistoryUnavailable as exc:
+                raise ControlOperationError(
+                    "temporarily_unavailable",
+                    "Source is inactive; removal metadata outcome is unknown",
+                ) from exc
             return changed
+
+    async def purge_event_history_source(
+        self, access: StoredAccessToken, control_uuid: str, state_uuid: str
+    ) -> tuple[int, int]:
+        async with self._event_history_lock:
+            monitor = self._event_history_allowed(access)
+            if self._event_history_reconciliation_tasks:
+                raise ControlOperationError(
+                    "temporarily_unavailable", "Source update is still being reconciled"
+                )
+            if (control_uuid, state_uuid) in self._event_history_purges:
+                raise ControlOperationError(
+                    "temporarily_unavailable", "Source purge is in progress"
+                )
+            if self._loxone_runtime is None:
+                raise ControlOperationError("temporarily_unavailable", "Operation is unavailable")
+            try:
+                async with self._loxone_runtime.history_call_slot(access):
+                    snapshot = await self._loxone_runtime.snapshot(access)
+            except RuntimeUnavailable as exc:
+                raise ControlOperationError("temporarily_unavailable", str(exc)) from exc
+            control = next(
+                (
+                    item
+                    for item in _flatten_controls(snapshot.structure.controls)
+                    if item.uuid == control_uuid
+                ),
+                None,
+            )
+            if control is None or state_uuid not in {uuid for _, uuid in control.state_uuids}:
+                raise ControlOperationError("not_found", "state is not visible")
+
+            def purge_locked(current: Any, _save: Any) -> tuple[int, int]:
+                self._event_history_change_allowed(current, access)
+                if (control_uuid, state_uuid) in current.event_history_sources:
+                    raise ControlOperationError("invalid_input", "source is still active")
+                return monitor.store.purge_source(control_uuid, state_uuid)
+
+            operation = asyncio.create_task(
+                asyncio.to_thread(self._config_store.transaction, purge_locked)
+            )
+            self._event_history_purges.add((control_uuid, state_uuid))
+
+            def finished(task: asyncio.Task[tuple[int, int]]) -> None:
+                self._event_history_purges.discard((control_uuid, state_uuid))
+                if not task.cancelled():
+                    task.exception()
+
+            operation.add_done_callback(finished)
+            try:
+                return await asyncio.wait_for(
+                    asyncio.shield(operation),
+                    timeout=self._event_history_source_change_timeout_seconds,
+                )
+            except (TimeoutError, asyncio.CancelledError):
+                # The worker may still commit; a later request must not retry it.
+                raise
 
 
 class EventHistoryRuntime:
@@ -1815,7 +1899,7 @@ class EventHistoryRuntime:
         end: float,
         limit: int,
         before: tuple[float, int] | None,
-    ) -> tuple[Control, str, Any]:
+    ) -> tuple[Control, str, Any, bool]:
         if HISTORY_SCOPE not in access.scopes:
             raise PermissionError("loxone:history is required")
         config = self._config_store.load()
@@ -1823,8 +1907,7 @@ class EventHistoryRuntime:
             raise PermissionError("loxone:history requires administrator activation")
         if not config.event_history_enabled:
             raise ControlOperationError("feature_disabled", "Local event history is disabled")
-        if (control_uuid, state_uuid) not in config.event_history_sources:
-            raise ControlOperationError("not_found", "state is not configured for local history")
+        recording_active = (control_uuid, state_uuid) in config.event_history_sources
         try:
             async with self._runtime.history_call_slot(access):
                 snapshot = await self._runtime.snapshot(access)
@@ -1861,7 +1944,9 @@ class EventHistoryRuntime:
                 )
         except EventHistoryUnavailable as exc:
             raise ControlOperationError("temporarily_unavailable", str(exc)) from exc
-        return control, state_name, page
+        if not recording_active and not page.has_evidence:
+            raise ControlOperationError("not_found", "state has no retained local history")
+        return control, state_name, page, recording_active
 
     async def coverage(
         self,
@@ -4573,7 +4658,8 @@ def register_event_history_tools(server: FastMCP, runtime: EventHistoryRuntime |
     @server.tool(
         name="loxone_get_state_history",
         description=(
-            "Read recorded local state transitions for one currently visible configured state. "
+            "Read retained local state transitions for one currently visible state, including "
+            "a removed recording source while evidence remains. "
             "Requires loxone:history; this is separate from native Loxone control history."
         ),
         annotations=annotations,
@@ -4619,7 +4705,7 @@ def register_event_history_tools(server: FastMCP, runtime: EventHistoryRuntime |
                 if anchor[0] != "event_history":
                     raise ValueError("cursor is invalid")
                 before = (float(anchor[2]), anchor[1])
-            control, state_name, page = await runtime.page(
+            control, state_name, page, recording_active = await runtime.page(
                 access,
                 control_uuid,
                 state_uuid,
@@ -4653,8 +4739,18 @@ def register_event_history_tools(server: FastMCP, runtime: EventHistoryRuntime |
                     "start": timestamp(start_seconds),
                     "end": timestamp(end_seconds),
                     "outcome": outcome,
+                    "coverage": page.coverage,
                     "capture_started_at": timestamp(page.capture_started_at),
                     "retained_from": timestamp(page.retained_from),
+                    "recording_status": "active" if recording_active else "removed",
+                    "recording_ended_at": (
+                        None if recording_active else timestamp(page.recording_ended_at)
+                    ),
+                    "recording_notice": (
+                        None
+                        if recording_active
+                        else "No new events are being captured for this source"
+                    ),
                     "entries": [
                         {
                             "observed_at": timestamp(entry.observed_at),
@@ -5179,6 +5275,73 @@ def register_loxberry_operate_tool(server: FastMCP, runtime: LoxBerryOperateRunt
         return await _change_event_history_source(
             add=False, control_uuid=control_uuid, state_uuid=state_uuid
         )
+
+    @server.tool(
+        name="loxberry_purge_event_history_source",
+        description=(
+            "Permanently delete retained local events and coverage for one inactive, "
+            "currently visible control/state pair. Requires confirm=true, loxone:history, "
+            "loxberry:operate and an exact local approval. Never retry an uncertain result."
+        ),
+        annotations=ToolAnnotations(
+            readOnlyHint=False, destructiveHint=True, idempotentHint=False, openWorldHint=False
+        ),
+        structured_output=True,
+    )
+    async def purge_event_history_source(
+        control_uuid: Annotated[str, Field(max_length=128)],
+        state_uuid: Annotated[str, Field(max_length=128)],
+        confirm: Annotated[bool, Field(strict=True)] = False,
+    ) -> EventHistoryPurgeEnvelope:
+        tool = "loxberry_purge_event_history_source"
+        access: StoredAccessToken | None = None
+        try:
+            access = _access()
+            if confirm is not True:
+                raise ValueError("confirm=true is required")
+            control_uuid = normalize_loxone_uuid(control_uuid)
+            state_uuid = normalize_loxone_uuid(state_uuid)
+            events, coverage = await runtime.purge_event_history_source(
+                access, control_uuid, state_uuid
+            )
+            audit_source(access, tool, "completed", control_uuid, state_uuid)
+            return _result(
+                EventHistoryPurgeEnvelope,
+                {"deleted_events": events, "coverage_removed": coverage > 0},
+            )
+        except PermissionError:
+            audit_source(access, tool, "permission_denied", control_uuid, state_uuid)
+            return _error(
+                EventHistoryPurgeEnvelope, "permission_denied", "Local approval is required"
+            )
+        except ValueError as exc:
+            audit_source(access, tool, "invalid_input", control_uuid, state_uuid)
+            return _error(EventHistoryPurgeEnvelope, "invalid_input", str(exc))
+        except ControlOperationError as exc:
+            audit_source(access, tool, exc.code, control_uuid, state_uuid)
+            return _error(EventHistoryPurgeEnvelope, exc.code, str(exc))
+        except TimeoutError:
+            audit_source(access, tool, "timed_out_unknown", control_uuid, state_uuid)
+            return _error(
+                EventHistoryPurgeEnvelope,
+                "temporarily_unavailable",
+                "Purge timed out; outcome is unknown. Do not retry automatically",
+            )
+        except EventHistoryUnavailable:
+            audit_source(access, tool, "outcome_unknown", control_uuid, state_uuid)
+            return _error(
+                EventHistoryPurgeEnvelope,
+                "temporarily_unavailable",
+                "Purge outcome is unknown. Do not retry automatically",
+            )
+        except asyncio.CancelledError:
+            audit_source(access, tool, "cancelled_unknown", control_uuid, state_uuid)
+            raise
+        except Exception:
+            audit_source(access, tool, "failed", control_uuid, state_uuid)
+            return _error(
+                EventHistoryPurgeEnvelope, "temporarily_unavailable", "Operation is unavailable"
+            )
 
 
 def register_control_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> None:

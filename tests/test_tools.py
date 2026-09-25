@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
 import time
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -22,7 +24,8 @@ from mcpserver.auth.provider import (
     READ_SCOPE,
     StoredAccessToken,
 )
-from mcpserver.config import AtomicConfigStore, PluginConfig
+from mcpserver.config import AtomicConfigStore, ExplorerBindingApproval, PluginConfig
+from mcpserver.loxone.event_history import EventHistoryStore, EventHistoryUnavailable
 from mcpserver.loxone.models import (
     Control,
     Freshness,
@@ -943,9 +946,18 @@ async def test_event_history_source_removal_reports_no_op_when_another_writer_re
         def pseudonym(self, *_parts: str) -> str:
             return "binding"
 
+    class Store:
+        def mark_removed(
+            self, control_uuid: str, state_uuid: str, *, removed_at: float | None
+        ) -> None:
+            assert (control_uuid, state_uuid) == source
+            assert removed_at is None
+
     class Monitor:
-        async def update_config(self, _config: PluginConfig) -> None:
-            raise AssertionError("a no-op must not reconfigure the monitor")
+        store = Store()
+
+        async def update_config(self, config: PluginConfig) -> None:
+            assert config is replacement
 
     runtime = LoxBerryOperateRuntime(object(), ConfigStore(), AuthStore(), event_history=Monitor())
 
@@ -955,10 +967,99 @@ async def test_event_history_source_removal_reports_no_op_when_another_writer_re
 
 
 @pytest.mark.asyncio
+async def test_event_history_source_removal_repairs_failed_marker_without_guessing_time(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = ("control", "state")
+    now = time.time()
+    store = EventHistoryStore(
+        (tmp_path / "history.sqlite3").resolve(), retention_days=90, maximum_mib=16
+    )
+    store.initialize()
+    store.begin_coverage((source,), started_at=now - 20)
+    original_mark_removed = store.mark_removed
+    fail_once = True
+
+    def mark_removed(control_uuid: str, state_uuid: str, *, removed_at: float | None) -> None:
+        nonlocal fail_once
+        if fail_once:
+            fail_once = False
+            raise EventHistoryUnavailable("local event history is unavailable")
+        original_mark_removed(control_uuid, state_uuid, removed_at=removed_at)
+
+    monkeypatch.setattr(store, "mark_removed", mark_removed)
+    initial = PluginConfig(
+        loxone_history_enabled=True,
+        loxberry_operate_enabled=True,
+        event_history_enabled=True,
+        loxberry_operate_bindings=("binding",),
+        event_history_sources=(source,),
+    )
+
+    class ConfigStore:
+        current = initial
+
+        def load(self) -> PluginConfig:
+            return self.current
+
+        def mutate(self, operation: object) -> PluginConfig:
+            self.current = operation(self.current)  # type: ignore[operator]
+            return self.current
+
+    class AuthStore:
+        def pseudonym(self, *_parts: str) -> str:
+            return "binding"
+
+    class Monitor:
+        def __init__(self) -> None:
+            self.store = store
+
+        async def update_config(self, config: PluginConfig) -> None:
+            if source not in config.event_history_sources:
+                store.end_coverage((source,), ended_at=now - 10, outcome="stopped")
+
+    runtime = LoxBerryOperateRuntime(
+        object(),
+        ConfigStore(),
+        AuthStore(),
+        event_history=Monitor(),  # type: ignore[arg-type]
+    )
+    access = _loxberry_access(HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE)
+    with pytest.raises(tools_module.ControlOperationError, match="outcome is unknown"):
+        await runtime.remove_event_history_source(access, *source)
+    assert source not in runtime._config_store.load().event_history_sources
+
+    assert not await runtime.remove_event_history_source(access, *source)
+    page = store.page(*source, start=now - 20, end=now - 10, limit=10)
+    assert page.has_evidence and page.coverage == "complete"
+    assert page.recording_ended_at is None
+
+
+@pytest.mark.asyncio
 async def test_event_history_read_rejects_a_visible_state_outside_the_source_allowlist(
     tmp_path: Path,
 ) -> None:
     source = ("control", "state")
+    control = Control(
+        uuid="control",
+        name="Visible",
+        control_type="Switch",
+        room_uuid=None,
+        category_uuid=None,
+        action_uuid=None,
+        state_uuids=(("active", "state"),),
+    )
+
+    @asynccontextmanager
+    async def slot(_access: object = None):
+        yield
+
+    class Runtime:
+        history_call_slot = staticmethod(slot)
+        worker_slot = staticmethod(slot)
+
+        async def snapshot(self, _access: object) -> object:
+            return SimpleNamespace(structure=SimpleNamespace(controls=(control,)))
 
     class ConfigStore:
         def load(self) -> PluginConfig:
@@ -968,13 +1069,80 @@ async def test_event_history_read_rejects_a_visible_state_outside_the_source_all
                 event_history_sources=(),
             )
 
-    runtime = EventHistoryRuntime(object(), ConfigStore(), (tmp_path / "history.sqlite3").resolve())
+    path = (tmp_path / "history.sqlite3").resolve()
+    EventHistoryStore(path, retention_days=90, maximum_mib=16).initialize()
+    runtime = EventHistoryRuntime(Runtime(), ConfigStore(), path)  # type: ignore[arg-type]
 
-    with pytest.raises(tools_module.ControlOperationError, match="not configured") as exc_info:
+    with pytest.raises(tools_module.ControlOperationError, match="no retained") as exc_info:
         await runtime.page(
             _loxberry_access(HISTORY_SCOPE), *source, start=0.0, end=1.0, limit=1, before=None
         )
 
+    assert exc_info.value.code == "not_found"
+
+
+@pytest.mark.asyncio
+async def test_removed_history_is_readable_only_while_currently_visible(tmp_path: Path) -> None:
+    source = ("control", "state")
+    now = time.time()
+    path = (tmp_path / "history.sqlite3").resolve()
+    store = EventHistoryStore(path, retention_days=90, maximum_mib=16)
+    store.initialize()
+    store.begin_coverage((source,), started_at=now - 30)
+    store.record_transition(*source, observed_at=now - 20, old_value=0, new_value=1)
+    store.end_coverage((source,), ended_at=now - 10, outcome="stopped")
+    store.mark_removed(*source, removed_at=now - 10)
+    control = Control(
+        uuid="control",
+        name="Visible",
+        control_type="Switch",
+        room_uuid=None,
+        category_uuid=None,
+        action_uuid=None,
+        state_uuids=(("active", "state"),),
+    )
+
+    @asynccontextmanager
+    async def slot(_access: object = None):
+        yield
+
+    class Runtime:
+        visible = True
+        history_call_slot = staticmethod(slot)
+        worker_slot = staticmethod(slot)
+
+        async def snapshot(self, _access: object) -> object:
+            return SimpleNamespace(
+                structure=SimpleNamespace(controls=(control,) if self.visible else ())
+            )
+
+    class ConfigStore:
+        def load(self) -> PluginConfig:
+            return PluginConfig(loxone_history_enabled=True, event_history_enabled=True)
+
+    loxone = Runtime()
+    runtime = EventHistoryRuntime(loxone, ConfigStore(), path)  # type: ignore[arg-type]
+    _, _, page, active = await runtime.page(
+        _loxberry_access(HISTORY_SCOPE),
+        *source,
+        start=now - 30,
+        end=now,
+        limit=10,
+        before=None,
+    )
+    assert not active and len(page.entries) == 1
+    assert page.recording_ended_at == now - 10
+    assert page.coverage == "partial_coverage"
+    loxone.visible = False
+    with pytest.raises(tools_module.ControlOperationError) as exc_info:
+        await runtime.page(
+            _loxberry_access(HISTORY_SCOPE),
+            *source,
+            start=now - 30,
+            end=now,
+            limit=10,
+            before=None,
+        )
     assert exc_info.value.code == "not_found"
 
 
@@ -996,6 +1164,7 @@ async def test_state_history_normalizes_standard_uuid_input_before_runtime_acces
 
     class Runtime:
         arguments: tuple[str, str] | None = None
+        active = True
 
         async def page(
             self, _access: object, control: str, state: str, **_kwargs: object
@@ -1009,9 +1178,11 @@ async def test_state_history_normalizes_standard_uuid_input_before_runtime_acces
                     entries=(),
                     capture_started_at=None,
                     retained_from=None,
+                    recording_ended_at=1_777_000_000.0,
                     next_event_id=None,
                     next_event_at=None,
                 ),
+                self.active,
             )
 
     control_object = control
@@ -1034,6 +1205,22 @@ async def test_state_history_normalizes_standard_uuid_input_before_runtime_acces
     assert runtime.arguments == (control_uuid, state_uuid)
     assert result.data.control_uuid == control_uuid  # type: ignore[union-attr]
     assert result.data.state_uuid == state_uuid  # type: ignore[union-attr]
+    assert result.data.recording_status == "active"  # type: ignore[union-attr]
+    assert result.data.coverage == "not_recorded"  # type: ignore[union-attr]
+    runtime.active = False
+    removed = await server._tool_manager.call_tool(
+        "loxone_get_state_history",
+        {
+            "control_uuid": control_uuid,
+            "state_uuid": state_uuid,
+            "start": "2026-09-01T00:00:00Z",
+            "end": "2026-09-01T01:00:00Z",
+        },
+    )
+    assert removed.ok
+    assert removed.data.recording_status == "removed"  # type: ignore[union-attr]
+    assert removed.data.recording_ended_at is not None  # type: ignore[union-attr]
+    assert removed.data.recording_notice  # type: ignore[union-attr]
 
 
 @pytest.mark.asyncio
@@ -1117,6 +1304,10 @@ async def test_event_history_source_tools_preserve_loxone_uuids_through_config_s
     class Monitor:
         def __init__(self) -> None:
             self.configs: list[PluginConfig] = []
+            self.store = EventHistoryStore(
+                (tmp_path / "event-history.sqlite3").resolve(), retention_days=90, maximum_mib=16
+            )
+            self.store.initialize()
 
         async def validate_source(self, control: str, state: str) -> tuple[str, str, str]:
             assert (control, state) == (control_uuid, state_uuid)
@@ -1166,6 +1357,356 @@ async def test_event_history_source_tools_preserve_loxone_uuids_through_config_s
         ((control_uuid, state_uuid),),
         (),
     ]
+
+
+@pytest.mark.asyncio
+async def test_event_history_purge_requires_confirmation_and_reports_uncertain_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = (
+        "00000000-0000-0000-0000000000000001",
+        "00000000-0000-0000-0000000000000002",
+    )
+
+    class Runtime:
+        calls = 0
+        timed_out = False
+        unavailable = False
+
+        async def purge_event_history_source(self, *_args: object) -> tuple[int, int]:
+            self.calls += 1
+            if self.timed_out:
+                raise TimeoutError
+            if self.unavailable:
+                raise EventHistoryUnavailable("local event history maintenance is unavailable")
+            return 3, 1
+
+    runtime = Runtime()
+    server = FastMCP("event-history-purge")
+    register_loxberry_operate_tool(server, runtime)  # type: ignore[arg-type]
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: _loxberry_access(READ_SCOPE, HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE),
+    )
+    arguments = {"control_uuid": source[0], "state_uuid": source[1]}
+    denied = await server._tool_manager.call_tool("loxberry_purge_event_history_source", arguments)
+    assert not denied.ok and runtime.calls == 0
+    assert denied.data.error == "invalid_input"  # type: ignore[union-attr]
+
+    confirmed = await server._tool_manager.call_tool(
+        "loxberry_purge_event_history_source", {**arguments, "confirm": True}
+    )
+    assert confirmed.ok and confirmed.data.deleted_events == 3  # type: ignore[union-attr]
+    assert confirmed.data.coverage_removed is True  # type: ignore[union-attr]
+    runtime.timed_out = True
+    uncertain = await server._tool_manager.call_tool(
+        "loxberry_purge_event_history_source", {**arguments, "confirm": True}
+    )
+    assert not uncertain.ok and "outcome is unknown" in uncertain.data.message  # type: ignore[union-attr]
+    runtime.timed_out = False
+    runtime.unavailable = True
+    uncertain = await server._tool_manager.call_tool(
+        "loxberry_purge_event_history_source", {**arguments, "confirm": True}
+    )
+    assert not uncertain.ok and "outcome is unknown" in uncertain.data.message  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+async def test_event_history_purge_rejects_active_or_invisible_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = ("control", "state")
+    path = (tmp_path / "history.sqlite3").resolve()
+    store = EventHistoryStore(path, retention_days=90, maximum_mib=16)
+    store.initialize()
+    store.begin_coverage((source,), started_at=time.time() - 10)
+    control = Control(
+        uuid="control",
+        name="Visible",
+        control_type="Switch",
+        room_uuid=None,
+        category_uuid=None,
+        action_uuid=None,
+        state_uuids=(("active", "state"),),
+    )
+
+    @asynccontextmanager
+    async def slot(_access: object = None):
+        yield
+
+    class Loxone:
+        visible = True
+        history_call_slot = staticmethod(slot)
+
+        async def snapshot(self, _access: object) -> object:
+            return SimpleNamespace(
+                structure=SimpleNamespace(controls=(control,) if self.visible else ())
+            )
+
+    class ConfigStore:
+        active = True
+        approved = True
+
+        def load(self) -> PluginConfig:
+            return PluginConfig(
+                loxone_history_enabled=True,
+                loxberry_operate_enabled=True,
+                loxberry_operate_requests_per_minute=10,
+                event_history_enabled=True,
+                loxberry_operate_bindings=("binding",) if self.approved else (),
+                event_history_sources=(source,) if self.active else (),
+            )
+
+        def transaction(self, operation: object) -> tuple[int, int]:
+            return operation(self.load(), lambda _config: None)  # type: ignore[operator]
+
+    class AuthStore:
+        def pseudonym(self, *_parts: str) -> str:
+            return "binding"
+
+    loxone = Loxone()
+    config = ConfigStore()
+    runtime = LoxBerryOperateRuntime(
+        object(),
+        config,
+        AuthStore(),
+        event_history=SimpleNamespace(store=store),
+        loxone_runtime=loxone,  # type: ignore[arg-type]
+    )
+    access = _loxberry_access(HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE)
+    with pytest.raises(tools_module.ControlOperationError, match="active"):
+        await runtime.purge_event_history_source(access, *source)
+    config.active = False
+    config.approved = False
+    with pytest.raises(PermissionError):
+        await runtime.purge_event_history_source(access, *source)
+    config.approved = True
+    loxone.visible = False
+    with pytest.raises(tools_module.ControlOperationError) as invisible:
+        await runtime.purge_event_history_source(access, *source)
+    assert invisible.value.code == "not_found"
+    loxone.visible = True
+    assert await runtime.purge_event_history_source(access, *source) == (0, 1)
+
+    def slow_purge(*_source: str) -> tuple[int, int]:
+        time.sleep(0.1)
+        return 0, 0
+
+    monkeypatch.setattr(store, "purge_source", slow_purge)
+    runtime._event_history_source_change_timeout_seconds = 0.01
+    with pytest.raises(TimeoutError):
+        await runtime.purge_event_history_source(access, *source)
+    with pytest.raises(tools_module.ControlOperationError, match="in progress"):
+        await runtime.purge_event_history_source(access, *source)
+    with pytest.raises(tools_module.ControlOperationError, match="in progress"):
+        await runtime.add_event_history_source(access, *source)
+    await asyncio.sleep(0.15)
+    assert not runtime._event_history_purges
+
+
+def test_event_history_changes_accept_current_explorer_approval() -> None:
+    now = int(time.time())
+    binding = "b" * 64
+    config = PluginConfig(
+        loxone_history_enabled=True,
+        loxberry_operate_enabled=True,
+        event_history_enabled=True,
+        explorer_bindings=(
+            ExplorerBindingApproval(
+                binding_id=binding,
+                capability="loxberry:operate",
+                application_id="tool-explorer-v1",
+                version=1,
+                created_at=now,
+                last_active_at=now,
+                last_active_until=now + 3600,
+            ),
+        ),
+    )
+
+    class AuthStore:
+        def snapshot(self) -> dict[str, object]:
+            return {
+                "families": {
+                    "family": {
+                        "client_kind": "tool_explorer",
+                        "explorer_origin": "https://public.example",
+                    }
+                }
+            }
+
+        def pseudonym(self, *_parts: str) -> str:
+            return binding
+
+    runtime = LoxBerryOperateRuntime(object(), object(), AuthStore())
+    runtime._event_history_change_allowed(
+        config, _loxberry_access(HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE)
+    )
+
+
+@pytest.mark.asyncio
+async def test_event_history_purge_serializes_with_admin_config_update(tmp_path: Path) -> None:
+    source = ("00000000-0000-0000-0000000000000001", "00000000-0000-0000-0000000000000002")
+    binding = "b" * 64
+    config_store = AtomicConfigStore((tmp_path / "config.json").resolve())
+    config_store.save(
+        PluginConfig(
+            loxone_history_enabled=True,
+            loxberry_operate_enabled=True,
+            loxberry_operate_requests_per_minute=10,
+            event_history_enabled=True,
+            loxberry_operate_bindings=(binding,),
+        )
+    )
+    control = Control(
+        uuid=source[0],
+        name="Visible",
+        control_type="Switch",
+        room_uuid=None,
+        category_uuid=None,
+        action_uuid=None,
+        state_uuids=(("active", source[1]),),
+    )
+    started = threading.Event()
+    release = threading.Event()
+
+    class Store:
+        def purge_source(self, *_source: str) -> tuple[int, int]:
+            started.set()
+            assert release.wait(2)
+            return 1, 1
+
+    @asynccontextmanager
+    async def slot(_access: object):
+        yield
+
+    class Loxone:
+        history_call_slot = staticmethod(slot)
+
+        async def snapshot(self, _access: object) -> object:
+            return SimpleNamespace(structure=SimpleNamespace(controls=(control,)))
+
+    class AuthStore:
+        def pseudonym(self, *_parts: str) -> str:
+            return binding
+
+    runtime = LoxBerryOperateRuntime(
+        object(),
+        config_store,
+        AuthStore(),
+        event_history=SimpleNamespace(store=Store()),
+        loxone_runtime=Loxone(),  # type: ignore[arg-type]
+    )
+    access = _loxberry_access(HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE)
+    purge = asyncio.create_task(runtime.purge_event_history_source(access, *source))
+    assert await asyncio.to_thread(started.wait, 1)
+    admin_update = asyncio.create_task(
+        asyncio.to_thread(
+            config_store.mutate,
+            lambda current: replace(current, event_history_sources=(source,)),
+        )
+    )
+    await asyncio.sleep(0.05)
+    assert not admin_update.done()
+    release.set()
+    assert await purge == (1, 1)
+    await admin_update
+    assert config_store.load().event_history_sources == (source,)
+
+
+@pytest.mark.asyncio
+async def test_event_history_purge_rejects_pending_source_removal_reconciliation() -> None:
+    source = ("control", "state")
+    binding = "b" * 64
+    config = PluginConfig(
+        loxone_history_enabled=True,
+        loxberry_operate_enabled=True,
+        loxberry_operate_requests_per_minute=10,
+        event_history_enabled=True,
+        loxberry_operate_bindings=(binding,),
+    )
+    reconciled = asyncio.Event()
+    mutation_release = asyncio.Event()
+    purged = False
+
+    class ConfigStore:
+        def load(self) -> PluginConfig:
+            return config
+
+        def transaction(self, operation: object) -> tuple[int, int]:
+            return operation(config, lambda _config: None)  # type: ignore[operator]
+
+    class Store:
+        def purge_source(self, *_source: str) -> tuple[int, int]:
+            nonlocal purged
+            assert reconciled.is_set(), "purge ran before the old recorder stopped"
+            purged = True
+            return 1, 1
+
+    class Monitor:
+        store = Store()
+
+        async def update_config(self, _config: PluginConfig) -> None:
+            reconciled.set()
+
+    @asynccontextmanager
+    async def slot(_access: object):
+        yield
+
+    class Loxone:
+        history_call_slot = staticmethod(slot)
+
+        async def snapshot(self, _access: object) -> object:
+            return SimpleNamespace(
+                structure=SimpleNamespace(
+                    controls=(
+                        Control(
+                            uuid=source[0],
+                            name="Visible",
+                            control_type="Switch",
+                            room_uuid=None,
+                            category_uuid=None,
+                            action_uuid=None,
+                            state_uuids=(("active", source[1]),),
+                        ),
+                    )
+                )
+            )
+
+    class AuthStore:
+        def pseudonym(self, *_parts: str) -> str:
+            return binding
+
+    monitor = Monitor()
+    runtime = LoxBerryOperateRuntime(
+        object(),
+        ConfigStore(),
+        AuthStore(),
+        event_history=monitor,  # type: ignore[arg-type]
+        loxone_runtime=Loxone(),  # type: ignore[arg-type]
+    )
+    access = _loxberry_access(HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE)
+
+    async def late_mutation() -> None:
+        await mutation_release.wait()
+
+    mutation = asyncio.create_task(late_mutation())
+    runtime._reconcile_completed_event_history_mutation(monitor, mutation)  # type: ignore[arg-type]
+    await runtime._event_history_lock.acquire()
+    purge = asyncio.create_task(runtime.purge_event_history_source(access, *source))
+    await asyncio.sleep(0)
+    mutation_release.set()
+    await asyncio.sleep(0)
+    runtime._event_history_lock.release()
+
+    with pytest.raises(tools_module.ControlOperationError) as pending:
+        await purge
+    assert pending.value.code == "temporarily_unavailable"
+    assert not purged
+    await asyncio.wait_for(reconciled.wait(), 1)
+    await asyncio.wait_for(asyncio.gather(*runtime._event_history_reconciliation_tasks), 1)
+    assert await runtime.purge_event_history_source(access, *source) == (1, 1)
 
 
 @pytest.mark.asyncio
