@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
 import time
 from contextlib import asynccontextmanager
 from dataclasses import replace
@@ -23,7 +24,7 @@ from mcpserver.auth.provider import (
     READ_SCOPE,
     StoredAccessToken,
 )
-from mcpserver.config import AtomicConfigStore, PluginConfig
+from mcpserver.config import AtomicConfigStore, ExplorerBindingApproval, PluginConfig
 from mcpserver.loxone.event_history import EventHistoryStore
 from mcpserver.loxone.models import (
     Control,
@@ -1370,6 +1371,9 @@ async def test_event_history_purge_rejects_active_or_invisible_source(
                 event_history_sources=(source,) if self.active else (),
             )
 
+        def transaction(self, operation: object) -> tuple[int, int]:
+            return operation(self.load(), lambda _config: None)  # type: ignore[operator]
+
     class AuthStore:
         def pseudonym(self, *_parts: str) -> str:
             return "binding"
@@ -1407,9 +1411,121 @@ async def test_event_history_purge_rejects_active_or_invisible_source(
     with pytest.raises(TimeoutError):
         await runtime.purge_event_history_source(access, *source)
     with pytest.raises(tools_module.ControlOperationError, match="in progress"):
+        await runtime.purge_event_history_source(access, *source)
+    with pytest.raises(tools_module.ControlOperationError, match="in progress"):
         await runtime.add_event_history_source(access, *source)
     await asyncio.sleep(0.15)
     assert not runtime._event_history_purges
+
+
+def test_event_history_changes_accept_current_explorer_approval() -> None:
+    now = int(time.time())
+    binding = "b" * 64
+    config = PluginConfig(
+        loxone_history_enabled=True,
+        loxberry_operate_enabled=True,
+        event_history_enabled=True,
+        explorer_bindings=(
+            ExplorerBindingApproval(
+                binding_id=binding,
+                capability="loxberry:operate",
+                application_id="tool-explorer-v1",
+                version=1,
+                created_at=now,
+                last_active_at=now,
+                last_active_until=now + 3600,
+            ),
+        ),
+    )
+
+    class AuthStore:
+        def snapshot(self) -> dict[str, object]:
+            return {
+                "families": {
+                    "family": {
+                        "client_kind": "tool_explorer",
+                        "explorer_origin": "https://public.example",
+                    }
+                }
+            }
+
+        def pseudonym(self, *_parts: str) -> str:
+            return binding
+
+    runtime = LoxBerryOperateRuntime(object(), object(), AuthStore())
+    runtime._event_history_change_allowed(
+        config, _loxberry_access(HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE)
+    )
+
+
+@pytest.mark.asyncio
+async def test_event_history_purge_serializes_with_admin_config_update(tmp_path: Path) -> None:
+    source = ("00000000-0000-0000-0000000000000001", "00000000-0000-0000-0000000000000002")
+    binding = "b" * 64
+    config_store = AtomicConfigStore((tmp_path / "config.json").resolve())
+    config_store.save(
+        PluginConfig(
+            loxone_history_enabled=True,
+            loxberry_operate_enabled=True,
+            loxberry_operate_requests_per_minute=10,
+            event_history_enabled=True,
+            loxberry_operate_bindings=(binding,),
+        )
+    )
+    control = Control(
+        uuid=source[0],
+        name="Visible",
+        control_type="Switch",
+        room_uuid=None,
+        category_uuid=None,
+        action_uuid=None,
+        state_uuids=(("active", source[1]),),
+    )
+    started = threading.Event()
+    release = threading.Event()
+
+    class Store:
+        def purge_source(self, *_source: str) -> tuple[int, int]:
+            started.set()
+            assert release.wait(2)
+            return 1, 1
+
+    @asynccontextmanager
+    async def slot(_access: object):
+        yield
+
+    class Loxone:
+        history_call_slot = staticmethod(slot)
+
+        async def snapshot(self, _access: object) -> object:
+            return SimpleNamespace(structure=SimpleNamespace(controls=(control,)))
+
+    class AuthStore:
+        def pseudonym(self, *_parts: str) -> str:
+            return binding
+
+    runtime = LoxBerryOperateRuntime(
+        object(),
+        config_store,
+        AuthStore(),
+        event_history=SimpleNamespace(store=Store()),
+        loxone_runtime=Loxone(),  # type: ignore[arg-type]
+    )
+    access = _loxberry_access(HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE)
+    purge = asyncio.create_task(runtime.purge_event_history_source(access, *source))
+    assert await asyncio.to_thread(started.wait, 1)
+    admin_update = asyncio.create_task(
+        asyncio.to_thread(
+            config_store.mutate,
+            lambda current: replace(current, event_history_sources=(source,)),
+        )
+    )
+    await asyncio.sleep(0.05)
+    assert not admin_update.done()
+    release.set()
+    assert await purge == (1, 1)
+    await admin_update
+    assert config_store.load().event_history_sources == (source,)
 
 
 @pytest.mark.asyncio

@@ -1606,6 +1606,14 @@ class LoxBerryOperateRuntime:
         self._requests[access.family_id] = entries
         if LOXBERRY_OPERATE_SCOPE not in access.scopes or HISTORY_SCOPE not in access.scopes:
             raise PermissionError("LoxBerry cache operation is not authorized")
+        if (
+            not config.loxone_history_enabled
+            or not config.loxberry_operate_enabled
+            or not self._operate_binding_allowed(config, access)
+        ):
+            raise PermissionError("LoxBerry cache operation is not authorized")
+
+    def _operate_binding_allowed(self, config: Any, access: StoredAccessToken) -> bool:
         snapshot = getattr(self._auth_store, "snapshot", None)
         family = snapshot().get("families", {}).get(access.family_id, {}) if snapshot else {}
         if isinstance(family, dict) and family.get("client_kind") == "tool_explorer":
@@ -1638,8 +1646,7 @@ class LoxBerryOperateRuntime:
                 access.miniserver_id,
             )
             allowed = binding in config.loxberry_operate_bindings
-        if not config.loxone_history_enabled or not config.loxberry_operate_enabled or not allowed:
-            raise PermissionError("LoxBerry cache operation is not authorized")
+        return allowed
 
     async def clear_statistics_cache(self, access: StoredAccessToken) -> Any:
         self._allowed(access)
@@ -1668,13 +1675,14 @@ class LoxBerryOperateRuntime:
         if cancelled:
             raise asyncio.CancelledError
 
-    @staticmethod
-    def _event_history_change_allowed(current: Any, binding: str) -> None:
+    def _event_history_change_allowed(self, current: Any, access: StoredAccessToken) -> None:
         if (
             not current.event_history_enabled
             or not current.loxone_history_enabled
             or not current.loxberry_operate_enabled
-            or binding not in current.loxberry_operate_bindings
+            or LOXBERRY_OPERATE_SCOPE not in access.scopes
+            or HISTORY_SCOPE not in access.scopes
+            or not self._operate_binding_allowed(current, access)
         ):
             raise PermissionError("LoxBerry cache operation is not authorized")
 
@@ -1742,17 +1750,11 @@ class LoxBerryOperateRuntime:
                 monitor.validate_source(control_uuid, state_uuid),
                 timeout=self._event_history_source_change_timeout_seconds,
             )
-            binding = self._auth_store.pseudonym(
-                "loxberry-operate-binding-v1",
-                access.client_id,
-                access.identity_id,
-                access.miniserver_id,
-            )
             changed = False
 
             def add_source(current: Any) -> Any:
                 nonlocal changed
-                self._event_history_change_allowed(current, binding)
+                self._event_history_change_allowed(current, access)
                 if (control_uuid, state_uuid) in current.event_history_sources:
                     return current
                 if len(current.event_history_sources) >= 64:
@@ -1782,18 +1784,11 @@ class LoxBerryOperateRuntime:
             if (control_uuid, state_uuid) not in config.event_history_sources:
                 await self._reconcile_event_history_config(monitor, config)
                 return False
-            binding = self._auth_store.pseudonym(
-                "loxberry-operate-binding-v1",
-                access.client_id,
-                access.identity_id,
-                access.miniserver_id,
-            )
-
             changed = False
 
             def remove_source(current: Any) -> Any:
                 nonlocal changed
-                self._event_history_change_allowed(current, binding)
+                self._event_history_change_allowed(current, access)
                 if (control_uuid, state_uuid) not in current.event_history_sources:
                     return current
                 changed = True
@@ -1825,6 +1820,10 @@ class LoxBerryOperateRuntime:
     ) -> tuple[int, int]:
         async with self._event_history_lock:
             monitor = self._event_history_allowed(access)
+            if (control_uuid, state_uuid) in self._event_history_purges:
+                raise ControlOperationError(
+                    "temporarily_unavailable", "Source purge is in progress"
+                )
             if self._loxone_runtime is None:
                 raise ControlOperationError("temporarily_unavailable", "Operation is unavailable")
             try:
@@ -1842,18 +1841,15 @@ class LoxBerryOperateRuntime:
             )
             if control is None or state_uuid not in {uuid for _, uuid in control.state_uuids}:
                 raise ControlOperationError("not_found", "state is not visible")
-            config = self._config_store.load()
-            if (control_uuid, state_uuid) in config.event_history_sources:
-                raise ControlOperationError("invalid_input", "source is still active")
-            binding = self._auth_store.pseudonym(
-                "loxberry-operate-binding-v1",
-                access.client_id,
-                access.identity_id,
-                access.miniserver_id,
-            )
-            self._event_history_change_allowed(config, binding)
+
+            def purge_locked(current: Any, _save: Any) -> tuple[int, int]:
+                self._event_history_change_allowed(current, access)
+                if (control_uuid, state_uuid) in current.event_history_sources:
+                    raise ControlOperationError("invalid_input", "source is still active")
+                return monitor.store.purge_source(control_uuid, state_uuid)
+
             operation = asyncio.create_task(
-                asyncio.to_thread(monitor.store.purge_source, control_uuid, state_uuid)
+                asyncio.to_thread(self._config_store.transaction, purge_locked)
             )
             self._event_history_purges.add((control_uuid, state_uuid))
 
