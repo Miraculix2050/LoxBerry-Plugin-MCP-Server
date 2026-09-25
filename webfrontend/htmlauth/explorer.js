@@ -520,9 +520,18 @@
       for (const field of ['name', 'title', 'label', 'type', 'id', 'uuid']) {
         if (!Object.prototype.hasOwnProperty.call(item, field)) continue;
         const value = item[field];
-        if (typeof value === 'string' && value.trim()) {
-          const chars = Array.from(value.trim());
-          return ` ${JSON.stringify(chars.slice(0, 80).join('') + (chars.length > 80 ? '…' : ''))}`;
+        if (typeof value === 'string') {
+          let preview = '';
+          let length = 0;
+          let truncated = false;
+          for (const char of value) {
+            if (!preview && /\s/u.test(char)) continue;
+            if (length === 80) { truncated = true; break; }
+            preview += char;
+            length += 1;
+          }
+          preview = preview.trimEnd();
+          if (preview) return ` ${JSON.stringify(preview + (truncated ? '…' : ''))}`;
         }
         if (typeof value === 'number' && Number.isFinite(value)) return ` ${value}`;
         if (typeof value === 'boolean') return ` ${value}`;
