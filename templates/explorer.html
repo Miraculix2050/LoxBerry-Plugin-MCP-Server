@@ -63,6 +63,7 @@
   data-tool-group-loxone-control="<TMPL_VAR EXPLORER.TOOL_GROUP_LOXONE_CONTROL ESCAPE=HTML>"
   data-tool-group-loxberry-read="<TMPL_VAR EXPLORER.TOOL_GROUP_LOXBERRY_READ ESCAPE=HTML>"
   data-tool-group-loxberry-operate="<TMPL_VAR EXPLORER.TOOL_GROUP_LOXBERRY_OPERATE ESCAPE=HTML>"
+  data-tool-group-other="<TMPL_VAR EXPLORER.TOOL_GROUP_OTHER ESCAPE=HTML>"
   data-filter-all="<TMPL_VAR EXPLORER.FILTER_ALL ESCAPE=HTML>"
   data-tool-badge-read-only="<TMPL_VAR EXPLORER.TOOL_BADGE_READ_ONLY ESCAPE=HTML>"
   data-tool-badge-write="<TMPL_VAR EXPLORER.TOOL_BADGE_WRITE ESCAPE=HTML>"
@@ -132,6 +133,7 @@
                 <label><input type="checkbox" data-tool-group="loxoneControl"> <TMPL_VAR EXPLORER.TOOL_GROUP_LOXONE_CONTROL></label>
                 <label><input type="checkbox" data-tool-group="loxberryRead"> <TMPL_VAR EXPLORER.TOOL_GROUP_LOXBERRY_READ></label>
                 <label><input type="checkbox" data-tool-group="loxberryOperate"> <TMPL_VAR EXPLORER.TOOL_GROUP_LOXBERRY_OPERATE></label>
+                <label><input type="checkbox" data-tool-group="other"> <TMPL_VAR EXPLORER.TOOL_GROUP_OTHER></label>
               </div>
             </details>
           </div>
@@ -215,4 +217,5 @@
   </form>
 </dialog>
 
-<script src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-protocol-meta-v1"></script>
+<script src="explorer-adapters.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-registry-v1"></script>
+<script src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-registry-v2"></script>

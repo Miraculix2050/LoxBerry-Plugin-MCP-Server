@@ -88,6 +88,7 @@ _TEST_GROUPS: Final = (
             "webfrontend/htmlauth/explorer.cgi",
             "webfrontend/htmlauth/explorer_callback.cgi",
             "webfrontend/htmlauth/explorer.js",
+            "webfrontend/htmlauth/explorer-adapters.js",
         ),
         ("tests/test_explorer_ui.py", "tests/test_oauth.py"),
     ),
