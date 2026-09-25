@@ -296,15 +296,17 @@ def test_result_inspector_array_object_preview_and_null_display() -> None:
       const tree = inspect({items:[
         {name:'  Kitchen  ',type:'Switch',uuid:'a'},
         {name:' ',title:'Overview',type:'Page'},
-        {label:'Etage'}, {type:'Light'}, {id:0}, {uuid:'abc'},
+        {label:'Etage'}, {type:'Light'}, {id:0}, {uuid:'abc',timestamp:1727300000},
         {name:null,other:1}, null, 'plain',
         {weather_type_text:'Clear',type:'Weather'},
         {block_type:'AutoJalousie'},
+        {component:'WeatherServer'},
         {code:'Weather.1'},
+        {timestamp:1727300000},
         {name:'X'.repeat(90)}
       ], ordinary:{name:'No preview'}, missing:null});
       const items = walk(tree).find(node => node.tag === 'button' &&
-        node.textContent.includes('items [13]'));
+        node.textContent.includes('items [15]'));
       items.click();
       const captions = walk(tree).filter(node => node.className ===
         'mcp-explorer-tree-toggle').map(node => node.textContent);
@@ -319,13 +321,15 @@ def test_result_inspector_array_object_preview_and_null_display() -> None:
     assert any(text.endswith('2 {1} "Etage"') for text in result["captions"])
     assert any(text.endswith('3 {1} "Light"') for text in result["captions"])
     assert any(text.endswith("4 {1} 0") for text in result["captions"])
-    assert any(text.endswith('5 {1} "abc"') for text in result["captions"])
+    assert any(text.endswith('5 {2} "abc"') for text in result["captions"])
     assert any(text.endswith("6 {2}") for text in result["captions"])
     assert any(text.endswith("ordinary {1}") for text in result["captions"])
     assert any(text.endswith('9 {2} "Clear"') for text in result["captions"])
     assert any(text.endswith('10 {1} "AutoJalousie"') for text in result["captions"])
-    assert any(text.endswith('11 {1} "Weather.1"') for text in result["captions"])
-    assert any('12 {1} "' + "X" * 80 in text for text in result["captions"])
+    assert any(text.endswith('11 {1} "WeatherServer"') for text in result["captions"])
+    assert any(text.endswith('12 {1} "Weather.1"') for text in result["captions"])
+    assert any(text.endswith("13 {1} 1727300000") for text in result["captions"])
+    assert any('14 {1} "' + "X" * 80 in text for text in result["captions"])
     assert "7: -" in result["values"]
     assert '8: "plain"' in result["values"]
     assert "missing: -" in result["values"]
