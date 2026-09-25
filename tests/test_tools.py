@@ -1371,11 +1371,14 @@ async def test_event_history_purge_requires_confirmation_and_reports_uncertain_t
     class Runtime:
         calls = 0
         timed_out = False
+        unavailable = False
 
         async def purge_event_history_source(self, *_args: object) -> tuple[int, int]:
             self.calls += 1
             if self.timed_out:
                 raise TimeoutError
+            if self.unavailable:
+                raise EventHistoryUnavailable("local event history maintenance is unavailable")
             return 3, 1
 
     runtime = Runtime()
@@ -1397,6 +1400,12 @@ async def test_event_history_purge_requires_confirmation_and_reports_uncertain_t
     assert confirmed.ok and confirmed.data.deleted_events == 3  # type: ignore[union-attr]
     assert confirmed.data.coverage_removed is True  # type: ignore[union-attr]
     runtime.timed_out = True
+    uncertain = await server._tool_manager.call_tool(
+        "loxberry_purge_event_history_source", {**arguments, "confirm": True}
+    )
+    assert not uncertain.ok and "outcome is unknown" in uncertain.data.message  # type: ignore[union-attr]
+    runtime.timed_out = False
+    runtime.unavailable = True
     uncertain = await server._tool_manager.call_tool(
         "loxberry_purge_event_history_source", {**arguments, "confirm": True}
     )

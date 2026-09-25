@@ -388,10 +388,10 @@ class EventHistoryStore:
             if vacuum or self._size() > self.maximum_bytes:
                 connection.execute("VACUUM")
                 connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-        except sqlite3.Error as exc:
+            if self._size() > self.maximum_bytes:
+                raise EventHistoryUnavailable("local event history size limit cannot be enforced")
+        except (sqlite3.Error, OSError) as exc:
             raise EventHistoryUnavailable("local event history maintenance is unavailable") from exc
-        if self._size() > self.maximum_bytes:
-            raise EventHistoryUnavailable("local event history size limit cannot be enforced")
 
     def page(
         self,

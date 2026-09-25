@@ -103,6 +103,30 @@ def test_removed_source_can_be_marked_without_guessing_its_end_time(tmp_path):
         assert connection.execute("SELECT COUNT(*) FROM removed_sources").fetchone()[0] == 1
 
 
+def test_purge_reports_unknown_if_compaction_fails_after_commit(tmp_path, monkeypatch):
+    store = EventHistoryStore(
+        (tmp_path / "event-history.sqlite3").resolve(), retention_days=90, maximum_mib=16
+    )
+    source = ("control", "state")
+    now = time.time()
+    store.initialize()
+    store.begin_coverage((source,), started_at=now - 20)
+    store.record_transition(*source, observed_at=now - 10, old_value=0, new_value=1)
+    store.end_coverage((source,), ended_at=now - 5, outcome="stopped")
+    store.mark_removed(*source, removed_at=now - 5)
+
+    def fail_size() -> int:
+        raise OSError("file stat failed")
+
+    monkeypatch.setattr(store, "_size", fail_size)
+    with pytest.raises(EventHistoryUnavailable, match="maintenance is unavailable"):
+        store.purge_source(*source)
+    with sqlite3.connect(store.path) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM coverage").fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM removed_sources").fetchone()[0] == 0
+
+
 def test_schema_v1_migration_preserves_evidence_without_inventing_removal_time(tmp_path):
     path = (tmp_path / "event-history.sqlite3").resolve()
     store = EventHistoryStore(path, retention_days=90, maximum_mib=16)
