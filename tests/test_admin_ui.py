@@ -640,6 +640,8 @@ def test_server_rendered_emergency_stop_status_is_terminal_after_discovery() -> 
     assert "EMERGENCY_STOP_NO_OPTIONS" in cgi
     assert "EMERGENCY_STOP_NOT_CONFIGURED" in cgi
     assert "$options_data->{failure_text}" in cgi
+    assert "if $options_data->{stale};" in cgi
+    assert "$L{'SETUP.EMERGENCY_STOP_STALE'}" in cgi
     assert "EMERGENCY_STOP_STATUS_TEXT => $emergency_stop_status_text" in cgi
     assert "EMERGENCY_STOP_STATUS_KIND => $emergency_stop_status_kind" in cgi
     assert "EMERGENCY_STOP_STATUS_VISIBLE => $emergency_stop_status_visible" in cgi
@@ -1885,10 +1887,11 @@ eval(source.slice(start, end) + `
   await loadCachedEmergencyStopOptions(emergencyStopDiscoveryGeneration);
   assert.equal(emergencyStopStatus.textContent, 'SETUP.EMERGENCY_STOP_STALE');
 
-  response = {data: {status: 'unavailable', options: [{uuid: 'saved', name: 'Cached signal'}],
-    failure_text: 'connection failed'}};
+  response = {data: {status: 'unavailable', stale: true,
+    options: [{uuid: 'saved', name: 'Cached signal'}], failure_text: 'connection failed'}};
   await loadEmergencyStopOptions();
-  assert.equal(emergencyStopStatus.textContent, 'connection failed');
+  assert.equal(emergencyStopStatus.textContent,
+    'connection failed SETUP.EMERGENCY_STOP_STALE');
   assert.equal(emergencyStopRetry.hidden, false);
   assert.equal(emergencyStopRetry.disabled, false);
   assert.equal(emergencyStopRetry.dataset.retry, 'true');

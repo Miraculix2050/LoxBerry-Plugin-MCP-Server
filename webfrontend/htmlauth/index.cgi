@@ -862,6 +862,8 @@ if ($server_rendered_fallback) {
         } else {
             $emergency_stop_status_text = $options_data->{failure_text}
                 // $L{'SETUP.EMERGENCY_STOP_LOAD_ERROR'};
+            $emergency_stop_status_text .= ' ' . $L{'SETUP.EMERGENCY_STOP_STALE'}
+                if $options_data->{stale};
             $emergency_stop_status_kind = 'error';
             $emergency_stop_button_label = $L{'SETUP.EMERGENCY_STOP_RETRY'};
             $emergency_stop_button_action = 'emergency_stop_retry';

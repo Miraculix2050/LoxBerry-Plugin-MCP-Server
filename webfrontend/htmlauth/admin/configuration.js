@@ -309,6 +309,9 @@ window.McpAdmin.createConfiguration = (
         emergencyStopStatus.textContent = status === 'not_configured'
           ? label('SETUP.EMERGENCY_STOP_NOT_CONFIGURED')
           : result.data.failure_text || label('SETUP.EMERGENCY_STOP_LOAD_ERROR');
+        if (result.data.stale) {
+          emergencyStopStatus.textContent += ' ' + label('SETUP.EMERGENCY_STOP_STALE');
+        }
         emergencyStopStatus.dataset.kind = 'error';
         emergencyStopStatus.hidden = false;
         emergencyStopRetry.dataset.retry = 'true';
