@@ -642,7 +642,7 @@ def test_explorer_discovery_controls_preserve_selection_and_drafts() -> None:
     assert template.count('type="checkbox" data-tool-group="') == 6
     assert 'id="explorer-tool-filter-count"' in template
     assert "core.filteredToolGroups(state.tools, state.toolSearch, state.toolGroups)" in source
-    assert 'src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-call-history-v1"' in template
+    assert 'src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-call-history-v2"' in template
     assert "label('noMatchingTools')" in source
     assert "label('noTools')" in source
     assert "state.toolSearch = elements.toolSearch.value" in handlers
@@ -1277,6 +1277,16 @@ def test_explorer_transcript_is_incremental_and_details_are_lazy() -> None:
     assert "firstElementChild?.remove()" in add_transcript
     assert "details.addEventListener('toggle'" in transcript_entry
     assert "{once: true}" in transcript_entry
+    assert "new Date(entry.at).toLocaleString()" in transcript_entry
+    assert transcript_entry.index("label('dateTime')") < transcript_entry.index("label('status')")
+    template = (ROOT / "templates/explorer.html").read_text(encoding="utf-8")
+    assert 'data-date-time="<TMPL_VAR EXPLORER.DATE_TIME ESCAPE=HTML>"' in template
+    assert "DATE_TIME=Datum und Uhrzeit" in (ROOT / "templates/lang/language_de.ini").read_text(
+        encoding="utf-8"
+    )
+    assert "DATE_TIME=Date and time" in (ROOT / "templates/lang/language_en.ini").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_explorer_tabs_support_roving_focus_and_arrow_keys() -> None:
@@ -1341,6 +1351,27 @@ def test_explorer_history_summary_is_schema_bound_redacted_and_short() -> None:
     for secret in ("nested-secret", "top-secret", "hidden", "hidden-too"):
         assert secret not in summary
     assert run_core(f"core.summarizeArguments({json.dumps(value)},null)") == ""
+
+
+def test_explorer_history_summary_prioritizes_non_default_arguments() -> None:
+    schema = {
+        "type": "object",
+        "properties": {
+            "has_statistics": {"type": "boolean", "default": False},
+            "has_history": {"type": "boolean", "default": False},
+            "has_notes": {"type": "boolean", "default": False},
+            "query": {"type": "string"},
+        },
+    }
+    value = {
+        "has_statistics": False,
+        "has_history": False,
+        "has_notes": False,
+        "query": "MCP-Test",
+    }
+    summary = run_core(f"core.summarizeArguments({json.dumps(value)},{json.dumps(schema)})")
+    assert summary.startswith('query="MCP-Test"')
+    assert summary.count("=") <= 3
 
 
 def test_explorer_history_and_call_feedback_are_separate_from_connection() -> None:

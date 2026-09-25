@@ -450,10 +450,17 @@
       }
       return effective.type || effective.enum || effective.const !== undefined ? current : undefined;
     }
+    const entries = Object.entries(redacted).filter(([key]) => Object.hasOwn(schema.properties, key));
+    entries.sort(([leftKey, left], [rightKey, right]) => {
+      const leftSchema = effectiveSchema(schema.properties[leftKey], schema);
+      const rightSchema = effectiveSchema(schema.properties[rightKey], schema);
+      const isDefault = (child, fieldSchema) => Object.hasOwn(fieldSchema, 'default')
+        && JSON.stringify(child) === JSON.stringify(fieldSchema.default);
+      return Number(isDefault(left, leftSchema)) - Number(isDefault(right, rightSchema));
+    });
     const parts = [];
-    for (const [key, child] of Object.entries(redacted)) {
+    for (const [key, child] of entries) {
       if (parts.length >= 3) break;
-      if (!Object.hasOwn(schema.properties, key)) continue;
       let safe = known(child, schema.properties[key], 0);
       if (safe === undefined) continue;
       if (typeof safe === 'string' && safe !== '[redacted]' && safe.length > 24) safe = `${safe.slice(0, 23)}…`;
@@ -1764,6 +1771,7 @@
     details.append(element('summary', {text: `${entry.method} — ${entry.status} — ${entry.duration} ms`}));
     details.addEventListener('toggle', () => {
       if (!details.open) return;
+      details.append(element('p', {text: `${label('dateTime')}: ${new Date(entry.at).toLocaleString()}`}));
       details.append(element('p', {text: `${label('status')}: ${entry.status}; ${label('duration')}: ${entry.duration} ms`}));
       details.append(element('strong', {text: label('request')}));
       details.append(element('pre', {className: 'mcp-explorer-pre', text: JSON.stringify(entry.request, null, 2)}));
