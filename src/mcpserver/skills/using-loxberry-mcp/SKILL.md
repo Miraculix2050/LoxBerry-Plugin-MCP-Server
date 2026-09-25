@@ -265,7 +265,12 @@ evidence that a state did not occur. Use exact `control_uuid` and `state_uuid`
 from current discovery. An approved client with `loxberry:operate` may list,
 add, or remove recording sources through the fixed event-history source tools;
 never infer or construct UUIDs. These operations do not enable the feature,
-change retention, clear history, or operate a Loxone control.
+change retention or operate a Loxone control. Removal stops capture while retained
+events remain readable only for a currently visible control/state. Check
+`recording_status` separately from the requested period's `coverage`; removal
+and re-addition leave a coverage gap. Purge only on an explicit user request,
+using `loxberry_purge_event_history_source` with `confirm=true` for an inactive
+source and exact local approval. Never retry a purge with an unknown outcome.
 
 For a time-bounded diagnostic question about one known project target, use
 `loxone_analyze_observability` with the exact target identity, a structural

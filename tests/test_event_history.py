@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 import threading
 import time
 from pathlib import Path
@@ -55,6 +56,63 @@ def test_store_reports_not_recorded_and_removes_data(tmp_path):
         store.page(*source, start=started_at, end=started_at + 20, limit=10).coverage
         == "not_recorded"
     )
+
+
+def test_removed_source_retains_evidence_and_readd_keeps_coverage_gap(tmp_path):
+    path = (tmp_path / "event-history.sqlite3").resolve()
+    store = EventHistoryStore(path, retention_days=90, maximum_mib=16)
+    source = ("control", "state")
+    other = ("other", "state")
+    now = time.time()
+    store.initialize()
+    store.begin_coverage((source, other), started_at=now - 60)
+    store.record_transition(*source, observed_at=now - 50, old_value=False, new_value=True)
+    store.record_transition(*other, observed_at=now - 50, old_value=False, new_value=True)
+    store.end_coverage((source,), ended_at=now - 40, outcome="stopped")
+    store.mark_removed(*source, removed_at=now - 40)
+
+    removed = EventHistoryStore(path, retention_days=90, maximum_mib=16)
+    page = removed.page(*source, start=now - 60, end=now - 30, limit=10)
+    assert page.has_evidence and page.recording_ended_at == now - 40
+    assert len(page.entries) == 1 and page.coverage == "partial_coverage"
+
+    removed.begin_coverage((source,), started_at=now - 10)
+    assert removed.page(*source, start=now - 60, end=now, limit=10).coverage == "partial_coverage"
+    assert removed.page(*source, start=now - 60, end=now, limit=10).recording_ended_at is None
+    assert removed.purge_source(*source) == (1, 2)
+    assert not removed.page(*source, start=now - 60, end=now, limit=10).has_evidence
+    assert removed.page(*other, start=now - 60, end=now, limit=10).has_evidence
+
+
+def test_schema_v1_migration_preserves_evidence_without_inventing_removal_time(tmp_path):
+    path = (tmp_path / "event-history.sqlite3").resolve()
+    store = EventHistoryStore(path, retention_days=90, maximum_mib=16)
+    source = ("control", "state")
+    now = time.time()
+    store.initialize()
+    store.begin_coverage((source,), started_at=now - 20)
+    store.end_coverage((source,), ended_at=now - 10, outcome="stopped")
+    with sqlite3.connect(path) as connection:
+        connection.execute("DROP TABLE removed_sources")
+        connection.execute("PRAGMA user_version = 1")
+    store.initialize()
+    page = store.page(*source, start=now - 20, end=now - 10, limit=10)
+    assert page.has_evidence and page.recording_ended_at is None
+
+
+def test_removed_source_is_pruned_by_global_retention(tmp_path, monkeypatch):
+    store = EventHistoryStore(
+        (tmp_path / "event-history.sqlite3").resolve(), retention_days=1, maximum_mib=16
+    )
+    source = ("control", "state")
+    store.initialize()
+    store.begin_coverage((source,), started_at=100.0)
+    store.record_transition(*source, observed_at=110.0, old_value=0, new_value=1)
+    store.end_coverage((source,), ended_at=120.0, outcome="stopped")
+    store.mark_removed(*source, removed_at=120.0)
+    monkeypatch.setattr("mcpserver.loxone.event_history.time.time", lambda: 200000.0)
+    page = store.page(*source, start=100.0, end=120.0, limit=10)
+    assert not page.has_evidence and page.recording_ended_at is None
 
 
 def test_store_reports_batched_coverage_without_exposing_event_values(tmp_path):

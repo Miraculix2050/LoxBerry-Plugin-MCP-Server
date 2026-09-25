@@ -8,6 +8,8 @@ The server reads visible rooms, categories, controls and states. Optional bounde
 
 When enabled by an administrator, selected state UUIDs can additionally be recorded locally as bounded event history. This supplements native Loxone history for short-lived transitions and never grants access beyond the caller's current visible structure.
 
+Removing an event-history source stops recording but leaves retained events readable while the control and state remain currently visible to the caller. `loxone_get_state_history` reports `recording_status`, `recording_ended_at`, `recording_notice`, and the requested period's `coverage` separately; `active` means configured for recording, while only `coverage` establishes capture for the requested period. A gap after removal is never treated as continuous recording. Global age and database-size limits still apply. An approved client can permanently delete one inactive source's events and coverage with `loxberry_purge_event_history_source` and `confirm=true`. A timed-out purge has an unknown outcome and must not be retried automatically.
+
 `loxone_get_project_status`, `loxone_find_project_objects`,
 `loxone_describe_project_object`, `loxone_trace_project_logic`, and
 `loxone_analyze_project` provide bounded,

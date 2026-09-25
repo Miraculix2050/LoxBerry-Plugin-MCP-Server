@@ -30,6 +30,7 @@
     {id: 'loxberryOperate', scopes: ['loxone:read', 'loxone:history', 'loxberry:operate'], names: [
       'loxberry_clear_statistics_cache', 'loxberry_list_event_history_sources',
       'loxberry_add_event_history_source', 'loxberry_remove_event_history_source',
+      'loxberry_purge_event_history_source',
     ]},
     {id: 'other', scopes: null, names: []},
   ];

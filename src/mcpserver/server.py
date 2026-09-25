@@ -775,6 +775,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
                 AtomicConfigStore(settings.phase0_auth.config_path),
                 auth_store,
                 event_history=event_history,
+                loxone_runtime=runtime,
             )
 
     remote_revocation = (

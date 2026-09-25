@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger("mcpserver.event_history")
 
 
-_SCHEMA_VERSION: Final = 1
+_SCHEMA_VERSION: Final = 2
 _MAX_TEXT_BYTES: Final = 4096
 _UNSUPPORTED_SOURCE_CONTROL_TYPES: Final = frozenset({"Daytimer"})
 
@@ -65,6 +65,8 @@ class EventHistoryPage:
     coverage: str
     next_event_id: int | None
     next_event_at: float | None
+    has_evidence: bool
+    recording_ended_at: float | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,7 +129,7 @@ class EventHistoryStore:
             try:
                 connection.execute("BEGIN IMMEDIATE")
                 version = connection.execute("PRAGMA user_version").fetchone()[0]
-                if version not in {0, _SCHEMA_VERSION}:
+                if version not in {0, 1, _SCHEMA_VERSION}:
                     raise EventHistoryUnavailable("local event history needs migration")
                 connection.execute(
                     """
@@ -159,13 +161,18 @@ class EventHistoryStore:
                     )
                     """
                 )
+                connection.execute(
+                    "CREATE TABLE IF NOT EXISTS removed_sources ("
+                    "control_uuid TEXT NOT NULL, state_uuid TEXT NOT NULL, "
+                    "removed_at REAL, PRIMARY KEY(control_uuid, state_uuid))"
+                )
                 # A process that did not reach ``end_coverage`` must not make a
                 # later request look continuously recorded across its downtime.
                 connection.execute(
                     "UPDATE coverage SET ended_at = started_at, outcome = 'interrupted' "
                     "WHERE ended_at IS NULL",
                 )
-                connection.execute("PRAGMA user_version = 1")
+                connection.execute("PRAGMA user_version = 2")
                 connection.execute("COMMIT")
                 self._compact(connection, vacuum=self._prune(connection, now=time.time()))
             except EventHistoryUnavailable:
@@ -189,6 +196,10 @@ class EventHistoryStore:
         with self._lock, self._opened() as connection:
             try:
                 connection.execute("BEGIN IMMEDIATE")
+                connection.executemany(
+                    "DELETE FROM removed_sources WHERE control_uuid = ? AND state_uuid = ?",
+                    sources,
+                )
                 connection.executemany(
                     "INSERT INTO coverage(control_uuid, state_uuid, started_at, ended_at, outcome) "
                     "VALUES (?, ?, ?, NULL, 'active')",
@@ -314,7 +325,49 @@ class EventHistoryStore:
                     "AND (ended_at IS NULL OR ended_at > ?)",
                     (boundary, control_uuid, state_uuid, boundary, boundary),
                 )
+        deleted += connection.execute(
+            "DELETE FROM removed_sources WHERE NOT EXISTS ("
+            "SELECT 1 FROM events WHERE events.control_uuid = removed_sources.control_uuid "
+            "AND events.state_uuid = removed_sources.state_uuid) AND NOT EXISTS ("
+            "SELECT 1 FROM coverage WHERE coverage.control_uuid = removed_sources.control_uuid "
+            "AND coverage.state_uuid = removed_sources.state_uuid)"
+        ).rowcount
         return deleted > 0
+
+    def mark_removed(self, control_uuid: str, state_uuid: str, *, removed_at: float) -> None:
+        with self._lock, self._opened() as connection:
+            try:
+                connection.execute(
+                    "INSERT INTO removed_sources VALUES (?, ?, ?) ON CONFLICT(control_uuid, "
+                    "state_uuid) DO UPDATE SET removed_at = excluded.removed_at",
+                    (control_uuid, state_uuid, removed_at),
+                )
+            except sqlite3.Error as exc:
+                raise EventHistoryUnavailable("local event history is unavailable") from exc
+
+    def purge_source(self, control_uuid: str, state_uuid: str) -> tuple[int, int]:
+        with self._lock, self._opened() as connection:
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                events = connection.execute(
+                    "DELETE FROM events WHERE control_uuid = ? AND state_uuid = ?",
+                    (control_uuid, state_uuid),
+                ).rowcount
+                coverage = connection.execute(
+                    "DELETE FROM coverage WHERE control_uuid = ? AND state_uuid = ?",
+                    (control_uuid, state_uuid),
+                ).rowcount
+                connection.execute(
+                    "DELETE FROM removed_sources WHERE control_uuid = ? AND state_uuid = ?",
+                    (control_uuid, state_uuid),
+                )
+                connection.execute("COMMIT")
+                self._compact(connection, vacuum=bool(events or coverage))
+                return events, coverage
+            except sqlite3.Error as exc:
+                if connection.in_transaction:
+                    connection.execute("ROLLBACK")
+                raise EventHistoryUnavailable("local event history is unavailable") from exc
 
     def _compact(self, connection: sqlite3.Connection, *, vacuum: bool) -> None:
         """Reclaim SQLite and WAL pages after bounded logical pruning."""
@@ -356,6 +409,12 @@ class EventHistoryStore:
                     "SELECT MIN(observed_at) FROM events WHERE control_uuid = ? AND state_uuid = ?",
                     (control_uuid, state_uuid),
                 ).fetchone()[0]
+                removed = connection.execute(
+                    "SELECT removed_at FROM removed_sources WHERE control_uuid = ? "
+                    "AND state_uuid = ?",
+                    (control_uuid, state_uuid),
+                ).fetchone()
+                has_evidence = retained is not None or capture is not None
                 query = (
                     "SELECT id, observed_at, old_value, new_value FROM events "
                     "WHERE control_uuid = ? AND state_uuid = ? AND observed_at >= ? "
@@ -383,6 +442,8 @@ class EventHistoryStore:
             coverage=coverage,
             next_event_id=selected[-1][0] if len(rows) > limit else None,
             next_event_at=selected[-1][1] if len(rows) > limit else None,
+            has_evidence=has_evidence,
+            recording_ended_at=removed[0] if removed is not None else None,
         )
 
     @staticmethod
@@ -453,6 +514,7 @@ class EventHistoryStore:
                 count = connection.execute("SELECT COUNT(*) FROM events").fetchone()[0]
                 connection.execute("DELETE FROM events")
                 connection.execute("DELETE FROM coverage")
+                connection.execute("DELETE FROM removed_sources")
                 connection.execute("COMMIT")
                 return int(count)
             except sqlite3.Error as exc:
