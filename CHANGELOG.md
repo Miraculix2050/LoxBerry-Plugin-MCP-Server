@@ -5,6 +5,9 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Keep Tool Explorer-specific presentation hints and workflows in a static registry.
+  Unknown tools appear under Other tools and remain callable from their MCP schemas.
+
 - Show local timestamps and redacted argument summaries in Tool Explorer call
   history, keep MCP protocol details in a separate debug panel, and report each
   call's progress and outcome next to Run. Expanded protocol entries show the

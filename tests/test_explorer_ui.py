@@ -12,6 +12,7 @@ from mcpserver.schema_reference import tool_schema_catalog
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "webfrontend" / "htmlauth" / "explorer.js"
+ADAPTERS = ROOT / "webfrontend" / "htmlauth" / "explorer-adapters.js"
 ADMIN_SCRIPTS = ROOT / "webfrontend" / "htmlauth" / "admin"
 
 
@@ -127,6 +128,18 @@ def run_core(expression: str) -> object:
         pytest.skip("Node.js is required for explorer JavaScript tests")
     program = (
         f"const core=require({json.dumps(str(SCRIPT))}); console.log(JSON.stringify({expression}));"
+    )
+    result = subprocess.run([node, "-e", program], check=True, capture_output=True, text=True)
+    return json.loads(result.stdout)
+
+
+def run_adapters(expression: str) -> object:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is required for explorer JavaScript tests")
+    program = (
+        f"const adapters=require({json.dumps(str(ADAPTERS))}); "
+        f"console.log(JSON.stringify({expression}));"
     )
     result = subprocess.run([node, "-e", program], check=True, capture_output=True, text=True)
     return json.loads(result.stdout)
@@ -638,11 +651,12 @@ def test_explorer_discovery_controls_preserve_selection_and_drafts() -> None:
 
     assert '<input id="explorer-tool-search" type="search"' in template
     assert '<details id="explorer-tool-filters"' in template
-    assert template.count('data-tool-group="') == 6
-    assert template.count('type="checkbox" data-tool-group="') == 6
+    assert template.count('data-tool-group="') == 7
+    assert template.count('type="checkbox" data-tool-group="') == 7
     assert 'id="explorer-tool-filter-count"' in template
     assert "core.filteredToolGroups(state.tools, state.toolSearch, state.toolGroups)" in source
-    assert 'src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-protocol-meta-v1"' in template
+    assert 'src="explorer-adapters.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-registry-v1"' in template
+    assert 'src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-registry-v1"' in template
     assert "label('noMatchingTools')" in source
     assert "label('noTools')" in source
     assert "state.toolSearch = elements.toolSearch.value" in handlers
@@ -704,11 +718,13 @@ def test_explorer_sorts_tools_and_prepares_statistics_transfer() -> None:
     result = {
         "data": {"uuid": "control", "capabilities": {"statistics": [{"series_id": "series"}]}}
     }
-    assert run_core(
-        "core.statisticsTransfer('loxone_describe_control',"
-        f"{json.dumps(result)},['data','capabilities','statistics',0],{{series_id:'series'}},0)"
+    assert run_adapters(
+        "adapters.transferRecipe('loxone_describe_control',"
+        f"{json.dumps(result)},['data','capabilities','statistics',0],{{series_id:'series'}},"
+        "[{name:'loxone_get_statistics'}],0)"
     ) == {
         "tool": "loxone_get_statistics",
+        "contextLabel": "statisticsTransferContext",
         "arguments": {
             "control_uuid": "control",
             "series_id": "series",
@@ -717,6 +733,100 @@ def test_explorer_sorts_tools_and_prepares_statistics_transfer() -> None:
             "granularity": "raw",
         },
     }
+
+
+def test_unknown_tool_uses_generic_explorer_path() -> None:
+    tool = {
+        "name": "future_custom_tool",
+        "description": "Search future data",
+        "annotations": {"readOnlyHint": True, "destructiveHint": False},
+        "inputSchema": {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        },
+    }
+    encoded = json.dumps(tool)
+    assert run_adapters(f"adapters.forTool({encoded})") is None
+    assert run_core(f"core.toolGroup({encoded})") == "other"
+    assert run_core(f"core.toolRequiredScopes({encoded})") is None
+    assert run_core(f"core.filteredToolGroups([{encoded}],'future',['other'])")[0]["tools"] == [
+        tool
+    ]
+    assert run_core(f"core.validateArguments({{query:'text'}},{encoded}.inputSchema)") == []
+    assert run_core(f"core.validateArguments({{}},{encoded}.inputSchema)")
+    assert run_core(f"core.toolIsMutating({encoded})") is False
+    source = SCRIPT.read_text(encoding="utf-8")
+    assert "mcpRequest('tools/call', {name: tool.name, arguments: args}, false)" in source
+    assert "adapters.fieldVisible(state.selectedTool, name, state.arguments)" in source
+
+
+def test_registry_keeps_tool_hints_out_of_authorization_and_defaults_unknown_safely() -> None:
+    assert run_adapters("adapters.toolGroup({name:'future_loxone_tool'})") == "other"
+    assert run_adapters("adapters.requiredMutationScope({name:'future_write'})") is None
+    assert run_core("core.toolIsMutating({name:'future_write'})") is True
+    assert (
+        run_adapters("adapters.requiredMutationScope({name:'loxone_operate_control'})")
+        == "loxone:control"
+    )
+    assert (
+        run_adapters("adapters.requiredMutationScope({name:'loxberry_add_event_history_source'})")
+        == "loxberry:operate"
+    )
+    assert run_adapters(
+        "adapters.requiredScopes({name:'loxberry_list_event_history_sources'})"
+    ) == ["loxone:read", "loxone:history", "loxberry:operate"]
+    source = SCRIPT.read_text(encoding="utf-8")
+    assert "core.toolIsMutating(state.selectedTool)" in source
+    assert "if (!(await confirmMutation(state.selectedTool, state.arguments))) return;" in source
+    assert "requiredMutationScope &&" in source
+    assert "loxone_operate_control" not in source
+    assert "loxberry_clear_statistics_cache" not in source
+
+
+def test_operation_adapter_changes_only_action_parameters() -> None:
+    assert run_adapters(
+        "adapters.changeAction({control_uuid:'id',action:'set_value',value:4,cursor:'keep'},'on')"
+    ) == {"control_uuid": "id", "action": "on", "cursor": "keep"}
+    assert (
+        run_adapters("adapters.fieldVisible({name:'loxone_operate_control'},'value',{action:'on'})")
+        is False
+    )
+    assert run_adapters("adapters.fieldVisible({name:'future_tool'},'value',{action:'on'})") is True
+    assert (
+        run_adapters(
+            "adapters.fieldVisible({name:'loxone_operate_control'},'brightness',"
+            "{action:'set_color_temperature'})"
+        )
+        is True
+    )
+
+
+def test_statistics_recipe_requires_source_shape_and_available_target() -> None:
+    result = {"data": {"uuid": "control"}}
+    source = json.dumps(result)
+    path = "['data','capabilities','statistics',0]"
+    assert (
+        run_adapters(
+            f"adapters.transferRecipe('loxone_describe_control',{source},{path},"
+            "{series_id:'series'},[])"
+        )
+        is None
+    )
+    assert (
+        run_adapters(
+            f"adapters.transferRecipe('other_tool',{source},{path},"
+            "{series_id:'series'},[{name:'loxone_get_statistics'}])"
+        )
+        is None
+    )
+    assert (
+        run_adapters(
+            f"adapters.transferRecipe('loxone_describe_control',{source},['data'],"
+            "{series_id:'series'},[{name:'loxone_get_statistics'}])"
+        )
+        is None
+    )
 
 
 def test_explorer_converts_datetime_local_values_to_rfc3339() -> None:
@@ -1466,7 +1576,7 @@ def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
     assert "const registrationScope = scope" in source
     assert "supported.delete('loxberry:operate')" in source
     assert "return fetchJson(metadata.explorer_session_endpoint" in source
-    assert "state.selectedTool.name === 'loxberry_clear_statistics_cache'" in source
+    assert "adapters.requiredMutationScope(state.selectedTool)" in source
     assert "elements.historyArguments.hidden = !historySource" in source
     assert "Cache_Control => 'no-store'" in callback
     assert "frame-ancestors 'none'" in callback

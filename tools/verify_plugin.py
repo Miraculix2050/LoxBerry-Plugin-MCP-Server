@@ -51,6 +51,7 @@ _REQUIRED: Final = {
     "webfrontend/htmlauth/explorer.cgi",
     "webfrontend/htmlauth/explorer_callback.cgi",
     "webfrontend/htmlauth/explorer.js",
+    "webfrontend/htmlauth/explorer-adapters.js",
     "webfrontend/htmlauth/admin/core.js",
     "webfrontend/htmlauth/admin/configuration.js",
     "webfrontend/htmlauth/admin/service.js",

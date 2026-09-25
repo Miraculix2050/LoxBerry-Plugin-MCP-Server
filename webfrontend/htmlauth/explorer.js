@@ -5,6 +5,8 @@
   if (root) root.McpExplorerCore = api;
 })(typeof window !== 'undefined' ? window : undefined, function () {
   'use strict';
+  const adapters = typeof module === 'object' && module.exports
+    ? require('./explorer-adapters.js') : window.McpExplorerAdapters;
 
   const PROTOCOL_VERSION = '2025-11-25';
   const MAX_CALL_HISTORY = 50;
@@ -30,64 +32,21 @@
     'pattern', 'minItems', 'maxItems', 'uniqueItems', 'title', 'description', 'default',
     'examples', 'format', 'readOnly', 'writeOnly',
   ]);
-  const ADVANCED_FIELDS = new Set(['cursor', 'limit', 'include_hidden']);
-  const REFERENCE_FIELDS = new Set(['control_uuid', 'room_uuid', 'category_uuid', 'room_group_uuid']);
-  const ACTION_FIELDS = {
-    set_level: ['level'], set_mood: ['mood_id'], set_position: ['position'],
-    set_slat_position: ['slat_position'], set_position_and_slats: ['position', 'slat_position'],
-    select_output: ['output_id'], set_scene: ['scene_id'],
-    set_color_hsv: ['hue', 'saturation', 'brightness'], set_color_temperature: ['brightness', 'kelvin'],
-    set_value: ['value'], start_override: ['value', 'duration_seconds'],
-    start_fan_override: ['duration_seconds'], start_mode_override: ['value', 'duration_seconds'],
-  };
-  const LOXONE_HISTORY_TOOLS = [
-    'loxone_get_statistics', 'loxone_get_control_history', 'loxone_get_state_history',
-    'loxone_analyze_observability',
-  ];
-  const LOXBERRY_OPERATE_TOOLS = [
-    'loxberry_clear_statistics_cache', 'loxberry_list_event_history_sources',
-    'loxberry_add_event_history_source', 'loxberry_remove_event_history_source',
-  ];
-  const TOOL_GROUPS = [
-    {id: 'loxoneRead', names: [
-      'loxone_get_skill_guide', 'loxone_get_system_status', 'loxone_list_rooms',
-      'loxone_list_categories', 'loxone_find_controls', 'loxone_describe_control',
-      'loxone_get_control_notes', 'loxone_get_states',
-    ]},
-    {id: 'loxoneHistory', names: LOXONE_HISTORY_TOOLS},
-    {id: 'loxoneControl', names: ['loxone_operate_control']},
-    {id: 'loxberryRead', names: [
-      'loxberry_get_system_status', 'loxberry_get_plugin_status', 'loxberry_get_service_health',
-      'loxberry_list_service_events',
-    ]},
-    {id: 'loxberryOperate', names: LOXBERRY_OPERATE_TOOLS},
-  ];
-  const ADDITIONAL_LOXONE_READ_TOOLS = new Set([
-    'loxone_get_structure_overview', 'loxone_get_room_snapshot', 'loxone_list_global_metadata',
-    'loxone_get_weather', 'loxone_get_project_status', 'loxone_find_project_objects',
-    'loxone_describe_project_object', 'loxone_trace_project_logic', 'loxone_analyze_project',
-  ]);
-
   function clone(value) {
     return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
   }
 
   function toolGroup(tool) {
-    const name = tool && tool.name || '';
-    if (LOXONE_HISTORY_TOOLS.includes(name)) return 'loxoneHistory';
-    if (name.startsWith('loxone_')) return toolIsMutating(tool) ? 'loxoneControl' : 'loxoneRead';
-    if (LOXBERRY_OPERATE_TOOLS.includes(name)) return 'loxberryOperate';
-    return 'loxberryRead';
+    return adapters.toolGroup(tool);
   }
 
   function sortedToolGroups(tools) {
-    return TOOL_GROUPS.map((group) => {
-      const positions = new Map(group.names.map((name, index) => [name, index]));
+    return adapters.GROUPS.map((group) => {
       return {
         id: group.id,
         tools: (tools || []).filter((tool) => toolGroup(tool) === group.id).sort((left, right) => {
-          const leftPosition = positions.has(left.name) ? positions.get(left.name) : Number.MAX_SAFE_INTEGER;
-          const rightPosition = positions.has(right.name) ? positions.get(right.name) : Number.MAX_SAFE_INTEGER;
+          const leftPosition = adapters.forTool(left)?.order ?? Number.MAX_SAFE_INTEGER;
+          const rightPosition = adapters.forTool(right)?.order ?? Number.MAX_SAFE_INTEGER;
           return leftPosition - rightPosition || left.name.localeCompare(right.name);
         }),
       };
@@ -130,62 +89,23 @@
   }
 
   function actionFields(action) {
-    return ACTION_FIELDS[action] || [];
+    return adapters.actionFields(action);
   }
 
   function operationParameterFields() {
-    return [...new Set(Object.values(ACTION_FIELDS).flat())];
+    return adapters.operationParameterFields();
   }
 
   function isAdvancedField(name) {
-    return ADVANCED_FIELDS.has(name);
+    return adapters.isAdvancedField(name);
   }
 
   function isReferenceField(name) {
-    return REFERENCE_FIELDS.has(name);
+    return adapters.isReferenceField(name);
   }
 
   function referenceCandidates(field, history) {
-    if (!REFERENCE_FIELDS.has(field) || !Array.isArray(history)) return [];
-    const candidates = new Map();
-    const add = (value, name) => {
-      if (typeof value !== 'string' || !value || candidates.has(value)) return;
-      candidates.set(value, {value, label: name ? `${name} (${value})` : value});
-    };
-    for (const entry of [...history].reverse()) {
-      const result = entry && entry.result;
-      const displayed = result && (result.structuredContent ?? result.content ?? result);
-      const data = displayed && displayed.data;
-      if (!data || !Array.isArray(data.items)) continue;
-      for (const item of data.items) {
-        if (!item || typeof item !== 'object') continue;
-        if (field === 'control_uuid' && entry.tool === 'loxone_find_controls') add(item.uuid, item.name);
-        if (field === 'room_uuid' && entry.tool === 'loxone_list_rooms') add(item.uuid, item.name);
-        if (field === 'category_uuid' && entry.tool === 'loxone_list_categories') add(item.uuid, item.name);
-        if (field === 'room_group_uuid' && entry.tool === 'loxone_list_rooms' && item.room_group) add(item.room_group.uuid, item.room_group.name);
-      }
-    }
-    return [...candidates.values()];
-  }
-
-  function statisticsTransfer(sourceTool, displayedResult, path, value, now) {
-    if (sourceTool !== 'loxone_describe_control' || !Array.isArray(path) || path.length !== 4 ||
-      path[0] !== 'data' || path[1] !== 'capabilities' || path[2] !== 'statistics' ||
-      !value || typeof value !== 'object' || Array.isArray(value) || typeof value.series_id !== 'string' ||
-      !displayedResult || !displayedResult.data || typeof displayedResult.data.uuid !== 'string') return null;
-    const end = new Date(now === undefined ? Date.now() : now);
-    if (Number.isNaN(end.getTime())) return null;
-    const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
-    return {
-      tool: 'loxone_get_statistics',
-      arguments: {
-        control_uuid: displayedResult.data.uuid,
-        series_id: value.series_id,
-        start: start.toISOString(),
-        end: end.toISOString(),
-        granularity: 'raw',
-      },
-    };
+    return adapters.referenceCandidates(field, history);
   }
 
   function canonicalExplorerUrl(resource, currentOrigin, trustedLocalAlias) {
@@ -704,18 +624,7 @@
   }
 
   function toolRequiredScopes(tool) {
-    const name = tool && tool.name;
-    const inGroup = (id) => TOOL_GROUPS.some((group) => group.id === id && group.names.includes(name));
-    if (LOXONE_HISTORY_TOOLS.includes(name)) return ['loxone:read', 'loxone:history'];
-    if (name === 'loxone_operate_control') return ['loxone:read', 'loxone:control'];
-    if (LOXBERRY_OPERATE_TOOLS.includes(name)) {
-      return ['loxone:read', 'loxone:history', 'loxberry:operate'];
-    }
-    if (inGroup('loxoneRead') || ADDITIONAL_LOXONE_READ_TOOLS.has(name)) {
-      return ['loxone:read'];
-    }
-    if (inGroup('loxberryRead')) return ['loxone:read', 'loxberry:read'];
-    return null;
+    return adapters.requiredScopes(tool);
   }
 
   function acceptOAuthPayload(data, expectedState) {
@@ -832,7 +741,6 @@
     filteredToolGroups,
     dateTimeLocalToRfc3339,
     rfc3339ToDateTimeLocal,
-    statisticsTransfer,
     timeRange,
     actionFields,
     operationParameterFields,
@@ -1495,12 +1403,7 @@
   }
 
   function setAction(value) {
-    const next = core.clone(state.arguments);
-    const visible = new Set(core.actionFields(value));
-    core.operationParameterFields().forEach((name) => {
-      if (!visible.has(name)) delete next[name];
-    });
-    next.action = value;
+    const next = adapters.changeAction(state.arguments, value);
     state.arguments = next;
     elements.json.value = JSON.stringify(next, null, 2);
     saveCurrentDraft();
@@ -1540,7 +1443,7 @@
       input.addEventListener('change', () => {
         if (input.value !== '') {
           const value = JSON.parse(input.value);
-          if (state.selectedTool && state.selectedTool.name === 'loxone_operate_control' && name === 'action') setAction(value);
+          if (adapters.hasActionFields(state.selectedTool) && name === 'action') setAction(value);
           else setDraftField(name, true, value);
         }
       });
@@ -1574,11 +1477,7 @@
     const fieldLabel = core.createFieldLabel(document, name, input, fieldIndex);
     input.disabled = !included;
     wrapper.append(fieldLabel);
-    const helpKey = {
-      cursor: 'helpCursor', limit: 'helpLimit', query: 'helpQuery', room_uuid: 'helpRoomUuid',
-      category_uuid: 'helpCategoryUuid', control_type: 'helpControlType',
-      control_uuid: 'helpControlUuid', state_uuids: 'helpStateUuids', action: 'helpAction',
-    }[name];
+    const helpKey = adapters.fieldHelpKey(name);
     const description = helpKey ? label(helpKey) : effective.description;
     if (description) wrapper.append(element('span', {className: 'mcp-explorer-muted', text: description}));
     wrapper.append(input);
@@ -1671,10 +1570,8 @@
     let fieldIndex = 0;
     const advanced = element('details', {className: 'mcp-explorer-stack'});
     advanced.append(element('summary', {text: label('advancedOptions')}));
-    const selectedAction = state.selectedTool.name === 'loxone_operate_control' ? state.arguments.action : null;
-    const actionFields = core.actionFields(selectedAction);
     for (const [name, property] of Object.entries(schema.properties || {})) {
-      if (state.selectedTool.name === 'loxone_operate_control' && name !== 'control_uuid' && name !== 'action' && !actionFields.includes(name)) continue;
+      if (!adapters.fieldVisible(state.selectedTool, name, state.arguments)) continue;
       const rendered = renderField(name, property, required.has(name), schema, fieldIndex++);
       supported = rendered.supported && supported;
       if (core.isAdvancedField(name)) advanced.append(rendered.wrapper);
@@ -1817,11 +1714,10 @@
   async function runSelectedTool() {
     if (!validateDraft(true) || !state.selectedTool) return;
     const oauth = state.oauth;
-    const requiredMutationScope = state.selectedTool.name === 'loxberry_clear_statistics_cache'
-      ? 'loxberry:operate'
-      : 'loxone:control';
+    const requiredMutationScope = adapters.requiredMutationScope(state.selectedTool);
     const granted = state.oauth && core.grantedScopes(state.oauth.scope);
-    if (core.toolIsMutating(state.selectedTool) && !(granted && granted.has(requiredMutationScope))) {
+    if (core.toolIsMutating(state.selectedTool) && requiredMutationScope &&
+        !(granted && granted.has(requiredMutationScope))) {
       setCallFeedback(label(requiredMutationScope === 'loxberry:operate' ? 'operateRequired' : 'controlRequired'), 'error');
       return;
     }
@@ -1874,15 +1770,16 @@
     state.transferValue = core.clone(value);
     state.transferPath = core.formatPath(path);
     elements.transferSource.textContent = `${state.transferPath} = ${JSON.stringify(value)}`;
-    const recipe = core.statisticsTransfer(
+    const recipe = adapters.transferRecipe(
       state.lastResultContext && state.lastResultContext.tool,
       displayValue(state.lastResult),
       path,
       value,
+      state.tools,
     );
     state.transferRecipe = recipe;
     elements.transferContext.textContent = recipe
-      ? `${label('statisticsTransferContext')}: loxone_get_statistics (5 ${label('fields')})`
+      ? `${label(recipe.contextLabel)}: ${recipe.tool} (${Object.keys(recipe.arguments).length} ${label('fields')})`
       : `${label('transferContext')}: ${state.lastResultContext ? state.lastResultContext.tool : '—'}`;
     elements.transferTool.closest('label').hidden = Boolean(recipe);
     elements.transferField.closest('label').hidden = Boolean(recipe);

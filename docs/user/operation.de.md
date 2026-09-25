@@ -31,6 +31,8 @@ Die verfügbaren Werkzeuge lassen sich nach Name oder Beschreibung durchsuchen
 und im aufklappbaren Filter nach einer oder mehreren Gruppen filtern. **Alle**
 setzt die Gruppenauswahl zurück. Die Filterung erfolgt lokal;
 das ausgewählte Werkzeug und sein ungesendeter Entwurf bleiben erhalten.
+Werkzeuge ohne bekannten Explorer-Darstellungshinweis erscheinen unter **Weitere Tools**;
+Formular und Aufruf verwenden weiterhin die Schemas aus `tools/list`.
 Beim ausgewählten Werkzeug zeigt der Explorer die Lese-/Schreib-Einstufung und
 explizit gemeldete MCP-Hinweise. Bei unvollständigen oder widersprüchlichen Angaben
 erscheint vorsichtig **Schreibzugriff möglich**. Die Hinweise sind keine

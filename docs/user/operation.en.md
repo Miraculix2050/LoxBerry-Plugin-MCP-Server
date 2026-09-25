@@ -31,6 +31,8 @@ Search the available tools by name or description and combine the search with
 one or more groups in the expandable filter. **All** clears the group selection.
 Filtering is local and keeps the selected tool and
 its unsent draft.
+Tools without a known Explorer presentation hint appear under **Other tools**;
+their forms and calls still use the schemas from `tools/list`.
 For the selected tool, the Explorer shows its read/write classification and
 explicit MCP hints. Incomplete or contradictory metadata is conservatively
 marked **May write**. Hints are not a safety guarantee; the complete annotations
