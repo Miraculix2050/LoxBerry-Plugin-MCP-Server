@@ -564,6 +564,9 @@ class EventHistoryMonitor:
             self.status = "unavailable"
             _LOGGER.warning("component=event_history outcome=store_unavailable")
             return
+        if not self.sources:
+            self.status = "unavailable"
+            return
         self._task = asyncio.create_task(self._run())
 
     async def _run(self) -> None:

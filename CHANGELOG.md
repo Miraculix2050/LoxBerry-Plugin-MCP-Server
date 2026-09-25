@@ -11,7 +11,8 @@ extracted from the matching version heading.
 - Keep retained local event history readable after source removal when the caller
   can still see the state. Report recording status separately from period coverage,
   preserve re-addition gaps, and add a confirmed per-source purge for inactive
-  sources without changing global retention limits.
+  sources without changing global retention limits. An enabled recorder with no
+  configured sources no longer opens idle Miniserver connections.
 
 - Show local timestamps and redacted argument summaries in Tool Explorer call
   history, keep MCP protocol details in a separate debug panel, and report each

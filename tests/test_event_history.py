@@ -221,6 +221,44 @@ def test_store_translates_parent_creation_failures_to_a_store_error(tmp_path, mo
 
 
 @pytest.mark.asyncio
+async def test_monitor_skips_miniserver_when_no_sources_and_starts_after_add(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Store:
+        def initialize(self) -> None:
+            pass
+
+    started = asyncio.Event()
+    attempts = 0
+    monitor = EventHistoryMonitor(
+        PluginConfig(event_history_enabled=True),
+        Store(),  # type: ignore[arg-type]
+        object(),  # type: ignore[arg-type]
+    )
+
+    async def run() -> None:
+        nonlocal attempts
+        attempts += 1
+        started.set()
+        await asyncio.Future()
+
+    monkeypatch.setattr(monitor, "_run", run)
+    await monitor.start()
+    assert attempts == 0
+    assert monitor._task is None
+
+    await monitor.update_config(
+        PluginConfig(event_history_enabled=True, event_history_sources=(("control", "state"),))
+    )
+    await asyncio.wait_for(started.wait(), 1)
+    assert attempts == 1
+
+    await monitor.update_config(PluginConfig(event_history_enabled=True))
+    assert attempts == 1
+    assert monitor._task is None or monitor._task.done()
+
+
+@pytest.mark.asyncio
 async def test_monitor_records_updates_following_the_initial_baseline_in_one_batch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
