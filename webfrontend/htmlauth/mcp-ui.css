@@ -128,7 +128,9 @@ details.mcp-explorer-card[open] > summary { border-bottom: 1px solid #d7dadd; }
 .mcp-explorer-value { padding: .15rem .3rem; border: 1px solid transparent; background: transparent; text-align: left; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .mcp-explorer-value:hover { border-color: #1261a0; }
 .mcp-explorer-history { display: grid; gap: .35rem; max-height: 18rem; overflow-y: auto; }
-.mcp-explorer-history button { padding: .55rem; text-align: left; border: 1px solid #ddd; background: #fff; }
+.mcp-explorer-history button { display: grid; gap: .15rem; min-width: 0; padding: .55rem; text-align: left; border: 1px solid #ddd; background: #fff; overflow-wrap: anywhere; }
+.mcp-explorer-history-arguments { font: .85rem ui-monospace, SFMono-Regular, Consolas, monospace; overflow-wrap: anywhere; }
+.mcp-explorer-protocol { grid-column: 1 / -1; }
 .mcp-explorer-muted { color: #5f6368; }
 .mcp-explorer-dialog select { box-sizing: border-box; width: 100%; min-height: 2.75rem; }
 @media (min-width: 80rem) {

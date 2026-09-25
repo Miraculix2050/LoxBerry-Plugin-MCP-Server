@@ -427,6 +427,43 @@
     return visit(value, schema || {}, schema || {}, '');
   }
 
+  function summarizeArguments(value, schema) {
+    if (!schema || !schema.properties || !value || typeof value !== 'object' || Array.isArray(value)) return '';
+    const redacted = redactArguments(value, schema);
+    function known(current, currentSchema, depth) {
+      if (current === '[redacted]') return current;
+      if (depth > 2) return undefined;
+      const effective = effectiveSchema(currentSchema, schema);
+      if (Array.isArray(current)) {
+        if (!effective.items) return undefined;
+        return current.slice(0, 2).map((item) => known(item, effective.items, depth + 1));
+      }
+      if (current && typeof current === 'object') {
+        if (!effective.properties) return undefined;
+        const result = {};
+        for (const [key, child] of Object.entries(current).slice(0, 3)) {
+          if (!Object.hasOwn(effective.properties, key)) continue;
+          const safe = known(child, effective.properties[key], depth + 1);
+          if (safe !== undefined) result[key] = safe;
+        }
+        return result;
+      }
+      return effective.type || effective.enum || effective.const !== undefined ? current : undefined;
+    }
+    const parts = [];
+    for (const [key, child] of Object.entries(redacted)) {
+      if (parts.length >= 3) break;
+      if (!Object.hasOwn(schema.properties, key)) continue;
+      let safe = known(child, schema.properties[key], 0);
+      if (safe === undefined) continue;
+      if (typeof safe === 'string' && safe !== '[redacted]' && safe.length > 24) safe = `${safe.slice(0, 23)}…`;
+      const rendered = JSON.stringify(safe);
+      parts.push(`${key.slice(0, 24)}=${rendered.length > 70 ? `${rendered.slice(0, 69)}…` : rendered}`);
+    }
+    const summary = parts.join(', ');
+    return summary.length > 120 ? `${summary.slice(0, 119)}…` : summary;
+  }
+
   function preferredTargetField(sourcePath) {
     const leaf = Array.isArray(sourcePath) && sourcePath.length
       ? String(sourcePath[sourcePath.length - 1]).toLowerCase()
@@ -726,6 +763,8 @@
     elements.restoreHistory.hidden = true;
     elements.validation.textContent = '';
     elements.validation.hidden = true;
+    elements.callFeedback.textContent = '';
+    elements.callFeedback.hidden = true;
   }
 
   function mcpFailure(response, fallback) {
@@ -779,6 +818,7 @@
     validateValue,
     validateArguments,
     redactArguments,
+    summarizeArguments,
     compatibleTargets,
     toolGroup,
     sortedToolGroups,
@@ -856,6 +896,7 @@
     json: document.getElementById('explorer-json'),
     schemaWarning: document.getElementById('explorer-schema-warning'),
     validation: document.getElementById('explorer-validation'),
+    callFeedback: document.getElementById('explorer-call-feedback'),
     run: document.getElementById('explorer-run'),
     resetDraft: document.getElementById('explorer-reset-draft'),
     copy: document.getElementById('explorer-copy'),
@@ -927,6 +968,12 @@
   function setStatus(text, kind) {
     elements.status.textContent = text;
     elements.status.dataset.kind = kind || '';
+  }
+
+  function setCallFeedback(text, kind) {
+    elements.callFeedback.textContent = text;
+    elements.callFeedback.dataset.kind = kind || '';
+    elements.callFeedback.hidden = !text;
   }
 
   function setBusy(busy) {
@@ -1739,7 +1786,13 @@
       return;
     }
     [...state.history].reverse().forEach((entry) => {
-      const button = element('button', {type: 'button', text: `${entry.tool} — ${entry.duration} ms — ${entry.ok ? 'OK' : 'ERROR'}`});
+      const tool = state.tools.find((candidate) => candidate.name === entry.tool);
+      const summary = core.summarizeArguments(entry.arguments, tool && tool.inputSchema);
+      const button = element('button', {type: 'button'}, [
+        element('strong', {text: entry.tool}),
+        ...(summary ? [element('span', {className: 'mcp-explorer-history-arguments', text: summary})] : []),
+        element('span', {className: 'mcp-explorer-muted', text: `${new Date(entry.at).toLocaleTimeString()} · ${entry.duration} ms · ${entry.ok ? 'OK' : 'ERROR'}`}),
+      ]);
       button.addEventListener('click', () => {
         renderResult(entry.result, {tool: entry.tool, arguments: entry.arguments, history: true});
         if (narrowViewport.matches) {
@@ -1759,7 +1812,7 @@
       : 'loxone:control';
     const granted = state.oauth && core.grantedScopes(state.oauth.scope);
     if (core.toolIsMutating(state.selectedTool) && !(granted && granted.has(requiredMutationScope))) {
-      showError(new Error(label(requiredMutationScope === 'loxberry:operate' ? 'operateRequired' : 'controlRequired')), label('error'));
+      setCallFeedback(label(requiredMutationScope === 'loxberry:operate' ? 'operateRequired' : 'controlRequired'), 'error');
       return;
     }
     if (!(await confirmMutation(state.selectedTool, state.arguments))) return;
@@ -1770,7 +1823,7 @@
     const tool = state.selectedTool;
     const args = core.clone(state.arguments);
     setBusy(true);
-    setStatus(label('working'), 'working');
+    setCallFeedback(label('working'), 'working');
     const started = performance.now();
     let result;
     let ok = false;
@@ -1787,7 +1840,7 @@
         elements.validation.textContent = `${label('invalidOutput')} ${outputErrors.join('; ')}`;
         elements.validation.hidden = false;
       }
-      setStatus(ok ? label('ready') : label('error'), ok ? 'success' : 'error');
+      setCallFeedback(`${label(ok ? 'callCompleted' : 'error')} · ${Math.round(performance.now() - started)} ms`, ok ? 'success' : 'error');
     } catch (error) {
       sessionCleared = Boolean(error && error.sessionCleared === true) || state.oauth !== oauth;
       if (!sessionCleared) {
@@ -1796,10 +1849,10 @@
           : {error: error instanceof Error ? error.message : label('error')};
         renderResult(result, {tool: tool.name, arguments: args});
       }
-      if (!sessionCleared) showError(error, label('error'));
+      if (!sessionCleared) setCallFeedback(`${label('error')} · ${Math.round(performance.now() - started)} ms`, 'error');
     } finally {
       if (!sessionCleared) {
-        state.history.push({tool: tool.name, arguments: args, result, ok, duration: Math.round(performance.now() - started)});
+        state.history.push({tool: tool.name, arguments: args, result, ok, at: Date.now(), duration: Math.round(performance.now() - started)});
         if (state.history.length > core.MAX_CALL_HISTORY) state.history.splice(0, state.history.length - core.MAX_CALL_HISTORY);
         renderHistory();
       }

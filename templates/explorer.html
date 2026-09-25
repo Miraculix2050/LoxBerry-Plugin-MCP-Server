@@ -1,8 +1,9 @@
-<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-result-inspector-v1">
+<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-call-history-v1">
 
 <main id="mcp-explorer" class="mcp-explorer mcp-explorer-stack"
   data-ready="<TMPL_VAR EXPLORER.READY ESCAPE=HTML>"
   data-working="<TMPL_VAR EXPLORER.WORKING ESCAPE=HTML>"
+  data-call-completed="<TMPL_VAR EXPLORER.CALL_COMPLETED ESCAPE=HTML>"
   data-error="<TMPL_VAR EXPLORER.ERROR ESCAPE=HTML>"
   data-connected="<TMPL_VAR EXPLORER.CONNECTED ESCAPE=HTML>"
   data-disconnected="<TMPL_VAR EXPLORER.DISCONNECTED ESCAPE=HTML>"
@@ -164,6 +165,7 @@
           <button id="explorer-run" class="lb-button" type="button" disabled><TMPL_VAR EXPLORER.RUN></button>
           <button id="explorer-reset-draft" class="lb-button" type="button" disabled><TMPL_VAR EXPLORER.RESET_DRAFT></button>
         </div>
+        <div id="explorer-call-feedback" class="mcp-explorer-status" role="status" aria-live="polite" hidden></div>
         <div id="explorer-validation" class="mcp-explorer-status" role="alert" data-kind="error" hidden></div>
       </section>
 
@@ -178,8 +180,8 @@
         <div id="explorer-history-arguments" class="mcp-explorer-stack" hidden></div>
         <div id="explorer-result-tree" class="mcp-explorer-tree"><p class="mcp-explorer-muted"><TMPL_VAR EXPLORER.EMPTY_RESULT></p></div>
         <details id="explorer-raw-details"><summary><TMPL_VAR EXPLORER.JSON></summary><pre id="explorer-result-raw" class="mcp-explorer-pre">{}</pre></details>
-        <details id="explorer-transcript-details"><summary><TMPL_VAR EXPLORER.TRANSCRIPT></summary><div id="explorer-transcript"></div></details>
       </section>
+      <details id="explorer-transcript-details" class="mcp-explorer-card mcp-explorer-protocol"><summary><TMPL_VAR EXPLORER.TRANSCRIPT></summary><div id="explorer-transcript" class="mcp-explorer-panel-content"></div></details>
     </div>
   </div>
 </main>
@@ -212,4 +214,4 @@
   </form>
 </dialog>
 
-<script src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-result-inspector-v1"></script>
+<script src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-call-history-v1"></script>
