@@ -10,6 +10,8 @@ Wenn ein Administrator sie aktiviert, kann der Server ausgewählte State-UUIDs z
 
 Das Entfernen einer Quelle beendet die Aufzeichnung; gespeicherte Ereignisse bleiben lesbar, solange Control und State für den Aufrufer aktuell sichtbar sind. `loxone_get_state_history` meldet `recording_status`, `recording_ended_at`, `recording_notice` und die `coverage` des angefragten Zeitraums getrennt. `active` bedeutet für die Aufzeichnung konfiguriert; nur `coverage` belegt eine Erfassung im angefragten Zeitraum. Die Pause nach dem Entfernen gilt nie als durchgehend erfasst. Die globalen Alters- und Datenbankgrößenlimits gelten weiter. Ein freigegebener Client kann Ereignisse und Abdeckung einer inaktiven Quelle mit `loxberry_purge_event_history_source` und `confirm=true` endgültig löschen. Nach einem Timeout ist das Ergebnis unbekannt; der Aufruf darf nicht automatisch wiederholt werden.
 
+Falls das Ergebnis zum Speichern der Entfernungsmarkierung unbekannt ist, vor einem manuellen erneuten `remove` die Quellenliste und Historie prüfen. Der erneute Aufruf kann die Markierung nachtragen; `recording_ended_at` bleibt leer, wenn der ursprüngliche Endzeitpunkt nicht belegbar ist.
+
 `loxone_get_project_status`, `loxone_find_project_objects`,
 `loxone_describe_project_object`, `loxone_trace_project_logic` und
 `loxone_analyze_project` stellen begrenzte,

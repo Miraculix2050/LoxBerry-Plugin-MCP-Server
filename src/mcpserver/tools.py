@@ -1781,38 +1781,41 @@ class LoxBerryOperateRuntime:
         async with self._event_history_lock:
             monitor = self._event_history_allowed(access)
             config = self._config_store.load()
+            self._event_history_change_allowed(config, access)
+            changed = False
             if (control_uuid, state_uuid) not in config.event_history_sources:
                 await self._reconcile_event_history_config(monitor, config)
-                return False
-            changed = False
+            else:
 
-            def remove_source(current: Any) -> Any:
-                nonlocal changed
-                self._event_history_change_allowed(current, access)
-                if (control_uuid, state_uuid) not in current.event_history_sources:
-                    return current
-                changed = True
-                return replace(
-                    current,
-                    event_history_sources=tuple(
-                        source
-                        for source in current.event_history_sources
-                        if source != (control_uuid, state_uuid)
-                    ),
-                )
-
-            updated = await self._mutate_event_history_config(monitor, remove_source)
-            if changed:
-                await self._reconcile_event_history_config(monitor, updated)
-                try:
-                    await asyncio.to_thread(
-                        monitor.store.mark_removed,
-                        control_uuid,
-                        state_uuid,
-                        removed_at=time.time(),
+                def remove_source(current: Any) -> Any:
+                    nonlocal changed
+                    self._event_history_change_allowed(current, access)
+                    if (control_uuid, state_uuid) not in current.event_history_sources:
+                        return current
+                    changed = True
+                    return replace(
+                        current,
+                        event_history_sources=tuple(
+                            source
+                            for source in current.event_history_sources
+                            if source != (control_uuid, state_uuid)
+                        ),
                     )
-                except EventHistoryUnavailable as exc:
-                    raise ControlOperationError("temporarily_unavailable", str(exc)) from exc
+
+                updated = await self._mutate_event_history_config(monitor, remove_source)
+                await self._reconcile_event_history_config(monitor, updated)
+            try:
+                await asyncio.to_thread(
+                    monitor.store.mark_removed,
+                    control_uuid,
+                    state_uuid,
+                    removed_at=time.time() if changed else None,
+                )
+            except EventHistoryUnavailable as exc:
+                raise ControlOperationError(
+                    "temporarily_unavailable",
+                    "Source is inactive; removal metadata outcome is unknown",
+                ) from exc
             return changed
 
     async def purge_event_history_source(

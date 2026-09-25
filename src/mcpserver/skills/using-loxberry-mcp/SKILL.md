@@ -268,7 +268,9 @@ never infer or construct UUIDs. These operations do not enable the feature,
 change retention or operate a Loxone control. Removal stops capture while retained
 events remain readable only for a currently visible control/state. Check
 `recording_status` separately from the requested period's `coverage`; removal
-and re-addition leave a coverage gap. Purge only on an explicit user request,
+and re-addition leave a coverage gap. If removal metadata has an unknown outcome,
+inspect the source list and history before a manual retry; a missing end time
+must not be inferred. Purge only on an explicit user request,
 using `loxberry_purge_event_history_source` with `confirm=true` for an inactive
 source and exact local approval. Never retry a purge with an unknown outcome.
 

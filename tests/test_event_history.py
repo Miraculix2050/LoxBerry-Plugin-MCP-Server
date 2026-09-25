@@ -70,6 +70,7 @@ def test_removed_source_retains_evidence_and_readd_keeps_coverage_gap(tmp_path):
     store.record_transition(*other, observed_at=now - 50, old_value=False, new_value=True)
     store.end_coverage((source,), ended_at=now - 40, outcome="stopped")
     store.mark_removed(*source, removed_at=now - 40)
+    store.mark_removed(*source, removed_at=None)
 
     removed = EventHistoryStore(path, retention_days=90, maximum_mib=16)
     page = removed.page(*source, start=now - 60, end=now - 30, limit=10)
@@ -82,6 +83,24 @@ def test_removed_source_retains_evidence_and_readd_keeps_coverage_gap(tmp_path):
     assert removed.purge_source(*source) == (1, 2)
     assert not removed.page(*source, start=now - 60, end=now, limit=10).has_evidence
     assert removed.page(*other, start=now - 60, end=now, limit=10).has_evidence
+
+
+def test_removed_source_can_be_marked_without_guessing_its_end_time(tmp_path):
+    store = EventHistoryStore(
+        (tmp_path / "event-history.sqlite3").resolve(), retention_days=90, maximum_mib=16
+    )
+    source = ("control", "state")
+    now = time.time()
+    store.initialize()
+    store.begin_coverage((source,), started_at=now - 20)
+    store.end_coverage((source,), ended_at=now - 10, outcome="stopped")
+    store.mark_removed(*source, removed_at=None)
+
+    page = store.page(*source, start=now - 20, end=now - 10, limit=10)
+    assert page.has_evidence and page.recording_ended_at is None
+    store.mark_removed("missing", "state", removed_at=None)
+    with sqlite3.connect(store.path) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM removed_sources").fetchone()[0] == 1
 
 
 def test_schema_v1_migration_preserves_evidence_without_inventing_removal_time(tmp_path):

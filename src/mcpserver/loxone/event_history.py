@@ -334,13 +334,25 @@ class EventHistoryStore:
         ).rowcount
         return deleted > 0
 
-    def mark_removed(self, control_uuid: str, state_uuid: str, *, removed_at: float) -> None:
+    def mark_removed(self, control_uuid: str, state_uuid: str, *, removed_at: float | None) -> None:
         with self._lock, self._opened() as connection:
             try:
                 connection.execute(
-                    "INSERT INTO removed_sources VALUES (?, ?, ?) ON CONFLICT(control_uuid, "
-                    "state_uuid) DO UPDATE SET removed_at = excluded.removed_at",
-                    (control_uuid, state_uuid, removed_at),
+                    "INSERT INTO removed_sources (control_uuid, state_uuid, removed_at) "
+                    "SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM events WHERE control_uuid = ? "
+                    "AND state_uuid = ?) OR EXISTS (SELECT 1 FROM coverage WHERE control_uuid = ? "
+                    "AND state_uuid = ?) ON CONFLICT(control_uuid, state_uuid) "
+                    "DO UPDATE SET removed_at = "
+                    "COALESCE(removed_sources.removed_at, excluded.removed_at)",
+                    (
+                        control_uuid,
+                        state_uuid,
+                        removed_at,
+                        control_uuid,
+                        state_uuid,
+                        control_uuid,
+                        state_uuid,
+                    ),
                 )
             except sqlite3.Error as exc:
                 raise EventHistoryUnavailable("local event history is unavailable") from exc

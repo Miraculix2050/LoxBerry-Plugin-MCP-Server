@@ -25,7 +25,7 @@ from mcpserver.auth.provider import (
     StoredAccessToken,
 )
 from mcpserver.config import AtomicConfigStore, ExplorerBindingApproval, PluginConfig
-from mcpserver.loxone.event_history import EventHistoryStore
+from mcpserver.loxone.event_history import EventHistoryStore, EventHistoryUnavailable
 from mcpserver.loxone.models import (
     Control,
     Freshness,
@@ -946,15 +946,93 @@ async def test_event_history_source_removal_reports_no_op_when_another_writer_re
         def pseudonym(self, *_parts: str) -> str:
             return "binding"
 
+    class Store:
+        def mark_removed(
+            self, control_uuid: str, state_uuid: str, *, removed_at: float | None
+        ) -> None:
+            assert (control_uuid, state_uuid) == source
+            assert removed_at is None
+
     class Monitor:
-        async def update_config(self, _config: PluginConfig) -> None:
-            raise AssertionError("a no-op must not reconfigure the monitor")
+        store = Store()
+
+        async def update_config(self, config: PluginConfig) -> None:
+            assert config is replacement
 
     runtime = LoxBerryOperateRuntime(object(), ConfigStore(), AuthStore(), event_history=Monitor())
 
     assert not await runtime.remove_event_history_source(
         _loxberry_access(READ_SCOPE, HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE), *source
     )
+
+
+@pytest.mark.asyncio
+async def test_event_history_source_removal_repairs_failed_marker_without_guessing_time(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = ("control", "state")
+    now = time.time()
+    store = EventHistoryStore(
+        (tmp_path / "history.sqlite3").resolve(), retention_days=90, maximum_mib=16
+    )
+    store.initialize()
+    store.begin_coverage((source,), started_at=now - 20)
+    original_mark_removed = store.mark_removed
+    fail_once = True
+
+    def mark_removed(control_uuid: str, state_uuid: str, *, removed_at: float | None) -> None:
+        nonlocal fail_once
+        if fail_once:
+            fail_once = False
+            raise EventHistoryUnavailable("local event history is unavailable")
+        original_mark_removed(control_uuid, state_uuid, removed_at=removed_at)
+
+    monkeypatch.setattr(store, "mark_removed", mark_removed)
+    initial = PluginConfig(
+        loxone_history_enabled=True,
+        loxberry_operate_enabled=True,
+        event_history_enabled=True,
+        loxberry_operate_bindings=("binding",),
+        event_history_sources=(source,),
+    )
+
+    class ConfigStore:
+        current = initial
+
+        def load(self) -> PluginConfig:
+            return self.current
+
+        def mutate(self, operation: object) -> PluginConfig:
+            self.current = operation(self.current)  # type: ignore[operator]
+            return self.current
+
+    class AuthStore:
+        def pseudonym(self, *_parts: str) -> str:
+            return "binding"
+
+    class Monitor:
+        def __init__(self) -> None:
+            self.store = store
+
+        async def update_config(self, config: PluginConfig) -> None:
+            if source not in config.event_history_sources:
+                store.end_coverage((source,), ended_at=now - 10, outcome="stopped")
+
+    runtime = LoxBerryOperateRuntime(
+        object(),
+        ConfigStore(),
+        AuthStore(),
+        event_history=Monitor(),  # type: ignore[arg-type]
+    )
+    access = _loxberry_access(HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE)
+    with pytest.raises(tools_module.ControlOperationError, match="outcome is unknown"):
+        await runtime.remove_event_history_source(access, *source)
+    assert source not in runtime._config_store.load().event_history_sources
+
+    assert not await runtime.remove_event_history_source(access, *source)
+    page = store.page(*source, start=now - 20, end=now - 10, limit=10)
+    assert page.has_evidence and page.coverage == "complete"
+    assert page.recording_ended_at is None
 
 
 @pytest.mark.asyncio
