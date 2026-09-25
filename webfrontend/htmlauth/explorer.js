@@ -517,7 +517,7 @@
     const summary = (item) => Array.isArray(item) ? `[${entries(item)}]` : `{${entries(item)}}`;
     const arrayItemPreview = (item) => {
       if (!structured(item) || Array.isArray(item)) return '';
-      for (const field of ['name', 'title', 'label', 'weather_type_text', 'type', 'block_type', 'id', 'uuid']) {
+      for (const field of ['name', 'title', 'label', 'weather_type_text', 'type', 'block_type', 'code', 'id', 'uuid']) {
         if (!Object.prototype.hasOwnProperty.call(item, field)) continue;
         const value = item[field];
         if (typeof value === 'string') {
