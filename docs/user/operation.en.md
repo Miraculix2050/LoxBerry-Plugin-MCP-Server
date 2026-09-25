@@ -47,7 +47,8 @@ argument summary where the tool schema permits one. Selecting an entry still
 opens its result and lets you load the call as a draft. Progress and the outcome
 of the current call appear next to **Run tool**; connection status stays in the
 connection card. The separate **MCP protocol / debug** panel contains the
-bounded request and response transcript for troubleshooting. History and
+bounded request and response transcript for troubleshooting. Expanded entries
+show the local date and time above HTTP status and duration. History and
 transcript remain in the current tab and clear when its session ends.
 
 MCP clients receive the tool descriptions published by the specific installation, including their input and output schemas, through the MCP method `tools/list`. The Tool Explorer reads and visualizes that exact response. **Help** also provides a static HTML reference for the complete tool contract of this plugin version and the same data as a JSON download.
