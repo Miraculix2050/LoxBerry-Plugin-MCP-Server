@@ -656,7 +656,7 @@ def test_explorer_discovery_controls_preserve_selection_and_drafts() -> None:
     assert 'id="explorer-tool-filter-count"' in template
     assert "core.filteredToolGroups(state.tools, state.toolSearch, state.toolGroups)" in source
     assert 'src="explorer-adapters.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-registry-v1"' in template
-    assert 'src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-registry-v1"' in template
+    assert 'src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-registry-v2"' in template
     assert "label('noMatchingTools')" in source
     assert "label('noTools')" in source
     assert "state.toolSearch = elements.toolSearch.value" in handlers
@@ -782,6 +782,13 @@ def test_registry_keeps_tool_hints_out_of_authorization_and_defaults_unknown_saf
     assert "requiredMutationScope &&" in source
     assert "loxone_operate_control" not in source
     assert "loxberry_clear_statistics_cache" not in source
+
+
+def test_explorer_ui_binds_static_registry_in_its_own_scope() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    ui = source[source.index("(function () {\n  'use strict';\n  if (typeof window") :]
+    assert "const adapters = window.McpExplorerAdapters;" in ui
+    assert "adapters.requiredMutationScope(state.selectedTool)" in ui
 
 
 def test_operation_adapter_changes_only_action_parameters() -> None:

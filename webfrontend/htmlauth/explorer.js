@@ -776,6 +776,7 @@
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
 
   const core = window.McpExplorerCore;
+  const adapters = window.McpExplorerAdapters;
   const page = document.getElementById('mcp-explorer');
   if (!page) return;
 
