@@ -49,8 +49,8 @@ Auswahl eines Eintrags öffnet weiterhin sein Ergebnis und erlaubt, den Aufruf
 als Entwurf zu laden. Fortschritt und Ergebnis des aktuellen Aufrufs erscheinen
 bei **Aufruf ausführen**; der Verbindungsstatus bleibt in der Verbindungskarte.
 Der separate Bereich **MCP-Protokoll / Debug** enthält das begrenzte Anfrage-
-und Antworttranskript zur Fehlersuche. Aufgeklappte Einträge zeigen lokale
-Datums- und Uhrzeitangaben über HTTP-Status und Dauer. Verlauf und Transkript bleiben im
+und Antworttranskript zur Fehlersuche. Aufgeklappte Einträge zeigen kompakt
+**Datum/Uhrzeit** über HTTP-Status und Dauer. Verlauf und Transkript bleiben im
 aktuellen Tab und werden beim Ende seiner Sitzung gelöscht.
 
 MCP-Clients erhalten die auf der konkreten Installation veröffentlichten Werkzeugbeschreibungen sowie deren Ein- und Ausgabeschemas über die MCP-Methode `tools/list`. Der Tool Explorer liest genau diese Antwort und visualisiert sie. Unter **Hilfe** stehen außerdem eine statische HTML-Referenz des vollständigen Werkzeugvertrags dieser Plugin-Version und dieselben Daten als JSON-Download bereit.

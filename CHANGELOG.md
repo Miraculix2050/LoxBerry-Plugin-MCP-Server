@@ -8,7 +8,8 @@ extracted from the matching version heading.
 - Show local timestamps and redacted argument summaries in Tool Explorer call
   history, keep MCP protocol details in a separate debug panel, and report each
   call's progress and outcome next to Run. Expanded protocol entries show the
-  local date and time; history summaries prioritize changed arguments.
+  local date and time in compact metadata rows; history summaries prioritize
+  changed arguments.
 
 - Keep the Admin emergency-stop retry button visible after a failed signal load
   and offer another refresh after a successful load, while honoring a supplied
