@@ -1670,6 +1670,7 @@ def dispatch(request: object, *, timing: dict[str, float] | None = None) -> dict
         sections: dict[str, dict[str, Any]] = {}
         for section_action in (
             "get_config",
+            "emergency_stop_cached_options",
             "page_state",
             "service_status",
             "certificate_status",

@@ -80,7 +80,7 @@ window.McpAdmin.createConfiguration = (
     setSummaryBadge(configurationSummaryBadge, ...enabled(configuration?.server?.enabled));
     setSummaryBadge(mqttSummaryBadge, ...enabled(configuration?.mqtt?.enabled));
   };
-  const renderConfiguration = (configuration) => {
+  const renderConfiguration = (configuration, cachedEmergencyStopOptions) => {
     const server = configuration?.server || {};
     const loxone = configuration?.loxone || {};
     const tools = configuration?.tools || {};
@@ -131,11 +131,13 @@ window.McpAdmin.createConfiguration = (
     syncMiniserverSelection();
     syncOperateDependency();
     resetEmergencyStopOptions();
-    void loadCachedEmergencyStopOptions(emergencyStopDiscoveryGeneration);
+    void loadCachedEmergencyStopOptions(
+      emergencyStopDiscoveryGeneration, cachedEmergencyStopOptions,
+    );
     updateMqttBrokerFields();
     renderLogging(configuration);
   };
-  const loadConfiguration = async (suppliedResult) => {
+  const loadConfiguration = async (suppliedResult, cachedEmergencyStopOptions) => {
     if (configurationLoaded || configurationLoadInFlight) return;
     configurationLoadInFlight = true;
     setAjaxStatus('', label('AJAX.WORKING'));
@@ -144,7 +146,7 @@ window.McpAdmin.createConfiguration = (
       body.set('action', 'get_config');
       body.set('ajax', '1');
       const result = await postAjax(body, 7000, suppliedResult);
-      renderConfiguration(result.data.configuration);
+      renderConfiguration(result.data.configuration, cachedEmergencyStopOptions);
       configurationLoaded = true;
       setConfigurationFieldsDisabled(false);
       configurationFallbackLink.hidden = true;
@@ -247,12 +249,12 @@ window.McpAdmin.createConfiguration = (
       );
     }
   };
-  const loadCachedEmergencyStopOptions = async (generation) => {
+  const loadCachedEmergencyStopOptions = async (generation, suppliedResult) => {
     const body = new URLSearchParams();
     body.set('action', 'emergency_stop_cached_options');
     body.set('ajax', '1');
     try {
-      const result = await postAjax(body, 15000);
+      const result = await postAjax(body, 15000, suppliedResult);
       if (generation !== emergencyStopDiscoveryGeneration) return;
       if (result.data.status === 'available') {
         const options = Array.isArray(result.data.options) ? result.data.options : [];
@@ -263,14 +265,15 @@ window.McpAdmin.createConfiguration = (
             ? label('SETUP.EMERGENCY_STOP_CACHED')
             : label('SETUP.EMERGENCY_STOP_NO_OPTIONS');
         emergencyStopStatus.dataset.kind = 'info';
-        emergencyStopStatus.hidden = false;
-        emergencyStopRetry.textContent = label('SETUP.EMERGENCY_STOP_REFRESH');
+        emergencyStopStatus.hidden = !emergencyStopStatus.textContent.trim();
+        emergencyStopRetry.textContent = label('SETUP.EMERGENCY_STOP_REFRESH')
+          || label('SETUP.EMERGENCY_STOP_LOAD');
       } else {
         emergencyStopStatus.textContent = result.data.status === 'not_configured'
           ? label('SETUP.EMERGENCY_STOP_NOT_CONFIGURED')
           : label('SETUP.EMERGENCY_STOP_NOT_LOADED');
         emergencyStopStatus.dataset.kind = 'info';
-        emergencyStopStatus.hidden = false;
+        emergencyStopStatus.hidden = !emergencyStopStatus.textContent.trim();
       }
     } catch {
       if (core.unloading || generation !== emergencyStopDiscoveryGeneration) return;

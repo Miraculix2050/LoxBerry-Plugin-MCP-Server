@@ -229,12 +229,17 @@ def test_page_snapshot_reuses_one_dispatch_and_keeps_section_failures_independen
 
     assert calls == [
         "get_config",
+        "emergency_stop_cached_options",
         "page_state",
         "service_status",
         "certificate_status",
         "list_sessions",
     ]
     assert result["get_config"] == {"ok": True, "data": {"section": "get_config"}}
+    assert result["emergency_stop_cached_options"] == {
+        "ok": True,
+        "data": {"section": "emergency_stop_cached_options"},
+    }
     assert result["page_state"] == {
         "ok": False,
         "error": {"code": "mqtt_unavailable", "message": "MQTT unavailable"},

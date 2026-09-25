@@ -53,7 +53,7 @@ def test_admin_modules_load_in_order_with_versioned_localized_assets() -> None:
         assert "<TMPL_" not in source
         assert (
             f'<script defer src="admin/{name}?v='
-            '<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v9"></script>'
+            '<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v10"></script>'
         ) in markup
         subprocess.run(
             [node, "--check", str(ROOT / "webfrontend/htmlauth/admin" / name)],
@@ -382,7 +382,10 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert "SELECTED_EMERGENCY_STOP => $selected_emergency_stop" in cgi
     assert "body.set('action', 'page_state')" in template
     assert "body.set('action', 'get_config')" in template
-    assert "const loadConfiguration = async (suppliedResult) =>" in template
+    assert (
+        "const loadConfiguration = async (suppliedResult, cachedEmergencyStopOptions) =>"
+        in template
+    )
     assert "const publicOrigin = String(server.public_origin || '')" in template
     assert "String(loxone.endpoint || miniserverEndpoint.value || '')" in template
     assert "setFormValue(mqttConfigForm, 'mqtt_host', mqtt.host);" in template
@@ -453,7 +456,10 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert "const backgroundHydrationQueue = [];" in template
     assert "Promise.resolve()" in template
     assert ".then(task)" in template
-    assert "await loadConfiguration(sections?.get_config);" in template
+    assert (
+        "await loadConfiguration(sections?.get_config, sections?.emergency_stop_cached_options);"
+        in template
+    )
     assert "await loadInitialState(sections?.page_state);" in template
     assert (
         "await pollServiceStatus({initial: true, suppliedResult: sections?.service_status});"
@@ -815,7 +821,7 @@ def test_admin_summary_badges_follow_authoritative_ui_state() -> None:
     ):
         assert f'id="{badge_id}"' in template
     assert ".mcp-service-badge[hidden] { display: none; }" in css
-    assert "renderConfiguration(result.data.configuration);" in template
+    assert "renderConfiguration(result.data.configuration, cachedEmergencyStopOptions);" in template
     assert "renderConfigurationBadges(data.configuration);" in template
     assert (
         "if (savedPublicOrigin !== nextPublicOrigin) certificate.refreshAfterOriginChange();"
@@ -1867,10 +1873,16 @@ const document = {createElement: () => ({})};
 const timers = [];
 const window = {setTimeout: (callback) => { timers.push(callback); }};
 const core = {unloading: false};
-const label = (key) => key;
+let missingCachedLabel = false;
+const label = (key) => missingCachedLabel && key === 'SETUP.EMERGENCY_STOP_CACHED'
+  ? '' : key;
 let response = {data: {status: 'unavailable', options: [], failure_text: 'connection failed'}};
 const actions = [];
-let postAjax = async (body) => { actions.push(body.get('action')); return response; };
+let postAjax = async (body, _timeout, supplied) => {
+  if (supplied !== undefined) return supplied;
+  actions.push(body.get('action'));
+  return response;
+};
 eval(source.slice(start, end) + `
 (async () => {
   resetEmergencyStopOptions();
@@ -1880,6 +1892,19 @@ eval(source.slice(start, end) + `
   assert.equal(actions.at(-1), 'emergency_stop_cached_options');
   assert.equal(emergencyStopStatus.textContent, 'SETUP.EMERGENCY_STOP_CACHED');
   assert.equal(emergencyStopRetry.textContent, 'SETUP.EMERGENCY_STOP_REFRESH');
+  assert(options.some((option) => option.value === 'saved' && option.selected));
+
+  missingCachedLabel = true;
+  await loadCachedEmergencyStopOptions(emergencyStopDiscoveryGeneration);
+  assert.equal(emergencyStopStatus.hidden, true);
+  missingCachedLabel = false;
+
+  const requestCount = actions.length;
+  await loadCachedEmergencyStopOptions(emergencyStopDiscoveryGeneration, {
+    ok: true, data: {status: 'available', cached: true,
+      options: [{uuid: 'saved', name: 'Snapshot signal'}]},
+  });
+  assert.equal(actions.length, requestCount);
   assert(options.some((option) => option.value === 'saved' && option.selected));
 
   response = {data: {status: 'available', cached: true, stale: true,

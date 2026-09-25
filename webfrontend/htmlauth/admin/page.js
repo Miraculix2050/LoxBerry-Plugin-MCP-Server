@@ -64,13 +64,13 @@
         const body = new URLSearchParams();
         body.set('action', 'page_snapshot');
         body.set('ajax', '1');
-        // The helper performs five reads in sequence. Allow their combined
+        // The helper performs six reads in sequence. Allow their combined
         // budget before falling back to the individual endpoints.
         sections = (await postAjax(body, 60000)).data;
       } catch {
         // An older or temporarily unavailable helper falls back to individual reads.
       }
-      await loadConfiguration(sections?.get_config);
+      await loadConfiguration(sections?.get_config, sections?.emergency_stop_cached_options);
       await loadInitialState(sections?.page_state);
       await pollServiceStatus({initial: true, suppliedResult: sections?.service_status});
       await loadCertificateStatus(sections?.certificate_status);
