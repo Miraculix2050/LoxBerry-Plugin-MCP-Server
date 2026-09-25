@@ -515,6 +515,20 @@
     };
     const structured = (item) => item !== null && typeof item === 'object';
     const summary = (item) => Array.isArray(item) ? `[${entries(item)}]` : `{${entries(item)}}`;
+    const arrayItemPreview = (item) => {
+      if (!structured(item) || Array.isArray(item)) return '';
+      for (const field of ['name', 'title', 'label', 'type', 'id', 'uuid']) {
+        if (!Object.prototype.hasOwnProperty.call(item, field)) continue;
+        const value = item[field];
+        if (typeof value === 'string' && value.trim()) {
+          const chars = Array.from(value.trim());
+          return ` ${JSON.stringify(chars.slice(0, 80).join('') + (chars.length > 80 ? '…' : ''))}`;
+        }
+        if (typeof value === 'number' && Number.isFinite(value)) return ` ${value}`;
+        if (typeof value === 'boolean') return ` ${value}`;
+      }
+      return '';
+    };
 
     function renderList(item, path, depth, initial) {
       const list = node('ul');
@@ -531,7 +545,7 @@
           rendered += 1;
           if (initialBatch) initialCount += 1;
           list.append(renderEntry(key, child, [...path, key], depth + 1,
-            initialBatch && !Array.isArray(item)));
+            initialBatch && !Array.isArray(item), Array.isArray(item)));
         }
         if (rendered < count) list.append(moreRow);
         else moreRow.remove();
@@ -542,13 +556,13 @@
       return list;
     }
 
-    function renderEntry(key, item, path, depth, initial) {
+    function renderEntry(key, item, path, depth, initial, arrayChild) {
       const row = node('li', 'mcp-explorer-tree-entry');
       const controls = node('div', 'mcp-explorer-tree-row');
       row.append(controls);
       if (!structured(item) || entries(item) === 0) {
         const choose = node('button', 'mcp-explorer-value',
-          `${String(key)}: ${structured(item) ? summary(item) : JSON.stringify(item)}`);
+          `${String(key)}: ${structured(item) ? summary(item) : item === null ? '-' : JSON.stringify(item)}`);
         choose.type = 'button';
         choose.title = labels.selectValue;
         choose.addEventListener('click', () => onTransfer(item, path));
@@ -558,10 +572,11 @@
       const disclosure = node('button', 'mcp-explorer-tree-toggle');
       disclosure.type = 'button';
       disclosure.setAttribute('aria-expanded', 'false');
+      const caption = `${String(key)} ${summary(item)}${arrayChild ? arrayItemPreview(item) : ''}`;
       const updateDisclosure = (open) => {
-        disclosure.textContent = `${open ? '▾' : '▸'} ${String(key)} ${summary(item)}`;
+        disclosure.textContent = `${open ? '▾' : '▸'} ${caption}`;
         disclosure.setAttribute('aria-expanded', String(open));
-        disclosure.setAttribute('aria-label', `${open ? labels.collapseResult : labels.expandResult}: ${String(key)} ${summary(item)}`);
+        disclosure.setAttribute('aria-label', `${open ? labels.collapseResult : labels.expandResult}: ${caption}`);
       };
       updateDisclosure(false);
       disclosure.addEventListener('click', () => {
@@ -671,8 +686,9 @@
     if (elements.transfer.open) elements.transfer.close();
     elements.resultContext.textContent = '';
     elements.resultContext.hidden = true;
-    elements.historyArguments.replaceChildren();
+    elements.historyArgumentsValue.textContent = '';
     elements.historyArguments.hidden = true;
+    elements.historyArguments.open = false;
     elements.resultTree.replaceChildren();
     elements.resultRaw.textContent = '';
     elements.rawDetails.open = false;
@@ -796,6 +812,7 @@
     toolsPanel: document.getElementById('explorer-tools-panel'),
     historyPanel: document.getElementById('explorer-history-panel'),
     selectedTool: document.getElementById('explorer-selected-tool'),
+    requestSelection: document.getElementById('explorer-request-selection'),
     toolSearch: document.getElementById('explorer-tool-search'),
     toolFilters: document.getElementById('explorer-tool-filters'),
     toolFilterCount: document.getElementById('explorer-tool-filter-count'),
@@ -819,6 +836,7 @@
     nextPage: document.getElementById('explorer-next-page'),
     resultContext: document.getElementById('explorer-result-context'),
     historyArguments: document.getElementById('explorer-history-arguments'),
+    historyArgumentsValue: document.getElementById('explorer-history-arguments-value'),
     restoreHistory: document.getElementById('explorer-restore-history'),
     resultTree: document.getElementById('explorer-result-tree'),
     rawDetails: document.getElementById('explorer-raw-details'),
@@ -906,12 +924,14 @@
   }
 
   function revealRequest(focus, force) {
+    elements.request.open = true;
     if (!force && !narrowViewport.matches) return;
     if (focus) elements.request.focus({preventScroll: true});
     elements.request.scrollIntoView({behavior: scrollBehavior(), block: 'start'});
   }
 
   function revealResult() {
+    elements.result.open = true;
     elements.result.focus({preventScroll: true});
     elements.result.scrollIntoView({behavior: scrollBehavior(), block: 'start'});
   }
@@ -1334,6 +1354,8 @@
       ? `(${state.toolGroups.length})` : `(${label('filterAll')})`;
     elements.selectedTool.textContent = state.selectedTool ? `— ${state.selectedTool.name}` : '';
     elements.selectedTool.hidden = !state.selectedTool;
+    elements.requestSelection.textContent = state.selectedTool ? `— ${state.selectedTool.name}` : '';
+    elements.requestSelection.hidden = !state.selectedTool;
     if (!state.tools.length) {
       elements.tools.append(element('p', {className: 'mcp-explorer-muted', text: label('noTools')}));
       return;
@@ -1393,6 +1415,7 @@
     elements.json.value = saved.json;
     renderTools();
     renderSelectedTool();
+    if (state.selectedTool) elements.request.open = true;
   }
 
   function setDraftField(name, included, value) {
@@ -1626,6 +1649,7 @@
   }
 
   function renderResult(result, context) {
+    elements.result.open = true;
     state.lastResult = result;
     state.hasResult = true;
     state.lastResultContext = context ? core.clone(context) : null;
@@ -1644,14 +1668,12 @@
     elements.resultContext.hidden = !context;
     elements.restoreHistory.hidden = !historySource;
     elements.historyArguments.hidden = !historySource;
-    elements.historyArguments.replaceChildren();
+    elements.historyArguments.open = false;
+    elements.historyArgumentsValue.textContent = '';
     if (historySource) {
       const historyTool = state.tools.find((tool) => tool.name === context.tool);
       const argumentsValue = core.redactArguments(context.arguments || {}, historyTool && historyTool.inputSchema);
-      elements.historyArguments.append(
-        element('strong', {text: label('historyArguments')}),
-        element('pre', {className: 'mcp-explorer-pre', text: JSON.stringify(argumentsValue, null, 2)}),
-      );
+      elements.historyArgumentsValue.textContent = JSON.stringify(argumentsValue, null, 2);
     }
     elements.rawDetails.open = false;
     elements.resultRaw.textContent = '';

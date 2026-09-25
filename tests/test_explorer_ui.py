@@ -48,6 +48,12 @@ def test_explorer_uses_one_compact_mobile_tool_panel_and_adaptive_workspace() ->
     assert template.count('id="explorer-history"') == 1
     assert '<details id="explorer-tools-panel" class="mcp-explorer-card" open>' in template
     assert '<details id="explorer-history-panel" class="mcp-explorer-card" open>' in template
+    assert (
+        '<details id="explorer-request" class="mcp-explorer-card" tabindex="-1" open>' in template
+    )
+    assert '<details id="explorer-result" class="mcp-explorer-card" tabindex="-1" open>' in template
+    assert "<summary><TMPL_VAR EXPLORER.SELECTED_TOOL>" in template
+    assert '<details id="explorer-history-arguments" hidden>' in template
     assert 'class="mcp-explorer-panel-label"' in template
     assert 'id="explorer-request"' in template
     assert 'id="explorer-result"' in template
@@ -90,6 +96,34 @@ def test_tool_badges_are_localized_through_the_explorer_template() -> None:
     assert "core.toolIsMutating(tool)" in render_tools
     assert "text: 'read-only'" not in render_tools
     assert "text: 'write'" not in render_tools
+
+
+def test_request_result_and_history_arguments_reopen_on_relevant_actions() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
+    german = (ROOT / "templates/lang/language_de.ini").read_text(encoding="utf-8")
+    english = (ROOT / "templates/lang/language_en.ini").read_text(encoding="utf-8")
+    select_tool = source[
+        source.index("function selectTool(") : source.index("function setDraftField(")
+    ]
+    render_result = source[
+        source.index("function renderResult(") : source.index("function transcriptEntry(")
+    ]
+
+    assert "SELECTED_TOOL=Ausgewähltes Tool" in german
+    assert "SELECTED_TOOL=Selected tool" in english
+    assert 'id="explorer-request-selection"' in template
+    assert 'id="explorer-history-arguments-value"' in template
+    assert "if (state.selectedTool) elements.request.open = true" in select_tool
+    assert "elements.result.open = true" in render_result
+    assert "elements.historyArguments.open = false" in render_result
+    assert "elements.historyArgumentsValue.textContent = ''" in render_result
+    assert (
+        "elements.result.open = true"
+        in source[
+            source.index("function revealResult()") : source.index("function syncResponsivePanels")
+        ]
+    )
 
 
 def test_tool_metadata_labels_are_localized_and_inspectable() -> None:
@@ -254,6 +288,41 @@ def test_result_inspector_empty_scalar_and_error_values() -> None:
     assert result[1]["text"] == ["[0]"]
     assert result[2]["text"] == ["{0}"]
     assert result[3]["items"] >= 2
+
+
+def test_result_inspector_array_object_preview_and_null_display() -> None:
+    result = run_inspector("""
+      const tree = inspect({items:[
+        {name:'  Kitchen  ',type:'Switch',uuid:'a'},
+        {name:' ',title:'Overview',type:'Page'},
+        {label:'Etage'}, {type:'Light'}, {id:0}, {uuid:'abc'},
+        {name:null,other:1}, null, 'plain',
+        {name:'X'.repeat(90)}
+      ], ordinary:{name:'No preview'}, missing:null});
+      const items = walk(tree).find(node => node.tag === 'button' &&
+        node.textContent.includes('items [10]'));
+      items.click();
+      const captions = walk(tree).filter(node => node.className ===
+        'mcp-explorer-tree-toggle').map(node => node.textContent);
+      const values = walk(tree).filter(node => node.className ===
+        'mcp-explorer-value').map(node => node.textContent);
+      walk(tree).find(node => node.className === 'mcp-explorer-value' &&
+        node.textContent === '7: -').click();
+      return {captions,values,transfers};
+    """)
+    assert any(text.endswith('0 {3} "Kitchen"') for text in result["captions"])
+    assert any(text.endswith('1 {3} "Overview"') for text in result["captions"])
+    assert any(text.endswith('2 {1} "Etage"') for text in result["captions"])
+    assert any(text.endswith('3 {1} "Light"') for text in result["captions"])
+    assert any(text.endswith("4 {1} 0") for text in result["captions"])
+    assert any(text.endswith('5 {1} "abc"') for text in result["captions"])
+    assert any(text.endswith("6 {2}") for text in result["captions"])
+    assert any(text.endswith("ordinary {1}") for text in result["captions"])
+    assert any('9 {1} "' + "X" * 80 in text for text in result["captions"])
+    assert "7: -" in result["values"]
+    assert '8: "plain"' in result["values"]
+    assert "missing: -" in result["values"]
+    assert result["transfers"] == [{"selected": None, "path": ["items", 7]}]
 
 
 def test_result_inspector_uses_the_same_history_path_and_lazy_complete_json() -> None:
@@ -657,7 +726,7 @@ def test_explorer_discovery_controls_preserve_selection_and_drafts() -> None:
     assert 'id="explorer-tool-filter-count"' in template
     assert "core.filteredToolGroups(state.tools, state.toolSearch, state.toolGroups)" in source
     assert 'src="explorer-adapters.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-registry-v1"' in template
-    assert 'src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-registry-v2"' in template
+    assert 'src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-collapsible-v1"' in template
     assert "label('noMatchingTools')" in source
     assert "label('noTools')" in source
     assert "state.toolSearch = elements.toolSearch.value" in handlers
@@ -1163,7 +1232,8 @@ def test_explorer_session_clear_removes_sensitive_dom_content() -> None:
         confirmArguments:text(),confirm:dialog(),transferSource:text(),
         transferContext:text(),transferTool:list(),transferField:list(),
         transferEmpty:{hidden:true},transferApply:{disabled:false},transfer:dialog(),
-        resultContext:text(),historyArguments:list(),restoreHistory:{hidden:false},
+        resultContext:text(),historyArguments:{hidden:false,open:true},
+        historyArgumentsValue:text(),restoreHistory:{hidden:false},
         resultTree:list(),resultRaw:text(),rawDetails:{open:true},
         validation:text(),callFeedback:text()};
       core.clearSensitiveDom(elements);
@@ -1179,8 +1249,9 @@ def test_explorer_session_clear_removes_sensitive_dom_content() -> None:
         transferApply:elements.transferApply.disabled,transferOpen:elements.transfer.open,
         resultContext:elements.resultContext.textContent,
         resultContextHidden:elements.resultContext.hidden,
-        historyArguments:elements.historyArguments.children,
+        historyArguments:elements.historyArgumentsValue.textContent,
         historyArgumentsHidden:elements.historyArguments.hidden,
+        historyArgumentsOpen:elements.historyArguments.open,
         restoreHistory:elements.restoreHistory.hidden,
         resultTree:elements.resultTree.children,
         resultRaw:elements.resultRaw.textContent,
@@ -1206,8 +1277,9 @@ def test_explorer_session_clear_removes_sensitive_dom_content() -> None:
         "transferOpen": False,
         "resultContext": "",
         "resultContextHidden": True,
-        "historyArguments": [],
+        "historyArguments": "",
         "historyArgumentsHidden": True,
+        "historyArgumentsOpen": False,
         "restoreHistory": True,
         "resultTree": [],
         "resultRaw": "",
@@ -1521,9 +1593,9 @@ def test_explorer_history_and_call_feedback_are_separate_from_connection() -> No
     assert template.index('id="explorer-result"') < template.index(
         'id="explorer-transcript-details"'
     )
-    assert template.index("</section>", template.index('id="explorer-result"')) < template.index(
-        'id="explorer-transcript-details"'
-    )
+    assert template.index(
+        "</details>", template.index('id="explorer-raw-details"')
+    ) < template.index('id="explorer-transcript-details"')
     assert "TRANSCRIPT=MCP protocol / debug" in (ROOT / "templates/lang/language_en.ini").read_text(
         encoding="utf-8"
     )
