@@ -165,6 +165,54 @@ def test_busy_coordinator_offers_short_manual_retry(
     assert isinstance(result.retry_not_before, int)
 
 
+def test_admin_signal_discovery_waits_for_busy_authentication_phases(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    coordinator = MiniserverAuthCoordinator(tmp_path / "auth-diagnostics.json")
+    waits: list[float] = []
+
+    async def credentials(_self: EmergencyStopMonitor) -> tuple[str, str]:
+        return "user", "password"
+
+    class Token:
+        def destroy(self) -> None:
+            pass
+
+    class Session:
+        async def load_structure(self) -> SimpleNamespace:
+            return SimpleNamespace(controls=[])
+
+        async def close(self) -> None:
+            pass
+
+    class Client:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        async def acquire_token(self, _username: str, _password: str) -> Token:
+            await asyncio.sleep(0.05)
+            return Token()
+
+        async def open_session(self, _token: Token) -> Session:
+            return Session()
+
+    async def record_attempt(operation, **kwargs):
+        waits.append(kwargs["busy_wait_seconds"])
+        return await operation()
+
+    monkeypatch.setattr(EmergencyStopMonitor, "_credentials", credentials)
+    monkeypatch.setattr("mcpserver.emergency_stop.LoxoneClient", Client)
+    monkeypatch.setattr("mcpserver.emergency_stop._ADMIN_AUTH_BUSY_WAIT_SECONDS", 0.2)
+    monkeypatch.setattr(coordinator, "attempt", record_attempt)
+    result = asyncio.run(
+        virtual_status_options(PluginConfig(loxone_endpoint="http://192.168.1.10"), coordinator)
+    )
+    assert result.status == "available"
+    assert len(waits) == 2
+    assert 0.15 < waits[0] <= 0.2
+    assert 0 <= waits[1] < waits[0] - 0.03
+
+
 def test_emergency_stop_enables_only_for_a_confirmed_one_value() -> None:
     monitor = EmergencyStopMonitor(
         PluginConfig(emergency_stop_virtual_status_uuid="00112233-4455-6677-8899aabbccddeeff")

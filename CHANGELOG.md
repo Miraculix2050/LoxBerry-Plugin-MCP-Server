@@ -15,6 +15,8 @@ extracted from the matching version heading.
   share one explicit Miniserver refresh among concurrent administrators. Page
   reloads read only the local cache, including the server-rendered fallback. The
   initial Admin snapshot includes the cached list without a second CGI request.
+  Explicit signal loads wait briefly for another Miniserver sign-in before
+  reporting that authentication is busy.
 
 - Keep the Admin emergency-stop retry button visible after a failed signal load
   and offer another refresh after a successful load, while honoring a supplied

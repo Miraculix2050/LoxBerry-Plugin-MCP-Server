@@ -8,12 +8,16 @@ import time
 from pathlib import Path
 from uuid import UUID
 
+import pytest
+
 from mcpserver.emergency_options_cache import EmergencyOptionsCache
 
 _UUID = str(UUID("00000000-0000-0000-0000-000000000123"))
 
 
-def _refresh_worker(auth_path: str, marker: str, start: object, results: object) -> None:
+def _refresh_worker(
+    auth_path: str, marker: str, start: object, results: object, available: bool
+) -> None:
     cache = EmergencyOptionsCache(Path(auth_path), "profile-a")
     start.wait()
 
@@ -21,7 +25,15 @@ def _refresh_worker(auth_path: str, marker: str, start: object, results: object)
         with Path(marker).open("a", encoding="utf-8") as handle:
             handle.write("discovery\n")
         time.sleep(0.3)
-        return {"status": "available", "options": [{"uuid": _UUID, "name": "Signal"}]}
+        return (
+            {"status": "available", "options": [{"uuid": _UUID, "name": "Signal"}]}
+            if available
+            else {
+                "status": "unavailable",
+                "options": [],
+                "discovery_failure_code": "connection_failed",
+            }
+        )
 
     results.put(cache.refresh(discover))
 
@@ -33,14 +45,17 @@ def _lock_worker(auth_path: str, acquired: object) -> None:
         time.sleep(30)
 
 
-def test_concurrent_admin_refreshes_share_one_discovery(tmp_path: Path) -> None:
+@pytest.mark.parametrize("available", [True, False])
+def test_concurrent_admin_refreshes_share_one_discovery(tmp_path: Path, available: bool) -> None:
     context = multiprocessing.get_context("spawn")
     start = context.Event()
     results = context.Queue()
     marker = tmp_path / "attempts.txt"
     auth_path = tmp_path / "auth.json"
     processes = [
-        context.Process(target=_refresh_worker, args=(str(auth_path), str(marker), start, results))
+        context.Process(
+            target=_refresh_worker, args=(str(auth_path), str(marker), start, results, available)
+        )
         for _ in range(2)
     ]
     for process in processes:
@@ -53,7 +68,8 @@ def test_concurrent_admin_refreshes_share_one_discovery(tmp_path: Path) -> None:
             process.join(timeout=2)
         assert process.exitcode == 0
     assert marker.read_text(encoding="utf-8").splitlines() == ["discovery"]
-    assert all(results.get(timeout=2)["status"] == "available" for _ in processes)
+    expected_status = "available" if available else "unavailable"
+    assert all(results.get(timeout=2)["status"] == expected_status for _ in processes)
 
 
 def test_last_good_options_survive_failed_refresh_and_profile_change(tmp_path: Path) -> None:

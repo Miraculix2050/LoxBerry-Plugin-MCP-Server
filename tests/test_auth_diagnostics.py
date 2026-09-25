@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -83,6 +85,72 @@ async def test_interprocess_authentication_attempt_is_suppressed_without_waiting
         await coordinator.attempt(must_not_run, owner="tool_request", phase="session_establishment")
 
     assert calls == 0
+
+
+@pytest.mark.asyncio
+async def test_admin_authentication_waits_for_shared_lock(tmp_path: Path) -> None:
+    path = (tmp_path / "auth-diagnostics.json").resolve()
+    coordinator = MiniserverAuthCoordinator(path)
+    lock_path = path.with_name(f".{path.name}.lock")
+    acquired = threading.Event()
+    release = threading.Event()
+
+    def hold_lock() -> None:
+        with _interprocess_lock(lock_path):
+            acquired.set()
+            release.wait(timeout=3)
+
+    holder = threading.Thread(target=hold_lock, daemon=True)
+    holder.start()
+    try:
+        assert await asyncio.to_thread(acquired.wait, 2)
+
+        async def finish_other_attempt() -> None:
+            await asyncio.sleep(0.2)
+            release.set()
+
+        release_task = asyncio.create_task(finish_other_attempt())
+        started = time.monotonic()
+
+        async def authenticated() -> str:
+            return "authenticated"
+
+        result = await coordinator.attempt(
+            authenticated,
+            owner="local_admin",
+            phase="token_acquisition",
+            busy_wait_seconds=1,
+        )
+        await release_task
+        assert result == "authenticated"
+        assert time.monotonic() - started >= 0.15
+    finally:
+        release.set()
+        holder.join(timeout=3)
+    assert not holder.is_alive()
+
+
+@pytest.mark.asyncio
+async def test_admin_authentication_reports_busy_after_wait_timeout(tmp_path: Path) -> None:
+    path = (tmp_path / "auth-diagnostics.json").resolve()
+    coordinator = MiniserverAuthCoordinator(path)
+    called = False
+
+    async def must_not_run() -> None:
+        nonlocal called
+        called = True
+
+    lock_path = path.with_name(f".{path.name}.lock")
+    started = time.monotonic()
+    with _interprocess_lock(lock_path), pytest.raises(MiniserverAuthenticationSuppressed):
+        await coordinator.attempt(
+            must_not_run,
+            owner="local_admin",
+            phase="token_acquisition",
+            busy_wait_seconds=0.2,
+        )
+    assert time.monotonic() - started >= 0.18
+    assert not called
 
 
 @pytest.mark.asyncio

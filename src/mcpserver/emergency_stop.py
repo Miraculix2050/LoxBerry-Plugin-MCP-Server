@@ -29,6 +29,7 @@ from mcpserver.loxone.client import (
 )
 
 _LOGGER = logging.getLogger("mcpserver.emergency_stop")
+_ADMIN_AUTH_BUSY_WAIT_SECONDS = 15
 
 
 async def _acquire_token(client: LoxoneClient, username: str, password: str) -> LoxoneToken:
@@ -288,6 +289,7 @@ async def virtual_status_options(
             timeout_seconds=config.connection_timeout,
         )
         stage = "token"
+        auth_wait_deadline = time.monotonic() + _ADMIN_AUTH_BUSY_WAIT_SECONDS
         if auth_coordinator is None:
             token = await client.acquire_token(username, password)
         else:
@@ -296,6 +298,7 @@ async def virtual_status_options(
                 owner="local_admin",
                 phase="token_acquisition",
                 allow_cooldown_probe=manual_retry,
+                busy_wait_seconds=max(0.0, auth_wait_deadline - time.monotonic()),
             )
         stage = "session"
         if auth_coordinator is None:
@@ -306,6 +309,7 @@ async def virtual_status_options(
                 owner="local_admin",
                 phase="session_establishment",
                 allow_cooldown_probe=manual_retry,
+                busy_wait_seconds=max(0.0, auth_wait_deadline - time.monotonic()),
             )
         stage = "structure"
         structure = await session.load_structure()
