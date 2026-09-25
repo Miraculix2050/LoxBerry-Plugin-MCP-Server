@@ -515,24 +515,46 @@
     };
     const structured = (item) => item !== null && typeof item === 'object';
     const summary = (item) => Array.isArray(item) ? `[${entries(item)}]` : `{${entries(item)}}`;
+    const clippedText = (value, limit) => {
+      if (typeof value !== 'string') return '';
+      let preview = '';
+      let length = 0;
+      let truncated = false;
+      for (const char of value) {
+        if (!preview && /\s/u.test(char)) continue;
+        if (length === limit) { truncated = true; break; }
+        preview += char;
+        length += 1;
+      }
+      preview = preview.trimEnd();
+      return preview ? preview + (truncated ? '…' : '') : '';
+    };
+    const relationPreview = (source, target) => {
+      const from = clippedText(source, 37);
+      const to = clippedText(target, 37);
+      return from && to ? `${from} \u2192 ${to}` : undefined;
+    };
     const arrayItemPreview = (item) => {
       if (!structured(item) || Array.isArray(item)) return '';
+      const own = (field) => Object.prototype.hasOwnProperty.call(item, field) ? item[field] : undefined;
+      const control = own('control');
+      const controlName = structured(control) && !Array.isArray(control) &&
+        Object.prototype.hasOwnProperty.call(control, 'name') ? control.name : undefined;
       // Keep timestamp last so a descriptive label or identifier wins when available.
-      for (const field of ['name', 'title', 'label', 'weather_type_text', 'type', 'block_type', 'component', 'code', 'id', 'uuid', 'timestamp']) {
-        if (!Object.prototype.hasOwnProperty.call(item, field)) continue;
-        const value = item[field];
+      const candidates = [
+        own('name'), own('title'), own('label'), own('control_name'), own('state_name'),
+        controlName, own('weather_type_text'), own('type'), own('block_type'),
+        own('component'), own('finding_type'), own('strategy'),
+        relationPreview(own('source'), own('target')),
+        relationPreview(own('source_project_node_id'), own('target_project_node_id')),
+        own('code'), own('model_source_id'), own('classification'), own('kind'),
+        own('interpretation'), own('state_uuid'), own('id'), own('uuid'),
+        own('observed_at'), own('at'), own('timestamp')
+      ];
+      for (const value of candidates) {
         if (typeof value === 'string') {
-          let preview = '';
-          let length = 0;
-          let truncated = false;
-          for (const char of value) {
-            if (!preview && /\s/u.test(char)) continue;
-            if (length === 80) { truncated = true; break; }
-            preview += char;
-            length += 1;
-          }
-          preview = preview.trimEnd();
-          if (preview) return ` ${JSON.stringify(preview + (truncated ? '…' : ''))}`;
+          const preview = clippedText(value, 80);
+          if (preview) return ` ${JSON.stringify(preview)}`;
         }
         if (typeof value === 'number' && Number.isFinite(value)) return ` ${value}`;
         if (typeof value === 'boolean') return ` ${value}`;

@@ -164,7 +164,9 @@ def run_core(expression: str) -> object:
     program = (
         f"const core=require({json.dumps(str(SCRIPT))}); console.log(JSON.stringify({expression}));"
     )
-    result = subprocess.run([node, "-e", program], check=True, capture_output=True, text=True)
+    result = subprocess.run(
+        [node, "-e", program], check=True, capture_output=True, text=True, encoding="utf-8"
+    )
     return json.loads(result.stdout)
 
 
@@ -334,6 +336,49 @@ def test_result_inspector_array_object_preview_and_null_display() -> None:
     assert '8: "plain"' in result["values"]
     assert "missing: -" in result["values"]
     assert result["transfers"] == [{"selected": None, "path": ["items", 7]}]
+
+
+def test_result_inspector_previews_nested_names_and_relationship_arrays() -> None:
+    captions = run_inspector("""
+      const tree = inspect({items:[
+        {control:{name:'Boiler'},state:{value:1}},
+        {control_name:'Heating',control_uuid:'a'},
+        {state_name:'Temperature',state_uuid:'b'},
+        {model_source_id:'source-1'},
+        {finding_type:'datatype_conflict',finding_id:'finding-1'},
+        {strategy:'record_on_change'},
+        {source:'node-a',target:'node-b',kind:'signal'},
+        {source_project_node_id:'node-c',target_project_node_id:'node-d',classification:'knx_to_loxone'},
+        {observed_at:'2026-09-25T12:00:00Z'},
+        {state_uuid:'state-1'},
+        {interpretation:'rising_edge'},
+        {classification:'knx_to_loxone'},
+        {kind:'reference'},
+        {at:'2026-09-26T12:00:00Z'}
+      ]});
+      walk(tree).find(node => node.tag === 'button' &&
+        node.textContent.includes('items [14]')).click();
+      return walk(tree).filter(node => node.className ===
+        'mcp-explorer-tree-toggle').map(node => node.textContent);
+    """)
+    expected = [
+        '0 {2} "Boiler"',
+        '1 {2} "Heating"',
+        '2 {2} "Temperature"',
+        '3 {1} "source-1"',
+        '4 {2} "datatype_conflict"',
+        '5 {1} "record_on_change"',
+        '6 {3} "node-a → node-b"',
+        '7 {3} "node-c → node-d"',
+        '8 {1} "2026-09-25T12:00:00Z"',
+        '9 {1} "state-1"',
+        '10 {1} "rising_edge"',
+        '11 {1} "knx_to_loxone"',
+        '12 {1} "reference"',
+        '13 {1} "2026-09-26T12:00:00Z"',
+    ]
+    for label in expected:
+        assert any(caption.endswith(label) for caption in captions)
 
 
 def test_result_inspector_uses_the_same_history_path_and_lazy_complete_json() -> None:

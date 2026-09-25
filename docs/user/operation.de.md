@@ -41,9 +41,16 @@ Sicherheitsgarantie; die vollständigen Annotationen stehen unter
 Daneben stehen die für bekannte Werkzeuge benötigten OAuth-Scopes. Die tatsächlich
 gewährten Scopes dieser Sitzung bleiben in der Verbindungskarte sichtbar.
 Lange Werkzeugbeschreibungen lassen sich in der kompakten Zusammenfassung aufklappen.
+**Ausgewähltes Tool** und **Ergebnis** lassen sich einklappen und öffnen sich bei
+einer passenden Auswahl beziehungsweise einem neuen Ergebnis wieder. Bei einem
+Verlaufsergebnis stehen **Verwendete Parameter** in einem eigenen Aufklappbereich.
 Ergebnisse und Verlaufseinträge erscheinen als aufklappbarer Baum. Große Zweige zeigen
 jeweils 100 Einträge; **Weitere anzeigen** lädt die nächsten. Der Pfeil öffnet einen
 Zweig, die separate Wert-Schaltfläche übernimmt dessen unveränderten Wert und Pfad.
+Objekte in Listen zeigen nach Möglichkeit einen kurzen Namen, Typ, Bezeichner oder
+bei Beziehungen Quelle und Ziel. Zeitangaben sind der letzte Ersatz, wenn nichts
+Aussagekräftigeres vorhanden ist. `null` erscheint im Baum als `-`; beim Kopieren
+und Übernehmen bleibt der ursprüngliche Wert erhalten.
 Die vollständige Antwort bleibt unter **JSON** sichtbar und über **JSON kopieren** verfügbar.
 Der Aufrufverlauf zeigt lokale Uhrzeit, Dauer, Ergebnis und eine kurze,
 geschwärzte Parameterübersicht, soweit das Werkzeugschema sie erlaubt. Die
