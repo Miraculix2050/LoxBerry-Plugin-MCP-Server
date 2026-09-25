@@ -131,6 +131,8 @@ details.mcp-explorer-card[open] > summary { border-bottom: 1px solid #d7dadd; }
 .mcp-explorer-history button { display: grid; gap: .15rem; min-width: 0; padding: .55rem; text-align: left; border: 1px solid #ddd; background: #fff; overflow-wrap: anywhere; }
 .mcp-explorer-history-arguments { font: .85rem ui-monospace, SFMono-Regular, Consolas, monospace; overflow-wrap: anywhere; }
 .mcp-explorer-protocol { grid-column: 1 / -1; }
+.mcp-explorer-protocol-meta { display: grid; gap: .1rem; margin: .35rem 0 .45rem; color: #4f5660; font-size: .875rem; line-height: 1.3; }
+.mcp-explorer-protocol-meta p { margin: 0; }
 .mcp-explorer-muted { color: #5f6368; }
 .mcp-explorer-dialog select { box-sizing: border-box; width: 100%; min-height: 2.75rem; }
 @media (min-width: 80rem) {

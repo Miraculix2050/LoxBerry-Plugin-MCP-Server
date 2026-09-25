@@ -1771,8 +1771,10 @@
     details.append(element('summary', {text: `${entry.method} — ${entry.status} — ${entry.duration} ms`}));
     details.addEventListener('toggle', () => {
       if (!details.open) return;
-      details.append(element('p', {text: `${label('dateTime')}: ${new Date(entry.at).toLocaleString()}`}));
-      details.append(element('p', {text: `${label('status')}: ${entry.status}; ${label('duration')}: ${entry.duration} ms`}));
+      details.append(element('div', {className: 'mcp-explorer-protocol-meta'}, [
+        element('p', {text: `${label('dateTime')}: ${new Date(entry.at).toLocaleString()}`}),
+        element('p', {text: `${label('status')}: ${entry.status}; ${label('duration')}: ${entry.duration} ms`}),
+      ]));
       details.append(element('strong', {text: label('request')}));
       details.append(element('pre', {className: 'mcp-explorer-pre', text: JSON.stringify(entry.request, null, 2)}));
       details.append(element('strong', {text: label('response')}));

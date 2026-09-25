@@ -642,7 +642,7 @@ def test_explorer_discovery_controls_preserve_selection_and_drafts() -> None:
     assert template.count('type="checkbox" data-tool-group="') == 6
     assert 'id="explorer-tool-filter-count"' in template
     assert "core.filteredToolGroups(state.tools, state.toolSearch, state.toolGroups)" in source
-    assert 'src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-call-history-v2"' in template
+    assert 'src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-protocol-meta-v1"' in template
     assert "label('noMatchingTools')" in source
     assert "label('noTools')" in source
     assert "state.toolSearch = elements.toolSearch.value" in handlers
@@ -1278,15 +1278,18 @@ def test_explorer_transcript_is_incremental_and_details_are_lazy() -> None:
     assert "details.addEventListener('toggle'" in transcript_entry
     assert "{once: true}" in transcript_entry
     assert "new Date(entry.at).toLocaleString()" in transcript_entry
+    assert "className: 'mcp-explorer-protocol-meta'" in transcript_entry
     assert transcript_entry.index("label('dateTime')") < transcript_entry.index("label('status')")
     template = (ROOT / "templates/explorer.html").read_text(encoding="utf-8")
     assert 'data-date-time="<TMPL_VAR EXPLORER.DATE_TIME ESCAPE=HTML>"' in template
-    assert "DATE_TIME=Datum und Uhrzeit" in (ROOT / "templates/lang/language_de.ini").read_text(
+    assert "DATE_TIME=Datum/Uhrzeit" in (ROOT / "templates/lang/language_de.ini").read_text(
         encoding="utf-8"
     )
-    assert "DATE_TIME=Date and time" in (ROOT / "templates/lang/language_en.ini").read_text(
+    assert "DATE_TIME=Date/time" in (ROOT / "templates/lang/language_en.ini").read_text(
         encoding="utf-8"
     )
+    stylesheet = (ROOT / "webfrontend/htmlauth/mcp-ui.css").read_text(encoding="utf-8")
+    assert ".mcp-explorer-protocol-meta p { margin: 0; }" in stylesheet
 
 
 def test_explorer_tabs_support_roving_focus_and_arrow_keys() -> None:
