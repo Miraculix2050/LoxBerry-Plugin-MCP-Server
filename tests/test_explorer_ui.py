@@ -381,6 +381,34 @@ def test_result_inspector_previews_nested_names_and_relationship_arrays() -> Non
         assert any(caption.endswith(label) for caption in captions)
 
 
+def test_result_inspector_bounds_whitespace_scans_and_skips_later_candidates() -> None:
+    result = run_inspector("""
+      const huge = ' '.repeat(100000);
+      const original = String.prototype[Symbol.iterator];
+      let inspected = 0;
+      String.prototype[Symbol.iterator] = function () {
+        const iterator = original.call(this);
+        if (this.valueOf() !== huge) return iterator;
+        return {next() { inspected += 1; return iterator.next(); },
+          [Symbol.iterator]() { return this; }};
+      };
+      try {
+        const named = {name:'Primary',target:'node-b'};
+        Object.defineProperty(named,'source',{
+          enumerable:true,get() { throw new Error('later candidate was read'); }
+        });
+        const tree = inspect({items:[{name:huge,type:'Fallback'},named]});
+        walk(tree).find(node => node.tag === 'button' &&
+          node.textContent.includes('items [2]')).click();
+        return {inspected,captions:walk(tree).filter(node => node.className ===
+          'mcp-explorer-tree-toggle').map(node => node.textContent)};
+      } finally { String.prototype[Symbol.iterator] = original; }
+    """)
+    assert result["inspected"] <= 400
+    assert any(text.endswith('0 {2} "Fallback"') for text in result["captions"])
+    assert any(text.endswith('1 {3} "Primary"') for text in result["captions"])
+
+
 def test_result_inspector_uses_the_same_history_path_and_lazy_complete_json() -> None:
     source = SCRIPT.read_text(encoding="utf-8")
     template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")

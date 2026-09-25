@@ -520,7 +520,9 @@
       let preview = '';
       let length = 0;
       let truncated = false;
+      let inspected = 0;
       for (const char of value) {
+        if (inspected++ >= limit + 256) { truncated = !!preview; break; }
         if (!preview && /\s/u.test(char)) continue;
         if (length === limit) { truncated = true; break; }
         preview += char;
@@ -537,21 +539,20 @@
     const arrayItemPreview = (item) => {
       if (!structured(item) || Array.isArray(item)) return '';
       const own = (field) => Object.prototype.hasOwnProperty.call(item, field) ? item[field] : undefined;
-      const control = own('control');
-      const controlName = structured(control) && !Array.isArray(control) &&
-        Object.prototype.hasOwnProperty.call(control, 'name') ? control.name : undefined;
-      // Keep timestamp last so a descriptive label or identifier wins when available.
-      const candidates = [
-        own('name'), own('title'), own('label'), own('control_name'), own('state_name'),
-        controlName, own('weather_type_text'), own('type'), own('block_type'),
-        own('component'), own('finding_type'), own('strategy'),
-        relationPreview(own('source'), own('target')),
-        relationPreview(own('source_project_node_id'), own('target_project_node_id')),
-        own('code'), own('model_source_id'), own('classification'), own('kind'),
-        own('interpretation'), own('state_uuid'), own('id'), own('uuid'),
-        own('observed_at'), own('at'), own('timestamp')
-      ];
-      for (const value of candidates) {
+      function* candidates() {
+        for (const field of ['name', 'title', 'label', 'control_name', 'state_name']) yield own(field);
+        const control = own('control');
+        yield structured(control) && !Array.isArray(control) &&
+          Object.prototype.hasOwnProperty.call(control, 'name') ? control.name : undefined;
+        for (const field of ['weather_type_text', 'type', 'block_type', 'component', 'finding_type', 'strategy']) yield own(field);
+        yield relationPreview(own('source'), own('target'));
+        yield relationPreview(own('source_project_node_id'), own('target_project_node_id'));
+        for (const field of ['code', 'model_source_id', 'classification', 'kind',
+          'interpretation', 'state_uuid', 'id', 'uuid', 'observed_at', 'at']) yield own(field);
+        // Keep timestamp last so a descriptive label or identifier wins when available.
+        yield own('timestamp');
+      }
+      for (const value of candidates()) {
         if (typeof value === 'string') {
           const preview = clippedText(value, 80);
           if (preview) return ` ${JSON.stringify(preview)}`;
