@@ -638,6 +638,8 @@ if ($action ne '') {
         $result = admin_call('page_state', {});
     } elsif ($action eq 'emergency_stop_options') {
         $result = admin_call('emergency_stop_options', {});
+    } elsif ($action eq 'emergency_stop_cached_options') {
+        $result = admin_call('emergency_stop_cached_options', {});
     } elsif ($action eq 'emergency_stop_retry') {
         $result = admin_call('emergency_stop_retry', {});
     } elsif ($action eq 'clear_event_history') {
@@ -727,7 +729,8 @@ if ($action ne '') {
     my $notice = $result->{ok}
         ? ($action eq 'renew_certificate' ? 'certificate_scheduled' : 'success')
         : 'error';
-    if ($action eq 'emergency_stop_retry' && ($q->{fallback} // '') eq '1') {
+    if (($action eq 'emergency_stop_retry' || $action eq 'emergency_stop_options')
+        && ($q->{fallback} // '') eq '1') {
         $fallback_retry_result = $result;
     } else {
         redirect_reply("index.cgi?notice=$notice");
@@ -761,6 +764,8 @@ my $emergency_stop_status_kind = 'info';
 my $emergency_stop_status_visible = 1;
 my $emergency_stop_retry_visible = 0;
 my $emergency_stop_retry_enabled = 0;
+my $emergency_stop_button_label = $L{'SETUP.EMERGENCY_STOP_LOAD'};
+my $emergency_stop_button_action = 'emergency_stop_options';
 my $fallback_configuration_loaded = 0;
 my $fallback_summary_configuration_loaded = 0;
 my $fallback_summary_sessions_loaded = 0;
@@ -813,7 +818,7 @@ $config->{emergency_stop} = {} if ref($config->{emergency_stop}) ne 'HASH';
 my $selected_emergency_stop = $config->{emergency_stop}{virtual_status_uuid} // '';
 if ($server_rendered_fallback) {
     my $options_result = $fallback_retry_result
-        // admin_call('emergency_stop_options', {});
+        // admin_call('emergency_stop_cached_options', {});
     my $options_data = ref($options_result->{data}) eq 'HASH'
         ? $options_result->{data} : {};
     my $options = $options_data->{options};
@@ -833,30 +838,50 @@ if ($server_rendered_fallback) {
             && !grep { $_->{selected} } @$emergency_stop_options;
         my $status = $options_data->{status} // '';
         if ($status eq 'available') {
-            if (@$emergency_stop_options) {
-                $emergency_stop_status_visible = 0;
-            } else {
+            if ($options_data->{stale}) {
+                $emergency_stop_status_text = $L{'SETUP.EMERGENCY_STOP_STALE'};
+            } elsif (!@$emergency_stop_options) {
                 $emergency_stop_status_text = $L{'SETUP.EMERGENCY_STOP_NO_OPTIONS'};
+            } elsif ($options_data->{cached}) {
+                $emergency_stop_status_text = $L{'SETUP.EMERGENCY_STOP_CACHED'};
+            } else {
+                $emergency_stop_status_visible = 0;
             }
+            $emergency_stop_button_label = $L{'SETUP.EMERGENCY_STOP_REFRESH'};
+            $emergency_stop_retry_visible = 1;
+            $emergency_stop_retry_enabled = 1;
+        } elsif ($status eq 'not_loaded') {
+            $emergency_stop_status_text = $L{'SETUP.EMERGENCY_STOP_NOT_LOADED'};
+            $emergency_stop_retry_visible = 1;
+            $emergency_stop_retry_enabled = 1;
         } elsif ($status eq 'not_configured') {
             $emergency_stop_status_text = $L{'SETUP.EMERGENCY_STOP_NOT_CONFIGURED'};
             $emergency_stop_status_kind = 'error';
+            $emergency_stop_retry_visible = 1;
+            $emergency_stop_retry_enabled = 1;
         } else {
             $emergency_stop_status_text = $options_data->{failure_text}
                 // $L{'SETUP.EMERGENCY_STOP_LOAD_ERROR'};
+            $emergency_stop_status_text .= ' ' . $L{'SETUP.EMERGENCY_STOP_STALE'}
+                if $options_data->{stale};
             $emergency_stop_status_kind = 'error';
+            $emergency_stop_button_label = $L{'SETUP.EMERGENCY_STOP_RETRY'};
+            $emergency_stop_button_action = 'emergency_stop_retry';
+            $emergency_stop_retry_visible = 1;
+            $emergency_stop_retry_enabled = 1;
             my $retry_at = $options_data->{retry_not_before};
             if ($status eq 'unavailable' && defined($retry_at)
                 && "$retry_at" =~ /\A[0-9]{1,10}\z/
                 && $retry_at <= MAX_EXPIRY_EPOCH) {
                 $emergency_stop_status_text .= ' ' . format_expiry($retry_at);
-                $emergency_stop_retry_visible = 1;
                 $emergency_stop_retry_enabled = time() >= $retry_at ? 1 : 0;
             }
         }
     } else {
         $emergency_stop_status_text = $L{'SETUP.EMERGENCY_STOP_LOAD_ERROR'};
         $emergency_stop_status_kind = 'error';
+        $emergency_stop_retry_visible = 1;
+        $emergency_stop_retry_enabled = 1;
     }
 }
 my $miniservers = configured_miniservers($config->{loxone}{endpoint} // '');
@@ -1043,6 +1068,8 @@ $template->param(
     EMERGENCY_STOP_STATUS_VISIBLE => $emergency_stop_status_visible,
     EMERGENCY_STOP_RETRY_VISIBLE => $emergency_stop_retry_visible,
     EMERGENCY_STOP_RETRY_ENABLED => $emergency_stop_retry_enabled,
+    EMERGENCY_STOP_BUTTON_LABEL => $emergency_stop_button_label,
+    EMERGENCY_STOP_BUTTON_ACTION => $emergency_stop_button_action,
     EMERGENCY_STOP_RUNTIME_SIGNAL_VALUE => $runtime_signal,
     EMERGENCY_STOP_RUNTIME_UUID => $runtime_signal_uuid,
     EMERGENCY_STOP_RUNTIME_UUID_VISIBLE => $server_rendered_fallback

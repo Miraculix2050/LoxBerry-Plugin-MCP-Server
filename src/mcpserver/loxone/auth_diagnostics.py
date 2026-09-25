@@ -71,7 +71,7 @@ def _interprocess_lock(path: Path) -> Iterator[None]:
 
 
 class MiniserverAuthenticationSuppressed(LoxoneConnectionError):
-    """A confirmed source-IP block deliberately prevented a new login."""
+    """A source-IP block or a busy coordinator prevented a new login."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -275,26 +275,34 @@ class MiniserverAuthCoordinator:
         provenance: AttemptProvenance | None = None,
         force_probe: bool = False,
         allow_cooldown_probe: bool = True,
+        busy_wait_seconds: float = 0,
     ) -> _T:
-        """Run one authorized authentication attempt, or fail before networking."""
+        """Run one authorized authentication attempt after an optional bounded wait."""
         if owner not in {"runtime_event_stream", "tool_request", "local_admin"}:
             raise ValueError("invalid connection owner")
+        if not 0 <= busy_wait_seconds <= 30:
+            raise ValueError("invalid authentication wait budget")
         async with self._lock:
-            try:
-                with _interprocess_lock(self._path.with_name(f".{self._path.name}.lock")):
-                    self._reload_state()
-                    return await self._attempt_locked(
-                        operation,
-                        owner=owner,
-                        phase=phase,
-                        provenance=provenance,
-                        force_probe=force_probe,
-                        allow_cooldown_probe=allow_cooldown_probe,
-                    )
-            except _InterprocessLockUnavailable as exc:
-                raise MiniserverAuthenticationSuppressed(
-                    "Miniserver authentication is already being coordinated"
-                ) from exc
+            deadline = time.monotonic() + busy_wait_seconds
+            while True:
+                try:
+                    with _interprocess_lock(self._path.with_name(f".{self._path.name}.lock")):
+                        self._reload_state()
+                        return await self._attempt_locked(
+                            operation,
+                            owner=owner,
+                            phase=phase,
+                            provenance=provenance,
+                            force_probe=force_probe,
+                            allow_cooldown_probe=allow_cooldown_probe,
+                        )
+                except _InterprocessLockUnavailable as exc:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise MiniserverAuthenticationSuppressed(
+                            "Miniserver authentication is already being coordinated"
+                        ) from exc
+                    await asyncio.sleep(min(0.1, remaining))
 
     async def _attempt_locked(
         self,

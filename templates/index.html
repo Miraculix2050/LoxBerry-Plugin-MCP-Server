@@ -84,7 +84,7 @@
       <label class="mcp-field"><span><TMPL_VAR SETUP.EMERGENCY_STOP></span><select id="emergency-stop-select" <TMPL_IF SERVER_RENDERED_FALLBACK>name="emergency_stop_virtual_status_uuid"<TMPL_ELSE>aria-describedby="emergency-stop-help emergency-stop-status" disabled aria-busy="true"</TMPL_IF>><TMPL_IF SERVER_RENDERED_FALLBACK><option value="" <TMPL_UNLESS SELECTED_EMERGENCY_STOP>selected</TMPL_UNLESS>><TMPL_VAR SETUP.EMERGENCY_STOP_NONE></option><TMPL_IF EMERGENCY_STOP_SELECTED_UNAVAILABLE><option value="<TMPL_VAR SELECTED_EMERGENCY_STOP ESCAPE=HTML>" selected><TMPL_VAR SETUP.EMERGENCY_STOP_CURRENT> (<TMPL_VAR SELECTED_EMERGENCY_STOP ESCAPE=HTML>)</option></TMPL_IF><TMPL_LOOP EMERGENCY_STOP_OPTIONS><option value="<TMPL_VAR uuid ESCAPE=HTML>" <TMPL_IF selected>selected</TMPL_IF>><TMPL_VAR name_html></option></TMPL_LOOP><TMPL_ELSE><option value="" selected><TMPL_VAR SETUP.EMERGENCY_STOP_LOADING></option></TMPL_IF></select></label>
       <p id="emergency-stop-help" class="mcp-help"><TMPL_VAR SETUP.EMERGENCY_STOP_HELP></p>
       <p id="emergency-stop-status" class="mcp-status" data-kind="<TMPL_VAR EMERGENCY_STOP_STATUS_KIND ESCAPE=HTML>" <TMPL_UNLESS EMERGENCY_STOP_STATUS_VISIBLE>hidden</TMPL_UNLESS>><TMPL_VAR EMERGENCY_STOP_STATUS_TEXT ESCAPE=HTML></p>
-      <TMPL_IF SERVER_RENDERED_FALLBACK><TMPL_IF EMERGENCY_STOP_RETRY_VISIBLE><div class="mcp-actions"><button class="lb-button" type="submit" form="fallback-emergency-stop-retry-form" <TMPL_UNLESS EMERGENCY_STOP_RETRY_ENABLED>disabled</TMPL_UNLESS>><TMPL_VAR SETUP.EMERGENCY_STOP_RETRY></button><TMPL_UNLESS EMERGENCY_STOP_RETRY_ENABLED><a href="index.cgi?fallback=1"><TMPL_VAR SETUP.EMERGENCY_STOP_RELOAD></a></TMPL_UNLESS></div></TMPL_IF></TMPL_IF>
+      <TMPL_IF SERVER_RENDERED_FALLBACK><TMPL_IF EMERGENCY_STOP_RETRY_VISIBLE><div class="mcp-actions"><button class="lb-button" type="submit" form="fallback-emergency-stop-retry-form" <TMPL_UNLESS EMERGENCY_STOP_RETRY_ENABLED>disabled</TMPL_UNLESS>><TMPL_VAR EMERGENCY_STOP_BUTTON_LABEL ESCAPE=HTML></button><TMPL_UNLESS EMERGENCY_STOP_RETRY_ENABLED><a href="index.cgi?fallback=1"><TMPL_VAR SETUP.EMERGENCY_STOP_RELOAD></a></TMPL_UNLESS></div></TMPL_IF></TMPL_IF>
       <button id="emergency-stop-retry" class="lb-button" type="button" hidden disabled><TMPL_VAR SETUP.EMERGENCY_STOP_LOAD></button>
       <div id="emergency-stop-runtime" class="mcp-field-stack" aria-live="polite" aria-busy="<TMPL_IF EMERGENCY_STOP_RUNTIME_BUSY>true<TMPL_ELSE>false</TMPL_IF>"
         data-signal-unavailable="<TMPL_VAR SETUP.EMERGENCY_STOP_RUNTIME_SIGNAL_UNAVAILABLE ESCAPE=HTML>"
@@ -165,7 +165,7 @@
       </div>
       </fieldset>
     </form>
-    <TMPL_IF SERVER_RENDERED_FALLBACK><form id="fallback-emergency-stop-retry-form" method="post" action="index.cgi"><input type="hidden" name="fallback" value="1"><input type="hidden" name="action" value="emergency_stop_retry"></form></TMPL_IF>
+    <TMPL_IF SERVER_RENDERED_FALLBACK><form id="fallback-emergency-stop-retry-form" method="post" action="index.cgi"><input type="hidden" name="fallback" value="1"><input type="hidden" name="action" value="<TMPL_VAR EMERGENCY_STOP_BUTTON_ACTION ESCAPE=HTML>"></form></TMPL_IF>
     <form class="mcp-actions" method="post" action="index.cgi" data-ajax="clear_event_history">
       <input type="hidden" name="action" value="clear_event_history">
       <button class="lb-button" type="submit"><TMPL_VAR ACTION.CLEAR_EVENT_HISTORY></button>
@@ -375,6 +375,9 @@
   data-l-setup-emergency-stop-loading="<TMPL_VAR SETUP.EMERGENCY_STOP_LOADING ESCAPE=HTML>"
   data-l-setup-emergency-stop-load="<TMPL_VAR SETUP.EMERGENCY_STOP_LOAD ESCAPE=HTML>"
   data-l-setup-emergency-stop-refresh="<TMPL_VAR SETUP.EMERGENCY_STOP_REFRESH ESCAPE=HTML>"
+  data-l-setup-emergency-stop-cached="<TMPL_VAR SETUP.EMERGENCY_STOP_CACHED ESCAPE=HTML>"
+  data-l-setup-emergency-stop-stale="<TMPL_VAR SETUP.EMERGENCY_STOP_STALE ESCAPE=HTML>"
+  data-l-setup-emergency-stop-not-loaded="<TMPL_VAR SETUP.EMERGENCY_STOP_NOT_LOADED ESCAPE=HTML>"
   data-l-setup-emergency-stop-retry="<TMPL_VAR SETUP.EMERGENCY_STOP_RETRY ESCAPE=HTML>"
   data-l-setup-emergency-stop-selected="<TMPL_VAR SETUP.EMERGENCY_STOP_SELECTED ESCAPE=HTML>"
   data-l-setup-emergency-stop-load-error="<TMPL_VAR SETUP.EMERGENCY_STOP_LOAD_ERROR ESCAPE=HTML>"
@@ -396,10 +399,10 @@
   data-l-summary-unknown="<TMPL_VAR SUMMARY.UNKNOWN ESCAPE=HTML>"
   data-l-summary-warning="<TMPL_VAR SUMMARY.WARNING ESCAPE=HTML>"
 ></div>
-<script defer src="admin/core.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v8"></script>
-<script defer src="admin/certificate.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v8"></script>
-<script defer src="admin/sessions.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v8"></script>
-<script defer src="admin/service.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v8"></script>
-<script defer src="admin/configuration.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v8"></script>
-<script defer src="admin/page.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v8"></script>
+<script defer src="admin/core.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v10"></script>
+<script defer src="admin/certificate.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v10"></script>
+<script defer src="admin/sessions.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v10"></script>
+<script defer src="admin/service.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v10"></script>
+<script defer src="admin/configuration.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v10"></script>
+<script defer src="admin/page.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v10"></script>
 </TMPL_UNLESS>

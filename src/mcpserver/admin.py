@@ -31,6 +31,7 @@ from mcpserver import __version__
 if TYPE_CHECKING:
     from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore
     from mcpserver.auth.store import AtomicJsonAuthStore
+    from mcpserver.emergency_options_cache import EmergencyOptionsCache
     from mcpserver.loxone.client import LoxoneClient, MiniserverEndpoint
 
 from mcpserver.config import AtomicConfigStore, PluginConfig
@@ -615,13 +616,43 @@ def _save_mcp(payload: object) -> dict[str, Any]:
     return {"configuration": updated.to_document(), "applied": True} | _service_response()
 
 
-def _emergency_stop_options(*, manual_retry: bool = False) -> dict[str, Any]:
+def _emergency_stop_cache(config: PluginConfig) -> EmergencyOptionsCache | None:
+    """Bind cached options to the current configured Miniserver credentials."""
+    from mcpserver.auth.store import AtomicJsonAuthStore
+    from mcpserver.emergency_options_cache import EmergencyOptionsCache
+    from mcpserver.emergency_stop import EmergencyStopMonitor
+
+    store_path = Path(os.getenv("MCPSERVER_AUTH_STORE", "").strip())
+    if not config.loxone_endpoint or not store_path.is_absolute() or store_path.suffix != ".json":
+        return None
+    try:
+        username, password = asyncio.run(EmergencyStopMonitor(config)._credentials())
+        profile = AtomicJsonAuthStore(store_path).pseudonym(
+            "emergency-stop-options-v1", config.loxone_endpoint, username, password
+        )
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+        return None
+    return EmergencyOptionsCache(store_path, profile)
+
+
+def _cached_emergency_stop_options() -> dict[str, Any]:
+    config = _config_store().load()
+    if not config.loxone_endpoint:
+        return {"status": "not_configured", "options": []}
+    cache = _emergency_stop_cache(config)
+    return (
+        cache.response(cache.read(), cached_only=True)
+        if cache is not None
+        else {"status": "not_loaded", "options": []}
+    )
+
+
+def _discover_emergency_stop_options(config: PluginConfig, *, manual_retry: bool) -> dict[str, Any]:
     from mcpserver.auth.store import AtomicJsonAuthStore
     from mcpserver.emergency_stop import VirtualStatusOptions, virtual_status_options
     from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
     from mcpserver.loxone.client import MiniserverEndpoint
 
-    config = _config_store().load()
     store_path = os.getenv("MCPSERVER_AUTH_STORE", "").strip()
     coordinator = None
     if (
@@ -657,6 +688,38 @@ def _emergency_stop_options(*, manual_retry: bool = False) -> dict[str, Any]:
     if result.retry_not_before is not None:
         response["retry_not_before"] = result.retry_not_before
     return response
+
+
+def _emergency_stop_options(*, manual_retry: bool = False) -> dict[str, Any]:
+    config = _config_store().load()
+    cache = _emergency_stop_cache(config)
+
+    def discover() -> dict[str, Any]:
+        return _discover_emergency_stop_options(config, manual_retry=manual_retry)
+
+    if cache is None:
+        return discover()
+    try:
+        return cache.refresh(discover)
+    except TimeoutError:
+        existing = cache.read()
+        retained = bool(existing and existing["has_options"])
+        return {
+            "status": "unavailable",
+            "options": existing["options"] if existing and retained else [],
+            "cached": retained,
+            "stale": retained,
+            "discovery_failure_code": "authentication_busy",
+        }
+    except (OSError, ValueError):
+        existing = cache.read()
+        retained = bool(existing and existing["has_options"])
+        return {
+            "status": "unavailable",
+            "options": existing["options"] if existing and retained else [],
+            "cached": retained,
+            "stale": retained,
+        }
 
 
 def _remote_cleanup_status() -> dict[str, Any]:
@@ -1613,6 +1676,7 @@ def dispatch(request: object, *, timing: dict[str, float] | None = None) -> dict
         sections: dict[str, dict[str, Any]] = {}
         for section_action in (
             "get_config",
+            "emergency_stop_cached_options",
             "page_state",
             "service_status",
             "certificate_status",
@@ -1663,6 +1727,8 @@ def dispatch(request: object, *, timing: dict[str, float] | None = None) -> dict
         return _save_mqtt(payload)
     if action == "emergency_stop_options":
         return _emergency_stop_options()
+    if action == "emergency_stop_cached_options":
+        return _cached_emergency_stop_options()
     if action == "emergency_stop_retry":
         return _emergency_stop_options(manual_retry=True)
     if action == "clear_event_history":

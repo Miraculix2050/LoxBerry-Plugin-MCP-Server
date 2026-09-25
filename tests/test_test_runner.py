@@ -46,6 +46,7 @@ def test_shared_language_files_select_both_ui_groups() -> None:
     assert _pytest_targets(plan) == {
         "tests/test_admin.py",
         "tests/test_admin_ui.py",
+        "tests/test_emergency_options_cache.py",
         "tests/test_apache_config.py",
         "tests/test_explorer_ui.py",
         "tests/test_oauth.py",
