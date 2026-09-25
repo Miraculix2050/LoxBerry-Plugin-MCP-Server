@@ -1820,6 +1820,10 @@ class LoxBerryOperateRuntime:
     ) -> tuple[int, int]:
         async with self._event_history_lock:
             monitor = self._event_history_allowed(access)
+            if self._event_history_reconciliation_tasks:
+                raise ControlOperationError(
+                    "temporarily_unavailable", "Source update is still being reconciled"
+                )
             if (control_uuid, state_uuid) in self._event_history_purges:
                 raise ControlOperationError(
                     "temporarily_unavailable", "Source purge is in progress"

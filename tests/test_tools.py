@@ -1529,6 +1529,100 @@ async def test_event_history_purge_serializes_with_admin_config_update(tmp_path:
 
 
 @pytest.mark.asyncio
+async def test_event_history_purge_rejects_pending_source_removal_reconciliation() -> None:
+    source = ("control", "state")
+    binding = "b" * 64
+    config = PluginConfig(
+        loxone_history_enabled=True,
+        loxberry_operate_enabled=True,
+        loxberry_operate_requests_per_minute=10,
+        event_history_enabled=True,
+        loxberry_operate_bindings=(binding,),
+    )
+    reconciled = asyncio.Event()
+    mutation_release = asyncio.Event()
+    purged = False
+
+    class ConfigStore:
+        def load(self) -> PluginConfig:
+            return config
+
+        def transaction(self, operation: object) -> tuple[int, int]:
+            return operation(config, lambda _config: None)  # type: ignore[operator]
+
+    class Store:
+        def purge_source(self, *_source: str) -> tuple[int, int]:
+            nonlocal purged
+            assert reconciled.is_set(), "purge ran before the old recorder stopped"
+            purged = True
+            return 1, 1
+
+    class Monitor:
+        store = Store()
+
+        async def update_config(self, _config: PluginConfig) -> None:
+            reconciled.set()
+
+    @asynccontextmanager
+    async def slot(_access: object):
+        yield
+
+    class Loxone:
+        history_call_slot = staticmethod(slot)
+
+        async def snapshot(self, _access: object) -> object:
+            return SimpleNamespace(
+                structure=SimpleNamespace(
+                    controls=(
+                        Control(
+                            uuid=source[0],
+                            name="Visible",
+                            control_type="Switch",
+                            room_uuid=None,
+                            category_uuid=None,
+                            action_uuid=None,
+                            state_uuids=(("active", source[1]),),
+                        ),
+                    )
+                )
+            )
+
+    class AuthStore:
+        def pseudonym(self, *_parts: str) -> str:
+            return binding
+
+    monitor = Monitor()
+    runtime = LoxBerryOperateRuntime(
+        object(),
+        ConfigStore(),
+        AuthStore(),
+        event_history=monitor,  # type: ignore[arg-type]
+        loxone_runtime=Loxone(),  # type: ignore[arg-type]
+    )
+    access = _loxberry_access(HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE)
+
+    async def late_mutation() -> None:
+        await mutation_release.wait()
+
+    mutation = asyncio.create_task(late_mutation())
+    runtime._reconcile_completed_event_history_mutation(monitor, mutation)  # type: ignore[arg-type]
+    await runtime._event_history_lock.acquire()
+    purge = asyncio.create_task(runtime.purge_event_history_source(access, *source))
+    await asyncio.sleep(0)
+    mutation_release.set()
+    await asyncio.sleep(0)
+    runtime._event_history_lock.release()
+
+    with pytest.raises(tools_module.ControlOperationError) as pending:
+        await purge
+    assert pending.value.code == "temporarily_unavailable"
+    assert not purged
+    await asyncio.wait_for(reconciled.wait(), 1)
+    await asyncio.wait_for(asyncio.gather(*runtime._event_history_reconciliation_tasks), 1)
+    assert await runtime.purge_event_history_source(access, *source) == (1, 1)
+
+
+@pytest.mark.asyncio
 async def test_event_history_source_audit_rejects_and_sanitizes_invalid_uuids(
     caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
