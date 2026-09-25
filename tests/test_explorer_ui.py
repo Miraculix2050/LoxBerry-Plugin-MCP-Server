@@ -52,7 +52,8 @@ def test_explorer_uses_one_compact_mobile_tool_panel_and_adaptive_workspace() ->
         '<details id="explorer-request" class="mcp-explorer-card" tabindex="-1" open>' in template
     )
     assert '<details id="explorer-result" class="mcp-explorer-card" tabindex="-1" open>' in template
-    assert "<summary><TMPL_VAR EXPLORER.SELECTED_TOOL>" in template
+    assert '<summary><h2 id="request-title"><TMPL_VAR EXPLORER.SELECTED_TOOL></h2>' in template
+    assert '<summary><h2 id="result-title"><TMPL_VAR EXPLORER.RESULT></h2></summary>' in template
     assert '<details id="explorer-history-arguments" hidden>' in template
     assert 'class="mcp-explorer-panel-label"' in template
     assert 'id="explorer-request"' in template
