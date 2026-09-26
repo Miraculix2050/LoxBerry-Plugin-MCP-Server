@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from mcpserver import admin, event_history_admin
+from mcpserver import admin, event_history_admin, event_history_selector_cache
 from mcpserver.config import AtomicConfigStore, PluginConfig
 from mcpserver.event_history_selector_cache import EventHistorySelectorCache, SelectorCacheError
 from mcpserver.loxone.event_history import EventHistoryStore
@@ -100,6 +100,21 @@ def test_duplicate_control_identifiers_are_rejected_before_publish(tmp_path):
     with pytest.raises(SelectorCacheError, match="invalid or oversized"):
         cache.refresh(lambda: projection)
     assert cache.read() is None
+
+
+def test_repeated_large_group_names_stop_at_write_limit(tmp_path, monkeypatch):
+    cache = _cache(tmp_path)
+    projection = _projection(10)
+    shared_name = "Room " + "x" * 1000
+    for item in projection["controls"]:
+        item["room"] = shared_name
+    monkeypatch.setattr(event_history_selector_cache, "_MAX_BYTES", 4096)
+
+    with pytest.raises(SelectorCacheError, match="size limit"):
+        cache.refresh(lambda: projection)
+
+    assert cache.read() is None
+    assert not list(cache.path.parent.glob("*.tmp"))
 
 
 def test_new_page_refreshes_even_when_program_marker_is_unchanged(tmp_path):

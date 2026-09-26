@@ -145,14 +145,21 @@ class EventHistorySelectorCache:
             or len(document["control_index"]) != len(controls)
         ):
             raise SelectorCacheError("event-history selector projection is invalid or oversized")
-        payload = json.dumps(document, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-        if len(payload) > _MAX_BYTES:
-            raise SelectorCacheError("event-history selector projection exceeds size limit")
         temporary = self.path.with_name(f".{self.path.name}.{secrets.token_hex(8)}.tmp")
         descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         try:
             with os.fdopen(descriptor, "wb") as handle:
-                handle.write(payload)
+                size = 0
+                # Repeated group names must not materialize one expanded JSON payload in memory.
+                encoder = json.JSONEncoder(separators=(",", ":"), ensure_ascii=False)
+                for chunk in encoder.iterencode(document):
+                    encoded = chunk.encode("utf-8")
+                    size += len(encoded)
+                    if size > _MAX_BYTES:
+                        raise SelectorCacheError(
+                            "event-history selector projection exceeds size limit"
+                        )
+                    handle.write(encoded)
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temporary, self.path)
