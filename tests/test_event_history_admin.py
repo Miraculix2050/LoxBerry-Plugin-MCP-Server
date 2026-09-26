@@ -131,6 +131,23 @@ def test_v2_migration_rebuilds_exact_event_summaries(tmp_path, monkeypatch):
     assert history.snapshot((SOURCE,)).sources[0].event_count == 1
 
 
+def test_v3_migration_preserves_events_and_adds_clear_generation(tmp_path, monkeypatch):
+    _, history = _setup(tmp_path, monkeypatch, sources=(SOURCE,))
+    history.initialize()
+    history.record_transition(*SOURCE, observed_at=time.time(), old_value=0, new_value=1)
+    with sqlite3.connect(history.path) as db:
+        db.execute("DROP TABLE history_metadata")
+        db.execute("PRAGMA user_version=3")
+
+    revision = admin.dispatch({"action": "event_history_source_revision"})
+    assert revision["availability"] == "available"
+    snapshot = history.snapshot((SOURCE,))
+    assert snapshot.sources[0].event_count == 1
+    assert snapshot.clear_generation == 0
+    history.clear()
+    assert history.snapshot((SOURCE,)).clear_generation == 1
+
+
 def test_overview_hides_historical_metadata_for_invisible_sources(tmp_path, monkeypatch):
     _, history = _setup(tmp_path, monkeypatch, sources=(SOURCE,))
     history.initialize()
@@ -179,6 +196,19 @@ def test_overview_keeps_configured_source_removal_available_when_visibility_fail
     assert result["unverified_sources"] == [{"control_uuid": SOURCE[0], "state_uuid": SOURCE[1]}]
 
 
+def test_local_overview_reports_sources_without_retrying_miniserver(tmp_path, monkeypatch):
+    _, history = _setup(tmp_path, monkeypatch, sources=(SOURCE,))
+    history.initialize()
+    monkeypatch.setattr(event_history_admin, "_controls", lambda _config: pytest.fail("discovery"))
+
+    result = admin.dispatch({"action": "event_history_local_overview", "payload": {}})
+
+    assert result["store_status"] == "available"
+    assert result["visibility_status"] == "unavailable"
+    assert result["sources"] == []
+    assert result["unverified_sources"] == [{"control_uuid": SOURCE[0], "state_uuid": SOURCE[1]}]
+
+
 def test_source_actions_preserve_history_until_separate_confirmed_purge(tmp_path, monkeypatch):
     config_store, history = _setup(tmp_path, monkeypatch)
     history.initialize()
@@ -198,6 +228,92 @@ def test_source_actions_preserve_history_until_separate_confirmed_purge(tmp_path
     assert required.value.code == "confirmation_required"
     assert event_history_admin.purge_source({**key, "confirm": True})["deleted_events"] == 1
     assert history.snapshot(()).sources == ()
+
+
+def test_add_returns_fresh_visible_overview_without_second_discovery(tmp_path, monkeypatch):
+    config_store, history = _setup(tmp_path, monkeypatch)
+    history.initialize()
+    original_controls = event_history_admin._controls
+    discoveries = 0
+
+    def controls(config):
+        nonlocal discoveries
+        discoveries += 1
+        return original_controls(config)
+
+    monkeypatch.setattr(event_history_admin, "_controls", controls)
+    result = event_history_admin.change_source(
+        {"control_uuid": SOURCE[0], "state_uuid": SOURCE[1]}, add=True
+    )
+
+    assert discoveries == 1
+    assert result["changed"] is True
+    assert result["overview"]["visibility_status"] == "available"
+    assert result["overview"]["visible_active_count"] == 1
+    assert result["overview"]["sources"][0]["control_name"] == "Visible"
+    assert result["overview"]["sources"][0]["state_name"] == "active"
+    assert config_store.load().event_history_sources == (SOURCE,)
+
+
+def test_source_revision_tracks_membership_without_polling_event_changes(tmp_path, monkeypatch):
+    config_store, history = _setup(tmp_path, monkeypatch)
+    history.initialize()
+    key = {"control_uuid": SOURCE[0], "state_uuid": SOURCE[1]}
+
+    def revision():
+        return admin.dispatch({"action": "event_history_source_revision"})["revision"]
+
+    initial = revision()
+
+    added = event_history_admin.change_source(key, add=True)
+    active = revision()
+    assert active != initial
+    assert added["overview"]["source_revision"] == active
+
+    history.record_transition(*SOURCE, observed_at=time.time(), old_value=0, new_value=1)
+    assert revision() == active
+
+    history.clear()
+    cleared = revision()
+    assert cleared != active
+    assert config_store.load().event_history_sources == (SOURCE,)
+    history.record_transition(*SOURCE, observed_at=time.time(), old_value=1, new_value=2)
+    assert revision() == cleared
+
+    event_history_admin.change_source({**key, "confirm": True}, add=False)
+    removed = revision()
+    assert removed != active
+    event_history_admin.purge_source({**key, "confirm": True})
+    assert revision() != removed
+
+
+def test_snapshot_keeps_counts_and_clear_generation_consistent(tmp_path, monkeypatch):
+    _, history = _setup(tmp_path, monkeypatch, sources=(SOURCE,))
+    history.initialize()
+    history.record_transition(*SOURCE, observed_at=time.time(), old_value=0, new_value=1)
+    original_connect = sqlite3.connect
+    cleared = False
+
+    class ClearDuringRead(sqlite3.Connection):
+        def execute(self, sql, *args):
+            nonlocal cleared
+            cursor = super().execute(sql, *args)
+            if sql.startswith("SELECT control_uuid, state_uuid, event_count") and not cleared:
+                cleared = True
+                history.clear()
+            return cursor
+
+    def connect(*args, **kwargs):
+        if kwargs.get("uri"):
+            kwargs["factory"] = ClearDuringRead
+        return original_connect(*args, **kwargs)
+
+    monkeypatch.setattr(sqlite3, "connect", connect)
+    before = history.snapshot((SOURCE,))
+    after = history.snapshot((SOURCE,))
+    assert cleared
+    assert (before.sources[0].event_count, before.clear_generation) == (1, 0)
+    assert (after.sources[0].event_count, after.clear_generation) == (0, 1)
 
 
 def test_policy_update_preserves_sources_and_rejects_invalid_input(tmp_path, monkeypatch):

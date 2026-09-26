@@ -662,6 +662,320 @@ def test_event_history_has_dedicated_bounded_admin_view() -> None:
     assert "window.confirm(label('confirmClear'))" in script
 
 
+def test_event_history_selector_is_progressive_and_localized() -> None:
+    page = (ROOT / "templates/event-history.html").read_text(encoding="utf-8")
+    script = (ROOT / "webfrontend/htmlauth/event-history/page.js").read_text(encoding="utf-8")
+    cgi = (ROOT / "webfrontend/htmlauth/event_history.cgi").read_text(encoding="utf-8")
+
+    assert 'id="history-control-list"' in page
+    assert 'role="radiogroup"' in page
+    assert 'id="history-prev-controls"' in page
+    assert 'id="history-more-controls"' in page
+    assert 'id="history-state-search-wrap" hidden' in page
+    assert 'id="history-add-status"' in page
+    assert 'data-refresh-working="<TMPL_VAR EVENT_HISTORY.REFRESH_WORKING' in page
+    assert 'data-refreshed="<TMPL_VAR EVENT_HISTORY.REFRESHED' in page
+    assert 'data-refresh-failed="<TMPL_VAR EVENT_HISTORY.REFRESH_FAILED' in page
+    assert "<TMPL_VAR EVENT_HISTORY.STATES>" in page
+    assert all(f'data-facet="{field}"' in page for field in ("room", "category", "type"))
+    assert "void loadQuickSummary();" in script
+    assert "void loadControls();" in script
+    assert "event_history_prepare_selector" in script
+    assert "event_history_selector_catalog" in script
+    assert "event_history_selector_states" in script
+    assert "event_history_source_revision" in script
+    assert "api.request('event_history_source_revision', {}, 15000)" in script
+    assert "refreshButton.disabled = true" in script
+    assert "refreshButton.textContent = label('refreshWorking')" in script
+    assert "setMessage(label(refreshed ? 'refreshed' : 'refreshFailed')" in script
+    assert "}, 5000);" in script
+    assert "event_history_prepare_selector" in cgi
+    assert "event_history_source_revision" in cgi
+    for language in ("de", "en"):
+        translations = (ROOT / f"templates/lang/language_{language}.ini").read_text(
+            encoding="utf-8"
+        )
+        for key in (
+            "LOAD_CONTROLS",
+            "FILTER_CLEAR",
+            "ROOM",
+            "CATEGORY",
+            "TYPE",
+            "STATES",
+            "STATES_LOADING",
+            "STATE_SUPPORT_HELP",
+            "ADD_WORKING",
+            "ADD_APPLIED",
+            "ADD_REFRESH_FAILED",
+            "REFRESH_WORKING",
+            "REFRESHED",
+            "REFRESH_FAILED",
+        ):
+            assert f"{key}=" in translations
+
+
+def test_event_history_mutation_refresh_waits_for_inflight_discovery() -> None:
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = (start, end) => source.slice(source.indexOf(start), source.indexOf(end));
+let finishDiscovery;
+const discovery = new Promise((resolve) => { finishDiscovery = resolve; });
+let calls = 0;
+const messages = [];
+const context = {
+  api: {request: async () => ({changed: true})},
+  refreshButton: {disabled: false},
+  addButton: {disabled: false},
+  stateSelect: {disabled: false, value: 'state'},
+  stateSearch: {disabled: false},
+  stateSearchWrap: {hidden: false},
+  performLoadControls: async () => {
+    calls += 1;
+    if (calls === 1) await discovery;
+    context.addButton.disabled = true;
+    context.stateSearch.disabled = true;
+  },
+  loadStatus: async () => {},
+  label: (value) => value,
+  errorLabel: () => 'error',
+  setMessage: (value) => messages.push(value),
+};
+vm.runInNewContext(`
+let busy = false;
+let controlsLoadPromise = null;
+let selectedControl = 'control';
+${section('  const mutate = async ', '  const facetSelection =')}
+${section('  const loadControls = (restore = null) => {', '  const checkSourceRevision =')}
+globalThis.subject = {mutate, loadControls};
+`, context);
+(async () => {
+  const first = context.subject.loadControls();
+  const mutation = context.subject.mutate('event_history_save_policy', {});
+  await Promise.resolve();
+  assert.equal(calls, 1);
+  finishDiscovery();
+  await Promise.all([first, mutation]);
+  assert.equal(calls, 2);
+  assert.equal(messages.at(-1), 'saved');
+  assert.equal(context.addButton.disabled, false);
+  assert.equal(context.stateSearch.disabled, false);
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_event_history_invalidation_removes_authorized_facet_names() -> None:
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = source.slice(source.indexOf('  const invalidateSelector = () => {'),
+  source.indexOf('  const applyFilters ='));
+const fields = ['room', 'category', 'type'];
+const panels = Object.fromEntries(fields.map((field) => {
+  const search = {value: 'old', disabled: false, oninput: () => {}};
+  const list = {children: ['Secret name'], replaceChildren() {this.children = [];}};
+  return [field, {open: true, search, list,
+    querySelector(selector) {return selector.startsWith('input') ? search : list;}}];
+}));
+const nodes = new Map();
+const getNode = (id) => {
+  if (!nodes.has(id)) nodes.set(id, {hidden: false, disabled: false, textContent: ''});
+  return nodes.get(id);
+};
+const stateCache = new Map([['old', {name: 'Secret state'}]]);
+const facetSelection = Object.fromEntries(fields.map((field) => [field, new Set(['old'])]));
+const context = {root: {querySelector: (selector) => panels[selector.match(/"([^"]+)"/)[1]]},
+  stateCache, facetSelection, controlList: {replaceChildren() {}},
+  stateSelect: {replaceChildren() {}}, stateSearch: {value: 'Secret state'},
+  stateSearchWrap: {}, addButton: {}, $: getNode, Option: class {}, label: () => ''};
+vm.runInNewContext(`let selectorGeneration = 'old'; let controls = [{}];
+let selectedControl = 'old'; ${section}
+globalThis.invalidate = invalidateSelector;`, context);
+context.invalidate();
+assert.equal(stateCache.size, 0);
+for (const field of fields) {
+  assert.equal(facetSelection[field].size, 0);
+  assert.deepEqual(panels[field].list.children, []);
+  assert.equal(panels[field].search.oninput, null);
+  assert.equal(panels[field].search.disabled, true);
+}
+assert.equal(getNode('history-clear-filters').disabled, true);
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_event_history_local_overview_starts_revision_tracking() -> None:
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = source.slice(source.indexOf('  const renderPolicy = (data) => {'),
+  source.indexOf('  const loadQuickSummary ='));
+const nodes = new Map();
+const context = {$: (id) => {
+  if (!nodes.has(id)) nodes.set(id, {});
+  return nodes.get(id);
+}, label: (key) => key, date: () => '', renderRows: () => {}, setMessage: () => {}};
+vm.runInNewContext(`let overviewLoaded = false; let knownSourceRevision = '';
+let selectorVerificationPending = false; let nextRevisionRefreshAt = 1;
+let revisionRefreshFailures = 1; let activeCount = 0; let savedPolicy = null;
+${section}
+globalThis.subject = {renderOverview, revision: () => knownSourceRevision,
+  pending: () => selectorVerificationPending};`, context);
+context.subject.renderOverview({store_status: 'available', visibility_status: 'unavailable',
+  source_revision: 'local-revision', active_source_count: 1, retention_days: 30,
+  maximum_mib: 64, database_bytes: 0, wal_bytes: 0, sources: [], unverified_sources: []});
+assert.equal(context.subject.revision(), 'local-revision');
+assert.equal(context.subject.pending(), true);
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_event_history_background_overview_preserves_unsaved_policy_edits() -> None:
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = source.slice(source.indexOf('  const renderPolicy = (data) => {'),
+  source.indexOf('  const renderOverview = (data) => {'));
+const nodes = new Map();
+const context = {$: (id) => {
+  if (!nodes.has(id)) nodes.set(id, {value: '', textContent: ''});
+  return nodes.get(id);
+}};
+vm.runInNewContext(`let savedPolicy = null; ${section}
+globalThis.renderPolicy = renderPolicy;`, context);
+context.renderPolicy({retention_days: 30, maximum_mib: 64});
+nodes.get('history-retention').value = '45';
+context.renderPolicy({retention_days: 31, maximum_mib: 128});
+assert.equal(nodes.get('history-retention').value, '45');
+assert.equal(nodes.get('history-maximum').value, '128');
+assert.equal(nodes.get('history-policy').textContent, '31 d · 128 MiB');
+nodes.get('history-retention').value = '31';
+context.renderPolicy({retention_days: 32, maximum_mib: 128});
+assert.equal(nodes.get('history-retention').value, '32');
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_event_history_revision_retries_after_failed_visibility_refresh() -> None:
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = source.slice(source.indexOf('  const checkSourceRevision = async () => {'),
+  source.indexOf('  const loadStates ='));
+const context = {document: {hidden: false}, api: {request: async () =>
+  ({availability: 'available', revision: 'new'})}};
+vm.runInNewContext(`let busy = false; let controlsLoading = false;
+let sourceRevisionChecking = false; let knownSourceRevision = 'old';
+let selectorVerificationPending = false; let nextRevisionRefreshAt = 0;
+let revisionRefreshFailures = 0; let refreshes = 0;
+const loadControls = async () => { refreshes += 1; knownSourceRevision = 'new'; return false; };
+${section}
+globalThis.subject = {checkSourceRevision, refreshes: () => refreshes,
+  pending: () => selectorVerificationPending,
+  retryNow: () => { nextRevisionRefreshAt = 0; }};`, context);
+(async () => {
+  await context.subject.checkSourceRevision();
+  assert.equal(context.subject.refreshes(), 1);
+  assert.equal(context.subject.pending(), true);
+  context.subject.retryNow();
+  await context.subject.checkSourceRevision();
+  assert.equal(context.subject.refreshes(), 2);
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_event_history_stale_generation_recovers_selected_pair() -> None:
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = source.slice(source.indexOf('  const loadControls = (restore = null) => {'),
+  source.indexOf('  const checkSourceRevision ='));
+let finishFirst;
+const firstGate = new Promise((resolve) => { finishFirst = resolve; });
+const calls = [];
+const context = {performLoadControls: async (restore) => {
+  calls.push(restore);
+  if (calls.length === 1) await firstGate;
+}};
+vm.runInNewContext(`let controlsLoadPromise = null; let staleRecoveryScheduled = false;
+let discoveryGeneration = 0; let selectedControl = 'control';
+const stateSelect = {value: 'state'};
+const selectedFilters = () => ({room: ['room'], category: [], type: []});
+const invalidateSelector = () => { selectedControl = ''; stateSelect.value = ''; };
+${section}
+globalThis.subject = {loadControls, recoverStaleSelector};`, context);
+(async () => {
+  const first = context.subject.loadControls();
+  context.subject.recoverStaleSelector();
+  assert.equal(calls.length, 1);
+  finishFirst();
+  await first;
+  await new Promise(setImmediate);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].control, 'control');
+  assert.equal(calls[1].state, 'state');
+  assert.deepEqual(Array.from(calls[1].filters.room), ['room']);
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
 def test_server_rendered_emergency_stop_status_is_terminal_after_discovery() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = _admin_source()

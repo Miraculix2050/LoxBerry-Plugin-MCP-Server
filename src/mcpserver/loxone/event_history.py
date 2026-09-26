@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import math
@@ -22,13 +23,13 @@ if TYPE_CHECKING:
     from mcpserver.config import PluginConfig
     from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
     from mcpserver.loxone.client import LoxoneClient, LoxoneToken, LoxoneWebSocketSession
-    from mcpserver.loxone.models import Control
+    from mcpserver.loxone.models import Control, LoxoneStructure
 
 
 _LOGGER = logging.getLogger("mcpserver.event_history")
 
 
-_SCHEMA_VERSION: Final = 3
+_SCHEMA_VERSION: Final = 4
 _MAX_TEXT_BYTES: Final = 4096
 _UNSUPPORTED_SOURCE_CONTROL_TYPES: Final = frozenset({"Daytimer"})
 
@@ -107,6 +108,32 @@ class EventHistoryStoreSummary:
     wal_bytes: int
     sources: tuple[EventHistorySourceSummary, ...]
     truncated: bool = False
+    clear_generation: int = 0
+
+
+def source_revision_for_snapshot(
+    active_sources: tuple[tuple[str, str], ...],
+    snapshot: EventHistoryStoreSummary,
+    *,
+    retention_days: int,
+    maximum_mib: int,
+) -> str:
+    """Track source membership, policy, and clears without changing on each event."""
+    active = set(active_sources)
+    source_keys = [
+        (source.control_uuid, source.state_uuid, (source.control_uuid, source.state_uuid) in active)
+        for source in snapshot.sources
+    ]
+    document = (
+        sorted(active_sources),
+        source_keys,
+        snapshot.truncated,
+        snapshot.clear_generation,
+        retention_days,
+        maximum_mib,
+    )
+    encoded = json.dumps(document, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()[:24]
 
 
 def _value(value: object) -> bool | float | int | str:
@@ -159,7 +186,7 @@ class EventHistoryStore:
             try:
                 connection.execute("BEGIN IMMEDIATE")
                 version = connection.execute("PRAGMA user_version").fetchone()[0]
-                if version not in {0, 1, 2, _SCHEMA_VERSION}:
+                if version not in {0, 1, 2, 3, _SCHEMA_VERSION}:
                     raise EventHistoryUnavailable("local event history needs migration")
                 connection.execute(
                     """
@@ -207,6 +234,7 @@ class EventHistoryStore:
                     "newest_event_at REAL NOT NULL, "
                     "PRIMARY KEY(control_uuid, state_uuid))"
                 )
+                self._ensure_history_metadata(connection)
                 if version < 3:
                     self._refresh_summaries(connection)
                 # A process that did not reach ``end_coverage`` must not make a
@@ -215,7 +243,7 @@ class EventHistoryStore:
                     "UPDATE coverage SET ended_at = started_at, outcome = 'interrupted' "
                     "WHERE ended_at IS NULL",
                 )
-                connection.execute("PRAGMA user_version = 3")
+                connection.execute("PRAGMA user_version = 4")
                 connection.execute("COMMIT")
                 connection.execute("BEGIN IMMEDIATE")
                 pruned = self._prune(connection, now=time.time())
@@ -235,6 +263,36 @@ class EventHistoryStore:
             raise EventHistoryUnavailable(
                 "local event history permissions are unavailable"
             ) from exc
+
+    @staticmethod
+    def _ensure_history_metadata(connection: sqlite3.Connection) -> None:
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS history_metadata ("
+            "id INTEGER PRIMARY KEY CHECK (id = 1), "
+            "clear_generation INTEGER NOT NULL)"
+        )
+        connection.execute(
+            "INSERT OR IGNORE INTO history_metadata(id, clear_generation) VALUES (1, 0)"
+        )
+
+    def _migrate_v3_snapshot(self) -> None:
+        """Upgrade the clear marker without starting recorder maintenance."""
+        with self._lock, self._opened() as connection:
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                version = connection.execute("PRAGMA user_version").fetchone()[0]
+                if version == 3:
+                    self._ensure_history_metadata(connection)
+                    connection.execute("PRAGMA user_version = 4")
+                elif version != _SCHEMA_VERSION:
+                    raise EventHistoryUnavailable("local event history needs migration")
+                connection.execute("COMMIT")
+            except (EventHistoryUnavailable, sqlite3.Error) as exc:
+                if connection.in_transaction:
+                    connection.execute("ROLLBACK")
+                if isinstance(exc, EventHistoryUnavailable):
+                    raise
+                raise EventHistoryUnavailable("local event history is unavailable") from exc
 
     def begin_coverage(self, sources: tuple[tuple[str, str], ...], *, started_at: float) -> None:
         if not sources:
@@ -361,7 +419,14 @@ class EventHistoryStore:
             with closing(
                 sqlite3.connect(self.path.as_uri() + "?mode=ro", uri=True, timeout=2)
             ) as db:
-                if db.execute("PRAGMA user_version").fetchone()[0] != _SCHEMA_VERSION:
+                db.execute("BEGIN")
+                version = db.execute("PRAGMA user_version").fetchone()[0]
+                if version == 3:
+                    db.execute("ROLLBACK")
+                    self._migrate_v3_snapshot()
+                    db.execute("BEGIN")
+                    version = db.execute("PRAGMA user_version").fetchone()[0]
+                if version != _SCHEMA_VERSION:
                     raise EventHistoryUnavailable("local event history needs migration")
                 totals = {
                     (row[0], row[1]): row[2:]
@@ -383,6 +448,11 @@ class EventHistoryStore:
                         "SELECT control_uuid, state_uuid, removed_at FROM removed_sources"
                     )
                 }
+                clear_generation = int(
+                    db.execute(
+                        "SELECT clear_generation FROM history_metadata WHERE id = 1"
+                    ).fetchone()[0]
+                )
                 keys = set(active_sources) | set(totals) | set(coverage) | set(removed)
                 active_set = set(active_sources)
                 selected_keys = sorted(
@@ -415,7 +485,12 @@ class EventHistoryStore:
             wal = self.path.with_suffix(".sqlite3-wal")
             wal_bytes = wal.stat().st_size if wal.exists() else 0
             return EventHistoryStoreSummary(
-                time.time(), database_bytes, wal_bytes, sources, len(keys) > len(selected_keys)
+                time.time(),
+                database_bytes,
+                wal_bytes,
+                sources,
+                len(keys) > len(selected_keys),
+                clear_generation,
             )
         except (OSError, sqlite3.Error) as exc:
             raise EventHistoryUnavailable("local event history is unavailable") from exc
@@ -685,6 +760,10 @@ class EventHistoryStore:
                 connection.execute("DELETE FROM coverage")
                 connection.execute("DELETE FROM removed_sources")
                 connection.execute("DELETE FROM source_totals")
+                connection.execute(
+                    "UPDATE history_metadata SET clear_generation = clear_generation + 1 "
+                    "WHERE id = 1"
+                )
                 connection.execute("COMMIT")
                 return int(count)
             except sqlite3.Error as exc:
@@ -895,7 +974,7 @@ class EventHistoryMonitor:
             with suppress(asyncio.CancelledError):
                 await self._task
 
-    async def visible_controls(self) -> tuple[Control, ...]:
+    async def visible_structure(self) -> LoxoneStructure:
         """Load one current service-owned structure for selection and validation."""
         from mcpserver.loxone.client import MiniserverEndpoint
 
@@ -930,13 +1009,16 @@ class EventHistoryMonitor:
                     allow_cooldown_probe=False,
                 )
                 session = opened_session
-            structure = await session.load_structure()
-            return _controls(structure.controls)
+            return await session.load_structure()
         finally:
             if session is not None:
                 await session.close()
             if token is not None:
                 token.destroy()
+
+    async def visible_controls(self) -> tuple[Control, ...]:
+        """Return only visible controls from a current authorized structure."""
+        return _controls((await self.visible_structure()).controls)
 
     async def validate_source(self, control_uuid: str, state_uuid: str) -> tuple[str, str, str]:
         """Resolve one exact source through current service-owned visibility."""
