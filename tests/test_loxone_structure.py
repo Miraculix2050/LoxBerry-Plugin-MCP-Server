@@ -604,6 +604,39 @@ def test_structure_omits_disabled_native_statistic_series() -> None:
     assert controls["legacy"].statistic_series == ()
 
 
+def test_structure_marks_statistic_v2_series_truncated_at_128() -> None:
+    raw = {
+        "lastModified": "now",
+        "msInfo": {"serialNr": "000000000000"},
+        "rooms": {},
+        "cats": {},
+        "controls": {
+            "meter": {
+                "name": "Meter",
+                "type": "Meter",
+                "states": {},
+                "statisticV2": {
+                    "groups": [
+                        {
+                            "id": group_id,
+                            "mode": 1,
+                            "dataPoints": [
+                                {"output": f"value{index}", "title": f"Value {index}"}
+                                for index in range(32)
+                            ],
+                        }
+                        for group_id in range(1, 6)
+                    ]
+                },
+            }
+        },
+    }
+
+    control = normalize_structure(raw, username="reader").controls[0]
+    assert len(control.statistic_series) == 128
+    assert control.statistic_series_truncated is True
+
+
 @pytest.mark.parametrize(
     ("raw_value", "expected"),
     [(False, False), (True, True), (0, False), (20, True)],

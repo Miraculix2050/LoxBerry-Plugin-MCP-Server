@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add an opt-in compact `loxone_describe_control` history-target view with state
+  UUIDs and advertised native statistic series, preserving the full default
+  response. Mark StatisticV2 series omitted beyond the normalized 128-series
+  limit without implying recording or historical coverage.
+
 - Make the Tool Explorer's selected-tool and result cards collapsible, with history
   arguments in a separate disclosure. Label array objects using available names,
   descriptions, identifiers, or relationship endpoints; use timestamps only as a

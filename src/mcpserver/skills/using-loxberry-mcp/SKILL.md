@@ -248,7 +248,15 @@ tool call can inspect or alter the emergency-stop condition while it is active.
 
 Use `loxone_describe_control` first. Call `loxone_get_control_history` only when
 `has_history` is true, and call `loxone_get_statistics` only with a `series_id`
-advertised under `capabilities.statistics`. For `source: legacy`, use `raw`
+advertised under `capabilities.statistics`.
+For history-target selection, use `view="history_targets"` to receive only the
+control identity, state UUIDs, native control-history flag, and advertised
+statistic series. The default `view="full"` remains available when control
+model, presentation, actions, or relationships are needed. Check
+`capabilities.native_statistics_truncated`; if true, the normalized StatisticV2
+list stopped at 128 series and an absent series is not evidence it does not
+exist. The compact view does not establish local event recording or time coverage.
+For `source: legacy`, use `raw`
 granularity only and no more than seven days; StatisticV2 also supports aggregated
 granularities. Follow `next_cursor` with
 the same query arguments. History and statistic cursors use signed continuation

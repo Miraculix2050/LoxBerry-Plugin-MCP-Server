@@ -154,6 +154,7 @@ class Control:
     step: float | None = None
     is_analog: bool | None = None
     statistic_series: tuple[StatisticSeries, ...] = ()
+    statistic_series_truncated: bool = False
     status_monitor_inputs: tuple[StatusMonitorInput, ...] = ()
     status_monitor_statuses: tuple[StatusMonitorStatus, ...] = ()
     format: str | None = None

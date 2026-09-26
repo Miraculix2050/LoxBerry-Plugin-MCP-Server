@@ -2,6 +2,8 @@
 
 FastMCP derives each tool's input and output JSON Schemas from the registered Python function and Pydantic result model. MCP clients obtain the tool surface enabled for a concrete installation through `tools/list`; that response is authoritative for calls to that installation. The integrated Tool Explorer reads and visualizes the same response.
 
+For `loxone_describe_control`, the generated schema lists `view="full"` as the default and `view="history_targets"` as a compact result variant. The latter omits presentation, relationships, and non-history capabilities while retaining `data.capabilities.statistics` for client transfer. The full/default data shape remains unchanged.
+
 The plugin package also contains a static reference for the complete tool contract supported by its release:
 
 - `tool-schema-reference.html` is the human-readable reference linked from **Help** and the Tool Explorer.
