@@ -540,7 +540,7 @@
       if (!structured(item) || Array.isArray(item)) return '';
       const own = (field) => Object.prototype.hasOwnProperty.call(item, field) ? item[field] : undefined;
       function* candidates() {
-        for (const field of ['name', 'title', 'label', 'control_name', 'state_name']) yield own(field);
+        for (const field of ['name', 'title', 'label', 'control_name', 'state_name', 'what']) yield own(field);
         const control = own('control');
         yield structured(control) && !Array.isArray(control) &&
           Object.prototype.hasOwnProperty.call(control, 'name') ? control.name : undefined;
