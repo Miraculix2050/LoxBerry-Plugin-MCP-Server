@@ -1,830 +1,9 @@
-/* LoxBerry MCP Tool Explorer. Refresh credentials remain in the server-side browser session. */
-(function (root, factory) {
-  const api = factory();
-  if (typeof module === 'object' && module.exports) module.exports = api;
-  if (root) root.McpExplorerCore = api;
-})(typeof window !== 'undefined' ? window : undefined, function () {
-  'use strict';
-  const adapters = typeof module === 'object' && module.exports
-    ? require('./explorer-adapters.js') : window.McpExplorerAdapters;
-
-  const PROTOCOL_VERSION = '2025-11-25';
-  const MAX_CALL_HISTORY = 50;
-  const MAX_TRANSCRIPT = 100;
-  const EXPLORER_SESSION_MS = 8 * 60 * 60 * 1000;
-  const MCP_RESOURCE_PATH = '/plugins/mcpserver/mcp';
-  const EXPLORER_PATH = '/admin/plugins/mcpserver/explorer.cgi';
-  const EXPLORER_SCOPE_ORDER = [
-    'loxone:read', 'loxone:history', 'loxone:control', 'loxberry:read', 'loxberry:operate',
-  ];
-  function grantedScopes(scope) {
-    if (typeof scope !== 'string' || !scope.trim()) return null;
-    const values = scope.trim().split(/\s+/);
-    if (values.some((value) => !EXPLORER_SCOPE_ORDER.includes(value)) ||
-        new Set(values).size !== values.length) return null;
-    return new Set(values);
-  }
-  const SECRET_NAME = /(?:password|passwd|secret|token|api[_-]?key|private[_-]?key)/i;
-  const JSON_TYPES = new Set(['null', 'boolean', 'object', 'array', 'number', 'string', 'integer']);
-  const REUSE_SCHEMA_KEYS = new Set([
-    '$ref', '$defs', 'type', 'enum', 'const', 'anyOf', 'oneOf', 'properties', 'required',
-    'additionalProperties', 'items', 'minimum', 'maximum', 'minLength', 'maxLength',
-    'pattern', 'minItems', 'maxItems', 'uniqueItems', 'title', 'description', 'default',
-    'examples', 'format', 'readOnly', 'writeOnly',
-  ]);
-  function clone(value) {
-    return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
-  }
-
-  function toolGroup(tool) {
-    return adapters.toolGroup(tool);
-  }
-
-  function sortedToolGroups(tools) {
-    return adapters.GROUPS.map((group) => {
-      return {
-        id: group.id,
-        tools: (tools || []).filter((tool) => toolGroup(tool) === group.id).sort((left, right) => {
-          const leftPosition = adapters.forTool(left)?.order ?? Number.MAX_SAFE_INTEGER;
-          const rightPosition = adapters.forTool(right)?.order ?? Number.MAX_SAFE_INTEGER;
-          return leftPosition - rightPosition || left.name.localeCompare(right.name);
-        }),
-      };
-    }).filter((group) => group.tools.length);
-  }
-
-  function filteredToolGroups(tools, search, groupIds) {
-    const query = String(search || '').trim().toLowerCase();
-    const selectedGroups = new Set(groupIds || []);
-    const matches = (tools || []).filter((tool) => {
-      if (selectedGroups.size && !selectedGroups.has(toolGroup(tool))) return false;
-      return !query || `${tool.name || ''} ${tool.description || ''}`.toLowerCase().includes(query);
-    });
-    return sortedToolGroups(matches);
-  }
-
-  function dateTimeLocalToRfc3339(value) {
-    if (typeof value !== 'string' || !value) return '';
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? '' : date.toISOString();
-  }
-
-  function rfc3339ToDateTimeLocal(value) {
-    const date = new Date(value);
-    if (typeof value !== 'string' || Number.isNaN(date.getTime())) return '';
-    const pad = (number) => String(number).padStart(2, '0');
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-  }
-
-  function timeRange(preset, now) {
-    const end = new Date(now === undefined ? Date.now() : now);
-    if (Number.isNaN(end.getTime())) return null;
-    const start = new Date(end.getTime());
-    if (preset === 'hour') start.setTime(start.getTime() - 60 * 60 * 1000);
-    else if (preset === 'day') start.setTime(start.getTime() - 24 * 60 * 60 * 1000);
-    else if (preset === 'week') start.setTime(start.getTime() - 7 * 24 * 60 * 60 * 1000);
-    else if (preset === 'today') start.setHours(0, 0, 0, 0);
-    else return null;
-    return {start: start.toISOString(), end: end.toISOString()};
-  }
-
-  function actionFields(action) {
-    return adapters.actionFields(action);
-  }
-
-  function operationParameterFields() {
-    return adapters.operationParameterFields();
-  }
-
-  function isAdvancedField(name) {
-    return adapters.isAdvancedField(name);
-  }
-
-  function isReferenceField(name) {
-    return adapters.isReferenceField(name);
-  }
-
-  function referenceCandidates(field, history) {
-    return adapters.referenceCandidates(field, history);
-  }
-
-  function canonicalExplorerUrl(resource, currentOrigin, trustedLocalAlias) {
-    if (typeof resource !== 'string' || typeof currentOrigin !== 'string') return null;
-    try {
-      const resourceUrl = new URL(resource);
-      const pageOrigin = new URL(currentOrigin);
-      if (
-        resourceUrl.protocol !== 'https:'
-        || resourceUrl.username
-        || resourceUrl.password
-        || resourceUrl.pathname !== MCP_RESOURCE_PATH
-        || resourceUrl.search
-        || resourceUrl.hash
-        || pageOrigin.origin !== currentOrigin
-      ) return null;
-      if (resourceUrl.origin === currentOrigin) return '';
-      // The metadata request reached this point only after the backend validated
-      // the same-origin Host against its finite hostname/IP allowlist.
-      if (trustedLocalAlias && pageOrigin.protocol === 'https:') return '';
-      return `${resourceUrl.origin}${EXPLORER_PATH}`;
-    } catch (_error) {
-      return null;
-    }
-  }
-
-  function httpsExplorerUrl(currentUrl) {
-    if (typeof currentUrl !== 'string') return null;
-    try {
-      const page = new URL(currentUrl);
-      if (
-        page.protocol !== 'http:'
-        || page.username
-        || page.password
-        || page.pathname !== EXPLORER_PATH
-      ) return null;
-      page.protocol = 'https:';
-      if (page.port === '80') page.port = '';
-      return page.href;
-    } catch (_error) {
-      return null;
-    }
-  }
-
-  function localAuthorizationMetadata(metadata, currentOrigin) {
-    let issuer;
-    let local;
-    try {
-      issuer = new URL(metadata.issuer);
-      local = new URL(currentOrigin);
-    } catch (_error) {
-      return null;
-    }
-    if (
-      issuer.protocol !== 'https:'
-      || issuer.pathname !== '/plugins/mcpserver/oauth'
-      || issuer.search
-      || issuer.hash
-      || local.protocol !== 'https:'
-      || local.origin !== currentOrigin
-    ) return null;
-    const endpoints = {
-      authorization_endpoint: '/plugins/mcpserver/oauth/authorize',
-      token_endpoint: '/plugins/mcpserver/oauth/token',
-      registration_endpoint: '/plugins/mcpserver/oauth/register',
-      revocation_endpoint: '/plugins/mcpserver/oauth/revoke',
-    };
-    for (const [name, path] of Object.entries(endpoints)) {
-      if (metadata[name] !== `${issuer.origin}${path}`) return null;
-    }
-    return Object.fromEntries(
-      [
-        ...Object.entries(endpoints),
-        ['explorer_session_endpoint', '/plugins/mcpserver/oauth/explorer-session'],
-      ].map(([name, path]) => [name, `${local.origin}${path}`]),
-    );
-  }
-
-  function resolveRef(schema, rootSchema) {
-    let current = schema || {};
-    const seen = new Set();
-    while (current && typeof current.$ref === 'string' && current.$ref.startsWith('#/')) {
-      if (seen.has(current.$ref)) return {};
-      seen.add(current.$ref);
-      current = current.$ref.slice(2).split('/').reduce((value, part) => {
-        const key = part.replace(/~1/g, '/').replace(/~0/g, '~');
-        return value && value[key];
-      }, rootSchema);
-    }
-    return current || {};
-  }
-
-  function effectiveSchema(schema, rootSchema) {
-    const resolved = resolveRef(schema, rootSchema);
-    if (Array.isArray(resolved.type)) {
-      const usefulTypes = resolved.type.filter((type) => type !== 'null');
-      if (usefulTypes.length === 1) return {...resolved, type: usefulTypes[0]};
-    }
-    const variants = resolved.anyOf || resolved.oneOf;
-    if (!Array.isArray(variants)) return resolved;
-    const useful = variants
-      .map((item) => resolveRef(item, rootSchema))
-      .filter((item) => item.type !== 'null');
-    if (useful.length !== 1) return resolved;
-    const {anyOf, oneOf, ...outer} = resolved;
-    return {...outer, ...useful[0]};
-  }
-
-  function schemaType(schema, rootSchema) {
-    const effective = effectiveSchema(schema, rootSchema);
-    if (typeof effective.type === 'string') return effective.type;
-    if (effective.properties) return 'object';
-    if (effective.enum && effective.enum.length) return typeof effective.enum[0];
-    return undefined;
-  }
-
-  function initialValue(schema, rootSchema) {
-    const effective = effectiveSchema(schema, rootSchema);
-    if (Object.prototype.hasOwnProperty.call(effective, 'default')) return clone(effective.default);
-    const type = schemaType(effective, rootSchema);
-    if (type === 'string') return '';
-    if (type === 'integer' || type === 'number') return 0;
-    if (type === 'boolean') return false;
-    if (type === 'array') return [];
-    if (type === 'object') return {};
-    return null;
-  }
-
-  function defaultArguments(schema) {
-    const document = {};
-    const required = new Set(schema && Array.isArray(schema.required) ? schema.required : []);
-    for (const [name, property] of Object.entries((schema && schema.properties) || {})) {
-      const effective = effectiveSchema(property, schema);
-      if (required.has(name) || (Object.prototype.hasOwnProperty.call(effective, 'default') && effective.default !== null)) {
-        document[name] = initialValue(property, schema);
-      }
-    }
-    return document;
-  }
-
-  function valueMatchesSchema(value, schema, rootSchema) {
-    const resolved = resolveRef(schema, rootSchema);
-    if (Array.isArray(resolved.enum) && !resolved.enum.some((item) => Object.is(item, value))) return false;
-    if (Object.prototype.hasOwnProperty.call(resolved, 'const') && !Object.is(resolved.const, value)) return false;
-    const declaredTypes = Array.isArray(resolved.type) ? resolved.type : [resolved.type];
-    const declaredVariants = resolved.anyOf || resolved.oneOf || [];
-    if (value === null) {
-      return (resolved.type === undefined && declaredVariants.length === 0) || declaredTypes.includes('null') ||
-        declaredVariants.some((item) => valueMatchesSchema(value, item, rootSchema));
-    }
-    const effective = effectiveSchema(resolved, rootSchema);
-    if (Array.isArray(effective.anyOf) || Array.isArray(effective.oneOf)) {
-      const variants = effective.anyOf || effective.oneOf;
-      return variants.some((item) => valueMatchesSchema(value, item, rootSchema));
-    }
-    const type = schemaType(effective, rootSchema);
-    if (type !== undefined && !JSON_TYPES.has(type)) return false;
-    if (type === 'string' && typeof value !== 'string') return false;
-    if (type === 'integer' && (!Number.isInteger(value))) return false;
-    if (type === 'number' && (typeof value !== 'number' || !Number.isFinite(value))) return false;
-    if (type === 'boolean' && typeof value !== 'boolean') return false;
-    if (type === 'array' && !Array.isArray(value)) return false;
-    if (type === 'object' && (typeof value !== 'object' || Array.isArray(value))) return false;
-    return true;
-  }
-
-  function validateValue(value, schema, rootSchema) {
-    const errors = [];
-    function visit(current, currentSchema, path) {
-      const resolved = resolveRef(currentSchema, rootSchema);
-      const variants = resolved.anyOf || resolved.oneOf;
-      if (Array.isArray(variants)) {
-        const matches = variants.filter((variant) => validateValue(current, variant, rootSchema).length === 0);
-        const valid = resolved.oneOf ? matches.length === 1 : matches.length > 0;
-        if (!valid) errors.push(`${path || '$'}: schema variant does not match`);
-        return;
-      }
-      const effective = effectiveSchema(currentSchema, rootSchema);
-      if (!valueMatchesSchema(current, currentSchema, rootSchema)) {
-        errors.push(`${path || '$'}: type or enum does not match`);
-        return;
-      }
-      if (typeof current === 'number') {
-        if (typeof effective.minimum === 'number' && current < effective.minimum) errors.push(`${path}: below minimum`);
-        if (typeof effective.maximum === 'number' && current > effective.maximum) errors.push(`${path}: above maximum`);
-      }
-      if (typeof current === 'string') {
-        if (typeof effective.minLength === 'number' && current.length < effective.minLength) errors.push(`${path}: too short`);
-        if (typeof effective.maxLength === 'number' && current.length > effective.maxLength) errors.push(`${path}: too long`);
-        if (typeof effective.pattern === 'string') {
-          try { if (!(new RegExp(effective.pattern)).test(current)) errors.push(`${path}: pattern does not match`); }
-          catch (_error) { errors.push(`${path}: schema pattern is invalid`); }
-        }
-      }
-      if (Array.isArray(current)) {
-        if (typeof effective.minItems === 'number' && current.length < effective.minItems) errors.push(`${path}: too few items`);
-        if (typeof effective.maxItems === 'number' && current.length > effective.maxItems) errors.push(`${path}: too many items`);
-        if (effective.uniqueItems && new Set(current.map((item) => JSON.stringify(item))).size !== current.length) errors.push(`${path}: items must be unique`);
-        if (effective.items) current.forEach((item, index) => visit(item, effective.items, `${path}[${index}]`));
-      }
-      if (current && typeof current === 'object' && !Array.isArray(current)) {
-        const properties = effective.properties || {};
-        for (const name of effective.required || []) {
-          if (!Object.prototype.hasOwnProperty.call(current, name)) errors.push(`${path ? `${path}.` : ''}${name}: required`);
-        }
-        if (effective.additionalProperties === false) {
-          for (const name of Object.keys(current)) if (!properties[name]) errors.push(`${path ? `${path}.` : ''}${name}: unknown`);
-        }
-        for (const [name, child] of Object.entries(current)) {
-          if (properties[name]) visit(child, properties[name], path ? `${path}.${name}` : name);
-        }
-      }
-    }
-    visit(value, schema || {}, '');
-    return errors;
-  }
-
-  function validateArguments(value, schema) {
-    return validateValue(value, schema || {type: 'object'}, schema || {});
-  }
-
-  function isSecretSchema(name, schema, rootSchema) {
-    const effective = effectiveSchema(schema, rootSchema);
-    return SECRET_NAME.test(name) || effective.writeOnly === true || effective.format === 'password';
-  }
-
-  function redactArguments(value, schema) {
-    function visit(current, currentSchema, rootSchema, name) {
-      if (isSecretSchema(name || '', currentSchema || {}, rootSchema || {})) return '[redacted]';
-      const effective = effectiveSchema(currentSchema || {}, rootSchema || {});
-      if (Array.isArray(current)) return current.map((item) => visit(item, effective.items || {}, rootSchema, ''));
-      if (!current || typeof current !== 'object') return clone(current);
-      const result = {};
-      for (const [key, child] of Object.entries(current)) {
-        result[key] = visit(child, (effective.properties || {})[key] || {}, rootSchema, key);
-      }
-      return result;
-    }
-    return visit(value, schema || {}, schema || {}, '');
-  }
-
-  function summarizeArguments(value, schema) {
-    if (!schema || !schema.properties || !value || typeof value !== 'object' || Array.isArray(value)) return '';
-    const redacted = redactArguments(value, schema);
-    function known(current, currentSchema, depth) {
-      if (current === '[redacted]') return current;
-      if (depth > 2) return undefined;
-      const effective = effectiveSchema(currentSchema, schema);
-      if (Array.isArray(current)) {
-        if (!effective.items) return undefined;
-        return current.slice(0, 2).map((item) => known(item, effective.items, depth + 1));
-      }
-      if (current && typeof current === 'object') {
-        if (!effective.properties) return undefined;
-        const result = {};
-        for (const [key, child] of Object.entries(current).slice(0, 3)) {
-          if (!Object.hasOwn(effective.properties, key)) continue;
-          const safe = known(child, effective.properties[key], depth + 1);
-          if (safe !== undefined) result[key] = safe;
-        }
-        return result;
-      }
-      return effective.type || effective.enum || effective.const !== undefined ? current : undefined;
-    }
-    const entries = Object.entries(redacted).filter(([key]) => Object.hasOwn(schema.properties, key));
-    entries.sort(([leftKey, left], [rightKey, right]) => {
-      const leftSchema = effectiveSchema(schema.properties[leftKey], schema);
-      const rightSchema = effectiveSchema(schema.properties[rightKey], schema);
-      const isDefault = (child, fieldSchema) => Object.hasOwn(fieldSchema, 'default')
-        && JSON.stringify(child) === JSON.stringify(fieldSchema.default);
-      return Number(isDefault(left, leftSchema)) - Number(isDefault(right, rightSchema));
-    });
-    const parts = [];
-    for (const [key, child] of entries) {
-      if (parts.length >= 3) break;
-      let safe = known(child, schema.properties[key], 0);
-      if (safe === undefined) continue;
-      if (typeof safe === 'string' && safe !== '[redacted]' && safe.length > 24) safe = `${safe.slice(0, 23)}…`;
-      const rendered = JSON.stringify(safe);
-      parts.push(`${key.slice(0, 24)}=${rendered.length > 70 ? `${rendered.slice(0, 69)}…` : rendered}`);
-    }
-    const summary = parts.join(', ');
-    return summary.length > 120 ? `${summary.slice(0, 119)}…` : summary;
-  }
-
-  function preferredTargetField(sourcePath) {
-    const leaf = Array.isArray(sourcePath) && sourcePath.length
-      ? String(sourcePath[sourcePath.length - 1]).toLowerCase()
-      : '';
-    return leaf.startsWith('next_') ? leaf.slice(5) : leaf;
-  }
-
-  function compatibleTargets(tools, value, context) {
-    const result = [];
-    const preferredField = preferredTargetField(context && context.sourcePath);
-    let order = 0;
-    for (const tool of tools || []) {
-      const schema = tool.inputSchema || {type: 'object'};
-      for (const [name, property] of Object.entries(schema.properties || {})) {
-        let target = null;
-        if (schemaSupportedForReuse(property, schema) && validateValue(value, property, schema).length === 0) {
-          target = {tool: tool.name, field: name};
-        } else {
-          const effective = effectiveSchema(property, schema);
-          if (schemaType(property, schema) === 'array' && effective.items &&
-            schemaSupportedForReuse(effective.items, schema) &&
-            validateValue(value, effective.items, schema).length === 0 &&
-            validateValue([value], property, schema).length === 0) {
-            target = {tool: tool.name, field: name, mode: 'wrap-array'};
-          }
-        }
-        if (target) {
-          target.semanticRank = preferredField && name.toLowerCase() === preferredField ? 0 : 1;
-          target.toolRank = context && tool.name === context.sourceTool ? 0 : 1;
-          target.order = order++;
-          result.push(target);
-        }
-      }
-    }
-    result.sort((left, right) =>
-      left.semanticRank - right.semanticRank || left.toolRank - right.toolRank || left.order - right.order);
-    return result.map(({semanticRank: _semanticRank, toolRank: _toolRank, order: _order, ...target}) => target);
-  }
-
-  function valueForTransfer(value, mode) {
-    return mode === 'wrap-array' ? [clone(value)] : clone(value);
-  }
-
-  function transferArguments(tool, field, value, mode, sourceContext, targetDraft) {
-    const draft = targetDraft && typeof targetDraft === 'object' && !Array.isArray(targetDraft)
-      ? clone(targetDraft)
-      : sourceContext && sourceContext.tool === tool.name && sourceContext.arguments &&
-      typeof sourceContext.arguments === 'object' && !Array.isArray(sourceContext.arguments)
-      ? clone(sourceContext.arguments)
-      : defaultArguments(tool.inputSchema || {});
-    if (field !== 'cursor') delete draft.cursor;
-    draft[field] = valueForTransfer(value, mode);
-    return draft;
-  }
-
-  function nextPageArguments(tool, previousArguments, displayedResult) {
-    if (!tool || toolIsMutating(tool) || !previousArguments ||
-      typeof previousArguments !== 'object' || Array.isArray(previousArguments)) return null;
-    const cursor = displayedResult && displayedResult.data && displayedResult.data.next_cursor;
-    if (typeof cursor !== 'string' || cursor.length === 0) return null;
-    const schema = tool.inputSchema || {type: 'object'};
-    const cursorSchema = (schema.properties || {}).cursor;
-    if (!cursorSchema || validateValue(cursor, cursorSchema, schema).length) return null;
-    const draft = clone(previousArguments);
-    draft.cursor = cursor;
-    return validateArguments(draft, schema).length ? null : draft;
-  }
-
-  function schemaSupportedForReuse(schema, rootSchema, seen) {
-    if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return false;
-    const visited = seen || new Set();
-    if (visited.has(schema)) return true;
-    visited.add(schema);
-    if (Object.keys(schema).some((key) => !REUSE_SCHEMA_KEYS.has(key))) return false;
-    if (schema.format !== undefined && schema.format !== 'date-time') return false;
-    if (typeof schema.$ref === 'string') {
-      if (!schema.$ref.startsWith('#/')) return false;
-      const resolved = schema.$ref.slice(2).split('/').reduce((value, part) => {
-        const key = part.replace(/~1/g, '/').replace(/~0/g, '~');
-        return value && Object.prototype.hasOwnProperty.call(value, key) ? value[key] : undefined;
-      }, rootSchema);
-      return resolved !== undefined && resolved !== schema && schemaSupportedForReuse(resolved, rootSchema, visited);
-    }
-    const types = Array.isArray(schema.type) ? schema.type : schema.type === undefined ? [] : [schema.type];
-    if (types.some((type) => !JSON_TYPES.has(type))) return false;
-    for (const key of ['anyOf', 'oneOf']) {
-      if (schema[key] !== undefined && (!Array.isArray(schema[key]) || !schema[key].length ||
-        !schema[key].every((item) => schemaSupportedForReuse(item, rootSchema, visited)))) return false;
-    }
-    if (schema.items !== undefined && !schemaSupportedForReuse(schema.items, rootSchema, visited)) return false;
-    if (schema.properties !== undefined && (!schema.properties || typeof schema.properties !== 'object' ||
-      Array.isArray(schema.properties) || !Object.values(schema.properties).every((item) => schemaSupportedForReuse(item, rootSchema, visited)))) return false;
-    if (schema.additionalProperties !== undefined && typeof schema.additionalProperties !== 'boolean') return false;
-    return true;
-  }
-
-  function formatPath(parts) {
-    if (!parts.length) return '$';
-    return parts.reduce((text, part) => typeof part === 'number' ? `${text}[${part}]` : `${text}.${part}`, '$');
-  }
-
-  function createResultInspector(document, value, labels, onTransfer) {
-    const BATCH_SIZE = 100;
-    const INITIAL_LIMIT = 200;
-    const SHALLOW_LIMIT = 10;
-    const keys = new WeakMap();
-    let initialCount = 0;
-    const node = (tag, className, text) => {
-      const result = document.createElement(tag);
-      if (className) result.className = className;
-      if (text !== undefined) result.textContent = text;
-      return result;
-    };
-    const entries = (item) => {
-      if (Array.isArray(item)) return item.length;
-      if (!keys.has(item)) keys.set(item, Object.keys(item));
-      return keys.get(item).length;
-    };
-    const childAt = (item, index) => {
-      const key = Array.isArray(item) ? index : keys.get(item)[index];
-      return [key, item[key]];
-    };
-    const structured = (item) => item !== null && typeof item === 'object';
-    const summary = (item) => Array.isArray(item) ? `[${entries(item)}]` : `{${entries(item)}}`;
-    const clippedText = (value, limit) => {
-      if (typeof value !== 'string') return '';
-      let preview = '';
-      let length = 0;
-      let truncated = false;
-      let inspected = 0;
-      for (const char of value) {
-        if (inspected++ >= limit + 256) { truncated = !!preview; break; }
-        if (!preview && /\s/u.test(char)) continue;
-        if (length === limit) { truncated = true; break; }
-        preview += char;
-        length += 1;
-      }
-      preview = preview.trimEnd();
-      return preview ? preview + (truncated ? '…' : '') : '';
-    };
-    const relationPreview = (source, target) => {
-      const from = clippedText(source, 37);
-      const to = clippedText(target, 37);
-      return from && to ? `${from} \u2192 ${to}` : undefined;
-    };
-    const arrayItemPreview = (item) => {
-      if (!structured(item) || Array.isArray(item)) return '';
-      const own = (field) => Object.prototype.hasOwnProperty.call(item, field) ? item[field] : undefined;
-      function* candidates() {
-        for (const field of ['name', 'title', 'label', 'control_name', 'state_name', 'what']) yield own(field);
-        const control = own('control');
-        yield structured(control) && !Array.isArray(control) &&
-          Object.prototype.hasOwnProperty.call(control, 'name') ? control.name : undefined;
-        for (const field of ['weather_type_text', 'type', 'block_type', 'component', 'finding_type', 'strategy']) yield own(field);
-        yield relationPreview(own('source'), own('target'));
-        yield relationPreview(own('source_project_node_id'), own('target_project_node_id'));
-        for (const field of ['code', 'model_source_id', 'classification', 'kind',
-          'interpretation', 'state_uuid', 'id', 'uuid', 'observed_at', 'at']) yield own(field);
-        // Keep timestamp last so a descriptive label or identifier wins when available.
-        yield own('timestamp');
-      }
-      for (const value of candidates()) {
-        if (typeof value === 'string') {
-          const preview = clippedText(value, 80);
-          if (preview) return ` ${JSON.stringify(preview)}`;
-        }
-        if (typeof value === 'number' && Number.isFinite(value)) return ` ${value}`;
-        if (typeof value === 'boolean') return ` ${value}`;
-      }
-      return '';
-    };
-
-    function renderList(item, path, depth, initial) {
-      const list = node('ul');
-      const count = entries(item);
-      let rendered = 0;
-      const more = node('button', 'mcp-explorer-tree-more', labels.moreResults);
-      const moreRow = node('li', 'mcp-explorer-tree-more-row');
-      moreRow.append(more);
-      more.type = 'button';
-      const addBatch = (initialBatch) => {
-        const limit = Math.min(count, rendered + BATCH_SIZE);
-        while (rendered < limit && (!initialBatch || initialCount < INITIAL_LIMIT)) {
-          const [key, child] = childAt(item, rendered);
-          rendered += 1;
-          if (initialBatch) initialCount += 1;
-          list.append(renderEntry(key, child, [...path, key], depth + 1,
-            initialBatch && !Array.isArray(item), Array.isArray(item)));
-        }
-        if (rendered < count) list.append(moreRow);
-        else moreRow.remove();
-        more.textContent = `${labels.moreResults} (${count - rendered})`;
-      };
-      more.addEventListener('click', () => { moreRow.remove(); addBatch(false); });
-      addBatch(initial);
-      return list;
-    }
-
-    function renderEntry(key, item, path, depth, initial, arrayChild) {
-      const row = node('li', 'mcp-explorer-tree-entry');
-      const controls = node('div', 'mcp-explorer-tree-row');
-      row.append(controls);
-      if (!structured(item) || entries(item) === 0) {
-        const choose = node('button', 'mcp-explorer-value',
-          `${String(key)}: ${structured(item) ? summary(item) : item === null ? '-' : JSON.stringify(item)}`);
-        choose.type = 'button';
-        choose.title = labels.selectValue;
-        choose.addEventListener('click', () => onTransfer(item, path));
-        controls.append(choose);
-        return row;
-      }
-      const disclosure = node('button', 'mcp-explorer-tree-toggle');
-      disclosure.type = 'button';
-      disclosure.setAttribute('aria-expanded', 'false');
-      const caption = `${String(key)} ${summary(item)}${arrayChild ? arrayItemPreview(item) : ''}`;
-      const updateDisclosure = (open) => {
-        disclosure.textContent = `${open ? '▾' : '▸'} ${caption}`;
-        disclosure.setAttribute('aria-expanded', String(open));
-        disclosure.setAttribute('aria-label', `${open ? labels.collapseResult : labels.expandResult}: ${caption}`);
-      };
-      updateDisclosure(false);
-      disclosure.addEventListener('click', () => {
-        const open = disclosure.getAttribute('aria-expanded') !== 'true';
-        if (open && row.children.length === 1) row.append(renderList(item, path, depth, false));
-        if (row.children.length > 1) row.children[1].hidden = !open;
-        updateDisclosure(open);
-      });
-      const choose = node('button', 'mcp-explorer-value mcp-explorer-tree-select', '↗');
-      choose.type = 'button';
-      choose.title = labels.selectValue;
-      choose.setAttribute('aria-label', `${labels.selectValue}: ${String(key)}`);
-      choose.addEventListener('click', () => onTransfer(item, path));
-      controls.append(disclosure, choose);
-      if (initial && depth === 1 && !Array.isArray(item) && entries(item) <= SHALLOW_LIMIT &&
-          INITIAL_LIMIT - initialCount >= entries(item)) {
-        row.append(renderList(item, path, depth, true));
-        updateDisclosure(true);
-      }
-      return row;
-    }
-
-    if (structured(value)) {
-      if (entries(value) === 0) return node('p', 'mcp-explorer-muted', summary(value));
-      return renderList(value, [], 0, true);
-    }
-    const list = node('ul');
-    list.append(renderEntry('$', value, [], 0, true));
-    return list;
-  }
-
-  function base64Url(bytes) {
-    let binary = '';
-    bytes.forEach((value) => { binary += String.fromCharCode(value); });
-    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  }
-
-  function toolIsMutating(tool) {
-    const annotations = tool && tool.annotations || {};
-    return !(annotations.readOnlyHint === true && annotations.destructiveHint === false);
-  }
-
-  function toolMetadataLabels(tool) {
-    const annotations = tool && tool.annotations || {};
-    const mutating = toolIsMutating(tool);
-    const contradictory = annotations.readOnlyHint === true && annotations.destructiveHint === true;
-    const labels = [mutating
-      ? (annotations.readOnlyHint === false ? 'toolBadgeWrite' : 'toolBadgeWritePossible')
-      : 'toolBadgeReadOnly'];
-    if (contradictory) return labels;
-    if (annotations.readOnlyHint === false) {
-      if (annotations.destructiveHint === true) labels.push('toolHintDestructive');
-      if (annotations.destructiveHint === false) labels.push('toolHintAdditive');
-      if (annotations.idempotentHint === true) labels.push('toolHintIdempotent');
-      if (annotations.idempotentHint === false) labels.push('toolHintRepeatEffect');
-    }
-    if (annotations.openWorldHint === true) labels.push('toolHintOpenWorld');
-    if (annotations.openWorldHint === false) labels.push('toolHintClosedWorld');
-    return labels;
-  }
-
-  function toolRequiredScopes(tool) {
-    return adapters.requiredScopes(tool);
-  }
-
-  function acceptOAuthPayload(data, expectedState) {
-    return Boolean(
-      data && data.type === 'mcp-explorer-oauth' && data.state === expectedState &&
-      (typeof data.code === 'string' || typeof data.error === 'string'),
-    );
-  }
-
-  function acceptOAuthMessage(origin, expectedOrigin, data, expectedState) {
-    return origin === expectedOrigin && acceptOAuthPayload(data, expectedState);
-  }
-
-  function clearSensitiveState(state) {
-    state.oauth = null;
-    state.tools = [];
-    state.selectedTool = null;
-    state.toolSearch = '';
-    state.toolGroups = [];
-    state.arguments = {};
-    state.history = [];
-    state.transcript = [];
-    state.lastResult = null;
-    state.hasResult = false;
-    state.lastResultContext = null;
-    state.nextPageRequest = null;
-    state.transferValue = undefined;
-    state.transferPath = '';
-    state.transferRecipe = null;
-    state.drafts = {};
-  }
-
-  function clearSensitiveDom(elements) {
-    elements.json.value = '{}';
-    elements.confirmTool.textContent = '';
-    elements.confirmArguments.textContent = '';
-    if (elements.confirm.open) elements.confirm.close('cancel');
-    elements.transferSource.textContent = '';
-    elements.transferContext.textContent = '';
-    elements.transferTool.replaceChildren();
-    elements.transferField.replaceChildren();
-    elements.transferEmpty.hidden = false;
-    elements.transferApply.disabled = true;
-    if (elements.transfer.open) elements.transfer.close();
-    elements.resultContext.textContent = '';
-    elements.resultContext.hidden = true;
-    elements.historyArgumentsValue.textContent = '';
-    elements.historyArguments.hidden = true;
-    elements.historyArguments.open = false;
-    elements.resultTree.replaceChildren();
-    elements.resultRaw.textContent = '';
-    elements.rawDetails.open = false;
-    elements.restoreHistory.hidden = true;
-    elements.validation.textContent = '';
-    elements.validation.hidden = true;
-    elements.callFeedback.textContent = '';
-    elements.callFeedback.hidden = true;
-  }
-
-  function mcpFailure(response, fallback) {
-    const protocolError = response && response.error;
-    if (protocolError && typeof protocolError === 'object') {
-      return {
-        message: typeof protocolError.message === 'string' ? protocolError.message : fallback,
-        result: {error: clone(protocolError)},
-      };
-    }
-    const message = typeof protocolError === 'string' ? protocolError : fallback;
-    return {message, result: {error: message}};
-  }
-
-  function fieldControlId(index) {
-    return `explorer-field-${index}`;
-  }
-
-  function createFieldLabel(documentObject, name, input, index) {
-    input.id = fieldControlId(index);
-    const strong = documentObject.createElement('strong');
-    strong.textContent = name;
-    const fieldLabel = documentObject.createElement('label');
-    fieldLabel.setAttribute('for', input.id);
-    fieldLabel.append(strong);
-    return fieldLabel;
-  }
-
-  function createOptionalToggle(documentObject, name, input, index, optionalText) {
-    input.id = `explorer-include-${index}`;
-    const toggleLabel = documentObject.createElement('label');
-    toggleLabel.setAttribute('for', input.id);
-    toggleLabel.append(input, documentObject.createTextNode(` ${optionalText}: ${name}`));
-    return toggleLabel;
-  }
-
-  return {
-    PROTOCOL_VERSION,
-    MAX_CALL_HISTORY,
-    MAX_TRANSCRIPT,
-    EXPLORER_SESSION_MS,
-    EXPLORER_SCOPE_ORDER,
-    grantedScopes,
-    clone,
-    resolveRef,
-    effectiveSchema,
-    schemaType,
-    initialValue,
-    defaultArguments,
-    valueMatchesSchema,
-    validateValue,
-    validateArguments,
-    redactArguments,
-    summarizeArguments,
-    compatibleTargets,
-    toolGroup,
-    sortedToolGroups,
-    filteredToolGroups,
-    dateTimeLocalToRfc3339,
-    rfc3339ToDateTimeLocal,
-    timeRange,
-    actionFields,
-    operationParameterFields,
-    isAdvancedField,
-    isReferenceField,
-    referenceCandidates,
-    valueForTransfer,
-    transferArguments,
-    nextPageArguments,
-    schemaSupportedForReuse,
-    formatPath,
-    createResultInspector,
-    base64Url,
-    toolIsMutating,
-    toolMetadataLabels,
-    toolRequiredScopes,
-    acceptOAuthPayload,
-    acceptOAuthMessage,
-    mcpFailure,
-    clearSensitiveState,
-    clearSensitiveDom,
-    fieldControlId,
-    canonicalExplorerUrl,
-    httpsExplorerUrl,
-    localAuthorizationMetadata,
-    createFieldLabel,
-    createOptionalToggle,
-  };
-});
-
 (function () {
   'use strict';
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
 
   const core = window.McpExplorerCore;
+  const viewHelpers = window.McpExplorerViews;
   const adapters = window.McpExplorerAdapters;
   const page = document.getElementById('mcp-explorer');
   if (!page) return;
@@ -888,26 +67,8 @@
   };
 
   const label = (name) => page.dataset[name] || name;
-  const state = {
-    oauth: null,
-    tools: [],
-    selectedTool: null,
-    toolSearch: '',
-    toolGroups: [],
-    arguments: {},
-    history: [],
-    transcript: [],
-    lastResult: null,
-    hasResult: false,
-    lastResultContext: null,
-    nextPageRequest: null,
-    transferValue: undefined,
-    transferPath: '',
-    transferRecipe: null,
-    drafts: {},
-    nextId: 1,
-    busy: false,
-  };
+  const explorerState = window.McpExplorerState.create(core);
+  const state = explorerState.data;
   const logoutChannel = typeof BroadcastChannel === 'function'
     ? new BroadcastChannel('mcp-explorer-session') : null;
   const narrowViewport = window.matchMedia('(max-width: 52rem)');
@@ -944,7 +105,7 @@
   }
 
   function setBusy(busy) {
-    state.busy = busy;
+    explorerState.setBusy(busy);
     elements.connect.disabled = busy || Boolean(state.oauth);
     elements.disconnect.disabled = busy || !state.oauth;
     elements.run.disabled = busy || !state.oauth || !state.selectedTool;
@@ -1002,310 +163,25 @@
     showError(error, fallback);
   }
 
-  async function sha256(value) {
-    return new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)));
-  }
-
-  function randomUrlSafe(length) {
-    const bytes = new Uint8Array(length);
-    crypto.getRandomValues(bytes);
-    return core.base64Url(bytes);
-  }
-
-  async function fetchWithTimeout(url, options, timeoutMs) {
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      return await fetch(url, {...options, signal: controller.signal});
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') throw new Error(label('timeout'));
-      throw error;
-    } finally {
-      window.clearTimeout(timeout);
-    }
-  }
-
-  async function fetchJson(url, options) {
-    const response = await fetchWithTimeout(url, options, 15000);
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const detail = body.error_description || body.error || `${response.status} ${response.statusText}`;
-      throw new Error(detail);
-    }
-    return body;
-  }
-
-  async function discover() {
-    if (window.location.protocol !== 'https:') {
-      const error = new Error(label('originMismatch'));
-      error.canonicalUrl = core.httpsExplorerUrl(window.location.href);
-      throw error;
-    }
-    const resourceMetadata = await fetchJson('/.well-known/oauth-protected-resource/plugins/mcpserver/mcp', {cache: 'no-store'});
-    const issuer = Array.isArray(resourceMetadata.authorization_servers) ? resourceMetadata.authorization_servers[0] : null;
-    const canonicalUrl = core.canonicalExplorerUrl(
-      resourceMetadata.resource,
-      window.location.origin,
-      true,
-    );
-    if (canonicalUrl === null) throw new Error('OAuth resource metadata is invalid');
-    if (canonicalUrl) {
-      const error = new Error(label('originMismatch'));
-      error.canonicalUrl = canonicalUrl;
-      throw error;
-    }
-    if (!issuer) throw new Error('OAuth resource metadata has no authorization server');
-    const issuerUrl = new URL(issuer);
-    const resourceUrl = new URL(resourceMetadata.resource);
-    if (
-      issuerUrl.protocol !== 'https:'
-      || issuerUrl.origin !== resourceUrl.origin
-      || issuerUrl.pathname !== '/plugins/mcpserver/oauth'
-    ) throw new Error('OAuth issuer is not the local plugin issuer');
-    const metadataPath = `/.well-known/oauth-authorization-server${issuerUrl.pathname}`;
-    const authorizationMetadata = await fetchJson(metadataPath, {cache: 'no-store'});
-    if (authorizationMetadata.issuer !== issuer) throw new Error('OAuth issuer metadata does not match');
-    const localEndpoints = core.localAuthorizationMetadata(
-      authorizationMetadata,
-      window.location.origin,
-    );
-    if (!localEndpoints) throw new Error('OAuth endpoints do not match the local plugin endpoint');
-    clearOriginWarning();
-    return {
-      resourceMetadata,
-      authorizationMetadata: {...authorizationMetadata, ...localEndpoints},
-    };
-  }
-
-  async function registerClient(metadata, registrationScope, redirectUri) {
-    const registration = await fetchJson(metadata.registration_endpoint, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      cache: 'no-store',
-      body: JSON.stringify({
-        client_name: 'LoxBerry MCP Tool Explorer',
-        redirect_uris: [redirectUri],
-        grant_types: ['authorization_code', 'refresh_token'],
-        response_types: ['code'],
-        token_endpoint_auth_method: 'none',
-        scope: registrationScope,
-      }),
-    });
-    if (!registration.client_id) throw new Error('OAuth client registration returned no client_id');
-    return registration.client_id;
-  }
-
-  function waitForAuthorization(popup, expectedState) {
-    return new Promise((resolve, reject) => {
-      let finished = false;
-      const authorizationChannel = typeof BroadcastChannel === 'function'
-        ? new BroadcastChannel('mcp-explorer-oauth')
-        : null;
-      const finish = (callback) => {
-        if (finished) return;
-        finished = true;
-        window.clearInterval(closedTimer);
-        window.clearTimeout(timeout);
-        window.removeEventListener('message', onMessage);
-        authorizationChannel?.close();
-        callback();
-      };
-      const onMessage = (event) => {
-        if (!core.acceptOAuthMessage(event.origin, window.location.origin, event.data, expectedState)) return;
-        finish(() => event.data.error ? reject(new Error(event.data.errorDescription || event.data.error)) : resolve(event.data.code));
-      };
-      const onChannelMessage = (event) => {
-        if (!core.acceptOAuthPayload(event.data, expectedState)) return;
-        finish(() => event.data.error ? reject(new Error(event.data.errorDescription || event.data.error)) : resolve(event.data.code));
-      };
-      window.addEventListener('message', onMessage);
-      if (authorizationChannel) authorizationChannel.onmessage = onChannelMessage;
-      const closedTimer = window.setInterval(() => {
-        if (popup.closed) finish(() => reject(new Error(label('authCancelled'))));
-      }, 500);
-      const timeout = window.setTimeout(() => {
-        try { popup.close(); } catch (_error) { /* already gone */ }
-        finish(() => reject(new Error(label('authCancelled'))));
-      }, 5 * 60 * 1000);
-    });
-  }
-
-  async function explorerSession(metadata, body) {
-    return fetchJson(metadata.explorer_session_endpoint, {
-      method: 'POST', cache: 'no-store', credentials: 'same-origin',
-      headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body),
-    });
-  }
-
-  function openAuthorizationPopup() {
-    return window.open(
-      '',
-      'mcp-explorer-oauth',
-      'popup=yes,width=680,height=900,resizable=yes,scrollbars=yes',
-    );
-  }
-
-  async function authorize(popup) {
-    const resumeUntil = Date.now() + core.EXPLORER_SESSION_MS;
-    const discovered = await discover();
-    if (!popup) throw new Error(label('popupBlocked'));
-    const supported = new Set(discovered.resourceMetadata.scopes_supported || []);
-    if (!supported.has('loxone:read')) throw new Error(label('error'));
-    if (!supported.has('loxone:history')) supported.delete('loxberry:operate');
-    const scope = core.EXPLORER_SCOPE_ORDER.filter((item) => supported.has(item)).join(' ');
-    const registrationScope = scope;
-    const redirectUri = new URL('explorer_callback.cgi', window.location.href).href;
-    const clientId = await registerClient(discovered.authorizationMetadata, registrationScope, redirectUri);
-    const verifier = randomUrlSafe(64);
-    const challenge = core.base64Url(await sha256(verifier));
-    const oauthState = randomUrlSafe(32);
-    const authorizationUrl = new URL(discovered.authorizationMetadata.authorization_endpoint);
-    authorizationUrl.search = new URLSearchParams({
-      response_type: 'code', client_id: clientId, redirect_uri: redirectUri,
-      code_challenge: challenge, code_challenge_method: 'S256', state: oauthState,
-      scope, resource: discovered.resourceMetadata.resource,
-    }).toString();
-    popup.location.replace(authorizationUrl.href);
-    const code = await waitForAuthorization(popup, oauthState);
-    if (!code) throw new Error(label('authCancelled'));
-    const token = await explorerSession(discovered.authorizationMetadata, {
-      action: 'complete', client_id: clientId, code, redirect_uri: redirectUri,
-      code_verifier: verifier, resource: discovered.resourceMetadata.resource,
-    });
-    if (!token.access_token) throw new Error('Explorer session response is incomplete');
-    return {
-      metadata: discovered.authorizationMetadata,
-      resource: discovered.resourceMetadata.resource,
-      scope: typeof token.scope === 'string' ? token.scope : '',
-      accessToken: token.access_token,
-      expiresAt: Date.now() + Math.max(0, Number(token.expires_in || 0) - 15) * 1000,
-      resumeUntil: Number(token.expires_at || resumeUntil) * 1000,
-    };
-  }
-
-  async function refreshAccessToken() {
-    if (!state.oauth) throw new Error(label('tokenExpired'));
-    const token = await explorerSession(state.oauth.metadata, {action: 'access'});
-    if (!token.access_token) throw new Error('Explorer session response is incomplete');
-    state.oauth.accessToken = token.access_token;
-    state.oauth.scope = typeof token.scope === 'string' ? token.scope : '';
-    state.oauth.expiresAt = Date.now() + Math.max(0, Number(token.expires_in || 0) - 15) * 1000;
-    state.oauth.resumeUntil = Number(token.expires_at || 0) * 1000;
-    renderConnection();
-  }
-
-  async function accessToken() {
-    if (!state.oauth) throw new Error(label('disconnected'));
-    if (Date.now() >= state.oauth.expiresAt) {
-      try { await refreshAccessToken(); } catch (_error) {
-        await revokeAndClear();
-        const error = new Error(label('tokenExpired'));
-        error.sessionCleared = true;
-        throw error;
-      }
-    }
-    return state.oauth.accessToken;
-  }
-
-  function parseMcpBody(text, contentType) {
-    if (!text) return null;
-    if (contentType.includes('text/event-stream')) {
-      const payloads = text.split(/\r?\n/).filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trim()).filter(Boolean);
-      return payloads.length ? JSON.parse(payloads[payloads.length - 1]) : null;
-    }
-    return JSON.parse(text);
-  }
+  const auth = window.McpExplorerAuth.create({core, state, explorerState, label, clearOriginWarning,
+    renderConnection: () => { views.renderConnection(); scheduleSessionExpiry(); }, revokeAndClear});
+  const {discover, authorize, refreshAccessToken, accessToken,
+    explorerSession, openAuthorizationPopup, fetchWithTimeout} = auth;
 
   function addTranscript(method, request, response, status, duration) {
     const entry = {method, request, response, status, duration, at: new Date().toISOString()};
-    state.transcript.push(entry);
-    if (state.transcript.length > core.MAX_TRANSCRIPT) {
-      state.transcript.splice(0, state.transcript.length - core.MAX_TRANSCRIPT);
-      elements.transcript.firstElementChild?.remove();
-    }
-    elements.transcript.append(transcriptEntry(entry));
+    views.appendTranscript(entry, explorerState.appendTranscript(entry));
   }
 
-  function safeMcpResponse(response, tool) {
-    const safe = core.clone(response);
-    if (!safe || !tool || !safe.result) return safe;
-    if (safe.result.structuredContent !== undefined) {
-      safe.result.structuredContent = core.redactArguments(safe.result.structuredContent, tool.outputSchema || {});
-      if (safe.result.content !== undefined) safe.result.content = '[omitted; structuredContent shown]';
-    }
-    return safe;
-  }
-
-  async function mcpRequest(method, params, notification) {
-    const oauth = state.oauth;
-    const selected = method === 'tools/call' ? state.tools.find((tool) => tool.name === params.name) : null;
-    const safeParams = selected ? {...params, arguments: core.redactArguments(params.arguments, selected.inputSchema)} : core.clone(params);
-    const request = {jsonrpc: '2.0', method, params: params || {}};
-    if (!notification) request.id = state.nextId++;
-    const safeRequest = {...request, params: safeParams || {}};
-    const started = performance.now();
-    let response;
-    let status = 0;
-    try {
-      const token = await accessToken();
-      if (state.oauth !== oauth || Date.now() >= oauth.resumeUntil) {
-        const error = new Error(label('tokenExpired'));
-        error.sessionCleared = true;
-        throw error;
-      }
-      const http = await fetchWithTimeout('/plugins/mcpserver/mcp', {
-        method: 'POST',
-        cache: 'no-store',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json, text/event-stream',
-          'MCP-Protocol-Version': core.PROTOCOL_VERSION,
-        },
-        body: JSON.stringify(request),
-      }, 70000);
-      status = http.status;
-      const text = await http.text();
-      if (state.oauth !== oauth || Date.now() >= oauth.resumeUntil) {
-        const error = new Error(label('tokenExpired'));
-        error.sessionCleared = true;
-        throw error;
-      }
-      response = parseMcpBody(text, http.headers.get('content-type') || '');
-      addTranscript(method, safeRequest, safeMcpResponse(response, selected), status, Math.round(performance.now() - started));
-      if (!http.ok || (response && response.error)) {
-        const failure = core.mcpFailure(response, http.ok ? 'MCP protocol error' : `${http.status} ${http.statusText}`);
-        const error = new Error(failure.message);
-        error.mcpResult = failure.result;
-        throw error;
-      }
-      return response ? response.result : null;
-    } catch (error) {
-      if (state.oauth !== oauth && error) error.sessionCleared = true;
-      if (!(error && error.sessionCleared === true) &&
-        (!state.transcript.length || state.transcript[state.transcript.length - 1].request !== safeRequest)) {
-        addTranscript(method, safeRequest, response || {error: error instanceof Error ? error.message : 'request failed'}, status, Math.round(performance.now() - started));
-      }
-      throw error;
-    }
-  }
-
-  async function initializeMcp() {
-    const initialized = await mcpRequest('initialize', {
-      protocolVersion: core.PROTOCOL_VERSION,
-      capabilities: {},
-      clientInfo: {name: 'LoxBerry MCP Tool Explorer', version: '1.0'},
-    }, false);
-    if (!initialized || initialized.protocolVersion !== core.PROTOCOL_VERSION) throw new Error('Unsupported MCP protocol version');
-    await mcpRequest('notifications/initialized', {}, true);
-    const listed = await mcpRequest('tools/list', {}, false);
-    state.tools = Array.isArray(listed && listed.tools) ? listed.tools : [];
-  }
+  const mcp = window.McpExplorerClient.create({core, state, explorerState, label, accessToken,
+    fetchWithTimeout, addTranscript});
+  const {initialize: initializeMcp, callTool} = mcp;
 
   async function revokeAndClear() {
     const oauth = state.oauth;
     clearExplorerState();
     renderAll();
+    setStatus(label('disconnected'), '');
     if (logoutChannel) logoutChannel.postMessage('logout');
     try { if (oauth) await explorerSession(oauth.metadata, {action: 'logout'}); }
     catch (_error) { /* Server-side expiry remains the fail-safe. */ }
@@ -1313,56 +189,46 @@
   }
 
   function clearExplorerState() {
-    core.clearSensitiveState(state);
-    core.clearSensitiveDom(elements);
+    explorerState.clear();
+    viewHelpers.clearSensitiveDom(elements);
   }
 
-  function renderConnection() {
+  function expireSession() {
+    clearExplorerState();
+    setBusy(false);
+    renderAll();
+    setStatus(label('disconnected'), '');
+    if (logoutChannel) logoutChannel.postMessage('logout');
+  }
+
+  function scheduleSessionExpiry() {
     if (sessionExpiryTimer !== null) window.clearTimeout(sessionExpiryTimer);
     sessionExpiryTimer = null;
-    const connected = Boolean(state.oauth && state.oauth.resumeUntil > Date.now());
-    if (!connected && state.oauth) {
-      clearExplorerState();
-      setBusy(false);
-      renderAll();
-      return;
-    }
-    elements.connect.disabled = state.busy || connected;
-    elements.disconnect.disabled = state.busy || !connected;
-    elements.run.disabled = state.busy || !connected || !state.selectedTool;
-    elements.connectionBadge.textContent = label(connected ? 'connected' : 'disconnected');
-    elements.connectionBadge.dataset.kind = connected ? 'success' : 'inactive';
-    elements.sessionExpiry.hidden = !connected;
-    elements.accessScopes.hidden = !connected;
-    elements.scopeList.replaceChildren();
-    if (connected) {
-      const expiry = new Date(state.oauth.resumeUntil);
-      elements.sessionExpiryTime.dateTime = expiry.toISOString();
-      elements.sessionExpiryTime.textContent = expiry.toLocaleString();
-      const granted = core.grantedScopes(state.oauth.scope);
-      elements.scopeUnavailable.hidden = granted !== null;
-      if (granted !== null) {
-        for (const scope of core.EXPLORER_SCOPE_ORDER) {
-          const isGranted = granted.has(scope);
-          const item = element('li', {className: 'mcp-explorer-scope'}, [
-            element('code', {text: scope}),
-            element('span', {text: label(isGranted ? 'scopeGranted' : 'scopeNotGranted')}),
-          ]);
-          elements.scopeList.append(item);
-        }
-      }
-      sessionExpiryTimer = window.setTimeout(() => {
-        clearExplorerState();
-        setBusy(false);
-        renderAll();
-        if (logoutChannel) logoutChannel.postMessage('logout');
-      }, Math.max(0, state.oauth.resumeUntil - Date.now()));
-    } else {
-      elements.scopeUnavailable.hidden = true;
-      elements.sessionExpiryTime.removeAttribute('datetime');
-      elements.sessionExpiryTime.textContent = '';
-    }
-    setStatus(connected ? label('connected') : label('disconnected'), connected ? 'success' : '');
+    const oauth = state.oauth;
+    if (!oauth || !Number.isFinite(oauth.resumeUntil)) return;
+    sessionExpiryTimer = window.setTimeout(() => {
+      if (state.oauth === oauth && Date.now() >= oauth.resumeUntil) expireSession();
+    }, Math.max(0, oauth.resumeUntil - Date.now()));
+  }
+
+  const views = window.McpExplorerViews.create({core, state,
+    adapters, elements, label, narrowViewport, element,
+    actions: {selectTool, revealRequest, setAction, setDraftField,
+      validateDraft, applyRange, showResult: renderResult, openTransfer, revealResult}});
+  const {renderConnection, renderTools, renderSelectedTool, renderResult: renderResultView,
+    renderTranscript, renderHistory, displayValue} = views;
+
+  function renderResult(result, context) {
+    const displayed = explorerState.setResult(result, context);
+    renderResultView(result, context, displayed);
+  }
+
+  function applyRange(range) {
+    explorerState.setArguments({...state.arguments, ...range});
+    elements.json.value = JSON.stringify(state.arguments, null, 2);
+    saveCurrentDraft();
+    validateDraft(false);
+    renderSelectedTool();
   }
 
   function element(tag, options, children) {
@@ -1376,84 +242,19 @@
     return node;
   }
 
-  function renderTools() {
-    elements.tools.replaceChildren();
-    if (elements.toolSearch.value !== state.toolSearch) elements.toolSearch.value = state.toolSearch;
-    elements.toolFilters.querySelectorAll('input[data-tool-group]').forEach((input) => {
-      input.checked = input.dataset.toolGroup === 'all'
-        ? state.toolGroups.length === 0 : state.toolGroups.includes(input.dataset.toolGroup);
-    });
-    elements.toolFilterCount.textContent = state.toolGroups.length
-      ? `(${state.toolGroups.length})` : `(${label('filterAll')})`;
-    elements.selectedTool.textContent = state.selectedTool ? `— ${state.selectedTool.name}` : '';
-    elements.selectedTool.hidden = !state.selectedTool;
-    elements.requestSelection.textContent = state.selectedTool ? `— ${state.selectedTool.name}` : '';
-    elements.requestSelection.hidden = !state.selectedTool;
-    if (!state.tools.length) {
-      elements.tools.append(element('p', {className: 'mcp-explorer-muted', text: label('noTools')}));
-      return;
-    }
-    const groups = core.filteredToolGroups(state.tools, state.toolSearch, state.toolGroups);
-    if (!groups.length) {
-      elements.tools.append(element('p', {className: 'mcp-explorer-muted', role: 'status', text: label('noMatchingTools')}));
-      return;
-    }
-    groups.forEach((group) => {
-      elements.tools.append(element('h3', {className: 'mcp-explorer-tool-group', text: label(`toolGroup${group.id[0].toUpperCase()}${group.id.slice(1)}`)}));
-      group.tools.forEach((tool) => {
-      const button = element('button', {type: 'button', className: 'mcp-explorer-tool', 'aria-current': String(state.selectedTool && state.selectedTool.name === tool.name)});
-      button.append(element('strong', {text: tool.name}));
-      const accessLabel = core.toolMetadataLabels(tool)[0];
-      button.append(element('span', {className: 'mcp-explorer-badge',
-        'data-kind': core.toolIsMutating(tool) ? 'danger' : 'read', text: label(accessLabel)}));
-      button.addEventListener('click', () => {
-        selectTool(tool.name);
-        if (narrowViewport.matches) {
-          elements.toolsPanel.open = false;
-          revealRequest(true, false);
-        } else {
-          elements.tools.querySelector('[aria-current="true"]')?.focus();
-        }
-      });
-      elements.tools.append(button);
-      });
-    });
-  }
+  function draftFor(tool) { return explorerState.draftFor(tool); }
 
-  function draftFor(tool) {
-    if (!tool) return {arguments: {}, json: '{}'};
-    if (!state.drafts[tool.name]) {
-      const argumentsValue = core.defaultArguments(tool.inputSchema || {});
-      state.drafts[tool.name] = {arguments: argumentsValue, json: JSON.stringify(argumentsValue, null, 2)};
-    }
-    return state.drafts[tool.name];
-  }
-
-  function saveCurrentDraft() {
-    if (!state.selectedTool) return;
-    state.drafts[state.selectedTool.name] = {
-      arguments: core.clone(state.arguments),
-      json: elements.json.value,
-    };
-  }
+  function saveCurrentDraft() { explorerState.saveDraft(elements.json.value); }
 
   function selectTool(name, draft) {
-    saveCurrentDraft();
-    state.selectedTool = state.tools.find((tool) => tool.name === name) || null;
-    if (state.selectedTool && draft !== undefined) {
-      state.drafts[state.selectedTool.name] = {arguments: core.clone(draft), json: JSON.stringify(draft, null, 2)};
-    }
-    const saved = draftFor(state.selectedTool);
-    state.arguments = core.clone(saved.arguments);
-    elements.json.value = saved.json;
+    elements.json.value = explorerState.selectTool(name, draft, elements.json.value);
     renderTools();
     renderSelectedTool();
     if (state.selectedTool) elements.request.open = true;
   }
 
   function setDraftField(name, included, value) {
-    if (included) state.arguments[name] = value;
-    else delete state.arguments[name];
+    explorerState.setField(name, included, value);
     elements.json.value = JSON.stringify(state.arguments, null, 2);
     saveCurrentDraft();
     validateDraft(false);
@@ -1461,184 +262,11 @@
 
   function setAction(value) {
     const next = adapters.changeAction(state.arguments, value);
-    state.arguments = next;
+    explorerState.setArguments(next);
     elements.json.value = JSON.stringify(next, null, 2);
     saveCurrentDraft();
     validateDraft(false);
     renderSelectedTool();
-  }
-
-  function renderField(name, property, required, rootSchema, fieldIndex) {
-    const effective = core.effectiveSchema(property, rootSchema);
-    const type = core.schemaType(effective, rootSchema);
-    const wrapper = element('div', {className: 'mcp-explorer-field'});
-    const booleanWithDefault = !required && type === 'boolean' &&
-      typeof effective.default === 'boolean';
-    const included = booleanWithDefault || required ||
-      Object.prototype.hasOwnProperty.call(state.arguments, name);
-    let include = null;
-    if (!required && !booleanWithDefault) {
-      include = element('input', {type: 'checkbox'});
-      include.checked = included;
-      const optional = core.createOptionalToggle(document, name, include, fieldIndex, label('optional'));
-      wrapper.append(optional);
-    }
-    let input;
-    if (Array.isArray(effective.enum)) {
-      input = element('select');
-      if (!effective.enum.some((value) => Object.is(state.arguments[name], value))) {
-        const placeholder = element('option', {value: '', text: '—'});
-        placeholder.selected = true;
-        placeholder.disabled = required;
-        input.append(placeholder);
-      }
-      effective.enum.forEach((value) => {
-        const option = element('option', {value: JSON.stringify(value), text: String(value)});
-        option.selected = Object.is(state.arguments[name], value);
-        input.append(option);
-      });
-      input.addEventListener('change', () => {
-        if (input.value !== '') {
-          const value = JSON.parse(input.value);
-          if (adapters.hasActionFields(state.selectedTool) && name === 'action') setAction(value);
-          else setDraftField(name, true, value);
-        }
-      });
-    } else if (type === 'boolean') {
-      input = element('input', {type: 'checkbox'});
-      input.checked = Boolean(state.arguments[name]);
-      input.addEventListener('change', () => setDraftField(name, true, input.checked));
-    } else if (type === 'integer' || type === 'number') {
-      input = element('input', {type: 'number'});
-      if (typeof effective.minimum === 'number') input.min = String(effective.minimum);
-      if (typeof effective.maximum === 'number') input.max = String(effective.maximum);
-      input.step = type === 'integer' ? '1' : 'any';
-      input.value = state.arguments[name] === undefined ? '' : String(state.arguments[name]);
-      input.addEventListener('input', () => setDraftField(name, true, input.value === '' ? 0 : Number(input.value)));
-    } else if (type === 'array' || type === 'object') {
-      input = element('textarea', {rows: '4', spellcheck: 'false', 'aria-label': type === 'array' ? label('arrayHelp') : label('objectHelp')});
-      input.value = JSON.stringify(state.arguments[name] === undefined ? core.initialValue(property, rootSchema) : state.arguments[name], null, 2);
-      input.addEventListener('change', () => {
-        try { setDraftField(name, true, JSON.parse(input.value)); input.setCustomValidity(''); }
-        catch (_error) { input.setCustomValidity(label('invalidJson')); input.reportValidity(); }
-      });
-    } else if (type === 'string' && effective.format === 'date-time') {
-      input = element('input', {type: 'datetime-local'});
-      input.value = core.rfc3339ToDateTimeLocal(state.arguments[name]);
-      input.addEventListener('change', () => setDraftField(name, true, core.dateTimeLocalToRfc3339(input.value)));
-    } else {
-      input = element('input', {type: 'text'});
-      input.value = state.arguments[name] === undefined ? '' : String(state.arguments[name]);
-      input.addEventListener('input', () => setDraftField(name, true, input.value));
-    }
-    const fieldLabel = core.createFieldLabel(document, name, input, fieldIndex);
-    input.disabled = !included;
-    wrapper.append(fieldLabel);
-    const helpKey = adapters.fieldHelpKey(name);
-    const description = helpKey ? label(helpKey) : effective.description;
-    if (description) wrapper.append(element('span', {className: 'mcp-explorer-muted', text: description}));
-    wrapper.append(input);
-    if (core.isReferenceField(name)) {
-      const candidates = core.referenceCandidates(name, state.history);
-      if (candidates.length) {
-        const select = element('select', {'aria-label': `${label('referenceSelect')}: ${name}`});
-        select.append(element('option', {value: '', text: label('referenceSelect')}));
-        candidates.forEach((candidate) => select.append(element('option', {value: candidate.value, text: candidate.label})));
-        select.addEventListener('change', () => {
-          if (select.value) {
-            setDraftField(name, true, select.value);
-            renderSelectedTool();
-            document.getElementById(core.fieldControlId(fieldIndex))?.focus();
-          }
-        });
-        wrapper.append(select);
-      }
-    }
-    if (name === 'start' && rootSchema.properties && rootSchema.properties.end) {
-      const actions = element('div', {className: 'mcp-explorer-actions'});
-      [['hour', 'rangeHour'], ['day', 'rangeDay'], ['week', 'rangeWeek'], ['today', 'rangeToday']].forEach(([preset, text]) => {
-        const button = element('button', {type: 'button', text: label(text)});
-        button.addEventListener('click', () => {
-          const range = core.timeRange(preset);
-          if (!range) return;
-          state.arguments = {...state.arguments, ...range};
-          elements.json.value = JSON.stringify(state.arguments, null, 2);
-          saveCurrentDraft();
-          validateDraft(false);
-          renderSelectedTool();
-        });
-        actions.append(button);
-      });
-      wrapper.append(actions);
-    }
-    if (include) include.addEventListener('change', () => {
-      input.disabled = !include.checked;
-      setDraftField(name, include.checked, include.checked ? core.initialValue(property, rootSchema) : undefined);
-      if (include.checked) { renderSelectedTool(); document.getElementById(input.id)?.focus(); }
-    });
-    return {wrapper, supported: ['string', 'integer', 'number', 'boolean', 'array', 'object'].includes(type)};
-  }
-
-  function renderSelectedTool() {
-    elements.form.replaceChildren();
-    elements.summary.replaceChildren();
-    elements.validation.hidden = true;
-    if (!state.selectedTool) {
-      elements.summary.append(element('p', {className: 'mcp-explorer-muted', text: label('noTools')}));
-      elements.run.disabled = true;
-      return;
-    }
-    elements.summary.append(element('h2', {text: state.selectedTool.name}));
-    const description = state.selectedTool.description || '';
-    if (description.length > 180) {
-      const excerpt = description.slice(0, 100).replace(/\s+\S*$/, '').trimEnd();
-      const descriptionDetails = element('details', {className: 'mcp-explorer-description'});
-      descriptionDetails.append(element('summary', {text: `${label('toolDescription')}: ${excerpt}…`}));
-      descriptionDetails.append(element('p', {text: description}));
-      elements.summary.append(descriptionDetails);
-    } else {
-      elements.summary.append(element('p', {text: description}));
-    }
-    const badges = element('div', {className: 'mcp-explorer-metadata'});
-    core.toolMetadataLabels(state.selectedTool).forEach((key, index) => {
-      badges.append(element('span', {className: 'mcp-explorer-badge',
-        'data-kind': index === 0 && core.toolIsMutating(state.selectedTool) ? 'danger' : 'read',
-        text: label(key)}));
-    });
-    elements.summary.append(badges);
-    const scopes = element('p', {className: 'mcp-explorer-required-scopes'});
-    scopes.append(element('span', {text: `${label('toolRequiredScopes')}:`}));
-    const requiredScopes = core.toolRequiredScopes(state.selectedTool);
-    if (requiredScopes) {
-      requiredScopes.forEach((scope) => scopes.append(element('code', {text: scope})));
-    } else {
-      scopes.append(element('span', {text: label('toolScopesUnknown')}));
-    }
-    elements.summary.append(scopes);
-    const technical = element('details', {className: 'mcp-explorer-technical'});
-    technical.append(element('summary', {text: label('toolTechnicalMetadata')}));
-    technical.append(element('p', {className: 'mcp-explorer-hint-notice', text: label('toolHintsNotice')}));
-    technical.append(element('pre', {className: 'mcp-explorer-pre',
-      text: JSON.stringify(state.selectedTool.annotations || {}, null, 2)}));
-    elements.summary.append(technical);
-    const schema = state.selectedTool.inputSchema || {type: 'object'};
-    const required = new Set(schema.required || []);
-    let supported = true;
-    let fieldIndex = 0;
-    const advanced = element('details', {className: 'mcp-explorer-stack'});
-    advanced.append(element('summary', {text: label('advancedOptions')}));
-    for (const [name, property] of Object.entries(schema.properties || {})) {
-      if (!adapters.fieldVisible(state.selectedTool, name, state.arguments)) continue;
-      const rendered = renderField(name, property, required.has(name), schema, fieldIndex++);
-      supported = rendered.supported && supported;
-      if (core.isAdvancedField(name)) advanced.append(rendered.wrapper);
-      else elements.form.append(rendered.wrapper);
-    }
-    if (advanced.childElementCount > 1) elements.form.append(advanced);
-    if (!Object.keys(schema.properties || {}).length) elements.form.append(element('p', {className: 'mcp-explorer-muted', text: '{}'}));
-    elements.schemaWarning.hidden = supported;
-    elements.run.disabled = !state.oauth;
-    elements.resetDraft.disabled = !state.oauth;
   }
 
   function validateDraft(show) {
@@ -1658,7 +286,7 @@
       if (show) { elements.validation.textContent = `${label('invalidArguments')} ${errors.join('; ')}`; elements.validation.hidden = false; }
       return false;
     }
-    state.arguments = parsed;
+    explorerState.setArguments(parsed);
     saveCurrentDraft();
     elements.validation.hidden = true;
     return true;
@@ -1673,98 +301,6 @@
     }
     elements.confirm.showModal();
     return new Promise((resolve) => elements.confirm.addEventListener('close', () => resolve(elements.confirm.returnValue === 'confirm'), {once: true}));
-  }
-
-  function displayValue(result) {
-    if (result && result.structuredContent !== undefined) return result.structuredContent;
-    if (result && result.content !== undefined) return result.content;
-    return result;
-  }
-
-  function renderResult(result, context) {
-    elements.result.open = true;
-    state.lastResult = result;
-    state.hasResult = true;
-    state.lastResultContext = context ? core.clone(context) : null;
-    const displayed = displayValue(result);
-    const sourceTool = context && state.tools.find((tool) => tool.name === context.tool);
-    const nextArguments = sourceTool
-      ? core.nextPageArguments(sourceTool, context.arguments, displayed)
-      : null;
-    state.nextPageRequest = nextArguments ? {tool: sourceTool.name, arguments: nextArguments} : null;
-    elements.nextPage.hidden = !state.nextPageRequest;
-    elements.nextPage.disabled = state.busy || !state.nextPageRequest;
-    const historySource = context && context.history === true;
-    elements.resultContext.textContent = historySource
-      ? `${label('resultFromHistory')}: ${context.tool}`
-      : context ? `${label('resultCurrentCall')}: ${context.tool}` : '';
-    elements.resultContext.hidden = !context;
-    elements.restoreHistory.hidden = !historySource;
-    elements.historyArguments.hidden = !historySource;
-    elements.historyArguments.open = false;
-    elements.historyArgumentsValue.textContent = '';
-    if (historySource) {
-      const historyTool = state.tools.find((tool) => tool.name === context.tool);
-      const argumentsValue = core.redactArguments(context.arguments || {}, historyTool && historyTool.inputSchema);
-      elements.historyArgumentsValue.textContent = JSON.stringify(argumentsValue, null, 2);
-    }
-    elements.rawDetails.open = false;
-    elements.resultRaw.textContent = '';
-    elements.resultTree.replaceChildren(core.createResultInspector(document, displayed, {
-      selectValue: label('selectValue'),
-      expandResult: label('expandResult'),
-      collapseResult: label('collapseResult'),
-      moreResults: label('moreResults'),
-    }, openTransfer));
-    elements.copy.disabled = false;
-  }
-
-  function transcriptEntry(entry) {
-    const details = element('details');
-    details.append(element('summary', {text: `${entry.method} — ${entry.status} — ${entry.duration} ms`}));
-    details.addEventListener('toggle', () => {
-      if (!details.open) return;
-      details.append(element('div', {className: 'mcp-explorer-protocol-meta'}, [
-        element('p', {text: `${label('dateTime')}: ${new Date(entry.at).toLocaleString()}`}),
-        element('p', {text: `${label('status')}: ${entry.status}; ${label('duration')}: ${entry.duration} ms`}),
-      ]));
-      details.append(element('strong', {text: label('request')}));
-      details.append(element('pre', {className: 'mcp-explorer-pre', text: JSON.stringify(entry.request, null, 2)}));
-      details.append(element('strong', {text: label('response')}));
-      details.append(element('pre', {className: 'mcp-explorer-pre', text: JSON.stringify(entry.response, null, 2)}));
-    }, {once: true});
-    return details;
-  }
-
-  function renderTranscript() {
-    const fragment = document.createDocumentFragment();
-    state.transcript.forEach((entry) => fragment.append(transcriptEntry(entry)));
-    elements.transcript.replaceChildren(fragment);
-  }
-
-  function renderHistory() {
-    elements.history.replaceChildren();
-    if (!state.history.length) {
-      elements.history.append(element('p', {className: 'mcp-explorer-muted', text: label('emptyHistory')}));
-      return;
-    }
-    [...state.history].reverse().forEach((entry) => {
-      const tool = state.tools.find((candidate) => candidate.name === entry.tool);
-      const summary = core.summarizeArguments(entry.arguments, tool && tool.inputSchema);
-      const button = element('button', {type: 'button'}, [
-        element('strong', {text: entry.tool}),
-        ...(summary ? [element('span', {className: 'mcp-explorer-history-arguments', text: summary})] : []),
-        element('span', {className: 'mcp-explorer-muted', text: `${new Date(entry.at).toLocaleTimeString()} · ${entry.duration} ms · ${entry.ok ? 'OK' : 'ERROR'}`}),
-      ]);
-      button.addEventListener('click', () => {
-        renderResult(entry.result, {tool: entry.tool, arguments: entry.arguments, history: true});
-        if (narrowViewport.matches) {
-          elements.historyPanel.open = false;
-          revealResult();
-        }
-      });
-      elements.history.append(button);
-    });
   }
 
   async function runSelectedTool() {
@@ -1791,7 +327,7 @@
     let ok = false;
     let sessionCleared = false;
     try {
-      result = await mcpRequest('tools/call', {name: tool.name, arguments: args}, false);
+      result = await callTool(tool.name, args);
       ok = !(result && result.isError);
       renderResult(result, {tool: tool.name, arguments: args});
       const outputErrors = result && result.structuredContent !== undefined && tool.outputSchema
@@ -1814,8 +350,7 @@
       if (!sessionCleared) setCallFeedback(`${label('error')} · ${Math.round(performance.now() - started)} ms`, 'error');
     } finally {
       if (!sessionCleared) {
-        state.history.push({tool: tool.name, arguments: args, result, ok, at: Date.now(), duration: Math.round(performance.now() - started)});
-        if (state.history.length > core.MAX_CALL_HISTORY) state.history.splice(0, state.history.length - core.MAX_CALL_HISTORY);
+        explorerState.appendHistory({tool: tool.name, arguments: args, result, ok, at: Date.now(), duration: Math.round(performance.now() - started)});
         renderHistory();
       }
       if (state.oauth === oauth) setBusy(false);
@@ -1823,9 +358,7 @@
   }
 
   function openTransfer(value, path) {
-    state.transferValue = core.clone(value);
-    state.transferPath = core.formatPath(path);
-    elements.transferSource.textContent = `${state.transferPath} = ${JSON.stringify(value)}`;
+    elements.transferSource.textContent = `${core.formatPath(path)} = ${JSON.stringify(value)}`;
     const recipe = adapters.transferRecipe(
       state.lastResultContext && state.lastResultContext.tool,
       displayValue(state.lastResult),
@@ -1833,7 +366,7 @@
       value,
       state.tools,
     );
-    state.transferRecipe = recipe;
+    explorerState.setTransfer(value, path, recipe);
     elements.transferContext.textContent = recipe
       ? `${label(recipe.contextLabel)}: ${recipe.tool} (${Object.keys(recipe.arguments).length} ${label('fields')})`
       : `${label('transferContext')}: ${state.lastResultContext ? state.lastResultContext.tool : '—'}`;
@@ -1895,7 +428,12 @@
   }
 
   function renderAll() {
+    if (state.oauth && state.oauth.resumeUntil <= Date.now()) {
+      expireSession();
+      return;
+    }
     renderConnection();
+    scheduleSessionExpiry();
     renderTools();
     renderSelectedTool();
     renderHistory();
@@ -1942,8 +480,8 @@
     setBusy(true);
     setStatus(label('working'), 'working');
     try {
-      state.oauth = await authorize(authorizationPopup);
-      await initializeMcp();
+      explorerState.setSession(await authorize(authorizationPopup));
+      explorerState.setTools(await initializeMcp());
       renderAll();
       if (state.tools.length) selectTool(state.tools[0].name);
       setStatus(label('connected'), 'success');
@@ -1951,10 +489,8 @@
       try { authorizationPopup?.close(); } catch (_closeError) { /* already gone */ }
       if (state.oauth) await revokeAndClear();
       else clearExplorerState();
-      renderAll();
-      // renderAll() resets the connection status. Render first so the actual
-      // OAuth failure remains visible instead of being replaced by "disconnected".
       showConnectionError(error, label('error'));
+      renderAll();
     } finally { setBusy(false); }
   });
   elements.disconnect.addEventListener('click', async () => {
@@ -1964,16 +500,16 @@
     setStatus(label('disconnected'), '');
   });
   elements.toolSearch.addEventListener('input', () => {
-    state.toolSearch = elements.toolSearch.value;
+    explorerState.setSearch(elements.toolSearch.value);
     renderTools();
   });
   elements.toolFilters.addEventListener('change', (event) => {
     const input = event.target;
     if (!input.matches('input[data-tool-group]')) return;
     const group = input.dataset.toolGroup;
-    if (group === 'all') state.toolGroups = [];
-    else if (input.checked) state.toolGroups = [...state.toolGroups, group];
-    else state.toolGroups = state.toolGroups.filter((selected) => selected !== group);
+    if (group === 'all') explorerState.setGroups([]);
+    else if (input.checked) explorerState.setGroups([...state.toolGroups, group]);
+    else explorerState.setGroups(state.toolGroups.filter((selected) => selected !== group));
     renderTools();
   });
   elements.run.addEventListener('click', runSelectedTool);
@@ -2020,13 +556,13 @@
       const discovered = await discover();
       setBusy(true);
       setStatus(label('restoringSession'), 'working');
-      state.oauth = {
+      explorerState.setSession({
         metadata: discovered.authorizationMetadata,
         resource: discovered.resourceMetadata.resource,
         scope: 'loxone:read', accessToken: '', expiresAt: 0,
-      };
+      });
       await refreshAccessToken();
-      await initializeMcp();
+      explorerState.setTools(await initializeMcp());
       renderAll();
       if (state.tools.length) selectTool(state.tools[0].name);
       setStatus(label('connected'), 'success');
@@ -2035,6 +571,7 @@
         && typeof _error.canonicalUrl === 'string';
       clearExplorerState();
       renderAll();
+      setStatus(label('disconnected'), '');
       if (canonicalOriginMismatch) {
         showConnectionError(_error, label('error'));
       }

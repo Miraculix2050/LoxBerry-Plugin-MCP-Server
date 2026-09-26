@@ -34,9 +34,14 @@ def test_changed_ui_selects_only_affected_ui_groups() -> None:
 
     assert plan.effective_profile == "changed"
     assert _pytest_targets(plan) == {
+        "tests/test_explorer_modules.py",
         "tests/test_explorer_ui.py",
         "tests/test_oauth.py",
     }
+
+    modules = create_plan("changed", ("webfrontend/htmlauth/explorer-auth.js",))
+    assert modules.effective_profile == "changed"
+    assert _pytest_targets(modules) == _pytest_targets(plan)
 
 
 def test_shared_language_files_select_both_ui_groups() -> None:
@@ -49,6 +54,7 @@ def test_shared_language_files_select_both_ui_groups() -> None:
         "tests/test_emergency_options_cache.py",
         "tests/test_apache_config.py",
         "tests/test_explorer_ui.py",
+        "tests/test_explorer_modules.py",
         "tests/test_event_history_admin.py",
         "tests/test_event_history_selector_cache.py",
         "tests/test_oauth.py",
