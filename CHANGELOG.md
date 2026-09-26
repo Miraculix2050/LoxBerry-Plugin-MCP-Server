@@ -23,7 +23,8 @@ extracted from the matching version heading.
   recover stale selections through a fresh authorization check. Share concurrent
   refreshes even when the catalog is unchanged, and preserve unsaved retention
   edits during background updates. Retry selector verification even when the
-  local source list is empty, and avoid parallel decoding of large cache files.
+  local source list is empty or its store snapshot fails, preserve selection on
+  a stale catalog response, and avoid parallel decoding of large cache files.
 
 - Make the Tool Explorer's selected-tool and result cards collapsible, with history
   arguments in a separate disclosure. Label array objects using available names,

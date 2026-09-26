@@ -428,6 +428,7 @@
       if (request !== discoveryGeneration) return;
       selectorGeneration = data.generation;
       renderOverview(data.overview);
+      if (data.overview?.store_status !== 'available') selectorVerificationPending = true;
       $('history-search').disabled = false;
       $('history-search-status').textContent =
         `${data.total} ${label('selectorCount')} · ${label('selectorVerified')}: ${date(data.verified_at)}`;
@@ -475,7 +476,9 @@
           if (request === discoveryGeneration) setMessage(label('unavailable'), 'warning');
         }
         if (request === discoveryGeneration) selectorVerificationPending = true;
-        if (error.code === 'stale_configuration') recoverStaleSelector();
+        if (error.code === 'stale_configuration') recoverStaleSelector({
+          control: previousControl, state: previousState, filters: previousFilters,
+        });
       }
       return false;
     } finally {
@@ -489,10 +492,10 @@
     controlsLoadPromise = performLoadControls(restore).finally(() => { controlsLoadPromise = null; });
     return controlsLoadPromise;
   };
-  const recoverStaleSelector = (restoreState = null) => {
+  const recoverStaleSelector = (selection = null) => {
     if (staleRecoveryScheduled) return;
     staleRecoveryScheduled = true;
-    const restore = {control: selectedControl, state: restoreState ?? stateSelect.value,
+    const restore = selection || {control: selectedControl, state: stateSelect.value,
       filters: selectedFilters()};
     const ongoing = controlsLoadPromise;
     if (ongoing) {
@@ -596,7 +599,9 @@
       stateSearchWrap.hidden = data.total <= 10 && !query;
       stateSearch.disabled = busy;
     } catch (error) {
-      if (error.code === 'stale_configuration') recoverStaleSelector(priorState);
+      if (error.code === 'stale_configuration') recoverStaleSelector({
+        control: selectedControl, state: priorState, filters: selectedFilters(),
+      });
       if (request === stateGeneration) {
         if (append && error.code !== 'stale_configuration') {
           stateSelect.disabled = !priorSelectEnabled;

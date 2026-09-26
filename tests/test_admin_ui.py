@@ -995,7 +995,7 @@ const context = {
   $: (id) => {if (!nodes.has(id)) nodes.set(id, {}); return nodes.get(id);},
   api: {request: async (action) => {
     if (action === 'event_history_prepare_selector') return {
-      generation: 'g', overview: {store_status: 'available', visibility_status: 'available'},
+      generation: 'g', overview: {store_status: 'unavailable', visibility_status: 'available'},
       controls: [], total: 0, verified_at: 0,
     };
     if (action.startsWith('event_history_selector_')) {
@@ -1016,13 +1016,69 @@ vm.runInNewContext(`let controlsLoading = false; let busy = false;
 let discoveryGeneration = 0; let selectedControl = ''; let querySequence = 0;
 let catalogMode = ''; let stateGeneration = 0; let selectorGeneration = '';
 let pageOffset = 0; let visibleCount = 0; let controls = [];
+let selectorVerificationPending = false;
 const facetSelection = {room: new Set(), category: new Set(), type: new Set()};
 const refreshButtonText = 'refresh';
 ${section}
+globalThis.subject = {performLoadControls, pending: () => selectorVerificationPending};`, context);
+(async () => {
+  assert.equal(await context.subject.performLoadControls(), false);
+  assert.equal(maximum, 1);
+  assert.equal(context.subject.pending(), true);
+})().catch((error) => {console.error(error); process.exitCode = 1;});
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_event_history_stale_catalog_restores_selection_after_invalidation() -> None:
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = source.slice(source.indexOf('  const performLoadControls = async'),
+  source.indexOf('  const loadControls = (restore = null) => {'));
+let recovered;
+const nodes = new Map();
+const stateSelect = {value: 'state'};
+const context = {
+  $: (id) => {if (!nodes.has(id)) nodes.set(id, {}); return nodes.get(id);},
+  api: {request: async (action) => {
+    if (action === 'event_history_prepare_selector') return {
+      generation: 'old', overview: {store_status: 'available', visibility_status: 'available'},
+      controls: [], total: 0, verified_at: 0,
+    };
+    if (action === 'event_history_selector_catalog') throw {code: 'stale_configuration'};
+    if (action === 'event_history_local_overview') return {};
+    throw new Error(action);
+  }},
+  refreshButton: {disabled: false, textContent: ''}, stateSelect,
+  selectedFilters: () => ({room: ['room'], category: [], type: []}),
+  invalidateSelector: () => {context.clearSelection(); stateSelect.value = '';},
+  renderOverview: () => {}, renderControls: () => {},
+  recoverStaleSelector: (selection) => {recovered = selection;},
+  errorLabel: () => 'stale', setMessage: () => {}, label: (key) => key, date: () => '',
+};
+vm.runInNewContext(`let controlsLoading = false; let busy = false;
+let discoveryGeneration = 0; let selectedControl = 'control'; let querySequence = 0;
+let catalogMode = ''; let stateGeneration = 0; let selectorGeneration = '';
+let pageOffset = 0; let visibleCount = 0; let selectorVerificationPending = false;
+const refreshButtonText = 'refresh';
+globalThis.clearSelection = () => {selectedControl = '';};
+${section}
 globalThis.performLoadControls = performLoadControls;`, context);
 (async () => {
-  assert.equal(await context.performLoadControls(), true);
-  assert.equal(maximum, 1);
+  assert.equal(await context.performLoadControls(), false);
+  assert.equal(recovered.control, 'control');
+  assert.equal(recovered.state, 'state');
+  assert.deepEqual(Array.from(recovered.filters.room), ['room']);
 })().catch((error) => {console.error(error); process.exitCode = 1;});
 """
     subprocess.run(
