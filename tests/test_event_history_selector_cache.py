@@ -10,7 +10,7 @@ import pytest
 
 from mcpserver import admin, event_history_admin
 from mcpserver.config import AtomicConfigStore, PluginConfig
-from mcpserver.event_history_selector_cache import EventHistorySelectorCache
+from mcpserver.event_history_selector_cache import EventHistorySelectorCache, SelectorCacheError
 from mcpserver.loxone.event_history import EventHistoryStore
 
 CONTROL = "00000000-0000-0000-0000000000000001"
@@ -69,6 +69,15 @@ def test_concurrent_refreshes_share_one_result(tmp_path):
         results = [future.result() for future in futures]
     assert len(calls) == 1
     assert results[0]["generation"] == results[1]["generation"]
+
+
+def test_duplicate_control_identifiers_are_rejected_before_publish(tmp_path):
+    cache = _cache(tmp_path)
+    projection = _projection(2)
+    projection["controls"][1]["uuid"] = projection["controls"][0]["uuid"]
+    with pytest.raises(SelectorCacheError, match="invalid or oversized"):
+        cache.refresh(lambda: projection)
+    assert cache.read() is None
 
 
 def test_new_page_refreshes_even_when_program_marker_is_unchanged(tmp_path):

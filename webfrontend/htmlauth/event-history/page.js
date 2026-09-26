@@ -334,6 +334,11 @@
           checkbox.value = option.id;
           checkbox.checked = facetSelection[field].has(option.id);
           checkbox.addEventListener('change', () => {
+            if (checkbox.checked && facetSelection[field].size >= 100) {
+              checkbox.checked = false;
+              $('history-search-status').textContent = label('filterLimit');
+              return;
+            }
             if (checkbox.checked) facetSelection[field].add(option.id);
             else facetSelection[field].delete(option.id);
             void applyFilters();

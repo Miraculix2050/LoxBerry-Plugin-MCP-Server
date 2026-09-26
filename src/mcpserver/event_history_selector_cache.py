@@ -138,6 +138,13 @@ class EventHistorySelectorCache:
                     fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
     def _write(self, document: dict[str, Any]) -> None:
+        controls = document["controls"]
+        if (
+            len(controls) > 20_000
+            or sum(len(item["states"]) for item in controls) > 100_000
+            or len(document["control_index"]) != len(controls)
+        ):
+            raise SelectorCacheError("event-history selector projection is invalid or oversized")
         payload = json.dumps(document, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
         if len(payload) > _MAX_BYTES:
             raise SelectorCacheError("event-history selector projection exceeds size limit")
