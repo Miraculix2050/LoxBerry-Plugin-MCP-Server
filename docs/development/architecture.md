@@ -26,6 +26,17 @@ MCP client -- HTTPS/OAuth --> LoxBerry Apache -- loopback --> mcpserver service
 | LoxBerry adapters | Masked diagnostics and the limited plugin-owned cache operation |
 | Admin UI and Explorer | Local configuration, session management and a separate OAuth test client |
 
+The Tool Explorer ships as ordered, same-origin static scripts. Its DOM-free core
+handles schemas, redaction and generic value transfer; the static adapter registry
+adds optional presentation hints. A tab-local state module owns drafts, results,
+history and transcript transitions. The auth module handles discovery, PKCE and
+the server-side Explorer session, while the MCP client owns fixed-path JSON-RPC
+requests and accepts short-lived access tokens only from auth. Bounded views
+render state and report user actions to the app controller. The controller owns
+event wiring, mutation confirmation and session cleanup. New script assets are
+listed in the Explorer template, the package manifest and the changed-test map;
+their load order is part of the frontend integration contract.
+
 ## Authorization and data flow
 
 Loxone authorization is evaluated with the signed-in Loxone user. LoxBerry authorization is independent: `loxberry:read` and `loxberry:operate` require matching local approval bound to client, Loxone identity and Miniserver. `loxone:control` additionally requires a global feature switch, OAuth consent, a visible operable Gen.-1 target and a typed allowlist.
