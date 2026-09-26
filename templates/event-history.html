@@ -1,6 +1,9 @@
-<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-event-history-v2">
+<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-event-history-v3">
 <main class="mcp-page mcp-event-history"
   data-loading="<TMPL_VAR EVENT_HISTORY.LOADING ESCAPE=HTML>"
+  data-refresh-working="<TMPL_VAR EVENT_HISTORY.REFRESH_WORKING ESCAPE=HTML>"
+  data-refreshed="<TMPL_VAR EVENT_HISTORY.REFRESHED ESCAPE=HTML>"
+  data-refresh-failed="<TMPL_VAR EVENT_HISTORY.REFRESH_FAILED ESCAPE=HTML>"
   data-unavailable="<TMPL_VAR EVENT_HISTORY.UNAVAILABLE ESCAPE=HTML>"
   data-unknown="<TMPL_VAR EVENT_HISTORY.UNKNOWN ESCAPE=HTML>"
   data-active="<TMPL_VAR EVENT_HISTORY.ACTIVE ESCAPE=HTML>"
@@ -137,4 +140,4 @@
   </section>
 </main>
 <script src="event-history/api.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-2" defer></script>
-<script src="event-history/page.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-6" defer></script>
+<script src="event-history/page.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-7" defer></script>

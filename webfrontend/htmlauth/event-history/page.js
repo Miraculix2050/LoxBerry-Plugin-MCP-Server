@@ -4,6 +4,8 @@
   const api = window.McpEventHistoryApi;
   const $ = (id) => document.getElementById(id);
   const message = $('history-message');
+  const refreshButton = $('history-refresh');
+  const refreshButtonText = refreshButton.textContent;
   const rows = $('history-source-rows');
   const controlList = $('history-control-list');
   const stateSelect = $('history-state');
@@ -30,6 +32,7 @@
   let knownSourceRevision = '';
   let nextRevisionRefreshAt = 0;
   let revisionRefreshFailures = 0;
+  let messageVersion = 0;
   const label = (name) => root.dataset[name] || name;
   const errorLabel = (error) => ({
     outcome_unknown: label('uncertain'),
@@ -44,6 +47,7 @@
     rate_limited: label('sourceLimit'),
   })[error?.code] || label('error');
   const setMessage = (value, kind = 'info') => {
+    messageVersion += 1;
     message.textContent = value;
     message.dataset.kind = kind;
   };
@@ -220,6 +224,7 @@
   const mutate = async (action, fields) => {
     if (busy) return;
     busy = true;
+    refreshButton.disabled = true;
     setMessage(label('loading'));
     let feedback = label('saved');
     let feedbackKind = 'success';
@@ -372,8 +377,10 @@
     }
   };
   const loadControls = async () => {
-    if (controlsLoading) return;
+    if (controlsLoading) return false;
     controlsLoading = true;
+    refreshButton.disabled = true;
+    refreshButton.textContent = label('refreshWorking');
     const request = ++discoveryGeneration;
     const previousControl = selectedControl;
     const previousState = stateSelect.value;
@@ -418,6 +425,8 @@
         }
       }
       if (!selectedControl) await applyFilters();
+      return data.overview?.store_status === 'available'
+        && data.overview?.visibility_status === 'available';
     } catch (error) {
       if (request === discoveryGeneration) {
         invalidateSelector();
@@ -429,8 +438,11 @@
           if (request === discoveryGeneration) setMessage(label('unavailable'), 'warning');
         }
       }
+      return false;
     } finally {
       controlsLoading = false;
+      refreshButton.disabled = false;
+      refreshButton.textContent = refreshButtonText;
     }
   };
   const checkSourceRevision = async () => {
@@ -574,7 +586,7 @@
     busy = true;
     const locked = Array.from(root.querySelectorAll(
       '#history-add-form input, #history-add-form select, #history-add-form button, '
-      + '#history-search, #history-search-button, #history-clear-filters, '
+      + '#history-search, #history-search-button, #history-clear-filters, #history-refresh, '
       + '.mcp-event-history-filters input, #history-source-rows button'));
     const wasDisabled = new Map(locked.map((control) => [control, control.disabled]));
     for (const control of locked) control.disabled = true;
@@ -623,7 +635,22 @@
   $('history-clear').addEventListener('click', () => {
     if (window.confirm(label('confirmClear'))) void mutate('clear_event_history', {confirm: '1'});
   });
-  $('history-refresh').addEventListener('click', () => { void loadControls(); void loadStatus(); });
+  refreshButton.addEventListener('click', () => {
+    if (busy || controlsLoading) return;
+    setMessage(label('refreshWorking'), 'working');
+    void (async () => {
+      const refreshed = await loadControls();
+      void loadStatus();
+      setMessage(label(refreshed ? 'refreshed' : 'refreshFailed'),
+        refreshed ? 'success' : 'warning');
+      if (refreshed) {
+        const shownVersion = messageVersion;
+        window.setTimeout(() => {
+          if (messageVersion === shownVersion) setMessage(label('loaded'), 'success');
+        }, 5000);
+      }
+    })();
+  });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) { void loadStatus(); void checkSourceRevision(); }
   });

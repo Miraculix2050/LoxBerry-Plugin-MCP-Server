@@ -673,6 +673,9 @@ def test_event_history_selector_is_progressive_and_localized() -> None:
     assert 'id="history-more-controls"' in page
     assert 'id="history-state-search-wrap" hidden' in page
     assert 'id="history-add-status"' in page
+    assert 'data-refresh-working="<TMPL_VAR EVENT_HISTORY.REFRESH_WORKING' in page
+    assert 'data-refreshed="<TMPL_VAR EVENT_HISTORY.REFRESHED' in page
+    assert 'data-refresh-failed="<TMPL_VAR EVENT_HISTORY.REFRESH_FAILED' in page
     assert "<TMPL_VAR EVENT_HISTORY.STATES>" in page
     assert all(f'data-facet="{field}"' in page for field in ("room", "category", "type"))
     assert "void loadQuickSummary();" in script
@@ -682,6 +685,10 @@ def test_event_history_selector_is_progressive_and_localized() -> None:
     assert "event_history_selector_states" in script
     assert "event_history_source_revision" in script
     assert "api.request('event_history_source_revision', {}, 15000)" in script
+    assert "refreshButton.disabled = true" in script
+    assert "refreshButton.textContent = label('refreshWorking')" in script
+    assert "setMessage(label(refreshed ? 'refreshed' : 'refreshFailed')" in script
+    assert "}, 5000);" in script
     assert "event_history_prepare_selector" in cgi
     assert "event_history_source_revision" in cgi
     for language in ("de", "en"):
@@ -700,6 +707,9 @@ def test_event_history_selector_is_progressive_and_localized() -> None:
             "ADD_WORKING",
             "ADD_APPLIED",
             "ADD_REFRESH_FAILED",
+            "REFRESH_WORKING",
+            "REFRESHED",
+            "REFRESH_FAILED",
         ):
             assert f"{key}=" in translations
 

@@ -179,6 +179,7 @@ details.mcp-explorer-card[open] > summary { border-bottom: 1px solid #d7dadd; }
 .mcp-event-history { max-width: 92rem; margin: 0 auto; display: grid; gap: 1rem; }
 .mcp-event-history-heading { display: flex; justify-content: space-between; gap: 1rem; align-items: start; }
 .mcp-event-history-heading h1 { margin: .4rem 0; }
+#history-refresh:disabled { opacity: .6; cursor: progress; }
 .mcp-event-history-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: .8rem; }
 .mcp-event-history-metrics .mcp-card { display: grid; align-content: start; gap: .4rem; }
 .mcp-event-history-metrics h2 { margin: 0; font-size: 1rem; color: #4b5563; }
