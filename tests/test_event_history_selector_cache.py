@@ -71,6 +71,25 @@ def test_concurrent_refreshes_share_one_result(tmp_path):
     assert results[0]["generation"] == results[1]["generation"]
 
 
+def test_concurrent_unchanged_refreshes_share_one_result_with_existing_cache(tmp_path):
+    cache = _cache(tmp_path)
+    first = cache.refresh(lambda: _projection())
+    calls = []
+
+    def discover():
+        calls.append(1)
+        time.sleep(0.2)
+        return _projection()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        leader = pool.submit(cache.refresh, discover)
+        time.sleep(0.05)
+        waiter = pool.submit(cache.refresh, discover)
+        results = [leader.result(), waiter.result()]
+    assert len(calls) == 1
+    assert all(item["generation"] == first["generation"] for item in results)
+
+
 def test_waiter_recovers_after_failed_refresh(tmp_path):
     cache = _cache(tmp_path)
     calls = []

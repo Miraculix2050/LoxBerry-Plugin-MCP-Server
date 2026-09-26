@@ -831,7 +831,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const source = fs.readFileSync(process.argv[1], 'utf8');
-const section = source.slice(source.indexOf('  const renderOverview = (data) => {'),
+const section = source.slice(source.indexOf('  const renderPolicy = (data) => {'),
   source.indexOf('  const loadQuickSummary ='));
 const nodes = new Map();
 const context = {$: (id) => {
@@ -840,7 +840,7 @@ const context = {$: (id) => {
 }, label: (key) => key, date: () => '', renderRows: () => {}, setMessage: () => {}};
 vm.runInNewContext(`let overviewLoaded = false; let knownSourceRevision = '';
 let selectorVerificationPending = false; let nextRevisionRefreshAt = 1;
-let revisionRefreshFailures = 1; let activeCount = 0;
+let revisionRefreshFailures = 1; let activeCount = 0; let savedPolicy = null;
 ${section}
 globalThis.subject = {renderOverview, revision: () => knownSourceRevision,
   pending: () => selectorVerificationPending};`, context);
@@ -849,6 +849,41 @@ context.subject.renderOverview({store_status: 'available', visibility_status: 'u
   maximum_mib: 64, database_bytes: 0, wal_bytes: 0, sources: [], unverified_sources: []});
 assert.equal(context.subject.revision(), 'local-revision');
 assert.equal(context.subject.pending(), true);
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_event_history_background_overview_preserves_unsaved_policy_edits() -> None:
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = source.slice(source.indexOf('  const renderPolicy = (data) => {'),
+  source.indexOf('  const renderOverview = (data) => {'));
+const nodes = new Map();
+const context = {$: (id) => {
+  if (!nodes.has(id)) nodes.set(id, {value: '', textContent: ''});
+  return nodes.get(id);
+}};
+vm.runInNewContext(`let savedPolicy = null; ${section}
+globalThis.renderPolicy = renderPolicy;`, context);
+context.renderPolicy({retention_days: 30, maximum_mib: 64});
+nodes.get('history-retention').value = '45';
+context.renderPolicy({retention_days: 31, maximum_mib: 128});
+assert.equal(nodes.get('history-retention').value, '45');
+assert.equal(nodes.get('history-maximum').value, '128');
+assert.equal(nodes.get('history-policy').textContent, '31 d · 128 MiB');
+nodes.get('history-retention').value = '31';
+context.renderPolicy({retention_days: 32, maximum_mib: 128});
+assert.equal(nodes.get('history-retention').value, '32');
 """
     subprocess.run(
         [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],

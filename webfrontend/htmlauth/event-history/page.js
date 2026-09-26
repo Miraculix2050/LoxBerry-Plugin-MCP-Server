@@ -36,6 +36,7 @@
   let nextRevisionRefreshAt = 0;
   let revisionRefreshFailures = 0;
   let messageVersion = 0;
+  let savedPolicy = null;
   const label = (name) => root.dataset[name] || name;
   const errorLabel = (error) => ({
     outcome_unknown: label('uncertain'),
@@ -149,6 +150,18 @@
       rows.append(tr);
     }
   };
+  const renderPolicy = (data) => {
+    const retention = $('history-retention');
+    const maximum = $('history-maximum');
+    const retentionDirty = savedPolicy !== null
+      && retention.value !== String(savedPolicy.retention_days);
+    const maximumDirty = savedPolicy !== null
+      && maximum.value !== String(savedPolicy.maximum_mib);
+    if (!retentionDirty) retention.value = String(data.retention_days);
+    if (!maximumDirty) maximum.value = String(data.maximum_mib);
+    savedPolicy = {retention_days: data.retention_days, maximum_mib: data.maximum_mib};
+    $('history-policy').textContent = `${data.retention_days} d · ${data.maximum_mib} MiB`;
+  };
   const renderOverview = (data) => {
       overviewLoaded = true;
       if (data.store_status === 'available' && typeof data.source_revision === 'string') {
@@ -160,9 +173,7 @@
         }
       }
       activeCount = data.active_source_count;
-      $('history-retention').value = data.retention_days;
-      $('history-maximum').value = data.maximum_mib;
-      $('history-policy').textContent = `${data.retention_days} d · ${data.maximum_mib} MiB`;
+      renderPolicy(data);
       $('history-measured').textContent = date(data.measured_at);
       $('history-storage').textContent = data.store_status === 'available'
         ? `${((data.database_bytes + data.wal_bytes) / 1048576).toLocaleString(undefined,
@@ -190,9 +201,7 @@
       const data = await api.request('event_history_quick_summary', {}, 5000);
       if (overviewLoaded) return;
       activeCount = data.active_source_count;
-      $('history-retention').value = data.retention_days;
-      $('history-maximum').value = data.maximum_mib;
-      $('history-policy').textContent = `${data.retention_days} d · ${data.maximum_mib} MiB`;
+      renderPolicy(data);
       $('history-measured').textContent = date(data.measured_at);
       $('history-storage').textContent = data.size_bytes == null ? label('unavailable')
         : `${(data.size_bytes / 1048576).toLocaleString(undefined,

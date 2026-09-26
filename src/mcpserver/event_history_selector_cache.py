@@ -167,13 +167,20 @@ class EventHistorySelectorCache:
         finally:
             temporary.unlink(missing_ok=True)
 
+    def _refresh_marker(self) -> tuple[int, int, int, int] | None:
+        """Identify an atomic cache replacement without decoding its contents."""
+        try:
+            metadata = self.path.lstat()
+        except OSError:
+            return None
+        return (metadata.st_dev, metadata.st_ino, metadata.st_mtime_ns, metadata.st_size)
+
     def refresh(self, discover: Callable[[], dict[str, Any]]) -> dict[str, Any]:
         """Join a concurrent refresh, but start a new one on a later page visit."""
-        before = self.read()
-        generation = before["generation"] if before else None
+        marker = self._refresh_marker()
         with self._locked():
             current = self.read()
-            if current is not None and current["generation"] != generation:
+            if current is not None and self._refresh_marker() != marker:
                 return current
             # A failed fresh visibility check must not leave old names queryable.
             try:
