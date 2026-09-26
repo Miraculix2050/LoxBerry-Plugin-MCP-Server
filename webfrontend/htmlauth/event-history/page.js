@@ -171,6 +171,8 @@
           nextRevisionRefreshAt = 0;
           revisionRefreshFailures = 0;
         }
+      } else {
+        selectorVerificationPending = true;
       }
       activeCount = data.active_source_count;
       renderPolicy(data);
@@ -428,7 +430,6 @@
       if (request !== discoveryGeneration) return;
       selectorGeneration = data.generation;
       renderOverview(data.overview);
-      if (data.overview?.store_status !== 'available') selectorVerificationPending = true;
       $('history-search').disabled = false;
       $('history-search-status').textContent =
         `${data.total} ${label('selectorCount')} · ${label('selectorVerified')}: ${date(data.verified_at)}`;

@@ -849,6 +849,15 @@ context.subject.renderOverview({store_status: 'available', visibility_status: 'u
   maximum_mib: 64, database_bytes: 0, wal_bytes: 0, sources: [], unverified_sources: []});
 assert.equal(context.subject.revision(), 'local-revision');
 assert.equal(context.subject.pending(), true);
+context.subject.renderOverview({store_status: 'available', visibility_status: 'available',
+  source_revision: 'local-revision', active_source_count: 1, retention_days: 30,
+  maximum_mib: 64, database_bytes: 0, wal_bytes: 0, sources: [], unverified_sources: []});
+assert.equal(context.subject.pending(), false);
+context.subject.renderOverview({store_status: 'unavailable', visibility_status: 'unavailable',
+  active_source_count: 1, retention_days: 30, maximum_mib: 64,
+  sources: [], unverified_sources: []});
+assert.equal(context.subject.revision(), 'local-revision');
+assert.equal(context.subject.pending(), true);
 """
     subprocess.run(
         [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
@@ -1016,15 +1025,13 @@ vm.runInNewContext(`let controlsLoading = false; let busy = false;
 let discoveryGeneration = 0; let selectedControl = ''; let querySequence = 0;
 let catalogMode = ''; let stateGeneration = 0; let selectorGeneration = '';
 let pageOffset = 0; let visibleCount = 0; let controls = [];
-let selectorVerificationPending = false;
 const facetSelection = {room: new Set(), category: new Set(), type: new Set()};
 const refreshButtonText = 'refresh';
 ${section}
-globalThis.subject = {performLoadControls, pending: () => selectorVerificationPending};`, context);
+globalThis.performLoadControls = performLoadControls;`, context);
 (async () => {
-  assert.equal(await context.subject.performLoadControls(), false);
+  assert.equal(await context.performLoadControls(), false);
   assert.equal(maximum, 1);
-  assert.equal(context.subject.pending(), true);
 })().catch((error) => {console.error(error); process.exitCode = 1;});
 """
     subprocess.run(
