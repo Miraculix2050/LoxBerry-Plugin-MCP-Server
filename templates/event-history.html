@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-event-history-v1">
+<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-event-history-v2">
 <main class="mcp-page mcp-event-history"
   data-loading="<TMPL_VAR EVENT_HISTORY.LOADING ESCAPE=HTML>"
   data-unavailable="<TMPL_VAR EVENT_HISTORY.UNAVAILABLE ESCAPE=HTML>"
@@ -29,6 +29,8 @@
   data-error-confirmation="<TMPL_VAR EVENT_HISTORY.ERROR_CONFIRMATION ESCAPE=HTML>"
   data-error-apply="<TMPL_VAR EVENT_HISTORY.ERROR_APPLY ESCAPE=HTML>"
   data-error-stale-configuration="<TMPL_VAR EVENT_HISTORY.ERROR_STALE_CONFIGURATION ESCAPE=HTML>"
+  data-authentication-busy="<TMPL_VAR EVENT_HISTORY.AUTHENTICATION_BUSY ESCAPE=HTML>"
+  data-source-ip-blocked="<TMPL_VAR EVENT_HISTORY.SOURCE_IP_BLOCKED ESCAPE=HTML>"
   data-not-visible="<TMPL_VAR EVENT_HISTORY.NOT_VISIBLE ESCAPE=HTML>"
   data-source-limit="<TMPL_VAR EVENT_HISTORY.SOURCE_LIMIT ESCAPE=HTML>"
   data-stop="<TMPL_VAR EVENT_HISTORY.STOP ESCAPE=HTML>"
@@ -54,7 +56,16 @@
   data-status-unsupported-value="<TMPL_VAR EVENT_HISTORY.STATUS_UNSUPPORTED_VALUE ESCAPE=HTML>"
   data-status-subscription-unavailable="<TMPL_VAR EVENT_HISTORY.STATUS_SUBSCRIPTION_UNAVAILABLE ESCAPE=HTML>"
   data-status-size-enforcement-failed="<TMPL_VAR EVENT_HISTORY.STATUS_SIZE_ENFORCEMENT_FAILED ESCAPE=HTML>"
-  data-more-states="<TMPL_VAR EVENT_HISTORY.MORE_STATES ESCAPE=HTML>">
+  data-more-states="<TMPL_VAR EVENT_HISTORY.MORE_STATES ESCAPE=HTML>"
+  data-selector-count="<TMPL_VAR EVENT_HISTORY.SELECTOR_COUNT ESCAPE=HTML>"
+  data-selector-verified="<TMPL_VAR EVENT_HISTORY.SELECTOR_VERIFIED ESCAPE=HTML>"
+  data-selector-filtered="<TMPL_VAR EVENT_HISTORY.SELECTOR_FILTERED ESCAPE=HTML>"
+  data-filter-clear="<TMPL_VAR EVENT_HISTORY.FILTER_CLEAR ESCAPE=HTML>"
+  data-selected-hidden="<TMPL_VAR EVENT_HISTORY.SELECTED_HIDDEN ESCAPE=HTML>"
+  data-filter-unknown="<TMPL_VAR EVENT_HISTORY.FILTER_UNKNOWN ESCAPE=HTML>"
+  data-room="<TMPL_VAR EVENT_HISTORY.ROOM ESCAPE=HTML>"
+  data-category="<TMPL_VAR EVENT_HISTORY.CATEGORY ESCAPE=HTML>"
+  data-type="<TMPL_VAR EVENT_HISTORY.TYPE ESCAPE=HTML>">
   <header class="mcp-event-history-heading">
     <div><a href="index.cgi"><TMPL_VAR EVENT_HISTORY.BACK></a>
       <h1><TMPL_VAR EVENT_HISTORY.TITLE></h1>
@@ -83,13 +94,20 @@
   <section class="mcp-card" aria-labelledby="history-add-title">
     <h2 id="history-add-title"><TMPL_VAR EVENT_HISTORY.ADD_TITLE></h2>
     <p class="mcp-help"><TMPL_VAR EVENT_HISTORY.ADD_HELP></p>
-    <div class="mcp-event-history-search"><label class="mcp-field"><span><TMPL_VAR EVENT_HISTORY.SEARCH></span><input id="history-search" type="search" maxlength="100" autocomplete="off"></label><button id="history-search-button" class="lb-button" type="button"><TMPL_VAR EVENT_HISTORY.SEARCH_BUTTON></button></div>
-    <p id="history-search-status" class="mcp-help" role="status"></p>
+    <div class="mcp-event-history-search"><label class="mcp-field"><span><TMPL_VAR EVENT_HISTORY.SEARCH></span><input id="history-search" type="search" maxlength="100" autocomplete="off" disabled></label><button id="history-search-button" class="lb-button" type="button"><TMPL_VAR EVENT_HISTORY.LOAD_CONTROLS></button></div>
+    <p id="history-search-status" class="mcp-help" role="status" aria-live="polite"></p>
+    <div class="mcp-event-history-filters">
+      <details data-facet="room"><summary><TMPL_VAR EVENT_HISTORY.ROOM></summary><input type="search" aria-label="<TMPL_VAR EVENT_HISTORY.FILTER_ROOM ESCAPE=HTML>" placeholder="<TMPL_VAR EVENT_HISTORY.FILTER_OPTIONS ESCAPE=HTML>"><div class="mcp-event-history-facet-options"></div></details>
+      <details data-facet="category"><summary><TMPL_VAR EVENT_HISTORY.CATEGORY></summary><input type="search" aria-label="<TMPL_VAR EVENT_HISTORY.FILTER_CATEGORY ESCAPE=HTML>" placeholder="<TMPL_VAR EVENT_HISTORY.FILTER_OPTIONS ESCAPE=HTML>"><div class="mcp-event-history-facet-options"></div></details>
+      <details data-facet="type"><summary><TMPL_VAR EVENT_HISTORY.TYPE></summary><input type="search" aria-label="<TMPL_VAR EVENT_HISTORY.FILTER_TYPE ESCAPE=HTML>" placeholder="<TMPL_VAR EVENT_HISTORY.FILTER_OPTIONS ESCAPE=HTML>"><div class="mcp-event-history-facet-options"></div></details>
+      <button id="history-clear-filters" class="lb-button" type="button" disabled><TMPL_VAR EVENT_HISTORY.FILTER_CLEAR></button>
+    </div>
     <form id="history-add-form" class="mcp-form">
-      <label class="mcp-field"><span><TMPL_VAR EVENT_HISTORY.CONTROL></span><select id="history-control" required disabled><option value=""><TMPL_VAR EVENT_HISTORY.SELECT_CONTROL></option></select></label>
-      <div class="mcp-event-history-search"><label class="mcp-field"><span><TMPL_VAR EVENT_HISTORY.SEARCH_STATE></span><input id="history-state-search" type="search" maxlength="100" autocomplete="off" disabled></label><button id="history-state-search-button" class="lb-button" type="button" disabled><TMPL_VAR EVENT_HISTORY.SEARCH_BUTTON></button></div>
+      <fieldset class="mcp-event-history-control-field"><legend><TMPL_VAR EVENT_HISTORY.CONTROL></legend><div id="history-control-list" class="mcp-event-history-control-list" role="radiogroup" aria-label="<TMPL_VAR EVENT_HISTORY.CONTROL ESCAPE=HTML>"></div><div class="mcp-actions"><button id="history-prev-controls" class="lb-button" type="button" hidden><TMPL_VAR EVENT_HISTORY.PREV_CONTROLS></button><button id="history-more-controls" class="lb-button" type="button" hidden><TMPL_VAR EVENT_HISTORY.MORE_CONTROLS></button></div></fieldset>
+      <div class="mcp-event-history-search"><label class="mcp-field"><span><TMPL_VAR EVENT_HISTORY.SEARCH_STATE></span><input id="history-state-search" type="search" maxlength="100" autocomplete="off" disabled></label></div>
       <p id="history-state-search-status" class="mcp-help" role="status"></p>
       <label class="mcp-field"><span><TMPL_VAR EVENT_HISTORY.STATE></span><select id="history-state" required disabled><option value=""><TMPL_VAR EVENT_HISTORY.SELECT_STATE></option></select></label>
+      <button id="history-more-states" class="lb-button" type="button" hidden><TMPL_VAR EVENT_HISTORY.SHOW_MORE_STATES></button>
       <div class="mcp-actions"><button id="history-add" class="lb-button" type="submit" disabled><TMPL_VAR EVENT_HISTORY.ADD></button></div>
     </form>
   </section>
@@ -109,5 +127,5 @@
     <button id="history-clear" class="lb-button" type="button"><TMPL_VAR EVENT_HISTORY.CLEAR></button>
   </section>
 </main>
-<script src="event-history/api.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-1" defer></script>
-<script src="event-history/page.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-1" defer></script>
+<script src="event-history/api.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-2" defer></script>
+<script src="event-history/page.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-2" defer></script>

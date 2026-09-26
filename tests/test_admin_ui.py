@@ -662,6 +662,30 @@ def test_event_history_has_dedicated_bounded_admin_view() -> None:
     assert "window.confirm(label('confirmClear'))" in script
 
 
+def test_event_history_selector_is_progressive_and_localized() -> None:
+    page = (ROOT / "templates/event-history.html").read_text(encoding="utf-8")
+    script = (ROOT / "webfrontend/htmlauth/event-history/page.js").read_text(encoding="utf-8")
+    cgi = (ROOT / "webfrontend/htmlauth/event_history.cgi").read_text(encoding="utf-8")
+
+    assert 'id="history-control-list"' in page
+    assert 'role="radiogroup"' in page
+    assert 'id="history-prev-controls"' in page
+    assert 'id="history-more-controls"' in page
+    assert all(f'data-facet="{field}"' in page for field in ("room", "category", "type"))
+    assert "void loadQuickSummary();" in script
+    assert "void loadControls();" in script
+    assert "event_history_prepare_selector" in script
+    assert "event_history_selector_catalog" in script
+    assert "event_history_selector_states" in script
+    assert "event_history_prepare_selector" in cgi
+    for language in ("de", "en"):
+        translations = (ROOT / f"templates/lang/language_{language}.ini").read_text(
+            encoding="utf-8"
+        )
+        for key in ("LOAD_CONTROLS", "FILTER_CLEAR", "ROOM", "CATEGORY", "TYPE"):
+            assert f"{key}=" in translations
+
+
 def test_server_rendered_emergency_stop_status_is_terminal_after_discovery() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = _admin_source()

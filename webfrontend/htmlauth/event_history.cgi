@@ -63,6 +63,8 @@ sub admin_call {
 my %actions = map { $_ => 1 } qw(
     event_history_overview event_history_quick_summary event_history_runtime_status event_history_discover
     event_history_discover_states
+    event_history_prepare_selector event_history_selector_catalog event_history_selector_facets
+    event_history_selector_query event_history_selector_states
     event_history_save_policy event_history_add_source event_history_remove_source
     event_history_purge_source clear_event_history
 );
@@ -84,6 +86,23 @@ if (($q->{action} // '') ne '') {
     } elsif ($action eq 'event_history_discover_states') {
         $payload = {control_uuid => ($q->{control_uuid} // ''),
             query => ($q->{query} // '')};
+    } elsif ($action =~ /\Aevent_history_selector_(?:catalog|facets|query|states)\z/) {
+        my $decode_list = sub {
+            my ($name) = @_;
+            my $raw = $q->{$name} // '[]';
+            return undef if length($raw) > 65536;
+            my $decoded = eval { decode_json($raw) };
+            return ref($decoded) eq 'ARRAY' ? $decoded : undef;
+        };
+        $payload = {
+            generation => ($q->{generation} // ''),
+            query => ($q->{query} // ''),
+            offset => ($q->{offset} // '') =~ /\A[0-9]+\z/ ? 0 + $q->{offset} : 0,
+            control_uuid => ($q->{control_uuid} // ''),
+            room => $decode_list->('room'),
+            category => $decode_list->('category'),
+            type => $decode_list->('type'),
+        };
     } elsif ($action eq 'event_history_save_policy') {
         $payload = {
             retention_days => ($q->{retention_days} // '') =~ /\A[0-9]+\z/

@@ -106,6 +106,7 @@ _TEXT_NAMES: Final = {
 _REQUIRED_PROJECT_WHEEL_ENTRIES: Final = {
     "mcpserver/auth/scopes.py",
     "mcpserver/emergency_options_cache.py",
+    "mcpserver/event_history_selector_cache.py",
     "mcpserver/skills/using-loxberry-mcp/SKILL.md",
     "mcpserver/skills/using-loxberry-mcp/agents/openai.yaml",
 }

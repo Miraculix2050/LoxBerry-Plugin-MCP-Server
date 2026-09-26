@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from mcpserver.config import PluginConfig
     from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
     from mcpserver.loxone.client import LoxoneClient, LoxoneToken, LoxoneWebSocketSession
-    from mcpserver.loxone.models import Control
+    from mcpserver.loxone.models import Control, LoxoneStructure
 
 
 _LOGGER = logging.getLogger("mcpserver.event_history")
@@ -895,7 +895,7 @@ class EventHistoryMonitor:
             with suppress(asyncio.CancelledError):
                 await self._task
 
-    async def visible_controls(self) -> tuple[Control, ...]:
+    async def visible_structure(self) -> LoxoneStructure:
         """Load one current service-owned structure for selection and validation."""
         from mcpserver.loxone.client import MiniserverEndpoint
 
@@ -930,13 +930,16 @@ class EventHistoryMonitor:
                     allow_cooldown_probe=False,
                 )
                 session = opened_session
-            structure = await session.load_structure()
-            return _controls(structure.controls)
+            return await session.load_structure()
         finally:
             if session is not None:
                 await session.close()
             if token is not None:
                 token.destroy()
+
+    async def visible_controls(self) -> tuple[Control, ...]:
+        """Return only visible controls from a current authorized structure."""
+        return _controls((await self.visible_structure()).controls)
 
     async def validate_source(self, control_uuid: str, state_uuid: str) -> tuple[str, str, str]:
         """Resolve one exact source through current service-owned visibility."""
