@@ -872,7 +872,12 @@ def test_explorer_sorts_tools_and_prepares_statistics_transfer() -> None:
     assert [tool["name"] for tool in groups[4]["tools"]] == ["loxberry_clear_statistics_cache"]
 
     result = {
-        "data": {"uuid": "control", "capabilities": {"statistics": [{"series_id": "series"}]}}
+        "data": {
+            "uuid": "control",
+            "view": "history_targets",
+            "capabilities": {"statistics": [{"series_id": "series"}]},
+            "omitted_sections": ["presentation", "relationships", "non_history_capabilities"],
+        }
     }
     assert run_adapters(
         "adapters.transferRecipe('loxone_describe_control',"

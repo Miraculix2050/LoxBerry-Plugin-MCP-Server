@@ -394,6 +394,21 @@ class ControlDescriptionData(ControlSummaryData):
     relationships: ControlRelationshipsData
 
 
+class HistoryTargetCapabilitiesData(BaseModel):
+    has_history: bool = Field(description="Advertised native Loxone control history.")
+    statistics: list[StatisticSeriesData]
+    native_statistics_truncated: bool = Field(
+        description="True when valid StatisticV2 series exceeded the normalized 128-series limit."
+    )
+
+
+class ControlHistoryTargetsData(ControlSummaryData):
+    view: Literal["history_targets"]
+    states: list[StateReferenceData]
+    capabilities: HistoryTargetCapabilitiesData
+    omitted_sections: list[Literal["presentation", "relationships", "non_history_capabilities"]]
+
+
 class StateData(BaseModel):
     uuid: str
     value: JsonValue
@@ -1005,7 +1020,7 @@ class ControlPageEnvelope(ToolEnvelope):
 
 
 class ControlDescriptionEnvelope(ToolEnvelope):
-    data: ControlDescriptionData | ErrorData
+    data: ControlDescriptionData | ControlHistoryTargetsData | ErrorData
 
 
 class StatesEnvelope(ToolEnvelope):
@@ -3354,7 +3369,8 @@ def register_read_tools(
         name="loxone_describe_control",
         description=(
             "Describe one visible Loxone control or, with include_hidden, one hidden control for "
-            "read-only diagnosis."
+            "read-only diagnosis. Set view=history_targets for compact state and advertised "
+            "native-history references; this does not establish local recording or time coverage."
         ),
         annotations=annotations,
         structured_output=True,
@@ -3368,9 +3384,18 @@ def register_read_tools(
             bool,
             Field(description="Allow a hidden control returned by include_hidden search results."),
         ] = False,
+        view: Annotated[
+            str,
+            Field(
+                description="Full description (default) or compact state and statistic targets.",
+                json_schema_extra={"enum": ["full", "history_targets"]},
+            ),
+        ] = "full",
     ) -> ControlDescriptionEnvelope:
         try:
             access_token, snapshot = await _snapshot(runtime)
+            if view not in {"full", "history_targets"}:
+                return _error(ControlDescriptionEnvelope, "invalid_input", "view is invalid")
             control = next(
                 (
                     item
@@ -3384,11 +3409,34 @@ def register_read_tools(
             if control is None:
                 return _error(ControlDescriptionEnvelope, "not_found", "control is not visible")
             value = _control_summary(control, snapshot)
+            statistics = [
+                {
+                    "series_id": series.series_id,
+                    "source": series.source,
+                    "title": series.title,
+                    "format": series.format,
+                    "accumulated": series.accumulated,
+                }
+                for series in control.statistic_series
+            ]
+            value["states"] = [{"name": name, "uuid": uuid} for name, uuid in control.state_uuids]
+            if view == "history_targets":
+                value["view"] = "history_targets"
+                value["capabilities"] = {
+                    "has_history": control.has_history,
+                    "statistics": statistics,
+                    "native_statistics_truncated": control.statistic_series_truncated,
+                }
+                value["omitted_sections"] = [
+                    "presentation",
+                    "relationships",
+                    "non_history_capabilities",
+                ]
+                return _result(ControlDescriptionEnvelope, value)
             visible_rooms = {item.uuid: item.name for item in snapshot.structure.rooms}
             visible_controls = {
                 item.uuid: item for item in _flatten_controls(snapshot.structure.controls)
             }
-            value["states"] = [{"name": name, "uuid": uuid} for name, uuid in control.state_uuids]
             value["capabilities"] = {
                 "readable": True,
                 "allowed_actions": (
@@ -3399,16 +3447,7 @@ def register_read_tools(
                     else []
                 ),
                 "has_history": control.has_history,
-                "statistics": [
-                    {
-                        "series_id": series.series_id,
-                        "source": series.source,
-                        "title": series.title,
-                        "format": series.format,
-                        "accumulated": series.accumulated,
-                    }
-                    for series in control.statistic_series
-                ],
+                "statistics": statistics,
                 "radio_outputs": [
                     {"output_id": output_id, "name": output_name}
                     for output_id, output_name in control.radio_outputs

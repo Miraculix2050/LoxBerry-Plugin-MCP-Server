@@ -545,17 +545,17 @@ def _status_monitor_details(
     return tuple(inputs), tuple(sorted(statuses, key=lambda status: status.status_id))
 
 
-def _statistic_series(item: Mapping[str, object]) -> tuple[StatisticSeries, ...]:
+def _statistic_series(item: Mapping[str, object]) -> tuple[tuple[StatisticSeries, ...], bool]:
     value = item.get("statisticV2")
     if isinstance(value, Mapping):
         return _statistic_v2_series(value)
-    return _legacy_statistic_series(item.get("statistic"))
+    return _legacy_statistic_series(item.get("statistic")), False
 
 
-def _statistic_v2_series(value: Mapping[str, object]) -> tuple[StatisticSeries, ...]:
+def _statistic_v2_series(value: Mapping[str, object]) -> tuple[tuple[StatisticSeries, ...], bool]:
     groups = value.get("groups")
     if not isinstance(groups, list) or len(groups) > 64:
-        return ()
+        return (), False
     result: list[StatisticSeries] = []
     for group in groups:
         if not isinstance(group, Mapping):
@@ -602,7 +602,7 @@ def _statistic_v2_series(value: Mapping[str, object]) -> tuple[StatisticSeries, 
                     accumulated=accumulated,
                 )
             )
-    return tuple(result[:128])
+    return tuple(result[:128]), len(result) > 128
 
 
 def _legacy_statistic_series(value: object) -> tuple[StatisticSeries, ...]:
@@ -782,6 +782,7 @@ def _controls(
         status_monitor_inputs, status_monitor_statuses = (
             _status_monitor_details(details) if item.get("type") == "StatusMonitor" else ((), ())
         )
+        statistic_series, statistic_series_truncated = _statistic_series(item)
         controls.append(
             Control(
                 uuid=uuid,
@@ -814,7 +815,8 @@ def _controls(
                 maximum=maximum,
                 step=step,
                 is_analog=analog,
-                statistic_series=_statistic_series(item),
+                statistic_series=statistic_series,
+                statistic_series_truncated=statistic_series_truncated,
                 status_monitor_inputs=status_monitor_inputs,
                 status_monitor_statuses=status_monitor_statuses,
                 format=format_value,

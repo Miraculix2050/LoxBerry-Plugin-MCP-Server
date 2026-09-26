@@ -652,7 +652,7 @@ def test_tool_input_schemas_explain_every_argument() -> None:
             "cursor",
             "limit",
         },
-        "loxone_describe_control": {"control_uuid", "include_hidden"},
+        "loxone_describe_control": {"control_uuid", "include_hidden", "view"},
         "loxone_get_control_notes": {"control_uuid", "include_hidden"},
         "loxone_get_states": {"state_uuids", "include_hidden"},
         "loxone_operate_control": {
@@ -682,6 +682,9 @@ def test_tool_input_schemas_explain_every_argument() -> None:
     assert find_properties["has_statistics"]["default"] is False
     assert "legacy" in find_properties["has_statistics"]["description"]
     assert find_properties["has_history"]["default"] is False
+    describe_view = published["loxone_describe_control"].parameters["properties"]["view"]
+    assert describe_view["default"] == "full"
+    assert describe_view["enum"] == ["full", "history_targets"]
     assert find_properties["limit"]["minimum"] == 1
     assert find_properties["limit"]["maximum"] == 100
     operation = published["loxone_operate_control"].parameters["properties"]
@@ -1943,6 +1946,120 @@ async def test_describe_control_only_advertises_actions_to_control_scope(
 
 
 @pytest.mark.asyncio
+async def test_describe_control_history_targets_is_compact_and_compatible(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    access = _loxberry_access(READ_SCOPE)
+    series = StatisticSeries("v2:1:value", "statistic_v2", "1", "value", "Energy", "kWh")
+    control = Control(
+        uuid="meter-1",
+        name="Meter",
+        control_type="Meter",
+        room_uuid=None,
+        category_uuid=None,
+        action_uuid=None,
+        state_uuids=(("value", "state-1"),),
+        has_history=True,
+        statistic_series=(series,),
+        subcontrols=(Control("child-1", "Child", "InfoOnlyAnalog", None, None, None, ()),),
+    )
+    structure = LoxoneStructure(
+        identity=LoxoneIdentity("user", "serial"),
+        last_modified="1",
+        rooms=(),
+        categories=(),
+        controls=(control,),
+    )
+
+    async def snapshot(_runtime: object) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+        return access, RuntimeSnapshot("family", structure, True)
+
+    monkeypatch.setattr(tools_module, "_snapshot", snapshot)
+    server = FastMCP("history-targets")
+    register_read_tools(server, None)
+    tool = server._tool_manager.get_tool("loxone_describe_control")
+    assert tool is not None
+
+    original = await tool.fn("meter-1")
+    explicit_full = await tool.fn("meter-1", view="full")
+    compact = await tool.fn("meter-1", view="history_targets")
+    assert original.data.model_dump(mode="json") == explicit_full.data.model_dump(mode="json")  # type: ignore[union-attr]
+    assert "view" not in original.data.model_dump()  # type: ignore[union-attr]
+    data = compact.data.model_dump(mode="json")  # type: ignore[union-attr]
+    assert data["view"] == "history_targets"
+    assert data["states"] == [{"name": "value", "uuid": "state-1"}]
+    assert data["capabilities"]["has_history"] is True
+    assert data["capabilities"]["statistics"][0]["series_id"] == "v2:1:value"
+    assert data["capabilities"]["native_statistics_truncated"] is False
+    assert set(data["capabilities"]) == {"has_history", "statistics", "native_statistics_truncated"}
+    assert data["omitted_sections"] == ["presentation", "relationships", "non_history_capabilities"]
+    assert "presentation" not in data and "relationships" not in data
+    structure = replace(structure, controls=(replace(control, statistic_series_truncated=True),))
+    truncated = await tool.fn("meter-1", view="history_targets")
+    assert truncated.data.capabilities.native_statistics_truncated is True  # type: ignore[union-attr]
+    assert (await tool.fn("meter-1", view="unexpected")).data.error == "invalid_input"  # type: ignore[union-attr]
+    called = await server._tool_manager.call_tool(
+        "loxone_describe_control", {"control_uuid": "meter-1", "view": "unexpected"}
+    )
+    assert called.data.error == "invalid_input"  # type: ignore[union-attr]
+    assert (await tool.fn("unknown", view="history_targets")).data.error == "not_found"  # type: ignore[union-attr]
+
+    async def denied(_runtime: object) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+        raise PermissionError
+
+    monkeypatch.setattr(tools_module, "_snapshot", denied)
+    assert (await tool.fn("meter-1", view="history_targets")).data.error == "unauthenticated"  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("related_count", [0, 50])
+async def test_history_targets_payload_measurement(
+    monkeypatch: pytest.MonkeyPatch, related_count: int
+) -> None:
+    control = Control(
+        "meter-1",
+        "Meter",
+        "Meter",
+        None,
+        None,
+        None,
+        (("value", "state-1"),),
+        subcontrols=tuple(
+            Control(f"child-{index}", f"Child {index}", "InfoOnlyAnalog", None, None, None, ())
+            for index in range(related_count)
+        ),
+    )
+    structure = LoxoneStructure(LoxoneIdentity("user", "serial"), "1", (), (), (control,))
+
+    async def snapshot(_runtime: object) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+        return _loxberry_access(READ_SCOPE), RuntimeSnapshot("family", structure, True)
+
+    monkeypatch.setattr(tools_module, "_snapshot", snapshot)
+    server = FastMCP("payload-measurement")
+    register_read_tools(server, None)
+    find = server._tool_manager.get_tool("loxone_find_controls")
+    describe = server._tool_manager.get_tool("loxone_describe_control")
+    assert find is not None and describe is not None
+    found = await find.fn(query="Meter")
+    full = await describe.fn("meter-1")
+    compact = await describe.fn("meter-1", view="history_targets")
+
+    def encoded_size(result: object) -> int:
+        return len(
+            json.dumps(result.model_dump(mode="json"), separators=(",", ":")).encode("utf-8")  # type: ignore[attr-defined]
+        )
+
+    discovery_bytes = encoded_size(found)
+    full_bytes = discovery_bytes + encoded_size(full)
+    compact_bytes = discovery_bytes + encoded_size(compact)
+    print(
+        f"history-target payload related={related_count} "
+        f"find+full={full_bytes} bytes find+compact={compact_bytes} bytes; 2 calls each"
+    )
+    assert compact_bytes < full_bytes
+
+
+@pytest.mark.asyncio
 async def test_list_rooms_includes_an_unambiguous_room_group(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2589,6 +2706,11 @@ async def test_hidden_controls_require_explicit_diagnosis_flag(
     described = await describe.fn("hidden-1", include_hidden=True)
     assert described.data.visibility == "hidden"  # type: ignore[union-attr]
     assert described.data.capabilities.allowed_actions == []  # type: ignore[union-attr]
+    assert (await describe.fn("hidden-1", view="history_targets")).data.error == "not_found"  # type: ignore[union-attr]
+    compact = await describe.fn("hidden-1", include_hidden=True, view="history_targets")
+    assert compact.data.visibility == "hidden"  # type: ignore[union-attr]
+    assert compact.data.states[0].uuid == "hidden-state-1"  # type: ignore[union-attr]
+    assert "allowed_actions" not in compact.data.capabilities.model_dump()  # type: ignore[union-attr]
 
 
 @pytest.mark.asyncio
