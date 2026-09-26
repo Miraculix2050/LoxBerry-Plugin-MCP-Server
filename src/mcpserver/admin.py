@@ -680,7 +680,11 @@ def _save_mcp(payload: object) -> dict[str, Any]:
         return updated
 
     updated = store.transaction(apply)
-    return {"configuration": updated.to_document(), "applied": True} | _service_response()
+    return {
+        "configuration": updated.to_document(),
+        "event_history_brief": _event_history_brief(updated),
+        "applied": True,
+    } | _service_response()
 
 
 def _emergency_stop_cache(config: PluginConfig) -> EmergencyOptionsCache | None:

@@ -143,6 +143,10 @@ def overview() -> dict[str, Any]:
         "store_status": "unavailable",
         "visibility_status": "unavailable",
         "sources": [],
+        "unverified_sources": [
+            {"control_uuid": control, "state_uuid": state}
+            for control, state in config.event_history_sources
+        ],
     }
     try:
         snapshot = store.snapshot(config.event_history_sources)
@@ -154,11 +158,26 @@ def overview() -> dict[str, Any]:
         )
     except Exception:
         return response
+    if not snapshot.sources and not config.event_history_sources:
+        response.update(
+            visibility_status="available",
+            sources_truncated=False,
+            hidden_sources_present=False,
+            visible_event_count=0,
+            visible_removed_count=0,
+            visible_active_count=0,
+        )
+        return response
     try:
         visible = _visible(_controls(config))
         response["visibility_status"] = "available"
     except bridge.AdminError:
         return response
+    response["unverified_sources"] = [
+        {"control_uuid": control, "state_uuid": state}
+        for control, state in config.event_history_sources
+        if (control, state) not in visible
+    ]
     active = set(config.event_history_sources)
     rows = []
     for source in snapshot.sources:
@@ -188,7 +207,9 @@ def overview() -> dict[str, Any]:
         )
     response["sources"] = rows[: _SOURCE_LIMIT * 2]
     response["sources_truncated"] = snapshot.truncated
-    response["hidden_sources_present"] = len(rows) < len(snapshot.sources)
+    response["hidden_sources_present"] = bool(response["unverified_sources"]) or len(rows) < len(
+        snapshot.sources
+    )
     response["visible_event_count"] = sum(row["event_count"] for row in rows)
     response["visible_removed_count"] = sum(row["recording_status"] == "removed" for row in rows)
     response["visible_active_count"] = sum(row["recording_status"] == "active" for row in rows)
@@ -307,25 +328,26 @@ def save_policy(payload: object) -> dict[str, Any]:
 def change_source(payload: object, *, add: bool) -> dict[str, Any]:
     bridge = _bridge()
     key = _source(payload)
-    config = bridge._config_store().load()
-    if key not in _visible(_controls(config)):
-        raise bridge.AdminError("source is not currently visible", code="not_found")
-    if not add:
+    if add:
+        config = bridge._config_store().load()
+        if key not in _visible(_controls(config)):
+            raise bridge.AdminError("source is not currently visible", code="not_found")
+    else:
         _confirmed(payload)
 
     def change(current: PluginConfig) -> PluginConfig:
-        _require_same_visibility_context(config, current)
-        if add and not current.event_history_enabled:
-            raise bridge.AdminError("local event history is disabled", code="feature_disabled")
         sources = current.event_history_sources
         if add:
+            _require_same_visibility_context(config, current)
+            if not current.event_history_enabled:
+                raise bridge.AdminError("local event history is disabled", code="feature_disabled")
             if key in sources:
                 return current
             if len(sources) >= _SOURCE_LIMIT:
                 raise bridge.AdminError("source capacity reached", code="rate_limited")
             return replace(current, event_history_sources=(*sources, key))
         if key not in sources:
-            return current
+            raise bridge.AdminError("source is not configured", code="not_found")
         return replace(current, event_history_sources=tuple(s for s in sources if s != key))
 
     updated, changed = _apply(change)

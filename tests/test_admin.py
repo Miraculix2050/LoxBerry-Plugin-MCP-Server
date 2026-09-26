@@ -1395,14 +1395,18 @@ def test_section_saves_are_atomic_and_preserve_the_other_configuration(
     monkeypatch.setattr("mcpserver.admin._service_active", lambda: False)
     monkeypatch.setattr("mcpserver.admin._service_response", lambda: {"service_active": False})
 
-    _save_mcp(
+    saved_mcp = _save_mcp(
         {
             "schema_version": 5,
             "server": {"enabled": False, "public_origin": "https://loxberry.example"},
             "loxone": {"endpoint": "http://192.168.10.20"},
+            "tools": {"loxone_history_enabled": True},
+            "event_history": {"enabled": True},
         }
     )
     after_mcp = store.load()
+    assert saved_mcp["event_history_brief"]["enabled"] is True
+    assert saved_mcp["event_history_brief"]["active_source_count"] == 0
     assert after_mcp.mqtt_enabled is True
     assert after_mcp.mqtt_root_topic == "existing"
 

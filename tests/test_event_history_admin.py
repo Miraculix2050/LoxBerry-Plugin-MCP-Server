@@ -82,6 +82,19 @@ def test_quick_summary_avoids_miniserver_discovery(tmp_path, monkeypatch):
     assert result["size_bytes"] == history.path.stat().st_size
 
 
+def test_empty_overview_avoids_miniserver_discovery(tmp_path, monkeypatch):
+    _, history = _setup(tmp_path, monkeypatch)
+    history.initialize()
+    monkeypatch.setattr(event_history_admin, "_controls", lambda _config: pytest.fail("discovery"))
+
+    result = event_history_admin.overview()
+
+    assert result["store_status"] == "available"
+    assert result["visibility_status"] == "available"
+    assert result["visible_active_count"] == 0
+    assert result["unverified_sources"] == []
+
+
 def test_v2_migration_rebuilds_exact_event_summaries(tmp_path, monkeypatch):
     _, history = _setup(tmp_path, monkeypatch, sources=(SOURCE,))
     history.initialize()
@@ -106,8 +119,41 @@ def test_overview_hides_historical_metadata_for_invisible_sources(tmp_path, monk
     result = event_history_admin.overview()
 
     assert [item["control_uuid"] for item in result["sources"]] == [SOURCE[0]]
+    assert result["unverified_sources"] == []
     assert result["visible_event_count"] == 1
     assert result["database_bytes"] > 0
+
+
+def test_invisible_configured_source_can_be_stopped_without_discovery(tmp_path, monkeypatch):
+    config_store, history = _setup(tmp_path, monkeypatch, sources=(HIDDEN,))
+    history.initialize()
+    result = event_history_admin.overview()
+    assert result["sources"] == []
+    assert result["unverified_sources"] == [{"control_uuid": HIDDEN[0], "state_uuid": HIDDEN[1]}]
+    assert result["hidden_sources_present"] is True
+
+    monkeypatch.setattr(event_history_admin, "_controls", lambda _config: pytest.fail("discovery"))
+    key = {"control_uuid": HIDDEN[0], "state_uuid": HIDDEN[1], "confirm": True}
+    assert event_history_admin.change_source(key, add=False)["changed"] is True
+    assert config_store.load().event_history_sources == ()
+    with pytest.raises(admin.AdminError) as missing:
+        event_history_admin.change_source(key, add=False)
+    assert missing.value.code == "not_found"
+
+
+def test_overview_keeps_configured_source_removal_available_when_visibility_fails(
+    tmp_path, monkeypatch
+):
+    _, history = _setup(tmp_path, monkeypatch, sources=(SOURCE,))
+    history.initialize()
+
+    def unavailable(_config):
+        raise admin.AdminError("structure unavailable", code="temporarily_unavailable")
+
+    monkeypatch.setattr(event_history_admin, "_controls", unavailable)
+    result = event_history_admin.overview()
+    assert result["visibility_status"] == "unavailable"
+    assert result["unverified_sources"] == [{"control_uuid": SOURCE[0], "state_uuid": SOURCE[1]}]
 
 
 def test_source_actions_preserve_history_until_separate_confirmed_purge(tmp_path, monkeypatch):

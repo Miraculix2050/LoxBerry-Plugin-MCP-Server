@@ -55,9 +55,21 @@
     wrap.append(details);
     return wrap;
   };
-  const renderRows = (sources) => {
+  const sourceAction = (source, recording) => {
+    const button = text('button', label(recording ? 'stop' : 'purge'));
+    button.type = 'button';
+    button.className = 'lb-button';
+    button.addEventListener('click', async () => {
+      const action = recording ? 'event_history_remove_source' : 'event_history_purge_source';
+      if (!window.confirm(label(recording ? 'confirmRemove' : 'confirmPurge'))) return;
+      await mutate(action, {control_uuid: source.control_uuid, state_uuid: source.state_uuid,
+        confirm: '1'});
+    });
+    return button;
+  };
+  const renderRows = (sources, unverified, visibilityStatus) => {
     rows.replaceChildren();
-    $('history-empty').hidden = sources.length > 0;
+    $('history-empty').hidden = sources.length + unverified.length > 0;
     for (const source of sources) {
       const tr = document.createElement('tr');
       const recording = source.recording_status === 'active';
@@ -83,16 +95,7 @@
       period.append(coverage);
       const actions = document.createElement('div');
       actions.className = 'mcp-actions';
-      const button = text('button', label(recording ? 'stop' : 'purge'));
-      button.type = 'button';
-      button.className = 'lb-button';
-      button.addEventListener('click', async () => {
-        const action = recording ? 'event_history_remove_source' : 'event_history_purge_source';
-        if (!window.confirm(label(recording ? 'confirmRemove' : 'confirmPurge'))) return;
-        await mutate(action, {control_uuid: source.control_uuid, state_uuid: source.state_uuid,
-          confirm: '1'});
-      });
-      actions.append(button);
+      actions.append(sourceAction(source, recording));
       tr.append(
         cell(root.querySelector('th:nth-child(1)').textContent,
           namedSource(source.control_name, source.control_type, source.control_uuid)),
@@ -102,6 +105,22 @@
         cell(label('events'), String(source.event_count)),
         cell(root.querySelector('th:nth-child(5)').textContent, period),
         cell(root.querySelector('th:nth-child(6)').textContent, actions),
+      );
+      rows.append(tr);
+    }
+    for (const source of unverified) {
+      const tr = document.createElement('tr');
+      const name = visibilityStatus === 'available'
+        ? label('sourceNotVisible') : label('sourceUnverified');
+      tr.append(
+        cell(root.querySelector('th:nth-child(1)').textContent,
+          namedSource(name, '', source.control_uuid)),
+        cell(root.querySelector('th:nth-child(2)').textContent,
+          namedSource(label('unknown'), '', source.state_uuid)),
+        cell(root.querySelector('th:nth-child(3)').textContent, label('selected')),
+        cell(label('events'), label('unknown')),
+        cell(root.querySelector('th:nth-child(5)').textContent, label('unknown')),
+        cell(root.querySelector('th:nth-child(6)').textContent, sourceAction(source, true)),
       );
       rows.append(tr);
     }
@@ -133,7 +152,9 @@
         data.hidden_sources_present ? label('hiddenSources') : '',
         data.sources_truncated ? label('sourcesTruncated') : '',
       ].filter(Boolean).join(' ');
-      renderRows(Array.isArray(data.sources) ? data.sources : []);
+      renderRows(Array.isArray(data.sources) ? data.sources : [],
+        Array.isArray(data.unverified_sources) ? data.unverified_sources : [],
+        data.visibility_status);
       setMessage(data.store_status === 'available' ? label('loaded') : label('unavailable'),
         data.store_status === 'available' ? 'success' : 'warning');
     } catch (error) {

@@ -80,6 +80,15 @@ window.McpAdmin.createConfiguration = (
     setSummaryBadge(configurationSummaryBadge, ...enabled(configuration?.server?.enabled));
     setSummaryBadge(mqttSummaryBadge, ...enabled(configuration?.mqtt?.enabled));
   };
+  const renderEventHistoryBrief = (history) => {
+    if (!history) return;
+    const brief = document.getElementById('event-history-brief');
+    const size = Number.isFinite(history.size_bytes)
+      ? `${(history.size_bytes / (1024 * 1024)).toLocaleString(undefined, {maximumFractionDigits: 1})} MiB`
+      : brief.dataset.sizeUnknown;
+    brief.textContent = `${history.enabled ? brief.dataset.enabled : brief.dataset.disabled} · `
+      + `${history.active_source_count} ${brief.dataset.sources} · ${size}`;
+  };
   const renderConfiguration = (configuration, cachedEmergencyStopOptions) => {
     const server = configuration?.server || {};
     const loxone = configuration?.loxone || {};
@@ -147,15 +156,7 @@ window.McpAdmin.createConfiguration = (
       body.set('ajax', '1');
       const result = await postAjax(body, 7000, suppliedResult);
       renderConfiguration(result.data.configuration, cachedEmergencyStopOptions);
-      const brief = document.getElementById('event-history-brief');
-      const history = result.data.event_history_brief;
-      if (history) {
-        const size = Number.isFinite(history.size_bytes)
-          ? `${(history.size_bytes / (1024 * 1024)).toLocaleString(undefined, {maximumFractionDigits: 1})} MiB`
-          : brief.dataset.sizeUnknown;
-        brief.textContent = `${history.enabled ? brief.dataset.enabled : brief.dataset.disabled} · `
-          + `${history.active_source_count} ${brief.dataset.sources} · ${size}`;
-      }
+      renderEventHistoryBrief(result.data.event_history_brief);
       configurationLoaded = true;
       setConfigurationFieldsDisabled(false);
       configurationFallbackLink.hidden = true;
@@ -414,6 +415,7 @@ window.McpAdmin.createConfiguration = (
     if (savedPublicOrigin !== nextPublicOrigin) certificate.refreshAfterOriginChange();
     savedPublicOrigin = nextPublicOrigin;
     renderConfigurationBadges(data.configuration);
+    renderEventHistoryBrief(data.event_history_brief);
     const savedEndpoint = data.configuration.loxone.endpoint;
     emergencyStopValue.value = data.configuration.emergency_stop.virtual_status_uuid;
     resetEmergencyStopOptions();
