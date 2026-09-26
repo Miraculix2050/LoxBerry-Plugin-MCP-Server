@@ -170,12 +170,18 @@ def test_project_wheel_source_verification_ignores_line_endings(tmp_path: Path) 
     scopes.write_bytes(b'"""Scope names."""\r\n')
     cache = source_root / "mcpserver" / "emergency_options_cache.py"
     cache.write_bytes(b'"""Emergency options cache."""\r\n')
+    selector_cache = source_root / "mcpserver" / "event_history_selector_cache.py"
+    selector_cache.write_bytes(b'"""Event History selector cache."""\r\n')
     wheel = tmp_path / "project.whl"
     with zipfile.ZipFile(wheel, "w") as archive:
         archive.writestr("mcpserver/module.py", b'"""Module."""\n')
         archive.writestr("mcpserver/auth/scopes.py", b'"""Scope names."""\n')
         archive.writestr(
             "mcpserver/emergency_options_cache.py", b'"""Emergency options cache."""\n'
+        )
+        archive.writestr(
+            "mcpserver/event_history_selector_cache.py",
+            b'"""Event History selector cache."""\n',
         )
         archive.writestr("mcpserver/skills/using-loxberry-mcp/SKILL.md", b"skill\n")
         archive.writestr(

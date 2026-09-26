@@ -1747,6 +1747,31 @@ def _diagnostic() -> dict[str, Any]:
     }
 
 
+def _event_history_source_revision() -> dict[str, str]:
+    """Read a local change marker without importing discovery or auth clients."""
+    from mcpserver.loxone.event_history import EventHistoryStore, source_revision_for_snapshot
+
+    config = _config_store().load()
+    try:
+        store = EventHistoryStore(
+            _path("MCPSERVER_EVENT_HISTORY_STORE", suffix=".sqlite3"),
+            retention_days=config.event_history_retention_days,
+            maximum_mib=config.event_history_maximum_mib,
+        )
+        snapshot = store.snapshot(config.event_history_sources)
+    except Exception:
+        return {"availability": "unavailable"}
+    return {
+        "availability": "available",
+        "revision": source_revision_for_snapshot(
+            config.event_history_sources,
+            snapshot,
+            retention_days=config.event_history_retention_days,
+            maximum_mib=config.event_history_maximum_mib,
+        ),
+    }
+
+
 def dispatch(request: object, *, timing: dict[str, float] | None = None) -> dict[str, Any]:
     if not isinstance(request, dict) or not isinstance(request.get("action"), str):
         raise AdminError("request is invalid")
@@ -1791,11 +1816,19 @@ def dispatch(request: object, *, timing: dict[str, float] | None = None) -> dict
             "mqtt_gateway": _mqtt_gateway_status(),
             "mqtt_password_configured": _mqtt_password_configured(),
         }
+    if action == "event_history_source_revision":
+        return _event_history_source_revision()
     if action in {
         "event_history_overview",
+        "event_history_local_overview",
         "event_history_quick_summary",
         "event_history_discover",
         "event_history_discover_states",
+        "event_history_prepare_selector",
+        "event_history_selector_catalog",
+        "event_history_selector_facets",
+        "event_history_selector_query",
+        "event_history_selector_states",
         "event_history_save_policy",
         "event_history_add_source",
         "event_history_remove_source",
@@ -1805,12 +1838,24 @@ def dispatch(request: object, *, timing: dict[str, float] | None = None) -> dict
 
         if action == "event_history_overview":
             return event_history_admin.overview()
+        if action == "event_history_local_overview":
+            return event_history_admin.overview(local_only=True)
         if action == "event_history_quick_summary":
             return event_history_admin.quick_summary()
         if action == "event_history_discover":
             return event_history_admin.discover(payload)
         if action == "event_history_discover_states":
             return event_history_admin.discover_states(payload)
+        if action == "event_history_prepare_selector":
+            return event_history_admin.prepare_selector()
+        if action == "event_history_selector_catalog":
+            return event_history_admin.selector_catalog(payload)
+        if action == "event_history_selector_facets":
+            return event_history_admin.selector_facets(payload)
+        if action == "event_history_selector_query":
+            return event_history_admin.selector_query(payload)
+        if action == "event_history_selector_states":
+            return event_history_admin.selector_states(payload)
         if action == "event_history_save_policy":
             return event_history_admin.save_policy(payload)
         if action == "event_history_add_source":

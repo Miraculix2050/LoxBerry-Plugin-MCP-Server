@@ -64,6 +64,7 @@ _TEST_GROUPS: Final = (
         (
             "src/mcpserver/admin.py",
             "src/mcpserver/event_history_admin.py",
+            "src/mcpserver/event_history_selector_cache.py",
             "src/mcpserver/emergency_options_cache.py",
             "src/mcpserver/auth/scopes.py",
             "templates/index.html",
@@ -79,6 +80,7 @@ _TEST_GROUPS: Final = (
         (
             "tests/test_admin.py",
             "tests/test_event_history_admin.py",
+            "tests/test_event_history_selector_cache.py",
             "tests/test_emergency_options_cache.py",
             "tests/test_admin_ui.py",
             "tests/test_apache_config.py",
