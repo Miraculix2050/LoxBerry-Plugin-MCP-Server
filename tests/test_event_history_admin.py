@@ -286,6 +286,35 @@ def test_source_revision_tracks_membership_without_polling_event_changes(tmp_pat
     assert revision() != removed
 
 
+def test_snapshot_keeps_counts_and_clear_generation_consistent(tmp_path, monkeypatch):
+    _, history = _setup(tmp_path, monkeypatch, sources=(SOURCE,))
+    history.initialize()
+    history.record_transition(*SOURCE, observed_at=time.time(), old_value=0, new_value=1)
+    original_connect = sqlite3.connect
+    cleared = False
+
+    class ClearDuringRead(sqlite3.Connection):
+        def execute(self, sql, *args):
+            nonlocal cleared
+            cursor = super().execute(sql, *args)
+            if sql.startswith("SELECT control_uuid, state_uuid, event_count") and not cleared:
+                cleared = True
+                history.clear()
+            return cursor
+
+    def connect(*args, **kwargs):
+        if kwargs.get("uri"):
+            kwargs["factory"] = ClearDuringRead
+        return original_connect(*args, **kwargs)
+
+    monkeypatch.setattr(sqlite3, "connect", connect)
+    before = history.snapshot((SOURCE,))
+    after = history.snapshot((SOURCE,))
+    assert cleared
+    assert (before.sources[0].event_count, before.clear_generation) == (1, 0)
+    assert (after.sources[0].event_count, after.clear_generation) == (0, 1)
+
+
 def test_policy_update_preserves_sources_and_rejects_invalid_input(tmp_path, monkeypatch):
     config_store, _ = _setup(tmp_path, monkeypatch, sources=(SOURCE,))
 

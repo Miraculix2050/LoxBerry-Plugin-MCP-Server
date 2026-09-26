@@ -774,6 +774,87 @@ globalThis.subject = {mutate, loadControls};
     )
 
 
+def test_event_history_invalidation_removes_authorized_facet_names() -> None:
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = source.slice(source.indexOf('  const invalidateSelector = () => {'),
+  source.indexOf('  const applyFilters ='));
+const fields = ['room', 'category', 'type'];
+const panels = Object.fromEntries(fields.map((field) => {
+  const search = {value: 'old', disabled: false, oninput: () => {}};
+  const list = {children: ['Secret name'], replaceChildren() {this.children = [];}};
+  return [field, {open: true, search, list,
+    querySelector(selector) {return selector.startsWith('input') ? search : list;}}];
+}));
+const nodes = new Map();
+const getNode = (id) => {
+  if (!nodes.has(id)) nodes.set(id, {hidden: false, disabled: false, textContent: ''});
+  return nodes.get(id);
+};
+const stateCache = new Map([['old', {name: 'Secret state'}]]);
+const facetSelection = Object.fromEntries(fields.map((field) => [field, new Set(['old'])]));
+const context = {root: {querySelector: (selector) => panels[selector.match(/"([^"]+)"/)[1]]},
+  stateCache, facetSelection, controlList: {replaceChildren() {}},
+  stateSelect: {replaceChildren() {}}, stateSearch: {value: 'Secret state'},
+  stateSearchWrap: {}, addButton: {}, $: getNode, Option: class {}, label: () => ''};
+vm.runInNewContext(`let selectorGeneration = 'old'; let controls = [{}];
+let selectedControl = 'old'; ${section}
+globalThis.invalidate = invalidateSelector;`, context);
+context.invalidate();
+assert.equal(stateCache.size, 0);
+for (const field of fields) {
+  assert.equal(facetSelection[field].size, 0);
+  assert.deepEqual(panels[field].list.children, []);
+  assert.equal(panels[field].search.oninput, null);
+  assert.equal(panels[field].search.disabled, true);
+}
+assert.equal(getNode('history-clear-filters').disabled, true);
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_event_history_local_overview_starts_revision_tracking() -> None:
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = source.slice(source.indexOf('  const renderOverview = (data) => {'),
+  source.indexOf('  const loadQuickSummary ='));
+const nodes = new Map();
+const context = {$: (id) => {
+  if (!nodes.has(id)) nodes.set(id, {});
+  return nodes.get(id);
+}, label: (key) => key, date: () => '', renderRows: () => {}, setMessage: () => {}};
+vm.runInNewContext(`let overviewLoaded = false; let knownSourceRevision = '';
+let nextRevisionRefreshAt = 1; let revisionRefreshFailures = 1; let activeCount = 0;
+${section}
+globalThis.subject = {renderOverview, revision: () => knownSourceRevision};`, context);
+context.subject.renderOverview({store_status: 'available', visibility_status: 'unavailable',
+  source_revision: 'local-revision', active_source_count: 1, retention_days: 30,
+  maximum_mib: 64, database_bytes: 0, wal_bytes: 0, sources: [], unverified_sources: []});
+assert.equal(context.subject.revision(), 'local-revision');
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
 def test_server_rendered_emergency_stop_status_is_terminal_after_discovery() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = _admin_source()

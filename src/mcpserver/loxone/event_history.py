@@ -396,6 +396,7 @@ class EventHistoryStore:
             with closing(
                 sqlite3.connect(self.path.as_uri() + "?mode=ro", uri=True, timeout=2)
             ) as db:
+                db.execute("BEGIN")
                 if db.execute("PRAGMA user_version").fetchone()[0] != _SCHEMA_VERSION:
                     raise EventHistoryUnavailable("local event history needs migration")
                 totals = {

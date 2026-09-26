@@ -149,8 +149,7 @@
   };
   const renderOverview = (data) => {
       overviewLoaded = true;
-      if (data.store_status === 'available' && data.visibility_status === 'available'
-        && typeof data.source_revision === 'string') {
+      if (data.store_status === 'available' && typeof data.source_revision === 'string') {
         knownSourceRevision = data.source_revision;
         nextRevisionRefreshAt = 0;
         revisionRefreshFailures = 0;
@@ -294,13 +293,27 @@
     selectorGeneration = '';
     controls = [];
     selectedControl = '';
+    stateCache.clear();
     controlList.replaceChildren();
     stateSelect.replaceChildren(new Option(label('selectState'), ''));
     stateSelect.disabled = true;
+    stateSearch.value = '';
     stateSearch.disabled = true;
     stateSearchWrap.hidden = true;
+    $('history-search').disabled = true;
     $('history-state-search-status').textContent = '';
     addButton.disabled = true;
+    for (const field of ['room', 'category', 'type']) {
+      facetSelection[field].clear();
+      const panel = root.querySelector(`[data-facet="${field}"]`);
+      panel.open = false;
+      const search = panel.querySelector('input[type="search"]');
+      search.value = '';
+      search.disabled = true;
+      search.oninput = null;
+      panel.querySelector('.mcp-event-history-facet-options').replaceChildren();
+    }
+    $('history-clear-filters').disabled = true;
     $('history-more-controls').hidden = true;
     $('history-prev-controls').hidden = true;
     $('history-more-states').hidden = true;
@@ -344,6 +357,7 @@
       const panel = root.querySelector(`[data-facet="${field}"]`);
       const list = panel.querySelector('.mcp-event-history-facet-options');
       const search = panel.querySelector('input[type="search"]');
+      search.disabled = false;
       const options = facets[field] || [];
       const available = new Set(options.map((option) => option.id));
       for (const value of facetSelection[field]) {
@@ -388,6 +402,7 @@
     const request = ++discoveryGeneration;
     const previousControl = selectedControl;
     const previousState = stateSelect.value;
+    const previousFilters = selectedFilters();
     invalidateSelector();
     ++querySequence;
     catalogMode = 'loading';
@@ -413,6 +428,9 @@
       if (request !== discoveryGeneration) return;
       catalogMode = catalog.mode;
       controls = catalog.controls || [];
+      for (const field of ['room', 'category', 'type']) {
+        for (const value of previousFilters[field]) facetSelection[field].add(value);
+      }
       renderFacets(facets);
       if (previousControl) {
         const found = catalogMode === 'local'
