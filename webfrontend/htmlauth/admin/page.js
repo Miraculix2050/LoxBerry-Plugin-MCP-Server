@@ -125,14 +125,11 @@
     service_action: 75000,
     service_status: 7000,
     list_sessions: 15000,
-    clear_event_history: 30000,
   })[action] || 15000;
   document.addEventListener('submit', async (event) => {
     const form = event.target.closest('form[data-ajax]');
     if (!form) return;
     event.preventDefault();
-    if (form.dataset.ajax === 'clear_event_history'
-        && !window.confirm(label('STATUS.CONFIRM_CLEAR_EVENT_HISTORY'))) return;
     if (!service.confirmAction(form)) return;
     delete form.dataset.confirmed;
     const button = event.submitter || form.querySelector('button[type="submit"]');

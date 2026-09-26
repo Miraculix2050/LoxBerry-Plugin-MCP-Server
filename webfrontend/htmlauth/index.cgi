@@ -481,12 +481,6 @@ if ($action ne '') {
 
     my $result;
     if ($action eq 'save_mcp_config') {
-        my $event_history_sources = eval { decode_json($q->{event_history_sources_json} // '[]') };
-        if ($@ || ref($event_history_sources) ne 'ARRAY') {
-            my $failure = {ok => JSON::PP::false, error => {code => 'invalid_request', message => 'Event history sources are invalid'}};
-            json_reply($failure, 400) if $q->{ajax};
-            redirect_reply('index.cgi?notice=invalid_request');
-        }
         my $document = {
             schema_version => 9,
             server => {
@@ -532,9 +526,6 @@ if ($action ne '') {
             event_history => {
                 enabled => ($q->{event_history_enabled} // '') eq '1'
                     ? JSON::PP::true : JSON::PP::false,
-                retention_days => 0 + ($q->{event_history_retention_days} // 90),
-                maximum_mib => 0 + ($q->{event_history_maximum_mib} // 128),
-                sources => $event_history_sources,
             },
             emergency_stop => {
                 virtual_status_uuid => $q->{emergency_stop_virtual_status_uuid} // '',
@@ -642,10 +633,6 @@ if ($action ne '') {
         $result = admin_call('emergency_stop_cached_options', {});
     } elsif ($action eq 'emergency_stop_retry') {
         $result = admin_call('emergency_stop_retry', {});
-    } elsif ($action eq 'clear_event_history') {
-        $result = admin_call('clear_event_history', {});
-        admin_log($result->{ok} ? 'info' : 'warning',
-            'action=clear_event_history outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
     } elsif ($action eq 'test_connection') {
         $result = admin_call('test_connection', {endpoint => requested_endpoint($q)});
     } elsif ($action eq 'revoke_session') {
@@ -1040,6 +1027,7 @@ $template->param(
     LOXONE_HISTORY_ENABLED => $config->{tools}{loxone_history_enabled} ? 1 : 0,
     LOXBERRY_OPERATE_ENABLED => $config->{tools}{loxberry_operate_enabled} ? 1 : 0,
     EVENT_HISTORY_ENABLED => $config->{event_history}{enabled} ? 1 : 0,
+    EVENT_HISTORY_SOURCE_COUNT => scalar(@{$config->{event_history}{sources} // []}),
     REQUESTS_PER_MINUTE => $config->{limits}{requests_per_minute} // 60,
     CONTROL_REQUESTS_PER_MINUTE => $config->{limits}{control_requests_per_minute} // 10,
     LOXBERRY_REQUESTS_PER_MINUTE => $config->{limits}{loxberry_requests_per_minute} // 30,
@@ -1047,9 +1035,6 @@ $template->param(
     LOXBERRY_OPERATE_REQUESTS_PER_MINUTE => $config->{limits}{loxberry_operate_requests_per_minute} // 3,
     EXPLORER_BINDING_RETENTION_HOURS => $config->{limits}{explorer_binding_retention_hours} // 72,
     STATISTICS_MEMORY_MAX_MIB => $config->{cache}{statistics_memory_max_mib} // 128,
-    EVENT_HISTORY_RETENTION_DAYS => $config->{event_history}{retention_days} // 90,
-    EVENT_HISTORY_MAXIMUM_MIB => $config->{event_history}{maximum_mib} // 128,
-    EVENT_HISTORY_SOURCES_JSON => encode_json($config->{event_history}{sources} // []),
     MAX_PARALLEL_CALLS => $config->{limits}{max_parallel_calls} // 4,
     STRUCTURE_REFRESH_SECONDS => $config->{limits}{structure_refresh_seconds} // 300,
     MAX_ACTIVE_RUNTIME_SESSIONS => $config->{limits}{max_active_runtime_sessions} // 16,

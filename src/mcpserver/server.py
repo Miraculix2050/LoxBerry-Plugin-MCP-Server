@@ -65,6 +65,7 @@ LOG_BACKUP_COUNT: Final = 2
 LOG_MAX_RECORD_BYTES: Final = 8 * 1024
 LOG_TRUNCATION_SUFFIX: Final = " ... [truncated]"
 _INTERNAL_EMERGENCY_STOP_STATUS_PATH: Final = "/internal/emergency-stop-status"
+_INTERNAL_EVENT_HISTORY_STATUS_PATH: Final = "/internal/event-history-status"
 _LOG_LEVELS: Final = {
     "off": None,
     "error": logging.ERROR,
@@ -215,7 +216,11 @@ class _DisabledServiceMiddleware(BaseHTTPMiddleware):
     """Keep health available while failing closed for all public protocol routes."""
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        if request.url.path not in {"/healthz", _INTERNAL_EMERGENCY_STOP_STATUS_PATH}:
+        if request.url.path not in {
+            "/healthz",
+            _INTERNAL_EMERGENCY_STOP_STATUS_PATH,
+            _INTERNAL_EVENT_HISTORY_STATUS_PATH,
+        }:
             return JSONResponse(
                 {"ok": False, "error": "service_disabled"},
                 status_code=503,
@@ -876,6 +881,21 @@ def create_server(settings: ServerSettings) -> FastMCP:
             else {"signal_uuid": None, "signal_name": None, "status": "not_configured"}
         )
         return JSONResponse({"ok": True, "emergency_stop": status})
+
+    @server.custom_route(  # type: ignore[misc]
+        _INTERNAL_EVENT_HISTORY_STATUS_PATH,
+        methods=["GET"],
+        include_in_schema=False,
+    )
+    async def event_history_runtime_status(request: Request) -> Response:
+        """Return only the recorder's bounded status to the local admin helper."""
+        del request
+        status = (
+            event_history.runtime_status()
+            if event_history is not None
+            else {"status": "disabled", "observed_at": time.time(), "capture_started_at": None}
+        )
+        return JSONResponse({"ok": True, "event_history": status})
 
     @server.custom_route(  # type: ignore[misc]
         "/internal/miniserver-auth-status", methods=["GET"], include_in_schema=False

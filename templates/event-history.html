@@ -1,0 +1,109 @@
+<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-event-history-v1">
+<main class="mcp-page mcp-event-history"
+  data-loading="<TMPL_VAR EVENT_HISTORY.LOADING ESCAPE=HTML>"
+  data-unavailable="<TMPL_VAR EVENT_HISTORY.UNAVAILABLE ESCAPE=HTML>"
+  data-unknown="<TMPL_VAR EVENT_HISTORY.UNKNOWN ESCAPE=HTML>"
+  data-active="<TMPL_VAR EVENT_HISTORY.ACTIVE ESCAPE=HTML>"
+  data-removed="<TMPL_VAR EVENT_HISTORY.REMOVED ESCAPE=HTML>"
+  data-enabled="<TMPL_VAR EVENT_HISTORY.ENABLED ESCAPE=HTML>"
+  data-disabled="<TMPL_VAR EVENT_HISTORY.DISABLED ESCAPE=HTML>"
+  data-recording="<TMPL_VAR EVENT_HISTORY.RECORDING ESCAPE=HTML>"
+  data-not-recording="<TMPL_VAR EVENT_HISTORY.NOT_RECORDING ESCAPE=HTML>"
+  data-no-sources="<TMPL_VAR EVENT_HISTORY.NO_SOURCES ESCAPE=HTML>"
+  data-no-controls="<TMPL_VAR EVENT_HISTORY.NO_CONTROLS ESCAPE=HTML>"
+  data-more-controls="<TMPL_VAR EVENT_HISTORY.MORE_CONTROLS ESCAPE=HTML>"
+  data-select-state="<TMPL_VAR EVENT_HISTORY.SELECT_STATE ESCAPE=HTML>"
+  data-confirm-remove="<TMPL_VAR EVENT_HISTORY.CONFIRM_REMOVE ESCAPE=HTML>"
+  data-confirm-purge="<TMPL_VAR EVENT_HISTORY.CONFIRM_PURGE ESCAPE=HTML>"
+  data-confirm-clear="<TMPL_VAR EVENT_HISTORY.CONFIRM_CLEAR ESCAPE=HTML>"
+  data-saved="<TMPL_VAR EVENT_HISTORY.SAVED ESCAPE=HTML>"
+  data-unchanged="<TMPL_VAR EVENT_HISTORY.UNCHANGED ESCAPE=HTML>"
+  data-uncertain="<TMPL_VAR EVENT_HISTORY.UNCERTAIN ESCAPE=HTML>"
+  data-loaded="<TMPL_VAR EVENT_HISTORY.LOADED ESCAPE=HTML>"
+  data-error="<TMPL_VAR EVENT_HISTORY.ERROR ESCAPE=HTML>"
+  data-error-not-found="<TMPL_VAR EVENT_HISTORY.ERROR_NOT_FOUND ESCAPE=HTML>"
+  data-error-disabled="<TMPL_VAR EVENT_HISTORY.ERROR_DISABLED ESCAPE=HTML>"
+  data-error-confirmation="<TMPL_VAR EVENT_HISTORY.ERROR_CONFIRMATION ESCAPE=HTML>"
+  data-error-apply="<TMPL_VAR EVENT_HISTORY.ERROR_APPLY ESCAPE=HTML>"
+  data-not-visible="<TMPL_VAR EVENT_HISTORY.NOT_VISIBLE ESCAPE=HTML>"
+  data-source-limit="<TMPL_VAR EVENT_HISTORY.SOURCE_LIMIT ESCAPE=HTML>"
+  data-stop="<TMPL_VAR EVENT_HISTORY.STOP ESCAPE=HTML>"
+  data-purge="<TMPL_VAR EVENT_HISTORY.PURGE ESCAPE=HTML>"
+  data-events="<TMPL_VAR EVENT_HISTORY.EVENTS ESCAPE=HTML>"
+  data-sources="<TMPL_VAR EVENT_HISTORY.SOURCES ESCAPE=HTML>"
+  data-retention="<TMPL_VAR EVENT_HISTORY.RETENTION ESCAPE=HTML>"
+  data-coverage="<TMPL_VAR EVENT_HISTORY.COVERAGE ESCAPE=HTML>"
+  data-from="<TMPL_VAR EVENT_HISTORY.FROM ESCAPE=HTML>"
+  data-to="<TMPL_VAR EVENT_HISTORY.TO ESCAPE=HTML>"
+  data-no-events="<TMPL_VAR EVENT_HISTORY.NO_EVENTS ESCAPE=HTML>"
+  data-no-coverage="<TMPL_VAR EVENT_HISTORY.NO_COVERAGE ESCAPE=HTML>"
+  data-visible-events="<TMPL_VAR EVENT_HISTORY.VISIBLE_EVENTS ESCAPE=HTML>"
+  data-listed="<TMPL_VAR EVENT_HISTORY.LISTED ESCAPE=HTML>"
+  data-sources-truncated="<TMPL_VAR EVENT_HISTORY.SOURCES_TRUNCATED ESCAPE=HTML>"
+  data-hidden-sources="<TMPL_VAR EVENT_HISTORY.HIDDEN_SOURCES ESCAPE=HTML>"
+  data-capture-start="<TMPL_VAR EVENT_HISTORY.CAPTURE_START ESCAPE=HTML>"
+  data-recording-end="<TMPL_VAR EVENT_HISTORY.RECORDING_END ESCAPE=HTML>"
+  data-open-interval="<TMPL_VAR EVENT_HISTORY.OPEN_INTERVAL ESCAPE=HTML>"
+  data-status-store-unavailable="<TMPL_VAR EVENT_HISTORY.STATUS_STORE_UNAVAILABLE ESCAPE=HTML>"
+  data-status-no-sources="<TMPL_VAR EVENT_HISTORY.STATUS_NO_SOURCES ESCAPE=HTML>"
+  data-status-no-visible-sources="<TMPL_VAR EVENT_HISTORY.STATUS_NO_VISIBLE_SOURCES ESCAPE=HTML>"
+  data-status-unsupported-value="<TMPL_VAR EVENT_HISTORY.STATUS_UNSUPPORTED_VALUE ESCAPE=HTML>"
+  data-status-subscription-unavailable="<TMPL_VAR EVENT_HISTORY.STATUS_SUBSCRIPTION_UNAVAILABLE ESCAPE=HTML>"
+  data-status-size-enforcement-failed="<TMPL_VAR EVENT_HISTORY.STATUS_SIZE_ENFORCEMENT_FAILED ESCAPE=HTML>"
+  data-more-states="<TMPL_VAR EVENT_HISTORY.MORE_STATES ESCAPE=HTML>">
+  <header class="mcp-event-history-heading">
+    <div><a href="index.cgi"><TMPL_VAR EVENT_HISTORY.BACK></a>
+      <h1><TMPL_VAR EVENT_HISTORY.TITLE></h1>
+      <p class="mcp-help"><TMPL_VAR EVENT_HISTORY.INTRO></p>
+    </div>
+    <button id="history-refresh" class="lb-button" type="button"><TMPL_VAR EVENT_HISTORY.REFRESH></button>
+  </header>
+  <div id="history-message" class="mcp-status" role="status" aria-live="polite"><TMPL_VAR EVENT_HISTORY.LOADING></div>
+  <noscript><p class="mcp-status" data-kind="warning"><TMPL_VAR EVENT_HISTORY.JAVASCRIPT_REQUIRED></p></noscript>
+  <section class="mcp-event-history-metrics" aria-label="<TMPL_VAR EVENT_HISTORY.SUMMARY>">
+    <div class="mcp-card"><h2><TMPL_VAR EVENT_HISTORY.RECORDER></h2><strong id="history-recorder"><TMPL_VAR EVENT_HISTORY.LOADING></strong><small id="history-recorder-time"></small></div>
+    <div class="mcp-card"><h2><TMPL_VAR EVENT_HISTORY.STORAGE></h2><strong id="history-storage"><TMPL_VAR EVENT_HISTORY.LOADING></strong><small><TMPL_VAR EVENT_HISTORY.STORAGE_HELP></small></div>
+    <div class="mcp-card"><h2><TMPL_VAR EVENT_HISTORY.SOURCES></h2><strong id="history-source-count"><TMPL_VAR EVENT_HISTORY.LOADING></strong><small id="history-events"></small></div>
+    <div class="mcp-card"><h2><TMPL_VAR EVENT_HISTORY.POLICY></h2><strong id="history-policy"><TMPL_VAR EVENT_HISTORY.LOADING></strong><small id="history-measured"></small></div>
+  </section>
+  <section class="mcp-card" aria-labelledby="history-sources-title">
+    <div class="mcp-event-history-section-head"><div><h2 id="history-sources-title"><TMPL_VAR EVENT_HISTORY.SOURCE_LIST></h2><p class="mcp-help"><TMPL_VAR EVENT_HISTORY.COVERAGE_HELP></p></div></div>
+    <div id="history-visibility-warning" class="mcp-status" data-kind="warning" hidden><TMPL_VAR EVENT_HISTORY.VISIBILITY_WARNING></div>
+    <div id="history-source-warning" class="mcp-status" data-kind="warning" hidden></div>
+    <div class="mcp-table-wrap"><table class="mcp-table mcp-event-history-table">
+      <thead><tr><th scope="col"><TMPL_VAR EVENT_HISTORY.CONTROL></th><th scope="col"><TMPL_VAR EVENT_HISTORY.STATE></th><th scope="col"><TMPL_VAR EVENT_HISTORY.STATUS></th><th scope="col"><TMPL_VAR EVENT_HISTORY.EVENTS></th><th scope="col"><TMPL_VAR EVENT_HISTORY.PERIOD></th><th scope="col"><TMPL_VAR EVENT_HISTORY.ACTIONS></th></tr></thead>
+      <tbody id="history-source-rows"></tbody>
+    </table></div>
+    <p id="history-empty" class="mcp-help" hidden><TMPL_VAR EVENT_HISTORY.NO_SOURCES></p>
+  </section>
+  <section class="mcp-card" aria-labelledby="history-add-title">
+    <h2 id="history-add-title"><TMPL_VAR EVENT_HISTORY.ADD_TITLE></h2>
+    <p class="mcp-help"><TMPL_VAR EVENT_HISTORY.ADD_HELP></p>
+    <div class="mcp-event-history-search"><label class="mcp-field"><span><TMPL_VAR EVENT_HISTORY.SEARCH></span><input id="history-search" type="search" maxlength="100" autocomplete="off"></label><button id="history-search-button" class="lb-button" type="button"><TMPL_VAR EVENT_HISTORY.SEARCH_BUTTON></button></div>
+    <p id="history-search-status" class="mcp-help" role="status"></p>
+    <form id="history-add-form" class="mcp-form">
+      <label class="mcp-field"><span><TMPL_VAR EVENT_HISTORY.CONTROL></span><select id="history-control" required disabled><option value=""><TMPL_VAR EVENT_HISTORY.SELECT_CONTROL></option></select></label>
+      <div class="mcp-event-history-search"><label class="mcp-field"><span><TMPL_VAR EVENT_HISTORY.SEARCH_STATE></span><input id="history-state-search" type="search" maxlength="100" autocomplete="off" disabled></label><button id="history-state-search-button" class="lb-button" type="button" disabled><TMPL_VAR EVENT_HISTORY.SEARCH_BUTTON></button></div>
+      <p id="history-state-search-status" class="mcp-help" role="status"></p>
+      <label class="mcp-field"><span><TMPL_VAR EVENT_HISTORY.STATE></span><select id="history-state" required disabled><option value=""><TMPL_VAR EVENT_HISTORY.SELECT_STATE></option></select></label>
+      <div class="mcp-actions"><button id="history-add" class="lb-button" type="submit" disabled><TMPL_VAR EVENT_HISTORY.ADD></button></div>
+    </form>
+  </section>
+  <section class="mcp-card" aria-labelledby="history-policy-title">
+    <h2 id="history-policy-title"><TMPL_VAR EVENT_HISTORY.SETTINGS></h2>
+    <form id="history-policy-form" class="mcp-form">
+      <div class="mcp-grid">
+        <label class="mcp-field"><span><TMPL_VAR EVENT_HISTORY.RETENTION></span><input id="history-retention" type="number" min="1" max="365" required></label>
+        <label class="mcp-field"><span><TMPL_VAR EVENT_HISTORY.MAXIMUM></span><input id="history-maximum" type="number" min="16" max="1024" required></label>
+      </div><p class="mcp-help"><TMPL_VAR EVENT_HISTORY.POLICY_HELP></p>
+      <div class="mcp-actions"><button class="lb-button" type="submit"><TMPL_VAR EVENT_HISTORY.SAVE></button></div>
+    </form>
+  </section>
+  <section class="mcp-card mcp-event-history-danger" aria-labelledby="history-clear-title">
+    <h2 id="history-clear-title"><TMPL_VAR EVENT_HISTORY.CLEAR_TITLE></h2>
+    <p class="mcp-help"><TMPL_VAR EVENT_HISTORY.CLEAR_HELP></p>
+    <button id="history-clear" class="lb-button" type="button"><TMPL_VAR EVENT_HISTORY.CLEAR></button>
+  </section>
+</main>
+<script src="event-history/api.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-1" defer></script>
+<script src="event-history/page.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-1" defer></script>

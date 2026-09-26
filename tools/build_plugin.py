@@ -44,6 +44,7 @@ _EXECUTABLES: Final = {
     "webfrontend/htmlauth/index.cgi",
     "webfrontend/htmlauth/explorer.cgi",
     "webfrontend/htmlauth/explorer_callback.cgi",
+    "webfrontend/htmlauth/event_history.cgi",
 }
 _TEXT_SUFFIXES: Final = {
     ".cfg",

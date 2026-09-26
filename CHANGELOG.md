@@ -9,6 +9,10 @@ extracted from the matching version heading.
   UUIDs and advertised native statistic series, preserving the full default
   response. Mark StatisticV2 series omitted beyond the normalized 128-series
   limit without implying recording or historical coverage.
+- Add a dedicated local Event History administration view for exact visible
+  control/state selection, bounded evidence and storage status, retention settings,
+  and separate confirmed source and whole-store deletion. Keep only enablement,
+  a lightweight summary, and a link on the main Admin page.
 
 - Make the Tool Explorer's selected-tool and result cards collapsible, with history
   arguments in a separate disclosure. Label array objects using available names,

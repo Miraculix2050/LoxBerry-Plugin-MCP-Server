@@ -115,9 +115,9 @@ window.McpAdmin.createConfiguration = (
     ]) setFormValue(mcpConfigForm, name, limits[name]);
     setFormValue(mcpConfigForm, 'statistics_memory_max_mib', cache.statistics_memory_max_mib);
     setFormChecked(mcpConfigForm, 'event_history_enabled', eventHistory.enabled);
-    setFormValue(mcpConfigForm, 'event_history_retention_days', eventHistory.retention_days);
-    setFormValue(mcpConfigForm, 'event_history_maximum_mib', eventHistory.maximum_mib);
-    document.getElementById('event-history-sources').value = JSON.stringify(eventHistory.sources || []);
+    const brief = document.getElementById('event-history-brief');
+    brief.textContent = `${eventHistory.enabled ? brief.dataset.enabled : brief.dataset.disabled} · `
+      + `${(eventHistory.sources || []).length} ${brief.dataset.sources} · ${brief.dataset.sizeUnknown}`;
     emergencyStopValue.value = String(emergencyStop.virtual_status_uuid || '');
     updateEmergencyStopRuntimeMismatch();
     setFormChecked(mqttConfigForm, 'mqtt_enabled', mqtt.enabled);
@@ -147,6 +147,15 @@ window.McpAdmin.createConfiguration = (
       body.set('ajax', '1');
       const result = await postAjax(body, 7000, suppliedResult);
       renderConfiguration(result.data.configuration, cachedEmergencyStopOptions);
+      const brief = document.getElementById('event-history-brief');
+      const history = result.data.event_history_brief;
+      if (history) {
+        const size = Number.isFinite(history.size_bytes)
+          ? `${(history.size_bytes / (1024 * 1024)).toLocaleString(undefined, {maximumFractionDigits: 1})} MiB`
+          : brief.dataset.sizeUnknown;
+        brief.textContent = `${history.enabled ? brief.dataset.enabled : brief.dataset.disabled} · `
+          + `${history.active_source_count} ${brief.dataset.sources} · ${size}`;
+      }
       configurationLoaded = true;
       setConfigurationFieldsDisabled(false);
       configurationFallbackLink.hidden = true;

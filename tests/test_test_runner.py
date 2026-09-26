@@ -49,6 +49,7 @@ def test_shared_language_files_select_both_ui_groups() -> None:
         "tests/test_emergency_options_cache.py",
         "tests/test_apache_config.py",
         "tests/test_explorer_ui.py",
+        "tests/test_event_history_admin.py",
         "tests/test_oauth.py",
     }
 

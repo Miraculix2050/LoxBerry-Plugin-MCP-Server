@@ -44,6 +44,7 @@ _SERVICE_ACTIONS: Final = frozenset({"start", "stop", "restart"})
 _SYSTEMD_COMMANDS: Final = frozenset({"enable", "disable", "start", "stop", "restart"})
 _CLIENT_UUID: Final = UUID("3f52f6fe-3af0-4d30-a8bb-f429b9da4465")
 _INTERNAL_EMERGENCY_STOP_STATUS_URL: Final = "http://127.0.0.1:8765/internal/emergency-stop-status"
+_INTERNAL_EVENT_HISTORY_STATUS_URL: Final = "http://127.0.0.1:8765/internal/event-history-status"
 _INTERNAL_RESPONSE_MAX_BYTES: Final = 4 * 1024
 _EMERGENCY_STOP_STATES: Final = frozenset({"not_configured", "clear", "active", "unknown"})
 _EMERGENCY_STOP_DISCOVERY_DEADLINE_SECONDS: Final = 90
@@ -222,6 +223,74 @@ def _emergency_stop_runtime_status(service: dict[str, Any]) -> dict[str, Any]:
         }
     except (OSError, ValueError):
         return {"availability": "unavailable"}
+
+
+def _event_history_runtime_status() -> dict[str, Any]:
+    """Read only the running recorder's bounded status, without touching SQLite."""
+    if not _service_active():
+        return {"availability": "service_inactive"}
+    try:
+        with urlopen(
+            Request(_INTERNAL_EVENT_HISTORY_STATUS_URL, headers={"Accept": "application/json"}),
+            timeout=1,
+        ) as response:
+            if response.getcode() != 200:
+                raise ValueError("unexpected response status")
+            raw = response.read(_INTERNAL_RESPONSE_MAX_BYTES + 1)
+        if len(raw) > _INTERNAL_RESPONSE_MAX_BYTES:
+            raise ValueError("oversized response")
+        document = json.loads(raw)
+        item = document.get("event_history") if isinstance(document, dict) else None
+        if not isinstance(item, dict) or item.get("status") not in {
+            "disabled",
+            "unknown",
+            "unavailable",
+            "recording",
+        }:
+            raise ValueError("invalid runtime status")
+        observed = item.get("observed_at")
+        capture = item.get("capture_started_at")
+        reason = item.get("reason")
+        if reason is not None and reason not in {
+            "size_enforcement_failed",
+            "store_unavailable",
+            "no_sources",
+            "no_visible_sources",
+            "unsupported_value",
+            "subscription_unavailable",
+        }:
+            raise ValueError("invalid status reason")
+        if not isinstance(observed, int | float) or (
+            capture is not None and not isinstance(capture, int | float)
+        ):
+            raise ValueError("invalid runtime time")
+        return {
+            "availability": "available",
+            "status": item["status"],
+            "observed_at": observed,
+            "capture_started_at": capture,
+            "reason": reason,
+        }
+    except (OSError, ValueError):
+        return {"availability": "unavailable"}
+
+
+def _event_history_brief(config: PluginConfig) -> dict[str, Any]:
+    """Keep the main page's summary constant-time and independent of discovery."""
+    path = Path(os.getenv("MCPSERVER_EVENT_HISTORY_STORE", ""))
+    size = None
+    if path.is_absolute() and path.suffix == ".sqlite3":
+        with suppress(OSError):
+            size = sum(
+                candidate.stat().st_size
+                for candidate in (path, path.with_suffix(".sqlite3-wal"))
+                if candidate.exists()
+            )
+    return {
+        "enabled": config.event_history_enabled,
+        "active_source_count": len(config.event_history_sources),
+        "size_bytes": size,
+    }
 
 
 def _run_service_command(command: str) -> None:
@@ -579,8 +648,6 @@ def _save_mcp(payload: object) -> dict[str, Any]:
         "max_parallel_calls",
         "statistics_memory_max_mib",
         "event_history_enabled",
-        "event_history_retention_days",
-        "event_history_maximum_mib",
         "structure_refresh_seconds",
         "max_active_runtime_sessions",
         "runtime_session_idle_seconds",
@@ -751,9 +818,12 @@ def _remote_cleanup_status() -> dict[str, Any]:
         return {"available": False}
 
 
-def _clear_event_history() -> dict[str, Any]:
+def _clear_event_history(payload: object = None) -> dict[str, Any]:
     """Delete only plugin-owned local event records through the local Admin UI."""
     from mcpserver.loxone.event_history import EventHistoryStore, EventHistoryUnavailable
+
+    if not isinstance(payload, dict) or payload.get("confirm") is not True:
+        raise AdminError("explicit confirmation is required", code="confirmation_required")
 
     config = _config_store().load()
     path = Path(os.getenv("MCPSERVER_EVENT_HISTORY_STORE", ""))
@@ -774,7 +844,13 @@ def _clear_event_history() -> dict[str, Any]:
         raise AdminError("local event history is unavailable") from exc
     finally:
         if was_active:
-            _start_service()
+            try:
+                _start_service()
+            except AdminError as exc:
+                raise AdminError(
+                    "local event history may be cleared but service restart failed",
+                    code="outcome_unknown",
+                ) from exc
     return {"event_history_entries_removed": removed}
 
 
@@ -1711,6 +1787,35 @@ def dispatch(request: object, *, timing: dict[str, float] | None = None) -> dict
             "mqtt_gateway": _mqtt_gateway_status(),
             "mqtt_password_configured": _mqtt_password_configured(),
         }
+    if action in {
+        "event_history_overview",
+        "event_history_quick_summary",
+        "event_history_discover",
+        "event_history_discover_states",
+        "event_history_save_policy",
+        "event_history_add_source",
+        "event_history_remove_source",
+        "event_history_purge_source",
+    }:
+        from mcpserver import event_history_admin
+
+        if action == "event_history_overview":
+            return event_history_admin.overview()
+        if action == "event_history_quick_summary":
+            return event_history_admin.quick_summary()
+        if action == "event_history_discover":
+            return event_history_admin.discover(payload)
+        if action == "event_history_discover_states":
+            return event_history_admin.discover_states(payload)
+        if action == "event_history_save_policy":
+            return event_history_admin.save_policy(payload)
+        if action == "event_history_add_source":
+            return event_history_admin.change_source(payload, add=True)
+        if action == "event_history_remove_source":
+            return event_history_admin.change_source(payload, add=False)
+        return event_history_admin.purge_source(payload)
+    if action == "event_history_runtime_status":
+        return _event_history_runtime_status()
     if action == "get_config":
         store = _config_store()
         if timing is None:
@@ -1718,7 +1823,10 @@ def dispatch(request: object, *, timing: dict[str, float] | None = None) -> dict
         else:
             configuration, config_timing = store.load_with_timing()
             timing.update(config_timing)
-        return {"configuration": configuration.to_document()}
+        return {
+            "configuration": configuration.to_document(),
+            "event_history_brief": _event_history_brief(configuration),
+        }
     if action == "save_config":
         return _save(payload)
     if action == "save_mcp_config":
@@ -1732,7 +1840,7 @@ def dispatch(request: object, *, timing: dict[str, float] | None = None) -> dict
     if action == "emergency_stop_retry":
         return _emergency_stop_options(manual_retry=True)
     if action == "clear_event_history":
-        return _clear_event_history()
+        return _clear_event_history(payload)
     if action == "set_logging":
         return _set_logging(payload)
     if action == "status":
