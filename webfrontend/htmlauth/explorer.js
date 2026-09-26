@@ -170,10 +170,7 @@
 
   function addTranscript(method, request, response, status, duration) {
     const entry = {method, request, response, status, duration, at: new Date().toISOString()};
-    if (explorerState.appendTranscript(entry)) {
-      elements.transcript.firstElementChild?.remove();
-    }
-    elements.transcript.append(transcriptEntry(entry));
+    views.appendTranscript(entry, explorerState.appendTranscript(entry));
   }
 
   const mcp = window.McpExplorerClient.create({core, state, explorerState, label, accessToken,
@@ -219,7 +216,7 @@
     actions: {selectTool, revealRequest, setAction, setDraftField,
       validateDraft, applyRange, showResult: renderResult, openTransfer, revealResult}});
   const {renderConnection, renderTools, renderSelectedTool, renderResult: renderResultView,
-    transcriptEntry, renderTranscript, renderHistory, displayValue} = views;
+    renderTranscript, renderHistory, displayValue} = views;
 
   function renderResult(result, context) {
     const displayed = explorerState.setResult(result, context);
@@ -361,8 +358,7 @@
   }
 
   function openTransfer(value, path) {
-    explorerState.setTransfer(value, path, null);
-    elements.transferSource.textContent = `${state.transferPath} = ${JSON.stringify(value)}`;
+    elements.transferSource.textContent = `${core.formatPath(path)} = ${JSON.stringify(value)}`;
     const recipe = adapters.transferRecipe(
       state.lastResultContext && state.lastResultContext.tool,
       displayValue(state.lastResult),

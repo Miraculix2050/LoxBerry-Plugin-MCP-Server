@@ -509,6 +509,11 @@
       elements.transcript.replaceChildren(fragment);
     }
 
+    function appendTranscript(entry, evicted) {
+      if (evicted) elements.transcript.firstElementChild?.remove();
+      elements.transcript.append(transcriptEntry(entry));
+    }
+
     function renderHistory() {
       elements.history.replaceChildren();
       if (!state.history.length) {
@@ -534,8 +539,8 @@
       });
     }
 
-      return {renderConnection, renderTools, renderSelectedTool, renderResult,
-        transcriptEntry, renderTranscript, renderHistory, displayValue};
+    return {renderConnection, renderTools, renderSelectedTool, renderResult,
+      appendTranscript, renderTranscript, renderHistory, displayValue};
   }
   return {create, createResultInspector, clearSensitiveDom, fieldControlId,
     createFieldLabel, createOptionalToggle};

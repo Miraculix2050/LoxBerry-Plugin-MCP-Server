@@ -1572,13 +1572,18 @@ def test_explorer_transcript_is_incremental_and_details_are_lazy() -> None:
 
     app = APP_SCRIPT.read_text(encoding="utf-8")
     add_transcript = app[app.index("function addTranscript") : app.index("const mcp =")]
+    view = VIEWS_SCRIPT.read_text(encoding="utf-8")
+    append_transcript = view[
+        view.index("function appendTranscript") : view.index("function renderHistory")
+    ]
     transcript_entry = source[
         source.index("function transcriptEntry") : source.index("function renderTranscript")
     ]
 
     assert "renderTranscript()" not in add_transcript
-    assert "elements.transcript.append(transcriptEntry(entry))" in add_transcript
-    assert "firstElementChild?.remove()" in add_transcript
+    assert "views.appendTranscript(entry, explorerState.appendTranscript(entry))" in add_transcript
+    assert "elements.transcript.append(transcriptEntry(entry))" in append_transcript
+    assert "firstElementChild?.remove()" in append_transcript
     assert "details.addEventListener('toggle'" in transcript_entry
     assert "{once: true}" in transcript_entry
     assert "new Date(entry.at).toLocaleString()" in transcript_entry
