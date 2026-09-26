@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger("mcpserver.event_history")
 
 
-_SCHEMA_VERSION: Final = 3
+_SCHEMA_VERSION: Final = 4
 _MAX_TEXT_BYTES: Final = 4096
 _UNSUPPORTED_SOURCE_CONTROL_TYPES: Final = frozenset({"Daytimer"})
 
@@ -108,6 +108,7 @@ class EventHistoryStoreSummary:
     wal_bytes: int
     sources: tuple[EventHistorySourceSummary, ...]
     truncated: bool = False
+    clear_generation: int = 0
 
 
 def source_revision_for_snapshot(
@@ -117,7 +118,7 @@ def source_revision_for_snapshot(
     retention_days: int,
     maximum_mib: int,
 ) -> str:
-    """Track source membership and policy without changing on each event."""
+    """Track source membership, policy, and clears without changing on each event."""
     active = set(active_sources)
     source_keys = [
         (source.control_uuid, source.state_uuid, (source.control_uuid, source.state_uuid) in active)
@@ -127,6 +128,7 @@ def source_revision_for_snapshot(
         sorted(active_sources),
         source_keys,
         snapshot.truncated,
+        snapshot.clear_generation,
         retention_days,
         maximum_mib,
     )
@@ -184,7 +186,7 @@ class EventHistoryStore:
             try:
                 connection.execute("BEGIN IMMEDIATE")
                 version = connection.execute("PRAGMA user_version").fetchone()[0]
-                if version not in {0, 1, 2, _SCHEMA_VERSION}:
+                if version not in {0, 1, 2, 3, _SCHEMA_VERSION}:
                     raise EventHistoryUnavailable("local event history needs migration")
                 connection.execute(
                     """
@@ -232,6 +234,14 @@ class EventHistoryStore:
                     "newest_event_at REAL NOT NULL, "
                     "PRIMARY KEY(control_uuid, state_uuid))"
                 )
+                connection.execute(
+                    "CREATE TABLE IF NOT EXISTS history_metadata ("
+                    "id INTEGER PRIMARY KEY CHECK (id = 1), "
+                    "clear_generation INTEGER NOT NULL)"
+                )
+                connection.execute(
+                    "INSERT OR IGNORE INTO history_metadata(id, clear_generation) VALUES (1, 0)"
+                )
                 if version < 3:
                     self._refresh_summaries(connection)
                 # A process that did not reach ``end_coverage`` must not make a
@@ -240,7 +250,7 @@ class EventHistoryStore:
                     "UPDATE coverage SET ended_at = started_at, outcome = 'interrupted' "
                     "WHERE ended_at IS NULL",
                 )
-                connection.execute("PRAGMA user_version = 3")
+                connection.execute("PRAGMA user_version = 4")
                 connection.execute("COMMIT")
                 connection.execute("BEGIN IMMEDIATE")
                 pruned = self._prune(connection, now=time.time())
@@ -408,6 +418,11 @@ class EventHistoryStore:
                         "SELECT control_uuid, state_uuid, removed_at FROM removed_sources"
                     )
                 }
+                clear_generation = int(
+                    db.execute(
+                        "SELECT clear_generation FROM history_metadata WHERE id = 1"
+                    ).fetchone()[0]
+                )
                 keys = set(active_sources) | set(totals) | set(coverage) | set(removed)
                 active_set = set(active_sources)
                 selected_keys = sorted(
@@ -440,7 +455,12 @@ class EventHistoryStore:
             wal = self.path.with_suffix(".sqlite3-wal")
             wal_bytes = wal.stat().st_size if wal.exists() else 0
             return EventHistoryStoreSummary(
-                time.time(), database_bytes, wal_bytes, sources, len(keys) > len(selected_keys)
+                time.time(),
+                database_bytes,
+                wal_bytes,
+                sources,
+                len(keys) > len(selected_keys),
+                clear_generation,
             )
         except (OSError, sqlite3.Error) as exc:
             raise EventHistoryUnavailable("local event history is unavailable") from exc
@@ -710,6 +730,10 @@ class EventHistoryStore:
                 connection.execute("DELETE FROM coverage")
                 connection.execute("DELETE FROM removed_sources")
                 connection.execute("DELETE FROM source_totals")
+                connection.execute(
+                    "UPDATE history_metadata SET clear_generation = clear_generation + 1 "
+                    "WHERE id = 1"
+                )
                 connection.execute("COMMIT")
                 return int(count)
             except sqlite3.Error as exc:

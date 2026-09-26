@@ -16,6 +16,8 @@ extracted from the matching version heading.
 - Load the Event History control list automatically after local status, checking
   visibility afresh on every page. Filter a bounded list by name, UUID, room,
   category, and type; load states on control selection and offer explicit refresh.
+  Refresh open tabs after source changes and whole-history deletion without
+  polling the event table.
 
 - Make the Tool Explorer's selected-tool and result cards collapsible, with history
   arguments in a separate disclosure. Label array objects using available names,

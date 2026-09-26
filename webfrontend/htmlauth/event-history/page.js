@@ -240,6 +240,9 @@
       await loadControls();
       await loadStatus();
       busy = false;
+      refreshButton.disabled = false;
+      addButton.disabled = stateSelect.disabled || !selectedControl || !stateSelect.value;
+      stateSearch.disabled = !selectedControl || stateSearchWrap.hidden;
       setMessage(feedback, feedbackKind);
     }
   };
@@ -442,7 +445,7 @@
       return false;
     } finally {
       controlsLoading = false;
-      refreshButton.disabled = false;
+      refreshButton.disabled = busy;
       refreshButton.textContent = refreshButtonText;
     }
   };

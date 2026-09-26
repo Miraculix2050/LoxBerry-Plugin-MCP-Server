@@ -131,6 +131,22 @@ def test_v2_migration_rebuilds_exact_event_summaries(tmp_path, monkeypatch):
     assert history.snapshot((SOURCE,)).sources[0].event_count == 1
 
 
+def test_v3_migration_preserves_events_and_adds_clear_generation(tmp_path, monkeypatch):
+    _, history = _setup(tmp_path, monkeypatch, sources=(SOURCE,))
+    history.initialize()
+    history.record_transition(*SOURCE, observed_at=time.time(), old_value=0, new_value=1)
+    with sqlite3.connect(history.path) as db:
+        db.execute("DROP TABLE history_metadata")
+        db.execute("PRAGMA user_version=3")
+
+    history.initialize()
+    snapshot = history.snapshot((SOURCE,))
+    assert snapshot.sources[0].event_count == 1
+    assert snapshot.clear_generation == 0
+    history.clear()
+    assert history.snapshot((SOURCE,)).clear_generation == 1
+
+
 def test_overview_hides_historical_metadata_for_invisible_sources(tmp_path, monkeypatch):
     _, history = _setup(tmp_path, monkeypatch, sources=(SOURCE,))
     history.initialize()
@@ -239,7 +255,7 @@ def test_add_returns_fresh_visible_overview_without_second_discovery(tmp_path, m
 
 
 def test_source_revision_tracks_membership_without_polling_event_changes(tmp_path, monkeypatch):
-    _, history = _setup(tmp_path, monkeypatch)
+    config_store, history = _setup(tmp_path, monkeypatch)
     history.initialize()
     key = {"control_uuid": SOURCE[0], "state_uuid": SOURCE[1]}
 
@@ -255,6 +271,13 @@ def test_source_revision_tracks_membership_without_polling_event_changes(tmp_pat
 
     history.record_transition(*SOURCE, observed_at=time.time(), old_value=0, new_value=1)
     assert revision() == active
+
+    history.clear()
+    cleared = revision()
+    assert cleared != active
+    assert config_store.load().event_history_sources == (SOURCE,)
+    history.record_transition(*SOURCE, observed_at=time.time(), old_value=1, new_value=2)
+    assert revision() == cleared
 
     event_history_admin.change_source({**key, "confirm": True}, add=False)
     removed = revision()

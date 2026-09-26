@@ -730,9 +730,15 @@ const messages = [];
 const context = {
   api: {request: async () => ({changed: true})},
   refreshButton: {disabled: false},
+  addButton: {disabled: false},
+  stateSelect: {disabled: false, value: 'state'},
+  stateSearch: {disabled: false},
+  stateSearchWrap: {hidden: false},
   performLoadControls: async () => {
     calls += 1;
     if (calls === 1) await discovery;
+    context.addButton.disabled = true;
+    context.stateSearch.disabled = true;
   },
   loadStatus: async () => {},
   label: (value) => value,
@@ -742,6 +748,7 @@ const context = {
 vm.runInNewContext(`
 let busy = false;
 let controlsLoadPromise = null;
+let selectedControl = 'control';
 ${section('  const mutate = async ', '  const facetSelection =')}
 ${section('  const loadControls = () => {', '  const checkSourceRevision =')}
 globalThis.subject = {mutate, loadControls};
@@ -755,6 +762,8 @@ globalThis.subject = {mutate, loadControls};
   await Promise.all([first, mutation]);
   assert.equal(calls, 2);
   assert.equal(messages.at(-1), 'saved');
+  assert.equal(context.addButton.disabled, false);
+  assert.equal(context.stateSearch.disabled, false);
 })().catch((error) => { console.error(error); process.exitCode = 1; });
 """
     subprocess.run(
