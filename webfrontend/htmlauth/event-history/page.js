@@ -500,14 +500,15 @@
     }
     void applyFilters();
   });
-  let filterTimer;
+  let controlFilterTimer;
+  let stateFilterTimer;
   $('history-search').addEventListener('input', () => {
-    window.clearTimeout(filterTimer);
-    filterTimer = window.setTimeout(() => { void applyFilters(); }, 180);
+    window.clearTimeout(controlFilterTimer);
+    controlFilterTimer = window.setTimeout(() => { void applyFilters(); }, 180);
   });
   stateSearch.addEventListener('input', () => {
-    window.clearTimeout(filterTimer);
-    filterTimer = window.setTimeout(() => { void loadStates(); }, 180);
+    window.clearTimeout(stateFilterTimer);
+    stateFilterTimer = window.setTimeout(() => { void loadStates(); }, 180);
   });
   stateSearch.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') event.preventDefault();

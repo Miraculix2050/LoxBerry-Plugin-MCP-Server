@@ -13,6 +13,9 @@ extracted from the matching version heading.
   control/state selection, bounded evidence and storage status, retention settings,
   and separate confirmed source and whole-store deletion. Keep only enablement,
   a lightweight summary, and a link on the main Admin page.
+- Load the Event History control list automatically after local status, checking
+  visibility afresh on every page. Filter a bounded list by name, UUID, room,
+  category, and type; load states on control selection and offer explicit refresh.
 
 - Make the Tool Explorer's selected-tool and result cards collapsible, with history
   arguments in a separate disclosure. Label array objects using available names,
