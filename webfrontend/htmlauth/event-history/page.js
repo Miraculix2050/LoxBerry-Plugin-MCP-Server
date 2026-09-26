@@ -435,10 +435,11 @@
       pageOffset = 0;
       visibleCount = data.controls?.length || 0;
       $('history-more-controls').hidden = visibleCount >= data.total;
-      const [catalog, facets] = await Promise.all([
-        api.request('event_history_selector_catalog', {generation: selectorGeneration}),
-        api.request('event_history_selector_facets', {generation: selectorGeneration}),
-      ]);
+      // Both helpers decode the private projection; avoid overlapping peak memory use.
+      const catalog = await api.request('event_history_selector_catalog',
+        {generation: selectorGeneration});
+      const facets = await api.request('event_history_selector_facets',
+        {generation: selectorGeneration});
       if (request !== discoveryGeneration) return;
       catalogMode = catalog.mode;
       controls = catalog.controls || [];
@@ -473,6 +474,7 @@
         } catch {
           if (request === discoveryGeneration) setMessage(label('unavailable'), 'warning');
         }
+        if (request === discoveryGeneration) selectorVerificationPending = true;
         if (error.code === 'stale_configuration') recoverStaleSelector();
       }
       return false;
@@ -510,7 +512,7 @@
   };
   const checkSourceRevision = async () => {
     if (document.hidden || busy || controlsLoading || sourceRevisionChecking
-      || !knownSourceRevision) return;
+      || (!knownSourceRevision && !selectorVerificationPending)) return;
     sourceRevisionChecking = true;
     try {
       const data = await api.request('event_history_source_revision', {}, 15000);

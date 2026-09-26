@@ -931,6 +931,108 @@ globalThis.subject = {checkSourceRevision, refreshes: () => refreshes,
     )
 
 
+def test_event_history_empty_local_fallback_keeps_selector_retry_pending() -> None:
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = source.slice(source.indexOf('  const performLoadControls = async'),
+  source.indexOf('  const loadControls = (restore = null) => {'));
+const nodes = new Map();
+const context = {
+  $: (id) => {if (!nodes.has(id)) nodes.set(id, {}); return nodes.get(id);},
+  api: {request: async (action) => {
+    if (action === 'event_history_prepare_selector') throw {code: 'temporarily_unavailable'};
+    if (action === 'event_history_local_overview') return {visibility_status: 'available'};
+    throw new Error(action);
+  }},
+  refreshButton: {disabled: false, textContent: ''}, stateSelect: {value: ''},
+  selectedFilters: () => ({room: [], category: [], type: []}),
+  invalidateSelector: () => {}, errorLabel: () => 'unavailable',
+  setMessage: () => {}, label: (key) => key,
+};
+vm.runInNewContext(`let controlsLoading = false; let busy = false;
+let discoveryGeneration = 0; let selectedControl = ''; let querySequence = 0;
+let catalogMode = ''; let stateGeneration = 0; let selectorVerificationPending = false;
+let knownSourceRevision = ''; const refreshButtonText = 'refresh';
+const renderOverview = () => {
+  knownSourceRevision = 'empty-local-store';
+  selectorVerificationPending = false;
+};
+${section}
+globalThis.subject = {performLoadControls, pending: () => selectorVerificationPending,
+  revision: () => knownSourceRevision};`, context);
+(async () => {
+  assert.equal(await context.subject.performLoadControls(), false);
+  assert.equal(context.subject.revision(), 'empty-local-store');
+  assert.equal(context.subject.pending(), true);
+})().catch((error) => {console.error(error); process.exitCode = 1;});
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_event_history_catalog_helpers_do_not_overlap_cache_decoding() -> None:
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = source.slice(source.indexOf('  const performLoadControls = async'),
+  source.indexOf('  const loadControls = (restore = null) => {'));
+let active = 0; let maximum = 0;
+const nodes = new Map();
+const context = {
+  $: (id) => {if (!nodes.has(id)) nodes.set(id, {}); return nodes.get(id);},
+  api: {request: async (action) => {
+    if (action === 'event_history_prepare_selector') return {
+      generation: 'g', overview: {store_status: 'available', visibility_status: 'available'},
+      controls: [], total: 0, verified_at: 0,
+    };
+    if (action.startsWith('event_history_selector_')) {
+      active += 1; maximum = Math.max(maximum, active);
+      await new Promise(setImmediate);
+      active -= 1;
+      return action.endsWith('_catalog') ? {mode: 'local', controls: []} : {};
+    }
+    throw new Error(action);
+  }},
+  refreshButton: {disabled: false, textContent: ''}, stateSelect: {value: ''},
+  selectedFilters: () => ({room: [], category: [], type: []}),
+  invalidateSelector: () => {}, renderOverview: () => {},
+  renderControls: () => {}, renderFacets: () => {}, applyFilters: async () => {},
+  label: (key) => key, date: () => '',
+};
+vm.runInNewContext(`let controlsLoading = false; let busy = false;
+let discoveryGeneration = 0; let selectedControl = ''; let querySequence = 0;
+let catalogMode = ''; let stateGeneration = 0; let selectorGeneration = '';
+let pageOffset = 0; let visibleCount = 0; let controls = [];
+const facetSelection = {room: new Set(), category: new Set(), type: new Set()};
+const refreshButtonText = 'refresh';
+${section}
+globalThis.performLoadControls = performLoadControls;`, context);
+(async () => {
+  assert.equal(await context.performLoadControls(), true);
+  assert.equal(maximum, 1);
+})().catch((error) => {console.error(error); process.exitCode = 1;});
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
 def test_event_history_stale_generation_recovers_selected_pair() -> None:
     node = shutil.which("node")
     assert node is not None, "Node.js is required for the complete deterministic gate"
