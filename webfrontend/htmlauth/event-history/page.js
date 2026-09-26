@@ -159,8 +159,8 @@
       renderRows(Array.isArray(data.sources) ? data.sources : [],
         Array.isArray(data.unverified_sources) ? data.unverified_sources : [],
         data.visibility_status);
-      setMessage(data.store_status === 'available' ? label('loaded') : label('unavailable'),
-        data.store_status === 'available' ? 'success' : 'warning');
+      const complete = data.store_status === 'available' && data.visibility_status === 'available';
+      setMessage(label(complete ? 'loaded' : 'unavailable'), complete ? 'success' : 'warning');
   };
   const loadQuickSummary = async () => {
     try {
@@ -364,7 +364,7 @@
     $('history-search').disabled = true;
     $('history-search-status').textContent = label('loading');
     try {
-      const data = await api.request('event_history_prepare_selector', {}, 60000);
+      const data = await api.request('event_history_prepare_selector', {}, 120000);
       if (request !== discoveryGeneration) return;
       selectorGeneration = data.generation;
       renderOverview(data.overview);
@@ -402,6 +402,12 @@
       if (request === discoveryGeneration) {
         invalidateSelector();
         $('history-search-status').textContent = errorLabel(error);
+        try {
+          const local = await api.request('event_history_local_overview', {}, 10000);
+          if (request === discoveryGeneration) renderOverview(local);
+        } catch {
+          if (request === discoveryGeneration) setMessage(label('unavailable'), 'warning');
+        }
       }
     }
   };
@@ -410,6 +416,8 @@
     const control = selectedControl;
     const status = $('history-state-search-status');
     const priorState = append ? stateSelect.value : restoreState;
+    const priorSelectEnabled = append && !stateSelect.disabled;
+    const priorAddEnabled = append && !$('history-add').disabled;
     if (!append) {
       stateSelect.replaceChildren(new Option(label('selectState'), ''));
       loadedStateCount = 0;
@@ -464,7 +472,13 @@
       stateSearch.closest('.mcp-field').hidden = data.total <= 10 && !query;
     } catch (error) {
       if (error.code === 'stale_configuration') invalidateSelector();
-      if (request === stateGeneration) status.textContent = errorLabel(error);
+      if (request === stateGeneration) {
+        if (append && error.code !== 'stale_configuration') {
+          stateSelect.disabled = !priorSelectEnabled;
+          $('history-add').disabled = !priorAddEnabled;
+        }
+        status.textContent = errorLabel(error);
+      }
     }
   };
   stateSelect.addEventListener('change', () => {

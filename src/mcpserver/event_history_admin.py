@@ -147,6 +147,8 @@ def _apply(change: Callable[[PluginConfig], PluginConfig]) -> tuple[PluginConfig
 
 def overview(
     verified_visible: dict[tuple[str, str], tuple[str, str, str]] | None = None,
+    *,
+    local_only: bool = False,
 ) -> dict[str, Any]:
     bridge = _bridge()
     config = bridge._config_store().load()
@@ -184,6 +186,8 @@ def overview(
             visible_removed_count=0,
             visible_active_count=0,
         )
+        return response
+    if local_only:
         return response
     if verified_visible is None:
         try:

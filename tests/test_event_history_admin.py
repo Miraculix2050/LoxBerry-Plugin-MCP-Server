@@ -179,6 +179,19 @@ def test_overview_keeps_configured_source_removal_available_when_visibility_fail
     assert result["unverified_sources"] == [{"control_uuid": SOURCE[0], "state_uuid": SOURCE[1]}]
 
 
+def test_local_overview_reports_sources_without_retrying_miniserver(tmp_path, monkeypatch):
+    _, history = _setup(tmp_path, monkeypatch, sources=(SOURCE,))
+    history.initialize()
+    monkeypatch.setattr(event_history_admin, "_controls", lambda _config: pytest.fail("discovery"))
+
+    result = admin.dispatch({"action": "event_history_local_overview", "payload": {}})
+
+    assert result["store_status"] == "available"
+    assert result["visibility_status"] == "unavailable"
+    assert result["sources"] == []
+    assert result["unverified_sources"] == [{"control_uuid": SOURCE[0], "state_uuid": SOURCE[1]}]
+
+
 def test_source_actions_preserve_history_until_separate_confirmed_purge(tmp_path, monkeypatch):
     config_store, history = _setup(tmp_path, monkeypatch)
     history.initialize()

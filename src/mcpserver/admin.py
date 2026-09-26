@@ -1793,6 +1793,7 @@ def dispatch(request: object, *, timing: dict[str, float] | None = None) -> dict
         }
     if action in {
         "event_history_overview",
+        "event_history_local_overview",
         "event_history_quick_summary",
         "event_history_discover",
         "event_history_discover_states",
@@ -1810,6 +1811,8 @@ def dispatch(request: object, *, timing: dict[str, float] | None = None) -> dict
 
         if action == "event_history_overview":
             return event_history_admin.overview()
+        if action == "event_history_local_overview":
+            return event_history_admin.overview(local_only=True)
         if action == "event_history_quick_summary":
             return event_history_admin.quick_summary()
         if action == "event_history_discover":
