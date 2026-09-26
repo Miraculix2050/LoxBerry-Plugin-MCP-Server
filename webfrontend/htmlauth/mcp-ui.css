@@ -187,6 +187,7 @@ details.mcp-explorer-card[open] > summary { border-bottom: 1px solid #d7dadd; }
 .mcp-event-history .mcp-card > h2 { margin-top: 0; }
 .mcp-event-history-search { display: flex; flex-wrap: wrap; align-items: end; gap: .6rem; }
 .mcp-event-history-search .mcp-field { flex: 1 1 18rem; }
+#history-add-form .mcp-field:has(> :disabled) > span { color: #6b7280; }
 .mcp-event-history-table td { vertical-align: top; overflow-wrap: anywhere; }
 .mcp-event-history-table td > div > span { display: block; }
 .mcp-event-history-table code { font-size: .75rem; }
