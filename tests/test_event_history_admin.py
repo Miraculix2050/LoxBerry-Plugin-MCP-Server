@@ -213,6 +213,56 @@ def test_source_actions_preserve_history_until_separate_confirmed_purge(tmp_path
     assert history.snapshot(()).sources == ()
 
 
+def test_add_returns_fresh_visible_overview_without_second_discovery(tmp_path, monkeypatch):
+    config_store, history = _setup(tmp_path, monkeypatch)
+    history.initialize()
+    original_controls = event_history_admin._controls
+    discoveries = 0
+
+    def controls(config):
+        nonlocal discoveries
+        discoveries += 1
+        return original_controls(config)
+
+    monkeypatch.setattr(event_history_admin, "_controls", controls)
+    result = event_history_admin.change_source(
+        {"control_uuid": SOURCE[0], "state_uuid": SOURCE[1]}, add=True
+    )
+
+    assert discoveries == 1
+    assert result["changed"] is True
+    assert result["overview"]["visibility_status"] == "available"
+    assert result["overview"]["visible_active_count"] == 1
+    assert result["overview"]["sources"][0]["control_name"] == "Visible"
+    assert result["overview"]["sources"][0]["state_name"] == "active"
+    assert config_store.load().event_history_sources == (SOURCE,)
+
+
+def test_source_revision_tracks_membership_without_polling_event_changes(tmp_path, monkeypatch):
+    _, history = _setup(tmp_path, monkeypatch)
+    history.initialize()
+    key = {"control_uuid": SOURCE[0], "state_uuid": SOURCE[1]}
+
+    def revision():
+        return admin.dispatch({"action": "event_history_source_revision"})["revision"]
+
+    initial = revision()
+
+    added = event_history_admin.change_source(key, add=True)
+    active = revision()
+    assert active != initial
+    assert added["overview"]["source_revision"] == active
+
+    history.record_transition(*SOURCE, observed_at=time.time(), old_value=0, new_value=1)
+    assert revision() == active
+
+    event_history_admin.change_source({**key, "confirm": True}, add=False)
+    removed = revision()
+    assert removed != active
+    event_history_admin.purge_source({**key, "confirm": True})
+    assert revision() != removed
+
+
 def test_policy_update_preserves_sources_and_rejects_invalid_input(tmp_path, monkeypatch):
     config_store, _ = _setup(tmp_path, monkeypatch, sources=(SOURCE,))
 

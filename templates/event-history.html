@@ -20,6 +20,12 @@
   data-confirm-purge="<TMPL_VAR EVENT_HISTORY.CONFIRM_PURGE ESCAPE=HTML>"
   data-confirm-clear="<TMPL_VAR EVENT_HISTORY.CONFIRM_CLEAR ESCAPE=HTML>"
   data-saved="<TMPL_VAR EVENT_HISTORY.SAVED ESCAPE=HTML>"
+  data-add="<TMPL_VAR EVENT_HISTORY.ADD ESCAPE=HTML>"
+  data-add-working="<TMPL_VAR EVENT_HISTORY.ADD_WORKING ESCAPE=HTML>"
+  data-add-applied="<TMPL_VAR EVENT_HISTORY.ADD_APPLIED ESCAPE=HTML>"
+  data-add-refresh-failed="<TMPL_VAR EVENT_HISTORY.ADD_REFRESH_FAILED ESCAPE=HTML>"
+  data-states-loading="<TMPL_VAR EVENT_HISTORY.STATES_LOADING ESCAPE=HTML>"
+  data-no-states="<TMPL_VAR EVENT_HISTORY.NO_STATES ESCAPE=HTML>"
   data-unchanged="<TMPL_VAR EVENT_HISTORY.UNCHANGED ESCAPE=HTML>"
   data-uncertain="<TMPL_VAR EVENT_HISTORY.UNCERTAIN ESCAPE=HTML>"
   data-loaded="<TMPL_VAR EVENT_HISTORY.LOADED ESCAPE=HTML>"
@@ -105,11 +111,13 @@
     </div>
     <form id="history-add-form" class="mcp-form">
       <fieldset class="mcp-event-history-control-field"><legend><TMPL_VAR EVENT_HISTORY.CONTROL></legend><div id="history-control-list" class="mcp-event-history-control-list" role="radiogroup" aria-label="<TMPL_VAR EVENT_HISTORY.CONTROL ESCAPE=HTML>"></div><div class="mcp-actions"><button id="history-prev-controls" class="lb-button" type="button" hidden><TMPL_VAR EVENT_HISTORY.PREV_CONTROLS></button><button id="history-more-controls" class="lb-button" type="button" hidden><TMPL_VAR EVENT_HISTORY.MORE_CONTROLS></button></div></fieldset>
-      <div class="mcp-event-history-search"><label class="mcp-field"><span><TMPL_VAR EVENT_HISTORY.SEARCH_STATE></span><input id="history-state-search" type="search" maxlength="100" autocomplete="off" disabled></label></div>
-      <p id="history-state-search-status" class="mcp-help" role="status"></p>
-      <label class="mcp-field"><span><TMPL_VAR EVENT_HISTORY.STATE></span><select id="history-state" required disabled><option value=""><TMPL_VAR EVENT_HISTORY.SELECT_STATE></option></select></label>
+      <div class="mcp-event-history-search" id="history-state-search-wrap" hidden><label class="mcp-field"><span><TMPL_VAR EVENT_HISTORY.SEARCH_STATE></span><input id="history-state-search" type="search" maxlength="100" autocomplete="off" disabled></label></div>
+      <p id="history-state-search-status" class="mcp-help" role="status" aria-live="polite"></p>
+      <label class="mcp-field"><span><TMPL_VAR EVENT_HISTORY.STATES></span><select id="history-state" required disabled><option value=""><TMPL_VAR EVENT_HISTORY.SELECT_STATE></option></select></label>
+      <p class="mcp-help"><TMPL_VAR EVENT_HISTORY.STATE_SUPPORT_HELP></p>
       <button id="history-more-states" class="lb-button" type="button" hidden><TMPL_VAR EVENT_HISTORY.SHOW_MORE_STATES></button>
       <div class="mcp-actions"><button id="history-add" class="lb-button" type="submit" disabled><TMPL_VAR EVENT_HISTORY.ADD></button></div>
+      <p id="history-add-status" class="mcp-status" role="status" aria-live="polite" hidden></p>
     </form>
   </section>
   <section class="mcp-card" aria-labelledby="history-policy-title">
@@ -129,4 +137,4 @@
   </section>
 </main>
 <script src="event-history/api.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-2" defer></script>
-<script src="event-history/page.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-2" defer></script>
+<script src="event-history/page.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-6" defer></script>

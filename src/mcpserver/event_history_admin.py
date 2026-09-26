@@ -16,7 +16,12 @@ from typing import Any, cast
 from mcpserver.config import PluginConfig
 from mcpserver.emergency_stop import EmergencyStopMonitor
 from mcpserver.event_history_selector_cache import EventHistorySelectorCache, SelectorCacheError
-from mcpserver.loxone.event_history import EventHistoryMonitor, EventHistoryStore
+from mcpserver.loxone.event_history import (
+    EventHistoryMonitor,
+    EventHistoryStore,
+    EventHistoryStoreSummary,
+    source_revision_for_snapshot,
+)
 from mcpserver.loxone.presentation import flatten_controls
 from mcpserver.loxone.uuid import normalize_loxone_uuid
 
@@ -145,6 +150,15 @@ def _apply(change: Callable[[PluginConfig], PluginConfig]) -> tuple[PluginConfig
     return cast(PluginConfig, result), changed
 
 
+def _source_revision(config: PluginConfig, snapshot: EventHistoryStoreSummary) -> str:
+    return source_revision_for_snapshot(
+        config.event_history_sources,
+        snapshot,
+        retention_days=config.event_history_retention_days,
+        maximum_mib=config.event_history_maximum_mib,
+    )
+
+
 def overview(
     verified_visible: dict[tuple[str, str], tuple[str, str, str]] | None = None,
     *,
@@ -174,6 +188,7 @@ def overview(
             database_bytes=snapshot.database_bytes,
             wal_bytes=snapshot.wal_bytes,
             store_status="available",
+            source_revision=_source_revision(config, snapshot),
         )
     except Exception:
         return response
@@ -589,9 +604,11 @@ def save_policy(payload: object) -> dict[str, Any]:
 def change_source(payload: object, *, add: bool) -> dict[str, Any]:
     bridge = _bridge()
     key = _source(payload)
+    visible = None
     if add:
         config = bridge._config_store().load()
-        if key not in _visible(_controls(config)):
+        visible = _visible(_controls(config))
+        if key not in visible:
             raise bridge.AdminError("source is not currently visible", code="not_found")
     else:
         _confirmed(payload)
@@ -621,7 +638,15 @@ def change_source(payload: object, *, add: bool) -> dict[str, Any]:
             raise bridge.AdminError(
                 "source is inactive; removal metadata outcome is unknown", code="outcome_unknown"
             ) from exc
-    return {"changed": changed, "recording_status": "active" if add else "removed"}
+    result: dict[str, Any] = {
+        "changed": changed,
+        "recording_status": "active" if add else "removed",
+    }
+    if add:
+        # The same fresh visibility check supplies the post-apply overview.
+        # A second full structure fetch would delay feedback without adding authorization.
+        result["overview"] = overview(visible)
+    return result
 
 
 def purge_source(payload: object) -> dict[str, Any]:

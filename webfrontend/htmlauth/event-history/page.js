@@ -8,6 +8,9 @@
   const controlList = $('history-control-list');
   const stateSelect = $('history-state');
   const stateSearch = $('history-state-search');
+  const stateSearchWrap = $('history-state-search-wrap');
+  const addButton = $('history-add');
+  const addStatus = $('history-add-status');
   let controls = [];
   let selectedControl = '';
   let selectorGeneration = '';
@@ -22,6 +25,11 @@
   let activeCount = 0;
   let overviewLoaded = false;
   let busy = false;
+  let controlsLoading = false;
+  let sourceRevisionChecking = false;
+  let knownSourceRevision = '';
+  let nextRevisionRefreshAt = 0;
+  let revisionRefreshFailures = 0;
   const label = (name) => root.dataset[name] || name;
   const errorLabel = (error) => ({
     outcome_unknown: label('uncertain'),
@@ -136,6 +144,12 @@
   };
   const renderOverview = (data) => {
       overviewLoaded = true;
+      if (data.store_status === 'available' && data.visibility_status === 'available'
+        && typeof data.source_revision === 'string') {
+        knownSourceRevision = data.source_revision;
+        nextRevisionRefreshAt = 0;
+        revisionRefreshFailures = 0;
+      }
       activeCount = data.active_source_count;
       $('history-retention').value = data.retention_days;
       $('history-maximum').value = data.maximum_mib;
@@ -244,6 +258,8 @@
       radio.addEventListener('change', () => {
         selectedControl = radio.value;
         stateSearch.value = '';
+        addStatus.textContent = '';
+        addStatus.hidden = true;
         void loadStates();
       });
       const title = document.createElement('span');
@@ -272,7 +288,9 @@
     stateSelect.replaceChildren(new Option(label('selectState'), ''));
     stateSelect.disabled = true;
     stateSearch.disabled = true;
-    $('history-add').disabled = true;
+    stateSearchWrap.hidden = true;
+    $('history-state-search-status').textContent = '';
+    addButton.disabled = true;
     $('history-more-controls').hidden = true;
     $('history-prev-controls').hidden = true;
     $('history-more-states').hidden = true;
@@ -354,6 +372,8 @@
     }
   };
   const loadControls = async () => {
+    if (controlsLoading) return;
+    controlsLoading = true;
     const request = ++discoveryGeneration;
     const previousControl = selectedControl;
     const previousState = stateSelect.value;
@@ -409,6 +429,29 @@
           if (request === discoveryGeneration) setMessage(label('unavailable'), 'warning');
         }
       }
+    } finally {
+      controlsLoading = false;
+    }
+  };
+  const checkSourceRevision = async () => {
+    if (document.hidden || busy || controlsLoading || sourceRevisionChecking
+      || !knownSourceRevision) return;
+    sourceRevisionChecking = true;
+    try {
+      const data = await api.request('event_history_source_revision', {}, 15000);
+      if (data.availability === 'available' && data.revision !== knownSourceRevision
+        && Date.now() >= nextRevisionRefreshAt) {
+        await loadControls();
+        if (knownSourceRevision !== data.revision) {
+          revisionRefreshFailures += 1;
+          nextRevisionRefreshAt = Date.now()
+            + Math.min(300000, 30000 * (2 ** revisionRefreshFailures));
+        }
+      }
+    } catch {
+      // Keep the last verified view; the next visible poll can retry this local check.
+    } finally {
+      sourceRevisionChecking = false;
     }
   };
   const loadStates = async (restoreState = '', append = false) => {
@@ -417,18 +460,18 @@
     const status = $('history-state-search-status');
     const priorState = append ? stateSelect.value : restoreState;
     const priorSelectEnabled = append && !stateSelect.disabled;
-    const priorAddEnabled = append && !$('history-add').disabled;
+    const priorAddEnabled = append && !addButton.disabled;
     if (!append) {
-      stateSelect.replaceChildren(new Option(label('selectState'), ''));
+      stateSelect.replaceChildren(new Option(label('statesLoading'), ''));
       loadedStateCount = 0;
+      if (!stateSearch.value.trim()) stateSearchWrap.hidden = true;
     }
     if (!append) $('history-more-states').hidden = true;
     stateSelect.disabled = true;
-    $('history-add').disabled = true;
+    stateSearch.disabled = true;
+    addButton.disabled = true;
     if (!control || !selectorGeneration) { status.textContent = ''; return; }
-    stateSearch.disabled = false;
-    stateSearch.closest('.mcp-field').hidden = false;
-    status.textContent = label('loading');
+    status.textContent = label('statesLoading');
     try {
       const query = stateSearch.value.trim().toLocaleLowerCase();
       const cached = stateCache.get(`${selectorGeneration}:${control}`);
@@ -444,6 +487,7 @@
             offset: append ? loadedStateCount : 0});
       if (request !== stateGeneration || control !== selectedControl) return;
       if (!query && data.total <= 200) stateCache.set(`${selectorGeneration}:${control}`, data);
+      if (!append) stateSelect.replaceChildren(new Option(label('selectState'), ''));
       const displayedStates = new Set(Array.from(stateSelect.options, (option) => option.value));
       for (const state of data.states || []) {
         if (!displayedStates.has(state.uuid)) {
@@ -464,25 +508,36 @@
       stateSelect.disabled = stateSelect.options.length <= 1;
       if (priorState && Array.from(stateSelect.options).some((state) => state.value === priorState)) {
         stateSelect.value = priorState;
-        $('history-add').disabled = false;
+        addButton.disabled = busy;
       }
       $('history-more-states').hidden =
         loadedStateCount >= Math.min(data.total, 2000);
-      status.textContent = data.total > loadedStateCount ? label('moreStates') : '';
-      stateSearch.closest('.mcp-field').hidden = data.total <= 10 && !query;
+      status.textContent = !data.total ? label('noStates')
+        : data.total > loadedStateCount ? label('moreStates') : '';
+      stateSearchWrap.hidden = data.total <= 10 && !query;
+      stateSearch.disabled = busy;
     } catch (error) {
       if (error.code === 'stale_configuration') invalidateSelector();
       if (request === stateGeneration) {
         if (append && error.code !== 'stale_configuration') {
           stateSelect.disabled = !priorSelectEnabled;
-          $('history-add').disabled = !priorAddEnabled;
+          addButton.disabled = busy || !priorAddEnabled;
         }
+        if (!append && error.code !== 'stale_configuration') {
+          stateSelect.replaceChildren(new Option(label('selectState'), ''));
+          stateSearchWrap.hidden = false;
+        }
+        stateSearch.disabled = busy || error.code === 'stale_configuration';
         status.textContent = errorLabel(error);
       }
     }
   };
   stateSelect.addEventListener('change', () => {
-    $('history-add').disabled = !stateSelect.value;
+    addButton.disabled = busy || !stateSelect.value;
+    if (!busy) {
+      addStatus.textContent = '';
+      addStatus.hidden = true;
+    }
   });
   $('history-more-states').addEventListener('click', () => { void loadStates('', true); });
   $('history-search-button').addEventListener('click', loadControls);
@@ -513,11 +568,52 @@
   stateSearch.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') event.preventDefault();
   });
+  const startRecording = async () => {
+    if (busy || !selectedControl || !stateSelect.value) return;
+    const source = {control_uuid: selectedControl, state_uuid: stateSelect.value};
+    busy = true;
+    const locked = Array.from(root.querySelectorAll(
+      '#history-add-form input, #history-add-form select, #history-add-form button, '
+      + '#history-search, #history-search-button, #history-clear-filters, '
+      + '.mcp-event-history-filters input, #history-source-rows button'));
+    const wasDisabled = new Map(locked.map((control) => [control, control.disabled]));
+    for (const control of locked) control.disabled = true;
+    addButton.disabled = true;
+    addButton.textContent = label('addWorking');
+    addStatus.textContent = label('addWorking');
+    addStatus.dataset.kind = 'working';
+    addStatus.hidden = false;
+    let applied = false;
+    let unchanged = false;
+    try {
+      const result = await api.request('event_history_add_source', source, 240000);
+      applied = true;
+      unchanged = result.changed === false;
+      stateSelect.value = '';
+      const refreshed = result.overview?.store_status === 'available'
+        && result.overview?.visibility_status === 'available';
+      if (result.overview) renderOverview(result.overview);
+      void loadStatus();
+      addStatus.textContent = refreshed
+        ? label(unchanged ? 'unchanged' : 'addApplied') : label('addRefreshFailed');
+      addStatus.dataset.kind = refreshed ? 'success' : 'warning';
+    } catch (error) {
+      addStatus.textContent = applied ? label('addRefreshFailed') : errorLabel(error);
+      addStatus.dataset.kind = applied ? 'warning' : 'error';
+    } finally {
+      busy = false;
+      for (const control of locked) {
+        if (control.isConnected) control.disabled = wasDisabled.get(control);
+      }
+      addButton.textContent = label('add');
+      addButton.disabled = applied || !stateSelect.value;
+      stateSearch.disabled = !selectedControl || stateSearchWrap.hidden;
+    }
+  };
   $('history-add-form').addEventListener('submit', (event) => {
     event.preventDefault();
     if (activeCount >= 64) { setMessage(label('sourceLimit'), 'warning'); return; }
-    void mutate('event_history_add_source', {control_uuid: selectedControl,
-      state_uuid: stateSelect.value});
+    void startRecording();
   });
   $('history-policy-form').addEventListener('submit', (event) => {
     event.preventDefault();
@@ -528,8 +624,11 @@
     if (window.confirm(label('confirmClear'))) void mutate('clear_event_history', {confirm: '1'});
   });
   $('history-refresh').addEventListener('click', () => { void loadControls(); void loadStatus(); });
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) void loadStatus(); });
-  window.setInterval(loadStatus, 30000);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) { void loadStatus(); void checkSourceRevision(); }
+  });
+  window.setInterval(() => { void loadStatus(); }, 30000);
+  window.setInterval(() => { void checkSourceRevision(); }, 60000);
   void loadQuickSummary();
   void loadStatus();
   void loadControls();

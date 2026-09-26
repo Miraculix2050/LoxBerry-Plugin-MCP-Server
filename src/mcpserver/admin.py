@@ -1747,6 +1747,31 @@ def _diagnostic() -> dict[str, Any]:
     }
 
 
+def _event_history_source_revision() -> dict[str, str]:
+    """Read a local change marker without importing discovery or auth clients."""
+    from mcpserver.loxone.event_history import EventHistoryStore, source_revision_for_snapshot
+
+    config = _config_store().load()
+    try:
+        store = EventHistoryStore(
+            _path("MCPSERVER_EVENT_HISTORY_STORE", suffix=".sqlite3"),
+            retention_days=config.event_history_retention_days,
+            maximum_mib=config.event_history_maximum_mib,
+        )
+        snapshot = store.snapshot(config.event_history_sources)
+    except Exception:
+        return {"availability": "unavailable"}
+    return {
+        "availability": "available",
+        "revision": source_revision_for_snapshot(
+            config.event_history_sources,
+            snapshot,
+            retention_days=config.event_history_retention_days,
+            maximum_mib=config.event_history_maximum_mib,
+        ),
+    }
+
+
 def dispatch(request: object, *, timing: dict[str, float] | None = None) -> dict[str, Any]:
     if not isinstance(request, dict) or not isinstance(request.get("action"), str):
         raise AdminError("request is invalid")
@@ -1791,6 +1816,8 @@ def dispatch(request: object, *, timing: dict[str, float] | None = None) -> dict
             "mqtt_gateway": _mqtt_gateway_status(),
             "mqtt_password_configured": _mqtt_password_configured(),
         }
+    if action == "event_history_source_revision":
+        return _event_history_source_revision()
     if action in {
         "event_history_overview",
         "event_history_local_overview",

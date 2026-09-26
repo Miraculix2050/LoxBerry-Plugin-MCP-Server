@@ -671,18 +671,36 @@ def test_event_history_selector_is_progressive_and_localized() -> None:
     assert 'role="radiogroup"' in page
     assert 'id="history-prev-controls"' in page
     assert 'id="history-more-controls"' in page
+    assert 'id="history-state-search-wrap" hidden' in page
+    assert 'id="history-add-status"' in page
+    assert "<TMPL_VAR EVENT_HISTORY.STATES>" in page
     assert all(f'data-facet="{field}"' in page for field in ("room", "category", "type"))
     assert "void loadQuickSummary();" in script
     assert "void loadControls();" in script
     assert "event_history_prepare_selector" in script
     assert "event_history_selector_catalog" in script
     assert "event_history_selector_states" in script
+    assert "event_history_source_revision" in script
+    assert "api.request('event_history_source_revision', {}, 15000)" in script
     assert "event_history_prepare_selector" in cgi
+    assert "event_history_source_revision" in cgi
     for language in ("de", "en"):
         translations = (ROOT / f"templates/lang/language_{language}.ini").read_text(
             encoding="utf-8"
         )
-        for key in ("LOAD_CONTROLS", "FILTER_CLEAR", "ROOM", "CATEGORY", "TYPE"):
+        for key in (
+            "LOAD_CONTROLS",
+            "FILTER_CLEAR",
+            "ROOM",
+            "CATEGORY",
+            "TYPE",
+            "STATES",
+            "STATES_LOADING",
+            "STATE_SUPPORT_HELP",
+            "ADD_WORKING",
+            "ADD_APPLIED",
+            "ADD_REFRESH_FAILED",
+        ):
             assert f"{key}=" in translations
 
 

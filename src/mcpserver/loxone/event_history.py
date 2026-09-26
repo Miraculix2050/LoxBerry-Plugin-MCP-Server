@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import math
@@ -107,6 +108,30 @@ class EventHistoryStoreSummary:
     wal_bytes: int
     sources: tuple[EventHistorySourceSummary, ...]
     truncated: bool = False
+
+
+def source_revision_for_snapshot(
+    active_sources: tuple[tuple[str, str], ...],
+    snapshot: EventHistoryStoreSummary,
+    *,
+    retention_days: int,
+    maximum_mib: int,
+) -> str:
+    """Track source membership and policy without changing on each event."""
+    active = set(active_sources)
+    source_keys = [
+        (source.control_uuid, source.state_uuid, (source.control_uuid, source.state_uuid) in active)
+        for source in snapshot.sources
+    ]
+    document = (
+        sorted(active_sources),
+        source_keys,
+        snapshot.truncated,
+        retention_days,
+        maximum_mib,
+    )
+    encoded = json.dumps(document, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()[:24]
 
 
 def _value(value: object) -> bool | float | int | str:

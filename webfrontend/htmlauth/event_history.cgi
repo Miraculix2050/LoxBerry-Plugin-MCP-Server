@@ -61,7 +61,7 @@ sub admin_call {
 }
 
 my %actions = map { $_ => 1 } qw(
-    event_history_overview event_history_local_overview event_history_quick_summary event_history_runtime_status event_history_discover
+    event_history_overview event_history_local_overview event_history_quick_summary event_history_source_revision event_history_runtime_status event_history_discover
     event_history_discover_states
     event_history_prepare_selector event_history_selector_catalog event_history_selector_facets
     event_history_selector_query event_history_selector_states
