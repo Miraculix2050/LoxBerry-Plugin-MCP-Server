@@ -95,6 +95,29 @@ def test_empty_overview_avoids_miniserver_discovery(tmp_path, monkeypatch):
     assert result["unverified_sources"] == []
 
 
+def test_admin_discovery_uses_endpoint_bound_auth_breaker(tmp_path, monkeypatch):
+    config_store, _ = _setup(tmp_path, monkeypatch)
+    auth_path = (tmp_path / "auth" / "sessions.json").resolve()
+    seen = []
+
+    def pseudonym(*parts):
+        seen.append(parts)
+        return "test-profile"
+
+    monkeypatch.setattr(
+        admin,
+        "_auth_store",
+        lambda: SimpleNamespace(path=auth_path, pseudonym=pseudonym),
+    )
+    config = replace(config_store.load(), loxone_endpoint="https://miniserver.example")
+    monitor = event_history_admin._monitor(config)
+
+    assert monitor.auth_coordinator is not None
+    assert monitor.auth_coordinator._path == auth_path.parent / "miniserver-auth-diagnostics.json"
+    assert monitor.auth_coordinator._profile_id == "test-profile"
+    assert seen == [("miniserver-auth-profile-v1", "https://miniserver.example")]
+
+
 def test_v2_migration_rebuilds_exact_event_summaries(tmp_path, monkeypatch):
     _, history = _setup(tmp_path, monkeypatch, sources=(SOURCE,))
     history.initialize()

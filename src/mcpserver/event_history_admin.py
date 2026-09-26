@@ -41,7 +41,18 @@ def _store(config: PluginConfig) -> EventHistoryStore:
 
 
 def _monitor(config: PluginConfig) -> EventHistoryMonitor:
-    return EventHistoryMonitor(config, _store(config), EmergencyStopMonitor(config))
+    from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
+    from mcpserver.loxone.client import MiniserverEndpoint
+
+    auth_store = _bridge()._auth_store()
+    endpoint = MiniserverEndpoint.parse(config.loxone_endpoint)
+    coordinator = MiniserverAuthCoordinator(
+        auth_store.path.parent / "miniserver-auth-diagnostics.json",
+        initial_probe_seconds=config.miniserver_auth_probe_initial_seconds,
+        maximum_probe_seconds=config.miniserver_auth_probe_max_seconds,
+        profile_id=auth_store.pseudonym("miniserver-auth-profile-v1", endpoint.origin),
+    )
+    return EventHistoryMonitor(config, _store(config), EmergencyStopMonitor(config), coordinator)
 
 
 def _controls(config: PluginConfig) -> tuple[Any, ...]:
