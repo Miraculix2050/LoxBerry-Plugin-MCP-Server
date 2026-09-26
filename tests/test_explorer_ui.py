@@ -11,9 +11,21 @@ import pytest
 from mcpserver.schema_reference import tool_schema_catalog
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "webfrontend" / "htmlauth" / "explorer.js"
+SCRIPT = ROOT / "webfrontend" / "htmlauth" / "explorer-core.js"
+APP_SCRIPT = ROOT / "webfrontend" / "htmlauth" / "explorer.js"
+AUTH_SCRIPT = ROOT / "webfrontend" / "htmlauth" / "explorer-auth.js"
+CLIENT_SCRIPT = ROOT / "webfrontend" / "htmlauth" / "explorer-client.js"
+STATE_SCRIPT = ROOT / "webfrontend" / "htmlauth" / "explorer-state.js"
+VIEWS_SCRIPT = ROOT / "webfrontend" / "htmlauth" / "explorer-views.js"
 ADAPTERS = ROOT / "webfrontend" / "htmlauth" / "explorer-adapters.js"
 ADMIN_SCRIPTS = ROOT / "webfrontend" / "htmlauth" / "admin"
+
+
+def read_explorer_source() -> str:
+    return "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (SCRIPT, VIEWS_SCRIPT, AUTH_SCRIPT, CLIENT_SCRIPT, APP_SCRIPT)
+    )
 
 
 def test_help_and_explorer_link_to_static_schema_reference() -> None:
@@ -39,7 +51,7 @@ def test_schema_reference_link_label_is_concise_in_both_languages() -> None:
 def test_explorer_uses_one_compact_mobile_tool_panel_and_adaptive_workspace() -> None:
     template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
     stylesheet = (ROOT / "webfrontend" / "htmlauth" / "mcp-ui.css").read_text(encoding="utf-8")
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = read_explorer_source()
     responsive_panels = source[
         source.index("function syncResponsivePanels") : source.index("function showError")
     ]
@@ -79,7 +91,7 @@ def test_tool_badges_are_localized_through_the_explorer_template() -> None:
     german = (ROOT / "templates" / "lang" / "language_de.ini").read_text(encoding="utf-8")
     english = (ROOT / "templates" / "lang" / "language_en.ini").read_text(encoding="utf-8")
     template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = read_explorer_source()
     render_tools = source[
         source.index("function renderTools()") : source.index("function draftFor(")
     ]
@@ -100,7 +112,7 @@ def test_tool_badges_are_localized_through_the_explorer_template() -> None:
 
 
 def test_request_result_and_history_arguments_reopen_on_relevant_actions() -> None:
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = read_explorer_source()
     template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
     german = (ROOT / "templates/lang/language_de.ini").read_text(encoding="utf-8")
     english = (ROOT / "templates/lang/language_en.ini").read_text(encoding="utf-8")
@@ -131,7 +143,7 @@ def test_tool_metadata_labels_are_localized_and_inspectable() -> None:
     german = (ROOT / "templates" / "lang" / "language_de.ini").read_text(encoding="utf-8")
     english = (ROOT / "templates" / "lang" / "language_en.ini").read_text(encoding="utf-8")
     template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = read_explorer_source()
     keys = [
         "TOOL_BADGE_WRITE_POSSIBLE",
         "TOOL_HINT_DESTRUCTIVE",
@@ -162,7 +174,9 @@ def run_core(expression: str) -> object:
     if node is None:
         pytest.skip("Node.js is required for explorer JavaScript tests")
     program = (
-        f"const core=require({json.dumps(str(SCRIPT))}); console.log(JSON.stringify({expression}));"
+        f"const core={{...require({json.dumps(str(SCRIPT))}),"
+        f"...require({json.dumps(str(VIEWS_SCRIPT))})}};"
+        f"console.log(JSON.stringify({expression}));"
     )
     result = subprocess.run(
         [node, "-e", program], check=True, capture_output=True, text=True, encoding="utf-8"
@@ -187,7 +201,8 @@ def run_core_async(expression: str) -> object:
     if node is None:
         pytest.skip("Node.js is required for explorer JavaScript tests")
     program = (
-        f"const core=require({json.dumps(str(SCRIPT))});"
+        f"const core={{...require({json.dumps(str(SCRIPT))}),"
+        f"...require({json.dumps(str(VIEWS_SCRIPT))})}};"
         f"(async()=>console.log(JSON.stringify(await ({expression}))))()"
         ".catch(error=>{console.error(error);process.exit(1);});"
     )
@@ -412,7 +427,7 @@ def test_result_inspector_bounds_whitespace_scans_and_skips_later_candidates() -
 
 
 def test_result_inspector_uses_the_same_history_path_and_lazy_complete_json() -> None:
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = read_explorer_source()
     template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
     german = (ROOT / "templates" / "lang" / "language_de.ini").read_text(encoding="utf-8")
     english = (ROOT / "templates" / "lang" / "language_en.ini").read_text(encoding="utf-8")
@@ -423,10 +438,10 @@ def test_result_inspector_uses_the_same_history_path_and_lazy_complete_json() ->
         source.index("function renderHistory(") : source.index("async function runSelectedTool(")
     ]
 
-    assert "core.createResultInspector(document, displayed" in render_result
+    assert "createResultInspector(document, displayed" in render_result
     assert (
-        "renderResult(entry.result, {tool: entry.tool, arguments: entry.arguments, history: true})"
-        in render_history
+        "actions.showResult(entry.result, {tool: entry.tool, arguments: entry.arguments, "
+        "history: true})" in render_history
     )
     assert "elements.resultRaw.textContent = JSON.stringify(result" not in render_result
     assert "elements.resultRaw.textContent = JSON.stringify(state.lastResult, null, 2)" in source
@@ -456,7 +471,7 @@ def test_explorer_preserves_structured_mcp_error_details() -> None:
         "message": "emergency_stop_active",
         "result": {"error": response["error"]},
     }
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = read_explorer_source()
     assert "error.mcpResult = failure.result" in source
     assert "core.clone(error.mcpResult)" in source
 
@@ -565,7 +580,7 @@ def test_explorer_uses_current_https_origin_for_validated_oauth_endpoints() -> N
 
 
 def test_explorer_blocks_insecure_origins_before_oauth_discovery() -> None:
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = read_explorer_source()
     discover_start = source.index("async function discover()")
     discover = source[
         discover_start : source.index("async function registerClient", discover_start)
@@ -584,7 +599,7 @@ def test_explorer_blocks_insecure_origins_before_oauth_discovery() -> None:
 
 
 def test_explorer_opens_oauth_popup_synchronously_only_for_https() -> None:
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = read_explorer_source()
     handler_start = source.index("elements.connect.addEventListener('click'")
     handler = source[
         handler_start : source.index("elements.disconnect.addEventListener", handler_start)
@@ -593,7 +608,7 @@ def test_explorer_opens_oauth_popup_synchronously_only_for_https() -> None:
     assert "const insecureOrigin = window.location.protocol !== 'https:';" in handler
     assert "const authorizationPopup = insecureOrigin ? null : openAuthorizationPopup();" in handler
     assert handler.index("openAuthorizationPopup()") < handler.index("setBusy(true)")
-    assert "state.oauth = await authorize(authorizationPopup);" in handler
+    assert "explorerState.setSession(await authorize(authorizationPopup));" in handler
     assert "authorizationPopup?.close()" in handler
 
 
@@ -794,7 +809,7 @@ def test_explorer_scope_filters_include_all_published_history_and_operate_tools(
 
 
 def test_explorer_discovery_controls_preserve_selection_and_drafts() -> None:
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = read_explorer_source()
     template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
     stylesheet = (ROOT / "webfrontend" / "htmlauth" / "mcp-ui.css").read_text(encoding="utf-8")
     german = (ROOT / "templates" / "lang" / "language_de.ini").read_text(encoding="utf-8")
@@ -811,14 +826,14 @@ def test_explorer_discovery_controls_preserve_selection_and_drafts() -> None:
     assert template.count('type="checkbox" data-tool-group="') == 7
     assert 'id="explorer-tool-filter-count"' in template
     assert "core.filteredToolGroups(state.tools, state.toolSearch, state.toolGroups)" in source
-    assert 'src="explorer-adapters.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-registry-v1"' in template
-    assert 'src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-collapsible-v1"' in template
+    assert 'src="explorer-adapters.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-modules-v1"' in template
+    assert 'src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-modules-v1"' in template
     assert "label('noMatchingTools')" in source
     assert "label('noTools')" in source
-    assert "state.toolSearch = elements.toolSearch.value" in handlers
-    assert "state.toolGroups = [...state.toolGroups, group]" in handlers
-    assert "state.toolGroups = state.toolGroups.filter(" in handlers
-    assert "if (group === 'all') state.toolGroups = []" in handlers
+    assert "explorerState.setSearch(elements.toolSearch.value)" in handlers
+    assert "explorerState.setGroups([...state.toolGroups, group])" in handlers
+    assert "explorerState.setGroups(state.toolGroups.filter(" in handlers
+    assert "if (group === 'all') explorerState.setGroups([])" in handlers
     assert "renderTools();" in handlers
     assert "mcpRequest(" not in handlers
     assert "selectTool(" not in handlers
@@ -917,8 +932,8 @@ def test_unknown_tool_uses_generic_explorer_path() -> None:
     assert run_core(f"core.validateArguments({{query:'text'}},{encoded}.inputSchema)") == []
     assert run_core(f"core.validateArguments({{}},{encoded}.inputSchema)")
     assert run_core(f"core.toolIsMutating({encoded})") is False
-    source = SCRIPT.read_text(encoding="utf-8")
-    assert "mcpRequest('tools/call', {name: tool.name, arguments: args}, false)" in source
+    source = read_explorer_source()
+    assert "mcpRequest('tools/call', {name, arguments: args}, false)" in source
     assert "adapters.fieldVisible(state.selectedTool, name, state.arguments)" in source
 
 
@@ -937,7 +952,7 @@ def test_registry_keeps_tool_hints_out_of_authorization_and_defaults_unknown_saf
     assert run_adapters(
         "adapters.requiredScopes({name:'loxberry_list_event_history_sources'})"
     ) == ["loxone:read", "loxone:history", "loxberry:operate"]
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = read_explorer_source()
     assert "core.toolIsMutating(state.selectedTool)" in source
     assert "if (!(await confirmMutation(state.selectedTool, state.arguments))) return;" in source
     assert "requiredMutationScope &&" in source
@@ -946,7 +961,7 @@ def test_registry_keeps_tool_hints_out_of_authorization_and_defaults_unknown_saf
 
 
 def test_explorer_ui_binds_static_registry_in_its_own_scope() -> None:
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = read_explorer_source()
     ui = source[source.index("(function () {\n  'use strict';\n  if (typeof window") :]
     assert "const adapters = window.McpExplorerAdapters;" in ui
     assert "adapters.requiredMutationScope(state.selectedTool)" in ui
@@ -1407,7 +1422,7 @@ def test_explorer_granted_scopes_are_exact_and_fail_closed() -> None:
 
 
 def test_explorer_scope_display_tracks_session_lifecycle() -> None:
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = read_explorer_source()
     template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
     german = (ROOT / "templates" / "lang" / "language_de.ini").read_text(encoding="utf-8")
     english = (ROOT / "templates" / "lang" / "language_en.ini").read_text(encoding="utf-8")
@@ -1423,15 +1438,19 @@ def test_explorer_scope_display_tracks_session_lifecycle() -> None:
             "async function accessToken"
         )
     ]
-    assert "state.oauth.scope = typeof token.scope === 'string' ? token.scope : '';" in refresh
+    assert "explorerState.updateToken(token);" in refresh
+    assert "typeof token.scope === 'string' ? token.scope : ''" in STATE_SCRIPT.read_text(
+        encoding="utf-8"
+    )
     assert "renderConnection();" in refresh
-    logout = source[
-        source.index("async function revokeAndClear") : source.index("function renderConnection")
-    ]
+    logout = (
+        APP_SCRIPT.read_text(encoding="utf-8")
+        .split("async function revokeAndClear()", 1)[1]
+        .split("function clearExplorerState()", 1)[0]
+    )
     assert logout.index("clearExplorerState()") < logout.index("action: 'logout'")
     assert logout.index("renderAll()") < logout.index("action: 'logout'")
-    assert "core.clearSensitiveDom(elements);" in logout
-    assert source.count("clearExplorerState();") >= 6
+    assert "viewHelpers.clearSensitiveDom(elements);" in APP_SCRIPT.read_text(encoding="utf-8")
     assert "sessionExpiryTimer = window.setTimeout" in source
     assert "if (logoutChannel) logoutChannel.postMessage('logout');" in source
     for text in (german, english):
@@ -1442,7 +1461,7 @@ def test_explorer_scope_display_tracks_session_lifecycle() -> None:
 
 
 def test_session_clear_prevents_call_artifacts_from_being_recreated() -> None:
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = read_explorer_source()
 
     assert "error.sessionCleared = true" in source
     assert "!(error && error.sessionCleared === true)" in source
@@ -1453,7 +1472,7 @@ def test_session_clear_prevents_call_artifacts_from_being_recreated() -> None:
     assert source.count("if (!sessionCleared) {") >= 2
     assert "if (elements.confirm.open) elements.confirm.close('cancel');" in source
     request = source[
-        source.index("async function mcpRequest") : source.index("async function initializeMcp")
+        source.index("async function mcpRequest") : source.index("async function listTools")
     ]
     assert request.count("state.oauth !== oauth || Date.now() >= oauth.resumeUntil") == 2
     run = source[
@@ -1466,7 +1485,7 @@ def test_session_clear_prevents_call_artifacts_from_being_recreated() -> None:
 
 
 def test_explorer_keeps_refresh_credentials_out_of_browser_storage() -> None:
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = read_explorer_source()
 
     assert "explorer-session" in source
     assert "credentials: 'same-origin'" in source
@@ -1481,7 +1500,7 @@ def test_explorer_keeps_refresh_credentials_out_of_browser_storage() -> None:
 
 def test_explorer_connection_and_scopes_are_independent_persistent_disclosures() -> None:
     template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = read_explorer_source()
 
     links = template.index('href="index.cgi"')
     panel = template.index('id="explorer-connection-panel"')
@@ -1500,7 +1519,7 @@ def test_explorer_connection_and_scopes_are_independent_persistent_disclosures()
 def test_explorer_connection_summary_shows_live_status_badge() -> None:
     template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
     stylesheet = (ROOT / "webfrontend" / "htmlauth" / "mcp-ui.css").read_text(encoding="utf-8")
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = read_explorer_source()
     summary = template[
         template.index('<details id="explorer-connection-panel"') : template.index(
             '<div class="mcp-explorer-panel-content',
@@ -1549,11 +1568,10 @@ def test_explorer_generated_field_ids_are_unique_and_labelled() -> None:
 
 
 def test_explorer_transcript_is_incremental_and_details_are_lazy() -> None:
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = read_explorer_source()
 
-    add_transcript = source[
-        source.index("function addTranscript") : source.index("function safeMcpResponse")
-    ]
+    app = APP_SCRIPT.read_text(encoding="utf-8")
+    add_transcript = app[app.index("function addTranscript") : app.index("const mcp =")]
     transcript_entry = source[
         source.index("function transcriptEntry") : source.index("function renderTranscript")
     ]
@@ -1579,7 +1597,7 @@ def test_explorer_transcript_is_incremental_and_details_are_lazy() -> None:
 
 
 def test_explorer_tabs_support_roving_focus_and_arrow_keys() -> None:
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = read_explorer_source()
 
     assert "elements.formTab.tabIndex = jsonMode ? -1 : 0" in source
     assert "elements.jsonTab.tabIndex = jsonMode ? 0 : -1" in source
@@ -1664,7 +1682,7 @@ def test_explorer_history_summary_prioritizes_non_default_arguments() -> None:
 
 
 def test_explorer_history_and_call_feedback_are_separate_from_connection() -> None:
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = read_explorer_source()
     template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
     run = source[
         source.index("async function runSelectedTool") : source.index("function openTransfer")
@@ -1696,7 +1714,7 @@ def test_explorer_history_and_call_feedback_are_separate_from_connection() -> No
 
 
 def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = read_explorer_source()
     template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
     stylesheet = (ROOT / "webfrontend" / "htmlauth" / "mcp-ui.css").read_text(encoding="utf-8")
     callback = (ROOT / "webfrontend" / "htmlauth" / "explorer_callback.cgi").read_text(
@@ -1713,7 +1731,7 @@ def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
     assert "action: 'access'" in source
     assert "if (state.oauth) await revokeAndClear()" in source
     assert "core.toolIsMutating(state.selectedTool)" in source
-    assert "state.history.length > core.MAX_CALL_HISTORY" in source
+    assert "data.history.length > core.MAX_CALL_HISTORY" in STATE_SCRIPT.read_text(encoding="utf-8")
     assert "fetchWithTimeout('/plugins/mcpserver/mcp'" in source
     assert "}, 70000)" in source
     assert "sessionStorage" not in source
@@ -1764,7 +1782,7 @@ def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
 
 
 def test_explorer_initial_discovery_has_no_pre_login_permission_choice() -> None:
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = read_explorer_source()
     initial_discovery = source[
         source.index("(async () => {", source.index("selectTab(false, false);")) :
     ]
@@ -1774,7 +1792,7 @@ def test_explorer_initial_discovery_has_no_pre_login_permission_choice() -> None
 
 
 def test_explorer_login_failure_remains_visible_after_connection_render() -> None:
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = read_explorer_source()
     login_handler = source[
         source.index("elements.connect.addEventListener('click'") : source.index(
             "elements.disconnect.addEventListener('click'"
@@ -1786,9 +1804,15 @@ def test_explorer_login_failure_remains_visible_after_connection_render() -> Non
         )
     ]
 
-    assert failure_handler.index("renderAll();") < failure_handler.index(
+    assert failure_handler.index(
         "showConnectionError(error, label('error'));"
+    ) < failure_handler.index("renderAll();")
+    connection = (
+        VIEWS_SCRIPT.read_text(encoding="utf-8")
+        .split("function renderConnection()", 1)[1]
+        .split("function renderTools()", 1)[0]
     )
+    assert "setStatus(" not in connection
 
 
 def test_session_refresh_preserves_pending_loxberry_approval_action() -> None:
@@ -1833,12 +1857,12 @@ def test_explorer_uses_csp_compatible_panel_free_loxberry_header() -> None:
 
 
 def test_explorer_transcript_never_records_authorization_headers() -> None:
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = read_explorer_source()
     add_transcript = source[
         source.index("function addTranscript") : source.index("async function mcpRequest")
     ]
     request_section = source[
-        source.index("async function mcpRequest") : source.index("async function initializeMcp")
+        source.index("async function mcpRequest") : source.index("async function listTools")
     ]
 
     assert "headers" not in add_transcript

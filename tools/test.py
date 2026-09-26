@@ -93,9 +93,9 @@ _TEST_GROUPS: Final = (
             "webfrontend/htmlauth/explorer.cgi",
             "webfrontend/htmlauth/explorer_callback.cgi",
             "webfrontend/htmlauth/explorer.js",
-            "webfrontend/htmlauth/explorer-adapters.js",
+            "webfrontend/htmlauth/explorer-*.js",
         ),
-        ("tests/test_explorer_ui.py", "tests/test_oauth.py"),
+        ("tests/test_explorer_ui.py", "tests/test_explorer_modules.py", "tests/test_oauth.py"),
     ),
     (
         ("config/default-config.json", "src/mcpserver/config.py"),
