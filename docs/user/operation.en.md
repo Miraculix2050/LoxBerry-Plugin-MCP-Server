@@ -40,9 +40,16 @@ are available under **Technical MCP metadata**.
 The summary also lists required OAuth scopes for known tools. The scopes actually
 granted to this session remain visible in the connection card. Long tool
 descriptions can be expanded from the compact summary.
+**Selected tool** and **Result** can be collapsed and reopen when a relevant
+selection or new result needs them. For history results, **Arguments used** have
+their own disclosure.
 Results and history entries appear as an expandable tree. Large branches show
 100 entries at a time; **Show more** loads the next batch. The disclosure arrow
 opens a branch, while the separate value button reuses its unchanged value and path.
+Objects in arrays show a short name, type, identifier, or relationship endpoints
+when available. Time fields are the final fallback when nothing more descriptive
+is present. `null` appears as `-` in the tree; copying and transferring retain
+the original value.
 The complete response remains available under **JSON** and through **Copy JSON**.
 Call history shows a local timestamp, duration, outcome and a short redacted
 argument summary where the tool schema permits one. Selecting an entry still

@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-protocol-meta-v1">
+<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-collapsible-v1">
 
 <main id="mcp-explorer" class="mcp-explorer mcp-explorer-stack"
   data-ready="<TMPL_VAR EXPLORER.READY ESCAPE=HTML>"
@@ -149,41 +149,49 @@
     </aside>
 
     <div class="mcp-explorer-workspace">
-      <section id="explorer-request" class="mcp-explorer-card mcp-explorer-stack" aria-labelledby="arguments-title" tabindex="-1">
-        <div id="explorer-tool-summary"><p class="mcp-explorer-muted"><TMPL_VAR EXPLORER.NO_TOOLS></p></div>
-        <h2 id="arguments-title"><TMPL_VAR EXPLORER.ARGUMENTS></h2>
-        <div class="mcp-explorer-tabs" role="tablist">
-          <button id="explorer-form-tab" type="button" role="tab" aria-selected="true" aria-controls="explorer-form-panel"><TMPL_VAR EXPLORER.FORM></button>
-          <button id="explorer-json-tab" type="button" role="tab" aria-selected="false" aria-controls="explorer-json-panel"><TMPL_VAR EXPLORER.JSON></button>
+      <details id="explorer-request" class="mcp-explorer-card" tabindex="-1" open>
+        <summary><h2 id="request-title"><TMPL_VAR EXPLORER.SELECTED_TOOL></h2> <span id="explorer-request-selection" class="mcp-explorer-panel-selection" hidden></span></summary>
+        <div class="mcp-explorer-panel-content mcp-explorer-stack">
+          <div id="explorer-tool-summary"><p class="mcp-explorer-muted"><TMPL_VAR EXPLORER.NO_TOOLS></p></div>
+          <h2 id="arguments-title"><TMPL_VAR EXPLORER.ARGUMENTS></h2>
+          <div class="mcp-explorer-tabs" role="tablist">
+            <button id="explorer-form-tab" type="button" role="tab" aria-selected="true" aria-controls="explorer-form-panel"><TMPL_VAR EXPLORER.FORM></button>
+            <button id="explorer-json-tab" type="button" role="tab" aria-selected="false" aria-controls="explorer-json-panel"><TMPL_VAR EXPLORER.JSON></button>
+          </div>
+          <div id="explorer-form-panel" role="tabpanel" aria-labelledby="explorer-form-tab">
+            <div id="explorer-form" class="mcp-explorer-stack"></div>
+            <p id="explorer-schema-warning" class="mcp-explorer-warning" hidden><TMPL_VAR EXPLORER.UNSUPPORTED_SCHEMA></p>
+          </div>
+          <div id="explorer-json-panel" role="tabpanel" aria-labelledby="explorer-json-tab" hidden>
+            <label for="explorer-json" class="mcp-explorer-muted"><TMPL_VAR EXPLORER.JSON></label>
+            <textarea id="explorer-json" class="mcp-explorer-json" spellcheck="false">{}</textarea>
+          </div>
+          <div class="mcp-explorer-actions">
+            <button id="explorer-run" class="lb-button" type="button" disabled><TMPL_VAR EXPLORER.RUN></button>
+            <button id="explorer-reset-draft" class="lb-button" type="button" disabled><TMPL_VAR EXPLORER.RESET_DRAFT></button>
+          </div>
+          <div id="explorer-call-feedback" class="mcp-explorer-status" role="status" aria-live="polite" hidden></div>
+          <div id="explorer-validation" class="mcp-explorer-status" role="alert" data-kind="error" hidden></div>
         </div>
-        <div id="explorer-form-panel" role="tabpanel" aria-labelledby="explorer-form-tab">
-          <div id="explorer-form" class="mcp-explorer-stack"></div>
-          <p id="explorer-schema-warning" class="mcp-explorer-warning" hidden><TMPL_VAR EXPLORER.UNSUPPORTED_SCHEMA></p>
-        </div>
-        <div id="explorer-json-panel" role="tabpanel" aria-labelledby="explorer-json-tab" hidden>
-          <label for="explorer-json" class="mcp-explorer-muted"><TMPL_VAR EXPLORER.JSON></label>
-          <textarea id="explorer-json" class="mcp-explorer-json" spellcheck="false">{}</textarea>
-        </div>
-        <div class="mcp-explorer-actions">
-          <button id="explorer-run" class="lb-button" type="button" disabled><TMPL_VAR EXPLORER.RUN></button>
-          <button id="explorer-reset-draft" class="lb-button" type="button" disabled><TMPL_VAR EXPLORER.RESET_DRAFT></button>
-        </div>
-        <div id="explorer-call-feedback" class="mcp-explorer-status" role="status" aria-live="polite" hidden></div>
-        <div id="explorer-validation" class="mcp-explorer-status" role="alert" data-kind="error" hidden></div>
-      </section>
+      </details>
 
-      <section id="explorer-result" class="mcp-explorer-card mcp-explorer-stack" aria-labelledby="result-title" tabindex="-1">
-        <h2 id="result-title"><TMPL_VAR EXPLORER.RESULT></h2>
-        <div class="mcp-explorer-actions">
-          <button id="explorer-copy" class="lb-button" type="button" disabled><TMPL_VAR EXPLORER.COPY_JSON></button>
-          <button id="explorer-next-page" class="lb-button" type="button" hidden disabled><TMPL_VAR EXPLORER.NEXT_PAGE></button>
-          <button id="explorer-restore-history" class="lb-button" type="button" hidden><TMPL_VAR EXPLORER.RESTORE_HISTORY></button>
+      <details id="explorer-result" class="mcp-explorer-card" tabindex="-1" open>
+        <summary><h2 id="result-title"><TMPL_VAR EXPLORER.RESULT></h2></summary>
+        <div class="mcp-explorer-panel-content mcp-explorer-stack">
+          <div class="mcp-explorer-actions">
+            <button id="explorer-copy" class="lb-button" type="button" disabled><TMPL_VAR EXPLORER.COPY_JSON></button>
+            <button id="explorer-next-page" class="lb-button" type="button" hidden disabled><TMPL_VAR EXPLORER.NEXT_PAGE></button>
+            <button id="explorer-restore-history" class="lb-button" type="button" hidden><TMPL_VAR EXPLORER.RESTORE_HISTORY></button>
+          </div>
+          <p id="explorer-result-context" class="mcp-explorer-muted" hidden></p>
+          <details id="explorer-history-arguments" hidden>
+            <summary><TMPL_VAR EXPLORER.HISTORY_ARGUMENTS></summary>
+            <pre id="explorer-history-arguments-value" class="mcp-explorer-pre"></pre>
+          </details>
+          <div id="explorer-result-tree" class="mcp-explorer-tree"><p class="mcp-explorer-muted"><TMPL_VAR EXPLORER.EMPTY_RESULT></p></div>
+          <details id="explorer-raw-details"><summary><TMPL_VAR EXPLORER.JSON></summary><pre id="explorer-result-raw" class="mcp-explorer-pre">{}</pre></details>
         </div>
-        <p id="explorer-result-context" class="mcp-explorer-muted" hidden></p>
-        <div id="explorer-history-arguments" class="mcp-explorer-stack" hidden></div>
-        <div id="explorer-result-tree" class="mcp-explorer-tree"><p class="mcp-explorer-muted"><TMPL_VAR EXPLORER.EMPTY_RESULT></p></div>
-        <details id="explorer-raw-details"><summary><TMPL_VAR EXPLORER.JSON></summary><pre id="explorer-result-raw" class="mcp-explorer-pre">{}</pre></details>
-      </section>
+      </details>
       <details id="explorer-transcript-details" class="mcp-explorer-card mcp-explorer-protocol"><summary><TMPL_VAR EXPLORER.TRANSCRIPT></summary><div id="explorer-transcript" class="mcp-explorer-panel-content"></div></details>
     </div>
   </div>
@@ -218,4 +226,4 @@
 </dialog>
 
 <script src="explorer-adapters.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-registry-v1"></script>
-<script src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-registry-v2"></script>
+<script src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-collapsible-v1"></script>

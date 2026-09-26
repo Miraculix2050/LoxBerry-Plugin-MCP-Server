@@ -48,6 +48,13 @@ def test_explorer_uses_one_compact_mobile_tool_panel_and_adaptive_workspace() ->
     assert template.count('id="explorer-history"') == 1
     assert '<details id="explorer-tools-panel" class="mcp-explorer-card" open>' in template
     assert '<details id="explorer-history-panel" class="mcp-explorer-card" open>' in template
+    assert (
+        '<details id="explorer-request" class="mcp-explorer-card" tabindex="-1" open>' in template
+    )
+    assert '<details id="explorer-result" class="mcp-explorer-card" tabindex="-1" open>' in template
+    assert '<summary><h2 id="request-title"><TMPL_VAR EXPLORER.SELECTED_TOOL></h2>' in template
+    assert '<summary><h2 id="result-title"><TMPL_VAR EXPLORER.RESULT></h2></summary>' in template
+    assert '<details id="explorer-history-arguments" hidden>' in template
     assert 'class="mcp-explorer-panel-label"' in template
     assert 'id="explorer-request"' in template
     assert 'id="explorer-result"' in template
@@ -92,6 +99,34 @@ def test_tool_badges_are_localized_through_the_explorer_template() -> None:
     assert "text: 'write'" not in render_tools
 
 
+def test_request_result_and_history_arguments_reopen_on_relevant_actions() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
+    german = (ROOT / "templates/lang/language_de.ini").read_text(encoding="utf-8")
+    english = (ROOT / "templates/lang/language_en.ini").read_text(encoding="utf-8")
+    select_tool = source[
+        source.index("function selectTool(") : source.index("function setDraftField(")
+    ]
+    render_result = source[
+        source.index("function renderResult(") : source.index("function transcriptEntry(")
+    ]
+
+    assert "SELECTED_TOOL=Ausgewähltes Tool" in german
+    assert "SELECTED_TOOL=Selected tool" in english
+    assert 'id="explorer-request-selection"' in template
+    assert 'id="explorer-history-arguments-value"' in template
+    assert "if (state.selectedTool) elements.request.open = true" in select_tool
+    assert "elements.result.open = true" in render_result
+    assert "elements.historyArguments.open = false" in render_result
+    assert "elements.historyArgumentsValue.textContent = ''" in render_result
+    assert (
+        "elements.result.open = true"
+        in source[
+            source.index("function revealResult()") : source.index("function syncResponsivePanels")
+        ]
+    )
+
+
 def test_tool_metadata_labels_are_localized_and_inspectable() -> None:
     german = (ROOT / "templates" / "lang" / "language_de.ini").read_text(encoding="utf-8")
     english = (ROOT / "templates" / "lang" / "language_en.ini").read_text(encoding="utf-8")
@@ -129,7 +164,9 @@ def run_core(expression: str) -> object:
     program = (
         f"const core=require({json.dumps(str(SCRIPT))}); console.log(JSON.stringify({expression}));"
     )
-    result = subprocess.run([node, "-e", program], check=True, capture_output=True, text=True)
+    result = subprocess.run(
+        [node, "-e", program], check=True, capture_output=True, text=True, encoding="utf-8"
+    )
     return json.loads(result.stdout)
 
 
@@ -254,6 +291,124 @@ def test_result_inspector_empty_scalar_and_error_values() -> None:
     assert result[1]["text"] == ["[0]"]
     assert result[2]["text"] == ["{0}"]
     assert result[3]["items"] >= 2
+
+
+def test_result_inspector_array_object_preview_and_null_display() -> None:
+    result = run_inspector("""
+      const tree = inspect({items:[
+        {name:'  Kitchen  ',type:'Switch',uuid:'a'},
+        {name:' ',title:'Overview',type:'Page'},
+        {label:'Etage'}, {type:'Light'}, {id:0}, {uuid:'abc',timestamp:1727300000},
+        {name:null,other:1}, null, 'plain',
+        {weather_type_text:'Clear',type:'Weather'},
+        {block_type:'AutoJalousie'},
+        {component:'WeatherServer'},
+        {code:'Weather.1'},
+        {timestamp:1727300000},
+        {name:'X'.repeat(90)}
+      ], ordinary:{name:'No preview'}, missing:null});
+      const items = walk(tree).find(node => node.tag === 'button' &&
+        node.textContent.includes('items [15]'));
+      items.click();
+      const captions = walk(tree).filter(node => node.className ===
+        'mcp-explorer-tree-toggle').map(node => node.textContent);
+      const values = walk(tree).filter(node => node.className ===
+        'mcp-explorer-value').map(node => node.textContent);
+      walk(tree).find(node => node.className === 'mcp-explorer-value' &&
+        node.textContent === '7: -').click();
+      return {captions,values,transfers};
+    """)
+    assert any(text.endswith('0 {3} "Kitchen"') for text in result["captions"])
+    assert any(text.endswith('1 {3} "Overview"') for text in result["captions"])
+    assert any(text.endswith('2 {1} "Etage"') for text in result["captions"])
+    assert any(text.endswith('3 {1} "Light"') for text in result["captions"])
+    assert any(text.endswith("4 {1} 0") for text in result["captions"])
+    assert any(text.endswith('5 {2} "abc"') for text in result["captions"])
+    assert any(text.endswith("6 {2}") for text in result["captions"])
+    assert any(text.endswith("ordinary {1}") for text in result["captions"])
+    assert any(text.endswith('9 {2} "Clear"') for text in result["captions"])
+    assert any(text.endswith('10 {1} "AutoJalousie"') for text in result["captions"])
+    assert any(text.endswith('11 {1} "WeatherServer"') for text in result["captions"])
+    assert any(text.endswith('12 {1} "Weather.1"') for text in result["captions"])
+    assert any(text.endswith("13 {1} 1727300000") for text in result["captions"])
+    assert any('14 {1} "' + "X" * 80 in text for text in result["captions"])
+    assert "7: -" in result["values"]
+    assert '8: "plain"' in result["values"]
+    assert "missing: -" in result["values"]
+    assert result["transfers"] == [{"selected": None, "path": ["items", 7]}]
+
+
+def test_result_inspector_previews_nested_names_and_relationship_arrays() -> None:
+    captions = run_inspector("""
+      const tree = inspect({items:[
+        {control:{name:'Boiler'},state:{value:1}},
+        {control_name:'Heating',control_uuid:'a'},
+        {state_name:'Temperature',state_uuid:'b'},
+        {model_source_id:'source-1'},
+        {finding_type:'datatype_conflict',finding_id:'finding-1'},
+        {strategy:'record_on_change'},
+        {source:'node-a',target:'node-b',kind:'signal'},
+        {source_project_node_id:'node-c',target_project_node_id:'node-d',classification:'knx_to_loxone'},
+        {observed_at:'2026-09-25T12:00:00Z'},
+        {state_uuid:'state-1'},
+        {interpretation:'rising_edge'},
+        {classification:'knx_to_loxone'},
+        {kind:'reference'},
+        {at:'2026-09-26T12:00:00Z'},
+        {what:'SwitchOn',timestamp:'2026-09-26T12:01:00Z'}
+      ]});
+      walk(tree).find(node => node.tag === 'button' &&
+        node.textContent.includes('items [15]')).click();
+      return walk(tree).filter(node => node.className ===
+        'mcp-explorer-tree-toggle').map(node => node.textContent);
+    """)
+    expected = [
+        '0 {2} "Boiler"',
+        '1 {2} "Heating"',
+        '2 {2} "Temperature"',
+        '3 {1} "source-1"',
+        '4 {2} "datatype_conflict"',
+        '5 {1} "record_on_change"',
+        '6 {3} "node-a → node-b"',
+        '7 {3} "node-c → node-d"',
+        '8 {1} "2026-09-25T12:00:00Z"',
+        '9 {1} "state-1"',
+        '10 {1} "rising_edge"',
+        '11 {1} "knx_to_loxone"',
+        '12 {1} "reference"',
+        '13 {1} "2026-09-26T12:00:00Z"',
+        '14 {2} "SwitchOn"',
+    ]
+    for label in expected:
+        assert any(caption.endswith(label) for caption in captions)
+
+
+def test_result_inspector_bounds_whitespace_scans_and_skips_later_candidates() -> None:
+    result = run_inspector("""
+      const huge = ' '.repeat(100000);
+      const original = String.prototype[Symbol.iterator];
+      let inspected = 0;
+      String.prototype[Symbol.iterator] = function () {
+        const iterator = original.call(this);
+        if (this.valueOf() !== huge) return iterator;
+        return {next() { inspected += 1; return iterator.next(); },
+          [Symbol.iterator]() { return this; }};
+      };
+      try {
+        const named = {name:'Primary',target:'node-b'};
+        Object.defineProperty(named,'source',{
+          enumerable:true,get() { throw new Error('later candidate was read'); }
+        });
+        const tree = inspect({items:[{name:huge,type:'Fallback'},named]});
+        walk(tree).find(node => node.tag === 'button' &&
+          node.textContent.includes('items [2]')).click();
+        return {inspected,captions:walk(tree).filter(node => node.className ===
+          'mcp-explorer-tree-toggle').map(node => node.textContent)};
+      } finally { String.prototype[Symbol.iterator] = original; }
+    """)
+    assert result["inspected"] <= 400
+    assert any(text.endswith('0 {2} "Fallback"') for text in result["captions"])
+    assert any(text.endswith('1 {3} "Primary"') for text in result["captions"])
 
 
 def test_result_inspector_uses_the_same_history_path_and_lazy_complete_json() -> None:
@@ -657,7 +812,7 @@ def test_explorer_discovery_controls_preserve_selection_and_drafts() -> None:
     assert 'id="explorer-tool-filter-count"' in template
     assert "core.filteredToolGroups(state.tools, state.toolSearch, state.toolGroups)" in source
     assert 'src="explorer-adapters.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-registry-v1"' in template
-    assert 'src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-registry-v2"' in template
+    assert 'src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-collapsible-v1"' in template
     assert "label('noMatchingTools')" in source
     assert "label('noTools')" in source
     assert "state.toolSearch = elements.toolSearch.value" in handlers
@@ -1163,7 +1318,8 @@ def test_explorer_session_clear_removes_sensitive_dom_content() -> None:
         confirmArguments:text(),confirm:dialog(),transferSource:text(),
         transferContext:text(),transferTool:list(),transferField:list(),
         transferEmpty:{hidden:true},transferApply:{disabled:false},transfer:dialog(),
-        resultContext:text(),historyArguments:list(),restoreHistory:{hidden:false},
+        resultContext:text(),historyArguments:{hidden:false,open:true},
+        historyArgumentsValue:text(),restoreHistory:{hidden:false},
         resultTree:list(),resultRaw:text(),rawDetails:{open:true},
         validation:text(),callFeedback:text()};
       core.clearSensitiveDom(elements);
@@ -1179,8 +1335,9 @@ def test_explorer_session_clear_removes_sensitive_dom_content() -> None:
         transferApply:elements.transferApply.disabled,transferOpen:elements.transfer.open,
         resultContext:elements.resultContext.textContent,
         resultContextHidden:elements.resultContext.hidden,
-        historyArguments:elements.historyArguments.children,
+        historyArguments:elements.historyArgumentsValue.textContent,
         historyArgumentsHidden:elements.historyArguments.hidden,
+        historyArgumentsOpen:elements.historyArguments.open,
         restoreHistory:elements.restoreHistory.hidden,
         resultTree:elements.resultTree.children,
         resultRaw:elements.resultRaw.textContent,
@@ -1206,8 +1363,9 @@ def test_explorer_session_clear_removes_sensitive_dom_content() -> None:
         "transferOpen": False,
         "resultContext": "",
         "resultContextHidden": True,
-        "historyArguments": [],
+        "historyArguments": "",
         "historyArgumentsHidden": True,
+        "historyArgumentsOpen": False,
         "restoreHistory": True,
         "resultTree": [],
         "resultRaw": "",
@@ -1521,9 +1679,9 @@ def test_explorer_history_and_call_feedback_are_separate_from_connection() -> No
     assert template.index('id="explorer-result"') < template.index(
         'id="explorer-transcript-details"'
     )
-    assert template.index("</section>", template.index('id="explorer-result"')) < template.index(
-        'id="explorer-transcript-details"'
-    )
+    assert template.index(
+        "</details>", template.index('id="explorer-raw-details"')
+    ) < template.index('id="explorer-transcript-details"')
     assert "TRANSCRIPT=MCP protocol / debug" in (ROOT / "templates/lang/language_en.ini").read_text(
         encoding="utf-8"
     )

@@ -16,6 +16,7 @@ details.mcp-explorer-card[open] > summary { border-bottom: 1px solid #d7dadd; }
 .mcp-explorer-panel-content { min-width: 0; padding: 1rem; }
 .mcp-explorer-header-links { margin: 0; }
 #explorer-connection-panel > summary h1 { display: inline; margin: 0; font: inherit; }
+#explorer-request > summary h2, #explorer-result > summary h2 { display: inline; margin: 0; font: inherit; }
 #explorer-connection-panel > summary { padding: .8rem 1rem; font-size: 1.15rem; }
 #explorer-connection-panel > .mcp-explorer-panel-content { gap: .7rem; padding: .85rem 1rem; }
 #explorer-connection-panel > .mcp-explorer-panel-content > p { margin: .2rem 0; }
@@ -99,7 +100,11 @@ details.mcp-explorer-card[open] > summary { border-bottom: 1px solid #d7dadd; }
 .mcp-explorer-technical > summary { cursor: pointer; }
 .mcp-explorer-technical > .mcp-explorer-hint-notice { margin: .5rem 0 0; }
 .mcp-explorer-technical > .mcp-explorer-pre { margin: .5rem 0 0; }
-#explorer-request { gap: .75rem; }
+#explorer-request > .mcp-explorer-panel-content { gap: .75rem; }
+#explorer-result > .mcp-explorer-panel-content { gap: .5rem; }
+#explorer-result-context { margin: 0; }
+#explorer-history-arguments > summary { cursor: pointer; font-weight: 600; }
+#explorer-history-arguments > .mcp-explorer-pre { margin: .4rem 0 0; }
 #explorer-tool-summary { display: grid; gap: .5rem; min-width: 0; }
 #explorer-tool-summary > h2 { margin: 0; font-size: 1.25rem; line-height: 1.3; }
 #explorer-tool-summary > p { margin: 0; }

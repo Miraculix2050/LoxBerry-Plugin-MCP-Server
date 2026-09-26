@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Make the Tool Explorer's selected-tool and result cards collapsible, with history
+  arguments in a separate disclosure. Label array objects using available names,
+  descriptions, identifiers, or relationship endpoints; use timestamps only as a
+  final fallback and show null as `-` in the result tree.
+
 - Keep Tool Explorer-specific presentation hints and workflows in a static registry.
   Unknown tools appear under Other tools and remain callable from their MCP schemas.
 
