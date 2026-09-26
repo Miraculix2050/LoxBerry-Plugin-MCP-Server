@@ -234,14 +234,7 @@ class EventHistoryStore:
                     "newest_event_at REAL NOT NULL, "
                     "PRIMARY KEY(control_uuid, state_uuid))"
                 )
-                connection.execute(
-                    "CREATE TABLE IF NOT EXISTS history_metadata ("
-                    "id INTEGER PRIMARY KEY CHECK (id = 1), "
-                    "clear_generation INTEGER NOT NULL)"
-                )
-                connection.execute(
-                    "INSERT OR IGNORE INTO history_metadata(id, clear_generation) VALUES (1, 0)"
-                )
+                self._ensure_history_metadata(connection)
                 if version < 3:
                     self._refresh_summaries(connection)
                 # A process that did not reach ``end_coverage`` must not make a
@@ -270,6 +263,36 @@ class EventHistoryStore:
             raise EventHistoryUnavailable(
                 "local event history permissions are unavailable"
             ) from exc
+
+    @staticmethod
+    def _ensure_history_metadata(connection: sqlite3.Connection) -> None:
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS history_metadata ("
+            "id INTEGER PRIMARY KEY CHECK (id = 1), "
+            "clear_generation INTEGER NOT NULL)"
+        )
+        connection.execute(
+            "INSERT OR IGNORE INTO history_metadata(id, clear_generation) VALUES (1, 0)"
+        )
+
+    def _migrate_v3_snapshot(self) -> None:
+        """Upgrade the clear marker without starting recorder maintenance."""
+        with self._lock, self._opened() as connection:
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                version = connection.execute("PRAGMA user_version").fetchone()[0]
+                if version == 3:
+                    self._ensure_history_metadata(connection)
+                    connection.execute("PRAGMA user_version = 4")
+                elif version != _SCHEMA_VERSION:
+                    raise EventHistoryUnavailable("local event history needs migration")
+                connection.execute("COMMIT")
+            except (EventHistoryUnavailable, sqlite3.Error) as exc:
+                if connection.in_transaction:
+                    connection.execute("ROLLBACK")
+                if isinstance(exc, EventHistoryUnavailable):
+                    raise
+                raise EventHistoryUnavailable("local event history is unavailable") from exc
 
     def begin_coverage(self, sources: tuple[tuple[str, str], ...], *, started_at: float) -> None:
         if not sources:
@@ -397,7 +420,13 @@ class EventHistoryStore:
                 sqlite3.connect(self.path.as_uri() + "?mode=ro", uri=True, timeout=2)
             ) as db:
                 db.execute("BEGIN")
-                if db.execute("PRAGMA user_version").fetchone()[0] != _SCHEMA_VERSION:
+                version = db.execute("PRAGMA user_version").fetchone()[0]
+                if version == 3:
+                    db.execute("ROLLBACK")
+                    self._migrate_v3_snapshot()
+                    db.execute("BEGIN")
+                    version = db.execute("PRAGMA user_version").fetchone()[0]
+                if version != _SCHEMA_VERSION:
                     raise EventHistoryUnavailable("local event history needs migration")
                 totals = {
                     (row[0], row[1]): row[2:]

@@ -139,7 +139,8 @@ def test_v3_migration_preserves_events_and_adds_clear_generation(tmp_path, monke
         db.execute("DROP TABLE history_metadata")
         db.execute("PRAGMA user_version=3")
 
-    history.initialize()
+    revision = admin.dispatch({"action": "event_history_source_revision"})
+    assert revision["availability"] == "available"
     snapshot = history.snapshot((SOURCE,))
     assert snapshot.sources[0].event_count == 1
     assert snapshot.clear_generation == 0

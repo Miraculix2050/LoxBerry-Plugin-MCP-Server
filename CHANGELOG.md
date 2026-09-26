@@ -17,7 +17,8 @@ extracted from the matching version heading.
   visibility afresh on every page. Filter a bounded list by name, UUID, room,
   category, and type; load states on control selection and offer explicit refresh.
   Refresh open tabs after source changes and whole-history deletion without
-  polling the event table.
+  polling the event table. Migrate existing history stores for this change on
+  the first local Admin read even when recording is disabled.
 
 - Make the Tool Explorer's selected-tool and result cards collapsible, with history
   arguments in a separate disclosure. Label array objects using available names,
