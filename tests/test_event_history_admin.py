@@ -205,3 +205,32 @@ def test_state_discovery_can_find_exact_uuid_beyond_first_page(tmp_path, monkeyp
     assert len(initial["states"]) == 100 and initial["more"] is True
     exact = event_history_admin.discover_states({"control_uuid": SOURCE[0], "query": states[-1][1]})
     assert exact == {"states": [{"name": states[-1][0], "uuid": states[-1][1]}], "more": False}
+
+
+@pytest.mark.parametrize("action", ["add", "purge"])
+def test_source_action_rejects_endpoint_changed_during_visibility_check(
+    tmp_path, monkeypatch, action
+):
+    config_store, history = _setup(tmp_path, monkeypatch)
+    history.initialize()
+    if action == "purge":
+        history.record_transition(*SOURCE, observed_at=time.time(), old_value=0, new_value=1)
+    visible = event_history_admin._controls(config_store.load())
+
+    def change_endpoint(_config):
+        config_store.save(replace(config_store.load(), loxone_endpoint="https://other.example"))
+        return visible
+
+    monkeypatch.setattr(event_history_admin, "_controls", change_endpoint)
+    key = {"control_uuid": SOURCE[0], "state_uuid": SOURCE[1], "confirm": True}
+
+    with pytest.raises(admin.AdminError) as stale:
+        if action == "add":
+            event_history_admin.change_source(key, add=True)
+        else:
+            event_history_admin.purge_source(key)
+
+    assert stale.value.code == "stale_configuration"
+    assert config_store.load().event_history_sources == ()
+    if action == "purge":
+        assert history.snapshot(()).sources[0].event_count == 1

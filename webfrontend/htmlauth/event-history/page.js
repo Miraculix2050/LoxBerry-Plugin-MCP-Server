@@ -23,6 +23,7 @@
     feature_disabled: label('errorDisabled'),
     confirmation_required: label('errorConfirmation'),
     apply_failed: label('errorApply'),
+    stale_configuration: label('errorStaleConfiguration'),
     rate_limited: label('sourceLimit'),
   })[error?.code] || label('error');
   const setMessage = (value, kind = 'info') => {
@@ -187,7 +188,7 @@
     let feedback = label('saved');
     let feedbackKind = 'success';
     try {
-      const result = await api.request(action, fields, 90000);
+      const result = await api.request(action, fields, 240000);
       if (result.changed === false) feedback = label('unchanged');
     } catch (error) {
       feedback = errorLabel(error);

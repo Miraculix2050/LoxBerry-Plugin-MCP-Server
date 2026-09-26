@@ -85,6 +85,17 @@ def _confirmed(payload: object) -> None:
         raise bridge.AdminError("explicit confirmation is required", code="confirmation_required")
 
 
+def _require_same_visibility_context(checked: PluginConfig, current: PluginConfig) -> None:
+    """Reject a write if discovery no longer describes the configured Miniserver."""
+    if (checked.loxone_endpoint, checked.connection_timeout) != (
+        current.loxone_endpoint,
+        current.connection_timeout,
+    ):
+        raise _bridge().AdminError(
+            "Miniserver configuration changed; search again", code="stale_configuration"
+        )
+
+
 def _apply(change: Callable[[PluginConfig], PluginConfig]) -> tuple[PluginConfig, bool]:
     """Persist one field-limited change and restore the previous running config on failure."""
     bridge = _bridge()
@@ -303,6 +314,7 @@ def change_source(payload: object, *, add: bool) -> dict[str, Any]:
         _confirmed(payload)
 
     def change(current: PluginConfig) -> PluginConfig:
+        _require_same_visibility_context(config, current)
         if add and not current.event_history_enabled:
             raise bridge.AdminError("local event history is disabled", code="feature_disabled")
         sources = current.event_history_sources
@@ -338,6 +350,7 @@ def purge_source(payload: object) -> dict[str, Any]:
         raise bridge.AdminError("source is not currently visible", code="not_found")
 
     def operation(current: PluginConfig, _save: Any) -> tuple[int, int]:
+        _require_same_visibility_context(config, current)
         if key in current.event_history_sources:
             raise bridge.AdminError("stop recording before deleting a source")
         return _store(current).purge_source(*key)

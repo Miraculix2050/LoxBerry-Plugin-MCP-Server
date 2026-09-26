@@ -37,6 +37,10 @@ class EventHistoryUnavailable(RuntimeError):
     """The optional local history store cannot safely answer a request."""
 
 
+class _UnsupportedEventValue(EventHistoryUnavailable):
+    """A configured state emitted a value the local history cannot store."""
+
+
 class _LoxBerryCredentials(Protocol):
     async def _credentials(self) -> tuple[str, str]: ...
 
@@ -811,8 +815,7 @@ class EventHistoryMonitor:
                         try:
                             value = _value(event.value)
                         except ValueError as exc:
-                            self._set_status("unavailable", "unsupported_value")
-                            raise EventHistoryUnavailable(
+                            raise _UnsupportedEventValue(
                                 "configured state does not produce a supported scalar value"
                             ) from exc
                         if not coverage_active:
@@ -839,16 +842,22 @@ class EventHistoryMonitor:
                                 new_value=value,
                             )
                         except ValueError as exc:
-                            raise EventHistoryUnavailable(
+                            raise _UnsupportedEventValue(
                                 "configured state does not produce a supported scalar value"
                             ) from exc
                         baselines[event.uuid] = value
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                self._set_status("unavailable", "subscription_unavailable")
+                reason = (
+                    "unsupported_value"
+                    if isinstance(exc, _UnsupportedEventValue)
+                    else "subscription_unavailable"
+                )
+                self._set_status("unavailable", reason)
                 _LOGGER.warning(
-                    "component=event_history outcome=subscription_unavailable error_type=%s",
+                    "component=event_history outcome=%s error_type=%s",
+                    reason,
                     type(exc).__name__,
                 )
                 if coverage_active:
