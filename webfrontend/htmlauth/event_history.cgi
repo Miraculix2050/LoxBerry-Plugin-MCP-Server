@@ -7,12 +7,14 @@ use HTML::Template;
 use IPC::Open3;
 use JSON::PP qw(encode_json decode_json);
 use Symbol qw(gensym);
+use Time::HiRes qw(clock_gettime CLOCK_MONOTONIC);
 use LoxBerry::System;
 use LoxBerry::Web;
 use LoxBerry::Log;
 
 my $cgi = CGI->new;
 my $q = $cgi->Vars;
+my $request_id = sprintf('%x-%x', $$, int(clock_gettime(CLOCK_MONOTONIC) * 1_000_000));
 if (($q->{lang} // '') =~ /\A(?:de|en)\z/) {
     $LoxBerry::System::lang = $q->{lang};
     $LoxBerry::Web::lang = $q->{lang};
@@ -97,12 +99,16 @@ if (($q->{action} // '') ne '') {
         $payload = {confirm => ($q->{confirm} // '') eq '1'
             ? JSON::PP::true : JSON::PP::false};
     }
+    my $started = clock_gettime(CLOCK_MONOTONIC);
     my $result = admin_call($action, $payload);
     if ($action =~ /\A(?:event_history_(?:save_policy|add_source|remove_source|purge_source)|clear_event_history)\z/) {
         my $log = LoxBerry::Log->new(name => 'admin-ui', package => $lbpplugindir,
             addtime => 1);
-        $log->INF('component=event_history_admin action=' . $action . ' outcome='
-            . ($result->{ok} ? 'completed' : 'rejected')) if $log;
+        $log->INF(sprintf(
+            'component=event_history_admin request_id=%s action=%s outcome=%s duration_ms=%.1f',
+            $request_id, $action, ($result->{ok} ? 'completed' : 'rejected'),
+            (clock_gettime(CLOCK_MONOTONIC) - $started) * 1000,
+        )) if $log;
     }
     reply($result, $result->{ok} ? 200 : 400);
 }

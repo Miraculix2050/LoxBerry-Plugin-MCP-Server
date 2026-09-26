@@ -410,6 +410,45 @@ async def test_monitor_records_updates_following_the_initial_baseline_in_one_bat
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "expected_reason"),
+    [
+        ("local event history is unavailable", "store_unavailable"),
+        ("local event history size limit cannot be enforced", "size_enforcement_failed"),
+    ],
+)
+async def test_monitor_reports_storage_failure_during_run(
+    monkeypatch: pytest.MonkeyPatch, message: str, expected_reason: str
+) -> None:
+    backoff_started = asyncio.Event()
+
+    class Store:
+        def initialize(self) -> None:
+            raise EventHistoryUnavailable(message)
+
+    class Credentials:
+        async def _credentials(self) -> tuple[str, str]:
+            pytest.fail("storage failure must stop before authentication")
+
+    async def backoff(_seconds: float) -> None:
+        backoff_started.set()
+        await asyncio.Future()
+
+    monkeypatch.setattr("mcpserver.loxone.event_history.asyncio.sleep", backoff)
+    monitor = EventHistoryMonitor(
+        PluginConfig(event_history_enabled=True, event_history_sources=(("control", "state"),)),
+        Store(),  # type: ignore[arg-type]
+        Credentials(),
+    )
+    task = asyncio.create_task(monitor._run())
+    await asyncio.wait_for(backoff_started.wait(), 1)
+    assert monitor.runtime_status()["reason"] == expected_reason
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+@pytest.mark.asyncio
 async def test_monitor_preserves_unsupported_value_reason_during_backoff(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

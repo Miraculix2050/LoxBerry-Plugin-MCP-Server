@@ -41,6 +41,10 @@ class _UnsupportedEventValue(EventHistoryUnavailable):
     """A configured state emitted a value the local history cannot store."""
 
 
+def _storage_failure_reason(exc: EventHistoryUnavailable) -> str:
+    return "size_enforcement_failed" if "size limit" in str(exc) else "store_unavailable"
+
+
 class _LoxBerryCredentials(Protocol):
     async def _credentials(self) -> tuple[str, str]: ...
 
@@ -745,7 +749,7 @@ class EventHistoryMonitor:
         except EventHistoryUnavailable as exc:
             self._set_status(
                 "unavailable",
-                "size_enforcement_failed" if "size limit" in str(exc) else "store_unavailable",
+                _storage_failure_reason(exc),
             )
             _LOGGER.warning("component=event_history outcome=store_unavailable")
             return
@@ -849,11 +853,12 @@ class EventHistoryMonitor:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                reason = (
-                    "unsupported_value"
-                    if isinstance(exc, _UnsupportedEventValue)
-                    else "subscription_unavailable"
-                )
+                if isinstance(exc, _UnsupportedEventValue):
+                    reason = "unsupported_value"
+                elif isinstance(exc, EventHistoryUnavailable):
+                    reason = _storage_failure_reason(exc)
+                else:
+                    reason = "subscription_unavailable"
                 self._set_status("unavailable", reason)
                 _LOGGER.warning(
                     "component=event_history outcome=%s error_type=%s",

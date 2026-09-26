@@ -656,6 +656,9 @@ def test_event_history_has_dedicated_bounded_admin_view() -> None:
     assert 'id="history-clear"' in page
     assert "Same-origin POST required" in cgi
     assert "event_history_purge_source" in cgi
+    assert (
+        "component=event_history_admin request_id=%s action=%s outcome=%s duration_ms=%.1f" in cgi
+    )
     assert "window.confirm(label('confirmClear'))" in script
 
 
