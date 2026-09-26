@@ -714,6 +714,57 @@ def test_event_history_selector_is_progressive_and_localized() -> None:
             assert f"{key}=" in translations
 
 
+def test_event_history_mutation_refresh_waits_for_inflight_discovery() -> None:
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = (start, end) => source.slice(source.indexOf(start), source.indexOf(end));
+let finishDiscovery;
+const discovery = new Promise((resolve) => { finishDiscovery = resolve; });
+let calls = 0;
+const messages = [];
+const context = {
+  api: {request: async () => ({changed: true})},
+  refreshButton: {disabled: false},
+  performLoadControls: async () => {
+    calls += 1;
+    if (calls === 1) await discovery;
+  },
+  loadStatus: async () => {},
+  label: (value) => value,
+  errorLabel: () => 'error',
+  setMessage: (value) => messages.push(value),
+};
+vm.runInNewContext(`
+let busy = false;
+let controlsLoadPromise = null;
+${section('  const mutate = async ', '  const facetSelection =')}
+${section('  const loadControls = () => {', '  const checkSourceRevision =')}
+globalThis.subject = {mutate, loadControls};
+`, context);
+(async () => {
+  const first = context.subject.loadControls();
+  const mutation = context.subject.mutate('event_history_save_policy', {});
+  await Promise.resolve();
+  assert.equal(calls, 1);
+  finishDiscovery();
+  await Promise.all([first, mutation]);
+  assert.equal(calls, 2);
+  assert.equal(messages.at(-1), 'saved');
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
 def test_server_rendered_emergency_stop_status_is_terminal_after_discovery() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = _admin_source()

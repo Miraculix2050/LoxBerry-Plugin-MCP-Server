@@ -28,6 +28,7 @@
   let overviewLoaded = false;
   let busy = false;
   let controlsLoading = false;
+  let controlsLoadPromise = null;
   let sourceRevisionChecking = false;
   let knownSourceRevision = '';
   let nextRevisionRefreshAt = 0;
@@ -235,9 +236,10 @@
       feedback = errorLabel(error);
       feedbackKind = 'error';
     } finally {
-      busy = false;
+      if (controlsLoadPromise) await controlsLoadPromise;
       await loadControls();
       await loadStatus();
+      busy = false;
       setMessage(feedback, feedbackKind);
     }
   };
@@ -376,8 +378,7 @@
       renderOptions();
     }
   };
-  const loadControls = async () => {
-    if (controlsLoading) return false;
+  const performLoadControls = async () => {
     controlsLoading = true;
     refreshButton.disabled = true;
     refreshButton.textContent = label('refreshWorking');
@@ -444,6 +445,11 @@
       refreshButton.disabled = false;
       refreshButton.textContent = refreshButtonText;
     }
+  };
+  const loadControls = () => {
+    if (controlsLoadPromise) return controlsLoadPromise;
+    controlsLoadPromise = performLoadControls().finally(() => { controlsLoadPromise = null; });
+    return controlsLoadPromise;
   };
   const checkSourceRevision = async () => {
     if (document.hidden || busy || controlsLoading || sourceRevisionChecking
