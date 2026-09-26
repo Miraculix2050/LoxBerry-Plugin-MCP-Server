@@ -19,6 +19,7 @@ from mcpserver.admin import (
     _allow_loxberry_read,
     _clear_event_history,
     _emergency_stop_runtime_status,
+    _event_history_runtime_status,
     _loxberry_bindings,
     _loxberry_operate_bindings,
     _remote_cleanup_status,
@@ -160,7 +161,7 @@ def test_clear_event_history_stops_the_recorder_before_deleting_its_store(
     monkeypatch.setattr("mcpserver.admin._start_service", lambda: calls.append("start"))
     monkeypatch.setenv("MCPSERVER_EVENT_HISTORY_STORE", str(path))
 
-    result = _clear_event_history()
+    result = _clear_event_history({"confirm": True})
 
     assert calls == ["stop", "start"]
     assert result == {"event_history_entries_removed": 0}
@@ -1133,6 +1134,38 @@ def test_emergency_stop_runtime_status_never_invents_unknown_for_an_invalid_resp
     assert _emergency_stop_runtime_status({"active": False}) == {"availability": "service_inactive"}
 
 
+def test_event_history_runtime_status_accepts_only_bounded_loopback_data(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    payload = {
+        "event_history": {
+            "status": "unavailable",
+            "reason": "subscription_unavailable",
+            "observed_at": 100.0,
+            "capture_started_at": None,
+        }
+    }
+
+    def open_runtime(request: object, *, timeout: float) -> _RuntimeResponse:
+        captured["url"] = request.full_url  # type: ignore[attr-defined]
+        captured["timeout"] = timeout
+        return _RuntimeResponse(json.dumps(payload).encode())
+
+    monkeypatch.setattr("mcpserver.admin._service_active", lambda: True)
+    monkeypatch.setattr("mcpserver.admin.urlopen", open_runtime)
+    assert _event_history_runtime_status() == {
+        "availability": "available",
+        **payload["event_history"],
+    }
+    assert captured == {"url": "http://127.0.0.1:8765/internal/event-history-status", "timeout": 1}
+
+    payload["event_history"]["reason"] = "private_message"
+    assert _event_history_runtime_status() == {"availability": "unavailable"}
+    monkeypatch.setattr("mcpserver.admin._service_active", lambda: False)
+    assert _event_history_runtime_status() == {"availability": "service_inactive"}
+
+
 @pytest.mark.parametrize("command", ["start", "stop", "restart"])
 def test_service_action_uses_only_the_fixed_unit(
     command: str, monkeypatch: pytest.MonkeyPatch
@@ -1362,14 +1395,18 @@ def test_section_saves_are_atomic_and_preserve_the_other_configuration(
     monkeypatch.setattr("mcpserver.admin._service_active", lambda: False)
     monkeypatch.setattr("mcpserver.admin._service_response", lambda: {"service_active": False})
 
-    _save_mcp(
+    saved_mcp = _save_mcp(
         {
             "schema_version": 5,
             "server": {"enabled": False, "public_origin": "https://loxberry.example"},
             "loxone": {"endpoint": "http://192.168.10.20"},
+            "tools": {"loxone_history_enabled": True},
+            "event_history": {"enabled": True},
         }
     )
     after_mcp = store.load()
+    assert saved_mcp["event_history_brief"]["enabled"] is True
+    assert saved_mcp["event_history_brief"]["active_source_count"] == 0
     assert after_mcp.mqtt_enabled is True
     assert after_mcp.mqtt_root_topic == "existing"
 

@@ -176,3 +176,33 @@ details.mcp-explorer-card[open] > summary { border-bottom: 1px solid #d7dadd; }
   #diagnostics .lb-table td:first-child, #diagnostics .lb-table td:last-child { display: none; }
   .mcp-explorer-tabs button { flex: 1; }
 }
+.mcp-event-history { max-width: 92rem; margin: 0 auto; display: grid; gap: 1rem; }
+.mcp-event-history-heading { display: flex; justify-content: space-between; gap: 1rem; align-items: start; }
+.mcp-event-history-heading h1 { margin: .4rem 0; }
+.mcp-event-history-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: .8rem; }
+.mcp-event-history-metrics .mcp-card { display: grid; align-content: start; gap: .4rem; }
+.mcp-event-history-metrics h2 { margin: 0; font-size: 1rem; color: #4b5563; }
+.mcp-event-history-metrics strong { font-size: 1.4rem; overflow-wrap: anywhere; }
+.mcp-event-history-metrics small, .mcp-event-history-subtext { display: block; color: #5f6368; font-size: .85rem; }
+.mcp-event-history .mcp-card > h2 { margin-top: 0; }
+.mcp-event-history-search { display: flex; flex-wrap: wrap; align-items: end; gap: .6rem; }
+.mcp-event-history-search .mcp-field { flex: 1 1 18rem; }
+#history-add-form .mcp-field:has(> :disabled) > span { color: #6b7280; }
+.mcp-event-history-table td { vertical-align: top; overflow-wrap: anywhere; }
+.mcp-event-history-table td > div > span { display: block; }
+.mcp-event-history-table code { font-size: .75rem; }
+.mcp-event-history-uuid { margin-top: .2rem; }
+.mcp-event-history-uuid summary { cursor: pointer; color: #4b5563; font-size: .8rem; }
+.mcp-event-history-badge { display: inline-block; border-radius: 1rem; padding: .2rem .55rem; background: #e5e7eb; }
+.mcp-event-history-badge[data-kind="active"] { color: #086346; background: #d1fae5; }
+.mcp-event-history-badge[data-kind="removed"] { color: #6b4e00; background: #fef3c7; }
+.mcp-event-history-danger { border-left: .3rem solid #b91c1c; }
+.mcp-event-history :focus-visible { outline: 3px solid #1261a0; outline-offset: 2px; }
+@media (max-width: 700px) {
+  .mcp-event-history-heading { flex-direction: column; }
+  .mcp-event-history-table thead { display: none; }
+  .mcp-event-history-table, .mcp-event-history-table tbody, .mcp-event-history-table tr,
+  .mcp-event-history-table td { display: block; width: 100%; box-sizing: border-box; }
+  .mcp-event-history-table tr { border: 1px solid #c9cdd2; border-radius: .4rem; margin-bottom: .8rem; padding: .3rem .6rem; }
+  .mcp-event-history-table td::before { content: attr(data-label); display: block; font-size: .75rem; font-weight: 700; color: #4b5563; }
+}

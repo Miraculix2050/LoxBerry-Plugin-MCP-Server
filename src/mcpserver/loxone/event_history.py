@@ -11,7 +11,7 @@ import sqlite3
 import threading
 import time
 from collections.abc import Iterator
-from contextlib import contextmanager, suppress
+from contextlib import closing, contextmanager, suppress
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -28,13 +28,21 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger("mcpserver.event_history")
 
 
-_SCHEMA_VERSION: Final = 2
+_SCHEMA_VERSION: Final = 3
 _MAX_TEXT_BYTES: Final = 4096
 _UNSUPPORTED_SOURCE_CONTROL_TYPES: Final = frozenset({"Daytimer"})
 
 
 class EventHistoryUnavailable(RuntimeError):
     """The optional local history store cannot safely answer a request."""
+
+
+class _UnsupportedEventValue(EventHistoryUnavailable):
+    """A configured state emitted a value the local history cannot store."""
+
+
+def _storage_failure_reason(exc: EventHistoryUnavailable) -> str:
+    return "size_enforcement_failed" if "size limit" in str(exc) else "store_unavailable"
 
 
 class _LoxBerryCredentials(Protocol):
@@ -77,6 +85,28 @@ class EventHistoryCoverage:
     retained_from: float | None
     coverage: str
     has_events: bool
+
+
+@dataclass(frozen=True, slots=True)
+class EventHistorySourceSummary:
+    control_uuid: str
+    state_uuid: str
+    event_count: int
+    oldest_event_at: float | None
+    newest_event_at: float | None
+    capture_started_at: float | None
+    coverage_ended_at: float | None
+    recording_ended_at: float | None
+    recent_coverage: tuple[tuple[float, float | None, str], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class EventHistoryStoreSummary:
+    measured_at: float
+    database_bytes: int
+    wal_bytes: int
+    sources: tuple[EventHistorySourceSummary, ...]
+    truncated: bool = False
 
 
 def _value(value: object) -> bool | float | int | str:
@@ -129,7 +159,7 @@ class EventHistoryStore:
             try:
                 connection.execute("BEGIN IMMEDIATE")
                 version = connection.execute("PRAGMA user_version").fetchone()[0]
-                if version not in {0, 1, _SCHEMA_VERSION}:
+                if version not in {0, 1, 2, _SCHEMA_VERSION}:
                     raise EventHistoryUnavailable("local event history needs migration")
                 connection.execute(
                     """
@@ -166,15 +196,31 @@ class EventHistoryStore:
                     "control_uuid TEXT NOT NULL, state_uuid TEXT NOT NULL, "
                     "removed_at REAL, PRIMARY KEY(control_uuid, state_uuid))"
                 )
+                connection.execute(
+                    "CREATE INDEX IF NOT EXISTS coverage_source_time "
+                    "ON coverage(control_uuid, state_uuid, started_at)"
+                )
+                connection.execute(
+                    "CREATE TABLE IF NOT EXISTS source_totals ("
+                    "control_uuid TEXT NOT NULL, state_uuid TEXT NOT NULL, "
+                    "event_count INTEGER NOT NULL, oldest_event_at REAL NOT NULL, "
+                    "newest_event_at REAL NOT NULL, "
+                    "PRIMARY KEY(control_uuid, state_uuid))"
+                )
+                if version < 3:
+                    self._refresh_summaries(connection)
                 # A process that did not reach ``end_coverage`` must not make a
                 # later request look continuously recorded across its downtime.
                 connection.execute(
                     "UPDATE coverage SET ended_at = started_at, outcome = 'interrupted' "
                     "WHERE ended_at IS NULL",
                 )
-                connection.execute("PRAGMA user_version = 2")
+                connection.execute("PRAGMA user_version = 3")
                 connection.execute("COMMIT")
-                self._compact(connection, vacuum=self._prune(connection, now=time.time()))
+                connection.execute("BEGIN IMMEDIATE")
+                pruned = self._prune(connection, now=time.time())
+                connection.execute("COMMIT")
+                self._compact(connection, vacuum=pruned)
             except EventHistoryUnavailable:
                 if connection.in_transaction:
                     connection.execute("ROLLBACK")
@@ -263,6 +309,14 @@ class EventHistoryStore:
                         json.dumps(new, ensure_ascii=False, separators=(",", ":")),
                     ),
                 )
+                connection.execute(
+                    "INSERT INTO source_totals VALUES (?, ?, 1, ?, ?) "
+                    "ON CONFLICT(control_uuid, state_uuid) DO UPDATE SET "
+                    "event_count = event_count + 1, "
+                    "oldest_event_at = MIN(oldest_event_at, excluded.oldest_event_at), "
+                    "newest_event_at = MAX(newest_event_at, excluded.newest_event_at)",
+                    (control_uuid, state_uuid, observed_at, observed_at),
+                )
                 pruned = self._prune(connection, now=observed_at)
                 connection.execute("COMMIT")
                 self._compact(connection, vacuum=pruned)
@@ -281,6 +335,92 @@ class EventHistoryStore:
         )
 
     @staticmethod
+    def _refresh_summaries(connection: sqlite3.Connection) -> None:
+        """Rebuild counters only during migration or actual pruning."""
+        connection.execute("DELETE FROM source_totals")
+        connection.execute(
+            "INSERT INTO source_totals "
+            "SELECT control_uuid, state_uuid, COUNT(*), MIN(observed_at), MAX(observed_at) "
+            "FROM events GROUP BY control_uuid, state_uuid"
+        )
+
+    def snapshot(self, active_sources: tuple[tuple[str, str], ...]) -> EventHistoryStoreSummary:
+        """Read a consistent overview without starting maintenance or creating files."""
+        measured_at = time.time()
+        if not self.path.exists():
+            return EventHistoryStoreSummary(
+                measured_at,
+                0,
+                0,
+                tuple(
+                    EventHistorySourceSummary(control, state, 0, None, None, None, None, None, ())
+                    for control, state in active_sources
+                ),
+            )
+        try:
+            with closing(
+                sqlite3.connect(self.path.as_uri() + "?mode=ro", uri=True, timeout=2)
+            ) as db:
+                if db.execute("PRAGMA user_version").fetchone()[0] != _SCHEMA_VERSION:
+                    raise EventHistoryUnavailable("local event history needs migration")
+                totals = {
+                    (row[0], row[1]): row[2:]
+                    for row in db.execute(
+                        "SELECT control_uuid, state_uuid, event_count, oldest_event_at, "
+                        "newest_event_at FROM source_totals"
+                    )
+                }
+                coverage = {
+                    (row[0], row[1]): row[2:]
+                    for row in db.execute(
+                        "SELECT control_uuid, state_uuid, MIN(started_at), "
+                        "MAX(ended_at) FROM coverage GROUP BY control_uuid, state_uuid"
+                    )
+                }
+                removed = {
+                    (row[0], row[1]): row[2]
+                    for row in db.execute(
+                        "SELECT control_uuid, state_uuid, removed_at FROM removed_sources"
+                    )
+                }
+                keys = set(active_sources) | set(totals) | set(coverage) | set(removed)
+                active_set = set(active_sources)
+                selected_keys = sorted(
+                    keys,
+                    key=lambda key: (key not in active_set, -(removed.get(key) or 0), key),
+                )[:128]
+                sources = tuple(
+                    EventHistorySourceSummary(
+                        key[0],
+                        key[1],
+                        int(totals.get(key, (0, None, None))[0]),
+                        totals.get(key, (0, None, None))[1],
+                        totals.get(key, (0, None, None))[2],
+                        coverage.get(key, (None, None))[0],
+                        coverage.get(key, (None, None))[1],
+                        removed.get(key),
+                        tuple(
+                            (float(item[0]), item[1], str(item[2]))
+                            for item in db.execute(
+                                "SELECT started_at, ended_at, outcome FROM coverage "
+                                "WHERE control_uuid = ? AND state_uuid = ? "
+                                "ORDER BY started_at DESC LIMIT 3",
+                                key,
+                            )
+                        ),
+                    )
+                    for key in selected_keys
+                )
+            database_bytes = self.path.stat().st_size
+            wal = self.path.with_suffix(".sqlite3-wal")
+            wal_bytes = wal.stat().st_size if wal.exists() else 0
+            return EventHistoryStoreSummary(
+                time.time(), database_bytes, wal_bytes, sources, len(keys) > len(selected_keys)
+            )
+        except (OSError, sqlite3.Error) as exc:
+            raise EventHistoryUnavailable("local event history is unavailable") from exc
+
+    @staticmethod
     def _used_database_bytes(connection: sqlite3.Connection) -> int:
         page_count = connection.execute("PRAGMA page_count").fetchone()[0]
         free_pages = connection.execute("PRAGMA freelist_count").fetchone()[0]
@@ -289,7 +429,10 @@ class EventHistoryStore:
 
     def _prune(self, connection: sqlite3.Connection, *, now: float) -> bool:
         cutoff = now - self.retention_seconds
-        deleted = connection.execute("DELETE FROM events WHERE observed_at < ?", (cutoff,)).rowcount
+        event_deletions = connection.execute(
+            "DELETE FROM events WHERE observed_at < ?", (cutoff,)
+        ).rowcount
+        deleted = event_deletions
         connection.execute(
             "UPDATE coverage SET started_at = ? WHERE started_at < ? "
             "AND (ended_at IS NULL OR ended_at > ?)",
@@ -316,6 +459,8 @@ class EventHistoryStore:
                 ).rowcount
                 if removed <= 0:
                     break
+            elif removed:
+                event_deletions += removed
             deleted += removed
             for control_uuid, state_uuid, observed_at in evicted:
                 boundary = math.nextafter(float(observed_at), math.inf)
@@ -332,6 +477,8 @@ class EventHistoryStore:
             "SELECT 1 FROM coverage WHERE coverage.control_uuid = removed_sources.control_uuid "
             "AND coverage.state_uuid = removed_sources.state_uuid)"
         ).rowcount
+        if event_deletions:
+            self._refresh_summaries(connection)
         return deleted > 0
 
     def mark_removed(self, control_uuid: str, state_uuid: str, *, removed_at: float | None) -> None:
@@ -373,6 +520,10 @@ class EventHistoryStore:
                     "DELETE FROM removed_sources WHERE control_uuid = ? AND state_uuid = ?",
                     (control_uuid, state_uuid),
                 )
+                connection.execute(
+                    "DELETE FROM source_totals WHERE control_uuid = ? AND state_uuid = ?",
+                    (control_uuid, state_uuid),
+                )
                 connection.execute("COMMIT")
                 self._compact(connection, vacuum=bool(events or coverage))
                 return events, coverage
@@ -405,7 +556,10 @@ class EventHistoryStore:
     ) -> EventHistoryPage:
         with self._lock, self._opened() as connection:
             try:
-                self._compact(connection, vacuum=self._prune(connection, now=time.time()))
+                connection.execute("BEGIN IMMEDIATE")
+                pruned = self._prune(connection, now=time.time())
+                connection.execute("COMMIT")
+                self._compact(connection, vacuum=pruned)
                 coverage_rows = connection.execute(
                     "SELECT started_at, ended_at FROM coverage WHERE control_uuid = ? "
                     "AND state_uuid = ? "
@@ -483,7 +637,10 @@ class EventHistoryStore:
         now = time.time()
         with self._lock, self._opened() as connection:
             try:
-                self._compact(connection, vacuum=self._prune(connection, now=now))
+                connection.execute("BEGIN IMMEDIATE")
+                pruned = self._prune(connection, now=now)
+                connection.execute("COMMIT")
+                self._compact(connection, vacuum=pruned)
                 result = {}
                 for control_uuid, state_uuid in sources:
                     coverage_rows = connection.execute(
@@ -527,6 +684,7 @@ class EventHistoryStore:
                 connection.execute("DELETE FROM events")
                 connection.execute("DELETE FROM coverage")
                 connection.execute("DELETE FROM removed_sources")
+                connection.execute("DELETE FROM source_totals")
                 connection.execute("COMMIT")
                 return int(count)
             except sqlite3.Error as exc:
@@ -561,7 +719,23 @@ class EventHistoryMonitor:
         self.auth_coordinator = auth_coordinator
         self._task: asyncio.Task[None] | None = None
         self.status = "disabled" if not config.event_history_enabled else "unknown"
+        self.status_reason: str | None = None
+        self.status_observed_at = time.time()
         self.capture_started_at: float | None = None
+
+    def _set_status(self, status: str, reason: str | None = None) -> None:
+        self.status = status
+        self.status_reason = reason
+        self.status_observed_at = time.time()
+
+    def runtime_status(self) -> dict[str, object]:
+        return {
+            "status": self.status,
+            "reason": self.status_reason,
+            "observed_at": time.time(),
+            "state_changed_at": self.status_observed_at,
+            "capture_started_at": self.capture_started_at,
+        }
 
     @property
     def sources(self) -> tuple[tuple[str, str], ...]:
@@ -572,12 +746,15 @@ class EventHistoryMonitor:
             return
         try:
             await asyncio.to_thread(self.store.initialize)
-        except EventHistoryUnavailable:
-            self.status = "unavailable"
+        except EventHistoryUnavailable as exc:
+            self._set_status(
+                "unavailable",
+                _storage_failure_reason(exc),
+            )
             _LOGGER.warning("component=event_history outcome=store_unavailable")
             return
         if not self.sources:
-            self.status = "unavailable"
+            self._set_status("unavailable", "no_sources")
             return
         self._task = asyncio.create_task(self._run())
 
@@ -625,7 +802,7 @@ class EventHistoryMonitor:
                 }
                 active = tuple(source for source in self.sources if source in visible)
                 if not active:
-                    self.status = "unavailable"
+                    self._set_status("unavailable", "no_visible_sources")
                     _LOGGER.warning("component=event_history outcome=no_configured_sources_visible")
                     await asyncio.sleep(60)
                     continue
@@ -642,8 +819,7 @@ class EventHistoryMonitor:
                         try:
                             value = _value(event.value)
                         except ValueError as exc:
-                            self.status = "unavailable"
-                            raise EventHistoryUnavailable(
+                            raise _UnsupportedEventValue(
                                 "configured state does not produce a supported scalar value"
                             ) from exc
                         if not coverage_active:
@@ -654,7 +830,7 @@ class EventHistoryMonitor:
                                     self.store.begin_coverage, active, started_at=started_at
                                 )
                                 self.capture_started_at = started_at
-                                self.status = "recording"
+                                self._set_status("recording")
                                 coverage_active = True
                             continue
                         previous = baselines[event.uuid]
@@ -670,16 +846,23 @@ class EventHistoryMonitor:
                                 new_value=value,
                             )
                         except ValueError as exc:
-                            raise EventHistoryUnavailable(
+                            raise _UnsupportedEventValue(
                                 "configured state does not produce a supported scalar value"
                             ) from exc
                         baselines[event.uuid] = value
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                self.status = "unavailable"
+                if isinstance(exc, _UnsupportedEventValue):
+                    reason = "unsupported_value"
+                elif isinstance(exc, EventHistoryUnavailable):
+                    reason = _storage_failure_reason(exc)
+                else:
+                    reason = "subscription_unavailable"
+                self._set_status("unavailable", reason)
                 _LOGGER.warning(
-                    "component=event_history outcome=subscription_unavailable error_type=%s",
+                    "component=event_history outcome=%s error_type=%s",
+                    reason,
                     type(exc).__name__,
                 )
                 if coverage_active:
@@ -712,8 +895,8 @@ class EventHistoryMonitor:
             with suppress(asyncio.CancelledError):
                 await self._task
 
-    async def validate_source(self, control_uuid: str, state_uuid: str) -> tuple[str, str, str]:
-        """Resolve one source through the service-owned identity before enabling capture."""
+    async def visible_controls(self) -> tuple[Control, ...]:
+        """Load one current service-owned structure for selection and validation."""
         from mcpserver.loxone.client import MiniserverEndpoint
 
         token = None
@@ -748,29 +931,30 @@ class EventHistoryMonitor:
                 )
                 session = opened_session
             structure = await session.load_structure()
-            control = next(
-                (item for item in _controls(structure.controls) if item.uuid == control_uuid), None
-            )
-            if control is None:
-                raise ValueError("configured control is not visible to the service identity")
-            if control.control_type in _UNSUPPORTED_SOURCE_CONTROL_TYPES:
-                raise ValueError("configured control has no supported scalar event states")
-            state_name = next(
-                (name for name, uuid in control.state_uuids if uuid == state_uuid), None
-            )
-            if state_name is None:
-                raise ValueError("configured state does not belong to the visible control")
-            return control.name, control.control_type, state_name
+            return _controls(structure.controls)
         finally:
             if session is not None:
                 await session.close()
             if token is not None:
                 token.destroy()
 
+    async def validate_source(self, control_uuid: str, state_uuid: str) -> tuple[str, str, str]:
+        """Resolve one exact source through current service-owned visibility."""
+        controls = await self.visible_controls()
+        control = next((item for item in controls if item.uuid == control_uuid), None)
+        if control is None:
+            raise ValueError("configured control is not visible to the service identity")
+        if control.control_type in _UNSUPPORTED_SOURCE_CONTROL_TYPES:
+            raise ValueError("configured control has no supported scalar event states")
+        state_name = next((name for name, uuid in control.state_uuids if uuid == state_uuid), None)
+        if state_name is None:
+            raise ValueError("configured state does not belong to the visible control")
+        return control.name, control.control_type, state_name
+
     async def update_config(self, config: PluginConfig) -> None:
         """Apply a persisted source update by recreating only this optional subscription."""
         await self.close()
         self.config = config
-        self.status = "unknown" if config.event_history_enabled else "disabled"
+        self._set_status("unknown" if config.event_history_enabled else "disabled")
         self.capture_started_at = None
         await self.start()

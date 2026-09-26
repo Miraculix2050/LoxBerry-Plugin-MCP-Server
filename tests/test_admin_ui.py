@@ -637,6 +637,31 @@ def test_event_history_enablement_is_preserved_in_server_rendered_fallback() -> 
     ) in template
 
 
+def test_event_history_has_dedicated_bounded_admin_view() -> None:
+    main = _admin_source()
+    page = (ROOT / "templates/event-history.html").read_text(encoding="utf-8")
+    cgi = (ROOT / "webfrontend/htmlauth/event_history.cgi").read_text(encoding="utf-8")
+    script = (ROOT / "webfrontend/htmlauth/event-history/page.js").read_text(encoding="utf-8")
+
+    assert 'href="event_history.cgi"' in main
+    assert 'name="event_history_enabled"' in main
+    assert 'name="event_history_retention_days"' not in main
+    assert 'name="event_history_maximum_mib"' not in main
+    assert "event_history_sources_json" not in main
+    assert 'data-ajax="clear_event_history"' not in main
+    assert 'id="history-source-rows"' in page
+    assert 'data-coverage="' in page
+    assert 'data-storage="' not in page
+    assert 'id="history-search"' in page
+    assert 'id="history-clear"' in page
+    assert "Same-origin POST required" in cgi
+    assert "event_history_purge_source" in cgi
+    assert (
+        "component=event_history_admin request_id=%s action=%s outcome=%s duration_ms=%.1f" in cgi
+    )
+    assert "window.confirm(label('confirmClear'))" in script
+
+
 def test_server_rendered_emergency_stop_status_is_terminal_after_discovery() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = _admin_source()
@@ -2100,8 +2125,6 @@ def test_status_and_progressive_configuration_keep_existing_form_contracts() -> 
         "max_structure_depth",
         "max_states_per_identity",
         "statistics_memory_max_mib",
-        "event_history_retention_days",
-        "event_history_maximum_mib",
     ):
         assert configuration.count(f'name="{name}"') == 1
         assert f'name="{name}"' in advanced

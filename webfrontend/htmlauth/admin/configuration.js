@@ -80,6 +80,15 @@ window.McpAdmin.createConfiguration = (
     setSummaryBadge(configurationSummaryBadge, ...enabled(configuration?.server?.enabled));
     setSummaryBadge(mqttSummaryBadge, ...enabled(configuration?.mqtt?.enabled));
   };
+  const renderEventHistoryBrief = (history) => {
+    if (!history) return;
+    const brief = document.getElementById('event-history-brief');
+    const size = Number.isFinite(history.size_bytes)
+      ? `${(history.size_bytes / (1024 * 1024)).toLocaleString(undefined, {maximumFractionDigits: 1})} MiB`
+      : brief.dataset.sizeUnknown;
+    brief.textContent = `${history.enabled ? brief.dataset.enabled : brief.dataset.disabled} · `
+      + `${history.active_source_count} ${brief.dataset.sources} · ${size}`;
+  };
   const renderConfiguration = (configuration, cachedEmergencyStopOptions) => {
     const server = configuration?.server || {};
     const loxone = configuration?.loxone || {};
@@ -115,9 +124,9 @@ window.McpAdmin.createConfiguration = (
     ]) setFormValue(mcpConfigForm, name, limits[name]);
     setFormValue(mcpConfigForm, 'statistics_memory_max_mib', cache.statistics_memory_max_mib);
     setFormChecked(mcpConfigForm, 'event_history_enabled', eventHistory.enabled);
-    setFormValue(mcpConfigForm, 'event_history_retention_days', eventHistory.retention_days);
-    setFormValue(mcpConfigForm, 'event_history_maximum_mib', eventHistory.maximum_mib);
-    document.getElementById('event-history-sources').value = JSON.stringify(eventHistory.sources || []);
+    const brief = document.getElementById('event-history-brief');
+    brief.textContent = `${eventHistory.enabled ? brief.dataset.enabled : brief.dataset.disabled} · `
+      + `${(eventHistory.sources || []).length} ${brief.dataset.sources} · ${brief.dataset.sizeUnknown}`;
     emergencyStopValue.value = String(emergencyStop.virtual_status_uuid || '');
     updateEmergencyStopRuntimeMismatch();
     setFormChecked(mqttConfigForm, 'mqtt_enabled', mqtt.enabled);
@@ -147,6 +156,7 @@ window.McpAdmin.createConfiguration = (
       body.set('ajax', '1');
       const result = await postAjax(body, 7000, suppliedResult);
       renderConfiguration(result.data.configuration, cachedEmergencyStopOptions);
+      renderEventHistoryBrief(result.data.event_history_brief);
       configurationLoaded = true;
       setConfigurationFieldsDisabled(false);
       configurationFallbackLink.hidden = true;
@@ -405,6 +415,7 @@ window.McpAdmin.createConfiguration = (
     if (savedPublicOrigin !== nextPublicOrigin) certificate.refreshAfterOriginChange();
     savedPublicOrigin = nextPublicOrigin;
     renderConfigurationBadges(data.configuration);
+    renderEventHistoryBrief(data.event_history_brief);
     const savedEndpoint = data.configuration.loxone.endpoint;
     emergencyStopValue.value = data.configuration.emergency_stop.virtual_status_uuid;
     resetEmergencyStopOptions();

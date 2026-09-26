@@ -193,6 +193,27 @@ def test_internal_emergency_stop_status_is_separate_from_health() -> None:
     }
 
 
+def test_internal_event_history_status_is_bounded_and_kept_for_disabled_service() -> None:
+    settings = ServerSettings(
+        host="127.0.0.1",
+        port=8765,
+        allowed_hosts=("testserver",),
+        allowed_origins=(),
+        service_enabled=False,
+    )
+    app = create_server(settings).streamable_http_app()
+    with TestClient(app, base_url="http://testserver") as client:
+        response = client.get("/internal/event-history-status")
+
+    assert response.status_code == 200
+    assert response.json()["event_history"]["status"] == "disabled"
+    assert set(response.json()["event_history"]) == {
+        "status",
+        "observed_at",
+        "capture_started_at",
+    }
+
+
 def test_streamable_app_starts_the_configured_emergency_stop_monitor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

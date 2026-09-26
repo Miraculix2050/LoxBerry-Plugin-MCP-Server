@@ -63,9 +63,13 @@ _TEST_GROUPS: Final = (
     (
         (
             "src/mcpserver/admin.py",
+            "src/mcpserver/event_history_admin.py",
             "src/mcpserver/emergency_options_cache.py",
             "src/mcpserver/auth/scopes.py",
             "templates/index.html",
+            "templates/event-history.html",
+            "webfrontend/htmlauth/event_history.cgi",
+            "webfrontend/htmlauth/event-history/**",
             "webfrontend/htmlauth/admin/**",
             "webfrontend/htmlauth/mcp-ui.css",
             "tools/benchmark_admin_page_state.py",
@@ -74,6 +78,7 @@ _TEST_GROUPS: Final = (
         ),
         (
             "tests/test_admin.py",
+            "tests/test_event_history_admin.py",
             "tests/test_emergency_options_cache.py",
             "tests/test_admin_ui.py",
             "tests/test_apache_config.py",
@@ -123,6 +128,8 @@ _TEST_GROUPS: Final = (
         (
             "tests/test_control.py",
             "tests/test_control_commands.py",
+            "tests/test_event_history.py",
+            "tests/test_event_history_admin.py",
             "tests/test_loxone_cache.py",
             "tests/test_loxone_client.py",
             "tests/test_loxone_events.py",

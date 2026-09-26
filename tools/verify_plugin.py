@@ -50,6 +50,9 @@ _REQUIRED: Final = {
     "webfrontend/htmlauth/index.cgi",
     "webfrontend/htmlauth/explorer.cgi",
     "webfrontend/htmlauth/explorer_callback.cgi",
+    "webfrontend/htmlauth/event_history.cgi",
+    "webfrontend/htmlauth/event-history/api.js",
+    "webfrontend/htmlauth/event-history/page.js",
     "webfrontend/htmlauth/explorer.js",
     "webfrontend/htmlauth/explorer-adapters.js",
     "webfrontend/htmlauth/admin/core.js",
@@ -61,6 +64,7 @@ _REQUIRED: Final = {
     "webfrontend/htmlauth/mcp-ui.css",
     "templates/index.html",
     "templates/explorer.html",
+    "templates/event-history.html",
     "templates/lang/language_de.ini",
     "templates/lang/language_en.ini",
 }
@@ -78,6 +82,7 @@ _EXECUTABLES: Final = {
     "webfrontend/htmlauth/index.cgi",
     "webfrontend/htmlauth/explorer.cgi",
     "webfrontend/htmlauth/explorer_callback.cgi",
+    "webfrontend/htmlauth/event_history.cgi",
 }
 _TEXT_SUFFIXES: Final = {
     ".cfg",

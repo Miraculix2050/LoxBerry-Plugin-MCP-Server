@@ -65,7 +65,6 @@
     <summary id="setup"><span class="mcp-service-summary"><span><TMPL_VAR SETUP.TITLE></span><span id="configuration-summary-badge" class="mcp-service-badge" <TMPL_IF SERVER_RENDERED_FALLBACK><TMPL_IF FALLBACK_SUMMARY_CONFIGURATION_LOADED><TMPL_IF ENABLED>data-kind="success"<TMPL_ELSE>data-kind="inactive"</TMPL_IF></TMPL_IF></TMPL_IF>><TMPL_IF SERVER_RENDERED_FALLBACK><TMPL_IF FALLBACK_SUMMARY_CONFIGURATION_LOADED><TMPL_IF ENABLED><TMPL_VAR SUMMARY.ENABLED><TMPL_ELSE><TMPL_VAR SUMMARY.DISABLED></TMPL_IF><TMPL_ELSE><TMPL_VAR SUMMARY.UNKNOWN></TMPL_IF><TMPL_ELSE><TMPL_VAR AJAX.WORKING></TMPL_IF></span></span></summary>
     <div class="mcp-collapsible-content">
     <form id="mcp-config-form" class="mcp-form" method="post" action="index.cgi" data-ajax="save_mcp_config">
-      <input id="event-history-sources" type="hidden" name="event_history_sources_json" value="<TMPL_VAR EVENT_HISTORY_SOURCES_JSON ESCAPE=HTML>">
       <fieldset id="mcp-config-fields" class="mcp-configuration-fields" <TMPL_UNLESS SERVER_RENDERED_FALLBACK>disabled<TMPL_ELSE><TMPL_UNLESS FALLBACK_CONFIGURATION_LOADED>disabled</TMPL_UNLESS></TMPL_UNLESS>>
       <input type="submit" name="action" value="save_mcp_config" hidden aria-hidden="true" tabindex="-1">
       <h3><TMPL_VAR SETUP.CONNECTION></h3>
@@ -97,7 +96,8 @@
       </div>
       <h3><TMPL_VAR SETUP.PERMISSIONS></h3>
       <label class="mcp-check"><input id="event-history-enabled" name="event_history_enabled" type="checkbox" value="1" <TMPL_IF EVENT_HISTORY_ENABLED>checked</TMPL_IF>> <span><TMPL_VAR SETUP.EVENT_HISTORY_ENABLED></span></label>
-      <p class="mcp-help"><TMPL_VAR SETUP.EVENT_HISTORY_HELP></p>
+      <p id="event-history-brief" class="mcp-help" data-enabled="<TMPL_VAR SETUP.EVENT_HISTORY_ON ESCAPE=HTML>" data-disabled="<TMPL_VAR SETUP.EVENT_HISTORY_OFF ESCAPE=HTML>" data-sources="<TMPL_VAR SETUP.EVENT_HISTORY_SOURCES ESCAPE=HTML>" data-size-unknown="<TMPL_VAR SETUP.EVENT_HISTORY_SIZE_UNKNOWN ESCAPE=HTML>"><TMPL_IF EVENT_HISTORY_ENABLED><TMPL_VAR SETUP.EVENT_HISTORY_ON><TMPL_ELSE><TMPL_VAR SETUP.EVENT_HISTORY_OFF></TMPL_IF> · <TMPL_VAR EVENT_HISTORY_SOURCE_COUNT> <TMPL_VAR SETUP.EVENT_HISTORY_SOURCES> · <TMPL_VAR SETUP.EVENT_HISTORY_SIZE_UNKNOWN></p>
+      <p class="mcp-help"><TMPL_VAR SETUP.EVENT_HISTORY_HELP> <a href="event_history.cgi"><TMPL_VAR SETUP.EVENT_HISTORY_OPEN></a></p>
       <div class="mcp-permission-groups" aria-describedby="permission-policy-hint">
         <section class="mcp-permission-group" aria-labelledby="loxone-permissions-heading">
           <h3 id="loxone-permissions-heading"><TMPL_VAR SETUP.PERMISSIONS_LOXONE></h3>
@@ -152,8 +152,6 @@
           <label class="mcp-field"><span><TMPL_VAR SETUP.STRUCTURE_STATES></span><input name="max_structure_state_references" type="number" min="10000" max="500000" value="<TMPL_VAR MAX_STRUCTURE_STATE_REFERENCES ESCAPE=HTML>"></label>
           <label class="mcp-field"><span><TMPL_VAR SETUP.STRUCTURE_DEPTH></span><input name="max_structure_depth" type="number" min="4" max="128" value="<TMPL_VAR MAX_STRUCTURE_DEPTH ESCAPE=HTML>"></label>
            <label class="mcp-field"><span><TMPL_VAR SETUP.CACHE_SIZE></span><input name="statistics_memory_max_mib" type="number" min="16" max="512" value="<TMPL_VAR STATISTICS_MEMORY_MAX_MIB ESCAPE=HTML>"></label>
-           <label class="mcp-field"><span><TMPL_VAR SETUP.EVENT_HISTORY_RETENTION></span><input name="event_history_retention_days" type="number" min="1" max="365" value="<TMPL_VAR EVENT_HISTORY_RETENTION_DAYS ESCAPE=HTML>"></label>
-           <label class="mcp-field"><span><TMPL_VAR SETUP.EVENT_HISTORY_SIZE></span><input name="event_history_maximum_mib" type="number" min="16" max="1024" value="<TMPL_VAR EVENT_HISTORY_MAXIMUM_MIB ESCAPE=HTML>"></label>
            <label class="mcp-field"><span><TMPL_VAR SETUP.CACHED_STATES></span><input name="max_states_per_identity" type="number" min="1000" max="100000" value="<TMPL_VAR MAX_STATES_PER_IDENTITY ESCAPE=HTML>"></label>
            <label class="mcp-field"><span><TMPL_VAR SETUP.EXPLORER_BINDING_RETENTION></span><input name="explorer_binding_retention_hours" type="number" min="1" max="720" value="<TMPL_VAR EXPLORER_BINDING_RETENTION_HOURS ESCAPE=HTML>"></label>
         </div>
@@ -166,10 +164,6 @@
       </fieldset>
     </form>
     <TMPL_IF SERVER_RENDERED_FALLBACK><form id="fallback-emergency-stop-retry-form" method="post" action="index.cgi"><input type="hidden" name="fallback" value="1"><input type="hidden" name="action" value="<TMPL_VAR EMERGENCY_STOP_BUTTON_ACTION ESCAPE=HTML>"></form></TMPL_IF>
-    <form class="mcp-actions" method="post" action="index.cgi" data-ajax="clear_event_history">
-      <input type="hidden" name="action" value="clear_event_history">
-      <button class="lb-button" type="submit"><TMPL_VAR ACTION.CLEAR_EVENT_HISTORY></button>
-    </form>
     </div>
   </details>
 
@@ -323,6 +317,7 @@
       <p class="mcp-actions">
         <a id="explorer-link" class="lb-button" href="<TMPL_VAR EXPLORER_URL ESCAPE=HTML>" target="_blank" rel="noopener"><TMPL_VAR ACTION.EXPLORER></a>
         <a id="schema-reference-link" class="lb-button" href="<TMPL_VAR SCHEMA_REFERENCE_URL ESCAPE=HTML>" target="_blank" rel="noopener"><TMPL_VAR ACTION.SCHEMA_REFERENCE></a>
+        <a id="event-history-help-link" class="lb-button" href="event_history.cgi"><TMPL_VAR SETUP.EVENT_HISTORY_OPEN></a>
       </p>
       <p><a href="https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server" target="_blank" rel="noopener"><TMPL_VAR HELP.PROJECT></a></p>
     </div>
