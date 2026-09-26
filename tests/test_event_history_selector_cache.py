@@ -137,9 +137,20 @@ def test_large_catalog_uses_paged_queries_and_rejects_old_generation(tmp_path, m
     monkeypatch.setattr(admin, "_config_store", lambda: config_store)
     payload = {"generation": first["generation"]}
 
+    encoded_items = 0
+    original_iterencode = event_history_admin.json.JSONEncoder.iterencode
+
+    def track_item(self, value, *args, **kwargs):
+        nonlocal encoded_items
+        if isinstance(value, dict) and "uuid" in value:
+            encoded_items += 1
+        yield from original_iterencode(self, value, *args, **kwargs)
+
+    monkeypatch.setattr(event_history_admin.json.JSONEncoder, "iterencode", track_item)
     catalog = event_history_admin.selector_catalog(payload)
     assert catalog["mode"] == "paged"
     assert catalog["total"] == 15_000
+    assert encoded_items < 15_000
     result = event_history_admin.selector_query(
         payload | {"query": "Control 14999", "room": [], "category": [], "type": []}
     )

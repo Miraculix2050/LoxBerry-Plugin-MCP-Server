@@ -27,6 +27,7 @@ from mcpserver.loxone.uuid import normalize_loxone_uuid
 
 _DISCOVERY_TIMEOUT = 35
 _SOURCE_LIMIT = 64
+_LOCAL_CATALOG_BYTES = 8 * 1024 * 1024
 
 
 def _bridge() -> Any:
@@ -403,16 +404,22 @@ def prepare_selector() -> dict[str, Any]:
 def selector_catalog(payload: object) -> dict[str, Any]:
     """Send compact metadata once; very large catalogues use bounded local queries."""
     document = _selector_document(payload)
-    controls = [
-        {
+    total = len(document["controls"])
+    controls: list[dict[str, Any]] = []
+    encoded_bytes = 2  # JSON array brackets.
+    encoder = json.JSONEncoder(separators=(",", ":"), ensure_ascii=False)
+    for item in document["controls"]:
+        control = {
             key: item[key]
             for key in ("uuid", "name", "type", "room_id", "room", "category_id", "category")
         }
-        for item in document["controls"]
-    ]
-    compact = json.dumps(controls, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-    if len(compact) > 8 * 1024 * 1024:
-        return {"mode": "paged", "total": len(controls)}
+        if controls:
+            encoded_bytes += 1  # JSON item separator.
+        for chunk in encoder.iterencode(control):
+            encoded_bytes += len(chunk.encode("utf-8"))
+            if encoded_bytes > _LOCAL_CATALOG_BYTES:
+                return {"mode": "paged", "total": total}
+        controls.append(control)
     return {"mode": "local", "controls": controls}
 
 
