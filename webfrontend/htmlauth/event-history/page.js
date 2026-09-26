@@ -29,8 +29,10 @@
   let busy = false;
   let controlsLoading = false;
   let controlsLoadPromise = null;
+  let staleRecoveryScheduled = false;
   let sourceRevisionChecking = false;
   let knownSourceRevision = '';
+  let selectorVerificationPending = false;
   let nextRevisionRefreshAt = 0;
   let revisionRefreshFailures = 0;
   let messageVersion = 0;
@@ -151,8 +153,11 @@
       overviewLoaded = true;
       if (data.store_status === 'available' && typeof data.source_revision === 'string') {
         knownSourceRevision = data.source_revision;
-        nextRevisionRefreshAt = 0;
-        revisionRefreshFailures = 0;
+        selectorVerificationPending = data.visibility_status !== 'available';
+        if (!selectorVerificationPending) {
+          nextRevisionRefreshAt = 0;
+          revisionRefreshFailures = 0;
+        }
       }
       activeCount = data.active_source_count;
       $('history-retention').value = data.retention_days;
@@ -348,7 +353,7 @@
       updateControlCount(data.total);
       if (!data.total) $('history-search-status').textContent = label('noControls');
     } catch (error) {
-      if (error.code === 'stale_configuration') invalidateSelector();
+      if (error.code === 'stale_configuration') recoverStaleSelector();
       if (request === querySequence) $('history-search-status').textContent = errorLabel(error);
     }
   };
@@ -395,14 +400,14 @@
       renderOptions();
     }
   };
-  const performLoadControls = async () => {
+  const performLoadControls = async (restore = null) => {
     controlsLoading = true;
     refreshButton.disabled = true;
     refreshButton.textContent = label('refreshWorking');
     const request = ++discoveryGeneration;
-    const previousControl = selectedControl;
-    const previousState = stateSelect.value;
-    const previousFilters = selectedFilters();
+    const previousControl = restore?.control ?? selectedControl;
+    const previousState = restore?.state ?? stateSelect.value;
+    const previousFilters = restore?.filters ?? selectedFilters();
     invalidateSelector();
     ++querySequence;
     catalogMode = 'loading';
@@ -459,6 +464,7 @@
         } catch {
           if (request === discoveryGeneration) setMessage(label('unavailable'), 'warning');
         }
+        if (error.code === 'stale_configuration') recoverStaleSelector();
       }
       return false;
     } finally {
@@ -467,10 +473,31 @@
       refreshButton.textContent = refreshButtonText;
     }
   };
-  const loadControls = () => {
+  const loadControls = (restore = null) => {
     if (controlsLoadPromise) return controlsLoadPromise;
-    controlsLoadPromise = performLoadControls().finally(() => { controlsLoadPromise = null; });
+    controlsLoadPromise = performLoadControls(restore).finally(() => { controlsLoadPromise = null; });
     return controlsLoadPromise;
+  };
+  const recoverStaleSelector = (restoreState = null) => {
+    if (staleRecoveryScheduled) return;
+    staleRecoveryScheduled = true;
+    const restore = {control: selectedControl, state: restoreState ?? stateSelect.value,
+      filters: selectedFilters()};
+    const ongoing = controlsLoadPromise;
+    if (ongoing) {
+      ++discoveryGeneration;
+      invalidateSelector();
+    }
+    void (async () => {
+      try {
+        if (ongoing) await ongoing;
+        await loadControls(restore);
+      } catch {
+        setMessage(label('unavailable'), 'warning');
+      } finally {
+        staleRecoveryScheduled = false;
+      }
+    })();
   };
   const checkSourceRevision = async () => {
     if (document.hidden || busy || controlsLoading || sourceRevisionChecking
@@ -478,10 +505,12 @@
     sourceRevisionChecking = true;
     try {
       const data = await api.request('event_history_source_revision', {}, 15000);
-      if (data.availability === 'available' && data.revision !== knownSourceRevision
+      if (data.availability === 'available'
+        && (data.revision !== knownSourceRevision || selectorVerificationPending)
         && Date.now() >= nextRevisionRefreshAt) {
-        await loadControls();
-        if (knownSourceRevision !== data.revision) {
+        const verified = await loadControls();
+        if (!verified || knownSourceRevision !== data.revision) {
+          selectorVerificationPending = true;
           revisionRefreshFailures += 1;
           nextRevisionRefreshAt = Date.now()
             + Math.min(300000, 30000 * (2 ** revisionRefreshFailures));
@@ -556,7 +585,7 @@
       stateSearchWrap.hidden = data.total <= 10 && !query;
       stateSearch.disabled = busy;
     } catch (error) {
-      if (error.code === 'stale_configuration') invalidateSelector();
+      if (error.code === 'stale_configuration') recoverStaleSelector(priorState);
       if (request === stateGeneration) {
         if (append && error.code !== 'stale_configuration') {
           stateSelect.disabled = !priorSelectEnabled;

@@ -122,7 +122,12 @@ def test_new_page_refreshes_even_when_program_marker_is_unchanged(tmp_path):
     first = cache.refresh(lambda: _projection())
     second = cache.refresh(lambda: _projection())
     assert second["last_modified"] == first["last_modified"]
-    assert second["generation"] != first["generation"]
+    assert second["generation"] == first["generation"]
+
+    changed = _projection()
+    changed["controls"][0]["name"] = "Newly visible name"
+    third = cache.refresh(lambda: changed)
+    assert third["generation"] != second["generation"]
 
 
 def test_large_catalog_uses_paged_queries_and_rejects_old_generation(tmp_path, monkeypatch):

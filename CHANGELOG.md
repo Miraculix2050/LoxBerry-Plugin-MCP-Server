@@ -18,7 +18,9 @@ extracted from the matching version heading.
   category, and type; load states on control selection and offer explicit refresh.
   Refresh open tabs after source changes and whole-history deletion without
   polling the event table. Migrate existing history stores for this change on
-  the first local Admin read even when recording is disabled.
+  the first local Admin read even when recording is disabled. Retry failed
+  visibility refreshes, retain unchanged selector generations across tabs, and
+  recover stale selections through a fresh authorization check.
 
 - Make the Tool Explorer's selected-tool and result cards collapsible, with history
   arguments in a separate disclosure. Label array objects using available names,

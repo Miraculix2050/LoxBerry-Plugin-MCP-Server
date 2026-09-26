@@ -181,10 +181,19 @@ class EventHistorySelectorCache:
             except OSError as exc:
                 raise SelectorCacheError("selector cache cannot be invalidated") from exc
             projection = discover()
+            unchanged = (
+                current is not None
+                and current["last_modified"] == projection["last_modified"]
+                and current["controls"] == projection["controls"]
+            )
             document = {
                 "schema": _SCHEMA,
                 "profile": self.profile,
-                "generation": secrets.token_hex(12),
+                "generation": (
+                    current["generation"]
+                    if unchanged and current is not None
+                    else secrets.token_hex(12)
+                ),
                 "verified_at": int(time.time()),
                 "last_modified": projection["last_modified"],
                 "controls": projection["controls"],

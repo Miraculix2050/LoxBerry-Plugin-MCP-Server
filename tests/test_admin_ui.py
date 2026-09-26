@@ -750,7 +750,7 @@ let busy = false;
 let controlsLoadPromise = null;
 let selectedControl = 'control';
 ${section('  const mutate = async ', '  const facetSelection =')}
-${section('  const loadControls = () => {', '  const checkSourceRevision =')}
+${section('  const loadControls = (restore = null) => {', '  const checkSourceRevision =')}
 globalThis.subject = {mutate, loadControls};
 `, context);
 (async () => {
@@ -839,13 +839,99 @@ const context = {$: (id) => {
   return nodes.get(id);
 }, label: (key) => key, date: () => '', renderRows: () => {}, setMessage: () => {}};
 vm.runInNewContext(`let overviewLoaded = false; let knownSourceRevision = '';
-let nextRevisionRefreshAt = 1; let revisionRefreshFailures = 1; let activeCount = 0;
+let selectorVerificationPending = false; let nextRevisionRefreshAt = 1;
+let revisionRefreshFailures = 1; let activeCount = 0;
 ${section}
-globalThis.subject = {renderOverview, revision: () => knownSourceRevision};`, context);
+globalThis.subject = {renderOverview, revision: () => knownSourceRevision,
+  pending: () => selectorVerificationPending};`, context);
 context.subject.renderOverview({store_status: 'available', visibility_status: 'unavailable',
   source_revision: 'local-revision', active_source_count: 1, retention_days: 30,
   maximum_mib: 64, database_bytes: 0, wal_bytes: 0, sources: [], unverified_sources: []});
 assert.equal(context.subject.revision(), 'local-revision');
+assert.equal(context.subject.pending(), true);
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_event_history_revision_retries_after_failed_visibility_refresh() -> None:
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = source.slice(source.indexOf('  const checkSourceRevision = async () => {'),
+  source.indexOf('  const loadStates ='));
+const context = {document: {hidden: false}, api: {request: async () =>
+  ({availability: 'available', revision: 'new'})}};
+vm.runInNewContext(`let busy = false; let controlsLoading = false;
+let sourceRevisionChecking = false; let knownSourceRevision = 'old';
+let selectorVerificationPending = false; let nextRevisionRefreshAt = 0;
+let revisionRefreshFailures = 0; let refreshes = 0;
+const loadControls = async () => { refreshes += 1; knownSourceRevision = 'new'; return false; };
+${section}
+globalThis.subject = {checkSourceRevision, refreshes: () => refreshes,
+  pending: () => selectorVerificationPending,
+  retryNow: () => { nextRevisionRefreshAt = 0; }};`, context);
+(async () => {
+  await context.subject.checkSourceRevision();
+  assert.equal(context.subject.refreshes(), 1);
+  assert.equal(context.subject.pending(), true);
+  context.subject.retryNow();
+  await context.subject.checkSourceRevision();
+  assert.equal(context.subject.refreshes(), 2);
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_event_history_stale_generation_recovers_selected_pair() -> None:
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = source.slice(source.indexOf('  const loadControls = (restore = null) => {'),
+  source.indexOf('  const checkSourceRevision ='));
+let finishFirst;
+const firstGate = new Promise((resolve) => { finishFirst = resolve; });
+const calls = [];
+const context = {performLoadControls: async (restore) => {
+  calls.push(restore);
+  if (calls.length === 1) await firstGate;
+}};
+vm.runInNewContext(`let controlsLoadPromise = null; let staleRecoveryScheduled = false;
+let discoveryGeneration = 0; let selectedControl = 'control';
+const stateSelect = {value: 'state'};
+const selectedFilters = () => ({room: ['room'], category: [], type: []});
+const invalidateSelector = () => { selectedControl = ''; stateSelect.value = ''; };
+${section}
+globalThis.subject = {loadControls, recoverStaleSelector};`, context);
+(async () => {
+  const first = context.subject.loadControls();
+  context.subject.recoverStaleSelector();
+  assert.equal(calls.length, 1);
+  finishFirst();
+  await first;
+  await new Promise(setImmediate);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].control, 'control');
+  assert.equal(calls[1].state, 'state');
+  assert.deepEqual(Array.from(calls[1].filters.room), ['room']);
+})().catch((error) => { console.error(error); process.exitCode = 1; });
 """
     subprocess.run(
         [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
