@@ -939,7 +939,9 @@ class EventHistoryStore:
 
         if limit < 1 or limit > 500 or after_id < 0 or start >= end:
             raise ValueError("chart query is invalid")
-        if deadline is not None and time.monotonic() >= deadline:
+        if deadline is None:
+            deadline = time.monotonic() + 10
+        if time.monotonic() >= deadline:
             raise EventHistoryUnavailable("chart query timed out")
         if not self.path.exists():
             return {
@@ -959,6 +961,11 @@ class EventHistoryStore:
             with closing(
                 sqlite3.connect(self.path.as_uri() + "?mode=ro", uri=True, timeout=2)
             ) as db:
+
+                def progress() -> int:
+                    return int(time.monotonic() >= deadline)
+
+                db.set_progress_handler(progress, 10000)
                 db.execute("BEGIN")
                 if db.execute("PRAGMA user_version").fetchone()[0] != _SCHEMA_VERSION:
                     raise EventHistoryUnavailable("local event history needs migration")
@@ -975,7 +982,7 @@ class EventHistoryStore:
                     if len(dense) > 4000:
                         sample_deadline = min(
                             time.monotonic() + 8,
-                            deadline if deadline is not None else float("inf"),
+                            deadline,
                         )
                         db.set_progress_handler(
                             lambda: int(time.monotonic() >= sample_deadline), 10000
@@ -983,7 +990,7 @@ class EventHistoryStore:
                         try:
                             rows = self._chart_sample(db, control_uuid, state_uuid, start, end)
                         finally:
-                            db.set_progress_handler(None, 0)
+                            db.set_progress_handler(progress, 10000)
                         reduced = True
                 if not reduced:
                     index = "events_source_time" if after_id == 0 else "events_source_id"
@@ -996,7 +1003,8 @@ class EventHistoryStore:
                         (control_uuid, state_uuid, after_id, start, end, limit + 1),
                     ).fetchall()
                 latest_id = db.execute(
-                    "SELECT MAX(id) FROM events WHERE control_uuid = ? AND state_uuid = ? "
+                    "SELECT MAX(id) FROM events INDEXED BY events_source_id "
+                    "WHERE control_uuid = ? AND state_uuid = ? "
                     "AND observed_at <= ?",
                     (control_uuid, state_uuid, end),
                 ).fetchone()[0]
