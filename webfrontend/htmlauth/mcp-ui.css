@@ -186,6 +186,9 @@ details.mcp-explorer-card[open] > summary { border-bottom: 1px solid #d7dadd; }
 .mcp-event-history-metrics strong { font-size: 1.4rem; overflow-wrap: anywhere; }
 .mcp-event-history-metrics small, .mcp-event-history-subtext { display: block; color: #5f6368; font-size: .85rem; }
 .mcp-event-history .mcp-card > h2 { margin-top: 0; }
+.mcp-event-history-section > summary h2 { display: inline; margin: 0; font: inherit; }
+.mcp-event-history-section > summary small { display: block; margin: .25rem 0 0 1.25rem; color: #5f6368; font-size: .85rem; font-weight: 400; overflow-wrap: anywhere; }
+.mcp-event-history-section > .mcp-collapsible-content { display: block; }
 .mcp-event-history-search { display: flex; flex-wrap: wrap; align-items: end; gap: .6rem; }
 .mcp-event-history-search .mcp-field { flex: 1 1 18rem; }
 .mcp-event-history-filters { display: flex; flex-wrap: wrap; align-items: start; gap: .5rem; margin: .7rem 0; }

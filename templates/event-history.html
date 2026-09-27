@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-event-history-v3">
+<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-event-history-v4">
 <main class="mcp-page mcp-event-history"
   data-loading="<TMPL_VAR EVENT_HISTORY.LOADING ESCAPE=HTML>"
   data-refresh-working="<TMPL_VAR EVENT_HISTORY.REFRESH_WORKING ESCAPE=HTML>"
@@ -91,8 +91,10 @@
     <div class="mcp-card"><h2><TMPL_VAR EVENT_HISTORY.SOURCES></h2><strong id="history-source-count"><TMPL_VAR EVENT_HISTORY.LOADING></strong><small id="history-events"></small></div>
     <div class="mcp-card"><h2><TMPL_VAR EVENT_HISTORY.POLICY></h2><strong id="history-policy"><TMPL_VAR EVENT_HISTORY.LOADING></strong><small id="history-measured"></small></div>
   </section>
-  <section class="mcp-card" aria-labelledby="history-sources-title">
-    <div class="mcp-event-history-section-head"><div><h2 id="history-sources-title"><TMPL_VAR EVENT_HISTORY.SOURCE_LIST></h2><p class="mcp-help"><TMPL_VAR EVENT_HISTORY.COVERAGE_HELP></p></div></div>
+  <details id="history-sources-section" class="mcp-card mcp-event-history-section" open>
+    <summary><h2><TMPL_VAR EVENT_HISTORY.SOURCE_LIST></h2><small id="history-sources-summary"><TMPL_VAR EVENT_HISTORY.LOADING></small></summary>
+    <div class="mcp-collapsible-content">
+    <p class="mcp-help"><TMPL_VAR EVENT_HISTORY.COVERAGE_HELP></p>
     <div id="history-visibility-warning" class="mcp-status" data-kind="warning" hidden><TMPL_VAR EVENT_HISTORY.VISIBILITY_WARNING></div>
     <div id="history-source-warning" class="mcp-status" data-kind="warning" hidden></div>
     <div class="mcp-table-wrap"><table class="mcp-table mcp-event-history-table">
@@ -100,9 +102,11 @@
       <tbody id="history-source-rows"></tbody>
     </table></div>
     <p id="history-empty" class="mcp-help" hidden><TMPL_VAR EVENT_HISTORY.NO_SOURCES></p>
-  </section>
-  <section class="mcp-card" aria-labelledby="history-add-title">
-    <h2 id="history-add-title"><TMPL_VAR EVENT_HISTORY.ADD_TITLE></h2>
+    </div>
+  </details>
+  <details id="history-add-section" class="mcp-card mcp-event-history-section">
+    <summary><h2><TMPL_VAR EVENT_HISTORY.ADD_TITLE></h2><small id="history-add-summary"><TMPL_VAR EVENT_HISTORY.LOADING></small></summary>
+    <div class="mcp-collapsible-content">
     <p class="mcp-help"><TMPL_VAR EVENT_HISTORY.ADD_HELP></p>
     <div class="mcp-event-history-search"><label class="mcp-field"><span><TMPL_VAR EVENT_HISTORY.SEARCH></span><input id="history-search" type="search" maxlength="100" autocomplete="off" disabled></label><button id="history-search-button" class="lb-button" type="button"><TMPL_VAR EVENT_HISTORY.LOAD_CONTROLS></button></div>
     <p id="history-search-status" class="mcp-help" role="status" aria-live="polite"></p>
@@ -122,9 +126,11 @@
       <div class="mcp-actions"><button id="history-add" class="lb-button" type="submit" disabled><TMPL_VAR EVENT_HISTORY.ADD></button></div>
       <p id="history-add-status" class="mcp-status" role="status" aria-live="polite" hidden></p>
     </form>
-  </section>
-  <section class="mcp-card" aria-labelledby="history-policy-title">
-    <h2 id="history-policy-title"><TMPL_VAR EVENT_HISTORY.SETTINGS></h2>
+    </div>
+  </details>
+  <details id="history-policy-section" class="mcp-card mcp-event-history-section">
+    <summary><h2><TMPL_VAR EVENT_HISTORY.SETTINGS></h2><small id="history-policy-summary"><TMPL_VAR EVENT_HISTORY.LOADING></small></summary>
+    <div class="mcp-collapsible-content">
     <form id="history-policy-form" class="mcp-form">
       <div class="mcp-grid">
         <label class="mcp-field"><span><TMPL_VAR EVENT_HISTORY.RETENTION></span><input id="history-retention" type="number" min="1" max="365" required></label>
@@ -132,12 +138,15 @@
       </div><p class="mcp-help"><TMPL_VAR EVENT_HISTORY.POLICY_HELP></p>
       <div class="mcp-actions"><button class="lb-button" type="submit"><TMPL_VAR EVENT_HISTORY.SAVE></button></div>
     </form>
-  </section>
-  <section class="mcp-card mcp-event-history-danger" aria-labelledby="history-clear-title">
-    <h2 id="history-clear-title"><TMPL_VAR EVENT_HISTORY.CLEAR_TITLE></h2>
+    </div>
+  </details>
+  <details id="history-clear-section" class="mcp-card mcp-event-history-section mcp-event-history-danger">
+    <summary><h2><TMPL_VAR EVENT_HISTORY.CLEAR_TITLE></h2><small><TMPL_VAR EVENT_HISTORY.CLEAR_SUMMARY></small></summary>
+    <div class="mcp-collapsible-content">
     <p class="mcp-help"><TMPL_VAR EVENT_HISTORY.CLEAR_HELP></p>
     <button id="history-clear" class="lb-button" type="button"><TMPL_VAR EVENT_HISTORY.CLEAR></button>
-  </section>
+    </div>
+  </details>
 </main>
 <script src="event-history/api.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-2" defer></script>
-<script src="event-history/page.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-7" defer></script>
+<script src="event-history/page.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-8" defer></script>
