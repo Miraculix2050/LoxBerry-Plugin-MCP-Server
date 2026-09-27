@@ -170,6 +170,44 @@ def test_dense_chart_sample_retains_middle_spikes_and_boolean_states(tmp_path):
     assert len(result["events"]) <= 384
 
 
+def test_dense_chart_sample_orders_huge_integer_extrema_exactly(tmp_path):
+    store = EventHistoryStore(
+        (tmp_path / "chart-huge.sqlite3").resolve(), retention_days=90, maximum_mib=16
+    )
+    source = ("control", "state")
+    now = time.time()
+    store.initialize()
+    with sqlite3.connect(store.path) as db:
+        db.executemany(
+            "INSERT INTO events(control_uuid, state_uuid, observed_at, old_value, new_value) "
+            "VALUES (?, ?, ?, '0', ?)",
+            (
+                (
+                    *source,
+                    now - 50 + index / 10000,
+                    str(
+                        10**600
+                        if index == 3000
+                        else 10**500
+                        if index == 3001
+                        else -(10**600)
+                        if index == 3002
+                        else -(10**500)
+                        if index == 3003
+                        else 1
+                    ),
+                )
+                for index in range(6000)
+            ),
+        )
+    result = store.chart_page(*source, start=now - 64, end=now)
+    values = [event["new_value"] for event in result["events"]]
+    assert result["reduced"] is True
+    assert {"integer_decimal": str(10**600)} in values
+    assert {"integer_decimal": str(-(10**600))} in values
+    assert len(result["events"]) <= 384
+
+
 def test_chart_cursor_does_not_skip_events_after_window_end(tmp_path):
     store = EventHistoryStore(
         (tmp_path / "chart-cursor.sqlite3").resolve(), retention_days=90, maximum_mib=16

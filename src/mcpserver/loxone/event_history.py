@@ -862,74 +862,36 @@ class EventHistoryStore:
         state_uuid: str,
         start: float,
         end: float,
+        deadline: float,
     ) -> list[tuple[int, float, str, str]]:
         """Keep exact boundary and extreme events with bounded Python memory."""
 
         buckets: dict[int, dict[str, tuple[int, float, str, str] | None]] = {}
         span = end - start
-        for bucket in range(64):
-            lower = start + span * bucket / 64
-            upper = end if bucket == 63 else start + span * (bucket + 1) / 64
-            comparison = "<=" if bucket == 63 else "<"
-            sampled_ids: set[int] = set()
-            for direction in ("ASC", "DESC"):
-                # At most 500 rows per bucket are decoded, including both edges.
-                cursor = db.execute(
-                    "SELECT id, observed_at, old_value, new_value FROM events "
-                    "INDEXED BY events_source_time "
-                    "WHERE control_uuid = ? AND state_uuid = ? AND observed_at >= ? "
-                    f"AND observed_at {comparison} ? "
-                    f"ORDER BY observed_at {direction}, id {direction} LIMIT 250",
-                    (control_uuid, state_uuid, lower, upper),
-                )
-                for row in cursor:
-                    sampled_ids.add(row[0])
-                    found = buckets.setdefault(bucket, {})
-                    if direction == "ASC":
-                        found.setdefault("first", row)
-                    else:
-                        found.setdefault("last", row)
-                    value = json.loads(row[3])
-                    if isinstance(value, bool):
-                        found.setdefault("true" if value else "false", row)
-                    elif isinstance(value, int) or (
-                        isinstance(value, float) and math.isfinite(value)
-                    ):
-                        minimum = found.get("min")
-                        maximum = found.get("max")
-                        if minimum is None or value < json.loads(minimum[3]):
-                            found["min"] = row
-                        if maximum is None or value > json.loads(maximum[3]):
-                            found["max"] = row
-            if len(sampled_ids) == 500:
-                found = buckets[bucket]
-                conditions = (
-                    "WHERE control_uuid = ? AND state_uuid = ? AND observed_at >= ? "
-                    f"AND observed_at {comparison} ? "
-                )
-                parameters = (control_uuid, state_uuid, lower, upper)
-                for direction, name in (("ASC", "min"), ("DESC", "max")):
-                    row = db.execute(
-                        "SELECT id, observed_at, old_value, new_value FROM events "
-                        "INDEXED BY events_source_time "
-                        + conditions
-                        + "AND json_type(new_value) IN ('integer', 'real') "
-                        + f"ORDER BY CAST(json_extract(new_value, '$') AS REAL) {direction} "
-                        "LIMIT 1",
-                        parameters,
-                    ).fetchone()
-                    if row is not None:
-                        found[name] = row
-                for value, name in (("true", "true"), ("false", "false")):
-                    row = db.execute(
-                        "SELECT id, observed_at, old_value, new_value FROM events "
-                        "INDEXED BY events_source_time "
-                        + conditions
-                        + "AND new_value = ? ORDER BY observed_at LIMIT 1",
-                        (*parameters, value),
-                    ).fetchone()
-                    if row is not None:
-                        found[name] = row
+        cursor = db.execute(
+            "SELECT id, observed_at, old_value, new_value FROM events "
+            "INDEXED BY events_source_time "
+            "WHERE control_uuid = ? AND state_uuid = ? AND observed_at >= ? "
+            "AND observed_at <= ? ORDER BY observed_at, id",
+            (control_uuid, state_uuid, start, end),
+        )
+        for count, row in enumerate(cursor):
+            if count % 256 == 0 and time.monotonic() >= deadline:
+                raise EventHistoryUnavailable("chart query timed out")
+            bucket = min(63, int((row[1] - start) / span * 64))
+            found = buckets.setdefault(bucket, {})
+            found.setdefault("first", row)
+            found["last"] = row
+            value = json.loads(row[3])
+            if isinstance(value, bool):
+                found.setdefault("true" if value else "false", row)
+            elif isinstance(value, int) or (isinstance(value, float) and math.isfinite(value)):
+                minimum = found.get("min")
+                maximum = found.get("max")
+                if minimum is None or value < json.loads(minimum[3]):
+                    found["min"] = row
+                if maximum is None or value > json.loads(maximum[3]):
+                    found["max"] = row
         chosen = {row[0]: row for bucket in buckets.values() for row in bucket.values() if row}
         return sorted(chosen.values(), key=lambda row: (row[1], row[0]))
 
@@ -997,7 +959,9 @@ class EventHistoryStore:
                             lambda: int(time.monotonic() >= sample_deadline), 10000
                         )
                         try:
-                            rows = self._chart_sample(db, control_uuid, state_uuid, start, end)
+                            rows = self._chart_sample(
+                                db, control_uuid, state_uuid, start, end, sample_deadline
+                            )
                         finally:
                             db.set_progress_handler(progress, 10000)
                         reduced = True
