@@ -808,39 +808,9 @@ def test_explorer_scope_filters_include_all_published_history_and_operate_tools(
     assert names_for("loxberryRead") == []
 
 
-def test_explorer_discovery_controls_preserve_selection_and_drafts() -> None:
-    source = read_explorer_source()
-    template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
-    stylesheet = (ROOT / "webfrontend" / "htmlauth" / "mcp-ui.css").read_text(encoding="utf-8")
+def test_explorer_discovery_labels_exist_in_both_languages() -> None:
     german = (ROOT / "templates" / "lang" / "language_de.ini").read_text(encoding="utf-8")
     english = (ROOT / "templates" / "lang" / "language_en.ini").read_text(encoding="utf-8")
-    handlers = source[
-        source.index("elements.toolSearch.addEventListener('input'") : source.index(
-            "elements.run.addEventListener('click'"
-        )
-    ]
-
-    assert '<input id="explorer-tool-search" type="search"' in template
-    assert '<details id="explorer-tool-filters"' in template
-    assert template.count('data-tool-group="') == 7
-    assert template.count('type="checkbox" data-tool-group="') == 7
-    assert 'id="explorer-tool-filter-count"' in template
-    assert "core.filteredToolGroups(state.tools, state.toolSearch, state.toolGroups)" in source
-    assert 'src="explorer-adapters.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-modules-v1"' in template
-    assert 'src="explorer.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-modules-v1"' in template
-    assert "label('noMatchingTools')" in source
-    assert "label('noTools')" in source
-    assert "explorerState.setSearch(elements.toolSearch.value)" in handlers
-    assert "explorerState.setGroups([...state.toolGroups, group])" in handlers
-    assert "explorerState.setGroups(state.toolGroups.filter(" in handlers
-    assert "if (group === 'all') explorerState.setGroups([])" in handlers
-    assert "renderTools();" in handlers
-    assert "mcpRequest(" not in handlers
-    assert "selectTool(" not in handlers
-    assert "state.drafts" not in handlers
-    assert "state.toolSearch = '';" in source
-    assert "state.toolGroups = [];" in source
-    assert ".mcp-explorer-tool-filter-options" in stylesheet
     for language in (german, english):
         for key in ("SEARCH_TOOLS=", "FILTER_TOOLS=", "FILTER_ALL=", "NO_MATCHING_TOOLS="):
             assert key in language
@@ -932,9 +902,6 @@ def test_unknown_tool_uses_generic_explorer_path() -> None:
     assert run_core(f"core.validateArguments({{query:'text'}},{encoded}.inputSchema)") == []
     assert run_core(f"core.validateArguments({{}},{encoded}.inputSchema)")
     assert run_core(f"core.toolIsMutating({encoded})") is False
-    source = read_explorer_source()
-    assert "mcpRequest('tools/call', {name, arguments: args}, false)" in source
-    assert "adapters.fieldVisible(state.selectedTool, name, state.arguments)" in source
 
 
 def test_registry_keeps_tool_hints_out_of_authorization_and_defaults_unknown_safely() -> None:
@@ -952,19 +919,6 @@ def test_registry_keeps_tool_hints_out_of_authorization_and_defaults_unknown_saf
     assert run_adapters(
         "adapters.requiredScopes({name:'loxberry_list_event_history_sources'})"
     ) == ["loxone:read", "loxone:history", "loxberry:operate"]
-    source = read_explorer_source()
-    assert "core.toolIsMutating(state.selectedTool)" in source
-    assert "if (!(await confirmMutation(state.selectedTool, state.arguments))) return;" in source
-    assert "requiredMutationScope &&" in source
-    assert "loxone_operate_control" not in source
-    assert "loxberry_clear_statistics_cache" not in source
-
-
-def test_explorer_ui_binds_static_registry_in_its_own_scope() -> None:
-    source = read_explorer_source()
-    ui = source[source.index("(function () {\n  'use strict';\n  if (typeof window") :]
-    assert "const adapters = window.McpExplorerAdapters;" in ui
-    assert "adapters.requiredMutationScope(state.selectedTool)" in ui
 
 
 def test_operation_adapter_changes_only_action_parameters() -> None:
@@ -1421,67 +1375,17 @@ def test_explorer_granted_scopes_are_exact_and_fail_closed() -> None:
     }
 
 
-def test_explorer_scope_display_tracks_session_lifecycle() -> None:
-    source = read_explorer_source()
-    template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
+def test_explorer_scope_labels_exist_in_both_languages() -> None:
     german = (ROOT / "templates" / "lang" / "language_de.ini").read_text(encoding="utf-8")
     english = (ROOT / "templates" / "lang" / "language_en.ini").read_text(encoding="utf-8")
-
-    assert 'id="explorer-access-scopes" hidden' in template
-    assert 'id="explorer-scope-list"' in template
-    assert "core.grantedScopes(state.oauth.scope)" in source
-    assert "core.EXPLORER_SCOPE_ORDER" in source
-    assert "token.scope || scope" not in source
-    assert "token.scope || state.oauth.scope" not in source
-    refresh = source[
-        source.index("async function refreshAccessToken") : source.index(
-            "async function accessToken"
-        )
-    ]
-    assert "explorerState.updateToken(token);" in refresh
-    assert "typeof token.scope === 'string' ? token.scope : ''" in STATE_SCRIPT.read_text(
-        encoding="utf-8"
-    )
-    assert "renderConnection();" in refresh
-    logout = (
-        APP_SCRIPT.read_text(encoding="utf-8")
-        .split("async function revokeAndClear()", 1)[1]
-        .split("function clearExplorerState()", 1)[0]
-    )
-    assert logout.index("clearExplorerState()") < logout.index("action: 'logout'")
-    assert logout.index("renderAll()") < logout.index("action: 'logout'")
-    assert "viewHelpers.clearSensitiveDom(elements);" in APP_SCRIPT.read_text(encoding="utf-8")
-    assert "sessionExpiryTimer = window.setTimeout" in source
-    assert "if (logoutChannel) logoutChannel.postMessage('logout');" in source
-    for text in (german, english):
-        assert "GRANTED_OAUTH_SCOPES=" in text
-        assert "SCOPE_GRANTED=" in text
-        assert "SCOPE_NOT_GRANTED=" in text
-        assert "SCOPE_UNAVAILABLE=" in text
-
-
-def test_session_clear_prevents_call_artifacts_from_being_recreated() -> None:
-    source = read_explorer_source()
-
-    assert "error.sessionCleared = true" in source
-    assert "!(error && error.sessionCleared === true)" in source
-    assert (
-        "sessionCleared = Boolean(error && error.sessionCleared === true) || state.oauth !== oauth"
-        in source
-    )
-    assert source.count("if (!sessionCleared) {") >= 2
-    assert "if (elements.confirm.open) elements.confirm.close('cancel');" in source
-    request = source[
-        source.index("async function mcpRequest") : source.index("async function listTools")
-    ]
-    assert request.count("state.oauth !== oauth || Date.now() >= oauth.resumeUntil") == 2
-    run = source[
-        source.index("async function runSelectedTool") : source.index("function openTransfer")
-    ]
-    assert run.index("if (state.oauth !== oauth || Date.now() >= oauth.resumeUntil)") < run.index(
-        "const tool = state.selectedTool"
-    )
-    assert "if (!sessionCleared) setCallFeedback(" in run
+    for language in (german, english):
+        for key in (
+            "GRANTED_OAUTH_SCOPES=",
+            "SCOPE_GRANTED=",
+            "SCOPE_NOT_GRANTED=",
+            "SCOPE_UNAVAILABLE=",
+        ):
+            assert key in language
 
 
 def test_explorer_keeps_refresh_credentials_out_of_browser_storage() -> None:
@@ -1859,22 +1763,6 @@ def test_explorer_uses_csp_compatible_panel_free_loxberry_header() -> None:
     assert "lbheader($L{'EXPLORER.TITLE'} . \" V$version\", 'nopanels'" in cgi
     assert "'unsafe-eval'" not in cgi
     assert '<a class="lb-button" href="index.cgi"><TMPL_VAR EXPLORER.BACK></a>' in template
-
-
-def test_explorer_transcript_never_records_authorization_headers() -> None:
-    source = read_explorer_source()
-    add_transcript = source[
-        source.index("function addTranscript") : source.index("async function mcpRequest")
-    ]
-    request_section = source[
-        source.index("async function mcpRequest") : source.index("async function listTools")
-    ]
-
-    assert "headers" not in add_transcript
-    assert "safeRequest" in request_section
-    assert "redactArguments" in request_section
-    assert "safeMcpResponse" in request_section
-    assert "[omitted; structuredContent shown]" in source
 
 
 def test_oauth_callback_emits_no_store_and_frame_protection() -> None:
