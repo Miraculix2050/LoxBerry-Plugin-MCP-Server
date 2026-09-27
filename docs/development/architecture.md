@@ -78,6 +78,8 @@ memory-only. Mapped views and queries are reused while the marker and freshly
 loaded visible structure match. Project search and analysis results use separate
 bounded, five-minute in-memory caches keyed by identity, graph, visible structure,
 model version, filters, and selected analyses.
+Marker session establishment uses the runtime's shared Miniserver authentication
+coordinator, including its source-IP block suppression.
 
 The public projection offers status, search, description, bounded signal/reference
 traces, and deterministic analysis; it never returns raw XML and does not add a

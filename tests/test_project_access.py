@@ -72,6 +72,24 @@ async def test_project_marker_uses_authenticated_session_and_closes_it(monkeypat
 
 
 @pytest.mark.asyncio
+async def test_project_service_uses_coordinated_marker_reader():
+    client = SimpleNamespace(project_marker=AsyncMock(side_effect=AssertionError("raw login")))
+    reader = AsyncMock(return_value="revision")
+    service = ProjectService(
+        client,
+        SimpleNamespace(),
+        SimpleNamespace(),
+        AsyncMock(return_value=True),
+        marker_reader=reader,
+    )
+    token = LoxoneToken("opaque", "reader", "", "SHA256", 9_999_999_999)
+
+    assert await service._marker(token) == "revision"
+    reader.assert_awaited_once_with(token)
+    client.project_marker.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_revocation_after_download_prevents_project_result():
     access = SimpleNamespace(
         scopes=["loxone:read"], family_id="f", miniserver_id="m", identity_id="i"

@@ -1127,6 +1127,14 @@ class LoxoneRuntime:
             lambda: self.client.open_session(token), owner=owner, phase=phase
         )
 
+    async def project_marker(self, token: LoxoneToken) -> str:
+        """Read the project marker through the shared authentication coordinator."""
+        session = await self._open_session(token, owner="tool_request", phase="project_marker")
+        try:
+            return await session.structure_version()
+        finally:
+            await session.close()
+
     async def _pump_events(self, subject: str, record: _ConnectionRecord) -> None:
         async for event_batch in record.session.state_events():
             if not record.state_stream_diagnostics_logged:

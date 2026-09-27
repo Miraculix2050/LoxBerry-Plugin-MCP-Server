@@ -4,14 +4,20 @@ import asyncio
 import logging
 from collections import defaultdict
 from contextlib import asynccontextmanager
+from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
 import mcpserver.loxone.runtime as runtime_module
 from mcpserver.auth.provider import HISTORY_SCOPE, READ_SCOPE, StoredAccessToken
+from mcpserver.loxone.auth_diagnostics import (
+    MiniserverAuthCoordinator,
+    MiniserverAuthenticationSuppressed,
+)
 from mcpserver.loxone.cache import UserStateCache
-from mcpserver.loxone.client import LoxoneConnectionError
+from mcpserver.loxone.client import LoxoneConnectionError, LoxoneSourceIpBlocked, LoxoneToken
 from mcpserver.loxone.events import StateEvent
 from mcpserver.loxone.models import Control, LoxoneIdentity, LoxoneStructure
 from mcpserver.loxone.runtime import (
@@ -297,6 +303,21 @@ async def test_history_visibility_does_not_issue_optional_marker_request(
         async with runtime._history_session(access, "control") as (visible, used_session):
             assert visible is control
             assert used_session is session
+
+
+@pytest.mark.asyncio
+async def test_project_marker_authentication_respects_shared_breaker(tmp_path: Path) -> None:
+    runtime = object.__new__(LoxoneRuntime)
+    open_session = AsyncMock(side_effect=LoxoneSourceIpBlocked("blocked"))
+    runtime.client = SimpleNamespace(open_session=open_session)
+    runtime.auth_coordinator = MiniserverAuthCoordinator(tmp_path / "auth-state.json")
+    token = LoxoneToken("opaque", "reader", "", "SHA256", 9_999_999_999)
+
+    with pytest.raises(LoxoneSourceIpBlocked):
+        await runtime.project_marker(token)
+    with pytest.raises(MiniserverAuthenticationSuppressed):
+        await runtime.project_marker(token)
+    open_session.assert_awaited_once_with(token)
 
 
 @pytest.mark.asyncio

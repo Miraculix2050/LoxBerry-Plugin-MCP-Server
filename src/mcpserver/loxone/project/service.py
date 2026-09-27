@@ -41,11 +41,13 @@ class ProjectService:
         health: LoxoneTokenHealthStore,
         validate: Callable[[StoredAccessToken], Awaitable[bool]],
         limits: ProjectLimits = DEFAULT_LIMITS,
+        marker_reader: Callable[[LoxoneToken], Awaitable[str]] | None = None,
     ) -> None:
         self.client = client
         self.tokens = tokens
         self.health = health
         self.validate = validate
+        self.marker_reader = marker_reader
         self.limits = limits
         self._closed = False
         self._tasks: dict[asyncio.Task[object], str] = {}
@@ -80,7 +82,8 @@ class ProjectService:
 
     async def _marker(self, token: LoxoneToken) -> str:
         try:
-            marker = await self.client.project_marker(token)
+            reader = self.marker_reader or self.client.project_marker
+            marker = await reader(token)
             if not isinstance(marker, str) or not marker or len(marker) > 128:
                 raise ProjectError("project_marker_invalid")
             return marker
