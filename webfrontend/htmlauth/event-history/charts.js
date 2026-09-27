@@ -31,7 +31,12 @@
     return new Date(date.getTime() - date.getTimezoneOffset() * 60000)
       .toISOString().slice(0, 16);
   };
-  const valueText = (value) => typeof value === 'string' ? value : JSON.stringify(value);
+  const decimalInteger = (value) => value && typeof value === 'object'
+    && typeof value.integer_decimal === 'string' && /^-?\d+$/.test(value.integer_decimal);
+  const numericValue = (value) => decimalInteger(value) ? Number(value.integer_decimal)
+    : (typeof value === 'number' ? value : null);
+  const valueText = (value) => decimalInteger(value) ? value.integer_decimal
+    : (typeof value === 'string' ? value : JSON.stringify(value));
   const setStatus = (message, kind = 'info') => {
     status.textContent = message;
     status.dataset.kind = kind;
@@ -60,10 +65,10 @@
     state.tableBody.replaceChildren();
     const events = [...state.events.values()].sort((a, b) =>
       a.observed_at - b.observed_at || a.id - b.id);
-    state.notice.textContent = state.reduced ? label('chartReduced')
+    state.notice.textContent = state.reduced || events.some((event) => decimalInteger(event.new_value))
+      ? label('chartReduced')
       : (events.length ? label('chartCoverage') : label('chartEmpty'));
-    const numeric = events.filter((event) => typeof event.new_value === 'number'
-      && Number.isFinite(event.new_value));
+    const numeric = events.filter((event) => Number.isFinite(numericValue(event.new_value)));
     const boolean = events.filter((event) => typeof event.new_value === 'boolean');
     const plotted = numeric.length >= boolean.length ? numeric : boolean;
     const plottedKind = numeric.length >= boolean.length ? 'number' : 'boolean';
@@ -83,7 +88,7 @@
           refs.push(null);
         }
         x.push(event.observed_at);
-        y.push(plottedKind === 'boolean' ? Number(event.new_value) : event.new_value);
+        y.push(plottedKind === 'boolean' ? Number(event.new_value) : numericValue(event.new_value));
         refs.push(event);
         priorCoverage = coverage;
       }

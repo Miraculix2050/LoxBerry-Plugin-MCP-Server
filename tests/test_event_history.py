@@ -113,11 +113,25 @@ def test_dense_chart_sample_retains_extrema_and_boolean_transitions(tmp_path):
             ),
         )
     result = store.chart_page(*source, start=now - 5000, end=now)
-    values = {event["new_value"] for event in result["events"]}
+    values = [event["new_value"] for event in result["events"]]
     assert result["reduced"] is True
     assert result["has_more"] is False
     assert len(result["events"]) <= 384
-    assert {-999, 999, 0, 1, 10**500} <= values
+    assert {-999, 999, 0, 1} <= {value for value in values if isinstance(value, int)}
+    assert {"integer_decimal": str(10**500)} in values
+
+
+def test_chart_page_preserves_unsafe_integers_for_browser(tmp_path):
+    store = EventHistoryStore(
+        (tmp_path / "chart-integer.sqlite3").resolve(), retention_days=90, maximum_mib=16
+    )
+    source = ("control", "state")
+    now = time.time()
+    store.initialize()
+    store.record_transition(*source, observed_at=now - 1, old_value=2**53, new_value=2**53 + 1)
+    event = store.chart_page(*source, start=now - 10, end=now)["events"][0]
+    assert event["old_value"] == {"integer_decimal": str(2**53)}
+    assert event["new_value"] == {"integer_decimal": str(2**53 + 1)}
 
 
 def test_dense_chart_sample_retains_middle_spikes_and_boolean_states(tmp_path):

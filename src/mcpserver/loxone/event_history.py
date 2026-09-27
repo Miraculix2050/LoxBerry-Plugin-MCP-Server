@@ -32,6 +32,7 @@ _LOGGER = logging.getLogger("mcpserver.event_history")
 _SCHEMA_VERSION: Final = 6
 _MAX_TEXT_BYTES: Final = 4096
 _UNSUPPORTED_SOURCE_CONTROL_TYPES: Final = frozenset({"Daytimer"})
+_MAX_SAFE_BROWSER_INTEGER: Final = 2**53 - 1
 
 
 class EventHistoryUnavailable(RuntimeError):
@@ -40,6 +41,12 @@ class EventHistoryUnavailable(RuntimeError):
 
 class _UnsupportedEventValue(EventHistoryUnavailable):
     """A configured state emitted a value the local history cannot store."""
+
+
+def _chart_json_value(value: object) -> object:
+    if type(value) is int and abs(value) > _MAX_SAFE_BROWSER_INTEGER:
+        return {"integer_decimal": str(value)}
+    return value
 
 
 def _storage_failure_reason(exc: EventHistoryUnavailable) -> str:
@@ -1047,8 +1054,8 @@ class EventHistoryStore:
                 {
                     "id": row[0],
                     "observed_at": row[1],
-                    "old_value": json.loads(row[2]),
-                    "new_value": json.loads(row[3]),
+                    "old_value": _chart_json_value(json.loads(row[2])),
+                    "new_value": _chart_json_value(json.loads(row[3])),
                 }
                 for row in (rows if reduced else rows[:limit])
             ],

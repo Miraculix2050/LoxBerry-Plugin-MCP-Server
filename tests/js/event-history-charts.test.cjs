@@ -58,9 +58,12 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
     if (action === 'event_history_chart_query') {
       queryCount++;
       const answer = {results: [{
-      generation: 1, events: queryCount === 1 ? [{id: 1, observed_at: Date.now() / 1000 - 10,
-        old_value: false, new_value: true}] : [], has_more: false, latest_id: 1,
-      next_id: 1, reduced: false, coverage, capture_started_at: null,
+      generation: 1, events: queryCount === 1 ? [
+        {id: 1, observed_at: Date.now() / 1000 - 10, old_value: false, new_value: true},
+        {id: 2, observed_at: Date.now() / 1000 - 9, old_value: 0,
+          new_value: {integer_decimal: '9007199254740993'}},
+      ] : [], has_more: false, latest_id: 2,
+      next_id: 2, reduced: false, coverage, capture_started_at: null,
       retained_from: null, recording_ended_at: null,
       }]};
       if (holdNext) {
@@ -79,6 +82,8 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
     ['after_id', 'control_uuid', 'end', 'generation', 'start', 'state_uuid']);
   assert.equal(window.document.querySelectorAll('#chart-panels canvas').length, 1);
   assert.match(window.document.querySelector('#chart-panels').textContent, /Control/);
+  assert.match(window.document.querySelector('#chart-panels table').textContent,
+    /9007199254740993/);
   assert.equal(window.document.querySelectorAll('#chart-panels ul li').length, 1);
 
   const queries = () => calls.filter(({action}) => action === 'event_history_chart_query');
