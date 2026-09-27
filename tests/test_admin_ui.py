@@ -822,8 +822,11 @@ vm.runInNewContext(`let sourceItems = [
 let unverifiedItems = []; let sourceVisibility = 'available';
 const sourceFilters = {room: new Set(), category: new Set(), type: new Set()};
 ${section}
-globalThis.subject = {applySourceFilters, sourceFilters};`, context);
-const {applySourceFilters, sourceFilters} = context.subject;
+globalThis.subject = {applySourceFilters, sourceFilters, sourceSize};`, context);
+const {applySourceFilters, sourceFilters, sourceSize} = context.subject;
+assert.equal(sourceSize(0), '0 KiB');
+assert.equal(sourceSize(null), 'unavailable');
+for (const bytes of [1, 11, 51]) assert.notEqual(sourceSize(bytes), '0 KiB');
 applySourceFilters();
 assert.deepEqual(drawn.at(-1), [1, 2, 3]);
 sourceFilters.room.add('r1'); sourceFilters.room.add('r2');

@@ -122,7 +122,7 @@
     const unit = bytes >= 1048576 ? 'MiB' : 'KiB';
     const value = bytes / (unit === 'MiB' ? 1048576 : 1024);
     return `${value.toLocaleString(undefined, {
-      maximumFractionDigits: bytes && value < 0.01 ? 3 : (bytes ? 1 : 0),
+      maximumFractionDigits: bytes && value < 0.1 ? 3 : (bytes ? 1 : 0),
     })} ${unit}`;
   };
   const applySourceFilters = () => {
