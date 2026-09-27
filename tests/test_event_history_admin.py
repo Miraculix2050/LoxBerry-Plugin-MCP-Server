@@ -138,6 +138,10 @@ def test_chart_query_requires_fresh_profile_bound_visibility(tmp_path, monkeypat
         ]
         is True
     )
+    batch = event_history_admin.chart_query({"queries": [payload]})
+    assert batch["results"][0]["events"][0]["new_value"] is True
+    with pytest.raises(admin.AdminError, match="duplicate"):
+        event_history_admin.chart_query({"queries": [payload, payload]})
 
     document["verified_at"] = int(now - 61)
     with pytest.raises(admin.AdminError, match="refreshed"):

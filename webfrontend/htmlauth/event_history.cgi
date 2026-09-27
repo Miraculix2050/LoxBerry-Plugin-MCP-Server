@@ -109,7 +109,9 @@ if (($q->{action} // '') ne '') {
         my $sources = length($raw) <= 1024 ? eval { decode_json($raw) } : undef;
         $payload = {sources => ref($sources) eq 'ARRAY' ? $sources : undef};
     } elsif ($action eq 'event_history_chart_query') {
-        $payload = {
+        my $raw = $q->{queries} // '';
+        my $queries = $raw ne '' && length($raw) <= 2048 ? eval { decode_json($raw) } : undef;
+        $payload = ref($queries) eq 'ARRAY' ? {queries => $queries} : {
             control_uuid => ($q->{control_uuid} // ''),
             state_uuid => ($q->{state_uuid} // ''),
             generation => ($q->{generation} // ''),

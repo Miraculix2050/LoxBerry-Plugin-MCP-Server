@@ -518,6 +518,19 @@ def chart_query(payload: object) -> dict[str, Any]:
     bridge = _bridge()
     if not isinstance(payload, dict):
         raise bridge.AdminError("chart query is invalid")
+    if "queries" in payload:
+        queries = payload["queries"]
+        if not isinstance(queries, list) or not 1 <= len(queries) <= _CHART_SOURCE_LIMIT:
+            raise bridge.AdminError("chart query limit exceeded")
+        if any(not isinstance(item, dict) for item in queries):
+            raise bridge.AdminError("chart query is invalid")
+        sources = tuple(_source(item) for item in queries)
+        if len(set(sources)) != len(sources):
+            raise bridge.AdminError("duplicate chart source")
+        results = [chart_query(item) for item in queries]
+        if len({result["generation"] for result in results}) != 1:
+            raise bridge.AdminError("local history changed", code="history_changed")
+        return {"results": results}
     source = _source(payload)
     start, end, after_id = (payload.get(key) for key in ("start", "end", "after_id"))
     now = time.time()

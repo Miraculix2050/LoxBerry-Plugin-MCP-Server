@@ -196,44 +196,52 @@
     selection = result;
     if (changed) createPanels();
   };
-  const query = async (state, reset, token) => {
-    let after = reset ? 0 : state.cursor;
-    let count = 0;
-    do {
-      const result = await api.request('event_history_chart_query', {
-        ...state.source, generation: selection.generation,
-        start: range.start, end: range.end, after_id: after,
+  const query = async (token) => {
+    let pending = [...sourceStates];
+    const counts = new Map(sourceStates.map((state) => [state, 0]));
+    while (pending.length) {
+      const response = await api.request('event_history_chart_query', {
+        queries: JSON.stringify(pending.map((state) => ({
+          ...state.source, generation: selection.generation,
+          start: range.start, end: range.end, after_id: state.cursor,
+        }))),
       }, 15000);
       if (token !== sequence) return;
-      if (state.generation !== null && result.generation !== state.generation) {
-        throw Object.assign(new Error('History changed'), {code: 'history_changed'});
+      if (!Array.isArray(response.results) || response.results.length !== pending.length) {
+        throw new Error('Invalid chart query response');
       }
-      state.generation = result.generation;
-      state.reduced = state.reduced || result.reduced;
-      state.coverage = result.coverage;
-      state.coverageTruncated = result.coverage_truncated;
-      state.reduced = state.reduced || result.coverage_truncated;
-      state.capture = result.capture_started_at;
-      state.retained = result.retained_from;
-      state.removed = result.recording_ended_at;
-      for (const event of result.events) state.events.set(event.id, event);
-      if (state.events.size > maxEvents) {
-        throw Object.assign(new Error('Chart memory limit reached'), {code: 'history_changed'});
+      const next = [];
+      for (let index = 0; index < pending.length; index++) {
+        const state = pending[index];
+        const result = response.results[index];
+        if (state.generation !== null && result.generation !== state.generation) {
+          throw Object.assign(new Error('History changed'), {code: 'history_changed'});
+        }
+        const renderNeeded = state.generation === null || result.events.length > 0
+          || (result.reduced && !state.reduced);
+        state.generation = result.generation;
+        state.reduced = state.reduced || result.reduced;
+        state.coverage = result.coverage;
+        state.coverageTruncated = result.coverage_truncated;
+        state.reduced = state.reduced || result.coverage_truncated;
+        state.capture = result.capture_started_at;
+        state.retained = result.retained_from;
+        state.removed = result.recording_ended_at;
+        for (const event of result.events) state.events.set(event.id, event);
+        if (state.events.size > maxEvents) {
+          throw Object.assign(new Error('Chart memory limit reached'), {code: 'history_changed'});
+        }
+        counts.set(state, counts.get(state) + result.events.length);
+        state.cursor = result.next_id;
+        if (!result.has_more) state.cursor = Math.max(state.cursor, result.latest_id);
+        else if (counts.get(state) >= maxEvents) {
+          state.reduced = true;
+          state.cursor = result.latest_id;
+        } else next.push(state);
+        if (renderNeeded) render(state);
       }
-      count += result.events.length;
-      after = result.next_id;
-      state.cursor = after;
-      if (!result.has_more) {
-        state.cursor = Math.max(after, result.latest_id);
-        break;
-      }
-      if (count >= maxEvents) {
-        state.reduced = true;
-        state.cursor = result.latest_id;
-        break;
-      }
-    } while (true);
-    render(state);
+      pending = next;
+    }
   };
   const load = async (fresh = false) => {
     if (busy || document.hidden || !requested.length) return;
@@ -245,7 +253,7 @@
         if (fresh) clear();
         await prepare();
       }
-      for (const state of sourceStates) await query(state, fresh || state.generation === null, token);
+      await query(token);
       if (token === sequence) setStatus('');
     } catch (error) {
       if (token !== sequence) return;

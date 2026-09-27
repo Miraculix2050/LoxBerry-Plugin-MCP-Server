@@ -50,12 +50,12 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
         sources: [{...source, control_name: 'Control', state_name: 'State',
           room: 'Room', category: 'Category', control_type: 'Switch'}]};
     }
-    if (action === 'event_history_chart_query') return {
+    if (action === 'event_history_chart_query') return {results: [{
       generation: 1, events: [{id: 1, observed_at: Date.now() / 1000 - 10,
         old_value: false, new_value: true}], has_more: false, latest_id: 1,
       next_id: 1, reduced: false, coverage: [], capture_started_at: null,
       retained_from: null, recording_ended_at: null,
-    };
+    }]};
     throw new Error(`Unexpected action ${action}`);
   }};
   window.eval(script);
