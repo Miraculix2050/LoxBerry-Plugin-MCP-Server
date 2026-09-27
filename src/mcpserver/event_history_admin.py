@@ -161,7 +161,10 @@ def _source_revision(config: PluginConfig, snapshot: EventHistoryStoreSummary) -
 
 
 def overview(
-    verified_visible: dict[tuple[str, str], tuple[str, str, str]] | None = None,
+    verified_visible: dict[
+        tuple[str, str], tuple[str, str, str, str | None, str | None, str | None, str | None]
+    ]
+    | None = None,
     *,
     local_only: bool = False,
 ) -> dict[str, Any]:
@@ -207,7 +210,7 @@ def overview(
         return response
     if verified_visible is None:
         try:
-            visible = _visible(_controls(config))
+            visible = _selector_visible(_selector_projection(config))
         except bridge.AdminError:
             return response
     else:
@@ -232,8 +235,13 @@ def overview(
                 "control_name": names[0],
                 "control_type": names[1],
                 "state_name": names[2],
+                "room_id": names[3],
+                "room": names[4],
+                "category_id": names[5],
+                "category": names[6],
                 "recording_status": "active" if key in active else "removed",
                 "event_count": source.event_count,
+                "logical_value_bytes": source.logical_value_bytes,
                 "oldest_event_at": source.oldest_event_at,
                 "newest_event_at": source.newest_event_at,
                 "capture_started_at": source.capture_started_at,
@@ -340,9 +348,19 @@ def _selector_projection(config: PluginConfig) -> dict[str, Any]:
     return {"last_modified": structure.last_modified, "controls": controls}
 
 
-def _selector_visible(document: dict[str, Any]) -> dict[tuple[str, str], tuple[str, str, str]]:
+def _selector_visible(
+    document: dict[str, Any],
+) -> dict[tuple[str, str], tuple[str, str, str, str | None, str | None, str | None, str | None]]:
     return {
-        (control["uuid"], state_uuid): (control["name"], control["type"], state_name)
+        (control["uuid"], state_uuid): (
+            control["name"],
+            control["type"],
+            state_name,
+            control["room_id"],
+            control["room"],
+            control["category_id"],
+            control["category"],
+        )
         for control in document["controls"]
         for state_name, state_uuid in control["states"]
     }
@@ -614,7 +632,7 @@ def change_source(payload: object, *, add: bool) -> dict[str, Any]:
     visible = None
     if add:
         config = bridge._config_store().load()
-        visible = _visible(_controls(config))
+        visible = _selector_visible(_selector_projection(config))
         if key not in visible:
             raise bridge.AdminError("source is not currently visible", code="not_found")
     else:

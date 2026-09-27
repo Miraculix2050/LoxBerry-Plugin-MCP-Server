@@ -38,6 +38,90 @@ def test_store_records_typed_transitions_and_pages_them(tmp_path):
         ("closed", "open"),
         (False, True),
     ]
+    assert store.snapshot((source,)).sources[0].logical_value_bytes == len(
+        b'falsetrue"closed""open"'
+    )
+
+
+def test_v4_logical_bytes_migrate_in_bounded_batches_with_concurrent_writes(tmp_path):
+    path = (tmp_path / "history.sqlite3").resolve()
+    store = EventHistoryStore(path, retention_days=90, maximum_mib=16)
+    source = ("control", "state")
+    removed = ("removed", "state")
+    now = time.time()
+    store.initialize()
+    store.record_transition(*source, observed_at=now - 3, old_value="ä", new_value="ö")
+    store.record_transition(*source, observed_at=now - 2, old_value=0, new_value=1)
+    store.record_transition(*removed, observed_at=now - 2, old_value=4, new_value=5)
+    with sqlite3.connect(path) as connection:
+        connection.execute("ALTER TABLE events DROP COLUMN logical_value_bytes")
+        connection.execute("ALTER TABLE source_totals DROP COLUMN logical_value_bytes")
+        connection.execute("ALTER TABLE source_totals DROP COLUMN unmeasured_events")
+        connection.execute("ALTER TABLE history_metadata DROP COLUMN backfill_last_id")
+        connection.execute("PRAGMA user_version = 4")
+
+    assert store.snapshot((source,)).sources[0].logical_value_bytes is None
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM events WHERE logical_value_bytes IS NOT NULL"
+            ).fetchone()[0]
+            == 0
+        )
+    assert store.backfill_payload_batch(limit=1) is True
+    assert store.snapshot((source,)).sources[0].logical_value_bytes is None
+    store.record_transition(*source, observed_at=now - 1, old_value=2, new_value=3)
+    assert store.purge_source(*removed)[0] == 1
+    assert store.backfill_payload_batch(limit=1) is True
+    assert store.backfill_payload_batch(limit=1) is False
+    expected = len('"ä""ö"'.encode()) + len(b"01") + len(b"23")
+    assert store.snapshot((source,)).sources[0].logical_value_bytes == expected
+    assert store.backfill_payload_batch(limit=1) is False
+
+
+def test_logical_bytes_do_not_include_wal_growth(tmp_path):
+    store = EventHistoryStore(
+        (tmp_path / "history.sqlite3").resolve(), retention_days=90, maximum_mib=16
+    )
+    source = ("control", "state")
+    now = time.time()
+    store.initialize()
+    store.record_transition(*source, observed_at=now, old_value=False, new_value=True)
+    expected = store.snapshot((source,)).sources[0].logical_value_bytes
+    with sqlite3.connect(store.path) as connection:
+        connection.execute("PRAGMA wal_autocheckpoint=0")
+        connection.execute(
+            "INSERT INTO coverage(control_uuid, state_uuid, started_at, outcome) "
+            "VALUES (?, ?, ?, 'active')",
+            (*source, now),
+        )
+        connection.commit()
+        summary = store.snapshot((source,))
+        assert summary.wal_bytes > 0
+        assert summary.sources[0].logical_value_bytes == expected
+
+
+def test_logical_bytes_follow_removal_pruning_purge_and_clear(tmp_path):
+    store = EventHistoryStore(
+        (tmp_path / "history.sqlite3").resolve(), retention_days=1, maximum_mib=16
+    )
+    source = ("control", "state")
+    other = ("other", "state")
+    now = time.time()
+    store.initialize()
+    store.record_transition(*source, observed_at=now - 100000, old_value=0, new_value=1)
+    store.record_transition(*source, observed_at=now - 10, old_value=2, new_value=3)
+    store.record_transition(*other, observed_at=now - 10, old_value=4, new_value=5)
+    store.mark_removed(*source, removed_at=now - 5)
+    assert store.snapshot(()).sources[0].logical_value_bytes == 2
+    with store._lock, store._opened() as connection:
+        store._prune(connection, now=now)
+    assert store.snapshot(()).sources[0].logical_value_bytes == 2
+    assert store.purge_source(*source)[0] == 1
+    assert store.snapshot(()).sources[0].control_uuid == "other"
+    assert store.clear() == 1
+    assert store.snapshot((source,)).sources[0].logical_value_bytes == 0
 
 
 def test_store_reports_not_recorded_and_removes_data(tmp_path):
@@ -245,6 +329,7 @@ def test_size_eviction_advances_only_coverage_for_its_source(tmp_path, monkeypat
 
     assert coverage[busy[0]] > 10.0
     assert coverage[quiet[0]] == 0.0
+    assert store.snapshot((busy, quiet)).sources[0].logical_value_bytes == 0
 
 
 def test_store_translates_parent_creation_failures_to_a_store_error(tmp_path, monkeypatch):
@@ -270,6 +355,9 @@ async def test_monitor_skips_miniserver_when_no_sources_and_starts_after_add(
     class Store:
         def initialize(self) -> None:
             pass
+
+        def backfill_payload_batch(self) -> bool:
+            return False
 
     started = asyncio.Event()
     attempts = 0
@@ -299,6 +387,29 @@ async def test_monitor_skips_miniserver_when_no_sources_and_starts_after_add(
     await monitor.update_config(PluginConfig(event_history_enabled=True))
     assert attempts == 1
     assert monitor._task is None or monitor._task.done()
+
+
+@pytest.mark.asyncio
+async def test_monitor_close_cancels_payload_backfill(monkeypatch, tmp_path) -> None:
+    store = EventHistoryStore(
+        (tmp_path / "history.sqlite3").resolve(), retention_days=90, maximum_mib=16
+    )
+    monitor = EventHistoryMonitor(
+        PluginConfig(event_history_enabled=True),
+        store,
+        object(),  # type: ignore[arg-type]
+    )
+    started = asyncio.Event()
+
+    async def backfill() -> None:
+        started.set()
+        await asyncio.Future()
+
+    monkeypatch.setattr(monitor, "_backfill", backfill)
+    await monitor.start()
+    await asyncio.wait_for(started.wait(), 1)
+    await monitor.close()
+    assert monitor._backfill_task is None
 
 
 @pytest.mark.asyncio

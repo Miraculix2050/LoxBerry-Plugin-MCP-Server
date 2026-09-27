@@ -75,7 +75,9 @@
   data-filter-limit="<TMPL_VAR EVENT_HISTORY.FILTER_LIMIT ESCAPE=HTML>"
   data-room="<TMPL_VAR EVENT_HISTORY.ROOM ESCAPE=HTML>"
   data-category="<TMPL_VAR EVENT_HISTORY.CATEGORY ESCAPE=HTML>"
-  data-type="<TMPL_VAR EVENT_HISTORY.TYPE ESCAPE=HTML>">
+  data-type="<TMPL_VAR EVENT_HISTORY.TYPE ESCAPE=HTML>"
+  data-source-size-estimated="<TMPL_VAR EVENT_HISTORY.SOURCE_SIZE_ESTIMATED ESCAPE=HTML>"
+  data-source-matches="<TMPL_VAR EVENT_HISTORY.SOURCE_MATCHES ESCAPE=HTML>">
   <header class="mcp-event-history-heading">
     <div><a href="index.cgi"><TMPL_VAR EVENT_HISTORY.BACK></a>
       <h1><TMPL_VAR EVENT_HISTORY.TITLE></h1>
@@ -95,13 +97,22 @@
     <summary><h2><TMPL_VAR EVENT_HISTORY.SOURCE_LIST></h2><small id="history-sources-summary"><TMPL_VAR EVENT_HISTORY.LOADING></small></summary>
     <div class="mcp-collapsible-content">
     <p class="mcp-help"><TMPL_VAR EVENT_HISTORY.COVERAGE_HELP></p>
+    <p class="mcp-help"><TMPL_VAR EVENT_HISTORY.SOURCE_SIZE_HELP></p>
     <div id="history-visibility-warning" class="mcp-status" data-kind="warning" hidden><TMPL_VAR EVENT_HISTORY.VISIBILITY_WARNING></div>
     <div id="history-source-warning" class="mcp-status" data-kind="warning" hidden></div>
+    <div class="mcp-event-history-filters" id="history-source-filters" aria-label="<TMPL_VAR EVENT_HISTORY.SOURCE_FILTERS ESCAPE=HTML>">
+      <details data-source-facet="room"><summary><TMPL_VAR EVENT_HISTORY.ROOM></summary><div class="mcp-event-history-facet-options"></div></details>
+      <details data-source-facet="category"><summary><TMPL_VAR EVENT_HISTORY.CATEGORY></summary><div class="mcp-event-history-facet-options"></div></details>
+      <details data-source-facet="type"><summary><TMPL_VAR EVENT_HISTORY.TYPE></summary><div class="mcp-event-history-facet-options"></div></details>
+      <button id="history-source-clear-filters" class="lb-button" type="button" disabled><TMPL_VAR EVENT_HISTORY.FILTER_CLEAR></button>
+    </div>
+    <p id="history-source-match-count" class="mcp-help" role="status" aria-live="polite"></p>
     <div class="mcp-table-wrap"><table class="mcp-table mcp-event-history-table">
-      <thead><tr><th scope="col"><TMPL_VAR EVENT_HISTORY.CONTROL></th><th scope="col"><TMPL_VAR EVENT_HISTORY.STATE></th><th scope="col"><TMPL_VAR EVENT_HISTORY.STATUS></th><th scope="col"><TMPL_VAR EVENT_HISTORY.EVENTS></th><th scope="col"><TMPL_VAR EVENT_HISTORY.PERIOD></th><th scope="col"><TMPL_VAR EVENT_HISTORY.ACTIONS></th></tr></thead>
+      <thead><tr><th scope="col"><TMPL_VAR EVENT_HISTORY.CONTROL></th><th scope="col"><TMPL_VAR EVENT_HISTORY.STATE></th><th scope="col"><TMPL_VAR EVENT_HISTORY.STATUS></th><th scope="col"><TMPL_VAR EVENT_HISTORY.EVENTS></th><th scope="col"><TMPL_VAR EVENT_HISTORY.SOURCE_SIZE_ESTIMATED></th><th scope="col"><TMPL_VAR EVENT_HISTORY.PERIOD></th><th scope="col"><TMPL_VAR EVENT_HISTORY.ACTIONS></th></tr></thead>
       <tbody id="history-source-rows"></tbody>
     </table></div>
     <p id="history-empty" class="mcp-help" hidden><TMPL_VAR EVENT_HISTORY.NO_SOURCES></p>
+    <p id="history-source-no-matches" class="mcp-help" hidden><TMPL_VAR EVENT_HISTORY.SOURCE_NO_MATCHES></p>
     </div>
   </details>
   <details id="history-add-section" class="mcp-card mcp-event-history-section">

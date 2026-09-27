@@ -38,6 +38,10 @@
   let messageVersion = 0;
   let actionMessagePinned = false;
   let savedPolicy = null;
+  let sourceItems = [];
+  let unverifiedItems = [];
+  let sourceVisibility = 'unavailable';
+  const sourceFilters = {room: new Set(), category: new Set(), type: new Set()};
   const label = (name) => root.dataset[name] || name;
   const sections = ['sources', 'add', 'policy', 'clear'];
   for (const name of sections) {
@@ -108,9 +112,71 @@
     });
     return button;
   };
+  const sourceFacetId = (source, field) => {
+    if (field === 'type') return source.control_type || '';
+    return source[field] && source[`${field}_id`] ? source[`${field}_id`] : '';
+  };
+  const sourceSize = (bytes) => {
+    if (!Number.isSafeInteger(bytes) || bytes < 0) return label('unavailable');
+    const unit = bytes >= 1048576 ? 'MiB' : 'KiB';
+    const value = bytes / (unit === 'MiB' ? 1048576 : 1024);
+    return `${value.toLocaleString(undefined, {
+      maximumFractionDigits: bytes && value < 0.01 ? 3 : (bytes ? 1 : 0),
+    })} ${unit}`;
+  };
+  const applySourceFilters = () => {
+    const matches = sourceItems.filter((source) => ['room', 'category', 'type'].every(
+      (field) => !sourceFilters[field].size || sourceFilters[field].has(sourceFacetId(source, field))));
+    $('history-source-clear-filters').disabled = !Object.values(sourceFilters)
+      .some((selected) => selected.size);
+    $('history-source-match-count').textContent = sourceVisibility === 'available'
+      ? `${matches.length} / ${sourceItems.length} ${label('sourceMatches')}` : label('unknown');
+    $('history-source-no-matches').hidden = !sourceItems.length || matches.length > 0;
+    renderRows(matches, unverifiedItems, sourceVisibility);
+  };
+  const renderSourceFacets = () => {
+    for (const field of ['room', 'category', 'type']) {
+      const panel = root.querySelector(`[data-source-facet="${field}"]`);
+      const list = panel.querySelector('.mcp-event-history-facet-options');
+      const options = new Map();
+      for (const source of sourceItems) {
+        const id = sourceFacetId(source, field);
+        const name = field === 'type' ? (source.control_type || label('filterUnknown'))
+          : (source[field] || label('filterUnknown'));
+        options.set(id, name);
+      }
+      for (const id of sourceFilters[field]) {
+        if (!options.has(id)) sourceFilters[field].delete(id);
+      }
+      list.replaceChildren();
+      for (const [id, name] of [...options].sort((left, right) =>
+        left[1].localeCompare(right[1]))) {
+        const row = document.createElement('label');
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = sourceFilters[field].has(id);
+        checkbox.addEventListener('change', () => {
+          if (checkbox.checked) sourceFilters[field].add(id);
+          else sourceFilters[field].delete(id);
+          applySourceFilters();
+        });
+        row.append(checkbox, text('span', name));
+        list.append(row);
+      }
+      panel.hidden = options.size === 0;
+    }
+    applySourceFilters();
+  };
+  $('history-source-clear-filters').addEventListener('click', () => {
+    for (const selected of Object.values(sourceFilters)) selected.clear();
+    for (const checkbox of root.querySelectorAll('[data-source-facet] input:checked')) {
+      checkbox.checked = false;
+    }
+    applySourceFilters();
+  });
   const renderRows = (sources, unverified, visibilityStatus) => {
     rows.replaceChildren();
-    $('history-empty').hidden = sources.length + unverified.length > 0;
+    $('history-empty').hidden = sourceItems.length + unverified.length > 0;
     for (const source of sources) {
       const tr = document.createElement('tr');
       const recording = source.recording_status === 'active';
@@ -137,15 +203,21 @@
       const actions = document.createElement('div');
       actions.className = 'mcp-actions';
       actions.append(sourceAction(source, recording));
+      const control = namedSource(source.control_name, source.control_type, source.control_uuid);
+      control.append(text('small', `${label('room')}: ${source.room || label('filterUnknown')}`,
+        'mcp-event-history-subtext'));
+      control.append(text('small', `${label('category')}: ${source.category || label('filterUnknown')}`,
+        'mcp-event-history-subtext'));
       tr.append(
         cell(root.querySelector('th:nth-child(1)').textContent,
-          namedSource(source.control_name, source.control_type, source.control_uuid)),
+          control),
         cell(root.querySelector('th:nth-child(2)').textContent,
           namedSource(source.state_name, '', source.state_uuid)),
         cell(root.querySelector('th:nth-child(3)').textContent, badge),
         cell(label('events'), String(source.event_count)),
-        cell(root.querySelector('th:nth-child(5)').textContent, period),
-        cell(root.querySelector('th:nth-child(6)').textContent, actions),
+        cell(label('sourceSizeEstimated'), sourceSize(source.logical_value_bytes)),
+        cell(root.querySelector('th:nth-child(6)').textContent, period),
+        cell(root.querySelector('th:nth-child(7)').textContent, actions),
       );
       rows.append(tr);
     }
@@ -160,8 +232,9 @@
           namedSource(label('unknown'), '', source.state_uuid)),
         cell(root.querySelector('th:nth-child(3)').textContent, label('selected')),
         cell(label('events'), label('unknown')),
-        cell(root.querySelector('th:nth-child(5)').textContent, label('unknown')),
-        cell(root.querySelector('th:nth-child(6)').textContent, sourceAction(source, true)),
+        cell(label('sourceSizeEstimated'), label('unknown')),
+        cell(root.querySelector('th:nth-child(6)').textContent, label('unknown')),
+        cell(root.querySelector('th:nth-child(7)').textContent, sourceAction(source, true)),
       );
       rows.append(tr);
     }
@@ -212,9 +285,10 @@
         data.hidden_sources_present ? label('hiddenSources') : '',
         data.sources_truncated ? label('sourcesTruncated') : '',
       ].filter(Boolean).join(' ');
-      renderRows(Array.isArray(data.sources) ? data.sources : [],
-        Array.isArray(data.unverified_sources) ? data.unverified_sources : [],
-        data.visibility_status);
+      sourceItems = Array.isArray(data.sources) ? data.sources : [];
+      unverifiedItems = Array.isArray(data.unverified_sources) ? data.unverified_sources : [];
+      sourceVisibility = data.visibility_status;
+      renderSourceFacets();
       const complete = data.store_status === 'available' && data.visibility_status === 'available';
       setMessage(label(complete ? 'loaded' : 'unavailable'), complete ? 'success' : 'warning');
   };

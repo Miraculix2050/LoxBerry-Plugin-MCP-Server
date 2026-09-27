@@ -794,6 +794,71 @@ def test_event_history_selector_is_progressive_and_localized() -> None:
             assert f"{key}=" in translations
 
 
+def test_event_history_source_filters_combine_facets_locally() -> None:
+    node = shutil.which("node")
+    assert node is not None
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = source.slice(source.indexOf('  const sourceFacetId ='),
+  source.indexOf('  const renderRows ='));
+const nodes = new Map();
+const $ = (id) => {
+  if (!nodes.has(id)) nodes.set(id, {addEventListener() {}});
+  return nodes.get(id);
+};
+const drawn = [];
+const context = {$, root: {querySelectorAll: () => []},
+  label: (key) => key, renderRows: (visible) => drawn.push(Array.from(visible, (item) => item.id))};
+vm.runInNewContext(`let sourceItems = [
+  {id: 1, room_id: 'r1', room: 'Kitchen', category_id: 'c1', category: 'Lights',
+    control_type: 'Switch'},
+  {id: 2, room_id: 'r2', room: 'Hall', category_id: 'c1', category: 'Lights',
+    control_type: 'Switch'},
+  {id: 3, room_id: null, room: null, category_id: 'c2', category: 'Climate',
+    control_type: 'Sensor'}];
+let unverifiedItems = []; let sourceVisibility = 'available';
+const sourceFilters = {room: new Set(), category: new Set(), type: new Set()};
+${section}
+globalThis.subject = {applySourceFilters, sourceFilters};`, context);
+const {applySourceFilters, sourceFilters} = context.subject;
+applySourceFilters();
+assert.deepEqual(drawn.at(-1), [1, 2, 3]);
+sourceFilters.room.add('r1'); sourceFilters.room.add('r2');
+sourceFilters.category.add('c1'); sourceFilters.type.add('Switch');
+applySourceFilters();
+assert.deepEqual(drawn.at(-1), [1, 2]);
+sourceFilters.room.clear(); sourceFilters.room.add('');
+applySourceFilters();
+assert.deepEqual(drawn.at(-1), []);
+assert.equal(nodes.get('history-source-no-matches').hidden, false);
+sourceFilters.category.clear(); sourceFilters.type.clear();
+applySourceFilters();
+assert.deepEqual(drawn.at(-1), [3]);
+for (const selected of Object.values(sourceFilters)) selected.clear();
+applySourceFilters();
+assert.equal(nodes.get('history-source-clear-filters').disabled, true);
+assert.equal(nodes.get('history-source-match-count').textContent, '3 / 3 sourceMatches');
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    page = (ROOT / "templates/event-history.html").read_text(encoding="utf-8")
+    assert 'data-source-facet="room"' in page
+    assert 'data-source-facet="category"' in page
+    assert 'data-source-facet="type"' in page
+    assert 'id="history-source-match-count"' in page
+    for locale in ("de", "en"):
+        labels = (ROOT / f"templates/lang/language_{locale}.ini").read_text(encoding="utf-8")
+        assert "SOURCE_SIZE_ESTIMATED=" in labels
+        assert "SOURCE_NO_MATCHES=" in labels
+
+
 def test_event_history_sections_use_native_disclosures_and_keep_actions_inside() -> None:
     page = (ROOT / "templates/event-history.html").read_text(encoding="utf-8")
     for name in ("sources", "add", "policy", "clear"):
@@ -1011,7 +1076,7 @@ const nodes = new Map();
 const context = {$: (id) => {
   if (!nodes.has(id)) nodes.set(id, {});
   return nodes.get(id);
-}, label: (key) => key, date: () => '', renderRows: () => {}, setMessage: () => {}};
+}, label: (key) => key, date: () => '', renderSourceFacets: () => {}, setMessage: () => {}};
 vm.runInNewContext(`let overviewLoaded = false; let knownSourceRevision = '';
 let selectorVerificationPending = false; let nextRevisionRefreshAt = 1;
 let revisionRefreshFailures = 1; let activeCount = 0; let savedPolicy = null;
