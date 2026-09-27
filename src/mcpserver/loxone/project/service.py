@@ -116,10 +116,8 @@ class ProjectService:
         cached = self._views.get(view_key)
         if cached is not None and cached[0] == runtime.structure:
             self._views.move_to_end(view_key)
-            await self._check(access)
             return cached[1]
         mapping = map_runtime(snapshot, runtime.structure)
-        await self._check(access)
         view = ProjectView(snapshot, mapping, marker)
         if cache_key in self._cache:
             size = len(mapping.entries) * 512
@@ -135,7 +133,6 @@ class ProjectService:
         view_key = (*cache_key, view.marker)
         cached = self._views.get(view_key)
         if cached is not None and cached[0] == runtime.structure and cached[2] is not None:
-            await self._check(access)
             return cached[2]
         names: dict[str, str] = {}
         pending = list(runtime.structure.controls)
@@ -144,7 +141,6 @@ class ProjectService:
             names[control.uuid] = control.name
             pending.extend(control.subcontrols)
         query = ProjectQuery(view, names)
-        await self._check(access)
         if cached is not None:
             size = cached[3] + len(view.snapshot.graph.nodes) * 256
             if size <= _MAX_VIEW_CACHE_BYTES:
@@ -194,7 +190,10 @@ class ProjectService:
                     )
                     if not marker or len(marker) > 128:
                         raise ProjectError("project_marker_invalid")
-                    await self._check(access)
+                    # A supplied runtime marker needs no network await; the
+                    # initial authorization check still covers a cache hit.
+                    if verified_marker is None:
+                        await self._check(access)
                     cached = self._cache.get(cache_key)
                     if cached is not None and cached[0] == marker:
                         self._cache.move_to_end(cache_key)

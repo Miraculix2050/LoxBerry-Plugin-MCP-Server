@@ -14,7 +14,9 @@ extracted from the matching version heading.
   project-marker check, and reuse bounded search and analysis results across
   continuation pages. Expired or changed-context cursors require a new first page.
   Add sanitized History phase timings while retaining fresh visibility checks
-  for each History read.
+  for each History read. Avoid repeated local authorization reads during a warm
+  Project Intelligence query while retaining a fresh visibility check and one
+  authorization check for each request.
 
 - Add an opt-in compact `loxone_describe_control` history-target view with state
   UUIDs and advertised native statistic series, preserving the full default

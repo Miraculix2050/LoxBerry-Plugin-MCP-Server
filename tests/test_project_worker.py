@@ -294,3 +294,35 @@ async def test_same_marker_and_visible_structure_reuse_mapping_and_query():
     await service.revoke("f")
     assert not service._views
     await service.close()
+
+
+@pytest.mark.asyncio
+async def test_warm_query_checks_access_once_and_rejects_revocation():
+    access = SimpleNamespace(
+        scopes=["loxone:read"], family_id="f", miniserver_id="m", identity_id="i"
+    )
+    validate = AsyncMock(return_value=True)
+    client = SimpleNamespace(
+        download_project=AsyncMock(return_value=sample()),
+        project_marker=AsyncMock(return_value="v1"),
+    )
+    service = ProjectService(
+        client,
+        SimpleNamespace(get=Mock(return_value=Mock())),
+        SimpleNamespace(get=lambda _: SimpleNamespace(confirmation_required=False)),
+        validate,
+    )
+    structure = LoxoneStructure(LoxoneIdentity("reader", "serial"), "v1", (), (), ())
+    runtime = SimpleNamespace(subject="f", structure=structure)
+    await service.query(access, runtime)
+
+    validate.reset_mock()
+    await service.query(access, runtime)
+    assert validate.await_count == 1
+
+    validate.return_value = False
+    with pytest.raises(ProjectError, match="project_access_denied"):
+        await service.query(access, runtime)
+    assert not service._cache
+    assert not service._views
+    await service.close()
