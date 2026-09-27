@@ -50,6 +50,7 @@ class RuntimeMapping:
 class ProjectView:
     snapshot: ProjectSnapshot = field(repr=False)
     mapping: RuntimeMapping = field(repr=False)
+    marker: str = field(default="", repr=False)
 
 
 def map_runtime(snapshot: ProjectSnapshot, structure: LoxoneStructure) -> RuntimeMapping:

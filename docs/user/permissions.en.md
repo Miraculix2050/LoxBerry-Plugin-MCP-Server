@@ -16,11 +16,24 @@ Use a separate Loxone account for each assistant. The server only exposes elemen
 
 Control is disabled by default. Local LoxBerry approvals are bound to the client application, Loxone identity, Miniserver, and exact capability; they never replace Loxone rights or OAuth consent. For the strictly validated local Tool Explorer, a new OAuth login can reuse its application approval until the displayed inactive-retention deadline. Other dynamically registered clients remain bound to their exact OAuth client identifier.
 
-Project Intelligence does not add a scope. Every invocation downloads the project again with the
-bound Loxone identity to verify access; cached processing results never grant access. It exposes
+Project Intelligence does not add a scope. Every invocation checks the bound identity and reads
+the currently visible Loxone structure through an authenticated session. Its project change marker
+and the fresh visibility result determine cache validity. An unchanged marker
+allows reuse of a bounded in-memory graph; a changed or unavailable marker invalidates it.
+The project is downloaded again only when the graph must be rebuilt. Cached results never grant
+OAuth access. It exposes
 bounded graph status, search, object descriptions, and upstream/downstream signal or reference
 traces, never raw project files or project modification.
+Project search and analysis continuation pages reuse bounded ordered results for up to five minutes. A cursor
+expires when that result is evicted or the project, visible structure, identity, or analysis
+selection changes; restart from the first page in that case.
 KNX/EIB metadata is an allowlisted, bounded projection of that same authorized project; it does
 not expose arbitrary project attributes, ETS data, bus monitoring, or configuration writes.
+Native Loxone History and statistics reads check current visibility before returning data,
+including a statistics cache hit. When a session structure exists, they check the authenticated
+project marker and reuse that OAuth family's structure only when the marker is unchanged. A
+changed marker reloads it; a failed check never releases cached History data. Without a cached
+session structure, the tool loads it afresh. Local Event History still checks visibility with a
+fresh structure download.
 
 Next: [Capabilities](capabilities.en.md).

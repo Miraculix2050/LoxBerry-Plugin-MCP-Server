@@ -765,6 +765,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
                 loxone_store,
                 LoxoneTokenHealthStore(auth_store),
                 validate_project_access,
+                marker_reader=runtime.project_marker,
             )
             runtime_ref["runtime"] = runtime
         if config and settings.phase0_auth.config_path is not None:

@@ -15,6 +15,7 @@ import pytest
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 
+import mcpserver.loxone.runtime as runtime_module
 import mcpserver.tools as tools_module
 from mcpserver.auth.provider import (
     CONTROL_SCOPE,
@@ -835,6 +836,28 @@ async def test_history_limit_is_enforced_at_runtime() -> None:
             "loxone_get_control_history",
             {"control_uuid": "control", "limit": 101},
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool_name", ["loxone_get_statistics", "loxone_get_control_history"])
+async def test_history_error_preserves_preallocated_trace_id(
+    monkeypatch: pytest.MonkeyPatch, tool_name: str
+) -> None:
+    identifiers = iter(("phase-trace", "incorrect-second-trace"))
+    monkeypatch.setattr(tools_module, "uuid4", lambda: next(identifiers))
+    monkeypatch.setattr(
+        tools_module, "_access", lambda: _loxberry_access(READ_SCOPE, HISTORY_SCOPE)
+    )
+    server = FastMCP("history-error-trace")
+    register_history_tools(server, object())  # type: ignore[arg-type]
+    arguments = {"control_uuid": "control", "start": "invalid"}
+    if tool_name == "loxone_get_statistics":
+        arguments.update(
+            {"series_id": "series", "end": "2026-01-02T00:00:00Z", "granularity": "raw"}
+        )
+    result = await server._tool_manager.call_tool(tool_name, arguments)
+    assert result.trace_id == "phase-trace"
+    assert result.ok is False
 
 
 @pytest.mark.asyncio
@@ -2571,6 +2594,31 @@ async def test_get_control_notes_returns_only_runtime_notes(
     assert result.ok is True
     assert result.data.control_uuid == "control-1"  # type: ignore[union-attr]
     assert result.data.text == "User-authored note"  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fails", [False, True])
+async def test_control_notes_phases_share_envelope_trace(
+    monkeypatch: pytest.MonkeyPatch, fails: bool
+) -> None:
+    class Runtime:
+        async def get_control_notes(
+            self, _access: StoredAccessToken, _control_uuid: str
+        ) -> tuple[object, str]:
+            assert runtime_module._HISTORY_TRACE_ID.get() == "notes-trace"
+            if fails:
+                raise tools_module.ControlOperationError("temporarily_unavailable", "unavailable")
+            return object(), "note"
+
+    monkeypatch.setattr(tools_module, "uuid4", lambda: "notes-trace")
+    monkeypatch.setattr(tools_module, "_access", lambda: _loxberry_access(READ_SCOPE))
+    server = FastMCP("notes-trace")
+    register_read_tools(server, Runtime(), control_enabled=True)  # type: ignore[arg-type]
+    result = await server._tool_manager.call_tool(
+        "loxone_get_control_notes", {"control_uuid": "control"}
+    )
+    assert result.trace_id == "notes-trace"
+    assert result.ok is not fails
 
 
 @pytest.mark.asyncio

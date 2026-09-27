@@ -67,6 +67,7 @@ from mcpserver.loxone.presentation import (
 )
 from mcpserver.loxone.presentation import structure_overview as _structure_overview
 from mcpserver.loxone.presentation import visible_controls as _visible_controls
+from mcpserver.loxone.project.analysis import ANALYSIS_VERSION
 from mcpserver.loxone.project.models import ProjectError
 from mcpserver.loxone.project.query import ProjectQuery, ProjectQueryError
 from mcpserver.loxone.project.worker import process_analysis
@@ -76,6 +77,7 @@ from mcpserver.loxone.runtime import (
     LoxoneRuntime,
     RuntimeSnapshot,
     RuntimeUnavailable,
+    history_trace,
 )
 from mcpserver.loxone.statistics import StatisticPoint
 from mcpserver.loxone.uuid import normalize_loxone_uuid
@@ -2032,10 +2034,13 @@ async def _project_query(runtime: LoxoneRuntime | None) -> tuple[ProjectQuery, R
         raise RuntimeUnavailable("the project service is not configured")
     access = _access()
     async with runtime.call_slot(access):
-        snapshot = await runtime.snapshot(access)
-        view = await runtime.projects.view(access, snapshot)
-    names = {control.uuid: control.name for control in _visible_controls(snapshot.structure)}
-    return ProjectQuery(view, names), snapshot
+        try:
+            snapshot = await runtime.snapshot(access, fresh_visibility=True)
+        except RuntimeUnavailable:
+            runtime.projects.invalidate(access.family_id)
+            raise
+        query = await runtime.projects.query(access, snapshot)
+    return query, snapshot
 
 
 async def _history_project_query(
@@ -2046,10 +2051,13 @@ async def _history_project_query(
     if runtime is None or runtime.projects is None:
         raise RuntimeUnavailable("the project service is not configured")
     async with runtime.history_call_slot(access):
-        snapshot = await runtime.snapshot(access)
-        view = await runtime.projects.view(access, snapshot)
-    names = {control.uuid: control.name for control in _visible_controls(snapshot.structure)}
-    return ProjectQuery(view, names), snapshot
+        try:
+            snapshot = await runtime.snapshot(access, fresh_visibility=True)
+        except RuntimeUnavailable:
+            runtime.projects.invalidate(access.family_id)
+            raise
+        query = await runtime.projects.query(access, snapshot)
+    return query, snapshot
 
 
 def _project_error_code(error: ProjectError | ProjectQueryError) -> tuple[str, str, str | None]:
@@ -3638,29 +3646,38 @@ def register_read_tools(
             ),
         ] = False,
     ) -> ControlNotesEnvelope:
+        trace_id = str(uuid4())
         try:
             if runtime is None:
                 raise RuntimeUnavailable("the service is not configured")
             access = _access()
-            if include_hidden:
-                _control, notes = await runtime.get_control_notes(
-                    access, control_uuid, include_hidden=True
-                )
-            else:
-                _control, notes = await runtime.get_control_notes(access, control_uuid)
-            return _result(ControlNotesEnvelope, {"control_uuid": control_uuid, "text": notes})
+            with history_trace(trace_id):
+                if include_hidden:
+                    _control, notes = await runtime.get_control_notes(
+                        access, control_uuid, include_hidden=True
+                    )
+                else:
+                    _control, notes = await runtime.get_control_notes(access, control_uuid)
+            return _result(
+                ControlNotesEnvelope,
+                {"control_uuid": control_uuid, "text": notes},
+                trace_id=trace_id,
+            )
         except ValueError as exc:
-            return _error(ControlNotesEnvelope, "invalid_input", str(exc))
+            return _error(ControlNotesEnvelope, "invalid_input", str(exc), trace_id=trace_id)
         except PermissionError:
             return _error(
                 ControlNotesEnvelope,
                 "unauthenticated",
                 "Authentication with loxone:read is required",
+                trace_id=trace_id,
             )
         except RuntimeUnavailable as exc:
-            return _error(ControlNotesEnvelope, "temporarily_unavailable", str(exc))
+            return _error(
+                ControlNotesEnvelope, "temporarily_unavailable", str(exc), trace_id=trace_id
+            )
         except ControlOperationError as exc:
-            return _error(ControlNotesEnvelope, exc.code, str(exc))
+            return _error(ControlNotesEnvelope, exc.code, str(exc), trace_id=trace_id)
 
     @server.tool(
         name="loxone_get_states",
@@ -3787,6 +3804,12 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
     """Publish bounded read-only Project Intelligence operations."""
     annotations = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
     cursors = _CursorCodec()
+    find_cache: OrderedDict[str, tuple[float, list[Any], int]] = OrderedDict()
+    find_locks = tuple(asyncio.Lock() for _ in range(16))
+    find_cache_bytes = 0
+    analysis_cache: OrderedDict[str, tuple[float, dict[str, object], int]] = OrderedDict()
+    analysis_locks = tuple(asyncio.Lock() for _ in range(16))
+    analysis_cache_bytes = 0
 
     @server.tool(
         name="loxone_get_project_status",
@@ -3848,32 +3871,73 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
         cursor: CursorArgument = None,
         limit: LimitArgument = DEFAULT_PAGE_SIZE,
     ) -> ProjectObjectPageEnvelope:
+        nonlocal find_cache_bytes
         try:
             project, snapshot = await _project_query(runtime)
-            values = project.find(
-                query=query,
-                kind=kind,
-                block_type=block_type,
-                source_id=source_id,
-                runtime_control_uuid=runtime_control_uuid,
-                technology=technology,
-                knx_object_kind=knx_object_kind,
-                knx_flow_direction=knx_flow_direction,
-                knx_group_address=knx_group_address,
+            access = _access()
+            scope = (
+                "project-find:"
+                + hashlib.sha256(
+                    json.dumps(
+                        [
+                            access.family_id,
+                            access.miniserver_id,
+                            access.identity_id,
+                            project.view.marker,
+                            project.view.snapshot.fingerprint,
+                            project.view.mapping.structure_fingerprint,
+                            query,
+                            kind,
+                            block_type,
+                            source_id,
+                            runtime_control_uuid,
+                            technology,
+                            knx_object_kind,
+                            knx_flow_direction,
+                            knx_group_address,
+                        ],
+                        separators=(",", ":"),
+                    ).encode()
+                ).hexdigest()
             )
-            scope = "project-find:" + "|".join(
-                (
-                    query or "",
-                    kind or "",
-                    block_type or "",
-                    source_id or "",
-                    runtime_control_uuid or "",
-                    technology or "",
-                    knx_object_kind or "",
-                    knx_flow_direction or "",
-                    knx_group_address or "",
-                )
-            )
+            cursors.decode(scope, cursor)
+            async with find_locks[int(scope[-2:], 16) % len(find_locks)]:
+                now = time.monotonic()
+                for key, (expires, _values, size) in tuple(find_cache.items()):
+                    if expires <= now:
+                        find_cache.pop(key)
+                        find_cache_bytes -= size
+                cached = find_cache.get(scope)
+                if cached is None:
+                    if cursor is not None:
+                        raise ValueError("cursor has expired; restart the project search")
+                    _LOGGER.debug("component=project_find_cache outcome=miss")
+                    values = project.find(
+                        query=query,
+                        kind=kind,
+                        block_type=block_type,
+                        source_id=source_id,
+                        runtime_control_uuid=runtime_control_uuid,
+                        technology=technology,
+                        knx_object_kind=knx_object_kind,
+                        knx_flow_direction=knx_flow_direction,
+                        knx_group_address=knx_group_address,
+                    )
+                    size = len(json.dumps(values, separators=(",", ":")).encode())
+                    if size > 64 * 1024 * 1024:
+                        raise ProjectError("project_worker_limit")
+                    find_cache[scope] = (now + 300, values, size)
+                    find_cache_bytes += size
+                    while len(find_cache) > 8 or find_cache_bytes > 64 * 1024 * 1024:
+                        _key, (_expires, _values, removed) = find_cache.popitem(last=False)
+                        find_cache_bytes -= removed
+                else:
+                    _LOGGER.debug("component=project_find_cache outcome=hit")
+                    find_cache.move_to_end(scope)
+                    values = cached[1]
+            projects = getattr(runtime, "projects", None)
+            if projects is not None:
+                await projects.authorize(access)
             envelope = _result(
                 ProjectObjectPageEnvelope,
                 _page(cursors, scope, values, cursor, limit),
@@ -4023,6 +4087,7 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
         cursor: CursorArgument = None,
         limit: Annotated[int, Field(ge=1, le=50)] = 20,
     ) -> ProjectAnalysisEnvelope:
+        nonlocal analysis_cache_bytes
         try:
             selected = (
                 frozenset(analyses)
@@ -4046,17 +4111,20 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
             if runtime is None or runtime.projects is None:
                 raise RuntimeUnavailable("the service is not configured")
             projects = runtime.projects
-            async with runtime.worker_slot():
-                result = await process_analysis(project.view, selected)
-            await projects.authorize(_access())
+            access = _access()
             analysis_scope = (
                 "project-analysis:"
                 + hashlib.sha256(
                     json.dumps(
                         [
                             scope,
-                            result["project_fingerprint"],
-                            result["model_version"],
+                            access.family_id,
+                            access.miniserver_id,
+                            access.identity_id,
+                            project.view.marker,
+                            project.view.snapshot.fingerprint,
+                            project.view.snapshot.model_version,
+                            ANALYSIS_VERSION,
                             project.view.mapping.structure_fingerprint,
                             sorted(selected),
                         ],
@@ -4064,7 +4132,35 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                     ).encode()
                 ).hexdigest()
             )
-            findings = result.pop("findings")
+            cursors.decode(analysis_scope, cursor)
+            async with analysis_locks[int(analysis_scope[-2:], 16) % len(analysis_locks)]:
+                now = time.monotonic()
+                for key, (expires, _value, size) in tuple(analysis_cache.items()):
+                    if expires <= now:
+                        analysis_cache.pop(key)
+                        analysis_cache_bytes -= size
+                cached = analysis_cache.get(analysis_scope)
+                if cached is None:
+                    if cursor is not None:
+                        raise ValueError("cursor has expired; start a new analysis")
+                    _LOGGER.debug("component=project_analysis_cache outcome=miss")
+                    async with runtime.worker_slot():
+                        result = await process_analysis(project.view, selected)
+                    await projects.authorize(access)
+                    size = len(json.dumps(result, separators=(",", ":")).encode())
+                    if size > 64 * 1024 * 1024:
+                        raise ProjectError("project_worker_limit")
+                    analysis_cache[analysis_scope] = (now + 300, result, size)
+                    analysis_cache_bytes += size
+                    while len(analysis_cache) > 4 or analysis_cache_bytes > 64 * 1024 * 1024:
+                        _key, (_expires, _value, removed) = analysis_cache.popitem(last=False)
+                        analysis_cache_bytes -= removed
+                else:
+                    _LOGGER.debug("component=project_analysis_cache outcome=hit")
+                    analysis_cache.move_to_end(analysis_scope)
+                    result = cached[1]
+                    await projects.authorize(access)
+            findings = result.get("findings")
             if not isinstance(findings, list):
                 raise ProjectError("project_worker_invalid")
             page = _page(cursors, analysis_scope, findings, cursor, limit)
@@ -4902,6 +4998,7 @@ def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
         cursor: CursorArgument = None,
         limit: StatisticsLimitArgument = 200,
     ) -> StatisticsEnvelope:
+        trace_id = str(uuid4())
         try:
             if runtime is None:
                 raise ControlOperationError(
@@ -4931,12 +5028,14 @@ def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                 end_second,
                 granularity,
             )
-            if include_hidden:
-                _control, series, points = await runtime.get_statistics(
-                    *arguments, include_hidden=True
-                )
-            else:
-                _control, series, points = await runtime.get_statistics(*arguments)
+            with history_trace(trace_id):
+                if include_hidden:
+                    _control, series, points = await runtime.get_statistics(
+                        *arguments, include_hidden=True
+                    )
+                else:
+                    _control, series, points = await runtime.get_statistics(*arguments)
+            page_started = time.perf_counter()
             keyed_points = statistic_keyed_points(points)
             if cursor is not None:
                 anchor = cursors.decode_anchor(query_scope, cursor)
@@ -4944,7 +5043,7 @@ def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                     raise ValueError("cursor is invalid")
                 keyed_points = tuple(item for item in keyed_points if item[1] > anchor)
             selected = keyed_points[:limit]
-            return _result(
+            envelope = _result(
                 StatisticsEnvelope,
                 {
                     "control_uuid": control_uuid,
@@ -4969,13 +5068,25 @@ def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                         else None
                     ),
                 },
+                trace_id=trace_id,
             )
+            _LOGGER.debug(
+                "component=history_timing trace_id=%s phase=pagination duration_ms=%.1f",
+                trace_id,
+                (time.perf_counter() - page_started) * 1000,
+            )
+            return envelope
         except ValueError as exc:
-            return _error(StatisticsEnvelope, "invalid_input", str(exc))
+            return _error(StatisticsEnvelope, "invalid_input", str(exc), trace_id=trace_id)
         except PermissionError:
-            return _error(StatisticsEnvelope, "unauthenticated", "Authentication is required")
+            return _error(
+                StatisticsEnvelope,
+                "unauthenticated",
+                "Authentication is required",
+                trace_id=trace_id,
+            )
         except ControlOperationError as exc:
-            return _error(StatisticsEnvelope, exc.code, str(exc))
+            return _error(StatisticsEnvelope, exc.code, str(exc), trace_id=trace_id)
 
     @server.tool(
         name="loxone_get_control_history",
@@ -5009,6 +5120,7 @@ def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
         cursor: CursorArgument = None,
         limit: LimitArgument = 50,
     ) -> ControlHistoryEnvelope:
+        trace_id = str(uuid4())
         try:
             if runtime is None:
                 raise ControlOperationError(
@@ -5025,12 +5137,14 @@ def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                     f"{access.family_id}\0{control_uuid}\0{include_hidden}\0{start}\0{end}".encode()
                 ).hexdigest()
             )
-            if include_hidden:
-                _control, entries = await runtime.get_control_history(
-                    access, control_uuid, include_hidden=True
-                )
-            else:
-                _control, entries = await runtime.get_control_history(access, control_uuid)
+            with history_trace(trace_id):
+                if include_hidden:
+                    _control, entries = await runtime.get_control_history(
+                        access, control_uuid, include_hidden=True
+                    )
+                else:
+                    _control, entries = await runtime.get_control_history(access, control_uuid)
+            page_started = time.perf_counter()
             keyed_entries = history_keyed_entries(entries)
             keyed_entries = tuple(
                 item
@@ -5044,7 +5158,7 @@ def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                     raise ValueError("cursor is invalid")
                 keyed_entries = tuple(item for item in keyed_entries if item[1] > anchor)
             selected = keyed_entries[:limit]
-            return _result(
+            envelope = _result(
                 ControlHistoryEnvelope,
                 {
                     "control_uuid": control_uuid,
@@ -5066,13 +5180,25 @@ def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                         else None
                     ),
                 },
+                trace_id=trace_id,
             )
+            _LOGGER.debug(
+                "component=history_timing trace_id=%s phase=pagination duration_ms=%.1f",
+                trace_id,
+                (time.perf_counter() - page_started) * 1000,
+            )
+            return envelope
         except ValueError as exc:
-            return _error(ControlHistoryEnvelope, "invalid_input", str(exc))
+            return _error(ControlHistoryEnvelope, "invalid_input", str(exc), trace_id=trace_id)
         except PermissionError:
-            return _error(ControlHistoryEnvelope, "unauthenticated", "Authentication is required")
+            return _error(
+                ControlHistoryEnvelope,
+                "unauthenticated",
+                "Authentication is required",
+                trace_id=trace_id,
+            )
         except ControlOperationError as exc:
-            return _error(ControlHistoryEnvelope, exc.code, str(exc))
+            return _error(ControlHistoryEnvelope, exc.code, str(exc), trace_id=trace_id)
 
 
 def register_loxberry_operate_tool(server: FastMCP, runtime: LoxBerryOperateRuntime) -> None:

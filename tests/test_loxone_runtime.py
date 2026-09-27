@@ -1,18 +1,27 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections import defaultdict
+from contextlib import asynccontextmanager
+from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
 import mcpserver.loxone.runtime as runtime_module
-from mcpserver.auth.provider import READ_SCOPE, StoredAccessToken
+from mcpserver.auth.provider import HISTORY_SCOPE, READ_SCOPE, StoredAccessToken
+from mcpserver.loxone.auth_diagnostics import (
+    MiniserverAuthCoordinator,
+    MiniserverAuthenticationSuppressed,
+)
 from mcpserver.loxone.cache import UserStateCache
-from mcpserver.loxone.client import LoxoneConnectionError
-from mcpserver.loxone.events import StateEvent
-from mcpserver.loxone.models import LoxoneIdentity, LoxoneStructure
+from mcpserver.loxone.client import LoxoneConnectionError, LoxoneSourceIpBlocked, LoxoneToken
+from mcpserver.loxone.events import LoxoneProtocolError, StateEvent
+from mcpserver.loxone.models import Control, LoxoneIdentity, LoxoneStructure
 from mcpserver.loxone.runtime import (
+    ControlOperationError,
     LoxoneRuntime,
     RuntimeUnavailable,
     _ConnectionRecord,
@@ -175,6 +184,337 @@ async def test_due_structure_refresh_checks_version_without_reloading_unchanged_
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
+
+
+@pytest.mark.asyncio
+async def test_fresh_project_visibility_detects_same_marker_rights_change() -> None:
+    class Store:
+        def get(self, *_parts: str) -> object:
+            return object()
+
+    changed_structure = LoxoneStructure(
+        LoxoneIdentity("reader", "serial"),
+        "current",
+        (),
+        (),
+        (Control("visible", "Visible", "Switch", None, None, None, ()),),
+    )
+
+    class RefreshSession(_Session):
+        async def structure_version(self) -> str:
+            raise AssertionError("fresh visibility must load the filtered structure")
+
+        async def load_structure(self) -> LoxoneStructure:
+            return changed_structure
+
+    class Client:
+        async def open_session(self, _token: object) -> RefreshSession:
+            return RefreshSession()
+
+    runtime = object.__new__(LoxoneRuntime)
+    task = asyncio.create_task(asyncio.sleep(60))
+    record = _ConnectionRecord(
+        _structure("current"), frozenset(), _Session(), task, last_structure_check=10**9
+    )
+    runtime._records = {"family": record}
+    runtime._locks = defaultdict(asyncio.Lock)
+    runtime._prune_sessions = lambda _subject: asyncio.sleep(0)  # type: ignore[method-assign]
+    runtime.token_store = Store()
+    runtime.client = Client()
+    runtime.cache = UserStateCache()
+    runtime.structure_refresh_seconds = 300
+
+    snapshot = await runtime.snapshot(_access(), fresh_visibility=True)
+
+    assert snapshot.structure is changed_structure
+    assert snapshot.structure_generation == 2
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+@pytest.mark.asyncio
+async def test_fresh_project_visibility_timeout_is_unavailable() -> None:
+    class Store:
+        def get(self, *_parts: str) -> object:
+            return object()
+
+    class RefreshSession(_Session):
+        async def load_structure(self) -> LoxoneStructure:
+            raise TimeoutError("private transport detail")
+
+    class Client:
+        async def open_session(self, _token: object) -> RefreshSession:
+            return RefreshSession()
+
+    runtime = object.__new__(LoxoneRuntime)
+    task = asyncio.create_task(asyncio.sleep(60))
+    record = _ConnectionRecord(
+        _structure("current"), frozenset(), _Session(), task, last_structure_check=10**9
+    )
+    runtime._records = {"family": record}
+    runtime._locks = defaultdict(asyncio.Lock)
+    runtime._prune_sessions = lambda _subject: asyncio.sleep(0)  # type: ignore[method-assign]
+    runtime.token_store = Store()
+    runtime.client = Client()
+    runtime.structure_refresh_seconds = 300
+
+    with pytest.raises(RuntimeUnavailable, match="structure refresh failed"):
+        await runtime.snapshot(_access(), fresh_visibility=True)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+@pytest.mark.asyncio
+async def test_history_visibility_loads_structure_without_cached_runtime_record(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class Store:
+        def get(self, *_parts: str) -> object:
+            return object()
+
+    control = Control("control", "Visible", "Switch", None, None, "action", ())
+    structure = LoxoneStructure(LoxoneIdentity("reader", "serial"), "current", (), (), (control,))
+
+    class Session(_Session):
+        async def structure_version(self) -> str:
+            raise AssertionError("history must not issue an optional marker request")
+
+        async def load_structure(self) -> LoxoneStructure:
+            return structure
+
+    session = Session()
+    runtime = object.__new__(LoxoneRuntime)
+    runtime.history_enabled = True
+    runtime.token_store = Store()
+    runtime._records = {}
+
+    @asynccontextmanager
+    async def call_slot(_access: StoredAccessToken):
+        yield
+
+    async def open_session(_token: object, **_kwargs: object) -> Session:
+        return session
+
+    runtime.history_call_slot = call_slot  # type: ignore[method-assign]
+    runtime._open_session = open_session  # type: ignore[method-assign]
+    access = _access()
+    access.scopes.append(HISTORY_SCOPE)
+    with caplog.at_level(logging.DEBUG):
+        async with runtime._history_session(access, "control") as (visible, used_session):
+            assert visible is control
+            assert used_session is session
+
+
+@pytest.mark.asyncio
+async def test_history_visibility_uses_authenticated_marker_for_cached_structure() -> None:
+    class Store:
+        def get(self, *_parts: str) -> object:
+            return object()
+
+    control = Control("control", "Visible", "Switch", None, None, "action", ())
+    structure = LoxoneStructure(LoxoneIdentity("reader", "serial"), "current", (), (), (control,))
+
+    class Session(_Session):
+        async def structure_version(self) -> str:
+            return "current"
+
+        async def load_structure(self) -> LoxoneStructure:
+            raise AssertionError("an unchanged marker must reuse the cached structure")
+
+    session = Session()
+    runtime = object.__new__(LoxoneRuntime)
+    runtime.history_enabled = True
+    runtime.token_store = Store()
+    task = asyncio.create_task(asyncio.sleep(60))
+    runtime._records = {"family": _ConnectionRecord(structure, frozenset(), _Session(), task)}
+
+    @asynccontextmanager
+    async def call_slot(_access: StoredAccessToken):
+        yield
+
+    async def open_session(_token: object, **_kwargs: object) -> Session:
+        return session
+
+    runtime.history_call_slot = call_slot  # type: ignore[method-assign]
+    runtime._open_session = open_session  # type: ignore[method-assign]
+    access = _access()
+    access.scopes.append(HISTORY_SCOPE)
+    async with runtime._history_session(access, "control") as (visible, used_session):
+        assert visible is control
+        assert used_session is session
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+@pytest.mark.asyncio
+async def test_history_marker_change_rejects_newly_hidden_control() -> None:
+    class Store:
+        def get(self, *_parts: str) -> object:
+            return object()
+
+    control = Control("control", "Old right", "Switch", None, None, "action", ())
+    old = LoxoneStructure(LoxoneIdentity("reader", "serial"), "old", (), (), (control,))
+    current = _structure("new")
+
+    class Session(_Session):
+        async def structure_version(self) -> str:
+            return "new"
+
+        async def load_structure(self) -> LoxoneStructure:
+            return current
+
+    runtime = object.__new__(LoxoneRuntime)
+    runtime.history_enabled = True
+    runtime.token_store = Store()
+    runtime.cache = UserStateCache()
+    task = asyncio.create_task(asyncio.sleep(60))
+    record = _ConnectionRecord(old, frozenset(), _Session(), task)
+    runtime._records = {"family": record}
+
+    @asynccontextmanager
+    async def call_slot(_access: StoredAccessToken):
+        yield
+
+    async def open_session(_token: object, **_kwargs: object) -> Session:
+        return Session()
+
+    runtime.history_call_slot = call_slot  # type: ignore[method-assign]
+    runtime._open_session = open_session  # type: ignore[method-assign]
+    access = _access()
+    access.scopes.append(HISTORY_SCOPE)
+    with pytest.raises(ControlOperationError, match="control is not visible"):
+        async with runtime._history_session(access, "control"):
+            pytest.fail("revoked control was returned")
+    assert record.structure is current
+    assert record.generation == 2
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+@pytest.mark.asyncio
+async def test_history_marker_failure_never_returns_cached_control() -> None:
+    class Store:
+        def get(self, *_parts: str) -> object:
+            return object()
+
+    control = Control("control", "Old right", "Switch", None, None, "action", ())
+    old = LoxoneStructure(LoxoneIdentity("reader", "serial"), "old", (), (), (control,))
+
+    class Session(_Session):
+        async def structure_version(self) -> str:
+            raise LoxoneConnectionError("marker unavailable")
+
+        async def load_structure(self) -> LoxoneStructure:
+            raise AssertionError("a failed marker must not use the cached structure")
+
+    runtime = object.__new__(LoxoneRuntime)
+    runtime.history_enabled = True
+    runtime.token_store = Store()
+    task = asyncio.create_task(asyncio.sleep(60))
+    runtime._records = {"family": _ConnectionRecord(old, frozenset(), _Session(), task)}
+
+    @asynccontextmanager
+    async def call_slot(_access: StoredAccessToken):
+        yield
+
+    async def open_session(_token: object, **_kwargs: object) -> Session:
+        return Session()
+
+    runtime.history_call_slot = call_slot  # type: ignore[method-assign]
+    runtime._open_session = open_session  # type: ignore[method-assign]
+    access = _access()
+    access.scopes.append(HISTORY_SCOPE)
+    with pytest.raises(ControlOperationError, match="Miniserver connection failed"):
+        async with runtime._history_session(access, "control"):
+            pytest.fail("cached control was returned after marker failure")
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+@pytest.mark.asyncio
+async def test_concurrent_history_marker_change_downloads_structure_once() -> None:
+    started = asyncio.Event()
+    release = asyncio.Event()
+    downloads = 0
+    old = _structure("old")
+    current = _structure("new")
+
+    class Session(_Session):
+        async def structure_version(self) -> str:
+            return "new"
+
+        async def load_structure(self) -> LoxoneStructure:
+            nonlocal downloads
+            downloads += 1
+            started.set()
+            await release.wait()
+            return current
+
+    runtime = object.__new__(LoxoneRuntime)
+    runtime.cache = UserStateCache()
+    task = asyncio.create_task(asyncio.sleep(60))
+    record = _ConnectionRecord(old, frozenset(), _Session(), task)
+    runtime._records = {"family": record}
+    first = asyncio.create_task(
+        runtime._history_visible_structure(_access(), Session(), "first")  # type: ignore[arg-type]
+    )
+    await started.wait()
+    second = asyncio.create_task(
+        runtime._history_visible_structure(_access(), Session(), "second")  # type: ignore[arg-type]
+    )
+    await asyncio.sleep(0)
+    release.set()
+    assert await asyncio.gather(first, second) == [current, current]
+    assert downloads == 1
+    assert record.generation == 2
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+@pytest.mark.asyncio
+async def test_history_structure_change_during_marker_check_fails_closed() -> None:
+    old = _structure("old")
+
+    class Session(_Session):
+        async def structure_version(self) -> str:
+            return "new"
+
+        async def load_structure(self) -> LoxoneStructure:
+            return _structure("newer")
+
+    runtime = object.__new__(LoxoneRuntime)
+    task = asyncio.create_task(asyncio.sleep(60))
+    record = _ConnectionRecord(old, frozenset(), _Session(), task)
+    runtime._records = {"family": record}
+    with pytest.raises(LoxoneProtocolError, match="changed during History verification"):
+        await runtime._history_visible_structure(  # type: ignore[arg-type]
+            _access(), Session(), "trace"
+        )
+    assert record.structure is old
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+@pytest.mark.asyncio
+async def test_project_marker_authentication_respects_shared_breaker(tmp_path: Path) -> None:
+    runtime = object.__new__(LoxoneRuntime)
+    open_session = AsyncMock(side_effect=LoxoneSourceIpBlocked("blocked"))
+    runtime.client = SimpleNamespace(open_session=open_session)
+    runtime.auth_coordinator = MiniserverAuthCoordinator(tmp_path / "auth-state.json")
+    token = LoxoneToken("opaque", "reader", "", "SHA256", 9_999_999_999)
+
+    with pytest.raises(LoxoneSourceIpBlocked):
+        await runtime.project_marker(token)
+    with pytest.raises(MiniserverAuthenticationSuppressed):
+        await runtime.project_marker(token)
+    open_session.assert_awaited_once_with(token)
 
 
 @pytest.mark.asyncio

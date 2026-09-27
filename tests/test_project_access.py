@@ -59,6 +59,37 @@ async def test_http_stream_is_bounded(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_project_marker_uses_authenticated_session_and_closes_it(monkeypatch):
+    client = LoxoneClient(MiniserverEndpoint.parse("https://example.com"), client_uuid=uuid4())
+    session = SimpleNamespace(
+        structure_version=AsyncMock(return_value="revision"), close=AsyncMock()
+    )
+    monkeypatch.setattr(client, "open_session", AsyncMock(return_value=session))
+    token = LoxoneToken("secret", "reader", "", "SHA256", 9999999999)
+    assert await client.project_marker(token) == "revision"
+    client.open_session.assert_awaited_once_with(token)
+    session.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_project_service_uses_coordinated_marker_reader():
+    client = SimpleNamespace(project_marker=AsyncMock(side_effect=AssertionError("raw login")))
+    reader = AsyncMock(return_value="revision")
+    service = ProjectService(
+        client,
+        SimpleNamespace(),
+        SimpleNamespace(),
+        AsyncMock(return_value=True),
+        marker_reader=reader,
+    )
+    token = LoxoneToken("opaque", "reader", "", "SHA256", 9_999_999_999)
+
+    assert await service._marker(token) == "revision"
+    reader.assert_awaited_once_with(token)
+    client.project_marker.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_revocation_after_download_prevents_project_result():
     access = SimpleNamespace(
         scopes=["loxone:read"], family_id="f", miniserver_id="m", identity_id="i"
