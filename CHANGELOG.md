@@ -5,6 +5,9 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Expose locally recorded state events as `loxone_get_event_history`, while
+  keeping `loxone_get_state_history` as a compatibility alias.
+
 - Release process-local Tool Explorer session locks after the last active or
   waiting request, and prevent concurrent refresh from restoring a removed
   encrypted session.

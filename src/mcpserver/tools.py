@@ -4793,6 +4793,15 @@ def register_event_history_tools(server: FastMCP, runtime: EventHistoryRuntime |
     @server.tool(
         name="loxone_get_state_history",
         description=(
+            "Compatibility alias for loxone_get_event_history. Read retained local state "
+            "transitions for one currently visible state. Requires loxone:history."
+        ),
+        annotations=annotations,
+        structured_output=True,
+    )
+    @server.tool(
+        name="loxone_get_event_history",
+        description=(
             "Read retained local state transitions for one currently visible state, including "
             "a removed recording source while evidence remains. "
             "Requires loxone:history; this is separate from native Loxone control history."

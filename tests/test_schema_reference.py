@@ -33,6 +33,7 @@ EXPECTED_TOOLS = {
     "loxone_find_controls",
     "loxone_find_project_objects",
     "loxone_get_control_history",
+    "loxone_get_event_history",
     "loxone_get_state_history",
     "loxone_get_control_notes",
     "loxone_get_project_status",

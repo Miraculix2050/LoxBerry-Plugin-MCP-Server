@@ -1172,9 +1172,11 @@ async def test_removed_history_is_readable_only_while_currently_visible(tmp_path
     assert exc_info.value.code == "not_found"
 
 
+@pytest.mark.parametrize("tool_name", ("loxone_get_event_history", "loxone_get_state_history"))
 @pytest.mark.asyncio
 async def test_state_history_normalizes_standard_uuid_input_before_runtime_access(
     monkeypatch: pytest.MonkeyPatch,
+    tool_name: str,
 ) -> None:
     control_uuid = "00000000-0000-0000-0000000000000001"
     state_uuid = "00000000-0000-0000-0000000000000002"
@@ -1218,7 +1220,7 @@ async def test_state_history_normalizes_standard_uuid_input_before_runtime_acces
     monkeypatch.setattr(tools_module, "_access", lambda: _loxberry_access(HISTORY_SCOPE))
 
     result = await server._tool_manager.call_tool(
-        "loxone_get_state_history",
+        tool_name,
         {
             "control_uuid": "00000000-0000-0000-0000-000000000001",
             "state_uuid": "00000000-0000-0000-0000-000000000002",
@@ -1235,7 +1237,7 @@ async def test_state_history_normalizes_standard_uuid_input_before_runtime_acces
     assert result.data.coverage == "not_recorded"  # type: ignore[union-attr]
     runtime.active = False
     removed = await server._tool_manager.call_tool(
-        "loxone_get_state_history",
+        tool_name,
         {
             "control_uuid": control_uuid,
             "state_uuid": state_uuid,
