@@ -225,6 +225,39 @@ async def test_fresh_project_visibility_detects_same_marker_rights_change() -> N
 
 
 @pytest.mark.asyncio
+async def test_fresh_project_visibility_timeout_is_unavailable() -> None:
+    class Store:
+        def get(self, *_parts: str) -> object:
+            return object()
+
+    class RefreshSession(_Session):
+        async def load_structure(self) -> LoxoneStructure:
+            raise TimeoutError("private transport detail")
+
+    class Client:
+        async def open_session(self, _token: object) -> RefreshSession:
+            return RefreshSession()
+
+    runtime = object.__new__(LoxoneRuntime)
+    task = asyncio.create_task(asyncio.sleep(60))
+    record = _ConnectionRecord(
+        _structure("current"), frozenset(), _Session(), task, last_structure_check=10**9
+    )
+    runtime._records = {"family": record}
+    runtime._locks = defaultdict(asyncio.Lock)
+    runtime._prune_sessions = lambda _subject: asyncio.sleep(0)  # type: ignore[method-assign]
+    runtime.token_store = Store()
+    runtime.client = Client()
+    runtime.structure_refresh_seconds = 300
+
+    with pytest.raises(RuntimeUnavailable, match="structure refresh failed"):
+        await runtime.snapshot(_access(), fresh_visibility=True)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+@pytest.mark.asyncio
 async def test_runtime_close_disconnects_all_records_without_revoking_tokens() -> None:
     runtime = object.__new__(LoxoneRuntime)
     closed: list[str] = []

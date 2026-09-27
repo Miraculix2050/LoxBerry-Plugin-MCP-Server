@@ -1054,7 +1054,12 @@ class LoxoneRuntime:
                 structure = await session.load_structure()
             finally:
                 await session.close()
-        except (LoxoneConnectionError, LoxoneProtocolError, LoxoneTokenStoreError) as exc:
+        except (
+            LoxoneConnectionError,
+            LoxoneProtocolError,
+            LoxoneTokenStoreError,
+            TimeoutError,
+        ) as exc:
             _LOGGER.warning(
                 "component=structure outcome=refresh_failed error_type=%s",
                 type(exc).__name__,

@@ -5068,11 +5068,16 @@ def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
             )
             return envelope
         except ValueError as exc:
-            return _error(StatisticsEnvelope, "invalid_input", str(exc))
+            return _error(StatisticsEnvelope, "invalid_input", str(exc), trace_id=trace_id)
         except PermissionError:
-            return _error(StatisticsEnvelope, "unauthenticated", "Authentication is required")
+            return _error(
+                StatisticsEnvelope,
+                "unauthenticated",
+                "Authentication is required",
+                trace_id=trace_id,
+            )
         except ControlOperationError as exc:
-            return _error(StatisticsEnvelope, exc.code, str(exc))
+            return _error(StatisticsEnvelope, exc.code, str(exc), trace_id=trace_id)
 
     @server.tool(
         name="loxone_get_control_history",
@@ -5175,11 +5180,16 @@ def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
             )
             return envelope
         except ValueError as exc:
-            return _error(ControlHistoryEnvelope, "invalid_input", str(exc))
+            return _error(ControlHistoryEnvelope, "invalid_input", str(exc), trace_id=trace_id)
         except PermissionError:
-            return _error(ControlHistoryEnvelope, "unauthenticated", "Authentication is required")
+            return _error(
+                ControlHistoryEnvelope,
+                "unauthenticated",
+                "Authentication is required",
+                trace_id=trace_id,
+            )
         except ControlOperationError as exc:
-            return _error(ControlHistoryEnvelope, exc.code, str(exc))
+            return _error(ControlHistoryEnvelope, exc.code, str(exc), trace_id=trace_id)
 
 
 def register_loxberry_operate_tool(server: FastMCP, runtime: LoxBerryOperateRuntime) -> None:

@@ -48,5 +48,5 @@ for name in order:
 '@
 $source = $bootstrap.Replace('ENCODED_MODULES', $encoded) + "`n" + (Get-Content -LiteralPath $ProbePath -Raw)
 Assert-LoxBerryConnection
-$result = Invoke-LoxBerryCommand -Command '/opt/loxberry/data/plugins/mcpserver/venv/bin/python -' -InputText $source -AllowedExitCodes @(0,2) -TimeoutSeconds 90
+$result = Invoke-LoxBerryCommand -Command '/opt/loxberry/data/plugins/mcpserver/venv/bin/python -' -InputText $source -AllowedExitCodes @(0,2) -TimeoutSeconds 180
 $result.StdOut

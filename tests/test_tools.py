@@ -838,6 +838,28 @@ async def test_history_limit_is_enforced_at_runtime() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("tool_name", ["loxone_get_statistics", "loxone_get_control_history"])
+async def test_history_error_preserves_preallocated_trace_id(
+    monkeypatch: pytest.MonkeyPatch, tool_name: str
+) -> None:
+    identifiers = iter(("phase-trace", "incorrect-second-trace"))
+    monkeypatch.setattr(tools_module, "uuid4", lambda: next(identifiers))
+    monkeypatch.setattr(
+        tools_module, "_access", lambda: _loxberry_access(READ_SCOPE, HISTORY_SCOPE)
+    )
+    server = FastMCP("history-error-trace")
+    register_history_tools(server, object())  # type: ignore[arg-type]
+    arguments = {"control_uuid": "control", "start": "invalid"}
+    if tool_name == "loxone_get_statistics":
+        arguments.update(
+            {"series_id": "series", "end": "2026-01-02T00:00:00Z", "granularity": "raw"}
+        )
+    result = await server._tool_manager.call_tool(tool_name, arguments)
+    assert result.trace_id == "phase-trace"
+    assert result.ok is False
+
+
+@pytest.mark.asyncio
 async def test_loxberry_operate_runtime_requires_exact_live_binding() -> None:
     class Cache:
         def clear(self) -> object:

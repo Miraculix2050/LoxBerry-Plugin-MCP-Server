@@ -17,6 +17,10 @@ def test_identity_selection_excludes_revoked_expired_and_explorer():
         }
     }
     assert select_family(document, 100) == ("active", family)
+    assert select_family(document, 100, use_tool_explorer=True) == (
+        "explorer",
+        document["families"]["explorer"],
+    )
     document["families"]["other"] = dict(family, identity_id="two")
     assert select_family(document, 100) is None
 
