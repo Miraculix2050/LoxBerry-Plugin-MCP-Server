@@ -158,6 +158,18 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
   tick();
   await flush();
   assert.ok(queries().length > beforeChange + 1, 'history mutation retries after busy clears');
+  failCode = 'history_changed';
+  const beforeRepeatedChange = queries().length;
+  tick();
+  await flush();
+  assert.equal(queries().length, beforeRepeatedChange + 2,
+    'a persistent history change gets one immediate retry');
+  assert.equal(window.document.querySelector('#chart-status').textContent, 'Unavailable');
+  failCode = null;
+  tick();
+  await flush();
+  assert.equal(window.document.querySelector('#chart-status').textContent, '',
+    'the next visible-tab poll recovers after the bounded retry');
 
   hidden = true;
   const beforeHidden = calls.length;

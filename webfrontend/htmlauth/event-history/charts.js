@@ -26,6 +26,7 @@
   let syncing = false;
   let applyingScale = false;
   let staleRetries = 0;
+  let historyRetries = 0;
   const time = (value) => new Date(value * 1000).toLocaleString();
   const localInput = (value) => {
     const date = new Date(value * 1000);
@@ -305,6 +306,7 @@
       await query(token);
       if (token === sequence) {
         staleRetries = 0;
+        historyRetries = 0;
         setStatus('');
       }
     } catch (error) {
@@ -315,7 +317,10 @@
           state.events.clear(); state.generation = null; state.cursor = 0; state.reduced = false;
           render(state);
         }
-        rerun = true;
+        if (historyRetries < 1) {
+          historyRetries++;
+          rerun = true;
+        } else setStatus(label('chartUnavailable'), 'warning');
       } else if (error.code === 'stale_configuration' && staleRetries < 1) {
         staleRetries++;
         clear();
