@@ -613,7 +613,7 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert tool.annotations.destructiveHint is False
     assert tool.annotations.openWorldHint is False
     assert result.data.name == "using-loxberry-mcp"  # type: ignore[union-attr]
-    assert result.data.revision == 35  # type: ignore[union-attr]
+    assert result.data.revision == 36  # type: ignore[union-attr]
     assert "`loxone_get_structure_overview`" in result.data.content  # type: ignore[union-attr]
     assert result.data.media_type == "text/markdown"  # type: ignore[union-attr]
     assert result.data.content == read_skill_markdown()  # type: ignore[union-attr]
@@ -1173,7 +1173,7 @@ async def test_removed_history_is_readable_only_while_currently_visible(tmp_path
 
 
 @pytest.mark.asyncio
-async def test_state_history_normalizes_standard_uuid_input_before_runtime_access(
+async def test_event_history_normalizes_standard_uuid_input_before_runtime_access(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     control_uuid = "00000000-0000-0000-0000000000000001"
@@ -1218,7 +1218,7 @@ async def test_state_history_normalizes_standard_uuid_input_before_runtime_acces
     monkeypatch.setattr(tools_module, "_access", lambda: _loxberry_access(HISTORY_SCOPE))
 
     result = await server._tool_manager.call_tool(
-        "loxone_get_state_history",
+        "loxone_get_event_history",
         {
             "control_uuid": "00000000-0000-0000-0000-000000000001",
             "state_uuid": "00000000-0000-0000-0000-000000000002",
@@ -1235,7 +1235,7 @@ async def test_state_history_normalizes_standard_uuid_input_before_runtime_acces
     assert result.data.coverage == "not_recorded"  # type: ignore[union-attr]
     runtime.active = False
     removed = await server._tool_manager.call_tool(
-        "loxone_get_state_history",
+        "loxone_get_event_history",
         {
             "control_uuid": control_uuid,
             "state_uuid": state_uuid,

@@ -782,7 +782,7 @@ def test_explorer_scope_filters_include_all_published_history_and_operate_tools(
     history_names = [
         "loxone_get_statistics",
         "loxone_get_control_history",
-        "loxone_get_state_history",
+        "loxone_get_event_history",
         "loxone_analyze_observability",
     ]
     operate_names = [

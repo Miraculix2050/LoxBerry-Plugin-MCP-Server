@@ -5,6 +5,8 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Name the local event-history query `loxone_get_event_history`.
+
 - Release process-local Tool Explorer session locks after the last active or
   waiting request, and prevent concurrent refresh from restoring a removed
   encrypted session.
@@ -206,7 +208,7 @@ extracted from the matching version heading.
 - Add opt-in, bounded local event history for explicitly selected Loxone state
   sources. The recorder uses the LoxBerry-managed Miniserver identity, preserves
   short-lived state changes, reports coverage evidence, and is queried through
-  `loxone_get_state_history`. Approved existing `loxberry:operate` clients can
+  `loxone_get_event_history`. Approved existing `loxberry:operate` clients can
   list, add, and remove sources without a new OAuth scope.
 
 - Show the running service's emergency-stop signal and MQTT-compatible state in
