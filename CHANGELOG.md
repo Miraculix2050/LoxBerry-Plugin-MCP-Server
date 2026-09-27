@@ -25,10 +25,10 @@ extracted from the matching version heading.
 - Reuse the bounded Project Intelligence graph and mapped query after an authenticated
   project-marker check, and reuse bounded search and analysis results across
   continuation pages. Expired or changed-context cursors require a new first page.
-  Add sanitized History phase timings and reuse the current OAuth family's visible
-  structure for native History and statistics after an authenticated unchanged
-  project-marker check. Changed markers reload visibility and failed checks deny
-  cached History data. Avoid repeated local authorization reads during a warm
+  Add sanitized History phase timings. Native History and statistics load the
+  current user-filtered structure for each call, including cache hits; a project
+  marker alone is insufficient proof of current visibility. Avoid repeated local
+  authorization reads during a warm
   Project Intelligence query while retaining a fresh visibility check and one
   authorization check for each request.
 

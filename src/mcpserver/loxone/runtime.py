@@ -9,11 +9,12 @@ import math
 import struct
 import time
 from collections import defaultdict, deque
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Iterator, Mapping
 from contextlib import asynccontextmanager, contextmanager, suppress
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from mcpserver.auth.loxone_health import LoxoneTokenHealthStore
@@ -164,6 +165,34 @@ class ControlHistoryEntry:
     trigger: str
     trigger_type: str
     impacts: tuple[str, ...]
+
+
+def normalize_control_history_entries(
+    raw: list[Mapping[str, Any]],
+) -> tuple[ControlHistoryEntry, ...]:
+    """Validate and bound decoded native History entries for a caller."""
+    entries: list[ControlHistoryEntry] = []
+    for item in raw[:1000]:
+        timestamp = item.get("ts")
+        what = item.get("what", "")
+        trigger = item.get("trigger", "")
+        trigger_type = item.get("triggerType", "")
+        impacts_value = item.get("impacts", [])
+        if (
+            not isinstance(timestamp, int)
+            or isinstance(timestamp, bool)
+            or not 0 <= timestamp <= _MAX_HISTORY_TIMESTAMP
+            or not isinstance(what, str)
+            or not isinstance(trigger, str)
+            or not isinstance(trigger_type, str)
+            or not isinstance(impacts_value, list)
+        ):
+            continue
+        impacts = tuple(value[:500] for value in impacts_value[:20] if isinstance(value, str))
+        entries.append(
+            ControlHistoryEntry(timestamp, what[:500], trigger[:500], trigger_type[:64], impacts)
+        )
+    return tuple(entries)
 
 
 def _state_uuids(controls: tuple[Control, ...]) -> frozenset[str]:
@@ -619,7 +648,7 @@ class LoxoneRuntime:
                     token, owner="tool_request", phase="session_establishment"
                 )
                 _history_phase(trace_id, "connection", started)
-                structure = await self._history_visible_structure(access, session, trace_id)
+                structure = await self._history_visible_structure(session, trace_id)
                 started = time.perf_counter()
                 control = self._control(structure, control_uuid, include_hidden=include_hidden)
                 _history_phase(trace_id, "visibility", started)
@@ -642,47 +671,15 @@ class LoxoneRuntime:
 
     async def _history_visible_structure(
         self,
-        access: StoredAccessToken,
         session: LoxoneWebSocketSession,
         trace_id: str,
     ) -> LoxoneStructure:
-        """Verify the current project marker before reusing family-bound visibility."""
-
-        record = self._records.get(access.family_id)
-        if record is None or record.task.done():
-            started = time.perf_counter()
-            structure = await session.load_structure()
-            _history_phase(trace_id, "structure", started)
-            _LOGGER.debug("component=history_visibility trace_id=%s outcome=no_cache", trace_id)
-            return structure
-
-        async with record.refresh_lock:
-            started = time.perf_counter()
-            marker = await session.structure_version()
-            _history_phase(trace_id, "structure_marker", started)
-            if marker == record.structure.last_modified:
-                _LOGGER.debug(
-                    "component=history_visibility trace_id=%s outcome=cache_hit", trace_id
-                )
-                return record.structure
-
-            started = time.perf_counter()
-            structure = await session.load_structure()
-            _history_phase(trace_id, "structure", started)
-            if structure.last_modified != marker:
-                raise LoxoneProtocolError(
-                    "Miniserver structure changed during History verification"
-                )
-            record.last_structure_check = time.monotonic()
-            if structure != record.structure:
-                record.structure = structure
-                record.allowed_states = _structure_state_uuids(structure)
-                record.generation += 1
-                self.cache.apply(access.family_id, (), allowed_uuids=record.allowed_states)
-            _LOGGER.debug(
-                "component=history_visibility trace_id=%s outcome=cache_invalidated", trace_id
-            )
-            return structure
+        """Load the caller-filtered structure before releasing native History data."""
+        started = time.perf_counter()
+        structure = await session.load_structure()
+        _history_phase(trace_id, "structure", started)
+        _LOGGER.debug("component=history_visibility trace_id=%s outcome=fresh", trace_id)
+        return structure
 
     async def get_statistics(
         self,
@@ -840,31 +837,9 @@ class LoxoneRuntime:
                     "temporarily_unavailable", "Control history could not be read"
                 ) from exc
         parse_started = time.perf_counter()
-        entries: list[ControlHistoryEntry] = []
-        for item in raw[:1000]:
-            timestamp = item.get("ts")
-            what = item.get("what", "")
-            trigger = item.get("trigger", "")
-            trigger_type = item.get("triggerType", "")
-            impacts_value = item.get("impacts", [])
-            if (
-                not isinstance(timestamp, int)
-                or isinstance(timestamp, bool)
-                or not 0 <= timestamp <= _MAX_HISTORY_TIMESTAMP
-                or not isinstance(what, str)
-                or not isinstance(trigger, str)
-                or not isinstance(trigger_type, str)
-                or not isinstance(impacts_value, list)
-            ):
-                continue
-            impacts = tuple(value[:500] for value in impacts_value[:20] if isinstance(value, str))
-            entries.append(
-                ControlHistoryEntry(
-                    timestamp, what[:500], trigger[:500], trigger_type[:64], impacts
-                )
-            )
+        entries = normalize_control_history_entries(raw)
         _history_phase(trace_id, "history_parse", parse_started)
-        return control, tuple(entries)
+        return control, entries
 
     async def get_control_notes(
         self, access: StoredAccessToken, control_uuid: str, *, include_hidden: bool = False

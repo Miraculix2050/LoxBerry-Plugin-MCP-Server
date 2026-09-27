@@ -1,5 +1,6 @@
 """Read-only end-to-end project diagnostic using one existing MCP OAuth family."""
 
+import argparse
 import asyncio
 import json
 import logging
@@ -150,10 +151,17 @@ async def run(*, use_tool_explorer: bool = False) -> dict[str, object]:
         await service.close()
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Read-only LoxCC access diagnostic")
+    parser.add_argument(
+        "--tool-explorer",
+        action="store_true",
+        help="select an active Tool Explorer MCP session instead of a normal MCP session",
+    )
+    args = parser.parse_args(argv)
     logging.disable(logging.CRITICAL)
     try:
-        result = asyncio.run(run(use_tool_explorer=True))
+        result = asyncio.run(run(use_tool_explorer=args.tool_explorer))
     except Exception:
         result = {"result": "diagnostic_setup_error"}
     print(json.dumps(result, sort_keys=True))
