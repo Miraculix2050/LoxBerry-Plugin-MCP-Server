@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections import defaultdict
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import pytest
 
 import mcpserver.loxone.runtime as runtime_module
-from mcpserver.auth.provider import READ_SCOPE, StoredAccessToken
+from mcpserver.auth.provider import HISTORY_SCOPE, READ_SCOPE, StoredAccessToken
 from mcpserver.loxone.cache import UserStateCache
 from mcpserver.loxone.client import LoxoneConnectionError
 from mcpserver.loxone.events import StateEvent
@@ -255,6 +257,46 @@ async def test_fresh_project_visibility_timeout_is_unavailable() -> None:
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
+
+
+@pytest.mark.asyncio
+async def test_history_visibility_does_not_issue_optional_marker_request(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class Store:
+        def get(self, *_parts: str) -> object:
+            return object()
+
+    control = Control("control", "Visible", "Switch", None, None, "action", ())
+    structure = LoxoneStructure(LoxoneIdentity("reader", "serial"), "current", (), (), (control,))
+
+    class Session(_Session):
+        async def structure_version(self) -> str:
+            raise AssertionError("history must not issue an optional marker request")
+
+        async def load_structure(self) -> LoxoneStructure:
+            return structure
+
+    session = Session()
+    runtime = object.__new__(LoxoneRuntime)
+    runtime.history_enabled = True
+    runtime.token_store = Store()
+
+    @asynccontextmanager
+    async def call_slot(_access: StoredAccessToken):
+        yield
+
+    async def open_session(_token: object, **_kwargs: object) -> Session:
+        return session
+
+    runtime.history_call_slot = call_slot  # type: ignore[method-assign]
+    runtime._open_session = open_session  # type: ignore[method-assign]
+    access = _access()
+    access.scopes.append(HISTORY_SCOPE)
+    with caplog.at_level(logging.DEBUG):
+        async with runtime._history_session(access, "control") as (visible, used_session):
+            assert visible is control
+            assert used_session is session
 
 
 @pytest.mark.asyncio

@@ -3646,29 +3646,38 @@ def register_read_tools(
             ),
         ] = False,
     ) -> ControlNotesEnvelope:
+        trace_id = str(uuid4())
         try:
             if runtime is None:
                 raise RuntimeUnavailable("the service is not configured")
             access = _access()
-            if include_hidden:
-                _control, notes = await runtime.get_control_notes(
-                    access, control_uuid, include_hidden=True
-                )
-            else:
-                _control, notes = await runtime.get_control_notes(access, control_uuid)
-            return _result(ControlNotesEnvelope, {"control_uuid": control_uuid, "text": notes})
+            with history_trace(trace_id):
+                if include_hidden:
+                    _control, notes = await runtime.get_control_notes(
+                        access, control_uuid, include_hidden=True
+                    )
+                else:
+                    _control, notes = await runtime.get_control_notes(access, control_uuid)
+            return _result(
+                ControlNotesEnvelope,
+                {"control_uuid": control_uuid, "text": notes},
+                trace_id=trace_id,
+            )
         except ValueError as exc:
-            return _error(ControlNotesEnvelope, "invalid_input", str(exc))
+            return _error(ControlNotesEnvelope, "invalid_input", str(exc), trace_id=trace_id)
         except PermissionError:
             return _error(
                 ControlNotesEnvelope,
                 "unauthenticated",
                 "Authentication with loxone:read is required",
+                trace_id=trace_id,
             )
         except RuntimeUnavailable as exc:
-            return _error(ControlNotesEnvelope, "temporarily_unavailable", str(exc))
+            return _error(
+                ControlNotesEnvelope, "temporarily_unavailable", str(exc), trace_id=trace_id
+            )
         except ControlOperationError as exc:
-            return _error(ControlNotesEnvelope, exc.code, str(exc))
+            return _error(ControlNotesEnvelope, exc.code, str(exc), trace_id=trace_id)
 
     @server.tool(
         name="loxone_get_states",

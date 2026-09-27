@@ -619,17 +619,6 @@ class LoxoneRuntime:
                     token, owner="tool_request", phase="session_establishment"
                 )
                 _history_phase(trace_id, "connection", started)
-                if _LOGGER.isEnabledFor(logging.DEBUG):
-                    started = time.perf_counter()
-                    try:
-                        await session.structure_version()
-                    except (LoxoneConnectionError, LoxoneProtocolError, TimeoutError):
-                        _LOGGER.debug(
-                            "component=history_timing trace_id=%s phase=marker outcome=failed",
-                            trace_id,
-                        )
-                    else:
-                        _history_phase(trace_id, "marker", started)
                 started = time.perf_counter()
                 structure = await session.load_structure()
                 _history_phase(trace_id, "structure", started)

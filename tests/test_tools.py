@@ -15,6 +15,7 @@ import pytest
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 
+import mcpserver.loxone.runtime as runtime_module
 import mcpserver.tools as tools_module
 from mcpserver.auth.provider import (
     CONTROL_SCOPE,
@@ -2593,6 +2594,31 @@ async def test_get_control_notes_returns_only_runtime_notes(
     assert result.ok is True
     assert result.data.control_uuid == "control-1"  # type: ignore[union-attr]
     assert result.data.text == "User-authored note"  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fails", [False, True])
+async def test_control_notes_phases_share_envelope_trace(
+    monkeypatch: pytest.MonkeyPatch, fails: bool
+) -> None:
+    class Runtime:
+        async def get_control_notes(
+            self, _access: StoredAccessToken, _control_uuid: str
+        ) -> tuple[object, str]:
+            assert runtime_module._HISTORY_TRACE_ID.get() == "notes-trace"
+            if fails:
+                raise tools_module.ControlOperationError("temporarily_unavailable", "unavailable")
+            return object(), "note"
+
+    monkeypatch.setattr(tools_module, "uuid4", lambda: "notes-trace")
+    monkeypatch.setattr(tools_module, "_access", lambda: _loxberry_access(READ_SCOPE))
+    server = FastMCP("notes-trace")
+    register_read_tools(server, Runtime(), control_enabled=True)  # type: ignore[arg-type]
+    result = await server._tool_manager.call_tool(
+        "loxone_get_control_notes", {"control_uuid": "control"}
+    )
+    assert result.trace_id == "notes-trace"
+    assert result.ok is not fails
 
 
 @pytest.mark.asyncio
