@@ -8,6 +8,8 @@ extracted from the matching version heading.
 - Add deterministic DOM and mocked OAuth/MCP flow tests for the Tool Explorer,
   backed by a development-only pinned jsdom dependency. CI installs the test
   dependency without changing shipped JavaScript or plugin assets.
+- Keep request-local Admin language previews in AJAX feedback, including
+  emergency-stop discovery errors, without changing the LoxBerry system language.
 
 - Add an opt-in compact `loxone_describe_control` history-target view with state
   UUIDs and advertised native statistic series, preserving the full default

@@ -28,6 +28,66 @@ def _admin_source() -> str:
     return markup + "\n" + "\n".join(_admin_script(name) for name in ADMIN_SCRIPTS)
 
 
+def test_admin_ajax_carries_only_supported_page_language_preview() -> None:
+    node = shutil.which("node")
+    assert node is not None
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const cases = [
+  ['?lang=en', 'en'],
+  ['?lang=de', 'de'],
+  ['', null],
+  ['?lang=fr', null],
+];
+(async () => {
+  for (const [search, expected] of cases) {
+    let sent;
+    const context = {
+      URLSearchParams, AbortController, Intl,
+      fetch: async (url, options) => {
+        sent = {url, options};
+        return {ok: true, json: async () => ({ok: true, data: {}})};
+      },
+      window: {
+        location: {hash: '', search},
+        localStorage: {getItem: () => null},
+        performance: {getEntriesByType: () => []},
+        addEventListener() {},
+        setTimeout: () => 1,
+        clearTimeout() {},
+      },
+      document: {
+        documentElement: {lang: 'de'},
+        getElementById: (id) => id === 'page-notice' ? null : {
+          getAttribute: () => 'error',
+        },
+        querySelectorAll: () => [],
+        addEventListener() {},
+      },
+      HTMLDetailsElement: class {},
+    };
+    vm.runInNewContext(source, context);
+    const body = new URLSearchParams({action: 'emergency_stop_options', ajax: '1'});
+    await context.window.McpAdmin.createCore().postAjax(body, 15000);
+    assert.equal(sent.url, 'index.cgi');
+    assert.equal(sent.options.method, 'POST');
+    assert.equal(sent.options.body.get('action'), 'emergency_stop_options');
+    assert.equal(sent.options.body.get('lang'), expected);
+    assert.equal(sent.options.headers['X-Requested-With'], 'XMLHttpRequest');
+  }
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/admin/core.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
 def test_admin_modules_load_in_order_with_versioned_localized_assets() -> None:
     markup = (ROOT / "templates/index.html").read_text(encoding="utf-8")
     browser_scripts = re.findall(r'<script defer src="(admin/[^"?]+\.js)\?v=', markup)
@@ -85,8 +145,9 @@ const element = (id) => {
   return elements.get(id);
 };
 const context = {
+  URLSearchParams,
   window: {
-    location: {hash: ''},
+    location: {hash: '', search: ''},
     localStorage: {getItem: () => null},
     performance: {getEntriesByType: () => []},
     addEventListener() {},
@@ -336,29 +397,48 @@ def test_admin_ajax_localized_messages_are_utf8(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     cgi = ROOT / "webfrontend" / "htmlauth" / "index.cgi"
-    for action, field, expected in (
-        ("emergency_stop_options", "failure_text", "Anmeldung läuft."),
-        ("status", "message", "Aktion für Dienst fehlgeschlagen."),
+    for system_language, preview_language, emergency_text, service_text in (
+        ("de", None, "Anmeldung läuft.", "Aktion für Dienst fehlgeschlagen."),
+        (
+            "de",
+            "en",
+            "Another sign-in is in progress.",
+            "The service action could not be completed.",
+        ),
+        ("en", "de", "Anmeldung läuft.", "Aktion für Dienst fehlgeschlagen."),
+        (
+            "en",
+            None,
+            "Another sign-in is in progress.",
+            "The service action could not be completed.",
+        ),
     ):
-        request = f"action={action}&ajax=1"
-        response = subprocess.run(
-            [perl, f"-I{ROOT / 'tests' / 'perl_stubs'}", str(cgi)],
-            check=True,
-            capture_output=True,
-            text=True,
-            input=request,
-            env={
-                **environment,
-                "REQUEST_METHOD": "POST",
-                "CONTENT_TYPE": "application/x-www-form-urlencoded",
-                "CONTENT_LENGTH": str(len(request)),
-                "HTTP_ORIGIN": "https://loxberry.example",
-                "HTTP_HOST": "loxberry.example",
-            },
-        )
-        payload = json.loads(response.stdout.partition("\n\n")[2])
-        detail = payload["data"] if field == "failure_text" else payload["error"]
-        assert detail[field] == expected
+        for action, field, expected in (
+            ("emergency_stop_options", "failure_text", emergency_text),
+            ("status", "message", service_text),
+        ):
+            request = f"action={action}&ajax=1"
+            if preview_language is not None:
+                request += f"&lang={preview_language}"
+            response = subprocess.run(
+                [perl, f"-I{ROOT / 'tests' / 'perl_stubs'}", str(cgi)],
+                check=True,
+                capture_output=True,
+                text=True,
+                input=request,
+                env={
+                    **environment,
+                    "LB_TEST_SYSTEM_LANG": system_language,
+                    "REQUEST_METHOD": "POST",
+                    "CONTENT_TYPE": "application/x-www-form-urlencoded",
+                    "CONTENT_LENGTH": str(len(request)),
+                    "HTTP_ORIGIN": "https://loxberry.example",
+                    "HTTP_HOST": "loxberry.example",
+                },
+            )
+            payload = json.loads(response.stdout.partition("\n\n")[2])
+            detail = payload["data"] if field == "failure_text" else payload["error"]
+            assert detail[field] == expected
 
 
 def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:

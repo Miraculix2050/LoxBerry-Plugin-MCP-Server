@@ -10,6 +10,7 @@ window.McpAdmin.createCore = () => {
   const status = document.getElementById('ajax-status');
   const loxberryNotifications = document.getElementById('loxberry-notifications');
   const pluginLogList = document.getElementById('plugin-log-list');
+  const previewLanguage = new URLSearchParams(window.location.search).get('lang');
   const collapseStorageKey = 'mcpserver.admin.sections.v2';
   const collapsibles = [...document.querySelectorAll('details[data-persist-collapse]')];
   // collapse-state-migration-start
@@ -142,6 +143,9 @@ window.McpAdmin.createCore = () => {
     if (suppliedResult !== undefined) {
       if (!suppliedResult?.ok) throw new Error(label('AJAX.ERROR'));
       return suppliedResult;
+    }
+    if (previewLanguage === 'de' || previewLanguage === 'en') {
+      body.set('lang', previewLanguage);
     }
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
