@@ -31,12 +31,10 @@ Identität oder Analyseauswahl ändern. In diesem Fall muss die erste Seite erne
 KNX/EIB-Metadaten sind eine erlaubnisgebundene, begrenzte Projektion desselben autorisierten
 Projekts. Sie geben weder beliebige Projektattribute noch ETS-Daten, Busmonitoring oder
 Konfigurationsschreibzugriffe frei.
-Native Loxone-Historie und Statistiken prüfen vor der Datenausgabe die aktuelle Sichtbarkeit,
-auch bei einem Treffer im Statistik-Cache. Bei vorhandener Sitzungsstruktur prüfen sie den
-authentifizierten Projektmarker und verwenden die Struktur derselben OAuth-Familie nur bei
-unverändertem Marker. Bei einer Änderung wird sie erneut geladen; schlägt die Markerprüfung
-fehl, werden keine zwischengespeicherten History-Daten ausgegeben. Ohne vorhandene
-Sitzungsstruktur wird sie frisch geladen. Die lokale Ereignishistorie prüft die Sichtbarkeit
-weiterhin durch einen frischen Strukturabruf.
+Native Loxone-Historie und Statistiken laden vor jeder Datenausgabe die aktuelle,
+benutzergefilterte Struktur frisch, auch bei einem Treffer im Statistik-Cache.
+Ein unveränderter Projektmarker allein genügt nicht als Nachweis aktueller
+Sichtbarkeit. Die lokale Ereignishistorie prüft die Sichtbarkeit ebenfalls durch
+einen frischen Strukturabruf.
 
 Weiter: [Funktionsumfang](capabilities.de.md).

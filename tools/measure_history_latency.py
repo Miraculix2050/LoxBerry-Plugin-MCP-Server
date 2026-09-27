@@ -1,4 +1,7 @@
-"""Read-only target phase probe for one visible native History control."""
+"""Read-only target phase probe for one visible native History control.
+
+fetch_s includes transport and JSON decoding; parse_s times runtime normalization.
+"""
 
 import asyncio
 import json
@@ -10,7 +13,20 @@ from mcpserver.auth.loxone_health import LoxoneTokenHealthStore
 from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore
 from mcpserver.auth.store import AtomicJsonAuthStore
 from mcpserver.loxone.client import LoxoneClient
+from mcpserver.loxone.models import Control, LoxoneStructure
+from mcpserver.loxone.runtime import normalize_control_history_entries
 from mcpserver.settings import ServerSettings
+
+
+def first_visible_history_control(structure: LoxoneStructure) -> Control | None:
+    """Find a visible native History target, including nested subcontrols."""
+    pending = list(structure.controls)
+    while pending:
+        control = pending.pop()
+        if control.has_history and control.action_uuid:
+            return control
+        pending.extend(control.subcontrols)
+    return None
 
 
 async def run() -> dict[str, object]:
@@ -54,10 +70,7 @@ async def run() -> dict[str, object]:
                     structure = await session.load_structure()
                 structure_seconds = time.monotonic() - phase
                 phase = time.monotonic()
-                control = next(
-                    (item for item in structure.controls if item.has_history and item.action_uuid),
-                    None,
-                )
+                control = first_visible_history_control(structure)
                 visibility = time.monotonic() - phase
                 if control is None:
                     return {"result": "no_visible_history_control"}
@@ -66,7 +79,7 @@ async def run() -> dict[str, object]:
                     raw = await session.control_history(control.action_uuid)
                 fetch = time.monotonic() - phase
                 phase = time.monotonic()
-                count = len(raw[:1000])
+                count = len(normalize_control_history_entries(raw))
                 parse = time.monotonic() - phase
                 runs.append(
                     {
