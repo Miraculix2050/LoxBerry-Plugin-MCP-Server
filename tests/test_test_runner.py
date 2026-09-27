@@ -34,6 +34,7 @@ def test_changed_ui_selects_only_affected_ui_groups() -> None:
 
     assert plan.effective_profile == "changed"
     assert _pytest_targets(plan) == {
+        "tests/test_explorer_behavior.py",
         "tests/test_explorer_modules.py",
         "tests/test_explorer_ui.py",
         "tests/test_oauth.py",
@@ -55,6 +56,7 @@ def test_shared_language_files_select_both_ui_groups() -> None:
         "tests/test_apache_config.py",
         "tests/test_explorer_ui.py",
         "tests/test_explorer_modules.py",
+        "tests/test_explorer_behavior.py",
         "tests/test_event_history_admin.py",
         "tests/test_event_history_selector_cache.py",
         "tests/test_oauth.py",
@@ -66,6 +68,13 @@ def test_changed_documentation_uses_only_diff_check() -> None:
 
     assert plan.effective_profile == "changed"
     assert plan.commands == (("git", "diff", "--check"),)
+
+
+def test_changed_explorer_harness_selects_dom_flows() -> None:
+    plan = create_plan("changed", ("tests/js/explorer-harness.cjs",))
+
+    assert plan.effective_profile == "changed"
+    assert _pytest_targets(plan) == {"tests/test_explorer_behavior.py"}
 
 
 def test_packaged_skill_markdown_selects_contract_tests() -> None:

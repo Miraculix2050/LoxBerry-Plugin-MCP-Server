@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add deterministic DOM and mocked OAuth/MCP flow tests for the Tool Explorer,
+  backed by a development-only pinned jsdom dependency. CI installs the test
+  dependency without changing shipped JavaScript or plugin assets.
+
 - Add an opt-in compact `loxone_describe_control` history-target view with state
   UUIDs and advertised native statistic series, preserving the full default
   response. Mark StatisticV2 series omitted beyond the normalized 128-series

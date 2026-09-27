@@ -20,9 +20,13 @@ Grenze.
 - **CI:** Ein grünes Full-Gate auf demselben Commit ist die maßgebliche PR-Evidenz und
   muss lokal nicht erneut ausgeführt werden.
 
-Changed darf in der vorhandenen Entwicklungsumgebung laufen. Vollständige lokale,
-CI- oder Release-Evidenz benötigt Python 3.13, Perl und Node.js. Fehlt eine
-Pflichtlaufzeit, ist das Ergebnis `incomplete` (Exitcode `2`), nicht bestanden.
+Changed darf in der vorhandenen Entwicklungsumgebung laufen. Explorer-DOM-Tests
+benötigen Node.js 24 und die nur für Tests gepinnten npm-Abhängigkeiten
+(`npm ci --ignore-scripts`). Sie laden die lokalen Skripte im Template-Ablauf mit
+simulierten OAuth-/MCP-Antworten; sie ersetzen keine Browser- oder Geräteabnahme.
+Vollständige lokale, CI- oder Release-Evidenz benötigt Python 3.13, Perl und
+Node.js. Fehlt eine Pflichtlaufzeit, ist das Ergebnis `incomplete` (Exitcode `2`),
+nicht bestanden.
 
 ## Testebenen
 
