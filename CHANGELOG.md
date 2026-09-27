@@ -9,6 +9,14 @@ extracted from the matching version heading.
   waiting request, and prevent concurrent refresh from restoring a removed
   encrypted session.
 
+- Show currently authorized room, category, and type context for Event History
+  sources with local room, category, type, and status filters, sortable list
+  columns, and estimated logical JSON value sizes. Upgrade existing SQLite
+  history stores to schema v5 without scanning events during
+  overview reads; measure legacy values in bounded background batches even when
+  recording is disabled and refresh displayed sizes when backfill finishes.
+  Keep physical SQLite and WAL sizes separate from these per-source estimates.
+
 - Add deterministic DOM and mocked OAuth/MCP flow tests for the Tool Explorer,
   backed by a development-only pinned jsdom dependency. CI installs the test
   dependency without changing shipped JavaScript or plugin assets.

@@ -46,6 +46,24 @@ def _setup(tmp_path, monkeypatch, *, sources=()):
             ),
         ),
     )
+    monkeypatch.setattr(
+        event_history_admin,
+        "_selector_projection",
+        lambda _config: {
+            "controls": [
+                {
+                    "uuid": SOURCE[0],
+                    "name": "Visible",
+                    "type": "Switch",
+                    "room_id": "room-1",
+                    "room": "Living room",
+                    "category_id": "category-1",
+                    "category": "Lights",
+                    "states": [["active", SOURCE[1]]],
+                }
+            ],
+        },
+    )
     return config_store, history
 
 
@@ -66,6 +84,12 @@ def test_snapshot_counts_are_exact_and_read_does_not_maintain_store(tmp_path, mo
     assert result["visible_event_count"] == 1
     assert result["database_bytes"] > 0 and result["wal_bytes"] >= 0
     assert row["event_count"] == 1
+    assert row["logical_value_bytes"] == len(b"falsetrue")
+    assert (row["room"], row["category"], row["control_type"]) == (
+        "Living room",
+        "Lights",
+        "Switch",
+    )
     assert len(row["recent_coverage"]) == 2
     assert row["oldest_event_at"] == row["newest_event_at"]
     assert history.path.stat().st_mtime_ns == before
@@ -164,6 +188,29 @@ def test_overview_hides_historical_metadata_for_invisible_sources(tmp_path, monk
     assert result["database_bytes"] > 0
 
 
+def test_overview_uses_current_nullable_context_and_revokes_it(tmp_path, monkeypatch):
+    _, history = _setup(tmp_path, monkeypatch, sources=(SOURCE,))
+    history.initialize()
+    history.record_transition(*SOURCE, observed_at=time.time(), old_value=0, new_value=1)
+    projection = event_history_admin._selector_projection(None)
+    control = projection["controls"][0]
+    control.update(room_id=None, room=None, category_id=None, category=None)
+    monkeypatch.setattr(event_history_admin, "_selector_projection", lambda _config: projection)
+
+    row = event_history_admin.overview()["sources"][0]
+    assert (row["room_id"], row["room"], row["category_id"], row["category"]) == (
+        None,
+        None,
+        None,
+        None,
+    )
+
+    projection["controls"] = []
+    revoked = event_history_admin.overview()
+    assert revoked["sources"] == []
+    assert revoked["unverified_sources"] == [{"control_uuid": SOURCE[0], "state_uuid": SOURCE[1]}]
+
+
 def test_invisible_configured_source_can_be_stopped_without_discovery(tmp_path, monkeypatch):
     config_store, history = _setup(tmp_path, monkeypatch, sources=(HIDDEN,))
     history.initialize()
@@ -190,7 +237,7 @@ def test_overview_keeps_configured_source_removal_available_when_visibility_fail
     def unavailable(_config):
         raise admin.AdminError("structure unavailable", code="temporarily_unavailable")
 
-    monkeypatch.setattr(event_history_admin, "_controls", unavailable)
+    monkeypatch.setattr(event_history_admin, "_selector_projection", unavailable)
     result = event_history_admin.overview()
     assert result["visibility_status"] == "unavailable"
     assert result["unverified_sources"] == [{"control_uuid": SOURCE[0], "state_uuid": SOURCE[1]}]
@@ -233,15 +280,15 @@ def test_source_actions_preserve_history_until_separate_confirmed_purge(tmp_path
 def test_add_returns_fresh_visible_overview_without_second_discovery(tmp_path, monkeypatch):
     config_store, history = _setup(tmp_path, monkeypatch)
     history.initialize()
-    original_controls = event_history_admin._controls
+    original_projection = event_history_admin._selector_projection
     discoveries = 0
 
-    def controls(config):
+    def projection(config):
         nonlocal discoveries
         discoveries += 1
-        return original_controls(config)
+        return original_projection(config)
 
-    monkeypatch.setattr(event_history_admin, "_controls", controls)
+    monkeypatch.setattr(event_history_admin, "_selector_projection", projection)
     result = event_history_admin.change_source(
         {"control_uuid": SOURCE[0], "state_uuid": SOURCE[1]}, add=True
     )
@@ -287,6 +334,28 @@ def test_source_revision_tracks_membership_without_polling_event_changes(tmp_pat
     assert revision() != removed
 
 
+def test_payload_backfill_completion_signals_poll_without_changing_source_revision(
+    tmp_path, monkeypatch
+):
+    _, history = _setup(tmp_path, monkeypatch, sources=(SOURCE,))
+    history.initialize()
+    history.record_transition(*SOURCE, observed_at=time.time(), old_value=0, new_value=1)
+    with sqlite3.connect(history.path) as db:
+        db.execute("UPDATE events SET logical_value_bytes = NULL")
+        db.execute("UPDATE source_totals SET logical_value_bytes = 0, unmeasured_events = 1")
+    pending = admin.dispatch({"action": "event_history_source_revision"})
+    assert pending["payload_pending"] is True
+    assert event_history_admin.overview()["payload_pending"] is True
+
+    assert history.backfill_payload_batch() is False
+    complete = admin.dispatch({"action": "event_history_source_revision"})
+    assert complete["revision"] == pending["revision"]
+    assert complete["payload_pending"] is False
+    overview = event_history_admin.overview()
+    assert overview["payload_pending"] is False
+    assert overview["sources"][0]["logical_value_bytes"] == 2
+
+
 def test_snapshot_keeps_counts_and_clear_generation_consistent(tmp_path, monkeypatch):
     _, history = _setup(tmp_path, monkeypatch, sources=(SOURCE,))
     history.initialize()
@@ -330,7 +399,9 @@ def test_policy_update_preserves_sources_and_rejects_invalid_input(tmp_path, mon
 def test_add_rechecks_current_visibility_and_policy_rollback(tmp_path, monkeypatch):
     config_store, _ = _setup(tmp_path, monkeypatch)
     key = {"control_uuid": SOURCE[0], "state_uuid": SOURCE[1]}
-    monkeypatch.setattr(event_history_admin, "_controls", lambda _config: ())
+    monkeypatch.setattr(
+        event_history_admin, "_selector_projection", lambda _config: {"controls": []}
+    )
     with pytest.raises(admin.AdminError) as hidden:
         event_history_admin.change_source(key, add=True)
     assert hidden.value.code == "not_found"
@@ -400,13 +471,21 @@ def test_source_action_rejects_endpoint_changed_during_visibility_check(
     history.initialize()
     if action == "purge":
         history.record_transition(*SOURCE, observed_at=time.time(), old_value=0, new_value=1)
-    visible = event_history_admin._controls(config_store.load())
+    visible = (
+        event_history_admin._selector_projection(config_store.load())
+        if action == "add"
+        else event_history_admin._controls(config_store.load())
+    )
 
     def change_endpoint(_config):
         config_store.save(replace(config_store.load(), loxone_endpoint="https://other.example"))
         return visible
 
-    monkeypatch.setattr(event_history_admin, "_controls", change_endpoint)
+    monkeypatch.setattr(
+        event_history_admin,
+        "_selector_projection" if action == "add" else "_controls",
+        change_endpoint,
+    )
     key = {"control_uuid": SOURCE[0], "state_uuid": SOURCE[1], "confirm": True}
 
     with pytest.raises(admin.AdminError) as stale:
