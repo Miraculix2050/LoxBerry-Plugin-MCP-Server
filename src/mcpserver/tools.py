@@ -16,7 +16,7 @@ from collections.abc import Mapping
 from dataclasses import replace
 from datetime import UTC, datetime
 from math import ceil, floor, isfinite
-from typing import Annotated, Any, Final, Literal, cast
+from typing import Annotated, Any, Final, Literal
 from uuid import UUID, uuid4
 
 from mcp.server.auth.middleware.auth_context import get_access_token
@@ -29,6 +29,7 @@ from mcpserver.auth.provider import (
     HISTORY_SCOPE,
     LOXBERRY_OPERATE_SCOPE,
     LOXBERRY_READ_SCOPE,
+    READ_SCOPE,
     StoredAccessToken,
 )
 from mcpserver.config import AtomicConfigStore
@@ -38,6 +39,7 @@ from mcpserver.loxone.event_history import (
     EventHistoryCoverage,
     EventHistoryMonitor,
     EventHistoryStore,
+    EventHistoryStoreSummary,
     EventHistoryUnavailable,
 )
 from mcpserver.loxone.models import Control, Freshness, StateRecord
@@ -1144,10 +1146,13 @@ class CacheClearEnvelope(ToolEnvelope):
 class EventHistorySourceData(BaseModel):
     control_uuid: str
     state_uuid: str
+    recording_status: Literal["active", "removed"]
+    recording_ended_at: str | None
 
 
 class EventHistorySourcesData(BaseModel):
     sources: list[EventHistorySourceData]
+    next_cursor: str | None
 
 
 class EventHistorySourcesEnvelope(ToolEnvelope):
@@ -1480,6 +1485,41 @@ def _access() -> StoredAccessToken:
     return access
 
 
+def _loxberry_binding_allowed(
+    config: Any, auth_store: Any, access: StoredAccessToken, capability: str
+) -> bool:
+    """Check the exact local approval for one independent LoxBerry capability."""
+    if capability == LOXBERRY_READ_SCOPE:
+        prefix = "loxberry-read-binding-v1"
+        bindings = config.loxberry_read_bindings
+    elif capability == LOXBERRY_OPERATE_SCOPE:
+        prefix = "loxberry-operate-binding-v1"
+        bindings = config.loxberry_operate_bindings
+    else:
+        raise ValueError("unsupported LoxBerry capability")
+    snapshot = getattr(auth_store, "snapshot", None)
+    family = snapshot().get("families", {}).get(access.family_id, {}) if snapshot else {}
+    if isinstance(family, dict) and family.get("client_kind") == "tool_explorer":
+        from mcpserver.explorer_bindings import active_explorer_binding
+
+        if (
+            active_explorer_binding(
+                config,
+                auth_store,
+                capability,
+                access.identity_id,
+                access.miniserver_id,
+                str(family.get("explorer_origin", "")),
+            )
+            is not None
+        ):
+            return True
+    binding = auth_store.pseudonym(
+        prefix, access.client_id, access.identity_id, access.miniserver_id
+    )
+    return binding in bindings
+
+
 class LoxBerryReadRuntime:
     """Live policy check and bounded access to the fixed diagnostics adapter."""
 
@@ -1495,39 +1535,9 @@ class LoxBerryReadRuntime:
         if LOXBERRY_READ_SCOPE not in access.scopes:
             raise PermissionError("LoxBerry diagnostics are not authorized")
         config = self._config_store.load()
-        snapshot = getattr(self._auth_store, "snapshot", None)
-        family = snapshot().get("families", {}).get(access.family_id, {}) if snapshot else {}
-        if isinstance(family, dict) and family.get("client_kind") == "tool_explorer":
-            from mcpserver.explorer_bindings import active_explorer_binding
-
-            allowed = (
-                active_explorer_binding(
-                    config,
-                    self._auth_store,
-                    LOXBERRY_READ_SCOPE,
-                    access.identity_id,
-                    access.miniserver_id,
-                    str(family.get("explorer_origin", "")),
-                )
-                is not None
-            )
-            if not allowed:
-                legacy_binding = self._auth_store.pseudonym(
-                    "loxberry-read-binding-v1",
-                    access.client_id,
-                    access.identity_id,
-                    access.miniserver_id,
-                )
-                allowed = legacy_binding in config.loxberry_read_bindings
-        else:
-            binding = self._auth_store.pseudonym(
-                "loxberry-read-binding-v1",
-                access.client_id,
-                access.identity_id,
-                access.miniserver_id,
-            )
-            allowed = binding in config.loxberry_read_bindings
-        if not config.loxberry_read_enabled or not allowed:
+        if not config.loxberry_read_enabled or not _loxberry_binding_allowed(
+            config, self._auth_store, access, LOXBERRY_READ_SCOPE
+        ):
             raise PermissionError("LoxBerry diagnostics are not authorized")
         now = time.monotonic()
         entries = [item for item in self._requests.get(access.family_id, []) if item > now - 60]
@@ -1631,39 +1641,7 @@ class LoxBerryOperateRuntime:
             raise PermissionError("LoxBerry cache operation is not authorized")
 
     def _operate_binding_allowed(self, config: Any, access: StoredAccessToken) -> bool:
-        snapshot = getattr(self._auth_store, "snapshot", None)
-        family = snapshot().get("families", {}).get(access.family_id, {}) if snapshot else {}
-        if isinstance(family, dict) and family.get("client_kind") == "tool_explorer":
-            from mcpserver.explorer_bindings import active_explorer_binding
-
-            allowed = (
-                active_explorer_binding(
-                    config,
-                    self._auth_store,
-                    LOXBERRY_OPERATE_SCOPE,
-                    access.identity_id,
-                    access.miniserver_id,
-                    str(family.get("explorer_origin", "")),
-                )
-                is not None
-            )
-            if not allowed:
-                legacy_binding = self._auth_store.pseudonym(
-                    "loxberry-operate-binding-v1",
-                    access.client_id,
-                    access.identity_id,
-                    access.miniserver_id,
-                )
-                allowed = legacy_binding in config.loxberry_operate_bindings
-        else:
-            binding = self._auth_store.pseudonym(
-                "loxberry-operate-binding-v1",
-                access.client_id,
-                access.identity_id,
-                access.miniserver_id,
-            )
-            allowed = binding in config.loxberry_operate_bindings
-        return allowed
+        return _loxberry_binding_allowed(config, self._auth_store, access, LOXBERRY_OPERATE_SCOPE)
 
     async def clear_statistics_cache(self, access: StoredAccessToken) -> Any:
         self._allowed(access)
@@ -1740,9 +1718,40 @@ class LoxBerryOperateRuntime:
 
     async def list_event_history_sources(
         self, access: StoredAccessToken
-    ) -> tuple[tuple[str, str], ...]:
-        self._event_history_allowed(access)
-        return cast(tuple[tuple[str, str], ...], self._config_store.load().event_history_sources)
+    ) -> tuple[EventHistorySourceData, ...]:
+        config = self._config_store.load()
+        if READ_SCOPE not in access.scopes or HISTORY_SCOPE not in access.scopes:
+            raise PermissionError("Loxone history is required")
+        if not config.loxone_history_enabled:
+            raise PermissionError("Loxone history requires administrator activation")
+        if not config.event_history_enabled:
+            raise ControlOperationError("feature_disabled", "Local event history is disabled")
+        read_allowed = (
+            LOXBERRY_READ_SCOPE in access.scopes
+            and config.loxberry_read_enabled
+            and _loxberry_binding_allowed(config, self._auth_store, access, LOXBERRY_READ_SCOPE)
+        )
+        operate_allowed = (
+            LOXBERRY_OPERATE_SCOPE in access.scopes
+            and config.loxberry_operate_enabled
+            and self._operate_binding_allowed(config, access)
+        )
+        if not (read_allowed or operate_allowed):
+            raise PermissionError("Local approval is required")
+        if self._event_history is None or self._loxone_runtime is None:
+            raise ControlOperationError("temporarily_unavailable", "Operation is unavailable")
+        try:
+            async with self._loxone_runtime.history_call_slot(access):
+                summary = await asyncio.to_thread(
+                    self._event_history.store.snapshot,
+                    config.event_history_sources,
+                    source_limit=None,
+                )
+        except RuntimeUnavailable as exc:
+            raise ControlOperationError("temporarily_unavailable", str(exc)) from exc
+        except EventHistoryUnavailable as exc:
+            raise ControlOperationError("temporarily_unavailable", str(exc)) from exc
+        return _history_source_items(summary, config.event_history_sources)
 
     async def add_event_history_source(
         self, access: StoredAccessToken, control_uuid: str, state_uuid: str
@@ -1893,6 +1902,34 @@ class LoxBerryOperateRuntime:
                 raise
 
 
+def _history_source_items(
+    summary: EventHistoryStoreSummary,
+    active_sources: tuple[tuple[str, str], ...],
+    visible_sources: set[tuple[str, str]] | None = None,
+) -> tuple[EventHistorySourceData, ...]:
+    """Project one source inventory into a complete or caller-visible read view."""
+    active = set(active_sources)
+    return tuple(
+        EventHistorySourceData(
+            control_uuid=source.control_uuid,
+            state_uuid=source.state_uuid,
+            recording_status=(
+                "active" if (source.control_uuid, source.state_uuid) in active else "removed"
+            ),
+            recording_ended_at=(
+                None
+                if (source.control_uuid, source.state_uuid) in active
+                or source.recording_ended_at is None
+                else datetime.fromtimestamp(source.recording_ended_at, UTC)
+                .isoformat()
+                .replace("+00:00", "Z")
+            ),
+        )
+        for source in summary.sources
+        if visible_sources is None or (source.control_uuid, source.state_uuid) in visible_sources
+    )
+
+
 class EventHistoryRuntime:
     """Authorize local event-history reads against the caller's live structure."""
 
@@ -1905,6 +1942,38 @@ class EventHistoryRuntime:
         self._runtime = runtime
         self._config_store = config_store
         self._store_path = store_path
+
+    async def list_event_history_sources(
+        self, access: StoredAccessToken
+    ) -> tuple[EventHistorySourceData, ...]:
+        config = self._config_store.load()
+        if READ_SCOPE not in access.scopes or HISTORY_SCOPE not in access.scopes:
+            raise PermissionError("Loxone history is required")
+        if not config.loxone_history_enabled:
+            raise PermissionError("Loxone history requires administrator activation")
+        if not config.event_history_enabled:
+            raise ControlOperationError("feature_disabled", "Local event history is disabled")
+        try:
+            async with self._runtime.history_call_slot(access):
+                snapshot = await self._runtime.snapshot(access, fresh_visibility=True)
+                visible = {
+                    (control.uuid, state_uuid)
+                    for control in _flatten_controls(snapshot.structure.controls)
+                    for _, state_uuid in control.state_uuids
+                }
+                store = EventHistoryStore(
+                    self._store_path,
+                    retention_days=config.event_history_retention_days,
+                    maximum_mib=config.event_history_maximum_mib,
+                )
+                summary = await asyncio.to_thread(
+                    store.snapshot, config.event_history_sources, source_limit=None
+                )
+        except RuntimeUnavailable as exc:
+            raise ControlOperationError("temporarily_unavailable", str(exc)) from exc
+        except EventHistoryUnavailable as exc:
+            raise ControlOperationError("temporarily_unavailable", str(exc)) from exc
+        return _history_source_items(summary, config.event_history_sources, visible)
 
     async def page(
         self,
@@ -2011,6 +2080,25 @@ def _page(
     return {
         "items": selected,
         "next_cursor": codec.encode(scope, next_offset) if next_offset < len(items) else None,
+    }
+
+
+def _history_source_page(
+    codec: _CursorCodec,
+    tool_name: str,
+    access: StoredAccessToken,
+    sources: tuple[EventHistorySourceData, ...],
+    cursor: str | None,
+    limit: int,
+) -> dict[str, Any]:
+    inventory = json.dumps(
+        [source.model_dump(mode="json") for source in sources], separators=(",", ":")
+    )
+    scope = codec.digest(f"{tool_name}\0{access.family_id}\0{inventory}".encode())
+    page = _page(codec, scope, list(sources), cursor, limit)
+    return {
+        "sources": [source.model_dump() for source in page["items"]],
+        "next_cursor": page["next_cursor"],
     }
 
 
@@ -4791,6 +4879,49 @@ def register_event_history_tools(server: FastMCP, runtime: EventHistoryRuntime |
     annotations = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
 
     @server.tool(
+        name="loxone_list_event_history_sources",
+        description=(
+            "List active and retained local event-history sources whose exact control and "
+            "state are currently visible to the caller. Requires loxone:read and "
+            "loxone:history; no LoxBerry approval is required."
+        ),
+        annotations=annotations,
+        structured_output=True,
+    )
+    async def list_visible_event_history_sources(
+        cursor: CursorArgument = None,
+        limit: LimitArgument = DEFAULT_PAGE_SIZE,
+    ) -> EventHistorySourcesEnvelope:
+        access: StoredAccessToken | None = None
+        try:
+            if runtime is None:
+                raise ControlOperationError(
+                    "temporarily_unavailable", "the service is not configured"
+                )
+            access = _access()
+            sources = await runtime.list_event_history_sources(access)
+            return _result(
+                EventHistorySourcesEnvelope,
+                _history_source_page(
+                    cursors, "loxone_list_event_history_sources", access, sources, cursor, limit
+                ),
+            )
+        except PermissionError:
+            _LOGGER.warning(
+                "component=event_history tool=loxone_list_event_history_sources "
+                "outcome=permission_denied identity=%s",
+                _audit_identity(access.identity_id) if access is not None else "unknown",
+                extra={"mcp_audit": True},
+            )
+            return _error(
+                EventHistorySourcesEnvelope, "permission_denied", "History access is required"
+            )
+        except ValueError:
+            return _error(EventHistorySourcesEnvelope, "invalid_input", "Cursor is invalid")
+        except ControlOperationError as exc:
+            return _error(EventHistorySourcesEnvelope, exc.code, str(exc))
+
+    @server.tool(
         name="loxone_get_event_history",
         description=(
             "Read retained local state transitions for one currently visible state, including "
@@ -5203,6 +5334,7 @@ def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
 
 def register_loxberry_operate_tool(server: FastMCP, runtime: LoxBerryOperateRuntime) -> None:
     """Publish the sole fixed Phase 4 LoxBerry operation."""
+    source_cursors = _CursorCodec()
     annotations = ToolAnnotations(
         readOnlyHint=False,
         destructiveHint=True,
@@ -5307,25 +5439,31 @@ def register_loxberry_operate_tool(server: FastMCP, runtime: LoxBerryOperateRunt
     @server.tool(
         name="loxberry_list_event_history_sources",
         description=(
-            "List the configured local event-history sources. Requires loxone:history, "
-            "loxberry:operate and an exact local approval."
+            "List all active and retained local event-history sources. Requires loxone:read "
+            "and loxone:history, plus either locally approved loxberry:read or locally "
+            "approved loxberry:operate. The two LoxBerry scopes remain independent."
         ),
         annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False),
         structured_output=True,
     )
-    async def list_event_history_sources() -> EventHistorySourcesEnvelope:
+    async def list_event_history_sources(
+        cursor: CursorArgument = None,
+        limit: LimitArgument = DEFAULT_PAGE_SIZE,
+    ) -> EventHistorySourcesEnvelope:
         access: StoredAccessToken | None = None
         try:
             access = _access()
             sources = await runtime.list_event_history_sources(access)
             return _result(
                 EventHistorySourcesEnvelope,
-                {
-                    "sources": [
-                        {"control_uuid": control_uuid, "state_uuid": state_uuid}
-                        for control_uuid, state_uuid in sources
-                    ]
-                },
+                _history_source_page(
+                    source_cursors,
+                    "loxberry_list_event_history_sources",
+                    access,
+                    sources,
+                    cursor,
+                    limit,
+                ),
             )
         except PermissionError:
             audit_source(access, "loxberry_list_event_history_sources", "permission_denied")
@@ -5335,6 +5473,8 @@ def register_loxberry_operate_tool(server: FastMCP, runtime: LoxBerryOperateRunt
         except ControlOperationError as exc:
             audit_source(access, "loxberry_list_event_history_sources", exc.code)
             return _error(EventHistorySourcesEnvelope, exc.code, str(exc))
+        except ValueError:
+            return _error(EventHistorySourcesEnvelope, "invalid_input", "Cursor is invalid")
         except DiagnosticsUnavailable:
             audit_source(access, "loxberry_list_event_history_sources", "temporarily_unavailable")
             return _error(

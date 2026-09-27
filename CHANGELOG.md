@@ -5,6 +5,8 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add `loxone_list_event_history_sources` for currently visible control/state pairs; page both source lists with active/removed status and known recording end time. Allow the complete `loxberry_list_event_history_sources` with either exact local read or operate approval, and show its alternative requirements in the Tool Explorer.
+
 - Name the local event-history query `loxone_get_event_history`.
 
 - Release process-local Tool Explorer session locks after the last active or

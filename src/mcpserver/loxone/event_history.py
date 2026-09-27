@@ -501,10 +501,18 @@ class EventHistoryStore:
                     connection.execute("ROLLBACK")
                 raise EventHistoryUnavailable("local event history is unavailable") from exc
 
-    def snapshot(self, active_sources: tuple[tuple[str, str], ...]) -> EventHistoryStoreSummary:
+    def snapshot(
+        self,
+        active_sources: tuple[tuple[str, str], ...],
+        *,
+        source_limit: int | None = 128,
+    ) -> EventHistoryStoreSummary:
         """Read a consistent overview without starting maintenance or creating files."""
+        if source_limit is not None and source_limit < 1:
+            raise ValueError("source_limit must be positive")
         measured_at = time.time()
         if not self.path.exists():
+            selected = active_sources[:source_limit]
             return EventHistoryStoreSummary(
                 measured_at,
                 0,
@@ -513,8 +521,9 @@ class EventHistoryStore:
                     EventHistorySourceSummary(
                         control, state, 0, None, None, None, None, None, (), 0
                     )
-                    for control, state in active_sources
+                    for control, state in selected
                 ),
+                len(active_sources) > len(selected),
             )
         try:
             with closing(
@@ -560,7 +569,7 @@ class EventHistoryStore:
                 selected_keys = sorted(
                     keys,
                     key=lambda key: (key not in active_set, -(removed.get(key) or 0), key),
-                )[:128]
+                )[:source_limit]
                 sources = tuple(
                     EventHistorySourceSummary(
                         key[0],

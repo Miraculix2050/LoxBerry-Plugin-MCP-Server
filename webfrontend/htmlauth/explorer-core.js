@@ -526,6 +526,10 @@
     return adapters.requiredScopes(tool);
   }
 
+  function toolScopeAlternatives(tool) {
+    return adapters.scopeAlternatives(tool);
+  }
+
   function acceptOAuthPayload(data, expectedState) {
     return Boolean(
       data && data.type === 'mcp-explorer-oauth' && data.state === expectedState &&
@@ -607,6 +611,7 @@
     toolIsMutating,
     toolMetadataLabels,
     toolRequiredScopes,
+    toolScopeAlternatives,
     acceptOAuthPayload,
     acceptOAuthMessage,
     mcpFailure,

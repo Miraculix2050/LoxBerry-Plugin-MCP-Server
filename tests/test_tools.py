@@ -613,7 +613,7 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert tool.annotations.destructiveHint is False
     assert tool.annotations.openWorldHint is False
     assert result.data.name == "using-loxberry-mcp"  # type: ignore[union-attr]
-    assert result.data.revision == 36  # type: ignore[union-attr]
+    assert result.data.revision == 37  # type: ignore[union-attr]
     assert "`loxone_get_structure_overview`" in result.data.content  # type: ignore[union-attr]
     assert result.data.media_type == "text/markdown"  # type: ignore[union-attr]
     assert result.data.content == read_skill_markdown()  # type: ignore[union-attr]
@@ -1346,8 +1346,15 @@ async def test_event_history_source_tools_preserve_loxone_uuids_through_config_s
         def pseudonym(self, *_parts: str) -> str:
             return binding
 
+    class LoxoneRuntime:
+        @asynccontextmanager
+        async def history_call_slot(self, _access: StoredAccessToken):
+            yield
+
     monitor = Monitor()
-    runtime = LoxBerryOperateRuntime(object(), store, AuthStore(), event_history=monitor)
+    runtime = LoxBerryOperateRuntime(
+        object(), store, AuthStore(), event_history=monitor, loxone_runtime=LoxoneRuntime()
+    )
     server = FastMCP("event-history-source-uuid-round-trip")
     register_loxberry_operate_tool(server, runtime)
     monkeypatch.setattr(
@@ -1374,8 +1381,14 @@ async def test_event_history_source_tools_preserve_loxone_uuids_through_config_s
     assert repeated.ok and repeated.data.changed is False  # type: ignore[union-attr]
     assert listed.ok
     assert [item.model_dump() for item in listed.data.sources] == [  # type: ignore[union-attr]
-        {"control_uuid": control_uuid, "state_uuid": state_uuid}
+        {
+            "control_uuid": control_uuid,
+            "state_uuid": state_uuid,
+            "recording_status": "active",
+            "recording_ended_at": None,
+        }
     ]
+    assert listed.data.next_cursor is None  # type: ignore[union-attr]
     assert removed.ok and removed.data.changed is True  # type: ignore[union-attr]
     assert store.load().event_history_sources == ()
     assert [config.event_history_sources for config in monitor.configs] == [
@@ -1383,6 +1396,196 @@ async def test_event_history_source_tools_preserve_loxone_uuids_through_config_s
         ((control_uuid, state_uuid),),
         (),
     ]
+
+
+@pytest.mark.asyncio
+async def test_event_history_source_views_share_inventory_but_enforce_independent_access(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    visible = ("00000000-0000-0000-0000000000000001", "00000000-0000-0000-0000000000000002")
+    removed = ("00000000-0000-0000-0000000000000003", "00000000-0000-0000-0000000000000004")
+    hidden = ("00000000-0000-0000-0000000000000005", "00000000-0000-0000-0000000000000006")
+    history_path = (tmp_path / "history.sqlite3").resolve()
+    history_store = EventHistoryStore(history_path, retention_days=90, maximum_mib=16)
+    history_store.initialize()
+    history_store.record_transition(*removed, observed_at=time.time(), old_value=0, new_value=1)
+    history_store.mark_removed(*removed, removed_at=1_700_000_000)
+    history_store.record_transition(*hidden, observed_at=time.time(), old_value=0, new_value=1)
+    history_store.mark_removed(*hidden, removed_at=None)
+
+    binding = "b" * 64
+    config_store = AtomicConfigStore((tmp_path / "config.json").resolve())
+    config_store.save(
+        PluginConfig(
+            loxone_history_enabled=True,
+            event_history_enabled=True,
+            event_history_sources=(visible,),
+            loxberry_read_enabled=True,
+            loxberry_operate_enabled=True,
+            loxberry_read_bindings=(binding,),
+            loxberry_operate_bindings=(binding,),
+        )
+    )
+
+    class AuthStore:
+        def pseudonym(self, *_parts: str) -> str:
+            return binding
+
+    class Runtime:
+        fail_visibility = False
+
+        @asynccontextmanager
+        async def history_call_slot(self, _access: StoredAccessToken):
+            yield
+
+        async def snapshot(self, _access: StoredAccessToken, *, fresh_visibility: bool):
+            assert fresh_visibility is True
+            if self.fail_visibility:
+                raise runtime_module.RuntimeUnavailable("visibility unavailable")
+            controls = tuple(
+                Control(control, control, "Switch", None, None, None, (("active", state),))
+                for control, state in (visible, removed)
+            )
+            structure = LoxoneStructure(LoxoneIdentity("user", "serial"), "1", (), (), controls)
+            return RuntimeSnapshot("family", structure, True)
+
+    loxone_runtime = Runtime()
+    visible_runtime = EventHistoryRuntime(loxone_runtime, config_store, history_path)
+    full_runtime = LoxBerryOperateRuntime(
+        object(),
+        config_store,
+        AuthStore(),
+        event_history=SimpleNamespace(store=history_store),
+        loxone_runtime=loxone_runtime,
+    )
+    server = FastMCP("event-history-source-views")
+    register_event_history_tools(server, visible_runtime)
+    register_loxberry_operate_tool(server, full_runtime)
+
+    async def call(name: str, *scopes: str):
+        monkeypatch.setattr(tools_module, "_access", lambda: _loxberry_access(*scopes))
+        return await server._tool_manager.call_tool(name, {})
+
+    base = (READ_SCOPE, HISTORY_SCOPE)
+    visible_result = await call("loxone_list_event_history_sources", *base)
+    assert visible_result.ok
+    assert [
+        (source.control_uuid, source.recording_status) for source in visible_result.data.sources
+    ] == [
+        (visible[0], "active"),
+        (removed[0], "removed"),
+    ]
+    assert visible_result.data.sources[1].recording_ended_at == "2023-11-14T22:13:20Z"
+    assert (
+        await call("loxberry_list_event_history_sources", *base)
+    ).data.error == "permission_denied"
+
+    for local_scope in (LOXBERRY_READ_SCOPE, LOXBERRY_OPERATE_SCOPE):
+        full_result = await call("loxberry_list_event_history_sources", *base, local_scope)
+        assert full_result.ok
+        assert {source.control_uuid for source in full_result.data.sources} == {
+            visible[0],
+            removed[0],
+            hidden[0],
+        }
+        assert full_result.data.sources[-1].recording_ended_at is None
+
+    config_store.save(replace(config_store.load(), loxberry_read_enabled=False))
+    assert (
+        await call("loxberry_list_event_history_sources", *base, LOXBERRY_READ_SCOPE)
+    ).data.error == "permission_denied"
+    assert (await call("loxberry_list_event_history_sources", *base, LOXBERRY_OPERATE_SCOPE)).ok
+    config_store.save(
+        replace(config_store.load(), loxberry_read_enabled=True, loxberry_read_bindings=())
+    )
+    assert (
+        await call("loxberry_list_event_history_sources", *base, LOXBERRY_READ_SCOPE)
+    ).data.error == "permission_denied"
+    monkeypatch.setattr(
+        tools_module, "_access", lambda: _loxberry_access(*base, LOXBERRY_READ_SCOPE)
+    )
+    mutation = await server._tool_manager.call_tool(
+        "loxberry_add_event_history_source",
+        {"control_uuid": visible[0], "state_uuid": visible[1]},
+    )
+    assert mutation.data.error == "permission_denied"
+    config_store.save(replace(config_store.load(), loxberry_operate_enabled=False))
+    assert (
+        await call("loxberry_list_event_history_sources", *base, LOXBERRY_OPERATE_SCOPE)
+    ).data.error == "permission_denied"
+    config_store.save(replace(config_store.load(), loxberry_operate_enabled=True))
+    config_store.save(replace(config_store.load(), loxberry_operate_bindings=()))
+    assert (
+        await call("loxberry_list_event_history_sources", *base, LOXBERRY_OPERATE_SCOPE)
+    ).data.error == "permission_denied"
+    assert (
+        await call("loxberry_list_event_history_sources", READ_SCOPE, LOXBERRY_OPERATE_SCOPE)
+    ).data.error == "permission_denied"
+    loxone_runtime.fail_visibility = True
+    assert (
+        await call("loxone_list_event_history_sources", *base)
+    ).data.error == "temporarily_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_event_history_source_cursor_pages_include_sources_beyond_128(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    history_store = EventHistoryStore(
+        (tmp_path / "history.sqlite3").resolve(), retention_days=90, maximum_mib=16
+    )
+    history_store.initialize()
+    for index in range(130):
+        control, state = f"control-{index:03}", f"state-{index:03}"
+        history_store.record_transition(
+            control, state, observed_at=time.time(), old_value=0, new_value=1
+        )
+        history_store.mark_removed(control, state, removed_at=None)
+    config_store = AtomicConfigStore((tmp_path / "config.json").resolve())
+    binding = "b" * 64
+    config_store.save(
+        PluginConfig(
+            loxone_history_enabled=True,
+            event_history_enabled=True,
+            loxberry_read_enabled=True,
+            loxberry_read_bindings=(binding,),
+        )
+    )
+
+    class AuthStore:
+        def pseudonym(self, *_parts: str) -> str:
+            return binding
+
+    class Runtime:
+        @asynccontextmanager
+        async def history_call_slot(self, _access: StoredAccessToken):
+            yield
+
+    runtime = LoxBerryOperateRuntime(
+        object(),
+        config_store,
+        AuthStore(),
+        event_history=SimpleNamespace(store=history_store),
+        loxone_runtime=Runtime(),
+    )
+    server = FastMCP("event-history-source-pagination")
+    register_loxberry_operate_tool(server, runtime)
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: _loxberry_access(READ_SCOPE, HISTORY_SCOPE, LOXBERRY_READ_SCOPE),
+    )
+    first = await server._tool_manager.call_tool(
+        "loxberry_list_event_history_sources", {"limit": 100}
+    )
+    assert first.ok and len(first.data.sources) == 100
+    assert first.data.next_cursor
+    second = await server._tool_manager.call_tool(
+        "loxberry_list_event_history_sources", {"limit": 100, "cursor": first.data.next_cursor}
+    )
+    assert second.ok and len(second.data.sources) == 30
+    assert second.data.next_cursor is None
+    assert len({source.control_uuid for source in first.data.sources + second.data.sources}) == 130
 
 
 @pytest.mark.asyncio
