@@ -619,9 +619,7 @@ class LoxoneRuntime:
                     token, owner="tool_request", phase="session_establishment"
                 )
                 _history_phase(trace_id, "connection", started)
-                started = time.perf_counter()
-                structure = await session.load_structure()
-                _history_phase(trace_id, "structure", started)
+                structure = await self._history_visible_structure(access, session, trace_id)
                 started = time.perf_counter()
                 control = self._control(structure, control_uuid, include_hidden=include_hidden)
                 _history_phase(trace_id, "visibility", started)
@@ -641,6 +639,50 @@ class LoxoneRuntime:
             finally:
                 if session is not None:
                     await session.close()
+
+    async def _history_visible_structure(
+        self,
+        access: StoredAccessToken,
+        session: LoxoneWebSocketSession,
+        trace_id: str,
+    ) -> LoxoneStructure:
+        """Verify the current project marker before reusing family-bound visibility."""
+
+        record = self._records.get(access.family_id)
+        if record is None or record.task.done():
+            started = time.perf_counter()
+            structure = await session.load_structure()
+            _history_phase(trace_id, "structure", started)
+            _LOGGER.debug("component=history_visibility trace_id=%s outcome=no_cache", trace_id)
+            return structure
+
+        async with record.refresh_lock:
+            started = time.perf_counter()
+            marker = await session.structure_version()
+            _history_phase(trace_id, "structure_marker", started)
+            if marker == record.structure.last_modified:
+                _LOGGER.debug(
+                    "component=history_visibility trace_id=%s outcome=cache_hit", trace_id
+                )
+                return record.structure
+
+            started = time.perf_counter()
+            structure = await session.load_structure()
+            _history_phase(trace_id, "structure", started)
+            if structure.last_modified != marker:
+                raise LoxoneProtocolError(
+                    "Miniserver structure changed during History verification"
+                )
+            record.last_structure_check = time.monotonic()
+            if structure != record.structure:
+                record.structure = structure
+                record.allowed_states = _structure_state_uuids(structure)
+                record.generation += 1
+                self.cache.apply(access.family_id, (), allowed_uuids=record.allowed_states)
+            _LOGGER.debug(
+                "component=history_visibility trace_id=%s outcome=cache_invalidated", trace_id
+            )
+            return structure
 
     async def get_statistics(
         self,
