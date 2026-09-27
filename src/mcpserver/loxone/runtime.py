@@ -661,6 +661,7 @@ class LoxoneRuntime:
             marker = await session.structure_version()
             _history_phase(trace_id, "structure_marker", started)
             if marker == record.structure.last_modified:
+                record.last_structure_check = time.monotonic()
                 _LOGGER.debug(
                     "component=history_visibility trace_id=%s outcome=cache_hit", trace_id
                 )
