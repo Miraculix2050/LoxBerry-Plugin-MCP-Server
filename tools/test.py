@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -319,6 +320,42 @@ def _runtime_issues() -> tuple[str, ...]:
     return tuple(issues)
 
 
+def _dom_runtime_issues() -> tuple[str, ...]:
+    node = shutil.which("node")
+    if node is None:
+        return ("Node.js 24 is required for Explorer DOM tests",)
+    version = subprocess.run(
+        (node, "--version"), check=False, cwd=ROOT, capture_output=True, text=True
+    )
+    match = re.fullmatch(r"v(\d+)\.(\d+)\.\d+", version.stdout.strip())
+    if version.returncode or match is None or (int(match[1]), int(match[2])) < (24, 15):
+        return ("Node.js 24.15 or newer is required for Explorer DOM tests",)
+    if int(match[1]) == 25:
+        return ("Node.js 25 is unsupported by the pinned Explorer DOM dependency",)
+    dependency = subprocess.run(
+        (node, "-e", "require.resolve('jsdom')"),
+        check=False,
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    if dependency.returncode:
+        return ("Explorer DOM tests require npm ci --ignore-scripts",)
+    return ()
+
+
+def _required_runtime_issues(plan: TestPlan) -> tuple[str, ...]:
+    issues = list(_runtime_issues()) if plan.effective_profile == "full" else []
+    selected = any(
+        "tests/test_explorer_behavior.py" in command
+        for command in plan.commands
+        if _is_pytest_command(command)
+    )
+    if plan.effective_profile == "full" or selected:
+        issues.extend(_dom_runtime_issues())
+    return tuple(issues)
+
+
 def _format_command(command: Command) -> str:
     return subprocess.list2cmdline(command)
 
@@ -333,18 +370,16 @@ def _print_plan(plan: TestPlan) -> None:
         print(f"TEST_PLAN_REASON={plan.reason}", flush=True)
     for command in plan.commands:
         print(f"TEST_COMMAND={_format_command(command)}", flush=True)
-    if plan.effective_profile == "full":
-        for issue in _runtime_issues():
-            print(f"TEST_ENVIRONMENT={issue}", flush=True)
+    for issue in _required_runtime_issues(plan):
+        print(f"TEST_ENVIRONMENT={issue}", flush=True)
 
 
 def _run(plan: TestPlan) -> int:
-    if plan.effective_profile == "full":
-        issues = _runtime_issues()
-        if issues:
-            for issue in issues:
-                print(f"INCOMPLETE={issue}", file=sys.stderr)
-            return 2
+    issues = _required_runtime_issues(plan)
+    if issues:
+        for issue in issues:
+            print(f"INCOMPLETE={issue}", file=sys.stderr)
+        return 2
 
     environment = {**os.environ, "PYTHONPATH": str(ROOT / "src")}
     existing_pytest_options = environment.get("PYTEST_ADDOPTS", "")

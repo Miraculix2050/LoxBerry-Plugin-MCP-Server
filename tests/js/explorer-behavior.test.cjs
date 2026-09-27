@@ -5,7 +5,7 @@ const {test} = require('node:test');
 const {createHarness, readTool, SCRIPT_NAMES} = require('./explorer-harness.cjs');
 
 test('shipped scripts restore a session and execute an unknown read-only tool', async (t) => {
-  const h = createHarness();
+  const h = createHarness({deferLogout: true});
   t.after(h.close);
   await h.ready();
   assert.deepEqual(SCRIPT_NAMES, [
@@ -64,11 +64,13 @@ test('shipped scripts restore a session and execute an unknown read-only tool', 
   assert.match(h.byId('result-context').textContent, /future_read/);
 
   await h.click(h.byId('disconnect'));
+  assert.equal(h.requests.some((item) => item.body?.action === 'logout'), true);
   assert.equal(h.byId('connection-badge').dataset.kind, 'inactive');
   assert.equal(h.byId('history').querySelector('button'), null);
   assert.equal(h.byId('result-raw').textContent, '');
   assert.equal(h.byId('scope-list').textContent, '');
   assert.equal(h.byId('json').value, '{}');
+  h.resolveLogout();
   assert.doesNotMatch(JSON.stringify({...h.window.localStorage}), /synthetic-token|sample/);
   assert.equal(JSON.stringify({...h.window.sessionStorage}), '{}');
   assert.doesNotMatch(h.byId('transcript').textContent, /synthetic-token/);

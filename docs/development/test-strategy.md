@@ -26,7 +26,7 @@ benötigen Node.js 24 und die nur für Tests gepinnten npm-Abhängigkeiten
 simulierten OAuth-/MCP-Antworten; sie ersetzen keine Browser- oder Geräteabnahme.
 Vollständige lokale, CI- oder Release-Evidenz benötigt Python 3.13, Perl und
 Node.js. Fehlt eine Pflichtlaufzeit, ist das Ergebnis `incomplete` (Exitcode `2`),
-nicht bestanden.
+nicht bestanden. Dasselbe gilt bei fehlender Explorer-DOM-Testabhängigkeit.
 
 ## Testebenen
 

@@ -77,6 +77,42 @@ def test_changed_explorer_harness_selects_dom_flows() -> None:
     assert _pytest_targets(plan) == {"tests/test_explorer_behavior.py"}
 
 
+def test_changed_explorer_dom_missing_dependency_is_incomplete(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    plan = create_plan("changed", ("tests/js/explorer-harness.cjs",))
+    monkeypatch.setattr(
+        test_runner, "_dom_runtime_issues", lambda: ("Explorer DOM tests require npm ci",)
+    )
+    monkeypatch.setattr(
+        test_runner.subprocess,
+        "run",
+        lambda *_args, **_kwargs: pytest.fail("commands must not run without DOM prerequisites"),
+    )
+
+    assert test_runner._run(plan) == 2
+    assert "INCOMPLETE=Explorer DOM tests require npm ci" in capsys.readouterr().err
+
+
+def test_explorer_dom_preflight_checks_node_and_jsdom(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(test_runner.shutil, "which", lambda _name: "node")
+    results = iter(
+        (
+            subprocess.CompletedProcess(("node", "--version"), 0, "v20.0.0", ""),
+            subprocess.CompletedProcess(("node", "--version"), 0, "v24.19.0", ""),
+            subprocess.CompletedProcess(("node", "-e"), 1, "", "missing"),
+        )
+    )
+    monkeypatch.setattr(test_runner.subprocess, "run", lambda *_args, **_kwargs: next(results))
+
+    assert test_runner._dom_runtime_issues() == (
+        "Node.js 24.15 or newer is required for Explorer DOM tests",
+    )
+    assert test_runner._dom_runtime_issues() == (
+        "Explorer DOM tests require npm ci --ignore-scripts",
+    )
+
+
 def test_packaged_skill_markdown_selects_contract_tests() -> None:
     plan = create_plan("changed", ("src/mcpserver/skills/using-loxberry-mcp/SKILL.md",))
 

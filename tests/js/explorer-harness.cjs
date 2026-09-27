@@ -8,8 +8,12 @@ const {JSDOM, VirtualConsole} = require('jsdom');
 
 const ROOT = path.resolve(__dirname, '../..');
 const TEMPLATE = fs.readFileSync(path.join(ROOT, 'templates/explorer.html'), 'utf8');
-const SCRIPT_NAMES = [...TEMPLATE.matchAll(/<script defer src="(explorer(?:-[^"?]+)?\.js)\?v=/g)]
+const scriptUrls = [...TEMPLATE.matchAll(/<script defer src="([^"]+)"/g)]
   .map((match) => match[1]);
+assert.ok(scriptUrls.every((url) =>
+  /^explorer(?:-[^"?]+)?\.js\?v=<TMPL_VAR VERSION ESCAPE=HTML>(?:-[\w-]+)?$/.test(url)),
+'Every Explorer script needs the template-derived cache version');
+const SCRIPT_NAMES = scriptUrls.map((url) => url.split('?')[0]);
 const ORIGIN = 'https://loxberry.test';
 const MCP_PATH = '/plugins/mcpserver/mcp';
 const SESSION_PATH = '/plugins/mcpserver/oauth/explorer-session';
@@ -80,6 +84,7 @@ function createHarness(options = {}) {
   let scope = options.scope === undefined ? 'loxone:read loxone:control' : options.scope;
   let sessionExpiresAt = START + (options.sessionMs || 600000);
   let pendingCall = null;
+  let pendingLogout = null;
   const response = (body, status = 200) => ({
     ok: status < 400, status, statusText: status < 400 ? 'OK' : 'Error',
     headers: {get: (name) => name.toLowerCase() === 'content-type' ? 'application/json' : null},
@@ -101,7 +106,12 @@ function createHarness(options = {}) {
         revocation_endpoint: `${issuer}/revoke`});
     }
     if (pathname === SESSION_PATH) {
-      if (body.action === 'logout') return response({});
+      if (body.action === 'logout') {
+        if (options.deferLogout) {
+          return new Promise((resolve) => { pendingLogout = () => resolve(response({})); });
+        }
+        return response({});
+      }
       if (options.restoreFailure) return response({error: 'expired'}, 401);
       return response({access_token: 'synthetic-token', scope,
         expires_in: 300, expires_at: Math.floor(sessionExpiresAt / 1000)});
@@ -148,6 +158,7 @@ function createHarness(options = {}) {
   return {window, document, requests, tools, ready, waitFor, advance, byId, calls,
     click, setScope: (value) => { scope = value; },
     resolveCall: () => { assert.ok(pendingCall); pendingCall(); pendingCall = null; },
+    resolveLogout: () => { assert.ok(pendingLogout); pendingLogout(); pendingLogout = null; },
     close: () => dom.window.close()};
 }
 
