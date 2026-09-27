@@ -2377,6 +2377,14 @@ async def test_weather_tool_pages_actual_and_forecast_without_state_uuid(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     access = _loxberry_access(READ_SCOPE)
+    formats = (
+        ("relativeHumidity", "%.0f%%"),
+        ("temperature", "%.1f °C"),
+        ("windSpeed", "%.0f km/h"),
+        ("precipitation", "%.1f mm"),
+        ("barometricPressure", "%.0f hPa"),
+        ("futureFormat", "%.2f"),
+    )
     structure = LoxoneStructure(
         identity=LoxoneIdentity("user", "serial"),
         last_modified="1",
@@ -2387,7 +2395,7 @@ async def test_weather_tool_pages_actual_and_forecast_without_state_uuid(
             GlobalMetadata("weather_state", "actual", "actual", state_uuid="actual-state"),
             GlobalMetadata("weather_state", "forecast", "forecast", state_uuid="forecast-state"),
         ),
-        weather=WeatherMetadata(formats=(("temperature", "%.1f °C"),), type_texts=((1, "Clear"),)),
+        weather=WeatherMetadata(formats=formats, type_texts=((1, "Clear"),)),
     )
 
     def point(timestamp: int, temperature: float) -> dict[str, object]:
@@ -2432,6 +2440,17 @@ async def test_weather_tool_pages_actual_and_forecast_without_state_uuid(
     register_read_tools(server, Runtime())  # type: ignore[arg-type]
     tool = server._tool_manager.get_tool("loxone_get_weather")
     assert tool is not None
+    output_defs = tool.output_schema["$defs"]
+    point_properties = output_defs["WeatherPointData"]["properties"]
+    numeric_fields = set(point_properties) - {"at", "weather_type_text"}
+    assert len(numeric_fields) == 10
+    assert all(point_properties[name].get("description") for name in numeric_fields)
+    assert "unverified" in point_properties["solar_radiation"]["description"]
+    assert "W/m²" in point_properties["solar_radiation"]["description"]
+    metadata_schema = output_defs["WeatherFieldMetadataMapData"]
+    assert set(metadata_schema["properties"]) == numeric_fields
+    assert set(metadata_schema["required"]) == numeric_fields
+    assert output_defs["WeatherFieldMetadataData"]["properties"]["value_semantics"]
 
     first = await tool.fn(limit=1)
     second = await tool.fn(cursor=first.data.next_cursor, limit=1)  # type: ignore[union-attr]
@@ -2466,7 +2485,32 @@ async def test_weather_tool_pages_actual_and_forecast_without_state_uuid(
     assert first.data.mode == "forecast"  # type: ignore[union-attr]
     assert first.data.items[0].at == "2009-01-01T01:00:00Z"  # type: ignore[union-attr]
     assert first.data.items[0].weather_type_text == "Clear"  # type: ignore[union-attr]
-    assert first.data.formats == {"temperature": "%.1f °C"}  # type: ignore[union-attr]
+    assert first.data.formats == dict(formats)  # type: ignore[union-attr]
+    assert first.data.items[0].temperature == 21.0  # type: ignore[union-attr]
+    assert first.data.items[0].solar_radiation == 100  # type: ignore[union-attr]
+    field_metadata = first.data.field_metadata.model_dump()  # type: ignore[union-attr]
+    assert set(field_metadata) == numeric_fields
+    expected_format_keys = {
+        "relative_humidity": "relativeHumidity",
+        "temperature": "temperature",
+        "wind_speed": "windSpeed",
+        "precipitation": "precipitation",
+        "barometric_pressure": "barometricPressure",
+    }
+    for field_name, source_key in expected_format_keys.items():
+        assert field_metadata[field_name]["source_format_key"] == source_key
+        assert field_metadata[field_name]["source_format"] == dict(formats)[source_key]
+    for field_name in numeric_fields - expected_format_keys.keys():
+        assert field_metadata[field_name]["source_format_key"] is None
+        assert field_metadata[field_name]["source_format"] is None
+    assert all(metadata["unit"] is None for metadata in field_metadata.values())
+    assert field_metadata["weather_type"]["value_semantics"] == "code"
+    assert field_metadata["solar_radiation"]["value_semantics"] == "unverified_source_value"
+    assert all(
+        metadata["value_semantics"] == "raw_source_value"
+        for field_name, metadata in field_metadata.items()
+        if field_name not in {"weather_type", "solar_radiation"}
+    )
     assert first.stale is True and second.data.next_cursor is None  # type: ignore[union-attr]
     assert single_page.data.next_cursor is None  # type: ignore[union-attr]
     assert fresh_first.ok is True
@@ -2476,6 +2520,20 @@ async def test_weather_tool_pages_actual_and_forecast_without_state_uuid(
     assert tampered.data.error == "invalid_input"  # type: ignore[union-attr]
     assert "restart at page one" in tampered.data.message  # type: ignore[union-attr]
     assert unavailable.data.error == "temporarily_unavailable"  # type: ignore[union-attr]
+
+
+def test_weather_field_metadata_keeps_missing_source_formats_explicit() -> None:
+    metadata = tools_module._weather_field_metadata({"temperature": "%.1f °C"}).model_dump()
+
+    assert metadata["temperature"]["source_format"] == "%.1f °C"
+    for field_name, source_key in (
+        ("relative_humidity", "relativeHumidity"),
+        ("wind_speed", "windSpeed"),
+        ("precipitation", "precipitation"),
+        ("barometric_pressure", "barometricPressure"),
+    ):
+        assert metadata[field_name]["source_format_key"] == source_key
+        assert metadata[field_name]["source_format"] is None
 
 
 @pytest.mark.asyncio

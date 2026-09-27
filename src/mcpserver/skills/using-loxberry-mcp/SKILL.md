@@ -192,6 +192,14 @@ mode is `forecast`; follow `next_cursor`. If a continuation cursor is rejected,
 restart at page one because the forecast may have changed. This tool has no
 historical mode. Never present forecast entries or retained state values as
 measured weather history.
+The response contains up to 96 forecast points, but the available forecast
+duration depends on the source. Use `field_metadata` to match each numeric point
+field to its source presentation format. The existing `formats` map retains raw
+LoxAPP3 keys and may contain additional keys. A missing format or `unit: null`
+means the source did not provide a verified unit; do not infer one from the
+format string or value range. In particular, the meaning of the raw
+`solar_radiation` weather event value is unverified: do not present it as W/m²
+or as a guaranteed 0–3 classification.
 
 ## Diagnose LoxBerry
 
