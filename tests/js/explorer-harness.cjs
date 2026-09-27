@@ -71,12 +71,13 @@ function createHarness(options = {}) {
     this.returnValue = value;
     this.dispatchEvent(new window.Event('close'));
   };
-  const channels = [];
+  const channels = options.channelBus || new Set();
+  const ownChannels = new Set();
   window.BroadcastChannel = class {
-    constructor(name) { this.name = name; channels.push(this); }
-    postMessage(message) { channels.filter((peer) => peer !== this && peer.name === this.name)
+    constructor(name) { this.name = name; channels.add(this); ownChannels.add(this); }
+    postMessage(message) { [...channels].filter((peer) => peer !== this && peer.name === this.name)
       .forEach((peer) => peer.onmessage?.({data: message})); }
-    close() {}
+    close() { channels.delete(this); ownChannels.delete(this); }
   };
 
   const requests = [];
@@ -159,7 +160,10 @@ function createHarness(options = {}) {
     click, setScope: (value) => { scope = value; },
     resolveCall: () => { assert.ok(pendingCall); pendingCall(); pendingCall = null; },
     resolveLogout: () => { assert.ok(pendingLogout); pendingLogout(); pendingLogout = null; },
-    close: () => dom.window.close()};
+    close: () => {
+      for (const channel of [...ownChannels]) channel.close();
+      dom.window.close();
+    }};
 }
 
 module.exports = {createHarness, readTool, secondTool, writeTool, SCRIPT_NAMES};

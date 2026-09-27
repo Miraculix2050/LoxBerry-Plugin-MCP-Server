@@ -227,6 +227,33 @@ test('expiry and logout discard sensitive state and late call results', async (t
   assert.equal(expired.calls().length, 0);
 });
 
+test('logout clears another Explorer tab before logout and its pending call settle', async (t) => {
+  const channelBus = new Set();
+  const first = createHarness({channelBus, deferLogout: true});
+  const second = createHarness({channelBus, deferCall: true});
+  t.after(first.close);
+  t.after(second.close);
+  await Promise.all([first.ready(), second.ready()]);
+  await second.click([...second.byId('tools').querySelectorAll('button')]
+    .find((button) => button.textContent.includes('future_read')));
+  second.byId('json').value = JSON.stringify({query: 'private-other-tab'});
+  await second.click(second.byId('run'));
+  assert.equal(second.calls().length, 1);
+
+  await first.click(first.byId('disconnect'));
+  assert.equal(first.requests.some((item) => item.body?.action === 'logout'), true);
+  assert.equal(second.byId('connection-badge').dataset.kind, 'inactive');
+  assert.equal(second.byId('scope-list').textContent, '');
+  assert.equal(second.byId('json').value, '{}');
+  assert.equal(second.byId('run').disabled, true);
+  assert.doesNotMatch(second.byId('transcript').textContent, /private-other-tab/);
+  second.resolveCall();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(second.byId('history').querySelector('button'), null);
+  assert.doesNotMatch(second.byId('result-tree').textContent, /result/);
+  first.resolveLogout();
+});
+
 test('session expiry closes an open mutation confirmation and erases its arguments', async (t) => {
   const h = createHarness({tools: [writeTool], sessionMs: 60000});
   t.after(h.close);
