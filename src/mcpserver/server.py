@@ -478,19 +478,20 @@ def create_server(settings: ServerSettings) -> FastMCP:
                     emergency_stop.config,
                 )
                 emergency_stop.auth_coordinator = auth_coordinator
-        if settings.plugin_config.event_history_enabled:
-            event_history_path = Path(os.getenv("MCPSERVER_EVENT_HISTORY_STORE", ""))
-            if event_history_path.is_absolute():
-                event_history = EventHistoryMonitor(
-                    settings.plugin_config,
-                    EventHistoryStore(
-                        event_history_path,
-                        retention_days=settings.plugin_config.event_history_retention_days,
-                        maximum_mib=settings.plugin_config.event_history_maximum_mib,
-                    ),
-                    emergency_stop,
-                    auth_coordinator,
-                )
+        event_history_path = Path(os.getenv("MCPSERVER_EVENT_HISTORY_STORE", ""))
+        if event_history_path.is_absolute() and (
+            settings.plugin_config.event_history_enabled or event_history_path.is_file()
+        ):
+            event_history = EventHistoryMonitor(
+                settings.plugin_config,
+                EventHistoryStore(
+                    event_history_path,
+                    retention_days=settings.plugin_config.event_history_retention_days,
+                    maximum_mib=settings.plugin_config.event_history_maximum_mib,
+                ),
+                emergency_stop,
+                auth_coordinator,
+            )
     if settings.plugin_config is not None and settings.plugin_config.mqtt_enabled:
         home = Path(os.getenv("LBHOMEDIR", "/opt/loxberry"))
         if home.is_absolute():

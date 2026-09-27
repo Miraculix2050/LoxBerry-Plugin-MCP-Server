@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger("mcpserver.event_history")
 
 
-_SCHEMA_VERSION: Final = 4
+_SCHEMA_VERSION: Final = 5
 _MAX_TEXT_BYTES: Final = 4096
 _UNSUPPORTED_SOURCE_CONTROL_TYPES: Final = frozenset({"Daytimer"})
 
@@ -99,6 +99,7 @@ class EventHistorySourceSummary:
     coverage_ended_at: float | None
     recording_ended_at: float | None
     recent_coverage: tuple[tuple[float, float | None, str], ...]
+    logical_value_bytes: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -186,7 +187,7 @@ class EventHistoryStore:
             try:
                 connection.execute("BEGIN IMMEDIATE")
                 version = connection.execute("PRAGMA user_version").fetchone()[0]
-                if version not in {0, 1, 2, 3, _SCHEMA_VERSION}:
+                if version not in {0, 1, 2, 3, 4, _SCHEMA_VERSION}:
                     raise EventHistoryUnavailable("local event history needs migration")
                 connection.execute(
                     """
@@ -196,7 +197,8 @@ class EventHistoryStore:
                       state_uuid TEXT NOT NULL,
                       observed_at REAL NOT NULL,
                       old_value TEXT NOT NULL,
-                      new_value TEXT NOT NULL
+                      new_value TEXT NOT NULL,
+                      logical_value_bytes INTEGER
                     )
                     """
                 )
@@ -232,9 +234,12 @@ class EventHistoryStore:
                     "control_uuid TEXT NOT NULL, state_uuid TEXT NOT NULL, "
                     "event_count INTEGER NOT NULL, oldest_event_at REAL NOT NULL, "
                     "newest_event_at REAL NOT NULL, "
+                    "logical_value_bytes INTEGER NOT NULL DEFAULT 0, "
+                    "unmeasured_events INTEGER NOT NULL DEFAULT 0, "
                     "PRIMARY KEY(control_uuid, state_uuid))"
                 )
                 self._ensure_history_metadata(connection)
+                self._ensure_payload_columns(connection)
                 if version < 3:
                     self._refresh_summaries(connection)
                 # A process that did not reach ``end_coverage`` must not make a
@@ -243,7 +248,7 @@ class EventHistoryStore:
                     "UPDATE coverage SET ended_at = started_at, outcome = 'interrupted' "
                     "WHERE ended_at IS NULL",
                 )
-                connection.execute("PRAGMA user_version = 4")
+                connection.execute("PRAGMA user_version = 5")
                 connection.execute("COMMIT")
                 connection.execute("BEGIN IMMEDIATE")
                 pruned = self._prune(connection, now=time.time())
@@ -269,21 +274,46 @@ class EventHistoryStore:
         connection.execute(
             "CREATE TABLE IF NOT EXISTS history_metadata ("
             "id INTEGER PRIMARY KEY CHECK (id = 1), "
-            "clear_generation INTEGER NOT NULL)"
+            "clear_generation INTEGER NOT NULL, "
+            "backfill_last_id INTEGER NOT NULL DEFAULT 0)"
         )
         connection.execute(
             "INSERT OR IGNORE INTO history_metadata(id, clear_generation) VALUES (1, 0)"
         )
 
-    def _migrate_v3_snapshot(self) -> None:
-        """Upgrade the clear marker without starting recorder maintenance."""
+    @staticmethod
+    def _ensure_payload_columns(connection: sqlite3.Connection) -> None:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(events)")}
+        if "logical_value_bytes" not in columns:
+            connection.execute("ALTER TABLE events ADD COLUMN logical_value_bytes INTEGER")
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(source_totals)")}
+        if "logical_value_bytes" not in columns:
+            connection.execute(
+                "ALTER TABLE source_totals ADD COLUMN logical_value_bytes "
+                "INTEGER NOT NULL DEFAULT 0"
+            )
+        if "unmeasured_events" not in columns:
+            connection.execute(
+                "ALTER TABLE source_totals ADD COLUMN unmeasured_events INTEGER NOT NULL DEFAULT 0"
+            )
+            connection.execute("UPDATE source_totals SET unmeasured_events = event_count")
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(history_metadata)")}
+        if "backfill_last_id" not in columns:
+            connection.execute(
+                "ALTER TABLE history_metadata ADD COLUMN backfill_last_id "
+                "INTEGER NOT NULL DEFAULT 0"
+            )
+
+    def _migrate_snapshot(self) -> None:
+        """Upgrade metadata without scanning events or starting recorder maintenance."""
         with self._lock, self._opened() as connection:
             try:
                 connection.execute("BEGIN IMMEDIATE")
                 version = connection.execute("PRAGMA user_version").fetchone()[0]
-                if version == 3:
+                if version in {3, 4}:
                     self._ensure_history_metadata(connection)
-                    connection.execute("PRAGMA user_version = 4")
+                    self._ensure_payload_columns(connection)
+                    connection.execute("PRAGMA user_version = 5")
                 elif version != _SCHEMA_VERSION:
                     raise EventHistoryUnavailable("local event history needs migration")
                 connection.execute("COMMIT")
@@ -352,28 +382,35 @@ class EventHistoryStore:
     ) -> None:
         old = _value(old_value)
         new = _value(new_value)
+        old_json = json.dumps(old, ensure_ascii=False, separators=(",", ":"))
+        new_json = json.dumps(new, ensure_ascii=False, separators=(",", ":"))
+        logical_bytes = len(old_json.encode("utf-8")) + len(new_json.encode("utf-8"))
         with self._lock, self._opened() as connection:
             try:
                 connection.execute("BEGIN IMMEDIATE")
                 connection.execute(
                     "INSERT INTO events(control_uuid, state_uuid, observed_at, old_value, "
-                    "new_value) "
-                    "VALUES (?, ?, ?, ?, ?)",
+                    "new_value, logical_value_bytes) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
                     (
                         control_uuid,
                         state_uuid,
                         observed_at,
-                        json.dumps(old, ensure_ascii=False, separators=(",", ":")),
-                        json.dumps(new, ensure_ascii=False, separators=(",", ":")),
+                        old_json,
+                        new_json,
+                        logical_bytes,
                     ),
                 )
                 connection.execute(
-                    "INSERT INTO source_totals VALUES (?, ?, 1, ?, ?) "
+                    "INSERT INTO source_totals(control_uuid, state_uuid, event_count, "
+                    "oldest_event_at, newest_event_at, logical_value_bytes, "
+                    "unmeasured_events) VALUES (?, ?, 1, ?, ?, ?, 0) "
                     "ON CONFLICT(control_uuid, state_uuid) DO UPDATE SET "
                     "event_count = event_count + 1, "
                     "oldest_event_at = MIN(oldest_event_at, excluded.oldest_event_at), "
-                    "newest_event_at = MAX(newest_event_at, excluded.newest_event_at)",
-                    (control_uuid, state_uuid, observed_at, observed_at),
+                    "newest_event_at = MAX(newest_event_at, excluded.newest_event_at), "
+                    "logical_value_bytes = logical_value_bytes + excluded.logical_value_bytes",
+                    (control_uuid, state_uuid, observed_at, observed_at, logical_bytes),
                 )
                 pruned = self._prune(connection, now=observed_at)
                 connection.execute("COMMIT")
@@ -398,9 +435,71 @@ class EventHistoryStore:
         connection.execute("DELETE FROM source_totals")
         connection.execute(
             "INSERT INTO source_totals "
-            "SELECT control_uuid, state_uuid, COUNT(*), MIN(observed_at), MAX(observed_at) "
+            "SELECT control_uuid, state_uuid, COUNT(*), MIN(observed_at), MAX(observed_at), "
+            "COALESCE(SUM(logical_value_bytes), 0), "
+            "SUM(CASE WHEN logical_value_bytes IS NULL THEN 1 ELSE 0 END) "
             "FROM events GROUP BY control_uuid, state_uuid"
         )
+
+    def backfill_payload_batch(self, *, limit: int = 256) -> bool:
+        """Measure at most one bounded batch of legacy rows; return whether more remain."""
+        if not 1 <= limit <= 256:
+            raise ValueError("backfill limit is invalid")
+        with self._lock, self._opened() as connection:
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                cursor = int(
+                    connection.execute(
+                        "SELECT backfill_last_id FROM history_metadata WHERE id = 1"
+                    ).fetchone()[0]
+                )
+                pending = connection.execute(
+                    "SELECT 1 FROM source_totals WHERE unmeasured_events > 0 LIMIT 1"
+                ).fetchone()
+                if pending is None:
+                    connection.execute("COMMIT")
+                    return False
+                batch = connection.execute(
+                    "SELECT id, control_uuid, state_uuid, "
+                    "length(CAST(old_value AS BLOB)) + length(CAST(new_value AS BLOB)) "
+                    "FROM events WHERE id > ? AND logical_value_bytes IS NULL "
+                    "ORDER BY id LIMIT ?",
+                    (cursor, limit),
+                ).fetchall()
+                grouped: dict[tuple[str, str], tuple[int, int]] = {}
+                for event_id, control, state, size in batch:
+                    connection.execute(
+                        "UPDATE events SET logical_value_bytes = ? WHERE id = ? "
+                        "AND logical_value_bytes IS NULL",
+                        (size, event_id),
+                    )
+                    count, total = grouped.get((control, state), (0, 0))
+                    grouped[(control, state)] = (count + 1, total + int(size))
+                for (control, state), (count, total) in grouped.items():
+                    connection.execute(
+                        "UPDATE source_totals SET logical_value_bytes = logical_value_bytes + ?, "
+                        "unmeasured_events = unmeasured_events - ? "
+                        "WHERE control_uuid = ? AND state_uuid = ?",
+                        (total, count, control, state),
+                    )
+                if batch:
+                    connection.execute(
+                        "UPDATE history_metadata SET backfill_last_id = ? WHERE id = 1",
+                        (batch[-1][0],),
+                    )
+                pruned = (
+                    self._prune(connection, now=time.time())
+                    if batch and self._used_database_bytes(connection) > self.maximum_bytes
+                    else False
+                )
+                connection.execute("COMMIT")
+                if batch:
+                    self._compact(connection, vacuum=pruned)
+                return len(batch) == limit
+            except sqlite3.Error as exc:
+                if connection.in_transaction:
+                    connection.execute("ROLLBACK")
+                raise EventHistoryUnavailable("local event history is unavailable") from exc
 
     def snapshot(self, active_sources: tuple[tuple[str, str], ...]) -> EventHistoryStoreSummary:
         """Read a consistent overview without starting maintenance or creating files."""
@@ -411,7 +510,9 @@ class EventHistoryStore:
                 0,
                 0,
                 tuple(
-                    EventHistorySourceSummary(control, state, 0, None, None, None, None, None, ())
+                    EventHistorySourceSummary(
+                        control, state, 0, None, None, None, None, None, (), 0
+                    )
                     for control, state in active_sources
                 ),
             )
@@ -421,9 +522,9 @@ class EventHistoryStore:
             ) as db:
                 db.execute("BEGIN")
                 version = db.execute("PRAGMA user_version").fetchone()[0]
-                if version == 3:
+                if version in {3, 4}:
                     db.execute("ROLLBACK")
-                    self._migrate_v3_snapshot()
+                    self._migrate_snapshot()
                     db.execute("BEGIN")
                     version = db.execute("PRAGMA user_version").fetchone()[0]
                 if version != _SCHEMA_VERSION:
@@ -432,7 +533,8 @@ class EventHistoryStore:
                     (row[0], row[1]): row[2:]
                     for row in db.execute(
                         "SELECT control_uuid, state_uuid, event_count, oldest_event_at, "
-                        "newest_event_at FROM source_totals"
+                        "newest_event_at, logical_value_bytes, unmeasured_events "
+                        "FROM source_totals"
                     )
                 }
                 coverage = {
@@ -478,6 +580,9 @@ class EventHistoryStore:
                                 key,
                             )
                         ),
+                        (int(totals[key][3]) if totals[key][4] == 0 else None)
+                        if key in totals
+                        else 0,
                     )
                     for key in selected_keys
                 )
@@ -797,6 +902,7 @@ class EventHistoryMonitor:
         self.credentials = credentials
         self.auth_coordinator = auth_coordinator
         self._task: asyncio.Task[None] | None = None
+        self._backfill_task: asyncio.Task[None] | None = None
         self.status = "disabled" if not config.event_history_enabled else "unknown"
         self.status_reason: str | None = None
         self.status_observed_at = time.time()
@@ -821,7 +927,7 @@ class EventHistoryMonitor:
         return self.config.event_history_sources
 
     async def start(self) -> None:
-        if not self.config.event_history_enabled:
+        if not self.config.event_history_enabled and not self.store.path.is_file():
             return
         try:
             await asyncio.to_thread(self.store.initialize)
@@ -832,10 +938,25 @@ class EventHistoryMonitor:
             )
             _LOGGER.warning("component=event_history outcome=store_unavailable")
             return
+        self._backfill_task = asyncio.create_task(self._backfill())
+        if not self.config.event_history_enabled:
+            return
         if not self.sources:
             self._set_status("unavailable", "no_sources")
             return
         self._task = asyncio.create_task(self._run())
+
+    async def _backfill(self) -> None:
+        while True:
+            try:
+                pending = await asyncio.to_thread(self.store.backfill_payload_batch)
+            except EventHistoryUnavailable:
+                _LOGGER.warning("component=event_history outcome=payload_backfill_unavailable")
+                await asyncio.sleep(30)
+                continue
+            if not pending:
+                return
+            await asyncio.sleep(0.25)
 
     async def _run(self) -> None:
         from mcpserver.loxone.client import MiniserverEndpoint
@@ -973,6 +1094,12 @@ class EventHistoryMonitor:
             self._task.cancel()
             with suppress(asyncio.CancelledError):
                 await self._task
+            self._task = None
+        if self._backfill_task is not None:
+            self._backfill_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._backfill_task
+            self._backfill_task = None
 
     async def visible_structure(self) -> LoxoneStructure:
         """Load one current service-owned structure for selection and validation."""

@@ -32,12 +32,20 @@
   let staleRecoveryScheduled = false;
   let sourceRevisionChecking = false;
   let knownSourceRevision = '';
+  let knownPayloadPending = null;
   let selectorVerificationPending = false;
   let nextRevisionRefreshAt = 0;
   let revisionRefreshFailures = 0;
   let messageVersion = 0;
   let actionMessagePinned = false;
   let savedPolicy = null;
+  let sourceItems = [];
+  let unverifiedItems = [];
+  let sourceVisibility = 'unavailable';
+  const sourceFilters = {room: new Set(), category: new Set(), type: new Set(), status: new Set()};
+  const sourceSort = {field: '', direction: 'ascending'};
+  const sourceSortFields = ['control', 'state', 'status', 'events', 'size', 'period', 'actions'];
+  const sourceCollator = new Intl.Collator(undefined, {numeric: true, sensitivity: 'base'});
   const label = (name) => root.dataset[name] || name;
   const sections = ['sources', 'add', 'policy', 'clear'];
   for (const name of sections) {
@@ -108,9 +116,142 @@
     });
     return button;
   };
+  const sourceFacetId = (source, field) => {
+    if (field === 'type') return source.control_type || '';
+    if (field === 'status') return source.recording_status || '';
+    return source[field] && source[`${field}_id`] ? source[`${field}_id`] : '';
+  };
+  const sourceSize = (bytes) => {
+    if (!Number.isSafeInteger(bytes) || bytes < 0) return label('unavailable');
+    const unit = bytes >= 1048576 ? 'MiB' : 'KiB';
+    const value = bytes / (unit === 'MiB' ? 1048576 : 1024);
+    return `${value.toLocaleString(undefined, {
+      maximumFractionDigits: bytes && value < 0.1 ? 3 : (bytes ? 1 : 0),
+    })} ${unit}`;
+  };
+  const sourceSortValue = (source, field) => {
+    if (field === 'control') return source.control_name || null;
+    if (field === 'state') return source.state_name || null;
+    if (field === 'status') return source.recording_status === 'active' ? 0
+      : (source.recording_status === 'removed' ? 1 : null);
+    if (field === 'events') return Number.isSafeInteger(source.event_count)
+      ? source.event_count : null;
+    if (field === 'size') return Number.isSafeInteger(source.logical_value_bytes)
+      ? source.logical_value_bytes : null;
+    if (field === 'period') return Number.isFinite(source.newest_event_at)
+      ? source.newest_event_at : null;
+    if (field === 'actions') return source.recording_status === 'active' ? label('stop')
+      : (source.recording_status === 'removed' ? label('purge') : null);
+    return null;
+  };
+  const sortedSourceItems = (items) => {
+    if (!sourceSort.field) return items;
+    const direction = sourceSort.direction === 'ascending' ? 1 : -1;
+    return [...items].sort((left, right) => {
+      const a = sourceSortValue(left, sourceSort.field);
+      const b = sourceSortValue(right, sourceSort.field);
+      if (a == null) return b == null ? 0 : 1;
+      if (b == null) return -1;
+      return direction * (typeof a === 'number' && typeof b === 'number'
+        ? a - b : sourceCollator.compare(String(a), String(b)));
+    });
+  };
+  const syncSourceSortControls = () => {
+    for (const button of root.querySelectorAll('[data-source-sort]')) {
+      const active = button.dataset.sourceSort === sourceSort.field;
+      const heading = button.closest('th');
+      if (active) heading.setAttribute('aria-sort', sourceSort.direction);
+      else heading.removeAttribute('aria-sort');
+      const nextDirection = active && sourceSort.direction === 'ascending'
+        ? 'sortDescending' : 'sortAscending';
+      button.setAttribute('aria-label', `${label('sortBy')} ${button.textContent.trim()}, ${label(nextDirection)}`);
+    }
+    $('history-source-sort-mobile').value = sourceSort.field;
+    const direction = $('history-source-sort-direction');
+    direction.disabled = !sourceSort.field;
+    direction.textContent = label(sourceSort.direction === 'ascending'
+      ? 'sortAscending' : 'sortDescending');
+    direction.setAttribute('aria-label', label(sourceSort.direction === 'ascending'
+      ? 'sortDescending' : 'sortAscending'));
+  };
+  const selectSourceSort = (field) => {
+    if (!sourceSortFields.includes(field)) {
+      sourceSort.field = '';
+      sourceSort.direction = 'ascending';
+    } else if (sourceSort.field === field) {
+      sourceSort.direction = sourceSort.direction === 'ascending' ? 'descending' : 'ascending';
+    } else {
+      sourceSort.field = field;
+      sourceSort.direction = 'ascending';
+    }
+    syncSourceSortControls();
+    applySourceFilters();
+  };
+  for (const button of root.querySelectorAll('[data-source-sort]')) {
+    button.addEventListener('click', () => { selectSourceSort(button.dataset.sourceSort); });
+  }
+  $('history-source-sort-mobile').addEventListener('change', (event) => {
+    if (event.target.value === sourceSort.field) return;
+    selectSourceSort(event.target.value);
+  });
+  $('history-source-sort-direction').addEventListener('click', () => {
+    if (sourceSort.field) selectSourceSort(sourceSort.field);
+  });
+  syncSourceSortControls();
+  const applySourceFilters = () => {
+    const matches = sourceItems.filter((source) => ['room', 'category', 'type', 'status'].every(
+      (field) => !sourceFilters[field].size || sourceFilters[field].has(sourceFacetId(source, field))));
+    $('history-source-clear-filters').disabled = !Object.values(sourceFilters)
+      .some((selected) => selected.size);
+    $('history-source-match-count').textContent = sourceVisibility === 'available'
+      ? `${matches.length} / ${sourceItems.length} ${label('sourceMatches')}` : label('unknown');
+    $('history-source-no-matches').hidden = !sourceItems.length || matches.length > 0;
+    renderRows(sortedSourceItems(matches), unverifiedItems, sourceVisibility);
+  };
+  const renderSourceFacets = () => {
+    for (const field of ['room', 'category', 'type', 'status']) {
+      const panel = root.querySelector(`[data-source-facet="${field}"]`);
+      const list = panel.querySelector('.mcp-event-history-facet-options');
+      const options = new Map();
+      for (const source of sourceItems) {
+        const id = sourceFacetId(source, field);
+        const name = field === 'type' ? (source.control_type || label('filterUnknown'))
+          : (field === 'status' ? label(id === 'active' || id === 'removed'
+            ? id : 'unknown') : (source[field] || label('filterUnknown')));
+        options.set(id, name);
+      }
+      for (const id of sourceFilters[field]) {
+        if (!options.has(id)) sourceFilters[field].delete(id);
+      }
+      list.replaceChildren();
+      for (const [id, name] of [...options].sort((left, right) =>
+        left[1].localeCompare(right[1]))) {
+        const row = document.createElement('label');
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = sourceFilters[field].has(id);
+        checkbox.addEventListener('change', () => {
+          if (checkbox.checked) sourceFilters[field].add(id);
+          else sourceFilters[field].delete(id);
+          applySourceFilters();
+        });
+        row.append(checkbox, text('span', name));
+        list.append(row);
+      }
+      panel.hidden = options.size === 0;
+    }
+    applySourceFilters();
+  };
+  $('history-source-clear-filters').addEventListener('click', () => {
+    for (const selected of Object.values(sourceFilters)) selected.clear();
+    for (const checkbox of root.querySelectorAll('[data-source-facet] input:checked')) {
+      checkbox.checked = false;
+    }
+    applySourceFilters();
+  });
   const renderRows = (sources, unverified, visibilityStatus) => {
     rows.replaceChildren();
-    $('history-empty').hidden = sources.length + unverified.length > 0;
+    $('history-empty').hidden = sourceItems.length + unverified.length > 0;
     for (const source of sources) {
       const tr = document.createElement('tr');
       const recording = source.recording_status === 'active';
@@ -137,15 +278,21 @@
       const actions = document.createElement('div');
       actions.className = 'mcp-actions';
       actions.append(sourceAction(source, recording));
+      const control = namedSource(source.control_name, source.control_type, source.control_uuid);
+      control.append(text('small', `${label('room')}: ${source.room || label('filterUnknown')}`,
+        'mcp-event-history-subtext'));
+      control.append(text('small', `${label('category')}: ${source.category || label('filterUnknown')}`,
+        'mcp-event-history-subtext'));
       tr.append(
         cell(root.querySelector('th:nth-child(1)').textContent,
-          namedSource(source.control_name, source.control_type, source.control_uuid)),
+          control),
         cell(root.querySelector('th:nth-child(2)').textContent,
           namedSource(source.state_name, '', source.state_uuid)),
         cell(root.querySelector('th:nth-child(3)').textContent, badge),
         cell(label('events'), String(source.event_count)),
-        cell(root.querySelector('th:nth-child(5)').textContent, period),
-        cell(root.querySelector('th:nth-child(6)').textContent, actions),
+        cell(label('sourceSizeEstimated'), sourceSize(source.logical_value_bytes)),
+        cell(root.querySelector('th:nth-child(6)').textContent, period),
+        cell(root.querySelector('th:nth-child(7)').textContent, actions),
       );
       rows.append(tr);
     }
@@ -160,8 +307,9 @@
           namedSource(label('unknown'), '', source.state_uuid)),
         cell(root.querySelector('th:nth-child(3)').textContent, label('selected')),
         cell(label('events'), label('unknown')),
-        cell(root.querySelector('th:nth-child(5)').textContent, label('unknown')),
-        cell(root.querySelector('th:nth-child(6)').textContent, sourceAction(source, true)),
+        cell(label('sourceSizeEstimated'), label('unknown')),
+        cell(root.querySelector('th:nth-child(6)').textContent, label('unknown')),
+        cell(root.querySelector('th:nth-child(7)').textContent, sourceAction(source, true)),
       );
       rows.append(tr);
     }
@@ -183,6 +331,8 @@
       overviewLoaded = true;
       if (data.store_status === 'available' && typeof data.source_revision === 'string') {
         knownSourceRevision = data.source_revision;
+        knownPayloadPending = typeof data.payload_pending === 'boolean'
+          ? data.payload_pending : null;
         selectorVerificationPending = data.visibility_status !== 'available';
         if (!selectorVerificationPending) {
           nextRevisionRefreshAt = 0;
@@ -212,9 +362,10 @@
         data.hidden_sources_present ? label('hiddenSources') : '',
         data.sources_truncated ? label('sourcesTruncated') : '',
       ].filter(Boolean).join(' ');
-      renderRows(Array.isArray(data.sources) ? data.sources : [],
-        Array.isArray(data.unverified_sources) ? data.unverified_sources : [],
-        data.visibility_status);
+      sourceItems = Array.isArray(data.sources) ? data.sources : [];
+      unverifiedItems = Array.isArray(data.unverified_sources) ? data.unverified_sources : [];
+      sourceVisibility = data.visibility_status;
+      renderSourceFacets();
       const complete = data.store_status === 'available' && data.visibility_status === 'available';
       setMessage(label(complete ? 'loaded' : 'unavailable'), complete ? 'success' : 'warning');
   };
@@ -545,7 +696,9 @@
     try {
       const data = await api.request('event_history_source_revision', {}, 15000);
       if (data.availability === 'available'
-        && (data.revision !== knownSourceRevision || selectorVerificationPending)
+        && (data.revision !== knownSourceRevision || selectorVerificationPending
+          || (typeof data.payload_pending === 'boolean'
+            && data.payload_pending !== knownPayloadPending))
         && Date.now() >= nextRevisionRefreshAt) {
         const verified = await loadControls();
         if (!verified || knownSourceRevision !== data.revision) {

@@ -794,6 +794,140 @@ def test_event_history_selector_is_progressive_and_localized() -> None:
             assert f"{key}=" in translations
 
 
+def test_event_history_source_filters_combine_facets_locally() -> None:
+    node = shutil.which("node")
+    assert node is not None
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = source.slice(source.indexOf('  const sourceFacetId ='),
+  source.indexOf('  const renderRows ='));
+const nodes = new Map();
+const $ = (id) => {
+  if (!nodes.has(id)) nodes.set(id, {listeners: {},
+    addEventListener(name, fn) {this.listeners[name] = fn;}, setAttribute() {}});
+  return nodes.get(id);
+};
+const headers = ['control', 'state', 'status', 'events', 'size', 'period', 'actions']
+  .map((field) => ({dataset: {sourceSort: field}, textContent: field, attrs: {},
+    addEventListener(name, fn) {this[name] = fn;},
+    setAttribute(name, value) {this.attrs[name] = value;},
+    closest() {return this.heading;}}));
+for (const button of headers) button.heading = {attrs: {},
+  setAttribute(name, value) {this.attrs[name] = value;},
+  removeAttribute(name) {delete this.attrs[name];}};
+const panels = Object.fromEntries(['room', 'category', 'type', 'status'].map((field) => {
+  const list = {children: [], replaceChildren() {this.children = [];},
+    append(item) {this.children.push(item);}};
+  return [field, {list, querySelector: () => list}];
+}));
+const document = {createElement: (tag) => ({tag, children: [],
+  append(...items) {this.children.push(...items);}, addEventListener() {}})};
+const drawn = [];
+const context = {$, document, text: (tag, value) => ({tag, value}),
+  root: {querySelector: (selector) => panels[selector.match(/"(.*?)"/)[1]],
+    querySelectorAll: (selector) => selector === '[data-source-sort]' ? headers : []},
+  label: (key) => key, renderRows: (visible) => drawn.push(Array.from(visible, (item) => item.id))};
+vm.runInNewContext(`let sourceItems = [
+  {id: 1, room_id: 'r1', room: 'Kitchen', category_id: 'c1', category: 'Lights',
+    control_type: 'Switch', recording_status: 'active', control_name: 'Zulu', state_name: 'B',
+    event_count: 10, logical_value_bytes: 11, newest_event_at: 20},
+  {id: 2, room_id: 'r2', room: 'Hall', category_id: 'c1', category: 'Lights',
+    control_type: 'Switch', recording_status: 'removed', control_name: 'Alpha', state_name: 'A',
+    event_count: 20, logical_value_bytes: null, newest_event_at: 10},
+  {id: 3, room_id: null, room: null, category_id: 'c2', category: 'Climate',
+    control_type: 'Sensor', recording_status: 'active', control_name: 'Beta', state_name: 'C',
+    event_count: 2, logical_value_bytes: 2, newest_event_at: null}];
+let unverifiedItems = []; let sourceVisibility = 'available';
+const sourceFilters = {room: new Set(), category: new Set(), type: new Set(), status: new Set()};
+const sourceSort = {field: '', direction: 'ascending'};
+const sourceSortFields = ['control', 'state', 'status', 'events', 'size', 'period', 'actions'];
+const sourceCollator = new Intl.Collator(undefined, {numeric: true, sensitivity: 'base'});
+${section}
+globalThis.subject = {applySourceFilters, renderSourceFacets, selectSourceSort,
+  sourceFilters, sourceSize};`, context);
+const {applySourceFilters, renderSourceFacets, selectSourceSort, sourceFilters, sourceSize} =
+  context.subject;
+assert.equal(sourceSize(0), '0 KiB');
+assert.equal(sourceSize(null), 'unavailable');
+for (const bytes of [1, 11, 51]) assert.notEqual(sourceSize(bytes), '0 KiB');
+renderSourceFacets();
+assert.deepEqual(drawn.at(-1), [1, 2, 3]);
+assert.deepEqual(panels.status.list.children.map((row) => row.children[1].value),
+  ['active', 'removed']);
+sourceFilters.room.add('r1'); sourceFilters.room.add('r2');
+sourceFilters.category.add('c1'); sourceFilters.type.add('Switch');
+applySourceFilters();
+assert.deepEqual(drawn.at(-1), [1, 2]);
+sourceFilters.status.add('active');
+applySourceFilters();
+assert.deepEqual(drawn.at(-1), [1]);
+sourceFilters.status.add('removed');
+applySourceFilters();
+assert.deepEqual(drawn.at(-1), [1, 2]);
+sourceFilters.room.clear(); sourceFilters.room.add('');
+applySourceFilters();
+assert.deepEqual(drawn.at(-1), []);
+assert.equal(nodes.get('history-source-no-matches').hidden, false);
+sourceFilters.category.clear(); sourceFilters.type.clear(); sourceFilters.status.clear();
+applySourceFilters();
+assert.deepEqual(drawn.at(-1), [3]);
+for (const selected of Object.values(sourceFilters)) selected.clear();
+applySourceFilters();
+assert.equal(nodes.get('history-source-clear-filters').disabled, true);
+assert.equal(nodes.get('history-source-match-count').textContent, '3 / 3 sourceMatches');
+selectSourceSort('control');
+assert.deepEqual(drawn.at(-1), [2, 3, 1]);
+assert.equal(headers[0].heading.attrs['aria-sort'], 'ascending');
+selectSourceSort('control');
+assert.deepEqual(drawn.at(-1), [1, 3, 2]);
+assert.equal(headers[0].heading.attrs['aria-sort'], 'descending');
+for (const [field, ascending, descending] of [
+  ['state', [2, 1, 3], [3, 1, 2]],
+  ['status', [1, 3, 2], [2, 1, 3]],
+  ['events', [3, 1, 2], [2, 1, 3]],
+  ['size', [3, 1, 2], [1, 3, 2]],
+  ['period', [2, 1, 3], [1, 2, 3]],
+  ['actions', [2, 1, 3], [1, 3, 2]],
+]) {
+  selectSourceSort(field);
+  assert.deepEqual(drawn.at(-1), ascending);
+  selectSourceSort(field);
+  assert.deepEqual(drawn.at(-1), descending);
+}
+nodes.get('history-source-sort-mobile').listeners.change({target: {value: 'events'}});
+assert.deepEqual(drawn.at(-1), [3, 1, 2]);
+nodes.get('history-source-sort-direction').listeners.click();
+assert.deepEqual(drawn.at(-1), [2, 1, 3]);
+selectSourceSort('');
+assert.deepEqual(drawn.at(-1), [1, 2, 3]);
+assert.equal(nodes.get('history-source-sort-direction').disabled, true);
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    page = (ROOT / "templates/event-history.html").read_text(encoding="utf-8")
+    assert 'data-source-facet="room"' in page
+    assert 'data-source-facet="category"' in page
+    assert 'data-source-facet="type"' in page
+    assert 'data-source-facet="status"' in page
+    assert 'id="history-source-sort-mobile"' in page
+    assert page.count("data-source-sort=") == 7
+    assert 'id="history-source-match-count"' in page
+    for locale in ("de", "en"):
+        labels = (ROOT / f"templates/lang/language_{locale}.ini").read_text(encoding="utf-8")
+        assert "SOURCE_SIZE_ESTIMATED=" in labels
+        assert "SOURCE_NO_MATCHES=" in labels
+        assert "SORT_BY=" in labels
+        assert "SORT_ASC=" in labels
+        assert "SORT_DESC=" in labels
+
+
 def test_event_history_sections_use_native_disclosures_and_keep_actions_inside() -> None:
     page = (ROOT / "templates/event-history.html").read_text(encoding="utf-8")
     for name in ("sources", "add", "policy", "clear"):
@@ -1011,7 +1145,7 @@ const nodes = new Map();
 const context = {$: (id) => {
   if (!nodes.has(id)) nodes.set(id, {});
   return nodes.get(id);
-}, label: (key) => key, date: () => '', renderRows: () => {}, setMessage: () => {}};
+}, label: (key) => key, date: () => '', renderSourceFacets: () => {}, setMessage: () => {}};
 vm.runInNewContext(`let overviewLoaded = false; let knownSourceRevision = '';
 let selectorVerificationPending = false; let nextRevisionRefreshAt = 1;
 let revisionRefreshFailures = 1; let activeCount = 0; let savedPolicy = null;
@@ -1094,6 +1228,7 @@ const context = {document: {hidden: false}, api: {request: async () =>
   ({availability: 'available', revision: 'new'})}};
 vm.runInNewContext(`let busy = false; let controlsLoading = false;
 let sourceRevisionChecking = false; let knownSourceRevision = 'old';
+let knownPayloadPending = false;
 let selectorVerificationPending = false; let nextRevisionRefreshAt = 0;
 let revisionRefreshFailures = 0; let refreshes = 0;
 const loadControls = async () => { refreshes += 1; knownSourceRevision = 'new'; return false; };
@@ -1108,6 +1243,44 @@ globalThis.subject = {checkSourceRevision, refreshes: () => refreshes,
   context.subject.retryNow();
   await context.subject.checkSourceRevision();
   assert.equal(context.subject.refreshes(), 2);
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_event_history_revision_refreshes_after_payload_backfill() -> None:
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = source.slice(source.indexOf('  const checkSourceRevision = async () => {'),
+  source.indexOf('  const loadStates ='));
+let payloadPending = true;
+const context = {document: {hidden: false}, api: {request: async () =>
+  ({availability: 'available', revision: 'same', payload_pending: payloadPending})}};
+vm.runInNewContext(`let busy = false; let controlsLoading = false;
+let sourceRevisionChecking = false; let knownSourceRevision = 'same';
+let knownPayloadPending = true; let selectorVerificationPending = false;
+let nextRevisionRefreshAt = 0; let revisionRefreshFailures = 0; let refreshes = 0;
+const loadControls = async () => { refreshes += 1; knownPayloadPending = false; return true; };
+${section}
+globalThis.subject = {checkSourceRevision, refreshes: () => refreshes};`, context);
+(async () => {
+  await context.subject.checkSourceRevision();
+  assert.equal(context.subject.refreshes(), 0);
+  payloadPending = false;
+  await context.subject.checkSourceRevision();
+  assert.equal(context.subject.refreshes(), 1);
+  await context.subject.checkSourceRevision();
+  assert.equal(context.subject.refreshes(), 1);
 })().catch((error) => { console.error(error); process.exitCode = 1; });
 """
     subprocess.run(

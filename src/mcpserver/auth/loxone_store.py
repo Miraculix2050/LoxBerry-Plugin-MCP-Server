@@ -468,6 +468,13 @@ class EncryptedLoxoneTokenStore:
         return f"{_SCHEMA_VERSION}\0explorer\0{session_id}\0{family_id}\0{client_id}".encode()
 
     def put_explorer_session(self, session: ExplorerSession) -> None:
+        self._save_explorer_session(session, existing_only=False)
+
+    def update_explorer_session(self, session: ExplorerSession) -> bool:
+        """Rotate tokens only while the same encrypted session still exists."""
+        return self._save_explorer_session(session, existing_only=True)
+
+    def _save_explorer_session(self, session: ExplorerSession, *, existing_only: bool) -> bool:
         if not all(
             (
                 session.session_id,
@@ -501,6 +508,13 @@ class EncryptedLoxoneTokenStore:
         )
         with self._locked():
             document = self._read()
+            if existing_only:
+                existing = document["explorer_sessions"].get(session.session_id)
+                if not isinstance(existing, dict) or (
+                    existing.get("family_id") != session.family_id
+                    or existing.get("client_id") != session.client_id
+                ):
+                    return False
             document["explorer_sessions"][session.session_id] = {
                 "family_id": session.family_id,
                 "client_id": session.client_id,
@@ -508,6 +522,7 @@ class EncryptedLoxoneTokenStore:
                 "ciphertext": _encoded(ciphertext),
             }
             self._write(document)
+            return True
 
     def get_explorer_session(self, session_id: str) -> ExplorerSession | None:
         with self._locked():

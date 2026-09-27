@@ -15,8 +15,8 @@ import re
 import secrets
 import time
 from collections import deque
-from collections.abc import Mapping
-from contextlib import suppress
+from collections.abc import AsyncIterator, Mapping
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from typing import Final
 from urllib.parse import urlencode, urlsplit
@@ -93,6 +93,12 @@ class LoginTransaction:
     loxberry_operate_locally_approved: bool = False
     phase: str = "login"
     lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
+
+
+@dataclass(slots=True)
+class _ExplorerLock:
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    users: int = 0
 
 
 def _callback_csp_source(uri: str) -> str:
@@ -241,13 +247,25 @@ class Phase0OAuthWeb:
         self.loxone_store = loxone_store
         self.auth_coordinator = auth_coordinator
         self.explorer_origin = issuer.rsplit("/plugins/mcpserver/oauth", 1)[0]
-        self._explorer_locks: dict[str, asyncio.Lock] = {}
+        self._explorer_locks: dict[str, _ExplorerLock] = {}
         self.transactions: dict[str, LoginTransaction] = {}
         self._client_uuid = uuid5(NAMESPACE_URL, issuer)
         self._login_slots = asyncio.Semaphore(2)
         self._login_failures: dict[str, deque[int]] = {}
         self._global_login_failures: deque[int] = deque()
         self._registration_attempts: dict[str, deque[int]] = {}
+
+    @asynccontextmanager
+    async def _locked_explorer_session(self, session_id: str) -> AsyncIterator[None]:
+        entry = self._explorer_locks.setdefault(session_id, _ExplorerLock())
+        entry.users += 1  # Include waiters so they never receive a different lock.
+        try:
+            async with entry.lock:
+                yield
+        finally:
+            entry.users -= 1
+            if entry.users == 0 and self._explorer_locks.get(session_id) is entry:
+                self._explorer_locks.pop(session_id)
 
     async def _kill(self, transaction: LoginTransaction) -> bool:
         token = transaction.loxone_token
@@ -388,29 +406,25 @@ class Phase0OAuthWeb:
             self._explorer_cookie(response, session_id)
             return response
         session_id = request.cookies.get(_EXPLORER_COOKIE_NAME, "")
-        try:
-            session = self.loxone_store.get_explorer_session(session_id)
-        except LoxoneTokenStoreError:
-            session = None
-        if session is None or session.expires_at <= self.provider.now():
-            response = _json({"error": "invalid_session"}, status=401)
-            self._delete_explorer_cookie(response)
-            if session_id:
-                self.loxone_store.delete_explorer_session(session_id)
-            return response
-        if action == "logout" and set(payload) == {"action"}:
-            await self.provider.revoke_raw_token(session.refresh_token, session.client_id)
-            self.loxone_store.delete_explorer_session(session.session_id)
-            logout_response = Response(status_code=204, headers=_security_headers())
-            self._delete_explorer_cookie(logout_response)
-            return logout_response
-        if action != "access" or set(payload) != {"action"}:
-            return _json({"error": "invalid_request"}, status=400)
-        lock = self._explorer_locks.setdefault(session.session_id, asyncio.Lock())
-        async with lock:
-            current = self.loxone_store.get_explorer_session(session.session_id)
+        async with self._locked_explorer_session(session_id):
+            try:
+                current = self.loxone_store.get_explorer_session(session_id)
+            except LoxoneTokenStoreError:
+                current = None
             if current is None or current.expires_at <= self.provider.now():
-                return _json({"error": "invalid_session"}, status=401)
+                response = _json({"error": "invalid_session"}, status=401)
+                self._delete_explorer_cookie(response)
+                if session_id:
+                    self.loxone_store.delete_explorer_session(session_id)
+                return response
+            if action == "logout" and set(payload) == {"action"}:
+                await self.provider.revoke_raw_token(current.refresh_token, current.client_id)
+                self.loxone_store.delete_explorer_session(current.session_id)
+                logout_response = Response(status_code=204, headers=_security_headers())
+                self._delete_explorer_cookie(logout_response)
+                return logout_response
+            if action != "access" or set(payload) != {"action"}:
+                return _json({"error": "invalid_request"}, status=400)
             if current.access_expires_at <= self.provider.now() + 15:
                 client = await self.provider.get_client(current.client_id)
                 refresh = (
@@ -435,7 +449,8 @@ class Phase0OAuthWeb:
                     token.refresh_token or "",
                     current.expires_at,
                 )
-                self.loxone_store.put_explorer_session(current)
+                if not self.loxone_store.update_explorer_session(current):
+                    return _json({"error": "invalid_session"}, status=401)
             token = OAuthToken(
                 access_token=current.access_token,
                 token_type="Bearer",
