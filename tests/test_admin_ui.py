@@ -113,7 +113,7 @@ def test_admin_modules_load_in_order_with_versioned_localized_assets() -> None:
         assert "<TMPL_" not in source
         assert (
             f'<script defer src="admin/{name}?v='
-            '<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v10"></script>'
+            '<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v11"></script>'
         ) in markup
         subprocess.run(
             [node, "--check", str(ROOT / "webfrontend/htmlauth/admin" / name)],
