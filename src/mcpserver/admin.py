@@ -1830,6 +1830,8 @@ def dispatch(request: object, *, timing: dict[str, float] | None = None) -> dict
         "event_history_selector_facets",
         "event_history_selector_query",
         "event_history_selector_states",
+        "event_history_chart_prepare",
+        "event_history_chart_query",
         "event_history_save_policy",
         "event_history_add_source",
         "event_history_remove_source",
@@ -1857,6 +1859,10 @@ def dispatch(request: object, *, timing: dict[str, float] | None = None) -> dict
             return event_history_admin.selector_query(payload)
         if action == "event_history_selector_states":
             return event_history_admin.selector_states(payload)
+        if action == "event_history_chart_prepare":
+            return event_history_admin.chart_prepare(payload)
+        if action == "event_history_chart_query":
+            return event_history_admin.chart_query(payload)
         if action == "event_history_save_policy":
             return event_history_admin.save_policy(payload)
         if action == "event_history_add_source":

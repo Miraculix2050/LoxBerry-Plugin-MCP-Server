@@ -95,6 +95,74 @@ def test_snapshot_counts_are_exact_and_read_does_not_maintain_store(tmp_path, mo
     assert history.path.stat().st_mtime_ns == before
 
 
+def test_chart_query_requires_fresh_profile_bound_visibility(tmp_path, monkeypatch):
+    _, history = _setup(tmp_path, monkeypatch, sources=(SOURCE,))
+    history.initialize()
+    now = time.time()
+    history.record_transition(*SOURCE, observed_at=now - 5, old_value=False, new_value=True)
+    document = {
+        "generation": "a" * 24,
+        "verified_at": int(now),
+        "controls": event_history_admin._selector_projection(None)["controls"],
+        "control_index": {SOURCE[0]: 0},
+    }
+
+    class Cache:
+        profile = "test-profile"
+
+        def refresh(self, discover):
+            discover()
+            document["verified_at"] = int(time.time())
+            return document
+
+        def read(self):
+            return document
+
+    cache = Cache()
+    monkeypatch.setattr(event_history_admin, "_selector_cache", lambda _config: cache)
+    selected = [{"control_uuid": SOURCE[0], "state_uuid": SOURCE[1]}]
+    prepared = admin.dispatch(
+        {"action": "event_history_chart_prepare", "payload": {"sources": selected}}
+    )
+    assert prepared["sources"][0]["room"] == "Living room"
+    payload = {
+        **selected[0],
+        "generation": prepared["generation"],
+        "start": now - 60,
+        "end": now,
+        "after_id": 0,
+    }
+    assert (
+        admin.dispatch({"action": "event_history_chart_query", "payload": payload})["events"][0][
+            "new_value"
+        ]
+        is True
+    )
+    batch = event_history_admin.chart_query({"queries": [payload]})
+    assert batch["results"][0]["events"][0]["new_value"] is True
+    with pytest.raises(admin.AdminError, match="timed out"):
+        event_history_admin.chart_query({"queries": [payload]}, _deadline=time.monotonic() - 1)
+    with pytest.raises(admin.AdminError, match="duplicate"):
+        event_history_admin.chart_query({"queries": [payload, payload]})
+
+    document["verified_at"] = int(now - 61)
+    with pytest.raises(admin.AdminError, match="refreshed"):
+        event_history_admin.chart_query(payload)
+    document["verified_at"] = int(now)
+    document["controls"] = []
+    with pytest.raises(admin.AdminError, match="not visible"):
+        event_history_admin.chart_query(payload)
+
+
+def test_chart_selection_and_range_are_bounded(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch)
+    selected = {"control_uuid": SOURCE[0], "state_uuid": SOURCE[1]}
+    with pytest.raises(admin.AdminError):
+        event_history_admin.chart_prepare({"sources": [selected] * 5})
+    with pytest.raises(admin.AdminError):
+        event_history_admin.chart_query({**selected, "start": 0, "end": 91 * 86400, "after_id": 0})
+
+
 def test_quick_summary_avoids_miniserver_discovery(tmp_path, monkeypatch):
     _, history = _setup(tmp_path, monkeypatch, sources=(SOURCE,))
     history.initialize()

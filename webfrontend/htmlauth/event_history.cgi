@@ -65,6 +65,7 @@ my %actions = map { $_ => 1 } qw(
     event_history_discover_states
     event_history_prepare_selector event_history_selector_catalog event_history_selector_facets
     event_history_selector_query event_history_selector_states
+    event_history_chart_prepare event_history_chart_query
     event_history_save_policy event_history_add_source event_history_remove_source
     event_history_purge_source clear_event_history
 );
@@ -103,6 +104,21 @@ if (($q->{action} // '') ne '') {
             category => $decode_list->('category'),
             type => $decode_list->('type'),
         };
+    } elsif ($action eq 'event_history_chart_prepare') {
+        my $raw = $q->{sources} // '';
+        my $sources = length($raw) <= 1024 ? eval { decode_json($raw) } : undef;
+        $payload = {sources => ref($sources) eq 'ARRAY' ? $sources : undef};
+    } elsif ($action eq 'event_history_chart_query') {
+        my $raw = $q->{queries} // '';
+        my $queries = $raw ne '' && length($raw) <= 2048 ? eval { decode_json($raw) } : undef;
+        $payload = ref($queries) eq 'ARRAY' ? {queries => $queries} : {
+            control_uuid => ($q->{control_uuid} // ''),
+            state_uuid => ($q->{state_uuid} // ''),
+            generation => ($q->{generation} // ''),
+            start => ($q->{start} // '') =~ /\A\d+(?:\.\d+)?\z/ ? 0 + $q->{start} : '',
+            end => ($q->{end} // '') =~ /\A\d+(?:\.\d+)?\z/ ? 0 + $q->{end} : '',
+            after_id => ($q->{after_id} // '') =~ /\A\d+\z/ ? 0 + $q->{after_id} : '',
+        };
     } elsif ($action eq 'event_history_save_policy') {
         $payload = {
             retention_days => ($q->{retention_days} // '') =~ /\A[0-9]+\z/
@@ -132,7 +148,9 @@ if (($q->{action} // '') ne '') {
     reply($result, $result->{ok} ? 200 : 400);
 }
 
-my $template_text = LoxBerry::System::read_file("$lbptemplatedir/event-history.html");
+my $charts_view = ($q->{view} // '') eq 'charts';
+my $template_text = LoxBerry::System::read_file(
+    "$lbptemplatedir/" . ($charts_view ? 'event-history-charts.html' : 'event-history.html'));
 my $template = HTML::Template->new_scalar_ref(\$template_text,
     global_vars => 1, die_on_bad_params => 0);
 my %L = LoxBerry::System::readlanguage($template, 'language.ini');
@@ -143,6 +161,6 @@ $navbar{10}{URL} = 'index.cgi';
 print "Cache-Control: no-store\nPragma: no-cache\n";
 print "Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'\n";
 print "Referrer-Policy: no-referrer\nX-Content-Type-Options: nosniff\nX-Frame-Options: DENY\n";
-LoxBerry::Web::lbheader($L{'EVENT_HISTORY.TITLE'} . " V$version", 'nopanels', '', 'nojqm');
+LoxBerry::Web::lbheader($L{$charts_view ? 'EVENT_HISTORY.CHART_TITLE' : 'EVENT_HISTORY.TITLE'} . " V$version", 'nopanels', '', 'nojqm');
 print $template->output();
 LoxBerry::Web::lbfooter();

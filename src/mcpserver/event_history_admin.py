@@ -28,6 +28,9 @@ from mcpserver.loxone.uuid import normalize_loxone_uuid
 _DISCOVERY_TIMEOUT = 35
 _SOURCE_LIMIT = 64
 _LOCAL_CATALOG_BYTES = 8 * 1024 * 1024
+_CHART_SOURCE_LIMIT = 4
+_CHART_VISIBILITY_SECONDS = 60
+_CHART_RANGE_SECONDS = 90 * 86400
 
 
 def _bridge() -> Any:
@@ -418,6 +421,157 @@ def prepare_selector() -> dict[str, Any]:
         ],
         "overview": overview(_selector_visible(document)),
     }
+
+
+def _chart_sources(payload: object) -> tuple[tuple[str, str], ...]:
+    bridge = _bridge()
+    if not isinstance(payload, dict) or not isinstance(payload.get("sources"), list):
+        raise bridge.AdminError("chart sources are invalid")
+    raw = payload["sources"]
+    if not 1 <= len(raw) <= _CHART_SOURCE_LIMIT:
+        raise bridge.AdminError("chart source limit exceeded")
+    sources = tuple(_source(item) for item in raw)
+    if len(set(sources)) != len(sources):
+        raise bridge.AdminError("duplicate chart source")
+    return sources
+
+
+def _chart_visible(
+    document: dict[str, Any], source: tuple[str, str]
+) -> tuple[str, str, str, str | None, str | None, str | None, str | None] | None:
+    index = document["control_index"].get(source[0])
+    if not isinstance(index, int) or not 0 <= index < len(document["controls"]):
+        return None
+    control = document["controls"][index]
+    for state_name, state_uuid in control["states"]:
+        if state_uuid == source[1]:
+            return (
+                control["name"],
+                control["type"],
+                state_name,
+                control["room_id"],
+                control["room"],
+                control["category_id"],
+                control["category"],
+            )
+    return None
+
+
+def chart_prepare(payload: object) -> dict[str, Any]:
+    """Freshly verify all selected sources with one service-owned discovery."""
+
+    bridge = _bridge()
+    sources = _chart_sources(payload)
+    config = bridge._config_store().load()
+    cache = _selector_cache(config)
+    try:
+        document = cache.refresh(lambda: _selector_projection(config))
+    except (TimeoutError, SelectorCacheError, OSError, ValueError) as exc:
+        raise bridge.AdminError(
+            "chart visibility is unavailable", code="temporarily_unavailable"
+        ) from exc
+    current = bridge._config_store().load()
+    _require_same_visibility_context(config, current)
+    if _selector_cache(current).profile != cache.profile:
+        raise bridge.AdminError("Miniserver identity changed", code="stale_configuration")
+    visible = {source: _chart_visible(document, source) for source in sources}
+    if any(names is None for names in visible.values()):
+        raise bridge.AdminError("chart source is not visible", code="forbidden")
+    try:
+        _store(current).prepare_chart_read()
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise bridge.AdminError(
+            "local event history is unavailable", code="temporarily_unavailable"
+        ) from exc
+    return {
+        "generation": document["generation"],
+        "verified_at": document["verified_at"],
+        "sources": [
+            dict(
+                zip(
+                    (
+                        "control_name",
+                        "control_type",
+                        "state_name",
+                        "room_id",
+                        "room",
+                        "category_id",
+                        "category",
+                    ),
+                    cast(
+                        tuple[str, str, str, str | None, str | None, str | None, str | None],
+                        visible[source],
+                    ),
+                    strict=True,
+                ),
+                control_uuid=source[0],
+                state_uuid=source[1],
+            )
+            for source in sources
+        ],
+    }
+
+
+def chart_query(payload: object, *, _deadline: float | None = None) -> dict[str, Any]:
+    """Return one bounded local page only while fresh visibility proof holds."""
+
+    bridge = _bridge()
+    if _deadline is None:
+        _deadline = time.monotonic() + 10
+    if time.monotonic() >= _deadline:
+        raise bridge.AdminError("chart query timed out", code="temporarily_unavailable")
+    if not isinstance(payload, dict):
+        raise bridge.AdminError("chart query is invalid")
+    if "queries" in payload:
+        queries = payload["queries"]
+        if not isinstance(queries, list) or not 1 <= len(queries) <= _CHART_SOURCE_LIMIT:
+            raise bridge.AdminError("chart query limit exceeded")
+        if any(not isinstance(item, dict) for item in queries):
+            raise bridge.AdminError("chart query is invalid")
+        sources = tuple(_source(item) for item in queries)
+        if len(set(sources)) != len(sources):
+            raise bridge.AdminError("duplicate chart source")
+        results = [chart_query(item, _deadline=_deadline) for item in queries]
+        if len({result["generation"] for result in results}) != 1:
+            raise bridge.AdminError("local history changed", code="history_changed")
+        return {"results": results}
+    source = _source(payload)
+    start, end, after_id = (payload.get(key) for key in ("start", "end", "after_id"))
+    now = time.time()
+    if (
+        isinstance(start, bool)
+        or not isinstance(start, int | float)
+        or isinstance(end, bool)
+        or not isinstance(end, int | float)
+        or not 0 <= start < end <= now + 60
+        or end - start > _CHART_RANGE_SECONDS
+        or isinstance(after_id, bool)
+        or not isinstance(after_id, int)
+        or after_id < 0
+        or after_id > 2**63 - 1
+        or not isinstance(payload.get("generation"), str)
+        or len(payload["generation"]) != 24
+    ):
+        raise bridge.AdminError("chart range is invalid")
+    config = bridge._config_store().load()
+    cache = _selector_cache(config)
+    document = cache.read()
+    if (
+        document is None
+        or document["generation"] != payload.get("generation")
+        or not 0 <= now - document["verified_at"] < _CHART_VISIBILITY_SECONDS
+    ):
+        raise bridge.AdminError("chart visibility must be refreshed", code="stale_configuration")
+    if _chart_visible(document, source) is None:
+        raise bridge.AdminError("chart source is not visible", code="forbidden")
+    try:
+        return _store(config).chart_page(
+            *source, start=start, end=end, after_id=after_id, deadline=_deadline
+        )
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise bridge.AdminError(
+            "local event history is unavailable", code="temporarily_unavailable"
+        ) from exc
 
 
 def selector_catalog(payload: object) -> dict[str, Any]:

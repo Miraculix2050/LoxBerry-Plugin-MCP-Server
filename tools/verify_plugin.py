@@ -39,6 +39,7 @@ _REQUIRED: Final = {
     "postupgrade.sh",
     "uninstall/uninstall.sh",
     "bin/emergency-stop-miniserver.php",
+    "bin/event-history-upgrade.py",
     "bin/healthcheck",
     "bin/mcpserver-admin",
     "bin/renew-web-certificate",
@@ -53,6 +54,12 @@ _REQUIRED: Final = {
     "webfrontend/htmlauth/event_history.cgi",
     "webfrontend/htmlauth/event-history/api.js",
     "webfrontend/htmlauth/event-history/page.js",
+    "webfrontend/htmlauth/event-history/charts.js",
+    "webfrontend/htmlauth/event-history/charts.css",
+    "webfrontend/htmlauth/event-history/vendor/uplot/uPlot.iife.min.js",
+    "webfrontend/htmlauth/event-history/vendor/uplot/uPlot.min.css",
+    "webfrontend/htmlauth/event-history/vendor/uplot/LICENSE",
+    "webfrontend/htmlauth/event-history/vendor/uplot/SHA256SUMS",
     "webfrontend/htmlauth/explorer.js",
     "webfrontend/htmlauth/explorer-adapters.js",
     "webfrontend/htmlauth/explorer-core.js",
@@ -70,6 +77,7 @@ _REQUIRED: Final = {
     "templates/index.html",
     "templates/explorer.html",
     "templates/event-history.html",
+    "templates/event-history-charts.html",
     "templates/lang/language_de.ini",
     "templates/lang/language_en.ini",
 }
@@ -107,6 +115,7 @@ _TEXT_NAMES: Final = {
     "bin/mcpserver-admin",
     "bin/renew-web-certificate",
     "bin/root-lifecycle-paths.py",
+    "bin/event-history-upgrade.py",
 }
 _REQUIRED_PROJECT_WHEEL_ENTRIES: Final = {
     "mcpserver/auth/scopes.py",
@@ -234,6 +243,24 @@ def verify_archive(archive: Path, *, require_checksum: bool = True) -> str:
         missing = _REQUIRED - set(names)
         if missing:
             raise PackageVerificationError(f"required package entry is missing: {min(missing)}")
+
+        vendor = "webfrontend/htmlauth/event-history/vendor/uplot/"
+        checksums = package.read(vendor + "SHA256SUMS").decode("ascii").splitlines()
+        checked: set[str] = set()
+        for line in checksums:
+            asset_digest, separator, filename = line.partition("  ")
+            if (
+                separator != "  "
+                or filename not in {"LICENSE", "uPlot.iife.min.js", "uPlot.min.css"}
+                or filename in checked
+                or len(asset_digest) != 64
+            ):
+                raise PackageVerificationError("bundled uPlot checksum list is invalid")
+            checked.add(filename)
+            if hashlib.sha256(package.read(vendor + filename)).hexdigest() != asset_digest:
+                raise PackageVerificationError(f"bundled uPlot file has changed: {filename}")
+        if checked != {"LICENSE", "uPlot.iife.min.js", "uPlot.min.css"}:
+            raise PackageVerificationError("bundled uPlot checksum list is incomplete")
 
         parser = configparser.ConfigParser()
         parser.read_file(io.StringIO(package.read("plugin.cfg").decode("utf-8")))
