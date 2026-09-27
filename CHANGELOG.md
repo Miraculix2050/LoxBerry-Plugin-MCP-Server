@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Bind weather forecast cursors to the source update time and bounded forecast
+  contents. A changed forecast rejects continuation with guidance to restart at
+  page one; cursors issued before this change may also require a restart.
+
 - Name the local event-history query `loxone_get_event_history`.
 
 - Release process-local Tool Explorer session locks after the last active or

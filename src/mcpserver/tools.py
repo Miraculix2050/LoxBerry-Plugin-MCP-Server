@@ -3152,7 +3152,15 @@ def register_read_tools(
             Literal["actual", "forecast"],
             Field(description="Return the current weather or the forecast for up to 96 hours."),
         ] = "forecast",
-        cursor: CursorArgument = None,
+        cursor: Annotated[
+            str | None,
+            Field(
+                description=(
+                    "Opaque continuation cursor for the same weather mode and forecast version. "
+                    "If the forecast changes or the cursor is rejected, restart at page one."
+                )
+            ),
+        ] = None,
         limit: Annotated[
             int,
             Field(
@@ -3209,7 +3217,23 @@ def register_read_tools(
             if mode == "actual" and len(points) > 1:
                 points = points[:1]
                 warnings.append("Current weather was limited to one point.")
-            page = _page(cursors, f"weather:{mode}", points, cursor, limit)
+            scope = f"weather:{mode}"
+            if mode == "forecast":
+                version = json.dumps(
+                    {"last_updated_at": last_updated_at, "points": points},
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    allow_nan=False,
+                ).encode("utf-8")
+                scope = f"{scope}:{cursors.digest(version)}"
+            try:
+                page = _page(cursors, scope, points, cursor, limit)
+            except ValueError as exc:
+                if cursor is not None and str(exc) == "cursor is invalid":
+                    raise ValueError(
+                        "weather cursor is invalid or expired; restart at page one"
+                    ) from None
+                raise
             return _result(
                 WeatherEnvelope,
                 {
