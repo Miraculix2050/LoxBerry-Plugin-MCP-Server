@@ -46,7 +46,7 @@ def restore(source: Path, destination: Path) -> None:
     if not stat.S_ISDIR(parent.lstat().st_mode):
         raise RuntimeError("unsafe event history restore directory")
     os.chmod(source, 0o600)
-    if os.replace in os.supports_dir_fd and hasattr(os, "O_NOFOLLOW"):
+    if os.rename in os.supports_dir_fd and hasattr(os, "O_NOFOLLOW"):
         directory = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         try:
             os.replace(source, destination.name, dst_dir_fd=directory)

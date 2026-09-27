@@ -1,10 +1,14 @@
 """Native upgrade must retain a consistent event history snapshot."""
 
+import os
+import runpy
 import sqlite3
 import subprocess
 import sys
 from contextlib import closing
 from pathlib import Path
+
+import pytest
 
 HELPER = Path(__file__).resolve().parents[1] / "bin" / "event-history-upgrade.py"
 
@@ -64,3 +68,26 @@ def test_native_upgrade_rejects_symlinked_restore_directory(tmp_path: Path) -> N
     assert run("restore", snapshot, destination).returncode != 0
     assert snapshot.exists()
     assert not (outside / "state-events.sqlite3").exists()
+
+
+@pytest.mark.skipif(
+    os.rename not in os.supports_dir_fd or not hasattr(os, "O_NOFOLLOW"),
+    reason="requires POSIX directory-FD support",
+)
+def test_native_upgrade_restores_through_directory_fd(tmp_path: Path, monkeypatch) -> None:
+    snapshot = tmp_path / "snapshot.sqlite3"
+    with sqlite3.connect(snapshot) as db:
+        db.execute("CREATE TABLE events (id INTEGER)")
+    destination = tmp_path / "event-history" / "state-events.sqlite3"
+    restore = runpy.run_path(str(HELPER))["restore"]
+    original_replace = os.replace
+    directory_fds = []
+
+    def tracked_replace(source, target, **kwargs):
+        directory_fds.append(kwargs.get("dst_dir_fd"))
+        return original_replace(source, target, **kwargs)
+
+    monkeypatch.setattr(os, "replace", tracked_replace)
+    restore(snapshot, destination)
+    assert directory_fds and directory_fds[0] is not None
+    assert destination.exists()
