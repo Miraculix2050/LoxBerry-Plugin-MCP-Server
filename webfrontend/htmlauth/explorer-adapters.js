@@ -18,7 +18,6 @@
     ]},
     {id: 'loxoneHistory', scopes: ['loxone:read', 'loxone:history'], names: [
       'loxone_get_statistics', 'loxone_get_control_history', 'loxone_get_event_history',
-      'loxone_get_state_history',
       'loxone_analyze_observability',
     ]},
     {id: 'loxoneControl', scopes: ['loxone:read', 'loxone:control'], names: [

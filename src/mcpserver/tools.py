@@ -4791,15 +4791,6 @@ def register_event_history_tools(server: FastMCP, runtime: EventHistoryRuntime |
     annotations = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
 
     @server.tool(
-        name="loxone_get_state_history",
-        description=(
-            "Compatibility alias for loxone_get_event_history. Read retained local state "
-            "transitions for one currently visible state. Requires loxone:history."
-        ),
-        annotations=annotations,
-        structured_output=True,
-    )
-    @server.tool(
         name="loxone_get_event_history",
         description=(
             "Read retained local state transitions for one currently visible state, including "
@@ -4809,7 +4800,7 @@ def register_event_history_tools(server: FastMCP, runtime: EventHistoryRuntime |
         annotations=annotations,
         structured_output=True,
     )
-    async def get_state_history(
+    async def get_event_history(
         control_uuid: Annotated[
             str, Field(description="Exact visible control UUID.", max_length=128)
         ],
