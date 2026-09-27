@@ -22,6 +22,7 @@
   let sourceStates = [];
   let sequence = 0;
   let busy = false;
+  let rerun = false;
   let syncing = false;
   let applyingScale = false;
   const time = (value) => new Date(value * 1000).toLocaleString();
@@ -204,7 +205,9 @@
     while (pending.length) {
       const response = await api.request('event_history_chart_query', {
         queries: JSON.stringify(pending.map((state) => ({
-          ...state.source, generation: selection.generation,
+          control_uuid: state.source.control_uuid,
+          state_uuid: state.source.state_uuid,
+          generation: selection.generation,
           start: range.start, end: range.end, after_id: state.cursor,
         }))),
       }, 15000);
@@ -292,7 +295,13 @@
         setStatus(error.code === 'forbidden' || error.code === 'stale_configuration'
           ? label('chartDenied') : label('chartError'), 'warning');
       }
-    } finally { busy = false; }
+    } finally {
+      busy = false;
+      if (rerun) {
+        rerun = false;
+        void load(false);
+      }
+    }
   };
   const replaceRange = (start, end, follow = false) => {
     const now = Date.now() / 1000;
@@ -303,6 +312,8 @@
     }
     range = {start, end};
     rolling = follow;
+    sequence++;
+    if (busy) rerun = true;
     for (const state of sourceStates) {
       state.events.clear(); state.cursor = 0; state.generation = null; state.reduced = false;
       render(state);

@@ -27,6 +27,8 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
   const {window} = dom;
   const calls = [];
   let denied = false;
+  let holdNext = false;
+  let releaseHeld;
   let tick;
   let hidden = false;
   Object.defineProperty(window.document, 'hidden', {get: () => hidden});
@@ -50,18 +52,27 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
         sources: [{...source, control_name: 'Control', state_name: 'State',
           room: 'Room', category: 'Category', control_type: 'Switch'}]};
     }
-    if (action === 'event_history_chart_query') return {results: [{
+    if (action === 'event_history_chart_query') {
+      const answer = {results: [{
       generation: 1, events: [{id: 1, observed_at: Date.now() / 1000 - 10,
         old_value: false, new_value: true}], has_more: false, latest_id: 1,
       next_id: 1, reduced: false, coverage: [], capture_started_at: null,
       retained_from: null, recording_ended_at: null,
-    }]};
+      }]};
+      if (holdNext) {
+        holdNext = false;
+        return new Promise((resolve) => { releaseHeld = () => resolve(answer); });
+      }
+      return answer;
+    }
     throw new Error(`Unexpected action ${action}`);
   }};
   window.eval(script);
   await flush();
   assert.deepEqual(calls.map(({action}) => action),
     ['event_history_chart_prepare', 'event_history_chart_query']);
+  assert.deepEqual(Object.keys(JSON.parse(calls[1].fields.queries)[0]).sort(),
+    ['after_id', 'control_uuid', 'end', 'generation', 'start', 'state_uuid']);
   assert.equal(window.document.querySelectorAll('#chart-panels canvas').length, 1);
   assert.match(window.document.querySelector('#chart-panels').textContent, /Control/);
 
@@ -83,6 +94,17 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
   const fixedRange = JSON.parse(queries()[2].fields.queries)[0];
   assert.equal(fixedRange.end, advancedRange.end);
   window.Date.now = originalNow;
+
+  holdNext = true;
+  tick();
+  await flush();
+  assert.equal(typeof releaseHeld, 'function');
+  window.document.querySelector('#chart-previous').click();
+  releaseHeld();
+  await flush();
+  const replay = JSON.parse(queries().at(-1).fields.queries)[0];
+  assert.equal(replay.after_id, 0);
+  assert.ok(replay.end < fixedRange.end);
 
   hidden = true;
   const beforeHidden = calls.length;
