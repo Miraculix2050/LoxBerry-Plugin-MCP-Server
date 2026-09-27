@@ -613,7 +613,7 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert tool.annotations.destructiveHint is False
     assert tool.annotations.openWorldHint is False
     assert result.data.name == "using-loxberry-mcp"  # type: ignore[union-attr]
-    assert result.data.revision == 36  # type: ignore[union-attr]
+    assert result.data.revision == 37  # type: ignore[union-attr]
     assert "`loxone_get_structure_overview`" in result.data.content  # type: ignore[union-attr]
     assert result.data.media_type == "text/markdown"  # type: ignore[union-attr]
     assert result.data.content == read_skill_markdown()  # type: ignore[union-attr]
@@ -621,6 +621,7 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert "`room_group`" in result.data.content  # type: ignore[union-attr]
     assert "`loxone_get_room_snapshot`" in result.data.content  # type: ignore[union-attr]
     assert "`loxone_get_weather" in result.data.content  # type: ignore[union-attr]
+    assert "`data.received_at`" in result.data.content  # type: ignore[union-attr]
     assert "`emergency_stop_active`" in result.data.content  # type: ignore[union-attr]
     assert "`error.data.blocked_since`" in result.data.content  # type: ignore[union-attr]
 
@@ -2441,6 +2442,13 @@ async def test_weather_tool_pages_actual_and_forecast_without_state_uuid(
     tool = server._tool_manager.get_tool("loxone_get_weather")
     assert tool is not None
     output_defs = tool.output_schema["$defs"]
+    weather_schema = output_defs["WeatherData"]
+    assert "received_at" in weather_schema["required"]
+    assert {item.get("type") for item in weather_schema["properties"]["received_at"]["anyOf"]} == {
+        "string",
+        "null",
+    }
+    assert "Source update time" in weather_schema["properties"]["last_updated_at"]["description"]
     point_properties = output_defs["WeatherPointData"]["properties"]
     numeric_fields = set(point_properties) - {"at", "weather_type_text"}
     assert len(numeric_fields) == 10
@@ -2483,6 +2491,7 @@ async def test_weather_tool_pages_actual_and_forecast_without_state_uuid(
     unavailable = await tool.fn()
 
     assert first.data.mode == "forecast"  # type: ignore[union-attr]
+    assert first.data.received_at == "2023-11-14T22:13:20Z"  # type: ignore[union-attr]
     assert first.data.items[0].at == "2009-01-01T01:00:00Z"  # type: ignore[union-attr]
     assert first.data.items[0].weather_type_text == "Clear"  # type: ignore[union-attr]
     assert first.data.formats == dict(formats)  # type: ignore[union-attr]
@@ -2520,6 +2529,39 @@ async def test_weather_tool_pages_actual_and_forecast_without_state_uuid(
     assert tampered.data.error == "invalid_input"  # type: ignore[union-attr]
     assert "restart at page one" in tampered.data.message  # type: ignore[union-attr]
     assert unavailable.data.error == "temporarily_unavailable"  # type: ignore[union-attr]
+
+    # Cache freshness and weather source age are independent on both modes.
+    assert actual.stale is False
+    assert actual.data.last_updated_at == "2009-01-01T00:00:01Z"  # type: ignore[union-attr]
+    assert actual.data.received_at == "2023-11-14T22:13:20Z"  # type: ignore[union-attr]
+    assert actual.observed_at not in {
+        actual.data.last_updated_at,  # type: ignore[union-attr]
+        actual.data.received_at,  # type: ignore[union-attr]
+    }
+    records["forecast-state"] = StateRecord(
+        "forecast-state",
+        {"last_update": 1_700_000_000 - 1_230_768_000, "entries": [point(3600, 21.0)]},
+        Freshness.STALE,
+        1_600_000_000.0,
+    )
+    recent_source = await tool.fn()
+    assert recent_source.stale is True
+    assert recent_source.data.last_updated_at == "2023-11-14T22:13:20Z"  # type: ignore[union-attr]
+    assert recent_source.data.received_at == "2020-09-13T12:26:40Z"  # type: ignore[union-attr]
+    assert recent_source.observed_at not in {
+        recent_source.data.last_updated_at,  # type: ignore[union-attr]
+        recent_source.data.received_at,  # type: ignore[union-attr]
+    }
+    records["actual-state"] = StateRecord(
+        "actual-state",
+        {"last_update": 1, "entries": [point(0, 20.0)]},
+        Freshness.CURRENT,
+        None,
+    )
+    unknown_receipt = await tool.fn("actual")
+    assert unknown_receipt.ok is True
+    assert unknown_receipt.data.received_at is None  # type: ignore[union-attr]
+    assert "received_at" in unknown_receipt.data.model_dump()  # type: ignore[union-attr]
 
 
 def test_weather_field_metadata_keeps_missing_source_formats_explicit() -> None:
