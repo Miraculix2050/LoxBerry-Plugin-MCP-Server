@@ -39,7 +39,6 @@ from mcpserver.loxone.event_history import (
     EventHistoryCoverage,
     EventHistoryMonitor,
     EventHistoryStore,
-    EventHistoryStoreSummary,
     EventHistoryUnavailable,
 )
 from mcpserver.loxone.models import Control, Freshness, StateRecord
@@ -1717,8 +1716,13 @@ class LoxBerryOperateRuntime:
             raise
 
     async def list_event_history_sources(
-        self, access: StoredAccessToken
-    ) -> tuple[EventHistorySourceData, ...]:
+        self,
+        access: StoredAccessToken,
+        *,
+        cursor: str | None,
+        limit: int,
+        codec: _CursorCodec,
+    ) -> EventHistorySourcesData:
         config = self._config_store.load()
         if READ_SCOPE not in access.scopes or HISTORY_SCOPE not in access.scopes:
             raise PermissionError("Loxone history is required")
@@ -1742,16 +1746,20 @@ class LoxBerryOperateRuntime:
             raise ControlOperationError("temporarily_unavailable", "Operation is unavailable")
         try:
             async with self._loxone_runtime.history_call_slot(access):
-                summary = await asyncio.to_thread(
-                    self._event_history.store.snapshot,
+                return await _history_source_page(
+                    self._event_history.store,
                     config.event_history_sources,
-                    source_limit=None,
+                    None,
+                    codec,
+                    "loxberry_list_event_history_sources",
+                    access,
+                    cursor,
+                    limit,
                 )
         except RuntimeUnavailable as exc:
             raise ControlOperationError("temporarily_unavailable", str(exc)) from exc
         except EventHistoryUnavailable as exc:
             raise ControlOperationError("temporarily_unavailable", str(exc)) from exc
-        return _history_source_items(summary, config.event_history_sources)
 
     async def add_event_history_source(
         self, access: StoredAccessToken, control_uuid: str, state_uuid: str
@@ -1903,30 +1911,48 @@ class LoxBerryOperateRuntime:
 
 
 def _history_source_items(
-    summary: EventHistoryStoreSummary,
-    active_sources: tuple[tuple[str, str], ...],
-    visible_sources: set[tuple[str, str]] | None = None,
+    rows: tuple[tuple[str, str, bool, float | None], ...],
 ) -> tuple[EventHistorySourceData, ...]:
-    """Project one source inventory into a complete or caller-visible read view."""
-    active = set(active_sources)
+    """Use the same response projection for both authorized source views."""
     return tuple(
         EventHistorySourceData(
-            control_uuid=source.control_uuid,
-            state_uuid=source.state_uuid,
-            recording_status=(
-                "active" if (source.control_uuid, source.state_uuid) in active else "removed"
-            ),
+            control_uuid=control,
+            state_uuid=state,
+            recording_status="active" if active else "removed",
             recording_ended_at=(
                 None
-                if (source.control_uuid, source.state_uuid) in active
-                or source.recording_ended_at is None
-                else datetime.fromtimestamp(source.recording_ended_at, UTC)
-                .isoformat()
-                .replace("+00:00", "Z")
+                if active or ended_at is None
+                else datetime.fromtimestamp(ended_at, UTC).isoformat().replace("+00:00", "Z")
             ),
         )
-        for source in summary.sources
-        if visible_sources is None or (source.control_uuid, source.state_uuid) in visible_sources
+        for control, state, active, ended_at in rows
+    )
+
+
+async def _history_source_page(
+    store: EventHistoryStore,
+    active_sources: tuple[tuple[str, str], ...],
+    visible_sources: set[tuple[str, str]] | None,
+    codec: _CursorCodec,
+    tool_name: str,
+    access: StoredAccessToken,
+    cursor: str | None,
+    limit: int,
+) -> EventHistorySourcesData:
+    if not 1 <= limit <= MAX_PAGE_SIZE:
+        raise ValueError("limit must be between 1 and 100")
+    scope = codec.digest(f"{tool_name}\0{access.family_id}".encode())
+    offset = codec.decode(scope, cursor)
+    rows, next_offset = await asyncio.to_thread(
+        store.source_inventory_page,
+        active_sources,
+        offset=offset,
+        limit=limit,
+        visible_sources=visible_sources,
+    )
+    return EventHistorySourcesData(
+        sources=list(_history_source_items(rows)),
+        next_cursor=codec.encode(scope, next_offset) if next_offset is not None else None,
     )
 
 
@@ -1944,8 +1970,13 @@ class EventHistoryRuntime:
         self._store_path = store_path
 
     async def list_event_history_sources(
-        self, access: StoredAccessToken
-    ) -> tuple[EventHistorySourceData, ...]:
+        self,
+        access: StoredAccessToken,
+        *,
+        cursor: str | None,
+        limit: int,
+        codec: _CursorCodec,
+    ) -> EventHistorySourcesData:
         config = self._config_store.load()
         if READ_SCOPE not in access.scopes or HISTORY_SCOPE not in access.scopes:
             raise PermissionError("Loxone history is required")
@@ -1966,14 +1997,20 @@ class EventHistoryRuntime:
                     retention_days=config.event_history_retention_days,
                     maximum_mib=config.event_history_maximum_mib,
                 )
-                summary = await asyncio.to_thread(
-                    store.snapshot, config.event_history_sources, source_limit=None
+                return await _history_source_page(
+                    store,
+                    config.event_history_sources,
+                    visible,
+                    codec,
+                    "loxone_list_event_history_sources",
+                    access,
+                    cursor,
+                    limit,
                 )
         except RuntimeUnavailable as exc:
             raise ControlOperationError("temporarily_unavailable", str(exc)) from exc
         except EventHistoryUnavailable as exc:
             raise ControlOperationError("temporarily_unavailable", str(exc)) from exc
-        return _history_source_items(summary, config.event_history_sources, visible)
 
     async def page(
         self,
@@ -2080,25 +2117,6 @@ def _page(
     return {
         "items": selected,
         "next_cursor": codec.encode(scope, next_offset) if next_offset < len(items) else None,
-    }
-
-
-def _history_source_page(
-    codec: _CursorCodec,
-    tool_name: str,
-    access: StoredAccessToken,
-    sources: tuple[EventHistorySourceData, ...],
-    cursor: str | None,
-    limit: int,
-) -> dict[str, Any]:
-    inventory = json.dumps(
-        [source.model_dump(mode="json") for source in sources], separators=(",", ":")
-    )
-    scope = codec.digest(f"{tool_name}\0{access.family_id}\0{inventory}".encode())
-    page = _page(codec, scope, list(sources), cursor, limit)
-    return {
-        "sources": [source.model_dump() for source in page["items"]],
-        "next_cursor": page["next_cursor"],
     }
 
 
@@ -4899,12 +4917,12 @@ def register_event_history_tools(server: FastMCP, runtime: EventHistoryRuntime |
                     "temporarily_unavailable", "the service is not configured"
                 )
             access = _access()
-            sources = await runtime.list_event_history_sources(access)
+            page = await runtime.list_event_history_sources(
+                access, cursor=cursor, limit=limit, codec=cursors
+            )
             return _result(
                 EventHistorySourcesEnvelope,
-                _history_source_page(
-                    cursors, "loxone_list_event_history_sources", access, sources, cursor, limit
-                ),
+                page.model_dump(),
             )
         except PermissionError:
             _LOGGER.warning(
@@ -5448,22 +5466,17 @@ def register_loxberry_operate_tool(server: FastMCP, runtime: LoxBerryOperateRunt
     )
     async def list_event_history_sources(
         cursor: CursorArgument = None,
-        limit: LimitArgument = DEFAULT_PAGE_SIZE,
+        limit: LimitArgument = 100,
     ) -> EventHistorySourcesEnvelope:
         access: StoredAccessToken | None = None
         try:
             access = _access()
-            sources = await runtime.list_event_history_sources(access)
+            page = await runtime.list_event_history_sources(
+                access, cursor=cursor, limit=limit, codec=source_cursors
+            )
             return _result(
                 EventHistorySourcesEnvelope,
-                _history_source_page(
-                    source_cursors,
-                    "loxberry_list_event_history_sources",
-                    access,
-                    sources,
-                    cursor,
-                    limit,
-                ),
+                page.model_dump(),
             )
         except PermissionError:
             audit_source(access, "loxberry_list_event_history_sources", "permission_denied")

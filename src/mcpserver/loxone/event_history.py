@@ -609,6 +609,83 @@ class EventHistoryStore:
         except (OSError, sqlite3.Error) as exc:
             raise EventHistoryUnavailable("local event history is unavailable") from exc
 
+    def source_inventory_page(
+        self,
+        active_sources: tuple[tuple[str, str], ...],
+        *,
+        offset: int,
+        limit: int,
+        visible_sources: set[tuple[str, str]] | None = None,
+    ) -> tuple[tuple[tuple[str, str, bool, float | None], ...], int | None]:
+        """Page source identities without materializing per-source history summaries."""
+        if offset < 0 or not 1 <= limit <= 100:
+            raise ValueError("source page is invalid")
+        active = set(active_sources)
+        if not self.path.exists():
+            keys = sorted(active)
+            if visible_sources is not None:
+                keys = [key for key in keys if key in visible_sources]
+            selected = keys[offset : offset + limit]
+            next_offset = offset + len(selected)
+            return (
+                tuple((control, state, True, None) for control, state in selected),
+                next_offset if next_offset < len(keys) else None,
+            )
+
+        active_values = ", ".join("(?, ?)" for _ in active_sources)
+        active_query = (
+            f"VALUES {active_values}"
+            if active_sources
+            else "SELECT NULL AS control_uuid, NULL AS state_uuid WHERE 0"
+        )
+        query = (
+            f"WITH active(control_uuid, state_uuid) AS ({active_query}), "
+            "source_keys AS ("
+            "SELECT control_uuid, state_uuid FROM active "
+            "UNION SELECT control_uuid, state_uuid FROM source_totals "
+            "UNION SELECT control_uuid, state_uuid FROM coverage "
+            "UNION SELECT control_uuid, state_uuid FROM removed_sources) "
+            "SELECT source_keys.control_uuid, source_keys.state_uuid, "
+            "removed_sources.removed_at, active.control_uuid IS NOT NULL "
+            "FROM source_keys "
+            "LEFT JOIN removed_sources USING (control_uuid, state_uuid) "
+            "LEFT JOIN active USING (control_uuid, state_uuid) "
+            "ORDER BY active.control_uuid IS NULL, "
+            "-COALESCE(removed_sources.removed_at, 0), "
+            "source_keys.control_uuid, source_keys.state_uuid LIMIT ? OFFSET ?"
+        )
+        parameters = tuple(part for source in active_sources for part in source)
+        items: list[tuple[str, str, bool, float | None]] = []
+        scan_offset = offset
+        try:
+            with closing(
+                sqlite3.connect(self.path.as_uri() + "?mode=ro", uri=True, timeout=2)
+            ) as db:
+                db.execute("BEGIN")
+                version = db.execute("PRAGMA user_version").fetchone()[0]
+                if version in {3, 4}:
+                    db.execute("ROLLBACK")
+                    self._migrate_snapshot()
+                    db.execute("BEGIN")
+                    version = db.execute("PRAGMA user_version").fetchone()[0]
+                if version != _SCHEMA_VERSION:
+                    raise EventHistoryUnavailable("local event history needs migration")
+                while True:
+                    rows = db.execute(query, (*parameters, 256, scan_offset)).fetchall()
+                    if not rows:
+                        return tuple(items), None
+                    for index, (control, state, removed_at, is_active) in enumerate(rows):
+                        if visible_sources is not None and (control, state) not in visible_sources:
+                            continue
+                        if len(items) == limit:
+                            return tuple(items), scan_offset + index
+                        items.append((str(control), str(state), bool(is_active), removed_at))
+                    scan_offset += len(rows)
+                    if len(rows) < 256:
+                        return tuple(items), None
+        except (OSError, sqlite3.Error) as exc:
+            raise EventHistoryUnavailable("local event history is unavailable") from exc
+
     @staticmethod
     def _used_database_bytes(connection: sqlite3.Connection) -> int:
         page_count = connection.execute("PRAGMA page_count").fetchone()[0]

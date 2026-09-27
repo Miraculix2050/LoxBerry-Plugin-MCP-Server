@@ -1586,6 +1586,64 @@ async def test_event_history_source_cursor_pages_include_sources_beyond_128(
     assert second.ok and len(second.data.sources) == 30
     assert second.data.next_cursor is None
     assert len({source.control_uuid for source in first.data.sources + second.data.sources}) == 130
+    invalid = await server._tool_manager.call_tool(
+        "loxberry_list_event_history_sources", {"cursor": first.data.next_cursor + "x"}
+    )
+    assert invalid.data.error == "invalid_input"
+
+
+@pytest.mark.asyncio
+async def test_event_history_source_default_page_keeps_all_64_active_sources(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sources = tuple(
+        (
+            f"00000000-0000-0000-{index:016x}",
+            f"00000000-0000-0000-{index + 64:016x}",
+        )
+        for index in range(64)
+    )
+    config_store = AtomicConfigStore((tmp_path / "config.json").resolve())
+    binding = "b" * 64
+    config_store.save(
+        PluginConfig(
+            loxone_history_enabled=True,
+            event_history_enabled=True,
+            event_history_sources=sources,
+            loxberry_read_enabled=True,
+            loxberry_read_bindings=(binding,),
+        )
+    )
+
+    class AuthStore:
+        def pseudonym(self, *_parts: str) -> str:
+            return binding
+
+    class Runtime:
+        @asynccontextmanager
+        async def history_call_slot(self, _access: StoredAccessToken):
+            yield
+
+    store = EventHistoryStore(
+        (tmp_path / "history.sqlite3").resolve(), retention_days=90, maximum_mib=16
+    )
+    runtime = LoxBerryOperateRuntime(
+        object(),
+        config_store,
+        AuthStore(),
+        event_history=SimpleNamespace(store=store),
+        loxone_runtime=Runtime(),
+    )
+    server = FastMCP("event-history-default-page")
+    register_loxberry_operate_tool(server, runtime)
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: _loxberry_access(READ_SCOPE, HISTORY_SCOPE, LOXBERRY_READ_SCOPE),
+    )
+    result = await server._tool_manager.call_tool("loxberry_list_event_history_sources", {})
+    assert result.ok and len(result.data.sources) == 64
+    assert result.data.next_cursor is None
 
 
 @pytest.mark.asyncio

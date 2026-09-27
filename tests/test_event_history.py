@@ -43,6 +43,26 @@ def test_store_records_typed_transitions_and_pages_them(tmp_path):
     )
 
 
+def test_source_inventory_page_filters_before_limiting_across_database_batches(tmp_path):
+    store = EventHistoryStore(
+        (tmp_path / "event-history.sqlite3").resolve(), retention_days=90, maximum_mib=16
+    )
+    store.initialize()
+    now = time.time()
+    for index in range(260):
+        control, state = f"control-{index:03}", f"state-{index:03}"
+        store.record_transition(control, state, observed_at=now, old_value=0, new_value=1)
+        store.mark_removed(control, state, removed_at=None)
+    visible = {("control-257", "state-257"), ("control-259", "state-259")}
+
+    first, cursor = store.source_inventory_page((), offset=0, limit=1, visible_sources=visible)
+    second, end = store.source_inventory_page((), offset=cursor, limit=1, visible_sources=visible)
+
+    assert first == (("control-257", "state-257", False, None),)
+    assert second == (("control-259", "state-259", False, None),)
+    assert end is None
+
+
 def test_v4_logical_bytes_migrate_in_bounded_batches_with_concurrent_writes(tmp_path):
     path = (tmp_path / "history.sqlite3").resolve()
     store = EventHistoryStore(path, retention_days=90, maximum_mib=16)
