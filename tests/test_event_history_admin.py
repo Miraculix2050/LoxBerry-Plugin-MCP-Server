@@ -197,6 +197,64 @@ def test_chart_selection_and_range_are_bounded(tmp_path, monkeypatch):
         event_history_admin.chart_query({**selected, "start": 0, "end": 91 * 86400, "after_id": 0})
 
 
+def test_chart_batch_reuses_one_config_visibility_and_store(tmp_path, monkeypatch):
+    config_store, history = _setup(tmp_path, monkeypatch, sources=(SOURCE, HIDDEN))
+    history.initialize()
+    now = time.time()
+    template = event_history_admin._selector_projection(None)["controls"][0]
+    hidden = {**template, "uuid": HIDDEN[0], "states": [["active", HIDDEN[1]]]}
+    document = {
+        "generation": "b" * 24,
+        "verified_at": now,
+        "controls": [template, hidden],
+        "control_index": {SOURCE[0]: 0, HIDDEN[0]: 1},
+    }
+    calls = {"config": 0, "visibility": 0, "store": 0}
+    original_load = config_store.load
+    original_store = event_history_admin._store
+
+    def load():
+        calls["config"] += 1
+        return original_load()
+
+    def read():
+        calls["visibility"] += 1
+        return document
+
+    def store(config):
+        calls["store"] += 1
+        return original_store(config)
+
+    monkeypatch.setattr(config_store, "load", load)
+    monkeypatch.setattr(
+        event_history_admin, "_selector_cache", lambda _config: SimpleNamespace(read=read)
+    )
+    monkeypatch.setattr(event_history_admin, "_store", store)
+    queries = [
+        {
+            "control_uuid": source[0],
+            "state_uuid": source[1],
+            "generation": document["generation"],
+            "start": now - 60,
+            "end": now,
+            "after_id": 0,
+        }
+        for source in (SOURCE, HIDDEN)
+    ]
+    result = event_history_admin.chart_query({"queries": queries})
+    assert len(result["results"]) == 2
+    assert calls == {"config": 1, "visibility": 1, "store": 1}
+    queries[1]["generation"] = "c" * 24
+    with pytest.raises(admin.AdminError, match="refreshed"):
+        event_history_admin.chart_query({"queries": queries})
+    queries[1]["generation"] = document["generation"]
+    document["controls"].pop()
+    before_store = calls["store"]
+    with pytest.raises(admin.AdminError, match="not visible"):
+        event_history_admin.chart_query({"queries": queries})
+    assert calls["store"] == before_store
+
+
 def test_quick_summary_avoids_miniserver_discovery(tmp_path, monkeypatch):
     _, history = _setup(tmp_path, monkeypatch, sources=(SOURCE,))
     history.initialize()
