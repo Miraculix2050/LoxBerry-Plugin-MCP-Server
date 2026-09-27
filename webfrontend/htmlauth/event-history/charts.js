@@ -81,9 +81,15 @@
     if (cursor < end) missing.push({start: cursor, end});
     return missing.filter((item) => item.start < item.end);
   };
+  const loadedForRange = (state, start, end) => [
+    ...state.exact,
+    ...state.sampled.filter((item) => item.start >= start && item.end <= end),
+  ].sort((a, b) => a.start - b.start);
   const resetSource = (state) => {
     state.events.clear();
     state.loaded = [];
+    state.exact = [];
+    state.sampled = [];
     state.cursor = 0;
     state.generation = null;
     state.reduced = false;
@@ -94,12 +100,18 @@
     state.focus.textContent = '';
   };
   const limitCache = (state) => {
-    if (state.loaded.length <= 8 && state.coverage.length <= 128
+    if (state.loaded.length <= 8 && state.exact.length <= 8
+      && state.sampled.length <= 8 && state.coverage.length <= 128
       && (!state.loaded.length
         || state.loaded.at(-1).end - state.loaded[0].start <= maxRange * 2)) return;
     state.loaded = state.loaded.map((item) => ({
       start: Math.max(item.start, range.start), end: Math.min(item.end, range.end),
     })).filter((item) => item.start < item.end);
+    state.exact = state.exact.map((item) => ({
+      start: Math.max(item.start, range.start), end: Math.min(item.end, range.end),
+    })).filter((item) => item.start < item.end);
+    state.sampled = state.sampled.filter((item) => item.start < range.end
+      && item.end > range.start).slice(-8);
     for (const [id, event] of state.events) {
       if (event.observed_at < range.start || event.observed_at > range.end) {
         state.events.delete(id);
@@ -140,7 +152,8 @@
     }
   };
   const render = (state) => {
-    const events = [...state.events.values()].sort((a, b) =>
+    const events = [...state.events.values()].filter((event) =>
+      event.observed_at >= range.start && event.observed_at <= range.end).sort((a, b) =>
       a.observed_at - b.observed_at || a.id - b.id);
     state.notice.textContent = state.reduced || events.some((event) => decimalInteger(event.new_value))
       ? label('chartReduced')
@@ -276,8 +289,8 @@
       coverageDetails.append(coverageSummary, coverageList);
       panel.append(title, context, notice, boundaries, coverageDetails, plotHost, focus, details);
       panels.append(panel);
-      const state = {source, title, context, events: new Map(), loaded: [], cursor: 0,
-        generation: null,
+      const state = {source, title, context, events: new Map(), loaded: [], exact: [],
+        sampled: [], cursor: 0, generation: null,
         reduced: false, coverage: [], plot: null, plotKind: null, refs: [], plotHost,
         focus, notice, boundaries, coverageList, tableBody, valueDetails: details};
       plotHost.addEventListener('keydown', (event) => {
@@ -376,6 +389,8 @@
           next.push(job);
         } else if (job.initial) {
           state.loaded = mergeInterval(state.loaded, job.start, job.end);
+          if (result.reduced) state.sampled.push({start: job.start, end: job.end});
+          else state.exact = mergeInterval(state.exact, job.start, job.end);
         }
         if (renderNeeded) render(state);
         limitCache(state);
@@ -388,7 +403,8 @@
     const initiallyEmpty = sourceStates.every((state) => state.loaded.length === 0);
     while (true) {
       const jobs = sourceStates.flatMap((state) => {
-        const missing = missingIntervals(state.loaded, range.start, range.end);
+        const missing = missingIntervals(loadedForRange(state, range.start, range.end),
+          range.start, range.end);
         return missing.length ? [{state, ...missing[0], afterId: 0, initial: true}] : [];
       });
       if (!jobs.length) break;
@@ -417,7 +433,7 @@
           }
         }
         if (removed) render(state);
-        else if (shift > 0) renderTextEvents(state);
+        else if (shift > 0) render(state);
         if (shift > 0) {
           state.focus.textContent = '';
           state.focusIndex = null;
@@ -509,11 +525,12 @@
       state.plot?.setScale('x', {min: start, max: end});
       state.focus.textContent = '';
       state.focusIndex = null;
-      renderTextEvents(state);
+      render(state);
     }
     applyingScale = false;
     if (busy) rerun = true;
-    else if (sourceStates.some((state) => missingIntervals(state.loaded, start, end).length)) {
+    else if (sourceStates.some((state) =>
+      missingIntervals(loadedForRange(state, start, end), start, end).length)) {
       void load(false, false);
     }
   };
