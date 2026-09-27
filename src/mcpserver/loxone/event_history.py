@@ -859,28 +859,37 @@ class EventHistoryStore:
         """Keep exact boundary and extreme events with bounded Python memory."""
 
         buckets: dict[int, dict[str, tuple[int, float, str, str] | None]] = {}
-        cursor = db.execute(
-            "SELECT id, observed_at, old_value, new_value FROM events "
-            "WHERE control_uuid = ? AND state_uuid = ? AND observed_at >= ? "
-            "AND observed_at <= ? ORDER BY observed_at, id",
-            (control_uuid, state_uuid, start, end),
-        )
         span = end - start
-        for row in cursor:
-            bucket = min(63, int((row[1] - start) * 64 / span))
-            found = buckets.setdefault(bucket, {})
-            found.setdefault("first", row)
-            found["last"] = row
-            value = json.loads(row[3])
-            if isinstance(value, bool):
-                found.setdefault("true" if value else "false", row)
-            elif isinstance(value, int | float) and math.isfinite(value):
-                minimum = found.get("min")
-                maximum = found.get("max")
-                if minimum is None or value < json.loads(minimum[3]):
-                    found["min"] = row
-                if maximum is None or value > json.loads(maximum[3]):
-                    found["max"] = row
+        for bucket in range(64):
+            lower = start + span * bucket / 64
+            upper = end if bucket == 63 else start + span * (bucket + 1) / 64
+            comparison = "<=" if bucket == 63 else "<"
+            for direction in ("ASC", "DESC"):
+                # At most 500 rows per bucket are decoded, including both edges.
+                cursor = db.execute(
+                    "SELECT id, observed_at, old_value, new_value FROM events "
+                    "INDEXED BY events_source_time "
+                    "WHERE control_uuid = ? AND state_uuid = ? AND observed_at >= ? "
+                    f"AND observed_at {comparison} ? "
+                    f"ORDER BY observed_at {direction}, id {direction} LIMIT 250",
+                    (control_uuid, state_uuid, lower, upper),
+                )
+                for row in cursor:
+                    found = buckets.setdefault(bucket, {})
+                    if direction == "ASC":
+                        found.setdefault("first", row)
+                    else:
+                        found.setdefault("last", row)
+                    value = json.loads(row[3])
+                    if isinstance(value, bool):
+                        found.setdefault("true" if value else "false", row)
+                    elif isinstance(value, int | float) and math.isfinite(value):
+                        minimum = found.get("min")
+                        maximum = found.get("max")
+                        if minimum is None or value < json.loads(minimum[3]):
+                            found["min"] = row
+                        if maximum is None or value > json.loads(maximum[3]):
+                            found["max"] = row
         chosen = {row[0]: row for bucket in buckets.values() for row in bucket.values() if row}
         return sorted(chosen.values(), key=lambda row: (row[1], row[0]))
 

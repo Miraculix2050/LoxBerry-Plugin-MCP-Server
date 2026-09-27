@@ -18,6 +18,7 @@
   } catch { /* Invalid selections show a safe empty state. */ }
   let selection = null;
   let range = {start: Date.now() / 1000 - 86400, end: Date.now() / 1000};
+  let rolling = true;
   let sourceStates = [];
   let sequence = 0;
   let busy = false;
@@ -72,7 +73,8 @@
         const coverage = (state.coverage || []).findIndex((item) =>
           item.started_at <= event.observed_at
           && (item.ended_at == null || item.ended_at >= event.observed_at));
-        if (priorCoverage !== null && (state.coverageTruncated || priorCoverage !== coverage
+        if (priorCoverage !== null && (state.coverageTruncated || coverage < 0
+          || priorCoverage < 0 || priorCoverage !== coverage
           || (state.reduced && x.length && event.observed_at - x[x.length - 1]
             > (range.end - range.start) / 64))) {
           x.push(event.observed_at - 0.000001);
@@ -245,6 +247,28 @@
   };
   const load = async (fresh = false) => {
     if (busy || document.hidden || !requested.length) return;
+    if (rolling) {
+      const end = Date.now() / 1000;
+      const shift = Math.max(0, end - range.end);
+      range = {start: range.start + shift, end: range.end + shift};
+      for (const state of sourceStates) {
+        let removed = false;
+        for (const [id, event] of state.events) {
+          if (event.observed_at < range.start) {
+            state.events.delete(id);
+            removed = true;
+          }
+        }
+        if (removed) render(state);
+      }
+      if (shift > 0) {
+        applyingScale = true;
+        for (const state of sourceStates) {
+          state.plot?.setScale('x', {min: range.start, max: range.end});
+        }
+        applyingScale = false;
+      }
+    }
     busy = true;
     const token = ++sequence;
     if (fresh || !selection) setStatus(label('loading'));
@@ -270,7 +294,7 @@
       }
     } finally { busy = false; }
   };
-  const replaceRange = (start, end) => {
+  const replaceRange = (start, end, follow = false) => {
     const now = Date.now() / 1000;
     if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0
       || start >= end || end - start > maxRange || end > now + 60) {
@@ -278,6 +302,7 @@
       return;
     }
     range = {start, end};
+    rolling = follow;
     for (const state of sourceStates) {
       state.events.clear(); state.cursor = 0; state.generation = null; state.reduced = false;
       render(state);
@@ -288,12 +313,13 @@
     const custom = event.target.value === 'custom';
     for (const id of ['chart-from', 'chart-to', 'chart-apply']) $(id).disabled = !custom;
     if (custom) {
+      rolling = false;
       $('chart-from').value = localInput(range.start);
       $('chart-to').value = localInput(range.end);
     }
     if (!custom) {
       const end = Date.now() / 1000;
-      replaceRange(end - Number(event.target.value), end);
+      replaceRange(end - Number(event.target.value), end, true);
     }
   });
   $('chart-apply').addEventListener('click', () => {

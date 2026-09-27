@@ -11,7 +11,7 @@ const script = fs.readFileSync(path.join(__dirname,
 const html = `<main class="mcp-history-charts" data-loading="Loading"
   data-chart-denied="Denied" data-chart-error="Failed" data-chart-empty="Empty"
   data-chart-reduced="Reduced" data-chart-value="Value" data-chart-coverage="Coverage">
-  <select id="chart-range"><option value="86400">Day</option></select>
+  <select id="chart-range"><option value="86400">Day</option><option value="custom">Custom</option></select>
   <input id="chart-from"><input id="chart-to"><button id="chart-apply"></button>
   <button id="chart-previous"></button><button id="chart-next"></button>
   <button id="chart-zoom-in"></button>
@@ -65,10 +65,30 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
   assert.equal(window.document.querySelectorAll('#chart-panels canvas').length, 1);
   assert.match(window.document.querySelector('#chart-panels').textContent, /Control/);
 
-  hidden = true;
+  const queries = () => calls.filter(({action}) => action === 'event_history_chart_query');
+  const initialRange = JSON.parse(queries()[0].fields.queries)[0];
+  const originalNow = window.Date.now;
+  window.Date.now = () => originalNow() + 60000;
   tick();
   await flush();
-  assert.equal(calls.length, 2);
+  const advancedRange = JSON.parse(queries()[1].fields.queries)[0];
+  assert.ok(advancedRange.end > initialRange.end + 59);
+  assert.ok(advancedRange.start > initialRange.start + 59);
+  const rangeSelect = window.document.querySelector('#chart-range');
+  rangeSelect.value = 'custom';
+  rangeSelect.dispatchEvent(new window.Event('change'));
+  window.Date.now = () => originalNow() + 120000;
+  tick();
+  await flush();
+  const fixedRange = JSON.parse(queries()[2].fields.queries)[0];
+  assert.equal(fixedRange.end, advancedRange.end);
+  window.Date.now = originalNow;
+
+  hidden = true;
+  const beforeHidden = calls.length;
+  tick();
+  await flush();
+  assert.equal(calls.length, beforeHidden);
   hidden = false;
   denied = true;
   window.document.querySelector('#chart-refresh').click();
