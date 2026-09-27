@@ -333,7 +333,14 @@ def _dom_runtime_issues() -> tuple[str, ...]:
     if int(match[1]) == 25:
         return ("Node.js 25 is unsupported by the pinned Explorer DOM dependency",)
     dependency = subprocess.run(
-        (node, "-e", "require.resolve('jsdom')"),
+        (
+            node,
+            "-e",
+            "const pkg = require('./package.json'); "
+            "const installed = require('jsdom/package.json'); "
+            "require('jsdom'); "
+            "if (installed.version !== pkg.devDependencies.jsdom) process.exit(1);",
+        ),
         check=False,
         cwd=ROOT,
         capture_output=True,
