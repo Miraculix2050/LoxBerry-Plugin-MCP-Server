@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Release process-local Tool Explorer session locks after the last active or
+  waiting request, and prevent concurrent refresh from restoring a removed
+  encrypted session.
+
 - Add deterministic DOM and mocked OAuth/MCP flow tests for the Tool Explorer,
   backed by a development-only pinned jsdom dependency. CI installs the test
   dependency without changing shipped JavaScript or plugin assets.

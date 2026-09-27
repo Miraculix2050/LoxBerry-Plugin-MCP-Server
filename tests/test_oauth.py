@@ -21,7 +21,7 @@ from starlette.testclient import TestClient
 
 from mcpserver.auth import scopes
 from mcpserver.auth import web as auth_web
-from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore
+from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore, ExplorerSession
 from mcpserver.auth.provider import (
     CONTROL_SCOPE,
     EXPLORER_CLIENT_NAME,
@@ -771,7 +771,7 @@ def _web_app(
         resource=RESOURCE,
         loxone_store=explorer_store,
     )
-    return Starlette(
+    app = Starlette(
         routes=[
             Route("/register", web.register, methods=["POST"]),
             Route("/authorize", web.authorize, methods=["GET", "POST"]),
@@ -781,6 +781,8 @@ def _web_app(
             Route("/metadata", web.authorization_metadata, methods=["GET"]),
         ]
     )
+    app.state.oauth_web = web
+    return app
 
 
 def test_explorer_session_cookie_reuses_one_oauth_family_and_logout_revokes_it(
@@ -832,6 +834,199 @@ def test_explorer_session_cookie_reuses_one_oauth_family_and_logout_revokes_it(
     assert reused.json()["access_token"] == complete.json()["access_token"]
     assert logout.status_code == 204
     assert next(iter(provider.store.snapshot()["families"].values()))["revoked"] is True
+
+
+def test_explorer_locks_do_not_accumulate_after_repeated_logout(tmp_path: Path) -> None:
+    provider = _provider(tmp_path)
+    asyncio.run(
+        provider.register_client(
+            _client_info(
+                "explorer-client", client_name=EXPLORER_CLIENT_NAME, redirect_uri=EXPLORER_REDIRECT
+            )
+        )
+    )
+    key = tmp_path / "install.key"
+    key.write_bytes(b"k" * 32)
+    encrypted = EncryptedLoxoneTokenStore((tmp_path / "tokens.json").resolve(), key.resolve())
+    app = _web_app(provider, encrypted)
+    headers = {"Origin": "https://public.example"}
+    with TestClient(app, base_url="https://public.example") as browser:
+        for _ in range(3):
+            code = provider.issue_authorization_code(
+                client_id="explorer-client",
+                redirect_uri=EXPLORER_REDIRECT,
+                code_challenge=CHALLENGE,
+                resource=RESOURCE,
+                identity_id="identity",
+                miniserver_id="miniserver",
+            )
+            complete = browser.post(
+                "/explorer-session",
+                headers=headers,
+                json={
+                    "action": "complete",
+                    "client_id": "explorer-client",
+                    "code": code,
+                    "redirect_uri": EXPLORER_REDIRECT,
+                    "code_verifier": VERIFIER,
+                    "resource": RESOURCE,
+                },
+            )
+            assert complete.status_code == 200
+            session_headers = {
+                **headers,
+                "Cookie": complete.headers["set-cookie"].split(";", 1)[0],
+            }
+            assert (
+                browser.post(
+                    "/explorer-session", headers=session_headers, json={"action": "access"}
+                ).status_code
+                == 200
+            )
+            assert (
+                browser.post(
+                    "/explorer-session", headers=session_headers, json={"action": "logout"}
+                ).status_code
+                == 204
+            )
+            assert app.state.oauth_web._explorer_locks == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("interferer", ["access", "logout", "revoke", "cancel"])
+async def test_explorer_refresh_keeps_one_lock_through_concurrent_teardown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, interferer: str
+) -> None:
+    clock = Clock()
+    provider = _provider(tmp_path, clock)
+    await provider.register_client(
+        _client_info(
+            "explorer-client", client_name=EXPLORER_CLIENT_NAME, redirect_uri=EXPLORER_REDIRECT
+        )
+    )
+    client = await provider.get_client("explorer-client")
+    assert client is not None
+    code = provider.issue_authorization_code(
+        client_id="explorer-client",
+        redirect_uri=EXPLORER_REDIRECT,
+        code_challenge=CHALLENGE,
+        resource=RESOURCE,
+        identity_id="identity",
+        miniserver_id="miniserver",
+    )
+    authorization = await provider.load_authorization_code(client, code)
+    assert authorization is not None
+    token = await provider.exchange_authorization_code(client, authorization)
+    key = tmp_path / "install.key"
+    key.write_bytes(b"k" * 32)
+    encrypted = EncryptedLoxoneTokenStore((tmp_path / "tokens.json").resolve(), key.resolve())
+    encrypted.put_explorer_session(
+        ExplorerSession(
+            "browser-session",
+            authorization.family_id,
+            "explorer-client",
+            RESOURCE,
+            token.scope or SCOPE,
+            token.access_token or "",
+            clock.value + 1,
+            token.refresh_token or "",
+            clock.value + EXPLORER_REFRESH_FAMILY_TTL,
+        )
+    )
+    app = _web_app(provider, encrypted)
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    original_exchange = provider.exchange_refresh_token
+    exchanges = 0
+
+    async def delayed_exchange(
+        client: OAuthClientInformationFull, refresh: Any, scopes: list[str]
+    ) -> Any:
+        nonlocal exchanges
+        exchanges += 1
+        entered.set()
+        await release.wait()
+        return await original_exchange(client, refresh, scopes)
+
+    monkeypatch.setattr(provider, "exchange_refresh_token", delayed_exchange)
+    headers = {"Origin": "https://public.example", "Cookie": "mcp_explorer_session=browser-session"}
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="https://public.example") as browser:
+        first = asyncio.create_task(
+            browser.post("/explorer-session", headers=headers, json={"action": "access"})
+        )
+        await asyncio.wait_for(entered.wait(), timeout=2)
+        second = None
+        if interferer != "revoke":
+            second = asyncio.create_task(
+                browser.post(
+                    "/explorer-session",
+                    headers=headers,
+                    json={"action": "logout" if interferer == "logout" else "access"},
+                )
+            )
+            for _ in range(100):
+                if app.state.oauth_web._explorer_locks["browser-session"].users == 2:
+                    break
+                await asyncio.sleep(0)
+            assert app.state.oauth_web._explorer_locks["browser-session"].users == 2
+        if interferer == "cancel":
+            assert second is not None
+            second.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await second
+            assert app.state.oauth_web._explorer_locks["browser-session"].users == 1
+        if interferer == "revoke":
+            encrypted.delete_explorer_family(authorization.family_id)
+        release.set()
+        response = await first
+        if interferer == "revoke":
+            assert response.status_code == 401
+        else:
+            assert response.status_code == 200
+        if interferer == "access":
+            assert second is not None
+            assert (await second).status_code == 200
+            assert exchanges == 1
+        elif interferer == "logout":
+            assert second is not None
+            assert (await second).status_code == 204
+            assert encrypted.get_explorer_session("browser-session") is None
+        assert app.state.oauth_web._explorer_locks == {}
+
+
+@pytest.mark.asyncio
+async def test_expired_explorer_session_removes_store_record_and_lock(tmp_path: Path) -> None:
+    clock = Clock()
+    provider = _provider(tmp_path, clock)
+    key = tmp_path / "install.key"
+    key.write_bytes(b"k" * 32)
+    encrypted = EncryptedLoxoneTokenStore((tmp_path / "tokens.json").resolve(), key.resolve())
+    encrypted.put_explorer_session(
+        ExplorerSession(
+            "expired",
+            "family",
+            "client",
+            RESOURCE,
+            SCOPE,
+            "access-secret",
+            clock.value - 2,
+            "refresh-secret",
+            clock.value - 1,
+        )
+    )
+    app = _web_app(provider, encrypted)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="https://public.example"
+    ) as browser:
+        response = await browser.post(
+            "/explorer-session",
+            headers={"Origin": "https://public.example", "Cookie": "mcp_explorer_session=expired"},
+            json={"action": "access"},
+        )
+    assert response.status_code == 401
+    assert encrypted.get_explorer_session("expired") is None
+    assert app.state.oauth_web._explorer_locks == {}
 
 
 def test_explorer_session_rejects_cross_origin_requests(tmp_path: Path) -> None:
