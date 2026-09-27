@@ -19,6 +19,10 @@ extracted from the matching version heading.
 - Bind weather forecast cursors to the source update time and bounded forecast
   contents. A changed forecast rejects continuation with guidance to restart at
   page one; cursors issued before this change may also require a restart.
+- Model `EIBextsensor` with validated `:0` and `:1` KNX address variants and
+  `EibAddrPulse` fallback. Preserve the address source field and distinguish
+  variants in search, trace, diagnostics, and KNX analysis without inferring
+  physical edge behavior.
 
 - Name the local event-history query `loxone_get_event_history`.
 

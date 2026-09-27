@@ -57,8 +57,9 @@ For confirmed KNX/EIB objects, use the optional `knx` metadata to distinguish
 bus lines, endpoints, and KNX logic blocks. `bus_to_loxone` and
 `loxone_to_bus` describe bus data flow, not a physical sensor or actuator role.
 Use a canonical group address only when present; equal addresses do not prove a
-program path. Find and trace expose only compact KNX metadata; use describe for
-the original address and `EIBType`. Treat `EIBType` as an unresolved source
+program path. Find and trace expose compact KNX metadata including the original
+address, its source field, and any `EIBextsensor` edge variant. Use describe for
+address segments and `EIBType`. Treat `EIBType` as an unresolved source
 code, not as a guessed DPT or EIS meaning.
 Describe can contain several `usage_observations` only where exact reviewed
 block/connector rules prove them; they are not a global meaning of the group
@@ -66,7 +67,7 @@ address. Trace keeps raw wiring in `edges` and reports derived internal evidence
 separately in `semantic_edges`. Use `technology_paths` only as static
 reachability evidence, check `semantic_truncated`, and never present a path as
 proof of a bus telegram or a historical cause.
-Use `loxone_analyze_project` version 3 for a bounded installation-level KNX
+Use `loxone_analyze_project` version 4 for a bounded installation-level KNX
 review before retrieving individual traces. It can add source-name patterns,
 exact UUID-mapped runtime context, and local peer or graph outliers to address,
 datatype, usage, path, and connection evidence. Treat all findings as

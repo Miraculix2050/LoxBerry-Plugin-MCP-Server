@@ -42,10 +42,17 @@ references stay unresolved. No Miniserver identity is inferred from ZIP filename
 ## KNX/EIB semantic projection
 
 The worker classifies only confirmed exact project types: `EIBline`, `EIBsensor`,
-`EIBactor`, `EIBPush`, `EibDimmer`, and `EIBJalousie`. `EIBsensor` is a
-`bus_to_loxone` endpoint and `EIBactor` a `loxone_to_bus` endpoint. This records
+`EIBextsensor`, `EIBactor`, `EIBPush`, `EibDimmer`, and `EIBJalousie`. `EIBsensor`
+and `EIBextsensor` are `bus_to_loxone` endpoints; `EIBactor` is a `loxone_to_bus`
+endpoint. This records
 the bus data-flow direction, never a physical device role. Group addresses are
 kept verbatim and normalized only for validated two- or three-level forms.
+For `EIBextsensor`, validated `:0` and `:1` suffixes retain their exact original
+value and an `edge` variant distinct from the canonical base address. `EibAddr`
+is used when present; `EibAddrPulse` is used only when `EibAddr` is absent. The
+address projection names the field actually used. Other suffixes are invalid;
+the suffix does not establish rising or falling edge semantics. Exact variant
+search matches only that variant, while a canonical-base search may return both.
 `EIBType` is retained as an unresolved source code; the model does not infer an
 EIS or DPT meaning. Unknown attributes remain internal and are never a raw MCP
 projection. Equal group addresses do not create graph edges.
@@ -74,14 +81,16 @@ reachability, not a physical device role, bus telegram, or historical cause.
 
 ## KNX project analysis
 
-`loxone_analyze_project` version 3 returns bounded, deterministic project-local
+`loxone_analyze_project` version 4 returns bounded, deterministic project-local
 evidence; it never grades a KNX installation. It aggregates canonical-address
 and source-name patterns, conflicting raw `EIBType` values on one group address,
 reviewed signal-use observations, exact runtime-mapping context, local peer and
 graph outliers, static KNX/Loxone paths, and endpoints without an observed
 project relationship. A runtime name, room, category, or control type is used
 only after an exact UUID mapping and is never used to identify a project node.
-Raw `EIBType` remains an unknown-system source code, so the analysis never
+Address-specific datatype and signal-use comparisons keep edge variants separate;
+address-prefix patterns use the canonical base. Raw `EIBType` remains an
+unknown-system source code, so the analysis never
 claims DPT compatibility. It reports fixed limitation codes whenever normalized
 DPTs, semantic domains, reviewed usage, or exact runtime mappings are missing.
 ETS data, bus traffic and physical-device use are outside this projection.

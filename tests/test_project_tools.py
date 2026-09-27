@@ -27,6 +27,40 @@ from mcpserver.tools import (
 )
 
 
+def test_knx_edge_variant_survives_public_project_schemas():
+    address = {
+        "original": "6/2/27:1",
+        "canonical": "6/2/27",
+        "format": "three_level",
+        "segments": [6, 2, 27],
+        "source_field": "EibAddrPulse",
+        "variant": {"kind": "edge", "value": "1"},
+    }
+    detail = tools_module.ProjectKnxGroupAddressData.model_validate(address)
+    summary = tools_module.ProjectKnxSummaryData.model_validate(
+        {
+            "object_kind": "endpoint",
+            "flow_direction": "bus_to_loxone",
+            "source_type": "EIBextsensor",
+            "group_address": address,
+        }
+    )
+    assert detail.model_dump()["source_field"] == "EibAddrPulse"
+    assert summary.model_dump()["group_address"]["variant"] == {"kind": "edge", "value": "1"}
+    finding = tools_module.ProjectAnalysisFindingData.model_validate(
+        {
+            "finding_id": "knx:fixture",
+            "analysis": "project_connectivity",
+            "finding_type": "no_project_signal_relationship",
+            "group_address": "6/2/27",
+            "address_variant": "1",
+            "affected_project_node_ids": ["p:1"],
+            "affected_omitted": 0,
+        }
+    )
+    assert finding.address_variant == "1"
+
+
 class Query:
     view = SimpleNamespace(
         marker="revision",

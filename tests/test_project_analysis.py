@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -46,6 +47,23 @@ def test_analysis_reports_project_local_datatype_and_usage_facts_deterministical
     assert conflict["group_address"] == "1/2/3"
     assert conflict["raw_datatypes"] == ["1", "5"]
     assert all("incompatible" not in str(item) for item in first["findings"])
+
+
+def test_edge_variants_stay_separate_in_analysis_and_connectivity():
+    view = _view(Path("tests/fixtures/project/knx-edge-variants.xml").read_bytes())
+    result = analyze_knx(view, frozenset({"datatype_consistency", "project_connectivity"}))
+
+    assert result["coverage"]["endpoints"] == 6
+    assert result["coverage"]["canonical_group_addresses"] == 5
+    assert not any(item["finding_type"] == "raw_datatype_conflict" for item in result["findings"])
+    disconnected = {
+        item["address_variant"]
+        for item in result["findings"]
+        if item["finding_type"] == "no_project_signal_relationship"
+        and item["group_address"] == "6/2/27"
+    }
+    assert disconnected == {None}
+    assert result["analysis_version"] == 4
 
 
 def test_analysis_uses_logical_knx_endpoints_and_keeps_source_occurrence_count():
@@ -475,7 +493,7 @@ def test_v2_uses_exact_runtime_evidence_for_naming_without_inventing_knx_semanti
 
     result = analyze_knx(_view(project, controls), frozenset({"naming_consistency"}))
 
-    assert result["analysis_version"] == 3
+    assert result["analysis_version"] == 4
     assert result["coverage"]["exact_runtime_mappings"] == 6
     assert result["coverage"]["reviewed_signal_usage"] == 0
     assert any(item["finding_type"] == "naming_deviation" for item in result["findings"])
