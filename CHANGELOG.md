@@ -6,6 +6,7 @@ extracted from the matching version heading.
 ## Unreleased
 
 - Add locally bundled, read-only Event History charts for up to four visible sources in a separate Admin tab. Show independent scales, synchronized time and cursor, coverage gaps, bounded range queries, and incremental updates; require fresh profile-bound visibility proof and clear values on access loss. Upgrade the local store to schema v6 for chart invalidation and indexed append queries.
+- Distinguish chart query failures, correlate them with sanitized Admin logs, and recover from history changes without dropping the retry.
 - Preserve the local Event History SQLite database across native LoxBerry plugin upgrades with a consistent snapshot.
 - Bind weather forecast cursors to the source update time and bounded forecast
   contents. A changed forecast rejects continuation with guidance to restart at

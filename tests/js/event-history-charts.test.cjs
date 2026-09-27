@@ -10,6 +10,9 @@ const script = fs.readFileSync(path.join(__dirname,
   '../../webfrontend/htmlauth/event-history/charts.js'), 'utf8');
 const html = `<main class="mcp-history-charts" data-loading="Loading"
   data-chart-denied="Denied" data-chart-error="Failed" data-chart-empty="Empty"
+  data-chart-timeout="Timed out" data-chart-unavailable="Unavailable"
+  data-chart-invalid="Invalid range" data-chart-stale="Data may be stale"
+  data-chart-reference="Reference"
   data-chart-reduced="Reduced" data-chart-value="Value" data-chart-coverage="Coverage">
   <select id="chart-range"><option value="86400">Day</option><option value="custom">Custom</option></select>
   <input id="chart-from"><input id="chart-to"><button id="chart-apply"></button>
@@ -32,6 +35,8 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
   let tick;
   let hidden = false;
   let queryCount = 0;
+  let failCode = null;
+  let historyGeneration = 1;
   let coverage = [{started_at: Date.now() / 1000 - 30,
     ended_at: Date.now() / 1000 - 20, outcome: 'stopped'}];
   Object.defineProperty(window.document, 'hidden', {get: () => hidden});
@@ -57,8 +62,10 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
     }
     if (action === 'event_history_chart_query') {
       queryCount++;
+      if (failCode) throw Object.assign(new Error('failed'),
+        {code: failCode, requestId: 'abc-123'});
       const answer = {results: [{
-      generation: 1, events: queryCount === 1 ? [
+      generation: historyGeneration, events: queryCount === 1 ? [
         {id: 1, observed_at: Date.now() / 1000 - 10, old_value: false, new_value: true},
         {id: 2, observed_at: Date.now() / 1000 - 9, old_value: 0,
           new_value: {integer_decimal: '9007199254740993'}},
@@ -103,9 +110,19 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
   window.Date.now = () => originalNow() + 120000;
   tick();
   await flush();
-  const fixedRange = JSON.parse(queries()[2].fields.queries)[0];
+  const fixedRange = JSON.parse(queries().at(-1).fields.queries)[0];
   assert.equal(fixedRange.end, advancedRange.end);
   window.Date.now = originalNow;
+  failCode = 'outcome_unknown';
+  tick();
+  await flush();
+  assert.equal(window.document.querySelectorAll('#chart-panels canvas').length, 1);
+  assert.match(window.document.querySelector('#chart-status').textContent,
+    /Timed out.*Data may be stale.*abc-123/);
+  failCode = null;
+  tick();
+  await flush();
+  assert.equal(window.document.querySelector('#chart-status').textContent, '');
 
   rangeSelect.value = '86400';
   rangeSelect.dispatchEvent(new window.Event('change'));
@@ -123,6 +140,11 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
   const replay = JSON.parse(queries().at(-1).fields.queries)[0];
   assert.equal(replay.after_id, 0);
   assert.ok(replay.end < fixedRange.end);
+  historyGeneration++;
+  const beforeChange = queries().length;
+  tick();
+  await flush();
+  assert.ok(queries().length > beforeChange + 1, 'history mutation retries after busy clears');
 
   hidden = true;
   const beforeHidden = calls.length;
