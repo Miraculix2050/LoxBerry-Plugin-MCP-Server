@@ -11,7 +11,7 @@ from mcpserver.auth.provider import READ_SCOPE, StoredAccessToken
 from mcpserver.loxone.cache import UserStateCache
 from mcpserver.loxone.client import LoxoneConnectionError
 from mcpserver.loxone.events import StateEvent
-from mcpserver.loxone.models import LoxoneIdentity, LoxoneStructure
+from mcpserver.loxone.models import Control, LoxoneIdentity, LoxoneStructure
 from mcpserver.loxone.runtime import (
     LoxoneRuntime,
     RuntimeUnavailable,
@@ -172,6 +172,53 @@ async def test_due_structure_refresh_checks_version_without_reloading_unchanged_
     assert snapshot.structure.last_modified == "current"
     assert record.last_structure_check > 0
 
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+@pytest.mark.asyncio
+async def test_fresh_project_visibility_detects_same_marker_rights_change() -> None:
+    class Store:
+        def get(self, *_parts: str) -> object:
+            return object()
+
+    changed_structure = LoxoneStructure(
+        LoxoneIdentity("reader", "serial"),
+        "current",
+        (),
+        (),
+        (Control("visible", "Visible", "Switch", None, None, None, ()),),
+    )
+
+    class RefreshSession(_Session):
+        async def structure_version(self) -> str:
+            raise AssertionError("fresh visibility must load the filtered structure")
+
+        async def load_structure(self) -> LoxoneStructure:
+            return changed_structure
+
+    class Client:
+        async def open_session(self, _token: object) -> RefreshSession:
+            return RefreshSession()
+
+    runtime = object.__new__(LoxoneRuntime)
+    task = asyncio.create_task(asyncio.sleep(60))
+    record = _ConnectionRecord(
+        _structure("current"), frozenset(), _Session(), task, last_structure_check=10**9
+    )
+    runtime._records = {"family": record}
+    runtime._locks = defaultdict(asyncio.Lock)
+    runtime._prune_sessions = lambda _subject: asyncio.sleep(0)  # type: ignore[method-assign]
+    runtime.token_store = Store()
+    runtime.client = Client()
+    runtime.cache = UserStateCache()
+    runtime.structure_refresh_seconds = 300
+
+    snapshot = await runtime.snapshot(_access(), fresh_visibility=True)
+
+    assert snapshot.structure is changed_structure
+    assert snapshot.structure_generation == 2
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task

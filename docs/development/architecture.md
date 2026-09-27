@@ -69,15 +69,28 @@ for page, AJAX, diagnostic-download and redirect responses.
 
 ProjectService is attached to the Loxone runtime lifecycle but performs no eager
 fetches. Every Project Intelligence call validates the current OAuth identity and
-read scope, uses its existing token for the fixed encrypted HTTP project endpoint,
-and rechecks authorization before releasing data. ZIP processing is bounded and
-memory-only. The public projection offers status, search, description, and bounded
-  signal/reference traces, and deterministic analysis; it never returns raw XML
-  and does not add a scope. Analysis version 3 consumes the immutable project
-  view and exact UUID mappings only. It can report source-name patterns, local
-  peer or graph outliers, and mapped runtime context, but names never create a
-  mapping and missing normalized DPT or semantic-domain data is exposed as an
-  explicit limitation rather than inferred.
+read scope, loads the current user-filtered structure through a newly authenticated
+session, uses its project marker, and rechecks authorization before releasing data.
+A changed marker triggers a new download through the fixed encrypted HTTP project
+endpoint; a matching marker reuses the identity-bound, memory-bounded graph. A
+verification failure invalidates the cache. ZIP processing is bounded and
+memory-only. Mapped views and queries are reused while the marker and freshly
+loaded visible structure match. Project search and analysis results use separate
+bounded, five-minute in-memory caches keyed by identity, graph, visible structure,
+model version, filters, and selected analyses.
+
+The public projection offers status, search, description, bounded signal/reference
+traces, and deterministic analysis; it never returns raw XML and does not add a
+scope. Analysis version 3 consumes the immutable project view and exact UUID
+mappings only. It can report source-name patterns, local peer or graph outliers,
+and mapped runtime context, but names never create a mapping. Missing normalized
+DPT or semantic-domain data is exposed as an explicit limitation rather than inferred.
+
+Native History reads continue to establish a fresh authenticated session and
+load the visible structure before returning data. Debug logs separate authorization,
+connection, structure, visibility, remote fetch, and parse timings without
+recording tokens, project content, or history values. Marker-only History
+visibility remains unverified until a controlled rights-change test proves it.
 Confirmed KNX/EIB nodes add an allowlisted semantic projection to those same
 responses. It preserves source-backed bus direction and bounded group-address
 facts without deriving physical roles, DPT meanings, or graph edges from equal

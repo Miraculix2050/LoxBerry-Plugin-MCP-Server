@@ -314,6 +314,14 @@ class LoxoneClient:
         except Exception:
             raise ProjectError("project_transport_error") from None
 
+    async def project_marker(self, token: LoxoneToken) -> str:
+        """Check the active project's authenticated change marker."""
+        session = await self.open_session(token)
+        try:
+            return await session.structure_version()
+        finally:
+            await session.close()
+
     async def probe(self) -> ProbeResult:
         value = _response_value(await self._get_json("/jdev/cfg/apiKey"))
         if isinstance(value, str):

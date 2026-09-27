@@ -10,6 +10,11 @@ extracted from the matching version heading.
   dependency without changing shipped JavaScript or plugin assets.
 - Keep request-local Admin language previews in AJAX feedback, including
   emergency-stop discovery errors, without changing the LoxBerry system language.
+- Reuse the bounded Project Intelligence graph and mapped query after an authenticated
+  project-marker check, and reuse bounded search and analysis results across
+  continuation pages. Expired or changed-context cursors require a new first page.
+  Add sanitized History phase timings while retaining fresh visibility checks
+  for each History read.
 
 - Add an opt-in compact `loxone_describe_control` history-target view with state
   UUIDs and advertised native statistic series, preserving the full default

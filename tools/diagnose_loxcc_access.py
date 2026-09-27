@@ -108,8 +108,11 @@ async def run() -> dict[str, object]:
         }
     except ProjectError as exc:
         return {"result": str(exc)}
-    except Exception:
-        return {"result": "diagnostic_transport_or_processing_error"}
+    except Exception as exc:
+        return {
+            "result": "diagnostic_transport_or_processing_error",
+            "error_type": type(exc).__name__,
+        }
     finally:
         if session is not None:
             await session.close()

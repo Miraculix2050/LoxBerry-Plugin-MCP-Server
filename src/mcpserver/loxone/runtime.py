@@ -9,11 +9,12 @@ import math
 import struct
 import time
 from collections import defaultdict, deque
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager, suppress
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager, contextmanager, suppress
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from uuid import NAMESPACE_URL, uuid5
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from mcpserver.auth.loxone_health import LoxoneTokenHealthStore
 from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore, LoxoneTokenStoreError
@@ -56,6 +57,30 @@ _REFRESH_BEFORE_SECONDS = 24 * 60 * 60
 _MAX_LEGACY_STATISTIC_BYTES = 64 * 1024 * 1024
 _MAX_HISTORY_TIMESTAMP = 4_102_444_800
 _LOGGER = logging.getLogger(__name__)
+_HISTORY_TRACE_ID: ContextVar[str | None] = ContextVar("history_trace_id", default=None)
+
+
+@contextmanager
+def history_trace(trace_id: str) -> Iterator[None]:
+    """Associate sanitized History phase timings with one MCP tool result."""
+    token = _HISTORY_TRACE_ID.set(trace_id)
+    try:
+        yield
+    finally:
+        _HISTORY_TRACE_ID.reset(token)
+
+
+def _history_phase(trace_id: str, phase: str, started: float) -> None:
+    _history_duration(trace_id, phase, time.perf_counter() - started)
+
+
+def _history_duration(trace_id: str, phase: str, seconds: float) -> None:
+    _LOGGER.debug(
+        "component=history_timing trace_id=%s phase=%s duration_ms=%.1f",
+        trace_id,
+        phase,
+        seconds * 1000,
+    )
 
 
 def _token_auth_rejection_message(response_code: str) -> str:
@@ -563,6 +588,8 @@ class LoxoneRuntime:
         *,
         include_hidden: bool = False,
     ) -> AsyncIterator[tuple[Control, LoxoneWebSocketSession]]:
+        trace_id = _HISTORY_TRACE_ID.get() or uuid4().hex
+        started = time.perf_counter()
         if READ_SCOPE not in access.scopes or HISTORY_SCOPE not in access.scopes:
             raise ControlOperationError("permission_denied", "loxone:history is required")
         if not self.history_enabled:
@@ -581,17 +608,41 @@ class LoxoneRuntime:
             raise ControlOperationError(
                 "temporarily_unavailable", "Loxone authorization is unavailable"
             )
+        _history_phase(trace_id, "authorization", started)
+        started = time.perf_counter()
         async with self.history_call_slot(access):
+            _history_phase(trace_id, "rate_wait", started)
             session: LoxoneWebSocketSession | None = None
             try:
+                started = time.perf_counter()
                 session = await self._open_session(
                     token, owner="tool_request", phase="session_establishment"
                 )
+                _history_phase(trace_id, "connection", started)
+                if _LOGGER.isEnabledFor(logging.DEBUG):
+                    started = time.perf_counter()
+                    try:
+                        await session.structure_version()
+                    except (LoxoneConnectionError, LoxoneProtocolError, TimeoutError):
+                        _LOGGER.debug(
+                            "component=history_timing trace_id=%s phase=marker outcome=failed",
+                            trace_id,
+                        )
+                    else:
+                        _history_phase(trace_id, "marker", started)
+                started = time.perf_counter()
                 structure = await session.load_structure()
+                _history_phase(trace_id, "structure", started)
+                started = time.perf_counter()
                 control = self._control(structure, control_uuid, include_hidden=include_hidden)
+                _history_phase(trace_id, "visibility", started)
                 if control is None:
                     raise ControlOperationError("not_found", "control is not visible")
-                yield control, session
+                trace_context = _HISTORY_TRACE_ID.set(trace_id)
+                try:
+                    yield control, session
+                finally:
+                    _HISTORY_TRACE_ID.reset(trace_context)
             except ControlOperationError:
                 raise
             except (LoxoneConnectionError, LoxoneProtocolError, TimeoutError) as exc:
@@ -639,15 +690,18 @@ class LoxoneRuntime:
                 session,
             )
         ):
+            trace_id = _HISTORY_TRACE_ID.get() or uuid4().hex
             series = next(
                 (item for item in control.statistic_series if item.series_id == series_id), None
             )
             if series is None:
                 raise ControlOperationError("not_found", "statistic series is not visible")
             if cached is not None:
-                _LOGGER.debug("component=statistics outcome=cache_hit")
+                _LOGGER.debug("component=statistics trace_id=%s outcome=cache_hit", trace_id)
                 return control, series, cached
-            _LOGGER.debug("component=statistics outcome=cache_miss")
+            _LOGGER.debug("component=statistics trace_id=%s outcome=cache_miss", trace_id)
+            fetch_seconds = 0.0
+            parse_seconds = 0.0
             try:
                 if series.source == "legacy":
                     if (
@@ -660,7 +714,10 @@ class LoxoneRuntime:
                         )
                     collected: list[StatisticPoint] = []
                     for date in _legacy_statistic_dates(start, end):
+                        phase_started = time.perf_counter()
                         payload = await session.legacy_statistic_data(control.uuid, date)
+                        fetch_seconds += time.perf_counter() - phase_started
+                        phase_started = time.perf_counter()
                         for item in _parse_legacy_statistic_points(
                             payload,
                             output_index=series.legacy_output_index,
@@ -674,9 +731,12 @@ class LoxoneRuntime:
                                         "temporarily_unavailable",
                                         "legacy statistic response contains too many points",
                                     )
+                        parse_seconds += time.perf_counter() - phase_started
                     points = tuple(collected)
                 else:
+                    phase_started = time.perf_counter()
                     info = await session.statistic_info(control.uuid)
+                    fetch_seconds += time.perf_counter() - phase_started
                     available = {
                         str(item.get("id"))
                         for item in info
@@ -685,6 +745,7 @@ class LoxoneRuntime:
                     }
                     if series.group_id not in available:
                         raise ControlOperationError("not_found", "statistic data is not available")
+                    phase_started = time.perf_counter()
                     payload = await session.statistic_data(
                         control.uuid,
                         mode="diff" if series.accumulated and granularity != "raw" else "raw",
@@ -694,11 +755,14 @@ class LoxoneRuntime:
                         group_id=series.group_id,
                         output=series.output,
                     )
+                    fetch_seconds += time.perf_counter() - phase_started
+                    phase_started = time.perf_counter()
                     points = tuple(
                         point
                         for point in parse_statistic_points(payload)
                         if start <= point.timestamp <= end
                     )
+                    parse_seconds += time.perf_counter() - phase_started
             except ControlOperationError:
                 raise
             except LoxoneCommandRejected as exc:
@@ -714,6 +778,8 @@ class LoxoneRuntime:
                 raise ControlOperationError(
                     "temporarily_unavailable", "Statistic data could not be read"
                 ) from exc
+            _history_duration(trace_id, "statistics_fetch", fetch_seconds)
+            _history_duration(trace_id, "statistics_parse", parse_seconds)
         self.statistics_cache.put(cache_key, points)
         return control, series, points
 
@@ -731,14 +797,18 @@ class LoxoneRuntime:
                 session,
             )
         ):
+            trace_id = _HISTORY_TRACE_ID.get() or uuid4().hex
             if not control.has_history or control.action_uuid is None:
                 raise ControlOperationError("not_found", "control history is not available")
             try:
+                fetch_started = time.perf_counter()
                 raw = await session.control_history(control.action_uuid)
+                _history_phase(trace_id, "history_fetch", fetch_started)
             except (LoxoneConnectionError, LoxoneProtocolError, TimeoutError, ValueError) as exc:
                 raise ControlOperationError(
                     "temporarily_unavailable", "Control history could not be read"
                 ) from exc
+        parse_started = time.perf_counter()
         entries: list[ControlHistoryEntry] = []
         for item in raw[:1000]:
             timestamp = item.get("ts")
@@ -762,12 +832,15 @@ class LoxoneRuntime:
                     timestamp, what[:500], trigger[:500], trigger_type[:64], impacts
                 )
             )
+        _history_phase(trace_id, "history_parse", parse_started)
         return control, tuple(entries)
 
     async def get_control_notes(
         self, access: StoredAccessToken, control_uuid: str, *, include_hidden: bool = False
     ) -> tuple[Control, str]:
         """Read bounded user-authored notes for one currently visible control."""
+        trace_id = _HISTORY_TRACE_ID.get() or uuid4().hex
+        started = time.perf_counter()
         if not control_uuid or len(control_uuid) > 128:
             raise ControlOperationError("invalid_input", "invalid control identifier")
         try:
@@ -784,18 +857,27 @@ class LoxoneRuntime:
                     raise ControlOperationError(
                         "temporarily_unavailable", "Loxone authorization is unavailable"
                     )
+                _history_phase(trace_id, "authorization", started)
                 session: LoxoneWebSocketSession | None = None
                 try:
+                    started = time.perf_counter()
                     session = await self._open_session(
                         token, owner="tool_request", phase="session_establishment"
                     )
+                    _history_phase(trace_id, "connection", started)
+                    started = time.perf_counter()
                     structure = await session.load_structure()
+                    _history_phase(trace_id, "structure", started)
+                    started = time.perf_counter()
                     control = self._control(structure, control_uuid, include_hidden=include_hidden)
+                    _history_phase(trace_id, "visibility", started)
                     if control is None:
                         raise ControlOperationError("not_found", "control is not visible")
                     if not control.has_notes or control.action_uuid is None:
                         raise ControlOperationError("not_found", "control notes are not available")
+                    started = time.perf_counter()
                     notes = await session.control_notes(control.action_uuid)
+                    _history_phase(trace_id, "notes_fetch", started)
                     return control, notes
                 except ControlOperationError:
                     raise
@@ -814,22 +896,30 @@ class LoxoneRuntime:
         except RuntimeUnavailable as exc:
             raise ControlOperationError("rate_limited", str(exc)) from exc
 
-    async def snapshot(self, access: StoredAccessToken) -> RuntimeSnapshot:
+    async def snapshot(
+        self, access: StoredAccessToken, *, fresh_visibility: bool = False
+    ) -> RuntimeSnapshot:
         subject = access.family_id
         await self._prune_sessions(subject)
         record = self._records.get(subject)
+        connected_now = False
         if record is None or record.task.done():
             async with self._locks[subject]:
                 record = self._records.get(subject)
                 if record is None or record.task.done():
                     record = await self._connect(access)
                     self._records[subject] = record
+                    connected_now = True
         record.last_used = time.monotonic()
-        if record.last_structure_check + self.structure_refresh_seconds <= record.last_used:
+        if (fresh_visibility and not connected_now) or (
+            record.last_structure_check + self.structure_refresh_seconds <= record.last_used
+        ):
             async with record.refresh_lock:
                 record.last_used = time.monotonic()
-                if record.last_structure_check + self.structure_refresh_seconds <= record.last_used:
-                    await self._refresh_structure(access, record)
+                if (fresh_visibility and not connected_now) or (
+                    record.last_structure_check + self.structure_refresh_seconds <= record.last_used
+                ):
+                    await self._refresh_structure(access, record, fresh_visibility=fresh_visibility)
         return RuntimeSnapshot(
             subject,
             record.structure,
@@ -941,7 +1031,11 @@ class LoxoneRuntime:
             active = [item for item in active if item[0] != subject]
 
     async def _refresh_structure(
-        self, access: StoredAccessToken, record: _ConnectionRecord
+        self,
+        access: StoredAccessToken,
+        record: _ConnectionRecord,
+        *,
+        fresh_visibility: bool = False,
     ) -> None:
         try:
             token = self.token_store.get(access.family_id, access.miniserver_id, access.identity_id)
@@ -951,11 +1045,12 @@ class LoxoneRuntime:
                 token, owner="tool_request", phase="session_establishment"
             )
             try:
-                version = await session.structure_version()
-                if version == record.structure.last_modified:
-                    record.last_structure_check = time.monotonic()
-                    _LOGGER.debug("component=structure outcome=unchanged")
-                    return
+                if not fresh_visibility:
+                    version = await session.structure_version()
+                    if version == record.structure.last_modified:
+                        record.last_structure_check = time.monotonic()
+                        _LOGGER.debug("component=structure outcome=unchanged")
+                        return
                 structure = await session.load_structure()
             finally:
                 await session.close()
@@ -966,7 +1061,10 @@ class LoxoneRuntime:
             )
             raise RuntimeUnavailable("Miniserver structure refresh failed") from exc
         record.last_structure_check = time.monotonic()
-        if structure.last_modified == record.structure.last_modified:
+        if structure == record.structure:
+            _LOGGER.debug("component=structure outcome=unchanged")
+            return
+        if not fresh_visibility and structure.last_modified == record.structure.last_modified:
             _LOGGER.warning("component=structure outcome=version_mismatch_without_change")
             return
         record.structure = structure

@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 Import-Module C:/Users/Benjamin/.codex/skills/test-loxberry-mcp-plugin/scripts/LoxBerryTarget.psm1 -Force
 $modules = [ordered]@{}
 $root = Split-Path $PSScriptRoot -Parent
-foreach ($name in @('models','source','decoder','parser','graph','mapping','worker','service')) {
+foreach ($name in @('models','source','decoder','parser','semantics','graph','mapping','analysis','query','worker','service')) {
     $path = Join-Path $root "src/mcpserver/loxone/project/$name.py"
     if (Test-Path $path) { $modules["mcpserver.loxone.project.$name"] = Get-Content $path -Raw }
 }

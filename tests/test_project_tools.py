@@ -1,6 +1,7 @@
+import asyncio
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from mcp.server.fastmcp import FastMCP
@@ -18,6 +19,7 @@ from mcpserver.loxone.models import (
 )
 from mcpserver.loxone.project.models import ProjectError
 from mcpserver.loxone.project.query import ProjectQueryError
+from mcpserver.loxone.runtime import RuntimeUnavailable
 from mcpserver.tools import (
     PROJECT_RESPONSE_MAX_BYTES,
     register_observability_tools,
@@ -27,6 +29,7 @@ from mcpserver.tools import (
 
 class Query:
     view = SimpleNamespace(
+        marker="revision",
         mapping=SimpleNamespace(structure_fingerprint="b" * 64),
         snapshot=SimpleNamespace(fingerprint="a" * 64, model_version=1),
     )
@@ -110,6 +113,11 @@ async def test_project_tools_publish_bounded_read_only_contracts(monkeypatch):
         return Query(), SimpleNamespace(connected=True, structure_generation=7)
 
     monkeypatch.setattr(tools_module, "_project_query", project_query)
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: SimpleNamespace(family_id="family", miniserver_id="server", identity_id="identity"),
+    )
     server = FastMCP("project-tools")
     register_project_tools(server, None)
 
@@ -133,6 +141,11 @@ async def test_project_tools_keep_structured_mapping_and_cursor_errors(monkeypat
         return Query(), SimpleNamespace(connected=True, structure_generation=1)
 
     monkeypatch.setattr(tools_module, "_project_query", project_query)
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: SimpleNamespace(family_id="family", miniserver_id="server", identity_id="identity"),
+    )
     server = FastMCP("project-tool-errors")
     register_project_tools(server, None)
 
@@ -146,6 +159,85 @@ async def test_project_tools_keep_structured_mapping_and_cursor_errors(monkeypat
     assert describe.ok is False
     assert describe.data.error == "ambiguous_mapping"  # type: ignore[union-attr]
     assert invalid_cursor.data.error == "invalid_input"  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+async def test_project_find_reuses_one_ordered_result_and_rejects_changed_marker(monkeypatch):
+    class PagedQuery(Query):
+        view = SimpleNamespace(
+            marker="v1",
+            mapping=SimpleNamespace(structure_fingerprint="b" * 64),
+            snapshot=SimpleNamespace(fingerprint="a" * 64, model_version=1),
+        )
+
+        def __init__(self):
+            self.find_calls = 0
+
+        def find(self, **_kwargs):
+            self.find_calls += 1
+            first = super().find()[0]
+            return [first, {**first, "project_node_id": "p:2"}]
+
+    project = PagedQuery()
+
+    async def project_query(_runtime):
+        return project, SimpleNamespace(connected=True)
+
+    monkeypatch.setattr(tools_module, "_project_query", project_query)
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: SimpleNamespace(family_id="family", miniserver_id="server", identity_id="identity"),
+    )
+    server = FastMCP("project-find-pages")
+    register_project_tools(server, None)
+    tool = server._tool_manager.get_tool("loxone_find_project_objects")
+    first, repeated = await asyncio.gather(
+        tool.fn(limit=1),
+        tool.fn(limit=1),  # type: ignore[union-attr]
+    )
+    assert repeated.data.items[0].project_node_id == "p:1"  # type: ignore[union-attr]
+    second = await tool.fn(limit=1, cursor=first.data.next_cursor)  # type: ignore[union-attr]
+    assert [first.data.items[0].project_node_id, second.data.items[0].project_node_id] == [  # type: ignore[union-attr]
+        "p:1",
+        "p:2",
+    ]
+    assert second.data.next_cursor is None  # type: ignore[union-attr]
+    assert project.find_calls == 1
+    project.view.marker = "v2"
+    changed = await tool.fn(limit=1, cursor=first.data.next_cursor)  # type: ignore[union-attr]
+    assert changed.data.error == "invalid_input"  # type: ignore[union-attr]
+    assert project.find_calls == 1
+    project.view.marker = "v1"
+    project.view.mapping.structure_fingerprint = "c" * 64
+    changed_visibility = await tool.fn(limit=1, cursor=first.data.next_cursor)  # type: ignore[union-attr]
+    assert changed_visibility.data.error == "invalid_input"  # type: ignore[union-attr]
+    project.view.mapping.structure_fingerprint = "b" * 64
+    monkeypatch.setattr(tools_module, "time", SimpleNamespace(monotonic=lambda: float("inf")))
+    expired = await tool.fn(limit=1, cursor=first.data.next_cursor)  # type: ignore[union-attr]
+    assert expired.data.error == "invalid_input"  # type: ignore[union-attr]
+    assert project.find_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_failed_fresh_visibility_invalidates_project_graph(monkeypatch):
+    access = SimpleNamespace(family_id="family")
+
+    class Runtime:
+        projects = SimpleNamespace(invalidate=Mock(), query=AsyncMock())
+
+        @asynccontextmanager
+        async def call_slot(self, _access):
+            yield
+
+        async def snapshot(self, _access, *, fresh_visibility):
+            assert fresh_visibility is True
+            raise RuntimeUnavailable("structure failed")
+
+    monkeypatch.setattr(tools_module, "_access", lambda: access)
+    with pytest.raises(RuntimeUnavailable):
+        await tools_module._project_query(Runtime())
+    Runtime.projects.invalidate.assert_called_once_with("family")
 
 
 @pytest.mark.asyncio
@@ -800,6 +892,11 @@ async def test_project_tools_bound_large_find_and_trace_responses(monkeypatch):
         return LargeQuery(), SimpleNamespace(connected=True, structure_generation=1)
 
     monkeypatch.setattr(tools_module, "_project_query", project_query)
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: SimpleNamespace(family_id="family", miniserver_id="server", identity_id="identity"),
+    )
     server = FastMCP("project-tool-size-limit")
     register_project_tools(server, None)
 
@@ -819,6 +916,8 @@ async def test_project_tools_bound_large_find_and_trace_responses(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_project_analysis_is_read_only_bounded_and_cursor_scoped(monkeypatch):
+    analysis_calls = 0
+
     class Runtime:
         def __init__(self):
             self.active_workers = 0
@@ -838,6 +937,8 @@ async def test_project_analysis_is_read_only_bounded_and_cursor_scoped(monkeypat
     runtime = Runtime()
 
     async def analysis(_view, _selected):
+        nonlocal analysis_calls
+        analysis_calls += 1
         assert runtime.active_workers == 1
         return {
             "analysis_version": 2,
@@ -869,7 +970,16 @@ async def test_project_analysis_is_read_only_bounded_and_cursor_scoped(monkeypat
                     "group_address": "1/2/3",
                     "affected_project_node_ids": ["p:1"],
                     "affected_omitted": 0,
-                }
+                },
+                {
+                    "finding_id": "knx:2",
+                    "analysis": "project_connectivity",
+                    "finding_type": "no_project_signal_relationship",
+                    "classification": "fact",
+                    "group_address": "1/2/4",
+                    "affected_project_node_ids": ["p:2"],
+                    "affected_omitted": 0,
+                },
             ],
             "analysis_truncated": False,
             "truncation_reasons": [],
@@ -877,14 +987,29 @@ async def test_project_analysis_is_read_only_bounded_and_cursor_scoped(monkeypat
 
     monkeypatch.setattr(tools_module, "_project_query", project_query)
     monkeypatch.setattr(tools_module, "process_analysis", analysis)
-    monkeypatch.setattr(tools_module, "_access", lambda: SimpleNamespace())
+    access = SimpleNamespace(family_id="family", miniserver_id="server", identity_id="identity")
+    monkeypatch.setattr(tools_module, "_access", lambda: access)
     server = FastMCP("project-analysis")
     register_project_tools(server, runtime)
 
-    result = await server._tool_manager.get_tool("loxone_analyze_project").fn()  # type: ignore[union-attr]
+    tool = server._tool_manager.get_tool("loxone_analyze_project")
+    result = await tool.fn(limit=1)  # type: ignore[union-attr]
 
     assert result.ok is True
     assert runtime.active_workers == 0
     assert result.data.findings[0].finding_id == "knx:1"  # type: ignore[union-attr]
-    assert result.data.next_cursor is None  # type: ignore[union-attr]
-    runtime.projects.authorize.assert_awaited_once()
+    assert result.data.next_cursor is not None  # type: ignore[union-attr]
+    second = await tool.fn(limit=1, cursor=result.data.next_cursor)  # type: ignore[union-attr]
+    assert second.data.findings[0].finding_id == "knx:2"  # type: ignore[union-attr]
+    assert second.data.next_cursor is None  # type: ignore[union-attr]
+    assert analysis_calls == 1
+    access.family_id = "different-family"
+    invalid = await tool.fn(limit=1, cursor=result.data.next_cursor)  # type: ignore[union-attr]
+    assert invalid.ok is False
+    assert invalid.data.error == "invalid_input"  # type: ignore[union-attr]
+    access.family_id = "family"
+    monkeypatch.setattr(tools_module, "time", SimpleNamespace(monotonic=lambda: float("inf")))
+    expired = await tool.fn(limit=1, cursor=result.data.next_cursor)  # type: ignore[union-attr]
+    assert expired.ok is False
+    assert expired.data.error == "invalid_input"  # type: ignore[union-attr]
+    assert analysis_calls == 1
