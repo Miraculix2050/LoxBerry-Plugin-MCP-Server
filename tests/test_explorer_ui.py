@@ -787,14 +787,13 @@ def test_explorer_scope_filters_include_all_published_history_and_operate_tools(
     ]
     operate_names = [
         "loxberry_clear_statistics_cache",
-        "loxberry_list_event_history_sources",
         "loxberry_add_event_history_source",
         "loxberry_remove_event_history_source",
         "loxberry_purge_event_history_source",
     ]
     tools = [
         {"name": name, "annotations": {"readOnlyHint": True, "destructiveHint": False}}
-        for name in history_names + operate_names
+        for name in history_names + operate_names + ["loxberry_list_event_history_sources"]
     ]
     encoded = json.dumps(tools)
 
@@ -805,7 +804,7 @@ def test_explorer_scope_filters_include_all_published_history_and_operate_tools(
     assert set(names_for("loxoneHistory")) == set(history_names)
     assert set(names_for("loxberryOperate")) == set(operate_names)
     assert names_for("loxoneRead") == []
-    assert names_for("loxberryRead") == []
+    assert names_for("loxberryRead") == ["loxberry_list_event_history_sources"]
 
 
 def test_explorer_discovery_labels_exist_in_both_languages() -> None:
@@ -918,7 +917,11 @@ def test_registry_keeps_tool_hints_out_of_authorization_and_defaults_unknown_saf
     )
     assert run_adapters(
         "adapters.requiredScopes({name:'loxberry_list_event_history_sources'})"
-    ) == ["loxone:read", "loxone:history", "loxberry:operate"]
+    ) == ["loxone:read", "loxone:history", "loxberry:read"]
+    assert (
+        run_adapters("adapters.requiredMutationScope({name:'loxberry_list_event_history_sources'})")
+        is None
+    )
 
 
 def test_operation_adapter_changes_only_action_parameters() -> None:

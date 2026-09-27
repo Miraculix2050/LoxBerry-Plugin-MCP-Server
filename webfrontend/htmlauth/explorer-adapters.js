@@ -26,9 +26,10 @@
     {id: 'loxberryRead', scopes: ['loxone:read', 'loxberry:read'], names: [
       'loxberry_get_system_status', 'loxberry_get_plugin_status',
       'loxberry_get_service_health', 'loxberry_list_service_events',
+      'loxberry_list_event_history_sources',
     ]},
     {id: 'loxberryOperate', scopes: ['loxone:read', 'loxone:history', 'loxberry:operate'], names: [
-      'loxberry_clear_statistics_cache', 'loxberry_list_event_history_sources',
+      'loxberry_clear_statistics_cache',
       'loxberry_add_event_history_source', 'loxberry_remove_event_history_source',
       'loxberry_purge_event_history_source',
     ]},
@@ -39,6 +40,9 @@
     if (TOOL_HINTS.has(name)) throw new Error(`Duplicate Explorer tool hint: ${name}`);
     TOOL_HINTS.set(name, {group: group.id, order, scopes: group.scopes});
   }));
+  const REQUIRED_SCOPE_OVERRIDES = new Map([
+    ['loxberry_list_event_history_sources', ['loxone:read', 'loxone:history', 'loxberry:read']],
+  ]);
 
   const ADVANCED_FIELDS = new Set(['cursor', 'limit', 'include_hidden']);
   const FIELD_HELP = {
@@ -74,7 +78,8 @@
   }
 
   function requiredScopes(tool) {
-    return forTool(tool)?.scopes || null;
+    const name = typeof tool === 'string' ? tool : tool && tool.name;
+    return REQUIRED_SCOPE_OVERRIDES.get(name) || forTool(tool)?.scopes || null;
   }
 
   function requiredMutationScope(tool) {

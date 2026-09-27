@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Require `loxberry:read` and local read approval instead of `loxberry:operate`
+  for listing configured event-history sources, while retaining `loxone:history`.
+  Show the tool in the Explorer's LoxBerry Read group. The source list remains
+  unfiltered by caller visibility pending Issue #217.
+
 - Release process-local Tool Explorer session locks after the last active or
   waiting request, and prevent concurrent refresh from restoring a removed
   encrypted session.

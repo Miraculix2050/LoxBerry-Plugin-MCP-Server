@@ -1285,6 +1285,51 @@ async def test_event_history_source_timeout_returns_an_uncertain_envelope(
 
 
 @pytest.mark.asyncio
+async def test_event_history_source_list_requires_history_and_local_read_approval() -> None:
+    source = ("control", "state")
+
+    class ConfigStore:
+        config = PluginConfig(
+            loxone_history_enabled=True,
+            loxberry_read_enabled=True,
+            event_history_enabled=True,
+            loxberry_read_bindings=("read-binding",),
+            event_history_sources=(source,),
+        )
+
+        def load(self) -> PluginConfig:
+            return self.config
+
+    class AuthStore:
+        def pseudonym(self, *_parts: str) -> str:
+            assert _parts[0] == "loxberry-read-binding-v1"
+            return "read-binding"
+
+    config_store = ConfigStore()
+    auth_store = AuthStore()
+    read_runtime = LoxBerryReadRuntime(object(), config_store, auth_store)  # type: ignore[arg-type]
+    runtime = LoxBerryOperateRuntime(
+        object(),
+        config_store,
+        auth_store,
+        event_history=object(),  # type: ignore[arg-type]
+        read_runtime=read_runtime,
+    )
+    read_access = _loxberry_access(READ_SCOPE, HISTORY_SCOPE, LOXBERRY_READ_SCOPE)
+
+    assert await runtime.list_event_history_sources(read_access) == (source,)
+    with pytest.raises(PermissionError):
+        await runtime.list_event_history_sources(
+            _loxberry_access(READ_SCOPE, HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE)
+        )
+    with pytest.raises(PermissionError):
+        await runtime.list_event_history_sources(_loxberry_access(READ_SCOPE, LOXBERRY_READ_SCOPE))
+    config_store.config = replace(config_store.config, loxberry_read_bindings=())
+    with pytest.raises(PermissionError):
+        await runtime.list_event_history_sources(read_access)
+
+
+@pytest.mark.asyncio
 async def test_event_history_source_tools_preserve_loxone_uuids_through_config_store(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1293,13 +1338,16 @@ async def test_event_history_source_tools_preserve_loxone_uuids_through_config_s
     standard_control_uuid = "00000000-0000-0000-0000-000000000001"
     standard_state_uuid = "00000000-0000-0000-0000-000000000002"
     binding = "b" * 64
+    read_binding = "a" * 64
     store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
     store.save(
         PluginConfig(
             loxone_history_enabled=True,
+            loxberry_read_enabled=True,
             loxberry_operate_enabled=True,
             loxberry_operate_requests_per_minute=10,
             event_history_enabled=True,
+            loxberry_read_bindings=(read_binding,),
             loxberry_operate_bindings=(binding,),
         )
     )
@@ -1321,10 +1369,14 @@ async def test_event_history_source_tools_preserve_loxone_uuids_through_config_s
 
     class AuthStore:
         def pseudonym(self, *_parts: str) -> str:
-            return binding
+            return read_binding if _parts[0] == "loxberry-read-binding-v1" else binding
 
     monitor = Monitor()
-    runtime = LoxBerryOperateRuntime(object(), store, AuthStore(), event_history=monitor)
+    auth_store = AuthStore()
+    read_runtime = LoxBerryReadRuntime(object(), store, auth_store)  # type: ignore[arg-type]
+    runtime = LoxBerryOperateRuntime(
+        object(), store, auth_store, event_history=monitor, read_runtime=read_runtime
+    )
     server = FastMCP("event-history-source-uuid-round-trip")
     register_loxberry_operate_tool(server, runtime)
     monkeypatch.setattr(
@@ -1341,7 +1393,17 @@ async def test_event_history_source_tools_preserve_loxone_uuids_through_config_s
         "loxberry_add_event_history_source",
         {"control_uuid": control_uuid, "state_uuid": state_uuid},
     )
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: _loxberry_access(READ_SCOPE, HISTORY_SCOPE, LOXBERRY_READ_SCOPE),
+    )
     listed = await server._tool_manager.call_tool("loxberry_list_event_history_sources", {})
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: _loxberry_access(READ_SCOPE, HISTORY_SCOPE, LOXBERRY_OPERATE_SCOPE),
+    )
     removed = await server._tool_manager.call_tool(
         "loxberry_remove_event_history_source",
         {"control_uuid": standard_control_uuid, "state_uuid": standard_state_uuid},

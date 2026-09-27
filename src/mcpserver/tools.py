@@ -1589,6 +1589,7 @@ class LoxBerryOperateRuntime:
         auth_store: Any,
         *,
         event_history: EventHistoryMonitor | None = None,
+        read_runtime: LoxBerryReadRuntime | None = None,
         loxone_runtime: LoxoneRuntime | None = None,
         clear_timeout_seconds: float = _CACHE_CLEAR_TIMEOUT_SECONDS,
         event_history_source_change_timeout_seconds: float = (
@@ -1601,6 +1602,7 @@ class LoxBerryOperateRuntime:
         self._config_store = config_store
         self._auth_store = auth_store
         self._event_history = event_history
+        self._read_runtime = read_runtime
         self._loxone_runtime = loxone_runtime
         self._event_history_lock = asyncio.Lock()
         self._event_history_purges: set[tuple[str, str]] = set()
@@ -1739,8 +1741,14 @@ class LoxBerryOperateRuntime:
     async def list_event_history_sources(
         self, access: StoredAccessToken
     ) -> tuple[tuple[str, str], ...]:
-        self._event_history_allowed(access)
-        return cast(tuple[tuple[str, str], ...], self._config_store.load().event_history_sources)
+        if self._read_runtime is None:
+            raise DiagnosticsUnavailable("LoxBerry read authorization is unavailable")
+        config = self._read_runtime._allowed(access)
+        if HISTORY_SCOPE not in access.scopes or not config.loxone_history_enabled:
+            raise PermissionError("Loxone history is not authorized")
+        if not config.event_history_enabled or self._event_history is None:
+            raise ControlOperationError("feature_disabled", "Local event history is disabled")
+        return cast(tuple[tuple[str, str], ...], config.event_history_sources)
 
     async def add_event_history_source(
         self, access: StoredAccessToken, control_uuid: str, state_uuid: str
@@ -5182,7 +5190,7 @@ def register_loxberry_operate_tool(server: FastMCP, runtime: LoxBerryOperateRunt
         name="loxberry_list_event_history_sources",
         description=(
             "List the configured local event-history sources. Requires loxone:history, "
-            "loxberry:operate and an exact local approval."
+            "loxberry:read and an exact local read approval."
         ),
         annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False),
         structured_output=True,

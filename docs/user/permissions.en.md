@@ -11,8 +11,10 @@ Use a separate Loxone account for each assistant. The server only exposes elemen
 | `loxone:read` | always | Read structure, current states, and bounded Project Intelligence through the same Loxone identity |
 | `loxone:history` | optional | Read history and statistics |
 | `loxone:control` | optional | Operate documented visible controls |
-| `loxberry:read` | optional, local approval | Read masked plugin and system diagnostics |
-| `loxberry:operate` | optional, with `loxone:history` and local approval | Clear the plugin-owned statistics cache, manage local event-history sources, and explicitly purge one inactive source's retained history |
+| `loxberry:read` | optional, local approval | Read masked plugin and system diagnostics; list configured local event-history sources with `loxone:history` |
+| `loxberry:operate` | optional, with `loxone:history` and local approval | Clear the plugin-owned statistics cache, add or remove local event-history sources, and explicitly purge one inactive source's retained history |
+
+The configured source list is not yet filtered by the caller's current Loxone visibility. It may include UUID pairs the caller cannot currently read as history. Issue #217 tracks that filtering and the remaining scope changes.
 
 Control is disabled by default. Local LoxBerry approvals are bound to the client application, Loxone identity, Miniserver, and exact capability; they never replace Loxone rights or OAuth consent. For the strictly validated local Tool Explorer, a new OAuth login can reuse its application approval until the displayed inactive-retention deadline. Other dynamically registered clients remain bound to their exact OAuth client identifier.
 
