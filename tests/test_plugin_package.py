@@ -220,6 +220,7 @@ def test_v4_package_manifest_is_present() -> None:
         "postupgrade.sh",
         "uninstall/uninstall.sh",
         "bin/emergency-stop-miniserver.php",
+        "bin/event-history-upgrade.py",
         "bin/healthcheck",
         "bin/renew-web-certificate",
         "bin/root-lifecycle-paths.py",
@@ -240,9 +241,16 @@ def test_v4_package_manifest_is_present() -> None:
         "webfrontend/htmlauth/admin/certificate.js",
         "webfrontend/htmlauth/admin/sessions.js",
         "webfrontend/htmlauth/admin/page.js",
+        "webfrontend/htmlauth/event-history/charts.js",
+        "webfrontend/htmlauth/event-history/charts.css",
+        "webfrontend/htmlauth/event-history/vendor/uplot/uPlot.iife.min.js",
+        "webfrontend/htmlauth/event-history/vendor/uplot/uPlot.min.css",
+        "webfrontend/htmlauth/event-history/vendor/uplot/LICENSE",
+        "webfrontend/htmlauth/event-history/vendor/uplot/SHA256SUMS",
         "webfrontend/htmlauth/mcp-ui.css",
         "templates/index.html",
         "templates/explorer.html",
+        "templates/event-history-charts.html",
         "templates/lang/language_de.ini",
         "templates/lang/language_en.ini",
     ]
@@ -254,6 +262,13 @@ def test_v4_package_manifest_is_present() -> None:
     assert "actual_folder=$3" in hooks
     assert "LBPCONFIG/$actual_folder" in hooks
     assert "LBPDATA/$actual_folder" in hooks
+
+
+def test_bundled_uplot_distribution_matches_pinned_checksums() -> None:
+    directory = ROOT / "webfrontend/htmlauth/event-history/vendor/uplot"
+    for line in (directory / "SHA256SUMS").read_text(encoding="ascii").splitlines():
+        digest, filename = line.split("  ", 1)
+        assert hashlib.sha256((directory / filename).read_bytes()).hexdigest() == digest
 
 
 def test_healthcheck_uses_loxberry_plugin_protocol() -> None:
@@ -306,12 +321,14 @@ def test_upgrade_preserves_configuration_in_plugin_data() -> None:
     assert (
         "sessions.json loxone-tokens.json.enc mqtt-credentials.json.enc install.key" in preupgrade
     )
+    assert '"$installer_root/bin/event-history-upgrade.py" backup' in preupgrade
     assert "installer_root=${6:-}" in postinstall
     assert 'upgrade_backup="$upgrade_backup_dir/mcpserver.json"' in postinstall
     assert 'install -m 600 "$upgrade_backup" "$config_file"' in postinstall
     assert (
         "sessions.json loxone-tokens.json.enc mqtt-credentials.json.enc install.key" in postinstall
     )
+    assert '"$installer_root/bin/event-history-upgrade.py" restore' in postinstall
     assert 'cp "$plugin_config/default-config.json" "$config_file"' in postinstall
     assert postinstall.index('install -m 600 "$upgrade_backup" "$config_file"') < postinstall.index(
         'cp "$plugin_config/default-config.json" "$config_file"'

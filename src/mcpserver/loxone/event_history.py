@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger("mcpserver.event_history")
 
 
-_SCHEMA_VERSION: Final = 5
+_SCHEMA_VERSION: Final = 6
 _MAX_TEXT_BYTES: Final = 4096
 _UNSUPPORTED_SOURCE_CONTROL_TYPES: Final = frozenset({"Daytimer"})
 
@@ -187,7 +187,7 @@ class EventHistoryStore:
             try:
                 connection.execute("BEGIN IMMEDIATE")
                 version = connection.execute("PRAGMA user_version").fetchone()[0]
-                if version not in {0, 1, 2, 3, 4, _SCHEMA_VERSION}:
+                if version not in {0, 1, 2, 3, 4, 5, _SCHEMA_VERSION}:
                     raise EventHistoryUnavailable("local event history needs migration")
                 connection.execute(
                     """
@@ -207,6 +207,10 @@ class EventHistoryStore:
                     CREATE INDEX IF NOT EXISTS events_source_time
                     ON events(control_uuid, state_uuid, observed_at DESC, id DESC)
                     """
+                )
+                connection.execute(
+                    "CREATE INDEX IF NOT EXISTS events_source_id "
+                    "ON events(control_uuid, state_uuid, id)"
                 )
                 connection.execute(
                     """
@@ -248,7 +252,7 @@ class EventHistoryStore:
                     "UPDATE coverage SET ended_at = started_at, outcome = 'interrupted' "
                     "WHERE ended_at IS NULL",
                 )
-                connection.execute("PRAGMA user_version = 5")
+                connection.execute("PRAGMA user_version = 6")
                 connection.execute("COMMIT")
                 connection.execute("BEGIN IMMEDIATE")
                 pruned = self._prune(connection, now=time.time())
@@ -275,7 +279,8 @@ class EventHistoryStore:
             "CREATE TABLE IF NOT EXISTS history_metadata ("
             "id INTEGER PRIMARY KEY CHECK (id = 1), "
             "clear_generation INTEGER NOT NULL, "
-            "backfill_last_id INTEGER NOT NULL DEFAULT 0)"
+            "backfill_last_id INTEGER NOT NULL DEFAULT 0, "
+            "mutation_generation INTEGER NOT NULL DEFAULT 0)"
         )
         connection.execute(
             "INSERT OR IGNORE INTO history_metadata(id, clear_generation) VALUES (1, 0)"
@@ -303,6 +308,11 @@ class EventHistoryStore:
                 "ALTER TABLE history_metadata ADD COLUMN backfill_last_id "
                 "INTEGER NOT NULL DEFAULT 0"
             )
+        if "mutation_generation" not in columns:
+            connection.execute(
+                "ALTER TABLE history_metadata ADD COLUMN mutation_generation "
+                "INTEGER NOT NULL DEFAULT 0"
+            )
 
     def _migrate_snapshot(self) -> None:
         """Upgrade metadata without scanning events or starting recorder maintenance."""
@@ -310,10 +320,14 @@ class EventHistoryStore:
             try:
                 connection.execute("BEGIN IMMEDIATE")
                 version = connection.execute("PRAGMA user_version").fetchone()[0]
-                if version in {3, 4}:
+                if version in {3, 4, 5}:
                     self._ensure_history_metadata(connection)
                     self._ensure_payload_columns(connection)
-                    connection.execute("PRAGMA user_version = 5")
+                    connection.execute(
+                        "CREATE INDEX IF NOT EXISTS events_source_id "
+                        "ON events(control_uuid, state_uuid, id)"
+                    )
+                    connection.execute("PRAGMA user_version = 6")
                 elif version != _SCHEMA_VERSION:
                     raise EventHistoryUnavailable("local event history needs migration")
                 connection.execute("COMMIT")
@@ -323,6 +337,23 @@ class EventHistoryStore:
                 if isinstance(exc, EventHistoryUnavailable):
                     raise
                 raise EventHistoryUnavailable("local event history is unavailable") from exc
+
+    def prepare_chart_read(self) -> None:
+        """Upgrade an existing store once without loading source summaries."""
+
+        if not self.path.exists():
+            return
+        try:
+            with closing(
+                sqlite3.connect(self.path.as_uri() + "?mode=ro", uri=True, timeout=2)
+            ) as db:
+                version = db.execute("PRAGMA user_version").fetchone()[0]
+        except sqlite3.Error as exc:
+            raise EventHistoryUnavailable("local event history is unavailable") from exc
+        if version in {3, 4, 5}:
+            self._migrate_snapshot()
+        elif version != _SCHEMA_VERSION:
+            raise EventHistoryUnavailable("local event history needs migration")
 
     def begin_coverage(self, sources: tuple[tuple[str, str], ...], *, started_at: float) -> None:
         if not sources:
@@ -341,6 +372,10 @@ class EventHistoryStore:
                         (control_uuid, state_uuid, started_at)
                         for control_uuid, state_uuid in sources
                     ],
+                )
+                connection.execute(
+                    "UPDATE history_metadata SET mutation_generation = "
+                    "mutation_generation + 1 WHERE id = 1"
                 )
                 connection.execute("COMMIT")
             except sqlite3.Error as exc:
@@ -364,6 +399,10 @@ class EventHistoryStore:
                         (ended_at, outcome, control_uuid, state_uuid)
                         for control_uuid, state_uuid in sources
                     ],
+                )
+                connection.execute(
+                    "UPDATE history_metadata SET mutation_generation = "
+                    "mutation_generation + 1 WHERE id = 1"
                 )
                 connection.execute("COMMIT")
             except sqlite3.Error as exc:
@@ -522,7 +561,7 @@ class EventHistoryStore:
             ) as db:
                 db.execute("BEGIN")
                 version = db.execute("PRAGMA user_version").fetchone()[0]
-                if version in {3, 4}:
+                if version in {3, 4, 5}:
                     db.execute("ROLLBACK")
                     self._migrate_snapshot()
                     db.execute("BEGIN")
@@ -659,11 +698,17 @@ class EventHistoryStore:
         ).rowcount
         if event_deletions:
             self._refresh_summaries(connection)
+        if deleted:
+            connection.execute(
+                "UPDATE history_metadata SET mutation_generation = "
+                "mutation_generation + 1 WHERE id = 1"
+            )
         return deleted > 0
 
     def mark_removed(self, control_uuid: str, state_uuid: str, *, removed_at: float | None) -> None:
         with self._lock, self._opened() as connection:
             try:
+                connection.execute("BEGIN IMMEDIATE")
                 connection.execute(
                     "INSERT INTO removed_sources (control_uuid, state_uuid, removed_at) "
                     "SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM events WHERE control_uuid = ? "
@@ -681,7 +726,14 @@ class EventHistoryStore:
                         state_uuid,
                     ),
                 )
+                connection.execute(
+                    "UPDATE history_metadata SET mutation_generation = "
+                    "mutation_generation + 1 WHERE id = 1"
+                )
+                connection.execute("COMMIT")
             except sqlite3.Error as exc:
+                if connection.in_transaction:
+                    connection.execute("ROLLBACK")
                 raise EventHistoryUnavailable("local event history is unavailable") from exc
 
     def purge_source(self, control_uuid: str, state_uuid: str) -> tuple[int, int]:
@@ -703,6 +755,10 @@ class EventHistoryStore:
                 connection.execute(
                     "DELETE FROM source_totals WHERE control_uuid = ? AND state_uuid = ?",
                     (control_uuid, state_uuid),
+                )
+                connection.execute(
+                    "UPDATE history_metadata SET mutation_generation = "
+                    "mutation_generation + 1 WHERE id = 1"
                 )
                 connection.execute("COMMIT")
                 self._compact(connection, vacuum=bool(events or coverage))
@@ -793,6 +849,155 @@ class EventHistoryStore:
         )
 
     @staticmethod
+    def _chart_sample(
+        db: sqlite3.Connection,
+        control_uuid: str,
+        state_uuid: str,
+        start: float,
+        end: float,
+    ) -> list[tuple[int, float, str, str]]:
+        """Keep exact boundary and extreme events with bounded Python memory."""
+
+        buckets: dict[int, dict[str, tuple[int, float, str, str] | None]] = {}
+        cursor = db.execute(
+            "SELECT id, observed_at, old_value, new_value FROM events "
+            "WHERE control_uuid = ? AND state_uuid = ? AND observed_at >= ? "
+            "AND observed_at <= ? ORDER BY observed_at, id",
+            (control_uuid, state_uuid, start, end),
+        )
+        span = end - start
+        for row in cursor:
+            bucket = min(63, int((row[1] - start) * 64 / span))
+            found = buckets.setdefault(bucket, {})
+            found.setdefault("first", row)
+            found["last"] = row
+            value = json.loads(row[3])
+            if isinstance(value, bool):
+                found.setdefault("true" if value else "false", row)
+            elif isinstance(value, int | float) and math.isfinite(value):
+                minimum = found.get("min")
+                maximum = found.get("max")
+                if minimum is None or value < json.loads(minimum[3]):
+                    found["min"] = row
+                if maximum is None or value > json.loads(maximum[3]):
+                    found["max"] = row
+        chosen = {row[0]: row for bucket in buckets.values() for row in bucket.values() if row}
+        return sorted(chosen.values(), key=lambda row: (row[1], row[0]))
+
+    def chart_page(
+        self,
+        control_uuid: str,
+        state_uuid: str,
+        *,
+        start: float,
+        end: float,
+        after_id: int = 0,
+        limit: int = 500,
+    ) -> dict[str, object]:
+        """Read a bounded chart page without running recorder maintenance."""
+
+        if limit < 1 or limit > 500 or after_id < 0 or start >= end:
+            raise ValueError("chart query is invalid")
+        if not self.path.exists():
+            return {
+                "generation": 0,
+                "events": [],
+                "has_more": False,
+                "latest_id": 0,
+                "next_id": 0,
+                "reduced": False,
+                "coverage": [],
+                "coverage_truncated": False,
+                "capture_started_at": None,
+                "retained_from": None,
+                "recording_ended_at": None,
+            }
+        try:
+            with closing(
+                sqlite3.connect(self.path.as_uri() + "?mode=ro", uri=True, timeout=2)
+            ) as db:
+                db.execute("BEGIN")
+                if db.execute("PRAGMA user_version").fetchone()[0] != _SCHEMA_VERSION:
+                    raise EventHistoryUnavailable("local event history needs migration")
+                generation = db.execute(
+                    "SELECT mutation_generation FROM history_metadata WHERE id = 1"
+                ).fetchone()[0]
+                reduced = False
+                if after_id == 0:
+                    dense = db.execute(
+                        "SELECT id FROM events WHERE control_uuid = ? AND state_uuid = ? "
+                        "AND observed_at >= ? AND observed_at <= ? LIMIT 4001",
+                        (control_uuid, state_uuid, start, end),
+                    ).fetchall()
+                    if len(dense) > 4000:
+                        rows = self._chart_sample(db, control_uuid, state_uuid, start, end)
+                        reduced = True
+                if not reduced:
+                    index = "events_source_time" if after_id == 0 else "events_source_id"
+                    rows = db.execute(
+                        "SELECT id, observed_at, old_value, new_value FROM events "
+                        f"INDEXED BY {index} "
+                        "WHERE control_uuid = ? AND state_uuid = ? AND id > ? "
+                        "AND observed_at >= ? AND observed_at <= ? "
+                        "ORDER BY id LIMIT ?",
+                        (control_uuid, state_uuid, after_id, start, end, limit + 1),
+                    ).fetchall()
+                latest_id = db.execute(
+                    "SELECT MAX(id) FROM events WHERE control_uuid = ? AND state_uuid = ?",
+                    (control_uuid, state_uuid),
+                ).fetchone()[0]
+                coverage = db.execute(
+                    "SELECT started_at, ended_at, outcome FROM coverage "
+                    "WHERE control_uuid = ? AND state_uuid = ? AND started_at <= ? "
+                    "AND (ended_at IS NULL OR ended_at >= ?) "
+                    "ORDER BY started_at LIMIT 129",
+                    (control_uuid, state_uuid, end, start),
+                ).fetchall()
+                capture = db.execute(
+                    "SELECT MIN(started_at) FROM coverage "
+                    "WHERE control_uuid = ? AND state_uuid = ?",
+                    (control_uuid, state_uuid),
+                ).fetchone()[0]
+                retained = db.execute(
+                    "SELECT MIN(observed_at) FROM events WHERE control_uuid = ? AND state_uuid = ?",
+                    (control_uuid, state_uuid),
+                ).fetchone()[0]
+                removed = db.execute(
+                    "SELECT removed_at FROM removed_sources "
+                    "WHERE control_uuid = ? AND state_uuid = ?",
+                    (control_uuid, state_uuid),
+                ).fetchone()
+                db.execute("COMMIT")
+        except (OSError, sqlite3.Error) as exc:
+            raise EventHistoryUnavailable("local event history is unavailable") from exc
+        return {
+            "generation": int(generation),
+            "events": [
+                {
+                    "id": row[0],
+                    "observed_at": row[1],
+                    "old_value": json.loads(row[2]),
+                    "new_value": json.loads(row[3]),
+                }
+                for row in (rows if reduced else rows[:limit])
+            ],
+            "has_more": not reduced and len(rows) > limit,
+            "latest_id": int(latest_id or 0),
+            "next_id": int(latest_id or 0)
+            if reduced
+            else (rows[limit - 1][0] if len(rows) > limit else (rows[-1][0] if rows else after_id)),
+            "reduced": reduced,
+            "coverage": [
+                {"started_at": row[0], "ended_at": row[1], "outcome": row[2]}
+                for row in coverage[:128]
+            ],
+            "coverage_truncated": len(coverage) > 128,
+            "capture_started_at": capture,
+            "retained_from": retained,
+            "recording_ended_at": removed[0] if removed else None,
+        }
+
+    @staticmethod
     def _coverage_status(
         coverage_rows: list[tuple[float, float | None]], *, start: float, end: float, now: float
     ) -> str:
@@ -866,7 +1071,8 @@ class EventHistoryStore:
                 connection.execute("DELETE FROM removed_sources")
                 connection.execute("DELETE FROM source_totals")
                 connection.execute(
-                    "UPDATE history_metadata SET clear_generation = clear_generation + 1 "
+                    "UPDATE history_metadata SET clear_generation = clear_generation + 1, "
+                    "mutation_generation = mutation_generation + 1 "
                     "WHERE id = 1"
                 )
                 connection.execute("COMMIT")

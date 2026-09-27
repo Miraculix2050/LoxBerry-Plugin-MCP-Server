@@ -43,6 +43,103 @@ def test_store_records_typed_transitions_and_pages_them(tmp_path):
     )
 
 
+def test_chart_page_is_read_only_and_detects_history_mutations(tmp_path, monkeypatch):
+    store = EventHistoryStore(
+        (tmp_path / "chart.sqlite3").resolve(), retention_days=90, maximum_mib=16
+    )
+    source = ("control", "state")
+    now = time.time()
+    store.initialize()
+    store.begin_coverage((source,), started_at=now - 30)
+    store.record_transition(*source, observed_at=now - 20, old_value=False, new_value=True)
+    store.record_transition(*source, observed_at=now - 10, old_value=True, new_value=False)
+    monkeypatch.setattr(store, "_prune", lambda *_args, **_kwargs: pytest.fail("maintenance"))
+
+    first = store.chart_page(*source, start=now - 40, end=now, limit=1)
+    second = store.chart_page(*source, start=now - 40, end=now, after_id=first["next_id"])
+    assert [event["new_value"] for event in first["events"] + second["events"]] == [
+        True,
+        False,
+    ]
+    assert first["has_more"] is True
+    assert second["has_more"] is False
+    assert first["generation"] == second["generation"]
+    store.mark_removed(*source, removed_at=now)
+    removed = store.chart_page(*source, start=now - 40, end=now)
+    assert removed["generation"] > first["generation"]
+    assert removed["recording_ended_at"] == now
+    with sqlite3.connect(store.path) as db:
+        plan = db.execute(
+            "EXPLAIN QUERY PLAN SELECT id FROM events INDEXED BY events_source_time "
+            "WHERE control_uuid = ? AND state_uuid = ? AND observed_at >= ? "
+            "AND observed_at <= ? ORDER BY id LIMIT 501",
+            (*source, now - 40, now),
+        ).fetchall()
+        assert any("events_source_time" in row[3] for row in plan)
+
+    store.clear()
+    cleared = store.chart_page(*source, start=now - 40, end=now)
+    assert cleared["events"] == []
+    assert cleared["generation"] > first["generation"]
+
+
+def test_dense_chart_sample_retains_extrema_and_boolean_transitions(tmp_path):
+    store = EventHistoryStore(
+        (tmp_path / "chart.sqlite3").resolve(), retention_days=90, maximum_mib=16
+    )
+    source = ("control", "state")
+    now = time.time()
+    store.initialize()
+    store.begin_coverage((source,), started_at=now - 5000)
+    with sqlite3.connect(store.path) as db:
+        db.executemany(
+            "INSERT INTO events(control_uuid, state_uuid, observed_at, old_value, new_value) "
+            "VALUES (?, ?, ?, '0', ?)",
+            (
+                (
+                    *source,
+                    now - 4002 + index,
+                    str(-999 if index == 2000 else 999 if index == 2001 else index % 2),
+                )
+                for index in range(4002)
+            ),
+        )
+    result = store.chart_page(*source, start=now - 5000, end=now)
+    values = {event["new_value"] for event in result["events"]}
+    assert result["reduced"] is True
+    assert result["has_more"] is False
+    assert len(result["events"]) <= 384
+    assert {-999, 999, 0, 1} <= values
+
+
+def test_chart_read_upgrades_v5_and_empty_store_without_maintenance(tmp_path, monkeypatch):
+    store = EventHistoryStore(
+        (tmp_path / "chart.sqlite3").resolve(), retention_days=90, maximum_mib=16
+    )
+    source = ("control", "state")
+    assert store.chart_page(*source, start=1, end=2)["events"] == []
+    assert not store.path.exists()
+    store.initialize()
+    with sqlite3.connect(store.path) as db:
+        db.execute("DROP INDEX events_source_id")
+        db.execute("ALTER TABLE history_metadata DROP COLUMN mutation_generation")
+        db.execute("PRAGMA user_version = 5")
+    monkeypatch.setattr(store, "_prune", lambda *_args, **_kwargs: pytest.fail("maintenance"))
+    store.prepare_chart_read()
+    with sqlite3.connect(store.path) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert (
+            db.execute("SELECT mutation_generation FROM history_metadata WHERE id = 1").fetchone()[
+                0
+            ]
+            == 0
+        )
+        assert (
+            db.execute("SELECT name FROM sqlite_master WHERE name = 'events_source_id'").fetchone()
+            is not None
+        )
+
+
 def test_v4_logical_bytes_migrate_in_bounded_batches_with_concurrent_writes(tmp_path):
     path = (tmp_path / "history.sqlite3").resolve()
     store = EventHistoryStore(path, retention_days=90, maximum_mib=16)
@@ -62,7 +159,7 @@ def test_v4_logical_bytes_migrate_in_bounded_batches_with_concurrent_writes(tmp_
 
     assert store.snapshot((source,)).sources[0].logical_value_bytes is None
     with sqlite3.connect(path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 6
         assert (
             connection.execute(
                 "SELECT COUNT(*) FROM events WHERE logical_value_bytes IS NOT NULL"

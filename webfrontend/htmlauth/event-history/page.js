@@ -40,6 +40,21 @@
   let actionMessagePinned = false;
   let savedPolicy = null;
   let sourceItems = [];
+  const selectedCharts = new Set();
+  const chartKey = (source) => `${source.control_uuid}|${source.state_uuid}`;
+  const updateChartSelection = () => {
+    $('history-open-charts').disabled = selectedCharts.size === 0;
+    $('history-chart-count').textContent = `${selectedCharts.size}/4`;
+  };
+  $('history-open-charts').addEventListener('click', () => {
+    const sources = sourceItems.filter((item) => selectedCharts.has(chartKey(item)))
+      .map(({control_uuid, state_uuid}) => ({control_uuid, state_uuid}));
+    if (!sources.length || sources.length > 4) return;
+    const url = new URL('event_history.cgi', window.location.href);
+    url.searchParams.set('view', 'charts');
+    url.searchParams.set('sources', JSON.stringify(sources));
+    window.open(url.href, '_blank', 'noopener');
+  });
   let unverifiedItems = [];
   let sourceVisibility = 'unavailable';
   const sourceFilters = {room: new Set(), category: new Set(), type: new Set(), status: new Set()};
@@ -277,6 +292,24 @@
       period.append(coverage);
       const actions = document.createElement('div');
       actions.className = 'mcp-actions';
+      const select = document.createElement('label');
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = selectedCharts.has(chartKey(source));
+      checkbox.setAttribute('aria-label', `${label('chartSelect')}: ${source.control_name}, ${source.state_name}`);
+      checkbox.addEventListener('change', () => {
+        const key = chartKey(source);
+        if (checkbox.checked && selectedCharts.size >= 4) {
+          checkbox.checked = false;
+          setMessage(label('chartLimit'), 'warning', true);
+          return;
+        }
+        if (checkbox.checked) selectedCharts.add(key);
+        else selectedCharts.delete(key);
+        updateChartSelection();
+      });
+      select.append(checkbox, text('span', label('chartSelect')));
+      actions.append(select);
       actions.append(sourceAction(source, recording));
       const control = namedSource(source.control_name, source.control_type, source.control_uuid);
       control.append(text('small', `${label('room')}: ${source.room || label('filterUnknown')}`,
@@ -363,6 +396,9 @@
         data.sources_truncated ? label('sourcesTruncated') : '',
       ].filter(Boolean).join(' ');
       sourceItems = Array.isArray(data.sources) ? data.sources : [];
+      const visibleKeys = new Set(sourceItems.map(chartKey));
+      for (const key of selectedCharts) if (!visibleKeys.has(key)) selectedCharts.delete(key);
+      updateChartSelection();
       unverifiedItems = Array.isArray(data.unverified_sources) ? data.unverified_sources : [];
       sourceVisibility = data.visibility_status;
       renderSourceFacets();

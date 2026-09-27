@@ -66,4 +66,8 @@ for auth_file in sessions.json loxone-tokens.json.enc mqtt-credentials.json.enc 
     fi
 done
 echo "<INFO> Existing sessions, encrypted credentials and installation key saved for the upgrade."
+python3 "$installer_root/bin/event-history-upgrade.py" backup \
+    "$LBPDATA/$actual_folder/event-history/state-events.sqlite3" \
+    "$backup_dir/state-events.sqlite3" || exit 2
+echo "<INFO> Existing event history saved for the upgrade."
 exit 0

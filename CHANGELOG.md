@@ -5,6 +5,9 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add locally bundled, read-only Event History charts for up to four visible sources in a separate Admin tab. Show independent scales, synchronized time and cursor, coverage gaps, bounded range queries, and incremental updates; require fresh profile-bound visibility proof and clear values on access loss. Upgrade the local store to schema v6 for chart invalidation and indexed append queries.
+- Preserve the local Event History SQLite database across native LoxBerry plugin upgrades with a consistent snapshot.
+
 - Name the local event-history query `loxone_get_event_history`.
 
 - Release process-local Tool Explorer session locks after the last active or
