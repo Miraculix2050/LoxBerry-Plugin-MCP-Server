@@ -42,7 +42,10 @@
   let sourceItems = [];
   let unverifiedItems = [];
   let sourceVisibility = 'unavailable';
-  const sourceFilters = {room: new Set(), category: new Set(), type: new Set()};
+  const sourceFilters = {room: new Set(), category: new Set(), type: new Set(), status: new Set()};
+  const sourceSort = {field: '', direction: 'ascending'};
+  const sourceSortFields = ['control', 'state', 'status', 'events', 'size', 'period', 'actions'];
+  const sourceCollator = new Intl.Collator(undefined, {numeric: true, sensitivity: 'base'});
   const label = (name) => root.dataset[name] || name;
   const sections = ['sources', 'add', 'policy', 'clear'];
   for (const name of sections) {
@@ -115,6 +118,7 @@
   };
   const sourceFacetId = (source, field) => {
     if (field === 'type') return source.control_type || '';
+    if (field === 'status') return source.recording_status || '';
     return source[field] && source[`${field}_id`] ? source[`${field}_id`] : '';
   };
   const sourceSize = (bytes) => {
@@ -125,25 +129,95 @@
       maximumFractionDigits: bytes && value < 0.1 ? 3 : (bytes ? 1 : 0),
     })} ${unit}`;
   };
+  const sourceSortValue = (source, field) => {
+    if (field === 'control') return source.control_name || null;
+    if (field === 'state') return source.state_name || null;
+    if (field === 'status') return source.recording_status === 'active' ? 0
+      : (source.recording_status === 'removed' ? 1 : null);
+    if (field === 'events') return Number.isSafeInteger(source.event_count)
+      ? source.event_count : null;
+    if (field === 'size') return Number.isSafeInteger(source.logical_value_bytes)
+      ? source.logical_value_bytes : null;
+    if (field === 'period') return Number.isFinite(source.newest_event_at)
+      ? source.newest_event_at : null;
+    if (field === 'actions') return source.recording_status === 'active' ? label('stop')
+      : (source.recording_status === 'removed' ? label('purge') : null);
+    return null;
+  };
+  const sortedSourceItems = (items) => {
+    if (!sourceSort.field) return items;
+    const direction = sourceSort.direction === 'ascending' ? 1 : -1;
+    return [...items].sort((left, right) => {
+      const a = sourceSortValue(left, sourceSort.field);
+      const b = sourceSortValue(right, sourceSort.field);
+      if (a == null) return b == null ? 0 : 1;
+      if (b == null) return -1;
+      return direction * (typeof a === 'number' && typeof b === 'number'
+        ? a - b : sourceCollator.compare(String(a), String(b)));
+    });
+  };
+  const syncSourceSortControls = () => {
+    for (const button of root.querySelectorAll('[data-source-sort]')) {
+      const active = button.dataset.sourceSort === sourceSort.field;
+      const heading = button.closest('th');
+      if (active) heading.setAttribute('aria-sort', sourceSort.direction);
+      else heading.removeAttribute('aria-sort');
+      const nextDirection = active && sourceSort.direction === 'ascending'
+        ? 'sortDescending' : 'sortAscending';
+      button.setAttribute('aria-label', `${label('sortBy')} ${button.textContent.trim()}, ${label(nextDirection)}`);
+    }
+    $('history-source-sort-mobile').value = sourceSort.field;
+    const direction = $('history-source-sort-direction');
+    direction.disabled = !sourceSort.field;
+    direction.textContent = label(sourceSort.direction === 'ascending'
+      ? 'sortAscending' : 'sortDescending');
+    direction.setAttribute('aria-label', label(sourceSort.direction === 'ascending'
+      ? 'sortDescending' : 'sortAscending'));
+  };
+  const selectSourceSort = (field) => {
+    if (!sourceSortFields.includes(field)) {
+      sourceSort.field = '';
+      sourceSort.direction = 'ascending';
+    } else if (sourceSort.field === field) {
+      sourceSort.direction = sourceSort.direction === 'ascending' ? 'descending' : 'ascending';
+    } else {
+      sourceSort.field = field;
+      sourceSort.direction = 'ascending';
+    }
+    syncSourceSortControls();
+    applySourceFilters();
+  };
+  for (const button of root.querySelectorAll('[data-source-sort]')) {
+    button.addEventListener('click', () => { selectSourceSort(button.dataset.sourceSort); });
+  }
+  $('history-source-sort-mobile').addEventListener('change', (event) => {
+    if (event.target.value === sourceSort.field) return;
+    selectSourceSort(event.target.value);
+  });
+  $('history-source-sort-direction').addEventListener('click', () => {
+    if (sourceSort.field) selectSourceSort(sourceSort.field);
+  });
+  syncSourceSortControls();
   const applySourceFilters = () => {
-    const matches = sourceItems.filter((source) => ['room', 'category', 'type'].every(
+    const matches = sourceItems.filter((source) => ['room', 'category', 'type', 'status'].every(
       (field) => !sourceFilters[field].size || sourceFilters[field].has(sourceFacetId(source, field))));
     $('history-source-clear-filters').disabled = !Object.values(sourceFilters)
       .some((selected) => selected.size);
     $('history-source-match-count').textContent = sourceVisibility === 'available'
       ? `${matches.length} / ${sourceItems.length} ${label('sourceMatches')}` : label('unknown');
     $('history-source-no-matches').hidden = !sourceItems.length || matches.length > 0;
-    renderRows(matches, unverifiedItems, sourceVisibility);
+    renderRows(sortedSourceItems(matches), unverifiedItems, sourceVisibility);
   };
   const renderSourceFacets = () => {
-    for (const field of ['room', 'category', 'type']) {
+    for (const field of ['room', 'category', 'type', 'status']) {
       const panel = root.querySelector(`[data-source-facet="${field}"]`);
       const list = panel.querySelector('.mcp-event-history-facet-options');
       const options = new Map();
       for (const source of sourceItems) {
         const id = sourceFacetId(source, field);
         const name = field === 'type' ? (source.control_type || label('filterUnknown'))
-          : (source[field] || label('filterUnknown'));
+          : (field === 'status' ? label(id === 'active' || id === 'removed'
+            ? id : 'unknown') : (source[field] || label('filterUnknown')));
         options.set(id, name);
       }
       for (const id of sourceFilters[field]) {

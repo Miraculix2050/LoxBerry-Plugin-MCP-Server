@@ -77,7 +77,10 @@
   data-category="<TMPL_VAR EVENT_HISTORY.CATEGORY ESCAPE=HTML>"
   data-type="<TMPL_VAR EVENT_HISTORY.TYPE ESCAPE=HTML>"
   data-source-size-estimated="<TMPL_VAR EVENT_HISTORY.SOURCE_SIZE_ESTIMATED ESCAPE=HTML>"
-  data-source-matches="<TMPL_VAR EVENT_HISTORY.SOURCE_MATCHES ESCAPE=HTML>">
+  data-source-matches="<TMPL_VAR EVENT_HISTORY.SOURCE_MATCHES ESCAPE=HTML>"
+  data-sort-by="<TMPL_VAR EVENT_HISTORY.SORT_BY ESCAPE=HTML>"
+  data-sort-ascending="<TMPL_VAR EVENT_HISTORY.SORT_ASC ESCAPE=HTML>"
+  data-sort-descending="<TMPL_VAR EVENT_HISTORY.SORT_DESC ESCAPE=HTML>">
   <header class="mcp-event-history-heading">
     <div><a href="index.cgi"><TMPL_VAR EVENT_HISTORY.BACK></a>
       <h1><TMPL_VAR EVENT_HISTORY.TITLE></h1>
@@ -104,11 +107,25 @@
       <details data-source-facet="room"><summary><TMPL_VAR EVENT_HISTORY.ROOM></summary><div class="mcp-event-history-facet-options"></div></details>
       <details data-source-facet="category"><summary><TMPL_VAR EVENT_HISTORY.CATEGORY></summary><div class="mcp-event-history-facet-options"></div></details>
       <details data-source-facet="type"><summary><TMPL_VAR EVENT_HISTORY.TYPE></summary><div class="mcp-event-history-facet-options"></div></details>
+      <details data-source-facet="status"><summary><TMPL_VAR EVENT_HISTORY.STATUS></summary><div class="mcp-event-history-facet-options"></div></details>
       <button id="history-source-clear-filters" class="lb-button" type="button" disabled><TMPL_VAR EVENT_HISTORY.FILTER_CLEAR></button>
     </div>
     <p id="history-source-match-count" class="mcp-help" role="status" aria-live="polite"></p>
+    <div class="mcp-event-history-mobile-sort">
+      <label class="mcp-field"><span><TMPL_VAR EVENT_HISTORY.SORT_BY></span><select id="history-source-sort-mobile">
+        <option value=""><TMPL_VAR EVENT_HISTORY.SORT_ORIGINAL></option>
+        <option value="control"><TMPL_VAR EVENT_HISTORY.CONTROL></option>
+        <option value="state"><TMPL_VAR EVENT_HISTORY.STATE></option>
+        <option value="status"><TMPL_VAR EVENT_HISTORY.STATUS></option>
+        <option value="events"><TMPL_VAR EVENT_HISTORY.EVENTS></option>
+        <option value="size"><TMPL_VAR EVENT_HISTORY.SOURCE_SIZE_ESTIMATED></option>
+        <option value="period"><TMPL_VAR EVENT_HISTORY.PERIOD></option>
+        <option value="actions"><TMPL_VAR EVENT_HISTORY.ACTIONS></option>
+      </select></label>
+      <button id="history-source-sort-direction" class="lb-button" type="button" disabled><TMPL_VAR EVENT_HISTORY.SORT_ASC></button>
+    </div>
     <div class="mcp-table-wrap"><table class="mcp-table mcp-event-history-table">
-      <thead><tr><th scope="col"><TMPL_VAR EVENT_HISTORY.CONTROL></th><th scope="col"><TMPL_VAR EVENT_HISTORY.STATE></th><th scope="col"><TMPL_VAR EVENT_HISTORY.STATUS></th><th scope="col"><TMPL_VAR EVENT_HISTORY.EVENTS></th><th scope="col"><TMPL_VAR EVENT_HISTORY.SOURCE_SIZE_ESTIMATED></th><th scope="col"><TMPL_VAR EVENT_HISTORY.PERIOD></th><th scope="col"><TMPL_VAR EVENT_HISTORY.ACTIONS></th></tr></thead>
+      <thead><tr><th scope="col"><button type="button" class="mcp-event-history-sort" data-source-sort="control"><TMPL_VAR EVENT_HISTORY.CONTROL></button></th><th scope="col"><button type="button" class="mcp-event-history-sort" data-source-sort="state"><TMPL_VAR EVENT_HISTORY.STATE></button></th><th scope="col"><button type="button" class="mcp-event-history-sort" data-source-sort="status"><TMPL_VAR EVENT_HISTORY.STATUS></button></th><th scope="col"><button type="button" class="mcp-event-history-sort" data-source-sort="events"><TMPL_VAR EVENT_HISTORY.EVENTS></button></th><th scope="col"><button type="button" class="mcp-event-history-sort" data-source-sort="size"><TMPL_VAR EVENT_HISTORY.SOURCE_SIZE_ESTIMATED></button></th><th scope="col"><button type="button" class="mcp-event-history-sort" data-source-sort="period"><TMPL_VAR EVENT_HISTORY.PERIOD></button></th><th scope="col"><button type="button" class="mcp-event-history-sort" data-source-sort="actions"><TMPL_VAR EVENT_HISTORY.ACTIONS></button></th></tr></thead>
       <tbody id="history-source-rows"></tbody>
     </table></div>
     <p id="history-empty" class="mcp-help" hidden><TMPL_VAR EVENT_HISTORY.NO_SOURCES></p>
