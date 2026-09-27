@@ -413,6 +413,41 @@ async def test_monitor_close_cancels_payload_backfill(monkeypatch, tmp_path) -> 
 
 
 @pytest.mark.asyncio
+async def test_disabled_monitor_backfills_existing_legacy_store_without_stream(
+    monkeypatch, tmp_path
+) -> None:
+    store = EventHistoryStore(
+        (tmp_path / "history.sqlite3").resolve(), retention_days=90, maximum_mib=16
+    )
+    source = ("control", "state")
+    store.initialize()
+    store.record_transition(*source, observed_at=time.time(), old_value=0, new_value=1)
+    with sqlite3.connect(store.path) as connection:
+        connection.execute("ALTER TABLE events DROP COLUMN logical_value_bytes")
+        connection.execute("ALTER TABLE source_totals DROP COLUMN logical_value_bytes")
+        connection.execute("ALTER TABLE source_totals DROP COLUMN unmeasured_events")
+        connection.execute("ALTER TABLE history_metadata DROP COLUMN backfill_last_id")
+        connection.execute("PRAGMA user_version = 4")
+    monitor = EventHistoryMonitor(
+        PluginConfig(event_history_enabled=False),
+        store,
+        object(),  # type: ignore[arg-type]
+    )
+
+    async def unexpected_stream() -> None:
+        pytest.fail("disabled history must not start a Miniserver stream")
+
+    monkeypatch.setattr(monitor, "_run", unexpected_stream)
+    await monitor.start()
+    assert monitor._backfill_task is not None
+    await asyncio.wait_for(monitor._backfill_task, 2)
+    assert monitor._task is None
+    assert monitor.status == "disabled"
+    assert store.snapshot((source,)).sources[0].logical_value_bytes == 2
+    await monitor.close()
+
+
+@pytest.mark.asyncio
 async def test_monitor_records_updates_following_the_initial_baseline_in_one_batch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

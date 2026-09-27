@@ -927,7 +927,7 @@ class EventHistoryMonitor:
         return self.config.event_history_sources
 
     async def start(self) -> None:
-        if not self.config.event_history_enabled:
+        if not self.config.event_history_enabled and not self.store.path.is_file():
             return
         try:
             await asyncio.to_thread(self.store.initialize)
@@ -939,6 +939,8 @@ class EventHistoryMonitor:
             _LOGGER.warning("component=event_history outcome=store_unavailable")
             return
         self._backfill_task = asyncio.create_task(self._backfill())
+        if not self.config.event_history_enabled:
+            return
         if not self.sources:
             self._set_status("unavailable", "no_sources")
             return

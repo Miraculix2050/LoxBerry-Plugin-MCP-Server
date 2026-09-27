@@ -11,8 +11,9 @@ extracted from the matching version heading.
 - Show currently authorized room, category, and type context for Event History
   sources with local list filters and estimated logical JSON value sizes. Upgrade
   existing SQLite history stores to schema v5 without scanning events during
-  overview reads; measure legacy values in bounded background batches and refresh
-  displayed sizes when backfill finishes. Keep physical SQLite and WAL sizes
+  overview reads; measure legacy values in bounded background batches even when
+  recording is disabled and refresh displayed sizes when backfill finishes.
+  Keep physical SQLite and WAL sizes
   separate from these per-source estimates.
 
 - Add deterministic DOM and mocked OAuth/MCP flow tests for the Tool Explorer,

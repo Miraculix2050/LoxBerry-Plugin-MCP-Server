@@ -214,6 +214,26 @@ def test_internal_event_history_status_is_bounded_and_kept_for_disabled_service(
     }
 
 
+def test_existing_history_store_keeps_maintenance_monitor_when_recording_disabled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    store_path = (tmp_path / "history.sqlite3").resolve()
+    store_path.touch()
+    monkeypatch.setenv("MCPSERVER_EVENT_HISTORY_STORE", str(store_path))
+    settings = ServerSettings(
+        host="127.0.0.1",
+        port=8765,
+        allowed_hosts=("testserver",),
+        allowed_origins=(),
+        plugin_config=PluginConfig(event_history_enabled=False),
+    )
+
+    server = create_server(settings)
+
+    assert server.event_history is not None
+    assert server.event_history.status == "disabled"
+
+
 def test_streamable_app_starts_the_configured_emergency_stop_monitor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
