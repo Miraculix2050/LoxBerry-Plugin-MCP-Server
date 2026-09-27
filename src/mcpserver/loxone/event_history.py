@@ -864,6 +864,7 @@ class EventHistoryStore:
             lower = start + span * bucket / 64
             upper = end if bucket == 63 else start + span * (bucket + 1) / 64
             comparison = "<=" if bucket == 63 else "<"
+            sampled_ids: set[int] = set()
             for direction in ("ASC", "DESC"):
                 # At most 500 rows per bucket are decoded, including both edges.
                 cursor = db.execute(
@@ -875,6 +876,7 @@ class EventHistoryStore:
                     (control_uuid, state_uuid, lower, upper),
                 )
                 for row in cursor:
+                    sampled_ids.add(row[0])
                     found = buckets.setdefault(bucket, {})
                     if direction == "ASC":
                         found.setdefault("first", row)
@@ -890,6 +892,35 @@ class EventHistoryStore:
                             found["min"] = row
                         if maximum is None or value > json.loads(maximum[3]):
                             found["max"] = row
+            if len(sampled_ids) == 500:
+                found = buckets[bucket]
+                conditions = (
+                    "WHERE control_uuid = ? AND state_uuid = ? AND observed_at >= ? "
+                    f"AND observed_at {comparison} ? "
+                )
+                parameters = (control_uuid, state_uuid, lower, upper)
+                for direction, name in (("ASC", "min"), ("DESC", "max")):
+                    row = db.execute(
+                        "SELECT id, observed_at, old_value, new_value FROM events "
+                        "INDEXED BY events_source_time "
+                        + conditions
+                        + "AND json_type(new_value) IN ('integer', 'real') "
+                        + f"ORDER BY CAST(json_extract(new_value, '$') AS REAL) {direction} "
+                        "LIMIT 1",
+                        parameters,
+                    ).fetchone()
+                    if row is not None:
+                        found[name] = row
+                for value, name in (("true", "true"), ("false", "false")):
+                    row = db.execute(
+                        "SELECT id, observed_at, old_value, new_value FROM events "
+                        "INDEXED BY events_source_time "
+                        + conditions
+                        + "AND new_value = ? ORDER BY observed_at LIMIT 1",
+                        (*parameters, value),
+                    ).fetchone()
+                    if row is not None:
+                        found[name] = row
         chosen = {row[0]: row for bucket in buckets.values() for row in bucket.values() if row}
         return sorted(chosen.values(), key=lambda row: (row[1], row[0]))
 
@@ -939,7 +970,12 @@ class EventHistoryStore:
                         (control_uuid, state_uuid, start, end),
                     ).fetchall()
                     if len(dense) > 4000:
-                        rows = self._chart_sample(db, control_uuid, state_uuid, start, end)
+                        deadline = time.monotonic() + 8
+                        db.set_progress_handler(lambda: int(time.monotonic() >= deadline), 10000)
+                        try:
+                            rows = self._chart_sample(db, control_uuid, state_uuid, start, end)
+                        finally:
+                            db.set_progress_handler(None, 0)
                         reduced = True
                 if not reduced:
                     index = "events_source_time" if after_id == 0 else "events_source_id"
@@ -952,8 +988,9 @@ class EventHistoryStore:
                         (control_uuid, state_uuid, after_id, start, end, limit + 1),
                     ).fetchall()
                 latest_id = db.execute(
-                    "SELECT MAX(id) FROM events WHERE control_uuid = ? AND state_uuid = ?",
-                    (control_uuid, state_uuid),
+                    "SELECT MAX(id) FROM events WHERE control_uuid = ? AND state_uuid = ? "
+                    "AND observed_at <= ?",
+                    (control_uuid, state_uuid, end),
                 ).fetchone()[0]
                 coverage = db.execute(
                     "SELECT started_at, ended_at, outcome FROM coverage "

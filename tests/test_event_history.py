@@ -112,6 +112,57 @@ def test_dense_chart_sample_retains_extrema_and_boolean_transitions(tmp_path):
     assert {-999, 999, 0, 1} <= values
 
 
+def test_dense_chart_sample_retains_middle_spikes_and_boolean_states(tmp_path):
+    store = EventHistoryStore(
+        (tmp_path / "chart-middle.sqlite3").resolve(), retention_days=90, maximum_mib=16
+    )
+    source = ("control", "state")
+    now = time.time()
+    store.initialize()
+    with sqlite3.connect(store.path) as db:
+        db.executemany(
+            "INSERT INTO events(control_uuid, state_uuid, observed_at, old_value, new_value) "
+            "VALUES (?, ?, ?, '0', ?)",
+            (
+                (
+                    *source,
+                    now - 50 + index / 10000,
+                    "-999"
+                    if index == 3000
+                    else "999"
+                    if index == 3001
+                    else "true"
+                    if index == 3002
+                    else "false"
+                    if index == 3003
+                    else "1",
+                )
+                for index in range(6000)
+            ),
+        )
+    result = store.chart_page(*source, start=now - 64, end=now)
+    values = [event["new_value"] for event in result["events"]]
+    assert -999 in values and 999 in values
+    assert any(value is True for value in values)
+    assert any(value is False for value in values)
+    assert len(result["events"]) <= 384
+
+
+def test_chart_cursor_does_not_skip_events_after_window_end(tmp_path):
+    store = EventHistoryStore(
+        (tmp_path / "chart-cursor.sqlite3").resolve(), retention_days=90, maximum_mib=16
+    )
+    source = ("control", "state")
+    now = time.time()
+    store.initialize()
+    store.record_transition(*source, observed_at=now - 1, old_value=0, new_value=1)
+    store.record_transition(*source, observed_at=now + 1, old_value=1, new_value=2)
+    first = store.chart_page(*source, start=now - 10, end=now)
+    assert [event["new_value"] for event in first["events"]] == [1]
+    second = store.chart_page(*source, start=now - 10, end=now + 2, after_id=first["latest_id"])
+    assert [event["new_value"] for event in second["events"]] == [2]
+
+
 def test_chart_read_upgrades_v5_and_empty_store_without_maintenance(tmp_path, monkeypatch):
     store = EventHistoryStore(
         (tmp_path / "chart.sqlite3").resolve(), retention_days=90, maximum_mib=16
