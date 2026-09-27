@@ -188,8 +188,10 @@ or mode.
 
 Use `loxone_get_weather(mode="actual")` for current weather and
 `loxone_get_weather(mode="forecast")` for the paginated forecast. The default
-mode is `forecast`; follow `next_cursor`. This tool has no historical mode. Never
-present forecast entries or retained state values as measured weather history.
+mode is `forecast`; follow `next_cursor`. If a continuation cursor is rejected,
+restart at page one because the forecast may have changed. This tool has no
+historical mode. Never present forecast entries or retained state values as
+measured weather history.
 
 ## Diagnose LoxBerry
 

@@ -2435,8 +2435,31 @@ async def test_weather_tool_pages_actual_and_forecast_without_state_uuid(
 
     first = await tool.fn(limit=1)
     second = await tool.fn(cursor=first.data.next_cursor, limit=1)  # type: ignore[union-attr]
+    single_page = await tool.fn(limit=96)
     actual = await tool.fn("actual")
     wrong_cursor = await tool.fn("actual", cursor=first.data.next_cursor)  # type: ignore[union-attr]
+    forecast_cursor = first.data.next_cursor  # type: ignore[union-attr]
+    assert forecast_cursor is not None
+    tampered_cursor = ("A" if forecast_cursor[0] != "A" else "B") + forecast_cursor[1:]
+    tampered = await tool.fn(cursor=tampered_cursor)
+
+    for last_update, entries in (
+        (2, [point(3600, 21.0), point(7200, 22.0)]),
+        (1, [point(7200, 22.0), point(10800, 23.0)]),
+        (1, [point(3600, 21.0), point(7200, 23.0)]),
+    ):
+        records["forecast-state"] = StateRecord(
+            "forecast-state",
+            {"last_update": last_update, "entries": entries},
+            Freshness.STALE,
+            1_700_000_000.0,
+        )
+        expired = await tool.fn(cursor=forecast_cursor, limit=1)
+        assert expired.ok is False
+        assert expired.data.error == "invalid_input"  # type: ignore[union-attr]
+        assert "restart at page one" in expired.data.message  # type: ignore[union-attr]
+
+    fresh_first = await tool.fn(limit=1)
     records["forecast-state"] = StateRecord("forecast-state", None, Freshness.UNKNOWN, None)
     unavailable = await tool.fn()
 
@@ -2445,9 +2468,13 @@ async def test_weather_tool_pages_actual_and_forecast_without_state_uuid(
     assert first.data.items[0].weather_type_text == "Clear"  # type: ignore[union-attr]
     assert first.data.formats == {"temperature": "%.1f °C"}  # type: ignore[union-attr]
     assert first.stale is True and second.data.next_cursor is None  # type: ignore[union-attr]
+    assert single_page.data.next_cursor is None  # type: ignore[union-attr]
+    assert fresh_first.ok is True
     assert len(actual.data.items) == 1  # type: ignore[union-attr]
     assert wrong_cursor.ok is False
     assert wrong_cursor.data.error == "invalid_input"  # type: ignore[union-attr]
+    assert tampered.data.error == "invalid_input"  # type: ignore[union-attr]
+    assert "restart at page one" in tampered.data.message  # type: ignore[union-attr]
     assert unavailable.data.error == "temporarily_unavailable"  # type: ignore[union-attr]
 
 
