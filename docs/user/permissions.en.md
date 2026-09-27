@@ -29,11 +29,11 @@ expires when that result is evicted or the project, visible structure, identity,
 selection changes; restart from the first page in that case.
 KNX/EIB metadata is an allowlisted, bounded projection of that same authorized project; it does
 not expose arbitrary project attributes, ETS data, bus monitoring, or configuration writes.
-Native Loxone History and statistics reads check the authenticated project marker before
-returning data, including a statistics cache hit. An unchanged marker allows reuse of the
-visible structure previously loaded for the same OAuth family. A changed marker reloads that
-structure; a failed marker check never releases cached History data. Without a cached session
-structure, the tool loads it afresh. Local Event History still checks visibility with a fresh
-structure download.
+Native Loxone History and statistics reads check current visibility before returning data,
+including a statistics cache hit. When a session structure exists, they check the authenticated
+project marker and reuse that OAuth family's structure only when the marker is unchanged. A
+changed marker reloads it; a failed check never releases cached History data. Without a cached
+session structure, the tool loads it afresh. Local Event History still checks visibility with a
+fresh structure download.
 
 Next: [Capabilities](capabilities.en.md).

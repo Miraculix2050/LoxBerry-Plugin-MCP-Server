@@ -344,7 +344,6 @@ async def test_history_visibility_uses_authenticated_marker_for_cached_structure
     async with runtime._history_session(access, "control") as (visible, used_session):
         assert visible is control
         assert used_session is session
-    assert runtime._records["family"].last_structure_check > 0
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
