@@ -89,6 +89,9 @@
     state.reduced = false;
     state.coverage = [];
     state.coverageTruncated = false;
+    state.refs = [];
+    state.focusIndex = null;
+    state.focus.textContent = '';
   };
   const limitCache = (state) => {
     if (state.loaded.length <= 8 && state.coverage.length <= 128
@@ -116,6 +119,24 @@
     syncing = false;
     if (Math.abs(min - range.start) > 1 || Math.abs(max - range.end) > 1) {
       window.setTimeout(() => replaceRange(min, max), 0);
+    }
+  };
+  const renderTextEvents = (state) => {
+    state.tableBody.replaceChildren();
+    const textEvents = [...state.events.values()].filter((event) =>
+      event.observed_at >= range.start && event.observed_at <= range.end
+      && !Number.isFinite(numericValue(event.new_value))
+      && typeof event.new_value !== 'boolean')
+      .sort((a, b) => b.observed_at - a.observed_at || b.id - a.id);
+    state.valueDetails.hidden = textEvents.length === 0;
+    for (const event of textEvents.slice(0, 200)) {
+      const tr = document.createElement('tr');
+      for (const content of [time(event.observed_at), valueText(event.new_value)]) {
+        const td = document.createElement('td');
+        td.textContent = content;
+        tr.append(td);
+      }
+      state.tableBody.append(tr);
     }
   };
   const render = (state) => {
@@ -184,20 +205,11 @@
       state.plot.destroy();
       state.plot = null;
       state.plotKind = null;
+      state.refs = [];
+      state.focusIndex = null;
+      state.focus.textContent = '';
     }
-    state.tableBody.replaceChildren();
-    const textEvents = events.filter((event) => !Number.isFinite(numericValue(event.new_value))
-      && typeof event.new_value !== 'boolean');
-    state.valueDetails.hidden = textEvents.length === 0;
-    for (const event of textEvents.slice(-200).reverse()) {
-      const tr = document.createElement('tr');
-      for (const content of [time(event.observed_at), valueText(event.new_value)]) {
-        const td = document.createElement('td');
-        td.textContent = content;
-        tr.append(td);
-      }
-      state.tableBody.append(tr);
-    }
+    renderTextEvents(state);
     const boundaries = [
       ['chartCapture', state.capture], ['chartRetained', state.retained],
       ['chartRemoved', state.removed],
@@ -270,7 +282,8 @@
         focus, notice, boundaries, coverageList, tableBody, valueDetails: details};
       plotHost.addEventListener('keydown', (event) => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-        const values = state.refs.filter(Boolean);
+        const values = state.refs.filter((value) => value
+          && value.observed_at >= range.start && value.observed_at <= range.end);
         if (!values.length) return;
         event.preventDefault();
         if (event.key === 'Home') state.focusIndex = 0;
@@ -404,6 +417,11 @@
           }
         }
         if (removed) render(state);
+        else if (shift > 0) renderTextEvents(state);
+        if (shift > 0) {
+          state.focus.textContent = '';
+          state.focusIndex = null;
+        }
         state.loaded = state.loaded.map((item) =>
           ({start: Math.max(item.start, range.start), end: item.end}))
           .filter((item) => item.start < item.end);
@@ -487,7 +505,12 @@
     }
     sequence++;
     applyingScale = true;
-    for (const state of sourceStates) state.plot?.setScale('x', {min: start, max: end});
+    for (const state of sourceStates) {
+      state.plot?.setScale('x', {min: start, max: end});
+      state.focus.textContent = '';
+      state.focusIndex = null;
+      renderTextEvents(state);
+    }
     applyingScale = false;
     if (busy) rerun = true;
     else if (sourceStates.some((state) => missingIntervals(state.loaded, start, end).length)) {

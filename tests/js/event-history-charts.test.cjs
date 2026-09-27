@@ -188,6 +188,10 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
   rangeSelect.value = '86400';
   rangeSelect.dispatchEvent(new window.Event('change'));
   await flush();
+  assert.doesNotMatch(window.document.querySelector('#chart-panels table').textContent,
+    /offline/, 'text events outside the active range are hidden');
+  assert.equal(window.document.querySelector('#chart-panels section > details:last-of-type').hidden,
+    true);
   holdNext = true;
   tick();
   await flush();
@@ -216,11 +220,17 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
   await new Promise((resolve) => window.setTimeout(resolve, 0));
   await flush();
   assert.equal(queries().length, beforeZoom, 'drag zoom inside loaded data stays local');
+  plotHost.dispatchEvent(new window.KeyboardEvent('keydown', {key: 'End', bubbles: true}));
+  assert.equal(window.document.querySelector('#chart-panels section [aria-live="polite"]')
+    .textContent, '', 'keyboard navigation does not read cached off-screen values');
   historyGeneration++;
   const beforeChange = queries().length;
   tick();
   await flush();
   assert.ok(queries().length > beforeChange + 1, 'history mutation retries after busy clears');
+  plotHost.dispatchEvent(new window.KeyboardEvent('keydown', {key: 'End', bubbles: true}));
+  assert.equal(window.document.querySelector('#chart-panels section [aria-live="polite"]')
+    .textContent, '', 'cleared history has no stale keyboard value');
   failCode = 'history_changed';
   const beforeRepeatedChange = queries().length;
   tick();
