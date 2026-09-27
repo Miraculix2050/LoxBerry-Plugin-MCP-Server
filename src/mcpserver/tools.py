@@ -508,7 +508,12 @@ class WeatherFieldMetadataMapData(BaseModel):
 
 class WeatherData(BaseModel):
     mode: Literal["actual", "forecast"]
-    last_updated_at: str
+    last_updated_at: str = Field(
+        description="Source update time reported by the Loxone weather state."
+    )
+    received_at: str | None = Field(
+        description="UTC time the local cache processed the weather event, or null if unknown."
+    )
     formats: dict[str, str] = Field(description="Unmodified weatherServer.format map from LoxAPP3.")
     field_metadata: WeatherFieldMetadataMapData = Field(
         description=(
@@ -3219,7 +3224,9 @@ def register_read_tools(
         name="loxone_get_weather",
         description=(
             "Get bounded current or forecast weather from the configured Loxone weather server. "
-            "This does not provide historical weather."
+            "last_updated_at is the source update time, data.received_at is the local cache "
+            "processing time, and observed_at is the tool response time. stale describes cache "
+            "availability, not weather source age. This does not provide historical weather."
         ),
         annotations=annotations,
         structured_output=True,
@@ -3316,6 +3323,7 @@ def register_read_tools(
                 {
                     "mode": mode,
                     "last_updated_at": last_updated_at,
+                    "received_at": _state_observed_at(record),
                     "formats": dict(snapshot.structure.weather.formats),
                     "field_metadata": _weather_field_metadata(
                         dict(snapshot.structure.weather.formats)

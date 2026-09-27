@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Expose the local Weather-State cache processing time as nullable
+  `received_at` in successful weather responses, separate from the Loxone
+  source update time and MCP response time. Clarify that `stale` reflects cache
+  availability rather than weather source age.
+
 - Add locally bundled, read-only Event History charts for up to four visible sources in a separate Admin tab. Show independent scales, synchronized time and cursor, coverage gaps, bounded range queries, and incremental updates; require fresh profile-bound visibility proof and clear values on access loss. Upgrade the local store to schema v6 for chart invalidation and indexed append queries.
 - Preserve the local Event History SQLite database across native LoxBerry plugin upgrades with a consistent snapshot.
 - Add field-aligned source formats and explicit value semantics to weather

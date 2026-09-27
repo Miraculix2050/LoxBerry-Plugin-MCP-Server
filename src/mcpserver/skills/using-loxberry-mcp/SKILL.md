@@ -192,6 +192,13 @@ mode is `forecast`; follow `next_cursor`. If a continuation cursor is rejected,
 restart at page one because the forecast may have changed. This tool has no
 historical mode. Never present forecast entries or retained state values as
 measured weather history.
+`data.last_updated_at` is the source update time reported by Loxone;
+`data.received_at` is when the local cache processed the Weather-State event
+and may be `null` if unknown; envelope `observed_at` is when the tool produced
+the response. Envelope `stale` describes cache/session availability, not the
+age of the weather source. When freshness matters, assess source age from
+`last_updated_at` independently, and do not treat `stale: false` as proof of a
+recent provider update.
 The response contains up to 96 forecast points, but the available forecast
 duration depends on the source. Use `field_metadata` to match each numeric point
 field to its source presentation format. The existing `formats` map retains raw
