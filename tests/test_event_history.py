@@ -43,7 +43,7 @@ def test_store_records_typed_transitions_and_pages_them(tmp_path):
     )
 
 
-def test_source_inventory_page_filters_before_limiting_across_database_batches(tmp_path):
+def test_source_inventory_page_filters_before_limiting_many_hidden_sources(tmp_path):
     store = EventHistoryStore(
         (tmp_path / "event-history.sqlite3").resolve(), retention_days=90, maximum_mib=16
     )
@@ -61,6 +61,10 @@ def test_source_inventory_page_filters_before_limiting_across_database_batches(t
     assert first == (("control-257", "state-257", False, None),)
     assert second == (("control-259", "state-259", False, None),)
     assert end is None
+    assert store.source_inventory_page((), offset=0, limit=1, visible_sources=set()) == (
+        (),
+        None,
+    )
 
 
 def test_v4_logical_bytes_migrate_in_bounded_batches_with_concurrent_writes(tmp_path):

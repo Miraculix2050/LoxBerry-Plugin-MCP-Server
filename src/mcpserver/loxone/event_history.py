@@ -638,6 +638,13 @@ class EventHistoryStore:
             if active_sources
             else "SELECT NULL AS control_uuid, NULL AS state_uuid WHERE 0"
         )
+        visibility_filter = (
+            "WHERE EXISTS (SELECT 1 FROM visible_source_keys AS visible "
+            "WHERE visible.control_uuid = source_keys.control_uuid "
+            "AND visible.state_uuid = source_keys.state_uuid) "
+            if visible_sources is not None
+            else ""
+        )
         query = (
             f"WITH active(control_uuid, state_uuid) AS ({active_query}), "
             "source_keys AS ("
@@ -650,13 +657,12 @@ class EventHistoryStore:
             "FROM source_keys "
             "LEFT JOIN removed_sources USING (control_uuid, state_uuid) "
             "LEFT JOIN active USING (control_uuid, state_uuid) "
+            f"{visibility_filter}"
             "ORDER BY active.control_uuid IS NULL, "
             "-COALESCE(removed_sources.removed_at, 0), "
             "source_keys.control_uuid, source_keys.state_uuid LIMIT ? OFFSET ?"
         )
         parameters = tuple(part for source in active_sources for part in source)
-        items: list[tuple[str, str, bool, float | None]] = []
-        scan_offset = offset
         try:
             with closing(
                 sqlite3.connect(self.path.as_uri() + "?mode=ro", uri=True, timeout=2)
@@ -670,19 +676,19 @@ class EventHistoryStore:
                     version = db.execute("PRAGMA user_version").fetchone()[0]
                 if version != _SCHEMA_VERSION:
                     raise EventHistoryUnavailable("local event history needs migration")
-                while True:
-                    rows = db.execute(query, (*parameters, 256, scan_offset)).fetchall()
-                    if not rows:
-                        return tuple(items), None
-                    for index, (control, state, removed_at, is_active) in enumerate(rows):
-                        if visible_sources is not None and (control, state) not in visible_sources:
-                            continue
-                        if len(items) == limit:
-                            return tuple(items), scan_offset + index
-                        items.append((str(control), str(state), bool(is_active), removed_at))
-                    scan_offset += len(rows)
-                    if len(rows) < 256:
-                        return tuple(items), None
+                if visible_sources is not None:
+                    db.execute(
+                        "CREATE TEMP TABLE visible_source_keys ("
+                        "control_uuid TEXT NOT NULL, state_uuid TEXT NOT NULL, "
+                        "PRIMARY KEY (control_uuid, state_uuid)) WITHOUT ROWID"
+                    )
+                    db.executemany("INSERT INTO visible_source_keys VALUES (?, ?)", visible_sources)
+                rows = db.execute(query, (*parameters, limit + 1, offset)).fetchall()
+                items = tuple(
+                    (str(control), str(state), bool(is_active), removed_at)
+                    for control, state, removed_at, is_active in rows[:limit]
+                )
+                return items, offset + limit if len(rows) > limit else None
         except (OSError, sqlite3.Error) as exc:
             raise EventHistoryUnavailable("local event history is unavailable") from exc
 
