@@ -724,7 +724,7 @@
   };
   $('history-add-form').addEventListener('submit', (event) => {
     event.preventDefault();
-    if (activeCount >= 64) { setMessage(label('sourceLimit'), 'warning'); return; }
+    if (activeCount >= 64) { setMessage(label('sourceLimit'), 'warning', true); return; }
     void startRecording();
   });
   $('history-policy-form').addEventListener('submit', (event) => {

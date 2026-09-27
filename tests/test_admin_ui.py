@@ -777,6 +777,18 @@ context.subject.setMessage('saved', 'success', true);
 context.subject.setMessage('loaded', 'success');
 assert.equal(message.textContent, 'saved');
 assert.equal(message.dataset.kind, 'success');
+let submit;
+vm.runInNewContext(`let activeCount = 64; const label = (name) => name;
+const startRecording = () => { throw Error('must not start'); };
+${section("  $('history-add-form').addEventListener", "  $('history-policy-form')")}`, {
+  $: () => ({addEventListener: (_event, handler) => { submit = handler; }}),
+  setMessage: context.subject.setMessage,
+});
+submit({preventDefault() {}});
+assert.equal(message.textContent, 'sourceLimit');
+assert.equal(message.dataset.kind, 'warning');
+context.subject.setMessage('loaded', 'success');
+assert.equal(message.textContent, 'sourceLimit');
 const blocked = new Map(['sources', 'add', 'policy', 'clear'].map((name) =>
   [name, {open: name === 'sources', addEventListener() {}}]));
 vm.runInNewContext(`${section('  const sections = ', '  const errorLabel =')}`, {
