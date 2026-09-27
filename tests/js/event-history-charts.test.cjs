@@ -31,6 +31,9 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
   let releaseHeld;
   let tick;
   let hidden = false;
+  let queryCount = 0;
+  let coverage = [{started_at: Date.now() / 1000 - 30,
+    ended_at: Date.now() / 1000 - 20, outcome: 'stopped'}];
   Object.defineProperty(window.document, 'hidden', {get: () => hidden});
   window.setInterval = (callback) => { tick = callback; return 1; };
   window.uPlot = class {
@@ -53,10 +56,11 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
           room: 'Room', category: 'Category', control_type: 'Switch'}]};
     }
     if (action === 'event_history_chart_query') {
+      queryCount++;
       const answer = {results: [{
-      generation: 1, events: [{id: 1, observed_at: Date.now() / 1000 - 10,
-        old_value: false, new_value: true}], has_more: false, latest_id: 1,
-      next_id: 1, reduced: false, coverage: [], capture_started_at: null,
+      generation: 1, events: queryCount === 1 ? [{id: 1, observed_at: Date.now() / 1000 - 10,
+        old_value: false, new_value: true}] : [], has_more: false, latest_id: 1,
+      next_id: 1, reduced: false, coverage, capture_started_at: null,
       retained_from: null, recording_ended_at: null,
       }]};
       if (holdNext) {
@@ -75,13 +79,16 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
     ['after_id', 'control_uuid', 'end', 'generation', 'start', 'state_uuid']);
   assert.equal(window.document.querySelectorAll('#chart-panels canvas').length, 1);
   assert.match(window.document.querySelector('#chart-panels').textContent, /Control/);
+  assert.equal(window.document.querySelectorAll('#chart-panels ul li').length, 1);
 
   const queries = () => calls.filter(({action}) => action === 'event_history_chart_query');
   const initialRange = JSON.parse(queries()[0].fields.queries)[0];
   const originalNow = window.Date.now;
   window.Date.now = () => originalNow() + 60000;
+  coverage = [];
   tick();
   await flush();
+  assert.equal(window.document.querySelectorAll('#chart-panels ul li').length, 0);
   const advancedRange = JSON.parse(queries()[1].fields.queries)[0];
   assert.ok(advancedRange.end > initialRange.end + 59);
   assert.ok(advancedRange.start > initialRange.start + 59);

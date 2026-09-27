@@ -99,7 +99,15 @@ def test_dense_chart_sample_retains_extrema_and_boolean_transitions(tmp_path):
                 (
                     *source,
                     now - 4002 + index,
-                    str(-999 if index == 2000 else 999 if index == 2001 else index % 2),
+                    str(
+                        10**500
+                        if index == 10
+                        else -999
+                        if index == 2000
+                        else 999
+                        if index == 2001
+                        else index % 2
+                    ),
                 )
                 for index in range(4002)
             ),
@@ -109,7 +117,7 @@ def test_dense_chart_sample_retains_extrema_and_boolean_transitions(tmp_path):
     assert result["reduced"] is True
     assert result["has_more"] is False
     assert len(result["events"]) <= 384
-    assert {-999, 999, 0, 1} <= values
+    assert {-999, 999, 0, 1, 10**500} <= values
 
 
 def test_dense_chart_sample_retains_middle_spikes_and_boolean_states(tmp_path):

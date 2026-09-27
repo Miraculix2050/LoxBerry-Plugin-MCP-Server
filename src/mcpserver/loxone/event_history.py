@@ -885,7 +885,9 @@ class EventHistoryStore:
                     value = json.loads(row[3])
                     if isinstance(value, bool):
                         found.setdefault("true" if value else "false", row)
-                    elif isinstance(value, int | float) and math.isfinite(value):
+                    elif isinstance(value, int) or (
+                        isinstance(value, float) and math.isfinite(value)
+                    ):
                         minimum = found.get("min")
                         maximum = found.get("max")
                         if minimum is None or value < json.loads(minimum[3]):

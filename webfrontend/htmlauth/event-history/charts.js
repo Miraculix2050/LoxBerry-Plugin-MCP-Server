@@ -222,8 +222,13 @@
         if (state.generation !== null && result.generation !== state.generation) {
           throw Object.assign(new Error('History changed'), {code: 'history_changed'});
         }
+        const metadataChanged = JSON.stringify(state.coverage) !== JSON.stringify(result.coverage)
+          || state.coverageTruncated !== result.coverage_truncated
+          || state.capture !== result.capture_started_at
+          || state.retained !== result.retained_from
+          || state.removed !== result.recording_ended_at;
         const renderNeeded = state.generation === null || result.events.length > 0
-          || (result.reduced && !state.reduced);
+          || (result.reduced && !state.reduced) || metadataChanged;
         state.generation = result.generation;
         state.reduced = state.reduced || result.reduced;
         state.coverage = result.coverage;
