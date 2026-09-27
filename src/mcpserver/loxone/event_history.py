@@ -994,20 +994,27 @@ class EventHistoryStore:
                         reduced = True
                 if not reduced:
                     index = "events_source_time" if after_id == 0 else "events_source_id"
+                    latest_id = db.execute(
+                        "SELECT MAX(id) FROM events INDEXED BY events_source_time "
+                        "WHERE control_uuid = ? AND state_uuid = ? "
+                        "AND observed_at >= ? AND observed_at <= ?",
+                        (control_uuid, state_uuid, start, end),
+                    ).fetchone()[0]
                     rows = db.execute(
                         "SELECT id, observed_at, old_value, new_value FROM events "
                         f"INDEXED BY {index} "
-                        "WHERE control_uuid = ? AND state_uuid = ? AND id > ? "
+                        "WHERE control_uuid = ? AND state_uuid = ? AND id > ? AND id <= ? "
                         "AND observed_at >= ? AND observed_at <= ? "
                         "ORDER BY id LIMIT ?",
-                        (control_uuid, state_uuid, after_id, start, end, limit + 1),
+                        (control_uuid, state_uuid, after_id, latest_id or 0, start, end, limit + 1),
                     ).fetchall()
-                latest_id = db.execute(
-                    "SELECT MAX(id) FROM events INDEXED BY events_source_id "
-                    "WHERE control_uuid = ? AND state_uuid = ? "
-                    "AND observed_at <= ?",
-                    (control_uuid, state_uuid, end),
-                ).fetchone()[0]
+                else:
+                    latest_id = db.execute(
+                        "SELECT MAX(id) FROM events INDEXED BY events_source_id "
+                        "WHERE control_uuid = ? AND state_uuid = ? "
+                        "AND observed_at <= ?",
+                        (control_uuid, state_uuid, end),
+                    ).fetchone()[0]
                 coverage = db.execute(
                     "SELECT started_at, ended_at, outcome FROM coverage "
                     "WHERE control_uuid = ? AND state_uuid = ? AND started_at <= ? "

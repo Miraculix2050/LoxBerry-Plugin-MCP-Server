@@ -163,6 +163,43 @@ def test_chart_cursor_does_not_skip_events_after_window_end(tmp_path):
     assert [event["new_value"] for event in second["events"]] == [2]
 
 
+def test_chart_page_bounds_old_range_before_newer_ids(tmp_path):
+    store = EventHistoryStore(
+        (tmp_path / "chart-old-range.sqlite3").resolve(), retention_days=90, maximum_mib=16
+    )
+    source = ("control", "state")
+    now = time.time()
+    store.initialize()
+    with sqlite3.connect(store.path) as db:
+        db.executemany(
+            "INSERT INTO events(control_uuid, state_uuid, observed_at, old_value, new_value) "
+            "VALUES (?, ?, ?, '0', '1')",
+            (
+                (
+                    *source,
+                    now - 3600 + index,
+                )
+                for index in range(501)
+            ),
+        )
+        db.executemany(
+            "INSERT INTO events(control_uuid, state_uuid, observed_at, old_value, new_value) "
+            "VALUES (?, ?, ?, '0', '2')",
+            (
+                (
+                    *source,
+                    now - 60 + index / 100,
+                )
+                for index in range(2000)
+            ),
+        )
+    first = store.chart_page(*source, start=now - 3600, end=now - 3000)
+    second = store.chart_page(*source, start=now - 3600, end=now - 3000, after_id=first["next_id"])
+    assert len(first["events"]) == 500 and first["has_more"] is True
+    assert len(second["events"]) == 1 and second["has_more"] is False
+    assert first["latest_id"] == second["latest_id"] == 501
+
+
 def test_chart_read_upgrades_v5_and_empty_store_without_maintenance(tmp_path, monkeypatch):
     store = EventHistoryStore(
         (tmp_path / "chart.sqlite3").resolve(), retention_days=90, maximum_mib=16
