@@ -73,6 +73,16 @@ def test_source_diagnostics_expose_shapes_not_unknown_values():
     assert "secret-value" not in repr(diagnostics)
 
 
+def test_extsensor_pulse_is_known_and_invalid_primary_is_reported():
+    parsed = parse_project(Path("tests/fixtures/project/knx-edge-variants.xml").read_bytes())
+    diagnostics = _source_diagnostics(build_graph((("p", parsed),)), ())
+    entries = {(item.code, item.source_type): item.count for item in diagnostics.entries}
+
+    assert entries[("invalid_group_address", "EIBextsensor")] == 1
+    assert ("unclassified_knx_candidate", "EIBextsensor") not in entries
+    assert not any(item.attribute_name == "EibAddrPulse" for item in diagnostics.entries)
+
+
 def test_source_diagnostics_report_unreviewed_logic_and_bound_labels():
     long_attribute = "A" * 120
     source = (

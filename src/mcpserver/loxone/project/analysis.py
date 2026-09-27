@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from .graph import GraphEdge, GraphNode, SemanticEdge
 from .mapping import ProjectView, RuntimeEvidence
 
-ANALYSIS_VERSION = 3
+ANALYSIS_VERSION = 4
 ANALYSES = frozenset(
     {
         "address_patterns",
@@ -43,6 +43,7 @@ class _Endpoint:
     blocks: tuple[GraphNode, ...]
     direction: str
     address: str | None
+    address_variant: str | None
     address_format: str | None
     segments: tuple[int, ...] | None
     datatype: str | None
@@ -274,6 +275,7 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
                 blocks,
                 knx.flow_direction,
                 address.canonical if address else None,
+                address.variant.value if address and address.variant else None,
                 address.format if address else None,
                 address.segments if address else None,
                 knx.datatype.source_value if knx.datatype else None,
@@ -414,24 +416,25 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
         summaries["naming_consistency"] = {"patterns": patterns, "deviations": deviations}
 
     if "datatype_consistency" in analyses:
-        by_address: dict[str, list[_Endpoint]] = defaultdict(list)
+        by_address: dict[tuple[str, str], list[_Endpoint]] = defaultdict(list)
         for item in endpoints:
             if item.address and item.datatype:
-                by_address[item.address].append(item)
+                by_address[(item.address, item.address_variant or "")].append(item)
         conflicts = 0
-        for group_address, members in sorted(by_address.items()):
+        for (group_address, variant), members in sorted(by_address.items()):
             values = sorted({item.datatype for item in members if item.datatype is not None})
             if len(values) < 2:
                 continue
             evidence = [item.node.key for item in members]
             emit(
                 "raw_datatype_conflict",
-                [group_address, values],
+                [group_address, variant, values],
                 evidence,
                 {
                     "analysis": "datatype_consistency",
                     "finding_type": "raw_datatype_conflict",
                     "group_address": group_address,
+                    "address_variant": variant or None,
                     "raw_datatypes": values,
                 },
             )
@@ -442,21 +445,22 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
         by_address = defaultdict(list)
         for item in endpoints:
             if item.address and item.usage:
-                by_address[item.address].append(item)
+                by_address[(item.address, item.address_variant or "")].append(item)
         mixed = 0
-        for group_address, members in sorted(by_address.items()):
+        for (group_address, variant), members in sorted(by_address.items()):
             signatures = sorted({item.usage for item in members})
             if len(signatures) < 2:
                 continue
             evidence = [item.node.key for item in members]
             emit(
                 "mixed_signal_usage",
-                [group_address, signatures],
+                [group_address, variant, signatures],
                 evidence,
                 {
                     "analysis": "signal_usage_consistency",
                     "finding_type": "mixed_signal_usage",
                     "group_address": group_address,
+                    "address_variant": variant or None,
                     "usage_signatures": [
                         [{"interpretation": x, "effect": y} for x, y in signature]
                         for signature in signatures
@@ -653,7 +657,7 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
             )
             emit(
                 finding_type,
-                [item.direction, item.address],
+                [item.direction, item.address, item.address_variant],
                 seed,
                 {
                     "analysis": "project_connectivity",
@@ -663,6 +667,7 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
                     else "fact",
                     "flow_direction": item.direction,
                     "group_address": item.address,
+                    "address_variant": item.address_variant,
                 },
             )
             disconnected += finding_type == "no_project_signal_relationship"

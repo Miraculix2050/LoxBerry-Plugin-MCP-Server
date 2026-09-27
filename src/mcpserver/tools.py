@@ -591,11 +591,18 @@ class ProjectRuntimeControlData(BaseModel):
     mapping_rule: str
 
 
+class ProjectKnxAddressVariantData(BaseModel):
+    kind: Literal["edge"]
+    value: Literal["0", "1"]
+
+
 class ProjectKnxGroupAddressData(BaseModel):
     original: str
     canonical: str | None
     format: Literal["two_level", "three_level"] | None
     segments: list[int] | None
+    source_field: Literal["EibAddr", "EibAddrPulse"]
+    variant: ProjectKnxAddressVariantData | None = None
 
 
 class ProjectKnxDatatypeData(BaseModel):
@@ -700,11 +707,18 @@ class ProjectSourceDiagnosticsData(BaseModel):
     labels_truncated: bool
 
 
+class ProjectKnxGroupAddressSummaryData(BaseModel):
+    canonical: str | None
+    original: str
+    source_field: Literal["EibAddr", "EibAddrPulse"]
+    variant: ProjectKnxAddressVariantData | None = None
+
+
 class ProjectKnxSummaryData(BaseModel):
     object_kind: Literal["line", "endpoint", "logic_block"]
     flow_direction: Literal["bus_to_loxone", "loxone_to_bus"] | None
     source_type: str
-    group_address: dict[Literal["canonical"], str | None] | None
+    group_address: ProjectKnxGroupAddressSummaryData | None
 
 
 class ProjectNodeSummaryData(BaseModel):
@@ -899,6 +913,7 @@ class ProjectAnalysisFindingData(BaseModel):
     peer_count: int | None = None
     deviation_prefix: list[int] = Field(default_factory=list)
     group_address: str | None = None
+    address_variant: Literal["0", "1"] | None = None
     raw_datatypes: list[str] = Field(default_factory=list)
     dominant_raw_datatype: str | None = None
     name_source: Literal["knx_title", "knx_internal_name", "runtime_control_name"] | None = None

@@ -8,11 +8,19 @@ from dataclasses import dataclass
 from .parser import ProjectElement
 
 _ADDRESS = re.compile(r"^(\d{1,2})/(\d{1,4})(?:/(\d{1,3}))?$")
+_EDGE_ADDRESS = re.compile(r"^(.+):(0|1)$")
 _ENDPOINT_DIRECTIONS = {
     "EIBsensor": "bus_to_loxone",
     "EIBactor": "loxone_to_bus",
+    "EIBextsensor": "bus_to_loxone",
 }
 _LOGIC_TYPES = {"EIBPush", "EibDimmer", "EIBJalousie"}
+
+
+@dataclass(frozen=True, slots=True)
+class KnxAddressVariant:
+    kind: str
+    value: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,6 +31,8 @@ class KnxGroupAddress:
     canonical: str | None
     format: str | None
     segments: tuple[int, ...] | None
+    source_field: str
+    variant: KnxAddressVariant | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,15 +102,22 @@ def _bounded(value: str | None, field: str, limit: int, truncated: list[str]) ->
     return value
 
 
-def _group_address(value: str | None, truncated: list[str]) -> KnxGroupAddress | None:
+def _group_address(
+    value: str | None, source_field: str, truncated: list[str], *, allow_edge: bool = False
+) -> KnxGroupAddress | None:
     original = _bounded(value, "group_address.original", 200, truncated)
     if original is None:
         return None
     if value is not None and len(value) > 200:
-        return KnxGroupAddress(original, None, None, None)
-    match = _ADDRESS.fullmatch(original.strip())
+        return KnxGroupAddress(original, None, None, None, source_field, None)
+    address = original.strip()
+    variant = None
+    if allow_edge and (edge := _EDGE_ADDRESS.fullmatch(address)) is not None:
+        address = edge.group(1)
+        variant = KnxAddressVariant("edge", edge.group(2))
+    match = _ADDRESS.fullmatch(address)
     if match is None:
-        return KnxGroupAddress(original, None, None, None)
+        return KnxGroupAddress(original, None, None, None, source_field, None)
     parts = tuple(int(item) for item in match.groups() if item is not None)
     if len(parts) == 2:
         valid = parts[0] <= 31 and parts[1] <= 2047
@@ -109,8 +126,10 @@ def _group_address(value: str | None, truncated: list[str]) -> KnxGroupAddress |
         valid = parts[0] <= 31 and parts[1] <= 7 and parts[2] <= 255
         format_name = "three_level"
     if not valid:
-        return KnxGroupAddress(original, None, None, None)
-    return KnxGroupAddress(original, "/".join(str(item) for item in parts), format_name, parts)
+        return KnxGroupAddress(original, None, None, None, source_field, None)
+    return KnxGroupAddress(
+        original, "/".join(str(item) for item in parts), format_name, parts, source_field, variant
+    )
 
 
 def classify_knx(element: ProjectElement) -> KnxSemantics | None:
@@ -147,7 +166,14 @@ def classify_knx(element: ProjectElement) -> KnxSemantics | None:
     if direction is not None:
         datatype_value = _bounded(element.value("EIBType"), "datatype.source_value", 200, truncated)
         datatype = KnxDatatype("EIBType", datatype_value) if datatype_value is not None else None
-        address = _group_address(element.value("EibAddr"), truncated)
+        address_field = "EibAddr"
+        address_value = element.value(address_field)
+        if source_type == "EIBextsensor" and address_value is None:
+            address_field = "EibAddrPulse"
+            address_value = element.value(address_field)
+        address = _group_address(
+            address_value, address_field, truncated, allow_edge=source_type == "EIBextsensor"
+        )
         return result("endpoint", direction, address, datatype)
     if source_type in _LOGIC_TYPES:
         return result("logic_block", None, None, None)

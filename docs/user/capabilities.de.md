@@ -27,10 +27,15 @@ Bestätigte KNX/EIB-Projektobjekte ergänzen begrenzte, quellengestützte Metada
 Endpunkte und KNX-Logikblöcke. Die Endpunktrichtung lautet `bus_to_loxone` oder
 `loxone_to_bus`; sie ist keine Aussage über die physische Gerätefunktion. Gruppenadressen
 behalten ihren Originaltext und erhalten nur bei gültigem Format eine kanonische Form. `EIBType`
-bleibt ein unaufgelöster Quellcode, keine geratene DPT. Gleiche Gruppenadressen erzeugen keine
-Graphbeziehung und beweisen keine Kausalität. Suche und Trace liefern nur eine kompakte
-KNX-Zusammenfassung; den Originalwert, Segmente, Namen und den DPT-Rohwert liefert gezielt
-`loxone_describe_project_object`. Projekt-Suchseiten und Traces sind zusätzlich auf 64 KiB
+bleibt ein unaufgelöster Quellcode, keine geratene DPT. `EIBextsensor` wird als Endpunkt mit
+Richtung vom Bus zu Loxone modelliert. Gültige Adressvarianten `:0` und `:1` bleiben getrennt;
+die Adresse nennt `EibAddr` oder, falls dieses Feld fehlt, `EibAddrPulse` als Quelle. Das Suffix
+belegt keine physische Flankenrichtung. Eine exakte Variantensuche findet nur diese Variante;
+die Suche nach der kanonischen Basis kann beide liefern. Gleiche Gruppenadressen erzeugen keine
+Graphbeziehung und beweisen keine Kausalität. Suche und Trace liefern eine kompakte
+KNX-Zusammenfassung mit Original- und kanonischer Adresse, Quellfeld und Variante. Segmente,
+Namen und den Rohdatentyp liefert gezielt `loxone_describe_project_object`.
+Projekt-Suchseiten und Traces sind zusätzlich auf 64 KiB
 begrenzt und melden eine Größenkürzung über `truncated` und `truncation_reason`.
 `project_parts` zählt intern eingelesene Modellquellen, nicht Loxone-Config-Projekte. Status
 liefert opake `model_sources`; identische KNX-Quellvorkommen aus getrennten Modellquellen werden
@@ -41,7 +46,7 @@ mehrere getrennte KNX-Signalnutzungsbeobachtungen. Trace liefert getrennt markie
 Connectorkanten sowie begrenzte Pfade `knx_to_loxone`, `loxone_to_knx` oder `knx_to_knx`.
 Unbekanntes Block- oder Connector-Verhalten wird nicht geraten. Diese Ergebnisse beschreiben
 statische Projektpfade, keine Bus-Telegramme und keine historische Ursache einer Aktion.
-`loxone_analyze_project` Version 3 fasst begrenzte, projektlokale KNX-Evidenz zusammen:
+`loxone_analyze_project` Version 4 fasst begrenzte, projektlokale KNX-Evidenz zusammen:
 Adress- und Quellnamensmuster, Wiederverwendung von Rohdatentypen, geprüfte Unterschiede der
 Signalnutzung, Kontext aus exakten Runtime-Mappings, lokale Peer- und Graph-Ausreißer,
 Pfadzähler und Endpunkte ohne beobachtete Projektbeziehung. Runtime-Namen und Control-Typen werden
