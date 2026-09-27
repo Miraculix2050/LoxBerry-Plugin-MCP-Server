@@ -141,13 +141,16 @@ if (($q->{action} // '') ne '') {
             : (ref($result->{error}) eq 'HASH'
                 ? ($result->{error}{code} // 'internal_error') : 'internal_error');
         $code = 'internal_error' unless $code =~ /\A[a-z_]+\z/;
-        my $log = LoxBerry::Log->new(name => 'admin-ui', package => $lbpplugindir,
-            addtime => 1);
-        $log->INF(sprintf(
-            'component=event_history_chart request_id=%s action=%s outcome=%s code=%s duration_ms=%.1f',
-            $request_id, $action, ($result->{ok} ? 'completed' : 'failed'), $code,
-            (clock_gettime(CLOCK_MONOTONIC) - $started) * 1000,
-        )) if $log;
+        my $duration_ms = (clock_gettime(CLOCK_MONOTONIC) - $started) * 1000;
+        if (!$result->{ok} || $duration_ms >= 5000) {
+            my $log = LoxBerry::Log->new(name => 'admin-ui', package => $lbpplugindir,
+                addtime => 1);
+            $log->INF(sprintf(
+                'component=event_history_chart request_id=%s action=%s outcome=%s code=%s duration_ms=%.1f',
+                $request_id, $action, ($result->{ok} ? 'slow' : 'failed'), $code,
+                $duration_ms,
+            )) if $log;
+        }
         $result->{error}{request_id} = $request_id if !$result->{ok}
             && ref($result->{error}) eq 'HASH';
     }

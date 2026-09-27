@@ -43,7 +43,8 @@
     status.dataset.kind = kind;
   };
   const queryErrorStatus = (error) => {
-    const name = error.code === 'outcome_unknown' ? 'chartTimeout'
+    const name = error.code === 'outcome_unknown' || error.code === 'query_timeout'
+      ? 'chartTimeout'
       : error.code === 'temporarily_unavailable' || error instanceof TypeError
         ? 'chartUnavailable'
         : error.code === 'invalid_request' ? 'chartInvalid' : 'chartError';
@@ -297,7 +298,6 @@
     if (fresh || !selection) setStatus(label('loading'));
     try {
       if (fresh || !selection || Date.now() / 1000 - selection.verified_at >= 50) {
-        if (fresh) clear();
         verifying = true;
         await prepare();
         verifying = false;

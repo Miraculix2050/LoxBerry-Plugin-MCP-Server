@@ -11,7 +11,7 @@ import pytest
 
 from mcpserver import admin, event_history_admin
 from mcpserver.config import AtomicConfigStore, PluginConfig
-from mcpserver.loxone.event_history import EventHistoryStore
+from mcpserver.loxone.event_history import EventHistoryQueryTimeout, EventHistoryStore
 
 SOURCE = ("00000000-0000-0000-0000000000000001", "00000000-0000-0000-0000000000000002")
 HIDDEN = ("00000000-0000-0000-0000000000000003", "00000000-0000-0000-0000000000000004")
@@ -140,8 +140,9 @@ def test_chart_query_requires_fresh_profile_bound_visibility(tmp_path, monkeypat
     )
     batch = event_history_admin.chart_query({"queries": [payload]})
     assert batch["results"][0]["events"][0]["new_value"] is True
-    with pytest.raises(admin.AdminError, match="timed out"):
+    with pytest.raises(admin.AdminError, match="timed out") as timed_out:
         event_history_admin.chart_query({"queries": [payload]}, _deadline=time.monotonic() - 1)
+    assert timed_out.value.code == "query_timeout"
     with pytest.raises(admin.AdminError, match="duplicate"):
         event_history_admin.chart_query({"queries": [payload, payload]})
 
@@ -152,6 +153,39 @@ def test_chart_query_requires_fresh_profile_bound_visibility(tmp_path, monkeypat
     document["controls"] = []
     with pytest.raises(admin.AdminError, match="not visible"):
         event_history_admin.chart_query(payload)
+
+
+def test_chart_store_timeout_has_distinct_code(tmp_path, monkeypatch):
+    _, history = _setup(tmp_path, monkeypatch, sources=(SOURCE,))
+    history.initialize()
+    now = time.time()
+    document = {
+        "generation": "a" * 24,
+        "verified_at": now,
+        "controls": event_history_admin._selector_projection(None)["controls"],
+        "control_index": {SOURCE[0]: 0},
+    }
+    monkeypatch.setattr(
+        event_history_admin,
+        "_selector_cache",
+        lambda _config: SimpleNamespace(read=lambda: document),
+    )
+
+    def timed_out(*_args, **_kwargs):
+        raise EventHistoryQueryTimeout("chart query timed out")
+
+    monkeypatch.setattr(EventHistoryStore, "chart_page", timed_out)
+    payload = {
+        "control_uuid": SOURCE[0],
+        "state_uuid": SOURCE[1],
+        "generation": document["generation"],
+        "start": now - 60,
+        "end": now,
+        "after_id": 0,
+    }
+    with pytest.raises(admin.AdminError, match="timed out") as error:
+        event_history_admin.chart_query(payload)
+    assert error.value.code == "query_timeout"
 
 
 def test_chart_selection_and_range_are_bounded(tmp_path, monkeypatch):

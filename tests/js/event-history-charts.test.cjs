@@ -119,10 +119,23 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
   assert.equal(window.document.querySelectorAll('#chart-panels canvas').length, 1);
   assert.match(window.document.querySelector('#chart-status').textContent,
     /Timed out.*Data may be stale.*abc-123/);
+  failCode = 'query_timeout';
+  tick();
+  await flush();
+  assert.match(window.document.querySelector('#chart-status').textContent, /Timed out/);
   failCode = null;
   tick();
   await flush();
   assert.equal(window.document.querySelector('#chart-status').textContent, '');
+  failCode = 'temporarily_unavailable';
+  window.document.querySelector('#chart-refresh').click();
+  await flush();
+  assert.equal(window.document.querySelectorAll('#chart-panels canvas').length, 1,
+    'successful visibility recheck preserves values after transient query failure');
+  assert.match(window.document.querySelector('#chart-status').textContent, /Unavailable/);
+  failCode = null;
+  tick();
+  await flush();
 
   rangeSelect.value = '86400';
   rangeSelect.dispatchEvent(new window.Event('change'));
