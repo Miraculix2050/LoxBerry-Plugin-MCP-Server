@@ -23,6 +23,8 @@
   let sequence = 0;
   let busy = false;
   let rerun = false;
+  let rerunPoll = false;
+  let rerunFresh = false;
   let syncing = false;
   let applyingScale = false;
   let staleRetries = 0;
@@ -58,6 +60,53 @@
     panels.replaceChildren();
     selection = null;
   };
+  const mergeInterval = (intervals, start, end) => {
+    const result = [];
+    for (const item of [...intervals, {start, end}].sort((a, b) => a.start - b.start)) {
+      const last = result.at(-1);
+      if (last && item.start <= last.end) last.end = Math.max(last.end, item.end);
+      else result.push({...item});
+    }
+    return result;
+  };
+  const missingIntervals = (intervals, start, end) => {
+    const missing = [];
+    let cursor = start;
+    for (const item of intervals) {
+      if (item.end < cursor) continue;
+      if (item.start > cursor) missing.push({start: cursor, end: Math.min(end, item.start)});
+      cursor = Math.max(cursor, item.end);
+      if (cursor >= end) break;
+    }
+    if (cursor < end) missing.push({start: cursor, end});
+    return missing.filter((item) => item.start < item.end);
+  };
+  const resetSource = (state) => {
+    state.events.clear();
+    state.loaded = [];
+    state.cursor = 0;
+    state.generation = null;
+    state.reduced = false;
+    state.coverage = [];
+    state.coverageTruncated = false;
+  };
+  const limitCache = (state) => {
+    if (state.loaded.length <= 8 && state.coverage.length <= 128
+      && (!state.loaded.length
+        || state.loaded.at(-1).end - state.loaded[0].start <= maxRange * 2)) return;
+    state.loaded = state.loaded.map((item) => ({
+      start: Math.max(item.start, range.start), end: Math.min(item.end, range.end),
+    })).filter((item) => item.start < item.end);
+    for (const [id, event] of state.events) {
+      if (event.observed_at < range.start || event.observed_at > range.end) {
+        state.events.delete(id);
+      }
+    }
+    state.coverage = state.coverage.filter((item) => item.started_at <= range.end
+      && (item.ended_at ?? Infinity) >= range.start).slice(-128);
+    state.coverageTruncated = true;
+    render(state);
+  };
   const syncRange = (origin, min, max) => {
     if (syncing || applyingScale || !Number.isFinite(min) || !Number.isFinite(max)) return;
     syncing = true;
@@ -70,10 +119,6 @@
     }
   };
   const render = (state) => {
-    state.plot?.destroy();
-    state.plot = null;
-    state.plotHost.replaceChildren();
-    state.tableBody.replaceChildren();
     const events = [...state.events.values()].sort((a, b) =>
       a.observed_at - b.observed_at || a.id - b.id);
     state.notice.textContent = state.reduced || events.some((event) => decimalInteger(event.new_value))
@@ -115,7 +160,7 @@
         cursor: {sync: {key: 'mcp-history-charts'}},
         hooks: {
           setCursor: [(plot) => {
-            const event = refs[plot.cursor.idx];
+            const event = state.refs[plot.cursor.idx];
             if (event) state.focus.textContent = `${time(event.observed_at)} · ${valueText(event.new_value)}`;
           }],
           setScale: [(plot, key) => {
@@ -123,13 +168,28 @@
           }],
         },
       };
+      state.refs = refs;
+      if (state.plot && state.plotKind !== plottedKind) {
+        state.plot.destroy();
+        state.plot = null;
+      }
       applyingScale = true;
       try {
-        state.plot = new window.uPlot(options, [x, y], state.plotHost);
+        if (state.plot) state.plot.setData([x, y]);
+        else state.plot = new window.uPlot(options, [x, y], state.plotHost);
+        state.plotKind = plottedKind;
         state.plot.setScale('x', {min: range.start, max: range.end});
       } finally { applyingScale = false; }
+    } else if (state.plot) {
+      state.plot.destroy();
+      state.plot = null;
+      state.plotKind = null;
     }
-    for (const event of events.slice(-200).reverse()) {
+    state.tableBody.replaceChildren();
+    const textEvents = events.filter((event) => !Number.isFinite(numericValue(event.new_value))
+      && typeof event.new_value !== 'boolean');
+    state.valueDetails.hidden = textEvents.length === 0;
+    for (const event of textEvents.slice(-200).reverse()) {
       const tr = document.createElement('tr');
       for (const content of [time(event.observed_at), valueText(event.new_value)]) {
         const td = document.createElement('td');
@@ -173,6 +233,9 @@
       boundaries.className = 'mcp-help';
       const plotHost = document.createElement('div');
       plotHost.className = 'mcp-history-chart-plot';
+      plotHost.tabIndex = 0;
+      plotHost.setAttribute('role', 'group');
+      plotHost.setAttribute('aria-label', title.textContent);
       const focus = document.createElement('p');
       focus.setAttribute('aria-live', 'polite');
       const details = document.createElement('details');
@@ -201,8 +264,24 @@
       coverageDetails.append(coverageSummary, coverageList);
       panel.append(title, context, notice, boundaries, coverageDetails, plotHost, focus, details);
       panels.append(panel);
-      return {source, title, context, events: new Map(), cursor: 0, generation: null, reduced: false,
-        coverage: [], plot: null, plotHost, focus, notice, boundaries, coverageList, tableBody};
+      const state = {source, title, context, events: new Map(), loaded: [], cursor: 0,
+        generation: null,
+        reduced: false, coverage: [], plot: null, plotKind: null, refs: [], plotHost,
+        focus, notice, boundaries, coverageList, tableBody, valueDetails: details};
+      plotHost.addEventListener('keydown', (event) => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        const values = state.refs.filter(Boolean);
+        if (!values.length) return;
+        event.preventDefault();
+        if (event.key === 'Home') state.focusIndex = 0;
+        else if (event.key === 'End') state.focusIndex = values.length - 1;
+        else state.focusIndex = Math.max(0, Math.min(values.length - 1,
+          (state.focusIndex ?? (event.key === 'ArrowLeft' ? values.length : -1))
+            + (event.key === 'ArrowLeft' ? -1 : 1)));
+        const value = values[state.focusIndex];
+        focus.textContent = `${time(value.observed_at)} · ${valueText(value.new_value)}`;
+      });
+      return state;
     });
   };
   const prepare = async () => {
@@ -223,62 +302,95 @@
       state.plotHost.setAttribute('aria-label', state.title.textContent);
     }
   };
-  const query = async (token) => {
-    let pending = [...sourceStates];
-    const counts = new Map(sourceStates.map((state) => [state, 0]));
+  const fetchJobs = async (jobs, token) => {
+    let pending = jobs;
+    const counts = new Map(jobs.map((job) => [job, 0]));
     while (pending.length) {
       const response = await api.request('event_history_chart_query', {
-        queries: JSON.stringify(pending.map((state) => ({
-          control_uuid: state.source.control_uuid,
-          state_uuid: state.source.state_uuid,
+        queries: JSON.stringify(pending.map((job) => ({
+          control_uuid: job.state.source.control_uuid,
+          state_uuid: job.state.source.state_uuid,
           generation: selection.generation,
-          start: range.start, end: range.end, after_id: state.cursor,
+          start: job.start, end: job.end, after_id: job.afterId,
         }))),
       }, 15000);
-      if (token !== sequence) return;
+      if (token !== sequence) return false;
       if (!Array.isArray(response.results) || response.results.length !== pending.length) {
         throw new Error('Invalid chart query response');
       }
       const next = [];
       for (let index = 0; index < pending.length; index++) {
-        const state = pending[index];
+        const job = pending[index];
+        const state = job.state;
         const result = response.results[index];
         if (state.generation !== null && result.generation !== state.generation) {
           throw Object.assign(new Error('History changed'), {code: 'history_changed'});
         }
-        const metadataChanged = JSON.stringify(state.coverage) !== JSON.stringify(result.coverage)
-          || state.coverageTruncated !== result.coverage_truncated
+        const coverage = state.coverage.filter((item) => job.initial
+          || item.started_at > job.end || (item.ended_at ?? Infinity) < job.start);
+        for (const item of result.coverage) {
+          if (!coverage.some((existing) => existing.started_at === item.started_at
+            && existing.ended_at === item.ended_at && existing.outcome === item.outcome)) {
+            coverage.push(item);
+          }
+        }
+        coverage.sort((a, b) => a.started_at - b.started_at);
+        const metadataChanged = JSON.stringify(state.coverage) !== JSON.stringify(coverage)
+          || (!state.coverageTruncated && result.coverage_truncated)
           || state.capture !== result.capture_started_at
           || state.retained !== result.retained_from
           || state.removed !== result.recording_ended_at;
         const renderNeeded = state.generation === null || result.events.length > 0
           || (result.reduced && !state.reduced) || metadataChanged;
         state.generation = result.generation;
-        state.reduced = state.reduced || result.reduced;
-        state.coverage = result.coverage;
-        state.coverageTruncated = result.coverage_truncated;
-        state.reduced = state.reduced || result.coverage_truncated;
+        state.reduced ||= result.reduced || result.coverage_truncated;
+        state.coverage = coverage;
+        state.coverageTruncated ||= result.coverage_truncated;
         state.capture = result.capture_started_at;
         state.retained = result.retained_from;
         state.removed = result.recording_ended_at;
         for (const event of result.events) state.events.set(event.id, event);
         if (state.events.size > maxEvents) {
-          throw Object.assign(new Error('Chart memory limit reached'), {code: 'history_changed'});
+          throw Object.assign(new Error('Chart memory limit reached'), {code: 'cache_full'});
         }
-        counts.set(state, counts.get(state) + result.events.length);
-        state.cursor = result.next_id;
-        if (!result.has_more) state.cursor = Math.max(state.cursor, result.latest_id);
-        else if (counts.get(state) >= maxEvents) {
-          state.reduced = true;
-          state.cursor = result.latest_id;
-        } else next.push(state);
+        counts.set(job, counts.get(job) + result.events.length);
+        state.cursor = Math.max(state.cursor, result.latest_id);
+        if (result.has_more) {
+          if (counts.get(job) >= maxEvents) {
+            throw Object.assign(new Error('Chart page limit reached'), {code: 'cache_full'});
+          }
+          job.afterId = result.next_id;
+          next.push(job);
+        } else if (job.initial) {
+          state.loaded = mergeInterval(state.loaded, job.start, job.end);
+        }
         if (renderNeeded) render(state);
+        limitCache(state);
       }
       pending = next;
     }
+    return true;
   };
-  const load = async (fresh = false) => {
-    if (busy || document.hidden || !requested.length) return;
+  const query = async (token, poll) => {
+    const initiallyEmpty = sourceStates.every((state) => state.loaded.length === 0);
+    while (true) {
+      const jobs = sourceStates.flatMap((state) => {
+        const missing = missingIntervals(state.loaded, range.start, range.end);
+        return missing.length ? [{state, ...missing[0], afterId: 0, initial: true}] : [];
+      });
+      if (!jobs.length) break;
+      if (!await fetchJobs(jobs, token)) return;
+    }
+    if (poll && !initiallyEmpty) {
+      await fetchJobs(sourceStates.map((state) => ({state,
+        start: range.start, end: range.end, afterId: state.cursor, initial: false})), token);
+    }
+  };
+  const load = async (fresh = false, poll = true) => {
+    if (busy || document.hidden || !requested.length) {
+      if (busy) { rerun = true; rerunPoll ||= poll; rerunFresh ||= fresh; }
+      return;
+    }
     if (rolling) {
       const end = Date.now() / 1000;
       const shift = Math.max(0, end - range.end);
@@ -292,6 +404,9 @@
           }
         }
         if (removed) render(state);
+        state.loaded = state.loaded.map((item) =>
+          ({start: Math.max(item.start, range.start), end: item.end}))
+          .filter((item) => item.start < item.end);
       }
       if (shift > 0) {
         applyingScale = true;
@@ -311,7 +426,8 @@
         await prepare();
         verifying = false;
       }
-      await query(token);
+      if (token !== sequence) return;
+      await query(token, poll);
       if (token === sequence) {
         staleRetries = 0;
         historyRetries = 0;
@@ -320,14 +436,15 @@
     } catch (error) {
       if (token !== sequence) return;
       if (verifying) clear();
-      if (error.code === 'history_changed') {
+      if (error.code === 'history_changed' || error.code === 'cache_full') {
         for (const state of sourceStates) {
-          state.events.clear(); state.generation = null; state.cursor = 0; state.reduced = false;
+          resetSource(state);
           render(state);
         }
         if (historyRetries < 1) {
           historyRetries++;
           rerun = true;
+          rerunPoll = true;
         } else setStatus(label('chartUnavailable'), 'warning');
       } else if (error.code === 'stale_configuration' && staleRetries < 1) {
         staleRetries++;
@@ -344,8 +461,12 @@
     } finally {
       busy = false;
       if (rerun) {
+        const nextPoll = rerunPoll;
+        const nextFresh = rerunFresh;
         rerun = false;
-        void load(false);
+        rerunPoll = false;
+        rerunFresh = false;
+        void load(nextFresh, nextPoll);
       }
     }
   };
@@ -365,12 +486,13 @@
       $('chart-to').value = localInput(end);
     }
     sequence++;
+    applyingScale = true;
+    for (const state of sourceStates) state.plot?.setScale('x', {min: start, max: end});
+    applyingScale = false;
     if (busy) rerun = true;
-    for (const state of sourceStates) {
-      state.events.clear(); state.cursor = 0; state.generation = null; state.reduced = false;
-      render(state);
+    else if (sourceStates.some((state) => missingIntervals(state.loaded, start, end).length)) {
+      void load(false, false);
     }
-    void load(false);
   };
   $('chart-range').addEventListener('change', (event) => {
     const custom = event.target.value === 'custom';
