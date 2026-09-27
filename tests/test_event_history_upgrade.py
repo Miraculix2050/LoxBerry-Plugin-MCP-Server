@@ -49,3 +49,18 @@ def test_native_upgrade_rejects_symlink_and_destination_collision(tmp_path: Path
     assert run("backup", source, backup).returncode != 0
     assert run("restore", backup, source).returncode != 0
     assert backup.exists()
+
+
+def test_native_upgrade_rejects_symlinked_restore_directory(tmp_path: Path) -> None:
+    snapshot = tmp_path / "snapshot.sqlite3"
+    with sqlite3.connect(snapshot) as db:
+        db.execute("CREATE TABLE events (id INTEGER)")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    plugin = tmp_path / "plugin"
+    plugin.mkdir()
+    (plugin / "event-history").symlink_to(outside, target_is_directory=True)
+    destination = plugin / "event-history" / "state-events.sqlite3"
+    assert run("restore", snapshot, destination).returncode != 0
+    assert snapshot.exists()
+    assert not (outside / "state-events.sqlite3").exists()

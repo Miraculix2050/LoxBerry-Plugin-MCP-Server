@@ -933,11 +933,14 @@ class EventHistoryStore:
         end: float,
         after_id: int = 0,
         limit: int = 500,
+        deadline: float | None = None,
     ) -> dict[str, object]:
         """Read a bounded chart page without running recorder maintenance."""
 
         if limit < 1 or limit > 500 or after_id < 0 or start >= end:
             raise ValueError("chart query is invalid")
+        if deadline is not None and time.monotonic() >= deadline:
+            raise EventHistoryUnavailable("chart query timed out")
         if not self.path.exists():
             return {
                 "generation": 0,
@@ -970,8 +973,13 @@ class EventHistoryStore:
                         (control_uuid, state_uuid, start, end),
                     ).fetchall()
                     if len(dense) > 4000:
-                        deadline = time.monotonic() + 8
-                        db.set_progress_handler(lambda: int(time.monotonic() >= deadline), 10000)
+                        sample_deadline = min(
+                            time.monotonic() + 8,
+                            deadline if deadline is not None else float("inf"),
+                        )
+                        db.set_progress_handler(
+                            lambda: int(time.monotonic() >= sample_deadline), 10000
+                        )
                         try:
                             rows = self._chart_sample(db, control_uuid, state_uuid, start, end)
                         finally:

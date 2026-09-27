@@ -41,9 +41,19 @@ def restore(source: Path, destination: Path) -> None:
     with closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True)) as snapshot:
         if snapshot.execute("PRAGMA quick_check").fetchone()[0] != "ok":
             raise RuntimeError("event history restore failed integrity check")
-    destination.parent.mkdir(mode=0o700, exist_ok=True)
-    os.replace(source, destination)
-    os.chmod(destination, 0o600)
+    parent = destination.parent
+    parent.mkdir(mode=0o700, exist_ok=True)
+    if not stat.S_ISDIR(parent.lstat().st_mode):
+        raise RuntimeError("unsafe event history restore directory")
+    os.chmod(source, 0o600)
+    if os.replace in os.supports_dir_fd and hasattr(os, "O_NOFOLLOW"):
+        directory = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            os.replace(source, destination.name, dst_dir_fd=directory)
+        finally:
+            os.close(directory)
+    else:
+        os.replace(source, destination)
 
 
 if __name__ == "__main__":

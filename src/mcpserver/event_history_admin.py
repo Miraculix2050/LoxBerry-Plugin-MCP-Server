@@ -512,10 +512,14 @@ def chart_prepare(payload: object) -> dict[str, Any]:
     }
 
 
-def chart_query(payload: object) -> dict[str, Any]:
+def chart_query(payload: object, *, _deadline: float | None = None) -> dict[str, Any]:
     """Return one bounded local page only while fresh visibility proof holds."""
 
     bridge = _bridge()
+    if _deadline is None:
+        _deadline = time.monotonic() + 10
+    if time.monotonic() >= _deadline:
+        raise bridge.AdminError("chart query timed out", code="temporarily_unavailable")
     if not isinstance(payload, dict):
         raise bridge.AdminError("chart query is invalid")
     if "queries" in payload:
@@ -527,7 +531,7 @@ def chart_query(payload: object) -> dict[str, Any]:
         sources = tuple(_source(item) for item in queries)
         if len(set(sources)) != len(sources):
             raise bridge.AdminError("duplicate chart source")
-        results = [chart_query(item) for item in queries]
+        results = [chart_query(item, _deadline=_deadline) for item in queries]
         if len({result["generation"] for result in results}) != 1:
             raise bridge.AdminError("local history changed", code="history_changed")
         return {"results": results}
@@ -561,7 +565,9 @@ def chart_query(payload: object) -> dict[str, Any]:
     if _chart_visible(document, source) is None:
         raise bridge.AdminError("chart source is not visible", code="forbidden")
     try:
-        return _store(config).chart_page(*source, start=start, end=end, after_id=after_id)
+        return _store(config).chart_page(
+            *source, start=start, end=end, after_id=after_id, deadline=_deadline
+        )
     except (OSError, ValueError, RuntimeError) as exc:
         raise bridge.AdminError(
             "local event history is unavailable", code="temporarily_unavailable"

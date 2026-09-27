@@ -95,11 +95,17 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
   assert.equal(fixedRange.end, advancedRange.end);
   window.Date.now = originalNow;
 
+  rangeSelect.value = '86400';
+  rangeSelect.dispatchEvent(new window.Event('change'));
+  await flush();
   holdNext = true;
   tick();
   await flush();
   assert.equal(typeof releaseHeld, 'function');
   window.document.querySelector('#chart-previous').click();
+  assert.equal(rangeSelect.value, 'custom');
+  assert.equal(window.document.querySelector('#chart-from').disabled, false);
+  assert.equal(window.document.querySelector('#chart-apply').disabled, false);
   releaseHeld();
   await flush();
   const replay = JSON.parse(queries().at(-1).fields.queries)[0];

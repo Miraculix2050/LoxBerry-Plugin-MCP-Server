@@ -312,6 +312,12 @@
     }
     range = {start, end};
     rolling = follow;
+    if (!follow) {
+      $('chart-range').value = 'custom';
+      for (const id of ['chart-from', 'chart-to', 'chart-apply']) $(id).disabled = false;
+      $('chart-from').value = localInput(start);
+      $('chart-to').value = localInput(end);
+    }
     sequence++;
     if (busy) rerun = true;
     for (const state of sourceStates) {
