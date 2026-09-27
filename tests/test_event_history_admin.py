@@ -334,6 +334,28 @@ def test_source_revision_tracks_membership_without_polling_event_changes(tmp_pat
     assert revision() != removed
 
 
+def test_payload_backfill_completion_signals_poll_without_changing_source_revision(
+    tmp_path, monkeypatch
+):
+    _, history = _setup(tmp_path, monkeypatch, sources=(SOURCE,))
+    history.initialize()
+    history.record_transition(*SOURCE, observed_at=time.time(), old_value=0, new_value=1)
+    with sqlite3.connect(history.path) as db:
+        db.execute("UPDATE events SET logical_value_bytes = NULL")
+        db.execute("UPDATE source_totals SET logical_value_bytes = 0, unmeasured_events = 1")
+    pending = admin.dispatch({"action": "event_history_source_revision"})
+    assert pending["payload_pending"] is True
+    assert event_history_admin.overview()["payload_pending"] is True
+
+    assert history.backfill_payload_batch() is False
+    complete = admin.dispatch({"action": "event_history_source_revision"})
+    assert complete["revision"] == pending["revision"]
+    assert complete["payload_pending"] is False
+    overview = event_history_admin.overview()
+    assert overview["payload_pending"] is False
+    assert overview["sources"][0]["logical_value_bytes"] == 2
+
+
 def test_snapshot_keeps_counts_and_clear_generation_consistent(tmp_path, monkeypatch):
     _, history = _setup(tmp_path, monkeypatch, sources=(SOURCE,))
     history.initialize()

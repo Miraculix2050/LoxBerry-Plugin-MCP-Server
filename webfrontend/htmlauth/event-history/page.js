@@ -32,6 +32,7 @@
   let staleRecoveryScheduled = false;
   let sourceRevisionChecking = false;
   let knownSourceRevision = '';
+  let knownPayloadPending = null;
   let selectorVerificationPending = false;
   let nextRevisionRefreshAt = 0;
   let revisionRefreshFailures = 0;
@@ -256,6 +257,8 @@
       overviewLoaded = true;
       if (data.store_status === 'available' && typeof data.source_revision === 'string') {
         knownSourceRevision = data.source_revision;
+        knownPayloadPending = typeof data.payload_pending === 'boolean'
+          ? data.payload_pending : null;
         selectorVerificationPending = data.visibility_status !== 'available';
         if (!selectorVerificationPending) {
           nextRevisionRefreshAt = 0;
@@ -619,7 +622,9 @@
     try {
       const data = await api.request('event_history_source_revision', {}, 15000);
       if (data.availability === 'available'
-        && (data.revision !== knownSourceRevision || selectorVerificationPending)
+        && (data.revision !== knownSourceRevision || selectorVerificationPending
+          || (typeof data.payload_pending === 'boolean'
+            && data.payload_pending !== knownPayloadPending))
         && Date.now() >= nextRevisionRefreshAt) {
         const verified = await loadControls();
         if (!verified || knownSourceRevision !== data.revision) {

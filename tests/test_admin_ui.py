@@ -1159,6 +1159,7 @@ const context = {document: {hidden: false}, api: {request: async () =>
   ({availability: 'available', revision: 'new'})}};
 vm.runInNewContext(`let busy = false; let controlsLoading = false;
 let sourceRevisionChecking = false; let knownSourceRevision = 'old';
+let knownPayloadPending = false;
 let selectorVerificationPending = false; let nextRevisionRefreshAt = 0;
 let revisionRefreshFailures = 0; let refreshes = 0;
 const loadControls = async () => { refreshes += 1; knownSourceRevision = 'new'; return false; };
@@ -1173,6 +1174,44 @@ globalThis.subject = {checkSourceRevision, refreshes: () => refreshes,
   context.subject.retryNow();
   await context.subject.checkSourceRevision();
   assert.equal(context.subject.refreshes(), 2);
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_event_history_revision_refreshes_after_payload_backfill() -> None:
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = source.slice(source.indexOf('  const checkSourceRevision = async () => {'),
+  source.indexOf('  const loadStates ='));
+let payloadPending = true;
+const context = {document: {hidden: false}, api: {request: async () =>
+  ({availability: 'available', revision: 'same', payload_pending: payloadPending})}};
+vm.runInNewContext(`let busy = false; let controlsLoading = false;
+let sourceRevisionChecking = false; let knownSourceRevision = 'same';
+let knownPayloadPending = true; let selectorVerificationPending = false;
+let nextRevisionRefreshAt = 0; let revisionRefreshFailures = 0; let refreshes = 0;
+const loadControls = async () => { refreshes += 1; knownPayloadPending = false; return true; };
+${section}
+globalThis.subject = {checkSourceRevision, refreshes: () => refreshes};`, context);
+(async () => {
+  await context.subject.checkSourceRevision();
+  assert.equal(context.subject.refreshes(), 0);
+  payloadPending = false;
+  await context.subject.checkSourceRevision();
+  assert.equal(context.subject.refreshes(), 1);
+  await context.subject.checkSourceRevision();
+  assert.equal(context.subject.refreshes(), 1);
 })().catch((error) => { console.error(error); process.exitCode = 1; });
 """
     subprocess.run(

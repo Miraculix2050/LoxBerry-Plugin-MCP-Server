@@ -1747,7 +1747,7 @@ def _diagnostic() -> dict[str, Any]:
     }
 
 
-def _event_history_source_revision() -> dict[str, str]:
+def _event_history_source_revision() -> dict[str, str | bool]:
     """Read a local change marker without importing discovery or auth clients."""
     from mcpserver.loxone.event_history import EventHistoryStore, source_revision_for_snapshot
 
@@ -1763,6 +1763,7 @@ def _event_history_source_revision() -> dict[str, str]:
         return {"availability": "unavailable"}
     return {
         "availability": "available",
+        "payload_pending": any(source.logical_value_bytes is None for source in snapshot.sources),
         "revision": source_revision_for_snapshot(
             config.event_history_sources,
             snapshot,

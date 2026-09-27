@@ -193,6 +193,7 @@ def overview(
             wal_bytes=snapshot.wal_bytes,
             store_status="available",
             source_revision=_source_revision(config, snapshot),
+            payload_pending=any(source.logical_value_bytes is None for source in snapshot.sources),
         )
     except Exception:
         return response
