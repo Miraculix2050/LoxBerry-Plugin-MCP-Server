@@ -2,7 +2,7 @@
 
 const assert = require('node:assert/strict');
 const {test} = require('node:test');
-const {createHarness, readTool, SCRIPT_NAMES} = require('./explorer-harness.cjs');
+const {createHarness, readTool, writeTool, SCRIPT_NAMES} = require('./explorer-harness.cjs');
 
 test('shipped scripts restore a session and execute an unknown read-only tool', async (t) => {
   const h = createHarness({deferLogout: true});
@@ -110,6 +110,27 @@ test('write flow rejects missing scope, then requires explicit confirmation', as
   });
 });
 
+test('an unknown mutating tool requires confirmation before its first call', async (t) => {
+  const unknownWrite = {
+    name: 'future_write',
+    inputSchema: {type: 'object', properties: {value: {type: 'string'}}, required: ['value']},
+  };
+  const h = createHarness({tools: [unknownWrite]});
+  t.after(h.close);
+  await h.ready();
+  const toolButton = h.byId('tools').querySelector('button');
+  assert.equal(toolButton.querySelector('.mcp-explorer-badge').dataset.kind, 'danger');
+  h.byId('json').value = JSON.stringify({value: 'new-value'});
+  await h.click(h.byId('run'));
+  assert.equal(h.byId('confirm').open, true);
+  assert.equal(h.calls().length, 0);
+  h.byId('confirm').close('confirm');
+  await h.waitFor(() => h.calls().length === 1);
+  assert.deepEqual(h.calls()[0].body.params, {
+    name: 'future_write', arguments: {value: 'new-value'},
+  });
+});
+
 test('filters preserve selection and drafts; JSON edits update the form', async (t) => {
   const h = createHarness();
   t.after(h.close);
@@ -204,6 +225,23 @@ test('expiry and logout discard sensitive state and late call results', async (t
   assert.equal(expired.byId('scope-list').textContent, '');
   assert.equal(expired.byId('run').disabled, true);
   assert.equal(expired.calls().length, 0);
+});
+
+test('session expiry closes an open mutation confirmation and erases its arguments', async (t) => {
+  const h = createHarness({tools: [writeTool], sessionMs: 60000});
+  t.after(h.close);
+  await h.ready();
+  h.byId('json').value = JSON.stringify({control_uuid: 'private-control', action: 'on'});
+  await h.click(h.byId('run'));
+  assert.equal(h.byId('confirm').open, true);
+  assert.match(h.byId('confirm-arguments').textContent, /private-control/);
+  assert.equal(h.calls().length, 0);
+  h.advance(60000);
+  assert.equal(h.byId('confirm').open, false);
+  assert.equal(h.byId('confirm-tool').textContent, '');
+  assert.equal(h.byId('confirm-arguments').textContent, '');
+  assert.equal(h.byId('connection-badge').dataset.kind, 'inactive');
+  assert.equal(h.calls().length, 0);
 });
 
 test('failed restore stays disconnected without MCP calls', async (t) => {
