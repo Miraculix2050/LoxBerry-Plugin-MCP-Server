@@ -36,8 +36,22 @@
   let nextRevisionRefreshAt = 0;
   let revisionRefreshFailures = 0;
   let messageVersion = 0;
+  let actionMessagePinned = false;
   let savedPolicy = null;
   const label = (name) => root.dataset[name] || name;
+  const sections = ['sources', 'add', 'policy', 'clear'];
+  for (const name of sections) {
+    const section = $(`history-${name}-section`);
+    const storageKey = `mcpserver.event-history.section.${name}.v1`;
+    try {
+      const stored = window.localStorage.getItem(storageKey);
+      if (stored === 'true' || stored === 'false') section.open = stored === 'true';
+    } catch { /* The default remains usable without browser storage. */ }
+    section.addEventListener('toggle', () => {
+      try { window.localStorage.setItem(storageKey, String(section.open)); }
+      catch { /* Disclosure remains usable for this visit. */ }
+    });
+  }
   const errorLabel = (error) => ({
     outcome_unknown: label('uncertain'),
     temporarily_unavailable: label('unavailable'),
@@ -50,7 +64,9 @@
     source_ip_blocked: label('sourceIpBlocked'),
     rate_limited: label('sourceLimit'),
   })[error?.code] || label('error');
-  const setMessage = (value, kind = 'info') => {
+  const setMessage = (value, kind = 'info', pin = false) => {
+    if (actionMessagePinned && !pin) return;
+    actionMessagePinned = pin;
     messageVersion += 1;
     message.textContent = value;
     message.dataset.kind = kind;
@@ -161,6 +177,7 @@
     if (!maximumDirty) maximum.value = String(data.maximum_mib);
     savedPolicy = {retention_days: data.retention_days, maximum_mib: data.maximum_mib};
     $('history-policy').textContent = `${data.retention_days} d · ${data.maximum_mib} MiB`;
+    $('history-policy-summary').textContent = `${data.retention_days} d · ${data.maximum_mib} MiB`;
   };
   const renderOverview = (data) => {
       overviewLoaded = true;
@@ -183,6 +200,9 @@
       $('history-source-count').textContent = data.visibility_status === 'available'
         ? `${data.sources_truncated ? `${label('listed')}: ` : ''}${data.visible_active_count} ${label('active')} · ${data.visible_removed_count} ${label('removed')}`
         : `${data.active_source_count} ${label('unknown')}`;
+      $('history-sources-summary').textContent = data.visibility_status === 'available'
+        ? `${data.sources_truncated ? `${label('listed')}: ` : ''}${data.visible_active_count} ${label('active')} · ${data.visible_removed_count} ${label('removed')}`
+        : label('unavailable');
       $('history-events').textContent = data.visibility_status === 'available'
         ? `${data.visible_event_count} ${label('visibleEvents')}` : label('unknown');
       $('history-visibility-warning').hidden = data.visibility_status === 'available';
@@ -241,6 +261,7 @@
     if (busy) return;
     busy = true;
     refreshButton.disabled = true;
+    actionMessagePinned = false;
     setMessage(label('loading'));
     let feedback = label('saved');
     let feedbackKind = 'success';
@@ -258,7 +279,7 @@
       refreshButton.disabled = false;
       addButton.disabled = stateSelect.disabled || !selectedControl || !stateSelect.value;
       stateSearch.disabled = !selectedControl || stateSearchWrap.hidden;
-      setMessage(feedback, feedbackKind);
+      setMessage(feedback, feedbackKind, true);
     }
   };
   const facetSelection = Object.fromEntries(['room', 'category', 'type']
@@ -422,6 +443,7 @@
     invalidateSelector();
     ++querySequence;
     catalogMode = 'loading';
+    $('history-add-summary').textContent = label('loading');
     ++stateGeneration;
     $('history-search').disabled = true;
     $('history-search-status').textContent = label('loading');
@@ -464,12 +486,14 @@
         }
       }
       if (!selectedControl) await applyFilters();
+      $('history-add-summary').textContent = label('loaded');
       return data.overview?.store_status === 'available'
         && data.overview?.visibility_status === 'available';
     } catch (error) {
       if (request === discoveryGeneration) {
         invalidateSelector();
         $('history-search-status').textContent = errorLabel(error);
+        $('history-add-summary').textContent = errorLabel(error);
         try {
           const local = await api.request('event_history_local_overview', {}, 10000);
           if (request === discoveryGeneration) renderOverview(local);
@@ -657,6 +681,8 @@
     if (busy || !selectedControl || !stateSelect.value) return;
     const source = {control_uuid: selectedControl, state_uuid: stateSelect.value};
     busy = true;
+    actionMessagePinned = false;
+    setMessage(label('addWorking'), 'working');
     const locked = Array.from(root.querySelectorAll(
       '#history-add-form input, #history-add-form select, #history-add-form button, '
       + '#history-search, #history-search-button, #history-clear-filters, #history-refresh, '
@@ -693,11 +719,12 @@
       addButton.textContent = label('add');
       addButton.disabled = applied || !stateSelect.value;
       stateSearch.disabled = !selectedControl || stateSearchWrap.hidden;
+      setMessage(addStatus.textContent, addStatus.dataset.kind, true);
     }
   };
   $('history-add-form').addEventListener('submit', (event) => {
     event.preventDefault();
-    if (activeCount >= 64) { setMessage(label('sourceLimit'), 'warning'); return; }
+    if (activeCount >= 64) { setMessage(label('sourceLimit'), 'warning', true); return; }
     void startRecording();
   });
   $('history-policy-form').addEventListener('submit', (event) => {
@@ -710,16 +737,20 @@
   });
   refreshButton.addEventListener('click', () => {
     if (busy || controlsLoading) return;
+    actionMessagePinned = false;
     setMessage(label('refreshWorking'), 'working');
     void (async () => {
       const refreshed = await loadControls();
       void loadStatus();
       setMessage(label(refreshed ? 'refreshed' : 'refreshFailed'),
-        refreshed ? 'success' : 'warning');
+        refreshed ? 'success' : 'warning', true);
       if (refreshed) {
         const shownVersion = messageVersion;
         window.setTimeout(() => {
-          if (messageVersion === shownVersion) setMessage(label('loaded'), 'success');
+          if (messageVersion === shownVersion) {
+            actionMessagePinned = false;
+            setMessage(label('loaded'), 'success');
+          }
         }, 5000);
       }
     })();

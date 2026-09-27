@@ -794,6 +794,100 @@ def test_event_history_selector_is_progressive_and_localized() -> None:
             assert f"{key}=" in translations
 
 
+def test_event_history_sections_use_native_disclosures_and_keep_actions_inside() -> None:
+    page = (ROOT / "templates/event-history.html").read_text(encoding="utf-8")
+    for name in ("sources", "add", "policy", "clear"):
+        assert f'<details id="history-{name}-section"' in page
+    assert (
+        '<details id="history-sources-section" class="mcp-card mcp-event-history-section" open>'
+        in page
+    )
+    assert (
+        'id="history-clear-section" class="mcp-card mcp-event-history-section '
+        'mcp-event-history-danger">' in page
+    )
+    assert page.index('id="history-message"') < page.index('id="history-sources-section"')
+    assert page.index('id="history-policy-form"') > page.index('id="history-policy-section"')
+    assert page.index('id="history-clear"') > page.index('id="history-clear-section"')
+    assert "<TMPL_VAR EVENT_HISTORY.CLEAR_SUMMARY>" in page
+    for language in ("de", "en"):
+        labels = (ROOT / f"templates/lang/language_{language}.ini").read_text(encoding="utf-8")
+        assert "CLEAR_SUMMARY=" in labels
+
+
+def test_event_history_disclosure_storage_and_action_feedback() -> None:
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the complete deterministic gate"
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = (start, end) => source.slice(source.indexOf(start), source.indexOf(end));
+const sections = new Map(['sources', 'add', 'policy', 'clear'].map((name) =>
+  [name, {open: name === 'sources', listeners: {}, addEventListener(event, fn) {
+    this.listeners[event] = fn;
+  }}]));
+const saved = new Map([['mcpserver.event-history.section.add.v1', 'true']]);
+let requests = 0;
+const message = {textContent: '', dataset: {}};
+const context = {
+  $: (id) => id === 'history-message' ? message
+    : sections.get(id.replace(/^history-|\-section$/g, '')),
+  window: {localStorage: {getItem: (key) => saved.get(key) ?? null,
+    setItem: (key, value) => saved.set(key, value)}},
+  root: {dataset: {}},
+  api: {request: () => { requests++; }},
+};
+vm.runInNewContext(`let actionMessagePinned = false;
+${section('  const sections = ', '  const errorLabel =')}
+let messageVersion = 0; const message = $('history-message');
+${section('  const setMessage = ', '  const date =')}
+globalThis.subject = {setMessage};`, context);
+assert.equal(sections.get('sources').open, true);
+assert.equal(sections.get('add').open, true);
+assert.equal(sections.get('policy').open, false);
+assert.equal(sections.get('clear').open, false);
+sections.get('policy').open = true;
+sections.get('policy').listeners.toggle();
+assert.equal(saved.get('mcpserver.event-history.section.policy.v1'), 'true');
+assert.equal(sections.get('clear').open, false);
+assert.equal(requests, 0);
+context.subject.setMessage('saved', 'success', true);
+context.subject.setMessage('loaded', 'success');
+assert.equal(message.textContent, 'saved');
+assert.equal(message.dataset.kind, 'success');
+let submit;
+vm.runInNewContext(`let activeCount = 64; const label = (name) => name;
+const startRecording = () => { throw Error('must not start'); };
+${section("  $('history-add-form').addEventListener", "  $('history-policy-form')")}`, {
+  $: () => ({addEventListener: (_event, handler) => { submit = handler; }}),
+  setMessage: context.subject.setMessage,
+});
+submit({preventDefault() {}});
+assert.equal(message.textContent, 'sourceLimit');
+assert.equal(message.dataset.kind, 'warning');
+context.subject.setMessage('loaded', 'success');
+assert.equal(message.textContent, 'sourceLimit');
+const blocked = new Map(['sources', 'add', 'policy', 'clear'].map((name) =>
+  [name, {open: name === 'sources', addEventListener() {}}]));
+vm.runInNewContext(`${section('  const sections = ', '  const errorLabel =')}`, {
+  $: (id) => blocked.get(id.replace(/^history-|\-section$/g, '')),
+  window: {localStorage: {getItem() { throw Error('blocked'); },
+    setItem() { throw Error('blocked'); }}},
+});
+assert.equal(blocked.get('sources').open, true);
+assert.equal(blocked.get('add').open, false);
+assert.equal(blocked.get('clear').open, false);
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
 def test_event_history_mutation_refresh_waits_for_inflight_discovery() -> None:
     node = shutil.which("node")
     assert node is not None, "Node.js is required for the complete deterministic gate"
@@ -930,14 +1024,17 @@ context.subject.renderOverview({store_status: 'available', visibility_status: 'u
 assert.equal(context.subject.revision(), 'local-revision');
 assert.equal(context.subject.pending(), true);
 context.subject.renderOverview({store_status: 'available', visibility_status: 'available',
-  source_revision: 'local-revision', active_source_count: 1, retention_days: 30,
+  source_revision: 'local-revision', active_source_count: 1,
+  visible_active_count: 0, visible_removed_count: 0, retention_days: 30,
   maximum_mib: 64, database_bytes: 0, wal_bytes: 0, sources: [], unverified_sources: []});
 assert.equal(context.subject.pending(), false);
+assert.equal(nodes.get('history-sources-summary').textContent, '0 active · 0 removed');
 context.subject.renderOverview({store_status: 'unavailable', visibility_status: 'unavailable',
   active_source_count: 1, retention_days: 30, maximum_mib: 64,
   sources: [], unverified_sources: []});
 assert.equal(context.subject.revision(), 'local-revision');
 assert.equal(context.subject.pending(), true);
+assert.equal(nodes.get('history-sources-summary').textContent, 'unavailable');
 """
     subprocess.run(
         [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
@@ -970,6 +1067,7 @@ context.renderPolicy({retention_days: 31, maximum_mib: 128});
 assert.equal(nodes.get('history-retention').value, '45');
 assert.equal(nodes.get('history-maximum').value, '128');
 assert.equal(nodes.get('history-policy').textContent, '31 d · 128 MiB');
+assert.equal(nodes.get('history-policy-summary').textContent, '31 d · 128 MiB');
 nodes.get('history-retention').value = '31';
 context.renderPolicy({retention_days: 32, maximum_mib: 128});
 assert.equal(nodes.get('history-retention').value, '32');
