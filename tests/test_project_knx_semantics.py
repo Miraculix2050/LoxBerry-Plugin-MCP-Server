@@ -57,9 +57,11 @@ def test_knx_endpoints_keep_direction_source_data_and_bounded_address():
         "datatype": {
             "source_field": "EIBType",
             "source_value": "5",
+            "source_kind": "loxone_config",
             "system": "unknown",
             "normalized_code": None,
         },
+        "normalized_dpt_evidence": None,
         "truncated_fields": [],
         "usage_observations": [],
         "usage_observations_truncated": False,
@@ -67,6 +69,8 @@ def test_knx_endpoints_keep_direction_source_data_and_bounded_address():
         "connector_evidence_truncated": False,
     }
     assert actor["flow_direction"] == "loxone_to_bus"
+    assert actor["datatype"] is None
+    assert actor["normalized_dpt_evidence"] is None
 
 
 def test_observed_knx_fixture_keeps_semantics_and_existing_graph_paths():

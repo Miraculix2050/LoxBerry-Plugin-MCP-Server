@@ -89,6 +89,32 @@ def test_knx_connector_evidence_survives_public_describe_schema():
     assert detail.connector_evidence_truncated is True
 
 
+def test_project_status_trims_coverage_groups_to_response_limit(monkeypatch):
+    status = Query().status()
+    status["structure_generation"] = 1
+    status["coverage_by_source_type"]["entries"] = [
+        {
+            "source_type": f"EIBunknown{index:02d}" + "x" * 80,
+            "source_type_truncated": False,
+            "source_objects": 1,
+            "modeled_endpoints": 0,
+            "modeled_logic_blocks": 0,
+            "modeled_lines": 0,
+            "unsupported": 1,
+            "invalid_or_missing_address": 0,
+            "duplicate_source_occurrences": 0,
+        }
+        for index in range(20)
+    ]
+    envelope = tools_module._result(tools_module.ProjectStatusEnvelope, status)
+    monkeypatch.setattr(tools_module, "PROJECT_RESPONSE_MAX_BYTES", 2_000)
+
+    assert tools_module._fit_project_status(envelope)
+    assert len(envelope.model_dump_json().encode("utf-8")) <= 2_000
+    assert envelope.data.coverage_by_source_type.groups_omitted > 0
+    assert envelope.data.coverage_by_source_type.complete is False
+
+
 class Query:
     view = SimpleNamespace(
         marker="revision",
@@ -110,6 +136,12 @@ class Query:
                 "complete": True,
                 "groups_omitted": 0,
                 "labels_truncated": False,
+            },
+            "coverage_by_source_type": {
+                "entries": [],
+                "complete": True,
+                "groups_omitted": 0,
+                "ambiguous_source_objects": 0,
             },
         }
 
@@ -1051,7 +1083,7 @@ async def test_project_analysis_is_read_only_bounded_and_cursor_scoped(monkeypat
         analysis_calls += 1
         assert runtime.active_workers == 1
         return {
-            "analysis_version": 2,
+            "analysis_version": 5,
             "project_fingerprint": "a" * 64,
             "model_version": 3,
             "scope": "knx",
@@ -1062,6 +1094,12 @@ async def test_project_analysis_is_read_only_bounded_and_cursor_scoped(monkeypat
                 "raw_datatypes": 0,
                 "reviewed_signal_usage": 0,
                 "unresolved_relationships": 0,
+            },
+            "coverage_by_source_type": {
+                "entries": [],
+                "complete": True,
+                "groups_omitted": 0,
+                "ambiguous_source_objects": 0,
             },
             "summaries": {"project_connectivity": {"unconnected": 1, "ambiguous": 0}},
             "limitations": [],

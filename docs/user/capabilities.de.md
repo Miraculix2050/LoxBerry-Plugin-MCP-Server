@@ -56,7 +56,7 @@ mehrere getrennte KNX-Signalnutzungsbeobachtungen. Trace liefert getrennt markie
 Connectorkanten sowie begrenzte Pfade `knx_to_loxone`, `loxone_to_knx` oder `knx_to_knx`.
 Unbekanntes Block- oder Connector-Verhalten wird nicht geraten. Diese Ergebnisse beschreiben
 statische Projektpfade, keine Bus-Telegramme und keine historische Ursache einer Aktion.
-`loxone_analyze_project` Version 4 fasst begrenzte, projektlokale KNX-Evidenz zusammen:
+`loxone_analyze_project` Version 5 fasst begrenzte, projektlokale KNX-Evidenz zusammen:
 Adress- und Quellnamensmuster, Wiederverwendung von Rohdatentypen, geprüfte Unterschiede der
 Signalnutzung, Kontext aus exakten Runtime-Mappings, lokale Peer- und Graph-Ausreißer,
 Pfadzähler und Endpunkte ohne beobachtete Projektbeziehung. Runtime-Namen und Control-Typen werden
@@ -66,6 +66,12 @@ normalisierte DPTs, Semantikdomänen, geprüfte Signalnutzung oder Runtime-Mappi
 behauptet weder DPT-Kompatibilität noch ETS-Abdeckung, Busaktivität oder physische
 Geräteverwendung; die Evidenz eines zurückgegebenen Projektknotens lässt sich mit Describe oder
 Trace vertiefen.
+Projektstatus und Analyse liefern außerdem `coverage_by_source_type`. Rohe
+Quellobjekt-Vorkommen werden getrennt von logischen Endpunkt-, Logikblock- und
+Linienzahlen gezählt; zusätzliche, über Modellquellen zusammengefasste Vorkommen
+sind eigens ausgewiesen. Unklare KNX-Kandidaten und ausgelassene Typgruppen machen
+die Abdeckung unvollständig. Objektdetails kennzeichnen `EIBType` als rohen
+Loxone-Config-Wert und melden, dass normalisierte DPT-Evidenz derzeit fehlt.
 `loxone_analyze_observability` bewertet getrennt einen begrenzten, ausdrücklich angefragten
 Zeitraum für ein Projektziel. Es verbindet nur exakte UUID-gemappte strukturelle Erreichbarkeit,
 Verfügbarkeit aktueller States, beworbene native Statistikserien und die Abdeckung der lokalen

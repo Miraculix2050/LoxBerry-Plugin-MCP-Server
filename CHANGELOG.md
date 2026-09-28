@@ -8,6 +8,10 @@ extracted from the matching version heading.
 - Avoid loading the Loxone project runtime for Event History chart queries, reducing Admin helper startup cost. Reuse a bounded, tab-local Chart View snapshot after fresh visibility and history checks so reloads fetch only missing or newer values.
 
 - Place each Chart View source's name, context, coverage details, and individual status beside its plot on wide screens; show the shared capture warning only once above the charts.
+- Expose bounded KNX coverage by source type in project status and analysis,
+  distinguishing raw source occurrences, logical objects, unsupported types,
+  ambiguous candidates and duplicate model-source occurrences. Identify raw
+  Config datatype evidence separately from unavailable normalized DPT evidence.
 
 - Add `loxone_list_event_history_sources` for currently visible control/state pairs; page both source lists with active/removed status and known recording end time. Allow the complete `loxberry_list_event_history_sources` with either exact local read or operate approval, and show its alternative requirements in the Tool Explorer.
 - Zoom the Chart View time axis around the pointer with Ctrl+mouse wheel over a plot, while ordinary wheel scrolling remains available.
