@@ -1443,6 +1443,37 @@ def test_knx_taxonomy_save_is_endpoint_scoped_and_preserves_other_settings(
     assert store.load().knx_address_taxonomy[0].label == "Test floor"
 
 
+def test_legacy_full_config_save_retains_separately_managed_knx_taxonomy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mcpserver.loxone.project.taxonomy import AddressTaxonomyEntry
+
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    previous = PluginConfig(
+        loxone_endpoint="http://192.168.10.20",
+        knx_address_taxonomy_endpoint="http://192.168.10.20",
+        knx_address_taxonomy=(AddressTaxonomyEntry("6/2", "Existing label", "three_level"),),
+    )
+    store.save(previous)
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._restart_service", lambda: None)
+    monkeypatch.setattr("mcpserver.admin._sessions", lambda: [])
+    monkeypatch.setattr("mcpserver.admin._service_response", lambda: {"service_active": True})
+
+    _save(
+        {
+            "schema_version": 10,
+            "server": {"enabled": False},
+            "loxone": {"endpoint": "http://192.168.10.21"},
+        }
+    )
+
+    saved = store.load()
+    assert saved.loxone_endpoint == "http://192.168.10.21"
+    assert saved.knx_address_taxonomy_endpoint == previous.knx_address_taxonomy_endpoint
+    assert saved.knx_address_taxonomy == previous.knx_address_taxonomy
+
+
 def test_failed_mcp_section_apply_restores_running_service(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

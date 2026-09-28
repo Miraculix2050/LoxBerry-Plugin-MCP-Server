@@ -538,6 +538,12 @@ def _save(payload: object) -> dict[str, Any]:
     previous = store.load()
     if "logging" not in payload:
         config = replace(config, log_level=previous.log_level)
+    if "knx_address_taxonomy" not in payload:
+        config = replace(
+            config,
+            knx_address_taxonomy_endpoint=previous.knx_address_taxonomy_endpoint,
+            knx_address_taxonomy=previous.knx_address_taxonomy,
+        )
     if "policies" not in payload:
         config = replace(
             config,
