@@ -16,3 +16,7 @@ observed in the same authorized project inspection. All identifiers, labels and
 group addresses were replaced, while the exact `Type`, `EibAddr`, `EIBType`,
 `C`, `Co` and `In` layout needed for semantic classification and graph traversal
 was retained. It is not a raw project export.
+
+knx-text-endpoints.xml is synthetic. It covers the confirmed type names,
+EibAddr forms, and connector directions without retaining project identifiers,
+labels, addresses, or other private source values.

@@ -13,7 +13,11 @@ _ENDPOINT_DIRECTIONS = {
     "EIBsensor": "bus_to_loxone",
     "EIBactor": "loxone_to_bus",
     "EIBextsensor": "bus_to_loxone",
+    "EIBextactor": "loxone_to_bus",
+    "EIBtextsensor": "bus_to_loxone",
+    "EIBtextactor": "loxone_to_bus",
 }
+_OPTIONAL_RAW_DATATYPE_TYPES = frozenset({"EIBextactor", "EIBtextsensor", "EIBtextactor"})
 _LOGIC_TYPES = {"EIBPush", "EibDimmer", "EIBJalousie"}
 
 
@@ -91,6 +95,12 @@ def signal_use_rules(block_type: str | None) -> tuple[SignalUseRule, ...]:
     """Return reviewed internal-flow rules for one exact project block type."""
 
     return _SIGNAL_USE_RULES.get(block_type or "", ())
+
+
+def expects_raw_datatype(source_type: str) -> bool:
+    """Whether an absent EIBType warrants a source-gap diagnostic."""
+
+    return source_type not in _OPTIONAL_RAW_DATATYPE_TYPES
 
 
 def _bounded(value: str | None, field: str, limit: int, truncated: list[str]) -> str | None:
@@ -178,7 +188,10 @@ def classify_knx(element: ProjectElement) -> KnxSemantics | None:
             address_field = "EibAddrPulse"
             address_value = element.value(address_field)
         address = _group_address(
-            address_value, address_field, truncated, allow_edge=source_type == "EIBextsensor"
+            address_value,
+            address_field,
+            truncated,
+            allow_edge=source_type in {"EIBextsensor", "EIBextactor"},
         )
         return result("endpoint", direction, address, datatype)
     if source_type in _LOGIC_TYPES:

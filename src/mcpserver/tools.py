@@ -624,6 +624,14 @@ class ProjectSignalUseObservationData(BaseModel):
     effect: Literal["toggle", "set_on", "set_off"] | None
 
 
+class ProjectKnxConnectorEvidenceData(BaseModel):
+    project_node_id: str
+    connector_key: str | None
+    connector_key_truncated: bool
+    incoming_signals: int = Field(ge=0)
+    outgoing_signals: int = Field(ge=0)
+
+
 class ProjectKnxData(BaseModel):
     object_kind: Literal["line", "endpoint", "logic_block"]
     flow_direction: Literal["bus_to_loxone", "loxone_to_bus"] | None
@@ -644,6 +652,8 @@ class ProjectKnxData(BaseModel):
     ]
     usage_observations: list[ProjectSignalUseObservationData] = Field(default_factory=list)
     usage_observations_truncated: bool = False
+    connector_evidence: list[ProjectKnxConnectorEvidenceData] = Field(default_factory=list)
+    connector_evidence_truncated: bool = False
 
 
 class ProjectNodeSourceDiagnosticData(BaseModel):

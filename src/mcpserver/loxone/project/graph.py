@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from .decoder import decode_loxcc
 from .models import DEFAULT_LIMITS, ProjectBundle, ProjectError, ProjectLimits
 from .parser import ParsedProject, parse_project
-from .semantics import KnxSemantics, classify_knx, signal_use_rules
+from .semantics import KnxSemantics, classify_knx, expects_raw_datatype, signal_use_rules
 
 _DIAGNOSTIC_GROUP_LIMIT = 2048
 _DIAGNOSTIC_SAMPLE_LIMIT = 3
@@ -398,7 +398,7 @@ def _source_diagnostics(
                 add("missing_group_address", node)
             elif knx.group_address.canonical is None:
                 add("invalid_group_address", node)
-            if knx.datatype is None:
+            if knx.datatype is None and expects_raw_datatype(knx.source_type):
                 add("missing_raw_datatype", node)
         for key, value in node.attributes:
             if key not in _KNOWN_KNX_ATTRIBUTES:
@@ -519,7 +519,7 @@ def build_snapshot(
     )
     return ProjectSnapshot(
         bundle.fingerprint,
-        6,
+        7,
         tuple(projects),
         graph,
         _source_diagnostics(graph, tuple(anomalies)),

@@ -61,6 +61,34 @@ def test_knx_edge_variant_survives_public_project_schemas():
     assert finding.address_variant == "1"
 
 
+def test_knx_connector_evidence_survives_public_describe_schema():
+    detail = tools_module.ProjectKnxData.model_validate(
+        {
+            "object_kind": "endpoint",
+            "flow_direction": "loxone_to_bus",
+            "source_type": "EIBextactor",
+            "title": None,
+            "description": None,
+            "internal_name": None,
+            "group_address": None,
+            "datatype": None,
+            "truncated_fields": [],
+            "connector_evidence": [
+                {
+                    "project_node_id": "p:2",
+                    "connector_key": "I",
+                    "connector_key_truncated": False,
+                    "incoming_signals": 1,
+                    "outgoing_signals": 0,
+                }
+            ],
+            "connector_evidence_truncated": True,
+        }
+    )
+    assert detail.model_dump()["connector_evidence"][0]["incoming_signals"] == 1
+    assert detail.connector_evidence_truncated is True
+
+
 class Query:
     view = SimpleNamespace(
         marker="revision",

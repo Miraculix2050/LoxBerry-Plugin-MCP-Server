@@ -63,6 +63,8 @@ def test_knx_endpoints_keep_direction_source_data_and_bounded_address():
         "truncated_fields": [],
         "usage_observations": [],
         "usage_observations_truncated": False,
+        "connector_evidence": [],
+        "connector_evidence_truncated": False,
     }
     assert actor["flow_direction"] == "loxone_to_bus"
 
@@ -215,6 +217,155 @@ def test_extsensor_variants_and_pulse_fallback_are_distinct_and_source_backed():
     assert {item["code"] for item in invalid_detail["source_diagnostics"]} >= {
         "invalid_group_address"
     }
+
+
+def test_text_and_external_actor_endpoints_use_exact_source_evidence():
+    project = _query(Path("tests/fixtures/project/knx-text-endpoints.xml").read_bytes())
+
+    def find(*, block_type: str | None = None, address: str | None = None):
+        return project.find(
+            query=None,
+            kind=None,
+            block_type=block_type,
+            source_id=None,
+            runtime_control_uuid=None,
+            technology="knx_eib",
+            knx_group_address=address,
+        )
+
+    assert len(find()) == 5
+    assert len(find(block_type="EIBtextactor")) == 2
+    assert [item["source_id"] for item in find(address="7/3/10")] == ["text-sensor"]
+    assert [item["source_id"] for item in find(address="7/3/13:0")] == ["ext-actor-zero"]
+    assert [item["source_id"] for item in find(address="7/3/13:1")] == ["ext-actor-one"]
+    assert {item["source_id"] for item in find(address="7/3/13")} == {
+        "ext-actor-zero",
+        "ext-actor-one",
+    }
+    assert find(address="7/3/14") == []
+
+    def describe(address: str):
+        return project.describe(
+            project.resolve(find(address=address)[0]["project_node_id"], "project_node_id"),
+            limit=10,
+        )
+
+    sensor = describe("7/3/10")
+    actor = describe("7/3/11")
+    external = describe("7/3/13:0")
+    unsupported = project.describe(project.resolve("p:20", "project_node_id"), limit=10)
+    sensor_connector = sensor["knx"]["connector_evidence"][0]
+    actor_connector = actor["knx"]["connector_evidence"][0]
+    assert sensor["knx"]["flow_direction"] == "bus_to_loxone"
+    assert sensor_connector["connector_key"] == "Q"
+    assert sensor_connector["incoming_signals"] == 0
+    assert sensor_connector["outgoing_signals"] == 1
+    assert actor["knx"]["flow_direction"] == "loxone_to_bus"
+    assert actor_connector["connector_key"] == "I"
+    assert actor_connector["incoming_signals"] == 1
+    assert actor_connector["outgoing_signals"] == 0
+    assert external["knx"]["group_address"]["original"] == "7/3/13:0"
+    assert external["knx"]["group_address"]["canonical"] == "7/3/13"
+    assert external["knx"]["group_address"]["source_field"] == "EibAddr"
+    assert external["knx"]["group_address"]["variant"] == {"kind": "edge", "value": "0"}
+    assert external["knx"]["datatype"] is None
+    assert "missing_raw_datatype" not in {item["code"] for item in external["source_diagnostics"]}
+    assert "unmodeled_knx_attribute" in {item["code"] for item in external["source_diagnostics"]}
+    assert "private-value" not in repr(external)
+    assert unsupported["knx"] is None
+    assert "unclassified_knx_candidate" in {
+        item["code"] for item in unsupported["source_diagnostics"]
+    }
+
+    assert any(
+        edge["source"] == sensor_connector["project_node_id"]
+        for edge in project.trace(
+            project.resolve(sensor["project_node_id"], "project_node_id"),
+            direction="downstream",
+            max_depth=4,
+            max_nodes=20,
+        )["edges"]
+    )
+    assert any(
+        edge["target"] == actor_connector["project_node_id"]
+        for edge in project.trace(
+            project.resolve(actor["project_node_id"], "project_node_id"),
+            direction="upstream",
+            max_depth=4,
+            max_nodes=20,
+        )["edges"]
+    )
+
+
+def test_new_endpoint_connector_evidence_is_bounded_and_text_variants_are_unmodeled():
+    long_key = "K" * 130
+    project = _query(
+        (
+            '<P><C Type="EIBtextsensor" U="sensor" EibAddr="7/3/10:0" '
+            'EibAddrPulse="7/3/11"><Co K="' + long_key + '" U="one"/>'
+            '<Co K="two" U="two"/></C></P>'
+        ).encode()
+    )
+    detail = project.describe(project.resolve("p:1", "project_node_id"), limit=1)
+    knx = detail["knx"]
+    assert knx["group_address"]["original"] == "7/3/10:0"
+    assert knx["group_address"]["canonical"] is None
+    assert knx["group_address"]["source_field"] == "EibAddr"
+    assert len(knx["connector_evidence"]) == 1
+    assert knx["connector_evidence_truncated"] is True
+    assert knx["connector_evidence"][0]["connector_key"] == long_key[:100]
+    assert knx["connector_evidence"][0]["connector_key_truncated"] is True
+    assert {item["code"] for item in detail["source_diagnostics"]} >= {
+        "invalid_group_address",
+    }
+
+
+def test_connector_evidence_includes_all_logical_source_occurrences():
+    first = parse_project(
+        b'<P><C Type="EIBtextactor" U="actor" EibAddr="7/3/11"><Co K="I" U="first-input"/></C></P>'
+    )
+    second = parse_project(
+        b'<P><C Type="Logic" U="source"><Co U="output"/></C>'
+        b'<C Type="EIBtextactor" U="actor" EibAddr="7/3/11">'
+        b'<Co K="I" U="second-input"><In Input="output"/></Co></C></P>'
+    )
+    graph = build_graph((("one", first), ("two", second)))
+    aliases, sources = _logical_knx_nodes(graph)
+    snapshot = ProjectSnapshot(
+        "project",
+        7,
+        (ProjectPartSummary("one", 1, ()), ProjectPartSummary("two", 1, ())),
+        graph,
+        logical_aliases=aliases,
+        logical_source_ids=sources,
+    )
+    project = ProjectQuery(
+        ProjectView(
+            snapshot,
+            map_runtime(snapshot, SimpleNamespace(last_modified="v", controls=())),
+        ),
+        {},
+    )
+
+    actor = next(
+        item
+        for item in project.find(
+            query=None,
+            kind=None,
+            block_type="EIBtextactor",
+            source_id=None,
+            runtime_control_uuid=None,
+            technology="knx_eib",
+        )
+    )
+    described = project.describe(
+        project.resolve(actor["project_node_id"], "project_node_id"), limit=10
+    )
+    evidence = described["knx"]["connector_evidence"]
+    assert described["source_occurrence_count"] == 2
+    assert len(evidence) == 2
+    assert {item["incoming_signals"] for item in evidence} == {0, 1}
+    assert described["knx"]["connector_evidence_truncated"] is False
 
 
 @pytest.mark.parametrize(
