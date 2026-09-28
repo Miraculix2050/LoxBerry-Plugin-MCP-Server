@@ -4543,6 +4543,12 @@ def register_project_tools(
                     "Project analysis result exceeds the response limit",
                 )
             return envelope
+        except ConfigError:
+            return _error(
+                ProjectAnalysisEnvelope,
+                "temporarily_unavailable",
+                "KNX address taxonomy configuration is unavailable",
+            )
         except ValueError as exc:
             return _error(ProjectAnalysisEnvelope, "invalid_input", str(exc))
         except PermissionError:
@@ -4556,12 +4562,6 @@ def register_project_tools(
             return _error(ProjectAnalysisEnvelope, code, message, diagnostic_code=diagnostic_code)
         except RuntimeUnavailable as exc:
             return _error(ProjectAnalysisEnvelope, "temporarily_unavailable", str(exc))
-        except ConfigError:
-            return _error(
-                ProjectAnalysisEnvelope,
-                "temporarily_unavailable",
-                "KNX address taxonomy configuration is unavailable",
-            )
 
 
 def register_observability_tools(
