@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 
 from .graph import GraphEdge, GraphNode, SemanticEdge
 from .mapping import ControlMapping, ProjectView
-from .semantics import is_valid_group_address_filter, signal_use_rules
+from .semantics import expects_raw_datatype, is_valid_group_address_filter, signal_use_rules
 
 _KNOWN_KNX_ATTRIBUTES = frozenset(
     {"Type", "U", "Title", "Desc", "IName", "EibAddr", "EibAddrPulse", "EIBType"}
@@ -188,6 +188,37 @@ class ProjectQuery:
         if knx is None:
             return result
         observations, observations_truncated = self._semantic_observations(node, limit)
+        connector_evidence: list[dict[str, object]] = []
+        connector_evidence_truncated = False
+        if knx.object_kind == "endpoint":
+            connector_ids = sorted(
+                key
+                for occurrence in self.view.snapshot.occurrence_keys_for(node.key)
+                for key in self._children[occurrence]
+                if self._nodes[key].kind == "connector"
+            )
+            connector_evidence_truncated = len(connector_ids) > limit
+            selected = set(connector_ids[:limit])
+            incoming: dict[str, int] = defaultdict(int)
+            outgoing: dict[str, int] = defaultdict(int)
+            for edge in self.view.snapshot.graph.edges:
+                if edge.kind == "signal":
+                    if edge.target in selected:
+                        incoming[edge.target] += 1
+                    if edge.source in selected:
+                        outgoing[edge.source] += 1
+            for key in connector_ids[:limit]:
+                connector = self._nodes[key]
+                raw_key = next((value for name, value in connector.attributes if name == "K"), None)
+                connector_evidence.append(
+                    {
+                        "project_node_id": key,
+                        "connector_key": raw_key[:100] if raw_key is not None else None,
+                        "connector_key_truncated": raw_key is not None and len(raw_key) > 100,
+                        "incoming_signals": incoming[key],
+                        "outgoing_signals": outgoing[key],
+                    }
+                )
         result["knx"] = {
             "object_kind": knx.object_kind,
             "flow_direction": knx.flow_direction,
@@ -226,6 +257,8 @@ class ProjectQuery:
             "truncated_fields": list(knx.truncated_fields),
             "usage_observations": observations,
             "usage_observations_truncated": observations_truncated,
+            "connector_evidence": connector_evidence,
+            "connector_evidence_truncated": connector_evidence_truncated,
         }
         return result
 
@@ -257,7 +290,7 @@ class ProjectQuery:
                 diagnostics.append({"code": "missing_group_address"})
             elif knx.group_address.canonical is None:
                 diagnostics.append({"code": "invalid_group_address"})
-            if knx.datatype is None:
+            if knx.datatype is None and expects_raw_datatype(knx.source_type):
                 diagnostics.append({"code": "missing_raw_datatype"})
         if knx.object_kind == "logic_block":
             rules = signal_use_rules(node.block_type)

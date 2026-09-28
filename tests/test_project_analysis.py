@@ -9,6 +9,7 @@ from mcpserver.loxone.project.graph import (
     ProjectPartSummary,
     ProjectSnapshot,
     _logical_knx_nodes,
+    _source_diagnostics,
     build_graph,
 )
 from mcpserver.loxone.project.mapping import ProjectView, map_runtime
@@ -64,6 +65,37 @@ def test_edge_variants_stay_separate_in_analysis_and_connectivity():
     }
     assert disconnected == {None}
     assert result["analysis_version"] == 4
+
+
+def test_new_knx_families_enter_coverage_and_connectivity_without_unmodeled_types():
+    parsed = parse_project(Path("tests/fixtures/project/knx-text-endpoints.xml").read_bytes())
+    graph = build_graph((("p", parsed),))
+    snapshot = ProjectSnapshot(
+        "project",
+        7,
+        (ProjectPartSummary("p", 1, ()),),
+        graph,
+        _source_diagnostics(graph, ()),
+    )
+    view = ProjectView(
+        snapshot, map_runtime(snapshot, SimpleNamespace(last_modified="v", controls=()))
+    )
+    result = analyze_knx(view, frozenset({"project_connectivity"}))
+
+    assert result["coverage"]["endpoints"] == 5
+    assert result["coverage"]["canonical_group_addresses"] == 5
+    assert result["coverage"]["raw_datatypes"] == 0
+    assert result["analysis_version"] == 4
+    assert any(
+        item["code"] == "unclassified_knx_candidate" and item["source_type"] == "EIBunknown"
+        for item in result["source_diagnostics"]["entries"]
+    )
+    assert not any(
+        item["code"] == "missing_raw_datatype"
+        and item["source_type"] in {"EIBtextsensor", "EIBtextactor", "EIBextactor"}
+        for item in result["source_diagnostics"]["entries"]
+    )
+    assert result["summaries"]["project_connectivity"]["unconnected"] == 0
 
 
 def test_analysis_uses_logical_knx_endpoints_and_keeps_source_occurrence_count():

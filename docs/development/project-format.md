@@ -42,20 +42,23 @@ references stay unresolved. No Miniserver identity is inferred from ZIP filename
 ## KNX/EIB semantic projection
 
 The worker classifies only confirmed exact project types: `EIBline`, `EIBsensor`,
-`EIBextsensor`, `EIBactor`, `EIBPush`, `EibDimmer`, and `EIBJalousie`. `EIBsensor`
-and `EIBextsensor` are `bus_to_loxone` endpoints; `EIBactor` is a `loxone_to_bus`
-endpoint. This records
+`EIBextsensor`, `EIBtextsensor`, `EIBactor`, `EIBextactor`, `EIBtextactor`,
+`EIBPush`, `EibDimmer`, and `EIBJalousie`. Sensor types are
+`bus_to_loxone` endpoints; actor types are `loxone_to_bus` endpoints. This records
 the bus data-flow direction, never a physical device role. Group addresses are
 kept verbatim and normalized only for validated two- or three-level forms.
-For `EIBextsensor`, validated `:0` and `:1` suffixes retain their exact original
+For `EIBextsensor` and `EIBextactor`, validated `:0` and `:1` suffixes retain their exact original
 value and an `edge` variant distinct from the canonical base address. `EibAddr`
-is used when present; `EibAddrPulse` is used only when `EibAddr` is absent. The
+is used when present; only `EIBextsensor` uses `EibAddrPulse` when `EibAddr` is absent. The
 address projection names the field actually used. Other suffixes are invalid;
 the suffix does not establish rising or falling edge semantics. Exact variant
 search matches only that variant, while a canonical-base search may return both.
-`EIBType` is retained as an unresolved source code; the model does not infer an
+`EIBType` is retained when present as an unresolved source code; the model does not infer an
 EIS or DPT meaning. Unknown attributes remain internal and are never a raw MCP
-projection. Equal group addresses do not create graph edges.
+projection. Describe bounds connector IDs and keys plus incoming and outgoing
+signal counts; those counts report configured graph wiring, not bus traffic.
+Missing `EIBType` on the three newly modeled families is not diagnosed as a
+source gap. Equal group addresses do not create graph edges.
 
 When identical confirmed KNX blocks occur in distinct internal model sources,
 the public projection uses one logical object. Its normalized source identity,

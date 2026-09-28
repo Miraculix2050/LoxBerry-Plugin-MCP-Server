@@ -29,14 +29,18 @@ Bestätigte KNX/EIB-Projektobjekte ergänzen begrenzte, quellengestützte Metada
 Endpunkte und KNX-Logikblöcke. Die Endpunktrichtung lautet `bus_to_loxone` oder
 `loxone_to_bus`; sie ist keine Aussage über die physische Gerätefunktion. Gruppenadressen
 behalten ihren Originaltext und erhalten nur bei gültigem Format eine kanonische Form. `EIBType`
-bleibt ein unaufgelöster Quellcode, keine geratene DPT. `EIBextsensor` wird als Endpunkt mit
-Richtung vom Bus zu Loxone modelliert. Gültige Adressvarianten `:0` und `:1` bleiben getrennt;
-die Adresse nennt `EibAddr` oder, falls dieses Feld fehlt, `EibAddrPulse` als Quelle. Das Suffix
+bleibt ein unaufgelöster Quellcode, keine geratene DPT. `EIBextsensor` und `EIBtextsensor`
+führen vom Bus zu Loxone; `EIBextactor` und `EIBtextactor` führen von Loxone zum Bus.
+Gültige Adressvarianten `:0` und `:1` bleiben für die beiden externen Typen getrennt;
+die Adresse nennt `EibAddr` oder nur bei `EIBextsensor`, falls dieses Feld fehlt,
+`EibAddrPulse` als Quelle. Das Suffix
 belegt keine physische Flankenrichtung. Eine exakte Variantensuche findet nur diese Variante;
 die Suche nach der kanonischen Basis kann beide liefern. Gleiche Gruppenadressen erzeugen keine
 Graphbeziehung und beweisen keine Kausalität. Suche und Trace liefern eine kompakte
 KNX-Zusammenfassung mit Original- und kanonischer Adresse, Quellfeld und Variante. Segmente,
-Namen und den Rohdatentyp liefert gezielt `loxone_describe_project_object`.
+Namen, einen vorhandenen Rohdatentyp sowie begrenzte Connector-IDs und -Schlüssel mit
+Anzahlen ein- und ausgehender Signalverbindungen liefert `loxone_describe_project_object`.
+Fehlendes `EIBType` bei den neu modellierten Typen lässt den Datentyp unbekannt.
 Der Filter `knx_group_address` akzeptiert gültige zwei- oder dreistufige Adressen und die
 Varianten `:0`/`:1`. Ungültige Syntax oder Zahlenbereiche liefern `invalid_input`; eine gültige
 Adresse ohne Treffer ergibt eine erfolgreiche leere Suchseite. Auch gültige Originalformen

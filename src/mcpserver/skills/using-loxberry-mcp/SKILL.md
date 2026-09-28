@@ -62,8 +62,9 @@ bus lines, endpoints, and KNX logic blocks. `bus_to_loxone` and
 `loxone_to_bus` describe bus data flow, not a physical sensor or actuator role.
 Use a canonical group address only when present; equal addresses do not prove a
 program path. Find and trace expose compact KNX metadata including the original
-address, its source field, and any `EIBextsensor` edge variant. Use describe for
-address segments and `EIBType`. Treat `EIBType` as an unresolved source
+address, its source field, and any `EIBextsensor` or `EIBextactor` edge variant.
+Use describe for address segments, bounded connector wiring evidence, and any
+`EIBType`. Treat `EIBType` as an unresolved source
 code, not as a guessed DPT or EIS meaning.
 Describe can contain several `usage_observations` only where exact reviewed
 block/connector rules prove them; they are not a global meaning of the group
