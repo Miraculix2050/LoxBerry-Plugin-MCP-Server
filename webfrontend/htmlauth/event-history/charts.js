@@ -25,6 +25,8 @@
   let rerun = false;
   let syncing = false;
   let applyingScale = false;
+  let staleRetries = 0;
+  let historyRetries = 0;
   const time = (value) => new Date(value * 1000).toLocaleString();
   const localInput = (value) => {
     const date = new Date(value * 1000);
@@ -40,6 +42,15 @@
   const setStatus = (message, kind = 'info') => {
     status.textContent = message;
     status.dataset.kind = kind;
+  };
+  const queryErrorStatus = (error) => {
+    const name = error.code === 'outcome_unknown' || error.code === 'query_timeout'
+      ? 'chartTimeout'
+      : error.code === 'temporarily_unavailable' || error instanceof TypeError
+        ? 'chartUnavailable'
+        : error.code === 'invalid_request' ? 'chartInvalid' : 'chartError';
+    const reference = error.requestId ? ` ${label('chartReference')}: ${error.requestId}.` : '';
+    return `${label(name)} ${label('chartStale')}${reference}`;
   };
   const clear = () => {
     for (const state of sourceStates) state.plot?.destroy();
@@ -141,6 +152,11 @@
       state.coverageList.append(item);
     }
   };
+  const sourceContext = (source) => [
+    `${label('chartRoom')}: ${source.room || label('chartUnknown')}`,
+    `${label('chartCategory')}: ${source.category || label('chartUnknown')}`,
+    `${label('chartType')}: ${source.control_type}`,
+  ].join(' · ');
   const createPanels = () => {
     panels.replaceChildren();
     sourceStates = selection.sources.map((source) => {
@@ -150,11 +166,7 @@
       title.textContent = `${source.control_name} · ${source.state_name}`;
       const context = document.createElement('p');
       context.className = 'mcp-help';
-      context.textContent = [
-        `${label('chartRoom')}: ${source.room || label('chartUnknown')}`,
-        `${label('chartCategory')}: ${source.category || label('chartUnknown')}`,
-        `${label('chartType')}: ${source.control_type}`,
-      ].join(' · ');
+      context.textContent = sourceContext(source);
       const notice = document.createElement('p');
       notice.setAttribute('role', 'status');
       const boundaries = document.createElement('p');
@@ -189,7 +201,7 @@
       coverageDetails.append(coverageSummary, coverageList);
       panel.append(title, context, notice, boundaries, coverageDetails, plotHost, focus, details);
       panels.append(panel);
-      return {source, events: new Map(), cursor: 0, generation: null, reduced: false,
+      return {source, title, context, events: new Map(), cursor: 0, generation: null, reduced: false,
         coverage: [], plot: null, plotHost, focus, notice, boundaries, coverageList, tableBody};
     });
   };
@@ -199,10 +211,17 @@
     if (!Array.isArray(result.sources) || result.sources.length !== requested.length) {
       throw new Error('Invalid chart source response');
     }
-    const changed = !selection || selection.generation !== result.generation;
-    if (changed) clear();
+    const first = !selection;
     selection = result;
-    if (changed) createPanels();
+    if (first) createPanels();
+    else for (let index = 0; index < sourceStates.length; index++) {
+      const state = sourceStates[index];
+      const source = result.sources[index];
+      state.source = source;
+      state.title.textContent = `${source.control_name} · ${source.state_name}`;
+      state.context.textContent = sourceContext(source);
+      state.plotHost.setAttribute('aria-label', state.title.textContent);
+    }
   };
   const query = async (token) => {
     let pending = [...sourceStates];
@@ -284,26 +303,43 @@
     }
     busy = true;
     const token = ++sequence;
+    let verifying = false;
     if (fresh || !selection) setStatus(label('loading'));
     try {
       if (fresh || !selection || Date.now() / 1000 - selection.verified_at >= 50) {
-        if (fresh) clear();
+        verifying = true;
         await prepare();
+        verifying = false;
       }
       await query(token);
-      if (token === sequence) setStatus('');
+      if (token === sequence) {
+        staleRetries = 0;
+        historyRetries = 0;
+        setStatus('');
+      }
     } catch (error) {
       if (token !== sequence) return;
+      if (verifying) clear();
       if (error.code === 'history_changed') {
         for (const state of sourceStates) {
           state.events.clear(); state.generation = null; state.cursor = 0; state.reduced = false;
           render(state);
         }
-        window.setTimeout(() => { void load(false); }, 0);
-      } else {
+        if (historyRetries < 1) {
+          historyRetries++;
+          rerun = true;
+        } else setStatus(label('chartUnavailable'), 'warning');
+      } else if (error.code === 'stale_configuration' && staleRetries < 1) {
+        staleRetries++;
         clear();
-        setStatus(error.code === 'forbidden' || error.code === 'stale_configuration'
-          ? label('chartDenied') : label('chartError'), 'warning');
+        rerun = true;
+      } else {
+        if (error.code === 'forbidden' || error.code === 'stale_configuration') {
+          clear();
+          setStatus(label('chartDenied'), 'warning');
+        } else {
+          setStatus(queryErrorStatus(error), 'warning');
+        }
       }
     } finally {
       busy = false;
@@ -317,7 +353,7 @@
     const now = Date.now() / 1000;
     if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0
       || start >= end || end - start > maxRange || end > now + 60) {
-      setStatus(label('chartError'), 'warning');
+      setStatus(label('chartInvalid'), 'warning');
       return;
     }
     range = {start, end};

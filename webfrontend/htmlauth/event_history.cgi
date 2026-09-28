@@ -136,6 +136,24 @@ if (($q->{action} // '') ne '') {
     }
     my $started = clock_gettime(CLOCK_MONOTONIC);
     my $result = admin_call($action, $payload);
+    if ($action =~ /\Aevent_history_chart_(?:prepare|query)\z/) {
+        my $code = $result->{ok} ? 'ok'
+            : (ref($result->{error}) eq 'HASH'
+                ? ($result->{error}{code} // 'internal_error') : 'internal_error');
+        $code = 'internal_error' unless $code =~ /\A[a-z_]+\z/;
+        my $duration_ms = (clock_gettime(CLOCK_MONOTONIC) - $started) * 1000;
+        if (!$result->{ok} || $duration_ms >= 5000) {
+            my $log = LoxBerry::Log->new(name => 'admin-ui', package => $lbpplugindir,
+                addtime => 1);
+            $log->INF(sprintf(
+                'component=event_history_chart request_id=%s action=%s outcome=%s code=%s duration_ms=%.1f',
+                $request_id, $action, ($result->{ok} ? 'slow' : 'failed'), $code,
+                $duration_ms,
+            )) if $log;
+        }
+        $result->{error}{request_id} = $request_id if !$result->{ok}
+            && ref($result->{error}) eq 'HASH';
+    }
     if ($action =~ /\A(?:event_history_(?:save_policy|add_source|remove_source|purge_source)|clear_event_history)\z/) {
         my $log = LoxBerry::Log->new(name => 'admin-ui', package => $lbpplugindir,
             addtime => 1);

@@ -18,6 +18,7 @@ from mcpserver.emergency_stop import EmergencyStopMonitor
 from mcpserver.event_history_selector_cache import EventHistorySelectorCache, SelectorCacheError
 from mcpserver.loxone.event_history import (
     EventHistoryMonitor,
+    EventHistoryQueryTimeout,
     EventHistoryStore,
     EventHistoryStoreSummary,
     source_revision_for_snapshot,
@@ -519,7 +520,7 @@ def chart_query(payload: object, *, _deadline: float | None = None) -> dict[str,
     if _deadline is None:
         _deadline = time.monotonic() + 10
     if time.monotonic() >= _deadline:
-        raise bridge.AdminError("chart query timed out", code="temporarily_unavailable")
+        raise bridge.AdminError("chart query timed out", code="query_timeout")
     if not isinstance(payload, dict):
         raise bridge.AdminError("chart query is invalid")
     if "queries" in payload:
@@ -568,6 +569,8 @@ def chart_query(payload: object, *, _deadline: float | None = None) -> dict[str,
         return _store(config).chart_page(
             *source, start=start, end=end, after_id=after_id, deadline=_deadline
         )
+    except EventHistoryQueryTimeout as exc:
+        raise bridge.AdminError("chart query timed out", code="query_timeout") from exc
     except (OSError, ValueError, RuntimeError) as exc:
         raise bridge.AdminError(
             "local event history is unavailable", code="temporarily_unavailable"

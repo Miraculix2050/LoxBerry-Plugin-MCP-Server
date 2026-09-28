@@ -39,6 +39,10 @@ class EventHistoryUnavailable(RuntimeError):
     """The optional local history store cannot safely answer a request."""
 
 
+class EventHistoryQueryTimeout(EventHistoryUnavailable):
+    """A bounded chart read exceeded its deadline."""
+
+
 class _UnsupportedEventValue(EventHistoryUnavailable):
     """A configured state emitted a value the local history cannot store."""
 
@@ -877,7 +881,7 @@ class EventHistoryStore:
         )
         for count, row in enumerate(cursor):
             if count % 256 == 0 and time.monotonic() >= deadline:
-                raise EventHistoryUnavailable("chart query timed out")
+                raise EventHistoryQueryTimeout("chart query timed out")
             bucket = min(63, int((row[1] - start) / span * 64))
             found = buckets.setdefault(bucket, {})
             found.setdefault("first", row)
@@ -913,7 +917,7 @@ class EventHistoryStore:
         if deadline is None:
             deadline = time.monotonic() + 10
         if time.monotonic() >= deadline:
-            raise EventHistoryUnavailable("chart query timed out")
+            raise EventHistoryQueryTimeout("chart query timed out")
         if not self.path.exists():
             return {
                 "generation": 0,
@@ -962,6 +966,10 @@ class EventHistoryStore:
                             rows = self._chart_sample(
                                 db, control_uuid, state_uuid, start, end, sample_deadline
                             )
+                        except sqlite3.Error as exc:
+                            if time.monotonic() >= sample_deadline:
+                                raise EventHistoryQueryTimeout("chart query timed out") from exc
+                            raise
                         finally:
                             db.set_progress_handler(progress, 10000)
                         reduced = True
@@ -1011,6 +1019,8 @@ class EventHistoryStore:
                 ).fetchone()
                 db.execute("COMMIT")
         except (OSError, sqlite3.Error) as exc:
+            if time.monotonic() >= deadline:
+                raise EventHistoryQueryTimeout("chart query timed out") from exc
             raise EventHistoryUnavailable("local event history is unavailable") from exc
         return {
             "generation": int(generation),

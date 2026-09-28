@@ -12,6 +12,7 @@ window.McpEventHistoryApi = (() => {
       if (!response.ok || !result.ok) {
         const error = new Error(result.error?.message || 'Request failed');
         error.code = result.error?.code || 'request_failed';
+        error.requestId = result.error?.request_id || null;
         throw error;
       }
       return result.data;
