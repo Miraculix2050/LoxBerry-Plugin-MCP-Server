@@ -196,6 +196,54 @@ async def test_project_tools_keep_structured_mapping_and_cursor_errors(monkeypat
 
 
 @pytest.mark.asyncio
+async def test_project_find_validates_address_before_loading_or_caching(monkeypatch):
+    class FilterQuery(Query):
+        def __init__(self):
+            self.find_calls = 0
+
+        def find(self, **kwargs):
+            self.find_calls += 1
+            return [] if kwargs["knx_group_address"] == "31/7/255" else super().find()
+
+    project = FilterQuery()
+    project_query = AsyncMock(return_value=(project, SimpleNamespace(connected=True)))
+    monkeypatch.setattr(tools_module, "_project_query", project_query)
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: SimpleNamespace(family_id="family", miniserver_id="server", identity_id="identity"),
+    )
+    server = FastMCP("project-find-address-validation")
+    register_project_tools(server, None)
+    find = server._tool_manager.get_tool("loxone_find_project_objects").fn  # type: ignore[union-attr]
+
+    invalid = await find(knx_group_address="6/2/27:2")
+    assert invalid.ok is False
+    assert invalid.data.error == "invalid_input"  # type: ignore[union-attr]
+    assert project_query.await_count == 0
+    assert project.find_calls == 0
+
+    absent = await find(knx_group_address="31/7/255")
+    assert absent.ok is True
+    assert absent.data.items == []  # type: ignore[union-attr]
+    assert project.find_calls == 1
+
+    present = await find(knx_group_address="6/2/27:0")
+    assert present.ok is True
+    assert [item.project_node_id for item in present.data.items] == ["p:1"]  # type: ignore[union-attr]
+    assert project.find_calls == 2
+
+    def unauthenticated():
+        raise PermissionError("authentication is required")
+
+    monkeypatch.setattr(tools_module, "_access", unauthenticated)
+    denied = await find(knx_group_address="6/2/27:2")
+    assert denied.data.error == "unauthenticated"  # type: ignore[union-attr]
+    assert project_query.await_count == 2
+    assert project.find_calls == 2
+
+
+@pytest.mark.asyncio
 async def test_project_find_reuses_one_ordered_result_and_rejects_changed_marker(monkeypatch):
     class PagedQuery(Query):
         view = SimpleNamespace(

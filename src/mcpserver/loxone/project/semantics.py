@@ -132,6 +132,12 @@ def _group_address(
     )
 
 
+def is_valid_group_address_filter(value: str) -> bool:
+    """Accept only modeled KNX address forms, including supported edge variants."""
+    address = _group_address(value, "EibAddr", [], allow_edge=True)
+    return address is not None and address.canonical is not None
+
+
 def classify_knx(element: ProjectElement) -> KnxSemantics | None:
     """Return only semantics proven by the exact Loxone project type and attributes."""
     source_type = element.value("Type")

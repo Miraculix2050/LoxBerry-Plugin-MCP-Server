@@ -34,6 +34,10 @@ searching the canonical base may return both.
 Equal group addresses do not create a graph relationship or prove causality. Find and trace return
 a compact KNX summary with original and canonical addresses, source field, and variant; use
 `loxone_describe_project_object` for address segments, names, and the raw datatype code.
+The `knx_group_address` filter accepts valid two- or three-level addresses and `:0`/`:1`
+variants. Invalid syntax or numeric ranges return `invalid_input`; a valid address without
+matches returns a successful empty search page. Valid original forms are still compared exactly
+with original or canonical addresses.
 Project find pages and traces are additionally limited to 64 KiB and
 report a size trim through `truncated` and `truncation_reason`.
 `project_parts` counts internally ingested model sources rather than Loxone Config projects.

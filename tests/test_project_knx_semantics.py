@@ -1,6 +1,8 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from mcpserver.loxone.project.graph import (
     ProjectPartSummary,
     ProjectSnapshot,
@@ -9,7 +11,7 @@ from mcpserver.loxone.project.graph import (
 )
 from mcpserver.loxone.project.mapping import ProjectView, map_runtime
 from mcpserver.loxone.project.parser import parse_project
-from mcpserver.loxone.project.query import ProjectQuery
+from mcpserver.loxone.project.query import ProjectQuery, ProjectQueryError
 
 
 def _query(data: bytes, controls: tuple[SimpleNamespace, ...] = ()) -> ProjectQuery:
@@ -213,6 +215,59 @@ def test_extsensor_variants_and_pulse_fallback_are_distinct_and_source_backed():
     assert {item["code"] for item in invalid_detail["source_diagnostics"]} >= {
         "invalid_group_address"
     }
+
+
+@pytest.mark.parametrize(
+    ("address", "source_id"),
+    [
+        ("6/2/27:0", "edge-zero"),
+        ("6/2/27:1", "edge-one"),
+        ("6/2/28:1", "pulse-fallback"),
+        ("31/7/255", None),
+        ("31/2047", None),
+        ("06/02/027", None),
+    ],
+)
+def test_knx_search_accepts_valid_original_variant_and_absent_forms(address, source_id):
+    project = _query(Path("tests/fixtures/project/knx-edge-variants.xml").read_bytes())
+    found = project.find(
+        query=None,
+        kind=None,
+        block_type=None,
+        source_id=None,
+        runtime_control_uuid=None,
+        knx_group_address=address,
+    )
+    assert [item["source_id"] for item in found] == ([source_id] if source_id else [])
+
+
+@pytest.mark.parametrize(
+    "address",
+    [
+        "",
+        "6/",
+        "6/2/",
+        "6/2/27:2",
+        "6/2/27:0:1",
+        "32/0/0",
+        "1/8/0",
+        "1/2/256",
+        "31/2048",
+        "6/2/27x",
+        "6/2/27" + " " * 200,
+    ],
+)
+def test_knx_search_rejects_malformed_and_out_of_range_filters(address):
+    project = _query(Path("tests/fixtures/project/knx-edge-variants.xml").read_bytes())
+    with pytest.raises(ProjectQueryError, match="project_query_invalid"):
+        project.find(
+            query=None,
+            kind=None,
+            block_type=None,
+            source_id=None,
+            runtime_control_uuid=None,
+            knx_group_address=address,
+        )
 
 
 def test_edge_variants_do_not_merge_as_one_logical_object():

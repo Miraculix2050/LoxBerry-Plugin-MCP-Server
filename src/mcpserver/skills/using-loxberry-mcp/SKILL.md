@@ -40,6 +40,10 @@ freshness, mapping coverage, or unresolved relationships matter. Then:
 1. Use `loxone_find_project_objects` with narrow exact filters or a bounded
    query. It returns a compact node summary; follow `next_cursor` while keeping
    all filters unchanged, and check `truncated` plus `truncation_reason`.
+   A `knx_group_address` filter accepts valid two- or three-level addresses and
+   exact `:0`/`:1` variants. Invalid syntax or numeric range returns
+   `invalid_input`; a valid address with no matches returns a successful empty
+   page. Preserve the entered original form for exact variant searches.
 2. Call `loxone_describe_project_object` for one returned `project_node_id`, or
    for an exact visible `runtime_control_uuid`. If a runtime mapping is
    ambiguous, present the candidates; never choose one.

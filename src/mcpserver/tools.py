@@ -70,6 +70,7 @@ from mcpserver.loxone.presentation import visible_controls as _visible_controls
 from mcpserver.loxone.project.analysis import ANALYSIS_VERSION
 from mcpserver.loxone.project.models import ProjectError
 from mcpserver.loxone.project.query import ProjectQuery, ProjectQueryError
+from mcpserver.loxone.project.semantics import is_valid_group_address_filter
 from mcpserver.loxone.project.worker import process_analysis
 from mcpserver.loxone.runtime import (
     ControlHistoryEntry,
@@ -3993,13 +3994,29 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
         ] = None,
         knx_group_address: Annotated[
             str | None,
-            Field(max_length=200, description="Exact original or canonical KNX group address."),
+            Field(
+                max_length=200,
+                description=(
+                    "Exact original or canonical two- or three-level KNX group address; "
+                    "supported :0/:1 variants are exact. Invalid syntax or range returns "
+                    "invalid_input; a valid address without matches returns an empty page."
+                ),
+            ),
         ] = None,
         cursor: CursorArgument = None,
         limit: LimitArgument = DEFAULT_PAGE_SIZE,
     ) -> ProjectObjectPageEnvelope:
         nonlocal find_cache_bytes
         try:
+            _access()
+            if knx_group_address is not None and not is_valid_group_address_filter(
+                knx_group_address
+            ):
+                return _error(
+                    ProjectObjectPageEnvelope,
+                    "invalid_input",
+                    "KNX group address filter is invalid",
+                )
             project, snapshot = await _project_query(runtime)
             access = _access()
             scope = (
