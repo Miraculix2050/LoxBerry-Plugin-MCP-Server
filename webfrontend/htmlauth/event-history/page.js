@@ -33,6 +33,8 @@
   let sourceRevisionChecking = false;
   let sourceRevisionQueued = false;
   let sourceRevisionQueueTotals = false;
+  let totalsRefreshPending = false;
+  let nextTotalsFallbackAt = 0;
   let knownSourceRevision = '';
   let knownPayloadPending = null;
   let selectorVerificationPending = false;
@@ -730,6 +732,7 @@
     })();
   };
   const checkSourceRevision = async (refreshTotals = false) => {
+    totalsRefreshPending ||= refreshTotals;
     if (sourceRevisionChecking) {
       sourceRevisionQueued = true;
       sourceRevisionQueueTotals ||= refreshTotals;
@@ -745,12 +748,13 @@
     try {
       const data = await api.request('event_history_source_revision', {}, 15000);
       if (data.availability === 'available'
-        && (refreshTotals || data.revision !== knownSourceRevision || selectorVerificationPending
+        && (totalsRefreshPending || data.revision !== knownSourceRevision
+          || selectorVerificationPending
           || (typeof data.payload_pending === 'boolean'
             && data.payload_pending !== knownPayloadPending))
         && Date.now() >= nextRevisionRefreshAt) {
         let verified = false;
-        if (!selectorVerificationPending && (refreshTotals
+        if (!selectorVerificationPending && (totalsRefreshPending
           || data.revision !== knownSourceRevision)) {
           try {
             const overview = await api.request('event_history_visible_overview', {}, 15000);
@@ -758,11 +762,14 @@
               && overview.visibility_status === 'available'
               && overview.source_revision === data.revision) {
               renderOverview(overview);
+              totalsRefreshPending = false;
               verified = true;
             }
           } catch { /* Refresh visibility through full discovery below. */ }
         }
         if (!verified) verified = await loadControls();
+        if (verified && !selectorVerificationPending
+          && knownSourceRevision === data.revision) totalsRefreshPending = false;
         if (!verified || knownSourceRevision !== data.revision) {
           selectorVerificationPending = true;
           revisionRefreshFailures += 1;
@@ -985,9 +992,14 @@
   window.setInterval(() => { void loadStatus(); }, 30000);
   if (typeof api.subscribeUpdates === 'function') {
     api.subscribeUpdates(() => { void checkSourceRevision(true); },
-      () => { void checkSourceRevision(true); });
+      () => {
+        if (Date.now() >= nextTotalsFallbackAt) {
+          nextTotalsFallbackAt = Date.now() + 60000;
+          void checkSourceRevision(true);
+        }
+      });
   }
-  window.setInterval(() => { void checkSourceRevision(true); }, 60000);
+  window.setInterval(() => { void checkSourceRevision(); }, 60000);
   void loadQuickSummary();
   void loadStatus();
   void loadControls();

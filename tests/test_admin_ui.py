@@ -1076,6 +1076,7 @@ vm.runInNewContext(`
 let busy = false;
 let controlsLoadPromise = null;
 let selectedControl = 'control';
+const drainSourceRevision = () => {};
 ${section('  const mutate = async ', '  const facetSelection =')}
 ${section('  const loadControls = (restore = null) => {', '  const checkSourceRevision =')}
 globalThis.subject = {mutate, loadControls};
@@ -1242,13 +1243,14 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const source = fs.readFileSync(process.argv[1], 'utf8');
-const section = source.slice(source.indexOf('  const checkSourceRevision = async (refreshTotals = false) => {'),
+const section = source.slice(source.indexOf(
+  '  const checkSourceRevision = async (refreshTotals = false) => {'),
   source.indexOf('  const loadStates ='));
 const context = {document: {hidden: false}, api: {request: async () =>
   ({availability: 'available', revision: 'new'})}};
 vm.runInNewContext(`let busy = false; let controlsLoading = false;
 let sourceRevisionChecking = false; let sourceRevisionQueued = false;
-let sourceRevisionQueueTotals = false;
+let sourceRevisionQueueTotals = false; let totalsRefreshPending = false;
 let knownSourceRevision = 'old';
 let knownPayloadPending = false;
 let selectorVerificationPending = false; let nextRevisionRefreshAt = 0;
@@ -1283,11 +1285,14 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const source = fs.readFileSync(process.argv[1], 'utf8');
-const section = source.slice(source.indexOf('  const checkSourceRevision = async (refreshTotals = false) => {'),
+const section = source.slice(source.indexOf(
+  '  const checkSourceRevision = async (refreshTotals = false) => {'),
   source.indexOf('  const loadStates ='));
 const calls = [];
+let failRevision = false;
 const context = {document: {hidden: false}, api: {request: async (action) => {
   calls.push(action);
+  if (action === 'event_history_source_revision' && failRevision) throw new Error('offline');
   if (action === 'event_history_source_revision') return {availability: 'available',
     revision: 'old', payload_pending: false};
   if (action === 'event_history_visible_overview') return {store_status: 'available',
@@ -1296,7 +1301,7 @@ const context = {document: {hidden: false}, api: {request: async (action) => {
 }}};
 vm.runInNewContext(`let busy = false; let controlsLoading = false;
 let sourceRevisionChecking = false; let sourceRevisionQueued = false;
-let sourceRevisionQueueTotals = false;
+let sourceRevisionQueueTotals = false; let totalsRefreshPending = false;
 let knownSourceRevision = 'old';
 let knownPayloadPending = false; let selectorVerificationPending = false;
 let nextRevisionRefreshAt = 0; let revisionRefreshFailures = 0;
@@ -1319,6 +1324,13 @@ globalThis.subject = {checkSourceRevision, drainSourceRevision,
   context.subject.drainSourceRevision();
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(calls.length, 4, 'queued totals refresh runs after the action');
+  failRevision = true;
+  await context.subject.checkSourceRevision(true);
+  failRevision = false;
+  await context.subject.checkSourceRevision();
+  assert.deepEqual(calls.slice(-3), ['event_history_source_revision',
+    'event_history_source_revision', 'event_history_visible_overview'],
+    'failed wakeup is retried even when the source revision is unchanged');
 })().catch((error) => { console.error(error); process.exitCode = 1; });
 """
     subprocess.run(
@@ -1337,14 +1349,15 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const source = fs.readFileSync(process.argv[1], 'utf8');
-const section = source.slice(source.indexOf('  const checkSourceRevision = async (refreshTotals = false) => {'),
+const section = source.slice(source.indexOf(
+  '  const checkSourceRevision = async (refreshTotals = false) => {'),
   source.indexOf('  const loadStates ='));
 let payloadPending = true;
 const context = {document: {hidden: false}, api: {request: async () =>
   ({availability: 'available', revision: 'same', payload_pending: payloadPending})}};
 vm.runInNewContext(`let busy = false; let controlsLoading = false;
 let sourceRevisionChecking = false; let sourceRevisionQueued = false;
-let sourceRevisionQueueTotals = false;
+let sourceRevisionQueueTotals = false; let totalsRefreshPending = false;
 let knownSourceRevision = 'same';
 let knownPayloadPending = true; let selectorVerificationPending = false;
 let nextRevisionRefreshAt = 0; let revisionRefreshFailures = 0; let refreshes = 0;
@@ -1396,6 +1409,7 @@ vm.runInNewContext(`let controlsLoading = false; let busy = false;
 let discoveryGeneration = 0; let selectedControl = ''; let querySequence = 0;
 let catalogMode = ''; let stateGeneration = 0; let selectorVerificationPending = false;
 let knownSourceRevision = ''; const refreshButtonText = 'refresh';
+const drainSourceRevision = () => {};
 const renderOverview = () => {
   knownSourceRevision = 'empty-local-store';
   selectorVerificationPending = false;
@@ -1456,6 +1470,7 @@ let catalogMode = ''; let stateGeneration = 0; let selectorGeneration = '';
 let pageOffset = 0; let visibleCount = 0; let controls = [];
 const facetSelection = {room: new Set(), category: new Set(), type: new Set()};
 const refreshButtonText = 'refresh';
+const drainSourceRevision = () => {};
 ${section}
 globalThis.performLoadControls = performLoadControls;`, context);
 (async () => {
@@ -1507,6 +1522,7 @@ let discoveryGeneration = 0; let selectedControl = 'control'; let querySequence 
 let catalogMode = ''; let stateGeneration = 0; let selectorGeneration = '';
 let pageOffset = 0; let visibleCount = 0; let selectorVerificationPending = false;
 const refreshButtonText = 'refresh';
+const drainSourceRevision = () => {};
 globalThis.clearSelection = () => {selectedControl = '';};
 ${section}
 globalThis.performLoadControls = performLoadControls;`, context);

@@ -674,13 +674,15 @@
         rerunPoll = true;
         setStatus(label('chartStale'), 'warning');
       } else {
-        if (error.code === 'forbidden' || error.code === 'stale_configuration'
-          || verifying) {
+        if (error.code === 'forbidden'
+          || ((error.code === 'stale_configuration' || verifying)
+            && (!selection || Date.now() / 1000 - selection.verified_at >= 60))) {
           clear();
           setStatus(error.code === 'forbidden' || error.code === 'stale_configuration'
             ? label('chartDenied') : queryErrorStatus(error), 'warning');
         } else {
-          setStatus(queryErrorStatus(error), 'warning');
+          setStatus(verifying || error.code === 'stale_configuration'
+            ? label('chartStale') : queryErrorStatus(error), 'warning');
         }
       }
     } finally {
