@@ -538,8 +538,14 @@ if ($action ne '') {
         my @entries;
         for my $line (split /\r?\n/, $q->{taxonomy_entries} // '') {
             next if $line eq '';
-            my ($prefix, $label) = split /=/, $line, 2;
-            push @entries, {prefix => $prefix // '', label => $label // ''};
+            my ($qualified_prefix, $label) = split /=/, $line, 2;
+            my ($format, $prefix) = split /:/, $qualified_prefix // '', 2;
+            push @entries, {
+                address_format => $format eq '2' ? 'two_level'
+                    : $format eq '3' ? 'three_level' : '',
+                prefix => $prefix // '',
+                label => $label // '',
+            };
         }
         $result = admin_call('save_knx_taxonomy', {entries => \@entries});
         admin_log($result->{ok} ? 'info' : 'warning',
@@ -891,7 +897,8 @@ my $taxonomy_endpoint = $display_endpoint;
 $taxonomy_endpoint =~ s{/$}{};
 my $taxonomy_text = ($config->{knx_address_taxonomy}{endpoint} // '') eq $taxonomy_endpoint
     ? join("\n", map {
-        ($_->{prefix} // '') . '=' . ($_->{label} // '')
+        (($_->{address_format} // '') eq 'two_level' ? '2:' : '3:')
+            . ($_->{prefix} // '') . '=' . ($_->{label} // '')
     } @{$config->{knx_address_taxonomy}{entries} // []})
     : '';
 my $public_origin = $config->{server}{public_origin} // '';

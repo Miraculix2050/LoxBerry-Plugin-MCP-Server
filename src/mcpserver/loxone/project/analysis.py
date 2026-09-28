@@ -338,7 +338,9 @@ def analyze_knx(
                 continue
             for depth in range(1, len(item.segments) + 1):
                 hierarchy_prefixes[(item.address_format, item.segments[:depth])].append(item)
-        labels = {entry.segments: entry.label for entry in taxonomy}
+        labels: dict[tuple[str, tuple[int, ...]], str] = {
+            (entry.address_format, entry.segments): entry.label for entry in taxonomy
+        }
         prefix_rows = patterns = outliers = 0
         for (address_format, prefix), members in sorted(hierarchy_prefixes.items()):
             members = sorted(members, key=lambda item: item.node.key)
@@ -365,7 +367,7 @@ def analyze_knx(
                 if item.node.knx is not None and item.node.knx.title
             )
             shape_count = max(shapes.values(), default=0)
-            label = labels.get(prefix)
+            label = labels.get((address_format, prefix))
             hierarchy: dict[str, object] = {
                 "prefix": list(prefix),
                 "prefix_level": len(prefix),
@@ -446,7 +448,10 @@ def analyze_knx(
                     (
                         "configured_taxonomy",
                         "configured_label",
-                        [labels.get(item.segments or (), "unlabeled") for item in members],
+                        [
+                            labels.get((address_format, item.segments or ()), "unlabeled")
+                            for item in members
+                        ],
                     )
                 )
             for category, dimension, values in dimensions:

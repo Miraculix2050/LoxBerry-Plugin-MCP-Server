@@ -117,7 +117,10 @@ address and edge variant in bounded examples. Logical-object and raw-occurrence
 counts remain separate. Direct wiring counts directional project signal/reference
 relationships and reports unresolved relationships separately. The optional
 `knx_address_taxonomy` configuration contains at most 128 exact canonical
-prefix labels bound to the configured Miniserver endpoint. Labels have
+prefix labels bound to the configured Miniserver endpoint and explicit
+`address_format` (`two_level` or `three_level`). The Admin form uses `2:` or
+`3:` before each prefix. This distinguishes a two-level leaf from a three-level
+middle prefix with the same numbers. Labels have
 `admin_configured` provenance and never alter graph facts or counts. Analysis
 cursor scope includes the taxonomy, so changed labels invalidate prior cursors.
 

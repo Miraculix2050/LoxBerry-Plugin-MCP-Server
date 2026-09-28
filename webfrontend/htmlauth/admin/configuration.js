@@ -49,6 +49,17 @@ window.McpAdmin.createConfiguration = (
   let configurationLoaded = false;
   let configurationLoadInFlight = false;
   let savedPublicOrigin = null;
+  let displayedTaxonomyEndpoint = '';
+  const renderTaxonomy = (configuration) => {
+    const endpoint = String(configuration?.loxone?.endpoint || '').replace(/\/$/, '');
+    const taxonomy = configuration?.knx_address_taxonomy || {};
+    displayedTaxonomyEndpoint = endpoint;
+    taxonomyEntries.value = taxonomy.endpoint === endpoint
+      ? (taxonomy.entries || []).map((entry) =>
+        (entry.address_format === 'two_level' ? '2:' : '3:') + entry.prefix + '=' + entry.label,
+      ).join('\n')
+      : '';
+  };
   const renderLogging = (configuration) => {
     const configured = configuration && configuration.logging ? configuration.logging : {};
     const level = ['off', 'error', 'warning', 'info', 'debug'].includes(configured.level)
@@ -100,10 +111,7 @@ window.McpAdmin.createConfiguration = (
     const mqtt = configuration?.mqtt || {};
     const emergencyStop = configuration?.emergency_stop || {};
     const eventHistory = configuration?.event_history || {};
-    const taxonomy = configuration?.knx_address_taxonomy || {};
-    taxonomyEntries.value = taxonomy.endpoint === String(loxone.endpoint || '').replace(/\/$/, '')
-      ? (taxonomy.entries || []).map((entry) => entry.prefix + '=' + entry.label).join('\n')
-      : '';
+    renderTaxonomy(configuration);
     const publicOrigin = String(server.public_origin || '')
       || String(mcpConfigForm.elements.namedItem('public_origin')?.value || '');
     savedPublicOrigin = String(server.public_origin || '');
@@ -428,6 +436,9 @@ window.McpAdmin.createConfiguration = (
     void loadCachedEmergencyStopOptions(emergencyStopDiscoveryGeneration);
     service.scheduleServicePoll(0);
     miniserverEndpoint.value = savedEndpoint;
+    if (String(savedEndpoint || '').replace(/\/$/, '') !== displayedTaxonomyEndpoint) {
+      renderTaxonomy(data.configuration);
+    }
     explorerLink.href = `${window.location.origin}${explorerPath}`;
   };
   const onMqttSaved = (data) => {
@@ -437,8 +448,7 @@ window.McpAdmin.createConfiguration = (
     renderConfigurationBadges(data.configuration);
   };
   const onTaxonomySaved = (data) => {
-    const entries = data.configuration.knx_address_taxonomy.entries || [];
-    taxonomyEntries.value = entries.map((entry) => entry.prefix + '=' + entry.label).join('\n');
+    renderTaxonomy(data.configuration);
   };
   return {mcpConfigForm, loadConfiguration, loadInitialState,
     onMcpSaved, onMqttSaved, onTaxonomySaved, renderLogging, renderConfigurationBadges};

@@ -72,7 +72,7 @@ def test_edge_variants_stay_separate_in_analysis_and_connectivity():
 def test_address_hierarchy_reports_measured_prefixes_and_configured_provenance():
     view = _view(Path("tests/fixtures/project/knx-edge-variants.xml").read_bytes())
     selected = frozenset({"address_hierarchy"})
-    taxonomy = (AddressTaxonomyEntry("6/2", "Test label"),)
+    taxonomy = (AddressTaxonomyEntry("6/2", "Test label", "three_level"),)
 
     result = analyze_knx(view, selected, taxonomy)
     assert result == analyze_knx(view, selected, taxonomy)
@@ -141,12 +141,34 @@ def test_address_hierarchy_counts_duplicate_sources_only_as_occurrences():
     assert leaf["source_occurrence_count"] == 2
 
 
+def test_address_taxonomy_does_not_cross_two_and_three_level_formats():
+    view = _view(
+        b'<P><C Type="EIBsensor" U="two" EibAddr="6/2"/>'
+        b'<C Type="EIBsensor" U="three" EibAddr="6/2/7"/></P>'
+    )
+    result = analyze_knx(
+        view,
+        frozenset({"address_hierarchy"}),
+        (
+            AddressTaxonomyEntry("6/2", "Two-level leaf", "two_level"),
+            AddressTaxonomyEntry("6/2", "Three-level middle", "three_level"),
+        ),
+    )
+    rows = {
+        (item["hierarchy"]["address_format"], tuple(item["hierarchy"]["prefix"])): item["hierarchy"]
+        for item in result["findings"]
+        if item["finding_type"] == "address_prefix_summary"
+    }
+    assert rows[("two_level", (6, 2))]["configured_taxonomy"]["label"] == "Two-level leaf"
+    assert rows[("three_level", (6, 2))]["configured_taxonomy"]["label"] == ("Three-level middle")
+
+
 @pytest.mark.asyncio
 async def test_address_hierarchy_worker_preserves_admin_label_provenance():
     result = await process_analysis(
         _view(b'<P><C Type="EIBsensor" U="a" EibAddr="6/2/7"/></P>'),
         frozenset({"address_hierarchy"}),
-        (AddressTaxonomyEntry("6/2", "Configured"),),
+        (AddressTaxonomyEntry("6/2", "Configured", "three_level"),),
     )
     prefix = next(
         item["hierarchy"]

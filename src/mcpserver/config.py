@@ -727,7 +727,12 @@ class PluginConfig:
         document["event_history"]["enabled"] = self.event_history_enabled
         document["knx_address_taxonomy"]["endpoint"] = self.knx_address_taxonomy_endpoint
         document["knx_address_taxonomy"]["entries"] = [
-            {"prefix": entry.prefix, "label": entry.label} for entry in self.knx_address_taxonomy
+            {
+                "address_format": entry.address_format,
+                "prefix": entry.prefix,
+                "label": entry.label,
+            }
+            for entry in self.knx_address_taxonomy
         ]
         document["event_history"]["retention_days"] = self.event_history_retention_days
         document["event_history"]["maximum_mib"] = self.event_history_maximum_mib

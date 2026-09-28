@@ -706,14 +706,18 @@ def test_common_actions_update_the_page_without_a_reload() -> None:
 def test_knx_taxonomy_admin_form_uses_the_same_origin_save_path_in_both_languages() -> None:
     template = _admin_source()
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    js = (ROOT / "webfrontend/htmlauth/admin/configuration.js").read_text(encoding="utf-8")
     german = (ROOT / "templates/lang/language_de.ini").read_text(encoding="utf-8")
     english = (ROOT / "templates/lang/language_en.ini").read_text(encoding="utf-8")
     assert 'id="knx-taxonomy-form"' in template
     assert 'data-ajax="save_knx_taxonomy"' in template
     assert 'name="taxonomy_entries"' in template
     assert "admin_call('save_knx_taxonomy', {entries => \\@entries})" in cgi
+    assert "address_format => $format eq '2' ? 'two_level'" in cgi
     assert "($config->{knx_address_taxonomy}{endpoint} // '') eq $taxonomy_endpoint" in cgi
     assert "KNX_TAXONOMY_TEXT => $taxonomy_text" in cgi
+    assert "displayedTaxonomyEndpoint" in js
+    assert "renderTaxonomy(data.configuration);" in js
     assert "KNX_TAXONOMY_HELP=" in german
     assert "KNX_TAXONOMY_HELP=" in english
 

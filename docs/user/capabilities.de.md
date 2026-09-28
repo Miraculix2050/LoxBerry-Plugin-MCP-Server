@@ -80,7 +80,8 @@ beobachtete Signal- oder Referenzbeziehung im Projekt; ungeklärte Beziehungen
 bleiben getrennt. Muster und Ausreißer nennen ihre lokale Vergleichsgruppe,
 bewerten aber keine Konfiguration. Optionale KNX-Adresslabels aus der
 Admin-Konfiguration gelten nur für den konfigurierten Miniserver, erscheinen als
-`admin_configured`-Metadaten und ändern keine Projektfakten. Namen und
+`admin_configured`-Metadaten, erfordern ein explizites zwei- oder dreistufiges
+Adressformat und ändern keine Projektfakten. Namen und
 Adressformen belegen weder Etagen, Funktionen, DPTs, ETS-Bedeutung noch Busaktivität.
 `loxone_analyze_observability` bewertet getrennt einen begrenzten, ausdrücklich angefragten
 Zeitraum für ein Projektziel. Es verbindet nur exakte UUID-gemappte strukturelle Erreichbarkeit,

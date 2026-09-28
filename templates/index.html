@@ -167,7 +167,7 @@
       <fieldset id="knx-taxonomy-fields" class="mcp-configuration-fields" <TMPL_UNLESS SERVER_RENDERED_FALLBACK>disabled<TMPL_ELSE><TMPL_UNLESS FALLBACK_CONFIGURATION_LOADED>disabled</TMPL_UNLESS></TMPL_UNLESS>>
         <input type="hidden" name="action" value="save_knx_taxonomy">
         <h3><TMPL_VAR SETUP.KNX_TAXONOMY></h3>
-        <label class="mcp-field"><span><TMPL_VAR SETUP.KNX_TAXONOMY_LABEL></span><textarea id="knx-taxonomy-entries" name="taxonomy_entries" rows="5" maxlength="12000" aria-describedby="knx-taxonomy-help"><TMPL_VAR KNX_TAXONOMY_TEXT ESCAPE=HTML></textarea></label>
+        <label class="mcp-field"><span><TMPL_VAR SETUP.KNX_TAXONOMY_LABEL></span><textarea id="knx-taxonomy-entries" name="taxonomy_entries" rows="5" maxlength="16384" aria-describedby="knx-taxonomy-help"><TMPL_VAR KNX_TAXONOMY_TEXT ESCAPE=HTML></textarea></label>
         <p id="knx-taxonomy-help" class="mcp-help"><TMPL_VAR SETUP.KNX_TAXONOMY_HELP></p>
         <div class="mcp-actions"><button class="lb-button" type="submit"><TMPL_VAR ACTION.SAVE_KNX_TAXONOMY></button></div>
       </fieldset>

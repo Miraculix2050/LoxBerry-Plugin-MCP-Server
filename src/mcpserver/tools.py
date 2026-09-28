@@ -4489,7 +4489,10 @@ def register_project_tools(
                             ANALYSIS_VERSION,
                             project.view.mapping.structure_fingerprint,
                             sorted(selected),
-                            [(entry.prefix, entry.label) for entry in taxonomy],
+                            [
+                                (entry.address_format, entry.prefix, entry.label)
+                                for entry in taxonomy
+                            ],
                         ],
                         separators=(",", ":"),
                     ).encode()

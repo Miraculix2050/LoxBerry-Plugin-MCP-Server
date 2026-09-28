@@ -1429,13 +1429,17 @@ def test_knx_taxonomy_save_is_endpoint_scoped_and_preserves_other_settings(
     store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
     store.save(PluginConfig(loxone_endpoint="http://192.168.10.20", mqtt_enabled=True))
     monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
-    saved = _save_knx_taxonomy({"entries": [{"prefix": "6/2", "label": "Test floor"}]})
+    saved = _save_knx_taxonomy(
+        {"entries": [{"address_format": "three_level", "prefix": "6/2", "label": "Test floor"}]}
+    )
     assert saved["applied"] is True
     assert store.load().knx_address_taxonomy_endpoint == "http://192.168.10.20"
     assert store.load().knx_address_taxonomy[0].label == "Test floor"
     assert store.load().mqtt_enabled is True
     with pytest.raises(AdminError):
-        _save_knx_taxonomy({"entries": [{"prefix": "6/8/0", "label": "Invalid"}]})
+        _save_knx_taxonomy(
+            {"entries": [{"address_format": "three_level", "prefix": "6/8/0", "label": "Invalid"}]}
+        )
     assert store.load().knx_address_taxonomy[0].label == "Test floor"
 
 

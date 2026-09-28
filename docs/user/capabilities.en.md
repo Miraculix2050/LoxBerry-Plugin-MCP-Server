@@ -76,7 +76,8 @@ address examples. Direct wiring means an observed project signal/reference
 relationship; unresolved relationships remain separate. Pattern and outlier
 candidates report a local peer baseline, not a configuration verdict. The
 optional Admin-managed KNX address labels apply only to the configured Miniserver,
-appear as `admin_configured` metadata, and do not change project facts. Names and
+require an explicit two- or three-level format, appear as `admin_configured`
+metadata, and do not change project facts. Names and
 address shape never establish floors, functions, DPTs, ETS meaning or bus activity.
 `loxone_analyze_observability` separately assesses a bounded, explicitly requested
 time range for a project target. It combines exact UUID-mapped structural reachability,
