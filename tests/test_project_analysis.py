@@ -64,7 +64,7 @@ def test_edge_variants_stay_separate_in_analysis_and_connectivity():
         and item["group_address"] == "6/2/27"
     }
     assert disconnected == {None}
-    assert result["analysis_version"] == 4
+    assert result["analysis_version"] == 5
 
 
 def test_new_knx_families_enter_coverage_and_connectivity_without_unmodeled_types():
@@ -85,7 +85,7 @@ def test_new_knx_families_enter_coverage_and_connectivity_without_unmodeled_type
     assert result["coverage"]["endpoints"] == 5
     assert result["coverage"]["canonical_group_addresses"] == 5
     assert result["coverage"]["raw_datatypes"] == 0
-    assert result["analysis_version"] == 4
+    assert result["analysis_version"] == 5
     assert any(
         item["code"] == "unclassified_knx_candidate" and item["source_type"] == "EIBunknown"
         for item in result["source_diagnostics"]["entries"]
@@ -525,7 +525,7 @@ def test_v2_uses_exact_runtime_evidence_for_naming_without_inventing_knx_semanti
 
     result = analyze_knx(_view(project, controls), frozenset({"naming_consistency"}))
 
-    assert result["analysis_version"] == 4
+    assert result["analysis_version"] == 5
     assert result["coverage"]["exact_runtime_mappings"] == 6
     assert result["coverage"]["reviewed_signal_usage"] == 0
     assert any(item["finding_type"] == "naming_deviation" for item in result["findings"])

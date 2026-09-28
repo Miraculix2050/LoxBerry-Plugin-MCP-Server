@@ -6,6 +6,7 @@ import hashlib
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 
+from .coverage import coverage_by_source_type
 from .graph import GraphEdge, GraphNode, SemanticEdge
 from .mapping import ControlMapping, ProjectView
 from .semantics import expects_raw_datatype, is_valid_group_address_filter, signal_use_rules
@@ -248,12 +249,14 @@ class ProjectQuery:
                 {
                     "source_field": knx.datatype.source_field,
                     "source_value": knx.datatype.source_value,
+                    "source_kind": "loxone_config",
                     "system": knx.datatype.system,
                     "normalized_code": knx.datatype.normalized_code,
                 }
                 if knx.datatype is not None
                 else None
             ),
+            "normalized_dpt_evidence": None,
             "truncated_fields": list(knx.truncated_fields),
             "usage_observations": observations,
             "usage_observations_truncated": observations_truncated,
@@ -389,6 +392,7 @@ class ProjectQuery:
                 "groups_omitted": self.view.snapshot.source_diagnostics.groups_omitted,
                 "labels_truncated": self.view.snapshot.source_diagnostics.labels_truncated,
             },
+            "coverage_by_source_type": coverage_by_source_type(self.view.snapshot),
         }
 
     def find(

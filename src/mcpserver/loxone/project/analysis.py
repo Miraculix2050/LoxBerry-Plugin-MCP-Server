@@ -9,10 +9,11 @@ import unicodedata
 from collections import Counter, defaultdict, deque
 from dataclasses import dataclass
 
+from .coverage import coverage_by_source_type
 from .graph import GraphEdge, GraphNode, SemanticEdge
 from .mapping import ProjectView, RuntimeEvidence
 
-ANALYSIS_VERSION = 4
+ANALYSIS_VERSION = 5
 ANALYSES = frozenset(
     {
         "address_patterns",
@@ -865,6 +866,7 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
             "exact_runtime_mappings": sum(item.runtime is not None for item in endpoints),
             "named_endpoints": sum(bool(item.names) for item in endpoints),
         },
+        "coverage_by_source_type": coverage_by_source_type(view.snapshot),
         "summaries": summaries,
         "limitations": [
             {

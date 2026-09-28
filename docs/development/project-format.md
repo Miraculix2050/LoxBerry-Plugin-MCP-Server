@@ -84,7 +84,7 @@ reachability, not a physical device role, bus telegram, or historical cause.
 
 ## KNX project analysis
 
-`loxone_analyze_project` version 4 returns bounded, deterministic project-local
+`loxone_analyze_project` version 5 returns bounded, deterministic project-local
 evidence; it never grades a KNX installation. It aggregates canonical-address
 and source-name patterns, conflicting raw `EIBType` values on one group address,
 reviewed signal-use observations, exact runtime-mapping context, local peer and
@@ -97,6 +97,33 @@ unknown-system source code, so the analysis never
 claims DPT compatibility. It reports fixed limitation codes whenever normalized
 DPTs, semantic domains, reviewed usage, or exact runtime mappings are missing.
 ETS data, bus traffic and physical-device use are outside this projection.
+Status and KNX analysis share `coverage_by_source_type`. `source_objects` counts raw
+`C` occurrences. `modeled_endpoints`, `modeled_logic_blocks`, and `modeled_lines`
+count logical objects after the existing identity-backed model-source collapse;
+`duplicate_source_occurrences` counts the additional collapsed raw occurrences.
+`invalid_or_missing_address` counts logical endpoints without a validated canonical
+address. `unsupported` counts unmodeled `EIB*` source types, not unknown physical
+devices. Marker-bearing objects without a confirmed `EIB*` type are counted only in
+`ambiguous_source_objects`; they are not claimed as unsupported. Up to 50 sorted
+source-type groups are returned. `groups_omitted` and `complete` disclose omitted
+groups or ambiguous candidates; long labels have a bounded, hash-suffixed form.
+Object details identify raw `EIBType` as `loxone_config` evidence. The separate
+`normalized_dpt_evidence` field is null until an authoritative, versioned source is
+implemented; `normalized_code` remains null. No DPT or EIS meaning is inferred.
+
+### Future live KNX diagnostics boundary
+
+There is currently no authorized ETS import or bus-diagnostic adapter. A future
+read-only capability must be explicitly enabled and require a dedicated
+`knx:diagnostics` OAuth scope in addition to project read access. Neither the
+scope nor a live tool is published until an actual fixed, authorized source and
+its revocation path exist. Its bounded result must identify the adapter kind,
+source version or fingerprint, observation time and freshness; redact raw
+telegram payloads, credentials and private addresses. Static project wiring and
+live observations must occupy separate fields. No observation may assert that
+static graph reachability caused bus activity. With no authorized source, the
+capability reports `unavailable` and produces no synthesized observations.
+
 Findings are stable only for an unchanged project model and analysis version;
 they include project-node evidence for follow-up describe or trace calls.
 Source, decoder, parser and graph execute in a disposable subprocess with a

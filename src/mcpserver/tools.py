@@ -610,6 +610,7 @@ class ProjectKnxGroupAddressData(BaseModel):
 class ProjectKnxDatatypeData(BaseModel):
     source_field: str
     source_value: str
+    source_kind: Literal["loxone_config"] = "loxone_config"
     system: Literal["unknown"]
     normalized_code: None = None
 
@@ -641,6 +642,7 @@ class ProjectKnxData(BaseModel):
     internal_name: str | None
     group_address: ProjectKnxGroupAddressData | None
     datatype: ProjectKnxDatatypeData | None
+    normalized_dpt_evidence: None = None
     truncated_fields: list[
         Literal[
             "title",
@@ -766,6 +768,25 @@ class ProjectModelSourceData(BaseModel):
     element_count: int = Field(ge=0)
 
 
+class ProjectKnxSourceTypeCoverageEntryData(BaseModel):
+    source_type: str = Field(max_length=100)
+    source_type_truncated: bool
+    source_objects: int = Field(ge=0)
+    modeled_endpoints: int = Field(ge=0)
+    modeled_logic_blocks: int = Field(ge=0)
+    modeled_lines: int = Field(ge=0)
+    unsupported: int = Field(ge=0)
+    invalid_or_missing_address: int = Field(ge=0)
+    duplicate_source_occurrences: int = Field(ge=0)
+
+
+class ProjectKnxSourceTypeCoverageData(BaseModel):
+    entries: list[ProjectKnxSourceTypeCoverageEntryData] = Field(max_length=50)
+    complete: bool
+    groups_omitted: int = Field(ge=0)
+    ambiguous_source_objects: int = Field(ge=0)
+
+
 class ProjectStatusData(BaseModel):
     project_fingerprint: str
     model_version: int
@@ -777,6 +798,7 @@ class ProjectStatusData(BaseModel):
     mapping: dict[str, int]
     structure_generation: int
     source_diagnostics: ProjectSourceDiagnosticsSummaryData
+    coverage_by_source_type: ProjectKnxSourceTypeCoverageData
 
 
 class ProjectObjectPageData(BaseModel):
@@ -961,6 +983,7 @@ class ProjectAnalysisData(BaseModel):
         ]
     ]
     coverage: ProjectAnalysisCoverageData
+    coverage_by_source_type: ProjectKnxSourceTypeCoverageData
     summaries: dict[str, JsonValue]
     limitations: list[ProjectAnalysisLimitationData] = Field(default_factory=list)
     source_diagnostics: ProjectSourceDiagnosticsData
@@ -2352,6 +2375,19 @@ def _fit_structure_overview(envelope: StructureOverviewEnvelope) -> StructureOve
         selected_breakdown.truncated = selected_breakdown.returned < selected_breakdown.total
         selected_breakdown.complete = not selected_breakdown.truncated
     return envelope
+
+
+def _fit_project_status(envelope: ProjectStatusEnvelope) -> bool:
+    if not isinstance(envelope.data, ProjectStatusData):
+        return True
+    coverage = envelope.data.coverage_by_source_type
+    while len(envelope.model_dump_json().encode("utf-8")) > PROJECT_RESPONSE_MAX_BYTES:
+        if not coverage.entries:
+            return False
+        coverage.entries.pop()
+        coverage.groups_omitted += 1
+        coverage.complete = False
+    return True
 
 
 def _fit_project_page(
@@ -4058,7 +4094,8 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
     @server.tool(
         name="loxone_get_project_status",
         description=(
-            "Get bounded status and runtime-mapping counts for the authorized Loxone project."
+            "Get bounded status, KNX source-type coverage and runtime-mapping counts "
+            "for the authorized Loxone project."
         ),
         annotations=annotations,
         structured_output=True,
@@ -4066,11 +4103,18 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
     async def get_project_status() -> ProjectStatusEnvelope:
         try:
             query, snapshot = await _project_query(runtime)
-            return _result(
+            envelope = _result(
                 ProjectStatusEnvelope,
                 {**query.status(), "structure_generation": snapshot.structure_generation},
                 stale=not snapshot.connected,
             )
+            if not _fit_project_status(envelope):
+                return _error(
+                    ProjectStatusEnvelope,
+                    "temporarily_unavailable",
+                    "Project status exceeds the response limit",
+                )
+            return envelope
         except PermissionError:
             return _error(
                 ProjectStatusEnvelope,
@@ -4318,8 +4362,8 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
     @server.tool(
         name="loxone_analyze_project",
         description=(
-            "Analyze bounded KNX project evidence for project-local patterns and "
-            "review candidates. Findings are facts, not configuration verdicts."
+            "Analyze bounded KNX project evidence, including source-type coverage, "
+            "for local patterns and review candidates. Findings are facts, not verdicts."
         ),
         annotations=annotations,
         structured_output=True,

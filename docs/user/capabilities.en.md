@@ -55,7 +55,7 @@ separate KNX signal-use observations, while trace returns separately marked deri
 and bounded `knx_to_loxone`, `loxone_to_knx`, or `knx_to_knx` paths. Unknown block or connector
 behaviour is not guessed. These are static project paths, not evidence that a bus telegram or
 historical state change caused an action.
-`loxone_analyze_project` version 4 summarizes bounded project-local KNX evidence: address and
+`loxone_analyze_project` version 5 summarizes bounded project-local KNX evidence: address and
 source-name patterns, raw datatype reuse, reviewed signal-use differences, exact runtime-mapping
 context, local peer and graph outliers, path counts, and endpoints without an observed project
 relationship. Runtime names and control types are used only for exact UUID mappings; names never
@@ -63,6 +63,12 @@ establish a mapping. Findings are review facts, not quality ratings. Fixed
 limitation codes show when normalized DPTs, semantic domains, reviewed usage, or runtime mappings
 are unavailable. The tool does not claim DPT compatibility, ETS coverage, bus activity, or physical
 device use; use a returned project-node ID with describe or trace to inspect its evidence.
+Project status and analysis also expose `coverage_by_source_type`. Raw source-object
+counts are separate from logical endpoint, logic-block and line counts; additional
+occurrences merged across model sources are counted explicitly. Unknown KNX-like
+objects and omitted type groups make coverage incomplete. Object details identify
+`EIBType` as raw Loxone Config evidence and report that normalized DPT evidence is
+currently unavailable.
 `loxone_analyze_observability` separately assesses a bounded, explicitly requested
 time range for a project target. It combines exact UUID-mapped structural reachability,
 current-state availability, advertised native statistic series, and local event-history
