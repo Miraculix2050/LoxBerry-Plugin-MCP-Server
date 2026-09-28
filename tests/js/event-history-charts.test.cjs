@@ -13,7 +13,8 @@ const html = `<main class="mcp-history-charts" data-loading="Loading"
   data-chart-timeout="Timed out" data-chart-unavailable="Unavailable"
   data-chart-invalid="Invalid range" data-chart-stale="Data may be stale"
   data-chart-reference="Reference"
-  data-chart-reduced="Reduced" data-chart-value="Value" data-chart-coverage="Coverage">
+  data-chart-reduced="Reduced" data-chart-value="Value" data-chart-number="Number"
+  data-chart-boolean="Boolean value" data-chart-coverage="Coverage">
   <select id="chart-range"><option value="86400">Day</option><option value="custom">Custom</option></select>
   <input id="chart-from"><input id="chart-to"><button id="chart-apply"></button>
   <button id="chart-previous"></button><button id="chart-next"></button>
@@ -103,7 +104,14 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
   assert.equal(window.document.querySelector('#chart-panels section > details:last-of-type').hidden,
     true);
   const chart = window.uPlot.instances[0];
-  chart.cursor = {idx: 0};
+  assert.equal(chart.options.series.length, 3, 'mixed scalar values use both plot series');
+  assert.equal(chart.options.series[1].points.show, true,
+    'an isolated numeric observation remains visible in a dense mixed range');
+  assert.equal(chart.options.series[2].points.show, true,
+    'an isolated Boolean observation remains visible in a dense mixed range');
+  assert.ok(chart.data[1].some((value) => value > 1000), 'numeric value is plotted');
+  assert.ok(chart.data[2].includes(1), 'Boolean value is plotted');
+  chart.cursor = {idx: chart.data[0].length - 1};
   chart.options.hooks.setCursor[0](chart);
   assert.match(window.document.querySelector('#chart-panels section [aria-live="polite"]').textContent,
     /9007199254740993/);
@@ -197,6 +205,8 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
   assert.equal(rangeSelect.value, 'custom');
   assert.equal(window.document.querySelector('#chart-from').disabled, false);
   assert.equal(window.document.querySelector('#chart-apply').disabled, false);
+  coverage = [{started_at: Date.now() / 1000 - 30,
+    ended_at: Date.now() / 1000 - 20, outcome: 'stopped'}];
   releaseHeld();
   await flush();
   const replay = JSON.parse(queries().at(-1).fields.queries)[0];
@@ -204,6 +214,8 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
   assert.ok(replay.end < fixedRange.end);
   assert.ok(Math.abs(replay.end - heldRange.start) < 2,
     'Earlier requests only the missing left interval');
+  assert.equal(window.document.querySelectorAll('#chart-panels ul li').length, 0,
+    'coverage outside the active range stays out of the visible list');
   const beforeZoom = queries().length;
   window.document.querySelector('#chart-zoom-in').click();
   await flush();
@@ -243,6 +255,13 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
     'narrowing a sampled interval requests more detailed values');
   assert.doesNotMatch(window.document.querySelector('#chart-panels section').textContent,
     /Reduced/, 'an exact narrowed range clears the old reduction notice');
+  window.document.querySelector('#chart-from').value = 'invalid';
+  window.document.querySelector('#chart-apply').click();
+  assert.equal(window.document.querySelector('#chart-status').textContent, 'Invalid range');
+  window.document.querySelector('#chart-zoom-in').click();
+  await flush();
+  assert.equal(window.document.querySelector('#chart-status').textContent, '',
+    'a valid cached zoom clears the earlier invalid-range warning');
   failCode = 'history_changed';
   const beforeRepeatedChange = queries().length;
   tick();

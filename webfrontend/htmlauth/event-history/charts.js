@@ -171,10 +171,13 @@
       : (events.length ? label('chartCoverage') : label('chartEmpty'));
     const numeric = events.filter((event) => Number.isFinite(numericValue(event.new_value)));
     const boolean = events.filter((event) => typeof event.new_value === 'boolean');
-    const plotted = numeric.length >= boolean.length ? numeric : boolean;
-    const plottedKind = numeric.length >= boolean.length ? 'number' : 'boolean';
+    const plottedKind = numeric.length && boolean.length ? 'mixed'
+      : (numeric.length ? 'number' : 'boolean');
+    const plotted = plottedKind === 'mixed' ? events.filter((event) =>
+      Number.isFinite(numericValue(event.new_value)) || typeof event.new_value === 'boolean')
+      : (plottedKind === 'number' ? numeric : boolean);
     if (plotted.length && typeof window.uPlot === 'function') {
-      const x = [], y = [], refs = [];
+      const x = [], y = [], booleanY = [], refs = [];
       let priorCoverage = null;
       for (const event of plotted) {
         const coverage = (state.coverage || []).findIndex((item) =>
@@ -186,10 +189,14 @@
             > (range.end - range.start) / 64))) {
           x.push(event.observed_at - 0.000001);
           y.push(null);
+          if (plottedKind === 'mixed') booleanY.push(null);
           refs.push(null);
         }
         x.push(event.observed_at);
-        y.push(plottedKind === 'boolean' ? Number(event.new_value) : numericValue(event.new_value));
+        const isBoolean = typeof event.new_value === 'boolean';
+        y.push(isBoolean ? (plottedKind === 'mixed' ? null : Number(event.new_value))
+          : numericValue(event.new_value));
+        if (plottedKind === 'mixed') booleanY.push(isBoolean ? Number(event.new_value) : null);
         refs.push(event);
         priorCoverage = coverage;
       }
@@ -198,10 +205,18 @@
         height: 220,
         scales: {x: {time: true}},
         series: [{}, {
-          label: label('chartValue'), stroke: '#2373a4', width: 2,
+          label: label(plottedKind === 'mixed' ? 'chartNumber' : 'chartValue'),
+          stroke: '#2373a4', width: 2,
           spanGaps: false,
+          ...(plottedKind === 'mixed' ? {scale: 'numeric', points: {show: true}} : {}),
           ...(plottedKind === 'boolean' ? {paths: window.uPlot.paths.stepped({align: 1})} : {}),
-        }],
+        }, ...(plottedKind === 'mixed' ? [{
+          label: label('chartBoolean'), scale: 'boolean', stroke: '#b35f19', width: 2,
+          spanGaps: false, paths: window.uPlot.paths.stepped({align: 1}),
+          points: {show: true},
+        }] : [])],
+        ...(plottedKind === 'mixed' ? {axes: [{}, {scale: 'numeric'},
+          {scale: 'boolean', side: 1, grid: {show: false}}]} : {}),
         cursor: {sync: {key: 'mcp-history-charts'}},
         hooks: {
           setCursor: [(plot) => {
@@ -220,8 +235,9 @@
       }
       applyingScale = true;
       try {
-        if (state.plot) state.plot.setData([x, y]);
-        else state.plot = new window.uPlot(options, [x, y], state.plotHost);
+        const data = plottedKind === 'mixed' ? [x, y, booleanY] : [x, y];
+        if (state.plot) state.plot.setData(data);
+        else state.plot = new window.uPlot(options, data, state.plotHost);
         state.plotKind = plottedKind;
         state.plot.setScale('x', {min: range.start, max: range.end});
       } finally { applyingScale = false; }
@@ -241,7 +257,8 @@
     state.boundaries.textContent = boundaries.map(([name, value]) =>
       `${label(name)}: ${time(value)}`).join(' · ');
     state.coverageList.replaceChildren();
-    for (const interval of state.coverage || []) {
+    for (const interval of (state.coverage || []).filter((item) =>
+      item.started_at <= range.end && (item.ended_at ?? Infinity) >= range.start)) {
       const item = document.createElement('li');
       item.textContent = `${time(interval.started_at)} – ${interval.ended_at == null
         ? '…' : time(interval.ended_at)}`;
@@ -530,6 +547,7 @@
     }
     range = {start, end};
     rolling = follow;
+    if (status.textContent === label('chartInvalid')) setStatus('');
     if (!follow) {
       $('chart-range').value = 'custom';
       for (const id of ['chart-from', 'chart-to', 'chart-apply']) $(id).disabled = false;
