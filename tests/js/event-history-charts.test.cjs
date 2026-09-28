@@ -13,7 +13,8 @@ const html = `<main class="mcp-history-charts" data-loading="Loading"
   data-chart-timeout="Timed out" data-chart-unavailable="Unavailable"
   data-chart-invalid="Invalid range" data-chart-stale="Data may be stale"
   data-chart-reference="Reference"
-  data-chart-reduced="Reduced" data-chart-value="Value" data-chart-coverage="Coverage">
+  data-chart-reduced="Reduced" data-chart-value="Value" data-chart-number="Number"
+  data-chart-boolean="Boolean value" data-chart-coverage="Coverage">
   <select id="chart-range"><option value="86400">Day</option><option value="custom">Custom</option></select>
   <input id="chart-from"><input id="chart-to"><button id="chart-apply"></button>
   <button id="chart-previous"></button><button id="chart-next"></button>
@@ -38,17 +39,24 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
   let failCode = null;
   let historyGeneration = 1;
   let selectorGeneration = 'a'.repeat(24);
+  let pendingEvent = null;
+  let latestId = 2;
+  let reducedMode = false;
   let coverage = [{started_at: Date.now() / 1000 - 30,
     ended_at: Date.now() / 1000 - 20, outcome: 'stopped'}];
   Object.defineProperty(window.document, 'hidden', {get: () => hidden});
   window.setInterval = (callback) => { tick = callback; return 1; };
   window.uPlot = class {
     static paths = {stepped: () => () => ({})};
+    static instances = [];
+    static dataUpdates = 0;
     constructor(options, data, host) {
       this.options = options; this.data = data; this.host = host;
+      window.uPlot.instances.push(this);
       host.append(window.document.createElement('canvas'));
       this.scales = {x: {min: data[0][0], max: data[0].at(-1)}};
     }
+    setData(data) { this.data = data; window.uPlot.dataUpdates++; }
     setScale(_key, {min, max}) { this.scales.x = {min, max}; }
     setSize() {}
     destroy() { this.host.replaceChildren(); }
@@ -66,13 +74,15 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
       queryCount++;
       if (failCode) throw Object.assign(new Error('failed'),
         {code: failCode, requestId: 'abc-123'});
-      const answer = {results: [{
-      generation: historyGeneration, events: queryCount === 1 ? [
+      const events = pendingEvent ? [pendingEvent] : queryCount === 1 ? [
         {id: 1, observed_at: Date.now() / 1000 - 10, old_value: false, new_value: true},
         {id: 2, observed_at: Date.now() / 1000 - 9, old_value: 0,
           new_value: {integer_decimal: '9007199254740993'}},
-      ] : [], has_more: false, latest_id: 2,
-      next_id: 2, reduced: false, coverage, capture_started_at: null,
+      ] : [];
+      if (pendingEvent) { latestId = pendingEvent.id; pendingEvent = null; }
+      const answer = {results: [{
+      generation: historyGeneration, events, has_more: false, latest_id: latestId,
+      next_id: latestId, reduced: reducedMode, coverage, capture_started_at: null,
       retained_from: null, recording_ended_at: null,
       }]};
       if (holdNext) {
@@ -91,7 +101,23 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
     ['after_id', 'control_uuid', 'end', 'generation', 'start', 'state_uuid']);
   assert.equal(window.document.querySelectorAll('#chart-panels canvas').length, 1);
   assert.match(window.document.querySelector('#chart-panels').textContent, /Control/);
-  assert.match(window.document.querySelector('#chart-panels table').textContent,
+  assert.equal(window.document.querySelector('#chart-panels section > details:last-of-type').hidden,
+    true);
+  const chart = window.uPlot.instances[0];
+  assert.equal(chart.options.series.length, 3, 'mixed scalar values use both plot series');
+  assert.equal(chart.options.series[1].points.show, true,
+    'an isolated numeric observation remains visible in a dense mixed range');
+  assert.equal(chart.options.series[2].points.show, true,
+    'an isolated Boolean observation remains visible in a dense mixed range');
+  assert.ok(chart.data[1].some((value) => value > 1000), 'numeric value is plotted');
+  assert.ok(chart.data[2].includes(1), 'Boolean value is plotted');
+  chart.cursor = {idx: chart.data[0].length - 1};
+  chart.options.hooks.setCursor[0](chart);
+  assert.match(window.document.querySelector('#chart-panels section [aria-live="polite"]').textContent,
+    /9007199254740993/);
+  const plotHost = window.document.querySelector('#chart-panels .mcp-history-chart-plot');
+  plotHost.dispatchEvent(new window.KeyboardEvent('keydown', {key: 'End', bubbles: true}));
+  assert.match(window.document.querySelector('#chart-panels section [aria-live="polite"]').textContent,
     /9007199254740993/);
   assert.equal(window.document.querySelectorAll('#chart-panels ul li').length, 1);
 
@@ -115,6 +141,20 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
   const fixedRange = JSON.parse(queries().at(-1).fields.queries)[0];
   assert.equal(fixedRange.end, advancedRange.end);
   window.Date.now = originalNow;
+  pendingEvent = {id: 3, observed_at: fixedRange.end - 5, old_value: 1, new_value: 2};
+  const originalPlot = window.uPlot.instances[0];
+  tick();
+  await flush();
+  assert.equal(window.uPlot.instances.length, 1, 'new numeric value reuses the plot');
+  assert.ok(window.uPlot.dataUpdates > 0);
+  assert.ok(originalPlot.data[0].length >= 2);
+  pendingEvent = {id: 4, observed_at: fixedRange.end - 4,
+    old_value: 2, new_value: 'offline'};
+  tick();
+  await flush();
+  assert.equal(window.document.querySelector('#chart-panels section > details:last-of-type').hidden,
+    false);
+  assert.match(window.document.querySelector('#chart-panels table').textContent, /offline/);
   failCode = 'outcome_unknown';
   tick();
   await flush();
@@ -152,24 +192,76 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
   rangeSelect.value = '86400';
   rangeSelect.dispatchEvent(new window.Event('change'));
   await flush();
+  assert.doesNotMatch(window.document.querySelector('#chart-panels table').textContent,
+    /offline/, 'text events outside the active range are hidden');
+  assert.equal(window.document.querySelector('#chart-panels section > details:last-of-type').hidden,
+    true);
   holdNext = true;
   tick();
   await flush();
   assert.equal(typeof releaseHeld, 'function');
+  const heldRange = JSON.parse(queries().at(-1).fields.queries)[0];
   window.document.querySelector('#chart-previous').click();
   assert.equal(rangeSelect.value, 'custom');
   assert.equal(window.document.querySelector('#chart-from').disabled, false);
   assert.equal(window.document.querySelector('#chart-apply').disabled, false);
+  coverage = [{started_at: Date.now() / 1000 - 30,
+    ended_at: Date.now() / 1000 - 20, outcome: 'stopped'}];
   releaseHeld();
   await flush();
   const replay = JSON.parse(queries().at(-1).fields.queries)[0];
   assert.equal(replay.after_id, 0);
   assert.ok(replay.end < fixedRange.end);
+  assert.ok(Math.abs(replay.end - heldRange.start) < 2,
+    'Earlier requests only the missing left interval');
+  assert.equal(window.document.querySelectorAll('#chart-panels ul li').length, 0,
+    'coverage outside the active range stays out of the visible list');
+  const beforeZoom = queries().length;
+  window.document.querySelector('#chart-zoom-in').click();
+  await flush();
+  assert.equal(queries().length, beforeZoom, 'zoom inside the loaded interval stays local');
+  const activePlot = window.uPlot.instances.at(-1);
+  const width = activePlot.scales.x.max - activePlot.scales.x.min;
+  activePlot.scales.x = {min: activePlot.scales.x.min + width / 4,
+    max: activePlot.scales.x.max - width / 4};
+  activePlot.options.hooks.setScale[0](activePlot, 'x');
+  await new Promise((resolve) => window.setTimeout(resolve, 0));
+  await flush();
+  assert.equal(queries().length, beforeZoom, 'drag zoom inside loaded data stays local');
+  pendingEvent = {id: 5, observed_at: activePlot.scales.x.max - 5,
+    old_value: false, new_value: true};
+  tick();
+  await flush();
+  assert.ok(window.uPlot.instances.at(-1).options.series[1].paths,
+    'the active boolean-only range selects a stepped plot despite cached numeric values');
+  plotHost.dispatchEvent(new window.KeyboardEvent('keydown', {key: 'End', bubbles: true}));
+  assert.match(window.document.querySelector('#chart-panels section [aria-live="polite"]')
+    .textContent, /true/, 'keyboard navigation reads only the active boolean range');
   historyGeneration++;
+  reducedMode = true;
   const beforeChange = queries().length;
   tick();
   await flush();
   assert.ok(queries().length > beforeChange + 1, 'history mutation retries after busy clears');
+  assert.match(window.document.querySelector('#chart-panels section').textContent, /Reduced/);
+  plotHost.dispatchEvent(new window.KeyboardEvent('keydown', {key: 'End', bubbles: true}));
+  assert.equal(window.document.querySelector('#chart-panels section [aria-live="polite"]')
+    .textContent, '', 'cleared history has no stale keyboard value');
+  reducedMode = false;
+  const beforeReducedZoom = queries().length;
+  window.document.querySelector('#chart-zoom-in').click();
+  await flush();
+  assert.equal(queries().length, beforeReducedZoom + 1,
+    'narrowing a sampled interval requests more detailed values');
+  assert.doesNotMatch(window.document.querySelector('#chart-panels section').textContent,
+    /Reduced/, 'an exact narrowed range clears the old reduction notice');
+  window.document.querySelector('#chart-from').value = 'invalid';
+  window.document.querySelector('#chart-apply').click();
+  assert.equal(window.document.querySelector('#chart-status').textContent, 'Invalid range');
+  window.document.querySelector('#chart-zoom-in').click();
+  await flush();
+  assert.equal(window.document.querySelector('#chart-status').textContent, '',
+    'a valid cached zoom clears the earlier invalid-range warning');
   failCode = 'history_changed';
   const beforeRepeatedChange = queries().length;
   tick();
