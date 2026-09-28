@@ -197,6 +197,96 @@ def test_chart_selection_and_range_are_bounded(tmp_path, monkeypatch):
         event_history_admin.chart_query({**selected, "start": 0, "end": 91 * 86400, "after_id": 0})
 
 
+def test_chart_batch_reuses_one_config_visibility_and_store(tmp_path, monkeypatch):
+    config_store, history = _setup(tmp_path, monkeypatch, sources=(SOURCE, HIDDEN))
+    history.initialize()
+    now = time.time()
+    template = event_history_admin._selector_projection(None)["controls"][0]
+    hidden = {**template, "uuid": HIDDEN[0], "states": [["active", HIDDEN[1]]]}
+    document = {
+        "generation": "b" * 24,
+        "verified_at": now,
+        "controls": [template, hidden],
+        "control_index": {SOURCE[0]: 0, HIDDEN[0]: 1},
+    }
+    calls = {"config": 0, "visibility": 0, "store": 0}
+    original_load = config_store.load
+    original_config = original_load()
+    original_store = event_history_admin._store
+
+    def load():
+        calls["config"] += 1
+        return original_load()
+
+    def read():
+        calls["visibility"] += 1
+        return dict(document)
+
+    def store(config):
+        calls["store"] += 1
+        return original_store(config)
+
+    monkeypatch.setattr(config_store, "load", load)
+    monkeypatch.setattr(
+        event_history_admin,
+        "_selector_cache",
+        lambda _config: SimpleNamespace(read=read, profile="same-profile"),
+    )
+    monkeypatch.setattr(event_history_admin, "_store", store)
+    queries = [
+        {
+            "control_uuid": source[0],
+            "state_uuid": source[1],
+            "generation": document["generation"],
+            "start": now - 60,
+            "end": now,
+            "after_id": 0,
+        }
+        for source in (SOURCE, HIDDEN)
+    ]
+    result = event_history_admin.chart_query({"queries": queries})
+    assert len(result["results"]) == 2
+    assert calls == {"config": 2, "visibility": 2, "store": 1}
+    original_page = EventHistoryStore.chart_page
+    page_calls = 0
+
+    def revoke_during_first_page(self, *args, **kwargs):
+        nonlocal page_calls
+        result = original_page(self, *args, **kwargs)
+        page_calls += 1
+        if page_calls == 1:
+            document["generation"] = "c" * 24
+        return result
+
+    monkeypatch.setattr(EventHistoryStore, "chart_page", revoke_during_first_page)
+    with pytest.raises(admin.AdminError, match="refreshed") as revoked:
+        event_history_admin.chart_query({"queries": queries})
+    assert revoked.value.code == "stale_configuration"
+    document["generation"] = "b" * 24
+    monkeypatch.setattr(EventHistoryStore, "chart_page", original_page)
+
+    def endpoint_changes_during_first_page(self, *args, **kwargs):
+        result = original_page(self, *args, **kwargs)
+        config_store.save(replace(original_config, loxone_endpoint="https://other.example"))
+        return result
+
+    monkeypatch.setattr(EventHistoryStore, "chart_page", endpoint_changes_during_first_page)
+    with pytest.raises(admin.AdminError, match="configuration changed") as endpoint_changed:
+        event_history_admin.chart_query({"queries": queries})
+    assert endpoint_changed.value.code == "stale_configuration"
+    config_store.save(original_config)
+    monkeypatch.setattr(EventHistoryStore, "chart_page", original_page)
+    queries[1]["generation"] = "c" * 24
+    with pytest.raises(admin.AdminError, match="refreshed"):
+        event_history_admin.chart_query({"queries": queries})
+    queries[1]["generation"] = document["generation"]
+    document["controls"].pop()
+    before_store = calls["store"]
+    with pytest.raises(admin.AdminError, match="not visible"):
+        event_history_admin.chart_query({"queries": queries})
+    assert calls["store"] == before_store
+
+
 def test_quick_summary_avoids_miniserver_discovery(tmp_path, monkeypatch):
     _, history = _setup(tmp_path, monkeypatch, sources=(SOURCE,))
     history.initialize()

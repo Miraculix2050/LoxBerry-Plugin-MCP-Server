@@ -523,58 +523,79 @@ def chart_query(payload: object, *, _deadline: float | None = None) -> dict[str,
         raise bridge.AdminError("chart query timed out", code="query_timeout")
     if not isinstance(payload, dict):
         raise bridge.AdminError("chart query is invalid")
-    if "queries" in payload:
-        queries = payload["queries"]
-        if not isinstance(queries, list) or not 1 <= len(queries) <= _CHART_SOURCE_LIMIT:
+    batched = "queries" in payload
+    if batched:
+        raw = payload["queries"]
+        if not isinstance(raw, list) or not 1 <= len(raw) <= _CHART_SOURCE_LIMIT:
             raise bridge.AdminError("chart query limit exceeded")
-        if any(not isinstance(item, dict) for item in queries):
+        if any(not isinstance(item, dict) for item in raw):
             raise bridge.AdminError("chart query is invalid")
-        sources = tuple(_source(item) for item in queries)
-        if len(set(sources)) != len(sources):
-            raise bridge.AdminError("duplicate chart source")
-        results = [chart_query(item, _deadline=_deadline) for item in queries]
-        if len({result["generation"] for result in results}) != 1:
-            raise bridge.AdminError("local history changed", code="history_changed")
-        return {"results": results}
-    source = _source(payload)
-    start, end, after_id = (payload.get(key) for key in ("start", "end", "after_id"))
+        queries = raw
+    else:
+        queries = [payload]
+    sources = tuple(_source(item) for item in queries)
+    if len(set(sources)) != len(sources):
+        raise bridge.AdminError("duplicate chart source")
     now = time.time()
-    if (
-        isinstance(start, bool)
-        or not isinstance(start, int | float)
-        or isinstance(end, bool)
-        or not isinstance(end, int | float)
-        or not 0 <= start < end <= now + 60
-        or end - start > _CHART_RANGE_SECONDS
-        or isinstance(after_id, bool)
-        or not isinstance(after_id, int)
-        or after_id < 0
-        or after_id > 2**63 - 1
-        or not isinstance(payload.get("generation"), str)
-        or len(payload["generation"]) != 24
-    ):
-        raise bridge.AdminError("chart range is invalid")
+    validated = []
+    for item, source in zip(queries, sources, strict=True):
+        start, end, after_id = (item.get(key) for key in ("start", "end", "after_id"))
+        generation = item.get("generation")
+        if (
+            isinstance(start, bool)
+            or not isinstance(start, int | float)
+            or isinstance(end, bool)
+            or not isinstance(end, int | float)
+            or not 0 <= start < end <= now + 60
+            or end - start > _CHART_RANGE_SECONDS
+            or isinstance(after_id, bool)
+            or not isinstance(after_id, int)
+            or after_id < 0
+            or after_id > 2**63 - 1
+            or not isinstance(generation, str)
+            or len(generation) != 24
+        ):
+            raise bridge.AdminError("chart range is invalid")
+        validated.append((source, start, end, after_id, generation))
     config = bridge._config_store().load()
     cache = _selector_cache(config)
     document = cache.read()
     if (
         document is None
-        or document["generation"] != payload.get("generation")
+        or any(document["generation"] != item[4] for item in validated)
         or not 0 <= now - document["verified_at"] < _CHART_VISIBILITY_SECONDS
     ):
         raise bridge.AdminError("chart visibility must be refreshed", code="stale_configuration")
-    if _chart_visible(document, source) is None:
+    if any(_chart_visible(document, source) is None for source in sources):
         raise bridge.AdminError("chart source is not visible", code="forbidden")
     try:
-        return _store(config).chart_page(
-            *source, start=start, end=end, after_id=after_id, deadline=_deadline
-        )
+        history = _store(config)
+        results = [
+            history.chart_page(*source, start=start, end=end, after_id=after_id, deadline=_deadline)
+            for source, start, end, after_id, _generation in validated
+        ]
     except EventHistoryQueryTimeout as exc:
         raise bridge.AdminError("chart query timed out", code="query_timeout") from exc
     except (OSError, ValueError, RuntimeError) as exc:
         raise bridge.AdminError(
             "local event history is unavailable", code="temporarily_unavailable"
         ) from exc
+    if len({result["generation"] for result in results}) != 1:
+        raise bridge.AdminError("local history changed", code="history_changed")
+    current = bridge._config_store().load()
+    _require_same_visibility_context(config, current)
+    if _selector_cache(current).profile != cache.profile:
+        raise bridge.AdminError("Miniserver identity changed", code="stale_configuration")
+    current_document = cache.read()
+    if (
+        current_document is None
+        or current_document["generation"] != document["generation"]
+        or not 0 <= time.time() - current_document["verified_at"] < _CHART_VISIBILITY_SECONDS
+    ):
+        raise bridge.AdminError("chart visibility must be refreshed", code="stale_configuration")
+    if any(_chart_visible(current_document, source) is None for source in sources):
+        raise bridge.AdminError("chart source is not visible", code="forbidden")
+    return {"results": results} if batched else results[0]
 
 
 def selector_catalog(payload: object) -> dict[str, Any]:
