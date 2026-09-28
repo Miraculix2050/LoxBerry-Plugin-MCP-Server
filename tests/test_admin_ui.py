@@ -1311,7 +1311,9 @@ const renderOverview = (data) => { knownSourceRevision = data.source_revision;
   shown = data.sources[0].event_count; };
 ${section}
 globalThis.subject = {checkSourceRevision, drainSourceRevision,
-  setBusy: (value) => { busy = value; }, result: () => ({fullLoads, shown})};`, context);
+  setBusy: (value) => { busy = value; },
+  setInitial: (value) => { controlsLoading = value; knownSourceRevision = value ? '' : 'old'; },
+  result: () => ({fullLoads, shown})};`, context);
 (async () => {
   await context.subject.checkSourceRevision(true);
   assert.deepEqual(calls, ['event_history_source_revision', 'event_history_visible_overview']);
@@ -1331,6 +1333,15 @@ globalThis.subject = {checkSourceRevision, drainSourceRevision,
   assert.deepEqual(calls.slice(-3), ['event_history_source_revision',
     'event_history_source_revision', 'event_history_visible_overview'],
     'failed wakeup is retried even when the source revision is unchanged');
+  const beforeInitial = calls.length;
+  context.subject.setInitial(true);
+  await context.subject.checkSourceRevision(true);
+  assert.equal(calls.length, beforeInitial);
+  context.subject.setInitial(false);
+  context.subject.drainSourceRevision();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls.length, beforeInitial + 2,
+    'a wakeup during initial discovery is drained after the first overview');
 })().catch((error) => { console.error(error); process.exitCode = 1; });
 """
     subprocess.run(

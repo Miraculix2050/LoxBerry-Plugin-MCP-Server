@@ -738,7 +738,14 @@
       sourceRevisionQueueTotals ||= refreshTotals;
       return;
     }
-    if (document.hidden || (!knownSourceRevision && !selectorVerificationPending)) return;
+    if (document.hidden) return;
+    if (!knownSourceRevision && !selectorVerificationPending) {
+      if (controlsLoading || busy) {
+        sourceRevisionQueued = true;
+        sourceRevisionQueueTotals ||= refreshTotals;
+      }
+      return;
+    }
     if (busy || controlsLoading) {
       sourceRevisionQueued = true;
       sourceRevisionQueueTotals ||= refreshTotals;
