@@ -54,6 +54,10 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
       this.options = options; this.data = data; this.host = host;
       window.uPlot.instances.push(this);
       host.append(window.document.createElement('canvas'));
+      this.over = window.document.createElement('div');
+      this.over.className = 'u-over';
+      this.over.getBoundingClientRect = () => ({left: 100, width: 400, height: 220});
+      host.append(this.over);
       this.scales = {x: {min: data[0][0], max: data[0].at(-1)}};
     }
     setData(data) { this.data = data; window.uPlot.dataUpdates++; }
@@ -148,6 +152,33 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
   assert.equal(window.uPlot.instances.length, 1, 'new numeric value reuses the plot');
   assert.ok(window.uPlot.dataUpdates > 0);
   assert.ok(originalPlot.data[0].length >= 2);
+  const wheelQueries = queries().length;
+  const wheelStart = originalPlot.scales.x.min;
+  const wheelEnd = originalPlot.scales.x.max;
+  const plainWheel = new window.WheelEvent('wheel', {deltaY: -100, clientX: 500,
+    bubbles: true, cancelable: true});
+  originalPlot.over.dispatchEvent(plainWheel);
+  assert.equal(plainWheel.defaultPrevented, false, 'ordinary wheel keeps page scrolling');
+  assert.equal(originalPlot.scales.x.min, wheelStart);
+  const outsideWheel = new window.WheelEvent('wheel', {deltaY: -100, ctrlKey: true,
+    clientX: 500, bubbles: true, cancelable: true});
+  plotHost.dispatchEvent(outsideWheel);
+  assert.equal(outsideWheel.defaultPrevented, false, 'Ctrl+wheel outside the plot is untouched');
+  const zoomInWheel = new window.WheelEvent('wheel', {deltaY: -100, ctrlKey: true,
+    clientX: 500, bubbles: true, cancelable: true});
+  originalPlot.over.dispatchEvent(zoomInWheel);
+  await flush();
+  assert.equal(zoomInWheel.defaultPrevented, true);
+  assert.equal(queries().length, wheelQueries, 'wheel zoom inside loaded data stays local');
+  assert.ok(originalPlot.scales.x.min > wheelStart);
+  assert.ok(Math.abs(originalPlot.scales.x.max - wheelEnd) < 0.01,
+    'wheel zoom anchors the time at the pointer');
+  const zoomOutWheel = new window.WheelEvent('wheel', {deltaY: 100, ctrlKey: true,
+    clientX: 500, bubbles: true, cancelable: true});
+  originalPlot.over.dispatchEvent(zoomOutWheel);
+  await flush();
+  assert.equal(queries().length, wheelQueries);
+  assert.ok(Math.abs(originalPlot.scales.x.min - wheelStart) < 0.01);
   pendingEvent = {id: 4, observed_at: fixedRange.end - 4,
     old_value: 2, new_value: 'offline'};
   tick();
