@@ -168,7 +168,7 @@
     state.notice.textContent = reduced || coverageTruncated
       || events.some((event) => decimalInteger(event.new_value))
       ? label('chartReduced')
-      : (events.length ? label('chartCoverage') : label('chartEmpty'));
+      : (events.length ? '' : label('chartEmpty'));
     const numeric = events.filter((event) => Number.isFinite(numericValue(event.new_value)));
     const boolean = events.filter((event) => typeof event.new_value === 'boolean');
     const plottedKind = numeric.length && boolean.length ? 'mixed'
@@ -286,31 +286,45 @@
       state.coverageList.append(item);
     }
   };
-  const sourceContext = (source) => [
-    `${label('chartRoom')}: ${source.room || label('chartUnknown')}`,
-    `${label('chartCategory')}: ${source.category || label('chartUnknown')}`,
-    `${label('chartType')}: ${source.control_type}`,
-  ].join(' · ');
+  const sourceContext = (node, source) => {
+    node.replaceChildren();
+    for (const [name, value] of [
+      ['chartRoom', source.room || label('chartUnknown')],
+      ['chartCategory', source.category || label('chartUnknown')],
+      ['chartType', source.control_type],
+    ]) {
+      const term = document.createElement('dt');
+      term.textContent = label(name);
+      const description = document.createElement('dd');
+      description.textContent = value;
+      node.append(term, description);
+    }
+  };
   const createPanels = () => {
     panels.replaceChildren();
     sourceStates = selection.sources.map((source) => {
       const panel = document.createElement('section');
       panel.className = 'mcp-card mcp-history-chart-panel';
+      const meta = document.createElement('div');
+      meta.className = 'mcp-history-chart-meta';
+      const body = document.createElement('div');
+      body.className = 'mcp-history-chart-body';
       const title = document.createElement('h2');
       title.textContent = `${source.control_name} · ${source.state_name}`;
-      const context = document.createElement('p');
-      context.className = 'mcp-help';
-      context.textContent = sourceContext(source);
+      const context = document.createElement('dl');
+      context.className = 'mcp-history-chart-context';
+      sourceContext(context, source);
       const notice = document.createElement('p');
       notice.setAttribute('role', 'status');
       const boundaries = document.createElement('p');
-      boundaries.className = 'mcp-help';
+      boundaries.className = 'mcp-help mcp-history-chart-boundaries';
       const plotHost = document.createElement('div');
       plotHost.className = 'mcp-history-chart-plot';
       plotHost.tabIndex = 0;
       plotHost.setAttribute('role', 'group');
       plotHost.setAttribute('aria-label', title.textContent);
       const focus = document.createElement('p');
+      focus.className = 'mcp-history-chart-focus';
       focus.setAttribute('aria-live', 'polite');
       const details = document.createElement('details');
       const summary = document.createElement('summary');
@@ -336,7 +350,9 @@
       coverageSummary.textContent = label('chartIntervals');
       const coverageList = document.createElement('ul');
       coverageDetails.append(coverageSummary, coverageList);
-      panel.append(title, context, notice, boundaries, coverageDetails, plotHost, focus, details);
+      meta.append(title, context, notice, boundaries, coverageDetails);
+      body.append(plotHost, focus, details);
+      panel.append(meta, body);
       panels.append(panel);
       const state = {source, title, context, events: new Map(), loaded: [], exact: [],
         sampled: [],
@@ -374,7 +390,7 @@
       const source = result.sources[index];
       state.source = source;
       state.title.textContent = `${source.control_name} · ${source.state_name}`;
-      state.context.textContent = sourceContext(source);
+      sourceContext(state.context, source);
       state.plotHost.setAttribute('aria-label', state.title.textContent);
     }
   };

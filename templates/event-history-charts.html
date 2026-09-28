@@ -1,6 +1,6 @@
 <link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-charts-1">
 <link rel="stylesheet" href="event-history/vendor/uplot/uPlot.min.css?v=1.6.32">
-<link rel="stylesheet" href="event-history/charts.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-1">
+<link rel="stylesheet" href="event-history/charts.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-2">
 <main class="mcp-page mcp-history-charts"
   data-loading="<TMPL_VAR EVENT_HISTORY.LOADING ESCAPE=HTML>"
   data-chart-empty="<TMPL_VAR EVENT_HISTORY.CHART_EMPTY ESCAPE=HTML>"
@@ -23,8 +23,7 @@
   data-chart-capture="<TMPL_VAR EVENT_HISTORY.CAPTURE_START ESCAPE=HTML>"
   data-chart-retained="<TMPL_VAR EVENT_HISTORY.FROM ESCAPE=HTML>"
   data-chart-removed="<TMPL_VAR EVENT_HISTORY.RECORDING_END ESCAPE=HTML>"
-  data-chart-intervals="<TMPL_VAR EVENT_HISTORY.COVERAGE ESCAPE=HTML>"
-  data-chart-coverage="<TMPL_VAR EVENT_HISTORY.COVERAGE_HELP ESCAPE=HTML>">
+  data-chart-intervals="<TMPL_VAR EVENT_HISTORY.COVERAGE ESCAPE=HTML>">
   <h1><TMPL_VAR EVENT_HISTORY.CHART_TITLE></h1>
   <p class="mcp-help"><TMPL_VAR EVENT_HISTORY.CHART_HELP></p>
   <div class="mcp-card mcp-history-chart-toolbar">
@@ -49,4 +48,4 @@
 </main>
 <script src="event-history/vendor/uplot/uPlot.iife.min.js?v=1.6.32" defer></script>
 <script src="event-history/api.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-2" defer></script>
-<script src="event-history/charts.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-2" defer></script>
+<script src="event-history/charts.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-3" defer></script>
