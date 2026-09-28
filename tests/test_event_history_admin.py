@@ -125,6 +125,7 @@ def test_chart_query_requires_fresh_profile_bound_visibility(tmp_path, monkeypat
         {"action": "event_history_chart_prepare", "payload": {"sources": selected}}
     )
     assert prepared["sources"][0]["room"] == "Living room"
+    assert prepared["history_generation"] == history.prepare_chart_read()
     payload = {
         **selected[0],
         "generation": prepared["generation"],

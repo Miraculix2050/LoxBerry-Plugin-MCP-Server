@@ -297,7 +297,7 @@ def test_chart_read_upgrades_v5_and_empty_store_without_maintenance(tmp_path, mo
         db.execute("ALTER TABLE history_metadata DROP COLUMN mutation_generation")
         db.execute("PRAGMA user_version = 5")
     monkeypatch.setattr(store, "_prune", lambda *_args, **_kwargs: pytest.fail("maintenance"))
-    store.prepare_chart_read()
+    assert store.prepare_chart_read() == 0
     with sqlite3.connect(store.path) as db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == 6
         assert (

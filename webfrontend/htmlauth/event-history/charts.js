@@ -8,6 +8,9 @@
   const panels = $('chart-panels');
   const maxRange = 90 * 86400;
   const maxEvents = 4000;
+  const snapshotKey = 'mcp-event-history-chart-v1';
+  const snapshotMaxChars = 2 * 1024 * 1024;
+  const snapshotMaxAge = 5 * 60;
   const sourcePattern = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{16}$/;
   let requested = [];
   try {
@@ -29,6 +32,101 @@
   let applyingScale = false;
   let staleRetries = 0;
   let historyRetries = 0;
+  let snapshotPending = true;
+  let snapshotDirty = false;
+  const discardSnapshot = () => {
+    try { window.sessionStorage.removeItem(snapshotKey); } catch { /* Storage may be disabled. */ }
+  };
+  const saveSnapshot = () => {
+    if (!selection || !snapshotDirty) return;
+    snapshotDirty = false;
+    try {
+      const value = JSON.stringify({version: 1, saved_at: Date.now() / 1000,
+        requested, selector_generation: selection.generation,
+        history_generation: selection.history_generation, range, rolling,
+        sources: sourceStates.map((state) => ({
+          events: [...state.events.values()], loaded: state.loaded, exact: state.exact,
+          sampled: state.sampled, coverageExact: state.coverageExact,
+          coverageTruncatedRanges: state.coverageTruncatedRanges,
+          cursor: state.cursor, generation: state.generation, coverage: state.coverage,
+          capture: state.capture, retained: state.retained, removed: state.removed,
+        }))});
+      if (value.length > snapshotMaxChars) discardSnapshot();
+      else window.sessionStorage.setItem(snapshotKey, value);
+    } catch { discardSnapshot(); }
+  };
+  const restoreSnapshot = () => {
+    if (!snapshotPending) return;
+    snapshotPending = false;
+    let value;
+    try {
+      const raw = window.sessionStorage.getItem(snapshotKey);
+      if (!raw || raw.length > snapshotMaxChars) return;
+      value = JSON.parse(raw);
+    } catch { discardSnapshot(); return; }
+    if (!value || value.version !== 1 || !Number.isFinite(value.saved_at)
+      || Date.now() / 1000 - value.saved_at > snapshotMaxAge
+      || value.saved_at > Date.now() / 1000 + 60
+      || JSON.stringify(value.requested) !== JSON.stringify(requested)
+      || value.selector_generation !== selection.generation
+      || value.history_generation !== selection.history_generation
+      || !Array.isArray(value.sources) || value.sources.length !== sourceStates.length
+      || !value.range || !Number.isFinite(value.range.start)
+      || !Number.isFinite(value.range.end) || value.range.start < 0
+      || value.range.start >= value.range.end
+      || value.range.end - value.range.start > maxRange
+      || value.range.end > Date.now() / 1000 + 60
+      || value.sources.some((item) => !item || !Array.isArray(item.events)
+        || item.events.length > maxEvents || !Array.isArray(item.loaded)
+        || !Array.isArray(item.exact) || !Array.isArray(item.sampled)
+        || !Array.isArray(item.coverageExact)
+        || !Array.isArray(item.coverageTruncatedRanges)
+        || !Array.isArray(item.coverage) || item.coverage.length > 128
+        || item.coverage.some((interval) => !interval
+          || !Number.isFinite(interval.started_at)
+          || (interval.ended_at !== null && !Number.isFinite(interval.ended_at)))
+        || !Number.isSafeInteger(item.cursor) || item.cursor < 0
+        || item.generation !== selection.history_generation
+        || item.events.some((event) => !event || !Number.isSafeInteger(event.id)
+          || !Number.isFinite(event.observed_at))
+        || [item.loaded, item.exact, item.sampled, item.coverageExact,
+          item.coverageTruncatedRanges].some((intervals) => intervals.length > 8
+          || intervals.some((interval) => !Number.isFinite(interval.start)
+            || !Number.isFinite(interval.end) || interval.start >= interval.end)))) {
+      discardSnapshot();
+      return;
+    }
+    range = value.range;
+    rolling = value.rolling === true;
+    if (rolling) {
+      const shift = Math.max(0, Date.now() / 1000 - range.end);
+      range = {start: range.start + shift, end: range.end + shift};
+      const preset = String(Math.round(range.end - range.start));
+      if ([3600, 86400, 604800, 2592000].includes(Number(preset))) {
+        $('chart-range').value = preset;
+      } else rolling = false;
+    }
+    if (!rolling) {
+      $('chart-range').value = 'custom';
+      for (const id of ['chart-from', 'chart-to', 'chart-apply']) $(id).disabled = false;
+      $('chart-from').value = localInput(range.start);
+      $('chart-to').value = localInput(range.end);
+    }
+    for (let index = 0; index < sourceStates.length; index++) {
+      const state = sourceStates[index];
+      const item = value.sources[index];
+      state.events = new Map(item.events.map((event) => [event.id, event]));
+      for (const name of ['loaded', 'exact', 'sampled', 'coverageExact',
+        'coverageTruncatedRanges', 'coverage']) state[name] = item[name];
+      state.cursor = item.cursor;
+      state.generation = item.generation;
+      state.capture = item.capture;
+      state.retained = item.retained;
+      state.removed = item.removed;
+      render(state);
+    }
+    setStatus(label('chartStale'), 'warning');
+  };
   const time = (value) => new Date(value * 1000).toLocaleString();
   const localInput = (value) => {
     const date = new Date(value * 1000);
@@ -55,6 +153,7 @@
     return `${label(name)} ${label('chartStale')}${reference}`;
   };
   const clear = () => {
+    discardSnapshot();
     for (const state of sourceStates) state.plot?.destroy();
     sourceStates = [];
     panels.replaceChildren();
@@ -393,6 +492,7 @@
       sourceContext(state.context, source);
       state.plotHost.setAttribute('aria-label', state.title.textContent);
     }
+    restoreSnapshot();
   };
   const fetchJobs = async (jobs, token) => {
     let pending = jobs;
@@ -433,6 +533,8 @@
           || state.removed !== result.recording_ended_at;
         const renderNeeded = state.generation === null || result.events.length > 0
           || result.reduced || result.coverage_truncated || metadataChanged;
+        if (state.generation === null || result.events.length > 0
+          || metadataChanged || job.initial) snapshotDirty = true;
         state.generation = result.generation;
         state.coverage = coverage;
         if (result.coverage_truncated) state.coverageTruncatedRanges = mergeInterval(
@@ -534,6 +636,7 @@
       if (token !== sequence) return;
       await query(token, poll);
       if (token === sequence) {
+        saveSnapshot();
         staleRetries = 0;
         historyRetries = 0;
         setStatus('');
@@ -542,6 +645,7 @@
       if (token !== sequence) return;
       if (verifying) clear();
       if (error.code === 'history_changed' || error.code === 'cache_full') {
+        discardSnapshot();
         for (const state of sourceStates) {
           resetSource(state);
           render(state);
@@ -584,6 +688,7 @@
     }
     range = {start, end};
     rolling = follow;
+    snapshotDirty = true;
     if (status.textContent === label('chartInvalid')) setStatus('');
     if (!follow) {
       $('chart-range').value = 'custom';
@@ -604,7 +709,7 @@
     else if (sourceStates.some((state) =>
       missingIntervals(loadedForRange(state, start, end), start, end).length)) {
       void load(false, false);
-    }
+    } else saveSnapshot();
   };
   $('chart-range').addEventListener('change', (event) => {
     const custom = event.target.value === 'custom';

@@ -349,11 +349,11 @@ class EventHistoryStore:
                     raise
                 raise EventHistoryUnavailable("local event history is unavailable") from exc
 
-    def prepare_chart_read(self) -> None:
-        """Upgrade an existing store once without loading source summaries."""
+    def prepare_chart_read(self) -> int:
+        """Upgrade an existing store and return its destructive-change generation."""
 
         if not self.path.exists():
-            return
+            return 0
         try:
             with closing(
                 sqlite3.connect(self.path.as_uri() + "?mode=ro", uri=True, timeout=2)
@@ -365,6 +365,18 @@ class EventHistoryStore:
             self._migrate_snapshot()
         elif version != _SCHEMA_VERSION:
             raise EventHistoryUnavailable("local event history needs migration")
+        try:
+            with closing(
+                sqlite3.connect(self.path.as_uri() + "?mode=ro", uri=True, timeout=2)
+            ) as db:
+                row = db.execute(
+                    "SELECT mutation_generation FROM history_metadata WHERE id = 1"
+                ).fetchone()
+                if row is None:
+                    raise EventHistoryUnavailable("local event history is unavailable")
+                return int(row[0])
+        except sqlite3.Error as exc:
+            raise EventHistoryUnavailable("local event history is unavailable") from exc
 
     def begin_coverage(self, sources: tuple[tuple[str, str], ...], *, started_at: float) -> None:
         if not sources:
