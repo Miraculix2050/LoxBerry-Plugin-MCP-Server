@@ -8,7 +8,6 @@ import json
 import re
 import unicodedata
 from collections import Counter, defaultdict, deque
-from collections.abc import Iterator
 from dataclasses import dataclass
 
 from .coverage import coverage_by_source_type
@@ -160,16 +159,38 @@ def _edge_sort_key(edge: GraphEdge | SemanticEdge) -> tuple[str, str, str, str]:
     )
 
 
-def _outlier_edges(
+def _sample_outlier_edges(
     raw: dict[str, list[GraphEdge]],
     semantic: dict[str, list[SemanticEdge]],
     seeds: set[str],
     adjacent: set[str],
-) -> Iterator[GraphEdge | SemanticEdge]:
-    for key in sorted(seeds):
-        yield from raw[key]
-    for key in sorted(adjacent):
-        yield from semantic[key]
+    limit: int,
+) -> list[GraphEdge | SemanticEdge]:
+    signal_sample = heapq.nsmallest(
+        limit,
+        (edge for key in seeds for edge in raw[key] if edge.kind == "signal"),
+        key=_edge_sort_key,
+    )
+    reference_sample = heapq.nsmallest(
+        limit,
+        (edge for key in seeds for edge in raw[key] if edge.kind == "reference"),
+        key=_edge_sort_key,
+    )
+    derived_sample = heapq.nsmallest(
+        limit,
+        (edge for key in adjacent for edge in semantic[key]),
+        key=_edge_sort_key,
+    )
+    reserved: list[GraphEdge | SemanticEdge] = []
+    for sample in (signal_sample, reference_sample, derived_sample):
+        if sample and len(reserved) < limit:
+            reserved.append(sample[0])
+    candidates: list[GraphEdge | SemanticEdge] = []
+    candidates.extend(signal_sample)
+    candidates.extend(reference_sample)
+    candidates.extend(derived_sample)
+    extras = sorted((edge for edge in candidates if edge not in reserved), key=_edge_sort_key)
+    return sorted([*reserved, *extras[: limit - len(reserved)]], key=_edge_sort_key)
 
 
 def _bounded_descendants(
@@ -926,15 +947,12 @@ def analyze_knx(
                         semantic_outgoing if metric == "fan_out" else semantic_incoming
                     )
                     derived_count = sum(len(semantic_directional[key]) for key in adjacent)
-                    sampled_edges = heapq.nsmallest(
+                    sampled_edges = _sample_outlier_edges(
+                        directional,
+                        semantic_directional,
+                        outlier_seed_keys,
+                        adjacent,
                         _MAX_EVIDENCE,
-                        _outlier_edges(
-                            directional,
-                            semantic_directional,
-                            outlier_seed_keys,
-                            adjacent,
-                        ),
-                        key=_edge_sort_key,
                     )
                     edge_evidence_rows = [_edge_evidence(edge, nodes) for edge in sampled_edges]
                     emit(
@@ -998,10 +1016,14 @@ def analyze_knx(
                 if reference_count
                 else "no_project_signal_relationship"
             )
-            connectors = sorted(
-                (_connector_evidence(nodes[key]) for key in seed if nodes[key].kind == "connector"),
-                key=lambda entry: str(entry["project_node_id"]),
-            )
+            connectors: list[dict[str, object]] = []
+            connector_count = 0
+            for key in seed:
+                if nodes[key].kind != "connector":
+                    continue
+                connector_count += 1
+                if len(connectors) < _MAX_EVIDENCE:
+                    connectors.append(_connector_evidence(nodes[key]))
             description = (
                 "No direct configured consumer found in the inspected project connectors."
                 if item.direction == "bus_to_loxone"
@@ -1024,8 +1046,8 @@ def analyze_knx(
                     "address_variant": item.address_variant,
                     "description": description,
                     "connectivity_scope": "inspected_project_endpoint_connectors",
-                    "inspected_connectors": connectors[:_MAX_EVIDENCE],
-                    "inspected_connectors_omitted": max(0, len(connectors) - _MAX_EVIDENCE),
+                    "inspected_connectors": connectors,
+                    "inspected_connectors_omitted": connector_count - len(connectors),
                     "direct_configured_relationship_count": direct_count,
                     "reference_relationship_count": reference_count,
                 },

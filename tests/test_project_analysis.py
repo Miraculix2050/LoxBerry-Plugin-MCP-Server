@@ -336,7 +336,16 @@ def test_reference_only_endpoint_reports_no_direct_wiring_without_changing_old_f
     )
 
 
-def test_connectivity_bounds_inspected_connectors_and_describes_output_direction():
+def test_connectivity_bounds_inspected_connectors_and_describes_output_direction(monkeypatch):
+    connector_evidence_calls = 0
+    original_connector_evidence = project_analysis._connector_evidence
+
+    def track_connector_evidence(*args):
+        nonlocal connector_evidence_calls
+        connector_evidence_calls += 1
+        return original_connector_evidence(*args)
+
+    monkeypatch.setattr(project_analysis, "_connector_evidence", track_connector_evidence)
     connectors = b"".join(
         f'<Co K="{index}-{("x" * 120)}" U="connector{index}"/>'.encode() for index in range(22)
     )
@@ -351,6 +360,7 @@ def test_connectivity_bounds_inspected_connectors_and_describes_output_direction
     assert finding["inspected_connectors_omitted"] == 2
     assert all(len(row["connector_key"]) == 100 for row in finding["inspected_connectors"])
     assert all(row["connector_key_truncated"] for row in finding["inspected_connectors"])
+    assert connector_evidence_calls == 20
 
 
 def test_unresolved_direct_wiring_remains_ambiguous():
@@ -428,6 +438,11 @@ def test_outgoing_graph_degree_explains_references_signals_and_logical_consumers
     assert bounded_finding["finding_id"] == finding["finding_id"]
     assert len(bounded_finding["edge_evidence"]) == 5
     assert bounded_finding["edge_evidence_omitted"] == 7
+    assert {row["kind"] for row in bounded_finding["edge_evidence"]} == {
+        "signal",
+        "reference",
+        "derived_semantic",
+    }
     assert evidence_calls <= 5 * bounded["summaries"]["graph_outliers"]["outliers"]
 
 
