@@ -1247,7 +1247,8 @@ const section = source.slice(source.indexOf('  const checkSourceRevision = async
 const context = {document: {hidden: false}, api: {request: async () =>
   ({availability: 'available', revision: 'new'})}};
 vm.runInNewContext(`let busy = false; let controlsLoading = false;
-let sourceRevisionChecking = false; let knownSourceRevision = 'old';
+let sourceRevisionChecking = false; let sourceRevisionQueued = false;
+let knownSourceRevision = 'old';
 let knownPayloadPending = false;
 let selectorVerificationPending = false; let nextRevisionRefreshAt = 0;
 let revisionRefreshFailures = 0; let refreshes = 0;
@@ -1273,6 +1274,51 @@ globalThis.subject = {checkSourceRevision, refreshes: () => refreshes,
     )
 
 
+def test_event_history_new_point_refreshes_visible_source_totals_without_discovery() -> None:
+    node = shutil.which("node")
+    assert node is not None
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = source.slice(source.indexOf('  const checkSourceRevision = async () => {'),
+  source.indexOf('  const loadStates ='));
+const calls = [];
+const context = {document: {hidden: false}, api: {request: async (action) => {
+  calls.push(action);
+  if (action === 'event_history_source_revision') return {availability: 'available',
+    revision: 'new', payload_pending: false};
+  if (action === 'event_history_visible_overview') return {store_status: 'available',
+    visibility_status: 'available', source_revision: 'new', sources: [{event_count: 2}]};
+  throw new Error(action);
+}}};
+vm.runInNewContext(`let busy = false; let controlsLoading = false;
+let sourceRevisionChecking = false; let sourceRevisionQueued = false;
+let knownSourceRevision = 'old';
+let knownPayloadPending = false; let selectorVerificationPending = false;
+let nextRevisionRefreshAt = 0; let revisionRefreshFailures = 0;
+let fullLoads = 0; let shown = 0;
+const loadControls = async () => { fullLoads++; return true; };
+const renderOverview = (data) => { knownSourceRevision = data.source_revision;
+  shown = data.sources[0].event_count; };
+${section}
+globalThis.subject = {checkSourceRevision, result: () => ({fullLoads, shown})};`, context);
+(async () => {
+  await context.subject.checkSourceRevision();
+  assert.deepEqual(calls, ['event_history_source_revision', 'event_history_visible_overview']);
+  assert.equal(context.subject.result().fullLoads, 0);
+  assert.equal(context.subject.result().shown, 2);
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
 def test_event_history_revision_refreshes_after_payload_backfill() -> None:
     node = shutil.which("node")
     assert node is not None, "Node.js is required for the complete deterministic gate"
@@ -1287,7 +1333,8 @@ let payloadPending = true;
 const context = {document: {hidden: false}, api: {request: async () =>
   ({availability: 'available', revision: 'same', payload_pending: payloadPending})}};
 vm.runInNewContext(`let busy = false; let controlsLoading = false;
-let sourceRevisionChecking = false; let knownSourceRevision = 'same';
+let sourceRevisionChecking = false; let sourceRevisionQueued = false;
+let knownSourceRevision = 'same';
 let knownPayloadPending = true; let selectorVerificationPending = false;
 let nextRevisionRefreshAt = 0; let revisionRefreshFailures = 0; let refreshes = 0;
 const loadControls = async () => { refreshes += 1; knownPayloadPending = false; return true; };

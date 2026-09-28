@@ -569,18 +569,30 @@
   };
   const query = async (token, poll) => {
     const initiallyEmpty = sourceStates.every((state) => state.loaded.length === 0);
+    const liveTails = new Map();
     while (true) {
       const jobs = sourceStates.flatMap((state) => {
         const missing = missingIntervals(loadedForRange(state, range.start, range.end),
           range.start, range.end);
+        if (rolling && poll && state.loaded.length && missing.length === 1
+          && missing[0].end === range.end
+          && missing[0].start <= state.loaded.at(-1).end + 1) {
+          liveTails.set(state, missing[0]);
+          return [];
+        }
         return missing.length ? [{state, ...missing[0], afterId: 0, initial: true}] : [];
       });
       if (!jobs.length) break;
       if (!await fetchJobs(jobs, token)) return;
     }
     if (poll && !initiallyEmpty) {
-      await fetchJobs(sourceStates.map((state) => ({state,
-        start: range.start, end: range.end, afterId: state.cursor, initial: false})), token);
+      if (!await fetchJobs(sourceStates.map((state) => ({state,
+        start: range.start, end: range.end, afterId: state.cursor, initial: false})), token)) return;
+      for (const [state, tail] of liveTails) {
+        state.loaded = mergeInterval(state.loaded, tail.start, tail.end);
+        state.exact = mergeInterval(state.exact, tail.start, tail.end);
+        snapshotDirty = true;
+      }
     }
   };
   const load = async (fresh = false, poll = true) => {
@@ -657,8 +669,9 @@
         } else setStatus(label('chartUnavailable'), 'warning');
       } else if (error.code === 'stale_configuration' && staleRetries < 1) {
         staleRetries++;
-        clear();
         rerun = true;
+        rerunFresh = true;
+        setStatus(label('chartStale'), 'warning');
       } else {
         if (error.code === 'forbidden' || error.code === 'stale_configuration') {
           clear();
@@ -753,7 +766,10 @@
     for (const state of sourceStates) state.plot?.setSize({width:
       Math.max(280, Math.floor(state.plotHost.clientWidth)), height: 220});
   });
-  window.setInterval(() => { void load(false); }, 10000);
+  if (typeof api.subscribeUpdates === 'function') {
+    api.subscribeUpdates(() => { void load(false); }, () => { void load(false); });
+    window.setInterval(() => { void load(false, false); }, 50000);
+  } else window.setInterval(() => { void load(false); }, 10000);
   if (requested.length) void load(true);
   else setStatus(label('chartDenied'), 'warning');
 })();

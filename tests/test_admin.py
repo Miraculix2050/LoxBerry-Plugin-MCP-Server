@@ -20,6 +20,7 @@ from mcpserver.admin import (
     _clear_event_history,
     _emergency_stop_runtime_status,
     _event_history_runtime_status,
+    _event_history_wait_update,
     _loxberry_bindings,
     _loxberry_operate_bindings,
     _remote_cleanup_status,
@@ -1164,6 +1165,30 @@ def test_event_history_runtime_status_accepts_only_bounded_loopback_data(
     assert _event_history_runtime_status() == {"availability": "unavailable"}
     monkeypatch.setattr("mcpserver.admin._service_active", lambda: False)
     assert _event_history_runtime_status() == {"availability": "service_inactive"}
+
+
+def test_event_history_wait_update_validates_token_and_loopback_reply(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def open_update(request: object, *, timeout: float) -> _RuntimeResponse:
+        captured["url"] = request.full_url  # type: ignore[attr-defined]
+        captured["timeout"] = timeout
+        return _RuntimeResponse(b'{"token":"0123456789abcdef","changed":true}')
+
+    monkeypatch.setattr("mcpserver.admin.urlopen", open_update)
+    assert _event_history_wait_update({"token": ""}) == {
+        "availability": "available",
+        "token": "0123456789abcdef",
+        "changed": True,
+    }
+    assert captured == {
+        "url": "http://127.0.0.1:8765/internal/event-history-updates?token=",
+        "timeout": 23,
+    }
+    with pytest.raises(AdminError):
+        _event_history_wait_update({"token": "not-a-token"})
 
 
 @pytest.mark.parametrize("command", ["start", "stop", "restart"])

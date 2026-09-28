@@ -116,6 +116,7 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
   let hidden = false;
   let queryCount = 0;
   let failCode = null;
+  let failOnce = false;
   let historyGeneration = 1;
   let selectorGeneration = 'a'.repeat(24);
   let pendingEvent = null;
@@ -155,8 +156,11 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
     }
     if (action === 'event_history_chart_query') {
       queryCount++;
-      if (failCode) throw Object.assign(new Error('failed'),
-        {code: failCode, requestId: 'abc-123'});
+      if (failCode) {
+        const code = failCode;
+        if (failOnce) { failCode = null; failOnce = false; }
+        throw Object.assign(new Error('failed'), {code, requestId: 'abc-123'});
+      }
       const events = pendingEvent ? [pendingEvent] : queryCount === 1 ? [
         {id: 1, observed_at: Date.now() / 1000 - 10, old_value: false, new_value: true},
         {id: 2, observed_at: Date.now() / 1000 - 9, old_value: 0,
@@ -230,6 +234,13 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
   await flush();
   const fixedRange = JSON.parse(queries().at(-1).fields.queries)[0];
   assert.equal(fixedRange.end, advancedRange.end);
+  failCode = 'stale_configuration';
+  failOnce = true;
+  tick();
+  await flush();
+  assert.equal(window.uPlot.instances.length, 1,
+    'a concurrent selector refresh keeps the existing plot during revalidation');
+  assert.equal(window.document.querySelectorAll('#chart-panels section').length, 1);
   window.Date.now = originalNow;
   pendingEvent = {id: 3, observed_at: fixedRange.end - 5, old_value: 1, new_value: 2};
   const originalPlot = window.uPlot.instances[0];

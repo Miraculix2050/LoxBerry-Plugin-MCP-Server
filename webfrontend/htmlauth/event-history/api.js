@@ -27,5 +27,38 @@ window.McpEventHistoryApi = (() => {
       window.clearTimeout(timer);
     }
   };
-  return {request};
+  const subscribeUpdates = (onChange, onUnavailable) => {
+    let stopped = false;
+    let token = '';
+    const visible = () => new Promise((resolve) => {
+      const resume = () => {
+        if (document.hidden) return;
+        document.removeEventListener('visibilitychange', resume);
+        resolve();
+      };
+      document.addEventListener('visibilitychange', resume);
+      resume();
+    });
+    const pause = (milliseconds) => new Promise((resolve) => window.setTimeout(resolve,
+      milliseconds));
+    void (async () => {
+      while (!stopped) {
+        if (document.hidden) await visible();
+        if (stopped) break;
+        try {
+          const update = await request('event_history_wait_update', {token}, 30000);
+          if (update.availability !== 'available' || !/^[0-9a-f]{16}$/.test(update.token)) {
+            throw new Error('Recorder updates unavailable');
+          }
+          token = update.token;
+          if (update.changed && !document.hidden) onChange();
+        } catch {
+          if (!document.hidden) onUnavailable();
+          await pause(10000);
+        }
+      }
+    })();
+    return () => { stopped = true; };
+  };
+  return {request, subscribeUpdates};
 })();

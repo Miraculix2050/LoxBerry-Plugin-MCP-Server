@@ -381,6 +381,31 @@ def test_overview_hides_historical_metadata_for_invisible_sources(tmp_path, monk
     assert result["database_bytes"] > 0
 
 
+def test_visible_overview_uses_fresh_selector_without_new_discovery(tmp_path, monkeypatch):
+    _, history = _setup(tmp_path, monkeypatch, sources=(SOURCE,))
+    history.initialize()
+    history.record_transition(*SOURCE, observed_at=time.time(), old_value=0, new_value=1)
+    projection = event_history_admin._selector_projection(None)
+    document = {
+        "generation": "a" * 24,
+        "verified_at": int(time.time()),
+        "controls": projection["controls"],
+    }
+    cache = SimpleNamespace(profile="test-profile", read=lambda: document)
+    monkeypatch.setattr(event_history_admin, "_selector_cache", lambda _config: cache)
+    monkeypatch.setattr(
+        event_history_admin,
+        "_selector_projection",
+        lambda _config: pytest.fail("new discovery is unnecessary"),
+    )
+    result = event_history_admin.visible_overview()
+    assert result["sources"][0]["event_count"] == 1
+    document["verified_at"] -= 61
+    with pytest.raises(admin.AdminError) as stale:
+        event_history_admin.visible_overview()
+    assert stale.value.code == "stale_configuration"
+
+
 def test_overview_uses_current_nullable_context_and_revokes_it(tmp_path, monkeypatch):
     _, history = _setup(tmp_path, monkeypatch, sources=(SOURCE,))
     history.initialize()

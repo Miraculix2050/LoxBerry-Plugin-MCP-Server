@@ -5,6 +5,8 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Wake Chart View and recorded-source windows after recorder commits through a value-free local update signal. Append new chart points with cursor queries, refresh source totals from a fresh visibility-bound local overview, and keep charts visible across concurrent selector refreshes and routine coverage changes.
+
 - Avoid loading the Loxone project runtime for Event History chart queries, reducing Admin helper startup cost. Reuse a bounded, tab-local Chart View snapshot after fresh visibility and history checks so reloads fetch only missing or newer values.
 
 - Place each Chart View source's name, context, coverage details, and individual status beside its plot on wide screens; use the available Admin content width and show the shared capture warning only once above the charts.

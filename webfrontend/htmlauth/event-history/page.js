@@ -31,6 +31,7 @@
   let controlsLoadPromise = null;
   let staleRecoveryScheduled = false;
   let sourceRevisionChecking = false;
+  let sourceRevisionQueued = false;
   let knownSourceRevision = '';
   let knownPayloadPending = null;
   let selectorVerificationPending = false;
@@ -726,7 +727,11 @@
     })();
   };
   const checkSourceRevision = async () => {
-    if (document.hidden || busy || controlsLoading || sourceRevisionChecking
+    if (sourceRevisionChecking) {
+      sourceRevisionQueued = true;
+      return;
+    }
+    if (document.hidden || busy || controlsLoading
       || (!knownSourceRevision && !selectorVerificationPending)) return;
     sourceRevisionChecking = true;
     try {
@@ -736,7 +741,19 @@
           || (typeof data.payload_pending === 'boolean'
             && data.payload_pending !== knownPayloadPending))
         && Date.now() >= nextRevisionRefreshAt) {
-        const verified = await loadControls();
+        let verified = false;
+        if (!selectorVerificationPending && data.revision !== knownSourceRevision) {
+          try {
+            const overview = await api.request('event_history_visible_overview', {}, 15000);
+            if (overview.store_status === 'available'
+              && overview.visibility_status === 'available'
+              && overview.source_revision === data.revision) {
+              renderOverview(overview);
+              verified = true;
+            }
+          } catch { /* Refresh visibility through full discovery below. */ }
+        }
+        if (!verified) verified = await loadControls();
         if (!verified || knownSourceRevision !== data.revision) {
           selectorVerificationPending = true;
           revisionRefreshFailures += 1;
@@ -748,6 +765,10 @@
       // Keep the last verified view; the next visible poll can retry this local check.
     } finally {
       sourceRevisionChecking = false;
+      if (sourceRevisionQueued) {
+        sourceRevisionQueued = false;
+        void checkSourceRevision();
+      }
     }
   };
   const loadStates = async (restoreState = '', append = false) => {
@@ -948,6 +969,10 @@
     if (!document.hidden) { void loadStatus(); void checkSourceRevision(); }
   });
   window.setInterval(() => { void loadStatus(); }, 30000);
+  if (typeof api.subscribeUpdates === 'function') {
+    api.subscribeUpdates(() => { void checkSourceRevision(); },
+      () => { void checkSourceRevision(); });
+  }
   window.setInterval(() => { void checkSourceRevision(); }, 60000);
   void loadQuickSummary();
   void loadStatus();

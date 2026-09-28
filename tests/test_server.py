@@ -342,6 +342,16 @@ def test_internal_emergency_stop_status_rejects_unknown_host() -> None:
     assert response.status_code == 421
 
 
+def test_event_history_updates_reject_remote_clients_and_bad_tokens() -> None:
+    app = create_server(_settings()).streamable_http_app()
+    with TestClient(app, base_url="http://testserver") as remote:
+        assert remote.get("/internal/event-history-updates").status_code == 403
+    app = create_server(_settings()).streamable_http_app()
+    with TestClient(app, base_url="http://testserver", client=("127.0.0.1", 5000)) as loopback:
+        assert loopback.get("/internal/event-history-updates?token=bad%20token").status_code == 400
+        assert loopback.get("/internal/event-history-updates").status_code == 503
+
+
 def test_health_rejects_unknown_origin() -> None:
     app = create_server(_settings()).streamable_http_app()
     headers = {"Origin": "https://untrusted.example"}

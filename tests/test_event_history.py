@@ -90,7 +90,7 @@ def test_chart_page_is_read_only_and_detects_history_mutations(tmp_path, monkeyp
     assert first["generation"] == second["generation"]
     store.mark_removed(*source, removed_at=now)
     removed = store.chart_page(*source, start=now - 40, end=now)
-    assert removed["generation"] > first["generation"]
+    assert removed["generation"] == first["generation"]
     assert removed["recording_ended_at"] == now
     with sqlite3.connect(store.path) as db:
         plan = db.execute(
@@ -310,6 +310,22 @@ def test_chart_read_upgrades_v5_and_empty_store_without_maintenance(tmp_path, mo
             db.execute("SELECT name FROM sqlite_master WHERE name = 'events_source_id'").fetchone()
             is not None
         )
+
+
+def test_chart_generation_changes_only_when_recorded_events_are_removed(tmp_path):
+    store = EventHistoryStore(
+        (tmp_path / "chart.sqlite3").resolve(), retention_days=90, maximum_mib=16
+    )
+    source = ("control", "state")
+    store.initialize()
+    store.record_transition(*source, observed_at=time.time(), old_value=0, new_value=1)
+    generation = store.prepare_chart_read()
+    store.begin_coverage((source,), started_at=time.time())
+    store.end_coverage((source,), ended_at=time.time(), outcome="stopped")
+    store.mark_removed(*source, removed_at=time.time())
+    assert store.prepare_chart_read() == generation
+    store.purge_source(*source)
+    assert store.prepare_chart_read() > generation
 
 
 def test_source_inventory_page_upgrades_v5_store(tmp_path):
@@ -675,6 +691,25 @@ async def test_monitor_skips_miniserver_when_no_sources_and_starts_after_add(
     await monitor.update_config(PluginConfig(event_history_enabled=True))
     assert attempts == 1
     assert monitor._task is None or monitor._task.done()
+
+
+@pytest.mark.asyncio
+async def test_monitor_update_wait_wakes_only_after_notification(tmp_path):
+    store = EventHistoryStore(
+        (tmp_path / "history.sqlite3").resolve(), retention_days=90, maximum_mib=16
+    )
+    monitor = EventHistoryMonitor(PluginConfig(event_history_enabled=False), store, object())  # type: ignore[arg-type]
+    initial = await monitor.wait_for_update("", timeout=0.01)
+    assert initial["changed"] is True
+    waiting = asyncio.create_task(monitor.wait_for_update(str(initial["token"]), timeout=1))
+    await asyncio.sleep(0)
+    assert not waiting.done()
+    monitor._notify_update()
+    changed = await asyncio.wait_for(waiting, 1)
+    assert changed["changed"] is True
+    assert changed["token"] != initial["token"]
+    quiet = await monitor.wait_for_update(str(changed["token"]), timeout=0.01)
+    assert quiet["changed"] is False
 
 
 @pytest.mark.asyncio

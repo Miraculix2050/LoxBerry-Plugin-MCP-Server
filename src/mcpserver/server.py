@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
@@ -66,6 +67,7 @@ LOG_MAX_RECORD_BYTES: Final = 8 * 1024
 LOG_TRUNCATION_SUFFIX: Final = " ... [truncated]"
 _INTERNAL_EMERGENCY_STOP_STATUS_PATH: Final = "/internal/emergency-stop-status"
 _INTERNAL_EVENT_HISTORY_STATUS_PATH: Final = "/internal/event-history-status"
+_INTERNAL_EVENT_HISTORY_UPDATES_PATH: Final = "/internal/event-history-updates"
 _LOG_LEVELS: Final = {
     "off": None,
     "error": logging.ERROR,
@@ -898,6 +900,22 @@ def create_server(settings: ServerSettings) -> FastMCP:
             else {"status": "disabled", "observed_at": time.time(), "capture_started_at": None}
         )
         return JSONResponse({"ok": True, "event_history": status})
+
+    @server.custom_route(  # type: ignore[misc]
+        _INTERNAL_EVENT_HISTORY_UPDATES_PATH,
+        methods=["GET"],
+        include_in_schema=False,
+    )
+    async def event_history_updates(request: Request) -> Response:
+        """Wake authenticated Admin CGI listeners without exposing event data."""
+        if request.client is None or request.client.host not in {"127.0.0.1", "::1"}:
+            return JSONResponse({"ok": False}, status_code=403)
+        token = request.query_params.get("token", "")
+        if not re.fullmatch(r"[0-9a-f]{0,16}", token):
+            return JSONResponse({"ok": False}, status_code=400)
+        if event_history is None:
+            return JSONResponse({"ok": False}, status_code=503)
+        return JSONResponse(await event_history.wait_for_update(token))
 
     @server.custom_route(  # type: ignore[misc]
         "/internal/miniserver-auth-status", methods=["GET"], include_in_schema=False

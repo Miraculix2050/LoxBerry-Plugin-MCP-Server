@@ -61,9 +61,9 @@ sub admin_call {
 }
 
 my %actions = map { $_ => 1 } qw(
-    event_history_overview event_history_local_overview event_history_quick_summary event_history_source_revision event_history_runtime_status event_history_discover
+    event_history_overview event_history_local_overview event_history_quick_summary event_history_source_revision event_history_wait_update event_history_runtime_status event_history_discover
     event_history_discover_states
-    event_history_prepare_selector event_history_selector_catalog event_history_selector_facets
+    event_history_prepare_selector event_history_visible_overview event_history_selector_catalog event_history_selector_facets
     event_history_selector_query event_history_selector_states
     event_history_chart_prepare event_history_chart_query
     event_history_save_policy event_history_add_source event_history_remove_source
@@ -108,6 +108,8 @@ if (($q->{action} // '') ne '') {
         my $raw = $q->{sources} // '';
         my $sources = length($raw) <= 1024 ? eval { decode_json($raw) } : undef;
         $payload = {sources => ref($sources) eq 'ARRAY' ? $sources : undef};
+    } elsif ($action eq 'event_history_wait_update') {
+        $payload = {token => ($q->{token} // '')};
     } elsif ($action eq 'event_history_chart_query') {
         my $raw = $q->{queries} // '';
         my $queries = $raw ne '' && length($raw) <= 2048 ? eval { decode_json($raw) } : undef;
