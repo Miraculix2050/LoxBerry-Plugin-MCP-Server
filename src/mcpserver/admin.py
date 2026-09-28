@@ -45,7 +45,6 @@ _SYSTEMD_COMMANDS: Final = frozenset({"enable", "disable", "start", "stop", "res
 _CLIENT_UUID: Final = UUID("3f52f6fe-3af0-4d30-a8bb-f429b9da4465")
 _INTERNAL_EMERGENCY_STOP_STATUS_URL: Final = "http://127.0.0.1:8765/internal/emergency-stop-status"
 _INTERNAL_EVENT_HISTORY_STATUS_URL: Final = "http://127.0.0.1:8765/internal/event-history-status"
-_INTERNAL_EVENT_HISTORY_UPDATES_URL: Final = "http://127.0.0.1:8765/internal/event-history-updates"
 _INTERNAL_RESPONSE_MAX_BYTES: Final = 4 * 1024
 _EMERGENCY_STOP_STATES: Final = frozenset({"not_configured", "clear", "active", "unknown"})
 _EMERGENCY_STOP_DISCOVERY_DEADLINE_SECONDS: Final = 90
@@ -272,38 +271,6 @@ def _event_history_runtime_status() -> dict[str, Any]:
             "capture_started_at": capture,
             "reason": reason,
         }
-    except (OSError, ValueError):
-        return {"availability": "unavailable"}
-
-
-def _event_history_wait_update(payload: object) -> dict[str, Any]:
-    """Wait for a value-free recorder wakeup through the fixed loopback route."""
-    if not isinstance(payload, dict):
-        raise AdminError("update token is invalid")
-    token = payload.get("token")
-    if not isinstance(token, str) or re.fullmatch(r"[0-9a-f]{0,16}", token) is None:
-        raise AdminError("update token is invalid")
-    try:
-        with urlopen(
-            Request(
-                f"{_INTERNAL_EVENT_HISTORY_UPDATES_URL}?token={token}",
-                headers={"Accept": "application/json"},
-            ),
-            timeout=23,
-        ) as response:
-            if response.getcode() != 200:
-                raise ValueError("unexpected update response")
-            raw = response.read(257)
-        if len(raw) > 256:
-            raise ValueError("oversized update response")
-        document = json.loads(raw)
-        next_token = document.get("token") if isinstance(document, dict) else None
-        changed = document.get("changed") if isinstance(document, dict) else None
-        if not isinstance(next_token, str) or re.fullmatch(r"[0-9a-f]{16}", next_token) is None:
-            raise ValueError("invalid update token")
-        if not isinstance(changed, bool):
-            raise ValueError("invalid update signal")
-        return {"availability": "available", "token": next_token, "changed": changed}
     except (OSError, ValueError):
         return {"availability": "unavailable"}
 
@@ -1852,8 +1819,6 @@ def dispatch(request: object, *, timing: dict[str, float] | None = None) -> dict
         }
     if action == "event_history_source_revision":
         return _event_history_source_revision()
-    if action == "event_history_wait_update":
-        return _event_history_wait_update(payload)
     if action in {
         "event_history_overview",
         "event_history_local_overview",

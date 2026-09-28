@@ -761,6 +761,44 @@ def test_event_history_chart_tab_keeps_values_out_of_the_overview() -> None:
     assert "CHART_DENIED=" in english and "CHART_DENIED=" in german
 
 
+def test_event_history_update_relay_is_bounded_and_fixed_to_loopback() -> None:
+    perl = shutil.which("perl")
+    assert perl is not None, "Perl is required for the complete deterministic gate"
+    source = (ROOT / "webfrontend/htmlauth/event_history.cgi").read_text(encoding="utf-8")
+    relay = source[source.index("sub wait_update {") : source.index("\nmy %actions =")]
+    script = (
+        r"""
+use strict;
+use warnings;
+use JSON::PP qw(decode_json);
+{ package HTTP::Tiny;
+  our $calls = 0;
+  our $url = '';
+  our %options;
+  our $content = '{"token":"0123456789abcdef","changed":true}';
+  sub new { my $class = shift; %options = @_; bless {}, $class }
+  sub get { my ($self, $url) = @_; $calls++; $HTTP::Tiny::url = $url;
+    return {success => 1, content => $content}; }
+}
+"""
+        + relay
+        + r"""
+die 'invalid token reached loopback' if wait_update('invalid!')->{ok} || $HTTP::Tiny::calls;
+my $result = wait_update('');
+die 'wrong loopback route' unless $HTTP::Tiny::url eq
+    'http://127.0.0.1:8765/internal/event-history-updates?token=';
+die 'relay lacks response bounds' unless $HTTP::Tiny::options{max_size} == 256
+    && $HTTP::Tiny::options{max_redirect} == 0;
+die 'valid wakeup unavailable' unless $result->{data}{availability} eq 'available';
+$HTTP::Tiny::content = 'x' x 257;
+die 'oversized response accepted' unless wait_update('')->{data}{availability} eq 'unavailable';
+$HTTP::Tiny::content = '{"token":"0123456789abcdef","changed":"true"}';
+die 'non-boolean signal accepted' unless wait_update('')->{data}{availability} eq 'unavailable';
+"""
+    )
+    subprocess.run([perl, "-e", script], check=True, capture_output=True, text=True)
+
+
 def test_event_history_selector_is_progressive_and_localized() -> None:
     page = (ROOT / "templates/event-history.html").read_text(encoding="utf-8")
     script = (ROOT / "webfrontend/htmlauth/event-history/page.js").read_text(encoding="utf-8")

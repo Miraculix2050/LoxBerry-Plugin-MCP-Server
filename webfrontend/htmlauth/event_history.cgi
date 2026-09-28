@@ -4,6 +4,7 @@ use strict;
 use warnings;
 use CGI;
 use HTML::Template;
+use HTTP::Tiny;
 use IPC::Open3;
 use JSON::PP qw(encode_json decode_json);
 use Symbol qw(gensym);
@@ -60,6 +61,25 @@ sub admin_call {
         : {ok => JSON::PP::false, error => {code => 'internal_error', message => 'Admin helper unavailable'}};
 }
 
+sub wait_update {
+    my ($token) = @_;
+    return {ok => JSON::PP::false,
+        error => {code => 'invalid_request', message => 'Invalid update token'}}
+        unless defined($token) && $token =~ /\A[0-9a-f]{0,16}\z/;
+    my $response = HTTP::Tiny->new(timeout => 23, max_size => 256,
+        max_redirect => 0, proxy => undef, no_proxy => '127.0.0.1')->get(
+            "http://127.0.0.1:8765/internal/event-history-updates?token=$token");
+    return {ok => JSON::PP::true, data => {availability => 'unavailable'}}
+        unless $response->{success} && length($response->{content} // '') <= 256;
+    my $data = eval { decode_json($response->{content}) };
+    return {ok => JSON::PP::true, data => {availability => 'unavailable'}}
+        unless ref($data) eq 'HASH' && defined($data->{token})
+            && $data->{token} =~ /\A[0-9a-f]{16}\z/
+            && ref($data->{changed}) eq 'JSON::PP::Boolean';
+    return {ok => JSON::PP::true, data => {availability => 'available',
+        token => $data->{token}, changed => $data->{changed}}};
+}
+
 my %actions = map { $_ => 1 } qw(
     event_history_overview event_history_local_overview event_history_quick_summary event_history_source_revision event_history_wait_update event_history_runtime_status event_history_discover
     event_history_discover_states
@@ -81,6 +101,8 @@ if (($q->{action} // '') ne '') {
     reply({ok => JSON::PP::false,
         error => {code => 'invalid_request', message => 'Unsupported action'}}, 400)
         if !$actions{$action};
+    reply(wait_update($q->{token} // ''), 200)
+        if $action eq 'event_history_wait_update';
     my $payload = {};
     if ($action eq 'event_history_discover') {
         $payload = {query => ($q->{query} // '')};
@@ -108,8 +130,6 @@ if (($q->{action} // '') ne '') {
         my $raw = $q->{sources} // '';
         my $sources = length($raw) <= 1024 ? eval { decode_json($raw) } : undef;
         $payload = {sources => ref($sources) eq 'ARRAY' ? $sources : undef};
-    } elsif ($action eq 'event_history_wait_update') {
-        $payload = {token => ($q->{token} // '')};
     } elsif ($action eq 'event_history_chart_query') {
         my $raw = $q->{queries} // '';
         my $queries = $raw ne '' && length($raw) <= 2048 ? eval { decode_json($raw) } : undef;
