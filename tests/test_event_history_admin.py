@@ -219,7 +219,7 @@ def test_chart_batch_reuses_one_config_visibility_and_store(tmp_path, monkeypatc
 
     def read():
         calls["visibility"] += 1
-        return document
+        return dict(document)
 
     def store(config):
         calls["store"] += 1
@@ -243,7 +243,24 @@ def test_chart_batch_reuses_one_config_visibility_and_store(tmp_path, monkeypatc
     ]
     result = event_history_admin.chart_query({"queries": queries})
     assert len(result["results"]) == 2
-    assert calls == {"config": 1, "visibility": 1, "store": 1}
+    assert calls == {"config": 1, "visibility": 2, "store": 1}
+    original_page = EventHistoryStore.chart_page
+    page_calls = 0
+
+    def revoke_during_first_page(self, *args, **kwargs):
+        nonlocal page_calls
+        result = original_page(self, *args, **kwargs)
+        page_calls += 1
+        if page_calls == 1:
+            document["generation"] = "c" * 24
+        return result
+
+    monkeypatch.setattr(EventHistoryStore, "chart_page", revoke_during_first_page)
+    with pytest.raises(admin.AdminError, match="refreshed") as revoked:
+        event_history_admin.chart_query({"queries": queries})
+    assert revoked.value.code == "stale_configuration"
+    document["generation"] = "b" * 24
+    monkeypatch.setattr(EventHistoryStore, "chart_page", original_page)
     queries[1]["generation"] = "c" * 24
     with pytest.raises(admin.AdminError, match="refreshed"):
         event_history_admin.chart_query({"queries": queries})

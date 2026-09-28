@@ -582,6 +582,15 @@ def chart_query(payload: object, *, _deadline: float | None = None) -> dict[str,
         ) from exc
     if len({result["generation"] for result in results}) != 1:
         raise bridge.AdminError("local history changed", code="history_changed")
+    current_document = cache.read()
+    if (
+        current_document is None
+        or current_document["generation"] != document["generation"]
+        or not 0 <= time.time() - current_document["verified_at"] < _CHART_VISIBILITY_SECONDS
+    ):
+        raise bridge.AdminError("chart visibility must be refreshed", code="stale_configuration")
+    if any(_chart_visible(current_document, source) is None for source in sources):
+        raise bridge.AdminError("chart source is not visible", code="forbidden")
     return {"results": results} if batched else results[0]
 
 
