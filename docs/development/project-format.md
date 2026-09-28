@@ -64,7 +64,9 @@ When identical confirmed KNX blocks occur in distinct internal model sources,
 the public projection uses one logical object. Its normalized source identity,
 block type, and KNX projection must agree; equal titles or addresses alone never
 merge objects. The raw graph remains internal provenance, while bounded opaque
-model-source IDs and an occurrence count disclose multiplicity.
+model-source IDs and an occurrence count disclose multiplicity. Project status
+calls the number of ingested model sources `project_parts`; it is not a count of
+Loxone Config projects.
 
 ## Derived KNX signal-use evidence
 

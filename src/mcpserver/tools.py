@@ -742,8 +742,17 @@ class ProjectNodeSummaryData(BaseModel):
     block_type: str | None
     source_id: str | None
     connector_key: str | None
-    source_occurrence_count: int = Field(default=1, ge=1, le=32)
-    model_source_ids: list[str] = Field(default_factory=list, max_length=32)
+    source_occurrence_count: int = Field(
+        default=1,
+        ge=1,
+        le=32,
+        description="Number of source occurrences represented by this logical object.",
+    )
+    model_source_ids: list[str] = Field(
+        default_factory=list,
+        max_length=32,
+        description="Opaque internal model source IDs, not Loxone Config project IDs.",
+    )
     runtime_control: ProjectRuntimeControlData | None = None
     knx: ProjectKnxSummaryData | None = None
 
@@ -754,8 +763,17 @@ class ProjectNodeData(BaseModel):
     block_type: str | None
     source_id: str | None
     connector_key: str | None
-    source_occurrence_count: int = Field(default=1, ge=1, le=32)
-    model_source_ids: list[str] = Field(default_factory=list, max_length=32)
+    source_occurrence_count: int = Field(
+        default=1,
+        ge=1,
+        le=32,
+        description="Number of source occurrences represented by this logical object.",
+    )
+    model_source_ids: list[str] = Field(
+        default_factory=list,
+        max_length=32,
+        description="Opaque internal model source IDs, not Loxone Config project IDs.",
+    )
     runtime_control: ProjectRuntimeControlData | None = None
     knx: ProjectKnxData | None = None
     source_diagnostics: list[ProjectNodeSourceDiagnosticData] = Field(default_factory=list)
@@ -765,8 +783,12 @@ class ProjectNodeData(BaseModel):
 
 
 class ProjectModelSourceData(BaseModel):
-    model_source_id: str
-    element_count: int = Field(ge=0)
+    model_source_id: str = Field(
+        description="Opaque internal model source ID, not a Loxone Config project ID."
+    )
+    element_count: int = Field(
+        ge=0, description="Number of parsed elements in this internal model source."
+    )
 
 
 class ProjectKnxSourceTypeCoverageEntryData(BaseModel):
@@ -791,8 +813,14 @@ class ProjectKnxSourceTypeCoverageData(BaseModel):
 class ProjectStatusData(BaseModel):
     project_fingerprint: str
     model_version: int
-    project_parts: int
-    model_sources: list[ProjectModelSourceData] = Field(default_factory=list, max_length=32)
+    project_parts: int = Field(
+        description="Number of internally ingested model sources, not Loxone Config projects."
+    )
+    model_sources: list[ProjectModelSourceData] = Field(
+        default_factory=list,
+        max_length=32,
+        description="Bounded provenance of the internal model sources counted by project_parts.",
+    )
     nodes: int
     edges: int
     unresolved_relationships: int
@@ -4184,7 +4212,8 @@ def register_project_tools(
         name="loxone_get_project_status",
         description=(
             "Get bounded status, KNX source-type coverage and runtime-mapping counts "
-            "for the authorized Loxone project."
+            "for the authorized Loxone project. project_parts counts internally "
+            "ingested model sources, not Loxone Config projects."
         ),
         annotations=annotations,
         structured_output=True,
