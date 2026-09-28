@@ -25,6 +25,77 @@ const flush = async () => {
   for (let index = 0; index < 10; index++) await new Promise((resolve) => setImmediate(resolve));
 };
 
+test('reload reuses bounded values only after fresh visibility and history checks', async () => {
+  const url = `https://example.test/event_history.cgi?view=charts&sources=${encodeURIComponent(JSON.stringify([source]))}`;
+  const fixedNow = Date.now();
+  const open = async ({saved = null, selector = 'a'.repeat(24), history = 1,
+    denied = false} = {}) => {
+    const dom = new JSDOM(html, {url, runScripts: 'outside-only'});
+    const {window} = dom;
+    window.Date.now = () => fixedNow;
+    Object.defineProperty(window.document, 'hidden', {get: () => false});
+    if (saved) window.sessionStorage.setItem('mcp-event-history-chart-v1', saved);
+    window.setInterval = () => 1;
+    window.uPlot = class {
+      static paths = {stepped: () => () => ({})};
+      constructor(_options, _data, host) {
+        this.host = host;
+        this.scales = {x: {min: 0, max: 1}};
+        this.over = window.document.createElement('div');
+        host.append(this.over);
+      }
+      setScale(_key, value) { this.scales.x = value; }
+      setData() {}
+      destroy() { this.host.replaceChildren(); }
+    };
+    const calls = [];
+    window.McpEventHistoryApi = {request: async (action, fields) => {
+      calls.push({action, fields});
+      if (action === 'event_history_chart_prepare') {
+        if (denied) throw Object.assign(new Error('denied'), {code: 'forbidden'});
+        return {generation: selector, history_generation: history,
+          verified_at: fixedNow / 1000, sources: [{...source, control_name: 'Control',
+            state_name: 'State', room: 'Room', category: 'Category', control_type: 'Switch'}]};
+      }
+      if (action === 'event_history_chart_query') {
+        const query = JSON.parse(fields.queries)[0];
+        return {results: [{generation: history,
+          events: query.after_id ? [] : [{id: 7, observed_at: fixedNow / 1000 - 10,
+            old_value: 0, new_value: 42}], has_more: false, latest_id: 7,
+          next_id: 7, reduced: false, coverage: [], capture_started_at: null,
+          retained_from: null, recording_ended_at: null}]};
+      }
+      throw new Error(`Unexpected action ${action}`);
+    }};
+    window.eval(script);
+    await flush();
+    return {window, calls,
+      saved: window.sessionStorage.getItem('mcp-event-history-chart-v1')};
+  };
+  const first = await open();
+  assert.equal(first.calls.length, 2, first.window.document.querySelector('#chart-status').textContent);
+  assert.equal(JSON.parse(first.calls[1].fields.queries)[0].after_id, 0);
+  assert.ok(first.saved);
+  const reload = await open({saved: first.saved});
+  assert.deepEqual(reload.calls.map(({action}) => action),
+    ['event_history_chart_prepare', 'event_history_chart_query']);
+  assert.equal(JSON.parse(reload.calls[1].fields.queries)[0].after_id, 7);
+  assert.match(reload.window.document.querySelector('#chart-panels').textContent, /Control/);
+  const changed = await open({saved: first.saved, history: 2});
+  assert.equal(JSON.parse(changed.calls[1].fields.queries)[0].after_id, 0);
+  const expiredValue = JSON.parse(first.saved);
+  expiredValue.saved_at -= 301;
+  const expired = await open({saved: JSON.stringify(expiredValue)});
+  assert.equal(JSON.parse(expired.calls[1].fields.queries)[0].after_id, 0);
+  const renamed = await open({saved: first.saved, selector: 'b'.repeat(24)});
+  assert.equal(JSON.parse(renamed.calls[1].fields.queries)[0].after_id, 0);
+  const revoked = await open({saved: first.saved, denied: true});
+  assert.deepEqual(revoked.calls.map(({action}) => action), ['event_history_chart_prepare']);
+  assert.equal(revoked.saved, null);
+  assert.equal(revoked.window.document.querySelector('#chart-panels').textContent, '');
+  for (const page of [first, reload, changed, expired, renamed, revoked]) page.window.close();
+});
+
 test('chart tab loads only selected values, pauses hidden polling, and clears revoked data', async () => {
   const url = `https://example.test/event_history.cgi?view=charts&sources=${encodeURIComponent(JSON.stringify([source]))}`;
   const dom = new JSDOM(html, {url, runScripts: 'outside-only'});

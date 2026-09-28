@@ -479,13 +479,14 @@ def chart_prepare(payload: object) -> dict[str, Any]:
     if any(names is None for names in visible.values()):
         raise bridge.AdminError("chart source is not visible", code="forbidden")
     try:
-        _store(current).prepare_chart_read()
+        history_generation = _store(current).prepare_chart_read()
     except (OSError, ValueError, RuntimeError) as exc:
         raise bridge.AdminError(
             "local event history is unavailable", code="temporarily_unavailable"
         ) from exc
     return {
         "generation": document["generation"],
+        "history_generation": history_generation,
         "verified_at": document["verified_at"],
         "sources": [
             dict(

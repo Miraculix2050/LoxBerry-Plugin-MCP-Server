@@ -5,7 +5,7 @@ extracted from the matching version heading.
 
 ## Unreleased
 
-- Avoid loading the Loxone project runtime for Event History chart queries, reducing Admin helper startup cost.
+- Avoid loading the Loxone project runtime for Event History chart queries, reducing Admin helper startup cost. Reuse a bounded, tab-local Chart View snapshot after fresh visibility and history checks so reloads fetch only missing or newer values.
 
 - Place each Chart View source's name, context, coverage details, and individual status beside its plot on wide screens; show the shared capture warning only once above the charts.
 
