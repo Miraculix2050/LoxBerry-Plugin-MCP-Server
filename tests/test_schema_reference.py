@@ -67,6 +67,31 @@ def test_schema_catalog_contains_complete_fastmcp_contract() -> None:
         assert tool["outputSchema"]["properties"]["data"]["anyOf"]
 
 
+def test_project_status_schema_distinguishes_model_sources_from_config_projects() -> None:
+    tools = {tool["name"]: tool for tool in tool_schema_catalog(VERSION)["tools"]}
+    status = tools["loxone_get_project_status"]
+    definitions = status["outputSchema"]["$defs"]
+    properties = definitions["ProjectStatusData"]["properties"]
+    source_properties = definitions["ProjectModelSourceData"]["properties"]
+
+    assert "model sources, not Loxone Config projects" in status["description"]
+    assert "model sources, not Loxone Config projects" in properties["project_parts"]["description"]
+    assert "project_parts" in properties["model_sources"]["description"]
+    assert "not a Loxone Config project ID" in source_properties["model_source_id"]["description"]
+    assert "parsed elements" in source_properties["element_count"]["description"]
+
+    for tool_name in ("loxone_find_project_objects", "loxone_describe_project_object"):
+        node_definitions = tools[tool_name]["outputSchema"]["$defs"]
+        node_name = (
+            "ProjectNodeSummaryData"
+            if tool_name == "loxone_find_project_objects"
+            else "ProjectDescriptionData"
+        )
+        node_properties = node_definitions[node_name]["properties"]
+        assert "source occurrences" in node_properties["source_occurrence_count"]["description"]
+        assert "not Loxone Config project IDs" in node_properties["model_source_ids"]["description"]
+
+
 def test_schema_reference_formats_are_deterministic_and_equivalent() -> None:
     first_json = schema_reference_json(VERSION)
     first_html = schema_reference_html(VERSION)
