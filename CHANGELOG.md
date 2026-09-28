@@ -5,6 +5,8 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Place each Chart View source's name, context, coverage details, and individual status beside its plot on wide screens; show the shared capture warning only once above the charts.
+
 - Add `loxone_list_event_history_sources` for currently visible control/state pairs; page both source lists with active/removed status and known recording end time. Allow the complete `loxberry_list_event_history_sources` with either exact local read or operate approval, and show its alternative requirements in the Tool Explorer.
 - Zoom the Chart View time axis around the pointer with Ctrl+mouse wheel over a plot, while ordinary wheel scrolling remains available.
 - Model `EIBextactor`, `EIBtextactor`, and `EIBtextsensor` as KNX endpoints.

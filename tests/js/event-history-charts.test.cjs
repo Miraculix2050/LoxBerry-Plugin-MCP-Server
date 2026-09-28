@@ -14,7 +14,7 @@ const html = `<main class="mcp-history-charts" data-loading="Loading"
   data-chart-invalid="Invalid range" data-chart-stale="Data may be stale"
   data-chart-reference="Reference"
   data-chart-reduced="Reduced" data-chart-value="Value" data-chart-number="Number"
-  data-chart-boolean="Boolean value" data-chart-coverage="Coverage">
+  data-chart-boolean="Boolean value">
   <select id="chart-range"><option value="86400">Day</option><option value="custom">Custom</option></select>
   <input id="chart-from"><input id="chart-to"><button id="chart-apply"></button>
   <button id="chart-previous"></button><button id="chart-next"></button>
@@ -105,7 +105,14 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
     ['after_id', 'control_uuid', 'end', 'generation', 'start', 'state_uuid']);
   assert.equal(window.document.querySelectorAll('#chart-panels canvas').length, 1);
   assert.match(window.document.querySelector('#chart-panels').textContent, /Control/);
-  assert.equal(window.document.querySelector('#chart-panels section > details:last-of-type').hidden,
+  const panel = window.document.querySelector('#chart-panels section');
+  assert.equal(panel.querySelectorAll('.mcp-history-chart-meta dl dt').length, 3,
+    'source context stays in the compact metadata column');
+  assert.ok(panel.querySelector('.mcp-history-chart-body .mcp-history-chart-plot'),
+    'plot has a separate layout column');
+  assert.equal(panel.querySelector('.mcp-history-chart-meta [role="status"]').textContent,
+    'Reduced', 'source-specific reduced-detail warning remains beside the plot');
+  assert.equal(window.document.querySelector('#chart-panels section .mcp-history-chart-body > details:last-of-type').hidden,
     true);
   const chart = window.uPlot.instances[0];
   assert.equal(chart.options.series.length, 3, 'mixed scalar values use both plot series');
@@ -183,7 +190,7 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
     old_value: 2, new_value: 'offline'};
   tick();
   await flush();
-  assert.equal(window.document.querySelector('#chart-panels section > details:last-of-type').hidden,
+  assert.equal(window.document.querySelector('#chart-panels section .mcp-history-chart-body > details:last-of-type').hidden,
     false);
   assert.match(window.document.querySelector('#chart-panels table').textContent, /offline/);
   failCode = 'outcome_unknown';
@@ -225,7 +232,7 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
   await flush();
   assert.doesNotMatch(window.document.querySelector('#chart-panels table').textContent,
     /offline/, 'text events outside the active range are hidden');
-  assert.equal(window.document.querySelector('#chart-panels section > details:last-of-type').hidden,
+  assert.equal(window.document.querySelector('#chart-panels section .mcp-history-chart-body > details:last-of-type').hidden,
     true);
   holdNext = true;
   tick();
