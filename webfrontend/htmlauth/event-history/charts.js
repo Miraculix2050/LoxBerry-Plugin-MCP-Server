@@ -237,7 +237,28 @@
       try {
         const data = plottedKind === 'mixed' ? [x, y, booleanY] : [x, y];
         if (state.plot) state.plot.setData(data);
-        else state.plot = new window.uPlot(options, data, state.plotHost);
+        else {
+          state.plot = new window.uPlot(options, data, state.plotHost);
+          state.plot.over?.addEventListener('wheel', (event) => {
+            if (!event.ctrlKey || !event.cancelable || !Number.isFinite(event.deltaY)
+              || !event.deltaY) return;
+            const rect = event.currentTarget.getBoundingClientRect();
+            if (rect.width <= 0) return;
+            event.preventDefault();
+            const position = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+            const delta = event.deltaY * (event.deltaMode === 1 ? 16
+              : event.deltaMode === 2 ? rect.height : 1);
+            const factor = Math.exp(Math.max(-120, Math.min(120, delta))
+              * Math.log(1.2) / 100);
+            const width = Math.max(1, Math.min(maxRange, (range.end - range.start) * factor));
+            const anchor = range.start + position * (range.end - range.start);
+            let start = Math.max(0, anchor - position * width);
+            let end = start + width;
+            const latest = Date.now() / 1000 + 60;
+            if (end > latest) { end = latest; start = Math.max(0, end - width); }
+            replaceRange(start, end);
+          }, {passive: false});
+        }
         state.plotKind = plottedKind;
         state.plot.setScale('x', {min: range.start, max: range.end});
       } finally { applyingScale = false; }
