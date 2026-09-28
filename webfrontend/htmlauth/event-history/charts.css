@@ -9,6 +9,7 @@
 .mcp-history-chart-context dd { margin: 0; overflow-wrap: anywhere; }
 .mcp-history-chart-boundaries { margin: .5rem 0; font-size: .85rem; }
 .mcp-history-chart-meta [role="status"] { margin: .5rem 0; }
+.mcp-history-chart-meta [role="status"]:empty { margin: 0; }
 .mcp-history-chart-meta details { font-size: .9rem; }
 .mcp-history-chart-meta ul { margin: .4rem 0; padding-left: 1.2rem; }
 .mcp-history-chart-plot { max-width: 100%; overflow-x: auto; }

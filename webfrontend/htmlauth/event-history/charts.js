@@ -169,7 +169,6 @@
       || events.some((event) => decimalInteger(event.new_value))
       ? label('chartReduced')
       : (events.length ? '' : label('chartEmpty'));
-    state.notice.hidden = !state.notice.textContent;
     const numeric = events.filter((event) => Number.isFinite(numericValue(event.new_value)));
     const boolean = events.filter((event) => typeof event.new_value === 'boolean');
     const plottedKind = numeric.length && boolean.length ? 'mixed'
@@ -317,7 +316,6 @@
       sourceContext(context, source);
       const notice = document.createElement('p');
       notice.setAttribute('role', 'status');
-      notice.hidden = true;
       const boundaries = document.createElement('p');
       boundaries.className = 'mcp-help mcp-history-chart-boundaries';
       const plotHost = document.createElement('div');
