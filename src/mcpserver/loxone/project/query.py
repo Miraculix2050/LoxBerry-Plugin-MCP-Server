@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 
 from .graph import GraphEdge, GraphNode, SemanticEdge
 from .mapping import ControlMapping, ProjectView
-from .semantics import signal_use_rules
+from .semantics import is_valid_group_address_filter, signal_use_rules
 
 _KNOWN_KNX_ATTRIBUTES = frozenset(
     {"Type", "U", "Title", "Desc", "IName", "EibAddr", "EibAddrPulse", "EIBType"}
@@ -385,6 +385,8 @@ class ProjectQuery:
             "bus_to_loxone",
             "loxone_to_bus",
         }:
+            raise ProjectQueryError("project_query_invalid")
+        if knx_group_address is not None and not is_valid_group_address_filter(knx_group_address):
             raise ProjectQueryError("project_query_invalid")
         if runtime_control_uuid is not None:
             mapping = self._mappings.get(runtime_control_uuid)

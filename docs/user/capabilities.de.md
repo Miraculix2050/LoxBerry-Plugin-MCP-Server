@@ -35,6 +35,10 @@ die Suche nach der kanonischen Basis kann beide liefern. Gleiche Gruppenadressen
 Graphbeziehung und beweisen keine Kausalität. Suche und Trace liefern eine kompakte
 KNX-Zusammenfassung mit Original- und kanonischer Adresse, Quellfeld und Variante. Segmente,
 Namen und den Rohdatentyp liefert gezielt `loxone_describe_project_object`.
+Der Filter `knx_group_address` akzeptiert gültige zwei- oder dreistufige Adressen und die
+Varianten `:0`/`:1`. Ungültige Syntax oder Zahlenbereiche liefern `invalid_input`; eine gültige
+Adresse ohne Treffer ergibt eine erfolgreiche leere Suchseite. Auch gültige Originalformen
+werden nur exakt mit Original- oder kanonischer Adresse verglichen.
 Projekt-Suchseiten und Traces sind zusätzlich auf 64 KiB
 begrenzt und melden eine Größenkürzung über `truncated` und `truncation_reason`.
 `project_parts` zählt intern eingelesene Modellquellen, nicht Loxone-Config-Projekte. Status

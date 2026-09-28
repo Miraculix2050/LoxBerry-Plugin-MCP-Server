@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Reject malformed or out-of-range KNX group-address search filters as
+  `invalid_input` before loading the project. Valid absent addresses still
+  return an empty result; exact original and canonical variant matching remains.
+
 - Expose the local Weather-State cache processing time as nullable
   `received_at` in successful weather responses, separate from the Loxone
   source update time and MCP response time. Clarify that `stale` reflects cache
