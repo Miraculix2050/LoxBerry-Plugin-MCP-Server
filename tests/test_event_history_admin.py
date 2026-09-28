@@ -211,6 +211,7 @@ def test_chart_batch_reuses_one_config_visibility_and_store(tmp_path, monkeypatc
     }
     calls = {"config": 0, "visibility": 0, "store": 0}
     original_load = config_store.load
+    original_config = original_load()
     original_store = event_history_admin._store
 
     def load():
@@ -227,7 +228,9 @@ def test_chart_batch_reuses_one_config_visibility_and_store(tmp_path, monkeypatc
 
     monkeypatch.setattr(config_store, "load", load)
     monkeypatch.setattr(
-        event_history_admin, "_selector_cache", lambda _config: SimpleNamespace(read=read)
+        event_history_admin,
+        "_selector_cache",
+        lambda _config: SimpleNamespace(read=read, profile="same-profile"),
     )
     monkeypatch.setattr(event_history_admin, "_store", store)
     queries = [
@@ -243,7 +246,7 @@ def test_chart_batch_reuses_one_config_visibility_and_store(tmp_path, monkeypatc
     ]
     result = event_history_admin.chart_query({"queries": queries})
     assert len(result["results"]) == 2
-    assert calls == {"config": 1, "visibility": 2, "store": 1}
+    assert calls == {"config": 2, "visibility": 2, "store": 1}
     original_page = EventHistoryStore.chart_page
     page_calls = 0
 
@@ -260,6 +263,18 @@ def test_chart_batch_reuses_one_config_visibility_and_store(tmp_path, monkeypatc
         event_history_admin.chart_query({"queries": queries})
     assert revoked.value.code == "stale_configuration"
     document["generation"] = "b" * 24
+    monkeypatch.setattr(EventHistoryStore, "chart_page", original_page)
+
+    def endpoint_changes_during_first_page(self, *args, **kwargs):
+        result = original_page(self, *args, **kwargs)
+        config_store.save(replace(original_config, loxone_endpoint="https://other.example"))
+        return result
+
+    monkeypatch.setattr(EventHistoryStore, "chart_page", endpoint_changes_during_first_page)
+    with pytest.raises(admin.AdminError, match="configuration changed") as endpoint_changed:
+        event_history_admin.chart_query({"queries": queries})
+    assert endpoint_changed.value.code == "stale_configuration"
+    config_store.save(original_config)
     monkeypatch.setattr(EventHistoryStore, "chart_page", original_page)
     queries[1]["generation"] = "c" * 24
     with pytest.raises(admin.AdminError, match="refreshed"):

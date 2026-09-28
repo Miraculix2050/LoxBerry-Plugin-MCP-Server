@@ -582,6 +582,10 @@ def chart_query(payload: object, *, _deadline: float | None = None) -> dict[str,
         ) from exc
     if len({result["generation"] for result in results}) != 1:
         raise bridge.AdminError("local history changed", code="history_changed")
+    current = bridge._config_store().load()
+    _require_same_visibility_context(config, current)
+    if _selector_cache(current).profile != cache.profile:
+        raise bridge.AdminError("Miniserver identity changed", code="stale_configuration")
     current_document = cache.read()
     if (
         current_document is None
