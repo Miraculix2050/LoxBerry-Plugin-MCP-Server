@@ -121,6 +121,14 @@ if document.get("schema_version") == 9:
     policies.setdefault("explorer_bindings", [])
     document["schema_version"] = 10
     changed = True
+if document.get("schema_version") == 10:
+    taxonomy = document.setdefault("knx_address_taxonomy", {})
+    if not isinstance(taxonomy, dict):
+        raise SystemExit("KNX address taxonomy configuration is not an object")
+    taxonomy.setdefault("endpoint", "")
+    taxonomy.setdefault("entries", [])
+    document["schema_version"] = 11
+    changed = True
 if changed:
     descriptor, temporary_name = tempfile.mkstemp(prefix=".mcpserver.", dir=path.parent)
     temporary = Path(temporary_name)

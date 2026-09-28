@@ -14,6 +14,8 @@ from mcpserver.loxone.project.graph import (
 )
 from mcpserver.loxone.project.mapping import ProjectView, map_runtime
 from mcpserver.loxone.project.parser import parse_project
+from mcpserver.loxone.project.taxonomy import AddressTaxonomyEntry
+from mcpserver.loxone.project.worker import process_analysis
 
 
 def _view(data: bytes, controls: tuple[SimpleNamespace, ...] = ()) -> ProjectView:
@@ -64,7 +66,98 @@ def test_edge_variants_stay_separate_in_analysis_and_connectivity():
         and item["group_address"] == "6/2/27"
     }
     assert disconnected == {None}
-    assert result["analysis_version"] == 5
+    assert result["analysis_version"] == 6
+
+
+def test_address_hierarchy_reports_measured_prefixes_and_configured_provenance():
+    view = _view(Path("tests/fixtures/project/knx-edge-variants.xml").read_bytes())
+    selected = frozenset({"address_hierarchy"})
+    taxonomy = (AddressTaxonomyEntry("6/2", "Test label"),)
+
+    result = analyze_knx(view, selected, taxonomy)
+    assert result == analyze_knx(view, selected, taxonomy)
+    rows = {
+        (tuple(item["hierarchy"]["prefix"]), item["hierarchy"]["address_format"]): item
+        for item in result["findings"]
+        if item["finding_type"] == "address_prefix_summary"
+    }
+    assert ((6,), "three_level") in rows
+    assert ((6, 2), "three_level") in rows
+    leaf = rows[((6, 2, 27), "three_level")]["hierarchy"]
+    assert leaf["object_count"] == 3
+    assert leaf["logical_address_count"] == 1
+    assert leaf["edge_variant_count"] == 2
+    assert {entry["original"] for entry in leaf["address_examples"]} == {
+        "6/2/27:0",
+        "6/2/27:1",
+        "6/2/27",
+    }
+    assert rows[((6, 2), "three_level")]["hierarchy"]["configured_taxonomy"] == {
+        "label": "Test label",
+        "provenance": "admin_configured",
+    }
+    assert leaf["configured_taxonomy"] is None
+    type_outlier = next(
+        item
+        for item in result["findings"]
+        if item["finding_type"] == "address_hierarchy_outlier"
+        and item["comparison_dimension"] == "source_type"
+        and item["dominant_prefix"] == [6, 2]
+    )
+    assert type_outlier["classification"] == "outlier"
+    assert type_outlier["dominant_count"] == 4
+    assert type_outlier["peer_count"] == 5
+    assert type_outlier["support"]["count"] == 1
+    assert type_outlier["affected_project_node_ids"]
+    assert all(
+        item["classification"] in {"fact", "pattern", "outlier"} for item in result["findings"]
+    )
+    assert "DPT" not in str(result)
+
+
+def test_address_hierarchy_counts_duplicate_sources_only_as_occurrences():
+    parsed = parse_project(b'<P><C Type="EIBactor" U="a" EibAddr="1/2/3"/></P>')
+    graph = build_graph((("one", parsed), ("two", parsed)))
+    aliases, source_ids = _logical_knx_nodes(graph)
+    snapshot = ProjectSnapshot(
+        "project",
+        5,
+        (ProjectPartSummary("one", 1, ()), ProjectPartSummary("two", 1, ())),
+        graph,
+        logical_aliases=aliases,
+        logical_source_ids=source_ids,
+    )
+    view = ProjectView(
+        snapshot, map_runtime(snapshot, SimpleNamespace(last_modified="v", controls=()))
+    )
+    result = analyze_knx(view, frozenset({"address_hierarchy"}))
+    leaf = next(
+        item["hierarchy"]
+        for item in result["findings"]
+        if item["finding_type"] == "address_prefix_summary"
+        and item["hierarchy"]["prefix"] == [1, 2, 3]
+    )
+    assert leaf["object_count"] == 1
+    assert leaf["source_occurrence_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_address_hierarchy_worker_preserves_admin_label_provenance():
+    result = await process_analysis(
+        _view(b'<P><C Type="EIBsensor" U="a" EibAddr="6/2/7"/></P>'),
+        frozenset({"address_hierarchy"}),
+        (AddressTaxonomyEntry("6/2", "Configured"),),
+    )
+    prefix = next(
+        item["hierarchy"]
+        for item in result["findings"]
+        if item["finding_type"] == "address_prefix_summary"
+        and item["hierarchy"]["prefix"] == [6, 2]
+    )
+    assert prefix["configured_taxonomy"] == {
+        "label": "Configured",
+        "provenance": "admin_configured",
+    }
 
 
 def test_new_knx_families_enter_coverage_and_connectivity_without_unmodeled_types():
@@ -85,7 +178,7 @@ def test_new_knx_families_enter_coverage_and_connectivity_without_unmodeled_type
     assert result["coverage"]["endpoints"] == 5
     assert result["coverage"]["canonical_group_addresses"] == 5
     assert result["coverage"]["raw_datatypes"] == 0
-    assert result["analysis_version"] == 5
+    assert result["analysis_version"] == 6
     assert any(
         item["code"] == "unclassified_knx_candidate" and item["source_type"] == "EIBunknown"
         for item in result["source_diagnostics"]["entries"]
@@ -525,7 +618,7 @@ def test_v2_uses_exact_runtime_evidence_for_naming_without_inventing_knx_semanti
 
     result = analyze_knx(_view(project, controls), frozenset({"naming_consistency"}))
 
-    assert result["analysis_version"] == 5
+    assert result["analysis_version"] == 6
     assert result["coverage"]["exact_runtime_mappings"] == 6
     assert result["coverage"]["reviewed_signal_usage"] == 0
     assert any(item["finding_type"] == "naming_deviation" for item in result["findings"])

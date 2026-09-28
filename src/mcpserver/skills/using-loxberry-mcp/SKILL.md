@@ -72,7 +72,7 @@ address. Trace keeps raw wiring in `edges` and reports derived internal evidence
 separately in `semantic_edges`. Use `technology_paths` only as static
 reachability evidence, check `semantic_truncated`, and never present a path as
 proof of a bus telegram or a historical cause.
-Use `loxone_analyze_project` version 5 for a bounded installation-level KNX
+Use `loxone_analyze_project` version 6 for a bounded installation-level KNX
 review before retrieving individual traces. It can add source-name patterns,
 exact UUID-mapped runtime context, and local peer or graph outliers to address,
 datatype, usage, path, and connection evidence. Treat all findings as
@@ -83,6 +83,13 @@ exact UUID mapping; they never establish a mapping. The
 tool does not grade the configuration, infer DPT meanings, or establish ETS/bus
 evidence. Use an affected `project_node_id` with describe or trace before
 explaining an exception or proposing an improvement.
+For an address audit, select `address_hierarchy`, follow every cursor, and
+compare prefix facts with `coverage_by_source_type` and source diagnostics.
+Separate logical endpoints from raw source occurrences and original addresses
+from canonical addresses and edge variants. Treat any `admin_configured`
+taxonomy label as administrator metadata, never a project inference. A local
+pattern or outlier is only a review candidate; address shape and names do not
+prove ETS roles, DPTs, floors, physical wiring or bus activity.
 
 `project_parts` counts internally ingested model sources, not Loxone Config
 projects. Status returns opaque `model_sources`; KNX object summaries expose a

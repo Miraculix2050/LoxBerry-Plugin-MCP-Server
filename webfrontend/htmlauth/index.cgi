@@ -534,6 +534,16 @@ if ($action ne '') {
         $result = admin_call('save_mcp_config', $document);
         admin_log($result->{ok} ? 'info' : 'warning',
             'action=save_mcp_config outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
+    } elsif ($action eq 'save_knx_taxonomy') {
+        my @entries;
+        for my $line (split /\r?\n/, $q->{taxonomy_entries} // '') {
+            next if $line eq '';
+            my ($prefix, $label) = split /=/, $line, 2;
+            push @entries, {prefix => $prefix // '', label => $label // ''};
+        }
+        $result = admin_call('save_knx_taxonomy', {entries => \@entries});
+        admin_log($result->{ok} ? 'info' : 'warning',
+            'action=save_knx_taxonomy outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
     } elsif ($action eq 'save_mqtt_config') {
         my $document = {
             schema_version => 5,
@@ -1019,6 +1029,9 @@ $template->param(
     EXPLORER_URL => 'explorer.cgi',
     SCHEMA_REFERENCE_URL => 'tool-schema-reference.html',
     ENDPOINT => $display_endpoint,
+    KNX_TAXONOMY_TEXT => join("\n", map {
+        ($_->{prefix} // '') . '=' . ($_->{label} // '')
+    } @{$config->{knx_address_taxonomy}{entries} // []}),
     MINISERVERS => $miniservers,
     MANUAL_ENDPOINT => $has_selected_miniserver ? 0 : 1,
     CONNECTION_TIMEOUT => $config->{loxone}{connection_timeout} // 10,

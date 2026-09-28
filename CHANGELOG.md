@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add paginated KNX address-prefix facts and local review candidates to project
+  analysis. Allow administrators to configure Miniserver-scoped prefix labels
+  with explicit provenance; labels never change project counts or imply bus semantics.
+
 - Wake Chart View and recorded-source windows after recorder commits through a value-free local update signal. Append new chart points with cursor queries, refresh source totals from a fresh visibility-bound local overview, and keep charts visible across concurrent selector refreshes and routine coverage changes.
 
 - Avoid loading the Loxone project runtime for Event History chart queries, reducing Admin helper startup cost. Reuse a bounded, tab-local Chart View snapshot after fresh visibility and history checks so reloads fetch only missing or newer values.

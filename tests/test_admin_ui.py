@@ -113,7 +113,7 @@ def test_admin_modules_load_in_order_with_versioned_localized_assets() -> None:
         assert "<TMPL_" not in source
         assert (
             f'<script defer src="admin/{name}?v='
-            '<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v11"></script>'
+            '<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v12"></script>'
         ) in markup
         subprocess.run(
             [node, "--check", str(ROOT / "webfrontend/htmlauth/admin" / name)],
@@ -701,6 +701,19 @@ def test_common_actions_update_the_page_without_a_reload() -> None:
     assert 'id="session-table-template"' in template
     assert "row.dataset.fingerprint !== sessionFingerprint(session)" in template
     assert "for (const row of existing.values()) row.remove()" in template
+
+
+def test_knx_taxonomy_admin_form_uses_the_same_origin_save_path_in_both_languages() -> None:
+    template = _admin_source()
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    german = (ROOT / "templates/lang/language_de.ini").read_text(encoding="utf-8")
+    english = (ROOT / "templates/lang/language_en.ini").read_text(encoding="utf-8")
+    assert 'id="knx-taxonomy-form"' in template
+    assert 'data-ajax="save_knx_taxonomy"' in template
+    assert 'name="taxonomy_entries"' in template
+    assert "admin_call('save_knx_taxonomy', {entries => \\@entries})" in cgi
+    assert "KNX_TAXONOMY_HELP=" in german
+    assert "KNX_TAXONOMY_HELP=" in english
 
 
 def test_event_history_enablement_is_preserved_in_server_rendered_fallback() -> None:

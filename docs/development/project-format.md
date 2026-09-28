@@ -84,7 +84,7 @@ reachability, not a physical device role, bus telegram, or historical cause.
 
 ## KNX project analysis
 
-`loxone_analyze_project` version 5 returns bounded, deterministic project-local
+`loxone_analyze_project` version 6 returns bounded, deterministic project-local
 evidence; it never grades a KNX installation. It aggregates canonical-address
 and source-name patterns, conflicting raw `EIBType` values on one group address,
 reviewed signal-use observations, exact runtime-mapping context, local peer and
@@ -110,6 +110,16 @@ groups or ambiguous candidates; long labels have a bounded, hash-suffixed form.
 Object details identify raw `EIBType` as `loxone_config` evidence. The separate
 `normalized_dpt_evidence` field is null until an authoritative, versioned source is
 implemented; `normalized_code` remains null. No DPT or EIS meaning is inferred.
+The `address_hierarchy` analysis emits one paginated fact per observed canonical
+prefix and bounded local pattern/outlier candidates. Prefixes are partitioned by
+two- or three-level address format; a three-level leaf retains the original
+address and edge variant in bounded examples. Logical-object and raw-occurrence
+counts remain separate. Direct wiring counts directional project signal/reference
+relationships and reports unresolved relationships separately. The optional
+`knx_address_taxonomy` configuration contains at most 128 exact canonical
+prefix labels bound to the configured Miniserver endpoint. Labels have
+`admin_configured` provenance and never alter graph facts or counts. Analysis
+cursor scope includes the taxonomy, so changed labels invalidate prior cursors.
 
 ### Future live KNX diagnostics boundary
 

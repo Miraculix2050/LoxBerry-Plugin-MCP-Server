@@ -1078,7 +1078,7 @@ async def test_project_analysis_is_read_only_bounded_and_cursor_scoped(monkeypat
 
     runtime = Runtime()
 
-    async def analysis(_view, _selected):
+    async def analysis(_view, _selected, _taxonomy=()):
         nonlocal analysis_calls
         analysis_calls += 1
         assert runtime.active_workers == 1

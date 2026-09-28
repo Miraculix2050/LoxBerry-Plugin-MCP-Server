@@ -32,7 +32,7 @@ from mcpserver.auth.provider import (
     READ_SCOPE,
     StoredAccessToken,
 )
-from mcpserver.config import AtomicConfigStore
+from mcpserver.config import AtomicConfigStore, ConfigError
 from mcpserver.loxberry.diagnostics import DiagnosticsUnavailable, LoxBerryDiagnostics
 from mcpserver.loxone.control import allowed_actions
 from mcpserver.loxone.event_history import (
@@ -72,6 +72,7 @@ from mcpserver.loxone.project.analysis import ANALYSIS_VERSION
 from mcpserver.loxone.project.models import ProjectError
 from mcpserver.loxone.project.query import ProjectQuery, ProjectQueryError
 from mcpserver.loxone.project.semantics import is_valid_group_address_filter
+from mcpserver.loxone.project.taxonomy import AddressTaxonomyEntry
 from mcpserver.loxone.project.worker import process_analysis
 from mcpserver.loxone.runtime import (
     ControlHistoryEntry,
@@ -910,9 +911,36 @@ class ProjectAnalysisLimitationData(BaseModel):
     count: int
 
 
+class ProjectAddressExampleData(BaseModel):
+    project_node_id: str
+    original: str
+    canonical: str
+    variant: Literal["0", "1"] | None
+
+
+class ProjectAddressHierarchyData(BaseModel):
+    prefix: list[int]
+    prefix_level: int
+    address_format: Literal["two_level", "three_level"]
+    object_count: int
+    source_occurrence_count: int
+    logical_address_count: int
+    edge_variant_count: int
+    source_type_counts: dict[str, int]
+    flow_direction_counts: dict[str, int]
+    direct_wiring: dict[str, int]
+    exact_runtime_mapping_count: int
+    name_pattern_support: dict[str, JsonValue]
+    configured_taxonomy: dict[str, str] | None
+    address_examples: list[ProjectAddressExampleData]
+    address_examples_omitted: int
+    evidence_categories: list[str]
+
+
 class ProjectAnalysisFindingData(BaseModel):
     finding_id: str
     analysis: Literal[
+        "address_hierarchy",
         "address_patterns",
         "naming_consistency",
         "datatype_consistency",
@@ -923,6 +951,9 @@ class ProjectAnalysisFindingData(BaseModel):
         "peer_group_consistency",
     ]
     finding_type: Literal[
+        "address_prefix_summary",
+        "address_hierarchy_pattern",
+        "address_hierarchy_outlier",
         "address_pattern",
         "address_pattern_deviation",
         "naming_pattern",
@@ -937,6 +968,21 @@ class ProjectAnalysisFindingData(BaseModel):
         "project_connectivity_ambiguous",
     ]
     classification: Literal["fact", "pattern", "outlier", "ambiguity"] = "fact"
+    evidence_category: (
+        Literal[
+            "address_structure",
+            "object_type",
+            "direct_wiring",
+            "runtime_mapping",
+            "name_pattern",
+            "configured_taxonomy",
+        ]
+        | None
+    ) = None
+    hierarchy: ProjectAddressHierarchyData | None = None
+    comparison_dimension: str | None = None
+    baseline_value: str | None = None
+    observed_value: str | None = None
     flow_direction: Literal["bus_to_loxone", "loxone_to_bus"] | None = None
     address_format: Literal["two_level", "three_level"] | None = None
     raw_datatype: str | None = None
@@ -972,6 +1018,7 @@ class ProjectAnalysisData(BaseModel):
     scope: Literal["knx"]
     analyses: list[
         Literal[
+            "address_hierarchy",
             "address_patterns",
             "naming_consistency",
             "datatype_consistency",
@@ -4080,7 +4127,11 @@ def register_skill_tool(server: FastMCP) -> None:
         )
 
 
-def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> None:
+def register_project_tools(
+    server: FastMCP,
+    runtime: LoxoneRuntime | None,
+    config_store: AtomicConfigStore | None = None,
+) -> None:
     """Publish bounded read-only Project Intelligence operations."""
     annotations = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
     cursors = _CursorCodec()
@@ -4375,6 +4426,7 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
         analyses: Annotated[
             list[
                 Literal[
+                    "address_hierarchy",
                     "address_patterns",
                     "naming_consistency",
                     "datatype_consistency",
@@ -4398,6 +4450,7 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                 if analyses is not None
                 else frozenset(
                     {
+                        "address_hierarchy",
                         "address_patterns",
                         "naming_consistency",
                         "datatype_consistency",
@@ -4416,6 +4469,11 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                 raise RuntimeUnavailable("the service is not configured")
             projects = runtime.projects
             access = _access()
+            taxonomy: tuple[AddressTaxonomyEntry, ...] = ()
+            if config_store is not None and "address_hierarchy" in selected:
+                config = await asyncio.to_thread(config_store.load)
+                if config.knx_address_taxonomy_endpoint == runtime.endpoint.origin:
+                    taxonomy = config.knx_address_taxonomy
             analysis_scope = (
                 "project-analysis:"
                 + hashlib.sha256(
@@ -4431,6 +4489,7 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                             ANALYSIS_VERSION,
                             project.view.mapping.structure_fingerprint,
                             sorted(selected),
+                            [(entry.prefix, entry.label) for entry in taxonomy],
                         ],
                         separators=(",", ":"),
                     ).encode()
@@ -4449,7 +4508,7 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                         raise ValueError("cursor has expired; start a new analysis")
                     _LOGGER.debug("component=project_analysis_cache outcome=miss")
                     async with runtime.worker_slot():
-                        result = await process_analysis(project.view, selected)
+                        result = await process_analysis(project.view, selected, taxonomy)
                     await projects.authorize(access)
                     size = len(json.dumps(result, separators=(",", ":")).encode())
                     if size > 64 * 1024 * 1024:
@@ -4494,6 +4553,12 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
             return _error(ProjectAnalysisEnvelope, code, message, diagnostic_code=diagnostic_code)
         except RuntimeUnavailable as exc:
             return _error(ProjectAnalysisEnvelope, "temporarily_unavailable", str(exc))
+        except ConfigError:
+            return _error(
+                ProjectAnalysisEnvelope,
+                "temporarily_unavailable",
+                "KNX address taxonomy configuration is unavailable",
+            )
 
 
 def register_observability_tools(
@@ -6083,12 +6148,13 @@ def register_tool_surface(
     loxberry_operate_runtime: LoxBerryOperateRuntime | None,
     event_history_runtime: EventHistoryRuntime | None,
     control_enabled: bool,
+    project_config_store: AtomicConfigStore | None = None,
 ) -> None:
     """Register one complete live or synthetic MCP tool surface."""
     register_skill_tool(server)
     register_read_tools(server, runtime, control_enabled=control_enabled)
     if runtime is not None:
-        register_project_tools(server, runtime)
+        register_project_tools(server, runtime, project_config_store)
         register_observability_tools(server, runtime, event_history_runtime)
         register_control_tool(server, runtime)
         register_history_tools(server, runtime)

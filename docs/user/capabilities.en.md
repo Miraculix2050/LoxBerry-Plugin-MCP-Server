@@ -55,7 +55,7 @@ separate KNX signal-use observations, while trace returns separately marked deri
 and bounded `knx_to_loxone`, `loxone_to_knx`, or `knx_to_knx` paths. Unknown block or connector
 behaviour is not guessed. These are static project paths, not evidence that a bus telegram or
 historical state change caused an action.
-`loxone_analyze_project` version 5 summarizes bounded project-local KNX evidence: address and
+`loxone_analyze_project` version 6 summarizes bounded project-local KNX evidence: address and
 source-name patterns, raw datatype reuse, reviewed signal-use differences, exact runtime-mapping
 context, local peer and graph outliers, path counts, and endpoints without an observed project
 relationship. Runtime names and control types are used only for exact UUID mappings; names never
@@ -69,6 +69,15 @@ occurrences merged across model sources are counted explicitly. Unknown KNX-like
 objects and omitted type groups make coverage incomplete. Object details identify
 `EIBType` as raw Loxone Config evidence and report that normalized DPT evidence is
 currently unavailable.
+Select `address_hierarchy` to page through measured one-, two- and three-level
+address prefixes. Each prefix fact separates logical endpoints, raw model-source
+occurrences, canonical addresses and edge variants, and includes bounded original
+address examples. Direct wiring means an observed project signal/reference
+relationship; unresolved relationships remain separate. Pattern and outlier
+candidates report a local peer baseline, not a configuration verdict. The
+optional Admin-managed KNX address labels apply only to the configured Miniserver,
+appear as `admin_configured` metadata, and do not change project facts. Names and
+address shape never establish floors, functions, DPTs, ETS meaning or bus activity.
 `loxone_analyze_observability` separately assesses a bounded, explicitly requested
 time range for a project target. It combines exact UUID-mapped structural reachability,
 current-state availability, advertised native statistic series, and local event-history

@@ -177,6 +177,7 @@
       if (result.data.certificate) certificate.updateCertificate(result.data.certificate);
       if (form.dataset.ajax === 'save_mqtt_config') configuration.onMqttSaved(result.data);
       if (submittedAction === 'save_mcp_config') configuration.onMcpSaved(result.data);
+      if (submittedAction === 'save_knx_taxonomy') configuration.onTaxonomySaved(result.data);
       if (form.dataset.ajax === 'set_logging') configuration.renderLogging(result.data.configuration);
       if (form.dataset.ajax === 'renew_certificate') {
         keepButtonDisabled = true;

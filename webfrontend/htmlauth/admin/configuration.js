@@ -8,9 +8,11 @@ window.McpAdmin.createConfiguration = (
   const manualEndpointFields = document.getElementById('manual-endpoint-fields');
   const miniserverEndpoint = document.getElementById('miniserver-endpoint');
   const mcpConfigForm = document.getElementById('mcp-config-form');
+  const taxonomyEntries = document.getElementById('knx-taxonomy-entries');
   const mqttConfigForm = document.querySelector('form[data-ajax="save_mqtt_config"]');
   const configurationFieldsets = [
     document.getElementById('mcp-config-fields'),
+    document.getElementById('knx-taxonomy-fields'),
     document.getElementById('mqtt-config-fields'),
     document.getElementById('logging-config-fields'),
   ];
@@ -98,6 +100,10 @@ window.McpAdmin.createConfiguration = (
     const mqtt = configuration?.mqtt || {};
     const emergencyStop = configuration?.emergency_stop || {};
     const eventHistory = configuration?.event_history || {};
+    const taxonomy = configuration?.knx_address_taxonomy || {};
+    taxonomyEntries.value = taxonomy.endpoint === String(loxone.endpoint || '').replace(/\/$/, '')
+      ? (taxonomy.entries || []).map((entry) => entry.prefix + '=' + entry.label).join('\n')
+      : '';
     const publicOrigin = String(server.public_origin || '')
       || String(mcpConfigForm.elements.namedItem('public_origin')?.value || '');
     savedPublicOrigin = String(server.public_origin || '');
@@ -430,6 +436,10 @@ window.McpAdmin.createConfiguration = (
     mqttPasswordStatus.hidden = !Boolean(data.mqtt_password_configured);
     renderConfigurationBadges(data.configuration);
   };
+  const onTaxonomySaved = (data) => {
+    const entries = data.configuration.knx_address_taxonomy.entries || [];
+    taxonomyEntries.value = entries.map((entry) => entry.prefix + '=' + entry.label).join('\n');
+  };
   return {mcpConfigForm, loadConfiguration, loadInitialState,
-    onMcpSaved, onMqttSaved, renderLogging, renderConfigurationBadges};
+    onMcpSaved, onMqttSaved, onTaxonomySaved, renderLogging, renderConfigurationBadges};
 };

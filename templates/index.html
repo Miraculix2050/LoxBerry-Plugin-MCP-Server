@@ -163,6 +163,15 @@
       </div>
       </fieldset>
     </form>
+    <form id="knx-taxonomy-form" class="mcp-form" method="post" action="index.cgi" data-ajax="save_knx_taxonomy">
+      <fieldset id="knx-taxonomy-fields" class="mcp-configuration-fields" <TMPL_UNLESS SERVER_RENDERED_FALLBACK>disabled<TMPL_ELSE><TMPL_UNLESS FALLBACK_CONFIGURATION_LOADED>disabled</TMPL_UNLESS></TMPL_UNLESS>>
+        <input type="hidden" name="action" value="save_knx_taxonomy">
+        <h3><TMPL_VAR SETUP.KNX_TAXONOMY></h3>
+        <label class="mcp-field"><span><TMPL_VAR SETUP.KNX_TAXONOMY_LABEL></span><textarea id="knx-taxonomy-entries" name="taxonomy_entries" rows="5" maxlength="12000" aria-describedby="knx-taxonomy-help"><TMPL_VAR KNX_TAXONOMY_TEXT ESCAPE=HTML></textarea></label>
+        <p id="knx-taxonomy-help" class="mcp-help"><TMPL_VAR SETUP.KNX_TAXONOMY_HELP></p>
+        <div class="mcp-actions"><button class="lb-button" type="submit"><TMPL_VAR ACTION.SAVE_KNX_TAXONOMY></button></div>
+      </fieldset>
+    </form>
     <TMPL_IF SERVER_RENDERED_FALLBACK><form id="fallback-emergency-stop-retry-form" method="post" action="index.cgi"><input type="hidden" name="fallback" value="1"><input type="hidden" name="action" value="<TMPL_VAR EMERGENCY_STOP_BUTTON_ACTION ESCAPE=HTML>"></form></TMPL_IF>
     </div>
   </details>
@@ -394,10 +403,10 @@
   data-l-summary-unknown="<TMPL_VAR SUMMARY.UNKNOWN ESCAPE=HTML>"
   data-l-summary-warning="<TMPL_VAR SUMMARY.WARNING ESCAPE=HTML>"
 ></div>
-<script defer src="admin/core.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v11"></script>
-<script defer src="admin/certificate.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v11"></script>
-<script defer src="admin/sessions.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v11"></script>
-<script defer src="admin/service.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v11"></script>
-<script defer src="admin/configuration.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v11"></script>
-<script defer src="admin/page.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v11"></script>
+<script defer src="admin/core.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v12"></script>
+<script defer src="admin/certificate.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v12"></script>
+<script defer src="admin/sessions.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v12"></script>
+<script defer src="admin/service.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v12"></script>
+<script defer src="admin/configuration.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v12"></script>
+<script defer src="admin/page.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v12"></script>
 </TMPL_UNLESS>
