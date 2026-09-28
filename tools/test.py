@@ -21,6 +21,7 @@ _PYTEST_TEMP_PARENT: Final = "tmp"
 _DOCUMENTATION_PATTERNS: Final = (
     "AGENTS.md",
     "CONTRIBUTING.md",
+    "CHANGELOG.md",
     "docs/**",
     "LICENSE",
     "README.md",
@@ -70,6 +71,7 @@ _TEST_GROUPS: Final = (
             "src/mcpserver/auth/scopes.py",
             "templates/index.html",
             "templates/event-history.html",
+            "templates/event-history-charts.html",
             "webfrontend/htmlauth/event_history.cgi",
             "webfrontend/htmlauth/event-history/**",
             "webfrontend/htmlauth/admin/**",

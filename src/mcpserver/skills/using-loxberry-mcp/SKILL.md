@@ -40,6 +40,10 @@ freshness, mapping coverage, or unresolved relationships matter. Then:
 1. Use `loxone_find_project_objects` with narrow exact filters or a bounded
    query. It returns a compact node summary; follow `next_cursor` while keeping
    all filters unchanged, and check `truncated` plus `truncation_reason`.
+   A `knx_group_address` filter accepts valid two- or three-level addresses and
+   exact `:0`/`:1` variants. Invalid syntax or numeric range returns
+   `invalid_input`; a valid address with no matches returns a successful empty
+   page. Preserve the entered original form for exact variant searches.
 2. Call `loxone_describe_project_object` for one returned `project_node_id`, or
    for an exact visible `runtime_control_uuid`. If a runtime mapping is
    ambiguous, present the candidates; never choose one.
@@ -57,8 +61,9 @@ For confirmed KNX/EIB objects, use the optional `knx` metadata to distinguish
 bus lines, endpoints, and KNX logic blocks. `bus_to_loxone` and
 `loxone_to_bus` describe bus data flow, not a physical sensor or actuator role.
 Use a canonical group address only when present; equal addresses do not prove a
-program path. Find and trace expose only compact KNX metadata; use describe for
-the original address and `EIBType`. Treat `EIBType` as an unresolved source
+program path. Find and trace expose compact KNX metadata including the original
+address, its source field, and any `EIBextsensor` edge variant. Use describe for
+address segments and `EIBType`. Treat `EIBType` as an unresolved source
 code, not as a guessed DPT or EIS meaning.
 Describe can contain several `usage_observations` only where exact reviewed
 block/connector rules prove them; they are not a global meaning of the group
@@ -66,7 +71,7 @@ address. Trace keeps raw wiring in `edges` and reports derived internal evidence
 separately in `semantic_edges`. Use `technology_paths` only as static
 reachability evidence, check `semantic_truncated`, and never present a path as
 proof of a bus telegram or a historical cause.
-Use `loxone_analyze_project` version 3 for a bounded installation-level KNX
+Use `loxone_analyze_project` version 4 for a bounded installation-level KNX
 review before retrieving individual traces. It can add source-name patterns,
 exact UUID-mapped runtime context, and local peer or graph outliers to address,
 datatype, usage, path, and connection evidence. Treat all findings as
@@ -188,8 +193,25 @@ or mode.
 
 Use `loxone_get_weather(mode="actual")` for current weather and
 `loxone_get_weather(mode="forecast")` for the paginated forecast. The default
-mode is `forecast`; follow `next_cursor`. This tool has no historical mode. Never
-present forecast entries or retained state values as measured weather history.
+mode is `forecast`; follow `next_cursor`. If a continuation cursor is rejected,
+restart at page one because the forecast may have changed. This tool has no
+historical mode. Never present forecast entries or retained state values as
+measured weather history.
+`data.last_updated_at` is the source update time reported by Loxone;
+`data.received_at` is when the local cache processed the Weather-State event
+and may be `null` if unknown; envelope `observed_at` is when the tool produced
+the response. Envelope `stale` describes cache/session availability, not the
+age of the weather source. When freshness matters, assess source age from
+`last_updated_at` independently, and do not treat `stale: false` as proof of a
+recent provider update.
+The response contains up to 96 forecast points, but the available forecast
+duration depends on the source. Use `field_metadata` to match each numeric point
+field to its source presentation format. The existing `formats` map retains raw
+LoxAPP3 keys and may contain additional keys. A missing format or `unit: null`
+means the source did not provide a verified unit; do not infer one from the
+format string or value range. In particular, the meaning of the raw
+`solar_radiation` weather event value is unverified: do not present it as W/m²
+or as a guaranteed 0–3 classification.
 
 ## Diagnose LoxBerry
 

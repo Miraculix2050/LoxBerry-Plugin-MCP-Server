@@ -742,6 +742,25 @@ def test_event_history_has_dedicated_bounded_admin_view() -> None:
     assert "window.confirm(label('confirmClear'))" in script
 
 
+def test_event_history_chart_tab_keeps_values_out_of_the_overview() -> None:
+    overview = (ROOT / "webfrontend/htmlauth/event-history/page.js").read_text(encoding="utf-8")
+    chart = (ROOT / "webfrontend/htmlauth/event-history/charts.js").read_text(encoding="utf-8")
+    template = (ROOT / "templates/event-history-charts.html").read_text(encoding="utf-8")
+    cgi = (ROOT / "webfrontend/htmlauth/event_history.cgi").read_text(encoding="utf-8")
+    english = (ROOT / "templates/lang/language_en.ini").read_text(encoding="utf-8")
+    german = (ROOT / "templates/lang/language_de.ini").read_text(encoding="utf-8")
+
+    assert 'id="history-open-charts"' in (ROOT / "templates/event-history.html").read_text(
+        encoding="utf-8"
+    )
+    assert "event_history_chart_query" not in overview
+    assert "event_history_chart_query" in chart
+    assert "event_history_chart_prepare" in chart
+    assert "event-history/vendor/uplot/uPlot.iife.min.js" in template
+    assert "event_history_chart_query" in cgi
+    assert "CHART_DENIED=" in english and "CHART_DENIED=" in german
+
+
 def test_event_history_selector_is_progressive_and_localized() -> None:
     page = (ROOT / "templates/event-history.html").read_text(encoding="utf-8")
     script = (ROOT / "webfrontend/htmlauth/event-history/page.js").read_text(encoding="utf-8")
@@ -1142,7 +1161,8 @@ const source = fs.readFileSync(process.argv[1], 'utf8');
 const section = source.slice(source.indexOf('  const renderPolicy = (data) => {'),
   source.indexOf('  const loadQuickSummary ='));
 const nodes = new Map();
-const context = {$: (id) => {
+const context = {
+  selectedCharts: new Set(), chartKey: () => '', updateChartSelection: () => {}, $: (id) => {
   if (!nodes.has(id)) nodes.set(id, {});
   return nodes.get(id);
 }, label: (key) => key, date: () => '', renderSourceFacets: () => {}, setMessage: () => {}};

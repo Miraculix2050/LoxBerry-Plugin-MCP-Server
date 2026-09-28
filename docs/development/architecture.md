@@ -83,7 +83,7 @@ coordinator, including its source-IP block suppression.
 
 The public projection offers status, search, description, bounded signal/reference
 traces, and deterministic analysis; it never returns raw XML and does not add a
-scope. Analysis version 3 consumes the immutable project view and exact UUID
+scope. Analysis version 4 consumes the immutable project view and exact UUID
 mappings only. It can report source-name patterns, local peer or graph outliers,
 and mapped runtime context, but names never create a mapping. Missing normalized
 DPT or semantic-domain data is exposed as an explicit limitation rather than inferred.
@@ -92,7 +92,8 @@ Native History reads continue to establish a fresh authenticated session and
 load the visible structure before returning data. Debug logs separate authorization,
 connection, structure, visibility, remote fetch, and parse timings without
 recording tokens, project content, or history values. Marker-only History
-visibility remains unverified until a controlled rights-change test proves it.
+visibility remains unverified for a History-capable control; the tested rights
+changes did not exercise that case.
 Confirmed KNX/EIB nodes add an allowlisted semantic projection to those same
 responses. It preserves source-backed bus direction and bounded group-address
 facts without deriving physical roles, DPT meanings, or graph edges from equal

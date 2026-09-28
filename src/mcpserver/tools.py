@@ -71,6 +71,7 @@ from mcpserver.loxone.presentation import visible_controls as _visible_controls
 from mcpserver.loxone.project.analysis import ANALYSIS_VERSION
 from mcpserver.loxone.project.models import ProjectError
 from mcpserver.loxone.project.query import ProjectQuery, ProjectQueryError
+from mcpserver.loxone.project.semantics import is_valid_group_address_filter
 from mcpserver.loxone.project.worker import process_analysis
 from mcpserver.loxone.runtime import (
     ControlHistoryEntry,
@@ -447,23 +448,80 @@ class RoomSnapshotData(BaseModel):
 
 class WeatherPointData(BaseModel):
     at: str
-    weather_type: int
-    weather_type_text: str | None = None
-    wind_direction: int
-    solar_radiation: int
-    relative_humidity: int
-    temperature: float
-    perceived_temperature: float
-    dew_point: float
-    precipitation: float
-    wind_speed: float
-    barometric_pressure: float
+    weather_type: int = Field(description="Weather condition code from the Loxone source.")
+    weather_type_text: str | None = Field(
+        default=None,
+        description="Source-provided text for the weather condition code, if available.",
+    )
+    wind_direction: int = Field(
+        description="Raw source wind direction value; no unit is guaranteed."
+    )
+    solar_radiation: int = Field(
+        description=(
+            "Raw source solarRadiation value with unverified semantics; neither W/m² nor "
+            "a 0-3 classification is guaranteed for this weather event field."
+        )
+    )
+    relative_humidity: int = Field(
+        description="Raw source relative humidity value; no unit is guaranteed."
+    )
+    temperature: float = Field(description="Raw source temperature value; no unit is guaranteed.")
+    perceived_temperature: float = Field(
+        description="Raw source perceived temperature value; no unit is guaranteed."
+    )
+    dew_point: float = Field(description="Raw source dew point value; no unit is guaranteed.")
+    precipitation: float = Field(
+        description="Raw source precipitation value; no unit is guaranteed."
+    )
+    wind_speed: float = Field(description="Raw source wind speed value; no unit is guaranteed.")
+    barometric_pressure: float = Field(
+        description="Raw source barometric pressure value; no unit is guaranteed."
+    )
+
+
+WeatherValueSemantics = Literal["code", "raw_source_value", "unverified_source_value"]
+
+
+class WeatherFieldMetadataData(BaseModel):
+    source_format_key: str | None = Field(
+        description="Documented weatherServer.format key for this field, if one exists."
+    )
+    source_format: str | None = Field(
+        description="Unmodified source presentation format, or null when absent."
+    )
+    unit: None = Field(description="No structured, verified unit is available from the source.")
+    value_semantics: WeatherValueSemantics = Field(
+        description="Whether the unchanged source value is a code, a raw value, or unverified."
+    )
+
+
+class WeatherFieldMetadataMapData(BaseModel):
+    weather_type: WeatherFieldMetadataData
+    wind_direction: WeatherFieldMetadataData
+    solar_radiation: WeatherFieldMetadataData
+    relative_humidity: WeatherFieldMetadataData
+    temperature: WeatherFieldMetadataData
+    perceived_temperature: WeatherFieldMetadataData
+    dew_point: WeatherFieldMetadataData
+    precipitation: WeatherFieldMetadataData
+    wind_speed: WeatherFieldMetadataData
+    barometric_pressure: WeatherFieldMetadataData
 
 
 class WeatherData(BaseModel):
     mode: Literal["actual", "forecast"]
-    last_updated_at: str
-    formats: dict[str, str]
+    last_updated_at: str = Field(
+        description="Source update time reported by the Loxone weather state."
+    )
+    received_at: str | None = Field(
+        description="UTC time the local cache processed the weather event, or null if unknown."
+    )
+    formats: dict[str, str] = Field(description="Unmodified weatherServer.format map from LoxAPP3.")
+    field_metadata: WeatherFieldMetadataMapData = Field(
+        description=(
+            "Field-aligned source formats and bounded value semantics for each numeric point field."
+        )
+    )
     items: list[WeatherPointData]
     next_cursor: str | None
 
@@ -535,11 +593,18 @@ class ProjectRuntimeControlData(BaseModel):
     mapping_rule: str
 
 
+class ProjectKnxAddressVariantData(BaseModel):
+    kind: Literal["edge"]
+    value: Literal["0", "1"]
+
+
 class ProjectKnxGroupAddressData(BaseModel):
     original: str
     canonical: str | None
     format: Literal["two_level", "three_level"] | None
     segments: list[int] | None
+    source_field: Literal["EibAddr", "EibAddrPulse"]
+    variant: ProjectKnxAddressVariantData | None = None
 
 
 class ProjectKnxDatatypeData(BaseModel):
@@ -644,11 +709,18 @@ class ProjectSourceDiagnosticsData(BaseModel):
     labels_truncated: bool
 
 
+class ProjectKnxGroupAddressSummaryData(BaseModel):
+    canonical: str | None
+    original: str
+    source_field: Literal["EibAddr", "EibAddrPulse"]
+    variant: ProjectKnxAddressVariantData | None = None
+
+
 class ProjectKnxSummaryData(BaseModel):
     object_kind: Literal["line", "endpoint", "logic_block"]
     flow_direction: Literal["bus_to_loxone", "loxone_to_bus"] | None
     source_type: str
-    group_address: dict[Literal["canonical"], str | None] | None
+    group_address: ProjectKnxGroupAddressSummaryData | None
 
 
 class ProjectNodeSummaryData(BaseModel):
@@ -843,6 +915,7 @@ class ProjectAnalysisFindingData(BaseModel):
     peer_count: int | None = None
     deviation_prefix: list[int] = Field(default_factory=list)
     group_address: str | None = None
+    address_variant: Literal["0", "1"] | None = None
     raw_datatypes: list[str] = Field(default_factory=list)
     dominant_raw_datatype: str | None = None
     name_source: Literal["knx_title", "knx_internal_name", "runtime_control_name"] | None = None
@@ -2901,6 +2974,31 @@ def _loxone_time(value: object) -> str:
         raise ValueError("weather timestamp is invalid") from exc
 
 
+def _weather_field_metadata(formats: Mapping[str, str]) -> WeatherFieldMetadataMapData:
+    def field(
+        source_format_key: str | None, value_semantics: WeatherValueSemantics
+    ) -> WeatherFieldMetadataData:
+        return WeatherFieldMetadataData(
+            source_format_key=source_format_key,
+            source_format=formats.get(source_format_key) if source_format_key is not None else None,
+            unit=None,
+            value_semantics=value_semantics,
+        )
+
+    return WeatherFieldMetadataMapData(
+        weather_type=field(None, "code"),
+        wind_direction=field(None, "raw_source_value"),
+        solar_radiation=field(None, "unverified_source_value"),
+        relative_humidity=field("relativeHumidity", "raw_source_value"),
+        temperature=field("temperature", "raw_source_value"),
+        perceived_temperature=field(None, "raw_source_value"),
+        dew_point=field(None, "raw_source_value"),
+        precipitation=field("precipitation", "raw_source_value"),
+        wind_speed=field("windSpeed", "raw_source_value"),
+        barometric_pressure=field("barometricPressure", "raw_source_value"),
+    )
+
+
 def _weather_point(value: object, type_texts: dict[int, str]) -> dict[str, object]:
     if not isinstance(value, dict):
         raise ValueError("weather entry is invalid")
@@ -3248,7 +3346,9 @@ def register_read_tools(
         name="loxone_get_weather",
         description=(
             "Get bounded current or forecast weather from the configured Loxone weather server. "
-            "This does not provide historical weather."
+            "last_updated_at is the source update time, data.received_at is the local cache "
+            "processing time, and observed_at is the tool response time. stale describes cache "
+            "availability, not weather source age. This does not provide historical weather."
         ),
         annotations=annotations,
         structured_output=True,
@@ -3256,9 +3356,17 @@ def register_read_tools(
     async def get_weather(
         mode: Annotated[
             Literal["actual", "forecast"],
-            Field(description="Return the current weather or the forecast for up to 96 hours."),
+            Field(description="Return the current weather or up to 96 forecast points."),
         ] = "forecast",
-        cursor: CursorArgument = None,
+        cursor: Annotated[
+            str | None,
+            Field(
+                description=(
+                    "Opaque continuation cursor for the same weather mode and forecast version. "
+                    "If the forecast changes or the cursor is rejected, restart at page one."
+                )
+            ),
+        ] = None,
         limit: Annotated[
             int,
             Field(
@@ -3315,13 +3423,33 @@ def register_read_tools(
             if mode == "actual" and len(points) > 1:
                 points = points[:1]
                 warnings.append("Current weather was limited to one point.")
-            page = _page(cursors, f"weather:{mode}", points, cursor, limit)
+            scope = f"weather:{mode}"
+            if mode == "forecast":
+                version = json.dumps(
+                    {"last_updated_at": last_updated_at, "points": points},
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    allow_nan=False,
+                ).encode("utf-8")
+                scope = f"{scope}:{cursors.digest(version)}"
+            try:
+                page = _page(cursors, scope, points, cursor, limit)
+            except ValueError as exc:
+                if cursor is not None and str(exc) == "cursor is invalid":
+                    raise ValueError(
+                        "weather cursor is invalid or expired; restart at page one"
+                    ) from None
+                raise
             return _result(
                 WeatherEnvelope,
                 {
                     "mode": mode,
                     "last_updated_at": last_updated_at,
+                    "received_at": _state_observed_at(record),
                     "formats": dict(snapshot.structure.weather.formats),
+                    "field_metadata": _weather_field_metadata(
+                        dict(snapshot.structure.weather.formats)
+                    ),
                     "items": page["items"],
                     "next_cursor": page["next_cursor"],
                 },
@@ -3972,13 +4100,29 @@ def register_project_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
         ] = None,
         knx_group_address: Annotated[
             str | None,
-            Field(max_length=200, description="Exact original or canonical KNX group address."),
+            Field(
+                max_length=200,
+                description=(
+                    "Exact original or canonical two- or three-level KNX group address; "
+                    "supported :0/:1 variants are exact. Invalid syntax or range returns "
+                    "invalid_input; a valid address without matches returns an empty page."
+                ),
+            ),
         ] = None,
         cursor: CursorArgument = None,
         limit: LimitArgument = DEFAULT_PAGE_SIZE,
     ) -> ProjectObjectPageEnvelope:
         nonlocal find_cache_bytes
         try:
+            _access()
+            if knx_group_address is not None and not is_valid_group_address_filter(
+                knx_group_address
+            ):
+                return _error(
+                    ProjectObjectPageEnvelope,
+                    "invalid_input",
+                    "KNX group address filter is invalid",
+                )
             project, snapshot = await _project_query(runtime)
             access = _access()
             scope = (

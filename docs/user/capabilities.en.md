@@ -28,9 +28,19 @@ Confirmed KNX/EIB project objects add bounded source-backed metadata for bus lin
 KNX logic blocks. Endpoint direction is `bus_to_loxone` or `loxone_to_bus`; it is not a claim
 about the physical device role. Group addresses retain their original text and only expose a
 canonical form when it is valid. `EIBType` remains an unresolved source code, not an inferred DPT.
+`EIBextsensor` is modeled as a bus-to-Loxone endpoint. Its validated `:0` and
+`:1` address variants remain distinct; the address reports whether it came from
+`EibAddr` or, when that field is absent, `EibAddrPulse`. The suffix does not prove
+which physical edge occurred. An exact variant search returns that variant;
+searching the canonical base may return both.
 Equal group addresses do not create a graph relationship or prove causality. Find and trace return
-only a compact KNX summary; use `loxone_describe_project_object` for the original value, segments,
-names, and raw DPT code. Project find pages and traces are additionally limited to 64 KiB and
+a compact KNX summary with original and canonical addresses, source field, and variant; use
+`loxone_describe_project_object` for address segments, names, and the raw datatype code.
+The `knx_group_address` filter accepts valid two- or three-level addresses and `:0`/`:1`
+variants. Invalid syntax or numeric ranges return `invalid_input`; a valid address without
+matches returns a successful empty search page. Valid original forms are still compared exactly
+with original or canonical addresses.
+Project find pages and traces are additionally limited to 64 KiB and
 report a size trim through `truncated` and `truncation_reason`.
 `project_parts` counts internally ingested model sources rather than Loxone Config projects.
 Status exposes opaque `model_sources`; identical KNX source occurrences from separate model
@@ -41,7 +51,7 @@ separate KNX signal-use observations, while trace returns separately marked deri
 and bounded `knx_to_loxone`, `loxone_to_knx`, or `knx_to_knx` paths. Unknown block or connector
 behaviour is not guessed. These are static project paths, not evidence that a bus telegram or
 historical state change caused an action.
-`loxone_analyze_project` version 3 summarizes bounded project-local KNX evidence: address and
+`loxone_analyze_project` version 4 summarizes bounded project-local KNX evidence: address and
 source-name patterns, raw datatype reuse, reviewed signal-use differences, exact runtime-mapping
 context, local peer and graph outliers, path counts, and endpoints without an observed project
 relationship. Runtime names and control types are used only for exact UUID mappings; names never

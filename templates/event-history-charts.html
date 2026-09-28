@@ -1,0 +1,52 @@
+<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-charts-1">
+<link rel="stylesheet" href="event-history/vendor/uplot/uPlot.min.css?v=1.6.32">
+<link rel="stylesheet" href="event-history/charts.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-1">
+<main class="mcp-page mcp-history-charts"
+  data-loading="<TMPL_VAR EVENT_HISTORY.LOADING ESCAPE=HTML>"
+  data-chart-empty="<TMPL_VAR EVENT_HISTORY.CHART_EMPTY ESCAPE=HTML>"
+  data-chart-denied="<TMPL_VAR EVENT_HISTORY.CHART_DENIED ESCAPE=HTML>"
+  data-chart-error="<TMPL_VAR EVENT_HISTORY.CHART_ERROR ESCAPE=HTML>"
+  data-chart-timeout="<TMPL_VAR EVENT_HISTORY.CHART_TIMEOUT ESCAPE=HTML>"
+  data-chart-unavailable="<TMPL_VAR EVENT_HISTORY.CHART_UNAVAILABLE ESCAPE=HTML>"
+  data-chart-invalid="<TMPL_VAR EVENT_HISTORY.CHART_INVALID ESCAPE=HTML>"
+  data-chart-stale="<TMPL_VAR EVENT_HISTORY.CHART_STALE ESCAPE=HTML>"
+  data-chart-reference="<TMPL_VAR EVENT_HISTORY.CHART_REFERENCE ESCAPE=HTML>"
+  data-chart-reduced="<TMPL_VAR EVENT_HISTORY.CHART_REDUCED ESCAPE=HTML>"
+  data-chart-value="<TMPL_VAR EVENT_HISTORY.CHART_VALUE ESCAPE=HTML>"
+  data-chart-number="<TMPL_VAR EVENT_HISTORY.CHART_NUMBER ESCAPE=HTML>"
+  data-chart-boolean="<TMPL_VAR EVENT_HISTORY.CHART_BOOLEAN ESCAPE=HTML>"
+  data-chart-time="<TMPL_VAR EVENT_HISTORY.CHART_TIME ESCAPE=HTML>"
+  data-chart-room="<TMPL_VAR EVENT_HISTORY.ROOM ESCAPE=HTML>"
+  data-chart-category="<TMPL_VAR EVENT_HISTORY.CATEGORY ESCAPE=HTML>"
+  data-chart-type="<TMPL_VAR EVENT_HISTORY.TYPE ESCAPE=HTML>"
+  data-chart-unknown="<TMPL_VAR EVENT_HISTORY.FILTER_UNKNOWN ESCAPE=HTML>"
+  data-chart-capture="<TMPL_VAR EVENT_HISTORY.CAPTURE_START ESCAPE=HTML>"
+  data-chart-retained="<TMPL_VAR EVENT_HISTORY.FROM ESCAPE=HTML>"
+  data-chart-removed="<TMPL_VAR EVENT_HISTORY.RECORDING_END ESCAPE=HTML>"
+  data-chart-intervals="<TMPL_VAR EVENT_HISTORY.COVERAGE ESCAPE=HTML>"
+  data-chart-coverage="<TMPL_VAR EVENT_HISTORY.COVERAGE_HELP ESCAPE=HTML>">
+  <h1><TMPL_VAR EVENT_HISTORY.CHART_TITLE></h1>
+  <p class="mcp-help"><TMPL_VAR EVENT_HISTORY.CHART_HELP></p>
+  <div class="mcp-card mcp-history-chart-toolbar">
+    <label><TMPL_VAR EVENT_HISTORY.CHART_RANGE> <select id="chart-range">
+      <option value="3600"><TMPL_VAR EVENT_HISTORY.CHART_HOUR></option>
+      <option value="86400" selected><TMPL_VAR EVENT_HISTORY.CHART_DAY></option>
+      <option value="604800"><TMPL_VAR EVENT_HISTORY.CHART_WEEK></option>
+      <option value="2592000"><TMPL_VAR EVENT_HISTORY.CHART_MONTH></option>
+      <option value="custom"><TMPL_VAR EVENT_HISTORY.CHART_CUSTOM></option>
+    </select></label>
+    <label><TMPL_VAR EVENT_HISTORY.CHART_FROM> <input id="chart-from" type="datetime-local" disabled></label>
+    <label><TMPL_VAR EVENT_HISTORY.CHART_TO> <input id="chart-to" type="datetime-local" disabled></label>
+    <button id="chart-apply" class="lb-button" type="button" disabled><TMPL_VAR EVENT_HISTORY.CHART_APPLY></button>
+    <button id="chart-previous" class="lb-button" type="button"><TMPL_VAR EVENT_HISTORY.CHART_PREVIOUS></button>
+    <button id="chart-next" class="lb-button" type="button"><TMPL_VAR EVENT_HISTORY.CHART_NEXT></button>
+    <button id="chart-zoom-in" class="lb-button" type="button"><TMPL_VAR EVENT_HISTORY.CHART_ZOOM_IN></button>
+    <button id="chart-zoom-out" class="lb-button" type="button"><TMPL_VAR EVENT_HISTORY.CHART_ZOOM_OUT></button>
+    <button id="chart-refresh" class="lb-button" type="button"><TMPL_VAR EVENT_HISTORY.REFRESH></button>
+  </div>
+  <p id="chart-status" role="status" aria-live="polite"></p>
+  <div id="chart-panels"></div>
+</main>
+<script src="event-history/vendor/uplot/uPlot.iife.min.js?v=1.6.32" defer></script>
+<script src="event-history/api.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-2" defer></script>
+<script src="event-history/charts.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-1" defer></script>

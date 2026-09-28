@@ -25,6 +25,28 @@ def test_identity_selection_excludes_revoked_expired_and_explorer():
     assert select_family(document, 100) is None
 
 
+def test_cli_uses_documented_non_explorer_default(monkeypatch, capsys):
+    async def fake_run(*, use_tool_explorer: bool = False):
+        assert use_tool_explorer is False
+        return {"result": "pipeline_verified"}
+
+    monkeypatch.setattr(diagnostic, "run", fake_run)
+    monkeypatch.setattr(diagnostic.logging, "disable", lambda _level: None)
+    assert diagnostic.main([]) == 0
+    assert "pipeline_verified" in capsys.readouterr().out
+
+
+def test_cli_can_explicitly_select_tool_explorer(monkeypatch, capsys):
+    async def fake_run(*, use_tool_explorer: bool = False):
+        assert use_tool_explorer is True
+        return {"result": "pipeline_verified"}
+
+    monkeypatch.setattr(diagnostic, "run", fake_run)
+    monkeypatch.setattr(diagnostic.logging, "disable", lambda _level: None)
+    assert diagnostic.main(["--tool-explorer"]) == 0
+    assert "pipeline_verified" in capsys.readouterr().out
+
+
 @pytest.mark.asyncio
 async def test_confirmation_guard_prevents_token_access(monkeypatch, tmp_path):
     path = tmp_path / "existing"

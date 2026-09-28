@@ -42,6 +42,8 @@
   data-source-ip-blocked="<TMPL_VAR EVENT_HISTORY.SOURCE_IP_BLOCKED ESCAPE=HTML>"
   data-not-visible="<TMPL_VAR EVENT_HISTORY.NOT_VISIBLE ESCAPE=HTML>"
   data-source-limit="<TMPL_VAR EVENT_HISTORY.SOURCE_LIMIT ESCAPE=HTML>"
+  data-chart-limit="<TMPL_VAR EVENT_HISTORY.CHART_LIMIT ESCAPE=HTML>"
+  data-chart-select="<TMPL_VAR EVENT_HISTORY.CHART_SELECT ESCAPE=HTML>"
   data-stop="<TMPL_VAR EVENT_HISTORY.STOP ESCAPE=HTML>"
   data-purge="<TMPL_VAR EVENT_HISTORY.PURGE ESCAPE=HTML>"
   data-events="<TMPL_VAR EVENT_HISTORY.EVENTS ESCAPE=HTML>"
@@ -111,6 +113,7 @@
       <button id="history-source-clear-filters" class="lb-button" type="button" disabled><TMPL_VAR EVENT_HISTORY.FILTER_CLEAR></button>
     </div>
     <p id="history-source-match-count" class="mcp-help" role="status" aria-live="polite"></p>
+    <div class="mcp-actions"><button id="history-open-charts" class="lb-button" type="button" disabled><TMPL_VAR EVENT_HISTORY.CHART_OPEN></button><span id="history-chart-count" role="status" aria-live="polite"></span></div>
     <div class="mcp-event-history-mobile-sort">
       <label class="mcp-field"><span><TMPL_VAR EVENT_HISTORY.SORT_BY></span><select id="history-source-sort-mobile">
         <option value=""><TMPL_VAR EVENT_HISTORY.SORT_ORIGINAL></option>

@@ -1,10 +1,17 @@
 from pathlib import Path
 from types import SimpleNamespace
 
-from mcpserver.loxone.project.graph import ProjectPartSummary, ProjectSnapshot, build_graph
+import pytest
+
+from mcpserver.loxone.project.graph import (
+    ProjectPartSummary,
+    ProjectSnapshot,
+    _logical_knx_nodes,
+    build_graph,
+)
 from mcpserver.loxone.project.mapping import ProjectView, map_runtime
 from mcpserver.loxone.project.parser import parse_project
-from mcpserver.loxone.project.query import ProjectQuery
+from mcpserver.loxone.project.query import ProjectQuery, ProjectQueryError
 
 
 def _query(data: bytes, controls: tuple[SimpleNamespace, ...] = ()) -> ProjectQuery:
@@ -44,6 +51,8 @@ def test_knx_endpoints_keep_direction_source_data_and_bounded_address():
             "canonical": "14/1/5",
             "format": "three_level",
             "segments": [14, 1, 5],
+            "source_field": "EibAddr",
+            "variant": None,
         },
         "datatype": {
             "source_field": "EIBType",
@@ -79,13 +88,23 @@ def test_observed_knx_fixture_keeps_semantics_and_existing_graph_paths():
             "object_kind": "endpoint",
             "flow_direction": "bus_to_loxone",
             "source_type": "EIBsensor",
-            "group_address": {"canonical": "14/1/5"},
+            "group_address": {
+                "canonical": "14/1/5",
+                "original": "14/1/5",
+                "source_field": "EibAddr",
+                "variant": None,
+            },
         },
         {
             "object_kind": "endpoint",
             "flow_direction": "loxone_to_bus",
             "source_type": "EIBactor",
-            "group_address": {"canonical": "14/1/6"},
+            "group_address": {
+                "canonical": "14/1/6",
+                "original": "14/1/6",
+                "source_field": "EibAddr",
+                "variant": None,
+            },
         },
     ]
     assert detailed["knx"]["datatype"]["source_value"] == "5"
@@ -111,6 +130,8 @@ def test_knx_group_address_never_guesses_invalid_or_line_values():
         "canonical": None,
         "format": None,
         "segments": None,
+        "source_field": "EibAddr",
+        "variant": None,
     }
     assert two["group_address"]["format"] == "two_level"
 
@@ -125,6 +146,140 @@ def test_knx_truncated_group_address_is_not_normalized():
     assert knx["group_address"]["canonical"] is None
     assert knx["group_address"]["format"] is None
     assert knx["truncated_fields"] == ["group_address.original"]
+
+
+def test_extsensor_variants_and_pulse_fallback_are_distinct_and_source_backed():
+    project = _query(Path("tests/fixtures/project/knx-edge-variants.xml").read_bytes())
+
+    def find(address: str) -> list[dict[str, object]]:
+        return project.find(
+            query=None,
+            kind=None,
+            block_type=None,
+            source_id=None,
+            runtime_control_uuid=None,
+            technology="knx_eib",
+            knx_object_kind="endpoint",
+            knx_flow_direction=None,
+            knx_group_address=address,
+        )
+
+    zero = find("6/2/27:0")
+    one = find("6/2/27:1")
+    base = find("6/2/27")
+    pulse = find("6/2/28:1")
+    assert [item["source_id"] for item in zero] == ["edge-zero"]
+    assert [item["source_id"] for item in one] == ["edge-one"]
+    assert {item["source_id"] for item in base} == {"edge-zero", "edge-one", "base"}
+    assert [item["source_id"] for item in pulse] == ["pulse-fallback"]
+    assert zero[0]["knx"]["group_address"] == {
+        "canonical": "6/2/27",
+        "original": "6/2/27:0",
+        "source_field": "EibAddr",
+        "variant": {"kind": "edge", "value": "0"},
+    }
+    assert one[0]["knx"]["group_address"]["variant"]["value"] == "1"
+    pulse_id = pulse[0]["project_node_id"]
+    described = project.describe(project.resolve(pulse_id, "project_node_id"), limit=10)
+    assert described["knx"]["group_address"]["source_field"] == "EibAddrPulse"
+    assert described["knx"]["flow_direction"] == "bus_to_loxone"
+    assert project.trace(
+        project.resolve(pulse_id, "project_node_id"),
+        direction="downstream",
+        max_depth=4,
+        max_nodes=20,
+    )["edges"]
+    assert not any(
+        item["code"] == "unclassified_knx_candidate" for item in described["source_diagnostics"]
+    )
+
+    both = find("6/2/29:0")[0]
+    assert both["knx"]["group_address"]["source_field"] == "EibAddr"
+    assert find("6/2/30:1") == []
+    invalid = next(
+        item
+        for item in project.find(
+            query=None,
+            kind=None,
+            block_type=None,
+            source_id="invalid-primary",
+            runtime_control_uuid=None,
+            technology="knx_eib",
+        )
+    )
+    invalid_detail = project.describe(
+        project.resolve(invalid["project_node_id"], "project_node_id"), limit=10
+    )
+    assert invalid_detail["knx"]["group_address"]["canonical"] is None
+    assert invalid_detail["knx"]["group_address"]["source_field"] == "EibAddr"
+    assert {item["code"] for item in invalid_detail["source_diagnostics"]} >= {
+        "invalid_group_address"
+    }
+
+
+@pytest.mark.parametrize(
+    ("address", "source_id"),
+    [
+        ("6/2/27:0", "edge-zero"),
+        ("6/2/27:1", "edge-one"),
+        ("6/2/28:1", "pulse-fallback"),
+        ("31/7/255", None),
+        ("31/2047", None),
+        ("06/02/027", None),
+    ],
+)
+def test_knx_search_accepts_valid_original_variant_and_absent_forms(address, source_id):
+    project = _query(Path("tests/fixtures/project/knx-edge-variants.xml").read_bytes())
+    found = project.find(
+        query=None,
+        kind=None,
+        block_type=None,
+        source_id=None,
+        runtime_control_uuid=None,
+        knx_group_address=address,
+    )
+    assert [item["source_id"] for item in found] == ([source_id] if source_id else [])
+
+
+@pytest.mark.parametrize(
+    "address",
+    [
+        "",
+        "6/",
+        "6/2/",
+        "6/2/27:2",
+        "6/2/27:0:1",
+        "32/0/0",
+        "1/8/0",
+        "1/2/256",
+        "31/2048",
+        "6/2/27x",
+        "6/2/27" + " " * 200,
+    ],
+)
+def test_knx_search_rejects_malformed_and_out_of_range_filters(address):
+    project = _query(Path("tests/fixtures/project/knx-edge-variants.xml").read_bytes())
+    with pytest.raises(ProjectQueryError, match="project_query_invalid"):
+        project.find(
+            query=None,
+            kind=None,
+            block_type=None,
+            source_id=None,
+            runtime_control_uuid=None,
+            knx_group_address=address,
+        )
+
+
+def test_edge_variants_do_not_merge_as_one_logical_object():
+    zero = parse_project(b'<P><C Type="EIBextsensor" U="shared" EibAddr="6/2/27:0"/></P>')
+    one = parse_project(b'<P><C Type="EIBextsensor" U="shared" EibAddr="6/2/27:1"/></P>')
+    graph = build_graph((("first", zero), ("second", one)))
+    assert _logical_knx_nodes(graph) == ((), ())
+
+    graph = build_graph((("first", zero), ("second", zero)))
+    aliases, sources = _logical_knx_nodes(graph)
+    assert len(aliases) == 2
+    assert len(sources) == 1
 
 
 def test_knx_unknown_and_caption_types_remain_generic_and_find_filters_are_exact():

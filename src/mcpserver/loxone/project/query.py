@@ -8,10 +8,12 @@ from dataclasses import dataclass, field
 
 from .graph import GraphEdge, GraphNode, SemanticEdge
 from .mapping import ControlMapping, ProjectView
-from .semantics import signal_use_rules
+from .semantics import is_valid_group_address_filter, signal_use_rules
 
-_KNOWN_KNX_ATTRIBUTES = frozenset({"Type", "U", "Title", "Desc", "IName", "EibAddr", "EIBType"})
-_KNX_MARKER_ATTRIBUTES = frozenset({"EibAddr", "EIBType"})
+_KNOWN_KNX_ATTRIBUTES = frozenset(
+    {"Type", "U", "Title", "Desc", "IName", "EibAddr", "EibAddrPulse", "EIBType"}
+)
+_KNX_MARKER_ATTRIBUTES = frozenset({"EibAddr", "EibAddrPulse", "EIBType"})
 _DIAGNOSTIC_LABEL_LIMIT = 100
 
 
@@ -153,6 +155,13 @@ class ProjectQuery:
                     "group_address": (
                         {
                             "canonical": knx.group_address.canonical,
+                            "original": knx.group_address.original,
+                            "source_field": knx.group_address.source_field,
+                            "variant": (
+                                {"kind": "edge", "value": knx.group_address.variant.value}
+                                if knx.group_address.variant is not None
+                                else None
+                            ),
                         }
                         if knx.group_address is not None
                         else None
@@ -194,6 +203,12 @@ class ProjectQuery:
                     "segments": list(knx.group_address.segments)
                     if knx.group_address.segments is not None
                     else None,
+                    "source_field": knx.group_address.source_field,
+                    "variant": (
+                        {"kind": "edge", "value": knx.group_address.variant.value}
+                        if knx.group_address.variant is not None
+                        else None
+                    ),
                 }
                 if knx.group_address is not None
                 else None
@@ -370,6 +385,8 @@ class ProjectQuery:
             "bus_to_loxone",
             "loxone_to_bus",
         }:
+            raise ProjectQueryError("project_query_invalid")
+        if knx_group_address is not None and not is_valid_group_address_filter(knx_group_address):
             raise ProjectQueryError("project_query_invalid")
         if runtime_control_uuid is not None:
             mapping = self._mappings.get(runtime_control_uuid)

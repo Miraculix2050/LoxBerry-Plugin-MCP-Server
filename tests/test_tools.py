@@ -621,6 +621,7 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert "`room_group`" in result.data.content  # type: ignore[union-attr]
     assert "`loxone_get_room_snapshot`" in result.data.content  # type: ignore[union-attr]
     assert "`loxone_get_weather" in result.data.content  # type: ignore[union-attr]
+    assert "`data.received_at`" in result.data.content  # type: ignore[union-attr]
     assert "`emergency_stop_active`" in result.data.content  # type: ignore[union-attr]
     assert "`error.data.blocked_since`" in result.data.content  # type: ignore[union-attr]
 
@@ -2638,6 +2639,14 @@ async def test_weather_tool_pages_actual_and_forecast_without_state_uuid(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     access = _loxberry_access(READ_SCOPE)
+    formats = (
+        ("relativeHumidity", "%.0f%%"),
+        ("temperature", "%.1f °C"),
+        ("windSpeed", "%.0f km/h"),
+        ("precipitation", "%.1f mm"),
+        ("barometricPressure", "%.0f hPa"),
+        ("futureFormat", "%.2f"),
+    )
     structure = LoxoneStructure(
         identity=LoxoneIdentity("user", "serial"),
         last_modified="1",
@@ -2648,7 +2657,7 @@ async def test_weather_tool_pages_actual_and_forecast_without_state_uuid(
             GlobalMetadata("weather_state", "actual", "actual", state_uuid="actual-state"),
             GlobalMetadata("weather_state", "forecast", "forecast", state_uuid="forecast-state"),
         ),
-        weather=WeatherMetadata(formats=(("temperature", "%.1f °C"),), type_texts=((1, "Clear"),)),
+        weather=WeatherMetadata(formats=formats, type_texts=((1, "Clear"),)),
     )
 
     def point(timestamp: int, temperature: float) -> dict[str, object]:
@@ -2693,23 +2702,141 @@ async def test_weather_tool_pages_actual_and_forecast_without_state_uuid(
     register_read_tools(server, Runtime())  # type: ignore[arg-type]
     tool = server._tool_manager.get_tool("loxone_get_weather")
     assert tool is not None
+    output_defs = tool.output_schema["$defs"]
+    weather_schema = output_defs["WeatherData"]
+    assert "received_at" in weather_schema["required"]
+    assert {item.get("type") for item in weather_schema["properties"]["received_at"]["anyOf"]} == {
+        "string",
+        "null",
+    }
+    assert "Source update time" in weather_schema["properties"]["last_updated_at"]["description"]
+    point_properties = output_defs["WeatherPointData"]["properties"]
+    numeric_fields = set(point_properties) - {"at", "weather_type_text"}
+    assert len(numeric_fields) == 10
+    assert all(point_properties[name].get("description") for name in numeric_fields)
+    assert "unverified" in point_properties["solar_radiation"]["description"]
+    assert "W/m²" in point_properties["solar_radiation"]["description"]
+    metadata_schema = output_defs["WeatherFieldMetadataMapData"]
+    assert set(metadata_schema["properties"]) == numeric_fields
+    assert set(metadata_schema["required"]) == numeric_fields
+    assert output_defs["WeatherFieldMetadataData"]["properties"]["value_semantics"]
 
     first = await tool.fn(limit=1)
     second = await tool.fn(cursor=first.data.next_cursor, limit=1)  # type: ignore[union-attr]
+    single_page = await tool.fn(limit=96)
     actual = await tool.fn("actual")
     wrong_cursor = await tool.fn("actual", cursor=first.data.next_cursor)  # type: ignore[union-attr]
+    forecast_cursor = first.data.next_cursor  # type: ignore[union-attr]
+    assert forecast_cursor is not None
+    tampered_cursor = ("A" if forecast_cursor[0] != "A" else "B") + forecast_cursor[1:]
+    tampered = await tool.fn(cursor=tampered_cursor)
+
+    for last_update, entries in (
+        (2, [point(3600, 21.0), point(7200, 22.0)]),
+        (1, [point(7200, 22.0), point(10800, 23.0)]),
+        (1, [point(3600, 21.0), point(7200, 23.0)]),
+    ):
+        records["forecast-state"] = StateRecord(
+            "forecast-state",
+            {"last_update": last_update, "entries": entries},
+            Freshness.STALE,
+            1_700_000_000.0,
+        )
+        expired = await tool.fn(cursor=forecast_cursor, limit=1)
+        assert expired.ok is False
+        assert expired.data.error == "invalid_input"  # type: ignore[union-attr]
+        assert "restart at page one" in expired.data.message  # type: ignore[union-attr]
+
+    fresh_first = await tool.fn(limit=1)
     records["forecast-state"] = StateRecord("forecast-state", None, Freshness.UNKNOWN, None)
     unavailable = await tool.fn()
 
     assert first.data.mode == "forecast"  # type: ignore[union-attr]
+    assert first.data.received_at == "2023-11-14T22:13:20Z"  # type: ignore[union-attr]
     assert first.data.items[0].at == "2009-01-01T01:00:00Z"  # type: ignore[union-attr]
     assert first.data.items[0].weather_type_text == "Clear"  # type: ignore[union-attr]
-    assert first.data.formats == {"temperature": "%.1f °C"}  # type: ignore[union-attr]
+    assert first.data.formats == dict(formats)  # type: ignore[union-attr]
+    assert first.data.items[0].temperature == 21.0  # type: ignore[union-attr]
+    assert first.data.items[0].solar_radiation == 100  # type: ignore[union-attr]
+    field_metadata = first.data.field_metadata.model_dump()  # type: ignore[union-attr]
+    assert set(field_metadata) == numeric_fields
+    expected_format_keys = {
+        "relative_humidity": "relativeHumidity",
+        "temperature": "temperature",
+        "wind_speed": "windSpeed",
+        "precipitation": "precipitation",
+        "barometric_pressure": "barometricPressure",
+    }
+    for field_name, source_key in expected_format_keys.items():
+        assert field_metadata[field_name]["source_format_key"] == source_key
+        assert field_metadata[field_name]["source_format"] == dict(formats)[source_key]
+    for field_name in numeric_fields - expected_format_keys.keys():
+        assert field_metadata[field_name]["source_format_key"] is None
+        assert field_metadata[field_name]["source_format"] is None
+    assert all(metadata["unit"] is None for metadata in field_metadata.values())
+    assert field_metadata["weather_type"]["value_semantics"] == "code"
+    assert field_metadata["solar_radiation"]["value_semantics"] == "unverified_source_value"
+    assert all(
+        metadata["value_semantics"] == "raw_source_value"
+        for field_name, metadata in field_metadata.items()
+        if field_name not in {"weather_type", "solar_radiation"}
+    )
     assert first.stale is True and second.data.next_cursor is None  # type: ignore[union-attr]
+    assert single_page.data.next_cursor is None  # type: ignore[union-attr]
+    assert fresh_first.ok is True
     assert len(actual.data.items) == 1  # type: ignore[union-attr]
     assert wrong_cursor.ok is False
     assert wrong_cursor.data.error == "invalid_input"  # type: ignore[union-attr]
+    assert tampered.data.error == "invalid_input"  # type: ignore[union-attr]
+    assert "restart at page one" in tampered.data.message  # type: ignore[union-attr]
     assert unavailable.data.error == "temporarily_unavailable"  # type: ignore[union-attr]
+
+    # Cache freshness and weather source age are independent on both modes.
+    assert actual.stale is False
+    assert actual.data.last_updated_at == "2009-01-01T00:00:01Z"  # type: ignore[union-attr]
+    assert actual.data.received_at == "2023-11-14T22:13:20Z"  # type: ignore[union-attr]
+    assert actual.observed_at not in {
+        actual.data.last_updated_at,  # type: ignore[union-attr]
+        actual.data.received_at,  # type: ignore[union-attr]
+    }
+    records["forecast-state"] = StateRecord(
+        "forecast-state",
+        {"last_update": 1_700_000_000 - 1_230_768_000, "entries": [point(3600, 21.0)]},
+        Freshness.STALE,
+        1_600_000_000.0,
+    )
+    recent_source = await tool.fn()
+    assert recent_source.stale is True
+    assert recent_source.data.last_updated_at == "2023-11-14T22:13:20Z"  # type: ignore[union-attr]
+    assert recent_source.data.received_at == "2020-09-13T12:26:40Z"  # type: ignore[union-attr]
+    assert recent_source.observed_at not in {
+        recent_source.data.last_updated_at,  # type: ignore[union-attr]
+        recent_source.data.received_at,  # type: ignore[union-attr]
+    }
+    records["actual-state"] = StateRecord(
+        "actual-state",
+        {"last_update": 1, "entries": [point(0, 20.0)]},
+        Freshness.CURRENT,
+        None,
+    )
+    unknown_receipt = await tool.fn("actual")
+    assert unknown_receipt.ok is True
+    assert unknown_receipt.data.received_at is None  # type: ignore[union-attr]
+    assert "received_at" in unknown_receipt.data.model_dump()  # type: ignore[union-attr]
+
+
+def test_weather_field_metadata_keeps_missing_source_formats_explicit() -> None:
+    metadata = tools_module._weather_field_metadata({"temperature": "%.1f °C"}).model_dump()
+
+    assert metadata["temperature"]["source_format"] == "%.1f °C"
+    for field_name, source_key in (
+        ("relative_humidity", "relativeHumidity"),
+        ("wind_speed", "windSpeed"),
+        ("precipitation", "precipitation"),
+        ("barometric_pressure", "barometricPressure"),
+    ):
+        assert metadata[field_name]["source_format_key"] == source_key
+        assert metadata[field_name]["source_format"] is None
 
 
 @pytest.mark.asyncio

@@ -13,8 +13,10 @@ from .semantics import KnxSemantics, classify_knx, signal_use_rules
 _DIAGNOSTIC_GROUP_LIMIT = 2048
 _DIAGNOSTIC_SAMPLE_LIMIT = 3
 _DIAGNOSTIC_LABEL_LIMIT = 100
-_KNOWN_KNX_ATTRIBUTES = frozenset({"Type", "U", "Title", "Desc", "IName", "EibAddr", "EIBType"})
-_KNX_MARKER_ATTRIBUTES = frozenset({"EibAddr", "EIBType"})
+_KNOWN_KNX_ATTRIBUTES = frozenset(
+    {"Type", "U", "Title", "Desc", "IName", "EibAddr", "EibAddrPulse", "EIBType"}
+)
+_KNX_MARKER_ATTRIBUTES = frozenset({"EibAddr", "EibAddrPulse", "EIBType"})
 
 
 def normalize_id(value: str | None) -> str:
@@ -517,7 +519,7 @@ def build_snapshot(
     )
     return ProjectSnapshot(
         bundle.fingerprint,
-        5,
+        6,
         tuple(projects),
         graph,
         _source_diagnostics(graph, tuple(anomalies)),

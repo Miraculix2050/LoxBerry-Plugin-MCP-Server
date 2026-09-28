@@ -27,6 +27,40 @@ from mcpserver.tools import (
 )
 
 
+def test_knx_edge_variant_survives_public_project_schemas():
+    address = {
+        "original": "6/2/27:1",
+        "canonical": "6/2/27",
+        "format": "three_level",
+        "segments": [6, 2, 27],
+        "source_field": "EibAddrPulse",
+        "variant": {"kind": "edge", "value": "1"},
+    }
+    detail = tools_module.ProjectKnxGroupAddressData.model_validate(address)
+    summary = tools_module.ProjectKnxSummaryData.model_validate(
+        {
+            "object_kind": "endpoint",
+            "flow_direction": "bus_to_loxone",
+            "source_type": "EIBextsensor",
+            "group_address": address,
+        }
+    )
+    assert detail.model_dump()["source_field"] == "EibAddrPulse"
+    assert summary.model_dump()["group_address"]["variant"] == {"kind": "edge", "value": "1"}
+    finding = tools_module.ProjectAnalysisFindingData.model_validate(
+        {
+            "finding_id": "knx:fixture",
+            "analysis": "project_connectivity",
+            "finding_type": "no_project_signal_relationship",
+            "group_address": "6/2/27",
+            "address_variant": "1",
+            "affected_project_node_ids": ["p:1"],
+            "affected_omitted": 0,
+        }
+    )
+    assert finding.address_variant == "1"
+
+
 class Query:
     view = SimpleNamespace(
         marker="revision",
@@ -159,6 +193,54 @@ async def test_project_tools_keep_structured_mapping_and_cursor_errors(monkeypat
     assert describe.ok is False
     assert describe.data.error == "ambiguous_mapping"  # type: ignore[union-attr]
     assert invalid_cursor.data.error == "invalid_input"  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+async def test_project_find_validates_address_before_loading_or_caching(monkeypatch):
+    class FilterQuery(Query):
+        def __init__(self):
+            self.find_calls = 0
+
+        def find(self, **kwargs):
+            self.find_calls += 1
+            return [] if kwargs["knx_group_address"] == "31/7/255" else super().find()
+
+    project = FilterQuery()
+    project_query = AsyncMock(return_value=(project, SimpleNamespace(connected=True)))
+    monkeypatch.setattr(tools_module, "_project_query", project_query)
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: SimpleNamespace(family_id="family", miniserver_id="server", identity_id="identity"),
+    )
+    server = FastMCP("project-find-address-validation")
+    register_project_tools(server, None)
+    find = server._tool_manager.get_tool("loxone_find_project_objects").fn  # type: ignore[union-attr]
+
+    invalid = await find(knx_group_address="6/2/27:2")
+    assert invalid.ok is False
+    assert invalid.data.error == "invalid_input"  # type: ignore[union-attr]
+    assert project_query.await_count == 0
+    assert project.find_calls == 0
+
+    absent = await find(knx_group_address="31/7/255")
+    assert absent.ok is True
+    assert absent.data.items == []  # type: ignore[union-attr]
+    assert project.find_calls == 1
+
+    present = await find(knx_group_address="6/2/27:0")
+    assert present.ok is True
+    assert [item.project_node_id for item in present.data.items] == ["p:1"]  # type: ignore[union-attr]
+    assert project.find_calls == 2
+
+    def unauthenticated():
+        raise PermissionError("authentication is required")
+
+    monkeypatch.setattr(tools_module, "_access", unauthenticated)
+    denied = await find(knx_group_address="6/2/27:2")
+    assert denied.data.error == "unauthenticated"  # type: ignore[union-attr]
+    assert project_query.await_count == 2
+    assert project.find_calls == 2
 
 
 @pytest.mark.asyncio

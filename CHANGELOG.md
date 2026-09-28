@@ -7,6 +7,32 @@ extracted from the matching version heading.
 
 - Add `loxone_list_event_history_sources` for currently visible control/state pairs; page both source lists with active/removed status and known recording end time. Allow the complete `loxberry_list_event_history_sources` with either exact local read or operate approval, and show its alternative requirements in the Tool Explorer.
 
+- Reject malformed or out-of-range KNX group-address search filters as
+  `invalid_input` before loading the project. Valid absent addresses still
+  return an empty result; exact original and canonical variant matching remains.
+
+- Expose the local Weather-State cache processing time as nullable
+  `received_at` in successful weather responses, separate from the Loxone
+  source update time and MCP response time. Clarify that `stale` reflects cache
+  availability rather than weather source age.
+
+- Add locally bundled, read-only Event History charts for up to four visible sources in a separate Admin tab. Show independent scales, synchronized time and cursor, coverage gaps, bounded range queries, and incremental updates; require fresh profile-bound visibility proof and clear values on access loss. Upgrade the local store to schema v6 for chart invalidation and indexed append queries.
+- Distinguish chart query failures, correlate them with sanitized Admin logs, and recover from history changes without dropping the retry.
+- Keep chart zoom local within loaded periods, fetch missing intervals on navigation, append new points to existing plots, and reserve the event list for text changes.
+- Reduce repeated configuration and visibility reads and reuse one local history store per bounded multi-source chart query.
+- Preserve the local Event History SQLite database across native LoxBerry plugin upgrades with a consistent snapshot.
+- Add field-aligned source formats and explicit value semantics to weather
+  responses. Keep raw formats and weather values unchanged, and mark units and
+  solar radiation semantics as unverified where the source does not establish them.
+
+- Bind weather forecast cursors to the source update time and bounded forecast
+  contents. A changed forecast rejects continuation with guidance to restart at
+  page one; cursors issued before this change may also require a restart.
+- Model `EIBextsensor` with validated `:0` and `:1` KNX address variants and
+  `EibAddrPulse` fallback. Preserve the address source field and distinguish
+  variants in search, trace, diagnostics, and KNX analysis without inferring
+  physical edge behavior.
+
 - Name the local event-history query `loxone_get_event_history`.
 
 - Release process-local Tool Explorer session locks after the last active or
@@ -29,10 +55,10 @@ extracted from the matching version heading.
 - Reuse the bounded Project Intelligence graph and mapped query after an authenticated
   project-marker check, and reuse bounded search and analysis results across
   continuation pages. Expired or changed-context cursors require a new first page.
-  Add sanitized History phase timings and reuse the current OAuth family's visible
-  structure for native History and statistics after an authenticated unchanged
-  project-marker check. Changed markers reload visibility and failed checks deny
-  cached History data. Avoid repeated local authorization reads during a warm
+  Add sanitized History phase timings. Native History and statistics load the
+  current user-filtered structure for each call, including cache hits; a project
+  marker alone is insufficient proof of current visibility. Avoid repeated local
+  authorization reads during a warm
   Project Intelligence query while retaining a fresh visibility check and one
   authorization check for each request.
 
