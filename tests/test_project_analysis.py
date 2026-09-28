@@ -412,6 +412,15 @@ def test_outgoing_graph_degree_explains_references_signals_and_logical_consumers
     assert result == analyze_knx(view, frozenset({"graph_outliers"}))
 
     monkeypatch.setattr(project_analysis, "_MAX_EVIDENCE", 5)
+    evidence_calls = 0
+    original_edge_evidence = project_analysis._edge_evidence
+
+    def track_edge_evidence(*args):
+        nonlocal evidence_calls
+        evidence_calls += 1
+        return original_edge_evidence(*args)
+
+    monkeypatch.setattr(project_analysis, "_edge_evidence", track_edge_evidence)
     bounded = analyze_knx(view, frozenset({"graph_outliers"}))
     bounded_finding = next(
         item for item in bounded["findings"] if item["graph_metric"] == "fan_out"
@@ -419,6 +428,7 @@ def test_outgoing_graph_degree_explains_references_signals_and_logical_consumers
     assert bounded_finding["finding_id"] == finding["finding_id"]
     assert len(bounded_finding["edge_evidence"]) == 5
     assert bounded_finding["edge_evidence_omitted"] == 7
+    assert evidence_calls <= 5 * bounded["summaries"]["graph_outliers"]["outliers"]
 
 
 def test_incoming_graph_degree_counts_distinct_configured_sources(monkeypatch):

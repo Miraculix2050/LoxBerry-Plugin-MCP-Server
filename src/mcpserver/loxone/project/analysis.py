@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import hashlib
+import heapq
 import json
 import re
 import unicodedata
 from collections import Counter, defaultdict, deque
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 from .coverage import coverage_by_source_type
@@ -147,6 +149,27 @@ def _edge_evidence(
         else False,
         "semantic_rule_id": rule_id,
     }
+
+
+def _edge_sort_key(edge: GraphEdge | SemanticEdge) -> tuple[str, str, str, str]:
+    return (
+        "derived_semantic" if isinstance(edge, SemanticEdge) else edge.kind,
+        edge.source,
+        edge.target,
+        edge.rule_id if isinstance(edge, SemanticEdge) else "None",
+    )
+
+
+def _outlier_edges(
+    raw: dict[str, list[GraphEdge]],
+    semantic: dict[str, list[SemanticEdge]],
+    seeds: set[str],
+    adjacent: set[str],
+) -> Iterator[GraphEdge | SemanticEdge]:
+    for key in sorted(seeds):
+        yield from raw[key]
+    for key in sorted(adjacent):
+        yield from semantic[key]
 
 
 def _bounded_descendants(
@@ -885,41 +908,35 @@ def analyze_knx(
                         continue
                     outlier_seed_keys = set(_endpoint_descendants(item, children))
                     directional = graph_outgoing if metric == "fan_out" else graph_incoming
-                    raw_edges = [
-                        edge for key in sorted(outlier_seed_keys) for edge in directional[key]
-                    ]
-                    signal_edges = [edge for edge in raw_edges if edge.kind == "signal"]
-                    counterparts = {
-                        view.snapshot.canonical_node_key(
-                            _block(
-                                nodes[edge.target if metric == "fan_out" else edge.source],
-                                nodes,
-                                parents,
-                            ).key
-                        )
-                        for edge in signal_edges
-                    }
-                    adjacent = outlier_seed_keys | {
-                        edge.target if metric == "fan_out" else edge.source for edge in raw_edges
-                    }
+                    signal_count = 0
+                    counterparts: set[str] = set()
+                    adjacent = set(outlier_seed_keys)
+                    for key in outlier_seed_keys:
+                        for raw_edge in directional[key]:
+                            other = raw_edge.target if metric == "fan_out" else raw_edge.source
+                            adjacent.add(other)
+                            if raw_edge.kind == "signal":
+                                signal_count += 1
+                                counterparts.add(
+                                    view.snapshot.canonical_node_key(
+                                        _block(nodes[other], nodes, parents).key
+                                    )
+                                )
                     semantic_directional = (
                         semantic_outgoing if metric == "fan_out" else semantic_incoming
                     )
-                    derived = [
-                        edge for key in sorted(adjacent) for edge in semantic_directional[key]
-                    ]
-                    edge_evidence_rows = sorted(
-                        [
-                            *(_edge_evidence(edge, nodes) for edge in raw_edges),
-                            *(_edge_evidence(edge, nodes) for edge in derived),
-                        ],
-                        key=lambda entry: (
-                            str(entry["kind"]),
-                            str(entry["source_project_node_id"]),
-                            str(entry["target_project_node_id"]),
-                            str(entry["semantic_rule_id"]),
+                    derived_count = sum(len(semantic_directional[key]) for key in adjacent)
+                    sampled_edges = heapq.nsmallest(
+                        _MAX_EVIDENCE,
+                        _outlier_edges(
+                            directional,
+                            semantic_directional,
+                            outlier_seed_keys,
+                            adjacent,
                         ),
+                        key=_edge_sort_key,
                     )
+                    edge_evidence_rows = [_edge_evidence(edge, nodes) for edge in sampled_edges]
                     emit(
                         "graph_metric_outlier",
                         [role, metric, q1, q3, metric_value],
@@ -937,9 +954,9 @@ def analyze_knx(
                                 if metric == "fan_out"
                                 else "raw_in_degree",
                                 "raw_degree": metric_value,
-                                "signal_edges": len(signal_edges),
-                                "reference_edges": len(raw_edges) - len(signal_edges),
-                                "derived_semantic_edges": len(derived),
+                                "signal_edges": signal_count,
+                                "reference_edges": metric_value - signal_count,
+                                "derived_semantic_edges": derived_count,
                                 "logical_consumers": len(counterparts)
                                 if metric == "fan_out"
                                 else None,
@@ -947,9 +964,9 @@ def analyze_knx(
                                 if metric == "fan_in"
                                 else None,
                             },
-                            "edge_evidence": edge_evidence_rows[:_MAX_EVIDENCE],
+                            "edge_evidence": edge_evidence_rows,
                             "edge_evidence_omitted": max(
-                                0, len(edge_evidence_rows) - _MAX_EVIDENCE
+                                0, metric_value + derived_count - len(edge_evidence_rows)
                             ),
                         },
                     )
