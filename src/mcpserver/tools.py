@@ -937,6 +937,34 @@ class ProjectAddressHierarchyData(BaseModel):
     evidence_categories: list[str]
 
 
+class ProjectAnalysisEdgeSummaryData(BaseModel):
+    metric: Literal["raw_in_degree", "raw_out_degree"]
+    raw_degree: int = Field(ge=0)
+    signal_edges: int = Field(ge=0)
+    reference_edges: int = Field(ge=0)
+    derived_semantic_edges: int = Field(ge=0)
+    logical_consumers: int | None = Field(default=None, ge=0)
+    logical_sources: int | None = Field(default=None, ge=0)
+
+
+class ProjectAnalysisEdgeEvidenceData(BaseModel):
+    kind: Literal["signal", "reference", "derived_semantic"]
+    provenance: Literal["configured_input", "configured_reference", "reviewed_rule"]
+    source_project_node_id: str
+    target_project_node_id: str
+    source_connector_key: str | None
+    source_connector_key_truncated: bool
+    target_connector_key: str | None
+    target_connector_key_truncated: bool
+    semantic_rule_id: str | None
+
+
+class ProjectAnalysisConnectorData(BaseModel):
+    project_node_id: str
+    connector_key: str | None
+    connector_key_truncated: bool
+
+
 class ProjectAnalysisFindingData(BaseModel):
     finding_id: str
     analysis: Literal[
@@ -965,6 +993,7 @@ class ProjectAnalysisFindingData(BaseModel):
         "peer_group_pattern",
         "graph_metric_outlier",
         "no_project_signal_relationship",
+        "no_direct_configured_signal_relationship",
         "project_connectivity_ambiguous",
     ]
     classification: Literal["fact", "pattern", "outlier", "ambiguity"] = "fact"
@@ -1004,6 +1033,15 @@ class ProjectAnalysisFindingData(BaseModel):
     graph_value: int | None = None
     graph_q1: int | None = None
     graph_q3: int | None = None
+    edge_summary: ProjectAnalysisEdgeSummaryData | None = None
+    edge_evidence: list[ProjectAnalysisEdgeEvidenceData] = Field(default_factory=list)
+    edge_evidence_omitted: int = Field(default=0, ge=0)
+    description: str | None = None
+    connectivity_scope: Literal["inspected_project_endpoint_connectors"] | None = None
+    inspected_connectors: list[ProjectAnalysisConnectorData] = Field(default_factory=list)
+    inspected_connectors_omitted: int = Field(default=0, ge=0)
+    direct_configured_relationship_count: int | None = Field(default=None, ge=0)
+    reference_relationship_count: int | None = Field(default=None, ge=0)
     usage_signatures: list[list[dict[Literal["interpretation", "effect"], str | None]]] = Field(
         default_factory=list
     )

@@ -56,10 +56,16 @@ mehrere getrennte KNX-Signalnutzungsbeobachtungen. Trace liefert getrennt markie
 Connectorkanten sowie begrenzte Pfade `knx_to_loxone`, `loxone_to_knx` oder `knx_to_knx`.
 Unbekanntes Block- oder Connector-Verhalten wird nicht geraten. Diese Ergebnisse beschreiben
 statische Projektpfade, keine Bus-Telegramme und keine historische Ursache einer Aktion.
-`loxone_analyze_project` Version 6 fasst begrenzte, projektlokale KNX-Evidenz zusammen:
+`loxone_analyze_project` Version 7 fasst begrenzte, projektlokale KNX-Evidenz zusammen:
 Adress- und Quellnamensmuster, Wiederverwendung von Rohdatentypen, geprüfte Unterschiede der
 Signalnutzung, Kontext aus exakten Runtime-Mappings, lokale Peer- und Graph-Ausreißer,
-Pfadzähler und Endpunkte ohne beobachtete Projektbeziehung. Runtime-Namen und Control-Typen werden
+Pfadzähler und Endpunkte ohne direkte konfigurierte Verdrahtung. Graph-Ausreißer benennen den
+rohen Kantengrad und zeigen Signal- und Referenzkanten sowie getrennt abgeleitete semantische
+Kanten mit begrenzten Konnektorbelegen. Ein Konnektivitätsbefund unterscheidet direkte
+Signalverdrahtung von Referenzen und nennt die geprüften Konnektoren. „Kein direkt konfigurierter
+Verbraucher gefunden“ (bei einem Ausgang: „keine direkt konfigurierte Eingangsquelle gefunden“)
+bezieht sich nur auf die statische Projektverdrahtung; daraus folgt weder eine unbenutzte
+Gruppenadresse noch ein inaktives Gerät. Runtime-Namen und Control-Typen werden
 nur bei exaktem UUID-Mapping verwendet; Namen erzeugen nie ein Mapping.
 Findings sind Prüffakten, keine Qualitätsurteile. Feste Limitierungs-Codes kennzeichnen fehlende
 normalisierte DPTs, Semantikdomänen, geprüfte Signalnutzung oder Runtime-Mappings. Die Analyse

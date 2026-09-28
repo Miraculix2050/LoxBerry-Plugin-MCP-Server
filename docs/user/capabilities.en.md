@@ -55,10 +55,15 @@ separate KNX signal-use observations, while trace returns separately marked deri
 and bounded `knx_to_loxone`, `loxone_to_knx`, or `knx_to_knx` paths. Unknown block or connector
 behaviour is not guessed. These are static project paths, not evidence that a bus telegram or
 historical state change caused an action.
-`loxone_analyze_project` version 6 summarizes bounded project-local KNX evidence: address and
+`loxone_analyze_project` version 7 summarizes bounded project-local KNX evidence: address and
 source-name patterns, raw datatype reuse, reviewed signal-use differences, exact runtime-mapping
-context, local peer and graph outliers, path counts, and endpoints without an observed project
-relationship. Runtime names and control types are used only for exact UUID mappings; names never
+context, local peer and graph outliers, path counts, and endpoints without direct configured
+wiring. Graph outliers identify raw edge degree and show signal, reference, and separately derived
+semantic edges with bounded connector evidence. A connectivity finding distinguishes direct signal
+wiring from references and identifies the inspected connectors. "No direct configured consumer
+found" (or, for an output, "no direct configured input source found") refers only to static project
+wiring; it does not mean a group address is unused or a device is inactive.
+Runtime names and control types are used only for exact UUID mappings; names never
 establish a mapping. Findings are review facts, not quality ratings. Fixed
 limitation codes show when normalized DPTs, semantic domains, reviewed usage, or runtime mappings
 are unavailable. The tool does not claim DPT compatibility, ETS coverage, bus activity, or physical

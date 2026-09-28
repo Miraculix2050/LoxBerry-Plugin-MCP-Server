@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Explain raw project graph outliers with separate signal, reference, and derived-edge
+  evidence. Report reference-only KNX endpoints separately from directly configured
+  consumers and bound connector details in connectivity findings.
+
 - Add paginated KNX address-prefix facts and local review candidates to project
   analysis. Allow administrators to configure Miniserver-scoped prefix labels
   with explicit provenance; labels never change project counts or imply bus semantics.
