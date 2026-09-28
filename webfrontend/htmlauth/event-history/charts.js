@@ -773,7 +773,7 @@
   });
   if (typeof api.subscribeUpdates === 'function') {
     api.subscribeUpdates(() => { void load(false); }, () => { void load(false); });
-    window.setInterval(() => { void load(false, false); }, 50000);
+    window.setInterval(() => { void load(false); }, 50000);
   } else window.setInterval(() => { void load(false); }, 10000);
   if (requested.length) void load(true);
   else setStatus(label('chartDenied'), 'warning');

@@ -113,6 +113,7 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
   let holdNext = false;
   let releaseHeld;
   let tick;
+  let wake;
   let hidden = false;
   let queryCount = 0;
   let failCode = null;
@@ -147,7 +148,8 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
     setSize() {}
     destroy() { window.uPlot.destroys++; this.host.replaceChildren(); }
   };
-  window.McpEventHistoryApi = {request: async (action, fields) => {
+  window.McpEventHistoryApi = {subscribeUpdates: (onChange) => { wake = onChange; },
+    request: async (action, fields) => {
     calls.push({action, fields});
     if (action === 'event_history_chart_prepare') {
       if (failPrepareOnce) {
@@ -254,7 +256,7 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
   window.Date.now = originalNow;
   pendingEvent = {id: 3, observed_at: fixedRange.end - 5, old_value: 1, new_value: 2};
   const originalPlot = window.uPlot.instances[0];
-  tick();
+  wake();
   await flush();
   assert.equal(window.uPlot.instances.length, 1, 'new numeric value reuses the plot');
   assert.ok(window.uPlot.dataUpdates > 0);
