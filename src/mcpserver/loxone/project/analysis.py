@@ -14,7 +14,8 @@ from .graph import GraphEdge, GraphNode, SemanticEdge
 from .mapping import ProjectView, RuntimeEvidence
 from .taxonomy import AddressTaxonomyEntry
 
-ANALYSIS_VERSION = 6
+ANALYSIS_VERSION = 7
+_FINDING_ID_VERSION = 6
 ANALYSES = frozenset(
     {
         "address_hierarchy",
@@ -68,7 +69,9 @@ class _UsageBudget:
 
 def _finding_id(kind: str, basis: object, nodes: list[str]) -> str:
     material = json.dumps(
-        [ANALYSIS_VERSION, kind, basis, sorted(nodes)], separators=(",", ":"), sort_keys=True
+        [_FINDING_ID_VERSION, kind, basis, sorted(nodes)],
+        separators=(",", ":"),
+        sort_keys=True,
     ).encode()
     return "knx:" + hashlib.sha256(material).hexdigest()[:20]
 
@@ -105,6 +108,45 @@ def _descendants(key: str, children: dict[str, list[str]]) -> list[str]:
 def _endpoint_descendants(item: _Endpoint, children: dict[str, list[str]]) -> list[str]:
     """Return graph evidence for every source occurrence of one logical endpoint."""
     return sorted({key for block in item.blocks for key in _descendants(block.key, children)})
+
+
+def _connector_evidence(node: GraphNode) -> dict[str, object]:
+    raw_key = next((value for name, value in node.attributes if name == "K"), None)
+    return {
+        "project_node_id": node.key,
+        "connector_key": raw_key[:100] if raw_key is not None else None,
+        "connector_key_truncated": raw_key is not None and len(raw_key) > 100,
+    }
+
+
+def _edge_evidence(
+    edge: GraphEdge | SemanticEdge, nodes: dict[str, GraphNode]
+) -> dict[str, object]:
+    if isinstance(edge, SemanticEdge):
+        kind, provenance, rule_id = "derived_semantic", "reviewed_rule", edge.rule_id
+    else:
+        kind = edge.kind
+        provenance = "configured_input" if kind == "signal" else "configured_reference"
+        rule_id = None
+    source = nodes[edge.source]
+    target = nodes[edge.target]
+    source_connector = _connector_evidence(source) if source.kind == "connector" else None
+    target_connector = _connector_evidence(target) if target.kind == "connector" else None
+    return {
+        "kind": kind,
+        "provenance": provenance,
+        "source_project_node_id": edge.source,
+        "target_project_node_id": edge.target,
+        "source_connector_key": source_connector["connector_key"] if source_connector else None,
+        "source_connector_key_truncated": source_connector["connector_key_truncated"]
+        if source_connector
+        else False,
+        "target_connector_key": target_connector["connector_key"] if target_connector else None,
+        "target_connector_key_truncated": target_connector["connector_key_truncated"]
+        if target_connector
+        else False,
+        "semantic_rule_id": rule_id,
+    }
 
 
 def _bounded_descendants(
@@ -792,12 +834,17 @@ def analyze_knx(
 
     if "graph_outliers" in analyses:
         outliers = 0
-        graph_outgoing: dict[str, int] = Counter(
-            edge.source for edge in graph.edges if edge.kind in {"signal", "reference"}
-        )
-        graph_incoming: dict[str, int] = Counter(
-            edge.target for edge in graph.edges if edge.kind in {"signal", "reference"}
-        )
+        graph_outgoing: dict[str, list[GraphEdge]] = defaultdict(list)
+        graph_incoming: dict[str, list[GraphEdge]] = defaultdict(list)
+        semantic_outgoing: dict[str, list[SemanticEdge]] = defaultdict(list)
+        semantic_incoming: dict[str, list[SemanticEdge]] = defaultdict(list)
+        for edge in graph.edges:
+            if edge.kind in {"signal", "reference"}:
+                graph_outgoing[edge.source].append(edge)
+                graph_incoming[edge.target].append(edge)
+        for semantic_edge in graph.semantic_edges:
+            semantic_outgoing[semantic_edge.source].append(semantic_edge)
+            semantic_incoming[semantic_edge.target].append(semantic_edge)
         for role, members in sorted(role_groups.items(), key=lambda pair: repr(pair[0])):
             if len(members) < 8:
                 continue
@@ -805,14 +852,20 @@ def analyze_knx(
                 "fan_out": [
                     (
                         item,
-                        sum(graph_outgoing[key] for key in _endpoint_descendants(item, children)),
+                        sum(
+                            len(graph_outgoing[key])
+                            for key in _endpoint_descendants(item, children)
+                        ),
                     )
                     for item in members
                 ],
                 "fan_in": [
                     (
                         item,
-                        sum(graph_incoming[key] for key in _endpoint_descendants(item, children)),
+                        sum(
+                            len(graph_incoming[key])
+                            for key in _endpoint_descendants(item, children)
+                        ),
                     )
                     for item in members
                 ],
@@ -830,6 +883,43 @@ def analyze_knx(
                     )
                     if not unusual:
                         continue
+                    outlier_seed_keys = set(_endpoint_descendants(item, children))
+                    directional = graph_outgoing if metric == "fan_out" else graph_incoming
+                    raw_edges = [
+                        edge for key in sorted(outlier_seed_keys) for edge in directional[key]
+                    ]
+                    signal_edges = [edge for edge in raw_edges if edge.kind == "signal"]
+                    counterparts = {
+                        view.snapshot.canonical_node_key(
+                            _block(
+                                nodes[edge.target if metric == "fan_out" else edge.source],
+                                nodes,
+                                parents,
+                            ).key
+                        )
+                        for edge in signal_edges
+                    }
+                    adjacent = outlier_seed_keys | {
+                        edge.target if metric == "fan_out" else edge.source for edge in raw_edges
+                    }
+                    semantic_directional = (
+                        semantic_outgoing if metric == "fan_out" else semantic_incoming
+                    )
+                    derived = [
+                        edge for key in sorted(adjacent) for edge in semantic_directional[key]
+                    ]
+                    edge_evidence_rows = sorted(
+                        [
+                            *(_edge_evidence(edge, nodes) for edge in raw_edges),
+                            *(_edge_evidence(edge, nodes) for edge in derived),
+                        ],
+                        key=lambda entry: (
+                            str(entry["kind"]),
+                            str(entry["source_project_node_id"]),
+                            str(entry["target_project_node_id"]),
+                            str(entry["semantic_rule_id"]),
+                        ),
+                    )
                     emit(
                         "graph_metric_outlier",
                         [role, metric, q1, q3, metric_value],
@@ -842,6 +932,25 @@ def analyze_knx(
                             "graph_value": metric_value,
                             "graph_q1": q1,
                             "graph_q3": q3,
+                            "edge_summary": {
+                                "metric": "raw_out_degree"
+                                if metric == "fan_out"
+                                else "raw_in_degree",
+                                "raw_degree": metric_value,
+                                "signal_edges": len(signal_edges),
+                                "reference_edges": len(raw_edges) - len(signal_edges),
+                                "derived_semantic_edges": len(derived),
+                                "logical_consumers": len(counterparts)
+                                if metric == "fan_out"
+                                else None,
+                                "logical_sources": len(counterparts)
+                                if metric == "fan_in"
+                                else None,
+                            },
+                            "edge_evidence": edge_evidence_rows[:_MAX_EVIDENCE],
+                            "edge_evidence_omitted": max(
+                                0, len(edge_evidence_rows) - _MAX_EVIDENCE
+                            ),
                         },
                     )
                     outliers += 1
@@ -855,18 +964,34 @@ def analyze_knx(
                 outgoing[edge.source].append(edge)
                 incoming[edge.target].append(edge)
         unresolved = {key for key, _ in graph.unresolved}
-        disconnected = ambiguous = 0
+        disconnected = ambiguous = reference_only = 0
         for item in endpoints:
             seed = _endpoint_descendants(item, children)
             directional = outgoing if item.direction == "bus_to_loxone" else incoming
-            has_relation = any(directional[key] for key in seed)
-            if has_relation:
+            relationships = [edge for key in seed for edge in directional[key]]
+            direct_count = sum(edge.kind == "signal" for edge in relationships)
+            reference_count = len(relationships) - direct_count
+            if direct_count:
                 continue
+            unresolved_count = sum(key in unresolved for key in seed)
             finding_type = (
                 "project_connectivity_ambiguous"
-                if any(key in unresolved for key in seed)
+                if unresolved_count
+                else "no_direct_configured_signal_relationship"
+                if reference_count
                 else "no_project_signal_relationship"
             )
+            connectors = sorted(
+                (_connector_evidence(nodes[key]) for key in seed if nodes[key].kind == "connector"),
+                key=lambda entry: str(entry["project_node_id"]),
+            )
+            description = (
+                "No direct configured consumer found in the inspected project connectors."
+                if item.direction == "bus_to_loxone"
+                else "No direct configured input source found in the inspected project connectors."
+            )
+            if unresolved_count:
+                description += " Some connector relationships could not be resolved."
             emit(
                 finding_type,
                 [item.direction, item.address, item.address_variant],
@@ -880,11 +1005,22 @@ def analyze_knx(
                     "flow_direction": item.direction,
                     "group_address": item.address,
                     "address_variant": item.address_variant,
+                    "description": description,
+                    "connectivity_scope": "inspected_project_endpoint_connectors",
+                    "inspected_connectors": connectors[:_MAX_EVIDENCE],
+                    "inspected_connectors_omitted": max(0, len(connectors) - _MAX_EVIDENCE),
+                    "direct_configured_relationship_count": direct_count,
+                    "reference_relationship_count": reference_count,
                 },
             )
             disconnected += finding_type == "no_project_signal_relationship"
             ambiguous += finding_type == "project_connectivity_ambiguous"
-        summaries["project_connectivity"] = {"unconnected": disconnected, "ambiguous": ambiguous}
+            reference_only += finding_type == "no_direct_configured_signal_relationship"
+        summaries["project_connectivity"] = {
+            "unconnected": disconnected,
+            "ambiguous": ambiguous,
+            "reference_only": reference_only,
+        }
 
     if "technology_architecture" in analyses:
         counts: Counter[str] = Counter()

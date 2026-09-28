@@ -66,7 +66,7 @@ def test_edge_variants_stay_separate_in_analysis_and_connectivity():
         and item["group_address"] == "6/2/27"
     }
     assert disconnected == {None}
-    assert result["analysis_version"] == 6
+    assert result["analysis_version"] == 7
 
 
 def test_address_hierarchy_reports_measured_prefixes_and_configured_provenance():
@@ -200,7 +200,7 @@ def test_new_knx_families_enter_coverage_and_connectivity_without_unmodeled_type
     assert result["coverage"]["endpoints"] == 5
     assert result["coverage"]["canonical_group_addresses"] == 5
     assert result["coverage"]["raw_datatypes"] == 0
-    assert result["analysis_version"] == 6
+    assert result["analysis_version"] == 7
     assert any(
         item["code"] == "unclassified_knx_candidate" and item["source_type"] == "EIBunknown"
         for item in result["source_diagnostics"]["entries"]
@@ -263,7 +263,11 @@ def test_logical_endpoint_connectivity_aggregates_all_source_occurrences():
 
     assert result["coverage"]["endpoints"] == 1
     assert result["coverage"]["endpoint_source_occurrences"] == 2
-    assert result["summaries"]["project_connectivity"] == {"unconnected": 0, "ambiguous": 0}
+    assert result["summaries"]["project_connectivity"] == {
+        "unconnected": 0,
+        "ambiguous": 0,
+        "reference_only": 0,
+    }
 
 
 def test_analysis_only_reports_address_deviations_for_strong_evidenced_peer_groups():
@@ -304,6 +308,147 @@ def test_analysis_scopes_unconnected_evidence_to_the_project_graph():
     finding = result["findings"][0]
     assert finding["finding_type"] == "no_project_signal_relationship"
     assert "unused" not in str(finding)
+    assert finding["connectivity_scope"] == "inspected_project_endpoint_connectors"
+    assert finding["direct_configured_relationship_count"] == 0
+    assert finding["reference_relationship_count"] == 0
+    assert finding["inspected_connectors"][0]["connector_key"] is None
+    assert finding["description"].startswith("No direct configured consumer found")
+
+
+def test_reference_only_endpoint_reports_no_direct_wiring_without_changing_old_finding_ids():
+    project = (
+        b'<P><C Type="EIBsensor" U="sensor" EibAddr="1/2/3"><Co K="AQ" U="out"/>'
+        b'</C><C Type="InputRef" U="alias" Ref="sensor"/></P>'
+    )
+    result = analyze_knx(_view(project), frozenset({"project_connectivity"}))
+    finding = result["findings"][0]
+
+    assert finding["finding_type"] == "no_direct_configured_signal_relationship"
+    assert finding["direct_configured_relationship_count"] == 0
+    assert finding["reference_relationship_count"] == 1
+    assert finding["inspected_connectors"][0]["connector_key"] == "AQ"
+    assert result["summaries"]["project_connectivity"]["reference_only"] == 1
+    assert (
+        project_analysis._finding_id(
+            "no_project_signal_relationship", ["bus_to_loxone", "1/2/3", None], ["p:1", "p:2"]
+        )
+        == "knx:748cc06d3762f2fe198f"
+    )
+
+
+def test_connectivity_bounds_inspected_connectors_and_describes_output_direction():
+    connectors = b"".join(
+        f'<Co K="{index}-{("x" * 120)}" U="connector{index}"/>'.encode() for index in range(22)
+    )
+    result = analyze_knx(
+        _view(b'<P><C Type="EIBactor" U="actor" EibAddr="1/2/3">' + connectors + b"</C></P>"),
+        frozenset({"project_connectivity"}),
+    )
+    finding = result["findings"][0]
+
+    assert finding["description"].startswith("No direct configured input source found")
+    assert len(finding["inspected_connectors"]) == 20
+    assert finding["inspected_connectors_omitted"] == 2
+    assert all(len(row["connector_key"]) == 100 for row in finding["inspected_connectors"])
+    assert all(row["connector_key_truncated"] for row in finding["inspected_connectors"])
+
+
+def test_unresolved_direct_wiring_remains_ambiguous():
+    result = analyze_knx(
+        _view(
+            b'<P><C Type="EIBsensor" U="sensor" EibAddr="1/2/3">'
+            b'<Co K="AQ" U="out"><In Input="unknown"/></Co></C>'
+            b'<C Type="InputRef" Ref="sensor"/></P>'
+        ),
+        frozenset({"project_connectivity"}),
+    )
+    finding = result["findings"][0]
+    assert finding["finding_type"] == "project_connectivity_ambiguous"
+    assert finding["reference_relationship_count"] == 1
+    assert "could not be resolved" in finding["description"]
+
+
+def test_outgoing_graph_degree_explains_references_signals_and_logical_consumers(monkeypatch):
+    parts = []
+    for index in range(8):
+        parts.append(
+            f'<C Type="EIBsensor" U="sensor{index}" EibAddr="1/2/{index}">'
+            f'<Co K="AQ" U="output{index}"/></C>'
+        )
+        if index < 7:
+            parts.append(
+                f'<C Type="EIBPush" U="consumer{index}"><Co K="Tg" U="trigger{index}">'
+                f'<In Input="output{index}"/></Co><Co K="O" U="result{index}"/></C>'
+            )
+        else:
+            for consumer in range(3):
+                parts.append(
+                    f'<C Type="InputRef" U="alias{consumer}" Ref="sensor7"/>'
+                    f'<C Type="EIBPush" U="consumer7{consumer}">'
+                    f'<Co K="Tg" U="trigger7{consumer}"><In Input="output7"/></Co>'
+                    f'<Co K="X" U="extra7{consumer}"><In Input="output7"/></Co>'
+                    f'<Co K="O" U="result7{consumer}"/></C>'
+                )
+    view = _view(("<P>" + "".join(parts) + "</P>").encode())
+    result = analyze_knx(view, frozenset({"graph_outliers"}))
+    finding = next(item for item in result["findings"] if item["graph_metric"] == "fan_out")
+
+    assert finding["graph_value"] == 9
+    assert finding["edge_summary"] == {
+        "metric": "raw_out_degree",
+        "raw_degree": 9,
+        "signal_edges": 6,
+        "reference_edges": 3,
+        "derived_semantic_edges": 3,
+        "logical_consumers": 3,
+        "logical_sources": None,
+    }
+    assert {row["kind"] for row in finding["edge_evidence"]} == {
+        "signal",
+        "reference",
+        "derived_semantic",
+    }
+    assert all(len(row["source_connector_key"] or "") <= 100 for row in finding["edge_evidence"])
+    assert result == analyze_knx(view, frozenset({"graph_outliers"}))
+
+    monkeypatch.setattr(project_analysis, "_MAX_EVIDENCE", 5)
+    bounded = analyze_knx(view, frozenset({"graph_outliers"}))
+    bounded_finding = next(
+        item for item in bounded["findings"] if item["graph_metric"] == "fan_out"
+    )
+    assert bounded_finding["finding_id"] == finding["finding_id"]
+    assert len(bounded_finding["edge_evidence"]) == 5
+    assert bounded_finding["edge_evidence_omitted"] == 7
+
+
+def test_incoming_graph_degree_counts_distinct_configured_sources(monkeypatch):
+    monkeypatch.setattr(project_analysis, "_usage", lambda *_args: ((("level", None),), False))
+    parts = []
+    for index in range(8):
+        source_count = 3 if index == 7 else 1
+        parts.append(
+            f'<C Type="Logic" U="source{index}">'
+            + "".join(
+                f'<Co K="O{source}" U="output{index}-{source}"/>' for source in range(source_count)
+            )
+            + "</C>"
+        )
+        parts.append(
+            f'<C Type="EIBactor" U="actor{index}" EibAddr="1/2/{index}">'
+            f'<Co K="I" U="input{index}">'
+            + "".join(f'<In Input="output{index}-{source}"/>' for source in range(source_count))
+            + "</Co></C>"
+        )
+    result = analyze_knx(
+        _view(("<P>" + "".join(parts) + "</P>").encode()), frozenset({"graph_outliers"})
+    )
+    finding = next(item for item in result["findings"] if item["graph_metric"] == "fan_in")
+
+    assert finding["graph_value"] == 3
+    assert finding["edge_summary"]["metric"] == "raw_in_degree"
+    assert finding["edge_summary"]["signal_edges"] == 3
+    assert finding["edge_summary"]["logical_sources"] == 1
+    assert finding["edge_summary"]["logical_consumers"] is None
 
 
 def test_analysis_skips_signal_usage_when_the_selected_analysis_does_not_need_it(monkeypatch):
@@ -317,7 +462,11 @@ def test_analysis_skips_signal_usage_when_the_selected_analysis_does_not_need_it
         frozenset({"project_connectivity"}),
     )
 
-    assert result["summaries"]["project_connectivity"] == {"unconnected": 1, "ambiguous": 0}
+    assert result["summaries"]["project_connectivity"] == {
+        "unconnected": 1,
+        "ambiguous": 0,
+        "reference_only": 0,
+    }
 
 
 @pytest.mark.parametrize(
@@ -640,7 +789,7 @@ def test_v2_uses_exact_runtime_evidence_for_naming_without_inventing_knx_semanti
 
     result = analyze_knx(_view(project, controls), frozenset({"naming_consistency"}))
 
-    assert result["analysis_version"] == 6
+    assert result["analysis_version"] == 7
     assert result["coverage"]["exact_runtime_mappings"] == 6
     assert result["coverage"]["reviewed_signal_usage"] == 0
     assert any(item["finding_type"] == "naming_deviation" for item in result["findings"])

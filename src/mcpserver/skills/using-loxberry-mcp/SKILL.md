@@ -72,11 +72,15 @@ address. Trace keeps raw wiring in `edges` and reports derived internal evidence
 separately in `semantic_edges`. Use `technology_paths` only as static
 reachability evidence, check `semantic_truncated`, and never present a path as
 proof of a bus telegram or a historical cause.
-Use `loxone_analyze_project` version 6 for a bounded installation-level KNX
+Use `loxone_analyze_project` version 7 for a bounded installation-level KNX
 review before retrieving individual traces. It can add source-name patterns,
 exact UUID-mapped runtime context, and local peer or graph outliers to address,
 datatype, usage, path, and connection evidence. Treat all findings as
-project-local facts, check `limitations`, `analysis_truncated`,
+project-local facts. Read graph degree as raw signal-plus-reference edges;
+use the separate edge counts and connector evidence to explain outliers.
+A missing direct configured consumer or input source is a static project-wiring
+fact, not evidence that a group address is unused or a device is inactive.
+Check `limitations`, `analysis_truncated`,
 `truncation_reasons`, and pagination, and never turn a pattern or outlier into
 a defect by itself. Runtime names and control types are context only after an
 exact UUID mapping; they never establish a mapping. The

@@ -62,6 +62,62 @@ def test_knx_edge_variant_survives_public_project_schemas():
     assert finding.address_variant == "1"
 
 
+def test_project_analysis_edge_and_connectivity_evidence_survive_public_schema():
+    finding = tools_module.ProjectAnalysisFindingData.model_validate(
+        {
+            "finding_id": "knx:fixture",
+            "analysis": "graph_outliers",
+            "finding_type": "graph_metric_outlier",
+            "graph_metric": "fan_out",
+            "graph_value": 9,
+            "edge_summary": {
+                "metric": "raw_out_degree",
+                "raw_degree": 9,
+                "signal_edges": 6,
+                "reference_edges": 3,
+                "derived_semantic_edges": 3,
+                "logical_consumers": 3,
+            },
+            "edge_evidence": [
+                {
+                    "kind": "signal",
+                    "provenance": "configured_input",
+                    "source_project_node_id": "p:1",
+                    "target_project_node_id": "p:2",
+                    "source_connector_key": "AQ",
+                    "source_connector_key_truncated": False,
+                    "target_connector_key": "Tg",
+                    "target_connector_key_truncated": False,
+                    "semantic_rule_id": None,
+                }
+            ],
+            "affected_project_node_ids": ["p:1"],
+            "affected_omitted": 0,
+        }
+    )
+    assert finding.model_dump()["edge_summary"]["logical_consumers"] == 3
+
+    connectivity = tools_module.ProjectAnalysisFindingData.model_validate(
+        {
+            "finding_id": "knx:reference",
+            "analysis": "project_connectivity",
+            "finding_type": "no_direct_configured_signal_relationship",
+            "connectivity_scope": "inspected_project_endpoint_connectors",
+            "description": (
+                "No direct configured consumer found in the inspected project connectors."
+            ),
+            "inspected_connectors": [
+                {"project_node_id": "p:1", "connector_key": "AQ", "connector_key_truncated": False}
+            ],
+            "direct_configured_relationship_count": 0,
+            "reference_relationship_count": 1,
+            "affected_project_node_ids": ["p:1"],
+            "affected_omitted": 0,
+        }
+    )
+    assert connectivity.model_dump()["inspected_connectors"][0]["connector_key"] == "AQ"
+
+
 def test_knx_connector_evidence_survives_public_describe_schema():
     detail = tools_module.ProjectKnxData.model_validate(
         {

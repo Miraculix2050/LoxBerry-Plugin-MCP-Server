@@ -84,12 +84,17 @@ reachability, not a physical device role, bus telegram, or historical cause.
 
 ## KNX project analysis
 
-`loxone_analyze_project` version 6 returns bounded, deterministic project-local
+`loxone_analyze_project` version 7 returns bounded, deterministic project-local
 evidence; it never grades a KNX installation. It aggregates canonical-address
 and source-name patterns, conflicting raw `EIBType` values on one group address,
 reviewed signal-use observations, exact runtime-mapping context, local peer and
-graph outliers, static KNX/Loxone paths, and endpoints without an observed
-project relationship. A runtime name, room, category, or control type is used
+graph outliers, static KNX/Loxone paths, and endpoints without direct configured
+wiring. Graph outlier degree retains raw signal-plus-reference counts, with separate
+component and logical-counterpart counts; bounded edge samples keep derived semantic
+edges distinct. Connectivity findings name the inspected connector scope and separate
+direct signals from references. Reference-only endpoints receive a distinct finding.
+Existing finding IDs use the version 6 hash basis despite the analysis-version change.
+A runtime name, room, category, or control type is used
 only after an exact UUID mapping and is never used to identify a project node.
 Address-specific datatype and signal-use comparisons keep edge variants separate;
 address-prefix patterns use the canonical base. Raw `EIBType` remains an
