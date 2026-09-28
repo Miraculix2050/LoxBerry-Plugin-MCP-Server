@@ -8,6 +8,7 @@ import json
 import logging
 import math
 import os
+import secrets
 import sqlite3
 import threading
 import time
@@ -396,10 +397,6 @@ class EventHistoryStore:
                         for control_uuid, state_uuid in sources
                     ],
                 )
-                connection.execute(
-                    "UPDATE history_metadata SET mutation_generation = "
-                    "mutation_generation + 1 WHERE id = 1"
-                )
                 connection.execute("COMMIT")
             except sqlite3.Error as exc:
                 if connection.in_transaction:
@@ -422,10 +419,6 @@ class EventHistoryStore:
                         (ended_at, outcome, control_uuid, state_uuid)
                         for control_uuid, state_uuid in sources
                     ],
-                )
-                connection.execute(
-                    "UPDATE history_metadata SET mutation_generation = "
-                    "mutation_generation + 1 WHERE id = 1"
                 )
                 connection.execute("COMMIT")
             except sqlite3.Error as exc:
@@ -813,7 +806,7 @@ class EventHistoryStore:
         ).rowcount
         if event_deletions:
             self._refresh_summaries(connection)
-        if deleted:
+        if event_deletions:
             connection.execute(
                 "UPDATE history_metadata SET mutation_generation = "
                 "mutation_generation + 1 WHERE id = 1"
@@ -840,10 +833,6 @@ class EventHistoryStore:
                         control_uuid,
                         state_uuid,
                     ),
-                )
-                connection.execute(
-                    "UPDATE history_metadata SET mutation_generation = "
-                    "mutation_generation + 1 WHERE id = 1"
                 )
                 connection.execute("COMMIT")
             except sqlite3.Error as exc:
@@ -1269,6 +1258,24 @@ class EventHistoryMonitor:
         self.status_reason: str | None = None
         self.status_observed_at = time.time()
         self.capture_started_at: float | None = None
+        self._update_token = secrets.token_hex(8)
+        self._update_event = asyncio.Event()
+
+    def _notify_update(self) -> None:
+        """Wake local Admin listeners without exposing values or source identities."""
+        previous = self._update_event
+        self._update_token = secrets.token_hex(8)
+        self._update_event = asyncio.Event()
+        previous.set()
+
+    async def wait_for_update(self, token: str, *, timeout: float = 20) -> dict[str, object]:
+        """Hold one bounded request until the recorder commits a change."""
+        changed = token != self._update_token
+        if not changed:
+            with suppress(TimeoutError):
+                await asyncio.wait_for(self._update_event.wait(), timeout=timeout)
+            changed = token != self._update_token
+        return {"token": self._update_token, "changed": changed}
 
     def _set_status(self, status: str, reason: str | None = None) -> None:
         self.status = status
@@ -1374,6 +1381,7 @@ class EventHistoryMonitor:
                 baselines: dict[str, object] = {}
                 async for batch in session.state_events():
                     observed_at = time.time()
+                    changed = False
                     for event in batch:
                         source = state_sources.get(event.uuid)
                         if source is None:
@@ -1394,6 +1402,7 @@ class EventHistoryMonitor:
                                 self.capture_started_at = started_at
                                 self._set_status("recording")
                                 coverage_active = True
+                                self._notify_update()
                             continue
                         previous = baselines[event.uuid]
                         if previous == value:
@@ -1412,6 +1421,9 @@ class EventHistoryMonitor:
                                 "configured state does not produce a supported scalar value"
                             ) from exc
                         baselines[event.uuid] = value
+                        changed = True
+                    if changed:
+                        self._notify_update()
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -1435,6 +1447,7 @@ class EventHistoryMonitor:
                             ended_at=time.time(),
                             outcome="disconnected",
                         )
+                        self._notify_update()
                     coverage_active = False
                 await asyncio.sleep(5)
             finally:
@@ -1446,6 +1459,7 @@ class EventHistoryMonitor:
                             ended_at=time.time(),
                             outcome="disconnected",
                         )
+                        self._notify_update()
                 if session is not None:
                     await session.close()
                 if token is not None:

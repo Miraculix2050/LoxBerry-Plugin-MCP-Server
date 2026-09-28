@@ -761,6 +761,44 @@ def test_event_history_chart_tab_keeps_values_out_of_the_overview() -> None:
     assert "CHART_DENIED=" in english and "CHART_DENIED=" in german
 
 
+def test_event_history_update_relay_is_bounded_and_fixed_to_loopback() -> None:
+    perl = shutil.which("perl")
+    assert perl is not None, "Perl is required for the complete deterministic gate"
+    source = (ROOT / "webfrontend/htmlauth/event_history.cgi").read_text(encoding="utf-8")
+    relay = source[source.index("sub wait_update {") : source.index("\nmy %actions =")]
+    script = (
+        r"""
+use strict;
+use warnings;
+use JSON::PP qw(decode_json);
+{ package HTTP::Tiny;
+  our $calls = 0;
+  our $url = '';
+  our %options;
+  our $content = '{"token":"0123456789abcdef","changed":true}';
+  sub new { my $class = shift; %options = @_; bless {}, $class }
+  sub get { my ($self, $url) = @_; $calls++; $HTTP::Tiny::url = $url;
+    return {success => 1, content => $content}; }
+}
+"""
+        + relay
+        + r"""
+die 'invalid token reached loopback' if wait_update('invalid!')->{ok} || $HTTP::Tiny::calls;
+my $result = wait_update('');
+die 'wrong loopback route' unless $HTTP::Tiny::url eq
+    'http://127.0.0.1:8765/internal/event-history-updates?token=';
+die 'relay lacks response bounds' unless $HTTP::Tiny::options{max_size} == 256
+    && $HTTP::Tiny::options{max_redirect} == 0;
+die 'valid wakeup unavailable' unless $result->{data}{availability} eq 'available';
+$HTTP::Tiny::content = 'x' x 257;
+die 'oversized response accepted' unless wait_update('')->{data}{availability} eq 'unavailable';
+$HTTP::Tiny::content = '{"token":"0123456789abcdef","changed":"true"}';
+die 'non-boolean signal accepted' unless wait_update('')->{data}{availability} eq 'unavailable';
+"""
+    )
+    subprocess.run([perl, "-e", script], check=True, capture_output=True, text=True)
+
+
 def test_event_history_selector_is_progressive_and_localized() -> None:
     page = (ROOT / "templates/event-history.html").read_text(encoding="utf-8")
     script = (ROOT / "webfrontend/htmlauth/event-history/page.js").read_text(encoding="utf-8")
@@ -1076,6 +1114,7 @@ vm.runInNewContext(`
 let busy = false;
 let controlsLoadPromise = null;
 let selectedControl = 'control';
+const drainSourceRevision = () => {};
 ${section('  const mutate = async ', '  const facetSelection =')}
 ${section('  const loadControls = (restore = null) => {', '  const checkSourceRevision =')}
 globalThis.subject = {mutate, loadControls};
@@ -1242,12 +1281,15 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const source = fs.readFileSync(process.argv[1], 'utf8');
-const section = source.slice(source.indexOf('  const checkSourceRevision = async () => {'),
+const section = source.slice(source.indexOf(
+  '  const checkSourceRevision = async (refreshTotals = false) => {'),
   source.indexOf('  const loadStates ='));
 const context = {document: {hidden: false}, api: {request: async () =>
   ({availability: 'available', revision: 'new'})}};
 vm.runInNewContext(`let busy = false; let controlsLoading = false;
-let sourceRevisionChecking = false; let knownSourceRevision = 'old';
+let sourceRevisionChecking = false; let sourceRevisionQueued = false;
+let sourceRevisionQueueTotals = false; let totalsRefreshPending = false;
+let knownSourceRevision = 'old';
 let knownPayloadPending = false;
 let selectorVerificationPending = false; let nextRevisionRefreshAt = 0;
 let revisionRefreshFailures = 0; let refreshes = 0;
@@ -1273,6 +1315,81 @@ globalThis.subject = {checkSourceRevision, refreshes: () => refreshes,
     )
 
 
+def test_event_history_new_point_refreshes_visible_source_totals_without_discovery() -> None:
+    node = shutil.which("node")
+    assert node is not None
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const section = source.slice(source.indexOf(
+  '  const checkSourceRevision = async (refreshTotals = false) => {'),
+  source.indexOf('  const loadStates ='));
+const calls = [];
+let failRevision = false;
+const context = {document: {hidden: false}, api: {request: async (action) => {
+  calls.push(action);
+  if (action === 'event_history_source_revision' && failRevision) throw new Error('offline');
+  if (action === 'event_history_source_revision') return {availability: 'available',
+    revision: 'old', payload_pending: false};
+  if (action === 'event_history_visible_overview') return {store_status: 'available',
+    visibility_status: 'available', source_revision: 'old', sources: [{event_count: 2}]};
+  throw new Error(action);
+}}};
+vm.runInNewContext(`let busy = false; let controlsLoading = false;
+let sourceRevisionChecking = false; let sourceRevisionQueued = false;
+let sourceRevisionQueueTotals = false; let totalsRefreshPending = false;
+let knownSourceRevision = 'old';
+let knownPayloadPending = false; let selectorVerificationPending = false;
+let nextRevisionRefreshAt = 0; let revisionRefreshFailures = 0;
+let fullLoads = 0; let shown = 0;
+const loadControls = async () => { fullLoads++; return true; };
+const renderOverview = (data) => { knownSourceRevision = data.source_revision;
+  shown = data.sources[0].event_count; };
+${section}
+globalThis.subject = {checkSourceRevision, drainSourceRevision,
+  setBusy: (value) => { busy = value; },
+  setInitial: (value) => { controlsLoading = value; knownSourceRevision = value ? '' : 'old'; },
+  result: () => ({fullLoads, shown})};`, context);
+(async () => {
+  await context.subject.checkSourceRevision(true);
+  assert.deepEqual(calls, ['event_history_source_revision', 'event_history_visible_overview']);
+  assert.equal(context.subject.result().fullLoads, 0);
+  assert.equal(context.subject.result().shown, 2);
+  context.subject.setBusy(true);
+  await context.subject.checkSourceRevision(true);
+  assert.equal(calls.length, 2, 'an in-progress action queues the wakeup');
+  context.subject.setBusy(false);
+  context.subject.drainSourceRevision();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls.length, 4, 'queued totals refresh runs after the action');
+  failRevision = true;
+  await context.subject.checkSourceRevision(true);
+  failRevision = false;
+  await context.subject.checkSourceRevision();
+  assert.deepEqual(calls.slice(-3), ['event_history_source_revision',
+    'event_history_source_revision', 'event_history_visible_overview'],
+    'failed wakeup is retried even when the source revision is unchanged');
+  const beforeInitial = calls.length;
+  context.subject.setInitial(true);
+  await context.subject.checkSourceRevision(true);
+  assert.equal(calls.length, beforeInitial);
+  context.subject.setInitial(false);
+  context.subject.drainSourceRevision();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls.length, beforeInitial + 2,
+    'a wakeup during initial discovery is drained after the first overview');
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/event-history/page.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
 def test_event_history_revision_refreshes_after_payload_backfill() -> None:
     node = shutil.which("node")
     assert node is not None, "Node.js is required for the complete deterministic gate"
@@ -1281,13 +1398,16 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const source = fs.readFileSync(process.argv[1], 'utf8');
-const section = source.slice(source.indexOf('  const checkSourceRevision = async () => {'),
+const section = source.slice(source.indexOf(
+  '  const checkSourceRevision = async (refreshTotals = false) => {'),
   source.indexOf('  const loadStates ='));
 let payloadPending = true;
 const context = {document: {hidden: false}, api: {request: async () =>
   ({availability: 'available', revision: 'same', payload_pending: payloadPending})}};
 vm.runInNewContext(`let busy = false; let controlsLoading = false;
-let sourceRevisionChecking = false; let knownSourceRevision = 'same';
+let sourceRevisionChecking = false; let sourceRevisionQueued = false;
+let sourceRevisionQueueTotals = false; let totalsRefreshPending = false;
+let knownSourceRevision = 'same';
 let knownPayloadPending = true; let selectorVerificationPending = false;
 let nextRevisionRefreshAt = 0; let revisionRefreshFailures = 0; let refreshes = 0;
 const loadControls = async () => { refreshes += 1; knownPayloadPending = false; return true; };
@@ -1338,6 +1458,7 @@ vm.runInNewContext(`let controlsLoading = false; let busy = false;
 let discoveryGeneration = 0; let selectedControl = ''; let querySequence = 0;
 let catalogMode = ''; let stateGeneration = 0; let selectorVerificationPending = false;
 let knownSourceRevision = ''; const refreshButtonText = 'refresh';
+const drainSourceRevision = () => {};
 const renderOverview = () => {
   knownSourceRevision = 'empty-local-store';
   selectorVerificationPending = false;
@@ -1398,6 +1519,7 @@ let catalogMode = ''; let stateGeneration = 0; let selectorGeneration = '';
 let pageOffset = 0; let visibleCount = 0; let controls = [];
 const facetSelection = {room: new Set(), category: new Set(), type: new Set()};
 const refreshButtonText = 'refresh';
+const drainSourceRevision = () => {};
 ${section}
 globalThis.performLoadControls = performLoadControls;`, context);
 (async () => {
@@ -1449,6 +1571,7 @@ let discoveryGeneration = 0; let selectedControl = 'control'; let querySequence 
 let catalogMode = ''; let stateGeneration = 0; let selectorGeneration = '';
 let pageOffset = 0; let visibleCount = 0; let selectorVerificationPending = false;
 const refreshButtonText = 'refresh';
+const drainSourceRevision = () => {};
 globalThis.clearSelection = () => {selectedControl = '';};
 ${section}
 globalThis.performLoadControls = performLoadControls;`, context);

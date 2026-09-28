@@ -424,6 +424,30 @@ def prepare_selector() -> dict[str, Any]:
     }
 
 
+def visible_overview() -> dict[str, Any]:
+    """Refresh local source totals using a still-fresh, profile-bound visibility proof."""
+    bridge = _bridge()
+    config = bridge._config_store().load()
+    cache = _selector_cache(config)
+    document = cache.read()
+    if (
+        document is None
+        or not 0 <= time.time() - document["verified_at"] < _CHART_VISIBILITY_SECONDS
+    ):
+        raise bridge.AdminError("selector must be refreshed", code="stale_configuration")
+    result = overview(_selector_visible(document))
+    current = bridge._config_store().load()
+    _require_same_visibility_context(config, current)
+    if current.event_history_sources != config.event_history_sources:
+        raise bridge.AdminError("sources changed", code="stale_configuration")
+    if _selector_cache(current).profile != cache.profile:
+        raise bridge.AdminError("Miniserver identity changed", code="stale_configuration")
+    updated = cache.read()
+    if updated is None or updated["generation"] != document["generation"]:
+        raise bridge.AdminError("selector changed", code="stale_configuration")
+    return result
+
+
 def _chart_sources(payload: object) -> tuple[tuple[str, str], ...]:
     bridge = _bridge()
     if not isinstance(payload, dict) or not isinstance(payload.get("sources"), list):

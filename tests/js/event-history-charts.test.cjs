@@ -113,9 +113,12 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
   let holdNext = false;
   let releaseHeld;
   let tick;
+  let wake;
   let hidden = false;
   let queryCount = 0;
   let failCode = null;
+  let failOnce = false;
+  let failPrepareOnce = false;
   let historyGeneration = 1;
   let selectorGeneration = 'a'.repeat(24);
   let pendingEvent = null;
@@ -129,6 +132,7 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
     static paths = {stepped: () => () => ({})};
     static instances = [];
     static dataUpdates = 0;
+    static destroys = 0;
     constructor(options, data, host) {
       this.options = options; this.data = data; this.host = host;
       window.uPlot.instances.push(this);
@@ -142,11 +146,17 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
     setData(data) { this.data = data; window.uPlot.dataUpdates++; }
     setScale(_key, {min, max}) { this.scales.x = {min, max}; }
     setSize() {}
-    destroy() { this.host.replaceChildren(); }
+    destroy() { window.uPlot.destroys++; this.host.replaceChildren(); }
   };
-  window.McpEventHistoryApi = {request: async (action, fields) => {
+  window.McpEventHistoryApi = {subscribeUpdates: (onChange) => { wake = onChange; },
+    request: async (action, fields) => {
     calls.push({action, fields});
     if (action === 'event_history_chart_prepare') {
+      if (failPrepareOnce) {
+        failPrepareOnce = false;
+        throw Object.assign(new Error('selector refresh in progress'),
+          {code: 'stale_configuration'});
+      }
       if (denied) throw Object.assign(new Error('denied'), {code: 'forbidden'});
       return {generation: selectorGeneration, verified_at: Date.now() / 1000,
         sources: [{...source, control_name: selectorGeneration[0] === 'b' ? 'Renamed' : 'Control',
@@ -155,8 +165,11 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
     }
     if (action === 'event_history_chart_query') {
       queryCount++;
-      if (failCode) throw Object.assign(new Error('failed'),
-        {code: failCode, requestId: 'abc-123'});
+      if (failCode) {
+        const code = failCode;
+        if (failOnce) { failCode = null; failOnce = false; }
+        throw Object.assign(new Error('failed'), {code, requestId: 'abc-123'});
+      }
       const events = pendingEvent ? [pendingEvent] : queryCount === 1 ? [
         {id: 1, observed_at: Date.now() / 1000 - 10, old_value: false, new_value: true},
         {id: 2, observed_at: Date.now() / 1000 - 9, old_value: 0,
@@ -216,8 +229,11 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
   const originalNow = window.Date.now;
   window.Date.now = () => originalNow() + 60000;
   coverage = [];
+  failPrepareOnce = true;
   tick();
   await flush();
+  assert.equal(window.uPlot.destroys, 0,
+    'transient verification failure retains the existing plot');
   assert.equal(window.document.querySelectorAll('#chart-panels ul li').length, 0);
   const advancedRange = JSON.parse(queries()[1].fields.queries)[0];
   assert.ok(advancedRange.end > initialRange.end + 59);
@@ -230,10 +246,17 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
   await flush();
   const fixedRange = JSON.parse(queries().at(-1).fields.queries)[0];
   assert.equal(fixedRange.end, advancedRange.end);
+  failCode = 'stale_configuration';
+  failOnce = true;
+  tick();
+  await flush();
+  assert.equal(window.uPlot.instances.length, 1,
+    'a concurrent selector refresh keeps the existing plot during revalidation');
+  assert.equal(window.document.querySelectorAll('#chart-panels section').length, 1);
   window.Date.now = originalNow;
   pendingEvent = {id: 3, observed_at: fixedRange.end - 5, old_value: 1, new_value: 2};
   const originalPlot = window.uPlot.instances[0];
-  tick();
+  wake();
   await flush();
   assert.equal(window.uPlot.instances.length, 1, 'new numeric value reuses the plot');
   assert.ok(window.uPlot.dataUpdates > 0);

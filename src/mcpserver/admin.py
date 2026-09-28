@@ -1826,6 +1826,7 @@ def dispatch(request: object, *, timing: dict[str, float] | None = None) -> dict
         "event_history_discover",
         "event_history_discover_states",
         "event_history_prepare_selector",
+        "event_history_visible_overview",
         "event_history_selector_catalog",
         "event_history_selector_facets",
         "event_history_selector_query",
@@ -1851,6 +1852,8 @@ def dispatch(request: object, *, timing: dict[str, float] | None = None) -> dict
             return event_history_admin.discover_states(payload)
         if action == "event_history_prepare_selector":
             return event_history_admin.prepare_selector()
+        if action == "event_history_visible_overview":
+            return event_history_admin.visible_overview()
         if action == "event_history_selector_catalog":
             return event_history_admin.selector_catalog(payload)
         if action == "event_history_selector_facets":

@@ -31,6 +31,10 @@
   let controlsLoadPromise = null;
   let staleRecoveryScheduled = false;
   let sourceRevisionChecking = false;
+  let sourceRevisionQueued = false;
+  let sourceRevisionQueueTotals = false;
+  let totalsRefreshPending = false;
+  let nextTotalsFallbackAt = 0;
   let knownSourceRevision = '';
   let knownPayloadPending = null;
   let selectorVerificationPending = false;
@@ -463,6 +467,7 @@
       await loadControls();
       await loadStatus();
       busy = false;
+      drainSourceRevision();
       refreshButton.disabled = false;
       addButton.disabled = stateSelect.disabled || !selectedControl || !stateSelect.value;
       stateSearch.disabled = !selectedControl || stateSearchWrap.hidden;
@@ -695,6 +700,7 @@
       return false;
     } finally {
       controlsLoading = false;
+      drainSourceRevision();
       refreshButton.disabled = busy;
       refreshButton.textContent = refreshButtonText;
     }
@@ -725,18 +731,52 @@
       }
     })();
   };
-  const checkSourceRevision = async () => {
-    if (document.hidden || busy || controlsLoading || sourceRevisionChecking
-      || (!knownSourceRevision && !selectorVerificationPending)) return;
+  const checkSourceRevision = async (refreshTotals = false) => {
+    totalsRefreshPending ||= refreshTotals;
+    if (sourceRevisionChecking) {
+      sourceRevisionQueued = true;
+      sourceRevisionQueueTotals ||= refreshTotals;
+      return;
+    }
+    if (document.hidden) return;
+    if (!knownSourceRevision && !selectorVerificationPending) {
+      if (controlsLoading || busy) {
+        sourceRevisionQueued = true;
+        sourceRevisionQueueTotals ||= refreshTotals;
+      }
+      return;
+    }
+    if (busy || controlsLoading) {
+      sourceRevisionQueued = true;
+      sourceRevisionQueueTotals ||= refreshTotals;
+      return;
+    }
     sourceRevisionChecking = true;
     try {
       const data = await api.request('event_history_source_revision', {}, 15000);
       if (data.availability === 'available'
-        && (data.revision !== knownSourceRevision || selectorVerificationPending
+        && (totalsRefreshPending || data.revision !== knownSourceRevision
+          || selectorVerificationPending
           || (typeof data.payload_pending === 'boolean'
             && data.payload_pending !== knownPayloadPending))
         && Date.now() >= nextRevisionRefreshAt) {
-        const verified = await loadControls();
+        let verified = false;
+        if (!selectorVerificationPending && (totalsRefreshPending
+          || data.revision !== knownSourceRevision)) {
+          try {
+            const overview = await api.request('event_history_visible_overview', {}, 15000);
+            if (overview.store_status === 'available'
+              && overview.visibility_status === 'available'
+              && overview.source_revision === data.revision) {
+              renderOverview(overview);
+              totalsRefreshPending = false;
+              verified = true;
+            }
+          } catch { /* Refresh visibility through full discovery below. */ }
+        }
+        if (!verified) verified = await loadControls();
+        if (verified && !selectorVerificationPending
+          && knownSourceRevision === data.revision) totalsRefreshPending = false;
         if (!verified || knownSourceRevision !== data.revision) {
           selectorVerificationPending = true;
           revisionRefreshFailures += 1;
@@ -748,7 +788,15 @@
       // Keep the last verified view; the next visible poll can retry this local check.
     } finally {
       sourceRevisionChecking = false;
+      drainSourceRevision();
     }
+  };
+  const drainSourceRevision = () => {
+    if (!sourceRevisionQueued) return;
+    const nextTotals = sourceRevisionQueueTotals;
+    sourceRevisionQueued = false;
+    sourceRevisionQueueTotals = false;
+    void checkSourceRevision(nextTotals);
   };
   const loadStates = async (restoreState = '', append = false) => {
     const request = ++stateGeneration;
@@ -902,6 +950,7 @@
       addStatus.dataset.kind = applied ? 'warning' : 'error';
     } finally {
       busy = false;
+      drainSourceRevision();
       for (const control of locked) {
         if (control.isConnected) control.disabled = wasDisabled.get(control);
       }
@@ -945,9 +994,18 @@
     })();
   });
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) { void loadStatus(); void checkSourceRevision(); }
+    if (!document.hidden) { void loadStatus(); void checkSourceRevision(true); }
   });
   window.setInterval(() => { void loadStatus(); }, 30000);
+  if (typeof api.subscribeUpdates === 'function') {
+    api.subscribeUpdates(() => { void checkSourceRevision(true); },
+      () => {
+        if (Date.now() >= nextTotalsFallbackAt) {
+          nextTotalsFallbackAt = Date.now() + 60000;
+          void checkSourceRevision(true);
+        }
+      });
+  }
   window.setInterval(() => { void checkSourceRevision(); }, 60000);
   void loadQuickSummary();
   void loadStatus();
