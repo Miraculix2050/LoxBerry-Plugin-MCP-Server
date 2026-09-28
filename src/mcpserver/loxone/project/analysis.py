@@ -294,11 +294,17 @@ def analyze_knx(
     findings: list[dict[str, object]] = []
     summaries: dict[str, object] = {}
     truncated_reasons: list[str] = ["max_usage_nodes"] if usage_truncated else []
+    hierarchy_limit = _MAX_FINDINGS if analyses == {"address_hierarchy"} else _MAX_FINDINGS // 2
+    hierarchy_findings = 0
 
     def emit(kind: str, basis: object, evidence: list[str], payload: dict[str, object]) -> None:
         """Add one bounded finding while hashing the complete evidence set."""
 
-        if len(findings) >= _MAX_FINDINGS:
+        nonlocal hierarchy_findings
+        is_hierarchy = payload["analysis"] == "address_hierarchy"
+        if len(findings) >= _MAX_FINDINGS or (
+            is_hierarchy and hierarchy_findings >= hierarchy_limit
+        ):
             truncated_reasons.append("max_findings")
             return
         ids, omitted = _bounded_nodes(evidence)
@@ -310,6 +316,7 @@ def analyze_knx(
                 "affected_omitted": omitted,
             }
         )
+        hierarchy_findings += is_hierarchy
 
     if "address_hierarchy" in analyses:
         hierarchy_outgoing: dict[str, list[GraphEdge]] = defaultdict(list)

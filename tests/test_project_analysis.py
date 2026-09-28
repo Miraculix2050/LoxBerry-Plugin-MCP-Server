@@ -666,3 +666,19 @@ def test_every_finding_type_honors_the_shared_result_limit(monkeypatch):
     assert len(result["findings"]) == 1
     assert result["analysis_truncated"] is True
     assert result["truncation_reasons"] == ["max_findings"]
+
+
+def test_hierarchy_limit_preserves_findings_from_other_requested_analyses(monkeypatch):
+    monkeypatch.setattr(project_analysis, "_MAX_FINDINGS", 4)
+    result = analyze_knx(
+        _view(
+            b'<P><C Type="EIBsensor" U="a" EibAddr="1/2/3" EIBType="1"/>'
+            b'<C Type="EIBsensor" U="b" EibAddr="1/2/3" EIBType="5"/></P>'
+        ),
+        frozenset({"address_hierarchy", "datatype_consistency"}),
+    )
+
+    assert len(result["findings"]) <= 4
+    assert sum(item["analysis"] == "address_hierarchy" for item in result["findings"]) == 2
+    assert any(item["finding_type"] == "raw_datatype_conflict" for item in result["findings"])
+    assert result["truncation_reasons"] == ["max_findings"]

@@ -123,6 +123,9 @@ prefix labels bound to the configured Miniserver endpoint and explicit
 middle prefix with the same numbers. Labels have
 `admin_configured` provenance and never alter graph facts or counts. Analysis
 cursor scope includes the taxonomy, so changed labels invalidate prior cursors.
+When other analyses are requested, hierarchy findings use at most half of the
+shared finding limit. `max_findings` marks omitted rows; summary counts still
+describe all observed prefixes.
 
 ### Future live KNX diagnostics boundary
 
