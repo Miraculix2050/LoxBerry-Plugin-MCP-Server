@@ -152,6 +152,11 @@
       state.coverageList.append(item);
     }
   };
+  const sourceContext = (source) => [
+    `${label('chartRoom')}: ${source.room || label('chartUnknown')}`,
+    `${label('chartCategory')}: ${source.category || label('chartUnknown')}`,
+    `${label('chartType')}: ${source.control_type}`,
+  ].join(' · ');
   const createPanels = () => {
     panels.replaceChildren();
     sourceStates = selection.sources.map((source) => {
@@ -161,11 +166,7 @@
       title.textContent = `${source.control_name} · ${source.state_name}`;
       const context = document.createElement('p');
       context.className = 'mcp-help';
-      context.textContent = [
-        `${label('chartRoom')}: ${source.room || label('chartUnknown')}`,
-        `${label('chartCategory')}: ${source.category || label('chartUnknown')}`,
-        `${label('chartType')}: ${source.control_type}`,
-      ].join(' · ');
+      context.textContent = sourceContext(source);
       const notice = document.createElement('p');
       notice.setAttribute('role', 'status');
       const boundaries = document.createElement('p');
@@ -200,7 +201,7 @@
       coverageDetails.append(coverageSummary, coverageList);
       panel.append(title, context, notice, boundaries, coverageDetails, plotHost, focus, details);
       panels.append(panel);
-      return {source, events: new Map(), cursor: 0, generation: null, reduced: false,
+      return {source, title, context, events: new Map(), cursor: 0, generation: null, reduced: false,
         coverage: [], plot: null, plotHost, focus, notice, boundaries, coverageList, tableBody};
     });
   };
@@ -210,10 +211,17 @@
     if (!Array.isArray(result.sources) || result.sources.length !== requested.length) {
       throw new Error('Invalid chart source response');
     }
-    const changed = !selection || selection.generation !== result.generation;
-    if (changed) clear();
+    const first = !selection;
     selection = result;
-    if (changed) createPanels();
+    if (first) createPanels();
+    else for (let index = 0; index < sourceStates.length; index++) {
+      const state = sourceStates[index];
+      const source = result.sources[index];
+      state.source = source;
+      state.title.textContent = `${source.control_name} · ${source.state_name}`;
+      state.context.textContent = sourceContext(source);
+      state.plotHost.setAttribute('aria-label', state.title.textContent);
+    }
   };
   const query = async (token) => {
     let pending = [...sourceStates];

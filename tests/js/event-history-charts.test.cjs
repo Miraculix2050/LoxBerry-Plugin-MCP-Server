@@ -37,6 +37,7 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
   let queryCount = 0;
   let failCode = null;
   let historyGeneration = 1;
+  let selectorGeneration = 'a'.repeat(24);
   let coverage = [{started_at: Date.now() / 1000 - 30,
     ended_at: Date.now() / 1000 - 20, outcome: 'stopped'}];
   Object.defineProperty(window.document, 'hidden', {get: () => hidden});
@@ -56,8 +57,9 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
     calls.push({action, fields});
     if (action === 'event_history_chart_prepare') {
       if (denied) throw Object.assign(new Error('denied'), {code: 'forbidden'});
-      return {generation: 'a'.repeat(24), verified_at: Date.now() / 1000,
-        sources: [{...source, control_name: 'Control', state_name: 'State',
+      return {generation: selectorGeneration, verified_at: Date.now() / 1000,
+        sources: [{...source, control_name: selectorGeneration[0] === 'b' ? 'Renamed' : 'Control',
+          state_name: 'State',
           room: 'Room', category: 'Category', control_type: 'Switch'}]};
     }
     if (action === 'event_history_chart_query') {
@@ -133,6 +135,16 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
   assert.equal(window.document.querySelectorAll('#chart-panels canvas').length, 1,
     'successful visibility recheck preserves values after transient query failure');
   assert.match(window.document.querySelector('#chart-status').textContent, /Unavailable/);
+  failCode = null;
+  tick();
+  await flush();
+  selectorGeneration = 'b'.repeat(24);
+  failCode = 'temporarily_unavailable';
+  window.document.querySelector('#chart-refresh').click();
+  await flush();
+  assert.equal(window.document.querySelectorAll('#chart-panels canvas').length, 1,
+    'a changed selector generation retains verified values after a transient query error');
+  assert.match(window.document.querySelector('#chart-panels section h2').textContent, /Renamed/);
   failCode = null;
   tick();
   await flush();
