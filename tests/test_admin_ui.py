@@ -712,6 +712,8 @@ def test_knx_taxonomy_admin_form_uses_the_same_origin_save_path_in_both_language
     assert 'data-ajax="save_knx_taxonomy"' in template
     assert 'name="taxonomy_entries"' in template
     assert "admin_call('save_knx_taxonomy', {entries => \\@entries})" in cgi
+    assert "($config->{knx_address_taxonomy}{endpoint} // '') eq $taxonomy_endpoint" in cgi
+    assert "KNX_TAXONOMY_TEXT => $taxonomy_text" in cgi
     assert "KNX_TAXONOMY_HELP=" in german
     assert "KNX_TAXONOMY_HELP=" in english
 

@@ -887,6 +887,13 @@ my ($selected_miniserver) = grep { $_->{selected} } @$miniservers;
 my $display_endpoint = $config->{loxone}{endpoint} // '';
 $display_endpoint = $selected_miniserver->{endpoint}
     if $display_endpoint eq '' && $selected_miniserver;
+my $taxonomy_endpoint = $display_endpoint;
+$taxonomy_endpoint =~ s{/$}{};
+my $taxonomy_text = ($config->{knx_address_taxonomy}{endpoint} // '') eq $taxonomy_endpoint
+    ? join("\n", map {
+        ($_->{prefix} // '') . '=' . ($_->{label} // '')
+    } @{$config->{knx_address_taxonomy}{entries} // []})
+    : '';
 my $public_origin = $config->{server}{public_origin} // '';
 my $certificate = {};
 my $renewal = {};
@@ -1029,9 +1036,7 @@ $template->param(
     EXPLORER_URL => 'explorer.cgi',
     SCHEMA_REFERENCE_URL => 'tool-schema-reference.html',
     ENDPOINT => $display_endpoint,
-    KNX_TAXONOMY_TEXT => join("\n", map {
-        ($_->{prefix} // '') . '=' . ($_->{label} // '')
-    } @{$config->{knx_address_taxonomy}{entries} // []}),
+    KNX_TAXONOMY_TEXT => $taxonomy_text,
     MINISERVERS => $miniservers,
     MANUAL_ENDPOINT => $has_selected_miniserver ? 0 : 1,
     CONNECTION_TIMEOUT => $config->{loxone}{connection_timeout} // 10,
