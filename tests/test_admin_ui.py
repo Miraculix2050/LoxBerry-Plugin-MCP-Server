@@ -1242,12 +1242,13 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const source = fs.readFileSync(process.argv[1], 'utf8');
-const section = source.slice(source.indexOf('  const checkSourceRevision = async () => {'),
+const section = source.slice(source.indexOf('  const checkSourceRevision = async (refreshTotals = false) => {'),
   source.indexOf('  const loadStates ='));
 const context = {document: {hidden: false}, api: {request: async () =>
   ({availability: 'available', revision: 'new'})}};
 vm.runInNewContext(`let busy = false; let controlsLoading = false;
 let sourceRevisionChecking = false; let sourceRevisionQueued = false;
+let sourceRevisionQueueTotals = false;
 let knownSourceRevision = 'old';
 let knownPayloadPending = false;
 let selectorVerificationPending = false; let nextRevisionRefreshAt = 0;
@@ -1282,19 +1283,20 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const source = fs.readFileSync(process.argv[1], 'utf8');
-const section = source.slice(source.indexOf('  const checkSourceRevision = async () => {'),
+const section = source.slice(source.indexOf('  const checkSourceRevision = async (refreshTotals = false) => {'),
   source.indexOf('  const loadStates ='));
 const calls = [];
 const context = {document: {hidden: false}, api: {request: async (action) => {
   calls.push(action);
   if (action === 'event_history_source_revision') return {availability: 'available',
-    revision: 'new', payload_pending: false};
+    revision: 'old', payload_pending: false};
   if (action === 'event_history_visible_overview') return {store_status: 'available',
-    visibility_status: 'available', source_revision: 'new', sources: [{event_count: 2}]};
+    visibility_status: 'available', source_revision: 'old', sources: [{event_count: 2}]};
   throw new Error(action);
 }}};
 vm.runInNewContext(`let busy = false; let controlsLoading = false;
 let sourceRevisionChecking = false; let sourceRevisionQueued = false;
+let sourceRevisionQueueTotals = false;
 let knownSourceRevision = 'old';
 let knownPayloadPending = false; let selectorVerificationPending = false;
 let nextRevisionRefreshAt = 0; let revisionRefreshFailures = 0;
@@ -1303,12 +1305,20 @@ const loadControls = async () => { fullLoads++; return true; };
 const renderOverview = (data) => { knownSourceRevision = data.source_revision;
   shown = data.sources[0].event_count; };
 ${section}
-globalThis.subject = {checkSourceRevision, result: () => ({fullLoads, shown})};`, context);
+globalThis.subject = {checkSourceRevision, drainSourceRevision,
+  setBusy: (value) => { busy = value; }, result: () => ({fullLoads, shown})};`, context);
 (async () => {
-  await context.subject.checkSourceRevision();
+  await context.subject.checkSourceRevision(true);
   assert.deepEqual(calls, ['event_history_source_revision', 'event_history_visible_overview']);
   assert.equal(context.subject.result().fullLoads, 0);
   assert.equal(context.subject.result().shown, 2);
+  context.subject.setBusy(true);
+  await context.subject.checkSourceRevision(true);
+  assert.equal(calls.length, 2, 'an in-progress action queues the wakeup');
+  context.subject.setBusy(false);
+  context.subject.drainSourceRevision();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls.length, 4, 'queued totals refresh runs after the action');
 })().catch((error) => { console.error(error); process.exitCode = 1; });
 """
     subprocess.run(
@@ -1327,13 +1337,14 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const source = fs.readFileSync(process.argv[1], 'utf8');
-const section = source.slice(source.indexOf('  const checkSourceRevision = async () => {'),
+const section = source.slice(source.indexOf('  const checkSourceRevision = async (refreshTotals = false) => {'),
   source.indexOf('  const loadStates ='));
 let payloadPending = true;
 const context = {document: {hidden: false}, api: {request: async () =>
   ({availability: 'available', revision: 'same', payload_pending: payloadPending})}};
 vm.runInNewContext(`let busy = false; let controlsLoading = false;
 let sourceRevisionChecking = false; let sourceRevisionQueued = false;
+let sourceRevisionQueueTotals = false;
 let knownSourceRevision = 'same';
 let knownPayloadPending = true; let selectorVerificationPending = false;
 let nextRevisionRefreshAt = 0; let revisionRefreshFailures = 0; let refreshes = 0;

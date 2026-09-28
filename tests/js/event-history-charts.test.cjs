@@ -117,6 +117,7 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
   let queryCount = 0;
   let failCode = null;
   let failOnce = false;
+  let failPrepareOnce = false;
   let historyGeneration = 1;
   let selectorGeneration = 'a'.repeat(24);
   let pendingEvent = null;
@@ -130,6 +131,7 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
     static paths = {stepped: () => () => ({})};
     static instances = [];
     static dataUpdates = 0;
+    static destroys = 0;
     constructor(options, data, host) {
       this.options = options; this.data = data; this.host = host;
       window.uPlot.instances.push(this);
@@ -143,11 +145,16 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
     setData(data) { this.data = data; window.uPlot.dataUpdates++; }
     setScale(_key, {min, max}) { this.scales.x = {min, max}; }
     setSize() {}
-    destroy() { this.host.replaceChildren(); }
+    destroy() { window.uPlot.destroys++; this.host.replaceChildren(); }
   };
   window.McpEventHistoryApi = {request: async (action, fields) => {
     calls.push({action, fields});
     if (action === 'event_history_chart_prepare') {
+      if (failPrepareOnce) {
+        failPrepareOnce = false;
+        throw Object.assign(new Error('selector refresh in progress'),
+          {code: 'stale_configuration'});
+      }
       if (denied) throw Object.assign(new Error('denied'), {code: 'forbidden'});
       return {generation: selectorGeneration, verified_at: Date.now() / 1000,
         sources: [{...source, control_name: selectorGeneration[0] === 'b' ? 'Renamed' : 'Control',
@@ -220,8 +227,11 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
   const originalNow = window.Date.now;
   window.Date.now = () => originalNow() + 60000;
   coverage = [];
+  failPrepareOnce = true;
   tick();
   await flush();
+  assert.equal(window.uPlot.destroys, 0,
+    'transient verification failure retains the existing plot');
   assert.equal(window.document.querySelectorAll('#chart-panels ul li').length, 0);
   const advancedRange = JSON.parse(queries()[1].fields.queries)[0];
   assert.ok(advancedRange.end > initialRange.end + 59);

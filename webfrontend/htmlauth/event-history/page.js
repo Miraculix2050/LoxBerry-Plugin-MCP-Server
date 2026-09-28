@@ -32,6 +32,7 @@
   let staleRecoveryScheduled = false;
   let sourceRevisionChecking = false;
   let sourceRevisionQueued = false;
+  let sourceRevisionQueueTotals = false;
   let knownSourceRevision = '';
   let knownPayloadPending = null;
   let selectorVerificationPending = false;
@@ -464,6 +465,7 @@
       await loadControls();
       await loadStatus();
       busy = false;
+      drainSourceRevision();
       refreshButton.disabled = false;
       addButton.disabled = stateSelect.disabled || !selectedControl || !stateSelect.value;
       stateSearch.disabled = !selectedControl || stateSearchWrap.hidden;
@@ -696,6 +698,7 @@
       return false;
     } finally {
       controlsLoading = false;
+      drainSourceRevision();
       refreshButton.disabled = busy;
       refreshButton.textContent = refreshButtonText;
     }
@@ -726,23 +729,29 @@
       }
     })();
   };
-  const checkSourceRevision = async () => {
+  const checkSourceRevision = async (refreshTotals = false) => {
     if (sourceRevisionChecking) {
       sourceRevisionQueued = true;
+      sourceRevisionQueueTotals ||= refreshTotals;
       return;
     }
-    if (document.hidden || busy || controlsLoading
-      || (!knownSourceRevision && !selectorVerificationPending)) return;
+    if (document.hidden || (!knownSourceRevision && !selectorVerificationPending)) return;
+    if (busy || controlsLoading) {
+      sourceRevisionQueued = true;
+      sourceRevisionQueueTotals ||= refreshTotals;
+      return;
+    }
     sourceRevisionChecking = true;
     try {
       const data = await api.request('event_history_source_revision', {}, 15000);
       if (data.availability === 'available'
-        && (data.revision !== knownSourceRevision || selectorVerificationPending
+        && (refreshTotals || data.revision !== knownSourceRevision || selectorVerificationPending
           || (typeof data.payload_pending === 'boolean'
             && data.payload_pending !== knownPayloadPending))
         && Date.now() >= nextRevisionRefreshAt) {
         let verified = false;
-        if (!selectorVerificationPending && data.revision !== knownSourceRevision) {
+        if (!selectorVerificationPending && (refreshTotals
+          || data.revision !== knownSourceRevision)) {
           try {
             const overview = await api.request('event_history_visible_overview', {}, 15000);
             if (overview.store_status === 'available'
@@ -765,11 +774,15 @@
       // Keep the last verified view; the next visible poll can retry this local check.
     } finally {
       sourceRevisionChecking = false;
-      if (sourceRevisionQueued) {
-        sourceRevisionQueued = false;
-        void checkSourceRevision();
-      }
+      drainSourceRevision();
     }
+  };
+  const drainSourceRevision = () => {
+    if (!sourceRevisionQueued) return;
+    const nextTotals = sourceRevisionQueueTotals;
+    sourceRevisionQueued = false;
+    sourceRevisionQueueTotals = false;
+    void checkSourceRevision(nextTotals);
   };
   const loadStates = async (restoreState = '', append = false) => {
     const request = ++stateGeneration;
@@ -923,6 +936,7 @@
       addStatus.dataset.kind = applied ? 'warning' : 'error';
     } finally {
       busy = false;
+      drainSourceRevision();
       for (const control of locked) {
         if (control.isConnected) control.disabled = wasDisabled.get(control);
       }
@@ -966,14 +980,14 @@
     })();
   });
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) { void loadStatus(); void checkSourceRevision(); }
+    if (!document.hidden) { void loadStatus(); void checkSourceRevision(true); }
   });
   window.setInterval(() => { void loadStatus(); }, 30000);
   if (typeof api.subscribeUpdates === 'function') {
-    api.subscribeUpdates(() => { void checkSourceRevision(); },
-      () => { void checkSourceRevision(); });
+    api.subscribeUpdates(() => { void checkSourceRevision(true); },
+      () => { void checkSourceRevision(true); });
   }
-  window.setInterval(() => { void checkSourceRevision(); }, 60000);
+  window.setInterval(() => { void checkSourceRevision(true); }, 60000);
   void loadQuickSummary();
   void loadStatus();
   void loadControls();

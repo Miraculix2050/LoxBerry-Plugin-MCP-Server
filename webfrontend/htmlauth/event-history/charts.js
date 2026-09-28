@@ -655,7 +655,6 @@
       }
     } catch (error) {
       if (token !== sequence) return;
-      if (verifying) clear();
       if (error.code === 'history_changed' || error.code === 'cache_full') {
         discardSnapshot();
         for (const state of sourceStates) {
@@ -667,15 +666,19 @@
           rerun = true;
           rerunPoll = true;
         } else setStatus(label('chartUnavailable'), 'warning');
-      } else if (error.code === 'stale_configuration' && staleRetries < 1) {
+      } else if ((error.code === 'stale_configuration'
+        || (verifying && error.code !== 'forbidden')) && staleRetries < 1) {
         staleRetries++;
         rerun = true;
         rerunFresh = true;
+        rerunPoll = true;
         setStatus(label('chartStale'), 'warning');
       } else {
-        if (error.code === 'forbidden' || error.code === 'stale_configuration') {
+        if (error.code === 'forbidden' || error.code === 'stale_configuration'
+          || verifying) {
           clear();
-          setStatus(label('chartDenied'), 'warning');
+          setStatus(error.code === 'forbidden' || error.code === 'stale_configuration'
+            ? label('chartDenied') : queryErrorStatus(error), 'warning');
         } else {
           setStatus(queryErrorStatus(error), 'warning');
         }
