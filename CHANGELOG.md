@@ -5,6 +5,8 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Avoid loading the Loxone project runtime for Event History chart queries, reducing Admin helper startup cost.
+
 - Place each Chart View source's name, context, coverage details, and individual status beside its plot on wide screens; show the shared capture warning only once above the charts.
 
 - Add `loxone_list_event_history_sources` for currently visible control/state pairs; page both source lists with active/removed status and known recording end time. Allow the complete `loxberry_list_event_history_sources` with either exact local read or operate approval, and show its alternative requirements in the Tool Explorer.

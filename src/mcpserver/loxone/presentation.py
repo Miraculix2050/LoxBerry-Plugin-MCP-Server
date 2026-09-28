@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from collections import Counter
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mcpserver.loxone.models import Control, LoxoneStructure, NamedGroup
-from mcpserver.loxone.runtime import RuntimeSnapshot
+
+if TYPE_CHECKING:
+    from mcpserver.loxone.runtime import RuntimeSnapshot
 
 
 def groups(items: tuple[NamedGroup, ...]) -> list[dict[str, str]]:
