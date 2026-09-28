@@ -147,11 +147,6 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
   assert.equal(window.document.querySelector('#chart-panels section > details:last-of-type').hidden,
     false);
   assert.match(window.document.querySelector('#chart-panels table').textContent, /offline/);
-  reducedMode = true;
-  tick();
-  await flush();
-  assert.match(window.document.querySelector('#chart-panels section').textContent, /Reduced/);
-  reducedMode = false;
   failCode = 'outcome_unknown';
   tick();
   await flush();
@@ -236,14 +231,18 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
   tick();
   await flush();
   assert.ok(queries().length > beforeChange + 1, 'history mutation retries after busy clears');
+  assert.match(window.document.querySelector('#chart-panels section').textContent, /Reduced/);
   plotHost.dispatchEvent(new window.KeyboardEvent('keydown', {key: 'End', bubbles: true}));
   assert.equal(window.document.querySelector('#chart-panels section [aria-live="polite"]')
     .textContent, '', 'cleared history has no stale keyboard value');
+  reducedMode = false;
   const beforeReducedZoom = queries().length;
   window.document.querySelector('#chart-zoom-in').click();
   await flush();
   assert.equal(queries().length, beforeReducedZoom + 1,
     'narrowing a sampled interval requests more detailed values');
+  assert.doesNotMatch(window.document.querySelector('#chart-panels section').textContent,
+    /Reduced/, 'an exact narrowed range clears the old reduction notice');
   failCode = 'history_changed';
   const beforeRepeatedChange = queries().length;
   tick();

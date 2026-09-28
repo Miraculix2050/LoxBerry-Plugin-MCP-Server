@@ -85,33 +85,41 @@
     ...state.exact,
     ...state.sampled.filter((item) => item.start >= start && item.end <= end),
   ].sort((a, b) => a.start - b.start);
+  const unresolvedInRange = (marked, exact, start, end) => marked.some((item) => {
+    const overlapStart = Math.max(start, item.start);
+    const overlapEnd = Math.min(end, item.end);
+    return overlapStart < overlapEnd
+      && missingIntervals(exact, overlapStart, overlapEnd).length > 0;
+  });
+  const trimIntervals = (intervals, start, end) => intervals.map((item) => ({
+    start: Math.max(item.start, start), end: Math.min(item.end, end),
+  })).filter((item) => item.start < item.end);
   const resetSource = (state) => {
     state.events.clear();
     state.loaded = [];
     state.exact = [];
     state.sampled = [];
+    state.coverageExact = [];
+    state.coverageTruncatedRanges = [];
     state.cursor = 0;
     state.generation = null;
-    state.reduced = false;
     state.coverage = [];
-    state.coverageTruncated = false;
     state.refs = [];
     state.focusIndex = null;
     state.focus.textContent = '';
   };
   const limitCache = (state) => {
     if (state.loaded.length <= 8 && state.exact.length <= 8
-      && state.sampled.length <= 8 && state.coverage.length <= 128
+      && state.sampled.length <= 8 && state.coverageExact.length <= 8
+      && state.coverageTruncatedRanges.length <= 8 && state.coverage.length <= 128
       && (!state.loaded.length
         || state.loaded.at(-1).end - state.loaded[0].start <= maxRange * 2)) return;
-    state.loaded = state.loaded.map((item) => ({
-      start: Math.max(item.start, range.start), end: Math.min(item.end, range.end),
-    })).filter((item) => item.start < item.end);
-    state.exact = state.exact.map((item) => ({
-      start: Math.max(item.start, range.start), end: Math.min(item.end, range.end),
-    })).filter((item) => item.start < item.end);
-    state.sampled = state.sampled.filter((item) => item.start < range.end
-      && item.end > range.start).slice(-8);
+    state.loaded = trimIntervals(state.loaded, range.start, range.end);
+    state.exact = trimIntervals(state.exact, range.start, range.end);
+    state.sampled = trimIntervals(state.sampled, range.start, range.end).slice(-8);
+    state.coverageExact = trimIntervals(state.coverageExact, range.start, range.end);
+    state.coverageTruncatedRanges = trimIntervals(state.coverageTruncatedRanges,
+      range.start, range.end).slice(-8);
     for (const [id, event] of state.events) {
       if (event.observed_at < range.start || event.observed_at > range.end) {
         state.events.delete(id);
@@ -119,7 +127,6 @@
     }
     state.coverage = state.coverage.filter((item) => item.started_at <= range.end
       && (item.ended_at ?? Infinity) >= range.start).slice(-128);
-    state.coverageTruncated = true;
     render(state);
   };
   const syncRange = (origin, min, max) => {
@@ -155,7 +162,11 @@
     const events = [...state.events.values()].filter((event) =>
       event.observed_at >= range.start && event.observed_at <= range.end).sort((a, b) =>
       a.observed_at - b.observed_at || a.id - b.id);
-    state.notice.textContent = state.reduced || events.some((event) => decimalInteger(event.new_value))
+    const reduced = unresolvedInRange(state.sampled, state.exact, range.start, range.end);
+    const coverageTruncated = unresolvedInRange(state.coverageTruncatedRanges,
+      state.coverageExact, range.start, range.end);
+    state.notice.textContent = reduced || coverageTruncated
+      || events.some((event) => decimalInteger(event.new_value))
       ? label('chartReduced')
       : (events.length ? label('chartCoverage') : label('chartEmpty'));
     const numeric = events.filter((event) => Number.isFinite(numericValue(event.new_value)));
@@ -169,9 +180,9 @@
         const coverage = (state.coverage || []).findIndex((item) =>
           item.started_at <= event.observed_at
           && (item.ended_at == null || item.ended_at >= event.observed_at));
-        if (priorCoverage !== null && (state.coverageTruncated || coverage < 0
+        if (priorCoverage !== null && (coverageTruncated || coverage < 0
           || priorCoverage < 0 || priorCoverage !== coverage
-          || (state.reduced && x.length && event.observed_at - x[x.length - 1]
+          || (reduced && x.length && event.observed_at - x[x.length - 1]
             > (range.end - range.start) / 64))) {
           x.push(event.observed_at - 0.000001);
           y.push(null);
@@ -290,8 +301,9 @@
       panel.append(title, context, notice, boundaries, coverageDetails, plotHost, focus, details);
       panels.append(panel);
       const state = {source, title, context, events: new Map(), loaded: [], exact: [],
-        sampled: [], cursor: 0, generation: null,
-        reduced: false, coverage: [], plot: null, plotKind: null, refs: [], plotHost,
+        sampled: [],
+        coverageExact: [], coverageTruncatedRanges: [], cursor: 0, generation: null,
+        coverage: [], plot: null, plotKind: null, refs: [], plotHost,
         focus, notice, boundaries, coverageList, tableBody, valueDetails: details};
       plotHost.addEventListener('keydown', (event) => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
@@ -362,16 +374,16 @@
         }
         coverage.sort((a, b) => a.started_at - b.started_at);
         const metadataChanged = JSON.stringify(state.coverage) !== JSON.stringify(coverage)
-          || (!state.coverageTruncated && result.coverage_truncated)
           || state.capture !== result.capture_started_at
           || state.retained !== result.retained_from
           || state.removed !== result.recording_ended_at;
         const renderNeeded = state.generation === null || result.events.length > 0
-          || (result.reduced && !state.reduced) || metadataChanged;
+          || result.reduced || result.coverage_truncated || metadataChanged;
         state.generation = result.generation;
-        state.reduced ||= result.reduced || result.coverage_truncated;
         state.coverage = coverage;
-        state.coverageTruncated ||= result.coverage_truncated;
+        if (result.coverage_truncated) state.coverageTruncatedRanges = mergeInterval(
+          state.coverageTruncatedRanges, job.start, job.end);
+        else state.coverageExact = mergeInterval(state.coverageExact, job.start, job.end);
         state.capture = result.capture_started_at;
         state.retained = result.retained_from;
         state.removed = result.recording_ended_at;
@@ -392,7 +404,7 @@
           if (result.reduced) state.sampled.push({start: job.start, end: job.end});
           else state.exact = mergeInterval(state.exact, job.start, job.end);
         }
-        if (renderNeeded) render(state);
+        if (renderNeeded || job.initial) render(state);
         limitCache(state);
       }
       pending = next;
@@ -441,6 +453,11 @@
         state.loaded = state.loaded.map((item) =>
           ({start: Math.max(item.start, range.start), end: item.end}))
           .filter((item) => item.start < item.end);
+        state.exact = trimIntervals(state.exact, range.start, Infinity);
+        state.sampled = trimIntervals(state.sampled, range.start, Infinity);
+        state.coverageExact = trimIntervals(state.coverageExact, range.start, Infinity);
+        state.coverageTruncatedRanges = trimIntervals(state.coverageTruncatedRanges,
+          range.start, Infinity);
       }
       if (shift > 0) {
         applyingScale = true;
