@@ -839,6 +839,11 @@ def create_server(settings: ServerSettings) -> FastMCP:
         loxberry_operate_runtime=loxberry_operate_runtime,
         event_history_runtime=event_history_runtime,
         control_enabled=control_enabled,
+        project_config_store=(
+            AtomicConfigStore(settings.phase0_auth.config_path)
+            if settings.phase0_auth is not None and settings.phase0_auth.config_path is not None
+            else None
+        ),
     )
 
     if oauth_web is not None:

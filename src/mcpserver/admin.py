@@ -538,6 +538,12 @@ def _save(payload: object) -> dict[str, Any]:
     previous = store.load()
     if "logging" not in payload:
         config = replace(config, log_level=previous.log_level)
+    if "knx_address_taxonomy" not in payload:
+        config = replace(
+            config,
+            knx_address_taxonomy_endpoint=previous.knx_address_taxonomy_endpoint,
+            knx_address_taxonomy=previous.knx_address_taxonomy,
+        )
     if "policies" not in payload:
         config = replace(
             config,
@@ -685,6 +691,31 @@ def _save_mcp(payload: object) -> dict[str, Any]:
         "event_history_brief": _event_history_brief(updated),
         "applied": True,
     } | _service_response()
+
+
+def _save_knx_taxonomy(payload: object) -> dict[str, Any]:
+    """Save administrator labels for the currently configured Miniserver."""
+    from mcpserver.loxone.endpoint import MiniserverEndpoint
+    from mcpserver.loxone.project.taxonomy import parse_taxonomy
+
+    if not isinstance(payload, dict) or set(payload) != {"entries"}:
+        raise AdminError("KNX taxonomy payload is invalid")
+    try:
+        entries = parse_taxonomy(payload["entries"])
+    except ValueError as exc:
+        raise AdminError(str(exc)) from exc
+
+    def update(previous: PluginConfig) -> PluginConfig:
+        if not previous.loxone_endpoint:
+            raise AdminError("A Miniserver endpoint is required for KNX taxonomy")
+        return replace(
+            previous,
+            knx_address_taxonomy_endpoint=MiniserverEndpoint.parse(previous.loxone_endpoint).origin,
+            knx_address_taxonomy=entries,
+        )
+
+    config = _config_store().mutate(update)
+    return {"configuration": config.to_document(), "applied": True}
 
 
 def _emergency_stop_cache(config: PluginConfig) -> EmergencyOptionsCache | None:
@@ -1890,6 +1921,8 @@ def dispatch(request: object, *, timing: dict[str, float] | None = None) -> dict
         return _save(payload)
     if action == "save_mcp_config":
         return _save_mcp(payload)
+    if action == "save_knx_taxonomy":
+        return _save_knx_taxonomy(payload)
     if action == "save_mqtt_config":
         return _save_mqtt(payload)
     if action == "emergency_stop_options":

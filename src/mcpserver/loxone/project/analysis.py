@@ -12,10 +12,12 @@ from dataclasses import dataclass
 from .coverage import coverage_by_source_type
 from .graph import GraphEdge, GraphNode, SemanticEdge
 from .mapping import ProjectView, RuntimeEvidence
+from .taxonomy import AddressTaxonomyEntry
 
-ANALYSIS_VERSION = 5
+ANALYSIS_VERSION = 6
 ANALYSES = frozenset(
     {
+        "address_hierarchy",
         "address_patterns",
         "naming_consistency",
         "datatype_consistency",
@@ -202,7 +204,11 @@ def _support(members: list[_Endpoint], selected: list[_Endpoint]) -> dict[str, o
     return {"count": len(selected), "total": len(members), "ratio": len(selected) / len(members)}
 
 
-def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object]:
+def analyze_knx(
+    view: ProjectView,
+    analyses: frozenset[str],
+    taxonomy: tuple[AddressTaxonomyEntry, ...] = (),
+) -> dict[str, object]:
     """Return facts and review candidates, never a configuration verdict."""
     if not analyses or not analyses <= ANALYSES:
         raise ValueError("project_analysis_invalid")
@@ -288,11 +294,17 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
     findings: list[dict[str, object]] = []
     summaries: dict[str, object] = {}
     truncated_reasons: list[str] = ["max_usage_nodes"] if usage_truncated else []
+    hierarchy_limit = _MAX_FINDINGS if analyses == {"address_hierarchy"} else _MAX_FINDINGS // 2
+    hierarchy_findings = 0
 
     def emit(kind: str, basis: object, evidence: list[str], payload: dict[str, object]) -> None:
         """Add one bounded finding while hashing the complete evidence set."""
 
-        if len(findings) >= _MAX_FINDINGS:
+        nonlocal hierarchy_findings
+        is_hierarchy = payload["analysis"] == "address_hierarchy"
+        if len(findings) >= _MAX_FINDINGS or (
+            is_hierarchy and hierarchy_findings >= hierarchy_limit
+        ):
             truncated_reasons.append("max_findings")
             return
         ids, omitted = _bounded_nodes(evidence)
@@ -304,6 +316,205 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
                 "affected_omitted": omitted,
             }
         )
+        hierarchy_findings += is_hierarchy
+
+    if "address_hierarchy" in analyses:
+        hierarchy_outgoing: dict[str, list[GraphEdge]] = defaultdict(list)
+        hierarchy_incoming: dict[str, list[GraphEdge]] = defaultdict(list)
+        for edge in graph.edges:
+            if edge.kind in {"signal", "reference"}:
+                hierarchy_outgoing[edge.source].append(edge)
+                hierarchy_incoming[edge.target].append(edge)
+        unresolved = {key for key, _ in graph.unresolved}
+        wiring: dict[str, str] = {}
+        for item in endpoints:
+            seed = _endpoint_descendants(item, children)
+            directional = (
+                hierarchy_outgoing if item.direction == "bus_to_loxone" else hierarchy_incoming
+            )
+            wiring[item.node.key] = (
+                "with_relationship"
+                if any(directional[key] for key in seed)
+                else "unresolved"
+                if any(key in unresolved for key in seed)
+                else "without_relationship"
+            )
+        hierarchy_prefixes: dict[tuple[str, tuple[int, ...]], list[_Endpoint]] = defaultdict(list)
+        for item in endpoints:
+            if item.segments is None or item.address_format is None:
+                continue
+            for depth in range(1, len(item.segments) + 1):
+                hierarchy_prefixes[(item.address_format, item.segments[:depth])].append(item)
+        labels: dict[tuple[str, tuple[int, ...]], str] = {
+            (entry.address_format, entry.segments): entry.label for entry in taxonomy
+        }
+        prefix_rows = patterns = outliers = 0
+        for (address_format, prefix), members in sorted(hierarchy_prefixes.items()):
+            members = sorted(members, key=lambda item: item.node.key)
+            examples = []
+            for item in members[:_MAX_EVIDENCE]:
+                address = item.node.knx.group_address if item.node.knx else None
+                if address is not None:
+                    examples.append(
+                        {
+                            "project_node_id": item.node.key,
+                            "original": address.original,
+                            "canonical": address.canonical,
+                            "variant": item.address_variant,
+                        }
+                    )
+            source_types = Counter(
+                item.node.knx.source_type for item in members if item.node.knx is not None
+            )
+            directions = Counter(item.direction for item in members)
+            wiring_counts = Counter(wiring[item.node.key] for item in members)
+            shapes = Counter(
+                _name_shape(item.node.knx.title)
+                for item in members
+                if item.node.knx is not None and item.node.knx.title
+            )
+            shape_count = max(shapes.values(), default=0)
+            label = labels.get((address_format, prefix))
+            hierarchy: dict[str, object] = {
+                "prefix": list(prefix),
+                "prefix_level": len(prefix),
+                "address_format": address_format,
+                "object_count": len(members),
+                "source_occurrence_count": sum(
+                    len(view.snapshot.source_ids_for(item.node.key)) or 1 for item in members
+                ),
+                "logical_address_count": len({item.address for item in members}),
+                "edge_variant_count": sum(item.address_variant is not None for item in members),
+                "source_type_counts": dict(sorted(source_types.items())),
+                "flow_direction_counts": dict(sorted(directions.items())),
+                "direct_wiring": dict(sorted(wiring_counts.items())),
+                "exact_runtime_mapping_count": sum(item.runtime is not None for item in members),
+                "name_pattern_support": {
+                    "kind": "literal_shape_only",
+                    "count": shape_count,
+                    "total": len(members),
+                },
+                "configured_taxonomy": (
+                    {"label": label, "provenance": "admin_configured"} if label else None
+                ),
+                "address_examples": examples,
+                "address_examples_omitted": max(0, len(members) - len(examples)),
+                "evidence_categories": [
+                    "address_structure",
+                    "object_type",
+                    "direct_wiring",
+                    "runtime_mapping",
+                    "name_pattern",
+                    *(["configured_taxonomy"] if label else []),
+                ],
+            }
+            emit(
+                "address_prefix_summary",
+                [address_format, prefix],
+                [item.node.key for item in members],
+                {
+                    "analysis": "address_hierarchy",
+                    "finding_type": "address_prefix_summary",
+                    "classification": "fact",
+                    "evidence_category": "address_structure",
+                    "hierarchy": hierarchy,
+                },
+            )
+            prefix_rows += 1
+
+            if len(members) < 5:
+                continue
+            dimensions: list[tuple[str, str, list[str]]] = [
+                (
+                    "object_type",
+                    "source_type",
+                    [item.node.knx.source_type for item in members if item.node.knx],
+                ),
+                (
+                    "address_structure",
+                    "variant",
+                    [item.address_variant or "none" for item in members],
+                ),
+                ("address_structure", "direction", [item.direction for item in members]),
+                ("direct_wiring", "wiring", [wiring[item.node.key] for item in members]),
+            ]
+            if all(item.node.knx and item.node.knx.title for item in members):
+                dimensions.append(
+                    (
+                        "name_pattern",
+                        "literal_name_shape",
+                        [
+                            json.dumps(_name_shape(item.node.knx.title))
+                            for item in members
+                            if item.node.knx is not None and item.node.knx.title
+                        ],
+                    )
+                )
+            if taxonomy:
+                dimensions.append(
+                    (
+                        "configured_taxonomy",
+                        "configured_label",
+                        [
+                            labels.get((address_format, item.segments or ()), "unlabeled")
+                            for item in members
+                        ],
+                    )
+                )
+            for category, dimension, values in dimensions:
+                if len(values) != len(members):
+                    continue
+                hierarchy_counts = Counter(values)
+                hierarchy_dominant, support_count = sorted(
+                    hierarchy_counts.items(), key=lambda pair: (-pair[1], pair[0])
+                )[0]
+                if len(hierarchy_counts) < 2 or support_count * 5 < len(members) * 4:
+                    continue
+                for value in sorted(hierarchy_counts):
+                    selected = [
+                        item.node.key
+                        for item, observed in zip(members, values, strict=True)
+                        if observed == value
+                    ]
+                    is_pattern = value == hierarchy_dominant
+                    emit(
+                        "address_hierarchy_pattern" if is_pattern else "address_hierarchy_outlier",
+                        [address_format, prefix, dimension, hierarchy_dominant, value],
+                        selected,
+                        {
+                            "analysis": "address_hierarchy",
+                            "finding_type": (
+                                "address_hierarchy_pattern"
+                                if is_pattern
+                                else "address_hierarchy_outlier"
+                            ),
+                            "classification": "pattern" if is_pattern else "outlier",
+                            "evidence_category": category,
+                            "comparison_dimension": dimension,
+                            "baseline_value": hierarchy_dominant,
+                            "observed_value": value,
+                            "dominant_count": support_count,
+                            "peer_count": len(members),
+                            "support": _support(
+                                members,
+                                [
+                                    item
+                                    for item, observed in zip(members, values, strict=True)
+                                    if observed == value
+                                ],
+                            ),
+                            "prefix_level": len(prefix),
+                            "dominant_prefix": list(prefix),
+                        },
+                    )
+                    patterns += is_pattern
+                    outliers += not is_pattern
+        summaries["address_hierarchy"] = {
+            "prefix_rows": prefix_rows,
+            "patterns": patterns,
+            "outliers": outliers,
+            "unaddressed_endpoints": sum(item.segments is None for item in endpoints),
+        }
 
     if "address_patterns" in analyses:
         groups: dict[_AddressGroupKey, list[_Endpoint]] = defaultdict(list)
@@ -845,9 +1056,26 @@ def analyze_knx(view: ProjectView, analyses: frozenset[str]) -> dict[str, object
     if len(findings) > _MAX_FINDINGS:
         findings = findings[:_MAX_FINDINGS]
         truncated_reasons.append("max_findings")
-    findings.sort(
-        key=lambda item: (str(item["analysis"]), str(item["finding_type"]), str(item["finding_id"]))
-    )
+
+    def finding_order(item: dict[str, object]) -> tuple[str, int, str, tuple[int, ...], str]:
+        hierarchy = item.get("hierarchy")
+        if item["finding_type"] == "address_prefix_summary" and isinstance(hierarchy, dict):
+            return (
+                "address_hierarchy",
+                0,
+                str(hierarchy["address_format"]),
+                tuple(hierarchy["prefix"]),
+                str(item["finding_id"]),
+            )
+        return (
+            str(item["analysis"]),
+            1,
+            str(item["finding_type"]),
+            (),
+            str(item["finding_id"]),
+        )
+
+    findings.sort(key=finding_order)
     return {
         "analysis_version": ANALYSIS_VERSION,
         "project_fingerprint": view.snapshot.fingerprint,

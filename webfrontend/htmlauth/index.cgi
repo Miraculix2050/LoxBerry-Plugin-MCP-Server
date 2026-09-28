@@ -534,6 +534,22 @@ if ($action ne '') {
         $result = admin_call('save_mcp_config', $document);
         admin_log($result->{ok} ? 'info' : 'warning',
             'action=save_mcp_config outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
+    } elsif ($action eq 'save_knx_taxonomy') {
+        my @entries;
+        for my $line (split /\r?\n/, $q->{taxonomy_entries} // '') {
+            next if $line eq '';
+            my ($qualified_prefix, $label) = split /=/, $line, 2;
+            my ($format, $prefix) = split /:/, $qualified_prefix // '', 2;
+            push @entries, {
+                address_format => $format eq '2' ? 'two_level'
+                    : $format eq '3' ? 'three_level' : '',
+                prefix => $prefix // '',
+                label => $label // '',
+            };
+        }
+        $result = admin_call('save_knx_taxonomy', {entries => \@entries});
+        admin_log($result->{ok} ? 'info' : 'warning',
+            'action=save_knx_taxonomy outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
     } elsif ($action eq 'save_mqtt_config') {
         my $document = {
             schema_version => 5,
@@ -877,6 +893,14 @@ my ($selected_miniserver) = grep { $_->{selected} } @$miniservers;
 my $display_endpoint = $config->{loxone}{endpoint} // '';
 $display_endpoint = $selected_miniserver->{endpoint}
     if $display_endpoint eq '' && $selected_miniserver;
+my $taxonomy_endpoint = $display_endpoint;
+$taxonomy_endpoint =~ s{/$}{};
+my $taxonomy_text = ($config->{knx_address_taxonomy}{endpoint} // '') eq $taxonomy_endpoint
+    ? join("\n", map {
+        (($_->{address_format} // '') eq 'two_level' ? '2:' : '3:')
+            . ($_->{prefix} // '') . '=' . ($_->{label} // '')
+    } @{$config->{knx_address_taxonomy}{entries} // []})
+    : '';
 my $public_origin = $config->{server}{public_origin} // '';
 my $certificate = {};
 my $renewal = {};
@@ -1019,6 +1043,7 @@ $template->param(
     EXPLORER_URL => 'explorer.cgi',
     SCHEMA_REFERENCE_URL => 'tool-schema-reference.html',
     ENDPOINT => $display_endpoint,
+    KNX_TAXONOMY_TEXT => $taxonomy_text,
     MINISERVERS => $miniservers,
     MANUAL_ENDPOINT => $has_selected_miniserver ? 0 : 1,
     CONNECTION_TIMEOUT => $config->{loxone}{connection_timeout} // 10,

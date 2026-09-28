@@ -28,6 +28,7 @@ from mcpserver.admin import (
     _revoke_loxberry_operate,
     _revoke_loxberry_read,
     _save,
+    _save_knx_taxonomy,
     _save_mcp,
     _save_mqtt,
     _service_status,
@@ -1420,6 +1421,57 @@ def test_section_saves_are_atomic_and_preserve_the_other_configuration(
     assert after_mqtt.public_origin == "https://loxberry.example"
     assert after_mqtt.loxone_endpoint == "http://192.168.10.20"
     assert after_mqtt.mqtt_enabled is False
+
+
+def test_knx_taxonomy_save_is_endpoint_scoped_and_preserves_other_settings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    store.save(PluginConfig(loxone_endpoint="http://192.168.10.20", mqtt_enabled=True))
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    saved = _save_knx_taxonomy(
+        {"entries": [{"address_format": "three_level", "prefix": "6/2", "label": "Test floor"}]}
+    )
+    assert saved["applied"] is True
+    assert store.load().knx_address_taxonomy_endpoint == "http://192.168.10.20"
+    assert store.load().knx_address_taxonomy[0].label == "Test floor"
+    assert store.load().mqtt_enabled is True
+    with pytest.raises(AdminError):
+        _save_knx_taxonomy(
+            {"entries": [{"address_format": "three_level", "prefix": "6/8/0", "label": "Invalid"}]}
+        )
+    assert store.load().knx_address_taxonomy[0].label == "Test floor"
+
+
+def test_legacy_full_config_save_retains_separately_managed_knx_taxonomy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mcpserver.loxone.project.taxonomy import AddressTaxonomyEntry
+
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    previous = PluginConfig(
+        loxone_endpoint="http://192.168.10.20",
+        knx_address_taxonomy_endpoint="http://192.168.10.20",
+        knx_address_taxonomy=(AddressTaxonomyEntry("6/2", "Existing label", "three_level"),),
+    )
+    store.save(previous)
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._restart_service", lambda: None)
+    monkeypatch.setattr("mcpserver.admin._sessions", lambda: [])
+    monkeypatch.setattr("mcpserver.admin._service_response", lambda: {"service_active": True})
+
+    _save(
+        {
+            "schema_version": 10,
+            "server": {"enabled": False},
+            "loxone": {"endpoint": "http://192.168.10.21"},
+        }
+    )
+
+    saved = store.load()
+    assert saved.loxone_endpoint == "http://192.168.10.21"
+    assert saved.knx_address_taxonomy_endpoint == previous.knx_address_taxonomy_endpoint
+    assert saved.knx_address_taxonomy == previous.knx_address_taxonomy
 
 
 def test_failed_mcp_section_apply_restores_running_service(

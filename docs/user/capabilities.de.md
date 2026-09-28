@@ -56,7 +56,7 @@ mehrere getrennte KNX-Signalnutzungsbeobachtungen. Trace liefert getrennt markie
 Connectorkanten sowie begrenzte Pfade `knx_to_loxone`, `loxone_to_knx` oder `knx_to_knx`.
 Unbekanntes Block- oder Connector-Verhalten wird nicht geraten. Diese Ergebnisse beschreiben
 statische Projektpfade, keine Bus-Telegramme und keine historische Ursache einer Aktion.
-`loxone_analyze_project` Version 5 fasst begrenzte, projektlokale KNX-Evidenz zusammen:
+`loxone_analyze_project` Version 6 fasst begrenzte, projektlokale KNX-Evidenz zusammen:
 Adress- und Quellnamensmuster, Wiederverwendung von Rohdatentypen, geprüfte Unterschiede der
 Signalnutzung, Kontext aus exakten Runtime-Mappings, lokale Peer- und Graph-Ausreißer,
 Pfadzähler und Endpunkte ohne beobachtete Projektbeziehung. Runtime-Namen und Control-Typen werden
@@ -72,6 +72,17 @@ Linienzahlen gezählt; zusätzliche, über Modellquellen zusammengefasste Vorkom
 sind eigens ausgewiesen. Unklare KNX-Kandidaten und ausgelassene Typgruppen machen
 die Abdeckung unvollständig. Objektdetails kennzeichnen `EIBType` als rohen
 Loxone-Config-Wert und melden, dass normalisierte DPT-Evidenz derzeit fehlt.
+Mit `address_hierarchy` lassen sich gemessene ein-, zwei- und dreistufige
+Adresspräfixe seitenweise abrufen. Jeder Präfixeintrag trennt logische Endpunkte,
+rohe Modellquellenvorkommen, kanonische Adressen und Flankenvarianten und zeigt
+begrenzte Beispiele der Originaladressen. Direkte Verdrahtung bedeutet eine
+beobachtete Signal- oder Referenzbeziehung im Projekt; ungeklärte Beziehungen
+bleiben getrennt. Muster und Ausreißer nennen ihre lokale Vergleichsgruppe,
+bewerten aber keine Konfiguration. Optionale KNX-Adresslabels aus der
+Admin-Konfiguration gelten nur für den konfigurierten Miniserver, erscheinen als
+`admin_configured`-Metadaten, erfordern ein explizites zwei- oder dreistufiges
+Adressformat und ändern keine Projektfakten. Namen und
+Adressformen belegen weder Etagen, Funktionen, DPTs, ETS-Bedeutung noch Busaktivität.
 `loxone_analyze_observability` bewertet getrennt einen begrenzten, ausdrücklich angefragten
 Zeitraum für ein Projektziel. Es verbindet nur exakte UUID-gemappte strukturelle Erreichbarkeit,
 Verfügbarkeit aktueller States, beworbene native Statistikserien und die Abdeckung der lokalen

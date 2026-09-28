@@ -22,9 +22,10 @@ from urllib.parse import urlsplit
 import idna
 
 from mcpserver.loxone.endpoint import MiniserverEndpoint
+from mcpserver.loxone.project.taxonomy import AddressTaxonomyEntry, parse_taxonomy
 from mcpserver.loxone.uuid import normalize_loxone_uuid
 
-SCHEMA_VERSION: Final = 10
+SCHEMA_VERSION: Final = 11
 DEFAULT_CONNECTION_TIMEOUT: Final = 10.0
 DEFAULT_REQUESTS_PER_MINUTE: Final = 60
 DEFAULT_MAX_PARALLEL_CALLS: Final = 4
@@ -327,6 +328,8 @@ class PluginConfig:
     mqtt_port: int = DEFAULT_MQTT_PORT
     mqtt_username: str = ""
     emergency_stop_virtual_status_uuid: str = ""
+    knx_address_taxonomy_endpoint: str = ""
+    knx_address_taxonomy: tuple[AddressTaxonomyEntry, ...] = ()
     _source: dict[str, Any] | None = None
 
     @classmethod
@@ -336,7 +339,7 @@ class PluginConfig:
     @classmethod
     def from_document(cls, document: object) -> PluginConfig:
         root = _mapping(document, name="configuration")
-        if root.get("schema_version") not in {1, 2, 3, 4, 5, 6, 8, 9, SCHEMA_VERSION}:
+        if root.get("schema_version") not in {1, 2, 3, 4, 5, 6, 8, 9, 10, SCHEMA_VERSION}:
             raise ConfigError("schema_version is unsupported")
         server = _mapping(root.get("server", {}), name="server")
         loxone = _mapping(root.get("loxone", {}), name="loxone")
@@ -348,6 +351,7 @@ class PluginConfig:
         mqtt = _mapping(root.get("mqtt", {}), name="mqtt")
         emergency_stop = _mapping(root.get("emergency_stop", {}), name="emergency_stop")
         event_history = _mapping(root.get("event_history", {}), name="event_history")
+        taxonomy = _mapping(root.get("knx_address_taxonomy", {}), name="knx_address_taxonomy")
 
         enabled = _boolean(server.get("enabled", False), name="server.enabled")
         public_origin_value = server.get("public_origin", "")
@@ -585,6 +589,21 @@ class PluginConfig:
         emergency_stop_virtual_status_uuid = _emergency_stop_uuid(
             emergency_stop.get("virtual_status_uuid", "")
         )
+        taxonomy_endpoint = taxonomy.get("endpoint", "")
+        if not isinstance(taxonomy_endpoint, str) or len(taxonomy_endpoint) > 512:
+            raise ConfigError("knx_address_taxonomy.endpoint is invalid")
+        if taxonomy_endpoint:
+            # Retain labels on endpoint changes, but never apply them to another server.
+            try:
+                taxonomy_endpoint = MiniserverEndpoint.parse(taxonomy_endpoint).origin
+            except ValueError as exc:
+                raise ConfigError(str(exc)) from exc
+        try:
+            taxonomy_entries = parse_taxonomy(taxonomy.get("entries", []))
+        except ValueError as exc:
+            raise ConfigError(str(exc)) from exc
+        if taxonomy_entries and not taxonomy_endpoint:
+            raise ConfigError("knx_address_taxonomy.endpoint is required")
         return cls(
             enabled=enabled,
             public_origin=public_origin,
@@ -628,6 +647,8 @@ class PluginConfig:
             mqtt_port=mqtt_port,
             mqtt_username=mqtt_username,
             emergency_stop_virtual_status_uuid=emergency_stop_virtual_status_uuid,
+            knx_address_taxonomy_endpoint=taxonomy_endpoint,
+            knx_address_taxonomy=taxonomy_entries,
             _source=copy.deepcopy(root),
         )
 
@@ -645,6 +666,7 @@ class PluginConfig:
             "mqtt",
             "emergency_stop",
             "event_history",
+            "knx_address_taxonomy",
         ):
             current = document.get(key)
             if not isinstance(current, dict):
@@ -703,6 +725,15 @@ class PluginConfig:
         document["cache"].pop("statistics_max_mib", None)
         document["cache"]["statistics_memory_max_mib"] = self.statistics_memory_max_mib
         document["event_history"]["enabled"] = self.event_history_enabled
+        document["knx_address_taxonomy"]["endpoint"] = self.knx_address_taxonomy_endpoint
+        document["knx_address_taxonomy"]["entries"] = [
+            {
+                "address_format": entry.address_format,
+                "prefix": entry.prefix,
+                "label": entry.label,
+            }
+            for entry in self.knx_address_taxonomy
+        ]
         document["event_history"]["retention_days"] = self.event_history_retention_days
         document["event_history"]["maximum_mib"] = self.event_history_maximum_mib
         document["event_history"]["sources"] = [

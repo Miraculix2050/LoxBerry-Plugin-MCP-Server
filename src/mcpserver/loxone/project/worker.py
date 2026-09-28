@@ -13,6 +13,7 @@ from .graph import ProjectSnapshot, build_snapshot
 from .mapping import ProjectView
 from .models import DEFAULT_LIMITS, ProjectBundle, ProjectError, ProjectLimits
 from .source import unpack_project
+from .taxonomy import AddressTaxonomyEntry
 
 MAX_RESULT = 64 * 1024 * 1024
 MAX_ANALYSIS_INPUT = 64 * 1024 * 1024
@@ -78,7 +79,11 @@ async def process_project(
         await asyncio.gather(sender, return_exceptions=True)
 
 
-async def process_analysis(view: ProjectView, analyses: frozenset[str]) -> dict[str, object]:
+async def process_analysis(
+    view: ProjectView,
+    analyses: frozenset[str],
+    taxonomy: tuple[AddressTaxonomyEntry, ...] = (),
+) -> dict[str, object]:
     """Run CPU-bound aggregate analysis in the same restricted worker boundary."""
     process = await asyncio.create_subprocess_exec(
         sys.executable,
@@ -92,7 +97,7 @@ async def process_analysis(view: ProjectView, analyses: frozenset[str]) -> dict[
     )
     assert process.stdin is not None and process.stdout is not None and process.stderr is not None
     stderr_task = asyncio.create_task(process.stderr.read())
-    payload = pickle.dumps((view, analyses), protocol=5)
+    payload = pickle.dumps((view, analyses, taxonomy), protocol=5)
     if len(payload) > MAX_ANALYSIS_INPUT:
         process.kill()
         await process.wait()
@@ -139,10 +144,15 @@ def main() -> None:
             raw = sys.stdin.buffer.read(MAX_ANALYSIS_INPUT + 1)
             if len(raw) > MAX_ANALYSIS_INPUT:
                 raise ProjectError("project_worker_limit")
-            view, analyses = pickle.loads(raw)
-            if not isinstance(view, ProjectView) or not isinstance(analyses, frozenset):
+            view, analyses, taxonomy = pickle.loads(raw)
+            if (
+                not isinstance(view, ProjectView)
+                or not isinstance(analyses, frozenset)
+                or not isinstance(taxonomy, tuple)
+                or any(not isinstance(item, AddressTaxonomyEntry) for item in taxonomy)
+            ):
                 raise ProjectError("project_worker_invalid")
-            analysis_result = analyze_knx(view, analyses)
+            analysis_result = analyze_knx(view, analyses, taxonomy)
             payload = pickle.dumps(analysis_result, protocol=5)
             if len(payload) > MAX_RESULT:
                 raise ProjectError("project_worker_limit")

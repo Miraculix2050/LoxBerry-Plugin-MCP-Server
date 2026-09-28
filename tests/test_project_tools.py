@@ -8,6 +8,7 @@ from mcp.server.fastmcp import FastMCP
 
 import mcpserver.tools as tools_module
 from mcpserver.auth.provider import HISTORY_SCOPE, READ_SCOPE
+from mcpserver.config import ConfigError
 from mcpserver.loxone.event_history import EventHistoryCoverage
 from mcpserver.loxone.models import (
     Control,
@@ -1057,6 +1058,31 @@ async def test_project_tools_bound_large_find_and_trace_responses(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_project_analysis_reports_invalid_taxonomy_config_as_unavailable(monkeypatch):
+    async def project_query(_runtime):
+        return SimpleNamespace(), SimpleNamespace(connected=True)
+
+    monkeypatch.setattr(tools_module, "_project_query", project_query)
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: SimpleNamespace(family_id="family", miniserver_id="server", identity_id="identity"),
+    )
+    runtime = SimpleNamespace(
+        projects=object(), endpoint=SimpleNamespace(origin="http://miniserver.example")
+    )
+    config_store = SimpleNamespace(load=Mock(side_effect=ConfigError("invalid configuration")))
+    server = FastMCP("project-analysis-config-error")
+    register_project_tools(server, runtime, config_store)
+
+    tool = server._tool_manager.get_tool("loxone_analyze_project")
+    result = await tool.fn(analyses=["address_hierarchy"])  # type: ignore[union-attr]
+
+    assert result.ok is False
+    assert result.data.error == "temporarily_unavailable"  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
 async def test_project_analysis_is_read_only_bounded_and_cursor_scoped(monkeypatch):
     analysis_calls = 0
 
@@ -1078,7 +1104,7 @@ async def test_project_analysis_is_read_only_bounded_and_cursor_scoped(monkeypat
 
     runtime = Runtime()
 
-    async def analysis(_view, _selected):
+    async def analysis(_view, _selected, _taxonomy=()):
         nonlocal analysis_calls
         analysis_calls += 1
         assert runtime.active_workers == 1
