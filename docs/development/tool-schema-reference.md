@@ -4,6 +4,8 @@ FastMCP derives each tool's input and output JSON Schemas from the registered Py
 
 For `loxone_describe_control`, the generated schema lists `view="full"` as the default and `view="history_targets"` as a compact result variant. The latter omits presentation, relationships, and non-history capabilities while retaining `data.capabilities.statistics` for client transfer. The full/default data shape remains unchanged.
 
+The two event-history source-list tools share a cursor-paged response (`sources`, `next_cursor`). Each source includes `recording_status` and a known `recording_ended_at`. `loxone_list_event_history_sources` returns only currently visible control/state pairs; `loxberry_list_event_history_sources` returns the complete inventory after an independently approved local read or operate grant. Their authorization requirements are described in the tool descriptions and permissions guide.
+
 The plugin package also contains a static reference for the complete tool contract supported by its release:
 
 - `tool-schema-reference.html` is the human-readable reference linked from **Help** and the Tool Explorer.

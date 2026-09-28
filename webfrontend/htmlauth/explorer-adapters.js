@@ -18,6 +18,7 @@
     ]},
     {id: 'loxoneHistory', scopes: ['loxone:read', 'loxone:history'], names: [
       'loxone_get_statistics', 'loxone_get_control_history', 'loxone_get_event_history',
+      'loxone_list_event_history_sources',
       'loxone_analyze_observability',
     ]},
     {id: 'loxoneControl', scopes: ['loxone:read', 'loxone:control'], names: [
@@ -26,9 +27,10 @@
     {id: 'loxberryRead', scopes: ['loxone:read', 'loxberry:read'], names: [
       'loxberry_get_system_status', 'loxberry_get_plugin_status',
       'loxberry_get_service_health', 'loxberry_list_service_events',
+      'loxberry_list_event_history_sources',
     ]},
     {id: 'loxberryOperate', scopes: ['loxone:read', 'loxone:history', 'loxberry:operate'], names: [
-      'loxberry_clear_statistics_cache', 'loxberry_list_event_history_sources',
+      'loxberry_clear_statistics_cache',
       'loxberry_add_event_history_source', 'loxberry_remove_event_history_source',
       'loxberry_purge_event_history_source',
     ]},
@@ -74,7 +76,14 @@
   }
 
   function requiredScopes(tool) {
+    if ((typeof tool === 'string' ? tool : tool && tool.name) ===
+        'loxberry_list_event_history_sources') return ['loxone:read', 'loxone:history'];
     return forTool(tool)?.scopes || null;
+  }
+
+  function scopeAlternatives(tool) {
+    return (typeof tool === 'string' ? tool : tool && tool.name) ===
+      'loxberry_list_event_history_sources' ? ['loxberry:read', 'loxberry:operate'] : null;
   }
 
   function requiredMutationScope(tool) {
@@ -159,7 +168,8 @@
     return null;
   }
 
-  return {GROUPS, forTool, toolGroup, requiredScopes, requiredMutationScope,
+  return {GROUPS, forTool, toolGroup, requiredScopes, scopeAlternatives,
+    requiredMutationScope,
     fieldHelpKey, isAdvancedField, isReferenceField, referenceCandidates,
     hasActionFields, actionFields, operationParameterFields, fieldVisible, changeAction,
     transferRecipe};

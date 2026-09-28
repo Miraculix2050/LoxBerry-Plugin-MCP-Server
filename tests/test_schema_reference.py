@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 VERSION = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
 
 EXPECTED_TOOLS = {
+    "loxone_list_event_history_sources",
     "loxberry_clear_statistics_cache",
     "loxberry_add_event_history_source",
     "loxberry_list_event_history_sources",

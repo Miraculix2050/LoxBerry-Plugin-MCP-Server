@@ -421,6 +421,15 @@
       const requiredScopes = core.toolRequiredScopes(state.selectedTool);
       if (requiredScopes) {
         requiredScopes.forEach((scope) => scopes.append(element('code', {text: scope})));
+        const alternatives = core.toolScopeAlternatives(state.selectedTool);
+        if (alternatives) {
+          scopes.append(element('span', {text: label('toolScopeEither')}));
+          alternatives.forEach((scope, index) => {
+            if (index) scopes.append(element('span', {text: label('toolScopeOr')}));
+            scopes.append(element('code', {text: scope}));
+          });
+          scopes.append(element('span', {text: label('toolScopeLocalApproval')}));
+        }
       } else {
         scopes.append(element('span', {text: label('toolScopesUnknown')}));
       }

@@ -155,6 +155,9 @@ def test_tool_metadata_labels_are_localized_and_inspectable() -> None:
         "TOOL_HINTS_NOTICE",
         "TOOL_DESCRIPTION",
         "TOOL_REQUIRED_SCOPES",
+        "TOOL_SCOPE_EITHER",
+        "TOOL_SCOPE_OR",
+        "TOOL_SCOPE_LOCAL_APPROVAL",
         "TOOL_SCOPES_UNKNOWN",
         "TOOL_TECHNICAL_METADATA",
     ]
@@ -165,6 +168,7 @@ def test_tool_metadata_labels_are_localized_and_inspectable() -> None:
         assert f'data-{attribute}="<TMPL_VAR EXPLORER.{key} ESCAPE=HTML>"' in template
     assert "core.toolMetadataLabels(state.selectedTool)" in source
     assert "core.toolRequiredScopes(state.selectedTool)" in source
+    assert "core.toolScopeAlternatives(state.selectedTool)" in source
     assert "JSON.stringify(state.selectedTool.annotations || {}, null, 2)" in source
     assert "element('details', {className: 'mcp-explorer-technical'})" in source
 
@@ -782,19 +786,19 @@ def test_explorer_scope_filters_include_all_published_history_and_operate_tools(
     history_names = [
         "loxone_get_statistics",
         "loxone_get_control_history",
+        "loxone_list_event_history_sources",
         "loxone_get_event_history",
         "loxone_analyze_observability",
     ]
     operate_names = [
         "loxberry_clear_statistics_cache",
-        "loxberry_list_event_history_sources",
         "loxberry_add_event_history_source",
         "loxberry_remove_event_history_source",
         "loxberry_purge_event_history_source",
     ]
     tools = [
         {"name": name, "annotations": {"readOnlyHint": True, "destructiveHint": False}}
-        for name in history_names + operate_names
+        for name in history_names + operate_names + ["loxberry_list_event_history_sources"]
     ]
     encoded = json.dumps(tools)
 
@@ -805,7 +809,7 @@ def test_explorer_scope_filters_include_all_published_history_and_operate_tools(
     assert set(names_for("loxoneHistory")) == set(history_names)
     assert set(names_for("loxberryOperate")) == set(operate_names)
     assert names_for("loxoneRead") == []
-    assert names_for("loxberryRead") == []
+    assert names_for("loxberryRead") == ["loxberry_list_event_history_sources"]
 
 
 def test_explorer_discovery_labels_exist_in_both_languages() -> None:
@@ -918,7 +922,10 @@ def test_registry_keeps_tool_hints_out_of_authorization_and_defaults_unknown_saf
     )
     assert run_adapters(
         "adapters.requiredScopes({name:'loxberry_list_event_history_sources'})"
-    ) == ["loxone:read", "loxone:history", "loxberry:operate"]
+    ) == ["loxone:read", "loxone:history"]
+    assert run_adapters(
+        "adapters.scopeAlternatives({name:'loxberry_list_event_history_sources'})"
+    ) == ["loxberry:read", "loxberry:operate"]
 
 
 def test_operation_adapter_changes_only_action_parameters() -> None:
@@ -1204,8 +1211,10 @@ def test_required_scopes_cover_current_tools_and_leave_unknown_tools_unmapped() 
     assert all(scopes and scopes[0] == "loxone:read" for scopes in mapped.values())
     assert mapped["loxone_get_system_status"] == ["loxone:read"]
     assert mapped["loxone_get_statistics"] == ["loxone:read", "loxone:history"]
+    assert mapped["loxone_list_event_history_sources"] == ["loxone:read", "loxone:history"]
     assert mapped["loxone_operate_control"] == ["loxone:read", "loxone:control"]
     assert mapped["loxberry_get_service_health"] == ["loxone:read", "loxberry:read"]
+    assert mapped["loxberry_list_event_history_sources"] == ["loxone:read", "loxone:history"]
     assert mapped["loxberry_add_event_history_source"] == [
         "loxone:read",
         "loxone:history",

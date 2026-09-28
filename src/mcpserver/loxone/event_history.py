@@ -551,10 +551,18 @@ class EventHistoryStore:
                     connection.execute("ROLLBACK")
                 raise EventHistoryUnavailable("local event history is unavailable") from exc
 
-    def snapshot(self, active_sources: tuple[tuple[str, str], ...]) -> EventHistoryStoreSummary:
+    def snapshot(
+        self,
+        active_sources: tuple[tuple[str, str], ...],
+        *,
+        source_limit: int | None = 128,
+    ) -> EventHistoryStoreSummary:
         """Read a consistent overview without starting maintenance or creating files."""
+        if source_limit is not None and source_limit < 1:
+            raise ValueError("source_limit must be positive")
         measured_at = time.time()
         if not self.path.exists():
+            selected = active_sources[:source_limit]
             return EventHistoryStoreSummary(
                 measured_at,
                 0,
@@ -563,8 +571,9 @@ class EventHistoryStore:
                     EventHistorySourceSummary(
                         control, state, 0, None, None, None, None, None, (), 0
                     )
-                    for control, state in active_sources
+                    for control, state in selected
                 ),
+                len(active_sources) > len(selected),
             )
         try:
             with closing(
@@ -610,7 +619,7 @@ class EventHistoryStore:
                 selected_keys = sorted(
                     keys,
                     key=lambda key: (key not in active_set, -(removed.get(key) or 0), key),
-                )[:128]
+                )[:source_limit]
                 sources = tuple(
                     EventHistorySourceSummary(
                         key[0],
@@ -647,6 +656,89 @@ class EventHistoryStore:
                 len(keys) > len(selected_keys),
                 clear_generation,
             )
+        except (OSError, sqlite3.Error) as exc:
+            raise EventHistoryUnavailable("local event history is unavailable") from exc
+
+    def source_inventory_page(
+        self,
+        active_sources: tuple[tuple[str, str], ...],
+        *,
+        offset: int,
+        limit: int,
+        visible_sources: set[tuple[str, str]] | None = None,
+    ) -> tuple[tuple[tuple[str, str, bool, float | None], ...], int | None]:
+        """Page source identities without materializing per-source history summaries."""
+        if offset < 0 or not 1 <= limit <= 100:
+            raise ValueError("source page is invalid")
+        active = set(active_sources)
+        if not self.path.exists():
+            keys = sorted(active)
+            if visible_sources is not None:
+                keys = [key for key in keys if key in visible_sources]
+            selected = keys[offset : offset + limit]
+            next_offset = offset + len(selected)
+            return (
+                tuple((control, state, True, None) for control, state in selected),
+                next_offset if next_offset < len(keys) else None,
+            )
+
+        active_values = ", ".join("(?, ?)" for _ in active_sources)
+        active_query = (
+            f"VALUES {active_values}"
+            if active_sources
+            else "SELECT NULL AS control_uuid, NULL AS state_uuid WHERE 0"
+        )
+        visibility_filter = (
+            "WHERE EXISTS (SELECT 1 FROM visible_source_keys AS visible "
+            "WHERE visible.control_uuid = source_keys.control_uuid "
+            "AND visible.state_uuid = source_keys.state_uuid) "
+            if visible_sources is not None
+            else ""
+        )
+        query = (
+            f"WITH active(control_uuid, state_uuid) AS ({active_query}), "
+            "source_keys AS ("
+            "SELECT control_uuid, state_uuid FROM active "
+            "UNION SELECT control_uuid, state_uuid FROM source_totals "
+            "UNION SELECT control_uuid, state_uuid FROM coverage "
+            "UNION SELECT control_uuid, state_uuid FROM removed_sources) "
+            "SELECT source_keys.control_uuid, source_keys.state_uuid, "
+            "removed_sources.removed_at, active.control_uuid IS NOT NULL "
+            "FROM source_keys "
+            "LEFT JOIN removed_sources USING (control_uuid, state_uuid) "
+            "LEFT JOIN active USING (control_uuid, state_uuid) "
+            f"{visibility_filter}"
+            "ORDER BY active.control_uuid IS NULL, "
+            "-COALESCE(removed_sources.removed_at, 0), "
+            "source_keys.control_uuid, source_keys.state_uuid LIMIT ? OFFSET ?"
+        )
+        parameters = tuple(part for source in active_sources for part in source)
+        try:
+            with closing(
+                sqlite3.connect(self.path.as_uri() + "?mode=ro", uri=True, timeout=2)
+            ) as db:
+                db.execute("BEGIN")
+                version = db.execute("PRAGMA user_version").fetchone()[0]
+                if version in {3, 4, 5}:
+                    db.execute("ROLLBACK")
+                    self._migrate_snapshot()
+                    db.execute("BEGIN")
+                    version = db.execute("PRAGMA user_version").fetchone()[0]
+                if version != _SCHEMA_VERSION:
+                    raise EventHistoryUnavailable("local event history needs migration")
+                if visible_sources is not None:
+                    db.execute(
+                        "CREATE TEMP TABLE visible_source_keys ("
+                        "control_uuid TEXT NOT NULL, state_uuid TEXT NOT NULL, "
+                        "PRIMARY KEY (control_uuid, state_uuid)) WITHOUT ROWID"
+                    )
+                    db.executemany("INSERT INTO visible_source_keys VALUES (?, ?)", visible_sources)
+                rows = db.execute(query, (*parameters, limit + 1, offset)).fetchall()
+                items = tuple(
+                    (str(control), str(state), bool(is_active), removed_at)
+                    for control, state, removed_at, is_active in rows[:limit]
+                )
+                return items, offset + limit if len(rows) > limit else None
         except (OSError, sqlite3.Error) as exc:
             raise EventHistoryUnavailable("local event history is unavailable") from exc
 

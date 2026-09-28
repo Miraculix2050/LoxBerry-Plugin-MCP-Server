@@ -292,8 +292,13 @@ history fetch.
 `loxone_get_event_history` is separate plugin-owned event history. It reports
 capture and coverage evidence, so `not_recorded` and `partial_coverage` are not
 evidence that a state did not occur. Use exact `control_uuid` and `state_uuid`
-from current discovery. An approved client with `loxberry:operate` may list,
-add, or remove recording sources through the fixed event-history source tools;
+from current discovery. `loxone_list_event_history_sources` lists active and
+retained removed sources whose exact control and state are currently visible;
+it requires `loxone:read` and `loxone:history`. The complete, cursor-paged
+`loxberry_list_event_history_sources` additionally requires either enabled
+`loxberry:read` with its exact local approval or enabled `loxberry:operate`
+with its exact local approval. Neither LoxBerry scope implies the other.
+Adding, removing, and purging sources still require approved `loxberry:operate`;
 never infer or construct UUIDs. These operations do not enable the feature,
 change retention or operate a Loxone control. Removal stops capture while retained
 events remain readable only for a currently visible control/state. Check

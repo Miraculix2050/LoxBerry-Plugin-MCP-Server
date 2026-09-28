@@ -43,6 +43,30 @@ def test_store_records_typed_transitions_and_pages_them(tmp_path):
     )
 
 
+def test_source_inventory_page_filters_before_limiting_many_hidden_sources(tmp_path):
+    store = EventHistoryStore(
+        (tmp_path / "event-history.sqlite3").resolve(), retention_days=90, maximum_mib=16
+    )
+    store.initialize()
+    now = time.time()
+    for index in range(260):
+        control, state = f"control-{index:03}", f"state-{index:03}"
+        store.record_transition(control, state, observed_at=now, old_value=0, new_value=1)
+        store.mark_removed(control, state, removed_at=None)
+    visible = {("control-257", "state-257"), ("control-259", "state-259")}
+
+    first, cursor = store.source_inventory_page((), offset=0, limit=1, visible_sources=visible)
+    second, end = store.source_inventory_page((), offset=cursor, limit=1, visible_sources=visible)
+
+    assert first == (("control-257", "state-257", False, None),)
+    assert second == (("control-259", "state-259", False, None),)
+    assert end is None
+    assert store.source_inventory_page((), offset=0, limit=1, visible_sources=set()) == (
+        (),
+        None,
+    )
+
+
 def test_chart_page_is_read_only_and_detects_history_mutations(tmp_path, monkeypatch):
     store = EventHistoryStore(
         (tmp_path / "chart.sqlite3").resolve(), retention_days=90, maximum_mib=16
@@ -286,6 +310,25 @@ def test_chart_read_upgrades_v5_and_empty_store_without_maintenance(tmp_path, mo
             db.execute("SELECT name FROM sqlite_master WHERE name = 'events_source_id'").fetchone()
             is not None
         )
+
+
+def test_source_inventory_page_upgrades_v5_store(tmp_path):
+    store = EventHistoryStore(
+        (tmp_path / "history.sqlite3").resolve(), retention_days=90, maximum_mib=16
+    )
+    source = ("control", "state")
+    store.initialize()
+    with sqlite3.connect(store.path) as db:
+        db.execute("DROP INDEX events_source_id")
+        db.execute("ALTER TABLE history_metadata DROP COLUMN mutation_generation")
+        db.execute("PRAGMA user_version = 5")
+
+    page, cursor = store.source_inventory_page((source,), offset=0, limit=10)
+
+    assert page == (("control", "state", True, None),)
+    assert cursor is None
+    with sqlite3.connect(store.path) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 6
 
 
 def test_v4_logical_bytes_migrate_in_bounded_batches_with_concurrent_writes(tmp_path):
