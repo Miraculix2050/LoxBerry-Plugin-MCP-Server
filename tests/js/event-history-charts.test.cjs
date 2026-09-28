@@ -15,7 +15,7 @@ const html = `<main class="mcp-history-charts" data-loading="Loading"
   data-chart-reference="Reference"
   data-chart-reduced="Reduced" data-chart-value="Value" data-chart-number="Number"
   data-chart-boolean="Boolean value">
-  <select id="chart-range"><option value="86400">Day</option><option value="custom">Custom</option></select>
+  <select id="chart-range"><option value="3600">Hour</option><option value="86400">Day</option><option value="custom">Custom</option></select>
   <input id="chart-from"><input id="chart-to"><button id="chart-apply"></button>
   <button id="chart-previous"></button><button id="chart-next"></button>
   <button id="chart-zoom-in"></button>
@@ -81,6 +81,12 @@ test('reload reuses bounded values only after fresh visibility and history check
     ['event_history_chart_prepare', 'event_history_chart_query']);
   assert.equal(JSON.parse(reload.calls[1].fields.queries)[0].after_id, 7);
   assert.match(reload.window.document.querySelector('#chart-panels').textContent, /Control/);
+  const hour = first.window.document.querySelector('#chart-range');
+  hour.value = '3600';
+  hour.dispatchEvent(new first.window.Event('change'));
+  await flush();
+  const hourReload = await open({saved: first.window.sessionStorage.getItem('mcp-event-history-chart-v1')});
+  assert.equal(hourReload.window.document.querySelector('#chart-range').value, '3600');
   const changed = await open({saved: first.saved, history: 2});
   assert.equal(JSON.parse(changed.calls[1].fields.queries)[0].after_id, 0);
   const expiredValue = JSON.parse(first.saved);
@@ -93,7 +99,9 @@ test('reload reuses bounded values only after fresh visibility and history check
   assert.deepEqual(revoked.calls.map(({action}) => action), ['event_history_chart_prepare']);
   assert.equal(revoked.saved, null);
   assert.equal(revoked.window.document.querySelector('#chart-panels').textContent, '');
-  for (const page of [first, reload, changed, expired, renamed, revoked]) page.window.close();
+  for (const page of [first, reload, hourReload, changed, expired, renamed, revoked]) {
+    page.window.close();
+  }
 });
 
 test('chart tab loads only selected values, pauses hidden polling, and clears revoked data', async () => {

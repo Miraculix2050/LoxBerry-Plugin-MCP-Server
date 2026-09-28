@@ -101,6 +101,10 @@
     if (rolling) {
       const shift = Math.max(0, Date.now() / 1000 - range.end);
       range = {start: range.start + shift, end: range.end + shift};
+      const preset = String(Math.round(range.end - range.start));
+      if ([3600, 86400, 604800, 2592000].includes(Number(preset))) {
+        $('chart-range').value = preset;
+      } else rolling = false;
     }
     if (!rolling) {
       $('chart-range').value = 'custom';
