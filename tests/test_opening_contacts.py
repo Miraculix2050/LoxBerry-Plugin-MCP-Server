@@ -23,7 +23,12 @@ from mcpserver.loxone.opening_contacts import (
     OpeningScopeError,
     analyze_opening_contacts,
 )
-from mcpserver.loxone.project.graph import ProjectPartSummary, ProjectSnapshot, build_graph
+from mcpserver.loxone.project.graph import (
+    ProjectPartSummary,
+    ProjectSnapshot,
+    _logical_knx_nodes,
+    build_graph,
+)
 from mcpserver.loxone.project.mapping import ProjectView, map_runtime
 from mcpserver.loxone.project.models import ProjectError
 from mcpserver.loxone.project.parser import parse_project
@@ -118,6 +123,41 @@ def test_existing_project_describe_and_trace_schemas_accept_reviewed_opening_sem
         "logical_or",
         "reference_projection",
     }
+
+
+def test_contact_traces_include_every_exact_logical_source_occurrence():
+    structure, _ = fixture()
+    canonical = parse_project(
+        (f'<P><C Type="EIBsensor" U="{CONTACT}"><Co K="AQ" U="unused-output"/></C></P>').encode()
+    )
+    wired = parse_project(Path("tests/fixtures/project/opening-contacts.xml").read_bytes())
+    graph = build_graph((("a", canonical), ("b", wired)))
+    aliases, source_ids = _logical_knx_nodes(graph)
+    snapshot = ProjectSnapshot(
+        "multi-source",
+        8,
+        (
+            ProjectPartSummary("a", len(canonical.elements), ()),
+            ProjectPartSummary("b", len(wired.elements), ()),
+        ),
+        graph,
+        logical_aliases=aliases,
+        logical_source_ids=source_ids,
+    )
+    project = ProjectQuery(ProjectView(snapshot, map_runtime(snapshot, structure)), {})
+    mapped = project.resolve(CONTACT, "runtime_control_uuid")
+    assert mapped.project == "a"
+    result = analyze(structure, project)
+    assert result["completeness"]["graph"]
+    assert {c["contact_uuid"] for c in result["connections"]} == {CONTACT}
+    assert not any(
+        f["finding_type"] == "consumer_without_resolved_contact" for f in result["findings"]
+    )
+    downstream = next(e for e in result["evidence"] if e["evidence_id"] == f"downstream:{CONTACT}")
+    assert {n["project_node_id"].split(":")[0] for n in downstream["nodes"]} == {"a", "b"}
+    bounded = analyze(structure, project, max_nodes=4)
+    assert not bounded["completeness"]["graph"]
+    assert not bounded["findings"]
 
 
 @pytest.mark.parametrize("limit", [{"max_depth": 1}, {"max_nodes": 1}])

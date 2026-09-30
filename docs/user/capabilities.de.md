@@ -61,6 +61,9 @@ unabhängig von der Analysezeit und dem verifizierten Projektmarker.
 Die erste Verbraucherregel ist exakt `AutoJalousie.Window`; `Dwc` wird nicht als
 Alias angenommen. `Or.I1/I2 -> Q` und die Projektion einer aufgelösten expliziten
 `InputRef`-Referenz auf einen eindeutigen `AQ` sind markierte abgeleitete Regeln.
+Die begrenzten Trace-Starts berücksichtigen alle exakt zugeordneten Vorkommen
+eines logischen KNX-Kontakts über interne Modellquellen hinweg; eine dabei erreichte
+Grenze verhindert eine vollständige Graphaussage.
 Zwischenlogik, Sperrquellen und Anschlusskontext bleiben in den Belegen sichtbar.
 Unbekannte Semantik, Mehrdeutigkeit und erreichte Grenzen verhindern negative
 Verbindungsaussagen. Ein `cross_assignment_review_candidate` vergleicht einen

@@ -55,7 +55,9 @@ verified project marker.
 
 The first consumer rule is exactly `AutoJalousie.Window`; `Dwc` is not assumed to be
 an alias. `Or.I1/I2 -> Q` and projection of a resolved explicit `InputRef` reference
-onto a unique `AQ` are marked derived rules. Intermediate logic, lockout sources
+onto a unique `AQ` are marked derived rules. Bounded trace starts retain every
+exactly identified occurrence of a logical KNX contact across internal model sources;
+reaching that bound prevents a complete graph claim. Intermediate logic, lockout sources
 and connector context remain visible in evidence. Unknown semantics, ambiguity
 and reached limits prevent negative connection conclusions.
 A `cross_assignment_review_candidate` compares a proven feeding contact with another

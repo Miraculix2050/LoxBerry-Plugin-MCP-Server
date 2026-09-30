@@ -88,13 +88,18 @@ class OpeningGraph:
                 and block.block_type not in CONSUMER_CONNECTORS
             ) or any(keys[r.input_key] != 1 or keys[r.output_key] != 1 for r in rules)
 
-    def connectors(self, block: GraphNode, key: str | None = None) -> list[str]:
-        return [
-            child
-            for child in self.children[block.key]
-            if self.nodes[child].kind == "connector"
-            and (key is None or dict(self.nodes[child].attributes).get("K") == key)
-        ]
+    def connectors(
+        self, block: GraphNode, key: str | None = None, *, limit: int | None = None
+    ) -> list[str]:
+        result = []
+        for child in self.children[block.key]:
+            if self.nodes[child].kind == "connector" and (
+                key is None or dict(self.nodes[child].attributes).get("K") == key
+            ):
+                result.append(child)
+                if limit is not None and len(result) >= limit:
+                    break
+        return result
 
     def trace(
         self, seeds: list[str], direction: str, max_depth: int, max_nodes: int
@@ -470,7 +475,16 @@ def analyze_opening_contacts(
             warnings.add("mapping_incomplete")
             continue
         node = graph.nodes[entry.node_keys[0]]
-        seeds = [node.key, *graph.connectors(node)]
+        seeds: list[str] = []
+        for occurrence in project.view.snapshot.occurrence_keys_for(node.key):
+            seeds.append(occurrence)
+            if len(seeds) > max_nodes:
+                break
+            seeds.extend(
+                graph.connectors(graph.nodes[occurrence], limit=max_nodes + 1 - len(seeds))
+            )
+            if len(seeds) > max_nodes:
+                break
         contact_seeds[uuid] = set(seeds)
         downstream[uuid] = graph.trace(seeds, "downstream", max_depth, max_nodes)
         downstream[uuid]["evidence_id"] = f"downstream:{uuid}"
@@ -491,7 +505,7 @@ def analyze_opening_contacts(
         if block.block_type != consumer.control_type:
             warnings.add("consumer_connector_unresolved")
             continue
-        connectors = graph.connectors(block, consumer_data["connector_key"])
+        connectors = graph.connectors(block, consumer_data["connector_key"], limit=2)
         if len(connectors) != 1:
             warnings.add("consumer_connector_unresolved")
             continue
