@@ -100,6 +100,17 @@ async def test_normal_stream_end_during_read_marks_cached_state_stale() -> None:
 @pytest.mark.xfail(strict=True, raises=AssertionError, reason="Confirmed bug #319")
 @pytest.mark.parametrize("cleanup", ["idle", "capacity", "close"])
 async def test_cleanup_during_refresh_does_not_resurrect_cache(cleanup: str) -> None:
+    await _cleanup_during_refresh(cleanup, check_cache=True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cleanup", ["idle", "capacity", "close"])
+async def test_cleanup_during_refresh_closes_owned_sessions(cleanup: str) -> None:
+    # Do not let a known cache failure mask independent session-leak evidence.
+    await _cleanup_during_refresh(cleanup, check_cache=False)
+
+
+async def _cleanup_during_refresh(cleanup: str, *, check_cache: bool) -> None:
     owner = runtime(max_active_sessions=1, session_idle_seconds=1)
     record = await install(owner)
     entered, release = asyncio.Event(), asyncio.Event()
@@ -130,9 +141,10 @@ async def test_cleanup_during_refresh_does_not_resurrect_cache(cleanup: str) -> 
         release.set()
         snapshot = await asyncio.wait_for(call, 2)
         assert not snapshot.connected
-        assert owner.state(snapshot, "state").freshness is Freshness.UNAVAILABLE
-        assert "one" not in owner.cache._values
         refresh.close.assert_awaited_once()
+        if check_cache:
+            assert owner.state(snapshot, "state").freshness is Freshness.UNAVAILABLE
+            assert "one" not in owner.cache._values
     finally:
         release.set()
         await asyncio.gather(call, return_exceptions=True)
