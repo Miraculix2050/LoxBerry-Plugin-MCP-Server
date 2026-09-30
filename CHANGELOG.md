@@ -17,6 +17,10 @@ extracted from the matching version heading.
 
 - Add `loxone_describe_control(view="state_refs")` for complete normalized state-name/UUID references without history, statistics, or other control metadata. Refresh user-filtered visibility before returning references, fail without cached fallback, and mark a disconnected event stream as stale.
 
+- Release per-family Loxone runtime locks after their last holder or waiter and
+  sweep expired rate-limit family keys without resetting live rate windows.
+  Serialize disconnect with in-flight connection establishment.
+
 - Measure Event History chart CGI delivery through stdout flush and distinguish
   completed preparations from slow or failed requests in operational logs.
 

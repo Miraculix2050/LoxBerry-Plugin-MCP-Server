@@ -61,6 +61,28 @@ _LOGGER = logging.getLogger(__name__)
 _HISTORY_TRACE_ID: ContextVar[str | None] = ContextVar("history_trace_id", default=None)
 
 
+@dataclass
+class _FamilyLock:
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    users: int = 0
+
+
+class _FamilyLocks(dict[str, _FamilyLock]):
+    """Retain one lock until its last holder or waiter has left."""
+
+    @asynccontextmanager
+    async def hold(self, family_id: str) -> AsyncIterator[None]:
+        entry = self.setdefault(family_id, _FamilyLock())
+        entry.users += 1
+        try:
+            async with entry.lock:
+                yield
+        finally:
+            entry.users -= 1
+            if entry.users == 0:
+                del self[family_id]
+
+
 @contextmanager
 def history_trace(trace_id: str) -> Iterator[None]:
     """Associate sanitized History phase timings with one MCP tool result."""
@@ -280,16 +302,17 @@ class LoxoneRuntime:
         self._initial_state_timeout_seconds = min(timeout_seconds, 2.0)
         self.cache = UserStateCache(max_states_per_user=max_states_per_identity)
         self._records: dict[str, _ConnectionRecord] = {}
-        self._locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+        self._locks = _FamilyLocks()
         self._rate: defaultdict[str, deque[float]] = defaultdict(deque)
         self._rate_limit = requests_per_minute
         self._control_rate: defaultdict[str, deque[float]] = defaultdict(deque)
         self._control_rate_limit = control_requests_per_minute
-        self._control_locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+        self._control_locks = _FamilyLocks()
         self._control_confirmation_seconds = control_confirmation_seconds
         self._parallel = asyncio.Semaphore(max_parallel_calls)
         self._history_rate: defaultdict[str, deque[float]] = defaultdict(deque)
         self._history_rate_limit = history_requests_per_minute
+        self._rate_prune_at = 0.0
         self.statistics_cache = statistics_cache or StatisticsCache()
         self.control_enabled = control_enabled
         self.history_enabled = history_enabled
@@ -297,11 +320,25 @@ class LoxoneRuntime:
         self.max_active_sessions = max_active_sessions
         self.session_idle_seconds = session_idle_seconds
 
+    def _prune_rate_state(self, now: float) -> None:
+        """Keep live rate windows across disconnects; discard expired family keys."""
+        if now < self._rate_prune_at:
+            return
+        next_prune = now + 60
+        for rates in (self._rate, self._control_rate, self._history_rate):
+            for family_id, values in tuple(rates.items()):
+                if not values or values[-1] <= now - 60:
+                    del rates[family_id]
+                else:
+                    next_prune = min(next_prune, values[-1] + 60)
+        self._rate_prune_at = next_prune
+
     @asynccontextmanager
     async def call_slot(self, access: StoredAccessToken) -> AsyncIterator[None]:
         if READ_SCOPE not in access.scopes:
             raise PermissionError("loxone:read scope is required")
         now = time.monotonic()
+        self._prune_rate_state(now)
         values = self._rate[access.family_id]
         while values and values[0] <= now - 60:
             values.popleft()
@@ -329,6 +366,7 @@ class LoxoneRuntime:
                 "permission_denied", "Loxone history requires administrator activation"
             )
         now = time.monotonic()
+        self._prune_rate_state(now)
         if not self._consume_rate(
             self._rate[access.family_id], self._rate_limit, now
         ) or not self._consume_rate(
@@ -410,6 +448,7 @@ class LoxoneRuntime:
             raise ControlOperationError("invalid_input", "invalid control operation")
 
         now = time.monotonic()
+        self._prune_rate_state(now)
         if not self._consume_rate(self._rate[access.family_id], self._rate_limit, now):
             raise ControlOperationError("rate_limited", "request rate limit exceeded")
         if not self._consume_rate(
@@ -417,7 +456,7 @@ class LoxoneRuntime:
         ):
             raise ControlOperationError("rate_limited", "control rate limit exceeded")
 
-        async with self._parallel, self._control_locks[access.family_id]:
+        async with self._parallel, self._control_locks.hold(access.family_id):
             try:
                 snapshot = await self.snapshot(access)
             except RuntimeUnavailable as exc:
@@ -910,7 +949,7 @@ class LoxoneRuntime:
         record = self._records.get(subject)
         connected_now = False
         if record is None or record.task.done():
-            async with self._locks[subject]:
+            async with self._locks.hold(subject):
                 record = self._records.get(subject)
                 if record is None or record.task.done():
                     record = await self._connect(access)
@@ -1170,12 +1209,17 @@ class LoxoneRuntime:
         return self.cache.get(snapshot.subject, uuid)
 
     async def disconnect(self, family_id: str) -> None:
-        record = self._records.pop(family_id, None)
-        if record is not None:
-            record.task.cancel()
-            with suppress(asyncio.CancelledError):
-                await record.task
-        self.cache.clear(family_id)
+        # Wait for an in-flight connection before removing its eventual record.
+        # Never acquire the control lock here: control calls acquire connection
+        # locks through snapshot(), and cleanup must not reverse that order.
+        async with self._locks.hold(family_id):
+            record = self._records.pop(family_id, None)
+            if record is not None:
+                record.task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await record.task
+            self.cache.clear(family_id)
+        self._prune_rate_state(time.monotonic())
 
     async def revoke(self, family_id: str) -> None:
         projects = getattr(self, "projects", None)
