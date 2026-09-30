@@ -780,6 +780,121 @@ def test_event_history_chart_tab_keeps_values_out_of_the_overview() -> None:
     assert "CHART_DENIED=" in english and "CHART_DENIED=" in german
 
 
+def test_chart_timing_cgi_forwards_only_fixed_numeric_diagnostics() -> None:
+    cgi = (ROOT / "webfrontend/htmlauth/event_history.cgi").read_text(encoding="utf-8")
+
+    assert (
+        "config_load_ms|selector_refresh_ms|revalidation_ms|history_prepare_ms|serialization_ms"
+        in cgi
+    )
+    assert "selected_sources|discovered_controls|serialized_bytes" in cgi
+    assert "component=event_history_chart_timing request_id=%s phase=%s duration_ms=%.1f" in cgi
+    assert "phase=cgi_delivery duration_ms=%.1f response_bytes=%d" in cgi
+    assert (
+        "control_uuid"
+        not in cgi[cgi.index("my %chart_phase_timing") : cgi.index("sub wait_update")]
+    )
+
+
+def test_chart_delivery_timing_includes_successful_stdout_flush() -> None:
+    perl = shutil.which("perl")
+    assert perl is not None, "Perl is required for the complete deterministic gate"
+    source = (ROOT / "webfrontend/htmlauth/event_history.cgi").read_text(encoding="utf-8")
+    reply = source[source.index("sub reply {") : source.index("sub admin_call {")]
+    script = (
+        r"""
+use strict;
+use warnings;
+use IO::Handle;
+use JSON::PP qw(encode_json);
+my $now = 1;
+sub CLOCK_MONOTONIC { 0 }
+sub clock_gettime { $now }
+my $q = {action => 'event_history_chart_prepare'};
+my $request_id = 'test';
+my $lbpplugindir = 'test';
+sub headers { () }
+{ package CGI; sub header { "Content-Type: application/json\n\n" } }
+my $cgi = bless {}, 'CGI';
+{ package LoxBerry::Log;
+  sub new { bless {}, shift }
+  sub INF { print STDERR $_[1], "\n" }
+}
+no warnings 'redefine';
+*IO::Handle::flush = sub {
+    die 'body not written' unless tell(STDOUT) > 0;
+    print STDERR "flush\n";
+    $now = 2;
+    return !$ENV{TEST_FLUSH_FAIL};
+};
+"""
+        + reply
+        + "reply({ok => JSON::PP::true}, 200);"
+    )
+    for failed in (False, True):
+        result = subprocess.run(
+            [perl, "-e", script],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "LC_ALL": "C", "TEST_FLUSH_FAIL": "1" if failed else "0"},
+            check=False,
+        )
+        assert result.stdout.endswith('{"ok":true}')
+        assert result.stderr.startswith("flush\n")
+        if failed:
+            assert result.returncode != 0
+            assert "phase=cgi_delivery" not in result.stderr
+        else:
+            assert result.returncode == 0, result.stderr
+            assert "phase=cgi_delivery duration_ms=1000.0" in result.stderr
+
+
+def test_chart_prepare_logging_classifies_fast_slow_and_failed_results() -> None:
+    perl = shutil.which("perl")
+    assert perl is not None, "Perl is required for the complete deterministic gate"
+    source = (ROOT / "webfrontend/htmlauth/event_history.cgi").read_text(encoding="utf-8")
+    start = source.index("        if (!$result->{ok} || $duration_ms >= 5000")
+    logging = source[
+        start : source.index("        if ($action eq 'event_history_chart_prepare')", start)
+    ]
+    script = (
+        r"""
+use strict;
+use warnings;
+my ($action, $duration_ms, $ok) = @ARGV;
+my $result = {ok => $ok};
+my $code = $ok ? 'ok' : 'internal_error';
+my $request_id = 'test';
+my $lbpplugindir = 'test';
+{ package LoxBerry::Log;
+  sub new { bless {}, shift }
+  sub INF { print $_[1] }
+}
+"""
+        + logging
+    )
+    for action, duration, ok, outcome in (
+        ("prepare", 25, 1, "completed"),
+        ("prepare", 4999, 1, "completed"),
+        ("prepare", 5000, 1, "slow"),
+        ("prepare", 25, 0, "failed"),
+        ("query", 25, 1, None),
+        ("query", 5000, 1, "slow"),
+        ("query", 25, 0, "failed"),
+    ):
+        result = subprocess.run(
+            [perl, "-e", script, f"event_history_chart_{action}", str(duration), str(ok)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        if outcome is None:
+            assert result.stdout == ""
+        else:
+            assert f"outcome={outcome} " in result.stdout
+
+
 def test_event_history_update_relay_is_bounded_and_fixed_to_loopback() -> None:
     perl = shutil.which("perl")
     assert perl is not None, "Perl is required for the complete deterministic gate"

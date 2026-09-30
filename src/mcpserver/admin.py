@@ -1804,7 +1804,7 @@ def _event_history_source_revision() -> dict[str, str | bool]:
     }
 
 
-def dispatch(request: object, *, timing: dict[str, float] | None = None) -> dict[str, Any]:
+def dispatch(request: object, *, timing: dict[str, float | int] | None = None) -> dict[str, Any]:
     if not isinstance(request, dict) or not isinstance(request.get("action"), str):
         raise AdminError("request is invalid")
     action = request["action"]
@@ -1894,7 +1894,7 @@ def dispatch(request: object, *, timing: dict[str, float] | None = None) -> dict
         if action == "event_history_selector_states":
             return event_history_admin.selector_states(payload)
         if action == "event_history_chart_prepare":
-            return event_history_admin.chart_prepare(payload)
+            return event_history_admin.chart_prepare(payload, timing=timing)
         if action == "event_history_chart_query":
             return event_history_admin.chart_query(payload)
         if action == "event_history_save_policy":
@@ -1985,7 +1985,7 @@ def dispatch(request: object, *, timing: dict[str, float] | None = None) -> dict
 
 def main() -> None:
     request_started = time.perf_counter_ns()
-    timing: dict[str, float] = {}
+    timing: dict[str, float | int] = {}
     action: str | None = None
     try:
         raw = sys.stdin.buffer.read(_MAX_REQUEST_BYTES + 1)
@@ -2003,21 +2003,31 @@ def main() -> None:
             "ok": False,
             "error": {"code": "internal_error", "message": "administrative action failed"},
         }
-    sys.stdout.write(json.dumps(response, ensure_ascii=True, separators=(",", ":")) + "\n")
-    if action in ("get_config", "page_snapshot"):
+    serialize_started = time.perf_counter_ns()
+    serialized = json.dumps(response, ensure_ascii=True, separators=(",", ":"))
+    if action == "event_history_chart_prepare":
+        timing["serialization_ms"] = (time.perf_counter_ns() - serialize_started) / 1_000_000
+        timing["serialized_bytes"] = len(serialized.encode("utf-8"))
+    sys.stdout.write(serialized + "\n")
+    if action in ("get_config", "page_snapshot", "event_history_chart_prepare"):
         helper_started = os.getenv("MCPSERVER_ADMIN_STARTED_NS", "")
         try:
             bootstrap_ms = (int(_MODULE_IMPORT_STARTED_NS) - int(helper_started)) / 1_000_000
         except ValueError:
             bootstrap_ms = None
-        timing.update(
-            {
-                "module_import_ms": (_MODULE_IMPORT_FINISHED_NS - _MODULE_IMPORT_STARTED_NS)
-                / 1_000_000,
-                "request_dispatch_ms": (time.perf_counter_ns() - request_started) / 1_000_000,
-            }
-        )
-        if bootstrap_ms is not None and bootstrap_ms >= 0:
+        if action in ("get_config", "page_snapshot"):
+            timing.update(
+                {
+                    "module_import_ms": (_MODULE_IMPORT_FINISHED_NS - _MODULE_IMPORT_STARTED_NS)
+                    / 1_000_000,
+                    "request_dispatch_ms": (time.perf_counter_ns() - request_started) / 1_000_000,
+                }
+            )
+        if (
+            action in ("get_config", "page_snapshot")
+            and bootstrap_ms is not None
+            and bootstrap_ms >= 0
+        ):
             timing["process_bootstrap_ms"] = bootstrap_ms
         sys.stderr.write(
             "mcpserver_admin_timing="

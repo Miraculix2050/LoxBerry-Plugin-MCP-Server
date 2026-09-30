@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import io
+import json
 import sqlite3
 import time
 from dataclasses import replace
@@ -187,6 +189,45 @@ def test_chart_store_timeout_has_distinct_code(tmp_path, monkeypatch):
     with pytest.raises(admin.AdminError, match="timed out") as error:
         event_history_admin.chart_query(payload)
     assert error.value.code == "query_timeout"
+
+
+def test_chart_prepare_phase_diagnostics_are_value_free(tmp_path, monkeypatch):
+    _, history = _setup(tmp_path, monkeypatch, sources=(SOURCE,))
+    history.initialize()
+    document = {
+        "generation": "c" * 24,
+        "verified_at": time.time(),
+        "controls": event_history_admin._selector_projection(None)["controls"],
+        "control_index": {SOURCE[0]: 0},
+    }
+
+    class Cache:
+        profile = "private-profile-marker"
+
+        def refresh(self, discover):
+            discover()
+            return document
+
+    monkeypatch.setattr(event_history_admin, "_selector_cache", lambda _config: Cache())
+    timing: dict[str, float | int] = {}
+
+    event_history_admin.chart_prepare(
+        {"sources": [{"control_uuid": SOURCE[0], "state_uuid": SOURCE[1]}]},
+        timing=timing,
+    )
+
+    assert set(timing) == {
+        "config_load_ms",
+        "selector_refresh_ms",
+        "revalidation_ms",
+        "history_prepare_ms",
+        "selected_sources",
+        "discovered_controls",
+    }
+    assert all(isinstance(value, int | float) and value >= 0 for value in timing.values())
+    diagnostics = repr(timing)
+    for private_value in (*SOURCE, "Visible", "Living room", "private-profile-marker"):
+        assert private_value not in diagnostics
 
 
 def test_chart_selection_and_range_are_bounded(tmp_path, monkeypatch):
@@ -716,3 +757,53 @@ def test_source_action_rejects_endpoint_changed_during_visibility_check(
     assert config_store.load().event_history_sources == ()
     if action == "purge":
         assert history.snapshot(()).sources[0].event_count == 1
+
+
+def test_chart_prepare_serialization_diagnostics_do_not_echo_private_values(monkeypatch, capsys):
+    private = {
+        "uuid": SOURCE[0],
+        "name": "private-control-name",
+        "token": "private-auth-token",
+        "project": {"private-project-field": "private-project-value"},
+    }
+
+    def dispatch(_request, *, timing):
+        timing["config_load_ms"] = 1.0
+        timing["selector_refresh_ms"] = 2.0
+        timing["revalidation_ms"] = 3.0
+        timing["history_prepare_ms"] = 4.0
+        timing["selected_sources"] = 1
+        timing["discovered_controls"] = 2
+        return private
+
+    request = {"action": "event_history_chart_prepare", "payload": private}
+    monkeypatch.setattr(
+        admin.sys, "stdin", SimpleNamespace(buffer=io.BytesIO(json.dumps(request).encode()))
+    )
+    monkeypatch.setattr(admin, "dispatch", dispatch)
+    admin.main()
+    output = capsys.readouterr()
+    assert json.loads(output.out)["data"] == private
+    prefix = "mcpserver_admin_timing="
+    assert output.err.startswith(prefix)
+    diagnostics = json.loads(output.err.removeprefix(prefix))
+    assert set(diagnostics) == {
+        "config_load_ms",
+        "selector_refresh_ms",
+        "revalidation_ms",
+        "history_prepare_ms",
+        "selected_sources",
+        "discovered_controls",
+        "serialization_ms",
+        "serialized_bytes",
+    }
+    assert all(isinstance(value, int | float) and value >= 0 for value in diagnostics.values())
+    assert diagnostics["serialized_bytes"] == len(output.out.rstrip("\n").encode())
+    for value in (
+        SOURCE[0],
+        "private-control-name",
+        "private-auth-token",
+        "private-project-field",
+        "private-project-value",
+    ):
+        assert value not in output.err

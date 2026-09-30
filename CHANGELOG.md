@@ -5,6 +5,9 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Measure Event History chart CGI delivery through stdout flush and distinguish
+  completed preparations from slow or failed requests in operational logs.
+
 - Explain raw project graph outliers with separate signal, reference, and derived-edge
   evidence. Report reference-only KNX endpoints separately from directly configured
   consumers and bound connector details in connectivity findings.
