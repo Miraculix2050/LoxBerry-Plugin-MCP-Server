@@ -6,10 +6,12 @@ import asyncio
 from contextlib import suppress
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
 import mcpserver.loxone.runtime as runtime_module
+from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore
 from mcpserver.auth.provider import (
     CONTROL_SCOPE,
     HISTORY_SCOPE,
@@ -17,8 +19,8 @@ from mcpserver.auth.provider import (
     Phase0OAuthProvider,
     StoredAccessToken,
 )
-from mcpserver.auth.store import AtomicJsonAuthStore
-from mcpserver.loxone.client import MiniserverEndpoint
+from mcpserver.auth.store import AtomicJsonAuthStore, token_digest
+from mcpserver.loxone.client import LoxoneToken, MiniserverEndpoint
 from mcpserver.loxone.models import LoxoneIdentity, LoxoneStructure
 from mcpserver.loxone.runtime import (
     ControlOperationError,
@@ -64,6 +66,76 @@ def _counts(runtime: LoxoneRuntime) -> tuple[int, ...]:
             "_history_rate",
         )
     )
+
+
+def _authorized_runtime(tmp_path: Path):
+    access = _access()
+    clock = [1_900_000_000.0]
+    key = tmp_path / "key"
+    key.write_bytes(b"k" * 32)
+    tokens = EncryptedLoxoneTokenStore((tmp_path / "tokens.enc").resolve(), key.resolve())
+    tokens.put(
+        "family",
+        "miniserver",
+        "identity",
+        LoxoneToken("test-token", "reader", "key", "SHA256", 2_000_000_000),
+    )
+    auth = AtomicJsonAuthStore(tmp_path / "auth.json")
+    auth.mutate(
+        lambda document: document["families"].update(
+            {
+                "family": {"revoked": False, "expires_at": access.expires_at},
+            }
+        )
+    )
+    auth.mutate(
+        lambda document: document["access_tokens"].update(
+            {
+                token_digest(access.token): {
+                    "status": "active",
+                    "expires_at": access.expires_at,
+                    "family_id": access.family_id,
+                    "client_id": access.client_id,
+                    "scopes": access.scopes,
+                    "resource": access.resource,
+                    "identity_id": access.identity_id,
+                    "miniserver_id": access.miniserver_id,
+                },
+            }
+        )
+    )
+    cleanup: list[asyncio.Task[None]] = []
+
+    def revoke(family: str) -> None:
+        tokens.schedule_remote_revoke(family)
+        cleanup.append(asyncio.create_task(runtime.revoke(family)))
+
+    provider = Phase0OAuthProvider(
+        auth,
+        issuer="https://example.test/oauth",
+        resource=access.resource,
+        clock=lambda: clock[0],
+        on_family_revoked=revoke,
+    )
+
+    async def validate(candidate: StoredAccessToken) -> bool:
+        current = await provider.load_access_token(candidate.token)
+        return bool(
+            current is not None
+            and current.family_id == candidate.family_id
+            and current.identity_id == candidate.identity_id
+            and current.miniserver_id == candidate.miniserver_id
+        )
+
+    runtime = LoxoneRuntime(
+        MiniserverEndpoint.parse_gen1("http://192.168.1.10"),
+        tokens,
+        max_parallel_calls=1,
+        history_enabled=True,
+        control_enabled=True,
+        validate_access=validate,
+    )
+    return runtime, provider, tokens, cleanup, clock
 
 
 @pytest.mark.asyncio
@@ -214,47 +286,98 @@ async def test_expired_rate_keys_are_swept_without_connection_records(
 @pytest.mark.asyncio
 async def test_disconnect_waits_for_connect_and_preserves_waiter_lock(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
-    runtime = _runtime()
+    runtime, provider, tokens, cleanup_tasks, _clock = _authorized_runtime(tmp_path)
     entered = asyncio.Event()
     release = asyncio.Event()
-    connects = 0
-    revoked = False
+    closed = asyncio.Event()
 
-    async def connect(_access: StoredAccessToken) -> _ConnectionRecord:
-        nonlocal connects
-        connects += 1
-        if revoked:
-            raise RuntimeUnavailable("authorization revoked")
+    class Session:
+        async def load_structure(self):
+            return LoxoneStructure(LoxoneIdentity("reader", "serial"), "1", (), (), ())
+
+        async def state_events(self):
+            yield ()
+            await asyncio.Event().wait()
+
+        async def close(self):
+            closed.set()
+
+    async def open_session(_token):
         entered.set()
         await release.wait()
-        return _ConnectionRecord(
-            LoxoneStructure(LoxoneIdentity("reader", "serial"), "1", (), (), ()),
-            frozenset(),
-            SimpleNamespace(),
-            asyncio.create_task(asyncio.Event().wait()),
-            last_structure_check=runtime_module.time.monotonic(),
-        )
+        return Session()
 
-    monkeypatch.setattr(runtime, "_connect", connect)
+    opening = AsyncMock(side_effect=open_session)
+    monkeypatch.setattr(runtime.client, "open_session", opening)
     first = asyncio.create_task(runtime.snapshot(_access()))
     await entered.wait()
     lock = runtime._locks["family"]
-    revoked = True
-    cleanup = asyncio.create_task(runtime.revoke("family"))
+    await provider.revoke_token(_access())
+    cleanup = cleanup_tasks[-1]
     await asyncio.sleep(0)
     waiter = asyncio.create_task(runtime.snapshot(_access()))
     await asyncio.sleep(0)
     assert not cleanup.done()
     assert runtime._locks["family"] is lock
     release.set()
-    await first
+    with pytest.raises(RuntimeUnavailable, match="authorization"):
+        await first
     await cleanup
-    with pytest.raises(RuntimeUnavailable, match="revoked"):
+    with pytest.raises(RuntimeUnavailable, match="authorization"):
         await waiter
-    assert connects == 2
+    assert opening.await_count == 1
+    assert closed.is_set()
+    assert tokens.get("family", "miniserver", "identity") is not None
     assert not runtime._records
     assert not runtime._locks
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["read", "history", "control"])
+@pytest.mark.parametrize("ending", ["revoke", "expiry"])
+async def test_queued_calls_cannot_reconnect_with_retained_revocation_token(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    ending: str,
+) -> None:
+    runtime, provider, tokens, cleanup, clock = _authorized_runtime(tmp_path)
+    opening = AsyncMock(side_effect=AssertionError("revoked call opened a connection"))
+    monkeypatch.setattr(runtime.client, "open_session", opening)
+    await runtime._parallel.acquire()
+
+    async def call() -> None:
+        if mode == "control":
+            await runtime.operate_control(_access(), "control", "on")
+        else:
+            slot = runtime.history_call_slot if mode == "history" else runtime.call_slot
+            async with slot(_access()):
+                await runtime.snapshot(_access())
+
+    waiting = asyncio.create_task(call())
+    await asyncio.sleep(0)
+    assert not waiting.done()
+    if ending == "revoke":
+        await provider.revoke_token(_access())
+    else:
+        clock[0] = 2_000_000_001
+        await provider.get_client("missing")
+    await asyncio.gather(*cleanup)
+    assert not runtime._records
+    assert tokens.get("family", "miniserver", "identity") is not None
+    assert len(tokens.pending_remote_revocations(int(clock[0]))) == 1
+    runtime._parallel.release()
+    error = RuntimeUnavailable if mode == "read" else ControlOperationError
+    with pytest.raises(error, match="authorization"):
+        await waiting
+    with pytest.raises(RuntimeUnavailable, match="authorization"):
+        await runtime.snapshot(_access())
+    assert opening.await_count == 0
+    assert not runtime._records
+    assert not runtime._locks
+    assert not runtime._control_locks
 
 
 @pytest.mark.asyncio

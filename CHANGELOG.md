@@ -20,6 +20,8 @@ extracted from the matching version heading.
 - Release per-family Loxone runtime locks after their last holder or waiter and
   sweep expired rate-limit family keys without resetting live rate windows.
   Serialize disconnect with in-flight connection establishment.
+  Recheck OAuth authorization for queued calls and before publishing a new
+  connection while preserving token material needed for remote revocation.
 
 - Measure Event History chart CGI delivery through stdout flush and distinguish
   completed preparations from slow or failed requests in operational logs.

@@ -9,7 +9,7 @@ import math
 import struct
 import time
 from collections import defaultdict, deque
-from collections.abc import AsyncIterator, Iterator, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Mapping
 from contextlib import asynccontextmanager, contextmanager, suppress
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -281,6 +281,7 @@ class LoxoneRuntime:
         max_structure_state_references: int = 100_000,
         max_structure_depth: int = 32,
         auth_coordinator: MiniserverAuthCoordinator | None = None,
+        validate_access: Callable[[StoredAccessToken], Awaitable[bool]] | None = None,
     ) -> None:
         from mcpserver.loxone.client import MiniserverEndpoint
 
@@ -299,6 +300,7 @@ class LoxoneRuntime:
             max_structure_depth=max_structure_depth,
         )
         self.auth_coordinator = auth_coordinator
+        self._validate_access = validate_access
         self._initial_state_timeout_seconds = min(timeout_seconds, 2.0)
         self.cache = UserStateCache(max_states_per_user=max_states_per_identity)
         self._records: dict[str, _ConnectionRecord] = {}
@@ -319,6 +321,11 @@ class LoxoneRuntime:
         self.structure_refresh_seconds = structure_refresh_seconds
         self.max_active_sessions = max_active_sessions
         self.session_idle_seconds = session_idle_seconds
+
+    async def _require_access(self, access: StoredAccessToken) -> None:
+        validator = getattr(self, "_validate_access", None)
+        if validator is not None and not await validator(access):
+            raise RuntimeUnavailable("Loxone authorization is unavailable")
 
     def _prune_rate_state(self, now: float) -> None:
         """Keep live rate windows across disconnects; discard expired family keys."""
@@ -346,6 +353,7 @@ class LoxoneRuntime:
             raise RuntimeUnavailable("request rate limit exceeded")
         values.append(now)
         async with self._parallel:
+            await self._require_access(access)
             yield
 
     @asynccontextmanager
@@ -374,6 +382,10 @@ class LoxoneRuntime:
         ):
             raise ControlOperationError("rate_limited", "history rate limit exceeded")
         async with self._parallel:
+            try:
+                await self._require_access(access)
+            except RuntimeUnavailable as exc:
+                raise ControlOperationError("permission_denied", str(exc)) from exc
             yield
 
     @staticmethod
@@ -945,14 +957,24 @@ class LoxoneRuntime:
         self, access: StoredAccessToken, *, fresh_visibility: bool = False
     ) -> RuntimeSnapshot:
         subject = access.family_id
+        await self._require_access(access)
         await self._prune_sessions(subject)
         record = self._records.get(subject)
         connected_now = False
         if record is None or record.task.done():
             async with self._locks.hold(subject):
+                await self._require_access(access)
                 record = self._records.get(subject)
                 if record is None or record.task.done():
                     record = await self._connect(access)
+                    try:
+                        await self._require_access(access)
+                    except BaseException:
+                        record.task.cancel()
+                        with suppress(asyncio.CancelledError, Exception):
+                            await record.task
+                        self.cache.clear(subject)
+                        raise
                     self._records[subject] = record
                     connected_now = True
         record.last_used = time.monotonic()
@@ -965,6 +987,7 @@ class LoxoneRuntime:
                     record.last_structure_check + self.structure_refresh_seconds <= record.last_used
                 ):
                     await self._refresh_structure(access, record, fresh_visibility=fresh_visibility)
+        await self._require_access(access)
         return RuntimeSnapshot(
             subject,
             record.structure,

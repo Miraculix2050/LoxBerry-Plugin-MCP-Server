@@ -47,7 +47,14 @@ Per-family connection and control locks exist only while a holder or waiter uses
 them, including cancelled and failed calls. Disconnect waits for connection
 establishment before removing its record and never acquires a control lock;
 control calls acquire connection locks through `snapshot()`. OAuth revocation and
-family expiry use this same disconnect path after removing local authorization.
+family expiry use this same disconnect path after ending OAuth authorization.
+The server supplies the runtime with the same authoritative OAuth access check
+used by ProjectService. Queued read/history calls recheck it after obtaining
+global concurrency; snapshots recheck before using a record, inside the
+connection lock and after connection establishment. A connection that outlives
+revocation is closed before publication. The encrypted Loxone token can remain
+available to the remote-revocation worker without allowing a delayed OAuth call
+to reconnect. No unbounded process-local revoked-family tombstones are needed.
 The normal, control and history rate windows survive disconnect and revocation
 until their last timestamp expires after 60 seconds. Subsequent rate-limited calls
 or disconnects sweep expired family keys, including families without connection
