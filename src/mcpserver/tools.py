@@ -449,6 +449,17 @@ class ControlOperationTargetsData(BaseModel):
     capabilities: OperationTargetCapabilitiesData
 
 
+class ControlStateRefsData(BaseModel):
+    """Complete normalized state references without other control metadata."""
+
+    uuid: str
+    name: str
+    type: str
+    visibility: Literal["direct", "linked", "hidden"]
+    view: Literal["state_refs"]
+    states: list[StateReferenceData]
+
+
 class StateData(BaseModel):
     uuid: str
     value: JsonValue
@@ -1278,7 +1289,11 @@ class ControlPageEnvelope(ToolEnvelope):
 
 class ControlDescriptionEnvelope(ToolEnvelope):
     data: (
-        ControlDescriptionData | ControlHistoryTargetsData | ControlOperationTargetsData | ErrorData
+        ControlDescriptionData
+        | ControlHistoryTargetsData
+        | ControlOperationTargetsData
+        | ControlStateRefsData
+        | ErrorData
     )
 
 
@@ -3812,7 +3827,8 @@ def register_read_tools(
         description=(
             "Describe one visible Loxone control or, with include_hidden, one hidden control for "
             "read-only diagnosis. Use view=history_targets for compact history targets or "
-            "view=operation_targets for allowed actions and their required selectable targets."
+            "view=operation_targets for allowed actions and their required selectable targets, "
+            "or view=state_refs for current state-name/UUID references only."
         ),
         annotations=annotations,
         structured_output=True,
@@ -3829,18 +3845,23 @@ def register_read_tools(
         view: Annotated[
             str,
             Field(
-                description="Full description (default), history targets, or operation targets.",
-                json_schema_extra={"enum": ["full", "history_targets", "operation_targets"]},
+                description=(
+                    "Full description (default), history targets, operation targets, "
+                    "or state references."
+                ),
+                json_schema_extra={
+                    "enum": ["full", "history_targets", "operation_targets", "state_refs"]
+                },
             ),
         ] = "full",
     ) -> ControlDescriptionEnvelope:
         try:
             access_token, snapshot = (
                 await _snapshot(runtime, fresh_visibility=True)
-                if view == "operation_targets"
+                if view in {"operation_targets", "state_refs"}
                 else await _snapshot(runtime)
             )
-            if view not in {"full", "history_targets", "operation_targets"}:
+            if view not in {"full", "history_targets", "operation_targets", "state_refs"}:
                 return _error(ControlDescriptionEnvelope, "invalid_input", "view is invalid")
             control = next(
                 (
@@ -3854,6 +3875,27 @@ def register_read_tools(
             )
             if control is None:
                 return _error(ControlDescriptionEnvelope, "not_found", "control is not visible")
+            if view == "state_refs":
+                return _result(
+                    ControlDescriptionEnvelope,
+                    {
+                        "uuid": control.uuid,
+                        "name": control.name,
+                        "type": control.control_type,
+                        "visibility": (
+                            "hidden"
+                            if control.is_hidden
+                            else "linked"
+                            if control.is_user_linked or control.is_monitor_referenced
+                            else "direct"
+                        ),
+                        "view": "state_refs",
+                        "states": [
+                            {"name": name, "uuid": uuid} for name, uuid in control.state_uuids
+                        ],
+                    },
+                    stale=not snapshot.connected,
+                )
             if view == "operation_targets":
                 actions = (
                     allowed_actions(control)

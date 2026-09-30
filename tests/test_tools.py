@@ -613,7 +613,7 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert tool.annotations.destructiveHint is False
     assert tool.annotations.openWorldHint is False
     assert result.data.name == "using-loxberry-mcp"  # type: ignore[union-attr]
-    assert result.data.revision == 38  # type: ignore[union-attr]
+    assert result.data.revision == 39  # type: ignore[union-attr]
     assert "`loxone_get_structure_overview`" in result.data.content  # type: ignore[union-attr]
     assert result.data.media_type == "text/markdown"  # type: ignore[union-attr]
     assert result.data.content == read_skill_markdown()  # type: ignore[union-attr]
@@ -686,7 +686,7 @@ def test_tool_input_schemas_explain_every_argument() -> None:
     assert find_properties["has_history"]["default"] is False
     describe_view = published["loxone_describe_control"].parameters["properties"]["view"]
     assert describe_view["default"] == "full"
-    assert describe_view["enum"] == ["full", "history_targets", "operation_targets"]
+    assert describe_view["enum"] == ["full", "history_targets", "operation_targets", "state_refs"]
     assert find_properties["limit"]["minimum"] == 1
     assert find_properties["limit"]["maximum"] == 100
     operation = published["loxone_operate_control"].parameters["properties"]

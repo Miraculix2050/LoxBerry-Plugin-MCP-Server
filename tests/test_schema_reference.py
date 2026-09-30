@@ -77,6 +77,27 @@ def test_window_monitor_summary_is_in_generated_description_contract() -> None:
     assert "invalid_window_monitor_collection" in str(summary["diagnostics"])
 
 
+def test_describe_schema_publishes_minimal_state_refs_contract() -> None:
+    describe = next(
+        tool
+        for tool in tool_schema_catalog(VERSION)["tools"]
+        if tool["name"] == "loxone_describe_control"
+    )
+    view = describe["inputSchema"]["properties"]["view"]
+    assert view["default"] == "full"
+    assert view["enum"] == ["full", "history_targets", "operation_targets", "state_refs"]
+    definitions = describe["outputSchema"]["$defs"]
+    state_refs = definitions["ControlStateRefsData"]
+    fields = {"uuid", "name", "type", "visibility", "view", "states"}
+    assert set(state_refs["properties"]) == fields
+    assert set(state_refs["required"]) == fields
+    assert state_refs["properties"]["view"]["const"] == "state_refs"
+    assert state_refs["properties"]["states"]["items"]["$ref"] == "#/$defs/StateReferenceData"
+    assert {"$ref": "#/$defs/ControlStateRefsData"} in describe["outputSchema"]["properties"][
+        "data"
+    ]["anyOf"]
+
+
 def test_project_status_schema_distinguishes_model_sources_from_config_projects() -> None:
     tools = {tool["name"]: tool for tool in tool_schema_catalog(VERSION)["tools"]}
     status = tools["loxone_get_project_status"]

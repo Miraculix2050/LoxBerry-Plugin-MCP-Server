@@ -54,7 +54,7 @@ def test_explorer_catalog_publishes_operation_targets_view() -> None:
     view = describe["inputSchema"]["properties"]["view"]
 
     assert view["default"] == "full"
-    assert view["enum"] == ["full", "history_targets", "operation_targets"]
+    assert view["enum"] == ["full", "history_targets", "operation_targets", "state_refs"]
 
 
 def test_explorer_uses_one_compact_mobile_tool_panel_and_adaptive_workspace() -> None:
