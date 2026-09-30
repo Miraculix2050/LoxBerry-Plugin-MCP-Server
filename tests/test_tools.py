@@ -686,7 +686,7 @@ def test_tool_input_schemas_explain_every_argument() -> None:
     assert find_properties["has_history"]["default"] is False
     describe_view = published["loxone_describe_control"].parameters["properties"]["view"]
     assert describe_view["default"] == "full"
-    assert describe_view["enum"] == ["full", "history_targets"]
+    assert describe_view["enum"] == ["full", "history_targets", "operation_targets"]
     assert find_properties["limit"]["minimum"] == 1
     assert find_properties["limit"]["maximum"] == 100
     operation = published["loxone_operate_control"].parameters["properties"]
@@ -2342,6 +2342,201 @@ async def test_history_targets_payload_measurement(
         f"find+full={full_bytes} bytes find+compact={compact_bytes} bytes; 2 calls each"
     )
     assert compact_bytes < full_bytes
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("metadata_count", [0, 60])
+async def test_operation_targets_are_complete_and_compact(
+    monkeypatch: pytest.MonkeyPatch, metadata_count: int
+) -> None:
+    control = Control(
+        "dimmer-1",
+        "Living room dimmer",
+        "Dimmer",
+        None,
+        None,
+        "action-1",
+        tuple((f"state-{i}", f"uuid-{i}") for i in range(metadata_count)),
+        minimum=0,
+        maximum=100,
+        step=1,
+        has_history=metadata_count > 0,
+        statistic_series=tuple(
+            StatisticSeries(f"series-{i}", "statistic_v2", "g", "o", f"Series {i}", "W")
+            for i in range(metadata_count)
+        ),
+        subcontrols=tuple(
+            Control(f"child-{i}", f"Child {i}", "InfoOnlyAnalog", None, None, None, ())
+            for i in range(metadata_count)
+        ),
+        linked_control_uuids=tuple(f"child-{i}" for i in range(metadata_count)),
+    )
+    structure = LoxoneStructure(LoxoneIdentity("user", "serial"), "1", (), (), (control,))
+    access = _loxberry_access(READ_SCOPE, CONTROL_SCOPE)
+
+    async def snapshot(_runtime: object) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+        return access, RuntimeSnapshot("family", structure, True)
+
+    monkeypatch.setattr(tools_module, "_snapshot", snapshot)
+    server = FastMCP("operation-targets")
+    register_read_tools(server, None, control_enabled=True)
+    describe = server._tool_manager.get_tool("loxone_describe_control")
+    assert describe is not None
+    full = await describe.fn("dimmer-1")
+    compact = await describe.fn("dimmer-1", view="operation_targets")
+    assert compact.data.view == "operation_targets"  # type: ignore[union-attr]
+    data = compact.data.model_dump(mode="json")  # type: ignore[union-attr]
+    assert data["capabilities"]["allowed_actions"] == ["on", "off", "set_level"]
+    assert data["capabilities"]["analog_range"] is None
+    assert set(data) == {"uuid", "name", "type", "visibility", "view", "capabilities"}
+    assert set(data["capabilities"]) == {
+        "allowed_actions",
+        "radio_outputs",
+        "scene_ids",
+        "analog_range",
+        "timer_modes",
+        "ventilation_modes",
+        "mood_list_state",
+        "kelvin_range",
+        "daytimer_values",
+        "climate_mode_values",
+    }
+    full_size = len(json.dumps(full.model_dump(mode="json"), separators=(",", ":")).encode())
+    compact_size = len(json.dumps(compact.model_dump(mode="json"), separators=(",", ":")).encode())
+    print(
+        f"operation-target payload metadata={metadata_count} full={full_size} bytes "
+        f"operation_targets={compact_size} bytes saving={full_size - compact_size} bytes"
+    )
+    assert compact_size < full_size
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("control", "expected_actions", "expected_target"),
+    [
+        (
+            Control(
+                "radio",
+                "Radio",
+                "Radio",
+                None,
+                None,
+                "a",
+                (),
+                radio_output_ids=("2",),
+                radio_outputs=(("2", "Kitchen"),),
+            ),
+            ["select_output"],
+            ("radio_outputs", [{"output_id": "2", "name": "Kitchen"}]),
+        ),
+        (
+            Control("scene", "Scenes", "LightsceneRGB", None, None, "a", (), scene_ids=("7",)),
+            ["on", "off", "set_scene"],
+            ("scene_ids", ["7"]),
+        ),
+        (
+            Control(
+                "analog", "Analog", "Slider", None, None, "a", (), minimum=-1, maximum=5, step=0.5
+            ),
+            ["set_value"],
+            ("analog_range", {"minimum": -1.0, "maximum": 5.0, "step": 0.5}),
+        ),
+        (
+            Control(
+                "room",
+                "Room",
+                "IRoomControllerV2",
+                None,
+                None,
+                "a",
+                (),
+                timer_modes=(NamedOption(3, "Eco"),),
+            ),
+            ["start_override", "stop_override"],
+            ("timer_modes", [{"id": 3, "name": "Eco"}]),
+        ),
+        (
+            Control(
+                "fan",
+                "Fan",
+                "Ventilation",
+                None,
+                None,
+                "a",
+                (),
+                ventilation_modes=(NamedOption(4, "Boost"),),
+            ),
+            ["start_override", "stop_override"],
+            ("ventilation_modes", [{"id": 4, "name": "Boost"}]),
+        ),
+        (
+            Control(
+                "light", "Light", "LightControllerV2", None, None, "a", (("moodList", "moods"),)
+            ),
+            ["off", "set_mood"],
+            ("mood_list_state", {"name": "moodList", "uuid": "moods"}),
+        ),
+        (
+            Control(
+                "picker",
+                "Picker",
+                "ColorPickerV2",
+                None,
+                None,
+                "a",
+                (),
+                picker_type="TunableWhite",
+                min_kelvin=2200,
+                max_kelvin=7000,
+            ),
+            ["set_color_temperature"],
+            ("kelvin_range", [2200, 7000]),
+        ),
+        (
+            Control("timer", "Timer", "Daytimer", None, None, "a", (), is_analog=False),
+            ["pulse", "start_override", "stop_override"],
+            ("daytimer_values", [0, 1]),
+        ),
+        (
+            Control(
+                "climate", "Climate", "ClimateControllerUS", None, None, "a", (), connected_inputs=0
+            ),
+            [
+                "start_fan_override",
+                "stop_fan_override",
+                "start_mode_override",
+                "stop_mode_override",
+            ],
+            ("climate_mode_values", [0, 1, 2, 3]),
+        ),
+    ],
+)
+async def test_operation_targets_publish_each_action_specific_target(
+    monkeypatch: pytest.MonkeyPatch,
+    control: Control,
+    expected_actions: list[str],
+    expected_target: tuple[str, object],
+) -> None:
+    structure = LoxoneStructure(LoxoneIdentity("user", "serial"), "1", (), (), (control,))
+
+    async def snapshot(_runtime: object) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+        return _loxberry_access(READ_SCOPE, CONTROL_SCOPE), RuntimeSnapshot(
+            "family", structure, True
+        )
+
+    monkeypatch.setattr(tools_module, "_snapshot", snapshot)
+    server = FastMCP("operation-target-fields")
+    register_read_tools(server, None, control_enabled=True)
+    describe = server._tool_manager.get_tool("loxone_describe_control")
+    assert describe is not None
+    result = await describe.fn(control.uuid, view="operation_targets")
+    capabilities = result.data.model_dump(mode="json")["capabilities"]  # type: ignore[union-attr]
+    assert capabilities["allowed_actions"] == expected_actions
+    key, value = expected_target
+    if key == "kelvin_range":
+        assert capabilities[key] == value
+    else:
+        assert capabilities[key] == value
 
 
 @pytest.mark.asyncio

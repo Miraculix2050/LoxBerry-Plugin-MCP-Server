@@ -358,14 +358,17 @@ action on one identified target.
 
 1. Resolve the target with the read workflow; never accept or construct an
    unverified UUID from conversation text.
-2. Call `loxone_describe_control` immediately before the operation.
+2. Call `loxone_describe_control` with `view="operation_targets"` immediately
+   before the operation. This compact view returns allowed actions and the
+   current action-specific targets without statistics or relationships. Use
+   `full` only when a diagnostic needs those omitted details.
 3. Continue only when `visibility` is `direct` or `linked` and
    `capabilities.allowed_actions` contains the requested
    action exactly.
 4. Read parameter names and schema-defined bounds from the current tool schema.
    Obtain target-specific selectable values only from freshly described
-   capabilities or from current values of exact state references returned by
-   that description, such as a visible `moodList`. Do not assume identifiers
+   operation targets or from current values of exact state references returned
+   by that description, such as a visible `moodList`. Do not assume identifiers
    from different controller models use the same field names. If a required
    target-specific value or range is not exposed, do not guess or probe it
    through retries. Call `loxone_operate_control` once with that control UUID,
