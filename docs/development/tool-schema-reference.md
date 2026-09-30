@@ -4,6 +4,11 @@ The full `loxone_describe_control` schema includes additive
 `capabilities.model.window_monitor_summary` collection counts and fixed diagnostics.
 Its `returned` count includes malformed retained positions; `total` and `omitted`
 are null for invalid collection shapes. Compact views omit this metadata.
+Each retained item adds fixed `diagnostics`, `resolution_status`, and
+`room_consistency`. Summary `resolved`, `partially_resolved`, and `unresolved`
+counts sum to `returned`, excluding omitted positions. Resolution checks the
+control and item room independently; room mismatch is a separate UUID-based
+consistency result. Unavailable references never distinguish hidden from unknown.
 
 FastMCP derives each tool's input and output JSON Schemas from the registered Python function and Pydantic result model. MCP clients obtain the tool surface enabled for a concrete installation through `tools/list`; that response is authoritative for calls to that installation. The integrated Tool Explorer reads and visualizes the same response.
 

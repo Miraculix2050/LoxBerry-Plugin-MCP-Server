@@ -613,7 +613,7 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert tool.annotations.destructiveHint is False
     assert tool.annotations.openWorldHint is False
     assert result.data.name == "using-loxberry-mcp"  # type: ignore[union-attr]
-    assert result.data.revision == 38  # type: ignore[union-attr]
+    assert result.data.revision == 39  # type: ignore[union-attr]
     assert "`loxone_get_structure_overview`" in result.data.content  # type: ignore[union-attr]
     assert result.data.media_type == "text/markdown"  # type: ignore[union-attr]
     assert result.data.content == read_skill_markdown()  # type: ignore[union-attr]
@@ -2756,6 +2756,10 @@ async def test_describe_control_resolves_window_monitor_item_references(
     assert summary is not None
     assert (summary.total, summary.returned, summary.omitted, summary.truncated) == (1, 1, 0, False)
     assert summary.diagnostics == []
+    assert (summary.resolved, summary.partially_resolved, summary.unresolved) == (1, 0, 0)
+    assert item.diagnostics == []
+    assert item.resolution_status == "resolved"
+    assert item.room_consistency == "match"
     for view in ("history_targets", "operation_targets"):
         compact = await tool.fn("monitor-1", view=view)
         assert compact.ok is True
@@ -2800,7 +2804,73 @@ async def test_describe_window_monitor_exposes_normalized_collection_summary(
         "omitted": 1,
         "truncated": True,
         "diagnostics": [],
+        "resolved": 0,
+        "partially_resolved": 0,
+        "unresolved": 100,
     }
+
+
+@pytest.mark.asyncio
+async def test_window_monitor_diagnostics_follow_only_current_visible_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monitor = Control(
+        "monitor",
+        "Windows",
+        "WindowMonitor",
+        None,
+        None,
+        None,
+        (),
+        window_monitor_items=(WindowMonitorItem(0, None, "room", "target", None),),
+    )
+    target = Control(
+        "target", "private-control-marker", "Switch", "other-room", None, None, (), is_hidden=True
+    )
+    structure = LoxoneStructure(
+        LoxoneIdentity("reader", "serial"),
+        "1",
+        (Room("room", "Room"),),
+        (),
+        (monitor,),
+        hidden_controls=(target,),
+        hidden_rooms=(Room("other-room", "private-room-marker"),),
+    )
+    access = _loxberry_access(READ_SCOPE)
+
+    async def snapshot(_runtime: object) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+        return access, RuntimeSnapshot("family", structure, True)
+
+    monkeypatch.setattr(tools_module, "_snapshot", snapshot)
+    server = FastMCP("window-monitor-visible-diagnostics")
+    register_read_tools(server, None)
+    tool = server._tool_manager.get_tool("loxone_describe_control")
+    assert tool is not None
+    result = await tool.fn("monitor")
+    assert "private-" not in result.model_dump_json()
+    item = result.data.capabilities.model.window_monitor_items[0]  # type: ignore[union-attr]
+    assert item.diagnostics == ["control_reference_unavailable"]
+    assert item.resolution_status == "partially_resolved"
+    assert item.room_consistency == "unknown"
+    structure = replace(
+        structure,
+        controls=(monitor, replace(target, name="Visible target", is_hidden=False)),
+        rooms=(Room("room", "Same name"), Room("other-room", "Same name")),
+    )
+    result = await tool.fn("monitor")
+    item = result.data.capabilities.model.window_monitor_items[0]  # type: ignore[union-attr]
+    assert item.diagnostics == ["room_reference_mismatch"]
+    assert item.resolution_status == "resolved"
+    assert item.room_consistency == "mismatch"
+    structure = replace(structure, controls=(monitor,), rooms=())
+    result = await tool.fn("monitor")
+    model = result.data.capabilities.model  # type: ignore[union-attr]
+    assert model.window_monitor_items[0].diagnostics == [
+        "control_reference_unavailable",
+        "room_reference_unavailable",
+    ]
+    assert model.window_monitor_summary.unresolved == 1
+    assert model.window_monitor_summary.resolved == 0
 
 
 @pytest.mark.asyncio

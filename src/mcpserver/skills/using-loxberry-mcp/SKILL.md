@@ -195,6 +195,13 @@ the problem.
   counts are null for invalid collections. Do not shift indices or interpret
   omitted positions as absent contacts. Complete configuration is not evidence
   of physical opening coverage; compact views omit this metadata.
+  Check item `diagnostics`, `resolution_status`, and `room_consistency` before
+  drawing conclusions. Summary resolution counts cover retained positions only
+  and sum to `returned`; a room mismatch is separate from reference resolution.
+  Unavailable references do not distinguish hidden from unknown targets. Fixed
+  input codes never echo rejected values; a valid mapping-key fallback may still
+  resolve an item whose explicit UUID field was rejected. Missing optional names
+  are not malformed entries. Names never establish identity or physical correctness.
 - For `Irrigation` and `AlarmClock`, use the additive `semantic_value` returned
   with documented states. Keep `value` as the unchanged source value, surface
   semantic-decoding warnings, and never infer a write action. Both families are

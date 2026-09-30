@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
-from mcpserver.loxone.models import Control, LoxoneStructure, NamedGroup
+from mcpserver.loxone.models import Control, LoxoneStructure, NamedGroup, WindowMonitorSummary
 
 if TYPE_CHECKING:
     from mcpserver.loxone.runtime import RuntimeSnapshot
@@ -14,6 +15,75 @@ if TYPE_CHECKING:
 def groups(items: tuple[NamedGroup, ...]) -> list[dict[str, str]]:
     """Serialize visible Loxone groups for the stable MCP contract."""
     return [{"uuid": item.uuid, "name": item.name} for item in items]
+
+
+def window_monitor_description(
+    monitor: Control,
+    controls: Mapping[str, Control],
+    rooms: Mapping[str, str],
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    """Resolve retained positions only against the caller's visible snapshot."""
+    items: list[dict[str, Any]] = []
+    counts: Counter[str] = Counter()
+    for item in monitor.window_monitor_items:
+        control = controls.get(item.control_uuid) if item.control_uuid else None
+        room = (
+            {"uuid": item.room_uuid, "name": rooms[item.room_uuid]}
+            if item.room_uuid is not None and item.room_uuid in rooms
+            else None
+        )
+        diagnostics = set(item.diagnostics)
+        if "invalid_window_monitor_entry" not in diagnostics:
+            if not item.control_uuid:
+                diagnostics.add("missing_control_reference")
+            elif control is None:
+                diagnostics.add("control_reference_unavailable")
+            if not item.room_uuid:
+                diagnostics.add("missing_room_reference")
+            elif room is None:
+                diagnostics.add("room_reference_unavailable")
+        room_consistency = "unknown"
+        if control is not None and room is not None and control.room_uuid in rooms:
+            room_consistency = "match" if control.room_uuid == item.room_uuid else "mismatch"
+            if room_consistency == "mismatch":
+                diagnostics.add("room_reference_mismatch")
+        resolution_status = (
+            "resolved"
+            if control is not None and room is not None
+            else "partially_resolved"
+            if control is not None or room is not None
+            else "unresolved"
+        )
+        counts[resolution_status] += 1
+        items.append(
+            {
+                "index": item.index,
+                "name": item.name,
+                "room_uuid": item.room_uuid,
+                "control_uuid": item.control_uuid,
+                "install_place": item.install_place,
+                "room": room,
+                "control": linked_control(control) if control is not None else None,
+                "diagnostics": sorted(diagnostics),
+                "resolution_status": resolution_status,
+                "room_consistency": room_consistency,
+            }
+        )
+    summary = monitor.window_monitor_summary
+    if summary is None:
+        if monitor.control_type != "WindowMonitor":
+            return items, None
+        summary = WindowMonitorSummary(total=len(items), returned=len(items))
+    return items, {
+        "total": summary.total,
+        "returned": summary.returned,
+        "omitted": summary.omitted,
+        "truncated": summary.truncated,
+        "diagnostics": list(summary.diagnostics),
+        "resolved": counts["resolved"],
+        "partially_resolved": counts["partially_resolved"],
+        "unresolved": counts["unresolved"],
+    }
 
 
 def flatten_controls(controls: tuple[Control, ...]) -> list[Control]:

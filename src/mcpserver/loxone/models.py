@@ -102,6 +102,7 @@ class WindowMonitorItem:
     room_uuid: str | None
     control_uuid: str | None
     install_place: str | None
+    diagnostics: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
