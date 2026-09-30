@@ -5,6 +5,9 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Mark cached runtime states stale on every state-stream termination, including
+  normal iterator exhaustion and cancellation before websocket teardown.
+
 - Extend the canonical skill with evidence-safe WindowMonitor coverage and
   bidirectional contact/consumer review, preserving intermediate logic and
   distinguishing configured wiring from unassessable physical completeness.

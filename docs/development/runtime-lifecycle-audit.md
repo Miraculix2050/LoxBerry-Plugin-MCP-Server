@@ -41,6 +41,10 @@ The audit initially reproduces three defects as strict expected failures:
 - #319: a suspended refresh recreates cleaned cache or removes replacement state.
 - #320: normal stream termination closes the websocket but leaves current values.
 
+The #320 correction invalidates connection status and cache freshness on every
+terminal stream path, after draining the pump and before awaiting websocket
+teardown. Its regression is no longer an expected failure.
+
 Each fix belongs in a separate reviewed PR and removes its expected-failure
 marker. Passing the audit with expected failures does not resolve these bugs or
 complete #160. Device/Miniserver and browser acceptance are not claimed by these
