@@ -96,7 +96,6 @@ async def test_normal_stream_end_during_read_marks_cached_state_stale() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="Confirmed bug #319")
 @pytest.mark.parametrize("cleanup", ["idle", "capacity", "close"])
 async def test_cleanup_during_refresh_does_not_resurrect_cache(cleanup: str) -> None:
     await _cleanup_during_refresh(cleanup, check_cache=True)
@@ -237,7 +236,6 @@ async def test_refresh_filters_batches_before_and_after_generation_change() -> N
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="Confirmed bug #319")
 async def test_old_refresh_cannot_modify_reconnected_generation_or_cache() -> None:
     owner = runtime()
     old = await install(owner)

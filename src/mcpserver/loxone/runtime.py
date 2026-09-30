@@ -1111,6 +1111,12 @@ class LoxoneRuntime:
         *,
         fresh_visibility: bool = False,
     ) -> None:
+        if (
+            self._records.get(access.family_id) is not record
+            or not record.connected
+            or record.task.done()
+        ):
+            return
         try:
             token = self.token_store.get(access.family_id, access.miniserver_id, access.identity_id)
             if token is None:
@@ -1139,6 +1145,15 @@ class LoxoneRuntime:
                 type(exc).__name__,
             )
             raise RuntimeUnavailable("Miniserver structure refresh failed") from exc
+        # Cleanup can finish while this independently owned request is awaiting
+        # network I/O. Only the current live owner may publish into family cache.
+        # Do not take the family lock while holding refresh_lock.
+        if (
+            self._records.get(access.family_id) is not record
+            or not record.connected
+            or record.task.done()
+        ):
+            return
         record.last_structure_check = time.monotonic()
         if structure == record.structure:
             _LOGGER.debug("component=structure outcome=unchanged")

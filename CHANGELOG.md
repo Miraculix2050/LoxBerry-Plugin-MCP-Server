@@ -5,6 +5,8 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Discard structure-refresh results from disconnected or replaced runtime records
+  so cleanup and reconnect cannot resurrect or overwrite per-family state cache.
 - Mark cached runtime states stale on every state-stream termination, including
   normal iterator exhaustion and cancellation before websocket teardown.
 
