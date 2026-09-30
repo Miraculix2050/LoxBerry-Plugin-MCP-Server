@@ -48,6 +48,8 @@ teardown. Its regression is no longer an expected failure.
 The #319 correction checks exact record ownership and stream liveness before
 starting refresh and again before its synchronous publication step. A removed,
 disconnected or replaced record cannot publish into the family cache. Refresh
+fails with `RuntimeUnavailable` instead of returning an old structure as fresh
+visibility; ended OAuth authorization retains its permission error. Refresh
 does not acquire a family lock while holding its refresh lock; cleanup remains
 able to drain the stream while the separate refresh request is suspended. The
 four cleanup/replacement regressions are no longer expected failures.

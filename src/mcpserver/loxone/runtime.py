@@ -1116,7 +1116,8 @@ class LoxoneRuntime:
             or not record.connected
             or record.task.done()
         ):
-            return
+            await self._require_access(access)
+            raise RuntimeUnavailable("Loxone runtime connection changed during structure refresh")
         try:
             token = self.token_store.get(access.family_id, access.miniserver_id, access.identity_id)
             if token is None:
@@ -1153,7 +1154,8 @@ class LoxoneRuntime:
             or not record.connected
             or record.task.done()
         ):
-            return
+            await self._require_access(access)
+            raise RuntimeUnavailable("Loxone runtime connection changed during structure refresh")
         record.last_structure_check = time.monotonic()
         if structure == record.structure:
             _LOGGER.debug("component=structure outcome=unchanged")
