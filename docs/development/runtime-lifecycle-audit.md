@@ -79,3 +79,11 @@ readiness at the deadline, and drains all owned tasks and sessions on failure.
 The silent-stream regression checks an `asyncio.all_tasks()` baseline and no
 published record or retained family lock. The timeout controls the behavior under
 test, not race ordering.
+
+The additional confirmed defects are #324 (unpublished streams surviving
+shutdown, fixed by the admission correction) and #326 (initial readiness timeout,
+fixed separately). On the combined revision all thirteen audit cases use ordinary
+assertions; no expected failures remain. The implementation is ready for review,
+but #160 remains open until the fix PRs are reviewed, merged and validated on
+their resulting master revision. This evidence covers controlled runtime
+ownership and freshness, not all possible network/device interleavings.
