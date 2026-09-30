@@ -182,6 +182,20 @@ def test_unmodeled_internal_flow_does_not_invent_edges(replacement):
     assert not result["findings"]
 
 
+def test_unknown_block_with_reference_input_remains_semantically_incomplete():
+    xml = Path("tests/fixtures/project/opening-contacts.xml").read_bytes()
+    xml = xml.replace(b'Type="Or"', b'Type="Unknown"')
+    xml = xml.replace(
+        b'<Co K="I1" U="or-input-1"><In Input="reference-output"/></Co>',
+        f'<Co K="I1" U="or-input-1" Ref="{CONTACT}"/>'.encode(),
+    )
+    xml = xml.replace(b'<In Input="lockout-output"/>', b"")
+    structure, project = fixture(xml)
+    result = analyze(structure, project)
+    assert "unmodeled_internal_flow" in result["warnings"]
+    assert not result["findings"]
+
+
 def test_reference_projection_requires_exact_ref_and_unique_output():
     xml = Path("tests/fixtures/project/opening-contacts.xml").read_bytes()
     for broken in (

@@ -70,7 +70,7 @@ class OpeningGraph:
             rules = signal_use_rules(block.block_type)
             keys = Counter(dict(self.nodes[child].attributes).get("K") for child in siblings)
             configured_inputs = any(
-                isinstance(e, GraphEdge) and e.kind == "signal"
+                isinstance(e, GraphEdge) and e.kind in {"signal", "reference"}
                 for child in siblings
                 for e in self.backward[child]
             )
