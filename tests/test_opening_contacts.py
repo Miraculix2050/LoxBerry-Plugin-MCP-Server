@@ -101,6 +101,25 @@ def test_motivating_topology_proves_review_candidate_without_physical_verdict():
     tools.OpeningAnalysisData.model_validate(result)
 
 
+def test_existing_project_describe_and_trace_schemas_accept_reviewed_opening_semantics():
+    _, project = fixture()
+    graph = OpeningGraph(project)
+    consumer = project.resolve(CONSUMER, "runtime_control_uuid")
+    window = graph.nodes[graph.connectors(consumer, "Window")[0]]
+    trace = project.trace(window, direction="upstream", max_depth=16, max_nodes=200)
+    public_trace = tools.ProjectTraceData.model_validate(trace)
+    assert {e.interpretation for e in public_trace.semantic_edges} >= {
+        "logical_or",
+        "reference_projection",
+    }
+    description = project.describe(project.resolve(CONTACT, "runtime_control_uuid"), limit=100)
+    public_description = tools.ProjectDescriptionData.model_validate(description)
+    assert {e.interpretation for e in public_description.knx.usage_observations} >= {
+        "logical_or",
+        "reference_projection",
+    }
+
+
 @pytest.mark.parametrize("limit", [{"max_depth": 1}, {"max_nodes": 1}])
 def test_trace_limits_prevent_negative_and_cross_assignment_findings(limit):
     result = analyze(**limit)

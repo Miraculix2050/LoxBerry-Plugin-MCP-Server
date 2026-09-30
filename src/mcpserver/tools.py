@@ -698,7 +698,14 @@ class ProjectSignalUseObservationData(BaseModel):
     target: str
     rule_id: str
     interpretation: Literal[
-        "level", "value", "rising_edge", "falling_edge", "any_edge", "duration_sensitive"
+        "level",
+        "value",
+        "rising_edge",
+        "falling_edge",
+        "any_edge",
+        "duration_sensitive",
+        "logical_or",
+        "reference_projection",
     ]
     effect: Literal["toggle", "set_on", "set_off"] | None
 
