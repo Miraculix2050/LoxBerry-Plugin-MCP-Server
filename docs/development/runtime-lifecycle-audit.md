@@ -1,7 +1,8 @@
 # Runtime lifecycle concurrency audit
 
 Issue #160 is an investigation, not a compatibility or device acceptance claim.
-The baseline is master `200acc2`, after merged PR #311 (`dbdbcb7`).
+The reproduction baseline is master `200acc2`, after merged PR #311 (`dbdbcb7`).
+The final PR stack also includes subsequent master PR #317 (`e34ecb3`).
 
 ## Existing coverage from PR #311
 
@@ -60,6 +61,9 @@ disconnect takes only a family lock, and refresh runs outside admission. Close
 ends admission before waiting for this lock. Connections already opening drain
 their stream before failing, and queued or subsequent snapshots cannot publish
 after close. Defaults and the independent per-family rate windows are unchanged.
+Queued snapshots recheck OAuth authorization immediately after acquiring
+admission, before pruning or using an existing record. Barrier tests cover both
+revocation and expiry during this wait, without discarding retained token material.
 The concurrent-capacity regression is no longer an expected failure; a real
 unpublished stream/shutdown regression additionally covers #324. Registered-task
 shutdown checks `asyncio.all_tasks()` against its baseline, including pump tasks.
@@ -82,7 +86,7 @@ test, not race ordering.
 
 The additional confirmed defects are #324 (unpublished streams surviving
 shutdown, fixed by the admission correction) and #326 (initial readiness timeout,
-fixed separately). On the combined revision all thirteen audit cases use ordinary
+fixed separately). On the combined revision all fifteen audit cases use ordinary
 assertions; no expected failures remain. The implementation is ready for review,
 but #160 remains open until the fix PRs are reviewed, merged and validated on
 their resulting master revision. This evidence covers controlled runtime
