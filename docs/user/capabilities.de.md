@@ -38,6 +38,52 @@ Räumen. Ein Konflikt ändert den Auflösungsstatus nicht. Verborgene und unbeka
 sind gleichermaßen nicht verfügbar; Namen belegen weder Identität noch Kontaktrollen
 oder die physische Richtigkeit.
 
+### Prüfung der Öffnungskontakt-Zuordnung
+
+Der kanonische Skill trennt Monitorabdeckung, konfigurierte Verbraucherverdrahtung
+und physische Öffnungsabdeckung. Suchen Sie exakte sichtbare `WindowMonitor`-Controls,
+verfolgen Sie Discovery-Seiten und verwenden Sie `loxone_describe_control(view="full")`.
+Trennen Sie direkte Eintragsreferenzen von `relationships.linked_controls` (auch
+Links aus Aggregatobjekten), exakten Project-Intelligence-Pfaden und reinen Namens-/
+Raumkandidaten. Eine direkte Eintragsreferenz ist normalisiert und kann aus einem
+expliziten UUID-Feld oder einem Mapping-Schlüssel als Fallback stammen; die
+Auflösung allein identifiziert die Quelle nicht. Beschreiben Sie jedes aufgelöste
+referenzierte Control separat mit `loxone_describe_control(control_uuid=..., view="full")`,
+bevor Sie dessen `relationships.linked_controls` prüfen; der Monitor enthält nur
+kompakte Eintragsreferenzen. Ein expliziter Link belegt eine indirekte Verknüpfung, keine direkte
+Monitorzuordnung. Verwenden Sie Diagnosen und Originalindizes; fehlerhafte, nicht
+verfügbare, raumwidersprüchliche und ausgelassene Einträge begrenzen Aussagen.
+`partially_resolved` kann ausschließlich einen aufgelösten Raum bedeuten.
+Auflösungszähler gelten nur für erhaltene Positionen. Wenn aktuelle Zustände relevant
+sind, lesen Sie `windowStates` und melden Sie Index-/Vektorabweichungen.
+
+Prüfen Sie bei Fragen zur richtigen Zuordnung `loxone_get_project_status`, lösen Sie
+Kontakte und Verbraucher exakt mit `loxone_describe_project_object` auf, verfolgen
+Sie Kontakte mit `loxone_trace_project_logic` downstream und den exakten
+Verbraucheranschluss upstream, zunächst `AutoJalousie.Window`. Ermitteln Sie den
+Anschluss über zurückgegebene Kindknoten-IDs und deren Beschreibungen; vergleichen
+Sie exakte Graphknoten-IDs und Kantenendpunkte. Erhalten Sie `InputRef`, `Or`,
+Sperrschalter und Anschlussnamen. Hierarchie und gemeinsame Erreichbarkeit sind
+kein Signalfluss; erfinden Sie keine internen Kanten durch nicht modellierte
+Bausteine. Prüfen Sie mehrdeutige Mappings, `truncated_fields`, Trace-Begrenzungen,
+ungelöste Beziehungen und Aktualität. Fehlende Pfade bei unvollständiger Evidenz
+beweisen keine fehlende Verdrahtung. Ein dedizierter Öffnungskontakt-Analyzer ist
+derzeit nicht verfügbar; dieser Ablauf verwendet bestehende Tools.
+
+Generisches Beispiel: `Dachfensterkontakt -> InputRef -> Or mit Sperrschalter ->
+als Fenster benannte Jalousie.Window`, während ein anderer Fensterkontakt desselben
+Raums im Monitor enthalten ist. Zeigen vollständige relevante Traces, dass dieser
+den Anschluss nicht speist, melden Sie einen `cross_assignment_review_candidate`
+mit exakten Belegen. Falsche Kontaktverdrahtung und irreführende Verbraucherbenennung
+sind beide möglich; weder Namen noch Monitorzuordnung rechtfertigen eine physische
+Korrektur. Sind nur einzelne Segmente verfügbar, melden Sie die Lücke. Verwenden Sie
+klare Formulierungen wie „nicht aufgelöst“ und „indirekt verknüpft“. Ohne autoritatives
+Inventar und exakte Identitätsverknüpfungen ist die physische Vollständigkeit „nicht
+beurteilbar“ (`not_assessable`). Leiten Sie weder eine Öffnung pro Jalousie noch
+Kontaktrollen aus Namen, Kategorien oder Raumzahlen ab.
+
+### Laufzeit- und Projektfunktionen
+
 Der Server liest sichtbare Räume, Kategorien, Controls und Zustände. Optional sind begrenzte Historie, Statistiken, maskierte LoxBerry-Diagnosen sowie dokumentierte, typabhängige Aktionen für sichtbare Gen.-1-Controls verfügbar.
 
 Für aktuelle Werte nach der Suche `loxone_describe_control(view="state_refs")` verwenden. Die Ansicht liefert nur Control-Identität, Sichtbarkeit und die vollständige normalisierte `states`-Liste mit Namen und UUIDs, ohne Raum-/Kategorie-Kontext, Fähigkeiten, Statistiken, Historie, Darstellung oder Beziehungen. Sie lädt die nutzergefilterte Struktur neu und liefert bei fehlgeschlagener Aktualisierung einen Fehler statt zwischengespeicherter Referenzen. `stale` kennzeichnet einen getrennten Ereignisstream; `observed_at` ist der Beschreibungszeitpunkt, kein Messzeitpunkt eines State-Werts. Nur benötigte UUIDs auswählen, Duplikate entfernen und `loxone_get_states` in Gruppen von höchstens 100 aufrufen; bei leerer Auswahl keinen Werte-Read ausführen. Für versteckte Controls bleibt `include_hidden=true` sowohl bei der Diagnose als auch beim Werte-Read erforderlich. `history_targets` dient der Historien-/Statistikauswahl, `operation_targets` der Bedienvorbereitung und `full` der weiterführenden Diagnose.

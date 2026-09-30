@@ -215,6 +215,87 @@ the problem.
   semantic-decoding warnings, and never infer a write action. Both families are
   read-only even if the control has an action UUID.
 
+### Review opening-contact coverage and consumer assignment
+
+Separate three questions: which contacts are referenced by visible monitors,
+which contacts feed configured consumers, and whether every physical opening
+has the correct contact. Monitor membership alone does not prove correct
+consumer wiring. Use only the existing discovery, description, state and
+Project Intelligence tools; no dedicated opening-contact analyzer is available.
+
+1. Find exact visible `WindowMonitor` controls with `loxone_find_controls`,
+   following `next_cursor` with unchanged filters. Describe each selected UUID
+   with `loxone_describe_control(view="full")`. Preserve original item indices
+   and distinguish these evidence layers in the report:
+   - Direct monitor reference: an item's normalized control reference resolves
+     to its `control`. It may come from an explicit UUID or a mapping-key fallback;
+     resolution alone does not establish which source supplied the reference.
+   - Explicit linked control: first describe each resolved referenced control
+     with `loxone_describe_control(control_uuid=..., view="full")`, then inspect
+     that object's `relationships.linked_controls`. The monitor description
+     embeds only a compact item `control`, not that object's relationships.
+     Use only a published link from that referenced object,
+     including an aggregate status object. Report it as `indirectly linked`;
+     it does not establish direct monitor membership of the raw contact.
+   - Structural project path: exact project nodes and returned signal/reference
+     edges establish configured relationships, independently of monitor membership.
+   - Name-only or shared-room candidate: review context, never identity,
+     contact role, physical assignment, or a graph edge.
+2. Check `window_monitor_summary`, item `diagnostics`, `resolution_status` and
+   `room_consistency`. Report `invalid_window_monitor_entry` as malformed,
+   `missing_control_reference` as missing, and `control_reference_unavailable`
+   as unavailable without distinguishing hidden from unknown. Say `unresolved`
+   when the contact cannot be resolved, even if its room resolves and the item
+   is `partially_resolved`. Report `room_reference_mismatch` as an explicit
+   UUID-based room conflict, not proof of a physical defect. Resolution counts
+   cover retained positions only. `truncated`, `omitted`, invalid collections
+   and unknown counts prevent a complete configured-coverage conclusion.
+   Read `windowStates` with `loxone_get_states` only when current state matters;
+   align it by original index and report missing values or vector-length
+   discrepancies without shifting positions or filling gaps.
+3. For a question about the *correct* opening assignment, call
+   `loxone_get_project_status` and resolve each relevant contact with
+   `loxone_describe_project_object(identifier=..., identifier_type="runtime_control_uuid")`.
+   Never choose an ambiguous mapping. Trace each exact contact downstream using
+   `loxone_trace_project_logic(direction="downstream")`.
+   Resolve each relevant consumer, initially `AutoJalousie`, describe its
+   returned `child_project_node_ids` with further object descriptions and
+   identify the exact `Window` connector by its `connector_key`.
+   Trace that connector upstream with
+   `start_type="project_node_id"` and `direction="upstream"`. There is no
+   connector-filter argument on the trace tool. A block-wide trace can include
+   unrelated connectors and does not establish a path to `Window`.
+4. Compare only exact node IDs and returned edge endpoints in both directions.
+   Preserve `InputRef`, `Or`, lockout controls and connector names in the
+   explanation. Distinguish signal edges, reference edges and separately marked
+   derived semantic edges; containment or shared reachability is not signal flow.
+   Do not invent an internal input-to-output edge across an unmodeled logic
+   block. Describe the exact segments and the unresolved internal relationship
+   instead. Check `truncated`, `truncation_reason`, `unresolved_relationships`,
+   object `truncated_fields` and relevant project coverage/freshness before
+   conclusions. Bounded retries with schema-supported limits may add evidence;
+   remaining gaps must be reported.
+   An absent path in incomplete evidence does not prove no connection exists.
+5. Report a supported suspicious relationship as a
+   `cross_assignment_review_candidate`, not a physical verdict. Other bounded
+   outcomes can say "monitored, but no supported consumer connection found in
+   the inspected evidence" or "consumer contact source unresolved". State the
+   inspected scope and limitations. Unless an authoritative physical opening
+   inventory is supplied, report `physical completeness not assessable`
+   (`not_assessable`). Never infer one opening per Jalousie or infer contact roles
+   from names, categories or room counts. A supplied inventory still needs exact
+   identity links; it does not make name similarity proof.
+
+Generic review example: the inspected configured topology is
+`roof-window contact -> InputRef -> Or with a lockout switch -> blind named window.Window`.
+Another same-room window contact is listed in the central monitor. If complete
+relevant traces establish that it does not feed this blind's `Window` connector,
+report the exact topology as suspicious while preserving the intermediate logic.
+The bounded interpretations are wrong contact wiring or misleading consumer
+naming. Names alone cannot decide which physical opening the blind controls or
+justify prescribing a correction. If the tools expose only separate path
+segments, explain that limitation rather than claiming the entire chain is proven.
+
 ### Read global metadata
 
 Use `loxone_list_global_metadata` for visible operating modes, modes, times,

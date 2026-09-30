@@ -34,6 +34,49 @@ explicit UUIDs when both rooms and the control are visible. A mismatch does not
 change resolution status. Hidden and unknown targets are both unavailable; names
 never establish identity, contact roles, or physical correctness.
 
+### Opening-contact assignment review
+
+The canonical skill separates monitor coverage, configured consumer wiring and
+physical opening coverage. Find exact visible `WindowMonitor` controls, follow
+discovery pages, and use `loxone_describe_control(view="full")`. Keep direct item
+references separate from `relationships.linked_controls` (including links from
+aggregate objects), exact Project Intelligence paths and name-only/shared-room
+review candidates. A direct item reference is normalized and may originate from
+an explicit UUID or a mapping-key fallback; resolution alone does not identify
+the source. Describe each resolved referenced control separately with
+`loxone_describe_control(control_uuid=..., view="full")` before inspecting its
+`relationships.linked_controls`; the monitor embeds only compact item references.
+An explicit link is indirectly linked evidence, not direct
+monitor membership. Use diagnostics and original indices; malformed, unavailable,
+room-mismatched and omitted entries limit conclusions. `partially_resolved` may
+mean only the room resolved. Resolution counts cover retained positions only.
+If current state matters, read `windowStates` and report index/vector discrepancies.
+
+For correct-assignment questions, check `loxone_get_project_status`, resolve exact
+contacts and consumers with `loxone_describe_project_object`, trace contacts
+downstream with `loxone_trace_project_logic`, and trace the exact consumer
+connector upstream, initially `AutoJalousie.Window`. Locate the connector through
+returned child node IDs and their descriptions; compare exact graph node IDs and
+edge endpoints. Preserve `InputRef`, `Or`, lockout controls and connector names.
+Containment and shared reachability are not signal flow; do not invent internal
+edges through unmodeled blocks. Check mapping ambiguity, `truncated_fields`,
+trace truncation, unresolved relationships and freshness. Missing paths in
+incomplete evidence do not prove missing wiring. No dedicated opening-contact
+analyzer is currently available; this workflow uses existing tools.
+
+Generic example: `roof-window contact -> InputRef -> Or with a lockout switch ->
+blind named window.Window`, while another same-room window contact is monitored.
+If complete relevant traces show that the latter does not feed that connector,
+report a `cross_assignment_review_candidate` with the exact evidence. Wrong
+contact wiring and misleading consumer naming are both possible; neither names
+nor monitor membership justify a physical correction. If only separate segments
+are available, report the gap. Use explicit wording such as "unresolved" and
+"indirectly linked". Without an authoritative inventory and exact identity links,
+physical completeness is `not_assessable`. Never infer one opening per blind or
+contact roles from names, categories or room counts.
+
+### Runtime and project capabilities
+
 The server reads visible rooms, categories, controls and states. Optional bounded history, statistics, masked LoxBerry diagnostics and documented type-specific actions for visible Gen. 1 controls are available.
 
 For current-value reads, use `loxone_describe_control(view="state_refs")` after discovery. It returns only control identity, visibility and the complete normalized `states` list of names and UUIDs, without room/category context, capabilities, statistics, history, presentation or relationships. The view reloads the user-filtered structure and returns an error rather than cached references if the refresh fails. `stale` marks a disconnected event stream; `observed_at` timestamps the description, not a state value. Select only needed UUIDs, deduplicate them and call `loxone_get_states` in batches of at most 100; make no value-read call for an empty selection. Preserve explicit `include_hidden=true` for hidden-control diagnosis and its value reads. Use `history_targets` for history/statistic selection, `operation_targets` for operation preparation, and `full` for additional diagnosis.
