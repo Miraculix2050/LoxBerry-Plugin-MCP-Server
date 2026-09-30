@@ -80,7 +80,6 @@ async def install(owner: LoxoneRuntime, family: str = "one") -> _ConnectionRecor
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="Confirmed bug #320")
 async def test_normal_stream_end_during_read_marks_cached_state_stale() -> None:
     owner = runtime(structure_refresh_seconds=10**12)
     record = await install(owner)

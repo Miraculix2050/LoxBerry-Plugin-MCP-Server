@@ -1199,6 +1199,10 @@ class LoxoneRuntime:
             events.cancel()
             with suppress(asyncio.CancelledError, Exception):
                 await events
+            # Normal iterator exhaustion and cancellation are terminal too.
+            # Invalidate freshness before awaiting websocket teardown.
+            record.connected = False
+            self.cache.disconnect(access.family_id)
             await record.session.close()
 
     async def _open_session(
