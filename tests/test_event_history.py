@@ -847,6 +847,7 @@ async def test_monitor_records_updates_following_the_initial_baseline_in_one_bat
             owner: str,
             phase: str,
             allow_cooldown_probe: bool = True,
+            busy_wait_seconds: float = 0,
         ) -> object:
             attempts.append((owner, phase, allow_cooldown_probe))
             return await operation()  # type: ignore[operator]
@@ -876,6 +877,137 @@ async def test_monitor_records_updates_following_the_initial_baseline_in_one_bat
         ("local_admin", "token_acquisition", False),
         ("local_admin", "session_establishment", False),
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("busy_phase", ["token_acquisition", "session_establishment"])
+async def test_admin_structure_waits_for_concurrent_authentication(
+    tmp_path, monkeypatch, busy_phase
+):
+    from mcpserver.loxone.auth_diagnostics import (
+        MiniserverAuthCoordinator,
+        _interprocess_lock,
+    )
+
+    path = (tmp_path / "auth-diagnostics.json").resolve()
+    coordinator = MiniserverAuthCoordinator(path)
+    lock_path = path.with_name(f".{path.name}.lock")
+    lock = _interprocess_lock(lock_path)
+    released = asyncio.Event()
+    release_task = None
+    loaded = []
+    cleaned = []
+
+    async def occupy():
+        nonlocal release_task
+        lock.__enter__()
+
+        async def release():
+            await asyncio.sleep(0.2)
+            lock.__exit__(None, None, None)
+            released.set()
+
+        release_task = asyncio.create_task(release())
+
+    class Token:
+        def destroy(self):
+            cleaned.append("token")
+
+    class Session:
+        async def load_structure(self):
+            loaded.append(released.is_set())
+            return LoxoneStructure(LoxoneIdentity("service", "serial"), "", (), (), ())
+
+        async def close(self):
+            cleaned.append("session")
+
+    class Client:
+        async def acquire_token(self, _username, _password):
+            return Token()
+
+        async def open_session(self, _token):
+            return Session()
+
+    class Credentials:
+        async def _credentials(self):
+            return "service", "password"
+
+    class Coordinator:
+        async def attempt(self, operation, **kwargs):
+            if kwargs["phase"] == busy_phase:
+                await occupy()
+            return await coordinator.attempt(operation, **kwargs)
+
+    monkeypatch.setattr("mcpserver.loxone.client.LoxoneClient", lambda *_a, **_kw: Client())
+    monitor = EventHistoryMonitor(
+        PluginConfig(loxone_endpoint="https://miniserver.example"),
+        EventHistoryStore(
+            (tmp_path / "history.sqlite3").resolve(), retention_days=90, maximum_mib=16
+        ),
+        Credentials(),
+        Coordinator(),  # type: ignore[arg-type]
+    )
+    try:
+        await monitor.visible_structure()
+        assert loaded == [True]
+        assert cleaned == ["session", "token"]
+    finally:
+        if release_task is not None:
+            await release_task
+
+
+@pytest.mark.asyncio
+async def test_admin_structure_authentication_shares_one_wait_deadline(tmp_path, monkeypatch):
+    from mcpserver.loxone.auth_diagnostics import MiniserverAuthenticationSuppressed
+
+    clock = [100.0]
+    waits = []
+    cleaned = []
+
+    class Token:
+        def destroy(self):
+            cleaned.append("token")
+
+    class Client:
+        async def acquire_token(self, _username, _password):
+            return Token()
+
+        async def open_session(self, _token):
+            pytest.fail("an exhausted authentication wait must not open a session")
+
+    class Credentials:
+        async def _credentials(self):
+            return "service", "password"
+
+    class Coordinator:
+        async def attempt(self, operation, **kwargs):
+            waits.append(kwargs["busy_wait_seconds"])
+            assert kwargs["allow_cooldown_probe"] is False
+            if kwargs["phase"] == "token_acquisition":
+                clock[0] += 16
+                return await operation()
+            raise MiniserverAuthenticationSuppressed("busy")
+
+    # Replace only this module's clock, not the event loop or coordinator clock.
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        "mcpserver.loxone.event_history.time",
+        SimpleNamespace(monotonic=lambda: clock[0], time=time.time),
+    )
+    monkeypatch.setattr("mcpserver.loxone.client.LoxoneClient", lambda *_a, **_kw: Client())
+    monitor = EventHistoryMonitor(
+        PluginConfig(loxone_endpoint="https://miniserver.example"),
+        EventHistoryStore(
+            (tmp_path / "history.sqlite3").resolve(), retention_days=90, maximum_mib=16
+        ),
+        Credentials(),
+        Coordinator(),  # type: ignore[arg-type]
+    )
+    with pytest.raises(MiniserverAuthenticationSuppressed):
+        await monitor.visible_structure()
+    assert waits == [15.0, 0.0]
+    assert cleaned == ["token"]
 
 
 @pytest.mark.asyncio
