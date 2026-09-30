@@ -16,6 +16,7 @@ use LoxBerry::Log;
 my $cgi = CGI->new;
 my $q = $cgi->Vars;
 my $request_id = sprintf('%x-%x', $$, int(clock_gettime(CLOCK_MONOTONIC) * 1_000_000));
+my %chart_phase_timing;
 if (($q->{lang} // '') =~ /\A(?:de|en)\z/) {
     $LoxBerry::System::lang = $q->{lang};
     $LoxBerry::Web::lang = $q->{lang};
@@ -39,9 +40,21 @@ sub headers {
 
 sub reply {
     my ($result, $status) = @_;
+    my $started = clock_gettime(CLOCK_MONOTONIC);
+    my $body = encode_json($result);
     print $cgi->header(-type => 'application/json', -charset => 'utf-8',
         -status => $status, headers());
-    print encode_json($result);
+    print $body;
+    if (($q->{action} // '') eq 'event_history_chart_prepare') {
+        my $duration_ms = (clock_gettime(CLOCK_MONOTONIC) - $started) * 1000;
+        my $bytes = length($body);
+        my $log = LoxBerry::Log->new(name => 'admin-ui', package => $lbpplugindir,
+            addtime => 1);
+        $log->INF(sprintf(
+            'component=event_history_chart_timing request_id=%s phase=cgi_delivery duration_ms=%.1f response_bytes=%d',
+            $request_id, $duration_ms, $bytes,
+        )) if $log;
+    }
     exit;
 }
 
@@ -54,8 +67,18 @@ sub admin_call {
     close $input;
     local $/;
     my $raw = <$output> // '';
-    my $ignored = <$error>;
+    my $helper_diagnostics = <$error> // '';
     waitpid($pid, 0);
+    if ($action eq 'event_history_chart_prepare'
+        && $helper_diagnostics =~ /\Amcpserver_admin_timing=(\{[^\r\n]*\})\s*\z/) {
+        my $diagnostics = eval { decode_json($1) };
+        if (ref($diagnostics) eq 'HASH') {
+            %chart_phase_timing = map { $_ => $diagnostics->{$_} }
+                grep { /\A(?:config_load_ms|selector_refresh_ms|revalidation_ms|history_prepare_ms|serialization_ms|selected_sources|discovered_controls|serialized_bytes)\z/
+                    && defined($diagnostics->{$_}) && $diagnostics->{$_} =~ /\A\d+(?:\.\d+)?\z/ }
+                keys %{$diagnostics};
+        }
+    }
     my $result = eval { decode_json($raw) };
     return ref($result) eq 'HASH' ? $result
         : {ok => JSON::PP::false, error => {code => 'internal_error', message => 'Admin helper unavailable'}};
@@ -164,7 +187,8 @@ if (($q->{action} // '') ne '') {
                 ? ($result->{error}{code} // 'internal_error') : 'internal_error');
         $code = 'internal_error' unless $code =~ /\A[a-z_]+\z/;
         my $duration_ms = (clock_gettime(CLOCK_MONOTONIC) - $started) * 1000;
-        if (!$result->{ok} || $duration_ms >= 5000) {
+        if (!$result->{ok} || $duration_ms >= 5000
+            || $action eq 'event_history_chart_prepare') {
             my $log = LoxBerry::Log->new(name => 'admin-ui', package => $lbpplugindir,
                 addtime => 1);
             $log->INF(sprintf(
@@ -172,6 +196,27 @@ if (($q->{action} // '') ne '') {
                 $request_id, $action, ($result->{ok} ? 'slow' : 'failed'), $code,
                 $duration_ms,
             )) if $log;
+        }
+        if ($action eq 'event_history_chart_prepare') {
+            my $log = LoxBerry::Log->new(name => 'admin-ui', package => $lbpplugindir,
+                addtime => 1);
+            for my $phase (qw(config_load_ms selector_refresh_ms revalidation_ms
+                history_prepare_ms serialization_ms)) {
+                next unless defined $chart_phase_timing{$phase};
+                my $phase_name = $phase;
+                $phase_name =~ s/_ms\z//;
+                $log->INF(sprintf(
+                    'component=event_history_chart_timing request_id=%s phase=%s duration_ms=%.1f',
+                    $request_id, $phase_name, $chart_phase_timing{$phase},
+                )) if $log;
+            }
+            for my $resource (qw(selected_sources discovered_controls serialized_bytes)) {
+                next unless defined $chart_phase_timing{$resource};
+                $log->INF(sprintf(
+                    'component=event_history_chart_timing request_id=%s resource=%s value=%d',
+                    $request_id, $resource, $chart_phase_timing{$resource},
+                )) if $log;
+            }
         }
         $result->{error}{request_id} = $request_id if !$result->{ok}
             && ref($result->{error}) eq 'HASH';
