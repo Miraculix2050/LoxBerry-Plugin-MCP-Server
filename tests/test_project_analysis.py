@@ -115,11 +115,41 @@ async def test_worker_phase_timings_are_numeric_private_and_preserve_results(cap
 
 
 @pytest.mark.asyncio
+async def test_child_timings_survive_startup_warnings_and_replace_reused_values(monkeypatch):
+    monkeypatch.setenv("PYTHONWARNINGS", "invalid-warning-action")
+    timings = {"child_analysis_seconds": -1, "old_measurement": -1}
+    result = await process_analysis(
+        _view(b"<P/>"), frozenset({"datatype_consistency"}), timings=timings
+    )
+    assert isinstance(result, dict)
+    assert "old_measurement" not in timings
+    for name in (
+        "child_stdin_seconds",
+        "child_pickle_loads_seconds",
+        "child_analysis_seconds",
+        "child_pickle_dumps_seconds",
+    ):
+        assert timings[name] >= 0
+
+
+@pytest.mark.asyncio
+async def test_absent_child_timing_frame_does_not_reuse_previous_measurements(monkeypatch):
+    import mcpserver.loxone.project.worker as worker
+
+    # Only the parent is patched; the real child emits its normal frame.
+    monkeypatch.setattr(worker, "_ANALYSIS_TIMING_MARKER", b"missing-frame")
+    timings = {"child_analysis_seconds": -1}
+    await process_analysis(_view(b"<P/>"), frozenset({"datatype_consistency"}), timings=timings)
+    assert "total_seconds" in timings
+    assert not any(key.startswith("child_") and key != "child_wait_seconds" for key in timings)
+
+
+@pytest.mark.asyncio
 async def test_profiled_worker_retains_sanitized_failure_and_input_limit(monkeypatch):
     import mcpserver.loxone.project.worker as worker
     from mcpserver.loxone.project.models import ProjectError
 
-    timings = {}
+    timings = {"child_analysis_seconds": -1, "old_measurement": -1}
     with pytest.raises(ProjectError, match="^project_worker_invalid$"):
         await process_analysis(None, frozenset(), timings=timings)
     assert not timings

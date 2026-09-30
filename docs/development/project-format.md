@@ -157,8 +157,11 @@ Only project bytes and limits cross into the worker, never authentication tokens
 dictionary: process creation, input pickle, stdin write/drain, waiting until the
 first output byte, remaining stdout through EOF, process exit, result unpickle,
 total duration and input/output byte counts. Child stdin, input unpickle, analysis
-and result pickle durations are returned as four fixed binary numbers on stderr
-only in this opt-in mode. No project content, selected-analysis names or identity
+and result pickle durations are returned as four framed binary numbers on stderr
+only in this opt-in mode. Other stderr diagnostics are discarded; warnings do not
+invalidate the timing frame. The supplied dictionary is cleared at call entry,
+so failed calls or absent frames cannot retain measurements from earlier calls.
+No project content, selected-analysis names or identity
 is logged or added to MCP responses. Child durations overlap parent pipe/wait
 intervals; do not add them to the parent total. Process creation does not include
 all child imports, and stdin backpressure can include remaining child startup.

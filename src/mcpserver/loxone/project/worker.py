@@ -21,6 +21,7 @@ from .taxonomy import AddressTaxonomyEntry
 MAX_RESULT = 64 * 1024 * 1024
 MAX_ANALYSIS_INPUT = 64 * 1024 * 1024
 _ANALYSIS_TIMINGS = struct.Struct("!4d")
+_ANALYSIS_TIMING_MARKER = b"\x00MCPTIME\x00"
 
 
 def _reduce_graph_node(node: GraphNode) -> tuple[type[GraphNode], tuple[object, ...]]:
@@ -136,6 +137,8 @@ async def process_analysis(
     byte; stdout measures the remaining stream through EOF, including child exit.
     Child durations overlap these parent intervals and must not be added to them.
     """
+    if timings is not None:
+        timings.clear()
     started = perf_counter()
     process = await asyncio.create_subprocess_exec(
         sys.executable,
@@ -194,8 +197,11 @@ async def process_analysis(
                     input_bytes=len(payload),
                     output_bytes=len(result),
                 )
-                child_timings = await stderr_task
-                if len(child_timings) == _ANALYSIS_TIMINGS.size:
+                stderr = await stderr_task
+                marker_offset = stderr.rfind(_ANALYSIS_TIMING_MARKER)
+                frame_offset = marker_offset + len(_ANALYSIS_TIMING_MARKER)
+                child_timings = stderr[frame_offset : frame_offset + _ANALYSIS_TIMINGS.size]
+                if marker_offset >= 0 and len(child_timings) == _ANALYSIS_TIMINGS.size:
                     timings.update(
                         zip(
                             (
@@ -249,7 +255,8 @@ def main() -> None:
                 raise ProjectError("project_worker_limit")
             if sys.argv[1] == "analysis-profile":
                 sys.stderr.buffer.write(
-                    _ANALYSIS_TIMINGS.pack(
+                    _ANALYSIS_TIMING_MARKER
+                    + _ANALYSIS_TIMINGS.pack(
                         received - started,
                         deserialized - received,
                         analyzed - deserialized,
