@@ -157,6 +157,10 @@ def _parse_legacy_statistic_points(
     return tuple(result)
 
 
+class RuntimeAuthorizationError(PermissionError):
+    """OAuth authorization has ended independently of Miniserver availability."""
+
+
 class RuntimeUnavailable(RuntimeError):
     """The identity-bound Loxone runtime is not currently available."""
 
@@ -325,7 +329,7 @@ class LoxoneRuntime:
     async def _require_access(self, access: StoredAccessToken) -> None:
         validator = getattr(self, "_validate_access", None)
         if validator is not None and not await validator(access):
-            raise RuntimeUnavailable("Loxone authorization is unavailable")
+            raise RuntimeAuthorizationError("Loxone authorization is unavailable")
 
     def _prune_rate_state(self, now: float) -> None:
         """Keep live rate windows across disconnects; discard expired family keys."""
@@ -384,7 +388,7 @@ class LoxoneRuntime:
         async with self._parallel:
             try:
                 await self._require_access(access)
-            except RuntimeUnavailable as exc:
+            except RuntimeAuthorizationError as exc:
                 raise ControlOperationError("permission_denied", str(exc)) from exc
             yield
 
@@ -471,6 +475,8 @@ class LoxoneRuntime:
         async with self._parallel, self._control_locks.hold(access.family_id):
             try:
                 snapshot = await self.snapshot(access)
+            except RuntimeAuthorizationError as exc:
+                raise ControlOperationError("permission_denied", str(exc)) from exc
             except RuntimeUnavailable as exc:
                 raise ControlOperationError("temporarily_unavailable", str(exc)) from exc
             try:

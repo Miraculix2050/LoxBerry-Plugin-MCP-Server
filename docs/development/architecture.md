@@ -55,6 +55,8 @@ connection lock and after connection establishment. A connection that outlives
 revocation is closed before publication. The encrypted Loxone token can remain
 available to the remote-revocation worker without allowing a delayed OAuth call
 to reconnect. No unbounded process-local revoked-family tombstones are needed.
+Ended OAuth authorization is a permission failure; queued control/history calls
+return `permission_denied` rather than a retryable availability error.
 The normal, control and history rate windows survive disconnect and revocation
 until their last timestamp expires after 60 seconds. Subsequent rate-limited calls
 or disconnects sweep expired family keys, including families without connection

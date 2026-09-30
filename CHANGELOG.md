@@ -22,6 +22,7 @@ extracted from the matching version heading.
   Serialize disconnect with in-flight connection establishment.
   Recheck OAuth authorization for queued calls and before publishing a new
   connection while preserving token material needed for remote revocation.
+  Report ended OAuth authorization as `permission_denied` for queued operations.
 
 - Measure Event History chart CGI delivery through stdout flush and distinguish
   completed preparations from slow or failed requests in operational logs.

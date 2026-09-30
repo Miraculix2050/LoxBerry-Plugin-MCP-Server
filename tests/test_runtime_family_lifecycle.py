@@ -25,6 +25,7 @@ from mcpserver.loxone.models import LoxoneIdentity, LoxoneStructure
 from mcpserver.loxone.runtime import (
     ControlOperationError,
     LoxoneRuntime,
+    RuntimeAuthorizationError,
     RuntimeUnavailable,
     _ConnectionRecord,
 )
@@ -322,10 +323,10 @@ async def test_disconnect_waits_for_connect_and_preserves_waiter_lock(
     assert not cleanup.done()
     assert runtime._locks["family"] is lock
     release.set()
-    with pytest.raises(RuntimeUnavailable, match="authorization"):
+    with pytest.raises(RuntimeAuthorizationError, match="authorization"):
         await first
     await cleanup
-    with pytest.raises(RuntimeUnavailable, match="authorization"):
+    with pytest.raises(RuntimeAuthorizationError, match="authorization"):
         await waiter
     assert opening.await_count == 1
     assert closed.is_set()
@@ -335,7 +336,7 @@ async def test_disconnect_waits_for_connect_and_preserves_waiter_lock(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("mode", ["read", "history", "control"])
+@pytest.mark.parametrize("mode", ["read", "history", "control", "control_lock"])
 @pytest.mark.parametrize("ending", ["revoke", "expiry"])
 async def test_queued_calls_cannot_reconnect_with_retained_revocation_token(
     tmp_path: Path,
@@ -346,10 +347,14 @@ async def test_queued_calls_cannot_reconnect_with_retained_revocation_token(
     runtime, provider, tokens, cleanup, clock = _authorized_runtime(tmp_path)
     opening = AsyncMock(side_effect=AssertionError("revoked call opened a connection"))
     monkeypatch.setattr(runtime.client, "open_session", opening)
-    await runtime._parallel.acquire()
+    if mode == "control_lock":
+        blocker = runtime._control_locks.hold("family")
+        await blocker.__aenter__()
+    else:
+        await runtime._parallel.acquire()
 
     async def call() -> None:
-        if mode == "control":
+        if mode in {"control", "control_lock"}:
             await runtime.operate_control(_access(), "control", "on")
         else:
             slot = runtime.history_call_slot if mode == "history" else runtime.call_slot
@@ -368,11 +373,16 @@ async def test_queued_calls_cannot_reconnect_with_retained_revocation_token(
     assert not runtime._records
     assert tokens.get("family", "miniserver", "identity") is not None
     assert len(tokens.pending_remote_revocations(int(clock[0]))) == 1
-    runtime._parallel.release()
-    error = RuntimeUnavailable if mode == "read" else ControlOperationError
-    with pytest.raises(error, match="authorization"):
+    if mode == "control_lock":
+        await blocker.__aexit__(None, None, None)
+    else:
+        runtime._parallel.release()
+    error = RuntimeAuthorizationError if mode == "read" else ControlOperationError
+    with pytest.raises(error, match="authorization") as rejection:
         await waiting
-    with pytest.raises(RuntimeUnavailable, match="authorization"):
+    if mode != "read":
+        assert rejection.value.code == "permission_denied"
+    with pytest.raises(RuntimeAuthorizationError, match="authorization"):
         await runtime.snapshot(_access())
     assert opening.await_count == 0
     assert not runtime._records
