@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections import defaultdict
 from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
@@ -25,6 +24,7 @@ from mcpserver.loxone.runtime import (
     LoxoneRuntime,
     RuntimeUnavailable,
     _ConnectionRecord,
+    _FamilyLocks,
 )
 
 
@@ -89,7 +89,7 @@ async def test_due_structure_refresh_is_single_flight_and_increments_generation(
         _structure("old"), frozenset(), _Session(), task, last_structure_check=0
     )
     runtime._records = {"family": record}
-    runtime._locks = defaultdict(asyncio.Lock)
+    runtime._locks = _FamilyLocks()
     runtime._prune_sessions = lambda _subject: asyncio.sleep(0)  # type: ignore[method-assign]
     runtime.token_store = Store()
     runtime.client = Client()
@@ -130,7 +130,7 @@ async def test_due_structure_refresh_fails_closed() -> None:
             _structure("old"), frozenset(), _Session(), task, last_structure_check=0
         )
     }
-    runtime._locks = defaultdict(asyncio.Lock)
+    runtime._locks = _FamilyLocks()
     runtime._prune_sessions = lambda _subject: asyncio.sleep(0)  # type: ignore[method-assign]
     runtime.token_store = Store()
     runtime.client = Client()
@@ -168,7 +168,7 @@ async def test_due_structure_refresh_checks_version_without_reloading_unchanged_
         _structure("current"), frozenset(), _Session(), task, last_structure_check=0
     )
     runtime._records = {"family": record}
-    runtime._locks = defaultdict(asyncio.Lock)
+    runtime._locks = _FamilyLocks()
     runtime._prune_sessions = lambda _subject: asyncio.sleep(0)  # type: ignore[method-assign]
     runtime.token_store = Store()
     runtime.client = Client()
@@ -217,7 +217,7 @@ async def test_fresh_project_visibility_detects_same_marker_rights_change() -> N
         _structure("current"), frozenset(), _Session(), task, last_structure_check=10**9
     )
     runtime._records = {"family": record}
-    runtime._locks = defaultdict(asyncio.Lock)
+    runtime._locks = _FamilyLocks()
     runtime._prune_sessions = lambda _subject: asyncio.sleep(0)  # type: ignore[method-assign]
     runtime.token_store = Store()
     runtime.client = Client()
@@ -253,7 +253,7 @@ async def test_fresh_project_visibility_timeout_is_unavailable() -> None:
         _structure("current"), frozenset(), _Session(), task, last_structure_check=10**9
     )
     runtime._records = {"family": record}
-    runtime._locks = defaultdict(asyncio.Lock)
+    runtime._locks = _FamilyLocks()
     runtime._prune_sessions = lambda _subject: asyncio.sleep(0)  # type: ignore[method-assign]
     runtime.token_store = Store()
     runtime.client = Client()

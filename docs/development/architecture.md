@@ -43,6 +43,28 @@ Loxone authorization is evaluated with the signed-in Loxone user. LoxBerry autho
 
 The server loads the user-filtered structure at connection start and refreshes it only after a bounded version-marker check. State data is held in runtime snapshots; statistics use a bounded RAM cache. No arbitrary files, shell commands or target URLs are accepted from MCP input.
 
+Per-family connection and control locks exist only while a holder or waiter uses
+them, including cancelled and failed calls. Disconnect waits for connection
+establishment before removing its record and never acquires a control lock;
+control calls acquire connection locks through `snapshot()`. OAuth revocation and
+family expiry use this same disconnect path after ending OAuth authorization.
+The server supplies the runtime with the same authoritative OAuth access check
+used by ProjectService. Queued read/history calls recheck it after obtaining
+global concurrency; snapshots recheck before using a record, inside the
+connection lock and after connection establishment. A connection that outlives
+revocation is closed before publication. The encrypted Loxone token can remain
+available to the remote-revocation worker without allowing a delayed OAuth call
+to reconnect. No unbounded process-local revoked-family tombstones are needed.
+Ended OAuth authorization is a permission failure; queued control/history calls
+return `permission_denied` rather than a retryable availability error.
+The normal, control and history rate windows survive disconnect and revocation
+until their last timestamp expires after 60 seconds. Subsequent rate-limited calls
+or disconnects sweep expired family keys, including families without connection
+records. Cleanup is lazy: an inactive process can retain its last window, but
+continued family churn does not retain all historical family keys. The active
+session limit bounds connection records, not the number of families admitted
+within one rate window.
+
 ## Persistence and lifecycle
 
 Configuration, encrypted sessions and plugin identity persist outside the package. Secrets are separated from ordinary configuration. Root lifecycle hooks consume service templates only from the current installer staging area, never from the installed plugin configuration or binary directories. The staging area's integrity remains a LoxBerry Core trust boundary because Core runs unprivileged lifecycle hooks before `postroot`; plugin code cannot make that shared staging area root-owned. Within the persistent LoxBerry tree, sensitive root operations use descriptor-relative traversal and reject symbolic links, non-regular files and path replacement. Install, upgrade and removal follow the native LoxBerry layout; upgrade preserves supported configuration and authentication state through idempotent migration. The service starts unprivileged, validates configuration and listens only on loopback.

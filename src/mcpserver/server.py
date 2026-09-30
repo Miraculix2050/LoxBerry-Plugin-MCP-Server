@@ -707,6 +707,17 @@ def create_server(settings: ServerSettings) -> FastMCP:
                     else 128 * 1024 * 1024
                 ),
             )
+
+            async def validate_project_access(access: StoredAccessToken) -> bool:
+                current = await provider.load_access_token(access.token)
+                return bool(
+                    current is not None
+                    and current.family_id == access.family_id
+                    and current.identity_id == access.identity_id
+                    and current.miniserver_id == access.miniserver_id
+                    and READ_SCOPE in current.scopes
+                )
+
             runtime = LoxoneRuntime(
                 settings.phase0_auth.loxone_endpoint,
                 loxone_store,
@@ -743,6 +754,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
                 ),
                 max_structure_depth=(config.max_structure_depth if config is not None else 32),
                 auth_coordinator=auth_coordinator,
+                validate_access=validate_project_access,
             )
             event_history_path = Path(os.getenv("MCPSERVER_EVENT_HISTORY_STORE", ""))
             if settings.phase0_auth.config_path is not None and event_history_path.is_absolute():
@@ -750,16 +762,6 @@ def create_server(settings: ServerSettings) -> FastMCP:
                     runtime,
                     AtomicConfigStore(settings.phase0_auth.config_path),
                     event_history_path,
-                )
-
-            async def validate_project_access(access: StoredAccessToken) -> bool:
-                current = await provider.load_access_token(access.token)
-                return bool(
-                    current is not None
-                    and current.family_id == access.family_id
-                    and current.identity_id == access.identity_id
-                    and current.miniserver_id == access.miniserver_id
-                    and READ_SCOPE in current.scopes
                 )
 
             runtime.projects = ProjectService(

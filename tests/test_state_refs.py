@@ -74,6 +74,9 @@ class _Runtime:
         self.state_reads: set[str] = set()
         self.gate = object.__new__(LoxoneRuntime)
         self.gate._rate = defaultdict(deque)
+        self.gate._control_rate = defaultdict(deque)
+        self.gate._history_rate = defaultdict(deque)
+        self.gate._rate_prune_at = 0.0
         self.gate._rate_limit = 1_000
         self.gate._parallel = asyncio.Semaphore(8)
 
