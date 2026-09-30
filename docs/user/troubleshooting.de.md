@@ -12,3 +12,28 @@
 | Update fehlgeschlagen | Warte auf den terminalen Status im Plugin Manager und halte das vorherige Paket bereit. |
 
 Exportiere oder teile keine Zugangsdaten, Tokens, privaten Adressen oder vollständigen Zustandsdaten. Nutze nur maskierte Plugin-Diagnosen.
+
+## Vorübergehend nicht verfügbare Leseaufrufe
+
+Bewahre bei `temporarily_unavailable` die Felder `error`, `message`,
+`diagnostic_code` und `trace_id` zusammen mit Tool und autorisiertem Zielkontext
+auf. Erhalte auch `availability_phase` und `retry_after_seconds`.
+`local_rate_limit` bezeichnet das lokale Aufrufbudget des Aufrufers; nur diese
+Ursache liefert eine aufgerundete Wartezeit von 1–60 Sekunden. Warte mindestens
+so lange und wiederhole einen Leseaufruf höchstens einmal. Kapazität wird nicht
+reserviert. Nutze erfolgreiche Beschreibungen erneut und reduziere parallele
+Aufrufe. Wiederhole ungewisse Schreibvorgänge niemals automatisch.
+
+`structure_refresh_connection`, `structure_refresh_protocol`,
+`structure_refresh_token` und `structure_refresh_timeout` unterscheiden bestätigte
+Refresh-Exception-Kategorien. Token-Fehler umfassen fehlende Tokens und Fehler des
+Token-Speichers. Die Phase bezeichnet Token-Abfrage, Sitzungsaufbau,
+Versionsprüfung, Strukturladen oder Sitzungsschließen. `structure_refresh_unknown`
+und `availability_unknown` lassen die Ursache ausdrücklich unbekannt. Dafür gibt
+es keine Wiederholungsfrist; erfinde keine und leite sie nicht aus einem gesunden
+Dienst ab.
+
+Nutze für Support autorisierte, maskierte Dienstdiagnosen mit der Trace-ID der
+Antwort. Warnungen werden je Kategorie und Phase 60 Sekunden unterdrückt;
+Ereigniszahlen zählen keine fehlgeschlagenen Aufrufe, fehlende Ereignisse benennen
+keine Ursache.

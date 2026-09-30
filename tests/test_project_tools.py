@@ -1243,3 +1243,32 @@ async def test_project_analysis_is_read_only_bounded_and_cursor_scoped(monkeypat
     assert expired.ok is False
     assert expired.data.error == "invalid_input"  # type: ignore[union-attr]
     assert analysis_calls == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reason", list(tools_module.AvailabilityReason))
+async def test_registered_project_description_preserves_availability_contract(monkeypatch, reason):
+    async def project_query(_runtime):
+        raise RuntimeUnavailable(
+            "Miniserver structure refresh failed",
+            reason=reason,
+            phase=tools_module.AvailabilityPhase.LOAD,
+            retry_after_seconds=9,
+        )
+
+    monkeypatch.setattr(tools_module, "_project_query", project_query)
+    server = FastMCP("availability-contract")
+    register_project_tools(server, None)
+    tool = server._tool_manager.get_tool("loxone_describe_project_object")
+    result = await tool.fn(identifier="visible-object", identifier_type="project_node_id")
+    assert not result.ok
+    assert result.data.error == "temporarily_unavailable"
+    assert result.data.message == "Miniserver structure refresh failed"
+    assert result.data.diagnostic_code == reason.value
+    assert result.data.availability_phase == "structure_load"
+    assert result.data.retry_after_seconds == (9 if reason.value == "local_rate_limit" else None)
+    assert result.trace_id
+    schema = tool.output_schema["$defs"]["ErrorData"]["properties"]
+    assert schema["retry_after_seconds"]["anyOf"][0]["maximum"] == 60
+    assert schema["retry_after_seconds"]["anyOf"][0]["minimum"] == 1
+    assert "availability_phase" in schema

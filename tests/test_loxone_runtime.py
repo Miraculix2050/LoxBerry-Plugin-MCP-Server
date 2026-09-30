@@ -649,3 +649,156 @@ async def test_session_pruning_prefers_idle_then_least_recently_used(
     runtime._records["new"].task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await runtime._records["new"].task
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failure,reason",
+    [
+        (LoxoneConnectionError, "structure_refresh_connection"),
+        (runtime_module.LoxoneProtocolError, "structure_refresh_protocol"),
+        (runtime_module.LoxoneTokenStoreError, "structure_refresh_token"),
+        (TimeoutError, "structure_refresh_timeout"),
+        (ValueError, "structure_refresh_unknown"),
+    ],
+)
+@pytest.mark.parametrize(
+    "phase",
+    [
+        "token_lookup",
+        "session_establishment",
+        "structure_version",
+        "structure_load",
+        "session_close",
+    ],
+)
+async def test_refresh_availability_categories_and_phases(failure, reason, phase, caplog) -> None:
+    secret = "private-token@192.0.2.9/hidden-control"
+
+    def fail_at(current):
+        if phase == current:
+            raise failure(secret)
+
+    class Store:
+        def get(self, *_parts):
+            fail_at("token_lookup")
+            return object()
+
+    class Session:
+        async def structure_version(self):
+            fail_at("structure_version")
+            return "new"
+
+        async def load_structure(self):
+            fail_at("structure_load")
+            return _structure("new")
+
+        async def close(self):
+            fail_at("session_close")
+
+    class Client:
+        async def open_session(self, _token):
+            fail_at("session_establishment")
+            return Session()
+
+    runtime = object.__new__(LoxoneRuntime)
+    runtime.token_store = Store()
+    runtime.client = Client()
+    task = asyncio.create_task(asyncio.sleep(60))
+    record = _ConnectionRecord(_structure("old"), frozenset(), _Session(), task)
+    runtime._records = {"family": record}
+    try:
+        with pytest.raises(RuntimeUnavailable) as caught:
+            await runtime._refresh_structure(_access(), record)
+        exc = caught.value
+        assert exc.reason == reason
+        assert exc.phase == phase
+        assert exc.retry_after_seconds is None
+        assert str(exc) == "Miniserver structure refresh failed"
+        assert secret not in caplog.text
+        assert record.structure.last_modified == "old"
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+
+@pytest.mark.asyncio
+async def test_local_budget_retry_is_rounded_bounded_and_family_scoped(monkeypatch) -> None:
+    from collections import defaultdict, deque
+
+    runtime = object.__new__(LoxoneRuntime)
+    runtime._rate = defaultdict(
+        deque, {"family": deque([100.25, 105.0]), "other": deque([130.0, 130.0])}
+    )
+    runtime._rate_limit = 2
+    runtime._parallel = asyncio.Semaphore(1)
+    runtime._prune_rate_state = lambda _now: None
+    runtime._require_access = AsyncMock()
+    monkeypatch.setattr(runtime_module.time, "monotonic", lambda: 140.0)
+    with pytest.raises(RuntimeUnavailable) as caught:
+        async with runtime.call_slot(_access()):
+            pytest.fail("rejected budget entered call")
+    assert caught.value.reason == "local_rate_limit"
+    assert caught.value.phase == "local_budget"
+    assert caught.value.retry_after_seconds == 21
+    assert list(runtime._rate["family"]) == [100.25, 105.0]
+    monkeypatch.setattr(runtime_module.time, "monotonic", lambda: 160.25)
+    async with runtime.call_slot(_access()):
+        pass
+    assert list(runtime._rate["family"]) == [105.0, 160.25]
+    assert list(runtime._rate["other"]) == [130.0, 130.0]
+
+
+@pytest.mark.asyncio
+async def test_missing_refresh_token_has_token_diagnostic_without_session() -> None:
+    runtime = object.__new__(LoxoneRuntime)
+    runtime.token_store = SimpleNamespace(get=lambda *_args: None)
+    runtime.client = SimpleNamespace(open_session=AsyncMock())
+    task = asyncio.create_task(asyncio.sleep(60))
+    record = _ConnectionRecord(_structure("old"), frozenset(), _Session(), task)
+    runtime._records = {"family": record}
+    try:
+        with pytest.raises(RuntimeUnavailable) as caught:
+            await runtime._refresh_structure(_access(), record, fresh_visibility=True)
+        assert caught.value.reason == "structure_refresh_token"
+        assert caught.value.phase == "token_lookup"
+        assert caught.value.retry_after_seconds is None
+        runtime.client.open_session.assert_not_awaited()
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+
+@pytest.mark.asyncio
+async def test_cancelled_refresh_is_not_converted_to_availability() -> None:
+    runtime = object.__new__(LoxoneRuntime)
+    session = SimpleNamespace(
+        load_structure=AsyncMock(side_effect=asyncio.CancelledError), close=AsyncMock()
+    )
+    runtime.token_store = SimpleNamespace(get=lambda *_args: object())
+    runtime.client = SimpleNamespace(open_session=AsyncMock(return_value=session))
+    task = asyncio.create_task(asyncio.sleep(60))
+    record = _ConnectionRecord(_structure("old"), frozenset(), _Session(), task)
+    runtime._records = {"family": record}
+    try:
+        with pytest.raises(asyncio.CancelledError):
+            await runtime._refresh_structure(_access(), record, fresh_visibility=True)
+        session.close.assert_awaited_once()
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+
+@pytest.mark.parametrize("delay", [0, 61, -1, True, 1.5])
+def test_availability_retry_rejects_invalid_delays(delay) -> None:
+    from mcpserver.availability import AvailabilityReason
+
+    assert (
+        RuntimeUnavailable(
+            "unavailable", reason=AvailabilityReason.LOCAL_RATE_LIMIT, retry_after_seconds=delay
+        ).retry_after_seconds
+        is None
+    )

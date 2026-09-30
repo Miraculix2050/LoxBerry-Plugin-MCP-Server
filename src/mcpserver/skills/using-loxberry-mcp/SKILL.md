@@ -16,6 +16,27 @@ For every read, check the complete result envelope. Do not treat a response as
 successful when `ok` is false. Surface relevant `warnings`, and qualify answers
 when `stale` is true or a state has an old or missing `observed_at` value.
 
+### Retain failure evidence and bound retries
+
+For every failed read, retain `error`, `message`, `diagnostic_code`, and the envelope's
+`trace_id`, together with the tool and target association. Also retain
+`availability_phase` and `retry_after_seconds` when supplied. Do not reduce a
+failure to a boolean or discard the failed envelope. Report only authorized target
+context; never copy private values into diagnostics. `temporarily_unavailable`
+alone does not establish rate limiting, a retry time, or a successful fresh read.
+Unknown causes remain unknown. A healthy service or state stream does not prove
+that a separate structure refresh succeeded.
+
+Reuse already successful descriptions within the current analysis and reduce
+concurrent fan-out; keep per-request fresh-visibility authorization intact.
+Only for `diagnostic_code="local_rate_limit"` with a server-provided integer
+`retry_after_seconds` from 1 to 60, wait at least that delay and retry the read
+at most once. This is a budget observation, not a reservation or success guarantee.
+Do not invent backoff for connection, protocol, token, timeout or unknown failures.
+Never automatically retry uncertain writes. Retain and report a second failure.
+Sanitized service events are deduplicated per diagnostic category and phase; their number
+is not the number of failed calls. Missing historical events do not establish a cause.
+
 ### Check connectivity and freshness
 
 Call `loxone_get_system_status` when connectivity or data freshness matters.
