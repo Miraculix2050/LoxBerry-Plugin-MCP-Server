@@ -903,6 +903,7 @@ def _controls(
                     not referenced
                     and bool(restrictions & _REFERENCED_ONLY_INTERNAL)
                     and uuid in monitor_referenced_control_uuids
+                    and uuid not in linked_control_uuids
                 ),
                 is_hidden=is_hidden,
             )

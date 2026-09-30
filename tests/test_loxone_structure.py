@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from mcpserver.loxone.control import allowed_actions
 from mcpserver.loxone.structure import LoxoneStructureError, normalize_structure
 
 
@@ -150,6 +151,46 @@ def test_window_monitor_bound_preserves_independent_visibility(hidden_monitor: b
         assert visible == {"monitor"} | {f"window-{index}" for index in range(101)}
         assert len(structure.controls[0].window_monitor_items) == 100
         assert structure.controls[0].window_monitor_items[99].control_uuid == "window-99"
+
+
+@pytest.mark.parametrize("count", [100, 101])
+@pytest.mark.parametrize("read_only", [False, True])
+def test_monitor_reference_preserves_independent_user_link_authorization(
+    count: int, read_only: bool
+) -> None:
+    raw = {
+        "msInfo": {"serialNr": "serial"},
+        "controls": {
+            "parent": {"name": "Visible", "type": "Switch", "links": ["linked"]},
+            "monitor": {
+                "name": "Windows",
+                "type": "WindowMonitor",
+                "details": {
+                    "windows": [{"uuid": "linked"}, {"uuid": "monitor-only"}] + [{}] * (count - 2)
+                },
+            },
+            "linked": {
+                "name": "Linked",
+                "type": "Switch",
+                "restrictions": 3 if read_only else 1,
+                "uuidAction": "linked-action",
+            },
+            "monitor-only": {
+                "name": "Monitor only",
+                "type": "Switch",
+                "restrictions": 1,
+                "uuidAction": "monitor-action",
+            },
+        },
+    }
+    controls = {
+        control.uuid: control for control in normalize_structure(raw, username="reader").controls
+    }
+    assert controls["linked"].is_user_linked is True
+    assert controls["linked"].is_monitor_referenced is False
+    assert allowed_actions(controls["linked"]) == ([] if read_only else ["on", "off"])
+    assert controls["monitor-only"].is_monitor_referenced is True
+    assert allowed_actions(controls["monitor-only"]) == []
 
 
 def test_structure_is_reduced_to_user_visible_domain_fields() -> None:

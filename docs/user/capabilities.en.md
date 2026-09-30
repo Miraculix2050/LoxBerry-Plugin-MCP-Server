@@ -8,8 +8,10 @@ For WindowMonitor controls, the full description retains the first 100 configure
 positions in list or mapping source order, including malformed placeholders.
 `capabilities.model.window_monitor_summary` reports `total`, `returned`, `omitted`,
 and `truncated`; only retained explicit references can additionally expose internal
-controls for reading. Missing/null collections are empty. Unsupported collection
-shapes report `invalid_window_monitor_collection`, with unknown (`null`) total and
+controls for reading. Explicit independent user links retain their existing authorization;
+the monitor-only read restriction does not override them or other read-only restrictions.
+Missing/null collections are empty. Unsupported collection shapes report
+`invalid_window_monitor_collection`, with unknown (`null`) total and
 omitted counts. Match `windowStates` by the original zero-based item index; omitted
 positions are not evidence of missing contacts. These fields are absent from compact
 views. Complete configured representation does not establish physical opening coverage.

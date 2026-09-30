@@ -8,7 +8,9 @@ Für WindowMonitor-Controls behält die vollständige Beschreibung die ersten 10
 konfigurierten Positionen in der Quellreihenfolge der Liste oder des Mappings bei,
 einschließlich fehlerhafter Platzhalter. `capabilities.model.window_monitor_summary`
 meldet `total`, `returned`, `omitted` und `truncated`; nur erhaltene explizite Referenzen
-können interne Controls zusätzlich zum Lesen sichtbar machen. Fehlende/null-Sammlungen
+können interne Controls zusätzlich zum Lesen sichtbar machen. Explizite unabhängige
+Benutzerlinks behalten ihre bestehende Autorisierung; die reine Monitor-Lesefreigabe
+übersteuert weder diese Links noch andere Nur-Lese-Beschränkungen. Fehlende/null-Sammlungen
 sind leer. Ungültige Sammlungsformen melden `invalid_window_monitor_collection` mit
 unbekannter (`null`) Gesamtzahl und ausgelassener Anzahl. Ordnen Sie `windowStates`
 über den ursprünglichen nullbasierten Index zu; ausgelassene Positionen belegen keine

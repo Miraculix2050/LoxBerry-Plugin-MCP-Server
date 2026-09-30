@@ -8,6 +8,7 @@ extracted from the matching version heading.
 - Preserve the first 100 WindowMonitor positions instead of discarding larger
   collections. Expose collection counts, truncation and invalid-shape diagnostics;
   apply the same prefix to explicit read-only reference exposure.
+  Preserve independently linked control authorization when monitor references overlap.
 
 - Measure Event History chart CGI delivery through stdout flush and distinguish
   completed preparations from slow or failed requests in operational logs.
