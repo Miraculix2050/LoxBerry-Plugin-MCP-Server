@@ -12,7 +12,7 @@ from mcpserver.auth.provider import READ_SCOPE, StoredAccessToken
 from mcpserver.loxone.client import MiniserverEndpoint
 from mcpserver.loxone.events import StateEvent
 from mcpserver.loxone.models import Freshness, LoxoneIdentity, LoxoneStructure
-from mcpserver.loxone.runtime import LoxoneRuntime, _ConnectionRecord
+from mcpserver.loxone.runtime import LoxoneRuntime, RuntimeUnavailable, _ConnectionRecord
 
 
 def access(family: str = "one") -> StoredAccessToken:
@@ -96,7 +96,6 @@ async def test_normal_stream_end_during_read_marks_cached_state_stale() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="Confirmed bug #319")
 @pytest.mark.parametrize("cleanup", ["idle", "capacity", "close"])
 async def test_cleanup_during_refresh_does_not_resurrect_cache(cleanup: str) -> None:
     await _cleanup_during_refresh(cleanup, check_cache=True)
@@ -138,11 +137,11 @@ async def _cleanup_during_refresh(cleanup: str, *, check_cache: bool) -> None:
         assert record.task.done()
         assert record.session.closed.is_set()
         release.set()
-        snapshot = await asyncio.wait_for(call, 2)
-        assert not snapshot.connected
+        with pytest.raises(RuntimeUnavailable, match="connection changed"):
+            await asyncio.wait_for(call, 2)
         refresh.close.assert_awaited_once()
         if check_cache:
-            assert owner.state(snapshot, "state").freshness is Freshness.UNAVAILABLE
+            assert owner.cache.get("one", "state").freshness is Freshness.UNAVAILABLE
             assert "one" not in owner.cache._values
     finally:
         release.set()
@@ -237,7 +236,6 @@ async def test_refresh_filters_batches_before_and_after_generation_change() -> N
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="Confirmed bug #319")
 async def test_old_refresh_cannot_modify_reconnected_generation_or_cache() -> None:
     owner = runtime()
     old = await install(owner)
@@ -260,8 +258,8 @@ async def test_old_refresh_cannot_modify_reconnected_generation_or_cache() -> No
         replacement.generation = 7
         await replacement.session.emit(7.0)
         release.set()
-        snapshot = await asyncio.wait_for(call, 2)
-        assert not snapshot.connected
+        with pytest.raises(RuntimeUnavailable, match="connection changed"):
+            await asyncio.wait_for(call, 2)
         assert owner._records["one"] is replacement
         assert replacement.generation == 7
         assert replacement.structure.last_modified == "replacement"
