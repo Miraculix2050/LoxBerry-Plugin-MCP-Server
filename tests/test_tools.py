@@ -635,6 +635,10 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
             "Explicit linked control",
             "Structural project path",
             "Name-only",
+            "normalized control reference",
+            "mapping-key fallback",
+            'loxone_describe_control(control_uuid=..., view="full")',
+            "that object's `relationships.linked_controls`",
         ),
         (
             "invalid_window_monitor_entry",
@@ -687,6 +691,7 @@ def test_opening_contact_user_documentation_preserves_tool_and_evidence_contract
     content = document.read_text(encoding="utf-8")
     for evidence in (
         "relationships.linked_controls",
+        'loxone_describe_control(control_uuid=..., view="full")',
         "loxone_get_project_status",
         "loxone_describe_project_object",
         "loxone_trace_project_logic",

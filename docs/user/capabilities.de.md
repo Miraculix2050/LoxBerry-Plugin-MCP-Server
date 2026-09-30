@@ -45,7 +45,12 @@ und physische Öffnungsabdeckung. Suchen Sie exakte sichtbare `WindowMonitor`-Co
 verfolgen Sie Discovery-Seiten und verwenden Sie `loxone_describe_control(view="full")`.
 Trennen Sie direkte Eintragsreferenzen von `relationships.linked_controls` (auch
 Links aus Aggregatobjekten), exakten Project-Intelligence-Pfaden und reinen Namens-/
-Raumkandidaten. Ein expliziter Link belegt eine indirekte Verknüpfung, keine direkte
+Raumkandidaten. Eine direkte Eintragsreferenz ist normalisiert und kann aus einem
+expliziten UUID-Feld oder einem Mapping-Schlüssel als Fallback stammen; die
+Auflösung allein identifiziert die Quelle nicht. Beschreiben Sie jedes aufgelöste
+referenzierte Control separat mit `loxone_describe_control(control_uuid=..., view="full")`,
+bevor Sie dessen `relationships.linked_controls` prüfen; der Monitor enthält nur
+kompakte Eintragsreferenzen. Ein expliziter Link belegt eine indirekte Verknüpfung, keine direkte
 Monitorzuordnung. Verwenden Sie Diagnosen und Originalindizes; fehlerhafte, nicht
 verfügbare, raumwidersprüchliche und ausgelassene Einträge begrenzen Aussagen.
 `partially_resolved` kann ausschließlich einen aufgelösten Raum bedeuten.

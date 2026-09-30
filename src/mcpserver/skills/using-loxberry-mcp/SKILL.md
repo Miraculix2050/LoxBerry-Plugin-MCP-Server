@@ -227,8 +227,14 @@ Project Intelligence tools; no dedicated opening-contact analyzer is available.
    following `next_cursor` with unchanged filters. Describe each selected UUID
    with `loxone_describe_control(view="full")`. Preserve original item indices
    and distinguish these evidence layers in the report:
-   - Direct monitor reference: an item's explicit UUID resolves to its `control`.
-   - Explicit linked control: a published link from that referenced object,
+   - Direct monitor reference: an item's normalized control reference resolves
+     to its `control`. It may come from an explicit UUID or a mapping-key fallback;
+     resolution alone does not establish which source supplied the reference.
+   - Explicit linked control: first describe each resolved referenced control
+     with `loxone_describe_control(control_uuid=..., view="full")`, then inspect
+     that object's `relationships.linked_controls`. The monitor description
+     embeds only a compact item `control`, not that object's relationships.
+     Use only a published link from that referenced object,
      including an aggregate status object. Report it as `indirectly linked`;
      it does not establish direct monitor membership of the raw contact.
    - Structural project path: exact project nodes and returned signal/reference

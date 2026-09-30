@@ -41,7 +41,12 @@ physical opening coverage. Find exact visible `WindowMonitor` controls, follow
 discovery pages, and use `loxone_describe_control(view="full")`. Keep direct item
 references separate from `relationships.linked_controls` (including links from
 aggregate objects), exact Project Intelligence paths and name-only/shared-room
-review candidates. An explicit link is indirectly linked evidence, not direct
+review candidates. A direct item reference is normalized and may originate from
+an explicit UUID or a mapping-key fallback; resolution alone does not identify
+the source. Describe each resolved referenced control separately with
+`loxone_describe_control(control_uuid=..., view="full")` before inspecting its
+`relationships.linked_controls`; the monitor embeds only compact item references.
+An explicit link is indirectly linked evidence, not direct
 monitor membership. Use diagnostics and original indices; malformed, unavailable,
 room-mismatched and omitted entries limit conclusions. `partially_resolved` may
 mean only the room resolved. Resolution counts cover retained positions only.
