@@ -67,6 +67,16 @@ def test_schema_catalog_contains_complete_fastmcp_contract() -> None:
         assert tool["outputSchema"]["properties"]["data"]["anyOf"]
 
 
+def test_window_monitor_summary_is_in_generated_description_contract() -> None:
+    tools = {tool["name"]: tool for tool in tool_schema_catalog(VERSION)["tools"]}
+    definitions = tools["loxone_describe_control"]["outputSchema"]["$defs"]
+    assert "window_monitor_summary" in definitions["ControlModelData"]["properties"]
+    summary = definitions["WindowMonitorSummaryData"]["properties"]
+    assert set(summary) == {"total", "returned", "omitted", "truncated", "diagnostics"}
+    assert "malformed" in summary["returned"]["description"]
+    assert "invalid_window_monitor_collection" in str(summary["diagnostics"])
+
+
 def test_project_status_schema_distinguishes_model_sources_from_config_projects() -> None:
     tools = {tool["name"]: tool for tool in tool_schema_catalog(VERSION)["tools"]}
     status = tools["loxone_get_project_status"]

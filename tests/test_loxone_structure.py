@@ -2,7 +2,195 @@ from __future__ import annotations
 
 import pytest
 
+from mcpserver.loxone.control import allowed_actions
 from mcpserver.loxone.structure import LoxoneStructureError, normalize_structure
+
+
+@pytest.mark.parametrize("count", [0, 100, 101, 1000])
+@pytest.mark.parametrize("mapping", [False, True])
+def test_window_monitor_collection_retains_bounded_source_positions(
+    count: int, mapping: bool
+) -> None:
+    entries = [{"uuid": f"window-{index}", "room": f"room-{index}"} for index in range(count)]
+    if count:
+        entries[0] = "invalid"  # type: ignore[assignment]
+    windows = {f"key-{index}": item for index, item in enumerate(entries)} if mapping else entries
+    raw = {
+        "msInfo": {"serialNr": "serial"},
+        "controls": {
+            "monitor": {
+                "name": "Windows",
+                "type": "WindowMonitor",
+                "details": {"windows": windows},
+            },
+            **{
+                f"window-{index}": {"name": "Internal", "type": "Switch", "restrictions": 1}
+                for index in range(count)
+            },
+        },
+        "rooms": {f"room-{index}": {"name": "Room"} for index in range(count)},
+    }
+    structure = normalize_structure(raw, username="reader")
+    monitor = structure.controls[0]
+    summary = monitor.window_monitor_summary
+    assert summary is not None
+    assert (summary.total, summary.returned, summary.omitted, summary.truncated) == (
+        count,
+        min(count, 100),
+        max(count - 100, 0),
+        count > 100,
+    )
+    assert [item.index for item in monitor.window_monitor_items] == list(range(min(count, 100)))
+    assert {item.uuid for item in structure.controls} == {"monitor"} | {
+        f"window-{index}" for index in range(1, min(count, 100))
+    }
+    assert {room.uuid for room in structure.rooms} == {
+        f"room-{index}" for index in range(1, min(count, 100))
+    }
+    if count:
+        assert monitor.window_monitor_items[0].control_uuid is None
+        assert monitor.window_monitor_items[-1].index == min(count, 100) - 1
+
+
+@pytest.mark.parametrize(
+    "windows,expected",
+    [(None, (0, 0, ())), ("invalid", (None, None, ("invalid_window_monitor_collection",)))],
+)
+def test_window_monitor_collection_distinguishes_empty_from_invalid(
+    windows: object, expected: tuple[object, ...]
+) -> None:
+    structure = normalize_structure(
+        {
+            "msInfo": {"serialNr": "serial"},
+            "controls": {
+                "monitor": {
+                    "name": "Windows",
+                    "type": "WindowMonitor",
+                    "details": {"windows": windows},
+                }
+            },
+        },
+        username="reader",
+    )
+    summary = structure.controls[0].window_monitor_summary
+    assert summary is not None
+    assert (summary.total, summary.omitted, summary.diagnostics) == expected
+    assert summary.returned == 0
+    assert summary.truncated is False
+
+
+def test_window_monitor_collection_does_not_visit_omitted_mapping_values() -> None:
+    class BoundedMapping(dict[str, object]):
+        def items(self):  # type: ignore[override,no-untyped-def]
+            for index in range(101):
+                assert index < 100, "omitted source value was visited"
+                yield f"window-{index}", {}
+
+    structure = normalize_structure(
+        {
+            "msInfo": {"serialNr": "serial"},
+            "controls": {
+                "monitor": {
+                    "name": "Windows",
+                    "type": "WindowMonitor",
+                    "details": {
+                        "windows": BoundedMapping({str(index): {} for index in range(101)})
+                    },
+                }
+            },
+        },
+        username="reader",
+    )
+    assert len(structure.controls[0].window_monitor_items) == 100
+
+
+def test_window_monitor_mapping_fallback_rejects_oversized_keys() -> None:
+    rejected = "x" * 201
+    structure = normalize_structure(
+        {
+            "msInfo": {"serialNr": "serial"},
+            "controls": {
+                "monitor": {
+                    "name": "Windows",
+                    "type": "WindowMonitor",
+                    "details": {"windows": {rejected: {}}},
+                },
+                rejected: {"name": "Internal", "type": "Switch", "restrictions": 1},
+            },
+        },
+        username="reader",
+    )
+    assert structure.controls[0].window_monitor_items[0].control_uuid is None
+    assert [control.uuid for control in structure.controls] == ["monitor"]
+
+
+@pytest.mark.parametrize("hidden_monitor", [False, True])
+def test_window_monitor_bound_preserves_independent_visibility(hidden_monitor: bool) -> None:
+    windows = [{"uuid": f"window-{index}"} for index in range(101)]
+    raw = {
+        "msInfo": {"serialNr": "serial"},
+        "controls": {
+            "monitor": {
+                "name": "Windows",
+                "type": "WindowMonitor",
+                "restrictions": int(hidden_monitor),
+                "details": {"windows": windows},
+            },
+            **{
+                f"window-{index}": {"name": "Window", "type": "Switch", "restrictions": 1}
+                for index in range(100)
+            },
+            "window-100": {"name": "Independently visible", "type": "Switch"},
+        },
+    }
+    structure = normalize_structure(raw, username="reader")
+    visible = {control.uuid for control in structure.controls}
+    if hidden_monitor:
+        assert visible == {"window-100"}
+    else:
+        assert visible == {"monitor"} | {f"window-{index}" for index in range(101)}
+        assert len(structure.controls[0].window_monitor_items) == 100
+        assert structure.controls[0].window_monitor_items[99].control_uuid == "window-99"
+
+
+@pytest.mark.parametrize("count", [100, 101])
+@pytest.mark.parametrize("read_only", [False, True])
+def test_monitor_reference_preserves_independent_user_link_authorization(
+    count: int, read_only: bool
+) -> None:
+    raw = {
+        "msInfo": {"serialNr": "serial"},
+        "controls": {
+            "parent": {"name": "Visible", "type": "Switch", "links": ["linked"]},
+            "monitor": {
+                "name": "Windows",
+                "type": "WindowMonitor",
+                "details": {
+                    "windows": [{"uuid": "linked"}, {"uuid": "monitor-only"}] + [{}] * (count - 2)
+                },
+            },
+            "linked": {
+                "name": "Linked",
+                "type": "Switch",
+                "restrictions": 3 if read_only else 1,
+                "uuidAction": "linked-action",
+            },
+            "monitor-only": {
+                "name": "Monitor only",
+                "type": "Switch",
+                "restrictions": 1,
+                "uuidAction": "monitor-action",
+            },
+        },
+    }
+    controls = {
+        control.uuid: control for control in normalize_structure(raw, username="reader").controls
+    }
+    assert controls["linked"].is_user_linked is True
+    assert controls["linked"].is_monitor_referenced is False
+    assert allowed_actions(controls["linked"]) == ([] if read_only else ["on", "off"])
+    assert controls["monitor-only"].is_monitor_referenced is True
+    assert allowed_actions(controls["monitor-only"]) == []
 
 
 def test_structure_is_reduced_to_user_visible_domain_fields() -> None:

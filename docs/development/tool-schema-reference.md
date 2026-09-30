@@ -1,8 +1,13 @@
 # Tool schema reference
 
+The full `loxone_describe_control` schema includes additive
+`capabilities.model.window_monitor_summary` collection counts and fixed diagnostics.
+Its `returned` count includes malformed retained positions; `total` and `omitted`
+are null for invalid collection shapes. Compact views omit this metadata.
+
 FastMCP derives each tool's input and output JSON Schemas from the registered Python function and Pydantic result model. MCP clients obtain the tool surface enabled for a concrete installation through `tools/list`; that response is authoritative for calls to that installation. The integrated Tool Explorer reads and visualizes the same response.
 
-For `loxone_describe_control`, the generated schema lists `view="full"` as the default. `history_targets` is the compact history/statistics transfer view; `operation_targets` returns allowed actions and only their selectable targets or ranges, without statistics, state lists, relationships, or presentation. The full/default data shape remains unchanged.
+For `loxone_describe_control`, the generated schema lists `view="full"` as the default. `history_targets` is the compact history/statistics transfer view; `operation_targets` returns allowed actions and only their selectable targets or ranges, without statistics, state lists, relationships, or presentation. Existing full/default fields remain compatible; additive metadata is documented above.
 
 The two event-history source-list tools share a cursor-paged response (`sources`, `next_cursor`). Each source includes `recording_status` and a known `recording_ended_at`. `loxone_list_event_history_sources` returns only currently visible control/state pairs; `loxberry_list_event_history_sources` returns the complete inventory after an independently approved local read or operate grant. Their authorization requirements are described in the tool descriptions and permissions guide.
 

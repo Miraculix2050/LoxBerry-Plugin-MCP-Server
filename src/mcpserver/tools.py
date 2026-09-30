@@ -264,6 +264,18 @@ class WindowMonitorItemData(BaseModel):
     control: LinkedControlData | None = None
 
 
+class WindowMonitorSummaryData(BaseModel):
+    total: int | None = Field(description="Source position count; unknown for invalid collections.")
+    returned: int = Field(
+        description="Retained positions, including malformed entries; at most 100."
+    )
+    omitted: int | None = Field(
+        description="Source positions omitted by the bound; unknown for invalid collections."
+    )
+    truncated: bool
+    diagnostics: list[Literal["invalid_window_monitor_collection"]] = Field(default_factory=list)
+
+
 class IrrigationModelData(BaseModel):
     off_zone_id: Literal[-1] = -1
     all_zones_id: Literal[8] = 8
@@ -288,6 +300,7 @@ class ControlModelData(BaseModel):
     ventilation_modes: list[NamedOptionData] = Field(default_factory=list)
     ventilation_timer_profiles: list[VentilationTimerProfileData] = Field(default_factory=list)
     window_monitor_items: list[WindowMonitorItemData] = Field(default_factory=list)
+    window_monitor_summary: WindowMonitorSummaryData | None = None
     connected_inputs: int | None = None
     irrigation: IrrigationModelData | None = None
     alarm_clock: AlarmClockModelData | None = None
@@ -4060,6 +4073,27 @@ def register_read_tools(
                             }
                             for item in control.window_monitor_items
                         ],
+                        "window_monitor_summary": (
+                            {
+                                "total": control.window_monitor_summary.total,
+                                "returned": control.window_monitor_summary.returned,
+                                "omitted": control.window_monitor_summary.omitted,
+                                "truncated": control.window_monitor_summary.truncated,
+                                "diagnostics": list(control.window_monitor_summary.diagnostics),
+                            }
+                            if control.window_monitor_summary is not None
+                            else (
+                                {
+                                    "total": len(control.window_monitor_items),
+                                    "returned": len(control.window_monitor_items),
+                                    "omitted": 0,
+                                    "truncated": False,
+                                    "diagnostics": [],
+                                }
+                                if control.control_type == "WindowMonitor"
+                                else None
+                            )
+                        ),
                         "connected_inputs": control.connected_inputs,
                         "irrigation": (
                             {"off_zone_id": -1, "all_zones_id": 8}

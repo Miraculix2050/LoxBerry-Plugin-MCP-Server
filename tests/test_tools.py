@@ -613,7 +613,7 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert tool.annotations.destructiveHint is False
     assert tool.annotations.openWorldHint is False
     assert result.data.name == "using-loxberry-mcp"  # type: ignore[union-attr]
-    assert result.data.revision == 37  # type: ignore[union-attr]
+    assert result.data.revision == 38  # type: ignore[union-attr]
     assert "`loxone_get_structure_overview`" in result.data.content  # type: ignore[union-attr]
     assert result.data.media_type == "text/markdown"  # type: ignore[union-attr]
     assert result.data.content == read_skill_markdown()  # type: ignore[union-attr]
@@ -2734,7 +2734,9 @@ async def test_describe_control_resolves_window_monitor_item_references(
         ),
     )
 
-    async def snapshot(_runtime: object) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+    async def snapshot(
+        _runtime: object, *, fresh_visibility: bool = False
+    ) -> tuple[StoredAccessToken, RuntimeSnapshot]:
         return access, RuntimeSnapshot("family", structure, True)
 
     monkeypatch.setattr(tools_module, "_snapshot", snapshot)
@@ -2750,6 +2752,55 @@ async def test_describe_control_resolves_window_monitor_item_references(
     assert item.room.uuid == "room-1"
     assert item.control.uuid == "window-1"
     assert item.control.name == "Office window"
+    summary = result.data.capabilities.model.window_monitor_summary  # type: ignore[union-attr]
+    assert summary is not None
+    assert (summary.total, summary.returned, summary.omitted, summary.truncated) == (1, 1, 0, False)
+    assert summary.diagnostics == []
+    for view in ("history_targets", "operation_targets"):
+        compact = await tool.fn("monitor-1", view=view)
+        assert compact.ok is True
+        assert "window_monitor" not in compact.model_dump_json()
+
+
+@pytest.mark.asyncio
+async def test_describe_window_monitor_exposes_normalized_collection_summary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from mcpserver.loxone.structure import normalize_structure
+
+    access = _loxberry_access(READ_SCOPE)
+    structure = normalize_structure(
+        {
+            "msInfo": {"serialNr": "serial"},
+            "controls": {
+                "monitor": {
+                    "name": "Windows",
+                    "type": "WindowMonitor",
+                    "details": {"windows": [{}] * 101},
+                }
+            },
+        },
+        username="reader",
+    )
+
+    async def snapshot(_runtime: object) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+        return access, RuntimeSnapshot("family", structure, True)
+
+    monkeypatch.setattr(tools_module, "_snapshot", snapshot)
+    server = FastMCP("window-monitor-bound-contract")
+    register_read_tools(server, None)
+    tool = server._tool_manager.get_tool("loxone_describe_control")
+    assert tool is not None
+    result = await tool.fn("monitor")
+    model = result.data.capabilities.model  # type: ignore[union-attr]
+    assert len(model.window_monitor_items) == 100
+    assert model.window_monitor_summary.model_dump() == {
+        "total": 101,
+        "returned": 100,
+        "omitted": 1,
+        "truncated": True,
+        "diagnostics": [],
+    }
 
 
 @pytest.mark.asyncio
