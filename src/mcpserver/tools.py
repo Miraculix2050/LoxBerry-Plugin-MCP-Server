@@ -2369,11 +2369,15 @@ def _normalized_query(value: str | None) -> str | None:
     return value.casefold().strip() if value else None
 
 
-async def _snapshot(runtime: LoxoneRuntime | None) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+async def _snapshot(
+    runtime: LoxoneRuntime | None, *, fresh_visibility: bool = False
+) -> tuple[StoredAccessToken, RuntimeSnapshot]:
     if runtime is None:
         raise RuntimeUnavailable("the service is not configured")
     access = _access()
     async with runtime.call_slot(access):
+        if fresh_visibility:
+            return access, await runtime.snapshot(access, fresh_visibility=True)
         return access, await runtime.snapshot(access)
 
 
@@ -3818,7 +3822,11 @@ def register_read_tools(
         ] = "full",
     ) -> ControlDescriptionEnvelope:
         try:
-            access_token, snapshot = await _snapshot(runtime)
+            access_token, snapshot = (
+                await _snapshot(runtime, fresh_visibility=True)
+                if view == "operation_targets"
+                else await _snapshot(runtime)
+            )
             if view not in {"full", "history_targets", "operation_targets"}:
                 return _error(ControlDescriptionEnvelope, "invalid_input", "view is invalid")
             control = next(

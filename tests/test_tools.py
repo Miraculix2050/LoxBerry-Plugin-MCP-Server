@@ -2374,7 +2374,12 @@ async def test_operation_targets_are_complete_and_compact(
     structure = LoxoneStructure(LoxoneIdentity("user", "serial"), "1", (), (), (control,))
     access = _loxberry_access(READ_SCOPE, CONTROL_SCOPE)
 
-    async def snapshot(_runtime: object) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+    requested_freshness: list[bool] = []
+
+    async def snapshot(
+        _runtime: object, *, fresh_visibility: bool = False
+    ) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+        requested_freshness.append(fresh_visibility)
         return access, RuntimeSnapshot("family", structure, True)
 
     monkeypatch.setattr(tools_module, "_snapshot", snapshot)
@@ -2384,6 +2389,7 @@ async def test_operation_targets_are_complete_and_compact(
     assert describe is not None
     full = await describe.fn("dimmer-1")
     compact = await describe.fn("dimmer-1", view="operation_targets")
+    assert requested_freshness == [False, True]
     assert compact.data.view == "operation_targets"  # type: ignore[union-attr]
     data = compact.data.model_dump(mode="json")  # type: ignore[union-attr]
     assert data["capabilities"]["allowed_actions"] == ["on", "off", "set_level"]
@@ -2519,7 +2525,10 @@ async def test_operation_targets_publish_each_action_specific_target(
 ) -> None:
     structure = LoxoneStructure(LoxoneIdentity("user", "serial"), "1", (), (), (control,))
 
-    async def snapshot(_runtime: object) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+    async def snapshot(
+        _runtime: object, *, fresh_visibility: bool
+    ) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+        assert fresh_visibility is True
         return _loxberry_access(READ_SCOPE, CONTROL_SCOPE), RuntimeSnapshot(
             "family", structure, True
         )
@@ -2537,6 +2546,78 @@ async def test_operation_targets_publish_each_action_specific_target(
         assert capabilities[key] == value
     else:
         assert capabilities[key] == value
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("refresh_result", ["renamed", "removed", "unavailable"])
+async def test_operation_targets_require_current_structure(
+    monkeypatch: pytest.MonkeyPatch, refresh_result: str
+) -> None:
+    access = _loxberry_access(READ_SCOPE, CONTROL_SCOPE)
+    cached_control = Control(
+        "room",
+        "Room",
+        "IRoomControllerV2",
+        None,
+        None,
+        "action",
+        (),
+        timer_modes=(NamedOption(3, "Eco"),),
+    )
+    cached = LoxoneStructure(
+        LoxoneIdentity("user", "serial"), "unchanged", (), (), (cached_control,)
+    )
+    current = replace(
+        cached,
+        controls=(
+            replace(cached_control, timer_modes=(NamedOption(3, "Boost"), NamedOption(4, "Eco"))),
+        )
+        if refresh_result == "renamed"
+        else (),
+    )
+    requested_freshness: list[bool] = []
+
+    class Runtime:
+        in_call_slot = False
+
+        @asynccontextmanager
+        async def call_slot(self, supplied_access: StoredAccessToken):
+            assert supplied_access is access
+            self.in_call_slot = True
+            try:
+                yield
+            finally:
+                self.in_call_slot = False
+
+        async def snapshot(
+            self, supplied_access: StoredAccessToken, *, fresh_visibility: bool = False
+        ) -> RuntimeSnapshot:
+            assert supplied_access is access
+            assert self.in_call_slot
+            requested_freshness.append(fresh_visibility)
+            if fresh_visibility and refresh_result == "unavailable":
+                raise runtime_module.RuntimeUnavailable("Miniserver structure refresh failed")
+            return RuntimeSnapshot("family", current if fresh_visibility else cached, True)
+
+    monkeypatch.setattr(tools_module, "_access", lambda: access)
+    server = FastMCP("operation-target-freshness")
+    register_read_tools(server, Runtime(), control_enabled=True)  # type: ignore[arg-type]
+    describe = server._tool_manager.get_tool("loxone_describe_control")
+    assert describe is not None
+    full = await describe.fn("room")
+    assert full.data.capabilities.model.timer_modes[0].name == "Eco"  # type: ignore[union-attr]
+
+    result = await describe.fn("room", view="operation_targets")
+    assert requested_freshness == [False, True]
+    if refresh_result == "renamed":
+        assert result.ok is True
+        modes = result.data.capabilities.timer_modes  # type: ignore[union-attr]
+        assert [(mode.id, mode.name) for mode in modes] == [(3, "Boost"), (4, "Eco")]
+    else:
+        assert result.ok is False
+        assert result.data.error == (  # type: ignore[union-attr]
+            "not_found" if refresh_result == "removed" else "temporarily_unavailable"
+        )
 
 
 @pytest.mark.asyncio

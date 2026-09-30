@@ -11,6 +11,8 @@ extracted from the matching version heading.
 - Add `loxone_describe_control(view="operation_targets")` for compact control
   identity, visible allowed actions, and action-specific targets or ranges needed
   to prepare control operations.
+  Refresh this view from the current user-filtered structure before selecting
+  targets, and reject the description if that refresh fails.
 
 - Explain raw project graph outliers with separate signal, reference, and derived-edge
   evidence. Report reference-only KNX endpoints separately from directly configured

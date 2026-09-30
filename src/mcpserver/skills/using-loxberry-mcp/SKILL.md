@@ -361,7 +361,9 @@ action on one identified target.
 2. Call `loxone_describe_control` with `view="operation_targets"` immediately
    before the operation. This compact view returns allowed actions and the
    current action-specific targets without statistics or relationships. Use
-   `full` only when a diagnostic needs those omitted details.
+   `full` only when a diagnostic needs those omitted details. The operation
+   view reloads the user-filtered structure and returns an error rather than
+   cached targets if the refresh fails.
 3. Continue only when `visibility` is `direct` or `linked` and
    `capabilities.allowed_actions` contains the requested
    action exactly.
