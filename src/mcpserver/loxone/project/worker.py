@@ -4,12 +4,15 @@ import asyncio
 import json
 import os
 import pickle
+import struct
 import sys
 from contextlib import suppress
 from dataclasses import asdict
+from io import BytesIO
+from time import perf_counter
 
 from .analysis import analyze_knx
-from .graph import ProjectSnapshot, build_snapshot
+from .graph import GraphEdge, GraphNode, ProjectSnapshot, SemanticEdge, build_snapshot
 from .mapping import ProjectView
 from .models import DEFAULT_LIMITS, ProjectBundle, ProjectError, ProjectLimits
 from .source import unpack_project
@@ -17,6 +20,48 @@ from .taxonomy import AddressTaxonomyEntry
 
 MAX_RESULT = 64 * 1024 * 1024
 MAX_ANALYSIS_INPUT = 64 * 1024 * 1024
+_ANALYSIS_TIMINGS = struct.Struct("!4d")
+_ANALYSIS_TIMING_MARKER = b"\x00MCPTIME\x00"
+
+
+def _reduce_graph_node(node: GraphNode) -> tuple[type[GraphNode], tuple[object, ...]]:
+    return GraphNode, (
+        node.key,
+        node.project,
+        node.source_index,
+        node.kind,
+        node.source_id,
+        node.block_type,
+        node.attributes,
+        node.knx,
+    )
+
+
+def _reduce_graph_edge(edge: GraphEdge) -> tuple[type[GraphEdge], tuple[object, ...]]:
+    return GraphEdge, (edge.source, edge.target, edge.kind)
+
+
+def _reduce_semantic_edge(edge: SemanticEdge) -> tuple[type[SemanticEdge], tuple[object, ...]]:
+    return SemanticEdge, (edge.source, edge.target, edge.rule_id, edge.interpretation, edge.effect)
+
+
+def _analysis_payload(
+    view: ProjectView, analyses: frozenset[str], taxonomy: tuple[AddressTaxonomyEntry, ...]
+) -> bytes:
+    """Avoid per-object frozen-slot field introspection; retain every graph field.
+
+    The dispatch table is local to this pickler, never a global copyreg mutation.
+    Constructors restore the same immutable types in the isolated child.
+    """
+    stream = BytesIO()
+    pickler = pickle.Pickler(stream, protocol=5)
+    pickler.dispatch_table = {
+        GraphNode: _reduce_graph_node,
+        GraphEdge: _reduce_graph_edge,
+        SemanticEdge: _reduce_semantic_edge,
+    }
+    pickler.dump((view, analyses, taxonomy))
+    return stream.getvalue()
 
 
 async def process_project(
@@ -83,21 +128,33 @@ async def process_analysis(
     view: ProjectView,
     analyses: frozenset[str],
     taxonomy: tuple[AddressTaxonomyEntry, ...] = (),
+    *,
+    timings: dict[str, float | int] | None = None,
 ) -> dict[str, object]:
-    """Run CPU-bound aggregate analysis in the same restricted worker boundary."""
+    """Run analysis; optional private diagnostics contain only durations and byte counts.
+
+    stdin includes child startup/backpressure. Waiting ends at the first stdout
+    byte; stdout measures the remaining stream through EOF, including child exit.
+    Child durations overlap these parent intervals and must not be added to them.
+    """
+    if timings is not None:
+        timings.clear()
+    started = perf_counter()
     process = await asyncio.create_subprocess_exec(
         sys.executable,
         "-m",
         "mcpserver.loxone.project.worker",
-        "analysis",
+        "analysis-profile" if timings is not None else "analysis",
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         env={key: value for key, value in os.environ.items() if not key.startswith("MCPSERVER_")},
     )
+    spawned = perf_counter()
     assert process.stdin is not None and process.stdout is not None and process.stderr is not None
     stderr_task = asyncio.create_task(process.stderr.read())
-    payload = pickle.dumps((view, analyses, taxonomy), protocol=5)
+    payload = _analysis_payload(view, analyses, taxonomy)
+    serialized = perf_counter()
     if len(payload) > MAX_ANALYSIS_INPUT:
         process.kill()
         await process.wait()
@@ -108,20 +165,55 @@ async def process_analysis(
             process.stdin.write(payload)
             await process.stdin.drain()
             process.stdin.close()
-            result = bytearray()
+            sent = perf_counter()
+            result = bytearray(await process.stdout.read(1))
+            first_output = perf_counter()
             while chunk := await process.stdout.read(65536):
                 result.extend(chunk)
                 if len(result) > MAX_RESULT:
                     raise ProjectError("project_worker_limit")
+            received = perf_counter()
             if (code := await process.wait()) != 0:
                 raise ProjectError(
                     "project_worker_resource_limit" if code < 0 else "project_worker_failed"
                 )
+            exited = perf_counter()
             value = pickle.loads(result)
+            deserialized = perf_counter()
             if isinstance(value, ProjectError):
                 raise value
             if not isinstance(value, dict):
                 raise ProjectError("project_worker_invalid")
+            if timings is not None:
+                timings.update(
+                    process_start_seconds=spawned - started,
+                    pickle_dumps_seconds=serialized - spawned,
+                    stdin_transfer_seconds=sent - serialized,
+                    child_wait_seconds=first_output - sent,
+                    stdout_transfer_seconds=received - first_output,
+                    process_exit_seconds=exited - received,
+                    pickle_loads_seconds=deserialized - exited,
+                    total_seconds=deserialized - started,
+                    input_bytes=len(payload),
+                    output_bytes=len(result),
+                )
+                stderr = await stderr_task
+                marker_offset = stderr.rfind(_ANALYSIS_TIMING_MARKER)
+                frame_offset = marker_offset + len(_ANALYSIS_TIMING_MARKER)
+                child_timings = stderr[frame_offset : frame_offset + _ANALYSIS_TIMINGS.size]
+                if marker_offset >= 0 and len(child_timings) == _ANALYSIS_TIMINGS.size:
+                    timings.update(
+                        zip(
+                            (
+                                "child_stdin_seconds",
+                                "child_pickle_loads_seconds",
+                                "child_analysis_seconds",
+                                "child_pickle_dumps_seconds",
+                            ),
+                            _ANALYSIS_TIMINGS.unpack(child_timings),
+                            strict=True,
+                        )
+                    )
             return value
     except TimeoutError:
         raise ProjectError("project_worker_timeout") from None
@@ -134,17 +226,20 @@ async def process_analysis(
 
 def main() -> None:
     try:
-        if sys.argv[1] == "analysis":
+        if sys.argv[1] in {"analysis", "analysis-profile"}:
             if sys.platform == "linux":
                 import resource
 
                 resource.setrlimit(resource.RLIMIT_AS, (512 * 1024 * 1024, 512 * 1024 * 1024))
                 resource.setrlimit(resource.RLIMIT_CPU, (45, 45))
                 resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+            started = perf_counter()
             raw = sys.stdin.buffer.read(MAX_ANALYSIS_INPUT + 1)
+            received = perf_counter()
             if len(raw) > MAX_ANALYSIS_INPUT:
                 raise ProjectError("project_worker_limit")
             view, analyses, taxonomy = pickle.loads(raw)
+            deserialized = perf_counter()
             if (
                 not isinstance(view, ProjectView)
                 or not isinstance(analyses, frozenset)
@@ -153,9 +248,21 @@ def main() -> None:
             ):
                 raise ProjectError("project_worker_invalid")
             analysis_result = analyze_knx(view, analyses, taxonomy)
+            analyzed = perf_counter()
             payload = pickle.dumps(analysis_result, protocol=5)
+            serialized = perf_counter()
             if len(payload) > MAX_RESULT:
                 raise ProjectError("project_worker_limit")
+            if sys.argv[1] == "analysis-profile":
+                sys.stderr.buffer.write(
+                    _ANALYSIS_TIMING_MARKER
+                    + _ANALYSIS_TIMINGS.pack(
+                        received - started,
+                        deserialized - received,
+                        analyzed - deserialized,
+                        serialized - analyzed,
+                    )
+                )
             sys.stdout.buffer.write(payload)
             return
         limits = ProjectLimits(**json.loads(sys.argv[2]))

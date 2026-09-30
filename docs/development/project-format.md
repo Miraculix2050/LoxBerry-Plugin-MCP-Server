@@ -153,6 +153,27 @@ Source, decoder, parser and graph execute in a disposable subprocess with a
 45-second processing deadline, bounded IPC and Linux address-space/CPU/core-dump
 limits. The separate network download deadline remains 20 seconds.
 Only project bytes and limits cross into the worker, never authentication tokens.
+`process_analysis(..., timings=...)` optionally fills a private numeric diagnostic
+dictionary: process creation, input pickle, stdin write/drain, waiting until the
+first output byte, remaining stdout through EOF, process exit, result unpickle,
+total duration and input/output byte counts. Child stdin, input unpickle, analysis
+and result pickle durations are returned as four framed binary numbers on stderr
+only in this opt-in mode. Other stderr diagnostics are discarded; warnings do not
+invalidate the timing frame. The supplied dictionary is cleared at call entry,
+so failed calls or absent frames cannot retain measurements from earlier calls.
+No project content, selected-analysis names or identity
+is logged or added to MCP responses. Child durations overlap parent pipe/wait
+intervals; do not add them to the parent total. Process creation does not include
+all child imports, and stdin backpressure can include remaining child startup.
+The first-byte/EOF intervals are observable stream boundaries, not pure kernel
+transfer timings. Measure repeated real-project runs with target load before
+attributing a bottleneck; fewer pickle bytes alone do not establish a speedup.
+Analysis input uses a per-pickler dispatch table for `GraphNode`, `GraphEdge` and
+`SemanticEdge`. It passes all fields to the existing immutable constructors,
+avoiding repeated frozen-slot dataclass field inspection on serialization and
+restoration. It does not project or omit graph data, change global pickle
+registration, or persist pickle bytes. Source/snapshot workers keep their existing
+serialization. Both processes must use the same installed model code.
 The service serializes builds and publishes complete immutable snapshots. Its
 identity-isolated RAM cache is capped at eight entries and a conservative 128 MiB
 accounting budget. A cache hit still requires a fresh successful download.

@@ -24,6 +24,9 @@ extracted from the matching version heading.
   connection while preserving token material needed for remote revocation.
   Report ended OAuth authorization as `permission_denied` for queued operations.
 
+- Reduce analysis-worker graph pickle overhead while retaining all model fields
+  and process isolation; add opt-in, numeric-only private worker phase diagnostics.
+
 - Measure Event History chart CGI delivery through stdout flush and distinguish
   completed preparations from slow or failed requests in operational logs.
 

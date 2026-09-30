@@ -1,3 +1,7 @@
+import copyreg
+import pickle
+from dataclasses import fields, replace
+from itertools import combinations
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -15,7 +19,13 @@ from mcpserver.loxone.project.graph import (
 from mcpserver.loxone.project.mapping import ProjectView, map_runtime
 from mcpserver.loxone.project.parser import parse_project
 from mcpserver.loxone.project.taxonomy import AddressTaxonomyEntry
-from mcpserver.loxone.project.worker import process_analysis
+from mcpserver.loxone.project.worker import (
+    _analysis_payload,
+    _reduce_graph_edge,
+    _reduce_graph_node,
+    _reduce_semantic_edge,
+    process_analysis,
+)
 
 
 def _view(data: bytes, controls: tuple[SimpleNamespace, ...] = ()) -> ProjectView:
@@ -28,6 +38,125 @@ def _view(data: bytes, controls: tuple[SimpleNamespace, ...] = ()) -> ProjectVie
     return ProjectView(
         snapshot, map_runtime(snapshot, SimpleNamespace(last_modified="v", controls=controls))
     )
+
+
+def test_analysis_pickler_preserves_all_graph_fields_and_shared_nodes():
+    from mcpserver.loxone.project.graph import GraphEdge, SemanticEdge
+
+    view = _view(Path("tests/fixtures/project/knx-edge-variants.xml").read_bytes())
+    view = replace(view, snapshot=replace(view.snapshot, _logical_nodes=view.snapshot.graph.nodes))
+    for item, reducer in (
+        (view.snapshot.graph.nodes[0], _reduce_graph_node),
+        (GraphEdge("source", "target", "reference"), _reduce_graph_edge),
+        (
+            SemanticEdge("source", "target", "rule", "interpretation", "effect"),
+            _reduce_semantic_edge,
+        ),
+    ):
+        constructor, arguments = reducer(item)
+        assert arguments == tuple(getattr(item, field.name) for field in fields(item))
+        assert constructor(*arguments) == item
+    dispatch_before = copyreg.dispatch_table.copy()
+    payload = _analysis_payload(view, frozenset({"datatype_consistency"}), ())
+    restored, selected, taxonomy = pickle.loads(payload)
+    assert restored == view
+    for field in fields(view.snapshot):
+        assert getattr(restored.snapshot, field.name) == getattr(view.snapshot, field.name)
+    assert selected == frozenset({"datatype_consistency"}) and taxonomy == ()
+    assert restored.snapshot._logical_nodes[0] is restored.snapshot.graph.nodes[0]
+    assert copyreg.dispatch_table == dispatch_before
+    names = sorted(project_analysis.ANALYSES)
+    for size in range(1, len(names) + 1):
+        for combination in combinations(names, size):
+            analyses = frozenset(combination)
+            assert analyze_knx(restored, analyses) == analyze_knx(view, analyses)
+
+
+@pytest.mark.asyncio
+async def test_worker_phase_timings_are_numeric_private_and_preserve_results(caplog):
+    view = _view(b'<P><C Type="EIBsensor" U="private-id" Title="private-title"/></P>')
+    selected = frozenset({"datatype_consistency"})
+    timings = {}
+    ordinary = await process_analysis(view, selected)
+    measured = await process_analysis(view, selected, timings=timings)
+    assert measured == ordinary
+    assert set(timings) == {
+        "process_start_seconds",
+        "pickle_dumps_seconds",
+        "stdin_transfer_seconds",
+        "child_wait_seconds",
+        "stdout_transfer_seconds",
+        "process_exit_seconds",
+        "pickle_loads_seconds",
+        "total_seconds",
+        "input_bytes",
+        "output_bytes",
+        "child_stdin_seconds",
+        "child_pickle_loads_seconds",
+        "child_analysis_seconds",
+        "child_pickle_dumps_seconds",
+    }
+    assert all(type(value) in {int, float} and value >= 0 for value in timings.values())
+    assert timings["input_bytes"] > 0 and timings["output_bytes"] > 0
+    phases = sum(
+        timings[key]
+        for key in (
+            "process_start_seconds",
+            "pickle_dumps_seconds",
+            "stdin_transfer_seconds",
+            "child_wait_seconds",
+            "stdout_transfer_seconds",
+            "process_exit_seconds",
+            "pickle_loads_seconds",
+        )
+    )
+    assert phases == pytest.approx(timings["total_seconds"])
+    assert "private-id" not in caplog.text and "private-title" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_child_timings_survive_startup_warnings_and_replace_reused_values(monkeypatch):
+    monkeypatch.setenv("PYTHONWARNINGS", "invalid-warning-action")
+    timings = {"child_analysis_seconds": -1, "old_measurement": -1}
+    result = await process_analysis(
+        _view(b"<P/>"), frozenset({"datatype_consistency"}), timings=timings
+    )
+    assert isinstance(result, dict)
+    assert "old_measurement" not in timings
+    for name in (
+        "child_stdin_seconds",
+        "child_pickle_loads_seconds",
+        "child_analysis_seconds",
+        "child_pickle_dumps_seconds",
+    ):
+        assert timings[name] >= 0
+
+
+@pytest.mark.asyncio
+async def test_absent_child_timing_frame_does_not_reuse_previous_measurements(monkeypatch):
+    import mcpserver.loxone.project.worker as worker
+
+    # Only the parent is patched; the real child emits its normal frame.
+    monkeypatch.setattr(worker, "_ANALYSIS_TIMING_MARKER", b"missing-frame")
+    timings = {"child_analysis_seconds": -1}
+    await process_analysis(_view(b"<P/>"), frozenset({"datatype_consistency"}), timings=timings)
+    assert "total_seconds" in timings
+    assert not any(key.startswith("child_") and key != "child_wait_seconds" for key in timings)
+
+
+@pytest.mark.asyncio
+async def test_profiled_worker_retains_sanitized_failure_and_input_limit(monkeypatch):
+    import mcpserver.loxone.project.worker as worker
+    from mcpserver.loxone.project.models import ProjectError
+
+    timings = {"child_analysis_seconds": -1, "old_measurement": -1}
+    with pytest.raises(ProjectError, match="^project_worker_invalid$"):
+        await process_analysis(None, frozenset(), timings=timings)
+    assert not timings
+    monkeypatch.setattr(worker, "MAX_ANALYSIS_INPUT", 1)
+    with pytest.raises(ProjectError, match="^project_worker_limit$"):
+        await process_analysis(_view(b"<P/>"), frozenset(), timings=timings)
+    assert not timings
 
 
 def test_analysis_reports_project_local_datatype_and_usage_facts_deterministically():
