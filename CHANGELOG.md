@@ -5,6 +5,8 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Fail closed and drain the state-stream session when the initial state batch
+  times out; ready subscriptions no longer wait for the full timeout.
 - Serialize runtime session admission across families to enforce capacity during
   concurrent connects, and drain pending admission before shutdown completes.
 - Discard structure-refresh results from disconnected or replaced runtime records

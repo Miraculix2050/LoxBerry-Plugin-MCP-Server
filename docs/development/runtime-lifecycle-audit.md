@@ -70,3 +70,12 @@ complete #160. Device/Miniserver and browser acceptance are not claimed by these
 controlled-session tests. In-flight admission during shutdown is now covered.
 Direct control command/session ownership requires explicit additional evidence
 before a broader lifecycle claim.
+
+Initial readiness is also tested with a stream that never yields a batch. The
+audit found that a timed-out connection was previously published anyway, and
+ready batches unnecessarily waited for the full timeout. Initial establishment
+now waits for the first completed readiness/maintenance task, rejects missing
+readiness at the deadline, and drains all owned tasks and sessions on failure.
+The silent-stream regression checks an `asyncio.all_tasks()` baseline and no
+published record or retained family lock. The timeout controls the behavior under
+test, not race ordering.

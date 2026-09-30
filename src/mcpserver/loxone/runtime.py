@@ -1079,11 +1079,15 @@ class LoxoneRuntime:
         initial_state_wait = asyncio.create_task(record.initial_state_batch.wait())
         try:
             done, _pending = await asyncio.wait(
-                {initial_state_wait, record.task}, timeout=self._initial_state_timeout_seconds
+                {initial_state_wait, record.task},
+                timeout=self._initial_state_timeout_seconds,
+                return_when=asyncio.FIRST_COMPLETED,
             )
             if record.task in done and not record.initial_state_batch.is_set():
                 await record.task
                 raise RuntimeUnavailable("Miniserver state subscription failed")
+            if not record.initial_state_batch.is_set():
+                raise RuntimeUnavailable("Miniserver initial state timed out")
         except BaseException:
             if not record.task.done():
                 record.task.cancel()

@@ -101,6 +101,35 @@ async def test_normal_stream_end_during_read_marks_cached_state_stale() -> None:
 
 
 @pytest.mark.asyncio
+async def test_initial_state_timeout_does_not_publish_empty_live_connection() -> None:
+    owner = runtime()
+    owner._initial_state_timeout_seconds = 0.01
+    baseline = asyncio.all_tasks()
+
+    class SilentStream(Stream):
+        async def load_structure(self):
+            return structure()
+
+        async def state_events(self):
+            self.started.set()
+            await asyncio.Event().wait()
+            yield ()
+
+    stream = SilentStream()
+    owner.client.open_session = AsyncMock(return_value=stream)
+    try:
+        with pytest.raises(RuntimeUnavailable, match="initial state"):
+            await asyncio.wait_for(owner.snapshot(access()), 2)
+        assert stream.started.is_set()
+        assert stream.closed.is_set()
+        assert not owner._records
+        assert not owner._locks
+        assert not (asyncio.all_tasks() - baseline)
+    finally:
+        await owner.close()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("cleanup", ["idle", "capacity", "close"])
 async def test_cleanup_during_refresh_does_not_resurrect_cache(cleanup: str) -> None:
     await _cleanup_during_refresh(cleanup, check_cache=True)
