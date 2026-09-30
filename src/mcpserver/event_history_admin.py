@@ -482,28 +482,49 @@ def _chart_visible(
     return None
 
 
-def chart_prepare(payload: object) -> dict[str, Any]:
+def chart_prepare(
+    payload: object, *, timing: dict[str, float | int] | None = None
+) -> dict[str, Any]:
     """Freshly verify all selected sources with one service-owned discovery."""
+
+    def measured(phase: str, operation: Callable[[], Any]) -> Any:
+        started = time.perf_counter_ns()
+        try:
+            return operation()
+        finally:
+            if timing is not None:
+                timing[phase] = (time.perf_counter_ns() - started) / 1_000_000
 
     bridge = _bridge()
     sources = _chart_sources(payload)
-    config = bridge._config_store().load()
+    config = measured("config_load_ms", lambda: bridge._config_store().load())
     cache = _selector_cache(config)
     try:
-        document = cache.refresh(lambda: _selector_projection(config))
+        document = measured(
+            "selector_refresh_ms", lambda: cache.refresh(lambda: _selector_projection(config))
+        )
     except (TimeoutError, SelectorCacheError, OSError, ValueError) as exc:
         raise bridge.AdminError(
             "chart visibility is unavailable", code="temporarily_unavailable"
         ) from exc
-    current = bridge._config_store().load()
-    _require_same_visibility_context(config, current)
-    if _selector_cache(current).profile != cache.profile:
-        raise bridge.AdminError("Miniserver identity changed", code="stale_configuration")
-    visible = {source: _chart_visible(document, source) for source in sources}
+    def revalidate() -> tuple[PluginConfig, dict[tuple[str, str], Any]]:
+        current_config = bridge._config_store().load()
+        _require_same_visibility_context(config, current_config)
+        if _selector_cache(current_config).profile != cache.profile:
+            raise bridge.AdminError("Miniserver identity changed", code="stale_configuration")
+        visible_sources = {source: _chart_visible(document, source) for source in sources}
+        return current_config, visible_sources
+
+    current, visible = measured("revalidation_ms", revalidate)
+    if timing is not None:
+        timing["selected_sources"] = len(sources)
+        timing["discovered_controls"] = len(document.get("controls", ()))
     if any(names is None for names in visible.values()):
         raise bridge.AdminError("chart source is not visible", code="forbidden")
     try:
-        history_generation = _store(current).prepare_chart_read()
+        history_generation = measured(
+            "history_prepare_ms", lambda: _store(current).prepare_chart_read()
+        )
     except (OSError, ValueError, RuntimeError) as exc:
         raise bridge.AdminError(
             "local event history is unavailable", code="temporarily_unavailable"
