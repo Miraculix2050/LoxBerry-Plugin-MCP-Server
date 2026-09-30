@@ -12,7 +12,12 @@ from mcpserver.auth.provider import READ_SCOPE, StoredAccessToken
 from mcpserver.loxone.client import MiniserverEndpoint
 from mcpserver.loxone.events import StateEvent
 from mcpserver.loxone.models import Freshness, LoxoneIdentity, LoxoneStructure
-from mcpserver.loxone.runtime import LoxoneRuntime, RuntimeUnavailable, _ConnectionRecord
+from mcpserver.loxone.runtime import (
+    LoxoneRuntime,
+    RuntimeAuthorizationError,
+    RuntimeUnavailable,
+    _ConnectionRecord,
+)
 
 
 def access(family: str = "one") -> StoredAccessToken:
@@ -199,6 +204,40 @@ async def test_shutdown_drains_background_tasks_and_is_idempotent() -> None:
     assert all(record.task.done() for record in records)
     assert all(record.session.close_calls == 1 for record in records)
     assert not (asyncio.all_tasks() - baseline)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ending", ["revoke", "expiry"])
+async def test_queued_cached_snapshot_rechecks_access_before_pruning(ending: str) -> None:
+    checked = asyncio.Event()
+    authorized, clock = [True], [100.0]
+
+    async def validate(candidate):
+        valid = authorized[0] and clock[0] < candidate.expires_at
+        checked.set()
+        return valid
+
+    owner = runtime(validate_access=validate, structure_refresh_seconds=10**12)
+    await install(owner)
+    owner._prune_sessions = AsyncMock()
+    await owner._admission_lock.acquire()
+    call = asyncio.create_task(owner.snapshot(access()))
+    try:
+        await asyncio.wait_for(checked.wait(), 2)
+        if ending == "revoke":
+            authorized[0] = False
+        else:
+            clock[0] = 2_000_000_001
+        owner._admission_lock.release()
+        with pytest.raises(RuntimeAuthorizationError):
+            await asyncio.wait_for(call, 2)
+        owner._prune_sessions.assert_not_awaited()
+        assert "one" in owner._records
+    finally:
+        if owner._admission_lock.locked():
+            owner._admission_lock.release()
+        await asyncio.gather(call, return_exceptions=True)
+        await owner.close()
 
 
 @pytest.mark.asyncio

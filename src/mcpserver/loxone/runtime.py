@@ -969,6 +969,7 @@ class LoxoneRuntime:
         # Admission precedes family locks. Disconnect never takes admission, so
         # pruning cannot reverse the order while waiting for a family holder.
         async with self._admission_lock:
+            await self._require_access(access)
             if self._closed:
                 raise RuntimeUnavailable("Loxone runtime is closed")
             await self._prune_sessions(subject)
