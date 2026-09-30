@@ -241,8 +241,24 @@ the problem.
 Separate three questions: which contacts are referenced by visible monitors,
 which contacts feed configured consumers, and whether every physical opening
 has the correct contact. Monitor membership alone does not prove correct
-consumer wiring. Use only the existing discovery, description, state and
-Project Intelligence tools; no dedicated opening-contact analyzer is available.
+consumer wiring. Start with `loxone_analyze_opening_contacts` using an exact visible
+`scope_type` (`monitor`, `room`, `contact` or `consumer`) and `scope_uuid`. Supply
+additional known candidates through `candidate_contact_uuids` (at most 100 unique
+visible UUIDs); the tool does not establish their physical contact role. Enable
+`include_current_state` only when state alignment matters. Inspect each dimension
+of `completeness`, all warnings, omission counts and evidence IDs before conclusions.
+The analyzer covers retained monitor positions and the reviewed `AutoJalousie.Window`
+connector, not every possible consumer. `InputRef` uses an explicit resolved reference
+with a unique `AQ` projection; `Or.I1/I2 -> Q` uses separately marked derived rules.
+Unknown flow or limits prevent negative connection conclusions. Project unavailability
+still permits monitor-only evidence. State observation time is independent of the
+analysis timestamp and verified project marker. A `cross_assignment_review_candidate`
+compares an exact feeding source and another same-room non-feeding candidate;
+it never decides which physical opening is intended. Physical coverage remains
+`not_assessable`.
+
+Use the following released discovery, description, state and Project Intelligence
+tools to inspect the returned evidence or refine an incomplete bounded result:
 
 1. Find exact visible `WindowMonitor` controls with `loxone_find_controls`,
    following `next_cursor` with unchanged filters. Describe each selected UUID

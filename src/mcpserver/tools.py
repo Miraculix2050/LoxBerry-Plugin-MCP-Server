@@ -43,6 +43,7 @@ from mcpserver.loxone.event_history import (
     EventHistoryUnavailable,
 )
 from mcpserver.loxone.models import Control, Freshness, StateRecord
+from mcpserver.loxone.opening_contacts import OpeningScopeError, analyze_opening_contacts
 from mcpserver.loxone.presentation import (
     control_matches_query as _control_matches_query,
 )
@@ -710,7 +711,14 @@ class ProjectSignalUseObservationData(BaseModel):
     target: str
     rule_id: str
     interpretation: Literal[
-        "level", "value", "rising_edge", "falling_edge", "any_edge", "duration_sensitive"
+        "level",
+        "value",
+        "rising_edge",
+        "falling_edge",
+        "any_edge",
+        "duration_sensitive",
+        "logical_or",
+        "reference_projection",
     ]
     effect: Literal["toggle", "set_on", "set_off"] | None
 
@@ -974,6 +982,146 @@ class ToolEnvelope(BaseModel):
     observed_at: str
     stale: bool
     trace_id: str
+
+
+class OpeningStateData(BaseModel):
+    state_uuid: str | None
+    freshness: Literal["current", "stale", "unknown"]
+    observed_at: float | None = Field(description="State observation Unix time, not analysis time.")
+    vector_length: int | None
+    alignment: Literal["match", "mismatch", "unknown", "unavailable", "invalid"]
+    warnings: list[str]
+
+
+class OpeningItemData(WindowMonitorItemData):
+    state_value: str | None = Field(default=None, description="Uninterpreted numeric source token.")
+
+
+class OpeningMonitorData(BaseModel):
+    monitor_uuid: str
+    items: list[OpeningItemData]
+    summary: WindowMonitorSummaryData
+    state: OpeningStateData | None
+
+
+class OpeningContactData(BaseModel):
+    control_uuid: str
+    evidence_kinds: list[
+        Literal["direct_monitor_reference", "explicit_control_link", "caller_selected_candidate"]
+    ]
+    mapping_status: Literal["exact", "ambiguous", "unmapped", "unavailable"]
+
+
+class OpeningConsumerData(BaseModel):
+    control_uuid: str
+    connector_key: Literal["Window"]
+    mapping_status: Literal["exact", "ambiguous", "unmapped"]
+    connector_project_node_id: str | None
+
+
+class OpeningPositionData(BaseModel):
+    monitor_uuid: str
+    index: int
+
+
+class OpeningDuplicateData(BaseModel):
+    control_uuid: str
+    positions: list[OpeningPositionData]
+
+
+class OpeningConnectionData(BaseModel):
+    contact_uuid: str
+    consumer_uuid: str
+    evidence_kind: Literal["project_signal_path"]
+    evidence_ids: list[str]
+
+
+class OpeningFindingData(BaseModel):
+    finding_type: Literal[
+        "multiple_contact_sources",
+        "consumer_without_resolved_contact",
+        "cross_assignment_review_candidate",
+        "contact_feeds_multiple_consumers",
+        "monitored_without_supported_consumer",
+    ]
+    contact_uuids: list[str]
+    consumer_uuids: list[str]
+    evidence_ids: list[str]
+
+
+class OpeningNodeData(BaseModel):
+    project_node_id: str
+    kind: str
+    block_type: str | None
+    connector_key: str | None
+    parent_project_node_id: str | None
+    parent_block_type: str | None
+
+
+class OpeningEdgeData(BaseModel):
+    source: str
+    target: str
+    kind: Literal["signal", "reference", "derived_semantic"]
+    semantic_rule_id: str | None
+
+
+class OpeningEvidenceData(BaseModel):
+    evidence_id: str
+    nodes: list[OpeningNodeData]
+    edges: list[OpeningEdgeData]
+    complete: bool
+    warnings: list[str]
+
+
+class OpeningCompletenessData(BaseModel):
+    monitors: bool
+    mapping: bool
+    graph: bool
+    states: Literal["not_requested", "complete", "incomplete"]
+
+
+class OpeningCountsData(BaseModel):
+    resolved: int
+    partially_resolved: int
+    unresolved: int
+    mismatched: int
+    duplicate_references: int
+    truncated_monitors: int
+
+
+class OpeningAnalysisData(BaseModel):
+    analysis_version: Literal[1]
+    connector_rule_version: Literal[1]
+    scope_type: Literal["monitor", "room", "contact", "consumer"]
+    scope_uuid: str
+    physical_opening_coverage: Literal["not_assessable"]
+    monitors: list[OpeningMonitorData]
+    contacts: list[OpeningContactData]
+    consumers: list[OpeningConsumerData]
+    duplicates: list[OpeningDuplicateData]
+    connections: list[OpeningConnectionData]
+    findings: list[OpeningFindingData]
+    evidence: list[OpeningEvidenceData]
+    project_fingerprint: str | None
+    project_model_version: int | None
+    project_marker: str | None = Field(
+        description="Verified project marker, not an observation time."
+    )
+    structure_last_modified: str
+    trace_starts: int
+    monitors_omitted: int
+    consumers_omitted: int
+    contacts_omitted: int
+    response_units_omitted: int
+    connections_omitted: int
+    findings_omitted: int
+    warnings: list[str]
+    completeness: OpeningCompletenessData
+    counts: OpeningCountsData = Field(description="Counts cover inspected retained positions only.")
+
+
+class OpeningAnalysisEnvelope(ToolEnvelope):
+    data: OpeningAnalysisData | ErrorData
 
 
 class SystemStatusEnvelope(ToolEnvelope):
@@ -3367,10 +3515,224 @@ def _weather_point(value: object, type_texts: dict[int, str]) -> dict[str, objec
     }
 
 
+def _fit_opening_analysis(envelope: OpeningAnalysisEnvelope) -> bool:
+    """Remove whole units and every dependent reference at the response boundary."""
+    data = envelope.data
+    if not isinstance(data, OpeningAnalysisData):
+        return True
+    while len(envelope.model_dump_json().encode("utf-8")) > PROJECT_RESPONSE_MAX_BYTES:
+        if "max_response_bytes" not in data.warnings:
+            data.warnings.append("max_response_bytes")
+            envelope.warnings = data.warnings.copy()
+            data.completeness.monitors = False
+            data.completeness.graph = False
+            if data.completeness.states != "not_requested":
+                data.completeness.states = "incomplete"
+            retained_findings = [
+                f
+                for f in data.findings
+                if f.finding_type
+                in {"multiple_contact_sources", "contact_feeds_multiple_consumers"}
+            ]
+            data.findings_omitted += len(data.findings) - len(retained_findings)
+            data.findings = retained_findings
+        if data.monitors:
+            count = max(1, len(data.monitors) // 2)
+            removed_ids = {m.monitor_uuid for m in data.monitors[-count:]}
+            del data.monitors[-count:]
+            data.monitors_omitted += count
+            data.duplicates = [
+                d
+                for d in data.duplicates
+                if all(p.monitor_uuid not in removed_ids for p in d.positions)
+            ]
+        elif data.findings:
+            count = max(1, len(data.findings) // 2)
+            del data.findings[-count:]
+            data.findings_omitted += count
+        elif data.evidence:
+            count = max(1, len(data.evidence) // 2)
+            removed_evidence = {e.evidence_id for e in data.evidence[-count:]}
+            del data.evidence[-count:]
+            prior_connections = len(data.connections)
+            data.connections = [
+                c for c in data.connections if not removed_evidence.intersection(c.evidence_ids)
+            ]
+            data.connections_omitted += prior_connections - len(data.connections)
+            data.findings = [
+                f for f in data.findings if not removed_evidence.intersection(f.evidence_ids)
+            ]
+        elif data.contacts:
+            count = max(1, len(data.contacts) // 2)
+            removed_contacts = {c.control_uuid for c in data.contacts[-count:]}
+            del data.contacts[-count:]
+            data.contacts_omitted += count
+            data.connections = [
+                c for c in data.connections if c.contact_uuid not in removed_contacts
+            ]
+            data.completeness.mapping = False
+        elif data.consumers:
+            count = max(1, len(data.consumers) // 2)
+            removed_consumers = {c.control_uuid for c in data.consumers[-count:]}
+            del data.consumers[-count:]
+            data.connections = [
+                c for c in data.connections if c.consumer_uuid not in removed_consumers
+            ]
+            data.consumers_omitted += count
+            data.completeness.mapping = False
+        else:
+            return False
+        data.response_units_omitted += count
+    return True
+
+
+def register_opening_contact_tool(server: FastMCP, runtime: LoxoneRuntime | None) -> None:
+    @server.tool(
+        name="loxone_analyze_opening_contacts",
+        description=(
+            "Analyze bounded visible WindowMonitor references and exact contact paths to "
+            "AutoJalousie.Window. Additional UUIDs are caller-selected candidates, never "
+            "name-inferred contact roles. Findings are configuration facts or review "
+            "candidates; physical opening coverage is not assessable. Requires loxone:read."
+        ),
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False),
+        structured_output=True,
+    )
+    async def analyze_contacts(
+        scope_type: Annotated[
+            Literal["monitor", "room", "contact", "consumer"],
+            Field(
+                description="Exact visible monitor, room, candidate contact or supported consumer."
+            ),
+        ],
+        scope_uuid: Annotated[
+            str,
+            Field(
+                min_length=1,
+                max_length=200,
+                description="Exact visible scope UUID; names are never identities.",
+            ),
+        ],
+        candidate_contact_uuids: Annotated[
+            list[Annotated[str, Field(min_length=1, max_length=200)]] | None,
+            Field(
+                max_length=100,
+                description="Up to 100 additional visible caller-selected candidate UUIDs.",
+            ),
+        ] = None,
+        include_current_state: Annotated[
+            bool,
+            Field(
+                description="Include cached windowStates by original index and separate freshness."
+            ),
+        ] = False,
+        max_depth: Annotated[
+            int, Field(ge=1, le=16, description="Maximum directed trace depth.")
+        ] = 6,
+        max_nodes: Annotated[
+            int,
+            Field(
+                ge=1,
+                le=200,
+                description="Maximum nodes and edges per trace; at most 200 trace starts per call.",
+            ),
+        ] = 100,
+    ) -> OpeningAnalysisEnvelope:
+        candidate_contact_uuids = candidate_contact_uuids or []
+        if len(candidate_contact_uuids) > 100 or len(set(candidate_contact_uuids)) != len(
+            candidate_contact_uuids
+        ):
+            return _error(
+                OpeningAnalysisEnvelope,
+                "invalid_input",
+                "Candidate UUIDs must be unique and bounded",
+            )
+        try:
+            if runtime is None:
+                raise RuntimeUnavailable("the service is not configured")
+            access = _access()
+            async with runtime.call_slot(access):
+                try:
+                    snapshot = await runtime.snapshot(access, fresh_visibility=True)
+                except RuntimeUnavailable:
+                    if runtime.projects is not None:
+                        runtime.projects.invalidate(access.family_id)
+                    raise
+                # Validate the scope before any project read or state access.
+                analyze_opening_contacts(
+                    snapshot.structure,
+                    None,
+                    scope_type=scope_type,
+                    scope_uuid=scope_uuid,
+                    candidate_contact_uuids=candidate_contact_uuids,
+                )
+                project = None
+                project_warning = None
+                if runtime.projects is not None:
+                    try:
+                        project = await runtime.projects.query(access, snapshot)
+                    except ProjectError as exc:
+                        if str(exc) in {"project_access_denied", "project_identity_mismatch"}:
+                            raise
+                        project_warning = _project_error_code(exc)[0]
+                data = analyze_opening_contacts(
+                    snapshot.structure,
+                    project,
+                    scope_type=scope_type,
+                    scope_uuid=scope_uuid,
+                    candidate_contact_uuids=candidate_contact_uuids,
+                    include_current_state=include_current_state,
+                    max_depth=max_depth,
+                    max_nodes=max_nodes,
+                    state_reader=lambda uuid: runtime.state(snapshot, uuid),
+                )
+                if project_warning is not None:
+                    data["warnings"].append(f"project_{project_warning}")
+                if project is not None and runtime.projects is not None:
+                    await runtime.projects.authorize(access)
+                # Recheck the shared read authorization even when project access was denied.
+                await runtime._require_access(access)
+            envelope = _result(
+                OpeningAnalysisEnvelope,
+                data,
+                stale=not snapshot.connected
+                or (
+                    include_current_state
+                    and any(m["state"]["freshness"] != "current" for m in data["monitors"])
+                ),
+                warnings=data["warnings"].copy(),
+            )
+            if not _fit_opening_analysis(envelope):
+                return _error(
+                    OpeningAnalysisEnvelope,
+                    "temporarily_unavailable",
+                    "Analysis exceeds the response limit",
+                )
+            assert isinstance(envelope.data, OpeningAnalysisData)
+            envelope.warnings = envelope.data.warnings.copy()
+            return envelope
+        except OpeningScopeError:
+            return _error(
+                OpeningAnalysisEnvelope, "not_found", "Scope or candidate is not accessible"
+            )
+        except PermissionError:
+            return _error(
+                OpeningAnalysisEnvelope,
+                "unauthenticated",
+                "Authentication with loxone:read is required",
+            )
+        except (ProjectError, ProjectQueryError) as exc:
+            code, message, diagnostic_code = _project_error_code(exc)
+            return _error(OpeningAnalysisEnvelope, code, message, diagnostic_code=diagnostic_code)
+        except RuntimeUnavailable as exc:
+            return _error(OpeningAnalysisEnvelope, "temporarily_unavailable", str(exc))
+
+
 def register_read_tools(
     server: FastMCP, runtime: LoxoneRuntime | None, *, control_enabled: bool = False
 ) -> None:
     """Publish the stable Loxone read-only tools."""
+    register_opening_contact_tool(server, runtime)
     annotations = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
     cursors = _CursorCodec()
 

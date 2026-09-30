@@ -35,6 +35,27 @@ _FULL_PATTERNS: Final = (
 _TEST_GROUPS: Final = (
     (
         (
+            "src/mcpserver/loxone/opening_contacts.py",
+            "src/mcpserver/loxone/project/**",
+            "tests/fixtures/project/**",
+        ),
+        (
+            "tests/test_opening_contacts.py",
+            "tests/test_project_access.py",
+            "tests/test_project_analysis.py",
+            "tests/test_project_coverage.py",
+            "tests/test_project_graph.py",
+            "tests/test_project_knx_semantics.py",
+            "tests/test_project_mapping.py",
+            "tests/test_project_query.py",
+            "tests/test_project_tools.py",
+            "tests/test_project_worker.py",
+            "tests/test_schema_reference.py",
+            "tests/test_window_monitor.py",
+        ),
+    ),
+    (
+        (
             ".gitattributes",
             "bin/**",
             "config/apache/**",

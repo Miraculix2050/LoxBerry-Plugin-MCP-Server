@@ -681,7 +681,7 @@ def test_skill_opening_contact_review_preserves_evidence_boundaries(required_evi
     normalized = " ".join(workflow.split())
     for evidence in required_evidence:
         assert evidence in normalized
-    assert "loxone_analyze_opening_contacts" not in workflow
+    assert "loxone_analyze_opening_contacts" in workflow
     assert "loxone_analyze_window_monitor" not in workflow
 
 

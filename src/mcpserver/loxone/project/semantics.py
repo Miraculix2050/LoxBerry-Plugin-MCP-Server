@@ -82,6 +82,12 @@ class SignalUseRule:
 # These rules encode only compact, independently stated connector behaviour.
 # They do not package Loxone documentation and must remain backed by fixtures.
 _SIGNAL_USE_RULES: dict[str, tuple[SignalUseRule, ...]] = {
+    # Project keys I1/I2/Q were observed in the authorized opening-contact audit.
+    # Loxone's OR documentation calls the output O; that UI label is not an XML alias.
+    "Or": (
+        SignalUseRule("or_i1_q_v1", "I1", "Q", "logical_or"),
+        SignalUseRule("or_i2_q_v1", "I2", "Q", "logical_or"),
+    ),
     "EIBPush": (
         SignalUseRule("eib_push_toggle", "Tg", "O", "rising_edge", "toggle"),
         SignalUseRule("eib_push_on", "On", "O", "rising_edge", "set_on"),
