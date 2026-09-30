@@ -36,6 +36,36 @@ never establish identity, contact roles, or physical correctness.
 
 ### Opening-contact assignment review
 
+`loxone_analyze_opening_contacts` joins monitor references and exact consumer paths
+in one bounded read-only call (`loxone:read`). Select `scope_type=monitor|room|contact|consumer`
+and an exact visible `scope_uuid`. Additional candidates are at most 100 unique
+visible `candidate_contact_uuids`; their physical contact role is not confirmed.
+`include_current_state=false` is the default. Trace limits default to depth 6 and
+100 nodes/edges, with maxima of 16 and 200. Each call inspects at most 100 monitors,
+100 contact candidates, 100 consumers and 200 trace starts; responses stay within
+65,536 bytes. At most 200 connections and 200 findings are materialized; additional
+records are counted separately and prevent a complete result. Check separate monitor,
+mapping, graph and state completeness, warnings and omission counts.
+Counts cover inspected retained positions, not the
+entire installation. Duplicates use identical reference UUIDs. Without project
+access, monitor findings remain available. Requested states expose original indices,
+vector length and separate state freshness; `state_value` is an uninterpreted numeric
+source token. State time is Unix time, independent of the analysis timestamp and
+verified project marker.
+
+The first consumer rule is exactly `AutoJalousie.Window`; `Dwc` is not assumed to be
+an alias. `Or.I1/I2 -> Q` and projection of a resolved explicit `InputRef` reference
+onto a unique `AQ` are marked derived rules. Intermediate logic, lockout sources
+and connector context remain visible in evidence. Unknown semantics, ambiguity
+and reached limits prevent negative connection conclusions.
+A `cross_assignment_review_candidate` compares a proven feeding contact with another
+non-feeding same-room candidate; it does not determine physical assignment.
+`physical_opening_coverage` remains `not_assessable`. Monitor scope inspects retained
+entries; room scope selects monitors by monitor/item room and candidates by exact
+item/control rooms. Contact scope finds direct or explicitly linked monitor membership;
+consumer scope uses its room for monitor context. Room and consumer scopes also
+restrict consumers; monitor and contact scopes compare visible supported consumers.
+
 The canonical skill separates monitor coverage, configured consumer wiring and
 physical opening coverage. Find exact visible `WindowMonitor` controls, follow
 discovery pages, and use `loxone_describe_control(view="full")`. Keep direct item
@@ -61,8 +91,8 @@ edge endpoints. Preserve `InputRef`, `Or`, lockout controls and connector names.
 Containment and shared reachability are not signal flow; do not invent internal
 edges through unmodeled blocks. Check mapping ambiguity, `truncated_fields`,
 trace truncation, unresolved relationships and freshness. Missing paths in
-incomplete evidence do not prove missing wiring. No dedicated opening-contact
-analyzer is currently available; this workflow uses existing tools.
+incomplete evidence do not prove missing wiring. This manual workflow supplements
+the analyzer evidence and helps refine incomplete results.
 
 Generic example: `roof-window contact -> InputRef -> Or with a lockout switch ->
 blind named window.Window`, while another same-room window contact is monitored.
@@ -132,7 +162,7 @@ separate KNX signal-use observations, while trace returns separately marked deri
 and bounded `knx_to_loxone`, `loxone_to_knx`, or `knx_to_knx` paths. Unknown block or connector
 behaviour is not guessed. These are static project paths, not evidence that a bus telegram or
 historical state change caused an action.
-`loxone_analyze_project` version 7 summarizes bounded project-local KNX evidence: address and
+`loxone_analyze_project` version 8 summarizes bounded project-local KNX evidence: address and
 source-name patterns, raw datatype reuse, reviewed signal-use differences, exact runtime-mapping
 context, local peer and graph outliers, path counts, and endpoints without direct configured
 wiring. Graph outliers identify raw edge degree and show signal, reference, and separately derived

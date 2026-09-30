@@ -78,6 +78,14 @@ interpretation such as `level`, `value`, `rising_edge`, or
 Unknown block types, connector keys, duplicate connector keys, and incomplete
 rules create no derived edge.
 
+Model version 8 additionally models the observed `Or.I1/I2 -> Q` project keys
+(`or_i1_q_v1`, `or_i2_q_v1`, `logical_or`) and an exact resolved `InputRef` block
+reference projected onto its unique `AQ` connector (`input_ref_aq_v1`,
+`reference_projection`). The latter preserves the explicit source-reference edge
+and separately marks the reference-output projection; it is not a containment edge.
+The anonymized opening-contact fixture records the reviewed structural forms.
+These rules do not introduce aliases for UI labels such as `O` or `Dwc`.
+
 One KNX endpoint can reach several derived edges and therefore has several
 usage observations. A trace may classify a bounded path as `knx_to_loxone`,
 `loxone_to_knx`, or `knx_to_knx` only when its boundary endpoints are confirmed
@@ -86,7 +94,7 @@ reachability, not a physical device role, bus telegram, or historical cause.
 
 ## KNX project analysis
 
-`loxone_analyze_project` version 7 returns bounded, deterministic project-local
+`loxone_analyze_project` version 8 returns bounded, deterministic project-local
 evidence; it never grades a KNX installation. It aggregates canonical-address
 and source-name patterns, conflicting raw `EIBType` values on one group address,
 reviewed signal-use observations, exact runtime-mapping context, local peer and

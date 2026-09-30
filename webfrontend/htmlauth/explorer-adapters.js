@@ -15,6 +15,7 @@
       'loxone_list_global_metadata', 'loxone_get_weather', 'loxone_get_project_status',
       'loxone_find_project_objects', 'loxone_describe_project_object',
       'loxone_trace_project_logic', 'loxone_analyze_project',
+      'loxone_analyze_opening_contacts',
     ]},
     {id: 'loxoneHistory', scopes: ['loxone:read', 'loxone:history'], names: [
       'loxone_get_statistics', 'loxone_get_control_history', 'loxone_get_event_history',

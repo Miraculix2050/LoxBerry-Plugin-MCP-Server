@@ -276,6 +276,10 @@ def _build_semantic_edges(project: ParsedProject, local: dict[int, GraphNode]) -
 
     result: set[SemanticEdge] = set()
     children: dict[int, list[int]] = defaultdict(list)
+    source_ids: dict[str, list[GraphNode]] = defaultdict(list)
+    for node in local.values():
+        if node.source_id:
+            source_ids[normalize_id(node.source_id)].append(node)
     for child_index, child in enumerate(project.elements):
         if child.parent is not None:
             children[child.parent].append(child_index)
@@ -283,8 +287,6 @@ def _build_semantic_edges(project: ParsedProject, local: dict[int, GraphNode]) -
         if element.tag != "C":
             continue
         rules = signal_use_rules(element.value("Type"))
-        if not rules:
-            continue
         connectors: dict[str, list[GraphNode]] = defaultdict(list)
         for child_index in children.get(index, []):
             child = project.elements[child_index]
@@ -294,6 +296,23 @@ def _build_semantic_edges(project: ParsedProject, local: dict[int, GraphNode]) -
             key = child.value("K")
             if connector is not None and key is not None:
                 connectors[key].append(connector)
+        # Observed InputRef: explicit Ref to one source block, with one AQ output.
+        # This projects the explicit reference onto that output, not containment
+        # or an arbitrary internal input/output relationship. Unknown references
+        # and duplicated AQ keys cannot acquire this relationship.
+        if element.value("Type") == "InputRef" and element.value("Ref"):
+            referred = source_ids.get(normalize_id(element.value("Ref")), [])
+            outputs = connectors.get("AQ", [])
+            if len(referred) == 1 and referred[0].kind == "block" and len(outputs) == 1:
+                result.add(
+                    SemanticEdge(
+                        local[index].key,
+                        outputs[0].key,
+                        "input_ref_aq_v1",
+                        "reference_projection",
+                        None,
+                    )
+                )
         for rule in rules:
             sources = connectors.get(rule.input_key, [])
             targets = connectors.get(rule.output_key, [])
@@ -519,7 +538,7 @@ def build_snapshot(
     )
     return ProjectSnapshot(
         bundle.fingerprint,
-        7,
+        8,
         tuple(projects),
         graph,
         _source_diagnostics(graph, tuple(anomalies)),

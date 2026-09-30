@@ -473,6 +473,7 @@ def test_exact_default_read_only_tools_are_published() -> None:
     tools = response.json()["result"]["tools"]
     assert [tool["name"] for tool in tools] == [
         "loxone_get_skill_guide",
+        "loxone_analyze_opening_contacts",
         "loxone_get_system_status",
         "loxone_get_structure_overview",
         "loxone_list_rooms",

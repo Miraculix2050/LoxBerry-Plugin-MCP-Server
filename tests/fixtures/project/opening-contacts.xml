@@ -1,0 +1,14 @@
+<P>
+  <C Type="EIBsensor" U="00000000-0000-0000-0000-000000000001"><Co K="AQ" U="contact-output"/></C>
+  <C Type="EIBsensor" U="00000000-0000-0000-0000-000000000002"><Co K="AQ" U="other-output"/></C>
+  <C Type="InputRef" U="reference" Ref="00000000-0000-0000-0000-000000000001"><Co K="AQ" U="reference-output"/></C>
+  <C Type="PushButton" U="lockout"><Co K="Q" U="lockout-output"/></C>
+  <C Type="Or" U="or">
+    <Co K="I1" U="or-input-1"><In Input="reference-output"/></Co>
+    <Co K="I2" U="or-input-2"><In Input="lockout-output"/></Co>
+    <Co K="Q" U="or-output"/>
+  </C>
+  <C Type="AutoJalousie" U="00000000-0000-0000-0000-000000000003">
+    <Co K="Window" U="window-input"><In Input="or-output"/></Co>
+  </C>
+</P>

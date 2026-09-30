@@ -1,5 +1,12 @@
 # Tool schema reference
 
+`loxone_analyze_opening_contacts` publishes a bounded read-only join of retained
+WindowMonitor references, exact runtime mappings and reviewed `AutoJalousie.Window`
+paths. Its schema separates monitor/item diagnostics, direct/link/caller provenance,
+connections, neutral findings, directed graph evidence, per-dimension completeness,
+omissions and optional state alignment. Unknown internal flow and bounded evidence
+never establish an absent connection; physical coverage is always `not_assessable`.
+
 The full `loxone_describe_control` schema includes additive
 `capabilities.model.window_monitor_summary` collection counts and fixed diagnostics.
 Its `returned` count includes malformed retained positions; `total` and `omitted`

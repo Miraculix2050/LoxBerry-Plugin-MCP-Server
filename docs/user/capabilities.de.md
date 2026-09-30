@@ -40,6 +40,39 @@ oder die physische Richtigkeit.
 
 ### Prüfung der Öffnungskontakt-Zuordnung
 
+`loxone_analyze_opening_contacts` verbindet Monitorreferenzen mit exakten
+Verbraucherpfaden in einem begrenzten Nur-Lese-Aufruf (`loxone:read`). Wählen Sie
+`scope_type=monitor|room|contact|consumer` und eine exakte sichtbare `scope_uuid`.
+Zusätzliche Kandidaten sind bis zu 100 eindeutige sichtbare `candidate_contact_uuids`;
+ihre physische Kontaktrolle wird nicht bestätigt. `include_current_state=false`
+ist der Standard. Die Trace-Grenzen sind standardmäßig Tiefe 6 und 100 Knoten/Kanten,
+maximal 16 und 200. Ein Aufruf untersucht höchstens 100 Monitore, 100 Kontaktkandidaten,
+100 Verbraucher und 200 Trace-Starts; die Antwort bleibt unter 65.536 Bytes.
+Höchstens 200 Verbindungen und 200 Befunde werden materialisiert; weitere Einträge
+werden getrennt gezählt und verhindern ein vollständiges Ergebnis.
+Prüfen Sie getrennte Vollständigkeit für Monitore, Mapping, Graph und Zustände,
+Warnungen und Auslassungszahlen. Zähler gelten für untersuchte erhaltene Positionen,
+nicht für die gesamte Installation. Duplikate beruhen auf identischen Referenz-UUIDs.
+Ohne Projektzugriff bleiben Monitorbefunde verfügbar. Angeforderte Zustände melden
+Originalindizes, Vektorlänge und separate Zustandsfrische; `state_value` ist ein
+uninterpretiertes numerisches Quelltoken. Die Zustandszeit ist eine Unix-Zeit und
+unabhängig von der Analysezeit und dem verifizierten Projektmarker.
+
+Die erste Verbraucherregel ist exakt `AutoJalousie.Window`; `Dwc` wird nicht als
+Alias angenommen. `Or.I1/I2 -> Q` und die Projektion einer aufgelösten expliziten
+`InputRef`-Referenz auf einen eindeutigen `AQ` sind markierte abgeleitete Regeln.
+Zwischenlogik, Sperrquellen und Anschlusskontext bleiben in den Belegen sichtbar.
+Unbekannte Semantik, Mehrdeutigkeit und erreichte Grenzen verhindern negative
+Verbindungsaussagen. Ein `cross_assignment_review_candidate` vergleicht einen
+belegt speisenden Kontakt mit einem weiteren nicht speisenden Kandidaten desselben
+Raums; er entscheidet keine physische Zuordnung. `physical_opening_coverage`
+bleibt `not_assessable`. Monitorumfang untersucht dessen erhaltene Einträge;
+Raumumfang wählt Monitore über Monitor-/Eintragsraum und Kandidaten über exakte
+Eintrags-/Controlräume. Kontaktumfang findet direkte oder explizit verlinkte
+Monitorzuordnungen; Verbraucherumfang verwendet dessen Raum als Monitorkontext.
+Raum- und Verbraucherumfang begrenzen auch die Verbraucher, Monitor- und
+Kontaktumfang vergleichen die sichtbaren unterstützten Verbraucher.
+
 Der kanonische Skill trennt Monitorabdeckung, konfigurierte Verbraucherverdrahtung
 und physische Öffnungsabdeckung. Suchen Sie exakte sichtbare `WindowMonitor`-Controls,
 verfolgen Sie Discovery-Seiten und verwenden Sie `loxone_describe_control(view="full")`.
@@ -67,8 +100,8 @@ Sperrschalter und Anschlussnamen. Hierarchie und gemeinsame Erreichbarkeit sind
 kein Signalfluss; erfinden Sie keine internen Kanten durch nicht modellierte
 Bausteine. Prüfen Sie mehrdeutige Mappings, `truncated_fields`, Trace-Begrenzungen,
 ungelöste Beziehungen und Aktualität. Fehlende Pfade bei unvollständiger Evidenz
-beweisen keine fehlende Verdrahtung. Ein dedizierter Öffnungskontakt-Analyzer ist
-derzeit nicht verfügbar; dieser Ablauf verwendet bestehende Tools.
+beweisen keine fehlende Verdrahtung. Dieser manuelle Ablauf ergänzt die Belege
+des Analyzers und hilft beim Verfeinern unvollständiger Ergebnisse.
 
 Generisches Beispiel: `Dachfensterkontakt -> InputRef -> Or mit Sperrschalter ->
 als Fenster benannte Jalousie.Window`, während ein anderer Fensterkontakt desselben
@@ -140,7 +173,7 @@ mehrere getrennte KNX-Signalnutzungsbeobachtungen. Trace liefert getrennt markie
 Connectorkanten sowie begrenzte Pfade `knx_to_loxone`, `loxone_to_knx` oder `knx_to_knx`.
 Unbekanntes Block- oder Connector-Verhalten wird nicht geraten. Diese Ergebnisse beschreiben
 statische Projektpfade, keine Bus-Telegramme und keine historische Ursache einer Aktion.
-`loxone_analyze_project` Version 7 fasst begrenzte, projektlokale KNX-Evidenz zusammen:
+`loxone_analyze_project` Version 8 fasst begrenzte, projektlokale KNX-Evidenz zusammen:
 Adress- und Quellnamensmuster, Wiederverwendung von Rohdatentypen, geprüfte Unterschiede der
 Signalnutzung, Kontext aus exakten Runtime-Mappings, lokale Peer- und Graph-Ausreißer,
 Pfadzähler und Endpunkte ohne direkte konfigurierte Verdrahtung. Graph-Ausreißer benennen den
