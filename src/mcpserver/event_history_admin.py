@@ -507,6 +507,7 @@ def chart_prepare(
         raise bridge.AdminError(
             "chart visibility is unavailable", code="temporarily_unavailable"
         ) from exc
+
     def revalidate() -> tuple[PluginConfig, dict[tuple[str, str], Any]]:
         current_config = bridge._config_store().load()
         _require_same_visibility_context(config, current_config)

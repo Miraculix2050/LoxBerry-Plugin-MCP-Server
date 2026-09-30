@@ -6,6 +6,7 @@ use CGI;
 use HTML::Template;
 use HTTP::Tiny;
 use IPC::Open3;
+use IO::Handle;
 use JSON::PP qw(encode_json decode_json);
 use Symbol qw(gensym);
 use Time::HiRes qw(clock_gettime CLOCK_MONOTONIC);
@@ -46,6 +47,7 @@ sub reply {
         -status => $status, headers());
     print $body;
     if (($q->{action} // '') eq 'event_history_chart_prepare') {
+        STDOUT->flush or die "Cannot flush CGI response: $!";
         my $duration_ms = (clock_gettime(CLOCK_MONOTONIC) - $started) * 1000;
         my $bytes = length($body);
         my $log = LoxBerry::Log->new(name => 'admin-ui', package => $lbpplugindir,
@@ -193,7 +195,8 @@ if (($q->{action} // '') ne '') {
                 addtime => 1);
             $log->INF(sprintf(
                 'component=event_history_chart request_id=%s action=%s outcome=%s code=%s duration_ms=%.1f',
-                $request_id, $action, ($result->{ok} ? 'slow' : 'failed'), $code,
+                $request_id, $action,
+                (!$result->{ok} ? 'failed' : $duration_ms >= 5000 ? 'slow' : 'completed'), $code,
                 $duration_ms,
             )) if $log;
         }

@@ -222,7 +222,7 @@ def test_chart_prepare_phase_diagnostics_are_value_free(tmp_path, monkeypatch):
         "selected_sources",
         "discovered_controls",
     }
-    assert all(isinstance(value, (int, float)) and value >= 0 for value in timing.values())
+    assert all(isinstance(value, int | float) and value >= 0 for value in timing.values())
     diagnostics = repr(timing)
     for private_value in (*SOURCE, "Visible", "Living room", "private-profile-marker"):
         assert private_value not in diagnostics
