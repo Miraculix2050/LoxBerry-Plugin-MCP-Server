@@ -24,8 +24,10 @@ each case at least five times.
 
 For each source count:
 
-1. Make one cold request after restarting only the test plugin service. Record
-   each fixed timing phase and the resource fields from the LoxBerry plugin log.
+1. Restart only the test plugin service, wait for `/healthz`, then use a fixed
+   ten-second readiness interval before the first request. Record it as cold
+   after service restart, not as a cold operating-system or filesystem cache.
+   Record each fixed timing phase and the resource fields from the plugin log.
 2. Make five warm requests in sequence without restarting the service or
    changing configuration. Record the same fields for every request.
 3. Repeat the set once while the usual competing workload is present and once
@@ -40,5 +42,54 @@ through the page itself by selecting the same source count and reopening the
 chart view. Use the resulting log entries with their request IDs; do not copy
 request payloads into notes. Compare the measured `selector_refresh` phase to
 the previous 6–8 s baseline, and report cold/warm and idle/loaded results
-separately. This repository environment has no configured LoxBerry target, so
-these device measurements remain to be collected there.
+separately. A fresh CGI/Python process is started for every request; warm here
+means a running service and existing selector state, not a reused interpreter.
+Correlate all phases to the same CGI request ID, retain failed attempts separately,
+and require all six phases before accepting a sample.
+
+## Reserved target measurements on 2026-09-30
+
+Instrumented revision: `eaa4f858`. A focused, hash-verified deployment passed
+with preserved file ownership/modes, a service restart, and `/healthz`. The
+exclusive reservation remained valid throughout 24 accepted CGI subprocess
+requests: one cold request and five warm requests for each of one to four sources.
+Each sample was matched to its own CGI process/request ID and contained all six phases.
+Three sources were already recorded; the fourth was freshly visible but not recorded.
+No recording policy or history values were changed. Two preliminary series
+encountered `internal_error` and were excluded; accepted series used the
+fixed ten-second readiness interval after health. This is local CGI/pipe evidence,
+not Apache forwarding or browser receipt evidence.
+
+Values below are milliseconds; warm entries are median (minimum-maximum), `n=5`.
+
+| Sources | Cold selector refresh | Warm selector refresh | Cold CGI process total | Warm CGI process total |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 7193.9 | 7012.0 (6388.5-7258.9) | 10476.1 | 10284.6 (9666.4-10531.1) |
+| 2 | 6643.9 | 6137.1 (5759.6-6826.0) | 10009.9 | 9484.6 (9080.6-10156.4) |
+| 3 | 6678.0 | 6673.7 (5689.8-6785.4) | 10095.1 | 9935.2 (9026.9-10144.9) |
+| 4 | 6683.9 | 6134.0 (5926.8-6204.3) | 9944.3 | 9456.2 (9201.9-9478.0) |
+
+Across all source counts, cold entries are median (minimum-maximum), `n=4`,
+and warm entries use `n=20`. The phase timers exclude interpreter/bootstrap,
+bridge and later logging work; their sum is not the complete CGI process time.
+
+| Phase | Cold | Warm |
+| --- | ---: | ---: |
+| `config_load` | 14.4 (14.2-14.5) | 14.4 (14.1-15.0) |
+| `selector_refresh` | 6680.9 (6643.9-7193.9) | 6380.7 (5689.8-7258.9) |
+| `revalidation` | 313.4 (310.7-393.6) | 312.8 (308.6-318.8) |
+| `history_prepare` | 6.5 (6.1-7.6) | 6.0 (5.6-6.9) |
+| `serialization` | 0.2 (0.2-0.3) | 0.2 (0.2-0.3) |
+| `cgi_delivery` | 15.6 (15.5-15.8) | 15.6 (15.5-18.8) |
+
+Each request discovered 464 controls. Observed one-minute system load ranged
+from 0.39 to 0.77; unrelated workloads were left running. This is one
+observed-load series, not a controlled idle-versus-loaded comparison. Selector
+refresh dominates the measured preparation work, while history preparation
+remains in single-digit milliseconds. The cold/warm ranges overlap; this
+sample does not establish a speedup or a source-count scaling effect.
+
+Dense/large-history workloads, separate competing-load conditions, service
+CPU/memory, browser CPU/heap, first content, pan/zoom, and an exact 390x844 CSS
+viewport remain follow-up work in #297. No performance or browser compatibility
+claim is made from these CGI samples.
