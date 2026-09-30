@@ -780,6 +780,21 @@ def test_event_history_chart_tab_keeps_values_out_of_the_overview() -> None:
     assert "CHART_DENIED=" in english and "CHART_DENIED=" in german
 
 
+def test_chart_timing_cgi_forwards_only_fixed_numeric_diagnostics() -> None:
+    cgi = (ROOT / "webfrontend/htmlauth/event_history.cgi").read_text(encoding="utf-8")
+
+    assert (
+        "config_load_ms|selector_refresh_ms|revalidation_ms|history_prepare_ms|serialization_ms"
+        in cgi
+    )
+    assert "selected_sources|discovered_controls|serialized_bytes" in cgi
+    assert "component=event_history_chart_timing request_id=%s phase=%s duration_ms=%.1f" in cgi
+    assert "phase=cgi_delivery duration_ms=%.1f response_bytes=%d" in cgi
+    assert "control_uuid" not in cgi[
+        cgi.index("my %chart_phase_timing") : cgi.index("sub wait_update")
+    ]
+
+
 def test_event_history_update_relay_is_bounded_and_fixed_to_loopback() -> None:
     perl = shutil.which("perl")
     assert perl is not None, "Perl is required for the complete deterministic gate"
