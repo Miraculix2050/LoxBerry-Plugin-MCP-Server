@@ -72,9 +72,33 @@ def test_window_monitor_summary_is_in_generated_description_contract() -> None:
     definitions = tools["loxone_describe_control"]["outputSchema"]["$defs"]
     assert "window_monitor_summary" in definitions["ControlModelData"]["properties"]
     summary = definitions["WindowMonitorSummaryData"]["properties"]
-    assert set(summary) == {"total", "returned", "omitted", "truncated", "diagnostics"}
+    assert set(summary) == {
+        "total",
+        "returned",
+        "omitted",
+        "truncated",
+        "diagnostics",
+        "resolved",
+        "partially_resolved",
+        "unresolved",
+    }
     assert "malformed" in summary["returned"]["description"]
     assert "invalid_window_monitor_collection" in str(summary["diagnostics"])
+    item = definitions["WindowMonitorItemData"]["properties"]
+    assert item["resolution_status"]["enum"] == ["resolved", "partially_resolved", "unresolved"]
+    assert item["room_consistency"]["enum"] == ["match", "mismatch", "unknown"]
+    assert set(item["diagnostics"]["items"]["enum"]) == {
+        "invalid_window_monitor_entry",
+        "invalid_name",
+        "invalid_install_place",
+        "invalid_control_reference",
+        "invalid_room_reference",
+        "missing_control_reference",
+        "control_reference_unavailable",
+        "missing_room_reference",
+        "room_reference_unavailable",
+        "room_reference_mismatch",
+    }
 
 
 def test_project_status_schema_distinguishes_model_sources_from_config_projects() -> None:

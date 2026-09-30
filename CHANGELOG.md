@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add value-safe WindowMonitor item diagnostics, visible-reference resolution
+  counts and explicit UUID-based room consistency. Keep malformed positions and
+  distinguish omitted evidence from unresolved retained entries without exposing
+  hidden target details.
+
 - Preserve the first 100 WindowMonitor positions instead of discarding larger
   collections. Expose collection counts, truncation and invalid-shape diagnostics;
   apply the same prefix to explicit read-only reference exposure.

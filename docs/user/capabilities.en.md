@@ -16,6 +16,24 @@ omitted counts. Match `windowStates` by the original zero-based item index; omit
 positions are not evidence of missing contacts. These fields are absent from compact
 views. Complete configured representation does not establish physical opening coverage.
 
+Each retained item exposes a sorted, fixed-code `diagnostics` list without rejected
+source values. Codes distinguish malformed entries (`invalid_window_monitor_entry`),
+invalid fields (`invalid_name`, `invalid_install_place`, `invalid_control_reference`,
+`invalid_room_reference`), missing references (`missing_control_reference`,
+`missing_room_reference`), unavailable visible references (`control_reference_unavailable`,
+`room_reference_unavailable`), and explicit room conflicts (`room_reference_mismatch`).
+Absent optional names/install places are valid; invalid present values, including null,
+are diagnosed. A rejected reference without a valid fallback can also be missing.
+A valid mapping-key fallback remains usable even when the explicit UUID is invalid.
+
+`resolution_status` is `resolved` when both the control and item room resolve,
+`partially_resolved` when exactly one resolves, otherwise `unresolved`. The summary
+counts these statuses over retained positions only; their sum equals `returned`.
+`room_consistency` is separately `match`, `mismatch`, or `unknown`, comparing only
+explicit UUIDs when both rooms and the control are visible. A mismatch does not
+change resolution status. Hidden and unknown targets are both unavailable; names
+never establish identity, contact roles, or physical correctness.
+
 The server reads visible rooms, categories, controls and states. Optional bounded history, statistics, masked LoxBerry diagnostics and documented type-specific actions for visible Gen. 1 controls are available.
 
 After locating a control with `loxone_find_controls`, `loxone_describe_control` can use `view="history_targets"` to return only its identity, state names and UUIDs, advertised native control-history flag, and statistic series IDs and metadata. The default `view="full"` retains the detailed response. `native_statistics_truncated=true` in the compact view means more than 128 valid StatisticV2 series were found and some are omitted. A listed target does not establish that local event history is recorded or that native history or statistics cover a requested period; check the respective history response.

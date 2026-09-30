@@ -17,6 +17,27 @@ unbekannter (`null`) Gesamtzahl und ausgelassener Anzahl. Ordnen Sie `windowStat
 fehlenden Kontakte. Kompakte Ansichten enthalten diese Felder nicht. Eine vollständige
 Konfigurationsdarstellung belegt keine physische Öffnungsabdeckung.
 
+Jeder erhaltene Eintrag enthält eine sortierte Liste fester `diagnostics`-Codes ohne
+zurückgewiesene Quellwerte. Die Codes unterscheiden fehlerhafte Einträge
+(`invalid_window_monitor_entry`), ungültige Felder (`invalid_name`,
+`invalid_install_place`, `invalid_control_reference`, `invalid_room_reference`),
+fehlende Referenzen (`missing_control_reference`, `missing_room_reference`), nicht
+verfügbare sichtbare Referenzen (`control_reference_unavailable`,
+`room_reference_unavailable`) und explizite Raumkonflikte (`room_reference_mismatch`).
+Fehlende optionale Namen/Installationsorte sind gültig; ungültige vorhandene Werte,
+einschließlich null, werden diagnostiziert. Eine zurückgewiesene Referenz ohne gültigen
+Fallback kann zusätzlich fehlen. Ein gültiger Mapping-Schlüssel bleibt als Fallback
+nutzbar, auch wenn das explizite UUID-Feld ungültig ist.
+
+`resolution_status` ist `resolved`, wenn Control und Eintragsraum aufgelöst sind,
+`partially_resolved`, wenn genau eine Referenz aufgelöst ist, andernfalls `unresolved`.
+Das Summary zählt diese Zustände ausschließlich für erhaltene Positionen; ihre Summe
+entspricht `returned`. `room_consistency` ist separat `match`, `mismatch` oder `unknown`
+und vergleicht ausschließlich explizite UUIDs bei sichtbarem Control und zwei sichtbaren
+Räumen. Ein Konflikt ändert den Auflösungsstatus nicht. Verborgene und unbekannte Ziele
+sind gleichermaßen nicht verfügbar; Namen belegen weder Identität noch Kontaktrollen
+oder die physische Richtigkeit.
+
 Der Server liest sichtbare Räume, Kategorien, Controls und Zustände. Optional sind begrenzte Historie, Statistiken, maskierte LoxBerry-Diagnosen sowie dokumentierte, typabhängige Aktionen für sichtbare Gen.-1-Controls verfügbar.
 
 Nach der Suche mit `loxone_find_controls` kann `loxone_describe_control` mit `view="history_targets"` nur die Control-Identität, State-Namen und -UUIDs, das Kennzeichen für native Control-Historie sowie IDs und Metadaten beworbener Statistikserien liefern. Der Standardwert `view="full"` behält die ausführliche Antwort bei. `native_statistics_truncated=true` in der kompakten Ansicht bedeutet, dass mehr als 128 gültige StatisticV2-Serien gefunden und einige ausgelassen wurden. Ein aufgeführtes Ziel belegt weder eine lokale Ereignisaufzeichnung noch die Abdeckung eines angefragten Zeitraums durch native Historie oder Statistik; dafür ist die jeweilige Historienantwort zu prüfen.

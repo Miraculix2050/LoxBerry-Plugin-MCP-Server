@@ -68,6 +68,7 @@ from mcpserver.loxone.presentation import (
 )
 from mcpserver.loxone.presentation import structure_overview as _structure_overview
 from mcpserver.loxone.presentation import visible_controls as _visible_controls
+from mcpserver.loxone.presentation import window_monitor_description as _window_monitor_description
 from mcpserver.loxone.project.analysis import ANALYSIS_VERSION
 from mcpserver.loxone.project.models import ProjectError
 from mcpserver.loxone.project.query import ProjectQuery, ProjectQueryError
@@ -262,6 +263,25 @@ class WindowMonitorItemData(BaseModel):
     install_place: str | None
     room: NamedGroupData | None = None
     control: LinkedControlData | None = None
+    diagnostics: list[
+        Literal[
+            "invalid_window_monitor_entry",
+            "invalid_name",
+            "invalid_install_place",
+            "invalid_control_reference",
+            "invalid_room_reference",
+            "missing_control_reference",
+            "control_reference_unavailable",
+            "missing_room_reference",
+            "room_reference_unavailable",
+            "room_reference_mismatch",
+        ]
+    ] = Field(
+        default_factory=list,
+        description="Fixed value-safe input and visible-reference diagnostics.",
+    )
+    resolution_status: Literal["resolved", "partially_resolved", "unresolved"] = "unresolved"
+    room_consistency: Literal["match", "mismatch", "unknown"] = "unknown"
 
 
 class WindowMonitorSummaryData(BaseModel):
@@ -274,6 +294,16 @@ class WindowMonitorSummaryData(BaseModel):
     )
     truncated: bool
     diagnostics: list[Literal["invalid_window_monitor_collection"]] = Field(default_factory=list)
+    resolved: int = Field(
+        default=0, description="Retained positions with both control and item room resolved."
+    )
+    partially_resolved: int = Field(
+        default=0, description="Retained positions with exactly one reference resolved."
+    )
+    unresolved: int = Field(
+        default=0,
+        description="Retained positions with neither reference resolved; excludes omitted entries.",
+    )
 
 
 class IrrigationModelData(BaseModel):
@@ -3974,6 +4004,9 @@ def register_read_tools(
             visible_controls = {
                 item.uuid: item for item in _flatten_controls(snapshot.structure.controls)
             }
+            window_monitor_items, window_monitor_summary = _window_monitor_description(
+                control, visible_controls, visible_rooms
+            )
             value["capabilities"] = {
                 "readable": True,
                 "allowed_actions": (
@@ -4053,47 +4086,8 @@ def register_read_tools(
                             }
                             for item in control.ventilation_timer_profiles
                         ],
-                        "window_monitor_items": [
-                            {
-                                "index": item.index,
-                                "name": item.name,
-                                "room_uuid": item.room_uuid,
-                                "control_uuid": item.control_uuid,
-                                "install_place": item.install_place,
-                                "room": (
-                                    {"uuid": item.room_uuid, "name": visible_rooms[item.room_uuid]}
-                                    if item.room_uuid in visible_rooms
-                                    else None
-                                ),
-                                "control": (
-                                    _linked_control(visible_controls[item.control_uuid])
-                                    if item.control_uuid in visible_controls
-                                    else None
-                                ),
-                            }
-                            for item in control.window_monitor_items
-                        ],
-                        "window_monitor_summary": (
-                            {
-                                "total": control.window_monitor_summary.total,
-                                "returned": control.window_monitor_summary.returned,
-                                "omitted": control.window_monitor_summary.omitted,
-                                "truncated": control.window_monitor_summary.truncated,
-                                "diagnostics": list(control.window_monitor_summary.diagnostics),
-                            }
-                            if control.window_monitor_summary is not None
-                            else (
-                                {
-                                    "total": len(control.window_monitor_items),
-                                    "returned": len(control.window_monitor_items),
-                                    "omitted": 0,
-                                    "truncated": False,
-                                    "diagnostics": [],
-                                }
-                                if control.control_type == "WindowMonitor"
-                                else None
-                            )
-                        ),
+                        "window_monitor_items": window_monitor_items,
+                        "window_monitor_summary": window_monitor_summary,
                         "connected_inputs": control.connected_inputs,
                         "irrigation": (
                             {"off_zone_id": -1, "all_zones_id": 8}

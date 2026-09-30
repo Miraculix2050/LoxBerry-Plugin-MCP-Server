@@ -267,36 +267,58 @@ def _window_monitor_items(
     """Retain a source-order prefix without materializing the omitted tail."""
     if value is None:
         return (), WindowMonitorSummary()
-    entries: Iterator[tuple[str | None, object]]
+    entries: Iterator[tuple[object, object]]
     if isinstance(value, list):
         entries = ((None, item) for item in islice(value, 100))
     elif isinstance(value, Mapping):
-        entries = (
-            (key if isinstance(key, str) and len(key) <= 200 else None, item)
-            for key, item in islice(value.items(), 100)
-        )
+        entries = islice(value.items(), 100)
     else:
         return (), WindowMonitorSummary(
             total=None, omitted=None, diagnostics=("invalid_window_monitor_collection",)
         )
     result: list[WindowMonitorItem] = []
-    for index, (mapped_uuid, item) in enumerate(entries):
+    field_codes = {
+        "name": "invalid_name",
+        "room": "invalid_room_reference",
+        "uuid": "invalid_control_reference",
+        "installPlace": "invalid_install_place",
+    }
+    for index, (mapped_key, item) in enumerate(entries):
         if not isinstance(item, Mapping):
-            result.append(WindowMonitorItem(index, None, None, None, None))
+            result.append(
+                WindowMonitorItem(index, None, None, None, None, ("invalid_window_monitor_entry",))
+            )
             continue
         window: Mapping[str, object] = item
+        diagnostics: set[str] = set()
 
-        def text(key: str, source: Mapping[str, object] = window) -> str | None:
+        def text(
+            key: str, source: Mapping[str, object] = window, issues: set[str] = diagnostics
+        ) -> str | None:
             candidate = source.get(key)
-            return candidate if isinstance(candidate, str) and len(candidate) <= 200 else None
+            if isinstance(candidate, str) and len(candidate) <= 200:
+                return candidate
+            if key in source:
+                issues.add(field_codes[key])
+            return None
 
+        name = text("name")
+        room_uuid = text("room")
+        control_uuid = text("uuid") or None
+        install_place = text("installPlace")
+        if not control_uuid and isinstance(value, Mapping):
+            if isinstance(mapped_key, str) and len(mapped_key) <= 200:
+                control_uuid = mapped_key
+            else:
+                diagnostics.add("invalid_control_reference")
         result.append(
             WindowMonitorItem(
                 index,
-                text("name"),
-                text("room"),
-                text("uuid") or mapped_uuid,
-                text("installPlace"),
+                name,
+                room_uuid,
+                control_uuid,
+                install_place,
+                tuple(sorted(diagnostics)),
             )
         )
     total = len(value)
