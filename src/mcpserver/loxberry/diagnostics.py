@@ -11,6 +11,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
+from mcpserver.availability import AvailabilityPhase, AvailabilityReason
+
 
 class DiagnosticsUnavailable(RuntimeError):
     """A permitted diagnostic source could not be read safely."""
@@ -28,7 +30,8 @@ _EVENT_LINE: Final = re.compile(
     r"severity=(?P<severity>DEBUG|INFO|WARNING|ERROR|CRITICAL)(?P<fields>.*)$"
 )
 _EVENT_FIELD: Final = re.compile(
-    r" (?P<name>trace_id|outcome|code|error_type)=(?P<value>[^ ]{1,128})"
+    r" (?P<name>trace_id|outcome|code|error_type|diagnostic_code|availability_phase)="
+    r"(?P<value>[^ ]{1,128})"
 )
 _EVENT_COMPONENTS: Final = frozenset(
     {
@@ -231,7 +234,12 @@ class LoxBerryDiagnostics:
                 "severity": match["severity"].lower(),
             }
             for field in _EVENT_FIELD.finditer(match["fields"]):
-                event[field["name"]] = field["value"]
+                name, value = field["name"], field["value"]
+                if name == "diagnostic_code" and value not in AvailabilityReason:
+                    continue
+                if name == "availability_phase" and value not in AvailabilityPhase:
+                    continue
+                event[name] = value
             observed_at = _event_timestamp(event["timestamp"])
             if trace_id is not None and event.get("trace_id") != trace_id:
                 continue

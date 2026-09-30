@@ -5,6 +5,12 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Preserve compatible temporary-unavailability errors while adding fixed runtime
+  reason/phase diagnostics and bounded retry hints only for the caller's local
+  rate budget. Distinguish structure-refresh connection, protocol, token, timeout
+  and unknown failures; retain sanitized diagnostic correlation and update the
+  canonical skill to preserve failure evidence and bound read retries (#328).
+
 - Fail closed and drain the state-stream session when the initial state batch
   times out; ready subscriptions no longer wait for the full timeout.
 - Serialize runtime session admission across families to enforce capacity during

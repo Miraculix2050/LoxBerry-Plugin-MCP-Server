@@ -32,6 +32,7 @@ from mcpserver.auth.provider import (
     READ_SCOPE,
     StoredAccessToken,
 )
+from mcpserver.availability import AvailabilityPhase, AvailabilityReason
 from mcpserver.config import AtomicConfigStore, ConfigError
 from mcpserver.loxberry.diagnostics import DiagnosticsUnavailable, LoxBerryDiagnostics
 from mcpserver.loxone.control import allowed_actions
@@ -144,11 +145,23 @@ StatisticsLimitArgument = Annotated[
 class ErrorData(BaseModel):
     error: str
     message: str
+    availability_phase: AvailabilityPhase | None = Field(
+        default=None,
+        description="Fixed availability operation phase; unknown when not established.",
+    )
+    retry_after_seconds: int | None = Field(
+        default=None,
+        ge=1,
+        le=60,
+        description="Rounded-up seconds until this caller local budget can admit a read; "
+        "only for local_rate_limit, not a reservation or success guarantee.",
+    )
     diagnostic_code: str | None = Field(
         default=None,
         description=(
             "Fixed, value-free diagnostic category when an operation could not process "
-            "its source. Null when no additional category is available."
+            "its source or runtime availability. Availability causes use fixed allowlisted codes; "
+            "unknown causes remain availability_unknown or structure_refresh_unknown."
         ),
     )
 
@@ -1538,6 +1551,8 @@ class LoxBerryServiceEventData(BaseModel):
     outcome: str | None = None
     code: str | None = None
     error_type: str | None = None
+    diagnostic_code: AvailabilityReason | None = None
+    availability_phase: AvailabilityPhase | None = None
 
 
 class LoxBerryServiceEventsData(BaseModel):
@@ -1610,17 +1625,23 @@ def _error[EnvelopeT: ToolEnvelope](
     *,
     diagnostic_code: str | None = None,
     trace_id: str | None = None,
+    availability_phase: AvailabilityPhase | None = None,
+    retry_after_seconds: int | None = None,
 ) -> EnvelopeT:
     trace_id = trace_id or str(uuid4())
     if code == "temporarily_unavailable":
         now = time.monotonic()
-        previous = _ERROR_LAST.get(code)
+        suppression_key = f"{diagnostic_code or code}:{availability_phase or 'unknown'}"
+        previous = _ERROR_LAST.get(suppression_key)
         if previous is None or previous <= now - _ERROR_SUPPRESSION_SECONDS:
-            _ERROR_LAST[code] = now
+            _ERROR_LAST[suppression_key] = now
             _LOGGER.warning(
-                "component=tools severity=WARNING trace_id=%s outcome=error code=%s",
+                "component=tools severity=WARNING trace_id=%s outcome=error code=%s "
+                "diagnostic_code=%s availability_phase=%s",
                 trace_id,
                 code,
+                diagnostic_code or "none",
+                availability_phase or "unknown",
             )
     else:
         _LOGGER.debug(
@@ -1630,11 +1651,68 @@ def _error[EnvelopeT: ToolEnvelope](
         )
     return envelope_type(
         ok=False,
-        data={"error": code, "message": message, "diagnostic_code": diagnostic_code},
+        data={
+            "error": code,
+            "message": message,
+            "diagnostic_code": diagnostic_code,
+            "availability_phase": availability_phase,
+            "retry_after_seconds": retry_after_seconds,
+        },
         observed_at=_now(),
         stale=False,
         trace_id=trace_id,
     )
+
+
+def _availability_error[EnvelopeT: ToolEnvelope](
+    envelope_type: type[EnvelopeT],
+    exc: RuntimeUnavailable,
+    *,
+    trace_id: str | None = None,
+) -> EnvelopeT:
+    """Project only plugin-owned fields, never underlying exception values."""
+    safe_messages = frozenset(
+        {
+            "Miniserver authentication is temporarily unavailable",
+            "Miniserver structure access failed",
+            "Miniserver structure refresh failed",
+            "Miniserver token authentication was rejected",
+            "Miniserver temporarily blocked this source IP after failed login attempts",
+            "Miniserver rejected token authentication as unauthorized",
+            "Loxone token use requires local administrator confirmation before another login",
+            "Miniserver rejected token authentication due to insufficient rights",
+            "Miniserver state subscription failed",
+            "Miniserver rate-limited token authentication after failed logins",
+            "Miniserver connection failed",
+            "Miniserver rejected token authentication because the user is disabled",
+            "Loxone authorization is unavailable",
+            "request rate limit exceeded",
+            "the service is not configured",
+            "the project service is not configured",
+        }
+    )
+    message = str(exc) if str(exc) in safe_messages else "Loxone runtime is temporarily unavailable"
+    return _error(
+        envelope_type,
+        "temporarily_unavailable",
+        message,
+        diagnostic_code=exc.reason.value,
+        availability_phase=exc.phase,
+        retry_after_seconds=exc.retry_after_seconds,
+        trace_id=trace_id,
+    )
+
+
+def _operation_error[EnvelopeT: ToolEnvelope](
+    envelope_type: type[EnvelopeT],
+    exc: ControlOperationError,
+    *,
+    trace_id: str | None = None,
+) -> EnvelopeT:
+    """Retain availability diagnostics through read-only adapter wrappers."""
+    if exc.code == "temporarily_unavailable" and isinstance(exc.__cause__, RuntimeUnavailable):
+        return _availability_error(envelope_type, exc.__cause__, trace_id=trace_id)
+    return _error(envelope_type, exc.code, str(exc), trace_id=trace_id)
 
 
 def _audit_identity(value: str) -> str:
@@ -3319,7 +3397,7 @@ def register_read_tools(
                 "Authentication with loxone:read is required",
             )
         except RuntimeUnavailable as exc:
-            return _error(SystemStatusEnvelope, "temporarily_unavailable", str(exc))
+            return _availability_error(SystemStatusEnvelope, exc)
 
     @server.tool(
         name="loxone_get_structure_overview",
@@ -3355,7 +3433,7 @@ def register_read_tools(
                 "Authentication with loxone:read is required",
             )
         except RuntimeUnavailable as exc:
-            return _error(StructureOverviewEnvelope, "temporarily_unavailable", str(exc))
+            return _availability_error(StructureOverviewEnvelope, exc)
 
     @server.tool(
         name="loxone_list_rooms",
@@ -3418,7 +3496,7 @@ def register_read_tools(
                 "Authentication with loxone:read is required",
             )
         except RuntimeUnavailable as exc:
-            return _error(RoomPageEnvelope, "temporarily_unavailable", str(exc))
+            return _availability_error(RoomPageEnvelope, exc)
 
     @server.tool(
         name="loxone_get_room_snapshot",
@@ -3483,7 +3561,7 @@ def register_read_tools(
                 "Authentication with loxone:read is required",
             )
         except RuntimeUnavailable as exc:
-            return _error(RoomSnapshotEnvelope, "temporarily_unavailable", str(exc))
+            return _availability_error(RoomSnapshotEnvelope, exc)
 
     @server.tool(
         name="loxone_list_categories",
@@ -3523,7 +3601,7 @@ def register_read_tools(
                 "Authentication with loxone:read is required",
             )
         except RuntimeUnavailable as exc:
-            return _error(NamedGroupPageEnvelope, "temporarily_unavailable", str(exc))
+            return _availability_error(NamedGroupPageEnvelope, exc)
 
     @server.tool(
         name="loxone_list_global_metadata",
@@ -3585,7 +3663,7 @@ def register_read_tools(
                 "Authentication with loxone:read is required",
             )
         except RuntimeUnavailable as exc:
-            return _error(GlobalMetadataPageEnvelope, "temporarily_unavailable", str(exc))
+            return _availability_error(GlobalMetadataPageEnvelope, exc)
 
     @server.tool(
         name="loxone_get_weather",
@@ -3710,7 +3788,7 @@ def register_read_tools(
                 "Authentication with loxone:read is required",
             )
         except RuntimeUnavailable as exc:
-            return _error(WeatherEnvelope, "temporarily_unavailable", str(exc))
+            return _availability_error(WeatherEnvelope, exc)
 
     @server.tool(
         name="loxone_find_controls",
@@ -3850,7 +3928,7 @@ def register_read_tools(
                 "Authentication with loxone:read is required",
             )
         except RuntimeUnavailable as exc:
-            return _error(ControlPageEnvelope, "temporarily_unavailable", str(exc))
+            return _availability_error(ControlPageEnvelope, exc)
 
     @server.tool(
         name="loxone_describe_control",
@@ -4208,7 +4286,7 @@ def register_read_tools(
                 "Authentication with loxone:read is required",
             )
         except RuntimeUnavailable as exc:
-            return _error(ControlDescriptionEnvelope, "temporarily_unavailable", str(exc))
+            return _availability_error(ControlDescriptionEnvelope, exc)
 
     @server.tool(
         name="loxone_get_control_notes",
@@ -4259,11 +4337,9 @@ def register_read_tools(
                 trace_id=trace_id,
             )
         except RuntimeUnavailable as exc:
-            return _error(
-                ControlNotesEnvelope, "temporarily_unavailable", str(exc), trace_id=trace_id
-            )
+            return _availability_error(ControlNotesEnvelope, exc, trace_id=trace_id)
         except ControlOperationError as exc:
-            return _error(ControlNotesEnvelope, exc.code, str(exc), trace_id=trace_id)
+            return _operation_error(ControlNotesEnvelope, exc, trace_id=trace_id)
 
     @server.tool(
         name="loxone_get_states",
@@ -4358,7 +4434,7 @@ def register_read_tools(
                 "Authentication with loxone:read is required",
             )
         except RuntimeUnavailable as exc:
-            return _error(StatesEnvelope, "temporarily_unavailable", str(exc))
+            return _availability_error(StatesEnvelope, exc)
 
 
 def register_skill_tool(server: FastMCP) -> None:
@@ -4436,7 +4512,7 @@ def register_project_tools(
             code, message, diagnostic_code = _project_error_code(exc)
             return _error(ProjectStatusEnvelope, code, message, diagnostic_code=diagnostic_code)
         except RuntimeUnavailable as exc:
-            return _error(ProjectStatusEnvelope, "temporarily_unavailable", str(exc))
+            return _availability_error(ProjectStatusEnvelope, exc)
 
     @server.tool(
         name="loxone_find_project_objects",
@@ -4577,7 +4653,7 @@ def register_project_tools(
             code, message, diagnostic_code = _project_error_code(exc)
             return _error(ProjectObjectPageEnvelope, code, message, diagnostic_code=diagnostic_code)
         except RuntimeUnavailable as exc:
-            return _error(ProjectObjectPageEnvelope, "temporarily_unavailable", str(exc))
+            return _availability_error(ProjectObjectPageEnvelope, exc)
 
     @server.tool(
         name="loxone_describe_project_object",
@@ -4625,7 +4701,7 @@ def register_project_tools(
                 ProjectDescriptionEnvelope, code, message, diagnostic_code=diagnostic_code
             )
         except RuntimeUnavailable as exc:
-            return _error(ProjectDescriptionEnvelope, "temporarily_unavailable", str(exc))
+            return _availability_error(ProjectDescriptionEnvelope, exc)
 
     @server.tool(
         name="loxone_trace_project_logic",
@@ -4668,7 +4744,7 @@ def register_project_tools(
             code, message, diagnostic_code = _project_error_code(exc)
             return _error(ProjectTraceEnvelope, code, message, diagnostic_code=diagnostic_code)
         except RuntimeUnavailable as exc:
-            return _error(ProjectTraceEnvelope, "temporarily_unavailable", str(exc))
+            return _availability_error(ProjectTraceEnvelope, exc)
 
     @server.tool(
         name="loxone_analyze_project",
@@ -4821,7 +4897,7 @@ def register_project_tools(
             code, message, diagnostic_code = _project_error_code(exc)
             return _error(ProjectAnalysisEnvelope, code, message, diagnostic_code=diagnostic_code)
         except RuntimeUnavailable as exc:
-            return _error(ProjectAnalysisEnvelope, "temporarily_unavailable", str(exc))
+            return _availability_error(ProjectAnalysisEnvelope, exc)
 
 
 def register_observability_tools(
@@ -5148,9 +5224,9 @@ def register_observability_tools(
             code, message, diagnostic_code = _project_error_code(exc)
             return _error(ObservabilityEnvelope, code, message, diagnostic_code=diagnostic_code)
         except RuntimeUnavailable as exc:
-            return _error(ObservabilityEnvelope, "temporarily_unavailable", str(exc))
+            return _availability_error(ObservabilityEnvelope, exc)
         except ControlOperationError as exc:
-            return _error(ObservabilityEnvelope, exc.code, str(exc))
+            return _operation_error(ObservabilityEnvelope, exc)
 
 
 def register_loxberry_read_tools(server: FastMCP, runtime: LoxBerryReadRuntime) -> None:
@@ -5463,7 +5539,7 @@ def register_event_history_tools(server: FastMCP, runtime: EventHistoryRuntime |
         except ValueError:
             return _error(EventHistorySourcesEnvelope, "invalid_input", "Cursor is invalid")
         except ControlOperationError as exc:
-            return _error(EventHistorySourcesEnvelope, exc.code, str(exc))
+            return _operation_error(EventHistorySourcesEnvelope, exc)
 
     @server.tool(
         name="loxone_get_event_history",
@@ -5587,7 +5663,7 @@ def register_event_history_tools(server: FastMCP, runtime: EventHistoryRuntime |
                 EventHistoryEnvelope, "permission_denied", "History authorization is required"
             )
         except ControlOperationError as exc:
-            return _error(EventHistoryEnvelope, exc.code, str(exc))
+            return _operation_error(EventHistoryEnvelope, exc)
 
 
 def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> None:
@@ -5761,7 +5837,7 @@ def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                 trace_id=trace_id,
             )
         except ControlOperationError as exc:
-            return _error(StatisticsEnvelope, exc.code, str(exc), trace_id=trace_id)
+            return _operation_error(StatisticsEnvelope, exc, trace_id=trace_id)
 
     @server.tool(
         name="loxone_get_control_history",
@@ -5873,7 +5949,7 @@ def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                 trace_id=trace_id,
             )
         except ControlOperationError as exc:
-            return _error(ControlHistoryEnvelope, exc.code, str(exc), trace_id=trace_id)
+            return _operation_error(ControlHistoryEnvelope, exc, trace_id=trace_id)
 
 
 def register_loxberry_operate_tool(server: FastMCP, runtime: LoxBerryOperateRuntime) -> None:
@@ -6011,7 +6087,7 @@ def register_loxberry_operate_tool(server: FastMCP, runtime: LoxBerryOperateRunt
             )
         except ControlOperationError as exc:
             audit_source(access, "loxberry_list_event_history_sources", exc.code)
-            return _error(EventHistorySourcesEnvelope, exc.code, str(exc))
+            return _operation_error(EventHistorySourcesEnvelope, exc)
         except ValueError:
             return _error(EventHistorySourcesEnvelope, "invalid_input", "Cursor is invalid")
         except DiagnosticsUnavailable:

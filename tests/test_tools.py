@@ -613,7 +613,7 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert tool.annotations.destructiveHint is False
     assert tool.annotations.openWorldHint is False
     assert result.data.name == "using-loxberry-mcp"  # type: ignore[union-attr]
-    assert result.data.revision == 40  # type: ignore[union-attr]
+    assert result.data.revision == 41  # type: ignore[union-attr]
     assert "`loxone_get_structure_overview`" in result.data.content  # type: ignore[union-attr]
     assert result.data.media_type == "text/markdown"  # type: ignore[union-attr]
     assert result.data.content == read_skill_markdown()  # type: ignore[union-attr]
@@ -3731,3 +3731,118 @@ async def test_find_controls_filters_visibility_notes_favorite_and_room_group(
         visibility="direct", has_notes=True, is_favorite=True, room_group_uuid="group-1"
     )
     assert [item.uuid for item in result.data.items] == ["matching"]  # type: ignore[union-attr]
+
+
+@pytest.mark.parametrize("reason", list(tools_module.AvailabilityReason))
+def test_availability_envelope_and_sanitized_diagnostic_chain(reason, tmp_path, caplog) -> None:
+    from mcpserver.loxberry.diagnostics import LoxBerryDiagnostics
+    from mcpserver.loxone.runtime import RuntimeUnavailable
+
+    tools_module._ERROR_LAST.clear()
+    caplog.set_level(logging.WARNING, logger="mcpserver.tools")
+    phase = tools_module.AvailabilityPhase.LOAD
+    exc = RuntimeUnavailable(
+        "secret-token@192.0.2.9/hidden-control", reason=reason, phase=phase, retry_after_seconds=12
+    )
+    result = tools_module._availability_error(SystemStatusEnvelope, exc, trace_id="trace-safe")
+    assert result.ok is False
+    assert result.data.error == "temporarily_unavailable"
+    assert result.data.message == "Loxone runtime is temporarily unavailable"
+    assert result.data.diagnostic_code == reason.value
+    assert result.data.availability_phase == phase
+    assert result.trace_id == "trace-safe"
+    assert result.data.retry_after_seconds == (12 if reason.value == "local_rate_limit" else None)
+    assert "secret" not in result.model_dump_json()
+    assert "secret" not in caplog.text
+    path = tmp_path / "log/plugins/mcpserver/service.log"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        "2026-10-01T00:00:00Z component=mcpserver.tools severity=WARNING "
+        + caplog.records[-1].getMessage()
+        + "\n",
+        encoding="utf-8",
+    )
+    event = LoxBerryDiagnostics(tmp_path.resolve()).service_events(trace_id="trace-safe")[0]
+    assert event["diagnostic_code"] == reason.value
+    assert event["availability_phase"] == phase.value
+    assert event["code"] == "temporarily_unavailable"
+
+
+def test_availability_warning_suppression_keeps_distinct_categories(caplog) -> None:
+    from mcpserver.loxone.runtime import RuntimeUnavailable
+
+    tools_module._ERROR_LAST.clear()
+    caplog.set_level(logging.WARNING, logger="mcpserver.tools")
+    for reason in [
+        tools_module.AvailabilityReason.REFRESH_CONNECTION,
+        tools_module.AvailabilityReason.REFRESH_CONNECTION,
+        tools_module.AvailabilityReason.REFRESH_PROTOCOL,
+    ]:
+        tools_module._availability_error(
+            SystemStatusEnvelope,
+            RuntimeUnavailable("Miniserver structure refresh failed", reason=reason),
+        )
+    assert len(caplog.records) == 2
+    assert "structure_refresh_connection" in caplog.records[0].message
+    assert "structure_refresh_protocol" in caplog.records[1].message
+
+
+@pytest.mark.parametrize(
+    "required",
+    [
+        "`error`",
+        "`message`",
+        "`diagnostic_code`",
+        "`trace_id`",
+        "target association",
+        "reduce\nconcurrent fan-out",
+        "at most once",
+        "Never automatically retry uncertain writes",
+        "Unknown causes remain unknown",
+    ],
+)
+def test_skill_retains_availability_evidence_and_bounds_read_retries(required) -> None:
+    assert required in read_skill_markdown()
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "request rate limit exceeded",
+        "Miniserver structure refresh failed",
+        "the service is not configured",
+        "the project service is not configured",
+    ],
+)
+def test_availability_preserves_released_fixed_messages(message) -> None:
+    result = tools_module._availability_error(
+        SystemStatusEnvelope, runtime_module.RuntimeUnavailable(message)
+    )
+    assert result.data.message == message
+    assert result.data.diagnostic_code == "availability_unknown"
+    assert result.data.availability_phase == "unknown"
+    assert result.data.retry_after_seconds is None
+
+
+@pytest.mark.parametrize("reason", list(tools_module.AvailabilityReason))
+def test_read_adapter_retains_wrapped_runtime_availability(reason) -> None:
+    try:
+        try:
+            raise runtime_module.RuntimeUnavailable(
+                "private-token",
+                reason=reason,
+                phase=tools_module.AvailabilityPhase.LOAD,
+                retry_after_seconds=8,
+            )
+        except runtime_module.RuntimeUnavailable as cause:
+            raise runtime_module.ControlOperationError(
+                "temporarily_unavailable", str(cause)
+            ) from cause
+    except runtime_module.ControlOperationError as exc:
+        result = tools_module._operation_error(SystemStatusEnvelope, exc, trace_id="wrapped-trace")
+    assert result.data.error == "temporarily_unavailable"
+    assert result.data.diagnostic_code == reason.value
+    assert result.data.availability_phase == "structure_load"
+    assert result.trace_id == "wrapped-trace"
+    assert "private-token" not in result.model_dump_json()
+    assert result.data.retry_after_seconds == (8 if reason.value == "local_rate_limit" else None)

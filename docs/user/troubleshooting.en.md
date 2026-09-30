@@ -12,3 +12,25 @@
 | An update failed | Wait for terminal Plugin Manager status and retain the earlier package. |
 
 Do not export or share credentials, tokens, private addresses or complete state data. Use only masked plugin diagnostics.
+
+## Temporary read unavailability
+
+For `temporarily_unavailable`, retain `error`, `message`, `diagnostic_code`, and
+`trace_id` with the tool and authorized target context. Also retain
+`availability_phase` and `retry_after_seconds`. `local_rate_limit` identifies the
+caller's local request budget; only this cause supplies a rounded-up delay of
+1–60 seconds. Wait at least this delay and retry a read at most once. Capacity is
+not reserved. Reuse successful descriptions and reduce concurrent fan-out.
+Never automatically retry uncertain writes.
+
+`structure_refresh_connection`, `structure_refresh_protocol`,
+`structure_refresh_token`, and `structure_refresh_timeout` distinguish established
+refresh exception categories. Token errors include missing tokens and token-store
+failures. The phase identifies token lookup, session establishment, version check,
+structure load, or session close. `structure_refresh_unknown` and
+`availability_unknown` explicitly leave the cause unknown. No retry time is given
+for these failures; do not invent one or infer it from a healthy service.
+
+Use authorized, sanitized service diagnostics with the response's trace ID for
+support. Warnings are suppressed for 60 seconds per category and phase; event
+counts do not count failed calls, and missing events do not identify a cause.

@@ -20,6 +20,7 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 from mcpserver.auth.loxone_health import LoxoneTokenHealthStore
 from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore, LoxoneTokenStoreError
 from mcpserver.auth.provider import CONTROL_SCOPE, HISTORY_SCOPE, READ_SCOPE, StoredAccessToken
+from mcpserver.availability import AvailabilityPhase, AvailabilityReason
 from mcpserver.loxone.auth_diagnostics import (
     MiniserverAuthCoordinator,
     MiniserverAuthenticationSuppressed,
@@ -163,6 +164,25 @@ class RuntimeAuthorizationError(PermissionError):
 
 class RuntimeUnavailable(RuntimeError):
     """The identity-bound Loxone runtime is not currently available."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        reason: AvailabilityReason = AvailabilityReason.UNKNOWN,
+        phase: AvailabilityPhase = AvailabilityPhase.UNKNOWN,
+        retry_after_seconds: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.reason = AvailabilityReason(reason)
+        self.phase = AvailabilityPhase(phase)
+        self.retry_after_seconds = (
+            retry_after_seconds
+            if self.reason == AvailabilityReason.LOCAL_RATE_LIMIT
+            and type(retry_after_seconds) is int
+            and 1 <= retry_after_seconds <= 60
+            else None
+        )
 
 
 class ControlOperationError(RuntimeError):
@@ -356,7 +376,14 @@ class LoxoneRuntime:
         while values and values[0] <= now - 60:
             values.popleft()
         if len(values) >= self._rate_limit:
-            raise RuntimeUnavailable("request rate limit exceeded")
+            raise RuntimeUnavailable(
+                "request rate limit exceeded",
+                reason=AvailabilityReason.LOCAL_RATE_LIMIT,
+                phase=AvailabilityPhase.LOCAL_BUDGET,
+                retry_after_seconds=max(1, min(60, math.ceil(values[-self._rate_limit] + 60 - now)))
+                if self._rate_limit > 0
+                else None,
+            )
         values.append(now)
         async with self._parallel:
             await self._require_access(access)
@@ -1132,34 +1159,51 @@ class LoxoneRuntime:
         ):
             await self._require_access(access)
             raise RuntimeUnavailable("Loxone runtime connection changed during structure refresh")
+        phase = AvailabilityPhase.TOKEN
         try:
             token = self.token_store.get(access.family_id, access.miniserver_id, access.identity_id)
             if token is None:
                 raise LoxoneTokenStoreError("Loxone token is unavailable")
+            phase = AvailabilityPhase.SESSION
             session = await self._open_session(
                 token, owner="tool_request", phase="session_establishment"
             )
             try:
                 if not fresh_visibility:
+                    phase = AvailabilityPhase.VERSION
                     version = await session.structure_version()
                     if version == record.structure.last_modified:
                         record.last_structure_check = time.monotonic()
                         _LOGGER.debug("component=structure outcome=unchanged")
                         return
+                phase = AvailabilityPhase.LOAD
                 structure = await session.load_structure()
             finally:
+                operation_phase = phase
+                phase = AvailabilityPhase.CLOSE
                 await session.close()
-        except (
-            LoxoneConnectionError,
-            LoxoneProtocolError,
-            LoxoneTokenStoreError,
-            TimeoutError,
-        ) as exc:
-            _LOGGER.warning(
-                "component=structure outcome=refresh_failed error_type=%s",
-                type(exc).__name__,
+                phase = operation_phase
+        except Exception as exc:
+            reason = (
+                AvailabilityReason.REFRESH_CONNECTION
+                if isinstance(exc, LoxoneConnectionError)
+                else AvailabilityReason.REFRESH_PROTOCOL
+                if isinstance(exc, LoxoneProtocolError)
+                else AvailabilityReason.REFRESH_TOKEN
+                if isinstance(exc, LoxoneTokenStoreError)
+                else AvailabilityReason.REFRESH_TIMEOUT
+                if isinstance(exc, TimeoutError)
+                else AvailabilityReason.REFRESH_UNKNOWN
             )
-            raise RuntimeUnavailable("Miniserver structure refresh failed") from exc
+            _LOGGER.warning(
+                "component=structure outcome=refresh_failed diagnostic_code=%s "
+                "availability_phase=%s",
+                reason.value,
+                phase.value,
+            )
+            raise RuntimeUnavailable(
+                "Miniserver structure refresh failed", reason=reason, phase=phase
+            ) from exc
         # Cleanup can finish while this independently owned request is awaiting
         # network I/O. Only the current live owner may publish into family cache.
         # Do not take the family lock while holding refresh_lock.

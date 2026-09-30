@@ -137,3 +137,16 @@ def test_diagnostic_source_rejects_a_symlink(tmp_path: Path) -> None:
 
     with pytest.raises(DiagnosticsUnavailable):
         LoxBerryDiagnostics._read_limited(source, 64)
+
+
+def test_availability_diagnostics_reject_non_allowlisted_values(tmp_path: Path) -> None:
+    path = tmp_path / "log/plugins/mcpserver/service.log"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        "2026-10-01T00:00:00Z component=mcpserver.tools severity=WARNING "
+        "diagnostic_code=secret-token availability_phase=192.0.2.9\n",
+        encoding="utf-8",
+    )
+    event = LoxBerryDiagnostics(tmp_path.resolve()).service_events()[0]
+    assert "diagnostic_code" not in event
+    assert "availability_phase" not in event
