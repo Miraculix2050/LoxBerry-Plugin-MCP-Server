@@ -1669,6 +1669,7 @@ def _availability_error[EnvelopeT: ToolEnvelope](
     exc: RuntimeUnavailable,
     *,
     trace_id: str | None = None,
+    code: str = "temporarily_unavailable",
 ) -> EnvelopeT:
     """Project only plugin-owned fields, never underlying exception values."""
     safe_messages = frozenset(
@@ -1687,6 +1688,9 @@ def _availability_error[EnvelopeT: ToolEnvelope](
             "Miniserver rejected token authentication because the user is disabled",
             "Loxone authorization is unavailable",
             "request rate limit exceeded",
+            "Loxone runtime is closed",
+            "Loxone runtime connection changed during structure refresh",
+            "Miniserver initial state timed out",
             "the service is not configured",
             "the project service is not configured",
         }
@@ -1694,7 +1698,7 @@ def _availability_error[EnvelopeT: ToolEnvelope](
     message = str(exc) if str(exc) in safe_messages else "Loxone runtime is temporarily unavailable"
     return _error(
         envelope_type,
-        "temporarily_unavailable",
+        code,
         message,
         diagnostic_code=exc.reason.value,
         availability_phase=exc.phase,
@@ -1710,8 +1714,10 @@ def _operation_error[EnvelopeT: ToolEnvelope](
     trace_id: str | None = None,
 ) -> EnvelopeT:
     """Retain availability diagnostics through read-only adapter wrappers."""
-    if exc.code == "temporarily_unavailable" and isinstance(exc.__cause__, RuntimeUnavailable):
-        return _availability_error(envelope_type, exc.__cause__, trace_id=trace_id)
+    if exc.code in {"temporarily_unavailable", "rate_limited"} and isinstance(
+        exc.__cause__, RuntimeUnavailable
+    ):
+        return _availability_error(envelope_type, exc.__cause__, trace_id=trace_id, code=exc.code)
     return _error(envelope_type, exc.code, str(exc), trace_id=trace_id)
 
 

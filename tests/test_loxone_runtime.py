@@ -706,6 +706,7 @@ async def test_refresh_availability_categories_and_phases(failure, reason, phase
     runtime.client = Client()
     task = asyncio.create_task(asyncio.sleep(60))
     record = _ConnectionRecord(_structure("old"), frozenset(), _Session(), task)
+    runtime._records = {"family": record}
     try:
         with pytest.raises(RuntimeUnavailable) as caught:
             await runtime._refresh_structure(_access(), record)
@@ -756,6 +757,7 @@ async def test_missing_refresh_token_has_token_diagnostic_without_session() -> N
     runtime.client = SimpleNamespace(open_session=AsyncMock())
     task = asyncio.create_task(asyncio.sleep(60))
     record = _ConnectionRecord(_structure("old"), frozenset(), _Session(), task)
+    runtime._records = {"family": record}
     try:
         with pytest.raises(RuntimeUnavailable) as caught:
             await runtime._refresh_structure(_access(), record, fresh_visibility=True)
@@ -779,6 +781,7 @@ async def test_cancelled_refresh_is_not_converted_to_availability() -> None:
     runtime.client = SimpleNamespace(open_session=AsyncMock(return_value=session))
     task = asyncio.create_task(asyncio.sleep(60))
     record = _ConnectionRecord(_structure("old"), frozenset(), _Session(), task)
+    runtime._records = {"family": record}
     try:
         with pytest.raises(asyncio.CancelledError):
             await runtime._refresh_structure(_access(), record, fresh_visibility=True)

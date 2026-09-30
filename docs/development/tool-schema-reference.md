@@ -29,7 +29,8 @@ The static catalog is version-specific and configuration-independent. Optional t
 ## Availability errors
 
 Runtime availability failures retain `error="temporarily_unavailable"` and existing
-fixed safe messages. Additive `availability_phase` and `retry_after_seconds` are
+fixed safe messages. The notes read preserves its released `rate_limited` category
+when wrapping local budget rejection, including the same diagnostic and retry fields. Additive `availability_phase` and `retry_after_seconds` are
 nullable. `diagnostic_code` is one of `local_rate_limit`,
 `structure_refresh_connection`, `structure_refresh_protocol`,
 `structure_refresh_token`, `structure_refresh_timeout`, `structure_refresh_unknown`,

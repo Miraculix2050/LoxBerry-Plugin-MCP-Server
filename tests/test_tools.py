@@ -3846,3 +3846,29 @@ def test_read_adapter_retains_wrapped_runtime_availability(reason) -> None:
     assert result.trace_id == "wrapped-trace"
     assert "private-token" not in result.model_dump_json()
     assert result.data.retry_after_seconds == (8 if reason.value == "local_rate_limit" else None)
+
+
+@pytest.mark.asyncio
+async def test_notes_budget_error_retains_released_code_and_retry(monkeypatch) -> None:
+    from collections import defaultdict, deque
+    from unittest.mock import AsyncMock
+
+    runtime = object.__new__(runtime_module.LoxoneRuntime)
+    runtime._rate = defaultdict(deque, {"family": deque([100.25])})
+    runtime._rate_limit = 1
+    runtime._parallel = asyncio.Semaphore(1)
+    runtime._prune_rate_state = lambda _now: None
+    runtime._require_access = AsyncMock()
+    monkeypatch.setattr(runtime_module.time, "monotonic", lambda: 140.0)
+    monkeypatch.setattr(tools_module, "get_access_token", lambda: _loxberry_access(READ_SCOPE))
+    server = FastMCP("notes-budget-contract")
+    register_read_tools(server, runtime)
+    tool = server._tool_manager.get_tool("loxone_get_control_notes")
+    result = await tool.fn("visible-control")
+    assert not result.ok
+    assert result.data.error == "rate_limited"
+    assert result.data.message == "request rate limit exceeded"
+    assert result.data.diagnostic_code == "local_rate_limit"
+    assert result.data.availability_phase == "local_budget"
+    assert result.data.retry_after_seconds == 21
+    assert result.trace_id
