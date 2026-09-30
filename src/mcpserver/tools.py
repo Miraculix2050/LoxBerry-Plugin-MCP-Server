@@ -414,6 +414,28 @@ class ControlHistoryTargetsData(ControlSummaryData):
     omitted_sections: list[Literal["presentation", "relationships", "non_history_capabilities"]]
 
 
+class OperationTargetCapabilitiesData(BaseModel):
+    allowed_actions: list[str]
+    radio_outputs: list[RadioOutputData] = Field(default_factory=list)
+    scene_ids: list[str] = Field(default_factory=list)
+    analog_range: AnalogRangeData | None = None
+    timer_modes: list[NamedOptionData] = Field(default_factory=list)
+    ventilation_modes: list[NamedOptionData] = Field(default_factory=list)
+    mood_list_state: StateReferenceData | None = None
+    kelvin_range: tuple[int, int] | None = None
+    daytimer_values: list[int] = Field(default_factory=list)
+    climate_mode_values: list[int] = Field(default_factory=list)
+
+
+class ControlOperationTargetsData(BaseModel):
+    uuid: str
+    name: str
+    type: str
+    visibility: Literal["direct", "linked", "hidden"]
+    view: Literal["operation_targets"]
+    capabilities: OperationTargetCapabilitiesData
+
+
 class StateData(BaseModel):
     uuid: str
     value: JsonValue
@@ -1242,7 +1264,9 @@ class ControlPageEnvelope(ToolEnvelope):
 
 
 class ControlDescriptionEnvelope(ToolEnvelope):
-    data: ControlDescriptionData | ControlHistoryTargetsData | ErrorData
+    data: (
+        ControlDescriptionData | ControlHistoryTargetsData | ControlOperationTargetsData | ErrorData
+    )
 
 
 class StatesEnvelope(ToolEnvelope):
@@ -2345,11 +2369,15 @@ def _normalized_query(value: str | None) -> str | None:
     return value.casefold().strip() if value else None
 
 
-async def _snapshot(runtime: LoxoneRuntime | None) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+async def _snapshot(
+    runtime: LoxoneRuntime | None, *, fresh_visibility: bool = False
+) -> tuple[StoredAccessToken, RuntimeSnapshot]:
     if runtime is None:
         raise RuntimeUnavailable("the service is not configured")
     access = _access()
     async with runtime.call_slot(access):
+        if fresh_visibility:
+            return access, await runtime.snapshot(access, fresh_visibility=True)
         return access, await runtime.snapshot(access)
 
 
@@ -3770,8 +3798,8 @@ def register_read_tools(
         name="loxone_describe_control",
         description=(
             "Describe one visible Loxone control or, with include_hidden, one hidden control for "
-            "read-only diagnosis. Set view=history_targets for compact state and advertised "
-            "native-history references; this does not establish local recording or time coverage."
+            "read-only diagnosis. Use view=history_targets for compact history targets or "
+            "view=operation_targets for allowed actions and their required selectable targets."
         ),
         annotations=annotations,
         structured_output=True,
@@ -3788,14 +3816,18 @@ def register_read_tools(
         view: Annotated[
             str,
             Field(
-                description="Full description (default) or compact state and statistic targets.",
-                json_schema_extra={"enum": ["full", "history_targets"]},
+                description="Full description (default), history targets, or operation targets.",
+                json_schema_extra={"enum": ["full", "history_targets", "operation_targets"]},
             ),
         ] = "full",
     ) -> ControlDescriptionEnvelope:
         try:
-            access_token, snapshot = await _snapshot(runtime)
-            if view not in {"full", "history_targets"}:
+            access_token, snapshot = (
+                await _snapshot(runtime, fresh_visibility=True)
+                if view == "operation_targets"
+                else await _snapshot(runtime)
+            )
+            if view not in {"full", "history_targets", "operation_targets"}:
                 return _error(ControlDescriptionEnvelope, "invalid_input", "view is invalid")
             control = next(
                 (
@@ -3809,6 +3841,97 @@ def register_read_tools(
             )
             if control is None:
                 return _error(ControlDescriptionEnvelope, "not_found", "control is not visible")
+            if view == "operation_targets":
+                actions = (
+                    allowed_actions(control)
+                    if not control.is_hidden
+                    and control_enabled
+                    and CONTROL_SCOPE in access_token.scopes
+                    else []
+                )
+                action_set = set(actions)
+                operation_value = {
+                    "uuid": control.uuid,
+                    "name": control.name,
+                    "type": control.control_type,
+                    "visibility": (
+                        "hidden"
+                        if control.is_hidden
+                        else "linked"
+                        if control.is_user_linked or control.is_monitor_referenced
+                        else "direct"
+                    ),
+                    "view": "operation_targets",
+                    "capabilities": {
+                        "allowed_actions": actions,
+                        "radio_outputs": (
+                            [
+                                {"output_id": output_id, "name": output_name}
+                                for output_id, output_name in control.radio_outputs
+                            ]
+                            if "select_output" in action_set
+                            else []
+                        ),
+                        "scene_ids": (list(control.scene_ids) if "set_scene" in action_set else []),
+                        "analog_range": (
+                            {
+                                "minimum": control.minimum,
+                                "maximum": control.maximum,
+                                "step": control.step,
+                            }
+                            if "set_value" in action_set
+                            else None
+                        ),
+                        "timer_modes": (
+                            [
+                                {"id": item.option_id, "name": item.name}
+                                for item in control.timer_modes
+                            ]
+                            if "start_override" in action_set
+                            and control.control_type == "IRoomControllerV2"
+                            else []
+                        ),
+                        "ventilation_modes": (
+                            [
+                                {"id": item.option_id, "name": item.name}
+                                for item in control.ventilation_modes
+                            ]
+                            if "start_override" in action_set
+                            and control.control_type == "Ventilation"
+                            else []
+                        ),
+                        "mood_list_state": (
+                            next(
+                                (
+                                    {"name": name, "uuid": state_uuid}
+                                    for name, state_uuid in control.state_uuids
+                                    if name == "moodList"
+                                ),
+                                None,
+                            )
+                            if "set_mood" in action_set
+                            and control.control_type == "LightControllerV2"
+                            else None
+                        ),
+                        "kelvin_range": (
+                            (control.min_kelvin, control.max_kelvin)
+                            if "set_color_temperature" in action_set
+                            else None
+                        ),
+                        "daytimer_values": (
+                            [0, 1]
+                            if control.control_type == "Daytimer" and "start_override" in action_set
+                            else []
+                        ),
+                        "climate_mode_values": (
+                            [0, 1, 2, 3]
+                            if control.control_type == "ClimateControllerUS"
+                            and "start_mode_override" in action_set
+                            else []
+                        ),
+                    },
+                }
+                return _result(ControlDescriptionEnvelope, operation_value)
             value = _control_summary(control, snapshot)
             statistics = [
                 {

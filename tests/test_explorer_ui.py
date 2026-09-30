@@ -48,6 +48,15 @@ def test_schema_reference_link_label_is_concise_in_both_languages() -> None:
     assert "SCHEMA_REFERENCE=Open schema reference" in english
 
 
+def test_explorer_catalog_publishes_operation_targets_view() -> None:
+    catalog = tool_schema_catalog("test")
+    describe = next(tool for tool in catalog["tools"] if tool["name"] == "loxone_describe_control")
+    view = describe["inputSchema"]["properties"]["view"]
+
+    assert view["default"] == "full"
+    assert view["enum"] == ["full", "history_targets", "operation_targets"]
+
+
 def test_explorer_uses_one_compact_mobile_tool_panel_and_adaptive_workspace() -> None:
     template = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
     stylesheet = (ROOT / "webfrontend" / "htmlauth" / "mcp-ui.css").read_text(encoding="utf-8")
