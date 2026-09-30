@@ -613,7 +613,7 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert tool.annotations.destructiveHint is False
     assert tool.annotations.openWorldHint is False
     assert result.data.name == "using-loxberry-mcp"  # type: ignore[union-attr]
-    assert result.data.revision == 39  # type: ignore[union-attr]
+    assert result.data.revision == 40  # type: ignore[union-attr]
     assert "`loxone_get_structure_overview`" in result.data.content  # type: ignore[union-attr]
     assert result.data.media_type == "text/markdown"  # type: ignore[union-attr]
     assert result.data.content == read_skill_markdown()  # type: ignore[union-attr]
@@ -624,6 +624,82 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert "`data.received_at`" in result.data.content  # type: ignore[union-attr]
     assert "`emergency_stop_active`" in result.data.content  # type: ignore[union-attr]
     assert "`error.data.blocked_since`" in result.data.content  # type: ignore[union-attr]
+
+
+@pytest.mark.parametrize(
+    "required_evidence",
+    [
+        (
+            'view="full"',
+            "Direct monitor reference",
+            "Explicit linked control",
+            "Structural project path",
+            "Name-only",
+        ),
+        (
+            "invalid_window_monitor_entry",
+            "control_reference_unavailable",
+            "partially_resolved",
+            "room_reference_mismatch",
+            "retained positions only",
+        ),
+        (
+            'identifier_type="runtime_control_uuid"',
+            'direction="downstream"',
+            'direction="upstream"',
+            'start_type="project_node_id"',
+            "child_project_node_ids",
+            "connector_key",
+        ),
+        (
+            "InputRef",
+            "Or",
+            "lockout",
+            "unmodeled logic",
+            "truncated_fields",
+            "unresolved_relationships",
+            "incomplete evidence",
+        ),
+        (
+            "cross_assignment_review_candidate",
+            "wrong contact wiring",
+            "misleading consumer",
+            "physical completeness not assessable",
+            "not_assessable",
+            "one opening per Jalousie",
+        ),
+    ],
+)
+def test_skill_opening_contact_review_preserves_evidence_boundaries(required_evidence) -> None:
+    content = read_skill_markdown()
+    workflow = content.split("### Review opening-contact coverage and consumer assignment\n", 1)[1]
+    workflow = workflow.split("### Read global metadata", 1)[0]
+    normalized = " ".join(workflow.split())
+    for evidence in required_evidence:
+        assert evidence in normalized
+    assert "loxone_analyze_opening_contacts" not in workflow
+    assert "loxone_analyze_window_monitor" not in workflow
+
+
+@pytest.mark.parametrize("language", ["de", "en"])
+def test_opening_contact_user_documentation_preserves_tool_and_evidence_contract(language) -> None:
+    document = Path(__file__).resolve().parents[1] / "docs" / "user" / f"capabilities.{language}.md"
+    content = document.read_text(encoding="utf-8")
+    for evidence in (
+        "relationships.linked_controls",
+        "loxone_get_project_status",
+        "loxone_describe_project_object",
+        "loxone_trace_project_logic",
+        "downstream",
+        "upstream",
+        "AutoJalousie.Window",
+        "InputRef",
+        "Or",
+        "truncated_fields",
+        "cross_assignment_review_candidate",
+        "not_assessable",
+    ):
+        assert evidence in content
 
 
 def test_tool_input_schemas_explain_every_argument() -> None:

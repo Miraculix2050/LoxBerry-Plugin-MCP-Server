@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Extend the canonical skill with evidence-safe WindowMonitor coverage and
+  bidirectional contact/consumer review, preserving intermediate logic and
+  distinguishing configured wiring from unassessable physical completeness.
+
 - Add value-safe WindowMonitor item diagnostics, visible-reference resolution
   counts and explicit UUID-based room consistency. Keep malformed positions and
   distinguish omitted evidence from unresolved retained entries without exposing
