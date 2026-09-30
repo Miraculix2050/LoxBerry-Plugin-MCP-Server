@@ -54,9 +54,19 @@ does not acquire a family lock while holding its refresh lock; cleanup remains
 able to drain the stream while the separate refresh request is suspended. The
 four cleanup/replacement regressions are no longer expected failures.
 
+The #318/#324 correction holds one runtime admission lock across pruning,
+connection establishment and publication. Admission precedes family locks;
+disconnect takes only a family lock, and refresh runs outside admission. Close
+ends admission before waiting for this lock. Connections already opening drain
+their stream before failing, and queued or subsequent snapshots cannot publish
+after close. Defaults and the independent per-family rate windows are unchanged.
+The concurrent-capacity regression is no longer an expected failure; a real
+unpublished stream/shutdown regression additionally covers #324. Registered-task
+shutdown checks `asyncio.all_tasks()` against its baseline, including pump tasks.
+
 Each fix belongs in a separate reviewed PR and removes its expected-failure
 marker. Passing the audit with expected failures does not resolve these bugs or
 complete #160. Device/Miniserver and browser acceptance are not claimed by these
-controlled-session tests. In-flight admission during shutdown and direct control
-command/session ownership require explicit additional evidence before a broader
-lifecycle claim.
+controlled-session tests. In-flight admission during shutdown is now covered.
+Direct control command/session ownership requires explicit additional evidence
+before a broader lifecycle claim.

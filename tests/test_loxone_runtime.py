@@ -90,6 +90,8 @@ async def test_due_structure_refresh_is_single_flight_and_increments_generation(
     )
     runtime._records = {"family": record}
     runtime._locks = _FamilyLocks()
+    runtime._admission_lock = asyncio.Lock()
+    runtime._closed = False
     runtime._prune_sessions = lambda _subject: asyncio.sleep(0)  # type: ignore[method-assign]
     runtime.token_store = Store()
     runtime.client = Client()
@@ -131,6 +133,8 @@ async def test_due_structure_refresh_fails_closed() -> None:
         )
     }
     runtime._locks = _FamilyLocks()
+    runtime._admission_lock = asyncio.Lock()
+    runtime._closed = False
     runtime._prune_sessions = lambda _subject: asyncio.sleep(0)  # type: ignore[method-assign]
     runtime.token_store = Store()
     runtime.client = Client()
@@ -169,6 +173,8 @@ async def test_due_structure_refresh_checks_version_without_reloading_unchanged_
     )
     runtime._records = {"family": record}
     runtime._locks = _FamilyLocks()
+    runtime._admission_lock = asyncio.Lock()
+    runtime._closed = False
     runtime._prune_sessions = lambda _subject: asyncio.sleep(0)  # type: ignore[method-assign]
     runtime.token_store = Store()
     runtime.client = Client()
@@ -218,6 +224,8 @@ async def test_fresh_project_visibility_detects_same_marker_rights_change() -> N
     )
     runtime._records = {"family": record}
     runtime._locks = _FamilyLocks()
+    runtime._admission_lock = asyncio.Lock()
+    runtime._closed = False
     runtime._prune_sessions = lambda _subject: asyncio.sleep(0)  # type: ignore[method-assign]
     runtime.token_store = Store()
     runtime.client = Client()
@@ -254,6 +262,8 @@ async def test_fresh_project_visibility_timeout_is_unavailable() -> None:
     )
     runtime._records = {"family": record}
     runtime._locks = _FamilyLocks()
+    runtime._admission_lock = asyncio.Lock()
+    runtime._closed = False
     runtime._prune_sessions = lambda _subject: asyncio.sleep(0)  # type: ignore[method-assign]
     runtime.token_store = Store()
     runtime.client = Client()
@@ -421,6 +431,7 @@ async def test_runtime_close_disconnects_all_records_without_revoking_tokens() -
         closed.append(family_id)
 
     runtime._records = {"one": object(), "two": object()}
+    runtime._admission_lock = asyncio.Lock()
     runtime.disconnect = disconnect  # type: ignore[method-assign]
 
     await runtime.close()

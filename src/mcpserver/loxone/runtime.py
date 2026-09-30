@@ -308,6 +308,8 @@ class LoxoneRuntime:
         self._initial_state_timeout_seconds = min(timeout_seconds, 2.0)
         self.cache = UserStateCache(max_states_per_user=max_states_per_identity)
         self._records: dict[str, _ConnectionRecord] = {}
+        self._admission_lock = asyncio.Lock()
+        self._closed = False
         self._locks = _FamilyLocks()
         self._rate: defaultdict[str, deque[float]] = defaultdict(deque)
         self._rate_limit = requests_per_minute
@@ -964,25 +966,32 @@ class LoxoneRuntime:
     ) -> RuntimeSnapshot:
         subject = access.family_id
         await self._require_access(access)
-        await self._prune_sessions(subject)
-        record = self._records.get(subject)
-        connected_now = False
-        if record is None or record.task.done():
-            async with self._locks.hold(subject):
-                await self._require_access(access)
-                record = self._records.get(subject)
-                if record is None or record.task.done():
-                    record = await self._connect(access)
-                    try:
-                        await self._require_access(access)
-                    except BaseException:
-                        record.task.cancel()
-                        with suppress(asyncio.CancelledError, Exception):
-                            await record.task
-                        self.cache.clear(subject)
-                        raise
-                    self._records[subject] = record
-                    connected_now = True
+        # Admission precedes family locks. Disconnect never takes admission, so
+        # pruning cannot reverse the order while waiting for a family holder.
+        async with self._admission_lock:
+            if self._closed:
+                raise RuntimeUnavailable("Loxone runtime is closed")
+            await self._prune_sessions(subject)
+            record = self._records.get(subject)
+            connected_now = False
+            if record is None or record.task.done():
+                async with self._locks.hold(subject):
+                    await self._require_access(access)
+                    record = self._records.get(subject)
+                    if record is None or record.task.done():
+                        record = await self._connect(access)
+                        try:
+                            await self._require_access(access)
+                            if self._closed:
+                                raise RuntimeUnavailable("Loxone runtime is closed")
+                        except BaseException:
+                            record.task.cancel()
+                            with suppress(asyncio.CancelledError, Exception):
+                                await record.task
+                            self.cache.clear(subject)
+                            raise
+                        self._records[subject] = record
+                        connected_now = True
         record.last_used = time.monotonic()
         if (fresh_visibility and not connected_now) or (
             record.last_structure_check + self.structure_refresh_seconds <= record.last_used
@@ -1278,8 +1287,11 @@ class LoxoneRuntime:
         await self.disconnect(family_id)
 
     async def close(self) -> None:
+        # Stop queued admission before waiting for a connection already opening.
+        self._closed = True
         projects = getattr(self, "projects", None)
         if projects is not None:
             await projects.close()
-        for family_id in tuple(self._records):
-            await self.disconnect(family_id)
+        async with self._admission_lock:
+            for family_id in tuple(self._records):
+                await self.disconnect(family_id)

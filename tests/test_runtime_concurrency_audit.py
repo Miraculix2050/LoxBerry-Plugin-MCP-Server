@@ -150,7 +150,6 @@ async def _cleanup_during_refresh(cleanup: str, *, check_cache: bool) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="Confirmed bug #318")
 async def test_concurrent_new_families_respect_session_capacity() -> None:
     owner = runtime(max_active_sessions=1, structure_refresh_seconds=10**12)
     entered = asyncio.Event()
@@ -189,6 +188,7 @@ async def test_concurrent_new_families_respect_session_capacity() -> None:
 
 @pytest.mark.asyncio
 async def test_shutdown_drains_background_tasks_and_is_idempotent() -> None:
+    baseline = asyncio.all_tasks()
     owner = runtime()
     records = [await install(owner, family) for family in ("one", "two", "three")]
     await asyncio.wait_for(owner.close(), 2)
@@ -198,6 +198,7 @@ async def test_shutdown_drains_background_tasks_and_is_idempotent() -> None:
     assert not owner.cache._values
     assert all(record.task.done() for record in records)
     assert all(record.session.close_calls == 1 for record in records)
+    assert not (asyncio.all_tasks() - baseline)
 
 
 @pytest.mark.asyncio
@@ -268,4 +269,47 @@ async def test_old_refresh_cannot_modify_reconnected_generation_or_cache() -> No
     finally:
         release.set()
         await asyncio.gather(call, return_exceptions=True)
+        await owner.close()
+
+
+@pytest.mark.asyncio
+async def test_shutdown_during_unpublished_initial_stream_drains_connection() -> None:
+    owner = runtime()
+    started, initial, closing = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+    class InitialStream(Stream):
+        async def load_structure(self):
+            return structure()
+
+        async def state_events(self):
+            started.set()
+            await initial.wait()
+            yield ()
+            await asyncio.Event().wait()
+
+    stream = InitialStream()
+    owner.client.open_session = AsyncMock(return_value=stream)
+    call = asyncio.create_task(owner.snapshot(access()))
+
+    async def shutdown():
+        closing.set()
+        await owner.close()
+
+    stop = None
+    try:
+        await asyncio.wait_for(started.wait(), 2)
+        assert not owner._records
+        stop = asyncio.create_task(shutdown())
+        await asyncio.wait_for(closing.wait(), 2)
+        initial.set()
+        results = await asyncio.wait_for(asyncio.gather(call, stop, return_exceptions=True), 4)
+        assert not owner._records
+        assert stream.closed.is_set()
+        assert isinstance(results[0], RuntimeUnavailable)
+        assert results[1] is None
+        with pytest.raises(RuntimeUnavailable, match="closed"):
+            await owner.snapshot(access("after-close"))
+    finally:
+        initial.set()
+        await asyncio.gather(call, *([stop] if stop is not None else []), return_exceptions=True)
         await owner.close()
