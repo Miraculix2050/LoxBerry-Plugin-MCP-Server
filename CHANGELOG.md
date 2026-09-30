@@ -5,6 +5,8 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Serialize runtime session admission across families to enforce capacity during
+  concurrent connects, and drain pending admission before shutdown completes.
 - Discard structure-refresh results from disconnected or replaced runtime records
   so cleanup and reconnect cannot resurrect or overwrite per-family state cache.
 - Mark cached runtime states stale on every state-stream termination, including
