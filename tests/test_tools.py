@@ -2734,7 +2734,9 @@ async def test_describe_control_resolves_window_monitor_item_references(
         ),
     )
 
-    async def snapshot(_runtime: object) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+    async def snapshot(
+        _runtime: object, *, fresh_visibility: bool = False
+    ) -> tuple[StoredAccessToken, RuntimeSnapshot]:
         return access, RuntimeSnapshot("family", structure, True)
 
     monkeypatch.setattr(tools_module, "_snapshot", snapshot)
@@ -2754,8 +2756,10 @@ async def test_describe_control_resolves_window_monitor_item_references(
     assert summary is not None
     assert (summary.total, summary.returned, summary.omitted, summary.truncated) == (1, 1, 0, False)
     assert summary.diagnostics == []
-    compact = await tool.fn("monitor-1", view="history_targets")
-    assert "window_monitor" not in compact.model_dump_json()
+    for view in ("history_targets", "operation_targets"):
+        compact = await tool.fn("monitor-1", view=view)
+        assert compact.ok is True
+        assert "window_monitor" not in compact.model_dump_json()
 
 
 @pytest.mark.asyncio
