@@ -686,7 +686,7 @@ def test_tool_input_schemas_explain_every_argument() -> None:
     assert find_properties["has_history"]["default"] is False
     describe_view = published["loxone_describe_control"].parameters["properties"]["view"]
     assert describe_view["default"] == "full"
-    assert describe_view["enum"] == ["full", "history_targets", "operation_targets"]
+    assert describe_view["enum"] == ["full", "history_targets", "operation_targets", "state_refs"]
     assert find_properties["limit"]["minimum"] == 1
     assert find_properties["limit"]["maximum"] == 100
     operation = published["loxone_operate_control"].parameters["properties"]

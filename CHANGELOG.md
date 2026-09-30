@@ -15,6 +15,8 @@ extracted from the matching version heading.
   apply the same prefix to explicit read-only reference exposure.
   Preserve independently linked control authorization when monitor references overlap.
 
+- Add `loxone_describe_control(view="state_refs")` for complete normalized state-name/UUID references without history, statistics, or other control metadata. Refresh user-filtered visibility before returning references, fail without cached fallback, and mark a disconnected event stream as stale.
+
 - Measure Event History chart CGI delivery through stdout flush and distinguish
   completed preparations from slow or failed requests in operational logs.
 
