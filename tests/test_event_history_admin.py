@@ -189,6 +189,45 @@ def test_chart_store_timeout_has_distinct_code(tmp_path, monkeypatch):
     assert error.value.code == "query_timeout"
 
 
+def test_chart_prepare_phase_diagnostics_are_value_free(tmp_path, monkeypatch):
+    _, history = _setup(tmp_path, monkeypatch, sources=(SOURCE,))
+    history.initialize()
+    document = {
+        "generation": "c" * 24,
+        "verified_at": time.time(),
+        "controls": event_history_admin._selector_projection(None)["controls"],
+        "control_index": {SOURCE[0]: 0},
+    }
+
+    class Cache:
+        profile = "private-profile-marker"
+
+        def refresh(self, discover):
+            discover()
+            return document
+
+    monkeypatch.setattr(event_history_admin, "_selector_cache", lambda _config: Cache())
+    timing: dict[str, float | int] = {}
+
+    event_history_admin.chart_prepare(
+        {"sources": [{"control_uuid": SOURCE[0], "state_uuid": SOURCE[1]}]},
+        timing=timing,
+    )
+
+    assert set(timing) == {
+        "config_load_ms",
+        "selector_refresh_ms",
+        "revalidation_ms",
+        "history_prepare_ms",
+        "selected_sources",
+        "discovered_controls",
+    }
+    assert all(isinstance(value, (int, float)) and value >= 0 for value in timing.values())
+    diagnostics = repr(timing)
+    for private_value in (*SOURCE, "Visible", "Living room", "private-profile-marker"):
+        assert private_value not in diagnostics
+
+
 def test_chart_selection_and_range_are_bounded(tmp_path, monkeypatch):
     _setup(tmp_path, monkeypatch)
     selected = {"control_uuid": SOURCE[0], "state_uuid": SOURCE[1]}
