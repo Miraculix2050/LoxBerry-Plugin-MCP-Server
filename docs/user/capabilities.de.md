@@ -4,6 +4,17 @@
 
 ## Unterstützter Umfang
 
+Für WindowMonitor-Controls behält die vollständige Beschreibung die ersten 100
+konfigurierten Positionen in der Quellreihenfolge der Liste oder des Mappings bei,
+einschließlich fehlerhafter Platzhalter. `capabilities.model.window_monitor_summary`
+meldet `total`, `returned`, `omitted` und `truncated`; nur erhaltene explizite Referenzen
+können interne Controls zusätzlich zum Lesen sichtbar machen. Fehlende/null-Sammlungen
+sind leer. Ungültige Sammlungsformen melden `invalid_window_monitor_collection` mit
+unbekannter (`null`) Gesamtzahl und ausgelassener Anzahl. Ordnen Sie `windowStates`
+über den ursprünglichen nullbasierten Index zu; ausgelassene Positionen belegen keine
+fehlenden Kontakte. Kompakte Ansichten enthalten diese Felder nicht. Eine vollständige
+Konfigurationsdarstellung belegt keine physische Öffnungsabdeckung.
+
 Der Server liest sichtbare Räume, Kategorien, Controls und Zustände. Optional sind begrenzte Historie, Statistiken, maskierte LoxBerry-Diagnosen sowie dokumentierte, typabhängige Aktionen für sichtbare Gen.-1-Controls verfügbar.
 
 Nach der Suche mit `loxone_find_controls` kann `loxone_describe_control` mit `view="history_targets"` nur die Control-Identität, State-Namen und -UUIDs, das Kennzeichen für native Control-Historie sowie IDs und Metadaten beworbener Statistikserien liefern. Der Standardwert `view="full"` behält die ausführliche Antwort bei. `native_statistics_truncated=true` in der kompakten Ansicht bedeutet, dass mehr als 128 gültige StatisticV2-Serien gefunden und einige ausgelassen wurden. Ein aufgeführtes Ziel belegt weder eine lokale Ereignisaufzeichnung noch die Abdeckung eines angefragten Zeitraums durch native Historie oder Statistik; dafür ist die jeweilige Historienantwort zu prüfen.

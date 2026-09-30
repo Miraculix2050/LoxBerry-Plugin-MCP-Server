@@ -189,6 +189,12 @@ the problem.
   value with `capabilities.model.window_monitor_items`. Resolve an item to a
   control only when its `control` reference is present; otherwise report its name
   or index without guessing a source contact.
+  The full view retains only the first 100 source positions, including malformed
+  placeholders. Check `capabilities.model.window_monitor_summary` for `total`,
+  `returned`, `omitted`, `truncated`, and fixed collection diagnostics. Unknown
+  counts are null for invalid collections. Do not shift indices or interpret
+  omitted positions as absent contacts. Complete configuration is not evidence
+  of physical opening coverage; compact views omit this metadata.
 - For `Irrigation` and `AlarmClock`, use the additive `semantic_value` returned
   with documented states. Keep `value` as the unchanged source value, surface
   semantic-decoding warnings, and never infer a write action. Both families are

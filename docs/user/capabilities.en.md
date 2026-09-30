@@ -4,6 +4,16 @@
 
 ## Supported scope
 
+For WindowMonitor controls, the full description retains the first 100 configured
+positions in list or mapping source order, including malformed placeholders.
+`capabilities.model.window_monitor_summary` reports `total`, `returned`, `omitted`,
+and `truncated`; only retained explicit references can additionally expose internal
+controls for reading. Missing/null collections are empty. Unsupported collection
+shapes report `invalid_window_monitor_collection`, with unknown (`null`) total and
+omitted counts. Match `windowStates` by the original zero-based item index; omitted
+positions are not evidence of missing contacts. These fields are absent from compact
+views. Complete configured representation does not establish physical opening coverage.
+
 The server reads visible rooms, categories, controls and states. Optional bounded history, statistics, masked LoxBerry diagnostics and documented type-specific actions for visible Gen. 1 controls are available.
 
 After locating a control with `loxone_find_controls`, `loxone_describe_control` can use `view="history_targets"` to return only its identity, state names and UUIDs, advertised native control-history flag, and statistic series IDs and metadata. The default `view="full"` retains the detailed response. `native_statistics_truncated=true` in the compact view means more than 128 valid StatisticV2 series were found and some are omitted. A listed target does not establish that local event history is recorded or that native history or statistics cover a requested period; check the respective history response.

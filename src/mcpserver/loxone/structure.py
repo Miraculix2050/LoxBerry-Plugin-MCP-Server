@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
+from itertools import islice
 from typing import Any
 
 from mcpserver.loxone.models import (
@@ -22,6 +23,7 @@ from mcpserver.loxone.models import (
     VentilationTimerProfile,
     WeatherMetadata,
     WindowMonitorItem,
+    WindowMonitorSummary,
 )
 
 _REFERENCED_ONLY_INTERNAL = 1 << 0
@@ -259,14 +261,24 @@ def _ventilation_profiles(value: object) -> tuple[VentilationTimerProfile, ...]:
     return tuple(result)
 
 
-def _window_monitor_items(value: object) -> tuple[WindowMonitorItem, ...]:
-    entries: list[tuple[str | None, object]]
-    if isinstance(value, list) and len(value) <= 100:
-        entries = [(None, item) for item in value]
-    elif isinstance(value, Mapping) and len(value) <= 100:
-        entries = [(key if isinstance(key, str) else None, item) for key, item in value.items()]
+def _window_monitor_items(
+    value: object,
+) -> tuple[tuple[WindowMonitorItem, ...], WindowMonitorSummary]:
+    """Retain a source-order prefix without materializing the omitted tail."""
+    if value is None:
+        return (), WindowMonitorSummary()
+    entries: Iterator[tuple[str | None, object]]
+    if isinstance(value, list):
+        entries = ((None, item) for item in islice(value, 100))
+    elif isinstance(value, Mapping):
+        entries = (
+            (key if isinstance(key, str) and len(key) <= 200 else None, item)
+            for key, item in islice(value.items(), 100)
+        )
     else:
-        return ()
+        return (), WindowMonitorSummary(
+            total=None, omitted=None, diagnostics=("invalid_window_monitor_collection",)
+        )
     result: list[WindowMonitorItem] = []
     for index, (mapped_uuid, item) in enumerate(entries):
         if not isinstance(item, Mapping):
@@ -287,7 +299,9 @@ def _window_monitor_items(value: object) -> tuple[WindowMonitorItem, ...]:
                 text("installPlace"),
             )
         )
-    return tuple(result)
+    total = len(value)
+    omitted = total - len(result)
+    return tuple(result), WindowMonitorSummary(total, len(result), omitted, omitted > 0)
 
 
 def _room_groups(
@@ -696,7 +710,7 @@ def _monitor_referenced_control_uuids(value: object, *, maximum_controls: int) -
             continue
         result.update(
             entry.control_uuid
-            for entry in _window_monitor_items(details.get("windows"))
+            for entry in _window_monitor_items(details.get("windows"))[0]
             if entry.control_uuid is not None
         )
     return frozenset(result)
@@ -783,6 +797,7 @@ def _controls(
             _status_monitor_details(details) if item.get("type") == "StatusMonitor" else ((), ())
         )
         statistic_series, statistic_series_truncated = _statistic_series(item)
+        window_monitor_items, window_monitor_summary = _window_monitor_items(details.get("windows"))
         controls.append(
             Control(
                 uuid=uuid,
@@ -823,7 +838,10 @@ def _controls(
                 timer_modes=_named_options(details.get("timerModes")),
                 ventilation_modes=_named_options(details.get("modes")),
                 ventilation_timer_profiles=_ventilation_profiles(details.get("timerProfiles")),
-                window_monitor_items=_window_monitor_items(details.get("windows")),
+                window_monitor_items=window_monitor_items,
+                window_monitor_summary=(
+                    window_monitor_summary if item.get("type") == "WindowMonitor" else None
+                ),
                 connected_inputs=connected_inputs,
                 alarm_clock_has_night_light=(
                     _optional_flag(details.get("hasNightLight"))

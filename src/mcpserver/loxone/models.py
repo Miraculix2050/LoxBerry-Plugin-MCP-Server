@@ -105,6 +105,17 @@ class WindowMonitorItem:
 
 
 @dataclass(frozen=True, slots=True)
+class WindowMonitorSummary:
+    """Collection coverage, including malformed retained positions."""
+
+    total: int | None = 0
+    returned: int = 0
+    omitted: int | None = 0
+    truncated: bool = False
+    diagnostics: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class GlobalMetadata:
     """One normalized, read-only LoxAPP3 global metadata entry."""
 
@@ -162,6 +173,7 @@ class Control:
     ventilation_modes: tuple[NamedOption, ...] = ()
     ventilation_timer_profiles: tuple[VentilationTimerProfile, ...] = ()
     window_monitor_items: tuple[WindowMonitorItem, ...] = ()
+    window_monitor_summary: WindowMonitorSummary | None = None
     connected_inputs: int | None = None
     alarm_clock_has_night_light: bool | None = None
     alarm_clock_brightness_inactive_connected: bool | None = None
