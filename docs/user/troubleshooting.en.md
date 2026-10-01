@@ -23,6 +23,17 @@ caller's local request budget; only this cause supplies a rounded-up delay of
 not reserved. Reuse successful descriptions and reduce concurrent fan-out.
 Never automatically retry uncertain writes.
 
+Runtime session establishment waits for local authentication coordination within
+the configured connection timeout; waiting and login share that budget. Cancellation
+stops waiting. Fresh MCP visibility still requires the caller's authenticated
+structure; the Admin identity or an old cached structure cannot replace it.
+`structure_refresh_auth_busy` means local coordination exhausted its wait before
+login. `structure_refresh_source_ip_suppressed` means source-IP blocking or the
+persistent breaker prevented access. Neither identifies the caller's rate budget.
+Transport failures and remote session limits remain separate; a connection-category
+error alone does not establish a Miniserver session limit. These diagnostics cannot
+attribute older failures whose underlying exception was not retained (#332).
+
 `structure_refresh_connection`, `structure_refresh_protocol`,
 `structure_refresh_token`, and `structure_refresh_timeout` distinguish established
 refresh exception categories. Token errors include missing tokens and token-store

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
+from types import SimpleNamespace
 from typing import Any, cast
+from unittest.mock import AsyncMock, Mock
 from uuid import UUID
 
 import httpx
@@ -11,6 +14,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from websockets.exceptions import ConnectionClosedError, ConnectionClosedOK
 from websockets.frames import Close
 
+from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
 from mcpserver.loxone.client import (
     LoxoneClient,
     LoxoneCommandRejected,
@@ -27,7 +31,87 @@ from mcpserver.loxone.client import (
     _websocket_command,
 )
 from mcpserver.loxone.events import MessageHeader, MessageType
+from mcpserver.loxone.runtime import LoxoneRuntime
 from mcpserver.loxone.security import token_hmac
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("trigger", ["cancel", "deadline", "cleanup_cancel", "cleanup_deadline"])
+async def test_open_session_cancellation_aborts_without_close_budget(
+    monkeypatch, tmp_path, trigger
+):
+    client = LoxoneClient(
+        MiniserverEndpoint.parse_gen1("http://192.168.1.10"),
+        client_uuid=UUID(int=1),
+        timeout_seconds=0.1,
+    )
+    started = asyncio.Event()
+    closing = asyncio.Event()
+    release_close = asyncio.Event()
+
+    async def authenticate(_session) -> None:
+        started.set()
+        if trigger.startswith("cleanup_"):
+            raise LoxoneConnectionError("authentication failed")
+        await asyncio.Event().wait()
+
+    async def blocked_close() -> None:
+        closing.set()
+        await release_close.wait()
+
+    websocket = SimpleNamespace(
+        close=AsyncMock(side_effect=blocked_close), transport=SimpleNamespace(abort=Mock())
+    )
+    monkeypatch.setattr(client, "websocket_public_key", AsyncMock(return_value="key"))
+    monkeypatch.setattr(client, "_connect_websocket", AsyncMock(return_value=websocket))
+    monkeypatch.setattr(LoxoneWebSocketSession, "authenticate", authenticate)
+    token = LoxoneToken("opaque", "reader", "", "SHA256", 9_999_999_999)
+    runtime = object.__new__(LoxoneRuntime)
+    runtime.client = client
+    runtime.auth_coordinator = MiniserverAuthCoordinator(tmp_path / "auth.json")
+    request = asyncio.create_task(
+        runtime._open_session(token, owner="tool_request", phase="session_establishment")
+    )
+    close_started = asyncio.create_task(closing.wait())
+    try:
+        await asyncio.wait_for(started.wait(), 2)
+        if trigger.startswith("cleanup_"):
+            await asyncio.wait_for(closing.wait(), 2)
+        if trigger in {"cancel", "cleanup_cancel"}:
+            request.cancel()
+        await asyncio.wait(
+            {request} if trigger.startswith("cleanup_") else {request, close_started},
+            timeout=2,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        # A hanging peer must not receive a fresh close timeout after the
+        # caller cancellation or the shared session deadline has expired.
+        assert request.done()
+        expected = (
+            asyncio.CancelledError if trigger in {"cancel", "cleanup_cancel"} else TimeoutError
+        )
+        with pytest.raises(expected):
+            await request
+        websocket.transport.abort.assert_called_once()
+        if trigger.startswith("cleanup_"):
+            websocket.close.assert_awaited_once()
+        else:
+            assert not closing.is_set()
+            websocket.close.assert_not_awaited()
+        assert (
+            await runtime.auth_coordinator.attempt(
+                AsyncMock(return_value="ok"), owner="local_admin", phase="test"
+            )
+            == "ok"
+        )
+    finally:
+        release_close.set()
+        request.cancel()
+        close_started.cancel()
+        with suppress(asyncio.CancelledError, Exception):
+            await request
+        with suppress(asyncio.CancelledError):
+            await close_started
 
 
 @pytest.mark.parametrize(

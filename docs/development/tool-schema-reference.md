@@ -39,12 +39,20 @@ Runtime availability failures retain `error="temporarily_unavailable"` and exist
 fixed safe messages. The notes read preserves its released `rate_limited` category
 when wrapping local budget rejection, including the same diagnostic and retry fields. Additive `availability_phase` and `retry_after_seconds` are
 nullable. `diagnostic_code` is one of `local_rate_limit`,
+`structure_refresh_auth_busy`, `structure_refresh_source_ip_suppressed`,
 `structure_refresh_connection`, `structure_refresh_protocol`,
 `structure_refresh_token`, `structure_refresh_timeout`, `structure_refresh_unknown`,
 or `availability_unknown`. These codes describe established exception categories,
 not the ultimate network/authentication cause. Token-store errors and missing
 tokens share `structure_refresh_token`; it does not claim that every token error
 means a missing token. Other existing source-processing codes remain compatible.
+
+`structure_refresh_auth_busy` identifies exhausted local authentication coordination
+before network login; `structure_refresh_source_ip_suppressed` identifies the
+source-IP breaker or explicit source-IP blocking (including code 4003). These are
+distinct from transport failures, remote session limits and local rate admission.
+Runtime coordination and login share the configured connection timeout. Cancellation
+releases coordinator locks and closes a session cancelled during authentication.
 
 Refresh phases are `token_lookup`, `session_establishment`, `structure_version`,
 `structure_load`, or `session_close`. Local budget rejection uses `local_budget`;

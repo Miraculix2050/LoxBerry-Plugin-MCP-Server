@@ -65,6 +65,24 @@ continued family churn does not retain all historical family keys. The active
 session limit bounds connection records, not the number of families admitted
 within one rate window.
 
+Runtime session establishment shares the configured connection timeout between
+local authentication coordination and network login. The in-process coordinator
+lock and nonblocking interprocess file lock serialize authentication only, not
+session lifetime or all reads. The file lock and endpoint-profile-bound breaker
+are shared with service-owned emergency stop, Event History and Admin discovery;
+MCP reads retain their own client token and fresh filtered structure. Admission
+and family/refresh locks remain separate from authentication coordination and
+remote session limits. The outer connection timeout bounds both local lock queues;
+the interprocess lock has no strict FIFO fairness guarantee. Cancellation releases
+locks without retrying login. A refresh and initial connection recheck OAuth access
+and shutdown immediately before login after waiting.
+These preflight checks also precede an active breaker cooldown's suppression;
+ended OAuth access remains a permission failure without altering breaker state
+or recording a network attempt.
+Cancellation during authentication aborts the underlying transport immediately;
+it does not start a new graceful-close budget. Cancellation during authentication
+error cleanup also aborts the transport before propagating.
+
 ## Persistence and lifecycle
 
 Configuration, encrypted sessions and plugin identity persist outside the package. Secrets are separated from ordinary configuration. Root lifecycle hooks consume service templates only from the current installer staging area, never from the installed plugin configuration or binary directories. The staging area's integrity remains a LoxBerry Core trust boundary because Core runs unprivileged lifecycle hooks before `postroot`; plugin code cannot make that shared staging area root-owned. Within the persistent LoxBerry tree, sensitive root operations use descriptor-relative traversal and reject symbolic links, non-regular files and path replacement. Install, upgrade and removal follow the native LoxBerry layout; upgrade preserves supported configuration and authentication state through idempotent migration. The service starts unprivileged, validates configuration and listens only on loopback.

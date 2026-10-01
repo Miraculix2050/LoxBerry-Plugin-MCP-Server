@@ -7,6 +7,8 @@ class AvailabilityReason(StrEnum):
     UNKNOWN = "availability_unknown"
     LOCAL_RATE_LIMIT = "local_rate_limit"
     REFRESH_CONNECTION = "structure_refresh_connection"
+    REFRESH_AUTH_BUSY = "structure_refresh_auth_busy"
+    REFRESH_SOURCE_IP = "structure_refresh_source_ip_suppressed"
     REFRESH_PROTOCOL = "structure_refresh_protocol"
     REFRESH_TOKEN = "structure_refresh_token"
     REFRESH_TIMEOUT = "structure_refresh_timeout"

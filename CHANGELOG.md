@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Wait for runtime authentication coordination within the existing connection
+  budget instead of immediately rejecting fresh MCP reads; preserve cancellation,
+  fresh visibility and source-IP protection, and distinguish local contention
+  from source-IP suppression with fixed value-safe diagnostics (#332).
+
 - Let Event History Admin discovery wait within one bounded authentication budget
   when another plugin consumer holds the shared sign-in lock, instead of failing
   immediately; fresh visibility and source-IP suppression remain required (#331).

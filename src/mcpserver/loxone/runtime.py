@@ -23,7 +23,9 @@ from mcpserver.auth.provider import CONTROL_SCOPE, HISTORY_SCOPE, READ_SCOPE, St
 from mcpserver.availability import AvailabilityPhase, AvailabilityReason
 from mcpserver.loxone.auth_diagnostics import (
     MiniserverAuthCoordinator,
+    MiniserverAuthenticationBusy,
     MiniserverAuthenticationSuppressed,
+    MiniserverSourceIpSuppressed,
 )
 from mcpserver.loxone.cache import UserStateCache
 from mcpserver.loxone.client import (
@@ -60,6 +62,10 @@ _MAX_LEGACY_STATISTIC_BYTES = 64 * 1024 * 1024
 _MAX_HISTORY_TIMESTAMP = 4_102_444_800
 _LOGGER = logging.getLogger(__name__)
 _HISTORY_TRACE_ID: ContextVar[str | None] = ContextVar("history_trace_id", default=None)
+
+
+class _SessionEstablishmentTimeout(LoxoneConnectionError, TimeoutError):
+    """The existing connection budget expired during session establishment."""
 
 
 @dataclass
@@ -522,8 +528,12 @@ class LoxoneRuntime:
                 )
             try:
                 command_session = await self._open_session(
-                    token, owner="tool_request", phase="session_establishment"
+                    token, owner="tool_request", phase="session_establishment", access=access
                 )
+            except RuntimeAuthorizationError as exc:
+                raise ControlOperationError("permission_denied", str(exc)) from exc
+            except RuntimeUnavailable as exc:
+                raise ControlOperationError("temporarily_unavailable", str(exc)) from exc
             except LoxoneConnectionError as exc:
                 raise ControlOperationError(
                     "loxone_unreachable", "Miniserver connection failed"
@@ -731,7 +741,7 @@ class LoxoneRuntime:
             try:
                 started = time.perf_counter()
                 session = await self._open_session(
-                    token, owner="tool_request", phase="session_establishment"
+                    token, owner="tool_request", phase="session_establishment", access=access
                 )
                 _history_phase(trace_id, "connection", started)
                 structure = await self._history_visible_structure(session, trace_id)
@@ -745,6 +755,10 @@ class LoxoneRuntime:
                     yield control, session
                 finally:
                     _HISTORY_TRACE_ID.reset(trace_context)
+            except RuntimeAuthorizationError as exc:
+                raise ControlOperationError("permission_denied", str(exc)) from exc
+            except RuntimeUnavailable as exc:
+                raise ControlOperationError("temporarily_unavailable", str(exc)) from exc
             except ControlOperationError:
                 raise
             except (LoxoneConnectionError, LoxoneProtocolError, TimeoutError) as exc:
@@ -954,7 +968,7 @@ class LoxoneRuntime:
                 try:
                     started = time.perf_counter()
                     session = await self._open_session(
-                        token, owner="tool_request", phase="session_establishment"
+                        token, owner="tool_request", phase="session_establishment", access=access
                     )
                     _history_phase(trace_id, "connection", started)
                     started = time.perf_counter()
@@ -971,6 +985,10 @@ class LoxoneRuntime:
                     notes = await session.control_notes(control.action_uuid)
                     _history_phase(trace_id, "notes_fetch", started)
                     return control, notes
+                except RuntimeAuthorizationError as exc:
+                    raise ControlOperationError("permission_denied", str(exc)) from exc
+                except RuntimeUnavailable as exc:
+                    raise ControlOperationError("temporarily_unavailable", str(exc)) from exc
                 except ControlOperationError:
                     raise
                 except (
@@ -1054,7 +1072,7 @@ class LoxoneRuntime:
             raise RuntimeUnavailable("Loxone authorization is unavailable")
         try:
             session = await self._open_session(
-                token, owner="runtime_event_stream", phase="session_establishment"
+                token, owner="runtime_event_stream", phase="session_establishment", access=access
             )
         except MiniserverAuthenticationSuppressed as exc:
             raise RuntimeUnavailable(
@@ -1166,7 +1184,7 @@ class LoxoneRuntime:
                 raise LoxoneTokenStoreError("Loxone token is unavailable")
             phase = AvailabilityPhase.SESSION
             session = await self._open_session(
-                token, owner="tool_request", phase="session_establishment"
+                token, owner="tool_request", phase="session_establishment", access=access
             )
             try:
                 if not fresh_visibility:
@@ -1183,9 +1201,18 @@ class LoxoneRuntime:
                 phase = AvailabilityPhase.CLOSE
                 await session.close()
                 phase = operation_phase
+        except RuntimeAuthorizationError:
+            raise
         except Exception as exc:
             reason = (
-                AvailabilityReason.REFRESH_CONNECTION
+                AvailabilityReason.REFRESH_AUTH_BUSY
+                if isinstance(exc, MiniserverAuthenticationBusy)
+                else AvailabilityReason.REFRESH_SOURCE_IP
+                if isinstance(exc, MiniserverSourceIpSuppressed | LoxoneSourceIpBlocked)
+                or (isinstance(exc, LoxoneCommandRejected) and exc.response_code == "4003")
+                else AvailabilityReason.REFRESH_TIMEOUT
+                if isinstance(exc, TimeoutError)
+                else AvailabilityReason.REFRESH_CONNECTION
                 if isinstance(exc, LoxoneConnectionError)
                 else AvailabilityReason.REFRESH_PROTOCOL
                 if isinstance(exc, LoxoneProtocolError)
@@ -1248,7 +1275,7 @@ class LoxoneRuntime:
                         await events
                     await record.session.close()
                     refreshed = await self._open_session(
-                        token, owner="runtime_event_stream", phase="token_refresh"
+                        token, owner="runtime_event_stream", phase="token_refresh", access=access
                     )
                     try:
                         await refreshed.refresh_token()
@@ -1281,15 +1308,49 @@ class LoxoneRuntime:
             await record.session.close()
 
     async def _open_session(
-        self, token: LoxoneToken, *, owner: str, phase: str
+        self,
+        token: LoxoneToken,
+        *,
+        owner: str,
+        phase: str,
+        access: StoredAccessToken | None = None,
     ) -> LoxoneWebSocketSession:
         """Open a session through the shared source-IP breaker when configured."""
         coordinator = getattr(self, "auth_coordinator", None)
+        coordinated = False
+
+        async def authorize() -> None:
+            nonlocal coordinated
+            coordinated = True
+            if access is not None:
+                await self._require_access(access)
+            if getattr(self, "_closed", False):
+                raise RuntimeUnavailable("Loxone runtime is closed")
+
         if not isinstance(coordinator, MiniserverAuthCoordinator):
+            await authorize()
             return await self.client.open_session(token)
-        return await coordinator.attempt(
-            lambda: self.client.open_session(token), owner=owner, phase=phase
-        )
+
+        # Coordination and login consume one existing connection budget. Outer
+        # caller cancellation remains effective, including while queued locally.
+        budget = self.client.timeout_seconds
+        try:
+            async with asyncio.timeout(budget):
+                return await coordinator.attempt(
+                    lambda: self.client.open_session(token),
+                    owner=owner,
+                    phase=phase,
+                    busy_wait_seconds=min(30.0, budget),
+                    before_attempt=authorize,
+                )
+        except TimeoutError as exc:
+            if not coordinated:
+                raise MiniserverAuthenticationBusy(
+                    "Miniserver authentication coordination timed out"
+                ) from exc
+            raise _SessionEstablishmentTimeout(
+                "Miniserver session establishment timed out"
+            ) from exc
 
     async def project_marker(self, token: LoxoneToken) -> str:
         """Read the project marker through the shared authentication coordinator."""

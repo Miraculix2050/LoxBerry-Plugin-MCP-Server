@@ -24,6 +24,18 @@ so lange und wiederhole einen Leseaufruf höchstens einmal. Kapazität wird nich
 reserviert. Nutze erfolgreiche Beschreibungen erneut und reduziere parallele
 Aufrufe. Wiederhole ungewisse Schreibvorgänge niemals automatisch.
 
+Der Runtime-Sitzungsaufbau wartet innerhalb des konfigurierten Verbindungszeitlimits
+auf lokale Authentifizierungskoordination; Warten und Login teilen dieses Budget.
+Cancellation beendet das Warten. Frische MCP-Sichtbarkeit erfordert weiterhin die
+authentifizierte Struktur des Aufrufers; die Admin-Identität oder eine alte gecachte
+Struktur kann sie nicht ersetzen. `structure_refresh_auth_busy` bedeutet, dass die
+lokale Koordination ihr Wartebudget vor dem Login ausgeschöpft hat.
+`structure_refresh_source_ip_suppressed` bezeichnet Source-IP-Blocking oder den
+persistent gespeicherten Breaker. Beide bezeichnen nicht das Aufrufbudget des Clients.
+Transportfehler und entfernte Sitzungslimits bleiben getrennt; ein Fehler der
+Verbindungskategorie allein belegt kein Miniserver-Sitzungslimit. Diese Diagnosen
+erlauben keine Zuordnung älterer Fehler ohne erhaltene zugrunde liegende Exception (#332).
+
 `structure_refresh_connection`, `structure_refresh_protocol`,
 `structure_refresh_token` und `structure_refresh_timeout` unterscheiden bestätigte
 Refresh-Exception-Kategorien. Token-Fehler umfassen fehlende Tokens und Fehler des

@@ -411,7 +411,7 @@ def test_native_history_normalization_skips_invalid_and_bounds_entries() -> None
 async def test_project_marker_authentication_respects_shared_breaker(tmp_path: Path) -> None:
     runtime = object.__new__(LoxoneRuntime)
     open_session = AsyncMock(side_effect=LoxoneSourceIpBlocked("blocked"))
-    runtime.client = SimpleNamespace(open_session=open_session)
+    runtime.client = SimpleNamespace(open_session=open_session, timeout_seconds=10)
     runtime.auth_coordinator = MiniserverAuthCoordinator(tmp_path / "auth-state.json")
     token = LoxoneToken("opaque", "reader", "", "SHA256", 9_999_999_999)
 

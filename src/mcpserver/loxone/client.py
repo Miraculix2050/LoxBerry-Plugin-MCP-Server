@@ -488,8 +488,15 @@ class LoxoneClient:
         )
         try:
             await session.authenticate()
-        except Exception:
-            await session.close()
+        except BaseException as exc:
+            try:
+                # Cancellation (including the shared deadline) has no remaining
+                # budget for a peer's graceful-close handshake.
+                if not isinstance(exc, asyncio.CancelledError):
+                    await session.close()
+            finally:
+                # Also abort if cancellation interrupts ordinary error cleanup.
+                websocket.transport.abort()
             raise
         return session
 
