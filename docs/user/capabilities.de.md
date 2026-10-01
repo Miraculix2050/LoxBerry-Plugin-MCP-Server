@@ -66,7 +66,10 @@ eines logischen KNX-Kontakts über interne Modellquellen hinweg; eine dabei erre
 Grenze verhindert eine vollständige Graphaussage.
 Zwischenlogik, Sperrquellen und Anschlusskontext bleiben in den Belegen sichtbar.
 Unbekannte Semantik, Mehrdeutigkeit und erreichte Grenzen verhindern negative
-Verbindungsaussagen. Ein `cross_assignment_review_candidate` vergleicht einen
+Verbindungsaussagen. Verdrahtete Ein- oder Ausgänge außerhalb der geprüften
+Anschlussregeln kennzeichnen die Blockevidenz ebenfalls als unvollständig;
+unverdrahtete Zusatzanschlüsse dagegen nicht.
+Ein `cross_assignment_review_candidate` vergleicht einen
 belegt speisenden Kontakt mit einem weiteren nicht speisenden Kandidaten desselben
 Raums; er entscheidet keine physische Zuordnung. `physical_opening_coverage`
 bleibt `not_assessable`. Monitorumfang untersucht dessen erhaltene Einträge;

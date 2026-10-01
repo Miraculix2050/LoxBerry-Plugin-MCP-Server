@@ -60,6 +60,8 @@ exactly identified occurrence of a logical KNX contact across internal model sou
 reaching that bound prevents a complete graph claim. Intermediate logic, lockout sources
 and connector context remain visible in evidence. Unknown semantics, ambiguity
 and reached limits prevent negative connection conclusions.
+Connected inputs or outputs outside the reviewed connector rules also mark the
+block's evidence incomplete; disconnected additional connectors do not.
 A `cross_assignment_review_candidate` compares a proven feeding contact with another
 non-feeding same-room candidate; it does not determine physical assignment.
 `physical_opening_coverage` remains `not_assessable`. Monitor scope inspects retained
