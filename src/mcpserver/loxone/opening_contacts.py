@@ -84,7 +84,10 @@ class OpeningGraph:
             output_keys = {r.output_key for r in rules}
             uncovered_connections = bool(rules) and any(
                 dict(self.nodes[child].attributes).get("K") not in covered_keys
-                and any(isinstance(e, GraphEdge) for e in adjacency[child])
+                and (
+                    child in self.unresolved
+                    or any(isinstance(e, GraphEdge) for e in adjacency[child])
+                )
                 for adjacency, covered_keys in (
                     (self.backward, input_keys),
                     (self.forward, output_keys),
