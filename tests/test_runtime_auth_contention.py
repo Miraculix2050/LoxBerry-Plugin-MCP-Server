@@ -205,11 +205,12 @@ async def test_in_process_queue_is_bounded_by_connection_budget(tmp_path):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("outcome", ["revoke", "shutdown"])
-async def test_preflight_abort_is_not_a_failed_cooldown_probe(tmp_path, outcome):
+@pytest.mark.parametrize("cooldown_active", [False, True])
+async def test_preflight_abort_is_not_a_failed_cooldown_probe(tmp_path, outcome, cooldown_active):
     runtime = object.__new__(LoxoneRuntime)
     coordinator = auth.MiniserverAuthCoordinator(tmp_path / "auth.json")
     coordinator._state["breaker_state"] = "open_source_ip_blocked"
-    coordinator._state["opened_at"] = 0
+    coordinator._state["opened_at"] = int(auth.time.time()) if cooldown_active else 0
     coordinator._save()
     before = coordinator.status()
     runtime.auth_coordinator = coordinator
@@ -227,8 +228,16 @@ async def test_preflight_abort_is_not_a_failed_cooldown_probe(tmp_path, outcome)
 @pytest.mark.asyncio
 @pytest.mark.parametrize("path", ["control", "history", "notes"])
 @pytest.mark.parametrize("outcome", ["revoke", "shutdown"])
-async def test_queued_session_callers_preserve_error_contract(contender, path, outcome):
+@pytest.mark.parametrize("cooldown_active", [False, True])
+async def test_queued_session_callers_preserve_error_contract(
+    contender, path, outcome, cooldown_active
+):
     coordinator, waiting, release = contender
+    if cooldown_active:
+        coordinator._state["breaker_state"] = "open_source_ip_blocked"
+        coordinator._state["opened_at"] = int(auth.time.time())
+        coordinator._save()
+    before = coordinator.status()
     validate = AsyncMock(return_value=True)
     runtime = LoxoneRuntime(
         MiniserverEndpoint.parse_gen1("http://192.168.1.10"),
@@ -265,10 +274,35 @@ async def test_queued_session_callers_preserve_error_contract(contender, path, o
         )
         runtime.client.open_session.assert_not_awaited()
         assert coordinator._state["events"] == []
+        assert coordinator.status() == before
     finally:
         request.cancel()
         with suppress(asyncio.CancelledError, Exception):
             await request
+
+
+@pytest.mark.asyncio
+async def test_authorized_preflight_preserves_active_breaker(tmp_path):
+    runtime = object.__new__(LoxoneRuntime)
+    coordinator = auth.MiniserverAuthCoordinator(tmp_path / "auth.json")
+    coordinator._state["breaker_state"] = "open_source_ip_blocked"
+    coordinator._state["opened_at"] = int(auth.time.time())
+    coordinator._save()
+    before = coordinator.status()
+    runtime.auth_coordinator = coordinator
+    runtime.client = SimpleNamespace(open_session=AsyncMock(), timeout_seconds=1)
+    runtime._validate_access = AsyncMock(return_value=True)
+    access = _access()
+    with pytest.raises(auth.MiniserverSourceIpSuppressed):
+        await runtime._open_session(object(), owner="tool_request", phase="test", access=access)
+    runtime._validate_access.assert_awaited_once_with(access)
+    runtime.client.open_session.assert_not_awaited()
+    after = coordinator.status()
+    assert after["breaker_state"] == "open_source_ip_blocked"
+    assert after["opened_at"] == before["opened_at"]
+    assert after["retry_not_before"] == before["retry_not_before"]
+    assert after["suppressed_attempts"] == before["suppressed_attempts"] + 1
+    assert [event["outcome"] for event in coordinator._state["events"]] == ["attempt_suppressed"]
 
 
 @pytest.mark.asyncio

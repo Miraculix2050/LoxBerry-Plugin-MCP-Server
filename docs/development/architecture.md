@@ -76,6 +76,9 @@ remote session limits. The outer connection timeout bounds both local lock queue
 the interprocess lock has no strict FIFO fairness guarantee. Cancellation releases
 locks without retrying login. A refresh and initial connection recheck OAuth access
 and shutdown immediately before login after waiting.
+These preflight checks also precede an active breaker cooldown's suppression;
+ended OAuth access remains a permission failure without altering breaker state
+or recording a network attempt.
 
 ## Persistence and lifecycle
 

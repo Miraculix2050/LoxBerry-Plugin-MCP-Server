@@ -326,6 +326,10 @@ class MiniserverAuthCoordinator:
         before_attempt: Callable[[], Awaitable[None]] | None,
     ) -> _T:
         """Execute one attempt while both coordinator locks are held."""
+        # Access may have ended while coordination was queued. Check it before
+        # any suppression/attempt accounting, including an active cooldown.
+        if before_attempt is not None:
+            await before_attempt()
         now = int(time.time())
         if self._state["breaker_state"] == "open_source_ip_blocked":
             retry_at = self._retry_not_before()
@@ -343,8 +347,6 @@ class MiniserverAuthCoordinator:
                 raise MiniserverSourceIpSuppressed(
                     "Miniserver authentication is temporarily suppressed"
                 )
-        if before_attempt is not None:
-            await before_attempt()
         self._record(owner=owner, phase=phase, outcome="attempt_started", provenance=provenance)
         try:
             result = await operation()
