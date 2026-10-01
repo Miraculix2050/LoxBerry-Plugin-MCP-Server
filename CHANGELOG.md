@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Sync parent directories for configuration and MQTT credential updates/deletion
+  and configuration upgrades. Report visible changes with unconfirmed durability
+  without automatic Admin compensation or service changes (#161).
+
 - Show `source_type` in Tool Explorer array item previews before timestamp fallback.
 
 - Clarify structure overview definition counts versus synthetic unassigned buckets

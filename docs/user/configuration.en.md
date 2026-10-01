@@ -4,6 +4,26 @@
 
 ## Basic settings
 
+### Persistence and storage errors
+
+On supported LoxBerry/Linux filesystems, configuration and MQTT credential updates
+sync the file before atomic replacement and then sync its parent directory. MQTT
+credential deletion and existing configuration migrations also sync the directory.
+Windows development skips directory sync; this does not establish equivalent
+power-loss durability. Newly created directory trees and installation keys, caches
+and diagnostic snapshots are outside this guarantee.
+
+A saved change is separate from applying it to the running service. If the file
+change succeeds but its durability cannot be confirmed, the Admin page reports
+`persistence_uncertain` and does not automatically retry, restore or switch the
+service. Reload the saved state before taking further action. MQTT settings and
+credentials are separate files and may show a partial update. A failed restoration
+is reported as a rollback failure. An upgrade migration with a directory-sync error
+stops with an error even if the migrated file is already visible.
+
+These sync operations reduce a filesystem metadata durability gap; they do not
+guarantee survival of arbitrary hardware failure or storage corruption.
+
 In **Status & operation**, **Service operation and autostart** shows the saved operating permission. It is enabled after a new installation, while MCP and MQTT health are separately disabled. Applying the enabled permission starts the service immediately and at the next system boot. Disabling it stops the service immediately and prevents it from starting at the next system boot; this choice is preserved across upgrades. The **Start**, **Stop** and **Restart** status actions are available only while this permission is enabled and affect only the current runtime state, never the boot behavior.
 
 ## MCP configuration

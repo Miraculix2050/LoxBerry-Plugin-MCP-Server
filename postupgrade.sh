@@ -136,12 +136,20 @@ if changed:
         with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
             json.dump(document, handle, ensure_ascii=True, sort_keys=True, indent=2)
             handle.write("\n")
+            os.chmod(temporary, 0o600)
             handle.flush()
             os.fsync(handle.fileno())
-        os.chmod(temporary, 0o600)
         os.replace(temporary, path)
+        directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
     finally:
-        temporary.unlink(missing_ok=True)
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
 PY
 chmod 600 "$plugin_config/mcpserver.json"
 mkdir -p "$plugin_data/auth"
