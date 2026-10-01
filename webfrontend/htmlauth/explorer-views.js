@@ -436,7 +436,10 @@
       if (include) include.addEventListener('change', () => {
         input.disabled = !include.checked;
         setField(name, include.checked, include.checked ? core.initialValue(property, rootSchema) : undefined);
-        if (include.checked) { renderSelectedTool(); document.getElementById(input.id)?.focus(); }
+        if (include.checked) {
+          renderSelectedTool();
+          document.getElementById(objectList ? fieldControlId(fieldIndex + '-add') : input.id)?.focus();
+        }
       });
       return {wrapper, supported: ['string', 'integer', 'number', 'boolean', 'array', 'object'].includes(type)};
     }

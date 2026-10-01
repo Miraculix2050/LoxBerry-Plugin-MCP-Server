@@ -396,6 +396,7 @@ test('optional object-list omission disables its entire group and preserves othe
   await h.click(toggle);
   group = h.byId('form').querySelector('.mcp-explorer-object-list');
   assert.equal(group.disabled, false);
+  assert.equal(group.ownerDocument.activeElement, group.querySelector(':scope > button'));
   await h.click(group.querySelector(':scope > button'));
   group = h.byId('form').querySelector('.mcp-explorer-object-list');
   toggle = group.parentElement.querySelector('input[type="checkbox"]');
