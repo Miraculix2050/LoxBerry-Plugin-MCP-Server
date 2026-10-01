@@ -404,3 +404,21 @@ test('optional object-list omission disables its entire group and preserves othe
   assert.equal(Object.hasOwn(JSON.parse(h.byId('json').value), 'targets'), false);
   assert.equal(h.calls().length, 0);
 });
+
+test('root action changes still remove old operation fields after valid draft edits', async (t) => {
+  const tool = JSON.parse(JSON.stringify(writeTool));
+  tool.inputSchema.properties.action = {type: 'string', enum: ['set_level', 'off'], default: 'set_level'};
+  tool.inputSchema.properties.level = {type: 'number', default: 50};
+  const h = createHarness({tools: [tool]});
+  t.after(h.close);
+  await h.ready();
+  await h.click(h.byId('tools').querySelector('button'));
+  const uuid = h.byId('form').querySelector('input[type="text"]');
+  uuid.value = 'visible-control';
+  uuid.dispatchEvent(new h.window.Event('input', {bubbles: true}));
+  const action = h.byId('form').querySelector('select');
+  action.value = JSON.stringify('off');
+  action.dispatchEvent(new h.window.Event('change', {bubbles: true}));
+  assert.deepEqual(JSON.parse(h.byId('json').value), {control_uuid: 'visible-control', action: 'off'});
+  assert.equal(h.calls().length, 0);
+});

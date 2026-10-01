@@ -314,7 +314,7 @@
         input.addEventListener('change', () => {
           if (input.value !== '') {
             const value = JSON.parse(input.value);
-            if (values === state.arguments && adapters.hasActionFields(state.selectedTool) && name === 'action') actions.setAction(value);
+            if (setField === actions.setDraftField && adapters.hasActionFields(state.selectedTool) && name === 'action') actions.setAction(value);
             else setField(name, true, value);
           }
         });
