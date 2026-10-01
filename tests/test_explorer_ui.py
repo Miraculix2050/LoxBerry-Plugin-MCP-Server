@@ -1219,6 +1219,7 @@ def test_required_scopes_cover_current_tools_and_leave_unknown_tools_unmapped() 
     assert set(mapped) == set(names)
     assert all(scopes and scopes[0] == "loxone:read" for scopes in mapped.values())
     assert mapped["loxone_get_system_status"] == ["loxone:read"]
+    assert mapped["loxone_read_controls"] == ["loxone:read"]
     assert mapped["loxone_get_statistics"] == ["loxone:read", "loxone:history"]
     assert mapped["loxone_list_event_history_sources"] == ["loxone:read", "loxone:history"]
     assert mapped["loxone_operate_control"] == ["loxone:read", "loxone:control"]

@@ -558,9 +558,16 @@ class StateSemanticsPageData(BaseModel):
 class ControlReadTarget(BaseModel):
     model_config = {"extra": "forbid"}
 
-    control_uuid: str = Field(min_length=1, max_length=128, strict=True)
+    control_uuid: str = Field(
+        min_length=1, max_length=128, strict=True, description="Exact known visible control UUID."
+    )
     state_names: list[Annotated[str, Field(min_length=1, max_length=128, strict=True)]] | None = (
-        Field(default=None, min_length=1, max_length=100)
+        Field(
+            default=None,
+            min_length=1,
+            max_length=100,
+            description="Unique exact state names; omit to select all normalized references.",
+        )
     )
 
 
@@ -4603,8 +4610,20 @@ def register_read_tools(
         structured_output=True,
     )
     async def read_controls(
-        targets: Annotated[list[ControlReadTarget], Field(min_length=1, max_length=25)],
-        include_semantics: bool = False,
+        targets: Annotated[
+            list[ControlReadTarget],
+            Field(
+                min_length=1,
+                max_length=25,
+                description="Unique visible control targets, at most 100 named states total.",
+            ),
+        ],
+        include_semantics: Annotated[
+            bool,
+            Field(
+                description="Include the existing semantic evidence and observation-quality model."
+            ),
+        ] = False,
     ) -> ControlsReadEnvelope:
         if (
             not 1 <= len(targets) <= 25

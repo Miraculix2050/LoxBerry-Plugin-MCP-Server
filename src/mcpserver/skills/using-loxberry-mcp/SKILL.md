@@ -154,7 +154,20 @@ the problem.
 3. Follow every non-null `next_cursor` until the relevant result is found or all
    pages are checked. If more than one control remains plausible, present the
    candidates and ask the user to choose. Never guess a UUID.
-4. For value reads, call `loxone_describe_control(view="state_refs")` to get
+4. For known visible UUIDs, prefer `loxone_read_controls` with exact
+   `targets=[{control_uuid, state_names?}]` for identity and named cached values
+   in one freshly authorized snapshot. Omit names to select all states. Use
+   1–25 unique controls, at most 100 named references (aliases count separately),
+   and identifiers/names of at most 128 characters. Inaccessible targets reject
+   the entire batch; never infer hidden existence from that error. Check each
+   value's freshness and observation time. Delivery `complete` and requested/
+   returned counts do not prove current values or complete semantic knowledge.
+   For `response_too_large`, split targets or select fewer states; no partial
+   values were returned. `include_semantics=true` optionally reuses the same
+   evidence/quality model as `loxone_get_state_semantics`; check descriptor
+   completeness separately. Relationships and other detail sections stay omitted.
+   For reference-only selection, hidden diagnosis, or servers without this tool,
+   call `loxone_describe_control(view="state_refs")` to get
    complete normalized state-name/UUID references from the freshly loaded
    user-filtered structure. It omits room/category context, capabilities,
    history, statistics, presentation and relationships. Refresh failures return
