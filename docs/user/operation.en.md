@@ -48,7 +48,8 @@ their own disclosure.
 Results and history entries appear as an expandable tree. Large branches show
 100 entries at a time; **Show more** loads the next batch. The disclosure arrow
 opens a branch, while the separate value button reuses its unchanged value and path.
-Objects in arrays show a short name, type, identifier, or relationship endpoints
+Objects in arrays show a short name, type (including `source_type`), identifier,
+or relationship endpoints
 when available. Time fields are the final fallback when nothing more descriptive
 is present. `null` appears as `-` in the tree; copying and transferring retain
 the original value.

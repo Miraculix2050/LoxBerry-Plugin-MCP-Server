@@ -383,10 +383,11 @@ def test_result_inspector_previews_nested_names_and_relationship_arrays() -> Non
         {classification:'knx_to_loxone'},
         {kind:'reference'},
         {at:'2026-09-26T12:00:00Z'},
-        {what:'SwitchOn',timestamp:'2026-09-26T12:01:00Z'}
+        {what:'SwitchOn',timestamp:'2026-09-26T12:01:00Z'},
+        {source_type:'EIBtextsensor',timestamp:'2026-09-26T12:02:00Z'}
       ]});
       walk(tree).find(node => node.tag === 'button' &&
-        node.textContent.includes('items [15]')).click();
+        node.textContent.includes('items [16]')).click();
       return walk(tree).filter(node => node.className ===
         'mcp-explorer-tree-toggle').map(node => node.textContent);
     """)
@@ -406,6 +407,7 @@ def test_result_inspector_previews_nested_names_and_relationship_arrays() -> Non
         '12 {1} "reference"',
         '13 {1} "2026-09-26T12:00:00Z"',
         '14 {2} "SwitchOn"',
+        '15 {2} "EIBtextsensor"',
     ]
     for label in expected:
         assert any(caption.endswith(label) for caption in captions)

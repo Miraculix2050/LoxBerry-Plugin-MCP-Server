@@ -5,6 +5,8 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Show `source_type` in Tool Explorer array item previews before timestamp fallback.
+
 - Extend active visible alerts with documented AalSmartAlarm and AlarmChain rules,
   source context and acknowledgement without hiding active alarm bits. Preserve
   explicit coverage gaps for unsupported families and unknown context (#344).

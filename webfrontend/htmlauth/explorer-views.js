@@ -57,7 +57,7 @@
         const control = own('control');
         yield structured(control) && !Array.isArray(control) &&
           Object.prototype.hasOwnProperty.call(control, 'name') ? control.name : undefined;
-        for (const field of ['weather_type_text', 'type', 'block_type', 'component', 'finding_type', 'strategy']) yield own(field);
+        for (const field of ['weather_type_text', 'type', 'source_type', 'block_type', 'component', 'finding_type', 'strategy']) yield own(field);
         yield relationPreview(own('source'), own('target'));
         yield relationPreview(own('source_project_node_id'), own('target_project_node_id'));
         for (const field of ['code', 'model_source_id', 'classification', 'kind',
