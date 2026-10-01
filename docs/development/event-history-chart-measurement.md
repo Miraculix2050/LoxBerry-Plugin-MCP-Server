@@ -93,3 +93,130 @@ Dense/large-history workloads, separate competing-load conditions, service
 CPU/memory, browser CPU/heap, first content, pan/zoom, and an exact 390x844 CSS
 viewport remain follow-up work in #297. No performance or browser compatibility
 claim is made from these CGI samples.
+
+## Selector discovery subphases
+
+Chart preparation additionally emits fixed numeric millisecond fields
+`selector_coordinator_wait`, `selector_token_acquisition`,
+`selector_session_establishment`, and `selector_structure_load`. These are
+nested inside `selector_refresh`; do not add them to the six main phases.
+The coordinator field sums elapsed time before entry into each authorized
+operation, including shared lock contention, coordinator state reload and
+pre-operation accounting. It is not a pure lock syscall timer. It excludes
+authentication operations and post-operation coordinator persistence.
+Token and session timers surround the actual client operations;
+structure timing surrounds `session.load_structure()` including its parsing.
+Credentials/client creation, cleanup, projection/cache work and coordinator
+post-operation bookkeeping remain in the parent timer only. No session,
+token or structure is reused by this instrumentation.
+
+Timings use a monotonic nanosecond clock and report elapsed work in `finally`,
+including failed/cancelled operations. An operation that never starts has no
+field; a suppressed/timed-out coordinator attempt contributes its elapsed
+pre-operation time. No-coordinator discovery reports zero coordinator wait.
+Missing subphases on failed requests must not be interpreted as zero or used
+as successful samples. Values contain no UUIDs, names, endpoints, tokens or
+project data; the CGI accepts only the fixed numeric allowlist. Existing
+responses, main phases, resource fields, outcomes and correlation IDs remain.
+
+For the next controlled comparison, retain the 1-4-source cold plus five-warm
+protocol above separately for each condition. Idle means no deliberately
+introduced auth competitor; record remaining background load. For controlled
+contention, use a cooperating test process holding the same auth lock for a
+fixed duration before each request, without acquiring a token or changing
+breaker/recording state. Synchronize lock acquisition and release, retain the
+hold duration and failed samples, and keep the exclusive target reservation.
+Report each new subphase's median/range per source count and condition. The
+successful sample must include all six existing phases and all four subphases.
+Retain failed or incomplete attempts separately without automatic retries. The
+2026-09-30 benchmark predates the shared Admin auth-wait budget and cannot be
+used to infer these subphase distributions or a performance improvement.
+
+## Reserved idle/contention measurements on 2026-10-01
+
+Base master: `fe0933a1a6717cc55a42b44f34d1c0a908eea3d9`; instrumented runtime:
+`0bb526ed4025125e44de2991ebf67a1039b95fda` (PR #337). The three runtime files
+were hash-verified through the reserved deployment helper with retained backup,
+unchanged ownership/modes and zero new files. All 56 installed Python source
+files matched this revision, including the post-PR-333 auth coordination code.
+Service restart/readiness and final service/health checks passed. The reservation
+remained valid throughout and was released after acceptance.
+
+Each condition used one cold request plus five sequential warm requests per
+source count. Cold retained the service restart, health readiness and fixed
+ten-second readiness interval; every CGI/Python helper was a fresh process.
+All 48 attempts succeeded with all ten phases, each independently matched to
+one complete, unique CGI request correlation. No failed or incomplete samples
+were excluded from these sets. One preliminary idle single-source smoke was
+accepted and kept outside the planned distributions.
+
+Three configured sources were recorded; the fourth was freshly visible and
+unrecorded. No recording policy changes, source changes or purge operations
+were performed.
+Idle means no deliberately introduced auth competitor; unrelated background
+activity remained. Contention used a synchronized cooperating process holding
+the same shared auth lock for eight seconds immediately before every CGI
+launch. It acquired no token, made no Miniserver request and changed no breaker
+state. CGI/bootstrap runs during the hold, so the measured coordinator delay
+is the remaining hold at discovery entry rather than eight full seconds.
+Idle sets preceded contention sets; this is one sequential controlled series,
+not randomized or repeated before/after performance evidence.
+
+Warm tables use median (minimum-maximum), milliseconds, `n=5` per row.
+
+### Idle warm samples
+
+| Sources | Selector refresh | Coordinator wait | Token acquisition | Session establishment | Structure load |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | 4266.8 (4208.8-4523.1) | 7.6 (7.4-9.8) | 1314.3 (1290.7-1325.4) | 1914.7 (1864.4-2186.5) | 306.0 (295.8-313.5) |
+| 2 | 4719.7 (4447.7-5078.7) | 8.7 (7.3-10.2) | 1304.6 (1285.0-1328.6) | 2371.3 (2109.4-2699.2) | 313.0 (310.8-325.8) |
+| 3 | 5394.7 (4362.4-7529.2) | 9.3 (7.3-10.2) | 1297.2 (1289.7-3897.9) | 2524.6 (2017.1-2960.7) | 352.5 (314.1-489.9) |
+| 4 | 4801.5 (4436.6-5085.6) | 10.6 (7.7-11.4) | 1297.7 (1284.7-1327.9) | 2415.1 (2101.3-2750.4) | 313.1 (309.0-315.8) |
+
+### Contention warm samples
+
+| Sources | Selector refresh | Coordinator wait | Token acquisition | Session establishment | Structure load |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | 9996.8 (9777.4-11263.4) | 5280.0 (5278.3-5379.8) | 1321.3 (1301.7-1342.4) | 2337.6 (2162.8-3331.4) | 317.1 (311.2-479.1) |
+| 2 | 9805.8 (9595.2-10218.9) | 5280.7 (5279.6-5381.3) | 1308.0 (1303.4-1343.4) | 2089.9 (1964.8-2424.4) | 324.3 (310.0-327.7) |
+| 3 | 9893.0 (9675.1-13995.2) | 5279.0 (5276.2-5281.5) | 1339.1 (1281.1-5231.2) | 2130.4 (2055.0-2402.8) | 318.0 (307.2-352.4) |
+| 4 | 9664.3 (9447.7-9885.3) | 5279.5 (5279.0-5280.8) | 1289.1 (1272.8-1309.9) | 2045.6 (1860.1-2234.4) | 314.9 (309.9-328.6) |
+
+Across source counts, entries are median (minimum-maximum), in milliseconds. Cold `n=4` and warm `n=20` per condition.
+
+| Phase | Idle cold | Idle warm | Contention cold | Contention warm |
+| --- | ---: | ---: | ---: | ---: |
+| `selector_refresh` | 4750.9 (3954.7-5155.4) | 4716.0 (4208.8-7529.2) | 9958.2 (9810.3-10120.9) | 9832.2 (9447.7-13995.2) |
+| `selector_coordinator_wait` | 9.8 (8.9-11.3) | 9.2 (7.3-11.4) | 5279.4 (5277.1-5280.6) | 5279.9 (5276.2-5381.3) |
+| `selector_token_acquisition` | 1300.8 (1262.6-1342.9) | 1305.4 (1284.7-3897.9) | 1301.1 (1290.7-1304.8) | 1309.0 (1272.8-5231.2) |
+| `selector_session_establishment` | 2396.6 (1643.9-2738.2) | 2357.0 (1864.4-2960.7) | 2314.3 (2171.5-2472.0) | 2146.6 (1860.1-3331.4) |
+| `selector_structure_load` | 317.2 (310.2-328.6) | 313.3 (295.8-489.9) | 324.9 (315.1-351.0) | 317.6 (307.2-479.1) |
+| `config_load` | 14.4 (14.1-14.5) | 14.3 (14.2-16.8) | 14.5 (14.2-14.8) | 14.3 (14.1-14.6) |
+| `revalidation` | 318.2 (317.1-321.2) | 319.2 (313.8-355.0) | 319.1 (317.8-323.8) | 318.1 (313.5-331.8) |
+| `history_prepare` | 6.1 (6.0-6.2) | 5.9 (5.7-6.5) | 6.2 (6.1-6.3) | 6.0 (5.4-6.1) |
+| `serialization` | 0.2 (0.2-0.4) | 0.2 (0.2-0.3) | 0.2 (0.2-0.3) | 0.2 (0.2-0.3) |
+| `cgi_delivery` | 15.7 (15.6-16.4) | 15.7 (15.5-16.7) | 16.5 (15.6-17.5) | 15.7 (15.5-16.6) |
+| `cgi_process_total` | 8027.0 (7477.7-8445.4) | 8021.4 (7545.4-10800.1) | 13258.8 (13112.7-13427.3) | 13113.6 (12740.9-17275.6) |
+
+
+
+idle: load1 0.29-0.87; controlled hold 0.0 (0.0-0.0) ms.
+contention: load1 0.38-0.78; controlled hold 8000.2 (8000.2-8000.4) ms.
+
+The controlled hold is isolated in the coordinator subphase. Idle authentication
+operations (token/session establishment) dominate the measured discovery work;
+structure-load medians remain approximately 0.3 seconds. Token acquisition
+also has outliers (3897.9 ms idle, 5231.2 ms contention), so contention alone
+does not explain all spread. The parent timer still includes untimed credential,
+projection/cache, coordinator persistence and cleanup work. These nested timers
+and CGI process totals must not be summed.
+
+Sanitized per-request numeric samples and the full-correlation audit are retained
+in local Project-Data evidence `20261001-issue297-subphases.jsonl` and
+`20261001-issue297-correlation-audit.json`. They retain no request payloads,
+UUIDs, names, endpoints, tokens or project values. This remains CGI subprocess/
+stdout-pipe evidence, excluding Apache forwarding and browser receipt. The
+older PR #310 benchmark is not a matched pre-change baseline. No speedup,
+source-count scaling or browser compatibility claim follows from these data.
+Browser CPU/heap, large/dense histories, service resources, first content,
+pan/zoom and remaining end-to-end/strict viewport measurements stay open in #297.

@@ -1116,3 +1116,132 @@ async def test_monitor_preserves_unsupported_value_reason_during_backoff(
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("coordinated", [False, True])
+@pytest.mark.parametrize(
+    "failure",
+    [
+        None,
+        "credentials",
+        "client",
+        "token_acquisition",
+        "session_establishment",
+        "structure_load",
+        "wait",
+        "cancel",
+    ],
+)
+async def test_admin_structure_numeric_subphases(tmp_path, monkeypatch, coordinated, failure):
+    from types import SimpleNamespace
+
+    from mcpserver.loxone.auth_diagnostics import MiniserverAuthenticationBusy
+
+    clock = [0]
+    cleaned = []
+
+    def advance(ms):
+        clock[0] += ms * 1_000_000
+
+    def fail(phase):
+        if failure == phase:
+            raise RuntimeError("private-token-name-endpoint-project-uuid")
+
+    class Token:
+        def destroy(self):
+            cleaned.append("token")
+
+    class Session:
+        async def load_structure(self):
+            advance(7)
+            if failure == "cancel":
+                raise asyncio.CancelledError
+            fail("structure_load")
+            return LoxoneStructure(LoxoneIdentity("private-name", "private-serial"), "", (), (), ())
+
+        async def close(self):
+            advance(11)
+            cleaned.append("session")
+
+    class Client:
+        async def acquire_token(self, username, password):
+            advance(3)
+            fail("token_acquisition")
+            return Token()
+
+        async def open_session(self, token):
+            advance(5)
+            fail("session_establishment")
+            return Session()
+
+    class Credentials:
+        async def _credentials(self):
+            fail("credentials")
+            return "private-name", "private-password"
+
+    class Coordinator:
+        async def attempt(self, operation, **kwargs):
+            advance(13)
+            if failure == "wait":
+                raise MiniserverAuthenticationBusy("private-endpoint")
+            result = await operation()
+            advance(17)  # Post-operation persistence is not coordinator wait.
+            return result
+
+    monkeypatch.setattr(
+        "mcpserver.loxone.event_history.time",
+        SimpleNamespace(
+            perf_counter_ns=lambda: clock[0],
+            monotonic=lambda: clock[0] / 1e9,
+            time=time.time,
+        ),
+    )
+
+    def client(*_a, **_kw):
+        fail("client")
+        return Client()
+
+    monkeypatch.setattr("mcpserver.loxone.client.LoxoneClient", client)
+    monitor = EventHistoryMonitor(
+        PluginConfig(loxone_endpoint="https://private-endpoint.example"),
+        EventHistoryStore(
+            (tmp_path / "history.sqlite3").resolve(), retention_days=90, maximum_mib=16
+        ),
+        Credentials(),
+        Coordinator() if coordinated else None,
+    )
+    timing = {}
+    effective_failure = failure if failure != "wait" or coordinated else None
+    if effective_failure:
+        error = (
+            asyncio.CancelledError
+            if failure == "cancel"
+            else (MiniserverAuthenticationBusy if failure == "wait" else RuntimeError)
+        )
+        with pytest.raises(error):
+            await monitor.visible_structure(timing=timing)
+    else:
+        await monitor.visible_structure(timing=timing)
+    expected = {"selector_coordinator_wait_ms": 0.0}
+    if effective_failure in {"credentials", "client"}:
+        expected = {}
+    elif effective_failure == "wait":
+        expected["selector_coordinator_wait_ms"] = 13.0
+    else:
+        expected["selector_token_acquisition_ms"] = 3.0
+        if coordinated:
+            expected["selector_coordinator_wait_ms"] += 13.0
+        if effective_failure != "token_acquisition":
+            expected["selector_session_establishment_ms"] = 5.0
+            if coordinated:
+                expected["selector_coordinator_wait_ms"] += 13.0
+            if effective_failure != "session_establishment":
+                expected["selector_structure_load_ms"] = 7.0
+    assert timing == expected
+    assert "private" not in repr(timing)
+    assert cleaned == (
+        []
+        if effective_failure in {"credentials", "client", "wait", "token_acquisition"}
+        else (["token"] if effective_failure == "session_establishment" else ["session", "token"])
+    )

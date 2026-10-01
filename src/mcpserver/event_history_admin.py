@@ -308,14 +308,21 @@ def _selector_cache(config: PluginConfig) -> EventHistorySelectorCache:
         ) from exc
 
 
-def _selector_projection(config: PluginConfig) -> dict[str, Any]:
+def _selector_projection(
+    config: PluginConfig, *, timing: dict[str, float | int] | None = None
+) -> dict[str, Any]:
     bridge = _bridge()
     from mcpserver.loxone.auth_diagnostics import MiniserverAuthenticationSuppressed
     from mcpserver.loxone.client import LoxoneSourceIpBlocked
 
     try:
         structure = asyncio.run(
-            asyncio.wait_for(_monitor(config).visible_structure(), timeout=_DISCOVERY_TIMEOUT)
+            asyncio.wait_for(
+                _monitor(config).visible_structure(
+                    **({"timing": timing} if timing is not None else {})
+                ),
+                timeout=_DISCOVERY_TIMEOUT,
+            )
         )
     except LoxoneSourceIpBlocked as exc:
         raise bridge.AdminError(
@@ -501,7 +508,12 @@ def chart_prepare(
     cache = _selector_cache(config)
     try:
         document = measured(
-            "selector_refresh_ms", lambda: cache.refresh(lambda: _selector_projection(config))
+            "selector_refresh_ms",
+            lambda: cache.refresh(
+                lambda: _selector_projection(
+                    config, **({"timing": timing} if timing is not None else {})
+                )
+            ),
         )
     except (TimeoutError, SelectorCacheError, OSError, ValueError) as exc:
         raise bridge.AdminError(

@@ -51,7 +51,7 @@ def _setup(tmp_path, monkeypatch, *, sources=()):
     monkeypatch.setattr(
         event_history_admin,
         "_selector_projection",
-        lambda _config: {
+        lambda _config, **_kwargs: {
             "controls": [
                 {
                     "uuid": SOURCE[0],
@@ -764,12 +764,17 @@ def test_chart_prepare_serialization_diagnostics_do_not_echo_private_values(monk
         "uuid": SOURCE[0],
         "name": "private-control-name",
         "token": "private-auth-token",
+        "endpoint": "https://private-endpoint.example",
         "project": {"private-project-field": "private-project-value"},
     }
 
     def dispatch(_request, *, timing):
         timing["config_load_ms"] = 1.0
         timing["selector_refresh_ms"] = 2.0
+        timing["selector_coordinator_wait_ms"] = 0.1
+        timing["selector_token_acquisition_ms"] = 0.2
+        timing["selector_session_establishment_ms"] = 0.3
+        timing["selector_structure_load_ms"] = 0.4
         timing["revalidation_ms"] = 3.0
         timing["history_prepare_ms"] = 4.0
         timing["selected_sources"] = 1
@@ -788,6 +793,10 @@ def test_chart_prepare_serialization_diagnostics_do_not_echo_private_values(monk
     assert output.err.startswith(prefix)
     diagnostics = json.loads(output.err.removeprefix(prefix))
     assert set(diagnostics) == {
+        "selector_coordinator_wait_ms",
+        "selector_token_acquisition_ms",
+        "selector_session_establishment_ms",
+        "selector_structure_load_ms",
         "config_load_ms",
         "selector_refresh_ms",
         "revalidation_ms",
@@ -803,7 +812,33 @@ def test_chart_prepare_serialization_diagnostics_do_not_echo_private_values(monk
         SOURCE[0],
         "private-control-name",
         "private-auth-token",
+        "https://private-endpoint.example",
         "private-project-field",
         "private-project-value",
     ):
         assert value not in output.err
+
+
+def test_selector_projection_passes_numeric_subphase_channel(monkeypatch):
+    from mcpserver.loxone.models import LoxoneIdentity, LoxoneStructure
+
+    seen = []
+
+    async def visible_structure(*, timing):
+        seen.append(timing)
+        timing["selector_coordinator_wait_ms"] = 13.0
+        timing["selector_token_acquisition_ms"] = 3.0
+        timing["selector_session_establishment_ms"] = 5.0
+        timing["selector_structure_load_ms"] = 7.0
+        return LoxoneStructure(LoxoneIdentity("private-name", "private-serial"), "", (), (), ())
+
+    monkeypatch.setattr(
+        event_history_admin,
+        "_monitor",
+        lambda _config: SimpleNamespace(visible_structure=visible_structure),
+    )
+    timing = {}
+    assert event_history_admin._selector_projection(None, timing=timing)["controls"] == []
+    assert seen == [timing]
+    assert len(timing) == 4 and all(type(value) is float for value in timing.values())
+    assert "private" not in repr(timing)
