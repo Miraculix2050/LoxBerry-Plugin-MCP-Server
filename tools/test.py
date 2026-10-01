@@ -128,6 +128,16 @@ _TEST_GROUPS: Final = (
             "tests/test_oauth.py",
         ),
     ),
+    (
+        (
+            "tools/browser/**",
+            "tests/js/chart-measurement.test.cjs",
+            "webfrontend/htmlauth/event-history/**",
+            "webfrontend/htmlauth/mcp-ui.css",
+            "templates/event-history-charts.html",
+        ),
+        ("tests/test_chart_measurement.py",),
+    ),
     (("tests/js/**",), ("tests/test_explorer_behavior.py",)),
     (
         ("config/default-config.json", "src/mcpserver/config.py"),
@@ -379,7 +389,10 @@ def _dom_runtime_issues() -> tuple[str, ...]:
 def _required_runtime_issues(plan: TestPlan) -> tuple[str, ...]:
     issues = list(_runtime_issues()) if plan.effective_profile == "full" else []
     selected = any(
-        "tests/test_explorer_behavior.py" in command
+        any(
+            target in command
+            for target in ("tests/test_explorer_behavior.py", "tests/test_chart_measurement.py")
+        )
         for command in plan.commands
         if _is_pytest_command(command)
     )

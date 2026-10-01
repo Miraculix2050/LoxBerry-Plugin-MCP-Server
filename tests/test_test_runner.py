@@ -63,6 +63,24 @@ def test_shared_language_files_select_both_ui_groups() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    "changed_file",
+    (
+        "webfrontend/htmlauth/event-history/charts.js",
+        "webfrontend/htmlauth/event-history/api.js",
+        "webfrontend/htmlauth/event-history/charts.css",
+        "webfrontend/htmlauth/event-history/vendor/uplot/uPlot.iife.min.js",
+        "webfrontend/htmlauth/event-history/vendor/uplot/uPlot.min.css",
+        "webfrontend/htmlauth/mcp-ui.css",
+        "templates/event-history-charts.html",
+    ),
+)
+def test_changed_fixture_assets_select_chart_harness(changed_file: str) -> None:
+    plan = create_plan("changed", (changed_file,))
+    assert plan.effective_profile == "changed"
+    assert "tests/test_chart_measurement.py" in _pytest_targets(plan)
+
+
 def test_changed_documentation_uses_only_diff_check() -> None:
     plan = create_plan("changed", ("docs/development/automation.md",))
 
@@ -77,10 +95,18 @@ def test_changed_explorer_harness_selects_dom_flows() -> None:
     assert _pytest_targets(plan) == {"tests/test_explorer_behavior.py"}
 
 
-def test_changed_explorer_dom_missing_dependency_is_incomplete(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize(
+    "changed_file",
+    (
+        "tests/js/explorer-harness.cjs",
+        "tools/browser/chart-probe.js",
+        "tests/test_chart_measurement.py",
+    ),
+)
+def test_changed_dom_missing_dependency_is_incomplete(
+    changed_file: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    plan = create_plan("changed", ("tests/js/explorer-harness.cjs",))
+    plan = create_plan("changed", (changed_file,))
     monkeypatch.setattr(
         test_runner, "_dom_runtime_issues", lambda: ("Explorer DOM tests require npm ci",)
     )

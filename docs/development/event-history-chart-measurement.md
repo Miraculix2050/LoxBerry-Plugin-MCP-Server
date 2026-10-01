@@ -1,5 +1,8 @@
 # Event-history chart preparation measurements
 
+For the development-only browser routine and explicitly synthetic fixture
+evidence, see [browser measurements](event-history-browser-measurement.md).
+
 The chart-prepare path emits sanitized `event_history_chart_timing` entries for
 the fixed phases `config_load`, `selector_refresh`, `revalidation`,
 `history_prepare`, `serialization`, and `cgi_delivery`. Phase entries contain
