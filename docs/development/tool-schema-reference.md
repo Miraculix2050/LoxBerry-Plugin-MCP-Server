@@ -1,5 +1,32 @@
 # Tool schema reference
 
+## Structure overview counts
+
+`loxone_get_structure_overview` counts the authorized visible discovery corpus,
+including normalized subcontrols and excluding hidden controls. `counts.controls`
+counts controls; `counts.control_types` counts distinct types with no synthetic
+unassigned type bucket. `counts.rooms` and `counts.categories` count visible
+definitions referenced by the normalized corpus, excluding the synthetic
+`unassigned` bucket. `rooms.total` and `categories.total` include that bucket
+if any controls have missing or unresolvable references within the visible
+structure. Empty Config definitions and definitions referenced only by hidden
+controls are excluded.
+
+For each group, `total = definitions_count + (unassigned_bucket_present ? 1 : 0)`.
+With two assigned rooms and no unassigned controls, `counts.rooms=2` and
+`rooms.total=2`; with unassigned controls, `counts.rooms=2` and `rooms.total=3`.
+The same examples apply to categories. Type `total` equals `counts.control_types`.
+
+`returned` equals `len(items)`; totals remain unchanged under the 50-item or
+64-KiB envelope limit, even if the unassigned bucket itself is omitted.
+`complete` means `returned == total`; `truncated` means `returned < total`.
+These describe delivery, not freshness or installation coverage. Complete
+`control_count` sums equal `counts.controls`; truncated sums may be smaller.
+Assigned UUIDs identify visible definitions; names are not unique identifiers.
+The synthetic bucket has `assignment="unassigned"`, `uuid=null`, and `name=null`.
+
+## Compact control reads
+
 `loxone_read_controls` is an additive `loxone:read` tool for known visible UUIDs.
 `targets` contains 1–25 unique `{control_uuid, state_names?}` objects; identifiers
 and exact state names are 1–128 characters. Each optional name list has 1–100

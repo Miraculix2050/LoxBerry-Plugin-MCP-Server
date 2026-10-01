@@ -778,38 +778,141 @@ class SystemStatusData(BaseModel):
 
 
 class StructureOverviewCountsData(BaseModel):
-    controls: int
-    rooms: int
-    categories: int
-    control_types: int
+    controls: int = Field(
+        description=(
+            "Total controls in the authorized visible discovery corpus, including "
+            "normalized subcontrols; excludes hidden controls."
+        )
+    )
+    rooms: int = Field(
+        description=(
+            "Visible room definitions referenced by the normalized discovery corpus; "
+            "excludes the synthetic unassigned bucket. rooms.total equals this count plus "
+            "one if an unassigned bucket exists, even when items are truncated."
+        )
+    )
+    categories: int = Field(
+        description=(
+            "Visible category definitions referenced by the normalized discovery corpus; "
+            "excludes the synthetic unassigned bucket. categories.total equals this count "
+            "plus one if an unassigned bucket exists, even when items are truncated."
+        )
+    )
+    control_types: int = Field(
+        description=(
+            "Distinct control types in the authorized visible discovery corpus; no "
+            "synthetic unassigned type bucket."
+        )
+    )
 
 
 class StructureOverviewGroupItemData(BaseModel):
-    assignment: Literal["assigned", "unassigned"]
-    uuid: str | None
-    name: str | None
-    control_count: int
+    assignment: Literal["assigned", "unassigned"] = Field(
+        description=(
+            "assigned identifies a visible definition; unassigned is one synthetic bucket "
+            "for controls with a missing or unresolvable reference within the visible "
+            "structure."
+        )
+    )
+    uuid: str | None = Field(
+        description=(
+            "Visible definition UUID for an assigned bucket; null for the synthetic "
+            "unassigned bucket."
+        )
+    )
+    name: str | None = Field(
+        description=(
+            "Visible definition display name, not a unique identifier; null for the "
+            "synthetic unassigned bucket."
+        )
+    )
+    control_count: int = Field(
+        description=(
+            "Visible discovery controls in this bucket, including normalized subcontrols. "
+            "Sums across all buckets equal counts.controls; sums of truncated items may be "
+            "smaller."
+        )
+    )
 
 
 class StructureOverviewTypeItemData(BaseModel):
-    type: str
-    control_count: int
+    type: str = Field(
+        description=(
+            "Control type from the normalized visible discovery corpus; no synthetic "
+            "unassigned type bucket."
+        )
+    )
+    control_count: int = Field(
+        description=(
+            "Visible discovery controls of this type, including normalized subcontrols. "
+            "Sums across all types equal counts.controls; sums of truncated items may be "
+            "smaller."
+        )
+    )
 
 
 class StructureOverviewGroupBreakdownData(BaseModel):
-    items: list[StructureOverviewGroupItemData]
-    returned: int
-    total: int
-    truncated: bool
-    complete: bool
+    items: list[StructureOverviewGroupItemData] = Field(
+        description=(
+            "Delivered room or category buckets; a synthetic unassigned bucket may exist "
+            "but be omitted by truncation."
+        )
+    )
+    returned: int = Field(
+        description=(
+            "Number of delivered buckets, including unassigned only if delivered; equals "
+            "len(items)."
+        )
+    )
+    total: int = Field(
+        description=(
+            "Total buckets before item or byte truncation: the corresponding counts.rooms "
+            "or counts.categories plus one if an unassigned bucket exists. Includes that "
+            "bucket even if it is not delivered."
+        )
+    )
+    truncated: bool = Field(
+        description=(
+            "True when returned < total; describes delivery of this breakdown, not "
+            "freshness or global installation coverage."
+        )
+    )
+    complete: bool = Field(
+        description=(
+            "True when returned == total; describes delivery of this breakdown, not "
+            "freshness or global installation coverage."
+        )
+    )
 
 
 class StructureOverviewTypeBreakdownData(BaseModel):
-    items: list[StructureOverviewTypeItemData]
-    returned: int
-    total: int
-    truncated: bool
-    complete: bool
+    items: list[StructureOverviewTypeItemData] = Field(
+        description=("Delivered control-type buckets; no synthetic unassigned type bucket.")
+    )
+    returned: int = Field(
+        description=(
+            "Number of delivered control-type buckets; equals len(items), with no synthetic "
+            "unassigned type bucket."
+        )
+    )
+    total: int = Field(
+        description=(
+            "Total distinct control-type buckets before item or byte truncation; equals "
+            "counts.control_types and excludes any synthetic unassigned bucket."
+        )
+    )
+    truncated: bool = Field(
+        description=(
+            "True when returned < total; describes delivery of this breakdown, not "
+            "freshness or global installation coverage."
+        )
+    )
+    complete: bool = Field(
+        description=(
+            "True when returned == total; describes delivery of this breakdown, not "
+            "freshness or global installation coverage."
+        )
+    )
 
 
 class StructureOverviewData(BaseModel):
