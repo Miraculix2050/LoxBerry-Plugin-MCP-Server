@@ -81,6 +81,11 @@ test('sparse exact and dense bounded fixtures retain coverage semantics', () => 
   assert.equal(sparse.reduced, false); assert.ok(sparse.events.length < 30);
   assert.equal(dense.reduced, true); assert.equal(dense.events.length, 2000);
   assert.equal(dense.has_more, false); assert.equal(dense.events.at(-1).id, 100000);
+  for (const result of [sparse, dense]) {
+    assert.equal(result.coverage.length, 1);
+    assert.ok(result.events.every((event) => result.coverage[0].started_at <= event.observed_at
+      && result.coverage[0].ended_at >= event.observed_at));
+  }
 });
 test('fixture serves real local scripts and rejects writes and arbitrary paths', async () => {
   const server = createServer(); await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));

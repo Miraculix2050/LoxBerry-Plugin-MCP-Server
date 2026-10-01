@@ -77,10 +77,18 @@ def test_changed_explorer_harness_selects_dom_flows() -> None:
     assert _pytest_targets(plan) == {"tests/test_explorer_behavior.py"}
 
 
-def test_changed_explorer_dom_missing_dependency_is_incomplete(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize(
+    "changed_file",
+    (
+        "tests/js/explorer-harness.cjs",
+        "tools/browser/chart-probe.js",
+        "tests/test_chart_measurement.py",
+    ),
+)
+def test_changed_dom_missing_dependency_is_incomplete(
+    changed_file: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    plan = create_plan("changed", ("tests/js/explorer-harness.cjs",))
+    plan = create_plan("changed", (changed_file,))
     monkeypatch.setattr(
         test_runner, "_dom_runtime_issues", lambda: ("Explorer DOM tests require npm ci",)
     )

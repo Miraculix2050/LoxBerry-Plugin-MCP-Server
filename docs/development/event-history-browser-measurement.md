@@ -101,23 +101,30 @@ Four accepted local runs used Chromium 154.0.8037.93, two synthetic sources and
 fresh isolated contexts, at an actual inner/client/visual viewport of 390×844,
 visual scale 1 and DPR 1. Each row is one reload with Zoom in then Previous.
 These are harness verification samples, not LoxBerry or Miniserver benchmarks.
-The shipped assets were from master `cd7e4ac4e2f94925f8388a5a225d2720027dc1df`;
+The shipped assets were from master `5621150cd3c6fbc03e2498467c11825c0f311e9c`;
 the development probe/driver were the new files delivered with this document.
+These corrected runs replace the withdrawn pre-review samples: those fixtures
+omitted recorded coverage and therefore inserted a gap between every event.
+Both fixtures now report one coverage interval spanning their generated events.
+An additional browser check after measuring confirmed blue data-stroke pixels
+in both shipped uPlot canvases (460 per sparse chart, 32575–32578 per dense chart);
+only pixel counts were returned, not images. This verification happens after
+CPU/heap sampling and is not part of the measurement probe.
 
 | Fixture / sample | First content ms | Zoom ms | Pan ms | Renderer thread CPU ms | End used heap bytes |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Sparse 1 | 98.8 | 26.3 | 27.2 | 74.6 | 4368564 |
-| Sparse 2 | 74.4 | 24.6 | 26.7 | 74.0 | 4374784 |
-| Dense 1 | 138.7 | 32.3 | 46.2 | 125.6 | 7694068 |
-| Dense 2 | 99.4 | 25.4 | 78.9 | 151.9 | 7621544 |
+| Sparse 1 | 64.8 | 27.9 | 29.4 | 55.9 | 4369984 |
+| Sparse 2 | 59.8 | 27.0 | 29.1 | 56.8 | 4381056 |
+| Dense 1 | 72.0 | 27.0 | 46.0 | 115.6 | 6830376 |
+| Dense 2 | 141.6 | 26.9 | 46.4 | 121.4 | 9191256 |
 
 Sparse fixtures contain 24 events per source across two days (24 returned events
 across two sources in the initial day). Dense fixtures model 100000 events per
 source over two days but return at most 2000 evenly sampled events per source,
 with `reduced=true`. They exercise the existing bounded frontend reduction and
 reload path, not a large SQLite database or backend history preparation.
-Sparse samples made one prepare and one query (body/parse 2.7–5.4 ms); dense
-samples made one prepare and four queries (6.6–32.7 ms). Each also retained a
+Sparse samples made one prepare and one query (body/parse 2.1–4.6 ms); dense
+samples made one prepare and four queries (2.6–30.6 ms). Each also retained a
 pending long poll. With only two samples per case, no distribution or comparative
 performance claim is justified. A preliminary desktop-scrollbar sample was
 rejected because the visual viewport was 375 pixels wide.

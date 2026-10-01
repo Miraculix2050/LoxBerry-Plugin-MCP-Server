@@ -383,7 +383,10 @@ def _dom_runtime_issues() -> tuple[str, ...]:
 def _required_runtime_issues(plan: TestPlan) -> tuple[str, ...]:
     issues = list(_runtime_issues()) if plan.effective_profile == "full" else []
     selected = any(
-        "tests/test_explorer_behavior.py" in command
+        any(
+            target in command
+            for target in ("tests/test_explorer_behavior.py", "tests/test_chart_measurement.py")
+        )
         for command in plan.commands
         if _is_pytest_command(command)
     )

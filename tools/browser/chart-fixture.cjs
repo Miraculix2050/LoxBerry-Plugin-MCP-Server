@@ -21,7 +21,8 @@ function events(query, dense, now) {
     const id = size === 1 ? first : first + Math.floor(index * (count - 1) / (size - 1));
     return {id, observed_at: start + id * step, old_value: 0, new_value: Math.sin(id / 20)};
   }), reduced: count > size, has_more: false, latest_id: total, next_id: last,
-  generation: 1, coverage: [], capture_started_at: start, retained_from: start,
+  generation: 1, coverage: [{started_at: start, ended_at: now}],
+  capture_started_at: start, retained_from: start,
   recording_ended_at: null};
 }
 function createServer() {
