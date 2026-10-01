@@ -1,5 +1,35 @@
 # Tool schema reference
 
+`loxone_read_controls` is an additive `loxone:read` tool for known visible UUIDs.
+`targets` contains 1–25 unique `{control_uuid, state_names?}` objects; identifiers
+and exact state names are 1–128 characters. Each optional name list has 1–100
+unique entries. Omission selects all normalized state references of that control.
+The batch contains at most 100 named references, counting aliases separately to
+bound output rows. Empty-state controls return an empty `values` list. Target and
+name order is preserved. A single freshly authorized snapshot validates the entire
+batch before cache reads; unknown, hidden and inaccessible targets share `not_found`.
+Duplicate selections and excess named references return `invalid_input`; malformed
+typed arguments fail MCP input validation. No `include_hidden` is provided.
+
+Each item contains the existing `ControlSummaryData` as `identity` and named
+`values` with original value, UUID, freshness and observation time. Default
+`semantics` is null. `include_semantics=true` adds the exact item model of
+`loxone_get_state_semantics` using its shared snapshot reader and resolver,
+including only current documented companion values. This optional projection
+duplicates raw values in its evidence items; it is not the smallest payload.
+Neither mode expands relationships, notes, history, statistics, actions or project
+data. `omitted_sections` explicitly identifies these sections and absent semantics.
+
+`requested_controls/returned_controls` and `requested_states/returned_states`
+count selected controls and named references. Successful `complete=true` and
+`truncated=false` mean the requested projection is fully delivered, not that all
+values are current, known or semantically interpreted. Each semantic descriptor
+retains its own metadata completeness. Envelope `stale` reflects disconnection or
+any non-current selected state. Responses exceeding 65,536 UTF-8 bytes of the
+serialized structured envelope return `response_too_large` without partial values;
+split targets or select fewer states. This limit does not count MCP transport
+framing or the textual copy of structured output.
+
 `loxone_get_state_semantics` is an additive `loxone:read` tool for one visible
 control. Optional `state_names` select 1–100 unique exact names; otherwise page
 the normalized references with `offset` and `limit` (default/maximum 100).

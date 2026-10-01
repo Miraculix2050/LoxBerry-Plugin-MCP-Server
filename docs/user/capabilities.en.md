@@ -278,6 +278,35 @@ four rooms and three categories, then use `loxone_find_controls` only for the
 chosen room, category, or type. It does not replace those targeted calls when a
 client needs individual controls, descriptions, or current states.
 
+## Compact reads of known controls
+
+Use `loxone_read_controls` when visible control UUIDs are already known; otherwise
+discover them with `loxone_find_controls` first. For example:
+
+```json
+{"targets":[{"control_uuid":"<visible-control-uuid>","state_names":["value"]}]}
+```
+
+The response joins `identity` (name, type, visibility, room and category) with
+named `values` (UUID, original value, freshness and observation time) in one call.
+Omit `state_names` to read all states of the selected control. Exact names are
+required. Select 1–25 unique controls and at most 100 named states in total;
+identifiers/names are limited to 128 characters. Aliases count separately.
+Hidden/unknown controls or unknown state names reject the whole batch.
+
+`include_semantics=true` optionally adds the same evidence and observation-quality
+model as `loxone_get_state_semantics`. No relationships, notes, history, statistics,
+actions or project data are expanded. Existing detail tools remain available.
+`complete` and requested/returned counts describe delivery of the selected data,
+including unavailable or stale values; they do not prove freshness or complete
+semantic knowledge. Semantic metadata has its own completeness fields.
+The structured response is limited to 64 KiB; `response_too_large` returns no
+partial values. Split the targets or select fewer states.
+
+Compared with full descriptions this reduces payloads substantially for controls
+with many relationships. For one small control, `describe_control(view="state_refs")`
+plus `get_states` may use fewer bytes, but still needs two calls.
+
 ## Limits
 
 - Exactly one Miniserver target is supported.

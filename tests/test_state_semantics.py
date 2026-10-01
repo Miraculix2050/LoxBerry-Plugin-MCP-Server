@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 from mcp.server.fastmcp import FastMCP
@@ -22,7 +23,7 @@ from mcpserver.loxone.models import (
 from mcpserver.loxone.runtime import RuntimeSnapshot, RuntimeUnavailable
 from mcpserver.loxone.state_semantics import StateSemanticsResolver
 from mcpserver.loxone.structure import normalize_structure
-from mcpserver.tools import register_read_tools
+from mcpserver.tools import ControlReadTarget, register_read_tools
 
 
 def control(kind="Irrigation", states=(("rainActive", "state"),), **kwargs):
@@ -141,6 +142,247 @@ def tool(monkeypatch, runtime):
     server = FastMCP("semantics")
     register_read_tools(server, runtime)
     return server._tool_manager.get_tool("loxone_get_state_semantics")
+
+
+def read_tool(monkeypatch, runtime):
+    monkeypatch.setattr(tools_module, "_access", lambda: SimpleNamespace(scopes=["loxone:read"]))
+    server = FastMCP("compact")
+    register_read_tools(server, runtime)
+    return server, server._tool_manager.get_tool("loxone_read_controls")
+
+
+@pytest.mark.asyncio
+async def test_compact_order_aliases_and_optional_shared_semantics(monkeypatch):
+    runtime = Runtime(control(states=(("rainActive", "state"), ("alias", "state"))))
+    second = replace(control("InfoOnlyAnalog", states=()), uuid="second")
+    runtime.structure = replace(runtime.structure, controls=(runtime.structure.controls[0], second))
+    server, t = read_tool(monkeypatch, runtime)
+    result = await t.fn(
+        [ControlReadTarget(control_uuid="second"), ControlReadTarget(control_uuid="control")]
+    )
+    assert result.ok and result.data.complete and not result.data.truncated
+    assert [item.identity.uuid for item in result.data.items] == ["second", "control"]
+    assert [item.name for item in result.data.items[1].values] == ["rainActive", "alias"]
+    assert result.data.requested_states == result.data.returned_states == 2
+    assert result.data.requested_controls == result.data.returned_controls == 2
+    assert runtime.reads == ["state"] and runtime.snapshots == [True]
+    assert result.data.items[0].values == []
+    assert result.data.items[1].semantics is None
+    enriched = await t.fn(
+        [ControlReadTarget(control_uuid="control", state_names=["rainActive"])], True
+    )
+    legacy = await server._tool_manager.get_tool("loxone_get_state_semantics").fn(
+        "control", ["rainActive"]
+    )
+    assert enriched.data.items[0].semantics == legacy.data.items
+    assert "semantics" not in enriched.data.omitted_sections
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("private_first", [False, True])
+@pytest.mark.parametrize(
+    "target",
+    [
+        {"control_uuid": "hidden"},
+        {"control_uuid": "absent"},
+        {"control_uuid": "control", "state_names": ["private"]},
+    ],
+)
+async def test_compact_batch_visibility_is_atomic(monkeypatch, target, private_first):
+    runtime = Runtime(control())
+    runtime.structure = replace(
+        runtime.structure, hidden_controls=(replace(control(), uuid="hidden", is_hidden=True),)
+    )
+    _, t = read_tool(monkeypatch, runtime)
+    targets = [ControlReadTarget(control_uuid="control"), ControlReadTarget(**target)]
+    # Use a distinct visible control when the invalid state targets the first control.
+    if target["control_uuid"] == "control":
+        targets[0] = ControlReadTarget(control_uuid="other")
+        runtime.structure = replace(
+            runtime.structure,
+            controls=(*runtime.structure.controls, replace(control(), uuid="other")),
+        )
+    result = await t.fn(targets[::-1] if private_first else targets)
+    assert result.data.error == "not_found" and runtime.reads == []
+    assert result.data.message == "One or more targets are not accessible"
+    runtime.structure = replace(runtime.structure, controls=())
+    assert (await t.fn([ControlReadTarget(control_uuid="control")])).data.error == "not_found"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"targets": []},
+        {"targets": [{"control_uuid": str(i)} for i in range(26)]},
+        {"targets": [{"control_uuid": "x" * 129}]},
+        {"targets": [{"control_uuid": "control", "state_names": []}]},
+        {"targets": [{"control_uuid": "control", "state_names": ["x" * 129]}]},
+        {"targets": [{"control_uuid": "control", "state_names": ["x"] * 101}]},
+        {"targets": [{"control_uuid": "control", "include_hidden": True}]},
+    ],
+)
+async def test_compact_schema_bounds(monkeypatch, arguments):
+    runtime = Runtime(control())
+    server, _ = read_tool(monkeypatch, runtime)
+    with pytest.raises(ToolError):
+        await server._tool_manager.call_tool("loxone_read_controls", arguments)
+    assert runtime.snapshots == []
+
+
+@pytest.mark.asyncio
+async def test_compact_duplicates_and_total_named_state_limit(monkeypatch):
+    runtime = Runtime(control(states=tuple((f"s{i}", "state") for i in range(101))))
+    _, t = read_tool(monkeypatch, runtime)
+    target = ControlReadTarget(control_uuid="control")
+    assert (await t.fn([target, target])).data.error == "invalid_input"
+    assert (
+        await t.fn([ControlReadTarget(control_uuid="control", state_names=["s0", "s0"])])
+    ).data.error == "invalid_input"
+    assert runtime.snapshots == []
+    assert (await t.fn([target])).data.error == "invalid_input" and runtime.reads == []
+    result = await t.fn(
+        [ControlReadTarget(control_uuid="control", state_names=[f"s{i}" for i in range(100)])]
+    )
+    assert result.ok and result.data.returned_states == 100 and runtime.reads == ["state"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("freshness", list(Freshness))
+async def test_compact_preserves_quality_and_does_not_read_companions_by_default(
+    monkeypatch, freshness
+):
+    runtime = Runtime(control(states=(("rainActive", "state"), ("zones", "zones"))))
+    runtime.records["state"] = StateRecord("state", None, freshness, None)
+    _, t = read_tool(monkeypatch, runtime)
+    result = await t.fn([ControlReadTarget(control_uuid="control", state_names=["rainActive"])])
+    value = result.data.items[0].values[0]
+    assert value.value is None and value.freshness == freshness.value and value.observed_at is None
+    assert result.data.complete and runtime.reads == ["state"]
+    assert result.stale == (freshness is not Freshness.CURRENT)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("semantics", [False, True])
+async def test_compact_byte_limit_rejects_without_partial_values(monkeypatch, semantics):
+    runtime = Runtime(control("InfoOnlyText"))
+    runtime.records["state"] = StateRecord("state", "ä" * 33000, Freshness.CURRENT, None)
+    _, t = read_tool(monkeypatch, runtime)
+    result = await t.fn([ControlReadTarget(control_uuid="control")], semantics)
+    assert not result.ok and result.data.error == "response_too_large"
+    assert len(result.model_dump_json().encode("utf-8")) < 65536
+    assert "ä" not in result.model_dump_json()
+
+
+@pytest.mark.asyncio
+async def test_compact_exact_byte_boundary_and_maximum_control_batch(monkeypatch):
+    monkeypatch.setattr(tools_module, "_now", lambda: "2026-10-01T00:00:00.000000Z")
+    runtime = Runtime(control("InfoOnlyText"))
+    _, t = read_tool(monkeypatch, runtime)
+    target = [ControlReadTarget(control_uuid="control")]
+    runtime.records["state"] = StateRecord("state", "", Freshness.CURRENT, None)
+    base = await t.fn(target)
+    size = len(base.model_dump_json().encode("utf-8"))
+    runtime.records["state"] = StateRecord("state", "x" * (65536 - size), Freshness.CURRENT, None)
+    result = await t.fn(target)
+    assert result.ok and len(result.model_dump_json().encode("utf-8")) == 65536
+    runtime.records["state"] = replace(runtime.records["state"], value="x" * (65537 - size))
+    assert (await t.fn(target)).data.error == "response_too_large"
+    runtime.structure = replace(
+        runtime.structure,
+        controls=tuple(
+            replace(control(states=()), uuid=f"c{i}", is_user_linked=True) for i in range(25)
+        ),
+    )
+    result = await t.fn([ControlReadTarget(control_uuid=f"c{i}") for i in range(25)])
+    assert result.ok and result.data.returned_controls == 25 and result.data.returned_states == 0
+    assert all(item.identity.visibility == "linked" for item in result.data.items)
+
+
+@pytest.mark.asyncio
+async def test_compact_shared_semantics_does_not_label_from_stale_companions(monkeypatch):
+    runtime = Runtime(control(states=(("currentZone", "state"), ("zones", "zones"))))
+    runtime.records["state"] = StateRecord("state", 0, Freshness.CURRENT, None)
+    runtime.records["zones"] = StateRecord(
+        "zones", '[{"id":0,"name":"Stale label"}]', Freshness.STALE, None
+    )
+    _, t = read_tool(monkeypatch, runtime)
+    result = await t.fn(
+        [ControlReadTarget(control_uuid="control", state_names=["currentZone"])], True
+    )
+    semantics = result.data.items[0].semantics[0]
+    assert semantics.semantics.reason == "companion_unavailable"
+    assert semantics.semantic_value == {"status": "zone", "zone_id": 0}
+    assert not result.stale and result.data.complete
+    assert set(runtime.reads) == {"state", "zones"} and len(runtime.reads) == 2
+
+
+@pytest.mark.asyncio
+async def test_compact_authentication_availability_and_cancellation(monkeypatch):
+    runtime = Runtime(control())
+    _, t = read_tool(monkeypatch, runtime)
+    targets = [ControlReadTarget(control_uuid="control")]
+
+    def denied():
+        raise PermissionError()
+
+    monkeypatch.setattr(tools_module, "_access", denied)
+    assert (await t.fn(targets)).data.error == "unauthenticated"
+    assert runtime.snapshots == []
+    monkeypatch.setattr(tools_module, "_access", lambda: object())
+    runtime.failure = RuntimeUnavailable("offline")
+    assert not (await t.fn(targets)).ok and runtime.reads == []
+    runtime.failure = asyncio.CancelledError()
+    with pytest.raises(asyncio.CancelledError):
+        await t.fn(targets)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("relationships", [0, 100])
+async def test_compact_serialized_payload_measurement(monkeypatch, relationships):
+    monkeypatch.setattr(tools_module, "_now", lambda: "2026-10-01T00:00:00.000000Z")
+    c = control("InfoOnlyAnalog", states=(("value", "state"),))
+    if relationships:
+        c = replace(
+            c,
+            control_type="StatusMonitor",
+            state_uuids=(("inputStates", "state"),),
+            status_monitor_inputs=tuple(
+                StatusMonitorInput(i, f"Input {i:03}", None, f"related-{i:03}", None)
+                for i in range(relationships)
+            ),
+            status_monitor_statuses=tuple(
+                StatusMonitorStatus(i, f"Status {i:03}", 0, None) for i in range(10)
+            ),
+        )
+    related = tuple(
+        replace(c, uuid=f"related-{i:03}", name=f"Related control {i:03}", state_uuids=())
+        for i in range(relationships)
+    )
+    c = replace(
+        c, name="Measured control", linked_control_uuids=tuple(item.uuid for item in related)
+    )
+    runtime = Runtime(c)
+    runtime.structure = replace(runtime.structure, controls=(c, *related))
+    server, t = read_tool(monkeypatch, runtime)
+    calls = [
+        await server._tool_manager.get_tool("loxone_find_controls").fn(query="Measured control"),
+        await server._tool_manager.get_tool("loxone_describe_control").fn("control"),
+        await server._tool_manager.get_tool("loxone_get_states").fn(["state"]),
+    ]
+    refs = await server._tool_manager.get_tool("loxone_describe_control").fn(
+        "control", view="state_refs"
+    )
+    compact = await t.fn([ControlReadTarget(control_uuid="control")])
+    assert all(call.ok for call in [*calls, refs, compact])
+    sizes = [len(call.model_dump_json().encode("utf-8")) for call in calls]
+    compact_size = len(compact.model_dump_json().encode("utf-8"))
+    refs_size = len(refs.model_dump_json().encode("utf-8"))
+    assert compact_size < sum(sizes)
+    print(
+        f"relationships={relationships}: find/describe/states={sizes}, total={sum(sizes)}, "
+        f"compact={compact_size}, describe-state_refs+states={refs_size + sizes[2]}"
+    )
 
 
 @pytest.mark.asyncio

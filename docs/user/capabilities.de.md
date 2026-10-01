@@ -304,6 +304,38 @@ gewählten Raum, die Kategorie oder den Typ verwenden. Die gezielten Aufrufe
 bleiben nötig, wenn einzelne Controls, Beschreibungen oder aktuelle Zustände
 benötigt werden.
 
+## Kompakte Reads bekannter Controls
+
+Nutze `loxone_read_controls`, wenn sichtbare Control-UUIDs bereits bekannt sind;
+ermittle sie sonst zuerst mit `loxone_find_controls`. Beispiel:
+
+```json
+{"targets":[{"control_uuid":"<visible-control-uuid>","state_names":["value"]}]}
+```
+
+Die Antwort verbindet `identity` (Name, Typ, Sichtbarkeit, Raum und Kategorie) mit
+benannten `values` (UUID, Rohwert, Freshness und Beobachtungszeit) in einem Call.
+Ohne `state_names` werden alle States des ausgewählten Controls gelesen. Namen
+müssen exakt passen. Erlaubt sind 1–25 eindeutige Controls und insgesamt höchstens
+100 benannte States; Identifier/Namen sind auf 128 Zeichen begrenzt. Aliase zählen
+einzeln. Versteckte/unbekannte Controls oder unbekannte State-Namen weisen den
+gesamten Batch zurück.
+
+`include_semantics=true` ergänzt optional dasselbe Evidenz- und Qualitätsmodell
+wie `loxone_get_state_semantics`. Beziehungen, Notizen, Historie, Statistiken,
+Aktionen und Projektdaten werden nicht expandiert. Bestehende Detailtools bleiben
+verfügbar. `complete` und angeforderte/zurückgegebene Anzahlen beschreiben die
+Auslieferung der Auswahl einschließlich unverfügbarer oder veralteter Werte;
+sie beweisen weder Aktualität noch vollständige Semantikkenntnis. Semantikmetadaten
+besitzen eigene Completeness-Felder. Die strukturierte Antwort ist auf 64 KiB
+begrenzt; `response_too_large` liefert keine Teilwerte. Teile die Targets auf oder
+wähle weniger States.
+
+Gegenüber vollständigen Beschreibungen sinkt die Antwortgröße bei Controls mit
+vielen Beziehungen deutlich. Für ein einzelnes kleines Control kann
+`describe_control(view="state_refs")` plus `get_states` weniger Bytes benötigen,
+braucht aber weiterhin zwei Calls.
+
 ## Grenzen
 
 - Genau ein Miniserver-Ziel wird unterstützt.
