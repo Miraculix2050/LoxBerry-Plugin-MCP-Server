@@ -124,6 +124,36 @@ async def test_optional_budget_does_not_invalidate_primary(monkeypatch):
     assert result.data.findings[0].context.source_states == []
 
 
+@pytest.mark.asyncio
+async def test_optional_reads_do_not_starve_later_primary_states(monkeypatch):
+    runtime = Runtime(control("AalSmartAlarm"))
+    controls = tuple(
+        replace(
+            control(
+                "AalSmartAlarm",
+                states=(
+                    ("alarmLevel", f"p{i}"),
+                    ("isLocked", f"l{i}"),
+                    ("isLeaveActive", f"v{i}"),
+                    ("disableEndTime", f"d{i}"),
+                ),
+            ),
+            uuid=f"c{i:03}",
+        )
+        for i in range(30)
+    )
+    runtime.structure = replace(runtime.structure, controls=controls)
+    runtime.records = {
+        uuid: StateRecord(uuid, 1, Freshness.CURRENT, 1700000000)
+        for c in controls
+        for _name, uuid in c.state_uuids
+    }
+    result = await make_tool(monkeypatch, runtime).fn()
+    assert result.data.total_active == 30 and result.data.coverage.complete
+    assert runtime.reads[:30] == [f"p{i}" for i in range(30)]
+    assert len(runtime.reads) == 100
+
+
 @pytest.mark.parametrize("raw", [None, "1", 2, float("nan"), {}, []])
 def test_invalid_optional_context_does_not_override_activity(raw):
     c = control("AalSmartAlarm")

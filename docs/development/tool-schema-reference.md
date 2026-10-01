@@ -166,7 +166,8 @@ Active test alarms and acknowledged active source states remain counted.
 `limit` is 1–50 (default 50), without cursor or family filter. Traversal stops at
 1,000 visible tree entries, reads at most 100 unique state UUIDs, examines at most
 100 references per supported control, attempts at most 100 decodes, and retains
-50 coverage reasons. The closed
+50 coverage reasons. Primary/required states across all sources are captured before
+optional context, so companions cannot starve later primary states. The closed
 candidate set is AalEmergency, AalSmartAlarm, Alarm, AlarmChain, SmokeAlarm,
 StatusMonitor and WindowMonitor. Other types are outside the claimed scope.
 Unsupported candidates, missing/invalid/stale states and budget limits make

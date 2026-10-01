@@ -4963,10 +4963,22 @@ def register_read_tools(
             sources, scan_complete = select_sources(snapshot.structure.controls)
             refs = {c.uuid: source_states(c) for c in sources if c.control_type in ALERT_FAMILIES}
             records: dict[str, StateRecord] = {}
-            for state_refs, reason in refs.values():
-                if reason is None:
-                    for uuid in state_refs.values():
-                        if uuid not in records and len(records) < MAX_STATES:
+            for optional in (False, True):
+                for control in sources:
+                    if control.uuid not in refs:
+                        continue
+                    state_refs, reason = refs[control.uuid]
+                    if reason is not None:
+                        continue
+                    family = ALERT_FAMILIES[control.control_type]
+                    names = (
+                        sorted(family.optional)
+                        if optional
+                        else (family.primary, *sorted(family.required))
+                    )
+                    for name in names:
+                        uuid = state_refs.get(name)
+                        if uuid is not None and uuid not in records and len(records) < MAX_STATES:
                             records[uuid] = runtime.state(snapshot, uuid)
             evaluation = evaluate_alerts(
                 snapshot.structure,
