@@ -74,6 +74,14 @@ class MiniserverAuthenticationSuppressed(LoxoneConnectionError):
     """A source-IP block or a busy coordinator prevented a new login."""
 
 
+class MiniserverAuthenticationBusy(MiniserverAuthenticationSuppressed):
+    """Local authentication coordination exhausted its bounded wait."""
+
+
+class MiniserverSourceIpSuppressed(MiniserverAuthenticationSuppressed):
+    """The persistent source-IP breaker prevented a network attempt."""
+
+
 @dataclass(frozen=True, slots=True)
 class AttemptProvenance:
     """Only a request that starts an attempt may provide this context."""
@@ -276,6 +284,7 @@ class MiniserverAuthCoordinator:
         force_probe: bool = False,
         allow_cooldown_probe: bool = True,
         busy_wait_seconds: float = 0,
+        before_attempt: Callable[[], Awaitable[None]] | None = None,
     ) -> _T:
         """Run one authorized authentication attempt after an optional bounded wait."""
         if owner not in {"runtime_event_stream", "tool_request", "local_admin"}:
@@ -295,11 +304,12 @@ class MiniserverAuthCoordinator:
                             provenance=provenance,
                             force_probe=force_probe,
                             allow_cooldown_probe=allow_cooldown_probe,
+                            before_attempt=before_attempt,
                         )
                 except _InterprocessLockUnavailable as exc:
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
-                        raise MiniserverAuthenticationSuppressed(
+                        raise MiniserverAuthenticationBusy(
                             "Miniserver authentication is already being coordinated"
                         ) from exc
                     await asyncio.sleep(min(0.1, remaining))
@@ -313,6 +323,7 @@ class MiniserverAuthCoordinator:
         provenance: AttemptProvenance | None,
         force_probe: bool,
         allow_cooldown_probe: bool,
+        before_attempt: Callable[[], Awaitable[None]] | None,
     ) -> _T:
         """Execute one attempt while both coordinator locks are held."""
         now = int(time.time())
@@ -329,9 +340,11 @@ class MiniserverAuthCoordinator:
                     )
                     self._save_best_effort()
                     self._last_suppression_persisted = time.monotonic()
-                raise MiniserverAuthenticationSuppressed(
+                raise MiniserverSourceIpSuppressed(
                     "Miniserver authentication is temporarily suppressed"
                 )
+        if before_attempt is not None:
+            await before_attempt()
         self._record(owner=owner, phase=phase, outcome="attempt_started", provenance=provenance)
         try:
             result = await operation()

@@ -488,7 +488,7 @@ class LoxoneClient:
         )
         try:
             await session.authenticate()
-        except Exception:
+        except BaseException:
             await session.close()
             raise
         return session

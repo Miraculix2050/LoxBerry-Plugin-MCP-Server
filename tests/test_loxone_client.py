@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any, cast
+from unittest.mock import AsyncMock
 from uuid import UUID
 
 import httpx
@@ -28,6 +29,34 @@ from mcpserver.loxone.client import (
 )
 from mcpserver.loxone.events import MessageHeader, MessageType
 from mcpserver.loxone.security import token_hmac
+
+
+@pytest.mark.asyncio
+async def test_open_session_cancellation_closes_authenticated_transport(monkeypatch) -> None:
+    client = LoxoneClient(
+        MiniserverEndpoint.parse_gen1("http://192.168.1.10"), client_uuid=UUID(int=1)
+    )
+    started = asyncio.Event()
+
+    async def authenticate() -> None:
+        started.set()
+        await asyncio.Event().wait()
+
+    session = type("Session", (), {})()
+    session.authenticate = authenticate
+    session.close = AsyncMock()
+    monkeypatch.setattr(client, "websocket_public_key", AsyncMock(return_value="key"))
+    monkeypatch.setattr(client, "_connect_websocket", AsyncMock(return_value=object()))
+    monkeypatch.setattr(
+        "mcpserver.loxone.client.LoxoneWebSocketSession", lambda *_args, **_kwargs: session
+    )
+    token = LoxoneToken("opaque", "reader", "", "SHA256", 9_999_999_999)
+    request = asyncio.create_task(client.open_session(token))
+    await asyncio.wait_for(started.wait(), 2)
+    request.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await request
+    session.close.assert_awaited_once()
 
 
 @pytest.mark.parametrize(
