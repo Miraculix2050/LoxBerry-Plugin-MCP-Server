@@ -5,7 +5,7 @@ from itertools import islice
 from typing import Any
 
 from .models import Control, Freshness, LoxoneStructure, StateRecord
-from .state_semantics import StateSemanticsResolver
+from .state_semantics import ALERT_FAMILIES, StateSemanticsResolver
 
 MAX_SCAN = 1000
 MAX_STATES = 100
@@ -46,20 +46,27 @@ def select_sources(controls: Iterable[Control]) -> tuple[list[Control], bool]:
     return sorted(selected, key=lambda c: c.uuid), True
 
 
-def source_state(control: Control) -> tuple[str | None, str | None]:
-    """Resolve the sole supported state without unbounded reference materialization."""
+def source_states(control: Control) -> tuple[dict[str, str], str | None]:
+    """Resolve bounded primary, required and optional references in read order."""
     refs = list(islice(control.state_uuids, 101))
     if len(refs) > 100:
-        return None, "reference_budget"
-    matches = [uuid for name, uuid in refs if name == "status"]
-    return (matches[0], None) if len(matches) == 1 else (None, "missing_state")
+        return {}, "reference_budget"
+    family = ALERT_FAMILIES[control.control_type]
+    selected: dict[str, str] = {}
+    for name in (family.primary, *sorted(family.required), *sorted(family.optional)):
+        matches = [uuid for key, uuid in refs if key == name]
+        if len(matches) == 1:
+            selected[name] = matches[0]
+        elif name == family.primary or name in family.required:
+            return {}, "missing_state"
+    return selected, None
 
 
 def evaluate_alerts(
     structure: LoxoneStructure,
     sources: list[Control],
     records: Mapping[str, StateRecord],
-    refs: Mapping[str, tuple[str | None, str | None]],
+    refs: Mapping[str, tuple[dict[str, str], str | None]],
     *,
     scan_complete: bool,
     connected: bool,
@@ -71,15 +78,17 @@ def evaluate_alerts(
     resolver = StateSemanticsResolver()
     for control in sources:
         reason = None
-        if control.control_type != "AalEmergency":
+        if control.control_type not in ALERT_FAMILIES:
             unsupported += 1
             reason = "unsupported_family"
         else:
-            uuid, reason = refs[control.uuid]
-            if reason is None and uuid not in records:
+            state_refs, reason = refs[control.uuid]
+            family = ALERT_FAMILIES[control.control_type]
+            required = (family.primary, *family.required)
+            if reason is None and any(state_refs[name] not in records for name in required):
                 reason = "state_budget"
             if reason is None:
-                assert uuid is not None
+                uuid = state_refs[family.primary]
                 record = records[uuid]
                 if not connected:
                     reason = "disconnected"
@@ -91,8 +100,15 @@ def evaluate_alerts(
                     reason = "decoder_budget"
                 else:
                     attempts += 1
+                    companions = {
+                        name: records[state_uuid].value
+                        for name, state_uuid in state_refs.items()
+                        if name != family.primary
+                        and state_uuid in records
+                        and records[state_uuid].freshness is Freshness.CURRENT
+                    }
                     semantics, value = resolver.resolve(
-                        structure, control, "status", record.value, {}
+                        structure, control, family.primary, record.value, companions
                     )
                     if semantics.interpretation_status != "known" or not isinstance(value, dict):
                         reason = "invalid"
@@ -104,7 +120,15 @@ def evaluate_alerts(
                                     "control": control,
                                     "record": record,
                                     "semantics": semantics,
-                                    "classification": value["status"],
+                                    "semantic_value": value,
+                                    "classification": "alarm_triggered",
+                                    "state_name": family.primary,
+                                    "context": value.get("context"),
+                                    "companions": [
+                                        (name, records[state_uuid])
+                                        for name, state_uuid in state_refs.items()
+                                        if name != family.primary and state_uuid in records
+                                    ],
                                 }
                             )
             if reason is not None:

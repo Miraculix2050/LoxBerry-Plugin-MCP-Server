@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Extend active visible alerts with documented AalSmartAlarm and AlarmChain rules,
+  source context and acknowledgement without hiding active alarm bits. Preserve
+  explicit coverage gaps for unsupported families and unknown context (#344).
+
 - Add bounded, sanitized internal-flow gap evidence to opening-contact traces,
   preserving warnings, conservative completeness and existing connector rules (#335).
 - Edit bounded object-list inputs as individual Tool Explorer entries and transfer
