@@ -7,6 +7,9 @@ extracted from the matching version heading.
 
 - Show `source_type` in Tool Explorer array item previews before timestamp fallback.
 
+- Clarify structure overview definition counts versus synthetic unassigned buckets
+  in the public schema, examples and agent guide without changing response values (#212).
+
 - Extend active visible alerts with documented AalSmartAlarm and AlarmChain rules,
   source context and acknowledgement without hiding active alarm bits. Preserve
   explicit coverage gaps for unsupported families and unknown context (#344).

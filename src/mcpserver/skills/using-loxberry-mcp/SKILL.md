@@ -46,6 +46,16 @@ Call `loxone_get_system_status` when connectivity or data freshness matters.
 Call `loxone_get_structure_overview` when a task needs an initial, bounded map
 of the authorized visible runtime structure. Treat its counts as scoped to the
 signed-in Loxone user, not as a complete physical or Config-project inventory.
+`counts.rooms` and `counts.categories` exclude the synthetic `unassigned` bucket;
+`rooms.total` and `categories.total` include it if visible controls have missing
+or unresolvable references. For each group,
+`total = definitions_count + (unassigned_bucket_present ? 1 : 0)`, even under
+truncation. Type buckets have no synthetic unassigned bucket. `returned` counts
+delivered items; `complete` describes delivery, not installation coverage or
+freshness. Truncation may omit the unassigned bucket, and delivered
+`control_count` sums may be smaller than `counts.controls`. Complete sums include
+normalized subcontrols and equal `counts.controls`.
+
 Check `stale` plus every breakdown's `truncated` and `complete` fields. Then use
 `loxone_list_rooms`, `loxone_list_categories`, `loxone_find_controls`,
 `loxone_describe_control`, or `loxone_get_room_snapshot` for targeted detail.

@@ -278,6 +278,21 @@ targeted discovery tools for details. Each breakdown contains at most 50 items,
 and the complete result envelope is limited to 64 KiB with explicit completeness
 metadata.
 
+`counts.rooms` and `counts.categories` count visible definitions referenced by
+the normalized discovery corpus, excluding the synthetic `unassigned` bucket.
+Each group's `total` includes one such bucket if controls have missing or
+unresolvable references within the visible structure:
+`total = definitions_count + (unassigned_bucket_present ? 1 : 0)`.
+With two assigned rooms and no unassigned controls, `counts.rooms=2` and
+`rooms.total=2`; with unassigned controls, `counts.rooms=2` and `rooms.total=3`.
+The same applies to categories. Types have no synthetic unassigned bucket.
+`returned` counts delivered items; totals remain unchanged under truncation,
+even if the unassigned bucket is omitted. `complete` describes delivery, not
+freshness or installation coverage. Complete `control_count` sums equal
+`counts.controls`, including normalized subcontrols; truncated sums may be
+smaller. Empty Config definitions and definitions referenced only by hidden
+controls are excluded.
+
 For initial orientation, this replaces separate calls to `loxone_list_rooms`,
 `loxone_list_categories`, and an unfiltered `loxone_find_controls` request just
 to learn their aggregate distribution. For example, a client can make one

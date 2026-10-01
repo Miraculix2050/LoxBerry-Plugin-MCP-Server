@@ -304,6 +304,23 @@ oder Config-Projektdaten; Details liefern die gezielten Discovery-Tools. Jede
 Aufschlüsselung enthält höchstens 50 Einträge, und das vollständige Ergebnis-
 Envelope ist mit expliziten Vollständigkeitsangaben auf 64 KiB begrenzt.
 
+`counts.rooms` und `counts.categories` zählen sichtbare Definitionen, die der
+normalisierte Discovery-Korpus referenziert, ohne den synthetischen
+`unassigned`-Bucket. Das `total` jeder Gruppe enthält einen solchen Bucket,
+wenn Controls fehlende oder innerhalb der sichtbaren Struktur nicht auflösbare
+Referenzen besitzen:
+`total = definitions_count + (unassigned_bucket_present ? 1 : 0)`.
+Bei zwei zugewiesenen Räumen ohne unzugeordnete Controls gilt `counts.rooms=2`
+und `rooms.total=2`; mit unzugeordneten Controls gilt `counts.rooms=2` und
+`rooms.total=3`. Dasselbe gilt für Kategorien. Typen besitzen keinen synthetischen
+unassigned-Bucket. `returned` zählt ausgelieferte Einträge; Gesamtzahlen bleiben
+bei Kürzung unverändert, auch wenn der unassigned-Bucket entfällt. `complete`
+beschreibt die Auslieferung, keine Aktualität oder Anlagenvollständigkeit.
+Vollständige `control_count`-Summen entsprechen `counts.controls` einschließlich
+normalisierter Subcontrols; gekürzte Summen können kleiner sein. Leere
+Config-Definitionen und nur von versteckten Controls referenzierte Definitionen
+bleiben ausgeschlossen.
+
 Für die erste Orientierung ersetzt dies getrennte Aufrufe von
 `loxone_list_rooms`, `loxone_list_categories` und einem ungefilterten
 `loxone_find_controls`-Aufruf, die nur deren aggregierte Verteilung ermitteln
