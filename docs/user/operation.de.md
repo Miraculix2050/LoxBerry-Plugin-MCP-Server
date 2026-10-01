@@ -49,7 +49,8 @@ Verlaufsergebnis stehen **Verwendete Parameter** in einem eigenen Aufklappbereic
 Ergebnisse und Verlaufseinträge erscheinen als aufklappbarer Baum. Große Zweige zeigen
 jeweils 100 Einträge; **Weitere anzeigen** lädt die nächsten. Der Pfeil öffnet einen
 Zweig, die separate Wert-Schaltfläche übernimmt dessen unveränderten Wert und Pfad.
-Objekte in Listen zeigen nach Möglichkeit einen kurzen Namen, Typ, Bezeichner oder
+Objekte in Listen zeigen nach Möglichkeit einen kurzen Namen, Typ (auch `source_type`),
+Bezeichner oder
 bei Beziehungen Quelle und Ziel. Zeitangaben sind der letzte Ersatz, wenn nichts
 Aussagekräftigeres vorhanden ist. `null` erscheint im Baum als `-`; beim Kopieren
 und Übernehmen bleibt der ursprüngliche Wert erhalten.
