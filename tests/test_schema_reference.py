@@ -88,6 +88,7 @@ EXPECTED_TOOLS = {
     "loxone_get_room_snapshot",
     "loxone_get_skill_guide",
     "loxone_get_state_semantics",
+    "loxone_get_active_alerts",
     "loxone_read_controls",
     "loxone_get_states",
     "loxone_get_statistics",

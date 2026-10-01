@@ -126,6 +126,35 @@ class StateSemanticsResolver:
     ) -> tuple[StateSemantics, object | None]:
         result = StateSemantics()
         semantic_value: object | None = None
+        if control.control_type == "AalEmergency" and state_name == "status":
+            result.value_type = "integer"
+            labels = ("normal_operation", "alarm_triggered", "reset_active", "temporarily_disabled")
+            result.encoding = [SemanticsEncoding(i, label) for i, label in enumerate(labels)]
+            result.encoding_total = result.encoding_returned = 4
+            result.encoding_complete = True
+            result.sources.append(
+                SemanticsSource(
+                    "decoder_rule",
+                    "https://www.loxone.com/dede/wp-content/uploads/sites/2/2021/10/1701_Structure-File.pdf#page=26",
+                    ("semantic_value", "encoding", "value_type"),
+                    rule_id="AalEmergency.status.v1",
+                    document_version="17.1",
+                )
+            )
+            result.interpretation_status, result.reason = "partial", "value_unavailable"
+            if value is not None:
+                if (
+                    isinstance(value, int | float)
+                    and not isinstance(value, bool)
+                    and value in (0, 1, 2, 3)
+                ):
+                    semantic_value = {"status": labels[int(value)], "alert_active": value == 1}
+                    result.interpretation_status, result.reason = "known", "documented_decoder"
+                else:
+                    result.interpretation_status, result.reason = (
+                        "invalid",
+                        "invalid_documented_value",
+                    )
         if control.control_type in _FORMAT_TYPES and state_name == "value":
             result.display_format_total_length = control.format_total_length
             result.display_format_returned_length = (

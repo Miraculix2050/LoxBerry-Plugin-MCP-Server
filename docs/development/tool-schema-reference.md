@@ -141,3 +141,32 @@ not recover its underlying exception or the second original response. The earlie
 trace/time queries found no matching cause evidence. These additions cannot
 retrospectively attribute those failures. A healthy service/state stream and
 `stale=false` on a failed envelope do not prove a successful fresh structure read.
+
+
+`loxone_get_active_alerts` provides a bounded read-only overview from one freshly
+authorized visible structure and captured cached observations. V1 evaluates only
+`AalEmergency.status`: 0 normal, 1 alarm triggered, 2 reset active, 3 temporarily
+disabled (Structure File 17.1, page 26). Numeric integral values are accepted;
+booleans, strings and unknown codes are invalid. Only current, available values
+establish activity or inactivity. No firmware compatibility range is inferred.
+
+`limit` is 1–50 (default 50), without cursor or family filter. Traversal stops at
+1,000 visible tree entries, reads at most 100 unique state UUIDs, examines at most
+100 references per supported control, attempts at most 100 decodes, and retains
+50 coverage reasons. The closed
+candidate set is AalEmergency, AalSmartAlarm, Alarm, AlarmChain, SmokeAlarm,
+StatusMonitor and WindowMonitor. Other types are outside the claimed scope.
+Unsupported candidates, missing/invalid/stale states and budget limits make
+`coverage.complete=false`. Hidden controls and their counts are excluded.
+`candidate_controls` is null when the scan is incomplete; evaluated/unsupported/
+unavailable counts cover only retained candidates. `known_active` counts established
+findings; `total_active` is null when evaluation coverage is partial.
+
+`returned`, `truncated` and top-level `complete` describe delivery as well as
+coverage. Findings are ordered by control UUID. Output is capped at 65,536 UTF-8
+bytes of the serialized structured envelope; trailing findings are removed while
+identity and coverage are preserved. If metadata alone exceeds the cap, return
+`response_too_large`. Coverage-reason truncation is separate. No simultaneous
+measurement, polling, history, acknowledgement or notification service is promised.
+Empty partial results never mean no alarms; even complete results apply only to
+known candidate families, never the physical installation.

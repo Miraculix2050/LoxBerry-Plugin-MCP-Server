@@ -364,3 +364,23 @@ Testfixtures bestätigt: `Switch.on`, `Switch.off`, `Dimmer.set_level`,
 Controls, Aktionen oder Installationen.
 
 Die aktuelle Zuordnung von Plattformen, Clients und Nachweisstatus steht in der [Support-Matrix](../development/support-matrix.md).
+
+
+### Aktive sichtbare Alarme
+
+`loxone_get_active_alerts` liefert einen begrenzten read-only Überblick aus einer
+frisch autorisierten sichtbaren Struktur und erfassten Cache-Beobachtungen. V1
+wertet ausschließlich `AalEmergency.status` aus: 0 Normalbetrieb, 1 ausgelöster
+Alarm, 2 aktiver Reset, 3 vorübergehend deaktiviert (Structure File 17.1, Seite 26).
+Ganzzahlige numerische Werte werden akzeptiert; Booleans, Strings und unbekannte
+Codes sind ungültig. Nur aktuelle verfügbare Werte belegen Aktivität/Inaktivität.
+Daraus folgt keine Firmware-Kompatibilitätszusage.
+
+Prüfen Sie `coverage.complete` unabhängig von `truncated`/`complete`. Leere
+partielle Ergebnisse belegen keine Alarmfreiheit. V1 klassifiziert StatusMonitor-
+und WindowMonitor-Zustände nicht als Alarme. Verwenden Sie Quell-Control und
+State-Referenzen für gezielte Lesungen; Namen/Farben belegen weder Gefahr noch
+Ursache oder Schweregrad. Der Snapshot ist kein Alarmierungsdienst und quittiert
+keine Alarme. `limit` erlaubt 1–50 Befunde (Standard 50), ohne Cursor/Familienfilter.
+Die Abdeckung gilt nur für bekannte Kandidatenfamilien, nie für die physische
+Installation; `total_active` bleibt bei partieller Auswertung null.

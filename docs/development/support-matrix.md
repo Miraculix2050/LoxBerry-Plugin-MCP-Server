@@ -35,3 +35,8 @@
 - Only actions explicitly identified as hardware confirmed in the user capability documentation are hardware promises; other implemented actions remain unverified.
 
 See [Gen. 2 compatibility testing](gen2-compatibility-test.md) and the [user capability overview](../user/capabilities.en.md).
+
+- `loxone_get_active_alerts` evaluates fixture-tested AalEmergency status codes
+  only. This adds no hardware-family or firmware compatibility promise. Known
+  unsupported monitor/alarm families make coverage partial; this is no safety
+  certification or alarm notification service.

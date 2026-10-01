@@ -11,6 +11,11 @@ extracted from the matching version heading.
   response UUIDs into nested fields such as targets[].control_uuid. Preserve the
   existing JSON editor, draft parameters and explicit call confirmation.
 
+- Add read-only `loxone_get_active_alerts` with evidence-backed AalEmergency
+  activity, fresh visibility, bounded cached reads and explicit evaluation/delivery
+  gaps. Other known monitor/alarm families remain unsupported; no guessed severity,
+  acknowledgement or simultaneous-measurement claim (#167).
+
 - Add read-only `loxone_read_controls` for known visible control UUIDs with compact
   identity and named cached values, atomic fresh visibility, fixed request/response
   limits and explicit delivery completeness. Optionally reuse the existing state
