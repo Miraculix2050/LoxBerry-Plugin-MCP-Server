@@ -21,6 +21,8 @@ The service log remains directly available under **Diagnostics and logs**. The L
 
 ## Tool Explorer
 
+Object lists such as targets show individual entries with **Add entry** and **Remove entry**. Use **Transfer** to copy a UUID into targets[].control_uuid; this replaces the selected list, as with simple list transfers. Other draft parameters are preserved. Optional state_names can be enabled per entry; omitting them reads all states. The complete arguments remain editable in the JSON editor.
+
 The [MCP Tool Explorer](https://loxberry/admin/plugins/mcpserver/explorer.cgi) is a local administrative test client. It signs in with a Loxone user and receives no rights from the LoxBerry admin session. Replace `loxberry` in the link with your installation's hostname when necessary. Mutating calls require confirmation before sending.
 After sign-in, the connection card shows which OAuth scopes the session actually granted. Scopes marked **Not granted** were not granted to this session; local LoxBerry approvals and other authorization checks remain separate. The list clears when the session ends.
 The connection card starts open so sign-in is immediately available. It can be collapsed after sign-in to make more room for the tool workspace. Its OAuth scope list starts collapsed, and the setup and schema-reference links remain visible above the card. Both disclosure choices persist across reloads and new tabs in the same browser.

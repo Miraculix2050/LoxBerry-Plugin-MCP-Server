@@ -282,14 +282,14 @@
       });
     }
 
-    function renderField(name, property, required, rootSchema, fieldIndex) {
+    function renderField(name, property, required, rootSchema, fieldIndex, values = state.arguments, setField = actions.setDraftField) {
       const effective = core.effectiveSchema(property, rootSchema);
       const type = core.schemaType(effective, rootSchema);
       const wrapper = element('div', {className: 'mcp-explorer-field'});
       const booleanWithDefault = !required && type === 'boolean' &&
         typeof effective.default === 'boolean';
       const included = booleanWithDefault || required ||
-        Object.prototype.hasOwnProperty.call(state.arguments, name);
+        Object.prototype.hasOwnProperty.call(values, name);
       let include = null;
       if (!required && !booleanWithDefault) {
         include = element('input', {type: 'checkbox'});
@@ -300,7 +300,7 @@
       let input;
       if (Array.isArray(effective.enum)) {
         input = element('select');
-        if (!effective.enum.some((value) => Object.is(state.arguments[name], value))) {
+        if (!effective.enum.some((value) => Object.is(values[name], value))) {
           const placeholder = element('option', {value: '', text: '—'});
           placeholder.selected = true;
           placeholder.disabled = required;
@@ -308,46 +308,98 @@
         }
         effective.enum.forEach((value) => {
           const option = element('option', {value: JSON.stringify(value), text: String(value)});
-          option.selected = Object.is(state.arguments[name], value);
+          option.selected = Object.is(values[name], value);
           input.append(option);
         });
         input.addEventListener('change', () => {
           if (input.value !== '') {
             const value = JSON.parse(input.value);
-            if (adapters.hasActionFields(state.selectedTool) && name === 'action') actions.setAction(value);
-            else actions.setDraftField(name, true, value);
+            if (values === state.arguments && adapters.hasActionFields(state.selectedTool) && name === 'action') actions.setAction(value);
+            else setField(name, true, value);
           }
         });
       } else if (type === 'boolean') {
         input = element('input', {type: 'checkbox'});
-        input.checked = Boolean(state.arguments[name]);
-        input.addEventListener('change', () => actions.setDraftField(name, true, input.checked));
+        input.checked = Boolean(values[name]);
+        input.addEventListener('change', () => setField(name, true, input.checked));
       } else if (type === 'integer' || type === 'number') {
         input = element('input', {type: 'number'});
         if (typeof effective.minimum === 'number') input.min = String(effective.minimum);
         if (typeof effective.maximum === 'number') input.max = String(effective.maximum);
         input.step = type === 'integer' ? '1' : 'any';
-        input.value = state.arguments[name] === undefined ? '' : String(state.arguments[name]);
-        input.addEventListener('input', () => actions.setDraftField(name, true, input.value === '' ? 0 : Number(input.value)));
+        input.value = values[name] === undefined ? '' : String(values[name]);
+        input.addEventListener('input', () => setField(name, true, input.value === '' ? 0 : Number(input.value)));
+      } else if (type === 'array' && effective.items &&
+          core.schemaType(effective.items, rootSchema) === 'object' &&
+          Object.keys(core.effectiveSchema(effective.items, rootSchema).properties || {}).length <= 20 &&
+          Object.values(core.effectiveSchema(effective.items, rootSchema).properties || {}).every((child) => {
+            const childType = core.schemaType(child, rootSchema);
+            return ['string', 'number', 'integer', 'boolean'].includes(childType) ||
+              (childType === 'array' && ['string', 'number', 'integer', 'boolean'].includes(
+                core.schemaType(core.effectiveSchema(child, rootSchema).items || {}, rootSchema)));
+          }) &&
+          (values[name] === undefined || (Array.isArray(values[name]) && values[name].length <= 100 &&
+            values[name].every((row) => row && typeof row === 'object' && !Array.isArray(row))))) {
+        input = element('fieldset', {className: 'mcp-explorer-object-list'});
+        const itemSchema = core.effectiveSchema(effective.items, rootSchema);
+        const rows = values[name] === undefined ? [] : values[name];
+        const requiredFields = new Set(itemSchema.required || []);
+        const refresh = (next, focusIndex) => {
+          setField(name, true, next);
+          renderSelectedTool();
+          if (focusIndex !== undefined) document.getElementById(fieldControlId(focusIndex))?.focus();
+        };
+        rows.forEach((row, rowIndex) => {
+          const entry = element('fieldset', {className: 'mcp-explorer-list-entry'});
+          entry.disabled = !included;
+          entry.append(element('legend', {text: name + ' ' + (rowIndex + 1)}));
+          Object.entries(itemSchema.properties || {}).forEach(([childName, childSchema], childIndex) => {
+            const childId = fieldIndex + '-' + rowIndex + '-' + childIndex;
+            const child = renderField(childName, childSchema, requiredFields.has(childName), rootSchema,
+              childId, row, (key, use, value) => {
+                const next = core.clone(rows);
+                if (use) next[rowIndex][key] = value;
+                else delete next[rowIndex][key];
+                if (use) row[key] = value;
+                else delete row[key];
+                rows[rowIndex] = next[rowIndex];
+                setField(name, true, next);
+              });
+            entry.append(child.wrapper);
+          });
+          const remove = element('button', {type: 'button', text: label('removeEntry')});
+          remove.addEventListener('click', () => refresh(rows.filter((_row, index) => index !== rowIndex), fieldIndex + '-add'));
+          entry.append(remove);
+          input.append(entry);
+        });
+        const add = element('button', {type: 'button', text: label('addEntry')});
+        add.id = fieldControlId(fieldIndex + '-add');
+        add.disabled = !included || rows.length >= Math.min(100, effective.maxItems ?? 100);
+        add.addEventListener('click', () => refresh([...rows,
+          core.defaultArguments({...itemSchema, $defs: rootSchema.$defs})], fieldIndex + '-' + rows.length + '-0'));
+        input.append(add);
       } else if (type === 'array' || type === 'object') {
         input = element('textarea', {rows: '4', spellcheck: 'false', 'aria-label': type === 'array' ? label('arrayHelp') : label('objectHelp')});
-        input.value = JSON.stringify(state.arguments[name] === undefined ? core.initialValue(property, rootSchema) : state.arguments[name], null, 2);
+        input.value = JSON.stringify(values[name] === undefined ? core.initialValue(property, rootSchema) : values[name], null, 2);
         input.addEventListener('change', () => {
-          try { actions.setDraftField(name, true, JSON.parse(input.value)); input.setCustomValidity(''); }
+          try { setField(name, true, JSON.parse(input.value)); input.setCustomValidity(''); }
           catch (_error) { input.setCustomValidity(label('invalidJson')); input.reportValidity(); }
         });
       } else if (type === 'string' && effective.format === 'date-time') {
         input = element('input', {type: 'datetime-local'});
-        input.value = core.rfc3339ToDateTimeLocal(state.arguments[name]);
-        input.addEventListener('change', () => actions.setDraftField(name, true, core.dateTimeLocalToRfc3339(input.value)));
+        input.value = core.rfc3339ToDateTimeLocal(values[name]);
+        input.addEventListener('change', () => setField(name, true, core.dateTimeLocalToRfc3339(input.value)));
       } else {
         input = element('input', {type: 'text'});
-        input.value = state.arguments[name] === undefined ? '' : String(state.arguments[name]);
-        input.addEventListener('input', () => actions.setDraftField(name, true, input.value));
+        input.value = values[name] === undefined ? '' : String(values[name]);
+        input.addEventListener('input', () => setField(name, true, input.value));
       }
-      const fieldLabel = createFieldLabel(document, name, input, fieldIndex);
+      const objectList = input.classList.contains('mcp-explorer-object-list');
+      const fieldLabel = objectList ? element('legend', {text: name})
+        : createFieldLabel(document, name, input, fieldIndex);
+      if (objectList) { input.id = fieldControlId(fieldIndex); input.prepend(fieldLabel); }
       input.disabled = !included;
-      wrapper.append(fieldLabel);
+      if (!objectList) wrapper.append(fieldLabel);
       const helpKey = adapters.fieldHelpKey(name);
       const description = helpKey ? label(helpKey) : effective.description;
       if (description) wrapper.append(element('span', {className: 'mcp-explorer-muted', text: description}));
@@ -360,7 +412,7 @@
           candidates.forEach((candidate) => select.append(element('option', {value: candidate.value, text: candidate.label})));
           select.addEventListener('change', () => {
             if (select.value) {
-              actions.setDraftField(name, true, select.value);
+              setField(name, true, select.value);
               renderSelectedTool();
               document.getElementById(fieldControlId(fieldIndex))?.focus();
             }
@@ -383,7 +435,7 @@
       }
       if (include) include.addEventListener('change', () => {
         input.disabled = !include.checked;
-        actions.setDraftField(name, include.checked, include.checked ? core.initialValue(property, rootSchema) : undefined);
+        setField(name, include.checked, include.checked ? core.initialValue(property, rootSchema) : undefined);
         if (include.checked) { renderSelectedTool(); document.getElementById(input.id)?.focus(); }
       });
       return {wrapper, supported: ['string', 'integer', 'number', 'boolean', 'array', 'object'].includes(type)};

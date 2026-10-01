@@ -389,7 +389,9 @@
     const updateFields = () => {
       elements.transferField.replaceChildren();
       targets.filter((item) => item.tool === elements.transferTool.value).forEach((item) => {
-        const text = item.mode === 'wrap-array' ? `${item.field} (${label('asList')})` : item.field;
+        const text = item.mode?.startsWith('object-array:')
+          ? item.field + '[].' + item.mode.slice('object-array:'.length) + ' (' + label('asList') + ')'
+          : item.mode === 'wrap-array' ? item.field + ' (' + label('asList') + ')' : item.field;
         elements.transferField.append(element('option', {value: item.field, text, 'data-mode': item.mode || 'direct'}));
       });
       const empty = !elements.transferField.options.length;

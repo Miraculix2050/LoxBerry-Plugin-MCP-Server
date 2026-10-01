@@ -417,6 +417,21 @@
             target = {tool: tool.name, field: name, mode: 'wrap-array'};
           }
         }
+        const effective = effectiveSchema(property, schema);
+        const itemSchema = effective.items && effectiveSchema(effective.items, schema);
+        if (!target && schemaType(property, schema) === 'array' &&
+            itemSchema && schemaType(itemSchema, schema) === 'object' &&
+            schemaSupportedForReuse(effective.items, schema)) {
+          for (const [childName, childProperty] of Object.entries(itemSchema.properties || {})) {
+            const item = {...defaultArguments({...itemSchema, $defs: schema.$defs}), [childName]: clone(value)};
+            if (!schemaSupportedForReuse(childProperty, schema) ||
+                validateValue(value, childProperty, schema).length ||
+                validateValue([item], property, schema).length) continue;
+            result.push({tool: tool.name, field: name, mode: 'object-array:' + childName,
+              semanticRank: preferredField && childName.toLowerCase() === preferredField ? 0 : 1,
+              toolRank: context && tool.name === context.sourceTool ? 0 : 1, order: order++});
+          }
+        }
         if (target) {
           target.semanticRank = preferredField && name.toLowerCase() === preferredField ? 0 : 1;
           target.toolRank = context && tool.name === context.sourceTool ? 0 : 1;
@@ -442,7 +457,20 @@
       ? clone(sourceContext.arguments)
       : defaultArguments(tool.inputSchema || {});
     if (field !== 'cursor') delete draft.cursor;
-    draft[field] = valueForTransfer(value, mode);
+    if (typeof mode === 'string' && mode.startsWith('object-array:')) {
+      const name = mode.slice('object-array:'.length);
+      const schema = tool.inputSchema || {};
+      const property = (schema.properties || {})[field];
+      const items = property && effectiveSchema(property, schema).items;
+      const itemSchema = items && effectiveSchema(items, schema);
+      if (!itemSchema || !Object.hasOwn(itemSchema.properties || {}, name)) return draft;
+      const item = {...defaultArguments({...itemSchema, $defs: schema.$defs}), [name]: clone(value)};
+      // Replace only the chosen field, matching existing simple list transfers.
+      if (validateValue([item], property, schema).length) return draft;
+      draft[field] = [item];
+    } else {
+      draft[field] = valueForTransfer(value, mode);
+    }
     return draft;
   }
 

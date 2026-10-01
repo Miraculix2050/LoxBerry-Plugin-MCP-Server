@@ -21,6 +21,8 @@ Das Service-Log bleibt unter **Diagnose und Logs** direkt erreichbar. Der LoxBer
 
 ## Tool Explorer
 
+Objektlisten wie targets zeigen einzelne Einträge mit **Eintrag hinzufügen** und **Eintrag entfernen**. Eine UUID lässt sich über **Übernehmen** in targets[].control_uuid übernehmen; dabei wird die ausgewählte Liste wie bei einfachen Listen ersetzt. Andere Parameter des Entwurfs bleiben erhalten. Optionale state_names können je Eintrag aktiviert werden; ohne sie werden alle States gelesen. Die vollständigen Argumente bleiben im JSON-Editor bearbeitbar.
+
 Der [MCP Tool Explorer](https://loxberry/admin/plugins/mcpserver/explorer.cgi) ist ein lokaler administrativer Testclient. Er meldet sich mit einem Loxone-Benutzer an und erhält keine Rechte aus der LoxBerry-Admin-Sitzung. Ersetze `loxberry` im Link bei Bedarf durch den Hostnamen deiner Installation. Ändernde Aufrufe verlangen vor dem Senden eine Bestätigung.
 Nach der Anmeldung zeigt die Verbindungskarte die tatsächlich gewährten OAuth-Scopes der Sitzung. Als **Nicht gewährt** markierte Scopes wurden dieser Sitzung nicht gewährt; lokale LoxBerry-Freigaben und weitere Berechtigungsprüfungen bleiben getrennt. Beim Ende der Sitzung verschwindet die Liste.
 Die Verbindungskarte ist zunächst geöffnet, damit die Anmeldung sofort sichtbar ist. Nach der Anmeldung lässt sie sich für mehr Platz einklappen. Ihre OAuth-Scope-Liste ist zunächst geschlossen; die Links zur Einrichtung und Schema-Referenz bleiben oberhalb der Karte sichtbar. Beide Aufklappzustände bleiben bei einem Reload und in neuen Tabs desselben Browsers erhalten.
