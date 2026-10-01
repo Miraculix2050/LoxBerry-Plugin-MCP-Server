@@ -369,15 +369,28 @@ Die aktuelle Zuordnung von Plattformen, Clients und Nachweisstatus steht in der 
 ### Aktive sichtbare Alarme
 
 `loxone_get_active_alerts` liefert einen begrenzten read-only Überblick aus einer
-frisch autorisierten sichtbaren Struktur und erfassten Cache-Beobachtungen. V1
-wertet ausschließlich `AalEmergency.status` aus: 0 Normalbetrieb, 1 ausgelöster
-Alarm, 2 aktiver Reset, 3 vorübergehend deaktiviert (Structure File 17.1, Seite 26).
+frisch autorisierten sichtbaren Struktur und erfassten Cache-Beobachtungen.
+Unterstützt werden `AalEmergency.status` (0 Normalbetrieb, 1 Alarm, 2 Reset,
+3 deaktiviert), `AalSmartAlarm.alarmLevel` (0 inaktiv, 1 sofortig, 2 verzögert)
+und `AlarmChain.activeAlarmType` (Bits 2/4/8 aktive Alarmarten, Bit 1 Quittierung).
 Ganzzahlige numerische Werte werden akzeptiert; Booleans, Strings und unbekannte
-Codes sind ungültig. Nur aktuelle verfügbare Werte belegen Aktivität/Inaktivität.
-Daraus folgt keine Firmware-Kompatibilitätszusage.
+Codes sind ungültig. AlarmChain akzeptiert Kombinationen 0–15: Quittierung allein
+ist inaktiv; Quittierung hebt aktive Alarmbits nicht auf. Grundlage ist Structure
+File 17.1, Seiten 26–30; daraus folgt keine Firmware-Kompatibilitätszusage.
+Nur aktuelle verfügbare primäre States belegen Aktivität/Inaktivität.
+
+`semantic_value` enthält dekodierte Quell-Level/-Arten und Kontext ohne weitere
+Tool-Interpretation. Aktive Befunde enthalten optional `context`: `test_alarm`, `acknowledged` und
+`signals_suppressed` sind true/false/null. Null bedeutet unbekannt oder von der
+Quelle nicht bereitgestellt. Sperrung, Abwesenheit und Deaktivierungszeit von
+AalSmartAlarm sind optionale Kontextquellen und überschreiben keinen aktiven Level.
+`context.source_states` erhält Begleitwerte, UUIDs, Freshness und Beobachtungszeit;
+stale oder ungültiger Kontext wird nicht interpretiert. Befehle beweisen keinen
+Test- oder Unterdrückungsstatus. Aktive Testalarme und quittierte aktive
+Quellzustände bleiben enthalten und werden mitgezählt.
 
 Prüfen Sie `coverage.complete` unabhängig von `truncated`/`complete`. Leere
-partielle Ergebnisse belegen keine Alarmfreiheit. V1 klassifiziert StatusMonitor-
+partielle Ergebnisse belegen keine Alarmfreiheit. Das Tool klassifiziert StatusMonitor-
 und WindowMonitor-Zustände nicht als Alarme. Verwenden Sie Quell-Control und
 State-Referenzen für gezielte Lesungen; Namen/Farben belegen weder Gefahr noch
 Ursache oder Schweregrad. Der Snapshot ist kein Alarmierungsdienst und quittiert

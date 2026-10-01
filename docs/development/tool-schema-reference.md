@@ -144,16 +144,30 @@ retrospectively attribute those failures. A healthy service/state stream and
 
 
 `loxone_get_active_alerts` provides a bounded read-only overview from one freshly
-authorized visible structure and captured cached observations. V1 evaluates only
-`AalEmergency.status`: 0 normal, 1 alarm triggered, 2 reset active, 3 temporarily
-disabled (Structure File 17.1, page 26). Numeric integral values are accepted;
-booleans, strings and unknown codes are invalid. Only current, available values
-establish activity or inactivity. No firmware compatibility range is inferred.
+authorized visible structure and captured cached observations. It evaluates
+`AalEmergency.status` (0 normal, 1 alarm, 2 reset, 3 disabled),
+`AalSmartAlarm.alarmLevel` (0 inactive, 1 immediate, 2 delayed), and
+`AlarmChain.activeAlarmType` (bits 2/4/8 active alarm types; bit 1 acknowledgement).
+Integral numeric values are accepted; booleans, strings and unknown codes are
+invalid. AlarmChain combinations 0–15 are accepted; acknowledgement alone is
+inactive, while acknowledgement never cancels active alarm bits. Rules use
+Structure File 17.1, pages 26–30; document provenance is no firmware promise.
+Only current, available primary states establish activity or inactivity.
+
+`semantic_value` exposes decoded source levels/types and context without tool-side
+reinterpretation. Active findings include optional `context`: `test_alarm`, `acknowledged` and
+`signals_suppressed` are true/false/null; null means unknown or not exposed by
+the source. AalSmartAlarm lock/leave/disable states are optional context sources
+and never override an active level. `context.source_states` preserves captured
+companion values, UUIDs, freshness and observation times; stale/invalid context
+is not interpreted. No test or suppression state is inferred from a command.
+Active test alarms and acknowledged active source states remain counted.
 
 `limit` is 1–50 (default 50), without cursor or family filter. Traversal stops at
 1,000 visible tree entries, reads at most 100 unique state UUIDs, examines at most
 100 references per supported control, attempts at most 100 decodes, and retains
-50 coverage reasons. The closed
+50 coverage reasons. Primary/required states across all sources are captured before
+optional context, so companions cannot starve later primary states. The closed
 candidate set is AalEmergency, AalSmartAlarm, Alarm, AlarmChain, SmokeAlarm,
 StatusMonitor and WindowMonitor. Other types are outside the claimed scope.
 Unsupported candidates, missing/invalid/stale states and budget limits make

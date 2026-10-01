@@ -40,7 +40,7 @@ from mcpserver.loxone.active_alerts import (
     MAX_STATES,
     evaluate_alerts,
     select_sources,
-    source_state,
+    source_states,
 )
 from mcpserver.loxone.control import allowed_actions
 from mcpserver.loxone.event_history import (
@@ -93,6 +93,7 @@ from mcpserver.loxone.runtime import (
     history_trace,
 )
 from mcpserver.loxone.state_semantics import (
+    ALERT_FAMILIES,
     StateSemantics,
     StateSemanticsResolver,
     decode_state_value,
@@ -635,17 +636,30 @@ class AlertCoverageData(BaseModel):
     reasons_truncated: bool
 
 
+class AlertContextData(BaseModel):
+    test_alarm: bool | None = None
+    acknowledged: bool | None = None
+    signals_suppressed: bool | None = None
+    source_states: list[CompactStateData] = Field(default_factory=list, max_length=100)
+
+
 class ActiveAlertData(BaseModel):
     source_control: ControlSummaryData
     source_state: CompactStateData
     classification: Literal["alarm_triggered"]
     semantics: StateSemantics
+    context: AlertContextData | None = None
+    semantic_value: JsonValue | None = None
 
 
 class ActiveAlertsData(BaseModel):
     scope: Literal["authorized_visible_runtime"] = "authorized_visible_runtime"
     complete_scope: Literal["known_candidate_families"] = "known_candidate_families"
-    supported_families: list[Literal["AalEmergency"]] = ["AalEmergency"]
+    supported_families: list[Literal["AalEmergency", "AalSmartAlarm", "AlarmChain"]] = [
+        "AalEmergency",
+        "AalSmartAlarm",
+        "AlarmChain",
+    ]
     candidate_families: list[str] = Field(default_factory=lambda: sorted(CANDIDATE_TYPES))
     structure_generation: int
     findings: list[ActiveAlertData] = Field(max_length=50)
@@ -3335,6 +3349,9 @@ def _semantic_state_items(
     companion_names = (
         {"zones", "entryList"} if control.control_type in {"Irrigation", "AlarmClock"} else set()
     )
+    family = ALERT_FAMILIES.get(control.control_type)
+    if family is not None and any(name == family.primary for name, _uuid in page_refs):
+        companion_names.update((*family.required, *family.optional))
     needed.update(uuid for name, uuid in control.state_uuids if name in companion_names)
     records = {uuid: runtime.state(snapshot, uuid) for uuid in needed}
     companions = {
@@ -4918,7 +4935,8 @@ def register_read_tools(
     @server.tool(
         name="loxone_get_active_alerts",
         description=(
-            "Read a bounded overview of active visible alerts. V1 evaluates AalEmergency only; "
+            "Read a bounded overview of active visible alerts. Evaluates AalEmergency, "
+            "AalSmartAlarm and AlarmChain; "
             "other known monitor/alarm families remain explicit coverage gaps. One freshly "
             "authorized structure and cached observations, not simultaneous measurements. "
             "No acknowledge, polling or history; not an emergency notification service."
@@ -4943,13 +4961,25 @@ def register_read_tools(
             _access_token, snapshot = await _snapshot(runtime, fresh_visibility=True)
             assert runtime is not None
             sources, scan_complete = select_sources(snapshot.structure.controls)
-            refs = {c.uuid: source_state(c) for c in sources if c.control_type == "AalEmergency"}
+            refs = {c.uuid: source_states(c) for c in sources if c.control_type in ALERT_FAMILIES}
             records: dict[str, StateRecord] = {}
-            for uuid, reason in refs.values():
-                if reason is None and uuid is not None and uuid not in records:
-                    if len(records) == MAX_STATES:
-                        break
-                    records[uuid] = runtime.state(snapshot, uuid)
+            for optional in (False, True):
+                for control in sources:
+                    if control.uuid not in refs:
+                        continue
+                    state_refs, reason = refs[control.uuid]
+                    if reason is not None:
+                        continue
+                    family = ALERT_FAMILIES[control.control_type]
+                    names = (
+                        sorted(family.optional)
+                        if optional
+                        else (family.primary, *sorted(family.required))
+                    )
+                    for name in names:
+                        uuid = state_refs.get(name)
+                        if uuid is not None and uuid not in records and len(records) < MAX_STATES:
+                            records[uuid] = runtime.state(snapshot, uuid)
             evaluation = evaluate_alerts(
                 snapshot.structure,
                 sources,
@@ -4965,7 +4995,7 @@ def register_read_tools(
                     {
                         "source_control": _control_summary(control, snapshot),
                         "source_state": {
-                            "name": "status",
+                            "name": finding["state_name"],
                             "uuid": record.uuid,
                             "value": record.value,
                             "freshness": record.freshness.value,
@@ -4973,6 +5003,22 @@ def register_read_tools(
                         },
                         "classification": finding["classification"],
                         "semantics": finding["semantics"],
+                        "semantic_value": finding["semantic_value"],
+                        "context": None
+                        if finding["context"] is None
+                        else {
+                            **finding["context"],
+                            "source_states": [
+                                {
+                                    "name": name,
+                                    "uuid": record.uuid,
+                                    "value": record.value,
+                                    "freshness": record.freshness.value,
+                                    "observed_at": _state_observed_at(record),
+                                }
+                                for name, record in finding["companions"]
+                            ],
+                        },
                     }
                 )
             data = {

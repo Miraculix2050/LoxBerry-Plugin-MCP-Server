@@ -7,6 +7,7 @@ import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from itertools import islice
 from typing import Annotated, Literal
 
 from pydantic import Field
@@ -113,6 +114,22 @@ _ALARM_RULES = {
 _FORMAT_TYPES = {"InfoOnlyAnalog", "UpDownAnalog", "Slider"}
 
 
+@dataclass(frozen=True, slots=True)
+class AlertFamily:
+    primary: str
+    required: tuple[str, ...] = ()
+    optional: tuple[str, ...] = ()
+
+
+ALERT_FAMILIES = {
+    "AalEmergency": AlertFamily("status"),
+    "AalSmartAlarm": AlertFamily(
+        "alarmLevel", optional=("disableEndTime", "isLeaveActive", "isLocked")
+    ),
+    "AlarmChain": AlertFamily("activeAlarmType"),
+}
+
+
 class StateSemanticsResolver:
     """Resolve only exact, reviewed type/state rules, without I/O or role inference."""
 
@@ -126,6 +143,95 @@ class StateSemanticsResolver:
     ) -> tuple[StateSemantics, object | None]:
         result = StateSemantics()
         semantic_value: object | None = None
+        family = ALERT_FAMILIES.get(control.control_type)
+        if (
+            family is not None
+            and state_name == family.primary
+            and control.control_type != "AalEmergency"
+        ):
+            smart = control.control_type == "AalSmartAlarm"
+            labels: tuple[str, ...] = (
+                ("no_alarm", "immediate_alarm", "delayed_alarm")
+                if smart
+                else ("inactive", "acknowledged", "alarm", "urgent_alarm", "ems_alarm")
+            )
+            codes = (0, 1, 2) if smart else (0, 1, 2, 4, 8)
+            result.value_type = "integer" if smart else "bitmask"
+            result.encoding = [
+                SemanticsEncoding(code, label) for code, label in zip(codes, labels, strict=True)
+            ]
+            result.encoding_total = result.encoding_returned = len(codes)
+            result.encoding_complete = True
+            result.sources.append(
+                SemanticsSource(
+                    "decoder_rule",
+                    "https://www.loxone.com/dede/wp-content/uploads/sites/2/2021/10/1701_Structure-File.pdf#page="
+                    + ("27" if smart else "30"),
+                    ("semantic_value", "encoding", "value_type"),
+                    rule_id=control.control_type + "." + state_name + ".v1",
+                    document_version="17.1",
+                )
+            )
+            result.interpretation_status, result.reason = "partial", "value_unavailable"
+            if value is not None:
+                valid = (
+                    isinstance(value, int | float)
+                    and not isinstance(value, bool)
+                    and (value in codes if smart else value in range(16))
+                )
+                if valid:
+                    assert isinstance(value, int | float)
+                    code = int(value)
+                    semantic_value = {
+                        "alert_active": code != 0 if smart else bool(code & 14),
+                        "context": {
+                            "test_alarm": None,
+                            "acknowledged": None if smart else bool(code & 1),
+                            "signals_suppressed": None,
+                        },
+                    }
+                    if smart:
+                        semantic_value["level"] = labels[code]
+                        for name in family.optional:
+                            raw = companion_values.get(name)
+                            if name == "disableEndTime":
+                                decoded = (
+                                    raw
+                                    if isinstance(raw, int | float)
+                                    and not isinstance(raw, bool)
+                                    and 0 <= raw <= 253402300799
+                                    and (not isinstance(raw, float) or math.isfinite(raw))
+                                    else None
+                                )
+                            else:
+                                decoded = (
+                                    bool(raw)
+                                    if isinstance(raw, int | float | bool) and raw in (0, 1)
+                                    else None
+                                )
+                            semantic_value[name] = decoded
+                            if decoded is not None:
+                                refs = dict(islice(control.state_uuids, 100))
+                                result.sources.append(
+                                    SemanticsSource(
+                                        "runtime_state",
+                                        "states." + name,
+                                        ("semantic_value." + name,),
+                                        state_uuid=refs.get(name),
+                                    )
+                                )
+                    else:
+                        semantic_value["alarm_types"] = [
+                            label
+                            for bit, label in zip(codes[2:], labels[2:], strict=True)
+                            if code & bit
+                        ]
+                    result.interpretation_status, result.reason = "known", "documented_decoder"
+                else:
+                    result.interpretation_status, result.reason = (
+                        "invalid",
+                        "invalid_documented_value",
+                    )
         if control.control_type == "AalEmergency" and state_name == "status":
             result.value_type = "integer"
             labels = ("normal_operation", "alarm_triggered", "reset_active", "temporarily_disabled")

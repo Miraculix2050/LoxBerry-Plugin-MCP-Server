@@ -286,7 +286,7 @@ try {
     $script:nextId = 4
     $skillGuide = Invoke-ReadTool (Get-NextId) 'loxone_get_skill_guide' @{}
     if ($skillGuide.data.name -ne 'using-loxberry-mcp' -or
-        $skillGuide.data.revision -ne 45 -or
+        $skillGuide.data.revision -ne 46 -or
         $skillGuide.data.media_type -ne 'text/markdown' -or
         $skillGuide.data.content -ne $skillMarkdown) {
         throw 'MCP skill guide tool differs from the canonical resource.'
@@ -381,6 +381,7 @@ try {
 
     $alerts = Invoke-ReadTool (Get-NextId) 'loxone_get_active_alerts' @{ limit = 5 }
     if ($alerts.data.scope -ne 'authorized_visible_runtime' -or
+        (@($alerts.data.supported_families) -join ',') -ne 'AalEmergency,AalSmartAlarm,AlarmChain' -or
         $alerts.data.complete_scope -ne 'known_candidate_families' -or
         @($alerts.data.findings).Count -gt 5 -or
         $alerts.data.returned -ne @($alerts.data.findings).Count -or
