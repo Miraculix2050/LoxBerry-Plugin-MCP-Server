@@ -239,6 +239,45 @@ def test_unresolved_extra_or_connector_prevents_negative_findings(relationship):
     assert not result["findings"]
 
 
+@pytest.mark.parametrize("source", ["contact-output", "missing", None])
+def test_extra_consumer_input_is_not_an_alias_for_window(source):
+    xml = Path("tests/fixtures/project/opening-contacts.xml").read_bytes()
+    xml = xml.replace(b'<In Input="or-output"/>', b"")
+    extra = b'<Co K="Dwc" U="extra">'
+    if source:
+        extra += f'<In Input="{source}"/>'.encode()
+    extra += b"</Co>"
+    xml = xml.replace(
+        b'<Co K="Window" U="window-input"></Co>', b'<Co K="Window" U="window-input"></Co>' + extra
+    )
+    structure, project = fixture(xml)
+    result = analyze(structure, project)
+    assert not result["connections"]
+    assert result["completeness"]["graph"] is (source is None)
+    if source:
+        assert "unmodeled_internal_flow" in result["warnings"]
+        assert not result["findings"]
+    else:
+        assert any(
+            f["finding_type"] == "consumer_without_resolved_contact" for f in result["findings"]
+        )
+
+
+@pytest.mark.parametrize("source", ["other-output", "missing"])
+def test_extra_reference_projection_input_is_incomplete(source):
+    xml = Path("tests/fixtures/project/opening-contacts.xml").read_bytes()
+    xml = xml.replace(
+        b'<Co K="AQ" U="reference-output"/>',
+        b'<Co K="AQ" U="reference-output"/>'
+        + f'<Co K="I3" U="extra"><In Input="{source}"/></Co>'.encode(),
+    )
+    structure, project = fixture(xml)
+    result = analyze(structure, project)
+    assert "unmodeled_internal_flow" in result["warnings"]
+    assert not result["completeness"]["graph"]
+    assert not result["findings"]
+
+
 def test_reference_projection_requires_exact_ref_and_unique_output():
     xml = Path("tests/fixtures/project/opening-contacts.xml").read_bytes()
     for broken in (

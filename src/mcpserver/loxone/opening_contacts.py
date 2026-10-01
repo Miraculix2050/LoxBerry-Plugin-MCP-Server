@@ -82,7 +82,14 @@ class OpeningGraph:
             )
             input_keys = {r.input_key for r in rules}
             output_keys = {r.output_key for r in rules}
-            uncovered_connections = bool(rules) and any(
+            consumer_connector = CONSUMER_CONNECTORS.get(block.block_type or "")
+            if consumer_connector:
+                input_keys.add(consumer_connector)
+            reference_block = block.block_type == "InputRef"
+            if reference_block:
+                output_keys.add("AQ")
+            reviewed_boundary = bool(rules) or bool(consumer_connector) or reference_block
+            uncovered_connections = reviewed_boundary and any(
                 dict(self.nodes[child].attributes).get("K") not in covered_keys
                 and (
                     child in self.unresolved
