@@ -129,7 +129,13 @@ _TEST_GROUPS: Final = (
         ),
     ),
     (
-        ("tools/browser/**", "tests/js/chart-measurement.test.cjs"),
+        (
+            "tools/browser/**",
+            "tests/js/chart-measurement.test.cjs",
+            "webfrontend/htmlauth/event-history/**",
+            "webfrontend/htmlauth/mcp-ui.css",
+            "templates/event-history-charts.html",
+        ),
         ("tests/test_chart_measurement.py",),
     ),
     (("tests/js/**",), ("tests/test_explorer_behavior.py",)),
