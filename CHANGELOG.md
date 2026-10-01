@@ -9,6 +9,9 @@ extracted from the matching version heading.
   when another plugin consumer holds the shared sign-in lock, instead of failing
   immediately; fresh visibility and source-IP suppression remain required (#331).
 
+- Treat additional connected inputs or outputs outside reviewed block rules as
+  incomplete opening-contact evidence, preventing false absent-connection findings.
+
 - Preserve compatible temporary-unavailability errors while adding fixed runtime
   reason/phase diagnostics and bounded retry hints only for the caller's local
   rate budget. Distinguish structure-refresh connection, protocol, token, timeout

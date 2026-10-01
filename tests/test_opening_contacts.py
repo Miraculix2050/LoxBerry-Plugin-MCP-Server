@@ -196,6 +196,28 @@ def test_unknown_block_with_reference_input_remains_semantically_incomplete():
     assert not result["findings"]
 
 
+@pytest.mark.parametrize("direction", ["input", "output", "reference", "disconnected"])
+def test_extra_or_connectors_only_allow_negatives_when_disconnected(direction):
+    xml = Path("tests/fixtures/project/opening-contacts.xml").read_bytes()
+    if direction == "input":
+        extra = b'<Co K="I3" U="extra"><In Input="other-output"/></Co>'
+    elif direction == "reference":
+        extra = f'<Co K="I3" U="extra" Ref="{OTHER}"/>'.encode()
+    else:
+        extra = b'<Co K="Q2" U="extra"/>'
+    xml = xml.replace(b'<Co K="Q" U="or-output"/>', b'<Co K="Q" U="or-output"/>' + extra)
+    if direction == "output":
+        xml = xml.replace(b'Input="or-output"', b'Input="extra"')
+    structure, project = fixture(xml)
+    result = analyze(structure, project)
+    assert result["completeness"]["graph"] is (direction == "disconnected")
+    if direction != "disconnected":
+        assert "unmodeled_internal_flow" in result["warnings"]
+        assert not result["findings"]
+    else:
+        assert result["findings"]
+
+
 def test_reference_projection_requires_exact_ref_and_unique_output():
     xml = Path("tests/fixtures/project/opening-contacts.xml").read_bytes()
     for broken in (
