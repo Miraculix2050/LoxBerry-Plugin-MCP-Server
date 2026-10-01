@@ -4,6 +4,39 @@
 
 ## Unterstützter Umfang
 
+`loxone_get_state_semantics` liest Semantikevidenz und gecachte Werte für ein
+sichtbares Control mit `loxone:read` und frischer Sichtbarkeitsprüfung. Wählen Sie
+1–100 eindeutige exakte `state_names` oder lassen Sie sie weg und paginieren Sie
+alle normalisierten Zustände mit `offset` und `limit` (Standard/Maximum 100).
+Folgen Sie `next_offset` mit derselben Auswahl. Unbekannte ausgewählte Zustände
+führen gemeinsam zum Fehler; versteckte Controls sind ausgeschlossen.
+
+Jeder Eintrag trennt den ursprünglichen `value`, optionalen `semantic_value`,
+Beobachtungsqualität `quality` und `semantics`. `known` bedeutet, dass die
+Interpretation durch die angegebene bestehende Decoderregel belegt ist;
+`partial`, `unknown` und `invalid` erhalten Wissenslücken, fehlende Begleitwerte
+und ungültige Quellkodierungen. Ein aktueller Wert kann eine unbekannte Bedeutung
+haben; ein veralteter Wert kann weiterhin eine bekannte Interpretation besitzen.
+Fehlende Dokument- oder Firmwareversionen bleiben null. Quellen je Feld benennen
+Structure-Metadaten, begleitende Runtime-Zustände oder Decoderregeln;
+Structure-Änderungszeiten sind keine Firmwareversion. Formate über 64 Zeichen
+werden mit ursprünglicher/zurückgegebener Länge und expliziter Kürzungsangabe
+weggelassen, ohne den Text zu verändern.
+
+V1 umfasst bestehende Irrigation-/AlarmClock-Decoder, `value`-Anzeigeformate für
+InfoOnlyAnalog/UpDownAnalog/Slider, UpDownAnalog-Bereiche und positionsgebundene
+Status-/Input-Metadaten von StatusMonitor `inputStates`. Formate belegen keine
+Einheit, Präzision oder Richtung; konfigurierte Bezeichnungen belegen keine
+Schweregrade oder Haushaltsrollen. Kodierungs- und Positionslisten behalten
+höchstens 100 Einträge, Quellen höchstens acht, jeweils mit Anzahl und
+Vollständigkeit. Seitenvollständigkeit ist von Semantik- und Metadatenvollständigkeit
+unabhängig. Es gibt keinen Projekt-Join, Download von Dokumentationsinhalten,
+Hidden-Diagnose, Alarmquittierung oder installationsweite Semantikabdeckung.
+Weitere Energie-, Zähler- oder Controllerbedeutungen können unbekannt bleiben.
+Diese Abdeckung ist mit Fixtures geprüft und begründet keine neue Hardware- oder
+Firmwarekompatibilität.
+
+
 Für WindowMonitor-Controls behält die vollständige Beschreibung die ersten 100
 konfigurierten Positionen in der Quellreihenfolge der Liste oder des Mappings bei,
 einschließlich fehlerhafter Platzhalter. `capabilities.model.window_monitor_summary`

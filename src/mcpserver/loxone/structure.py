@@ -820,6 +820,33 @@ def _controls(
         )
         statistic_series, statistic_series_truncated = _statistic_series(item)
         window_monitor_items, window_monitor_summary = _window_monitor_items(details.get("windows"))
+        semantics_invalid_fields: list[str] = []
+        format_total_length = (
+            len(details["format"]) if isinstance(details.get("format"), str) else None
+        )
+        if "format" in details and not isinstance(details["format"], str):
+            semantics_invalid_fields.append("format")
+        if any(key in details for key in ("min", "max", "step")) and minimum is None:
+            semantics_invalid_fields.append("range")
+        raw_statuses, raw_inputs = details.get("status"), details.get("inputs")
+        status_total = len(raw_statuses) if isinstance(raw_statuses, Mapping) else None
+        input_total = len(raw_inputs) if isinstance(raw_inputs, list) else None
+        status_complete = status_total is not None and status_total == len(status_monitor_statuses)
+        input_complete = input_total is not None and input_total == len(status_monitor_inputs)
+        input_labels_valid = not isinstance(raw_inputs, list) or all(
+            isinstance(v, Mapping)
+            and ("name" not in v or (isinstance(v["name"], str) and len(v["name"]) <= 200))
+            for v in raw_inputs[:100]
+        )
+        input_complete = input_complete and input_labels_valid
+        if item.get("type") == "StatusMonitor" and (
+            ("status" in details and not isinstance(raw_statuses, Mapping))
+            or (status_total is not None and len(status_monitor_statuses) < status_total)
+            or len({s.status_id for s in status_monitor_statuses}) != len(status_monitor_statuses)
+            or ("inputs" in details and not isinstance(raw_inputs, list))
+            or not input_labels_valid
+        ):
+            semantics_invalid_fields.append("status_monitor")
         controls.append(
             Control(
                 uuid=uuid,
@@ -857,6 +884,12 @@ def _controls(
                 status_monitor_inputs=status_monitor_inputs,
                 status_monitor_statuses=status_monitor_statuses,
                 format=format_value,
+                semantics_invalid_fields=tuple(semantics_invalid_fields),
+                format_total_length=format_total_length,
+                status_monitor_status_total=status_total,
+                status_monitor_status_complete=status_complete,
+                status_monitor_input_total=input_total,
+                status_monitor_input_complete=input_complete,
                 timer_modes=_named_options(details.get("timerModes")),
                 ventilation_modes=_named_options(details.get("modes")),
                 ventilation_timer_profiles=_ventilation_profiles(details.get("timerProfiles")),

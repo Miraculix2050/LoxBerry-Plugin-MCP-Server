@@ -4,6 +4,34 @@
 
 ## Supported scope
 
+`loxone_get_state_semantics` reads semantic evidence and cached values for one
+visible control with `loxone:read`, using a fresh visibility check. Select 1–100
+unique exact `state_names`, or omit them and page all normalized states with
+`offset` and `limit` (default/maximum 100). Follow `next_offset` with the same
+selection. Unknown selections fail together; hidden controls are excluded.
+
+Each item separates the original `value`, optional `semantic_value`, observation
+`quality` and `semantics`. `known` means the interpretation is supported by the
+identified existing decoder rule; `partial`, `unknown` and `invalid` preserve
+gaps, absent companions and invalid source coding. A current value can have
+unknown meaning, and a stale value can still have a known interpretation.
+Missing document or firmware versions remain null. Per-field sources identify
+Structure metadata, companion runtime states or decoder rules; Structure
+modification times are not firmware. Formats longer than 64 characters are omitted
+with original/returned lengths and explicit truncation instead of altered text.
+
+V1 covers existing Irrigation/AlarmClock decoders, `value` display formats for
+InfoOnlyAnalog/UpDownAnalog/Slider, UpDownAnalog ranges and position-bound
+StatusMonitor `inputStates` status/input metadata. Formats do not prove units,
+precision or direction; configured labels do not prove severity or household roles.
+Encoding and position lists retain at most 100 entries, sources at most eight,
+with counts and completeness. Page completeness is independent of semantic and
+metadata completeness. No project join, documentation-content download, hidden
+diagnosis, alarm acknowledgement or installation-wide semantic coverage is provided.
+Other energy, meter or controller meanings can remain unknown. This coverage is
+fixture-tested; it does not establish new hardware or firmware compatibility.
+
+
 For WindowMonitor controls, the full description retains the first 100 configured
 positions in list or mapping source order, including malformed placeholders.
 `capabilities.model.window_monitor_summary` reports `total`, `returned`, `omitted`,

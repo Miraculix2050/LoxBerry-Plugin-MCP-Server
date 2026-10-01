@@ -85,6 +85,11 @@ from mcpserver.loxone.runtime import (
     RuntimeUnavailable,
     history_trace,
 )
+from mcpserver.loxone.state_semantics import (
+    StateSemantics,
+    StateSemanticsResolver,
+    decode_state_value,
+)
 from mcpserver.loxone.statistics import StatisticPoint
 from mcpserver.loxone.uuid import normalize_loxone_uuid
 from mcpserver.skill_delivery import (
@@ -102,8 +107,6 @@ STRUCTURE_OVERVIEW_MAX_ITEMS: Final = 50
 STRUCTURE_OVERVIEW_MAX_BYTES: Final = 65_536
 PROJECT_RESPONSE_MAX_BYTES: Final = 65_536
 _LOXONE_EPOCH_UNIX: Final = 1_230_768_000
-_MAX_SEMANTIC_JSON_TEXT: Final = 65_536
-_MAX_SEMANTIC_ENTRIES: Final = 100
 _LOGGER = logging.getLogger("mcpserver.tools")
 _AUDIT_SUPPRESSION_SECONDS: Final = 60.0
 _MAX_AUDIT_SUPPRESSION_KEYS: Final = 512
@@ -524,6 +527,32 @@ class StatesData(BaseModel):
 
 class NamedStateData(StateData):
     name: str
+
+
+class StateObservationQualityData(BaseModel):
+    availability: Literal["available", "unknown", "unavailable"]
+    freshness: Literal["current", "stale", "unknown", "unavailable"]
+    observed_at: str | None
+
+
+class StateSemanticsItemData(BaseModel):
+    name: str
+    uuid: str
+    value: JsonValue
+    semantic_value: JsonValue | None
+    quality: StateObservationQualityData
+    semantics: StateSemantics
+
+
+class StateSemanticsPageData(BaseModel):
+    control_uuid: str
+    items: list[StateSemanticsItemData] = Field(max_length=100)
+    offset: int
+    next_offset: int | None
+    returned: int
+    total: int
+    truncated: bool
+    complete: bool
 
 
 class RoomSnapshotItemData(BaseModel):
@@ -1490,6 +1519,10 @@ class ControlDescriptionEnvelope(ToolEnvelope):
 
 class StatesEnvelope(ToolEnvelope):
     data: StatesData | ErrorData
+
+
+class StateSemanticsEnvelope(ToolEnvelope):
+    data: StateSemanticsPageData | ErrorData
 
 
 class RoomSnapshotEnvelope(ToolEnvelope):
@@ -3165,245 +3198,6 @@ def _observability_recommendation(
     }
 
 
-class _SemanticValueError(ValueError):
-    pass
-
-
-def _semantic_json(value: object) -> object:
-    if not isinstance(value, str) or len(value) > _MAX_SEMANTIC_JSON_TEXT:
-        raise _SemanticValueError
-    try:
-        return json.loads(value)
-    except (json.JSONDecodeError, RecursionError) as exc:
-        raise _SemanticValueError from exc
-
-
-def _semantic_integer(value: object, *, minimum: int, maximum: int) -> int:
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        raise _SemanticValueError
-    try:
-        number = float(value)
-    except (OverflowError, ValueError) as exc:
-        raise _SemanticValueError from exc
-    if not math.isfinite(number) or not number.is_integer():
-        raise _SemanticValueError
-    result = int(number)
-    if not minimum <= result <= maximum:
-        raise _SemanticValueError
-    return result
-
-
-def _semantic_number(value: object, *, minimum: float, maximum: float) -> float | int:
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        raise _SemanticValueError
-    try:
-        number = float(value)
-    except (OverflowError, ValueError) as exc:
-        raise _SemanticValueError from exc
-    if not math.isfinite(number) or not minimum <= number <= maximum:
-        raise _SemanticValueError
-    return value
-
-
-def _semantic_boolean(value: object) -> bool:
-    if isinstance(value, bool):
-        return value
-    return bool(_semantic_integer(value, minimum=0, maximum=1))
-
-
-def _semantic_text(value: object) -> str:
-    if not isinstance(value, str) or not 1 <= len(value) <= 200:
-        raise _SemanticValueError
-    return value
-
-
-def _irrigation_zones(value: object) -> list[dict[str, object]]:
-    raw = _semantic_json(value)
-    if not isinstance(raw, list) or len(raw) > _MAX_SEMANTIC_ENTRIES:
-        raise _SemanticValueError
-    result: list[dict[str, object]] = []
-    for item in raw:
-        if not isinstance(item, Mapping):
-            raise _SemanticValueError
-        result.append(
-            {
-                "id": _semantic_integer(item.get("id"), minimum=0, maximum=99),
-                "name": _semantic_text(item.get("name")),
-                "duration_seconds": _semantic_integer(
-                    item.get("duration"), minimum=0, maximum=31_536_000
-                ),
-                "set_by_logic": _semantic_boolean(item.get("setByLogic")),
-            }
-        )
-    return result
-
-
-def _alarm_entries(value: object) -> list[dict[str, object]]:
-    raw = _semantic_json(value)
-    if not isinstance(raw, Mapping) or len(raw) > _MAX_SEMANTIC_ENTRIES:
-        raise _SemanticValueError
-    result: list[dict[str, object]] = []
-    for identifier, item in raw.items():
-        if (
-            not isinstance(identifier, str)
-            or not identifier.isdecimal()
-            or not isinstance(item, Mapping)
-        ):
-            raise _SemanticValueError
-        entry_id = int(identifier)
-        if not 0 <= entry_id <= 1_000_000:
-            raise _SemanticValueError
-        alarm_time = _semantic_integer(item.get("alarmTime"), minimum=0, maximum=86_399)
-        modes = item.get("modes")
-        if not isinstance(modes, list) or len(modes) > _MAX_SEMANTIC_ENTRIES:
-            raise _SemanticValueError
-        mode_ids = [_semantic_integer(mode, minimum=0, maximum=1000) for mode in modes]
-        alarm_time_text = (
-            f"{alarm_time // 3600:02d}:{alarm_time % 3600 // 60:02d}:{alarm_time % 60:02d}"
-        )
-        result.append(
-            {
-                "id": entry_id,
-                "name": _semantic_text(item.get("name")),
-                "active": _semantic_boolean(item.get("isActive")),
-                "alarm_time_seconds": alarm_time,
-                "alarm_time": alarm_time_text,
-                "mode_ids": mode_ids,
-                "night_light": _semantic_boolean(item.get("nightLight", False)),
-                "daily": _semantic_boolean(item.get("daily", False)),
-            }
-        )
-    return sorted(
-        result,
-        key=lambda item: _semantic_integer(item["id"], minimum=0, maximum=1_000_000),
-    )
-
-
-def _alarm_settings(value: object, *, sound: bool) -> dict[str, object]:
-    raw = _semantic_json(value)
-    if not isinstance(raw, Mapping) or len(raw) > 16:
-        raise _SemanticValueError
-    result: dict[str, object] = {}
-    if sound:
-        if "sound" in raw:
-            result["sound_id"] = _semantic_integer(raw["sound"], minimum=0, maximum=1000)
-        if "volume" in raw:
-            result["volume"] = _semantic_number(raw["volume"], minimum=0, maximum=100)
-        if "isSloping" in raw:
-            result["sloping"] = _semantic_boolean(raw["isSloping"])
-    else:
-        if "beepUsed" in raw:
-            result["beep_used"] = _semantic_boolean(raw["beepUsed"])
-        if "brightInactive" in raw:
-            result["brightness_inactive"] = _semantic_number(
-                raw["brightInactive"], minimum=0, maximum=100
-            )
-        if "brightActive" in raw:
-            result["brightness_active"] = _semantic_number(
-                raw["brightActive"], minimum=0, maximum=100
-            )
-    return result
-
-
-def _alarm_entry_reference(value: object, entries_value: object) -> dict[str, object]:
-    entry_id = _semantic_integer(value, minimum=-1, maximum=1_000_000)
-    if entry_id == -1:
-        return {"status": "none"}
-    result: dict[str, object] = {"status": "entry", "entry_id": entry_id}
-    try:
-        entry = next(
-            (item for item in _alarm_entries(entries_value) if item["id"] == entry_id), None
-        )
-    except _SemanticValueError:
-        entry = None
-    if entry is not None:
-        result["entry"] = entry
-    return result
-
-
-def _semantic_state_value(
-    snapshot: RuntimeSnapshot,
-    control: Control,
-    state_name: str,
-    value: object,
-    companion_values: Mapping[str, object],
-) -> tuple[object | None, bool]:
-    try:
-        if control.control_type == "Irrigation":
-            if state_name == "zones":
-                return _irrigation_zones(value), False
-            if state_name == "rainActive":
-                return _semantic_boolean(value), False
-            if state_name == "currentZone":
-                zone_id = _semantic_integer(value, minimum=-1, maximum=8)
-                if zone_id == -1:
-                    return {"status": "off"}, False
-                if zone_id == 8:
-                    return {"status": "all"}, False
-                result: dict[str, object] = {"status": "zone", "zone_id": zone_id}
-                try:
-                    zone = next(
-                        (
-                            item
-                            for item in _irrigation_zones(companion_values.get("zones"))
-                            if item["id"] == zone_id
-                        ),
-                        None,
-                    )
-                except _SemanticValueError:
-                    zone = None
-                if zone is not None:
-                    result["zone_name"] = zone["name"]
-                return result, False
-
-        if control.control_type == "AlarmClock":
-            if state_name in {"isEnabled", "isAlarmActive", "confirmationNeeded"}:
-                return _semantic_boolean(value), False
-            if state_name == "entryList":
-                return _alarm_entries(value), False
-            if state_name in {"currentEntry", "nextEntry"}:
-                return _alarm_entry_reference(value, companion_values.get("entryList")), False
-            if state_name == "nextEntryMode":
-                mode_id = _semantic_integer(value, minimum=-1, maximum=1000)
-                if mode_id == -1:
-                    return {"status": "none"}, False
-                result = {"status": "mode", "mode_id": mode_id}
-                mode_name = next(
-                    (
-                        item.name
-                        for item in snapshot.structure.global_metadata
-                        if item.kind == "operating_mode" and item.identifier == str(mode_id)
-                    ),
-                    None,
-                )
-                if mode_name is not None:
-                    result["mode_name"] = mode_name
-                return result, False
-            if state_name in {
-                "ringingTime",
-                "ringDuration",
-                "prepareDuration",
-                "snoozeTime",
-                "snoozeDuration",
-            }:
-                return {"seconds": _semantic_integer(value, minimum=0, maximum=31_536_000)}, False
-            if state_name == "nextEntryTime":
-                seconds = _semantic_integer(value, minimum=-1, maximum=4_000_000_000)
-                if seconds <= 0:
-                    return {"status": "none"}, False
-                return {"status": "scheduled", "at": _loxone_time(seconds)}, False
-            if state_name == "deviceState":
-                state = _semantic_integer(value, minimum=0, maximum=2)
-                return {"status": {0: "not_connected", 1: "offline", 2: "online"}[state]}, False
-            if state_name == "deviceSettings":
-                return _alarm_settings(value, sound=False), False
-            if state_name == "wakeAlarmSoundSettings":
-                return _alarm_settings(value, sound=True), False
-    except ValueError:
-        return None, True
-    return None, False
-
-
 def _state_payload(
     runtime: LoxoneRuntime,
     snapshot: RuntimeSnapshot,
@@ -3420,8 +3214,8 @@ def _state_payload(
             companion = runtime.state(snapshot, uuid)
             if companion.freshness is Freshness.CURRENT:
                 companion_values[name] = companion.value
-        semantic_value, semantic_invalid = _semantic_state_value(
-            snapshot, control, state_name, record.value, companion_values
+        semantic_value, semantic_invalid = decode_state_value(
+            snapshot.structure, control, state_name, record.value, companion_values
         )
     return (
         {
@@ -4708,6 +4502,146 @@ def register_read_tools(
             return _availability_error(ControlNotesEnvelope, exc, trace_id=trace_id)
         except ControlOperationError as exc:
             return _operation_error(ControlNotesEnvelope, exc, trace_id=trace_id)
+
+    @server.tool(
+        name="loxone_get_state_semantics",
+        description=(
+            "Read bounded semantic evidence and cached values for one visible control. "
+            "Interpretation and observation quality are independent; missing units or meanings "
+            "remain explicit. No hidden controls, project data, or documentation download."
+        ),
+        annotations=annotations,
+        structured_output=True,
+    )
+    async def get_state_semantics(
+        control_uuid: Annotated[
+            str, Field(description="Exact visible control UUID from discovery.")
+        ],
+        state_names: Annotated[
+            list[str] | None,
+            Field(
+                description="Optional 1 to 100 unique exact state names; omit to page all states.",
+                json_schema_extra={"minItems": 1, "maxItems": 100},
+            ),
+        ] = None,
+        offset: Annotated[
+            int, Field(description="Zero-based offset within the selected state list.", strict=True)
+        ] = 0,
+        limit: Annotated[
+            int, Field(description="Maximum number of states returned, from 1 to 100.", strict=True)
+        ] = 100,
+    ) -> StateSemanticsEnvelope:
+        if (
+            not isinstance(control_uuid, str)
+            or not 1 <= len(control_uuid) <= 200
+            or isinstance(offset, bool)
+            or not isinstance(offset, int)
+            or offset < 0
+            or isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or not 1 <= limit <= 100
+            or (
+                state_names is not None
+                and (
+                    not isinstance(state_names, list)
+                    or not 1 <= len(state_names) <= 100
+                    or any(
+                        not isinstance(name, str) or not 1 <= len(name) <= 200
+                        for name in state_names
+                    )
+                    or len(set(state_names)) != len(state_names)
+                )
+            )
+        ):
+            return _error(
+                StateSemanticsEnvelope, "invalid_input", "Invalid state selection or page bounds"
+            )
+        try:
+            _access_token, snapshot = await _snapshot(runtime, fresh_visibility=True)
+            control = next(
+                (c for c in _visible_controls(snapshot.structure) if c.uuid == control_uuid), None
+            )
+            if control is None:
+                return _error(StateSemanticsEnvelope, "not_found", "control is not visible")
+            if state_names is not None:
+                refs = dict(control.state_uuids)
+                if any(name not in refs for name in state_names):
+                    return _error(
+                        StateSemanticsEnvelope, "not_found", "one or more states are not accessible"
+                    )
+                selected_refs = tuple((name, refs[name]) for name in state_names)
+            else:
+                selected_refs = control.state_uuids
+            if runtime is None:  # pragma: no cover - _snapshot rejects this
+                raise RuntimeUnavailable("the service is not configured")
+            # Capture each required record once. Companions are restricted to this control
+            # and admitted only when current; stale companions cannot label a current value.
+            page_refs = selected_refs[offset : offset + limit]
+            needed = {uuid for _name, uuid in page_refs}
+            companion_names = (
+                {"zones", "entryList"}
+                if control.control_type in {"Irrigation", "AlarmClock"}
+                else set()
+            )
+            needed.update(uuid for name, uuid in control.state_uuids if name in companion_names)
+            records = {uuid: runtime.state(snapshot, uuid) for uuid in needed}
+            companions = {
+                name: records[uuid].value
+                for name, uuid in control.state_uuids
+                if name in companion_names and records[uuid].freshness is Freshness.CURRENT
+            }
+            resolver = StateSemanticsResolver()
+            items: list[dict[str, Any]] = []
+            for name, uuid in page_refs:
+                record = records[uuid]
+                semantics, semantic_value = resolver.resolve(
+                    snapshot.structure, control, name, record.value, companions
+                )
+                items.append(
+                    {
+                        "name": name,
+                        "uuid": uuid,
+                        "value": record.value,
+                        "semantic_value": semantic_value,
+                        "quality": {
+                            "availability": "available"
+                            if record.value is not None
+                            else "unavailable"
+                            if record.freshness is Freshness.UNAVAILABLE
+                            else "unknown",
+                            "freshness": record.freshness.value,
+                            "observed_at": _state_observed_at(record),
+                        },
+                        "semantics": semantics,
+                    }
+                )
+            total = len(selected_refs)
+            complete = offset == 0 and len(items) == total
+            return _result(
+                StateSemanticsEnvelope,
+                {
+                    "control_uuid": control.uuid,
+                    "items": items,
+                    "offset": offset,
+                    "next_offset": offset + len(items) if offset + len(items) < total else None,
+                    "returned": len(items),
+                    "total": total,
+                    "truncated": not complete,
+                    "complete": complete,
+                },
+                stale=not snapshot.connected
+                or any(
+                    records[uuid].freshness is not Freshness.CURRENT for _name, uuid in page_refs
+                ),
+            )
+        except PermissionError:
+            return _error(
+                StateSemanticsEnvelope,
+                "unauthenticated",
+                "Authentication with loxone:read is required",
+            )
+        except RuntimeUnavailable as exc:
+            return _availability_error(StateSemanticsEnvelope, exc)
 
     @server.tool(
         name="loxone_get_states",

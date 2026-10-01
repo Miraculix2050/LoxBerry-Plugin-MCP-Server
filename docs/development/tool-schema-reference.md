@@ -1,5 +1,30 @@
 # Tool schema reference
 
+`loxone_get_state_semantics` is an additive `loxone:read` tool for one visible
+control. Optional `state_names` select 1–100 unique exact names; otherwise page
+the normalized references with `offset` and `limit` (default/maximum 100).
+Unknown selected names fail atomically. `next_offset` continues the same
+selection; `returned`, `total`, `truncated`, `complete` describe page coverage.
+Each item separates the original `value`, optional `semantic_value`, observation
+`quality` (`availability`, `freshness`, `observed_at`) and `semantics`.
+Interpretation status is `known|partial|unknown|invalid` with a fixed `reason`.
+Nullable descriptor fields cover value type, display format, unit, range, precision
+and sign convention. `encoding` and position-bound `positions` have separate
+returned/total/truncated/complete fields, capped at 100 entries each. At most eight
+per-field sources identify a Structure field, exact companion runtime state or
+stable existing decoder rule;
+document and firmware versions stay null when unavailable. Structure modification
+timestamps are not firmware versions. Sources describe the retained claim list,
+not overall family coverage. Valid display formats exceeding 64 characters are
+omitted unchanged, with original/returned lengths and explicit truncation and
+completeness; this omission is not invalid coding.
+No hidden-control option, documentation-content
+pipeline, project join or name-based inference is provided. Static metadata can
+remain useful when the value is unavailable; stale companions are not used to label
+values. Format strings are not parsed into units or precision in V1. StatusMonitor
+metadata is not a new value decoder or alert classification.
+
+
 `loxone_analyze_opening_contacts` publishes a bounded read-only join of retained
 WindowMonitor references, exact runtime mappings and reviewed `AutoJalousie.Window`
 paths. Its schema separates monitor/item diagnostics, direct/link/caller provenance,

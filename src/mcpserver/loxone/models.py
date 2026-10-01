@@ -189,6 +189,12 @@ class Control:
     is_user_linked: bool = False
     is_monitor_referenced: bool = False
     is_hidden: bool = False
+    semantics_invalid_fields: tuple[str, ...] = ()
+    format_total_length: int | None = None
+    status_monitor_status_total: int | None = None
+    status_monitor_status_complete: bool = False
+    status_monitor_input_total: int | None = None
+    status_monitor_input_complete: bool = False
 
 
 @dataclass(frozen=True, slots=True)

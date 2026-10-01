@@ -10,7 +10,7 @@
     {id: 'loxoneRead', scopes: ['loxone:read'], names: [
       'loxone_get_skill_guide', 'loxone_get_system_status', 'loxone_list_rooms',
       'loxone_list_categories', 'loxone_find_controls', 'loxone_describe_control',
-      'loxone_get_control_notes', 'loxone_get_states',
+      'loxone_get_control_notes', 'loxone_get_state_semantics', 'loxone_get_states',
       'loxone_get_structure_overview', 'loxone_get_room_snapshot',
       'loxone_list_global_metadata', 'loxone_get_weather', 'loxone_get_project_status',
       'loxone_find_project_objects', 'loxone_describe_project_object',

@@ -207,6 +207,23 @@ the problem.
 
 ### Interpret controller-specific states
 
+For evidence about the meaning of an exact visible state, call
+`loxone_get_state_semantics(control_uuid=..., state_names=[...])`. Omit
+`state_names` to page the control's normalized states using `offset` and `limit`
+(maximum/default 100); follow `next_offset` with the same selection. A page's
+`complete` describes that page's coverage, not complete semantic knowledge.
+This read-only tool uses fresh visibility and has no hidden-control option.
+Keep `value`, `semantic_value`, `quality` and `semantics` separate: a current
+value may have unknown meaning; a known decoder result may describe a stale
+observation. `known` is limited to the named decoder rule. Preserve `reason`,
+per-field `sources`, missing versions, and collection completeness. Missing
+companions yield partial interpretations. Format strings do not prove units or
+precision. Configured StatusMonitor labels and positions do not establish
+severity, household roles or physical danger. Unsupported energy, meter and
+controller states can remain unknown. This interface does not retrieve project
+metadata or bundled documentation content and does not acknowledge alarms.
+
+
 - For a `StatusMonitor`, use its `inputStates` state UUID. Map each value at
   position `index` to `capabilities.status_monitor.inputs[index]`, then map the
   numeric value to the matching

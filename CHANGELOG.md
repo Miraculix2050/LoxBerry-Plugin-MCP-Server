@@ -5,6 +5,13 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add read-only `loxone_get_state_semantics` for one freshly authorized visible
+  control, with bounded state selection/pagination, per-claim provenance and
+  explicit interpretation gaps independent of cached observation quality.
+  Preserve existing Irrigation/AlarmClock read results; expose exact-state
+  format/range and position-bound StatusMonitor metadata without guessed units,
+  hidden-control expansion or a documentation-content pipeline (#166).
+
 - Wait for runtime authentication coordination within the existing connection
   budget instead of immediately rejecting fresh MCP reads; preserve cancellation,
   fresh visibility and source-IP protection, and distinguish local contention

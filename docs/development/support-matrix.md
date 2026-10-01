@@ -25,6 +25,11 @@
 - One Miniserver target is supported.
 - External or cloud-hosted MCP access is unsupported.
 - Read-only tools are available within the signed-in Loxone user's visibility.
+- `loxone_get_state_semantics` adds fixture-tested exact-state evidence for
+  existing Irrigation/AlarmClock decoders, `value` format metadata on
+  InfoOnlyAnalog/UpDownAnalog/Slider, UpDownAnalog ranges and StatusMonitor
+  `inputStates` position/status metadata. Other meanings remain unknown;
+  this does not establish new firmware or control-family hardware compatibility.
 - History, diagnostics and cache operation require their documented scopes and local approvals.
 - Control is Gen.-1-only, default-disabled, type-specific and limited to visible operable controls.
 - Only actions explicitly identified as hardware confirmed in the user capability documentation are hardware promises; other implemented actions remain unverified.
