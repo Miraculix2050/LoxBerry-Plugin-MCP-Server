@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections import Counter, defaultdict, deque
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -19,6 +20,9 @@ MAX_CONTACTS = 100
 MAX_CONSUMERS = 100
 MAX_TRACE_STARTS = 200
 MAX_RESULT_RELATIONSHIPS = 200
+MAX_GAPS_PER_TRACE = 20
+MAX_GAPS_PER_CALL = 200
+_SAFE_GAP_TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,63}\Z")
 CONNECTOR_RULE_VERSION = 1
 CONSUMER_CONNECTORS = {"AutoJalousie": "Window"}
 
@@ -40,6 +44,7 @@ class OpeningGraph:
     unresolved: set[str] = field(init=False)
     boundary_incomplete: dict[str, bool] = field(init=False)
     starts: int = 0
+    gaps_returned: int = 0
 
     def __post_init__(self) -> None:
         graph = self.query.view.snapshot.graph
@@ -134,6 +139,8 @@ class OpeningGraph:
             "edges": [],
             "complete": True,
             "warnings": [],
+            "gaps": [],
+            "gaps_omitted": 0,
         }
         if self.starts >= MAX_TRACE_STARTS:
             result.update(complete=False, warnings=["max_trace_starts"])
@@ -145,6 +152,43 @@ class OpeningGraph:
         queue = deque((key, 0) for key in ordered)
         edges: dict[tuple[str, str, str], dict[str, Any]] = {}
         warnings = set()
+
+        def append_gap(key: str, reason: str) -> None:
+            # Bound materialization across all traces, not just each traversal.
+            if len(result["gaps"]) >= MAX_GAPS_PER_TRACE or self.gaps_returned >= MAX_GAPS_PER_CALL:
+                result["gaps_omitted"] += 1
+                warnings.add("max_gap_evidence")
+                return
+            node = self.nodes[key]
+            parent = self.parents.get(key)
+            block = self.nodes[parent] if node.kind == "connector" and parent is not None else node
+
+            def token(value: str | None) -> str | None:
+                return value if value and _SAFE_GAP_TOKEN.fullmatch(value) else None
+
+            rules = signal_use_rules(block.block_type)
+            result["gaps"].append(
+                {
+                    "direction": direction,
+                    "project_node_id": key,
+                    "node_kind": node.kind if node.kind in {"block", "connector"} else "unknown",
+                    "block_type": token(block.block_type),
+                    "connector_key": token(dict(node.attributes).get("K")),
+                    "reason": reason,
+                    "connector_rule_version": CONNECTOR_RULE_VERSION,
+                    "rule_ids": [r.rule_id for r in rules[:8]],
+                    "rule_ids_omitted": max(0, len(rules) - 8),
+                    "reference_projection_rule_id": "input_ref_aq_v1"
+                    if any(
+                        isinstance(e, SemanticEdge) and e.rule_id == "input_ref_aq_v1"
+                        for e in self.forward[block.key]
+                    )
+                    else None,
+                    "evidence_node_ids": [key],
+                }
+            )
+            self.gaps_returned += 1
+
         if len(seeds) > max_nodes:
             warnings.add("max_nodes")
         while queue:
@@ -163,6 +207,7 @@ class OpeningGraph:
                 )
             ):
                 warnings.add("unmodeled_internal_flow")
+                append_gap(key, "block_reference_projection_unavailable")
             parent = self.parents.get(key)
             if (
                 parent is not None
@@ -170,6 +215,7 @@ class OpeningGraph:
                 and self.boundary_incomplete[parent]
             ):
                 warnings.add("unmodeled_internal_flow")
+                append_gap(key, "parent_boundary_incomplete")
             for edge in adjacency[key]:
                 neighbor = edge.target if direction == "downstream" else edge.source
                 kind = "derived_semantic" if isinstance(edge, SemanticEdge) else edge.kind

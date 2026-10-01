@@ -74,6 +74,14 @@ visible `candidate_contact_uuids`; their physical contact role is not confirmed.
 65,536 bytes. At most 200 connections and 200 findings are materialized; additional
 records are counted separately and prevent a complete result. Check separate monitor,
 mapping, graph and state completeness, warnings and omission counts.
+Each directed evidence trace adds up to 20 `gaps`, with at most 200 across the call.
+A gap identifies the reached opaque project node, direction, safe technical block type
+and connector key, fixed reason, connector-rule version and available rule references.
+Invalid or overlong technical tokens are null; names and raw attributes are omitted.
+`gaps_omitted` counts omitted cases per trace; `max_gap_evidence` preserves incomplete
+graph evidence. `parent_boundary_incomplete` describes the existing conservative
+parent check; it does not prove which adjacent port matters or a configuration defect.
+The existing `unmodeled_internal_flow` warning remains unchanged.
 Counts cover inspected retained positions, not the
 entire installation. Duplicates use identical reference UUIDs. Without project
 access, monitor findings remain available. Requested states expose original indices,

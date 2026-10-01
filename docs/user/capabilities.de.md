@@ -91,6 +91,16 @@ Originalindizes, Vektorlänge und separate Zustandsfrische; `state_value` ist ei
 uninterpretiertes numerisches Quelltoken. Die Zustandszeit ist eine Unix-Zeit und
 unabhängig von der Analysezeit und dem verifizierten Projektmarker.
 
+Jeder gerichtete Evidenz-Trace liefert maximal 20 `gaps`, insgesamt maximal 200
+je Aufruf. Ein Gap nennt den erreichten opaken Projektknoten, Richtung, sicheren
+technischen Blocktyp und Connector-Key, festen Grund, Connector-Regelversion und
+vorhandene Regelreferenzen. Ungültige oder zu lange Tokens sind null; Namen und
+rohe Attribute fehlen. `gaps_omitted` zählt ausgelassene Fälle je Trace;
+`max_gap_evidence` erhält die unvollständige Graph-Evidenz.
+`parent_boundary_incomplete` beschreibt die bestehende konservative Parent-Prüfung;
+daraus folgen weder die Relevanz eines benachbarten Ports noch ein Konfigurationsfehler.
+Die bestehende Warning `unmodeled_internal_flow` bleibt erhalten.
+
 Die erste Verbraucherregel ist exakt `AutoJalousie.Window`; `Dwc` wird nicht als
 Alias angenommen. `Or.I1/I2 -> Q` und die Projektion einer aufgelösten expliziten
 `InputRef`-Referenz auf einen eindeutigen `AQ` sind markierte abgeleitete Regeln.

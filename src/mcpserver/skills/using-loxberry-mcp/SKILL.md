@@ -277,6 +277,13 @@ additional known candidates through `candidate_contact_uuids` (at most 100 uniqu
 visible UUIDs); the tool does not establish their physical contact role. Enable
 `include_current_state` only when state alignment matters. Inspect each dimension
 of `completeness`, all warnings, omission counts and evidence IDs before conclusions.
+Inspect each trace's `gaps` and `gaps_omitted` to locate `unmodeled_internal_flow`: the
+fixed reason distinguishes a reached block lacking reference projection from a
+connector whose parent boundary is incomplete. Direction, safe block/connector
+tokens, opaque node evidence and available rule references are diagnostic evidence,
+not a new semantic rule or defect verdict. At most 20 gaps per trace and 200 per call
+are retained; `max_gap_evidence` means cases were omitted. Never infer port aliases
+or independence from a parent-boundary gap.
 The analyzer covers retained monitor positions and the reviewed `AutoJalousie.Window`
 connector, not every possible consumer. `InputRef` uses an explicit resolved reference
 with a unique `AQ` projection; `Or.I1/I2 -> Q` uses separately marked derived rules.

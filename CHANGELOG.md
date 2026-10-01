@@ -5,6 +5,9 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add bounded, sanitized internal-flow gap evidence to opening-contact traces,
+  preserving warnings, conservative completeness and existing connector rules (#335).
+
 - Add read-only `loxone_read_controls` for known visible control UUIDs with compact
   identity and named cached values, atomic fresh visibility, fixed request/response
   limits and explicit delivery completeness. Optionally reuse the existing state

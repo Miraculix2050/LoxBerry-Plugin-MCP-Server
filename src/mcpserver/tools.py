@@ -1139,12 +1139,28 @@ class OpeningEdgeData(BaseModel):
     semantic_rule_id: str | None
 
 
+class OpeningGapData(BaseModel):
+    direction: Literal["upstream", "downstream"]
+    project_node_id: str
+    node_kind: Literal["block", "connector", "unknown"]
+    block_type: str | None = Field(max_length=64)
+    connector_key: str | None = Field(max_length=64)
+    reason: Literal["block_reference_projection_unavailable", "parent_boundary_incomplete"]
+    connector_rule_version: int
+    rule_ids: list[str] = Field(max_length=8)
+    rule_ids_omitted: int
+    reference_projection_rule_id: Literal["input_ref_aq_v1"] | None
+    evidence_node_ids: list[str] = Field(max_length=1)
+
+
 class OpeningEvidenceData(BaseModel):
     evidence_id: str
     nodes: list[OpeningNodeData]
     edges: list[OpeningEdgeData]
     complete: bool
     warnings: list[str]
+    gaps: list[OpeningGapData] = Field(default_factory=list, max_length=20)
+    gaps_omitted: int = 0
 
 
 class OpeningCompletenessData(BaseModel):
