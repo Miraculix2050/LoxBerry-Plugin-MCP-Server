@@ -79,6 +79,9 @@ and shutdown immediately before login after waiting.
 These preflight checks also precede an active breaker cooldown's suppression;
 ended OAuth access remains a permission failure without altering breaker state
 or recording a network attempt.
+Cancellation during authentication aborts the underlying transport immediately;
+it does not start a new graceful-close budget. Cancellation during authentication
+error cleanup also aborts the transport before propagating.
 
 ## Persistence and lifecycle
 
