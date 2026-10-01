@@ -221,11 +221,12 @@ try {
         'loxone_operate_control', 'loxone_get_control_history', 'loxone_get_statistics',
         'loxone_get_project_status', 'loxone_find_project_objects',
         'loxone_describe_project_object', 'loxone_trace_project_logic',
-        'loxone_analyze_observability',
+        'loxone_analyze_observability', 'loxone_analyze_project',
         'loxberry_get_plugin_status', 'loxberry_get_service_health',
         'loxberry_get_system_status', 'loxberry_list_service_events',
         'loxberry_clear_statistics_cache', 'loxberry_list_event_history_sources',
-        'loxberry_add_event_history_source', 'loxberry_remove_event_history_source'
+        'loxberry_add_event_history_source', 'loxberry_remove_event_history_source',
+        'loxberry_purge_event_history_source'
     )
     $controlAdvertised = $actual -contains 'loxone_operate_control'
     if ($ControlFixturePath -and -not $controlAdvertised) {
@@ -236,11 +237,11 @@ try {
         throw 'MCP tool inventory differs from the expected enabled contract.'
     }
     foreach ($tool in $toolsResponse.result.tools) {
-        if ($tool.name -eq 'loxone_operate_control') {
+        if ($tool.name -in @('loxone_operate_control', 'loxberry_purge_event_history_source')) {
             if ($tool.annotations.readOnlyHint -ne $false -or
                 $tool.annotations.destructiveHint -ne $true -or
                 $tool.annotations.idempotentHint -ne $false) {
-                throw 'MCP control tool annotations violate the control contract.'
+                throw 'MCP destructive tool annotations violate the operate contract.'
             }
         } elseif ($tool.name -eq 'loxberry_clear_statistics_cache') {
             if ($tool.annotations.readOnlyHint -ne $false -or

@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from mcpserver.schema_reference import REFERENCE_HTML_PATH, REFERENCE_JSON_PATH
+from mcpserver.schema_reference import REFERENCE_HTML_PATH, REFERENCE_JSON_PATH, tool_schema_catalog
 from mcpserver.server import create_server
 from mcpserver.settings import ServerSettings
 from mcpserver.skill_delivery import SKILL_REVISION
@@ -159,6 +159,20 @@ def test_mcp_client_smoke_covers_skill_delivery_surfaces() -> None:
     assert "mcp_room_snapshot_acceptance=pass" in script
     assert "mcp_weather_acceptance=pass" in script
     assert "mcp_readonly_controller_models_acceptance=pass" in script
+
+
+def test_mcp_client_smoke_optional_inventory_covers_release_catalog() -> None:
+    script = (ROOT / "tools" / "test_mcp_client.ps1").read_text(encoding="utf-8")
+    inventories = [
+        re.search(r"[$]" + name + r" = @[(](.*?)[)]", script, re.DOTALL)
+        for name in ("expected", "optional")
+    ]
+    assert all(inventories)
+    names = [
+        name for inventory in inventories for name in re.findall(r"'([^']+)'", inventory.group(1))
+    ]
+    assert len(names) == len(set(names))
+    assert set(names) == {tool["name"] for tool in tool_schema_catalog("test")["tools"]}
 
 
 @pytest.mark.parametrize("variant", ["extra", "duplicate", "missing"])
