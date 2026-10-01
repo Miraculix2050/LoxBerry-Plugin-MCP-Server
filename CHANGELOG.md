@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Let Event History Admin discovery wait within one bounded authentication budget
+  when another plugin consumer holds the shared sign-in lock, instead of failing
+  immediately; fresh visibility and source-IP suppression remain required (#331).
+
 - Preserve compatible temporary-unavailability errors while adding fixed runtime
   reason/phase diagnostics and bounded retry hints only for the caller's local
   rate budget. Distinguish structure-refresh connection, protocol, token, timeout

@@ -34,6 +34,7 @@ _SCHEMA_VERSION: Final = 6
 _MAX_TEXT_BYTES: Final = 4096
 _UNSUPPORTED_SOURCE_CONTROL_TYPES: Final = frozenset({"Daytimer"})
 _MAX_SAFE_BROWSER_INTEGER: Final = 2**53 - 1
+_ADMIN_AUTH_BUSY_WAIT_SECONDS: Final = 15
 
 
 class EventHistoryUnavailable(RuntimeError):
@@ -1494,6 +1495,7 @@ class EventHistoryMonitor:
                 ),
                 timeout_seconds=self.config.connection_timeout,
             )
+            auth_wait_deadline = time.monotonic() + _ADMIN_AUTH_BUSY_WAIT_SECONDS
             if self.auth_coordinator is None:
                 token = await client.acquire_token(username, password)
                 session = await client.open_session(token)
@@ -1503,6 +1505,7 @@ class EventHistoryMonitor:
                     owner="local_admin",
                     phase="token_acquisition",
                     allow_cooldown_probe=False,
+                    busy_wait_seconds=max(0.0, auth_wait_deadline - time.monotonic()),
                 )
                 token = acquired_token
                 opened_session = await self.auth_coordinator.attempt(
@@ -1510,6 +1513,7 @@ class EventHistoryMonitor:
                     owner="local_admin",
                     phase="session_establishment",
                     allow_cooldown_probe=False,
+                    busy_wait_seconds=max(0.0, auth_wait_deadline - time.monotonic()),
                 )
                 session = opened_session
             return await session.load_structure()
