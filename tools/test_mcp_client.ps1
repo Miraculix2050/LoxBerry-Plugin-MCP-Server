@@ -211,7 +211,7 @@ try {
         'loxone_list_rooms', 'loxone_get_room_snapshot',
         'loxone_list_categories', 'loxone_get_weather',
         'loxone_find_controls', 'loxone_describe_control', 'loxone_get_control_notes',
-        'loxone_read_controls', 'loxone_get_state_semantics',
+        'loxone_read_controls', 'loxone_get_state_semantics', 'loxone_get_active_alerts',
         'loxone_get_states', 'loxone_list_global_metadata',
         'loxone_analyze_opening_contacts',
         'loxone_get_skill_guide', 'loxone_list_event_history_sources', 'loxone_get_event_history'
@@ -221,11 +221,12 @@ try {
         'loxone_operate_control', 'loxone_get_control_history', 'loxone_get_statistics',
         'loxone_get_project_status', 'loxone_find_project_objects',
         'loxone_describe_project_object', 'loxone_trace_project_logic',
-        'loxone_analyze_observability',
+        'loxone_analyze_observability', 'loxone_analyze_project',
         'loxberry_get_plugin_status', 'loxberry_get_service_health',
         'loxberry_get_system_status', 'loxberry_list_service_events',
         'loxberry_clear_statistics_cache', 'loxberry_list_event_history_sources',
-        'loxberry_add_event_history_source', 'loxberry_remove_event_history_source'
+        'loxberry_add_event_history_source', 'loxberry_remove_event_history_source',
+        'loxberry_purge_event_history_source'
     )
     $controlAdvertised = $actual -contains 'loxone_operate_control'
     if ($ControlFixturePath -and -not $controlAdvertised) {
@@ -236,11 +237,11 @@ try {
         throw 'MCP tool inventory differs from the expected enabled contract.'
     }
     foreach ($tool in $toolsResponse.result.tools) {
-        if ($tool.name -eq 'loxone_operate_control') {
+        if ($tool.name -in @('loxone_operate_control', 'loxberry_purge_event_history_source')) {
             if ($tool.annotations.readOnlyHint -ne $false -or
                 $tool.annotations.destructiveHint -ne $true -or
                 $tool.annotations.idempotentHint -ne $false) {
-                throw 'MCP control tool annotations violate the control contract.'
+                throw 'MCP destructive tool annotations violate the operate contract.'
             }
         } elseif ($tool.name -eq 'loxberry_clear_statistics_cache') {
             if ($tool.annotations.readOnlyHint -ne $false -or
@@ -285,7 +286,7 @@ try {
     $script:nextId = 4
     $skillGuide = Invoke-ReadTool (Get-NextId) 'loxone_get_skill_guide' @{}
     if ($skillGuide.data.name -ne 'using-loxberry-mcp' -or
-        $skillGuide.data.revision -ne 44 -or
+        $skillGuide.data.revision -ne 45 -or
         $skillGuide.data.media_type -ne 'text/markdown' -or
         $skillGuide.data.content -ne $skillMarkdown) {
         throw 'MCP skill guide tool differs from the canonical resource.'
@@ -377,6 +378,16 @@ try {
         }
     }
     Write-Output 'mcp_state_semantics=pass'
+
+    $alerts = Invoke-ReadTool (Get-NextId) 'loxone_get_active_alerts' @{ limit = 5 }
+    if ($alerts.data.scope -ne 'authorized_visible_runtime' -or
+        $alerts.data.complete_scope -ne 'known_candidate_families' -or
+        @($alerts.data.findings).Count -gt 5 -or
+        $alerts.data.returned -ne @($alerts.data.findings).Count -or
+        (-not $alerts.data.coverage.complete -and $null -ne $alerts.data.total_active)) {
+        throw 'Active alerts did not preserve bounded delivery and coverage.'
+    }
+    Write-Output 'mcp_active_alerts=pass'
 
     if ($ReadFeatureAcceptance) {
         $roomSnapshot = $null

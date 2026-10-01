@@ -333,3 +333,22 @@ fixtures: `Switch.on`, `Switch.off`, `Dimmer.set_level`, `Dimmer.off`,
 controls, actions or installations.
 
 The current mapping of platforms, clients and evidence status is in the [support matrix](../development/support-matrix.md).
+
+
+### Active visible alerts
+
+`loxone_get_active_alerts` provides a bounded read-only overview from one freshly
+authorized visible structure and captured cached observations. V1 evaluates only
+`AalEmergency.status`: 0 normal, 1 alarm triggered, 2 reset active, 3 temporarily
+disabled (Structure File 17.1, page 26). Numeric integral values are accepted;
+booleans, strings and unknown codes are invalid. Only current, available values
+establish activity or inactivity. No firmware compatibility range is inferred.
+
+Check `coverage.complete` independently of `truncated`/`complete`. Empty partial
+results do not establish absence of alarms. V1 does not classify StatusMonitor or
+WindowMonitor states as alarms. Use source control/state references for targeted
+reads; do not infer danger, cause or severity from names or colors. This snapshot
+is not an emergency notification service and never acknowledges alarms.
+`limit` allows 1–50 findings (default 50), without cursor/family filter. Coverage
+applies only to known candidate families, never the physical installation;
+`total_active` remains null for partial evaluation.

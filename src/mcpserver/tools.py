@@ -35,6 +35,13 @@ from mcpserver.auth.provider import (
 from mcpserver.availability import AvailabilityPhase, AvailabilityReason
 from mcpserver.config import AtomicConfigStore, ConfigError
 from mcpserver.loxberry.diagnostics import DiagnosticsUnavailable, LoxBerryDiagnostics
+from mcpserver.loxone.active_alerts import (
+    CANDIDATE_TYPES,
+    MAX_STATES,
+    evaluate_alerts,
+    select_sources,
+    source_state,
+)
 from mcpserver.loxone.control import allowed_actions
 from mcpserver.loxone.event_history import (
     EventHistoryCoverage,
@@ -598,6 +605,56 @@ class ControlsReadData(BaseModel):
             "relationships", "notes", "history", "statistics", "actions", "project", "semantics"
         ]
     ]
+
+
+class AlertReasonData(BaseModel):
+    control_uuid: str
+    control_type: str
+    reason: Literal[
+        "unsupported_family",
+        "reference_budget",
+        "missing_state",
+        "state_budget",
+        "decoder_budget",
+        "disconnected",
+        "unknown",
+        "unavailable",
+        "stale",
+        "invalid",
+    ]
+
+
+class AlertCoverageData(BaseModel):
+    candidate_controls: int | None
+    evaluated_controls: int
+    unsupported_controls: int
+    unavailable_controls: int
+    scan_complete: bool
+    complete: bool
+    reasons: list[AlertReasonData] = Field(max_length=50)
+    reasons_truncated: bool
+
+
+class ActiveAlertData(BaseModel):
+    source_control: ControlSummaryData
+    source_state: CompactStateData
+    classification: Literal["alarm_triggered"]
+    semantics: StateSemantics
+
+
+class ActiveAlertsData(BaseModel):
+    scope: Literal["authorized_visible_runtime"] = "authorized_visible_runtime"
+    complete_scope: Literal["known_candidate_families"] = "known_candidate_families"
+    supported_families: list[Literal["AalEmergency"]] = ["AalEmergency"]
+    candidate_families: list[str] = Field(default_factory=lambda: sorted(CANDIDATE_TYPES))
+    structure_generation: int
+    findings: list[ActiveAlertData] = Field(max_length=50)
+    coverage: AlertCoverageData
+    known_active: int
+    total_active: int | None
+    returned: int
+    truncated: bool
+    complete: bool
 
 
 class RoomSnapshotItemData(BaseModel):
@@ -1588,6 +1645,10 @@ class StateSemanticsEnvelope(ToolEnvelope):
 
 class ControlsReadEnvelope(ToolEnvelope):
     data: ControlsReadData | ErrorData
+
+
+class ActiveAlertsEnvelope(ToolEnvelope):
+    data: ActiveAlertsData | ErrorData
 
 
 class RoomSnapshotEnvelope(ToolEnvelope):
@@ -4853,6 +4914,97 @@ def register_read_tools(
             )
         except RuntimeUnavailable as exc:
             return _availability_error(StateSemanticsEnvelope, exc)
+
+    @server.tool(
+        name="loxone_get_active_alerts",
+        description=(
+            "Read a bounded overview of active visible alerts. V1 evaluates AalEmergency only; "
+            "other known monitor/alarm families remain explicit coverage gaps. One freshly "
+            "authorized structure and cached observations, not simultaneous measurements. "
+            "No acknowledge, polling or history; not an emergency notification service."
+        ),
+        annotations=annotations,
+        structured_output=True,
+    )
+    async def get_active_alerts(
+        limit: Annotated[
+            int,
+            Field(
+                ge=1,
+                le=50,
+                strict=True,
+                description="Maximum returned findings (1 to 50), independent of coverage.",
+            ),
+        ] = 50,
+    ) -> ActiveAlertsEnvelope:
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 50:
+            return _error(ActiveAlertsEnvelope, "invalid_input", "Limit must be from 1 to 50")
+        try:
+            _access_token, snapshot = await _snapshot(runtime, fresh_visibility=True)
+            assert runtime is not None
+            sources, scan_complete = select_sources(snapshot.structure.controls)
+            refs = {c.uuid: source_state(c) for c in sources if c.control_type == "AalEmergency"}
+            records: dict[str, StateRecord] = {}
+            for uuid, reason in refs.values():
+                if reason is None and uuid is not None and uuid not in records:
+                    if len(records) == MAX_STATES:
+                        break
+                    records[uuid] = runtime.state(snapshot, uuid)
+            evaluation = evaluate_alerts(
+                snapshot.structure,
+                sources,
+                records,
+                refs,
+                scan_complete=scan_complete,
+                connected=snapshot.connected,
+            )
+            findings = []
+            for finding in evaluation.pop("findings")[:limit]:
+                control, record = finding["control"], finding["record"]
+                findings.append(
+                    {
+                        "source_control": _control_summary(control, snapshot),
+                        "source_state": {
+                            "name": "status",
+                            "uuid": record.uuid,
+                            "value": record.value,
+                            "freshness": record.freshness.value,
+                            "observed_at": _state_observed_at(record),
+                        },
+                        "classification": finding["classification"],
+                        "semantics": finding["semantics"],
+                    }
+                )
+            data = {
+                **evaluation,
+                "structure_generation": snapshot.structure_generation,
+                "findings": findings,
+                "returned": len(findings),
+                "truncated": len(findings) < evaluation["known_active"],
+                "complete": evaluation["coverage"]["complete"]
+                and len(findings) == evaluation["known_active"],
+            }
+            stale = not snapshot.connected or any(
+                r.freshness is not Freshness.CURRENT for r in records.values()
+            )
+            while True:
+                envelope = _result(ActiveAlertsEnvelope, data, stale=stale)
+                if len(envelope.model_dump_json().encode("utf-8")) <= 65_536:
+                    return envelope
+                if not findings:
+                    return _error(
+                        ActiveAlertsEnvelope, "response_too_large", "Alert metadata exceeds 64 KiB"
+                    )
+                findings.pop()
+                data.update(returned=len(findings), truncated=True, complete=False)
+        except PermissionError:
+            return _error(
+                ActiveAlertsEnvelope,
+                "unauthenticated",
+                "Authentication with loxone:read is required",
+            )
+        except RuntimeUnavailable as exc:
+            return _availability_error(ActiveAlertsEnvelope, exc)
 
     @server.tool(
         name="loxone_get_states",
