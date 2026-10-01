@@ -196,6 +196,76 @@ def test_unknown_block_with_reference_input_remains_semantically_incomplete():
     assert not result["findings"]
 
 
+def test_gap_evidence_identifies_both_warning_paths_deterministically():
+    xml = Path("tests/fixtures/project/opening-contacts.xml").read_bytes()
+    xml = xml.replace(b'Type="Or" U="or"', b'Type="Unknown" U="or" Ref="' + CONTACT.encode() + b'"')
+    structure, project = fixture(xml)
+    result = analyze(structure, project)
+    assert result == analyze(structure, project)
+    gaps = [g for e in result["evidence"] for g in e["gaps"]]
+    assert {g["reason"] for g in gaps} == {
+        "block_reference_projection_unavailable",
+        "parent_boundary_incomplete",
+    }
+    assert {g["direction"] for g in gaps} == {"upstream", "downstream"}
+    assert all(g["block_type"] == "Unknown" for g in gaps)
+    for evidence in result["evidence"]:
+        nodes = {n["project_node_id"] for n in evidence["nodes"]}
+        for gap in evidence["gaps"]:
+            assert set(gap["evidence_node_ids"]) <= nodes
+            assert gap["project_node_id"] in nodes
+            assert not gap["rule_ids"]
+    assert "unmodeled_internal_flow" in result["warnings"]
+    assert not result["completeness"]["graph"]
+    tools.OpeningAnalysisData.model_validate(result)
+
+
+def test_gap_evidence_sanitizes_source_tokens_and_preserves_rule_references():
+    xml = Path("tests/fixtures/project/opening-contacts.xml").read_bytes()
+    xml = xml.replace(
+        b'<Co K="Q" U="or-output"/>',
+        b'<Co K="Q" U="or-output"/><Co K="I3" U="extra" Ref="missing"/>',
+    )
+    structure, project = fixture(xml)
+    gaps = [g for e in analyze(structure, project)["evidence"] for g in e["gaps"]]
+    assert any(g["rule_ids"] == ["or_i1_q_v1", "or_i2_q_v1"] for g in gaps)
+    xml = xml.replace(b'Type="Or"', b'Type="private / unsafe"').replace(
+        b'K="Q"', b'K="' + b"X" * 65 + b'"'
+    )
+    structure, project = fixture(xml)
+    result = analyze(structure, project)
+    gaps = [g for e in result["evidence"] for g in e["gaps"]]
+    assert gaps
+    assert all(g["block_type"] is None for g in gaps)
+    assert all(g["connector_key"] is None or len(g["connector_key"]) <= 64 for g in gaps)
+    graph = OpeningGraph(project)
+    extra = next(n.key for n in graph.nodes.values() if dict(n.attributes).get("K") == "I3")
+    trace = graph.trace([extra], "upstream", 16, 200)
+    assert "unresolved_relationship" in trace["warnings"]
+    assert trace["gaps"][0]["reason"] == "parent_boundary_incomplete"
+
+
+def test_gap_limits_bound_materialization_and_keep_incompleteness(monkeypatch):
+    import mcpserver.loxone.opening_contacts as opening
+
+    xml = (
+        Path("tests/fixtures/project/opening-contacts.xml")
+        .read_bytes()
+        .replace(b'Type="Or"', b'Type="Unknown"')
+    )
+    structure, project = fixture(xml)
+    monkeypatch.setattr(opening, "MAX_GAPS_PER_TRACE", 1)
+    monkeypatch.setattr(opening, "MAX_GAPS_PER_CALL", 1)
+    result = analyze(structure, project)
+    assert sum(len(e["gaps"]) for e in result["evidence"]) == 1
+    assert all(len(e["gaps"]) <= 1 for e in result["evidence"])
+    assert sum(e["gaps_omitted"] for e in result["evidence"]) > 0
+    assert "max_gap_evidence" in result["warnings"]
+    assert "unmodeled_internal_flow" in result["warnings"]
+    assert not result["completeness"]["graph"]
+    assert not result["findings"]
+
+
 @pytest.mark.parametrize("direction", ["input", "output", "reference", "disconnected"])
 def test_extra_or_connectors_only_allow_negatives_when_disconnected(direction):
     xml = Path("tests/fixtures/project/opening-contacts.xml").read_bytes()
@@ -681,3 +751,126 @@ async def test_release_authorization_and_next_identity_visibility_are_rechecked(
     )
     result = await invoke(monkeypatch, runtime)
     assert result.data.error == "not_found"
+
+
+def test_anonymized_live_state_gap_preserves_exact_wiring_without_internal_inference():
+    # Authorized target: InputRef.AQ -> State.I2; State.AQ -> WindowsMonitor.Wh.
+    # Synthetic identities and only the two configured relationships are retained.
+    _, project = fixture(Path("tests/fixtures/project/opening-gap-state.xml").read_bytes())
+    graph = OpeningGraph(project)
+    source = next(n.key for n in graph.nodes.values() if n.source_id == "reference-output")
+    trace = graph.trace([source], "downstream", 16, 200)
+    assert not trace["complete"]
+    assert trace["warnings"] == ["unmodeled_internal_flow"]
+    gap = next(g for g in trace["gaps"] if g["block_type"] == "State")
+    assert gap["direction"] == "downstream"
+    assert gap["connector_key"] == "I2"
+    assert gap["reason"] == "parent_boundary_incomplete"
+    assert not gap["rule_ids"]
+    assert gap["reference_projection_rule_id"] is None
+    assert not any(n["connector_key"] == "Wh" for n in trace["nodes"])
+    assert not any(e["kind"] == "derived_semantic" for e in trace["edges"])
+    assert any(
+        e.kind == "signal"
+        and graph.nodes[e.source].source_id == "state-output"
+        and graph.nodes[e.target].source_id == "monitor-input"
+        for e in project.view.snapshot.graph.edges
+    )
+
+
+def test_default_per_trace_gap_limit_and_exhausted_trace_shape():
+    xml = (
+        b'<P><C Type="Source" U="source"><Co K="Q" U="source-out"/></C>'
+        b'<C Type="Unknown" U="unknown">'
+    )
+    xml += b"".join(
+        f'<Co K="I{i}" U="in{i}"><In Input="source-out"/></Co>'.encode() for i in range(25)
+    )
+    xml += (
+        b'<Co K="Q" U="output"/></C><C Type="Sink" U="sink">'
+        b'<Co K="I" U="sink-in"><In Input="output"/></Co></C></P>'
+    )
+    _, project = fixture(xml)
+    graph = OpeningGraph(project)
+    seeds = [
+        n.key
+        for n in graph.nodes.values()
+        if n.kind == "connector" and n.source_id.startswith("in")
+    ]
+    trace = graph.trace(seeds, "upstream", 16, 200)
+    assert len(trace["gaps"]) == 20
+    assert trace["gaps_omitted"] == 5
+    assert "max_gap_evidence" in trace["warnings"]
+    graph.starts = 200
+    exhausted = graph.trace(seeds, "upstream", 16, 200)
+    assert exhausted["gaps"] == []
+    assert exhausted["gaps_omitted"] == 0
+    assert exhausted["warnings"] == ["max_trace_starts"]
+
+
+def test_gap_evidence_does_not_expand_runtime_visibility():
+    xml = (
+        Path("tests/fixtures/project/opening-contacts.xml")
+        .read_bytes()
+        .replace(b'Type="Or"', b'Type="Unknown"')
+    )
+    structure, project = fixture(xml)
+    result = analyze(structure, project)
+    hidden = replace(structure, hidden_controls=(control("private-hidden"),))
+    assert analyze(hidden, project) == result
+    with pytest.raises(OpeningScopeError):
+        analyze(hidden, project, scope_type="contact", scope_uuid="private-hidden")
+    with pytest.raises(OpeningScopeError):
+        analyze(hidden, project, candidate_contact_uuids=["private-hidden"])
+    assert "private-hidden" not in str(result)
+
+
+def test_response_trimming_keeps_gap_references_inside_retained_traces(monkeypatch):
+    xml = (
+        Path("tests/fixtures/project/opening-contacts.xml")
+        .read_bytes()
+        .replace(b'Type="Or"', b'Type="Unknown"')
+    )
+    structure, project = fixture(xml)
+    data = tools.OpeningAnalysisData.model_validate(analyze(structure, project))
+    assert any(e.gaps for e in data.evidence)
+    envelope = tools.OpeningAnalysisEnvelope(
+        ok=True, data=data, observed_at="now", stale=False, trace_id="fixture"
+    )
+    monkeypatch.setattr(tools, "PROJECT_RESPONSE_MAX_BYTES", 4500)
+    assert tools._fit_opening_analysis(envelope)
+    assert len(envelope.model_dump_json().encode()) <= 4500
+    assert "unmodeled_internal_flow" in data.warnings
+    assert not data.completeness.graph
+    for trace in data.evidence:
+        ids = {n.project_node_id for n in trace.nodes}
+        assert all(set(g.evidence_node_ids) <= ids and g.project_node_id in ids for g in trace.gaps)
+
+
+def test_old_trace_shape_remains_schema_compatible():
+    result = analyze()
+    for evidence in result["evidence"]:
+        del evidence["gaps"]
+        del evidence["gaps_omitted"]
+    data = tools.OpeningAnalysisData.model_validate(result)
+    assert all(not e.gaps and e.gaps_omitted == 0 for e in data.evidence)
+
+
+def test_nested_block_gap_uses_reached_block_metadata_not_containing_block():
+    xml = Path("tests/fixtures/project/opening-contacts.xml").read_bytes()
+    xml = xml.replace(
+        b'<C Type="Or" U="or">',
+        b'<C Type="Or" U="outer"><C Type="Unknown" U="or" Ref="' + CONTACT.encode() + b'">',
+    )
+    xml = xml.replace(b'<Co K="Q" U="or-output"/>', b'<Co K="Q" U="or-output"/></C>')
+    structure, project = fixture(xml)
+    result = analyze(structure, project)
+    gaps = [
+        g
+        for e in result["evidence"]
+        for g in e["gaps"]
+        if g["reason"] == "block_reference_projection_unavailable"
+    ]
+    assert gaps
+    assert all(g["node_kind"] == "block" and g["block_type"] == "Unknown" for g in gaps)
+    assert all(not g["rule_ids"] and g["reference_projection_rule_id"] is None for g in gaps)

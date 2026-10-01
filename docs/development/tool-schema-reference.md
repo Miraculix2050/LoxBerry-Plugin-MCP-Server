@@ -61,6 +61,12 @@ paths. Its schema separates monitor/item diagnostics, direct/link/caller provena
 connections, neutral findings, directed graph evidence, per-dimension completeness,
 omissions and optional state alignment. Unknown internal flow and bounded evidence
 never establish an absent connection; physical coverage is always `not_assessable`.
+Each directed trace includes additive `gaps` (20 per trace, 200 per call) and
+`gaps_omitted`. Fixed reasons distinguish `block_reference_projection_unavailable`
+from `parent_boundary_incomplete`. Gap node references refer to reached trace nodes;
+block/connector tokens are restricted to 64 ASCII identifier characters or null.
+Rule references describe available rules, not a resolution of the gap. No new
+internal-flow semantics or connector aliases are introduced.
 
 The full `loxone_describe_control` schema includes additive
 `capabilities.model.window_monitor_summary` collection counts and fixed diagnostics.
