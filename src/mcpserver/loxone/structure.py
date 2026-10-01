@@ -552,7 +552,7 @@ def _status_monitor_details(
     statuses_value = details.get("status")
     statuses: list[StatusMonitorStatus] = []
     if isinstance(statuses_value, Mapping):
-        for item in islice(statuses_value.values(), 256):
+        for item in statuses_value.values():
             if not isinstance(item, Mapping):
                 continue
             status_id, name, priority = item.get("id"), item.get("name"), item.get("prio")
@@ -841,7 +841,7 @@ def _controls(
         input_complete = input_complete and input_labels_valid
         if item.get("type") == "StatusMonitor" and (
             ("status" in details and not isinstance(raw_statuses, Mapping))
-            or (status_total is not None and len(status_monitor_statuses) < min(status_total, 256))
+            or (status_total is not None and len(status_monitor_statuses) < status_total)
             or len({s.status_id for s in status_monitor_statuses}) != len(status_monitor_statuses)
             or ("inputs" in details and not isinstance(raw_inputs, list))
             or not input_labels_valid

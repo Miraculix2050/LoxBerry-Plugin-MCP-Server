@@ -313,6 +313,28 @@ def test_oversized_format_is_omitted_with_length_evidence_not_invalid():
     assert descriptor.interpretation_status == "partial"
 
 
+def test_legacy_status_mapping_retains_valid_status_after_large_malformed_prefix():
+    statuses = {f"invalid-{i}": "malformed" for i in range(270)}
+    statuses["valid"] = {"id": 4, "name": "Retained", "prio": 0}
+    raw = {
+        "msInfo": {"serialNr": "serial"},
+        "controls": {
+            "monitor": {
+                "name": "Monitor",
+                "type": "StatusMonitor",
+                "states": {"inputStates": "input"},
+                "details": {"inputs": [], "status": statuses},
+            }
+        },
+    }
+    c = normalize_structure(raw, username="reader").controls[0]
+    assert len(c.status_monitor_statuses) == 1
+    assert c.status_monitor_statuses[0].status_id == 4
+    descriptor, _ = resolve(c, "inputStates")
+    assert descriptor.encoding[0].code == 4 and descriptor.encoding[0].label == "Retained"
+    assert descriptor.encoding_total == 271 and not descriptor.encoding_complete
+
+
 def test_enriched_mode_and_companion_labels_identify_their_sources():
     c = control("AlarmClock")
     s = replace(
