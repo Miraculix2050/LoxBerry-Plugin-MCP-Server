@@ -211,7 +211,8 @@ try {
         'loxone_list_rooms', 'loxone_get_room_snapshot',
         'loxone_list_categories', 'loxone_get_weather',
         'loxone_find_controls', 'loxone_describe_control', 'loxone_get_control_notes',
-        'loxone_get_state_semantics', 'loxone_get_states', 'loxone_list_global_metadata',
+        'loxone_read_controls', 'loxone_get_state_semantics',
+        'loxone_get_states', 'loxone_list_global_metadata',
         'loxone_analyze_opening_contacts',
         'loxone_get_skill_guide', 'loxone_list_event_history_sources', 'loxone_get_event_history'
     )
