@@ -128,6 +128,10 @@ _TEST_GROUPS: Final = (
             "tests/test_oauth.py",
         ),
     ),
+    (
+        ("tools/browser/**", "tests/js/chart-measurement.test.cjs"),
+        ("tests/test_chart_measurement.py",),
+    ),
     (("tests/js/**",), ("tests/test_explorer_behavior.py",)),
     (
         ("config/default-config.json", "src/mcpserver/config.py"),
