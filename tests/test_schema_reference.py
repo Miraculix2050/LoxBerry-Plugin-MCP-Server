@@ -4,6 +4,10 @@ import json
 import tomllib
 from pathlib import Path
 
+import pytest
+from mcp.server.fastmcp import FastMCP
+from pydantic import ValidationError
+
 from mcpserver.schema_reference import (
     REFERENCE_HTML_PATH,
     REFERENCE_JSON_PATH,
@@ -12,9 +16,52 @@ from mcpserver.schema_reference import (
     tool_schema_catalog,
     write_schema_reference,
 )
+from mcpserver.tools import register_observability_tools
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("limit,valid", [(1, True), (50, True), (0, False), (51, False)])
+async def test_observability_published_limit_matches_validation(limit: int, valid: bool) -> None:
+    server = FastMCP("observability-contract")
+    register_observability_tools(server, None, None)
+    published = next(
+        tool for tool in await server.list_tools() if tool.name == "loxone_analyze_observability"
+    )
+    reference = next(
+        tool
+        for tool in json.loads(schema_reference_json(VERSION))["tools"]
+        if tool["name"] == published.name
+    )
+    assert reference["inputSchema"] == published.inputSchema
+    bounds = published.inputSchema["properties"]["limit"]
+    assert bounds["minimum"] == 1
+    assert bounds["maximum"] == 50
+    assert bounds["default"] == 20
+    assert bounds["type"] == "integer"
+
+    tool = server._tool_manager.get_tool(published.name)
+    assert tool is not None
+    arguments = {
+        "target_identifier": "control",
+        "target_type": "runtime_control_uuid",
+        "direction": "upstream",
+        "start": "2026-09-01T00:00:00Z",
+        "end": "2026-09-02T00:00:00Z",
+        "limit": limit,
+    }
+    if valid:
+        assert tool.fn_metadata.arg_model.model_validate(arguments).limit == limit
+    else:
+        with pytest.raises(ValidationError) as error:
+            tool.fn_metadata.arg_model.model_validate(arguments)
+        assert error.value.errors()[0]["loc"] == ("limit",)
+        assert error.value.errors()[0]["type"] == (
+            "greater_than_equal" if limit == 0 else "less_than_equal"
+        )
+
 
 EXPECTED_TOOLS = {
     "loxone_analyze_opening_contacts",
