@@ -423,3 +423,23 @@ test('root action changes still remove old operation fields after valid draft ed
   assert.deepEqual(JSON.parse(h.byId('json').value), {control_uuid: 'visible-control', action: 'off'});
   assert.equal(h.calls().length, 0);
 });
+
+
+test('adding an object row focuses an enabled control when its first field is optional', async (t) => {
+  const tool = JSON.parse(JSON.stringify(compactReadTool));
+  tool.inputSchema.properties.targets.items.properties = {
+    state_names: {type: 'array', items: {type: 'string'}},
+    control_uuid: {type: 'string'},
+  };
+  const h = createHarness({tools: [tool]});
+  t.after(h.close);
+  await h.ready();
+  await h.click(h.byId('tools').querySelector('button'));
+  await h.click(h.byId('form').querySelector('.mcp-explorer-object-list > button'));
+  const entry = h.byId('form').querySelector('.mcp-explorer-list-entry');
+  const focused = entry.ownerDocument.activeElement;
+  assert.equal(entry.contains(focused), true);
+  assert.equal(focused.disabled, false);
+  assert.notEqual(focused.tagName, 'FIELDSET');
+  assert.equal(entry.querySelector('textarea').disabled, true);
+});

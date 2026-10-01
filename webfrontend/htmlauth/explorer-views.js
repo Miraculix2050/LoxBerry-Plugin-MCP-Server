@@ -347,10 +347,16 @@
         const refresh = (next, focusIndex) => {
           setField(name, true, next);
           renderSelectedTool();
-          if (focusIndex !== undefined) document.getElementById(fieldControlId(focusIndex))?.focus();
+          if (focusIndex !== undefined) {
+            const target = document.getElementById(fieldControlId(focusIndex));
+            (target?.tagName === 'FIELDSET'
+              ? target.querySelector('input:not(:disabled), select:not(:disabled), textarea:not(:disabled), button:not(:disabled)')
+              : target)?.focus();
+          }
         };
         rows.forEach((row, rowIndex) => {
           const entry = element('fieldset', {className: 'mcp-explorer-list-entry'});
+          entry.id = fieldControlId(fieldIndex + '-row-' + rowIndex);
           entry.disabled = !included;
           entry.append(element('legend', {text: name + ' ' + (rowIndex + 1)}));
           Object.entries(itemSchema.properties || {}).forEach(([childName, childSchema], childIndex) => {
@@ -376,7 +382,7 @@
         add.id = fieldControlId(fieldIndex + '-add');
         add.disabled = !included || rows.length >= Math.min(100, effective.maxItems ?? 100);
         add.addEventListener('click', () => refresh([...rows,
-          core.defaultArguments({...itemSchema, $defs: rootSchema.$defs})], fieldIndex + '-' + rows.length + '-0'));
+          core.defaultArguments({...itemSchema, $defs: rootSchema.$defs})], fieldIndex + '-row-' + rows.length));
         input.append(add);
       } else if (type === 'array' || type === 'object') {
         input = element('textarea', {rows: '4', spellcheck: 'false', 'aria-label': type === 'array' ? label('arrayHelp') : label('objectHelp')});
