@@ -39,6 +39,7 @@ runners and numeric raw reports outside the tracked checkout. The driver opens
 a disposable sibling page in the same authenticated browser context, measures
 one navigation to the caller's exact URL, and closes that page on success or
 failure, including redirects. It never installs scripts on the caller's page.
+Cross-origin redirects reject the measurement with a fixed error before sampling.
 Use a fresh context per fixture sample; for target samples retain the authorized
 authenticated context and record the warm-run policy. The sibling shares context
 authentication and HTTP cache, but does not copy sessionStorage history snapshots;

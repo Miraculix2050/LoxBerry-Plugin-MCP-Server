@@ -43,6 +43,9 @@ async function measurePage(page, {width, height, mobile, timeout}, url) {
       cdp = null;
     }
     await page.goto(url, {waitUntil: 'domcontentloaded', timeout});
+    if (new URL(page.url()).origin !== new URL(url).origin) {
+      throw new Error('Measurement navigation changed origin');
+    }
     if (cdp) baseline = await metrics().catch(() => null);
     let ready = true;
     try {

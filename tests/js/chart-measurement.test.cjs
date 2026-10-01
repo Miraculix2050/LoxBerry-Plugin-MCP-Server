@@ -103,7 +103,7 @@ test('driver validates viewport, missing metrics and trusted interaction accepta
   const originalWindow = global.window, originalDocument = global.document;
   try {
     for (const mode of ['supported', 'unsupported', 'viewport', 'metric_failure', 'no_thread_cpu',
-      'request_failure', 'untrusted', 'timed_out', 'redirect_failure']) {
+      'request_failure', 'untrusted', 'timed_out', 'redirect_failure', 'redirect_origin']) {
       const report = {first_content_ms: 10, dropped: 0, viewport: {width: 390, height: 844,
         visual_width: mode === 'viewport' ? 375 : 390, visual_height: 844, visual_scale: 1},
         requests: mode === 'request_failure' ? [{action: 'event_history_chart_query', status: 'failed'}] : [],
@@ -123,6 +123,7 @@ test('driver validates viewport, missing metrics and trusted interaction accepta
       }, detach: async () => {detached = true;}};
       let closed = false, initializerCount = 0;
       const target = {setViewportSize: async () => {},
+        url: () => mode === 'redirect_origin' ? 'https://redirect.example/auth' : 'https://fixture.example/chart',
         addInitScript: async () => {initializerCount++;},
         goto: async () => {
           if (mode === 'redirect_failure') throw new Error('Redirected navigation failed');
@@ -138,6 +139,11 @@ test('driver validates viewport, missing metrics and trusted interaction accepta
         context: () => ({newPage: async () => target})};
       if (mode === 'redirect_failure') {
         await assert.rejects(measure(page), /Redirected navigation failed/);
+        assert.equal(closed, true); assert.equal(detached, true);
+        continue;
+      }
+      if (mode === 'redirect_origin') {
+        await assert.rejects(measure(page), /Measurement navigation changed origin/);
         assert.equal(closed, true); assert.equal(detached, true);
         continue;
       }
