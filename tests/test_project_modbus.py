@@ -15,7 +15,7 @@ from mcpserver.loxone.project.models import ProjectError
 from mcpserver.loxone.project.parser import parse_project
 from mcpserver.loxone.project.query import ProjectQuery, ProjectQueryError
 from mcpserver.schema_reference import schema_reference_json
-from mcpserver.tools import ProjectModbusData, ProjectNodeData, ProjectNodeSummaryData
+from mcpserver.tools import ProjectModbusData, ProjectNodeData, ProjectSearchNodeSummaryData
 
 FIXTURES = Path(__file__).parent / "fixtures/project/modbus"
 
@@ -49,7 +49,7 @@ def test_public_original_shapes_and_typed_projection(fixture, count, transport):
     found = sensors(project)
     assert len(found) == count
     for summary in found:
-        projected = ProjectNodeSummaryData.model_validate(summary).modbus
+        projected = ProjectSearchNodeSummaryData.model_validate(summary).modbus
         assert projected is not None
         assert projected.ancestry_truncated
         detail = project.describe(
@@ -243,3 +243,20 @@ def test_generated_schema_contains_the_optional_typed_projection():
         fields = schema["$defs"]["ProjectModbusFieldData"]["properties"]
         assert fields["evidence_status"]["enum"] == ["explicit", "absent", "ambiguous", "invalid"]
         assert fields["occurrences"]["maxItems"] == 8
+
+
+def test_modbus_projection_does_not_expand_trace_or_observability():
+    project = query((FIXTURES / "tcp-gen24.xml").read_bytes())
+    node = project.resolve(sensors(project)[0]["project_node_id"], "project_node_id")
+    trace = project.trace(node, direction="downstream", max_depth=8, max_nodes=100)
+    observability = project.observable_controls(node, direction="both", max_depth=8, max_nodes=100)
+    assert "modbus" not in trace["start"]
+    assert all("modbus" not in item for item in trace["nodes"])
+    assert "modbus" not in observability["target"]
+    assert "modbus" not in json.dumps(trace)
+    assert "modbus" not in json.dumps(observability)
+    catalog = json.loads(schema_reference_json("test"))
+    for name in ("loxone_trace_project_logic", "loxone_analyze_observability"):
+        schema = next(t for t in catalog["tools"] if t["name"] == name)["outputSchema"]
+        assert "ProjectModbusData" not in schema["$defs"]
+        assert "modbus" not in schema["$defs"]["ProjectNodeSummaryData"]["properties"]

@@ -1154,6 +1154,11 @@ class ProjectNodeSummaryData(BaseModel):
     )
     runtime_control: ProjectRuntimeControlData | None = None
     knx: ProjectKnxSummaryData | None = None
+
+
+class ProjectSearchNodeSummaryData(ProjectNodeSummaryData):
+    """Search-only additive evidence, excluded from trace and observability contracts."""
+
     modbus: ProjectModbusData | None = None
 
 
@@ -1232,7 +1237,7 @@ class ProjectStatusData(BaseModel):
 
 
 class ProjectObjectPageData(BaseModel):
-    items: list[ProjectNodeSummaryData]
+    items: list[ProjectSearchNodeSummaryData]
     next_cursor: str | None
     truncated: bool = False
     truncation_reason: Literal["max_response_bytes"] | None = None

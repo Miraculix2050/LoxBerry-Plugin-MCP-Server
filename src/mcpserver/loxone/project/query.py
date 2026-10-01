@@ -176,7 +176,6 @@ class ProjectQuery:
                 if knx is not None
                 else None
             ),
-            "modbus": sensor_projection(node, self._nodes, self._containment_parents, 1),
         }
 
     def _detail(self, node: GraphNode, *, limit: int) -> dict[str, object]:
@@ -479,6 +478,7 @@ class ProjectQuery:
             ):
                 continue
             item = self._summary(node)
+            item["modbus"] = sensor_projection(node, self._nodes, self._containment_parents, 1)
             if needle is not None:
                 connector_key = next((value for key, value in node.attributes if key == "K"), None)
                 knx_values = (
