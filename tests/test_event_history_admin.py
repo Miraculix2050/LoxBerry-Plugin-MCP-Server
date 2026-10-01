@@ -764,6 +764,7 @@ def test_chart_prepare_serialization_diagnostics_do_not_echo_private_values(monk
         "uuid": SOURCE[0],
         "name": "private-control-name",
         "token": "private-auth-token",
+        "endpoint": "https://private-endpoint.example",
         "project": {"private-project-field": "private-project-value"},
     }
 
@@ -811,6 +812,7 @@ def test_chart_prepare_serialization_diagnostics_do_not_echo_private_values(monk
         SOURCE[0],
         "private-control-name",
         "private-auth-token",
+        "https://private-endpoint.example",
         "private-project-field",
         "private-project-value",
     ):

@@ -797,6 +797,35 @@ def test_chart_timing_cgi_forwards_only_fixed_numeric_diagnostics() -> None:
     )
 
 
+def test_chart_subphase_allowlist_rejects_private_and_non_numeric_values() -> None:
+    perl = shutil.which("perl")
+    assert perl is not None, "Perl is required for the complete deterministic gate"
+    source = (ROOT / "webfrontend/htmlauth/event_history.cgi").read_text(encoding="utf-8")
+    start = source.index("%chart_phase_timing = map")
+    end = source.index("keys %{$diagnostics};", start) + len("keys %{$diagnostics};")
+    fields = (
+        "selector_coordinator_wait_ms",
+        "selector_token_acquisition_ms",
+        "selector_session_establishment_ms",
+        "selector_structure_load_ms",
+    )
+    for rejected in ("private-token-endpoint-name-project-uuid", -1, None, {"private": 3}):
+        values = dict.fromkeys(fields, 1.25)
+        values[fields[0]] = rejected
+        values["private-uuid"] = 99
+        script = (
+            "use strict; use warnings; use JSON::PP qw(encode_json decode_json); "
+            "my %chart_phase_timing; my $diagnostics = decode_json(q|"
+            + json.dumps(values)
+            + "|); "
+            + source[start:end]
+            + " print encode_json(\\%chart_phase_timing);"
+        )
+        result = subprocess.run([perl, "-e", script], capture_output=True, text=True, check=True)
+        assert json.loads(result.stdout) == dict.fromkeys(fields[1:], 1.25)
+        assert "private" not in result.stdout + result.stderr
+
+
 def test_chart_delivery_timing_includes_successful_stdout_flush() -> None:
     perl = shutil.which("perl")
     assert perl is not None, "Perl is required for the complete deterministic gate"
