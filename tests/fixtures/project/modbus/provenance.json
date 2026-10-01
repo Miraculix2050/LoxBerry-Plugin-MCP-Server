@@ -1,0 +1,29 @@
+[
+  {
+    "fixture": "rtu-meter.xml",
+    "public_source": "https://www.loxone.com/eses/wp-content/uploads/sites/8/2016/10/kb_es_ejemplo_ModbusExtension_01.zip",
+    "source_sha256": "f33bcb17bd724dcf9c2fb85e6240e4c17976dd51e4fdd17976a5ea7cc4cb634e",
+    "object_versions": [
+      "115"
+    ],
+    "derivation": "Original C/Co containment and allowlisted numeric field pairs only; synthetic source IDs; names, notes, addresses, other attributes and unrelated nodes removed. No private source."
+  },
+  {
+    "fixture": "rtu-hvac.xml",
+    "public_source": "https://www.loxone.com/eses/wp-content/uploads/sites/8/2016/10/kb_es_ejemplo_ModbusExtension_02.zip",
+    "source_sha256": "e8d50eb232181d7193c2f865b80f5a6957d50eec515f551a586b6993f7f65c7f",
+    "object_versions": [
+      "115"
+    ],
+    "derivation": "Original C/Co containment and allowlisted numeric field pairs only; synthetic source IDs; names, notes, addresses, other attributes and unrelated nodes removed. No private source."
+  },
+  {
+    "fixture": "tcp-gen24.xml",
+    "public_source": "https://api.library.loxone.com/downloader/file/1561/Fronius%20Symo%20Gen24_V1.0.1.Loxone",
+    "source_sha256": "224a0384b68871f2f779404ac23883730ec8f44c451d0300c8e6dcc4904f3740",
+    "object_versions": [
+      "163"
+    ],
+    "derivation": "Original C/Co containment and allowlisted numeric field pairs only; synthetic source IDs; names, notes, addresses, other attributes and unrelated nodes removed. No private source."
+  }
+]

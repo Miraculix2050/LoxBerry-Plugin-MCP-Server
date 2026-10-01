@@ -60,7 +60,7 @@
         for (const field of ['weather_type_text', 'type', 'source_type', 'block_type', 'component', 'finding_type', 'strategy']) yield own(field);
         yield relationPreview(own('source'), own('target'));
         yield relationPreview(own('source_project_node_id'), own('target_project_node_id'));
-        for (const field of ['code', 'model_source_id', 'classification', 'kind',
+        for (const field of ['source_field', 'code', 'model_source_id', 'classification', 'kind',
           'interpretation', 'state_uuid', 'id', 'uuid', 'observed_at', 'at']) yield own(field);
         // Keep timestamp last so a descriptive label or identifier wins when available.
         yield own('timestamp');

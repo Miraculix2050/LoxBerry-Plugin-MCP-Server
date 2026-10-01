@@ -191,6 +191,38 @@ strukturellen Einfluss, nicht eine beobachtete historische Ursache. Ergebnisse s
 melden Abschneiden explizit; unbekannte Blocktypen und unaufgelöste Beziehungen bleiben ohne
 erfundene Semantik sichtbar. Ein Trace begrenzt unaufgelöste Beziehungen unabhängig und meldet
 dies über `unresolved_truncated`.
+Exakte `ModbusASensor`-Objekte ergänzen optionale, schreibgeschützte `modbus`-Evidenz in
+Projektsuche und Describe. Die Suche erfolgt weiter per `block_type`; es gibt keinen neuen
+Technologiefilter oder Analyse-Scope. Die Allowlist umfasst `ModbusAddress`, `ModbusCmd`,
+`ModbusDataType`, `ModbusPollingCycle`, `SourceValHigh`, `DestValHigh`; beobachtete
+`ModbusDev`-Vorfahren zeigen den roh konfigurierten `Channel`, `ModbusServer` zeigt `Timeout`,
+`Comm485` zeigt `RxTimeout`, `Baudrate`, `Databits`, `Parity`, `Pause`, `Protocol`.
+Comm485 wird nur als beobachteter Quelltyp dieser Ancestry genannt und für sich nicht als
+Modbus klassifiziert. `source_read` folgt dem exakten Sensortyp; Containment ist Hierarchie,
+keine Signalkausalität. Bestehende Connector- und Beziehungsevidenz bleibt in Describe verfügbar.
+
+Jedes Feld enthält `explicit`, `absent`, `ambiguous` oder `invalid`, Quellfeld,
+Rohvorkommen und opake Modellquellen-/Projektknoten-Provenienz. Widersprüchliche Werte haben
+keinen einzelnen `raw_value`; identische doppelte Vorkommen bleiben sichtbar. Numerische
+Quellstrings sind auf 64 Zeichen und acht Vorkommen je Feld begrenzt, mit `occurrences_omitted`.
+Fehlerhafte oder überlange Strings bleiben interne Quellevidenz; öffentliche Vorkommen markieren
+sie als ungültig und lassen ihren Inhalt aus. Einheiten, Enums und Datentypsemantik bleiben
+`unresolved`. Channel ist keine belegte Unit-ID. Defaults, Skalierungsformeln, Bit-/Wortreihenfolge,
+Actor-Unterstützung, Laufzeitfrische oder erfolgreiche Transaktionen werden nicht abgeleitet.
+Konfiguriertes Polling ist statische Evidenz. Die Suche zeigt höchstens einen Vorfahren,
+Describe höchstens `min(limit, 16)`, mit `ancestry_status` und `ancestry_truncated`.
+Nicht unterstützte Modbus-Typen erhalten eine Describe-Diagnose.
+Describe führt begrenzte Parser-Diagnosen beobachteter Vorfahren mit und begrenzt den
+strukturierten Envelope auf 65.536 UTF-8-Bytes: Die Ancestry wird mit explizitem Kürzungsflag
+verkürzt; passt die verbleibende Beschreibung nicht, folgt `response_too_large`.
+`coverage_complete=false` vermeidet ausdrücklich eine vollständige Installationsinventur;
+Registernummern, Namen und
+quellenübergreifende IDs führen keine Vorkommen zusammen. Bestehende Identitäts-, Berechtigungs-,
+Marker-, Cursor- und Antwortbyte-Prüfungen gelten weiter. Der Explorer zeigt die optionalen
+typisierten Felder einschließlich Quellfeld-Labels in Arrays. Bereinigte öffentliche historische
+RTU- und Hersteller-TCP-Fixtures belegen nur die Quellform; Live-Sensor-/Gerätekompatibilität
+ist nicht verifiziert (Issues #350/#352).
+
 Bestätigte KNX/EIB-Projektobjekte ergänzen begrenzte, quellengestützte Metadaten für Buslinien,
 Endpunkte und KNX-Logikblöcke. Die Endpunktrichtung lautet `bus_to_loxone` oder
 `loxone_to_bus`; sie ist keine Aussage über die physische Gerätefunktion. Gruppenadressen

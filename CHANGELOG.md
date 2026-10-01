@@ -9,6 +9,11 @@ extracted from the matching version heading.
   and configuration upgrades. Report visible changes with unconfirmed durability
   without automatic Admin compensation or service changes (#161).
 
+- Add read-only, allowlisted raw `ModbusASensor` project evidence with explicit,
+  absent, ambiguous and invalid values, bounded source occurrences and observed
+  device/transport ancestry. Preserve authorization and KNX contracts; datatype,
+  unit-ID, actor and runtime semantics remain unproven (#352, investigation #350).
+
 - Show `source_type` in Tool Explorer array item previews before timestamp fallback.
 
 - Clarify structure overview definition counts versus synthetic unassigned buckets
