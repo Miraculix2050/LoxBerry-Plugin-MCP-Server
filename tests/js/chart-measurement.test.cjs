@@ -100,18 +100,14 @@ test('fixture serves real local scripts and rejects writes and arbitrary paths',
   } finally {await new Promise((resolve) => server.close(resolve));}
 });
 test('driver validates viewport, missing metrics and trusted interaction acceptance', async () => {
-  const originalWindow = global.window, originalDocument = global.document,
-    originalStorage = global.sessionStorage;
+  const originalWindow = global.window, originalDocument = global.document;
   try {
     for (const mode of ['supported', 'unsupported', 'viewport', 'metric_failure', 'no_thread_cpu',
-      'request_failure', 'untrusted', 'timed_out']) {
+      'request_failure', 'untrusted', 'timed_out', 'redirect_failure']) {
       const report = {first_content_ms: 10, dropped: 0, viewport: {width: 390, height: 844,
         visual_width: mode === 'viewport' ? 375 : 390, visual_height: 844, visual_scale: 1},
         requests: mode === 'request_failure' ? [{action: 'event_history_chart_query', status: 'failed'}] : [],
         interactions: [], cpu: null, heap: null};
-      const stored = new Map();
-      global.sessionStorage = {setItem: (key, value) => stored.set(key, value),
-        removeItem: (key) => stored.delete(key), getItem: (key) => stored.get(key) ?? null};
       global.window = {chartProbe: {report: () => report, stop: () => report}};
       global.document = {getElementById: () => ({textContent: ''})};
       let calls = 0, detached = false;
@@ -125,15 +121,26 @@ test('driver validates viewport, missing metrics and trusted interaction accepta
           {name: 'JSHeapUsedSize', value: 1234}, {name: 'JSHeapTotalSize', value: 5678},
           {name: 'private-project', value: 99}]};
       }, detach: async () => {detached = true;}};
-      let initContent;
-      const page = {setViewportSize: async () => {},
-        addInitScript: async ({content}) => {initContent = content;}, reload: async () => {},
+      let closed = false, initializerCount = 0;
+      const target = {setViewportSize: async () => {},
+        addInitScript: async () => {initializerCount++;},
+        goto: async () => {
+          if (mode === 'redirect_failure') throw new Error('Redirected navigation failed');
+        }, close: async () => {closed = true;},
         context: () => ({newCDPSession: async () => {
           if (mode === 'unsupported') throw new Error('private-token'); return cdp;
         }}), waitForFunction: async () => {}, evaluate: async (fn, arg) => fn(arg),
         locator: (id) => ({click: async () => report.interactions.push({kind: id.includes('zoom') ? 'zoom' : 'pan',
           trusted: mode !== 'untrusted', visible: true,
           status: mode === 'timed_out' ? 'pending' : 'completed', render_ms: 32})})};
+      // The caller has no mutation APIs: all instrumentation must use its disposable sibling.
+      const page = {url: () => 'https://fixture.example/chart',
+        context: () => ({newPage: async () => target})};
+      if (mode === 'redirect_failure') {
+        await assert.rejects(measure(page), /Redirected navigation failed/);
+        assert.equal(closed, true); assert.equal(detached, true);
+        continue;
+      }
       const output = await measure(page);
       assert.equal(output.accepted, !['viewport', 'request_failure', 'untrusted', 'timed_out'].includes(mode));
       assert.equal(output.cpu === null, ['unsupported', 'metric_failure', 'no_thread_cpu'].includes(mode));
@@ -142,37 +149,11 @@ test('driver validates viewport, missing metrics and trusted interaction accepta
       }
       assert.equal(detached, mode !== 'unsupported');
       assert.ok(!JSON.stringify(output).includes('private'));
-      assert.equal(stored.size, 0);
-      if (mode === 'supported') {
-        const key = page[Symbol.for('loxberry.chart.measurement.installed')];
-        const first = new JSDOM('', {url: 'https://fixture.example', runScripts: 'outside-only'}).window;
-        first.fetch = async () => {};
-        first.sessionStorage.setItem(key, 'armed');
-        first.eval(initContent);
-        assert.ok(first.chartProbe);
-        assert.equal(first.sessionStorage.getItem(key), null);
-        const originalFetch = first.fetch;
-        first.chartProbe.stop();
-        assert.notEqual(first.fetch, originalFetch);
-        const afterStop = first.fetch;
-        first.eval(initContent);
-        assert.equal(first.fetch, afterStop);
-        const next = new JSDOM('', {url: 'https://fixture.example', runScripts: 'outside-only'}).window;
-        next.fetch = async () => {};
-        const nextFetch = next.fetch;
-        next.eval(initContent);
-        assert.equal(next.chartProbe, undefined);
-        assert.equal(next.fetch, nextFetch);
-        const opaque = new JSDOM('', {runScripts: 'outside-only'}).window;
-        opaque.eval(initContent);
-        assert.equal(opaque.chartProbe, undefined);
-        first.close(); next.close(); opaque.close();
-      }
+      assert.equal(closed, true); assert.equal(initializerCount, 1);
     }
     assert.ok(bundle().startsWith('async (page)'));
     await assert.rejects(measure({}, {timeout: 120001}), /Invalid measurement bounds/);
   } finally {
     global.window = originalWindow; global.document = originalDocument;
-    global.sessionStorage = originalStorage;
   }
 });

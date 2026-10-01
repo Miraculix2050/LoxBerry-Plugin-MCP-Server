@@ -35,14 +35,17 @@ fs.writeFileSync('local-chart-runner.js', bundle(), 'utf8');
 
 Pass that file to the provider's Playwright code runner (`filename`), or its
 contents as the function to execute with the existing page. Keep generated
-runners and numeric raw reports outside the tracked checkout. Reloading is part
-of each measurement. Use a fresh context per fixture sample; for target samples,
-retain the authorized authenticated context and record the warm-run policy.
-The registered initializer is gated by a per-page development activation key,
-consumed before installing the probe and removed again on cleanup. Later
-navigation/reload does not reinstall the probe until another measurement arms
-it. After upgrading from an earlier, ungated harness version, close its old
-measurement pages first; Playwright cannot unregister their old initializer.
+runners and numeric raw reports outside the tracked checkout. The driver opens
+a disposable sibling page in the same authenticated browser context, measures
+one navigation to the caller's exact URL, and closes that page on success or
+failure, including redirects. It never installs scripts on the caller's page.
+Use a fresh context per fixture sample; for target samples retain the authorized
+authenticated context and record the warm-run policy. The sibling shares context
+authentication and HTTP cache, but does not copy sessionStorage history snapshots;
+the shipped chart starts with its normal rolling one-day range. This is a fresh
+tab navigation, not an in-place reload with a retained chart snapshot.
+After upgrading from older harness versions, close their old measurement pages;
+Playwright cannot unregister an initializer they already installed there.
 
 For LoxBerry-Test, first acquire the normal shared test reservation, use an
 already authorized Admin browser page with one to four selected sources, and
@@ -50,8 +53,8 @@ record deployed revision, browser version, source count and sparse/dense selecti
 policy without source identities. Run this read-only routine against that page.
 Do not export authentication state or URLs containing credentials. Do not create,
 alter or delete histories for this measurement. Release the reservation afterward.
-The harness clicks Zoom in and Previous once; it leaves that page at the resulting
-range. Restore the intended range manually after measuring.
+The harness clicks Zoom in and Previous once on the disposable page. The caller's
+selected range and page remain unchanged.
 
 ## Meaning and acceptance
 
@@ -108,7 +111,7 @@ visual scale 1 and DPR 1. Each row is one reload with Zoom in then Previous.
 These are harness verification samples, not LoxBerry or Miniserver benchmarks.
 The shipped assets were from master `5621150cd3c6fbc03e2498467c11825c0f311e9c`;
 the development probe/driver used the coverage-fix revision
-`e9323ba95fa018f5c1a4a4e9ab1f758f61d4c5da`, before the later one-shot initializer
+`e9323ba95fa018f5c1a4a4e9ab1f758f61d4c5da`, before the later disposable-page
 and Changed-selection hardening. The table retains that historical attribution;
 later lifecycle checks are not additional benchmark samples.
 These corrected runs replace the withdrawn pre-review samples: those fixtures
@@ -149,6 +152,7 @@ draw visibility/range gating, delayed JSON completion, privacy sentinels, fixtur
 limits/read-only routing, exact viewport acceptance and absent/failing/thread-CPU
 metrics. `python tools/test.py --profile changed` includes this suite through
 `tests/test_chart_measurement.py`. Full CI remains the final project gate.
-Initializer tests also verify consumption, subsequent navigation, restored fetch
-and opaque-origin inactivity. A local Chromium fixture smoke confirmed acceptance
-followed by a quiet navigation with no probe, namespace or activation keys.
+Lifecycle tests verify disposable-page closure for successful, failed and
+redirect-failed navigation, without invoking mutation APIs on the caller page.
+An additional local Chromium smoke exercises A→B→A: a redirected measurement is
+rejected and closed, and returning the caller to A has no probe or namespace.
