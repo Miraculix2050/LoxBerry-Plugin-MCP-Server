@@ -167,6 +167,7 @@ _TEST_GROUPS: Final = (
             "tests/test_loxone_events.py",
             "tests/test_loxone_security.py",
             "tests/test_loxone_structure.py",
+            "tests/test_state_semantics.py",
             "tests/test_loxone_target.py",
             "tests/test_tools.py",
         ),

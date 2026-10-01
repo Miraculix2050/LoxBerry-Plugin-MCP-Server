@@ -211,7 +211,7 @@ try {
         'loxone_list_rooms', 'loxone_get_room_snapshot',
         'loxone_list_categories', 'loxone_get_weather',
         'loxone_find_controls', 'loxone_describe_control', 'loxone_get_control_notes',
-        'loxone_get_states', 'loxone_list_global_metadata',
+        'loxone_get_state_semantics', 'loxone_get_states', 'loxone_list_global_metadata',
         'loxone_analyze_opening_contacts',
         'loxone_get_skill_guide', 'loxone_list_event_history_sources', 'loxone_get_event_history'
     )
@@ -284,7 +284,7 @@ try {
     $script:nextId = 4
     $skillGuide = Invoke-ReadTool (Get-NextId) 'loxone_get_skill_guide' @{}
     if ($skillGuide.data.name -ne 'using-loxberry-mcp' -or
-        $skillGuide.data.revision -ne 41 -or
+        $skillGuide.data.revision -ne 42 -or
         $skillGuide.data.media_type -ne 'text/markdown' -or
         $skillGuide.data.content -ne $skillMarkdown) {
         throw 'MCP skill guide tool differs from the canonical resource.'
@@ -351,6 +351,31 @@ try {
     $stateUuid = @($description.data.states | ForEach-Object { $_.uuid }) | Select-Object -First 1
     if (-not $stateUuid) { throw 'The selected visible control has no readable state.' }
     [void](Invoke-ReadTool (Get-NextId) 'loxone_get_states' @{ state_uuids = @($stateUuid) })
+
+    $stateName = [string]@($description.data.states | Select-Object -First 1)[0].name
+    $semantics = Invoke-ReadTool (Get-NextId) 'loxone_get_state_semantics' @{
+        control_uuid = $visibleUuid; state_names = @($stateName)
+    }
+    $semanticItems = @($semantics.data.items)
+    if ($semantics.data.control_uuid -ne $visibleUuid -or
+        $semantics.data.returned -ne 1 -or $semantics.data.total -ne 1 -or
+        -not $semantics.data.complete -or $semantics.data.truncated -or
+        $semanticItems.Count -ne 1 -or $semanticItems[0].uuid -ne $stateUuid -or
+        $semanticItems[0].name -ne $stateName -or
+        $semanticItems[0].quality.freshness -notin @('current', 'stale', 'unknown', 'unavailable') -or
+        $semanticItems[0].semantics.interpretation_status -notin @('known', 'partial', 'unknown', 'invalid') -or
+        @($semanticItems[0].semantics.sources).Count -gt 8) {
+        throw 'State semantics did not preserve the bounded identity/quality contract.'
+    }
+    if ($hiddenUuid) {
+        $hiddenSemantics = Invoke-ToolEnvelope (Get-NextId) 'loxone_get_state_semantics' @{
+            control_uuid = $hiddenUuid
+        }
+        if ($hiddenSemantics.ok -or $hiddenSemantics.data.error -ne 'not_found') {
+            throw 'State semantics exposed a hidden control.'
+        }
+    }
+    Write-Output 'mcp_state_semantics=pass'
 
     if ($ReadFeatureAcceptance) {
         $roomSnapshot = $null

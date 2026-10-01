@@ -484,6 +484,7 @@ def test_exact_default_read_only_tools_are_published() -> None:
         "loxone_find_controls",
         "loxone_describe_control",
         "loxone_get_control_notes",
+        "loxone_get_state_semantics",
         "loxone_get_states",
         "loxone_list_event_history_sources",
         "loxone_get_event_history",
