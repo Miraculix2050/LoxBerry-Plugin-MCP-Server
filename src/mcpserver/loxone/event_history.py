@@ -1487,8 +1487,6 @@ class EventHistoryMonitor:
 
         token = None
         session = None
-        if timing is not None:
-            timing["selector_coordinator_wait_ms"] = 0.0
 
         async def authenticate(operation: Callable[[], Awaitable[_T]], phase: str) -> _T:
             queued = time.perf_counter_ns() if timing is not None else 0
@@ -1535,6 +1533,8 @@ class EventHistoryMonitor:
                 ),
                 timeout_seconds=self.config.connection_timeout,
             )
+            if timing is not None:
+                timing["selector_coordinator_wait_ms"] = 0.0
             auth_wait_deadline = time.monotonic() + _ADMIN_AUTH_BUSY_WAIT_SECONDS
             token = await authenticate(
                 partial(_acquire_token, client, username, password), "token_acquisition"

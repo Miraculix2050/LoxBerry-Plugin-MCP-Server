@@ -1122,7 +1122,16 @@ async def test_monitor_preserves_unsupported_value_reason_during_backoff(
 @pytest.mark.parametrize("coordinated", [False, True])
 @pytest.mark.parametrize(
     "failure",
-    [None, "token_acquisition", "session_establishment", "structure_load", "wait", "cancel"],
+    [
+        None,
+        "credentials",
+        "client",
+        "token_acquisition",
+        "session_establishment",
+        "structure_load",
+        "wait",
+        "cancel",
+    ],
 )
 async def test_admin_structure_numeric_subphases(tmp_path, monkeypatch, coordinated, failure):
     from types import SimpleNamespace
@@ -1168,6 +1177,7 @@ async def test_admin_structure_numeric_subphases(tmp_path, monkeypatch, coordina
 
     class Credentials:
         async def _credentials(self):
+            fail("credentials")
             return "private-name", "private-password"
 
     class Coordinator:
@@ -1187,7 +1197,12 @@ async def test_admin_structure_numeric_subphases(tmp_path, monkeypatch, coordina
             time=time.time,
         ),
     )
-    monkeypatch.setattr("mcpserver.loxone.client.LoxoneClient", lambda *_a, **_kw: Client())
+
+    def client(*_a, **_kw):
+        fail("client")
+        return Client()
+
+    monkeypatch.setattr("mcpserver.loxone.client.LoxoneClient", client)
     monitor = EventHistoryMonitor(
         PluginConfig(loxone_endpoint="https://private-endpoint.example"),
         EventHistoryStore(
@@ -1209,7 +1224,9 @@ async def test_admin_structure_numeric_subphases(tmp_path, monkeypatch, coordina
     else:
         await monitor.visible_structure(timing=timing)
     expected = {"selector_coordinator_wait_ms": 0.0}
-    if effective_failure == "wait":
+    if effective_failure in {"credentials", "client"}:
+        expected = {}
+    elif effective_failure == "wait":
         expected["selector_coordinator_wait_ms"] = 13.0
     else:
         expected["selector_token_acquisition_ms"] = 3.0
@@ -1225,6 +1242,6 @@ async def test_admin_structure_numeric_subphases(tmp_path, monkeypatch, coordina
     assert "private" not in repr(timing)
     assert cleaned == (
         []
-        if effective_failure in {"wait", "token_acquisition"}
+        if effective_failure in {"credentials", "client", "wait", "token_acquisition"}
         else (["token"] if effective_failure == "session_establishment" else ["session", "token"])
     )
