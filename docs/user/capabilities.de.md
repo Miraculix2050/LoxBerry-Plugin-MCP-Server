@@ -158,7 +158,7 @@ Kontaktrollen aus Namen, Kategorien oder Raumzahlen ab.
 
 Der Server liest sichtbare Räume, Kategorien, Controls und Zustände. Optional sind begrenzte Historie, Statistiken, maskierte LoxBerry-Diagnosen sowie dokumentierte, typabhängige Aktionen für sichtbare Gen.-1-Controls verfügbar.
 
-Für aktuelle Werte nach der Suche `loxone_describe_control(view="state_refs")` verwenden. Die Ansicht liefert nur Control-Identität, Sichtbarkeit und die vollständige normalisierte `states`-Liste mit Namen und UUIDs, ohne Raum-/Kategorie-Kontext, Fähigkeiten, Statistiken, Historie, Darstellung oder Beziehungen. Sie lädt die nutzergefilterte Struktur neu und liefert bei fehlgeschlagener Aktualisierung einen Fehler statt zwischengespeicherter Referenzen. `stale` kennzeichnet einen getrennten Ereignisstream; `observed_at` ist der Beschreibungszeitpunkt, kein Messzeitpunkt eines State-Werts. Nur benötigte UUIDs auswählen, Duplikate entfernen und `loxone_get_states` in Gruppen von höchstens 100 aufrufen; bei leerer Auswahl keinen Werte-Read ausführen. Für versteckte Controls bleibt `include_hidden=true` sowohl bei der Diagnose als auch beim Werte-Read erforderlich. `history_targets` dient der Historien-/Statistikauswahl, `operation_targets` der Bedienvorbereitung und `full` der weiterführenden Diagnose.
+Für bekannte sichtbare UUIDs bevorzugt `loxone_read_controls` für Identität und aktuelle Werte in einem Call nutzen, wie unten beschrieben. Für reine Referenzauswahl, explizite Diagnose versteckter Controls oder Server ohne dieses Tool nach der Suche `loxone_describe_control(view="state_refs")` verwenden. Die Ansicht liefert nur Control-Identität, Sichtbarkeit und die vollständige normalisierte `states`-Liste mit Namen und UUIDs, ohne Raum-/Kategorie-Kontext, Fähigkeiten, Statistiken, Historie, Darstellung oder Beziehungen. Sie lädt die nutzergefilterte Struktur neu und liefert bei fehlgeschlagener Aktualisierung einen Fehler statt zwischengespeicherter Referenzen. `stale` kennzeichnet einen getrennten Ereignisstream; `observed_at` ist der Beschreibungszeitpunkt, kein Messzeitpunkt eines State-Werts. Nur benötigte UUIDs auswählen, Duplikate entfernen und `loxone_get_states` in Gruppen von höchstens 100 aufrufen; bei leerer Auswahl keinen Werte-Read ausführen. Für versteckte Controls bleibt `include_hidden=true` sowohl bei der Diagnose als auch beim Werte-Read erforderlich. `history_targets` dient der Historien-/Statistikauswahl, `operation_targets` der Bedienvorbereitung und `full` der weiterführenden Diagnose.
 
 Nach der Suche mit `loxone_find_controls` kann `loxone_describe_control` mit `view="history_targets"` nur die Control-Identität, State-Namen und -UUIDs, das Kennzeichen für native Control-Historie sowie IDs und Metadaten beworbener Statistikserien liefern. Der Standardwert `view="full"` behält die ausführliche Antwort bei. `native_statistics_truncated=true` in der kompakten Ansicht bedeutet, dass mehr als 128 gültige StatisticV2-Serien gefunden und einige ausgelassen wurden. Ein aufgeführtes Ziel belegt weder eine lokale Ereignisaufzeichnung noch die Abdeckung eines angefragten Zeitraums durch native Historie oder Statistik; dafür ist die jeweilige Historienantwort zu prüfen.
 
@@ -303,6 +303,38 @@ Kategorien enthält, und anschließend `loxone_find_controls` nur für den
 gewählten Raum, die Kategorie oder den Typ verwenden. Die gezielten Aufrufe
 bleiben nötig, wenn einzelne Controls, Beschreibungen oder aktuelle Zustände
 benötigt werden.
+
+## Kompakte Reads bekannter Controls
+
+Nutze `loxone_read_controls`, wenn sichtbare Control-UUIDs bereits bekannt sind;
+ermittle sie sonst zuerst mit `loxone_find_controls`. Beispiel:
+
+```json
+{"targets":[{"control_uuid":"<visible-control-uuid>","state_names":["value"]}]}
+```
+
+Die Antwort verbindet `identity` (Name, Typ, Sichtbarkeit, Raum und Kategorie) mit
+benannten `values` (UUID, Rohwert, Freshness und Beobachtungszeit) in einem Call.
+Ohne `state_names` werden alle States des ausgewählten Controls gelesen. Namen
+müssen exakt passen. Erlaubt sind 1–25 eindeutige Controls und insgesamt höchstens
+100 benannte States; Identifier/Namen sind auf 128 Zeichen begrenzt. Aliase zählen
+einzeln. Versteckte/unbekannte Controls oder unbekannte State-Namen weisen den
+gesamten Batch zurück.
+
+`include_semantics=true` ergänzt optional dasselbe Evidenz- und Qualitätsmodell
+wie `loxone_get_state_semantics`. Beziehungen, Notizen, Historie, Statistiken,
+Aktionen und Projektdaten werden nicht expandiert. Bestehende Detailtools bleiben
+verfügbar. `complete` und angeforderte/zurückgegebene Anzahlen beschreiben die
+Auslieferung der Auswahl einschließlich unverfügbarer oder veralteter Werte;
+sie beweisen weder Aktualität noch vollständige Semantikkenntnis. Semantikmetadaten
+besitzen eigene Completeness-Felder. Die strukturierte Antwort ist auf 64 KiB
+begrenzt; `response_too_large` liefert keine Teilwerte. Teile die Targets auf oder
+wähle weniger States.
+
+Gegenüber vollständigen Beschreibungen sinkt die Antwortgröße bei Controls mit
+vielen Beziehungen deutlich. Für ein einzelnes kleines Control kann
+`describe_control(view="state_refs")` plus `get_states` weniger Bytes benötigen,
+braucht aber weiterhin zwei Calls.
 
 ## Grenzen
 

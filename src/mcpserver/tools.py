@@ -555,6 +555,51 @@ class StateSemanticsPageData(BaseModel):
     complete: bool
 
 
+class ControlReadTarget(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    control_uuid: str = Field(
+        min_length=1, max_length=128, strict=True, description="Exact known visible control UUID."
+    )
+    state_names: list[Annotated[str, Field(min_length=1, max_length=128, strict=True)]] | None = (
+        Field(
+            default=None,
+            min_length=1,
+            max_length=100,
+            description="Unique exact state names; omit to select all normalized references.",
+        )
+    )
+
+
+class CompactStateData(BaseModel):
+    name: str
+    uuid: str
+    value: JsonValue
+    freshness: str
+    observed_at: str | None
+
+
+class ControlReadItemData(BaseModel):
+    identity: ControlSummaryData
+    values: list[CompactStateData] = Field(max_length=100)
+    semantics: list[StateSemanticsItemData] | None = Field(default=None, max_length=100)
+
+
+class ControlsReadData(BaseModel):
+    items: list[ControlReadItemData] = Field(max_length=25)
+    requested_controls: int
+    returned_controls: int
+    requested_states: int
+    returned_states: int
+    complete: bool
+    truncated: bool
+    omitted_sections: list[
+        Literal[
+            "relationships", "notes", "history", "statistics", "actions", "project", "semantics"
+        ]
+    ]
+
+
 class RoomSnapshotItemData(BaseModel):
     control: ControlSummaryData
     state: NamedStateData
@@ -1523,6 +1568,10 @@ class StatesEnvelope(ToolEnvelope):
 
 class StateSemanticsEnvelope(ToolEnvelope):
     data: StateSemanticsPageData | ErrorData
+
+
+class ControlsReadEnvelope(ToolEnvelope):
+    data: ControlsReadData | ErrorData
 
 
 class RoomSnapshotEnvelope(ToolEnvelope):
@@ -3198,6 +3247,52 @@ def _observability_recommendation(
     }
 
 
+def _semantic_state_items(
+    runtime: LoxoneRuntime,
+    snapshot: RuntimeSnapshot,
+    control: Control,
+    page_refs: tuple[tuple[str, str], ...],
+) -> tuple[list[dict[str, Any]], bool]:
+    """Read selected and current companion states once using the shared resolver."""
+    needed = {uuid for _name, uuid in page_refs}
+    companion_names = (
+        {"zones", "entryList"} if control.control_type in {"Irrigation", "AlarmClock"} else set()
+    )
+    needed.update(uuid for name, uuid in control.state_uuids if name in companion_names)
+    records = {uuid: runtime.state(snapshot, uuid) for uuid in needed}
+    companions = {
+        name: records[uuid].value
+        for name, uuid in control.state_uuids
+        if name in companion_names and records[uuid].freshness is Freshness.CURRENT
+    }
+    resolver = StateSemanticsResolver()
+    items: list[dict[str, Any]] = []
+    for name, uuid in page_refs:
+        record = records[uuid]
+        semantics, semantic_value = resolver.resolve(
+            snapshot.structure, control, name, record.value, companions
+        )
+        items.append(
+            {
+                "name": name,
+                "uuid": uuid,
+                "value": record.value,
+                "semantic_value": semantic_value,
+                "quality": {
+                    "availability": "available"
+                    if record.value is not None
+                    else "unavailable"
+                    if record.freshness is Freshness.UNAVAILABLE
+                    else "unknown",
+                    "freshness": record.freshness.value,
+                    "observed_at": _state_observed_at(record),
+                },
+                "semantics": semantics,
+            }
+        )
+    return items, any(records[uuid].freshness is not Freshness.CURRENT for _, uuid in page_refs)
+
+
 def _state_payload(
     runtime: LoxoneRuntime,
     snapshot: RuntimeSnapshot,
@@ -4504,6 +4599,148 @@ def register_read_tools(
             return _operation_error(ControlNotesEnvelope, exc, trace_id=trace_id)
 
     @server.tool(
+        name="loxone_read_controls",
+        description=(
+            "Read compact identity and cached values for 1 to 25 known visible control UUIDs. "
+            "Select exact state names or omit to read all; at most 100 named states and 64 KiB "
+            "per response. Optional semantics reuses the state-semantics evidence model. "
+            "All targets are validated atomically against one fresh visible snapshot."
+        ),
+        annotations=annotations,
+        structured_output=True,
+    )
+    async def read_controls(
+        targets: Annotated[
+            list[ControlReadTarget],
+            Field(
+                min_length=1,
+                max_length=25,
+                description="Unique visible control targets, at most 100 named states total.",
+            ),
+        ],
+        include_semantics: Annotated[
+            bool,
+            Field(
+                description="Include the existing semantic evidence and observation-quality model."
+            ),
+        ] = False,
+    ) -> ControlsReadEnvelope:
+        if (
+            not 1 <= len(targets) <= 25
+            or len({target.control_uuid for target in targets}) != len(targets)
+            or any(
+                target.state_names is not None
+                and len(set(target.state_names)) != len(target.state_names)
+                for target in targets
+            )
+        ):
+            return _error(ControlsReadEnvelope, "invalid_input", "Targets and names must be unique")
+        try:
+            _, snapshot = await _snapshot(runtime, fresh_visibility=True)
+            visible = {c.uuid: c for c in _visible_controls(snapshot.structure)}
+            selected: list[tuple[Control, tuple[tuple[str, str], ...]]] = []
+            # Validate the complete batch before reading any cached values. Hidden and
+            # absent targets have the same error, independent of their input position.
+            for target in targets:
+                control = visible.get(target.control_uuid)
+                if control is None:
+                    return _error(
+                        ControlsReadEnvelope, "not_found", "One or more targets are not accessible"
+                    )
+                by_name = dict(control.state_uuids)
+                if target.state_names is not None:
+                    if any(name not in by_name for name in target.state_names):
+                        return _error(
+                            ControlsReadEnvelope,
+                            "not_found",
+                            "One or more targets are not accessible",
+                        )
+                    names = tuple((name, by_name[name]) for name in target.state_names)
+                else:
+                    names = control.state_uuids
+                selected.append((control, names))
+            count = sum(len(refs) for _, refs in selected)
+            # Count named references, including aliases: this bounds response rows
+            # even when many names reference the same state UUID.
+            if count > 100:
+                return _error(
+                    ControlsReadEnvelope, "invalid_input", "Select at most 100 named states"
+                )
+            if runtime is None:  # pragma: no cover - _snapshot rejects this
+                raise RuntimeUnavailable("the service is not configured")
+            items: list[dict[str, Any]] = []
+            stale = not snapshot.connected
+            for control, refs in selected:
+                semantics = None
+                if include_semantics:
+                    semantics, item_stale = _semantic_state_items(runtime, snapshot, control, refs)
+                    values = [
+                        {
+                            "name": item["name"],
+                            "uuid": item["uuid"],
+                            "value": item["value"],
+                            "freshness": item["quality"]["freshness"],
+                            "observed_at": item["quality"]["observed_at"],
+                        }
+                        for item in semantics
+                    ]
+                    stale = stale or item_stale
+                else:
+                    records = {uuid: runtime.state(snapshot, uuid) for uuid in {u for _, u in refs}}
+                    values = [
+                        {
+                            "name": name,
+                            "uuid": uuid,
+                            "value": records[uuid].value,
+                            "freshness": records[uuid].freshness.value,
+                            "observed_at": _state_observed_at(records[uuid]),
+                        }
+                        for name, uuid in refs
+                    ]
+                    stale = stale or any(
+                        r.freshness is not Freshness.CURRENT for r in records.values()
+                    )
+                items.append(
+                    {
+                        "identity": _control_summary(control, snapshot),
+                        "values": values,
+                        "semantics": semantics,
+                    }
+                )
+            omitted = ["relationships", "notes", "history", "statistics", "actions", "project"]
+            if not include_semantics:
+                omitted.append("semantics")
+            envelope = _result(
+                ControlsReadEnvelope,
+                {
+                    "items": items,
+                    "requested_controls": len(targets),
+                    "returned_controls": len(items),
+                    "requested_states": count,
+                    "returned_states": count,
+                    "complete": True,
+                    "truncated": False,
+                    "omitted_sections": omitted,
+                },
+                stale=stale,
+            )
+            if len(envelope.model_dump_json().encode("utf-8")) > 65_536:
+                return _error(
+                    ControlsReadEnvelope,
+                    "response_too_large",
+                    "Split targets or select fewer states; response exceeds 64 KiB",
+                )
+            return envelope
+        except PermissionError:
+            return _error(
+                ControlsReadEnvelope,
+                "unauthenticated",
+                "Authentication with loxone:read is required",
+            )
+        except RuntimeUnavailable as exc:
+            return _availability_error(ControlsReadEnvelope, exc)
+
+    @server.tool(
         name="loxone_get_state_semantics",
         description=(
             "Read bounded semantic evidence and cached values for one visible control. "
@@ -4574,47 +4811,8 @@ def register_read_tools(
                 selected_refs = control.state_uuids
             if runtime is None:  # pragma: no cover - _snapshot rejects this
                 raise RuntimeUnavailable("the service is not configured")
-            # Capture each required record once. Companions are restricted to this control
-            # and admitted only when current; stale companions cannot label a current value.
             page_refs = selected_refs[offset : offset + limit]
-            needed = {uuid for _name, uuid in page_refs}
-            companion_names = (
-                {"zones", "entryList"}
-                if control.control_type in {"Irrigation", "AlarmClock"}
-                else set()
-            )
-            needed.update(uuid for name, uuid in control.state_uuids if name in companion_names)
-            records = {uuid: runtime.state(snapshot, uuid) for uuid in needed}
-            companions = {
-                name: records[uuid].value
-                for name, uuid in control.state_uuids
-                if name in companion_names and records[uuid].freshness is Freshness.CURRENT
-            }
-            resolver = StateSemanticsResolver()
-            items: list[dict[str, Any]] = []
-            for name, uuid in page_refs:
-                record = records[uuid]
-                semantics, semantic_value = resolver.resolve(
-                    snapshot.structure, control, name, record.value, companions
-                )
-                items.append(
-                    {
-                        "name": name,
-                        "uuid": uuid,
-                        "value": record.value,
-                        "semantic_value": semantic_value,
-                        "quality": {
-                            "availability": "available"
-                            if record.value is not None
-                            else "unavailable"
-                            if record.freshness is Freshness.UNAVAILABLE
-                            else "unknown",
-                            "freshness": record.freshness.value,
-                            "observed_at": _state_observed_at(record),
-                        },
-                        "semantics": semantics,
-                    }
-                )
+            items, stale = _semantic_state_items(runtime, snapshot, control, page_refs)
             total = len(selected_refs)
             complete = offset == 0 and len(items) == total
             return _result(
@@ -4629,10 +4827,7 @@ def register_read_tools(
                     "truncated": not complete,
                     "complete": complete,
                 },
-                stale=not snapshot.connected
-                or any(
-                    records[uuid].freshness is not Freshness.CURRENT for _name, uuid in page_refs
-                ),
+                stale=not snapshot.connected or stale,
             )
         except PermissionError:
             return _error(

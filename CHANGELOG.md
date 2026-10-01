@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add read-only `loxone_read_controls` for known visible control UUIDs with compact
+  identity and named cached values, atomic fresh visibility, fixed request/response
+  limits and explicit delivery completeness. Optionally reuse the existing state
+  semantics evidence model without relationship expansion (#168).
+
 - Add read-only `loxone_get_state_semantics` for one freshly authorized visible
   control, with bounded state selection/pagination, per-claim provenance and
   explicit interpretation gaps independent of cached observation quality.

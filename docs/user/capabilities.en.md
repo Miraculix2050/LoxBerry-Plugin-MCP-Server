@@ -141,7 +141,7 @@ contact roles from names, categories or room counts.
 
 The server reads visible rooms, categories, controls and states. Optional bounded history, statistics, masked LoxBerry diagnostics and documented type-specific actions for visible Gen. 1 controls are available.
 
-For current-value reads, use `loxone_describe_control(view="state_refs")` after discovery. It returns only control identity, visibility and the complete normalized `states` list of names and UUIDs, without room/category context, capabilities, statistics, history, presentation or relationships. The view reloads the user-filtered structure and returns an error rather than cached references if the refresh fails. `stale` marks a disconnected event stream; `observed_at` timestamps the description, not a state value. Select only needed UUIDs, deduplicate them and call `loxone_get_states` in batches of at most 100; make no value-read call for an empty selection. Preserve explicit `include_hidden=true` for hidden-control diagnosis and its value reads. Use `history_targets` for history/statistic selection, `operation_targets` for operation preparation, and `full` for additional diagnosis.
+For known visible UUIDs, prefer `loxone_read_controls` for identity and current values in one call, as described below. For reference-only selection, explicit hidden diagnosis or servers without that tool, use `loxone_describe_control(view="state_refs")` after discovery. It returns only control identity, visibility and the complete normalized `states` list of names and UUIDs, without room/category context, capabilities, statistics, history, presentation or relationships. The view reloads the user-filtered structure and returns an error rather than cached references if the refresh fails. `stale` marks a disconnected event stream; `observed_at` timestamps the description, not a state value. Select only needed UUIDs, deduplicate them and call `loxone_get_states` in batches of at most 100; make no value-read call for an empty selection. Preserve explicit `include_hidden=true` for hidden-control diagnosis and its value reads. Use `history_targets` for history/statistic selection, `operation_targets` for operation preparation, and `full` for additional diagnosis.
 
 After locating a control with `loxone_find_controls`, `loxone_describe_control` can use `view="history_targets"` to return only its identity, state names and UUIDs, advertised native control-history flag, and statistic series IDs and metadata. The default `view="full"` retains the detailed response. `native_statistics_truncated=true` in the compact view means more than 128 valid StatisticV2 series were found and some are omitted. A listed target does not establish that local event history is recorded or that native history or statistics cover a requested period; check the respective history response.
 
@@ -277,6 +277,35 @@ overview call to see that its authorized visible structure has 18 controls in
 four rooms and three categories, then use `loxone_find_controls` only for the
 chosen room, category, or type. It does not replace those targeted calls when a
 client needs individual controls, descriptions, or current states.
+
+## Compact reads of known controls
+
+Use `loxone_read_controls` when visible control UUIDs are already known; otherwise
+discover them with `loxone_find_controls` first. For example:
+
+```json
+{"targets":[{"control_uuid":"<visible-control-uuid>","state_names":["value"]}]}
+```
+
+The response joins `identity` (name, type, visibility, room and category) with
+named `values` (UUID, original value, freshness and observation time) in one call.
+Omit `state_names` to read all states of the selected control. Exact names are
+required. Select 1–25 unique controls and at most 100 named states in total;
+identifiers/names are limited to 128 characters. Aliases count separately.
+Hidden/unknown controls or unknown state names reject the whole batch.
+
+`include_semantics=true` optionally adds the same evidence and observation-quality
+model as `loxone_get_state_semantics`. No relationships, notes, history, statistics,
+actions or project data are expanded. Existing detail tools remain available.
+`complete` and requested/returned counts describe delivery of the selected data,
+including unavailable or stale values; they do not prove freshness or complete
+semantic knowledge. Semantic metadata has its own completeness fields.
+The structured response is limited to 64 KiB; `response_too_large` returns no
+partial values. Split the targets or select fewer states.
+
+Compared with full descriptions this reduces payloads substantially for controls
+with many relationships. For one small control, `describe_control(view="state_refs")`
+plus `get_states` may use fewer bytes, but still needs two calls.
 
 ## Limits
 

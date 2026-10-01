@@ -4,6 +4,7 @@ import configparser
 import hashlib
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -14,6 +15,8 @@ from pathlib import Path
 import pytest
 
 from mcpserver.schema_reference import REFERENCE_HTML_PATH, REFERENCE_JSON_PATH
+from mcpserver.server import create_server
+from mcpserver.settings import ServerSettings
 from mcpserver.skill_delivery import SKILL_REVISION
 from tools.build_plugin import (
     _EXECUTABLES,
@@ -113,6 +116,24 @@ def test_schema_generator_requires_explicit_output_root(monkeypatch: pytest.Monk
         generate_schema_reference()
 
     assert exc_info.value.code == 2
+
+
+def test_mcp_client_smoke_required_inventory_matches_default_server() -> None:
+    script = (ROOT / "tools" / "test_mcp_client.ps1").read_text(encoding="utf-8")
+    inventory = re.search(r"[$]expected = @[(](.*?)[)]", script, re.DOTALL)
+    assert inventory is not None
+    expected = re.findall(r"'([^']+)'", inventory.group(1))
+    server = create_server(
+        ServerSettings(
+            host="127.0.0.1",
+            port=8765,
+            allowed_hosts=("testserver",),
+            allowed_origins=("https://client.example",),
+        )
+    )
+    actual = {tool.name for tool in server._tool_manager.list_tools()}
+    assert len(expected) == len(set(expected))
+    assert set(expected) == actual
 
 
 def test_mcp_client_smoke_covers_skill_delivery_surfaces() -> None:
