@@ -122,7 +122,7 @@ function createHarness(options = {}) {
       const result = body.method === 'initialize'
         ? {protocolVersion: window.McpExplorerCore.PROTOCOL_VERSION}
         : body.method === 'tools/list' ? {tools}
-          : body.method === 'tools/call' ? {structuredContent: {items: [{name: 'result'}]}} : {};
+          : body.method === 'tools/call' ? {structuredContent: options.callResult || {items: [{name: 'result'}]}} : {};
       if (body.method === 'tools/call' && options.deferCall) {
         return new Promise((resolve) => { pendingCall = () => resolve(response({jsonrpc: '2.0', id: body.id, result})); });
       }

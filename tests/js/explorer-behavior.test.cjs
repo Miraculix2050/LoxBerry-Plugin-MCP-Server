@@ -279,3 +279,167 @@ test('failed restore stays disconnected without MCP calls', async (t) => {
   assert.equal(h.requests.some((item) => item.pathname === '/plugins/mcpserver/mcp'), false);
   assert.equal(h.byId('run').disabled, true);
 });
+
+const compactReadTool = {
+  name: 'loxone_read_controls', description: 'Compact reads',
+  annotations: {readOnlyHint: true, destructiveHint: false},
+  inputSchema: {type: 'object', required: ['targets'], $defs: {
+    Target: {type: 'object', additionalProperties: false, required: ['control_uuid'],
+      properties: {control_uuid: {type: 'string', minLength: 1, maxLength: 128},
+        state_names: {anyOf: [{type: 'array', minItems: 1, maxItems: 100, items: {type: 'string'}}, {type: 'null'}], default: null}}},
+  }, properties: {targets: {type: 'array', minItems: 1, maxItems: 2, items: {$ref: '#/$defs/Target'}},
+    include_semantics: {type: 'boolean', default: false}}},
+};
+
+test('object-list form edits rows and optional states, preserves drafts and bounds adds', async (t) => {
+  const h = createHarness({tools: [compactReadTool, readTool]});
+  t.after(h.close);
+  await h.ready();
+  const select = (name) => h.click([...h.byId('tools').querySelectorAll('button')]
+    .find((button) => button.querySelector('strong')?.textContent === name));
+  await select(compactReadTool.name);
+  const add = () => h.byId('form').querySelector('.mcp-explorer-object-list > button');
+  await h.click(add());
+  const editUuid = (index, value) => {
+    const input = h.byId('form').querySelectorAll('fieldset input[type="text"]')[index];
+    input.value = value;
+    input.dispatchEvent(new h.window.Event('input', {bubbles: true}));
+  };
+  editUuid(0, 'first');
+  editUuid(0, 'first-edited');
+  let entry = h.byId('form').querySelector('fieldset');
+  await h.click(entry.querySelector('input[type="checkbox"]'));
+  entry = h.byId('form').querySelector('fieldset');
+  const states = entry.querySelector('textarea');
+  states.value = '["position"]';
+  states.dispatchEvent(new h.window.Event('change', {bubbles: true}));
+  await h.click(add());
+  editUuid(1, 'second');
+  assert.equal(add().disabled, true);
+  assert.deepEqual(JSON.parse(h.byId('json').value).targets, [
+    {control_uuid: 'first-edited', state_names: ['position']}, {control_uuid: 'second'},
+  ]);
+  await select(readTool.name);
+  await select(compactReadTool.name);
+  assert.equal(h.byId('form').querySelectorAll('.mcp-explorer-list-entry').length, 2);
+  await h.click(h.byId('form').querySelector('fieldset button'));
+  assert.deepEqual(JSON.parse(h.byId('json').value).targets, [{control_uuid: 'second'}]);
+  assert.equal(add().disabled, false);
+  assert.equal(h.calls().length, 0);
+});
+
+test('UUID result transfer builds a schema-valid nested target without submitting it', async (t) => {
+  const core = require('../../webfrontend/htmlauth/explorer-core.js');
+  const candidate = core.compatibleTargets([compactReadTool], 'visible-control', {sourcePath: ['data', 'uuid']});
+  assert.deepEqual(candidate, [{tool: compactReadTool.name, field: 'targets', mode: 'object-array:control_uuid'}]);
+  const draft = core.transferArguments(compactReadTool, 'targets', 'visible-control',
+    candidate[0].mode, null, {include_semantics: true, targets: [{control_uuid: 'old'}], cursor: 'old'});
+  assert.deepEqual(draft, {include_semantics: true, targets: [{control_uuid: 'visible-control'}]});
+  assert.deepEqual(core.validateArguments(draft, compactReadTool.inputSchema), []);
+  assert.deepEqual(core.compatibleTargets([compactReadTool], ''), []);
+  const h = createHarness({tools: [compactReadTool]});
+  t.after(h.close);
+  await h.ready();
+  await h.click(h.byId('tools').querySelector('button'));
+  h.byId('json').value = JSON.stringify(draft);
+  h.byId('json').dispatchEvent(new h.window.Event('change', {bubbles: true}));
+  await h.click(h.byId('form-tab'));
+  assert.equal(h.byId('form').querySelector('fieldset input[type="text"]').value, 'visible-control');
+  assert.equal(h.calls().length, 0);
+});
+
+test('nested transfer refuses missing required siblings and unknown schema constraints', () => {
+  const core = require('../../webfrontend/htmlauth/explorer-core.js');
+  const tool = JSON.parse(JSON.stringify(compactReadTool));
+  tool.inputSchema.$defs.Target.required.push('other_required');
+  tool.inputSchema.$defs.Target.properties.other_required = {type: 'string', minLength: 1};
+  assert.deepEqual(core.compatibleTargets([tool], 'control'), []);
+  tool.inputSchema.$defs.Target.required.pop();
+  tool.inputSchema.$defs.Target.properties.control_uuid.format = 'unsupported-format';
+  // Unrecognized formats are not offered as reusable targets.
+  assert.deepEqual(core.compatibleTargets([tool], 'control'), []);
+});
+
+test('response UUID can be transferred through the actual dialog into targets', async (t) => {
+  const h = createHarness({tools: [readTool, compactReadTool],
+    callResult: {ok: true, data: {uuid: 'visible-control'}}});
+  t.after(h.close);
+  await h.ready();
+  await h.click([...h.byId('tools').querySelectorAll('button')]
+    .find((button) => button.querySelector('strong')?.textContent === readTool.name));
+  h.byId('json').value = JSON.stringify({query: 'control'});
+  await h.click(h.byId('run'));
+  await h.waitFor(() => h.byId('result-tree').querySelector('.mcp-explorer-value') && h.calls().length === 1);
+  const uuid = [...h.byId('result-tree').querySelectorAll('.mcp-explorer-value')]
+    .find((button) => button.textContent.startsWith('uuid:'));
+  assert.ok(uuid);
+  await h.click(uuid);
+  h.byId('transfer-tool').value = compactReadTool.name;
+  h.byId('transfer-tool').dispatchEvent(new h.window.Event('change', {bubbles: true}));
+  assert.match(h.byId('transfer-field').selectedOptions[0].textContent, /targets\[\]\.control_uuid/);
+  h.byId('transfer').close('apply');
+  await h.waitFor(() => h.byId('form').querySelector('fieldset input[type="text"]'));
+  assert.deepEqual(JSON.parse(h.byId('json').value).targets, [{control_uuid: 'visible-control'}]);
+  assert.equal(h.calls().length, 1);
+});
+
+test('optional object-list omission disables its entire group and preserves other arguments', async (t) => {
+  const tool = JSON.parse(JSON.stringify(compactReadTool));
+  tool.inputSchema.required = [];
+  const h = createHarness({tools: [tool]});
+  t.after(h.close);
+  await h.ready();
+  await h.click(h.byId('tools').querySelector('button'));
+  let group = h.byId('form').querySelector('.mcp-explorer-object-list');
+  assert.equal(group.disabled, true);
+  let toggle = group.parentElement.querySelector('input[type="checkbox"]');
+  await h.click(toggle);
+  group = h.byId('form').querySelector('.mcp-explorer-object-list');
+  assert.equal(group.disabled, false);
+  assert.equal(group.ownerDocument.activeElement, group.querySelector(':scope > button'));
+  await h.click(group.querySelector(':scope > button'));
+  group = h.byId('form').querySelector('.mcp-explorer-object-list');
+  toggle = group.parentElement.querySelector('input[type="checkbox"]');
+  await h.click(toggle);
+  assert.equal(group.disabled, true);
+  assert.equal(Object.hasOwn(JSON.parse(h.byId('json').value), 'targets'), false);
+  assert.equal(h.calls().length, 0);
+});
+
+test('root action changes still remove old operation fields after valid draft edits', async (t) => {
+  const tool = JSON.parse(JSON.stringify(writeTool));
+  tool.inputSchema.properties.action = {type: 'string', enum: ['set_level', 'off'], default: 'set_level'};
+  tool.inputSchema.properties.level = {type: 'number', default: 50};
+  const h = createHarness({tools: [tool]});
+  t.after(h.close);
+  await h.ready();
+  await h.click(h.byId('tools').querySelector('button'));
+  const uuid = h.byId('form').querySelector('input[type="text"]');
+  uuid.value = 'visible-control';
+  uuid.dispatchEvent(new h.window.Event('input', {bubbles: true}));
+  const action = h.byId('form').querySelector('select');
+  action.value = JSON.stringify('off');
+  action.dispatchEvent(new h.window.Event('change', {bubbles: true}));
+  assert.deepEqual(JSON.parse(h.byId('json').value), {control_uuid: 'visible-control', action: 'off'});
+  assert.equal(h.calls().length, 0);
+});
+
+
+test('adding an object row focuses an enabled control when its first field is optional', async (t) => {
+  const tool = JSON.parse(JSON.stringify(compactReadTool));
+  tool.inputSchema.properties.targets.items.properties = {
+    state_names: {type: 'array', items: {type: 'string'}},
+    control_uuid: {type: 'string'},
+  };
+  const h = createHarness({tools: [tool]});
+  t.after(h.close);
+  await h.ready();
+  await h.click(h.byId('tools').querySelector('button'));
+  await h.click(h.byId('form').querySelector('.mcp-explorer-object-list > button'));
+  const entry = h.byId('form').querySelector('.mcp-explorer-list-entry');
+  const focused = entry.ownerDocument.activeElement;
+  assert.equal(entry.contains(focused), true);
+  assert.equal(focused.disabled, false);
+  assert.notEqual(focused.tagName, 'FIELDSET');
+  assert.equal(entry.querySelector('textarea').disabled, true);
+});

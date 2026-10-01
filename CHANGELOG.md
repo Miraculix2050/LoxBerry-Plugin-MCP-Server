@@ -7,6 +7,9 @@ extracted from the matching version heading.
 
 - Add bounded, sanitized internal-flow gap evidence to opening-contact traces,
   preserving warnings, conservative completeness and existing connector rules (#335).
+- Edit bounded object-list inputs as individual Tool Explorer entries and transfer
+  response UUIDs into nested fields such as targets[].control_uuid. Preserve the
+  existing JSON editor, draft parameters and explicit call confirmation.
 
 - Add read-only `loxone_read_controls` for known visible control UUIDs with compact
   identity and named cached values, atomic fresh visibility, fixed request/response
