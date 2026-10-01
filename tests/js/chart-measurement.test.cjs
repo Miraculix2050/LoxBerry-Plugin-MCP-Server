@@ -100,7 +100,8 @@ test('fixture serves real local scripts and rejects writes and arbitrary paths',
   } finally {await new Promise((resolve) => server.close(resolve));}
 });
 test('driver validates viewport, missing metrics and trusted interaction acceptance', async () => {
-  const originalWindow = global.window, originalDocument = global.document;
+  const originalWindow = global.window, originalDocument = global.document,
+    originalStorage = global.sessionStorage;
   try {
     for (const mode of ['supported', 'unsupported', 'viewport', 'metric_failure', 'no_thread_cpu',
       'request_failure', 'untrusted', 'timed_out']) {
@@ -108,6 +109,9 @@ test('driver validates viewport, missing metrics and trusted interaction accepta
         visual_width: mode === 'viewport' ? 375 : 390, visual_height: 844, visual_scale: 1},
         requests: mode === 'request_failure' ? [{action: 'event_history_chart_query', status: 'failed'}] : [],
         interactions: [], cpu: null, heap: null};
+      const stored = new Map();
+      global.sessionStorage = {setItem: (key, value) => stored.set(key, value),
+        removeItem: (key) => stored.delete(key), getItem: (key) => stored.get(key) ?? null};
       global.window = {chartProbe: {report: () => report, stop: () => report}};
       global.document = {getElementById: () => ({textContent: ''})};
       let calls = 0, detached = false;
@@ -121,10 +125,12 @@ test('driver validates viewport, missing metrics and trusted interaction accepta
           {name: 'JSHeapUsedSize', value: 1234}, {name: 'JSHeapTotalSize', value: 5678},
           {name: 'private-project', value: 99}]};
       }, detach: async () => {detached = true;}};
-      const page = {setViewportSize: async () => {}, addInitScript: async () => {}, reload: async () => {},
+      let initContent;
+      const page = {setViewportSize: async () => {},
+        addInitScript: async ({content}) => {initContent = content;}, reload: async () => {},
         context: () => ({newCDPSession: async () => {
           if (mode === 'unsupported') throw new Error('private-token'); return cdp;
-        }}), waitForFunction: async () => {}, evaluate: async (fn) => fn(),
+        }}), waitForFunction: async () => {}, evaluate: async (fn, arg) => fn(arg),
         locator: (id) => ({click: async () => report.interactions.push({kind: id.includes('zoom') ? 'zoom' : 'pan',
           trusted: mode !== 'untrusted', visible: true,
           status: mode === 'timed_out' ? 'pending' : 'completed', render_ms: 32})})};
@@ -136,8 +142,37 @@ test('driver validates viewport, missing metrics and trusted interaction accepta
       }
       assert.equal(detached, mode !== 'unsupported');
       assert.ok(!JSON.stringify(output).includes('private'));
+      assert.equal(stored.size, 0);
+      if (mode === 'supported') {
+        const key = page[Symbol.for('loxberry.chart.measurement.installed')];
+        const first = new JSDOM('', {url: 'https://fixture.example', runScripts: 'outside-only'}).window;
+        first.fetch = async () => {};
+        first.sessionStorage.setItem(key, 'armed');
+        first.eval(initContent);
+        assert.ok(first.chartProbe);
+        assert.equal(first.sessionStorage.getItem(key), null);
+        const originalFetch = first.fetch;
+        first.chartProbe.stop();
+        assert.notEqual(first.fetch, originalFetch);
+        const afterStop = first.fetch;
+        first.eval(initContent);
+        assert.equal(first.fetch, afterStop);
+        const next = new JSDOM('', {url: 'https://fixture.example', runScripts: 'outside-only'}).window;
+        next.fetch = async () => {};
+        const nextFetch = next.fetch;
+        next.eval(initContent);
+        assert.equal(next.chartProbe, undefined);
+        assert.equal(next.fetch, nextFetch);
+        const opaque = new JSDOM('', {runScripts: 'outside-only'}).window;
+        opaque.eval(initContent);
+        assert.equal(opaque.chartProbe, undefined);
+        first.close(); next.close(); opaque.close();
+      }
     }
     assert.ok(bundle().startsWith('async (page)'));
     await assert.rejects(measure({}, {timeout: 120001}), /Invalid measurement bounds/);
-  } finally {global.window = originalWindow; global.document = originalDocument;}
+  } finally {
+    global.window = originalWindow; global.document = originalDocument;
+    global.sessionStorage = originalStorage;
+  }
 });

@@ -9,10 +9,14 @@ async function measure(page, {width = 390, height = 844, mobile = true, timeout 
   await page.setViewportSize({width, height});
   const marker = Symbol.for('loxberry.chart.measurement.installed');
   if (!page[marker]) {
-    await page.addInitScript({content: probeSource +
-      '\nwindow.chartProbe = window.chartProbe || window.ChartMeasurement.install(window);'});
-    page[marker] = true;
+    const key = '__loxberry_chart_measurement_' + Math.random().toString(36).slice(2);
+    await page.addInitScript({content: '(function () { if (window !== window.top) return;\n'
+      + 'try { if (sessionStorage.getItem(' + JSON.stringify(key) + ') !== "armed") return; '
+      + 'sessionStorage.removeItem(' + JSON.stringify(key) + '); } catch { return; }\n'
+      + probeSource + '\nwindow.chartProbe = window.chartProbe || window.ChartMeasurement.install(window);\n})();'});
+    page[marker] = key;
   }
+  const activationKey = page[marker];
   let cdp = null, baseline = null, threadCpu = false;
   const metrics = async () => {
     const response = await cdp.send('Performance.getMetrics');
@@ -22,6 +26,7 @@ async function measure(page, {width = 390, height = 844, mobile = true, timeout 
   };
   let result;
   try {
+    await page.evaluate((key) => sessionStorage.setItem(key, 'armed'), activationKey);
     try {
       cdp = await page.context().newCDPSession(page);
       if (mobile) await cdp.send('Emulation.setDeviceMetricsOverride',
@@ -91,6 +96,7 @@ async function measure(page, {width = 390, height = 844, mobile = true, timeout 
         .every((row) => row.status === 'completed');
     return result;
   } finally {
+    await page.evaluate((key) => sessionStorage.removeItem(key), activationKey).catch(() => {});
     await page.evaluate(() => window.chartProbe?.stop()).catch(() => {});
     if (cdp) {
       if (mobile) await cdp.send('Emulation.clearDeviceMetricsOverride').catch(() => {});
