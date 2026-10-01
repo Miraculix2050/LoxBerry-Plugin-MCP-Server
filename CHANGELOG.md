@@ -12,6 +12,10 @@ extracted from the matching version heading.
   format/range and position-bound StatusMonitor metadata without guessed units,
   hidden-control expansion or a documentation-content pipeline (#166).
 
+- Split Event History chart selector diagnostics into numeric-only coordination,
+  token acquisition, session establishment and structure-load subphases while
+  preserving existing timing fields and fresh discovery behavior (#297).
+
 - Wait for runtime authentication coordination within the existing connection
   budget instead of immediately rejecting fresh MCP reads; preserve cancellation,
   fresh visibility and source-IP protection, and distinguish local contention

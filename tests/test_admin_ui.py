@@ -784,8 +784,9 @@ def test_chart_timing_cgi_forwards_only_fixed_numeric_diagnostics() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/event_history.cgi").read_text(encoding="utf-8")
 
     assert (
-        "config_load_ms|selector_refresh_ms|revalidation_ms|history_prepare_ms|serialization_ms"
-        in cgi
+        "config_load_ms|selector_refresh_ms|selector_coordinator_wait_ms|"
+        "selector_token_acquisition_ms|selector_session_establishment_ms|"
+        "selector_structure_load_ms|revalidation_ms|history_prepare_ms|serialization_ms" in cgi
     )
     assert "selected_sources|discovered_controls|serialized_bytes" in cgi
     assert "component=event_history_chart_timing request_id=%s phase=%s duration_ms=%.1f" in cgi

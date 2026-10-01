@@ -76,7 +76,7 @@ sub admin_call {
         my $diagnostics = eval { decode_json($1) };
         if (ref($diagnostics) eq 'HASH') {
             %chart_phase_timing = map { $_ => $diagnostics->{$_} }
-                grep { /\A(?:config_load_ms|selector_refresh_ms|revalidation_ms|history_prepare_ms|serialization_ms|selected_sources|discovered_controls|serialized_bytes)\z/
+                grep { /\A(?:config_load_ms|selector_refresh_ms|selector_coordinator_wait_ms|selector_token_acquisition_ms|selector_session_establishment_ms|selector_structure_load_ms|revalidation_ms|history_prepare_ms|serialization_ms|selected_sources|discovered_controls|serialized_bytes)\z/
                     && defined($diagnostics->{$_}) && $diagnostics->{$_} =~ /\A\d+(?:\.\d+)?\z/ }
                 keys %{$diagnostics};
         }
@@ -203,7 +203,9 @@ if (($q->{action} // '') ne '') {
         if ($action eq 'event_history_chart_prepare') {
             my $log = LoxBerry::Log->new(name => 'admin-ui', package => $lbpplugindir,
                 addtime => 1);
-            for my $phase (qw(config_load_ms selector_refresh_ms revalidation_ms
+            for my $phase (qw(config_load_ms selector_refresh_ms selector_coordinator_wait_ms
+                selector_token_acquisition_ms selector_session_establishment_ms selector_structure_load_ms
+                revalidation_ms
                 history_prepare_ms serialization_ms)) {
                 next unless defined $chart_phase_timing{$phase};
                 my $phase_name = $phase;

@@ -93,3 +93,39 @@ Dense/large-history workloads, separate competing-load conditions, service
 CPU/memory, browser CPU/heap, first content, pan/zoom, and an exact 390x844 CSS
 viewport remain follow-up work in #297. No performance or browser compatibility
 claim is made from these CGI samples.
+
+## Selector discovery subphases
+
+Chart preparation additionally emits fixed numeric millisecond fields
+`selector_coordinator_wait`, `selector_token_acquisition`,
+`selector_session_establishment`, and `selector_structure_load`. These are
+nested inside `selector_refresh`; do not add them to the six main phases.
+The coordinator field sums elapsed time before entry into each authorized
+operation, including shared lock contention, coordinator state reload and
+pre-operation accounting. It is not a pure lock syscall timer. It excludes
+authentication operations and post-operation coordinator persistence.
+Token and session timers surround the actual client operations;
+structure timing surrounds `session.load_structure()` including its parsing.
+Credentials/client creation, cleanup, projection/cache work and coordinator
+post-operation bookkeeping remain in the parent timer only. No session,
+token or structure is reused by this instrumentation.
+
+Timings use a monotonic nanosecond clock and report elapsed work in `finally`,
+including failed/cancelled operations. An operation that never starts has no
+field; a suppressed/timed-out coordinator attempt contributes its elapsed
+pre-operation time. No-coordinator discovery reports zero coordinator wait.
+Missing subphases on failed requests must not be interpreted as zero or used
+as successful samples. Values contain no UUIDs, names, endpoints, tokens or
+project data; the CGI accepts only the fixed numeric allowlist. Existing
+responses, main phases, resource fields, outcomes and correlation IDs remain.
+
+For the next controlled comparison, retain the 1-4-source cold plus five-warm
+protocol above separately for each condition. Idle means no deliberately
+introduced auth competitor; record remaining background load. For controlled
+contention, use a cooperating test process holding the same auth lock for a
+fixed duration before each request, without acquiring a token or changing
+breaker/recording state. Synchronize lock acquisition and release, retain the
+hold duration and failed samples, and keep the exclusive target reservation.
+Report each new subphase's median/range per source count and condition. The
+2026-09-30 benchmark predates the shared Admin auth-wait budget and cannot be
+used to infer these subphase distributions or a performance improvement.

@@ -12,12 +12,12 @@ import secrets
 import sqlite3
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Awaitable, Callable, Iterator
 from contextlib import closing, contextmanager, suppress
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, Protocol
+from typing import TYPE_CHECKING, Final, Protocol, TypeVar
 from uuid import NAMESPACE_URL, uuid5
 
 if TYPE_CHECKING:
@@ -35,6 +35,7 @@ _MAX_TEXT_BYTES: Final = 4096
 _UNSUPPORTED_SOURCE_CONTROL_TYPES: Final = frozenset({"Daytimer"})
 _MAX_SAFE_BROWSER_INTEGER: Final = 2**53 - 1
 _ADMIN_AUTH_BUSY_WAIT_SECONDS: Final = 15
+_T = TypeVar("_T")
 
 
 class EventHistoryUnavailable(RuntimeError):
@@ -1478,12 +1479,51 @@ class EventHistoryMonitor:
                 await self._backfill_task
             self._backfill_task = None
 
-    async def visible_structure(self) -> LoxoneStructure:
+    async def visible_structure(
+        self, *, timing: dict[str, float | int] | None = None
+    ) -> LoxoneStructure:
         """Load one current service-owned structure for selection and validation."""
         from mcpserver.loxone.client import MiniserverEndpoint
 
         token = None
         session = None
+        if timing is not None:
+            timing["selector_coordinator_wait_ms"] = 0.0
+
+        async def authenticate(operation: Callable[[], Awaitable[_T]], phase: str) -> _T:
+            queued = time.perf_counter_ns() if timing is not None else 0
+            entered = False
+
+            async def measured_operation() -> _T:
+                nonlocal entered
+                entered = True
+                started = time.perf_counter_ns() if timing is not None else 0
+                if timing is not None and self.auth_coordinator is not None:
+                    timing["selector_coordinator_wait_ms"] += (started - queued) / 1_000_000
+                try:
+                    return await operation()
+                finally:
+                    if timing is not None:
+                        timing[f"selector_{phase}_ms"] = (
+                            time.perf_counter_ns() - started
+                        ) / 1_000_000
+
+            try:
+                if self.auth_coordinator is None:
+                    return await measured_operation()
+                return await self.auth_coordinator.attempt(
+                    measured_operation,
+                    owner="local_admin",
+                    phase=phase,
+                    allow_cooldown_probe=False,
+                    busy_wait_seconds=max(0.0, auth_wait_deadline - time.monotonic()),
+                )
+            finally:
+                if timing is not None and not entered:
+                    timing["selector_coordinator_wait_ms"] += (
+                        time.perf_counter_ns() - queued
+                    ) / 1_000_000
+
         try:
             username, password = await self.credentials._credentials()
             from mcpserver.loxone.client import LoxoneClient
@@ -1496,27 +1536,20 @@ class EventHistoryMonitor:
                 timeout_seconds=self.config.connection_timeout,
             )
             auth_wait_deadline = time.monotonic() + _ADMIN_AUTH_BUSY_WAIT_SECONDS
-            if self.auth_coordinator is None:
-                token = await client.acquire_token(username, password)
-                session = await client.open_session(token)
-            else:
-                acquired_token = await self.auth_coordinator.attempt(
-                    partial(_acquire_token, client, username, password),
-                    owner="local_admin",
-                    phase="token_acquisition",
-                    allow_cooldown_probe=False,
-                    busy_wait_seconds=max(0.0, auth_wait_deadline - time.monotonic()),
-                )
-                token = acquired_token
-                opened_session = await self.auth_coordinator.attempt(
-                    partial(_open_session, client, acquired_token),
-                    owner="local_admin",
-                    phase="session_establishment",
-                    allow_cooldown_probe=False,
-                    busy_wait_seconds=max(0.0, auth_wait_deadline - time.monotonic()),
-                )
-                session = opened_session
-            return await session.load_structure()
+            token = await authenticate(
+                partial(_acquire_token, client, username, password), "token_acquisition"
+            )
+            session = await authenticate(
+                partial(_open_session, client, token), "session_establishment"
+            )
+            started = time.perf_counter_ns() if timing is not None else 0
+            try:
+                return await session.load_structure()
+            finally:
+                if timing is not None:
+                    timing["selector_structure_load_ms"] = (
+                        time.perf_counter_ns() - started
+                    ) / 1_000_000
         finally:
             if session is not None:
                 await session.close()
