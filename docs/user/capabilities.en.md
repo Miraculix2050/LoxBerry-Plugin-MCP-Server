@@ -171,6 +171,35 @@ graph evidence rather than raw XML: a signal or reference trace describes struct
 not an observed historical cause. Results are limited and explicitly report truncation; unknown
 block types and unresolved relationships remain visible without invented semantics. A trace caps
 its unresolved-relationship entries independently and reports that with `unresolved_truncated`.
+Exact `ModbusASensor` objects add optional read-only `modbus` evidence to project search and
+describe. Search remains by `block_type`; there is no new technology filter or analysis scope.
+The allowlist is `ModbusAddress`, `ModbusCmd`, `ModbusDataType`, `ModbusPollingCycle`,
+`SourceValHigh`, `DestValHigh`; observed `ModbusDev` ancestors expose raw configured `Channel`,
+`ModbusServer` exposes `Timeout`, and `Comm485` exposes `RxTimeout`, `Baudrate`, `Databits`,
+`Parity`, `Pause`, `Protocol`. Comm485 is reported only as an observed source type in this
+ancestry, never classified as Modbus by itself. `source_read` derives from the exact sensor
+type; containment is hierarchy, not signal causality. Existing connector and relationship
+evidence remains available in describe.
+
+Each field carries `explicit`, `absent`, `ambiguous` or `invalid` evidence, source field,
+raw occurrences and opaque model-source/project-node provenance. Conflicting values have no
+single `raw_value`; identical duplicate occurrences remain visible. Numeric source strings are
+limited to 64 characters and eight occurrences per field, with `occurrences_omitted`.
+Malformed or oversized strings remain internal source evidence; public occurrences mark them
+invalid and omit their content. All units/enums and datatype semantics remain `unresolved`.
+Channel is not a proven unit ID. No defaults, scaling formula, bit/word order, actor support,
+runtime freshness or successful transactions are inferred. Configured polling is static evidence.
+Search shows one ancestor at most; describe shows at most `min(limit, 16)`, with
+`ancestry_status` and `ancestry_truncated`. Unsupported Modbus types receive a describe diagnostic.
+Describe carries bounded parser diagnostics for observed ancestors and caps the structured
+envelope at 65,536 UTF-8 bytes: it shortens ancestry with an explicit truncation flag or returns
+`response_too_large` if the remaining description cannot fit.
+`coverage_complete=false` explicitly avoids an installation inventory claim; register numbers,
+names and cross-part source IDs do not merge occurrences. Existing identity, authorization,
+marker, cursor and response-byte checks still apply. The Explorer displays these optional typed
+fields, including source-field array labels. Sanitized public historic RTU and vendor TCP fixtures
+prove source shape only; live sensor/device compatibility is unverified (issues #350/#352).
+
 Confirmed KNX/EIB project objects add bounded source-backed metadata for bus lines, endpoints and
 KNX logic blocks. Endpoint direction is `bus_to_loxone` or `loxone_to_bus`; it is not a claim
 about the physical device role. Group addresses retain their original text and only expose a

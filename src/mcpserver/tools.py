@@ -1006,6 +1006,7 @@ class ProjectKnxData(BaseModel):
 
 class ProjectNodeSourceDiagnosticData(BaseModel):
     code: Literal[
+        "unsupported_modbus_source_type",
         "parser_duplicate_attribute",
         "parser_attribute_newline",
         "missing_group_address",
@@ -1081,6 +1082,59 @@ class ProjectKnxSummaryData(BaseModel):
     group_address: ProjectKnxGroupAddressSummaryData | None
 
 
+class ProjectModbusOccurrenceData(BaseModel):
+    raw_value: str | None = Field(max_length=64)
+    invalid: bool
+
+
+class ProjectModbusFieldData(BaseModel):
+    source_field: Literal[
+        "ModbusAddress",
+        "ModbusCmd",
+        "ModbusDataType",
+        "ModbusPollingCycle",
+        "SourceValHigh",
+        "DestValHigh",
+        "Channel",
+        "Timeout",
+        "RxTimeout",
+        "Baudrate",
+        "Databits",
+        "Parity",
+        "Pause",
+        "Protocol",
+    ]
+    evidence_status: Literal["explicit", "absent", "ambiguous", "invalid"]
+    raw_value: str | None = Field(max_length=64)
+    occurrences: list[ProjectModbusOccurrenceData] = Field(max_length=8)
+    occurrences_omitted: int = Field(ge=0)
+    semantics: Literal["unresolved"]
+
+
+class ProjectModbusAncestorData(BaseModel):
+    project_node_id: str
+    model_source_id: str
+    source_type: Literal["ModbusDev", "ModbusServer", "Comm485"]
+    relationship: Literal["contains"]
+    child_project_node_id: str
+    fields: list[ProjectModbusFieldData] = Field(max_length=6)
+    source_diagnostics: list[ProjectNodeSourceDiagnosticData] = Field(
+        default_factory=list, max_length=2
+    )
+
+
+class ProjectModbusData(BaseModel):
+    source_type: Literal["ModbusASensor"]
+    flow_direction: Literal["source_read"]
+    project_node_id: str
+    model_source_id: str
+    fields: list[ProjectModbusFieldData] = Field(max_length=6)
+    ancestors: list[ProjectModbusAncestorData] = Field(max_length=16)
+    ancestry_status: Literal["explicit", "absent", "ambiguous", "invalid"]
+    ancestry_truncated: bool
+    coverage_complete: Literal[False]
+
+
 class ProjectNodeSummaryData(BaseModel):
     project_node_id: str
     kind: Literal["block", "connector"]
@@ -1102,6 +1156,12 @@ class ProjectNodeSummaryData(BaseModel):
     knx: ProjectKnxSummaryData | None = None
 
 
+class ProjectSearchNodeSummaryData(ProjectNodeSummaryData):
+    """Search-only additive evidence, excluded from trace and observability contracts."""
+
+    modbus: ProjectModbusData | None = None
+
+
 class ProjectNodeData(BaseModel):
     project_node_id: str
     kind: Literal["block", "connector"]
@@ -1121,6 +1181,7 @@ class ProjectNodeData(BaseModel):
     )
     runtime_control: ProjectRuntimeControlData | None = None
     knx: ProjectKnxData | None = None
+    modbus: ProjectModbusData | None = None
     source_diagnostics: list[ProjectNodeSourceDiagnosticData] = Field(default_factory=list)
     source_diagnostics_labels_truncated: bool = False
     source_diagnostics_truncated: bool = False
@@ -1176,7 +1237,7 @@ class ProjectStatusData(BaseModel):
 
 
 class ProjectObjectPageData(BaseModel):
-    items: list[ProjectNodeSummaryData]
+    items: list[ProjectSearchNodeSummaryData]
     next_cursor: str | None
     truncated: bool = False
     truncation_reason: Literal["max_response_bytes"] | None = None
@@ -5498,11 +5559,25 @@ def register_project_tools(
     ) -> ProjectDescriptionEnvelope:
         try:
             project, snapshot = await _project_query(runtime)
-            return _result(
+            envelope = _result(
                 ProjectDescriptionEnvelope,
                 project.describe(project.resolve(identifier, identifier_type), limit=limit),
                 stale=not snapshot.connected,
             )
+            if (
+                isinstance(envelope.data, ProjectDescriptionData)
+                and envelope.data.modbus is not None
+            ):
+                while len(envelope.model_dump_json().encode("utf-8")) > PROJECT_RESPONSE_MAX_BYTES:
+                    if not envelope.data.modbus.ancestors:
+                        return _error(
+                            ProjectDescriptionEnvelope,
+                            "response_too_large",
+                            "Project description exceeds the response byte limit",
+                        )
+                    envelope.data.modbus.ancestors.pop()
+                    envelope.data.modbus.ancestry_truncated = True
+            return envelope
         except PermissionError:
             return _error(
                 ProjectDescriptionEnvelope,

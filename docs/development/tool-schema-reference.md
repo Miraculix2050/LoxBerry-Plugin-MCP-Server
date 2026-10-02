@@ -25,6 +25,18 @@ These describe delivery, not freshness or installation coverage. Complete
 Assigned UUIDs identify visible definitions; names are not unique identifiers.
 The synthetic bucket has `assignment="unassigned"`, `uuid=null`, and `name=null`.
 
+## Raw Modbus analog-sensor evidence
+
+Project search/describe node schemas now include optional `modbus: ProjectModbusData`
+only for exact `ModbusASensor` objects. `ProjectModbusFieldData` retains allowlisted
+source-field evidence statuses and bounded raw occurrences; `ProjectModbusAncestorData`
+retains part-local containment and configured fields without decoded semantics.
+Search uses a one-ancestor bound, describe uses `min(limit, 16)`. Invalid strings are
+value-free publicly, retained internally. Missing values remain absent. See the
+synchronized capability guides and issue #352 for the narrow sensor-only boundary.
+The generated HTML/JSON schema reference derives these definitions from the same
+public Pydantic models; it is generated during packaging, not checked in separately.
+
 ## Compact control reads
 
 `loxone_read_controls` is an additive `loxone:read` tool for known visible UUIDs.

@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from .coverage import coverage_by_source_type
 from .graph import GraphEdge, GraphNode, SemanticEdge
 from .mapping import ControlMapping, ProjectView
+from .modbus import sensor_projection
 from .semantics import expects_raw_datatype, is_valid_group_address_filter, signal_use_rules
 
 _KNOWN_KNX_ATTRIBUTES = frozenset(
@@ -32,6 +33,7 @@ class ProjectQuery:
     _mappings: dict[str, ControlMapping] = field(init=False, repr=False)
     _mapped_nodes: dict[str, list[ControlMapping]] = field(init=False, repr=False)
     _parents: dict[str, str] = field(init=False, repr=False)
+    _containment_parents: dict[str, list[str]] = field(init=False, repr=False)
     _children: dict[str, list[str]] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -46,12 +48,15 @@ class ProjectQuery:
                 mapped_nodes[key].append(entry)
         object.__setattr__(self, "_mapped_nodes", mapped_nodes)
         parents: dict[str, str] = {}
+        containment_parents: dict[str, list[str]] = defaultdict(list)
         children: dict[str, list[str]] = defaultdict(list)
         for edge in self.view.snapshot.graph.edges:
             if edge.kind == "contains":
                 parents[edge.target] = edge.source
+                containment_parents[edge.target].append(edge.source)
                 children[edge.source].append(edge.target)
         object.__setattr__(self, "_parents", parents)
+        object.__setattr__(self, "_containment_parents", containment_parents)
         object.__setattr__(self, "_children", children)
 
     @staticmethod
@@ -185,6 +190,19 @@ class ProjectQuery:
         result["source_diagnostics_omitted"] = diagnostics_omitted
         parser_codes = dict(self.view.snapshot.source_diagnostics.parser_codes_by_node)
         source_diagnostics.extend({"code": code} for code in parser_codes.get(node.key, ()))
+        result["modbus"] = sensor_projection(node, self._nodes, self._containment_parents, limit)
+        modbus = result["modbus"]
+        if isinstance(modbus, dict) and isinstance(modbus.get("ancestors"), list):
+            for ancestor in modbus["ancestors"]:
+                ancestor["source_diagnostics"] = [
+                    {"code": code} for code in parser_codes.get(ancestor["project_node_id"], ())[:2]
+                ]
+        if (
+            node.block_type is not None
+            and node.block_type.startswith("Modbus")
+            and node.block_type not in {"ModbusASensor", "ModbusDev", "ModbusServer"}
+        ):
+            source_diagnostics.append({"code": "unsupported_modbus_source_type"})
         knx = node.knx
         if knx is None:
             return result
@@ -460,6 +478,7 @@ class ProjectQuery:
             ):
                 continue
             item = self._summary(node)
+            item["modbus"] = sensor_projection(node, self._nodes, self._containment_parents, 1)
             if needle is not None:
                 connector_key = next((value for key, value in node.attributes if key == "K"), None)
                 knx_values = (

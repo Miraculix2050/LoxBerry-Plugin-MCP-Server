@@ -189,7 +189,7 @@ def test_project_status_schema_distinguishes_model_sources_from_config_projects(
     for tool_name in ("loxone_find_project_objects", "loxone_describe_project_object"):
         node_definitions = tools[tool_name]["outputSchema"]["$defs"]
         node_name = (
-            "ProjectNodeSummaryData"
+            "ProjectSearchNodeSummaryData"
             if tool_name == "loxone_find_project_objects"
             else "ProjectDescriptionData"
         )
