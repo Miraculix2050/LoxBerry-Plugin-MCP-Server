@@ -13,7 +13,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
 
-from mcpserver.config import PluginConfig
+from mcpserver.config import ConfigError, PluginConfig
 from mcpserver.emergency_stop import EmergencyStopMonitor
 from mcpserver.event_history_selector_cache import EventHistorySelectorCache, SelectorCacheError
 from mcpserver.loxone.event_history import (
@@ -140,7 +140,7 @@ def _apply(change: Callable[[PluginConfig], PluginConfig]) -> tuple[PluginConfig
                 try:
                     save(previous)
                     bridge._restart_service()
-                except bridge.AdminError as rollback_error:
+                except (bridge.AdminError, ConfigError) as rollback_error:
                     raise bridge.AdminError(
                         "event history apply and rollback failed", code="outcome_unknown"
                     ) from rollback_error

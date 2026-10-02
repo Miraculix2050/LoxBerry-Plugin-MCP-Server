@@ -1527,6 +1527,8 @@ def _allow_loxberry_read(payload: object) -> dict[str, Any]:
             record_explorer_approval(
                 _config_store(), _auth_store(), "loxberry:read", record, now=int(time.time())
             )
+        except PersistenceUncertain:
+            raise
         except ValueError as exc:
             raise AdminError(str(exc)) from exc
         return {"loxberry_bindings": _loxberry_bindings(), "sessions": _sessions()}
@@ -1628,6 +1630,8 @@ def _allow_loxberry_operate(payload: object) -> dict[str, Any]:
             record_explorer_approval(
                 _config_store(), _auth_store(), "loxberry:operate", record, now=int(time.time())
             )
+        except PersistenceUncertain:
+            raise
         except ValueError as exc:
             raise AdminError(str(exc)) from exc
         return {

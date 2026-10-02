@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from mcpserver import admin, config, mqtt_health, persistence
+from mcpserver import admin, config, event_history_admin, mqtt_health, persistence
 from mcpserver.auth import loxone_store, remote_revocation
 from mcpserver.auth import store as auth_store
 from mcpserver.config import (
@@ -252,6 +252,58 @@ def test_admin_uncertainty_is_localized_for_ajax_and_fallback():
     for language in ("de", "en"):
         text = (root / f"templates/lang/language_{language}.ini").read_text()
         assert "PERSISTENCE_UNCERTAIN=" in text
+
+
+@pytest.mark.parametrize("capability", ["read", "operate"])
+def test_explorer_approval_does_not_reclassify_persistence_uncertainty(monkeypatch, capability):
+    record = {
+        "expires_at": 4_000_000_000,
+        "client_kind": "tool_explorer",
+        "pending_loxberry_read": True,
+        "pending_loxberry_operate": True,
+        "scope": "loxone:read loxone:history loxberry:operate",
+    }
+    monkeypatch.setattr(
+        admin,
+        "_auth_store",
+        lambda: SimpleNamespace(snapshot=lambda: {"families": {"session": record}}),
+    )
+    monkeypatch.setattr(admin, "_config_store", lambda: None)
+
+    def fail(*args, **kwargs):
+        raise ConfigPersistenceUncertain("visible approval")
+
+    monkeypatch.setattr("mcpserver.explorer_bindings.record_explorer_approval", fail)
+    with pytest.raises(ConfigPersistenceUncertain):
+        getattr(admin, f"_allow_loxberry_{capability}")({"session_id": "session"})
+
+
+def test_event_history_uncertain_rollback_reports_failed_rollback(monkeypatch):
+    previous = PluginConfig.defaults()
+    writes, restarts = [], []
+
+    def save(candidate):
+        writes.append(candidate)
+        if len(writes) == 2:
+            raise ConfigPersistenceUncertain("rollback visible")
+
+    def restart():
+        restarts.append(True)
+        raise admin.AdminError("apply failed")
+
+    store = SimpleNamespace(transaction=lambda apply: apply(previous, save))
+    bridge = SimpleNamespace(
+        _config_store=lambda: store,
+        _service_active=lambda: True,
+        _restart_service=restart,
+        AdminError=admin.AdminError,
+    )
+    monkeypatch.setattr(event_history_admin, "_bridge", lambda: bridge)
+    with pytest.raises(admin.AdminError, match="apply and rollback failed") as captured:
+        event_history_admin._apply(lambda current: replace(current, event_history_enabled=True))
+    assert captured.value.code == "outcome_unknown"
+    assert isinstance(captured.value.__cause__, ConfigPersistenceUncertain)
+    assert len(writes) == 2 and len(restarts) == 1
 
 
 def test_mqtt_uncertain_rollback_stops_further_compensation(tmp_path, monkeypatch):
