@@ -23,6 +23,8 @@ und Zugangsdaten liegen in getrennten Dateien und können teilweise aktualisiert
 sein. Eine fehlgeschlagene Wiederherstellung wird als Rollback-Fehler gemeldet.
 Eine Upgrade-Migration mit Verzeichnis-Sync-Fehler bricht mit Fehler ab, auch wenn
 die migrierte Datei bereits sichtbar ist.
+Auch eine idempotente Wiederholung synchronisiert das Verzeichnis und gelingt erst
+nach erfolgreicher Synchronisierung.
 
 Diese Synchronisierung verkleinert eine Lücke bei der Dauerhaftigkeit von
 Dateisystemmetadaten; sie garantiert keinen Schutz vor beliebigen Hardwaredefekten

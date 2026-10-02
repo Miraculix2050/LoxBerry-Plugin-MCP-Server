@@ -20,6 +20,7 @@ service. Reload the saved state before taking further action. MQTT settings and
 credentials are separate files and may show a partial update. A failed restoration
 is reported as a rollback failure. An upgrade migration with a directory-sync error
 stops with an error even if the migrated file is already visible.
+An idempotent retry also syncs the directory and succeeds only after that sync.
 
 These sync operations reduce a filesystem metadata durability gap; they do not
 guarantee survival of arbitrary hardware failure or storage corruption.

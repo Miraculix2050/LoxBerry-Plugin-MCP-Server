@@ -140,16 +140,18 @@ if changed:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary, path)
-        directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
-        try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
     finally:
         try:
             temporary.unlink(missing_ok=True)
         except OSError:
             pass
+# A retry can see the migrated schema after a previous post-replace sync failure.
+# Confirm directory durability even when no additional migration is necessary.
+directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+try:
+    os.fsync(directory)
+finally:
+    os.close(directory)
 PY
 chmod 600 "$plugin_config/mcpserver.json"
 mkdir -p "$plugin_data/auth"
