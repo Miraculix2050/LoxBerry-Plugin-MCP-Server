@@ -27,6 +27,7 @@ from urllib.request import Request, urlopen
 from uuid import UUID
 
 from mcpserver import __version__
+from mcpserver.persistence import PersistenceUncertain
 
 if TYPE_CHECKING:
     from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore
@@ -987,11 +988,16 @@ def _save_mqtt(payload: object) -> dict[str, Any]:
                     else "failed"
                 )
             return updated
+        except PersistenceUncertain:
+            # The filesystem change has happened. Do not compensate or restart blindly.
+            raise
         except (AdminError, MqttCredentialStoreError, ValueError) as apply_error:
             rollback_error: Exception | None = None
             if configuration_restore_required:
                 try:
                     save(previous)
+                except PersistenceUncertain as exc:
+                    raise AdminError("MQTT configuration apply and rollback failed") from exc
                 except ConfigError as exc:
                     rollback_error = exc
             if credentials_restore_required and credentials is not None:
@@ -1521,6 +1527,8 @@ def _allow_loxberry_read(payload: object) -> dict[str, Any]:
             record_explorer_approval(
                 _config_store(), _auth_store(), "loxberry:read", record, now=int(time.time())
             )
+        except PersistenceUncertain:
+            raise
         except ValueError as exc:
             raise AdminError(str(exc)) from exc
         return {"loxberry_bindings": _loxberry_bindings(), "sessions": _sessions()}
@@ -1622,6 +1630,8 @@ def _allow_loxberry_operate(payload: object) -> dict[str, Any]:
             record_explorer_approval(
                 _config_store(), _auth_store(), "loxberry:operate", record, now=int(time.time())
             )
+        except PersistenceUncertain:
+            raise
         except ValueError as exc:
             raise AdminError(str(exc)) from exc
         return {
@@ -1805,6 +1815,17 @@ def _event_history_source_revision() -> dict[str, str | bool]:
 
 
 def dispatch(request: object, *, timing: dict[str, float | int] | None = None) -> dict[str, Any]:
+    try:
+        return _dispatch(request, timing=timing)
+    except PersistenceUncertain as exc:
+        raise AdminError(
+            "A stored change is visible, but durability is unconfirmed. "
+            "Reload the saved state before taking further action.",
+            code="persistence_uncertain",
+        ) from exc
+
+
+def _dispatch(request: object, *, timing: dict[str, float | int] | None = None) -> dict[str, Any]:
     if not isinstance(request, dict) or not isinstance(request.get("action"), str):
         raise AdminError("request is invalid")
     action = request["action"]

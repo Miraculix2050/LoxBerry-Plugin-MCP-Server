@@ -4,6 +4,32 @@
 
 ## Grundeinstellungen
 
+### Persistenz und Speicherfehler
+
+Auf unterstützten LoxBerry/Linux-Dateisystemen synchronisieren Änderungen an
+Konfiguration und MQTT-Zugangsdaten die Datei vor dem atomaren Austausch und
+anschließend das Elternverzeichnis. Das Löschen von MQTT-Zugangsdaten und bestehende
+Konfigurationsmigrationen synchronisieren ebenfalls das Verzeichnis. Die
+Windows-Entwicklung überspringt den Verzeichnis-Sync; daraus folgt keine gleichwertige
+Stromausfallfestigkeit. Neu angelegte Verzeichnisbäume und Installationsschlüssel,
+Caches und Diagnosesnapshots sind von dieser Zusage ausgenommen.
+
+Eine gespeicherte Änderung ist von ihrer Anwendung im laufenden Dienst zu
+unterscheiden. Gelingt die Dateiänderung, kann ihre Dauerhaftigkeit aber nicht
+bestätigt werden, meldet die Admin-Seite `persistence_uncertain` und wiederholt,
+restauriert oder schaltet den Dienst nicht automatisch um. Laden Sie den
+gespeicherten Zustand erneut, bevor Sie weitere Schritte ausführen. MQTT-Einstellungen
+und Zugangsdaten liegen in getrennten Dateien und können teilweise aktualisiert
+sein. Eine fehlgeschlagene Wiederherstellung wird als Rollback-Fehler gemeldet.
+Eine Upgrade-Migration mit Verzeichnis-Sync-Fehler bricht mit Fehler ab, auch wenn
+die migrierte Datei bereits sichtbar ist.
+Auch eine idempotente Wiederholung synchronisiert das Verzeichnis und gelingt erst
+nach erfolgreicher Synchronisierung.
+
+Diese Synchronisierung verkleinert eine Lücke bei der Dauerhaftigkeit von
+Dateisystemmetadaten; sie garantiert keinen Schutz vor beliebigen Hardwaredefekten
+oder Speicherkorruption.
+
 Im Bereich **Status & Betrieb** zeigt **Dienstbetrieb und Autostart** die gespeicherte Betriebsfreigabe. Nach einer Neuinstallation ist sie aktiviert, MCP und MQTT-Health sind jedoch getrennt und jeweils deaktiviert. Das Anwenden der aktivierten Freigabe startet den Dienst sofort und beim nächsten Systemstart. Das Deaktivieren stoppt ihn sofort und verhindert seinen Start beim nächsten Systemstart; diese Wahl bleibt auch bei Updates erhalten. Die Statusaktionen **Starten**, **Stoppen** und **Neu starten** sind nur bei aktivierter Betriebsfreigabe verfügbar und ändern ausschließlich den aktuellen Laufzeitstatus, nicht das Verhalten beim Systemstart.
 
 ## MCP-Konfiguration

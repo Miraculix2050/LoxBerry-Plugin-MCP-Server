@@ -22,6 +22,7 @@ from typing import Any, Final
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from mcpserver.config import PluginConfig
+from mcpserver.persistence import PersistenceUncertain, fsync_parent_directory
 
 LOXONE_EPOCH_OFFSET: Final = 1_230_768_000
 _LOGGER = logging.getLogger("mcpserver.mqtt_health")
@@ -51,6 +52,10 @@ def consume_service_restart() -> bool:
 
 class MqttCredentialStoreError(RuntimeError):
     """Custom MQTT credentials cannot be handled safely."""
+
+
+class MqttPersistenceUncertain(MqttCredentialStoreError, PersistenceUncertain):
+    """A credential change is visible, but durability was not confirmed."""
 
 
 class MqttCredentialStore:
@@ -118,6 +123,7 @@ class MqttCredentialStore:
             "ciphertext": base64.urlsafe_b64encode(ciphertext).decode("ascii"),
         }
         temporary = self.path.with_name(f".{self.path.name}.{secrets.token_hex(8)}.tmp")
+        replaced = False
         try:
             self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -126,26 +132,41 @@ class MqttCredentialStore:
                     document, handle, ensure_ascii=True, separators=(",", ":"), sort_keys=True
                 )
                 handle.write("\n")
+                os.chmod(temporary, 0o600)
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temporary, self.path)
+            replaced = True
             os.chmod(self.path, 0o600)
+            fsync_parent_directory(self.path)
         except OSError as exc:
-            temporary.unlink(missing_ok=True)
+            with suppress(OSError):
+                temporary.unlink(missing_ok=True)
+            if replaced:
+                raise MqttPersistenceUncertain(
+                    "MQTT credential change is visible; durability is unconfirmed"
+                ) from exc
             raise MqttCredentialStoreError("MQTT credential store update failed") from exc
 
     def delete(self) -> None:
         """Remove the optional password only after rejecting unsafe paths."""
         if not self.path.exists():
             return
+        removed = False
         try:
             metadata = self.path.lstat()
             if not stat.S_ISREG(metadata.st_mode) or self.path.is_symlink():
                 raise MqttCredentialStoreError("MQTT credential path is unsafe")
             self.path.unlink()
+            removed = True
+            fsync_parent_directory(self.path)
         except MqttCredentialStoreError:
             raise
         except OSError as exc:
+            if removed:
+                raise MqttPersistenceUncertain(
+                    "MQTT credential removal is visible; durability is unconfirmed"
+                ) from exc
             raise MqttCredentialStoreError("MQTT credential store removal failed") from exc
 
 

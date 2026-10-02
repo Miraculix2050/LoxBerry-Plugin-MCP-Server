@@ -456,6 +456,7 @@ sub localize_admin_error {
     my ($result) = @_;
     return if $result->{ok} || ref($result->{error}) ne 'HASH';
     my %messages = (
+        persistence_uncertain => $L{'AJAX.PERSISTENCE_UNCERTAIN'},
         securepin_invalid => $L{'CERTIFICATE.ERROR_PIN_INVALID'},
         securepin_wrong => $L{'CERTIFICATE.ERROR_PIN_WRONG'},
         securepin_locked => $L{'CERTIFICATE.ERROR_PIN_LOCKED'},
@@ -731,7 +732,7 @@ if ($action ne '') {
     json_reply($result, $result->{ok} ? 200 : 400) if $q->{ajax};
     my $notice = $result->{ok}
         ? ($action eq 'renew_certificate' ? 'certificate_scheduled' : 'success')
-        : 'error';
+        : (($result->{error}{code} // '') eq 'persistence_uncertain' ? 'persistence_uncertain' : 'error');
     if (($action eq 'emergency_stop_retry' || $action eq 'emergency_stop_options')
         && ($q->{fallback} // '') eq '1') {
         $fallback_retry_result = $result;
@@ -922,13 +923,14 @@ my %renewal_labels = (
 my $renewal_state = $renewal->{state} // 'idle';
 my $notice_value = $q->{notice} // '';
 my $notice_text = $notice_value eq 'success' ? $L{'AJAX.SUCCESS'}
+    : $notice_value eq 'persistence_uncertain' ? $L{'AJAX.PERSISTENCE_UNCERTAIN'}
     : $notice_value eq 'certificate_scheduled' ? $L{'CERTIFICATE.STATE_SCHEDULED'}
     : $notice_value ne '' ? $L{'AJAX.ERROR'} : '';
 my $notice_kind = $notice_value eq 'success' || $notice_value eq 'certificate_scheduled'
     ? 'success' : 'error';
 my $fallback_url = 'index.cgi?fallback=1';
 $fallback_url .= '&notice=' . $notice_value
-    if $notice_value =~ /\A(?:success|certificate_scheduled|error|forbidden)\z/;
+    if $notice_value =~ /\A(?:success|certificate_scheduled|error|forbidden|persistence_uncertain)\z/;
 for my $session (@$sessions) {
     next if ref($session) ne 'HASH';
     $session->{expires_display} = format_expiry($session->{expires_at});

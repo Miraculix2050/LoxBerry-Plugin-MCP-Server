@@ -24,6 +24,7 @@ import idna
 from mcpserver.loxone.endpoint import MiniserverEndpoint
 from mcpserver.loxone.project.taxonomy import AddressTaxonomyEntry, parse_taxonomy
 from mcpserver.loxone.uuid import normalize_loxone_uuid
+from mcpserver.persistence import PersistenceUncertain, fsync_parent_directory
 
 SCHEMA_VERSION: Final = 11
 DEFAULT_CONNECTION_TIMEOUT: Final = 10.0
@@ -58,6 +59,10 @@ _TransactionResult = TypeVar("_TransactionResult")
 
 class ConfigError(ValueError):
     """The plugin configuration is invalid or cannot be persisted safely."""
+
+
+class ConfigPersistenceUncertain(ConfigError, PersistenceUncertain):
+    """The new configuration is visible, but durability was not confirmed."""
 
 
 def _lock_file(handle: BinaryIO) -> None:
@@ -815,6 +820,7 @@ class AtomicConfigStore:
         document = config.to_document()
         PluginConfig.from_document(document)
         temporary: Path | None = None
+        replaced = False
         try:
             self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             temporary = self.path.with_name(f".{self.path.name}.{secrets.token_hex(8)}.tmp")
@@ -822,15 +828,21 @@ class AtomicConfigStore:
             with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
                 json.dump(document, handle, ensure_ascii=True, sort_keys=True, indent=2)
                 handle.write("\n")
+                os.chmod(temporary, 0o600)
                 handle.flush()
                 os.fsync(handle.fileno())
-            os.chmod(temporary, 0o600)
             os.replace(temporary, self.path)
+            replaced = True
             os.chmod(self.path, 0o600)
+            fsync_parent_directory(self.path)
         except OSError as exc:
             if temporary is not None:
                 with suppress(OSError):
                     temporary.unlink(missing_ok=True)
+            if replaced:
+                raise ConfigPersistenceUncertain(
+                    "configuration change is visible; durability is unconfirmed"
+                ) from exc
             raise ConfigError("configuration update failed") from exc
 
     def mutate(self, operation: Callable[[PluginConfig], PluginConfig]) -> PluginConfig:

@@ -17,6 +17,8 @@ from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Any, BinaryIO, Final, Protocol, TypeVar, cast
 
+from mcpserver.persistence import fsync_parent_directory
+
 _SCHEMA_VERSION: Final = 1
 _COLLECTIONS: Final = ("clients", "codes", "access_tokens", "refresh_tokens", "families")
 _MAX_STORE_BYTES: Final = 4 * 1024 * 1024
@@ -180,12 +182,7 @@ class AtomicJsonAuthStore:
             os.chmod(temporary, 0o600)
             os.replace(temporary, self.path)
             os.chmod(self.path, 0o600)
-            if hasattr(os, "O_DIRECTORY"):
-                directory = os.open(self.path.parent, os.O_RDONLY | os.O_DIRECTORY)
-                try:
-                    os.fsync(directory)
-                finally:
-                    os.close(directory)
+            fsync_parent_directory(self.path)
         except OSError as exc:
             with suppress(OSError):
                 temporary.unlink(missing_ok=True)

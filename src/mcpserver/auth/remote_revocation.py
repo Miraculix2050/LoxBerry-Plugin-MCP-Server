@@ -17,7 +17,6 @@ from uuid import UUID
 from mcpserver.auth.loxone_store import (
     EncryptedLoxoneTokenStore,
     LoxoneTokenStoreError,
-    _fsync_parent_directory,
 )
 from mcpserver.loxone.auth_diagnostics import (
     MiniserverAuthCoordinator,
@@ -32,6 +31,7 @@ from mcpserver.loxone.client import (
     MiniserverEndpoint,
 )
 from mcpserver.loxone.events import LoxoneProtocolError
+from mcpserver.persistence import fsync_parent_directory
 
 _LOGGER = logging.getLogger("mcpserver.auth.remote_revocation")
 _POLL_SECONDS: Final = 5
@@ -161,7 +161,7 @@ class RemoteRevocationState:
             os.chmod(temporary, 0o600)
             os.replace(temporary, self.path)
             os.chmod(self.path, 0o600)
-            _fsync_parent_directory(self.path)
+            fsync_parent_directory(self.path)
         except OSError as exc:
             with suppress(OSError):
                 temporary.unlink(missing_ok=True)
