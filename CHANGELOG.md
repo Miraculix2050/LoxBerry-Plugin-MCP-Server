@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Preserve actual raw field/status evidence in Modbus mapping and polling
+  comparison exclusions; reject reversed or contradictory containment as a
+  grouping identity (#359).
+
 - Complete Modbus V1 static project analysis with configured mapping, direct
   consumer and raw polling checks, and expose all five checks through MCP and
   Explorer (#358–#360). Preserve KNX defaults, explicit coverage and evidence

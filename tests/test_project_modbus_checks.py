@@ -88,6 +88,83 @@ def test_only_exact_fc3_fc4_are_comparable(command):
     )
 
 
+@pytest.mark.parametrize(
+    "extra,expected_status,expected_raw,expected_pairs",
+    [
+        ('ModbusCmd="9"', "explicit", "9", ["9"]),
+        ('ModbusCmd="03"', "explicit", "03", ["03"]),
+        ('ModbusCmd="3.0"', "explicit", "3.0", ["3.0"]),
+        ('ModbusCmd="3" ModbusCmd="4"', "ambiguous", None, ["3", "4"]),
+        ('ModbusCmd=" 3"', "invalid", None, [None]),
+        ("", "absent", None, []),
+    ],
+)
+def test_comparison_exclusion_preserves_actual_command_evidence(
+    extra, expected_status, expected_raw, expected_pairs
+):
+    item = sensor().replace('ModbusCmd="3"', extra)
+    data = run(view("<P>" + device(item) + "</P>"))
+    for check in ("configured_register_mappings", "configured_polling"):
+        candidate = next(
+            f for f in findings(data, "modbus_evidence_gap") if f.blocked_check == check
+        )
+        evidence = candidate.evidence[0]
+        assert evidence.source_field == "ModbusCmd"
+        assert evidence.evidence_status == expected_status
+        assert evidence.raw_value == expected_raw
+        assert [o.raw_value for o in evidence.occurrences] == expected_pairs
+        assert evidence.semantics == "unknown"
+        assert candidate.reason_code
+        assert candidate.severity == (
+            "warning" if expected_status in {"ambiguous", "invalid"} else "info"
+        )
+    assert not findings(data, "configured_mapping_repeated")
+    assert data == ProjectModbusAnalysisData.model_validate_json(data.model_dump_json())
+
+
+@pytest.mark.parametrize(
+    "extra,status,raw",
+    [
+        ('ModbusAddress=""', "invalid", None),
+        ('ModbusAddress="1" ModbusAddress="2"', "ambiguous", None),
+        ("", "absent", None),
+    ],
+)
+def test_mapping_address_exclusion_retains_field_evidence(extra, status, raw):
+    data = run(view("<P>" + device(sensor().replace('ModbusAddress="1"', extra)) + "</P>"))
+    gaps = [
+        f
+        for f in findings(data, "modbus_evidence_gap")
+        if f.blocked_check in {"configured_register_mappings", "configured_polling"}
+    ]
+    assert len(gaps) == 2
+    assert all(f.evidence[0].source_field == "ModbusAddress" for f in gaps)
+    assert all(f.evidence[0].evidence_status == status for f in gaps)
+    assert all(f.evidence[0].raw_value == raw for f in gaps)
+
+
+def test_reversed_and_conflicting_ancestry_never_establish_comparison_identity():
+    for xml in (
+        '<P><C Type="ModbusDev"><C Type="ModbusServer">' + sensor() * 2 + "</C></C></P>",
+        '<P><C Type="ModbusServer" Type="Other"><C Type="ModbusDev">'
+        + sensor() * 2
+        + "</C></C></P>",
+    ):
+        data = run(view(xml))
+        assert not findings(data, "configured_mapping_repeated")
+        assert (
+            "mapping_ancestry_unresolved"
+            in data.check_status["configured_register_mappings"].reason_codes
+        )
+        assert data.check_status["configured_polling"].evaluated_occurrences.value == 2
+        gap = next(
+            f
+            for f in findings(data, "modbus_evidence_gap")
+            if f.reason_code == "mapping_ancestry_unresolved"
+        )
+        assert gap.evidence[0].evidence_status in {"explicit", "ambiguous"}
+
+
 def test_raw_differences_and_polling_never_imply_device_invalidity():
     data = run(
         view(

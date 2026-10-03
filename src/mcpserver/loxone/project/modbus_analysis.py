@@ -333,6 +333,8 @@ def resolve_ancestry(
         if parent is None or parent.key in seen or parent.project != node.project:
             return ancestors, "invalid"
         seen.add(parent.key)
+        if source_type_status(parent) == "ambiguous":
+            return ancestors, "ambiguous"
         if exact_source_type(parent) not in {"ModbusDev", "ModbusServer", "Comm485"}:
             return ancestors, "explicit" if ancestors else "absent"
         ancestors.append(parent)

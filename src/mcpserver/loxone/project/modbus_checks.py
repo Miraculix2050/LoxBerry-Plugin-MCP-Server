@@ -51,7 +51,11 @@ def mapping_key(sensor: SensorEvidence) -> tuple[str, ...] | None:
     # Ancestry has already passed the independent, source-local uniqueness gate.
     device = [a for a in sensor.ancestors if a.block_type == "ModbusDev"]
     transport = [a for a in sensor.ancestors if a.block_type in {"Comm485", "ModbusServer"}]
-    if len(device) != 1 or len(transport) != 1:
+    if (
+        len(device) != 1
+        or len(transport) != 1
+        or sensor.ancestors.index(device[0]) > sensor.ancestors.index(transport[0])
+    ):
         return None
     return sensor.node.project, transport[0].key, device[0].key, command, address
 
@@ -60,7 +64,13 @@ def gap(
     emit: Emit, sensor: SensorEvidence, check: str, reason: str, name: str | None = None
 ) -> None:
     evidence = sensor.fields.get(name or "")
-    status = str(evidence["evidence_status"]) if evidence else "absent"
+    status = (
+        str(evidence["evidence_status"])
+        if evidence
+        else sensor.ancestry_status
+        if sensor.ancestry_status in {"explicit", "ambiguous", "invalid"}
+        else "absent"
+    )
     emit(
         "evidence_gaps",
         "modbus_evidence_gap",
@@ -70,6 +80,7 @@ def gap(
         node=sensor.node,
         field=name,
         status=status,
+        raw=str(evidence["raw_value"]) if evidence and evidence["raw_value"] is not None else None,
         warning=status in {"ambiguous", "invalid"},
         raw_evidence=evidence,
         extra={"blocked_check": check, "reason_code": reason},
@@ -107,7 +118,9 @@ def configured_checks(
                 if name == "ModbusCmd"
                 else "mapping_address_unavailable"
             )
-            if sensor.ancestry_status != "explicit":
+            if sensor.ancestry_status != "explicit" or (
+                raw_value(sensor, "ModbusCmd") in {"3", "4"} and raw_value(sensor, "ModbusAddress")
+            ):
                 name, reason = "", "mapping_ancestry_unresolved"
             results["configured_register_mappings"].reasons.add(reason)
             if "configured_register_mappings" in selected:
@@ -129,6 +142,7 @@ def configured_checks(
                         sensor,
                         "configured_polling",
                         "polling_comparison_prerequisite_unavailable",
+                        name or None,
                     )
         else:
             results["configured_polling"].reasons.add("polling_evidence_unavailable")

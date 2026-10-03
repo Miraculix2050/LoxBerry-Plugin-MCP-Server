@@ -46,6 +46,11 @@ default scope with version 8. Omitted Modbus selection executes `inventory`,
 `evidence_gaps`. Empty, duplicate and cross-scope selections are rejected before
 project loading. The input schema's `x-analyses-by-scope` annotation also supplies
 Explorer selection options; changing scope clears selection and cursor.
+Comparison-exclusion findings retain their `blocked_check` and `reason_code`,
+the implicated source field, its raw value/status and duplicate-pair evidence.
+Unsupported explicit commands remain explicit evidence, not absent values or
+invalid device configurations. Contradictory or reversed device/transport
+containment cannot establish a comparison identity.
 
 Counts describe `(model_source_id, project_node_id)` occurrences and carry
 `exact` or `lower_bound`. Source ingestion, candidate scanning, supported-type

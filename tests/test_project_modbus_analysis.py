@@ -371,10 +371,14 @@ def test_ids_order_and_gap_context_are_selection_independent():
 
 
 @pytest.mark.asyncio
-async def test_real_worker_dispatch_and_complete_default():
-    project = view((FIXTURES / "rtu-meter.xml").read_bytes())
-    result = await process_analysis(project, BOTH, scope="modbus")
-    assert result == analyze_modbus(project, BOTH)
+@pytest.mark.parametrize("fixture", ["rtu-meter.xml", "rtu-hvac.xml", "tcp-gen24.xml"])
+@pytest.mark.parametrize(
+    "selected", [BOTH, frozenset({"configured_register_mappings", "configured_polling"})]
+)
+async def test_real_worker_dispatch_and_complete_default(fixture, selected):
+    project = view((FIXTURES / fixture).read_bytes())
+    result = await process_analysis(project, selected, scope="modbus")
+    assert result == analyze_modbus(project, selected)
     default = frozenset(MODBUS_ANALYSES)
     assert await process_analysis(project, default, scope="modbus") == analyze_modbus(
         project, default
@@ -503,10 +507,18 @@ async def test_internal_runner_validation_precedes_loading(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
+    "selected", [BOTH, frozenset({"configured_register_mappings", "configured_polling"})]
+)
+@pytest.mark.parametrize(
     "changed", ["family_id", "miniserver_id", "identity_id", "marker", "version"]
 )
-async def test_internal_cache_cursor_binding_and_reauthorization(monkeypatch, changed):
-    project = view(b'<P><C Type="ModbusASensor"/></P>')
+async def test_internal_cache_cursor_binding_and_reauthorization(monkeypatch, changed, selected):
+    project = view(
+        b'<P><C Type="ModbusServer"><C Type="ModbusDev">'
+        b'<C Type="ModbusASensor" ModbusCmd="3" ModbusAddress="1" ModbusPollingCycle="1"/>'
+        b'<C Type="ModbusASensor" ModbusCmd="3" ModbusAddress="1" ModbusPollingCycle="2"/>'
+        b"</C></C></P>"
+    )
     access = SimpleNamespace(family_id="family", miniserver_id="server", identity_id="identity")
     authorize = AsyncMock()
 
@@ -527,9 +539,9 @@ async def test_internal_cache_cursor_binding_and_reauthorization(monkeypatch, ch
     worker = AsyncMock(side_effect=lambda v, selected, **_: analyze_modbus(v, selected))
     monkeypatch.setattr(tools, "process_analysis", worker)
     runner = tools._ProjectAnalysisRunner(runtime)
-    first = await runner.run("modbus", ["inventory", "evidence_gaps"], limit=1)
+    first = await runner.run("modbus", sorted(selected), limit=1)
     assert first.ok and first.stale and first.data.next_cursor
-    second = await runner.run("modbus", ["evidence_gaps", "inventory"], first.data.next_cursor, 1)
+    second = await runner.run("modbus", sorted(selected, reverse=True), first.data.next_cursor, 1)
     assert second.ok and worker.await_count == 1 and authorize.await_count == 2
     cross_scope = await runner.run("knx", ["project_connectivity"], first.data.next_cursor, 1)
     assert not cross_scope.ok and cross_scope.data.error == "invalid_input"
@@ -539,7 +551,7 @@ async def test_internal_cache_cursor_binding_and_reauthorization(monkeypatch, ch
         monkeypatch.setattr(tools, "MODBUS_ANALYSIS_VERSION", 2)
     else:
         setattr(access, changed, "changed")
-    invalid = await runner.run("modbus", ["inventory", "evidence_gaps"], first.data.next_cursor, 1)
+    invalid = await runner.run("modbus", sorted(selected), first.data.next_cursor, 1)
     assert not invalid.ok and invalid.data.error == "invalid_input"
     assert worker.await_count == 1
     current[0] = project
@@ -554,7 +566,7 @@ async def test_internal_cache_cursor_binding_and_reauthorization(monkeypatch, ch
     )
     monkeypatch.setattr(tools, "MODBUS_ANALYSIS_VERSION", 1)
     authorize.side_effect = PermissionError
-    revoked = await runner.run("modbus", ["inventory", "evidence_gaps"], first.data.next_cursor, 1)
+    revoked = await runner.run("modbus", sorted(selected), first.data.next_cursor, 1)
     assert not revoked.ok and revoked.data.error == "unauthenticated"
     assert worker.await_count == 1
 
