@@ -279,3 +279,21 @@ def test_trace_fitting_keeps_gap_references_and_reports_omission(monkeypatch):
     assert data.semantic_truncated
     assert not data.semantic_gaps
     assert len(envelope.model_dump_json().encode()) <= 2000
+
+
+def test_semantic_gap_preserves_traversal_truncation_reason():
+    from mcpserver.loxone.project.graph import ProjectPartSummary, ProjectSnapshot
+    from mcpserver.loxone.project.mapping import ProjectView, map_runtime
+    from mcpserver.loxone.project.query import ProjectQuery
+    from mcpserver.tools import ProjectTraceData
+
+    g = graph(xml(version="17010727"))
+    snap = ProjectSnapshot("synthetic", 9, (ProjectPartSummary("synthetic", 20, ()),), g)
+    structure = SimpleNamespace(controls=(), last_modified="synthetic")
+    q = ProjectQuery(ProjectView(snap, map_runtime(snap, structure), "synthetic"), {})
+    node = next(n for n in g.nodes if n.source_id == "state")
+    trace = q.trace(node, direction="upstream", max_depth=1, max_nodes=1)
+    assert trace["truncated"]
+    assert trace["truncation_reason"] == "max_nodes"
+    assert trace["semantic_gaps"]
+    ProjectTraceData.model_validate(trace)

@@ -796,15 +796,15 @@ class ProjectQuery:
             flow = state_flows.get(parent or reached)
             if flow is None:
                 continue
-            reason = (
+            gap_reason = (
                 state_connector_reason(
                     flow, dict(self._nodes[reached].attributes).get("K"), direction
                 )
                 if parent is not None
                 else flow.reason
             )
-            if reason is not None:
-                semantic_gaps.append({"project_node_id": reached, "code": reason})
+            if gap_reason is not None:
+                semantic_gaps.append({"project_node_id": reached, "code": gap_reason})
         return {
             "semantic_gaps": semantic_gaps,
             "start": self._summary(node),
