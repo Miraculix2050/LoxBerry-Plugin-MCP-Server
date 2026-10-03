@@ -228,8 +228,17 @@ def test_cgi_guard_before_helper(
     helper.chmod(0o755)
     action = "get_config" if endpoint == "index.cgi" else "event_history_local_overview"
     body = f"action={action}&ajax=1"
+    command = [
+        perl,
+        f"-I{ROOT / 'tests/perl_stubs'}",
+        str(ROOT / "webfrontend/htmlauth" / endpoint),
+    ]
+    if "REQUEST_METHOD" not in _request(overrides):
+        # CGI's offline mode reads command-line parameters instead of QUERY_STRING.
+        # Keep the method absent while still exercising an actual action guard.
+        command.extend((f"action={action}", "ajax=1"))
     result = subprocess.run(
-        [perl, f"-I{ROOT / 'tests/perl_stubs'}", str(ROOT / "webfrontend/htmlauth" / endpoint)],
+        command,
         input=body,
         text=True,
         capture_output=True,
