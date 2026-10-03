@@ -517,8 +517,9 @@
           else state.exact = mergeInterval(state.exact, job.start, job.end);
         }
         if (!replacement) {
+          const noticeChanged = Boolean(state.recoveryNotice);
           state.recoveryNotice = '';
-          if (renderNeeded || job.initial) render(state);
+          if (renderNeeded || job.initial || noticeChanged) render(state);
           limitCache(state);
         }
       }

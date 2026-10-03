@@ -103,6 +103,7 @@ async function overflowFixture({initialCount = 4000, replacement = 'reduced',
     update: async () => { updating = true; tick(); await flush(); },
     release: async () => { release?.(); await flush(); },
     get replacing() { return replacing; },
+    stopUpdating: () => { updating = false; },
     hide: () => { hidden = true; }, tick, close: () => dom.window.close()};
 }
 
@@ -161,6 +162,19 @@ for (const replacement of ['timeout', 'network', 'overflow']) {
     fixture.close();
   });
 }
+
+test('a successful empty fixed-range update clears a previous source recovery warning', async () => {
+  const fixture = await overflowFixture({replacement: 'timeout'});
+  const select = fixture.window.document.getElementById('chart-range');
+  select.value = 'custom';
+  select.dispatchEvent(new fixture.window.Event('change'));
+  await fixture.update(); await fixture.release();
+  assert.match(fixture.window.document.querySelector('#chart-panels section').textContent, /stale/);
+  fixture.stopUpdating(); fixture.tick(); await flush();
+  assert.doesNotMatch(fixture.window.document.querySelector('#chart-panels section').textContent, /stale/);
+  assert.equal(fixture.snapshot().sources[0].events.length, 4000);
+  fixture.close();
+});
 
 test('3999 events accept the 4000th and 4000 events accept duplicate IDs without replacement', async () => {
   for (const options of [{initialCount: 3999}, {initialCount: 4000, duplicate: true}]) {
