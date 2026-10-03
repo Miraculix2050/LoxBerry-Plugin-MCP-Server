@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Complete Modbus V1 static project analysis with configured mapping, direct
+  consumer and raw polling checks, and expose all five checks through MCP and
+  Explorer (#358–#360). Preserve KNX defaults, explicit coverage and evidence
+  gaps; configuration establishes neither bus activity nor device validity.
+
 - Let administrators export and load KNX prefix labels as a local UTF-8 text file.
   Loading is a draft until saved; clarify two- versus three-level address formats
   in the Admin help (#370, follow-up to #199).

@@ -95,6 +95,12 @@
   }
 
   function fieldHelpKey(name) { return FIELD_HELP[name] || null; }
+  function analysisOptions(tool, args) {
+    if (tool?.name !== 'loxone_analyze_project') return null;
+    const choices = tool.inputSchema?.properties?.analyses?.['x-analyses-by-scope'];
+    const scope = args.scope ?? tool.inputSchema?.properties?.scope?.default;
+    return Array.isArray(choices?.[scope]) ? choices[scope] : null;
+  }
   function isAdvancedField(name) { return ADVANCED_FIELDS.has(name); }
   function isReferenceField(name) { return Object.hasOwn(REFERENCES, name); }
   function actionFields(action) { return ACTION_FIELDS[action] || []; }
@@ -172,7 +178,7 @@
 
   return {GROUPS, forTool, toolGroup, requiredScopes, scopeAlternatives,
     requiredMutationScope,
-    fieldHelpKey, isAdvancedField, isReferenceField, referenceCandidates,
+    fieldHelpKey, analysisOptions, isAdvancedField, isReferenceField, referenceCandidates,
     hasActionFields, actionFields, operationParameterFields, fieldVisible, changeAction,
     transferRecipe};
 });

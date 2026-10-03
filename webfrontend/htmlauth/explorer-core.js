@@ -30,7 +30,7 @@
     '$ref', '$defs', 'type', 'enum', 'const', 'anyOf', 'oneOf', 'properties', 'required',
     'additionalProperties', 'items', 'minimum', 'maximum', 'minLength', 'maxLength',
     'pattern', 'minItems', 'maxItems', 'uniqueItems', 'title', 'description', 'default',
-    'examples', 'format', 'readOnly', 'writeOnly',
+    'examples', 'format', 'readOnly', 'writeOnly', 'x-analyses-by-scope',
   ]);
   function clone(value) {
     return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
@@ -324,7 +324,17 @@
   }
 
   function validateArguments(value, schema) {
-    return validateValue(value, schema || {type: 'object'}, schema || {});
+    const errors = validateValue(value, schema || {type: 'object'}, schema || {});
+    const choices = schema?.properties?.analyses?.['x-analyses-by-scope'];
+    if (choices && value && Array.isArray(value.analyses)) {
+      const scope = value.scope ?? schema.properties.scope.default;
+      const allowed = choices[scope] || [];
+      if (!value.analyses.length || new Set(value.analyses).size !== value.analyses.length ||
+          value.analyses.some((name) => !allowed.includes(name))) {
+        errors.push('analyses: select unique analyses from the selected scope');
+      }
+    }
+    return errors;
   }
 
   function isSecretSchema(name, schema, rootSchema) {

@@ -53,6 +53,10 @@
       if (!structured(item) || Array.isArray(item)) return '';
       const own = (field) => Object.prototype.hasOwnProperty.call(item, field) ? item[field] : undefined;
       function* candidates() {
+        if (['fact', 'review_candidate', 'evidence_gap'].includes(own('classification')) &&
+            typeof own('finding_type') === 'string') {
+          yield `${own('classification')}: ${own('finding_type')}`;
+        }
         for (const field of ['name', 'title', 'label', 'control_name', 'state_name', 'what']) yield own(field);
         const control = own('control');
         yield structured(control) && !Array.isArray(control) &&
@@ -384,6 +388,18 @@
         add.addEventListener('click', () => refresh([...rows,
           core.defaultArguments({...itemSchema, $defs: rootSchema.$defs})], fieldIndex + '-row-' + rows.length));
         input.append(add);
+      } else if (name === 'analyses' && adapters.analysisOptions(state.selectedTool, values)) {
+        input = element('select');
+        input.multiple = true;
+        const choices = adapters.analysisOptions(state.selectedTool, values);
+        input.size = Math.min(9, choices.length);
+        choices.forEach((value) => {
+          const option = element('option', {value, text: value});
+          option.selected = Array.isArray(values[name]) && values[name].includes(value);
+          input.append(option);
+        });
+        input.addEventListener('change', () => setField(name, true,
+          [...input.selectedOptions].map((option) => option.value)));
       } else if (type === 'array' || type === 'object') {
         input = element('textarea', {rows: '4', spellcheck: 'false', 'aria-label': type === 'array' ? label('arrayHelp') : label('objectHelp')});
         input.value = JSON.stringify(values[name] === undefined ? core.initialValue(property, rootSchema) : values[name], null, 2);
@@ -553,6 +569,23 @@
         collapseResult: label('collapseResult'),
         moreResults: label('moreResults'),
       }, actions.openTransfer));
+      if (context?.tool === 'loxone_analyze_project' && displayed?.ok && displayed.data?.scope === 'modbus') {
+        const data = displayed.data;
+        const counts = {fact: 0, review_candidate: 0, evidence_gap: 0};
+        for (const finding of data.findings || []) {
+          if (Object.hasOwn(counts, finding.classification)) counts[finding.classification]++;
+        }
+        const summary = element('div', {className: 'mcp-explorer-stack'});
+        summary.append(element('p', {text: `${label('analysisPage')}: ${label('analysisFacts')} ${counts.fact}; ` +
+          `${label('analysisReview')} ${counts.review_candidate}; ${label('analysisGaps')} ${counts.evidence_gap}`}));
+        summary.append(element('p', {className: 'mcp-explorer-muted', text: label('analysisStatic')}));
+        if (!data.coverage?.presentation_complete || !data.coverage?.candidate_scan_complete ||
+            !data.coverage?.source_ingestion_complete || !data.coverage?.supported_type_coverage_complete ||
+            Object.values(data.check_status || {}).some((status) => status.status !== 'complete')) {
+          summary.append(element('p', {className: 'mcp-explorer-warning', text: label('analysisLimited')}));
+        }
+        elements.resultTree.prepend(summary);
+      }
       elements.copy.disabled = false;
     }
 

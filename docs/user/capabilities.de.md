@@ -192,8 +192,8 @@ melden Abschneiden explizit; unbekannte Blocktypen und unaufgelöste Beziehungen
 erfundene Semantik sichtbar. Ein Trace begrenzt unaufgelöste Beziehungen unabhängig und meldet
 dies über `unresolved_truncated`.
 Exakte `ModbusASensor`-Objekte ergänzen optionale, schreibgeschützte `modbus`-Evidenz in
-Projektsuche und Describe. Die Suche erfolgt weiter per `block_type`; es gibt keinen neuen
-Technologiefilter oder Analyse-Scope. Die Allowlist umfasst `ModbusAddress`, `ModbusCmd`,
+Projektsuche und Describe. Die Suche erfolgt weiter per `block_type`, ohne neuen
+Technologiefilter. Die Allowlist umfasst `ModbusAddress`, `ModbusCmd`,
 `ModbusDataType`, `ModbusPollingCycle`, `SourceValHigh`, `DestValHigh`; beobachtete
 `ModbusDev`-Vorfahren zeigen den roh konfigurierten `Channel`, `ModbusServer` zeigt `Timeout`,
 `Comm485` zeigt `RxTimeout`, `Baudrate`, `Databits`, `Parity`, `Pause`, `Protocol`.
@@ -212,10 +212,20 @@ Actor-Unterstützung, Laufzeitfrische oder erfolgreiche Transaktionen werden nic
 Konfiguriertes Polling ist statische Evidenz. Die Suche zeigt höchstens einen Vorfahren,
 Describe höchstens `min(limit, 16)`, mit `ancestry_status` und `ancestry_truncated`.
 Nicht unterstützte Modbus-Typen erhalten eine Describe-Diagnose.
-Die interne Modbus-V1-Grundlage (#358) ergänzt Inventar- und Evidenzlückenprüfungen
-für spätere Integration. `loxone_analyze_project` und der Explorer bleiben öffentlich
-KNX-only; Modbus wird erst mit allen fünf Prüfungen aus #354 nach #359/#360 freigeschaltet.
-Diese Grundlage erzeugt keinen Busverkehr und belegt weder Gerätefunktion noch aktuelle Messwerte.
+`loxone_analyze_project(scope="modbus")` und Explorer bieten Modbus-Version 1:
+`inventory`, `configured_register_mappings`, `direct_consumers`,
+`configured_polling` und `evidence_gaps`. Ohne Auswahl laufen alle fünf; KNX bleibt
+Standard-Scope (Version 8). Ein Scopewechsel im Explorer leert Auswahl und Cursor.
+Der Mappingvergleich verwendet exakte Rohbefehle `3`/`4` und explizite lexikalische
+Adressen bei eindeutig beobachteter Transport-/Gerätehierarchie innerhalb einer Quelle.
+Wiederholte Mappings oder unterschiedliche explizite Rohattribute sind Prüfkandidaten,
+keine Defekte. Pollingwerte haben unbekannte Einheiten und belegen weder erreichte
+Raten noch Buslast. Direkte Signalkanten und verschiedene Verbraucher werden getrennt
+gezählt; Referenzen bleiben separat und fehlende direkte Verbraucher beweisen keine Nichtnutzung.
+Prüfstatus, Abdeckung, Lücken, Auslassungen und Pagination beachten. Diese Prüfungen
+erzeugen keinen Busverkehr und belegen weder aktuelle Messwerte noch Gerätefunktion.
+Gemeinsame Sensor-/Aktorregister können beabsichtigt sein. Registerbreite, Überlappung,
+Geräteadressierung, Skalierung und Byte-Reihenfolge benötigen Registerdokumentation.
 Describe führt begrenzte Parser-Diagnosen beobachteter Vorfahren mit und begrenzt den
 strukturierten Envelope auf 65.536 UTF-8-Bytes: Die Ancestry wird mit explizitem Kürzungsflag
 verkürzt; passt die verbleibende Beschreibung nicht, folgt `response_too_large`.

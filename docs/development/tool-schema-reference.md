@@ -37,15 +37,15 @@ synchronized capability guides and issue #352 for the narrow sensor-only boundar
 The generated HTML/JSON schema reference derives these definitions from the same
 public Pydantic models; it is generated during packaging, not checked in separately.
 
-## Internal Modbus V1 analysis foundation (#358)
+## Modbus V1 project analysis (#358–#360)
 
-`ProjectModbusAnalysisData` and the internal scope-discriminated success envelope
-prepare Modbus version 1 independently of KNX version 8. Only `inventory` and
-`evidence_gaps` execute internally. The final selection contract contains five
-checks; omitted selection selects all five and is rejected internally until
-the remaining checks are implemented. Empty, duplicate and cross-scope selections
-are rejected before project loading. The registered MCP schema, catalog and
-Explorer remain KNX-only; activation awaits #359 and #360.
+`loxone_analyze_project(scope="modbus")` returns `ProjectModbusAnalysisData`
+version 1 through the scope-discriminated success envelope. KNX remains the
+default scope with version 8. Omitted Modbus selection executes `inventory`,
+`configured_register_mappings`, `direct_consumers`, `configured_polling` and
+`evidence_gaps`. Empty, duplicate and cross-scope selections are rejected before
+project loading. The input schema's `x-analyses-by-scope` annotation also supplies
+Explorer selection options; changing scope clears selection and cursor.
 
 Counts describe `(model_source_id, project_node_id)` occurrences and carry
 `exact` or `lower_bound`. Source ingestion, candidate scanning, supported-type
@@ -72,8 +72,15 @@ structure fingerprint and selection. Findings use a separate `modbus:` ID namesp
 Construction quotas and presentation omissions follow #354. Pagination fits the
 whole envelope into 65,536 UTF-8 bytes, retains count/check/limitation truth and
 advances only over emitted findings. Static fixture evidence does not establish
-live sensor acceptance. Register mappings, direct consumers and polling checks
-remain separate implementation tasks; no register decoding or bus access is added.
+live sensor acceptance. Mapping comparison requires unique observed project
+transport/device ancestry, exact raw command `3` or `4`, and an explicit raw
+address. Addresses retain their lexical spelling. Repeated mappings and differing
+explicit raw attributes are review candidates; missing evidence is a gap.
+Polling summaries retain explicit raw values with unknown units, including when
+mapping prerequisites are unavailable. Direct consumers count raw signal edges
+and distinct resolved consumer occurrences separately; references remain separate.
+Zero observed consumers never establish non-use. No register width, overlap,
+device validity, scaling, byte order, bus load or current measurement is evaluated.
 
 ## Compact control reads
 

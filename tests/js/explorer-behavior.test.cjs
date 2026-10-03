@@ -443,3 +443,73 @@ test('adding an object row focuses an enabled control when its first field is op
   assert.notEqual(focused.tagName, 'FIELDSET');
   assert.equal(entry.querySelector('textarea').disabled, true);
 });
+
+const modbusAnalysisTool = {
+  name: 'loxone_analyze_project', description: 'Static project analysis',
+  annotations: {readOnlyHint: true, destructiveHint: false},
+  inputSchema: {type: 'object', properties: {
+    scope: {type: 'string', enum: ['knx', 'modbus'], default: 'knx'},
+    analyses: {anyOf: [{type: 'array', items: {type: 'string'}}, {type: 'null'}],
+      default: null, 'x-analyses-by-scope': {
+        knx: ['address_patterns'], modbus: ['inventory', 'configured_register_mappings',
+          'direct_consumers', 'configured_polling', 'evidence_gaps'],
+      }},
+    cursor: {type: 'string'},
+  }},
+};
+
+test('analysis scope changes clear stale selections and cursor and retain keyboard focus', async (t) => {
+  const h = createHarness({tools: [modbusAnalysisTool]});
+  t.after(h.close);
+  await h.ready();
+  const field = (name) => [...h.document.querySelectorAll('.mcp-explorer-field')]
+    .find((row) => [...row.querySelectorAll('label')].some((label) => label.textContent === name));
+  const toggle = field('scope').querySelector('input[type=checkbox]');
+  if (!toggle.checked) await h.click(toggle);
+  const scope = field('scope').querySelector('select');
+  scope.focus();
+  scope.value = JSON.stringify('modbus');
+  scope.dispatchEvent(new h.window.Event('change', {bubbles: true}));
+  assert.equal(h.document.activeElement.id, scope.id);
+  const analyses = field('analyses').querySelector('select');
+  assert.equal(analyses.multiple, true);
+  assert.deepEqual([...analyses.options].map((option) => option.value),
+    modbusAnalysisTool.inputSchema.properties.analyses['x-analyses-by-scope'].modbus);
+  await h.click(field('analyses').querySelector('input[type=checkbox]'));
+  const selection = field('analyses').querySelector('select');
+  selection.options[0].selected = true;
+  selection.dispatchEvent(new h.window.Event('change', {bubbles: true}));
+  assert.deepEqual(JSON.parse(h.byId('json').value), {scope: 'modbus', analyses: ['inventory']});
+  await h.click(field('cursor').querySelector('input[type=checkbox]'));
+  const cursor = field('cursor').querySelector('input:not([type=checkbox])');
+  cursor.value = 'synthetic-old-cursor';
+  cursor.dispatchEvent(new h.window.Event('input', {bubbles: true}));
+  const nextScope = field('scope').querySelector('select');
+  nextScope.value = JSON.stringify('knx');
+  nextScope.dispatchEvent(new h.window.Event('change', {bubbles: true}));
+  assert.deepEqual(JSON.parse(h.byId('json').value), {scope: 'knx'});
+  assert.deepEqual([...field('analyses').querySelector('select').options].map((option) => option.value),
+    ['address_patterns']);
+});
+
+test('Modbus results keep facts, review candidates, gaps and partial coverage visible', async (t) => {
+  const h = createHarness({tools: [modbusAnalysisTool], callResult: {ok: true, data: {
+    scope: 'modbus', findings: [
+      {classification: 'fact', finding_type: 'direct_consumer_summary'},
+      {classification: 'review_candidate', finding_type: 'configured_mapping_repeated'},
+      {classification: 'evidence_gap', finding_type: 'modbus_evidence_gap'},
+    ], coverage: {presentation_complete: true, candidate_scan_complete: true,
+      source_ingestion_complete: true, supported_type_coverage_complete: true},
+    check_status: {direct_consumers: {status: 'partial'}},
+  }}});
+  t.after(h.close);
+  await h.ready();
+  h.byId('json').value = JSON.stringify({scope: 'modbus'});
+  await h.click(h.byId('run'));
+  await h.waitFor(() => h.calls().length === 1 && h.byId('result-tree').firstChild?.className === 'mcp-explorer-stack');
+  const summary = h.byId('result-tree').firstChild;
+  assert.equal(summary.querySelectorAll('p').length, 3);
+  assert.match(summary.firstChild.textContent, /1.*1.*1/);
+  assert.ok(summary.querySelector('.mcp-explorer-warning'));
+  assert.doesNotMatch(summary.textContent, /unused|healthy|fault/);
+});
