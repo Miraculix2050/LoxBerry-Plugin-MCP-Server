@@ -120,6 +120,8 @@ def test_schema_catalog_contains_complete_fastmcp_contract() -> None:
 
 def test_window_monitor_summary_is_in_generated_description_contract() -> None:
     tools = {tool["name"]: tool for tool in tool_schema_catalog(VERSION)["tools"]}
+    states = tools["loxone_get_states"]["outputSchema"]["$defs"]["StateData"]["properties"]
+    assert "WindowMonitor contact states" in states["semantic_value"]["description"]
     definitions = tools["loxone_describe_control"]["outputSchema"]["$defs"]
     assert "window_monitor_summary" in definitions["ControlModelData"]["properties"]
     analysis = tools["loxone_analyze_opening_contacts"]["outputSchema"]["$defs"]
