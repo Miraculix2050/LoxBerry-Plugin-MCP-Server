@@ -1,4 +1,4 @@
-"""Allowlisted raw analog-sensor evidence; no Config defaults or protocol decoder."""
+"""Allowlisted raw analog endpoint evidence; no defaults or protocol decoder."""
 
 import re
 from collections.abc import Mapping
@@ -13,6 +13,16 @@ FIELDS = {
         "ModbusPollingCycle",
         "SourceValHigh",
         "DestValHigh",
+    ),
+    "ModbusAActor": (
+        "ModbusAddress",
+        "ModbusCmd",
+        "ModbusDataType",
+        "SourceValHigh",
+        "DestValHigh",
+        "Channel",
+        "RepeatRate",
+        "ModbusCoilQuantity",
     ),
     "ModbusDev": ("Channel",),
     "ModbusServer": ("Timeout",),
@@ -62,7 +72,7 @@ def sensor_projection(
     parents: Mapping[str, list[str]],
     limit: int,
 ) -> dict[str, object] | None:
-    if node.kind != "block" or node.block_type != "ModbusASensor":
+    if node.kind != "block" or node.block_type not in {"ModbusASensor", "ModbusAActor"}:
         return None
     ancestors: list[dict[str, object]] = []
     seen = {node.key}
@@ -81,7 +91,9 @@ def sensor_projection(
             status = "invalid"
             break
         seen.add(parent.key)
-        if parent.block_type not in {"ModbusDev", "ModbusServer", "Comm485"}:
+        if parent.block_type not in {"ModbusDev", "ModbusServer", "Comm485"} and not (
+            node.block_type == "ModbusAActor" and parent.block_type == "ActorCaption"
+        ):
             break
         status = "explicit"
         ancestors.append(
@@ -98,8 +110,10 @@ def sensor_projection(
     else:
         truncated = bool(parents.get(current.key))
     return {
-        "source_type": "ModbusASensor",
-        "flow_direction": "source_read",
+        "source_type": node.block_type,
+        "flow_direction": "source_read"
+        if node.block_type == "ModbusASensor"
+        else "configured_write",
         "project_node_id": node.key,
         "model_source_id": node.project,
         "fields": raw_fields(node),

@@ -225,7 +225,8 @@ class ProjectQuery:
         if (
             node.block_type is not None
             and node.block_type.startswith("Modbus")
-            and node.block_type not in {"ModbusASensor", "ModbusDev", "ModbusServer"}
+            and node.block_type
+            not in {"ModbusASensor", "ModbusAActor", "ModbusDev", "ModbusServer"}
         ):
             source_diagnostics.append({"code": "unsupported_modbus_source_type"})
         knx = node.knx

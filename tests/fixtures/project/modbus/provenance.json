@@ -25,5 +25,23 @@
       "163"
     ],
     "derivation": "Original C/Co containment and allowlisted numeric field pairs only; synthetic source IDs; names, notes, addresses, other attributes and unrelated nodes removed. No private source."
+  },
+  {
+    "fixture": "tcp-actors.xml",
+    "public_source": "https://api.library.loxone.com/downloader/file/1561/Fronius%20Symo%20Gen24_V1.0.1.Loxone",
+    "source_sha256": "224a0384b68871f2f779404ac23883730ec8f44c451d0300c8e6dcc4904f3740",
+    "object_versions": [
+      "163"
+    ],
+    "derivation": "Original actor C/Co containment and allowlisted numeric attribute pairs only; synthetic source IDs; names, notes, network endpoints, unrelated nodes and other attributes removed. Public source only; no invented field values or connector semantics."
+  },
+  {
+    "fixture": "hoval-actors.xml",
+    "public_source": "https://api.library.loxone.com/downloader/file/2885/Hoval%20Webinar%20Loxone%20FIle%20Deutsch%20(Version%203.0.0).Loxone",
+    "source_sha256": "40e3bfb9704021782a09d9d589c648a0baab38aeaf678f839de0f067a7b1d21c",
+    "object_versions": [
+      "174"
+    ],
+    "derivation": "Original actor C/Co containment and allowlisted numeric attribute pairs only; synthetic source IDs; names, notes, network endpoints, unrelated nodes and other attributes removed. Public source only; no invented field values or connector semantics."
   }
 ]

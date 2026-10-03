@@ -25,15 +25,18 @@ These describe delivery, not freshness or installation coverage. Complete
 Assigned UUIDs identify visible definitions; names are not unique identifiers.
 The synthetic bucket has `assignment="unassigned"`, `uuid=null`, and `name=null`.
 
-## Raw Modbus analog-sensor evidence
+## Raw Modbus analog-endpoint evidence
 
 Project search/describe node schemas now include optional `modbus: ProjectModbusData`
-only for exact `ModbusASensor` objects. `ProjectModbusFieldData` retains allowlisted
+only for exact `ModbusASensor` and `ModbusAActor` objects. `ProjectModbusFieldData` retains allowlisted
 source-field evidence statuses and bounded raw occurrences; `ProjectModbusAncestorData`
 retains part-local containment and configured fields without decoded semantics.
 Search uses a one-ancestor bound, describe uses `min(limit, 16)`. Invalid strings are
 value-free publicly, retained internally. Missing values remain absent. See the
-synchronized capability guides and issue #352 for the narrow sensor-only boundary.
+synchronized capability guides and issues #352/#381 for the raw projection boundary.
+Actor fields are bounded at eight; `configured_write` describes configuration only.
+An observed `ActorCaption` ancestor preserves its containment identity with no fields.
+Sensor fields and ancestry bounds remain unchanged. The V1 analyzer remains sensor-only.
 The generated HTML/JSON schema reference derives these definitions from the same
 public Pydantic models; it is generated during packaging, not checked in separately.
 
