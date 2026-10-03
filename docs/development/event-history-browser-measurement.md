@@ -1,9 +1,83 @@
 # Development-only chart browser measurements
 
-This routine continues #297 without changing production assets, dependencies or
-performance architecture. The existing backend measurements and their revision
+This routine originated in #297, which is now closed as an ongoing measurement
+task (not completed performance acceptance). It supports focused follow-up
+measurements without changing production assets, dependencies or performance
+architecture. The existing backend measurements and their revision
 attribution in [chart preparation measurements](event-history-chart-measurement.md)
-remain unchanged. An authenticated target-browser run is still outstanding.
+remain unchanged. The October 3 authenticated target pilots are recorded in #297;
+they supersede
+the earlier zero-sample status. They do not complete the former broad measurement
+matrix or prove current performance.
+
+## Focused cache-overflow comparison (#371)
+
+`tools/browser/measure-chart-overflow.cjs` exports `bundle({charts, cache})` for an
+existing Playwright page. Write its returned function to a local development file
+and run that file with the browser provider. Omit the arguments for the working
+checkout; supply the two scripts from the comparison revision for the baseline.
+The runner creates and closes isolated sibling pages, fulfils only synthetic
+fixture requests, and does not navigate or modify the caller's target page.
+
+Each DE/EN and 1280x800/390x844 combination uses two sources, one initial load and
+five updates. The primary source starts with 24 or exactly 4,000 events; every
+update adds one event, while the second source remains unchanged. Pages contain
+at most 500 events; a dense replacement returns a deterministic reduced subset.
+This fixture is not the SQLite sampler: it tests bounded response handling with
+the shipped controller, cache, styles and uPlot. Responses include a fixed 15 ms
+synthetic delay. Toolbar interaction timings include Playwright dispatch, query
+completion and two animation frames, not physical paint or touch latency.
+
+The accepted October 4 comparison used baseline `c039b944` and the #371 working
+revision. Values below pool the four language/viewport combinations; update
+rows contain 20 observations, initial and interaction rows four. Times are
+median (minimum–maximum), milliseconds.
+
+| Scenario/measurement | Before | After |
+| --- | ---: | ---: |
+| Small: initial | 188 (177–225) | 177 (171–201) |
+| Small: five updates | 67 (65–84) | 67.5 (65–95) |
+| Small: zoom | 65 (65–65) | 64.5 (64–65) |
+| Small: pan | 66.5 (66–67) | 66.5 (66–84) |
+| Dense: initial | 424 (420–430) | 431 (412–462) |
+| Dense: five updates | 68 (65–117) | 83 (66–116) |
+| Dense: overflow update only | 107.5 (99–117) | 108.5 (100–116) |
+| Dense: zoom to higher detail | 331 (315–332) | 331.5 (329–332) |
+| Dense: pan | 117 (116–117) | 117.5 (99–133) |
+
+Small initial loads used two requests/4,248 JSON bytes in both revisions;
+each update used one request/600–601 bytes. Dense initial loads used nine
+requests/278,057 bytes in both revisions. The overflow update used two requests
+in both, but the replacement queried two sources before and one after: total
+JSON bytes decreased from 19,868 to 18,038. Each of the four following updates
+used one request/608 bytes. JSON byte counts exclude HTTP headers and compression.
+The fixture envelopes are ASCII, so character and UTF-8 byte counts coincide.
+
+The baseline destroyed both plot instances at overflow; the new controller
+destroyed neither. Both revisions completed without JavaScript exceptions or
+horizontal page overflow, and keyboard values remained accessible. The new
+controller showed the DE/EN reduced-detail notice only on the affected source;
+zooming to an exact shorter range removed it. No immediate recovery loop occurred.
+The small-history request and transfer path was unchanged. The timing ranges
+overlap; this is a correctness and transfer comparison, not a speedup claim.
+These measurements do not establish current CGI/SQLite cost, service CPU/heap,
+target-device overflow reproduction, or the retired broad #297 acceptance matrix.
+
+The installed-path smoke on exclusively reserved LoxBerry-Test used the five
+changed existing Chart View files, with baseline hash verification, retained
+backups and post-deploy hashes. Service and `/healthz` passed before and after.
+Authenticated sibling tabs at 1280x800 (DE) and 390x844 (EN) loaded three existing
+sources with 276, 7 and 0 cached events, two populated plots, clear status, no
+horizontal overflow or JavaScript exceptions, and the updated cache/controller
+asset suffixes. Zoom worked without changing target histories. This confirms
+the installed path only: no suitable 4,000-event history was present in the
+inspected selection, so overflow reproduction remains synthetic.
+
+The final console check also reported native Admin-shell CSP diagnostics: four
+blocked inline scripts and one blocked data-URL image. The same five diagnostics
+occurred on the unchanged Event History overview; there were no failed HTTP
+resources or Chart View JavaScript exceptions. These shared-shell diagnostics
+are outside #371 and do not establish an error-free native Admin console.
 
 ## Reproduction
 

@@ -7,6 +7,10 @@ extracted from the matching version heading.
 
 - Extend version-bound State AQ evidence to I1–I8 and all demonstrated fixed-operand operators, with first-match/AND semantics and conservative numeric independence. Preserve gaps for empty results and unsupported contracts; synchronize generic and opening traces.
 
+- Recover a full Chart View cache per source, keeping existing plots visible while
+  bounded replacement data loads. Preserve other sources and distinguish reduced
+  detail from actual history changes (#371).
+
 - Decode bounded WindowMonitor contact bitmasks and original configured positions
   through shared state readers and opening-contact analysis. Preserve observation
   quality, malformed/missing values and mapping/truncation gaps; history remains
