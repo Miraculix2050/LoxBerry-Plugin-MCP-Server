@@ -275,6 +275,7 @@ def direct_check(
     edges: list[GraphEdge],
     unresolved: list[tuple[str, str]],
     relationships_complete: bool,
+    unresolved_complete: bool,
     emit: Emit,
     count: Callable[[int, bool], dict[str, object]],
     complete: bool,
@@ -335,6 +336,9 @@ def direct_check(
             reasons.add("max_connectors")
         if not relationships_complete:
             reasons.add("max_relationships")
+        if not unresolved_complete:
+            reasons.add("max_relationships")
+            reasons.add("unresolved_relationships_truncated")
         labels: Counter[str] = Counter()
         for key in connector_ids:
             values = {value for name, value in nodes[key].attributes if name == "K"}

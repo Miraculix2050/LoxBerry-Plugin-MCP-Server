@@ -378,6 +378,7 @@ def analyze_modbus(
     relevant_unresolved = []
     relationships = 0
     relationships_complete = True
+    unresolved_complete = True
     for edge in sorted(graph.edges, key=lambda e: (e.source, e.target, e.kind)):
         if edge.kind not in {"contains", "signal", "reference"}:
             continue
@@ -390,7 +391,7 @@ def analyze_modbus(
         relationships += 1
     for unresolved in sorted(graph.unresolved):
         if relationships == limits.relationships:
-            relationships_complete = False
+            unresolved_complete = False
             break
         relevant_unresolved.append(unresolved)
         relationships += 1
@@ -662,14 +663,14 @@ def analyze_modbus(
             relevant_edges,
             relevant_unresolved,
             relationships_complete,
+            unresolved_complete,
             emit,
             count,
             sensor_complete,
             limits.connectors_per_sensor,
             limits.evidence_records,
         )
-        if "max_connectors" in checks["direct_consumers"].reasons:
-            reasons.add("max_connectors")
+        reasons.update(checks["direct_consumers"].reasons & {"max_connectors", "max_relationships"})
     evaluated_union: set[tuple[str, str]] = set()
     if "inventory" in analyses:
         evaluated_union.update(s.identity for s in sensor_evidence)
@@ -819,7 +820,7 @@ def analyze_modbus(
             or not domain_complete
             or not sensor_complete
             or bool(findings_omitted[analysis])
-            or "max_relationships" in reasons
+            or (not relationships_complete and evaluated > 0)
             or "max_ancestry_depth" in reasons
         )
         eligible = len(inventory_occurrences)

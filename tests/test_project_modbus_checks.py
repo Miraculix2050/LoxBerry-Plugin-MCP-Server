@@ -280,3 +280,30 @@ def test_selection_independent_relationship_budget_preserves_mapping_ids():
     assert [f.finding_id for f in alone.findings] == [
         f.finding_id for f in together.findings if f.analysis == "configured_register_mappings"
     ]
+
+
+def test_unresolved_record_limit_preserves_complete_ancestry_and_positive_edges():
+    project = view(
+        "<P>"
+        + device(
+            sensor().replace("/>", '><Co U="src" K="Q"/></C>'),
+            sensor(),
+        )
+        + '<C Type="Other"><Co U="dst" K="I"><In Input="src"/></Co></C></P>'
+    )
+    graph = project.snapshot.graph
+    target = next(node for node in graph.nodes if node.block_type == "Other")
+    graph = replace(graph, unresolved=((target.key, "signal_unresolved"),))
+    project = replace(project, snapshot=replace(project.snapshot, graph=graph))
+    data = run(project, limits=ModbusLimits(relationships=len(graph.edges)))
+    assert len(findings(data, "configured_mapping_repeated")) == 1
+    assert data.check_status["configured_register_mappings"].status == "complete"
+    positive = findings(data, "direct_consumer_summary")
+    assert len(positive) == 1 and positive[0].direct_edge_count.value == 1
+    assert positive[0].direct_edge_count.count_kind == "lower_bound"
+    assert not positive[0].direct_slice_complete
+    assert data.check_status["direct_consumers"].status == "partial"
+    assert (
+        "unresolved_relationships_truncated" in data.check_status["direct_consumers"].reason_codes
+    )
+    assert data.check_status["inventory"].status == "complete"
