@@ -336,7 +336,6 @@ def analyze_modbus(
             continue
         if relationships == limits.relationships:
             relationships_complete = False
-            reasons.add("max_relationships")
             break
         parents[edge.target].append(edge.source)
         relationships += 1
@@ -429,8 +428,9 @@ def analyze_modbus(
         if category is None:
             continue
         type_key = source_type or "unresolved_type"
-        types[type_key]["source_occurrences"] += 1
-        source_type_occurrences[type_key].add(occurrence_identity(node))
+        if occurrence_identity(node) not in source_type_occurrences[type_key]:
+            types[type_key]["source_occurrences"] += 1
+            source_type_occurrences[type_key].add(occurrence_identity(node))
         if category != "hierarchy":
             types[type_key][category] += 1
             counters[category] += 1
@@ -479,6 +479,7 @@ def analyze_modbus(
                 )
         ancestors: list[GraphNode]
         if not relationships_complete:
+            reasons.add("max_relationships")
             ancestors, ancestry_status = [], "max_relationships"
         else:
             ancestors, ancestry_status = resolve_ancestry(
@@ -552,7 +553,7 @@ def analyze_modbus(
     sensor_complete = domain_complete and "max_sensor_occurrences" not in reasons
     field_complete = (
         sensor_complete
-        and relationships_complete
+        and (relationships_complete or evaluated == 0)
         and "max_ancestry_depth" not in reasons
         and not gaps["ambiguous"]
         and not gaps["invalid"]

@@ -61,11 +61,13 @@ def test_check_counts_include_unsupported_and_unresolved_occurrences():
         assert status.excluded_occurrences.value == 0
 
 
-def test_overlapping_candidate_and_ancestor_roles_keep_distinct_occurrence_counts():
+@pytest.mark.parametrize("padding", [b"", b"<X/>" * 7])
+def test_overlapping_candidate_and_ancestor_roles_keep_distinct_occurrence_counts(padding):
     result = analyze(
         view(
-            b'<P><C Type="Comm485" ModbusAddress="1">'
-            b'<C Type="ModbusDev"><C Type="ModbusASensor"/></C></C></P>'
+            b'<P><X/><C Type="Comm485" ModbusAddress="1">'
+            + padding
+            + b'<C Type="ModbusDev"><C Type="ModbusASensor"/></C></C></P>'
         )
     )
     role = next(t for t in result.coverage_by_source_type if t.source_type == "Comm485")
@@ -92,6 +94,22 @@ def test_gap_only_inspection_is_not_non_gap_sensor_evaluation(sensor_limit):
     assert result.coverage.evaluated_sensor_occurrences.value == 0
     assert result.coverage.evaluated_sensor_occurrences.count_kind == "exact"
     assert result.check_status["evidence_gaps"].evaluated_occurrences.value == min(sensor_limit, 2)
+
+
+@pytest.mark.parametrize("source_type,expected", [("Other", 0), ("ModbusAActor", 1)])
+def test_irrelevant_relationship_limit_does_not_make_domain_incomplete(source_type, expected):
+    project = view(
+        f'<P><C Type="Other"><C Type="Other"><C Type="{source_type}"/></C></C></P>'.encode()
+    )
+    result = analyze(project, limits=ModbusLimits(relationships=1))
+    assert result.coverage.candidate_scan_complete
+    assert "max_relationships" not in result.truncation_reasons
+    for status in result.check_status.values():
+        assert status.status == "complete"
+        assert status.eligible_occurrences.value == expected
+        assert status.eligible_occurrences.count_kind == "exact"
+        assert status.evaluated_occurrences.value == expected
+        assert status.evaluated_occurrences.count_kind == "exact"
 
 
 def test_unobserved_hierarchy_is_in_inventory_but_excluded_from_raw_gap_check():
