@@ -11,6 +11,7 @@ from mcp.server.fastmcp import FastMCP
 import mcpserver.tools as tools_module
 from mcpserver.loxone.project.graph import GraphEdge, ProjectSnapshot, build_graph
 from mcpserver.loxone.project.mapping import ProjectView, RuntimeMapping
+from mcpserver.loxone.project.modbus_analysis import analyze_modbus
 from mcpserver.loxone.project.models import ProjectError
 from mcpserver.loxone.project.parser import parse_project
 from mcpserver.loxone.project.query import ProjectQuery, ProjectQueryError
@@ -77,8 +78,11 @@ def test_public_original_shapes_and_typed_projection(fixture, count, transport):
         ('ModbusAddress="' + "1" * 65 + '"', "invalid", None, 1),
     ],
 )
-def test_field_evidence_status_and_occurrence_preservation(attrs, status, value, occurrences):
-    project = query(f'<P><C Type="ModbusASensor" {attrs}/></P>'.encode())
+@pytest.mark.parametrize("source_type", ["ModbusASensor", "ModbusAActor"])
+def test_field_evidence_status_and_occurrence_preservation(
+    attrs, status, value, occurrences, source_type
+):
+    project = query(f'<P><C Type="{source_type}" {attrs}/></P>'.encode())
     node = project.view.snapshot.graph.nodes[0]
     data = ProjectModbusData.model_validate(project.describe(node, limit=100)["modbus"])
     address = data.fields[0]
@@ -112,13 +116,13 @@ def test_bounded_occurrences_and_no_arbitrary_content():
 
 @pytest.mark.parametrize(
     "source_type",
-    ["Comm485", "ModbusDev", "ModbusServer", "ModbusAActor", "ModbusDSensor", "Unknown"],
+    ["Comm485", "ModbusDev", "ModbusServer", "ModbusSensor", "ModbusDSensor", "Unknown"],
 )
-def test_only_exact_analog_sensor_is_supported(source_type):
+def test_only_exact_analog_endpoints_are_supported(source_type):
     project = query(f'<P><C Type="{source_type}" ModbusAddress="1"/></P>'.encode())
     detail = project.describe(project.view.snapshot.graph.nodes[0], limit=100)
     assert detail["modbus"] is None
-    if source_type in {"ModbusAActor", "ModbusDSensor"}:
+    if source_type in {"ModbusSensor", "ModbusDSensor"}:
         assert {"code": "unsupported_modbus_source_type"} in detail["source_diagnostics"]
         ProjectNodeData.model_validate(detail)
     with pytest.raises(ProjectQueryError):
@@ -169,11 +173,17 @@ def test_parent_ambiguity_and_cycle_do_not_guess():
 
 def test_fixture_provenance_is_public_and_versioned():
     entries = json.loads((FIXTURES / "provenance.json").read_text())
-    assert len(entries) == 3
+    assert {e["fixture"] for e in entries} == {
+        "rtu-meter.xml",
+        "rtu-hvac.xml",
+        "tcp-gen24.xml",
+        "tcp-actors.xml",
+        "hoval-actors.xml",
+    }
     assert all(
         len(e["source_sha256"]) == 64 and e["public_source"].startswith("https://") for e in entries
     )
-    assert [e["object_versions"] for e in entries] == [["115"], ["115"], ["163"]]
+    assert [e["object_versions"] for e in entries] == [["115"], ["115"], ["163"], ["163"], ["174"]]
 
 
 def test_ancestor_parser_diagnostics_and_direct_connector_evidence():
@@ -204,9 +214,13 @@ def test_ancestor_parser_diagnostics_and_direct_connector_evidence():
 
 
 @pytest.mark.asyncio
-async def test_registered_description_byte_bound_and_revocation(monkeypatch):
-    project = query((FIXTURES / "tcp-gen24.xml").read_bytes())
-    identifier = sensors(project)[0]["project_node_id"]
+@pytest.mark.parametrize("source_type", ["ModbusASensor", "ModbusAActor"])
+async def test_registered_description_byte_bound_and_revocation(monkeypatch, source_type):
+    fixture = "tcp-gen24.xml" if source_type == "ModbusASensor" else "tcp-actors.xml"
+    project = query((FIXTURES / fixture).read_bytes())
+    identifier = next(
+        n.key for n in project.view.snapshot.graph.nodes if n.block_type == source_type
+    )
 
     async def project_query(_runtime):
         return project, SimpleNamespace(connected=True)
@@ -243,6 +257,73 @@ def test_generated_schema_contains_the_optional_typed_projection():
         fields = schema["$defs"]["ProjectModbusFieldData"]["properties"]
         assert fields["evidence_status"]["enum"] == ["explicit", "absent", "ambiguous", "invalid"]
         assert fields["occurrences"]["maxItems"] == 8
+        projection = schema["$defs"]["ProjectModbusData"]["properties"]
+        assert projection["source_type"]["enum"] == ["ModbusASensor", "ModbusAActor"]
+        assert projection["fields"]["maxItems"] == 8
+
+
+@pytest.mark.parametrize("fixture,count", [("tcp-actors.xml", 3), ("hoval-actors.xml", 18)])
+def test_public_actor_raw_projection_preserves_analysis_and_trace_boundary(fixture, count):
+    project = query((FIXTURES / fixture).read_bytes())
+    found = project.find(
+        query=None,
+        kind="block",
+        block_type="ModbusAActor",
+        source_id=None,
+        runtime_control_uuid=None,
+    )
+    assert len(found) == count
+    for summary in found:
+        assert (
+            ProjectSearchNodeSummaryData.model_validate(summary).modbus.source_type
+            == "ModbusAActor"
+        )
+        node = project.resolve(summary["project_node_id"], "project_node_id")
+        detail = project.describe(node, limit=100)
+        actor = ProjectNodeData.model_validate(detail).modbus
+        assert actor.flow_direction == "configured_write"
+        assert len(actor.fields) == 8
+        assert {f.source_field for f in actor.fields} == {
+            "ModbusAddress",
+            "ModbusCmd",
+            "ModbusDataType",
+            "SourceValHigh",
+            "DestValHigh",
+            "Channel",
+            "RepeatRate",
+            "ModbusCoilQuantity",
+        }
+        assert all(f.semantics == "unresolved" for f in actor.fields)
+        assert not actor.coverage_complete
+        assert [a.source_type for a in actor.ancestors[:2]] == ["ActorCaption", "ModbusDev"]
+        assert actor.ancestors[2].source_type in {"ModbusServer", "Comm485"}
+        assert {"code": "unsupported_modbus_source_type"} not in detail["source_diagnostics"]
+        assert "modbus" not in json.dumps(
+            project.trace(node, direction="downstream", max_depth=8, max_nodes=100)
+        )
+        assert "modbus" not in json.dumps(
+            project.observable_controls(node, direction="both", max_depth=8, max_nodes=100)
+        )
+    analysis = analyze_modbus(project.view, frozenset({"inventory", "evidence_gaps"}))
+    assert analysis["coverage"]["actor_source_occurrences"]["value"] == count
+    assert analysis["coverage"]["supported_sensor_occurrences"]["value"] == 0
+
+
+def test_actor_extra_fields_are_bounded_value_free_and_not_sensor_polling():
+    project = query(
+        b'<P><C Type="ModbusAActor" RepeatRate="10" RepeatRate="20" '
+        b'ModbusCoilQuantity="secret" Notes="private" ModbusPollingCycle="123"/></P>'
+    )
+    data = ProjectNodeData.model_validate(
+        project.describe(project.view.snapshot.graph.nodes[0], limit=100)
+    ).modbus
+    fields = {f.source_field: f for f in data.fields}
+    assert fields["RepeatRate"].evidence_status == "ambiguous"
+    assert fields["RepeatRate"].raw_value is None
+    assert fields["ModbusCoilQuantity"].evidence_status == "invalid"
+    assert fields["ModbusCoilQuantity"].occurrences[0].raw_value is None
+    assert "ModbusPollingCycle" not in fields
+    assert "secret" not in data.model_dump_json() and "private" not in data.model_dump_json()
 
 
 def test_modbus_projection_does_not_expand_trace_or_observability():

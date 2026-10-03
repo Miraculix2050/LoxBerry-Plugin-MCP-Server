@@ -5,6 +5,9 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Expose allowlisted raw analog Modbus actor configuration in project search/describe,
+  preserving unresolved encodings and the sensor-only analysis boundary (#381).
+
 - Derive configuration-bound State I2-to-AQ signal flow for the verified source
   version and equality/default table; retain connector-specific gaps for unknown
   State contracts and expose bounded provenance (#335).

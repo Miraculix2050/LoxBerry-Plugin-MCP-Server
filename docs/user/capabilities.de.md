@@ -191,14 +191,20 @@ strukturellen Einfluss, nicht eine beobachtete historische Ursache. Ergebnisse s
 melden Abschneiden explizit; unbekannte Blocktypen und unaufgelöste Beziehungen bleiben ohne
 erfundene Semantik sichtbar. Ein Trace begrenzt unaufgelöste Beziehungen unabhängig und meldet
 dies über `unresolved_truncated`.
-Exakte `ModbusASensor`-Objekte ergänzen optionale, schreibgeschützte `modbus`-Evidenz in
+Exakte `ModbusASensor`- und `ModbusAActor`-Objekte ergänzen optionale, schreibgeschützte `modbus`-Evidenz in
 Projektsuche und Describe. Die Suche erfolgt weiter per `block_type`, ohne neuen
-Technologiefilter. Die Allowlist umfasst `ModbusAddress`, `ModbusCmd`,
+Technologiefilter. Die Sensor-Allowlist umfasst `ModbusAddress`, `ModbusCmd`,
 `ModbusDataType`, `ModbusPollingCycle`, `SourceValHigh`, `DestValHigh`; beobachtete
 `ModbusDev`-Vorfahren zeigen den roh konfigurierten `Channel`, `ModbusServer` zeigt `Timeout`,
 `Comm485` zeigt `RxTimeout`, `Baudrate`, `Databits`, `Parity`, `Pause`, `Protocol`.
 Comm485 wird nur als beobachteter Quelltyp dieser Ancestry genannt und für sich nicht als
-Modbus klassifiziert. `source_read` folgt dem exakten Sensortyp; Containment ist Hierarchie,
+Modbus klassifiziert. `source_read` folgt dem exakten Sensortyp; Aktoren zeigen mit
+`configured_write` ihre konfigurierte Richtung, ohne Schreibzugriff zu gewähren.
+Aktor-Felder sind `ModbusAddress`, `ModbusCmd`, `ModbusDataType`, `SourceValHigh`,
+`DestValHigh`, `Channel`, `RepeatRate` und `ModbusCoilQuantity`; Wiederholung und Anzahl behalten
+unbekannte Einheiten/Semantik und sind kein Sensor-Polling oder decodierter Registerbereich.
+Der beobachtete `ActorCaption`-Vorfahr erhält seine Containment-Identität ohne Zusatzfelder.
+Containment ist Hierarchie,
 keine Signalkausalität. Bestehende Connector- und Beziehungsevidenz bleibt in Describe verfügbar.
 
 Jedes Feld enthält `explicit`, `absent`, `ambiguous` oder `invalid`, Quellfeld,
@@ -208,10 +214,12 @@ Quellstrings sind auf 64 Zeichen und acht Vorkommen je Feld begrenzt, mit `occur
 Fehlerhafte oder überlange Strings bleiben interne Quellevidenz; öffentliche Vorkommen markieren
 sie als ungültig und lassen ihren Inhalt aus. Einheiten, Enums und Datentypsemantik bleiben
 `unresolved`. Channel ist keine belegte Unit-ID. Defaults, Skalierungsformeln, Bit-/Wortreihenfolge,
-Actor-Unterstützung, Laufzeitfrische oder erfolgreiche Transaktionen werden nicht abgeleitet.
+Aktoroperationen, Laufzeitfrische oder erfolgreiche Transaktionen werden nicht abgeleitet.
 Konfiguriertes Polling ist statische Evidenz. Die Suche zeigt höchstens einen Vorfahren,
 Describe höchstens `min(limit, 16)`, mit `ancestry_status` und `ancestry_truncated`.
 Nicht unterstützte Modbus-Typen erhalten eine Describe-Diagnose.
+Aktoren bleiben in diesem Analog-Sensor-Analyzer nicht unterstützt; rohe Aktormetadaten
+erweitern weder die Analyseabdeckung noch belegen sie physische Aktorkompatibilität.
 `loxone_analyze_project(scope="modbus")` und Explorer bieten Modbus-Version 1:
 `inventory`, `configured_register_mappings`, `direct_consumers`,
 `configured_polling` und `evidence_gaps`. Ohne Auswahl laufen alle fünf; KNX bleibt
