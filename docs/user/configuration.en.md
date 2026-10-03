@@ -4,6 +4,24 @@
 
 ## Basic settings
 
+### Admin access and reverse proxies
+
+Admin and Event History actions require a POST with an Origin whose scheme, host
+and effective port match the browser address of the request. Direct HTTP and HTTPS
+access remain supported; an omitted port means 80 for HTTP and 443 for HTTPS.
+Cross-scheme requests and missing or malformed Origins are rejected.
+
+The plugin ignores `Forwarded` and `X-Forwarded-*` headers. For TLS termination at
+a reverse proxy, the administrator must sanitize incoming forwarding headers and
+use an explicitly trusted webserver configuration to supply the external host and
+port as `HTTP_HOST` and the external scheme as consistent CGI metadata:
+`HTTPS=on/1` for HTTPS or `off/0` for HTTP and/or `REQUEST_SCHEME=https/http`.
+Contradictory or invalid values are rejected; if both scheme variables are absent,
+native Apache's HTTP convention applies. Backend TLS metadata must be overwritten
+where necessary. The configured MCP origin does not replace this request metadata.
+Check both Admin pages after proxy changes; this does not establish general
+reverse-proxy compatibility.
+
 ### Persistence and storage errors
 
 On supported LoxBerry/Linux filesystems, configuration and MQTT credential updates

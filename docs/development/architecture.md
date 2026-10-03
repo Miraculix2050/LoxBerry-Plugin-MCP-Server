@@ -98,6 +98,21 @@ The authenticated Admin UI sends no-store cache directives, a same-origin Conten
 Security Policy, frame denial, a no-referrer policy and MIME sniffing protection
 for page, AJAX, diagnostic-download and redirect responses.
 
+Admin and Event History CGI actions require a POST with an Origin matching the
+request scheme, host and effective port. A shared Perl guard uses server-side
+`HTTPS` (`on`/`1`, `off`/`0`) and `REQUEST_SCHEME` (`http`/`https`); invalid or
+contradictory metadata is rejected. If both variables are absent, native Apache's
+cleartext HTTP convention applies. DNS host comparison is case-insensitive;
+IPv4 and bracketed IPv6 are supported. Omitted ports mean 80 for HTTP and 443 for
+HTTPS. Missing/null or malformed Origins are rejected before helper execution.
+The guard never infers the scheme from a port or the configured MCP public origin.
+It ignores `Forwarded` and `X-Forwarded-*` headers. A TLS-terminating reverse proxy
+must sanitize incoming forwarding headers and provide the external host/port in
+`HTTP_HOST` and consistent external scheme metadata through an explicitly trusted
+webserver configuration, overwriting backend TLS metadata where necessary. This
+does not introduce plugin-managed proxy trust or establish deployment-specific
+proxy compatibility.
+
 ## Related documents
 
 - [Implementation guidelines](implementation-guidelines.md)

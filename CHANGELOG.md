@@ -11,6 +11,10 @@ extracted from the matching version heading.
   bounded replacement data loads. Preserve other sources and distinguish reduced
   detail from actual history changes (#371).
 
+- Validate Admin and Event History POST origins against the request scheme, host
+  and effective port; reject cross-scheme requests and ignore forwarding headers
+  unless the webserver supplies trusted CGI metadata (#372).
+
 - Decode bounded WindowMonitor contact bitmasks and original configured positions
   through shared state readers and opening-contact analysis. Preserve observation
   quality, malformed/missing values and mapping/truncation gaps; history remains

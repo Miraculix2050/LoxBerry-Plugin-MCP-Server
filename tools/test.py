@@ -35,6 +35,14 @@ _FULL_PATTERNS: Final = (
 _TEST_GROUPS: Final = (
     (
         (
+            "bin/lib/MCPServer/RequestSecurity.pm",
+            "webfrontend/htmlauth/index.cgi",
+            "webfrontend/htmlauth/event_history.cgi",
+        ),
+        ("tests/test_admin_request_security.py",),
+    ),
+    (
+        (
             "src/mcpserver/loxone/opening_contacts.py",
             "src/mcpserver/loxone/project/**",
             "tests/fixtures/project/**",

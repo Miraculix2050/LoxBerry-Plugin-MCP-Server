@@ -257,6 +257,7 @@ def test_v4_package_manifest_is_present() -> None:
         "bin/emergency-stop-miniserver.php",
         "bin/event-history-upgrade.py",
         "bin/healthcheck",
+        "bin/lib/MCPServer/RequestSecurity.pm",
         "bin/renew-web-certificate",
         "bin/root-lifecycle-paths.py",
         "icons/icon.svg",
@@ -550,7 +551,7 @@ def test_perl_admin_cgi_has_valid_syntax() -> None:
     perl = shutil.which("perl")
     if perl is None:
         pytest.skip("perl is unavailable")
-    for name in ("index.cgi", "explorer.cgi", "explorer_callback.cgi"):
+    for name in ("index.cgi", "event_history.cgi", "explorer.cgi", "explorer_callback.cgi"):
         subprocess.run(
             [
                 perl,
@@ -560,6 +561,7 @@ def test_perl_admin_cgi_has_valid_syntax() -> None:
             ],
             check=True,
         )
+    subprocess.run([perl, "-c", str(ROOT / "bin/lib/MCPServer/RequestSecurity.pm")], check=True)
     subprocess.run(
         [
             perl,

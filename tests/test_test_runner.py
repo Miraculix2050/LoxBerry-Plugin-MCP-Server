@@ -45,6 +45,20 @@ def test_changed_ui_selects_only_affected_ui_groups() -> None:
     assert _pytest_targets(modules) == _pytest_targets(plan)
 
 
+@pytest.mark.parametrize(
+    "path",
+    (
+        "bin/lib/MCPServer/RequestSecurity.pm",
+        "webfrontend/htmlauth/index.cgi",
+        "webfrontend/htmlauth/event_history.cgi",
+    ),
+)
+def test_changed_admin_origin_guard_selects_security_tests(path: str) -> None:
+    plan = create_plan("changed", (path,))
+    assert plan.effective_profile == "changed"
+    assert "tests/test_admin_request_security.py" in _pytest_targets(plan)
+
+
 def test_shared_language_files_select_both_ui_groups() -> None:
     plan = create_plan("changed", ("templates/lang/language_de.ini",))
 

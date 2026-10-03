@@ -14,6 +14,8 @@ use LoxBerry::System;
 use LoxBerry::Web;
 use LoxBerry::Log;
 
+require "$lbpbindir/lib/MCPServer/RequestSecurity.pm";
+
 my $cgi = CGI->new;
 my $q = $cgi->Vars;
 my $request_id = sprintf('%x-%x', $$, int(clock_gettime(CLOCK_MONOTONIC) * 1_000_000));
@@ -115,13 +117,9 @@ my %actions = map { $_ => 1 } qw(
     event_history_purge_source clear_event_history
 );
 if (($q->{action} // '') ne '') {
-    my $origin = $ENV{HTTP_ORIGIN} // '';
-    my $host = $ENV{HTTP_HOST} // '';
     reply({ok => JSON::PP::false,
         error => {code => 'forbidden', message => 'Same-origin POST required'}}, 403)
-        if uc($ENV{REQUEST_METHOD} // '') ne 'POST'
-        || $origin eq '' || $host eq ''
-        || $origin !~ m{^https?://\Q$host\E$}i;
+        unless MCPServer::RequestSecurity::same_origin_post();
     my $action = $q->{action};
     reply({ok => JSON::PP::false,
         error => {code => 'invalid_request', message => 'Unsupported action'}}, 400)
