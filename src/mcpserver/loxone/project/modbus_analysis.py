@@ -619,6 +619,18 @@ def analyze_modbus(
             item["evidence_omitted"] = total - len(samples)
             if total > len(samples):
                 reasons.add("max_evidence_records")
+    uninspected_hierarchy = hierarchy_nodes - inspected_ancestor_fields
+    for identity in sorted(uninspected_hierarchy):
+        emit(
+            "evidence_gaps",
+            "modbus_evidence_gap",
+            [identity, "hierarchy_fields_not_inspected"],
+            "Hierarchy raw fields were not inspected because this occurrence was not "
+            "observed in an evaluated sensor ancestry; no device conclusion was evaluated.",
+            node=nodes[identity[1]],
+            field="Type",
+            status="explicit",
+        )
     if types:
         emit(
             "evidence_gaps",
@@ -646,7 +658,7 @@ def analyze_modbus(
             continue
         excluded = counters["supported_sensor_occurrences"] - evaluated
         if analysis == "evidence_gaps":
-            excluded += len(hierarchy_nodes - inspected_ancestor_fields)
+            excluded += len(uninspected_hierarchy)
         partial = (
             bool(excluded)
             or not domain_complete
@@ -662,7 +674,13 @@ def analyze_modbus(
             "evaluated_occurrences": count(eligible - excluded, domain_complete and field_complete),
             "excluded_occurrences": count(excluded),
             "reason_codes": sorted(
-                reasons | ({"source_ingestion_incomplete"} if not ingestion_complete else set())
+                reasons
+                | ({"source_ingestion_incomplete"} if not ingestion_complete else set())
+                | (
+                    {"hierarchy_fields_not_inspected"}
+                    if analysis == "evidence_gaps" and uninspected_hierarchy
+                    else set()
+                )
             ),
             "omitted_count": findings_omitted[analysis] if domain_complete else None,
         }

@@ -68,6 +68,10 @@ def test_unobserved_hierarchy_is_in_inventory_but_excluded_from_raw_gap_check():
     assert result.check_status["evidence_gaps"].excluded_occurrences.value == 1
     assert result.coverage.check_exclusions["evidence_gaps"].value == 1
     assert result.check_status["evidence_gaps"].status == "partial"
+    assert "hierarchy_fields_not_inspected" in result.check_status["evidence_gaps"].reason_codes
+    gap = next(f for f in result.findings if "Hierarchy raw fields" in f.description)
+    assert len(gap.affected_occurrences) == 1
+    assert gap.affected_occurrences[0].model_source_id == "part-a"
 
 
 @pytest.mark.parametrize("selected", [BOTH, frozenset({"inventory"})])
