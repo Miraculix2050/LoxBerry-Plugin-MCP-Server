@@ -897,3 +897,17 @@ def test_nested_block_gap_uses_reached_block_metadata_not_containing_block():
     assert gaps
     assert all(g["node_kind"] == "block" and g["block_type"] == "Unknown" for g in gaps)
     assert all(not g["rule_ids"] and g["reference_projection_rule_id"] is None for g in gaps)
+
+
+def test_supported_state_edges_preserve_hidden_scope_boundary():
+    xml = Path("tests/fixtures/project/state-original-274.xml").read_bytes()
+    structure, project = fixture(xml)
+    assert len(project.view.snapshot.graph.semantic_edges) == 3
+    result = analyze(structure, project)
+    hidden = replace(structure, hidden_controls=(control("private-hidden"),))
+    assert analyze(hidden, project) == result
+    with pytest.raises(OpeningScopeError):
+        analyze(hidden, project, scope_type="contact", scope_uuid="private-hidden")
+    with pytest.raises(OpeningScopeError):
+        analyze(hidden, project, candidate_contact_uuids=["private-hidden"])
+    assert "private-hidden" not in str(result)

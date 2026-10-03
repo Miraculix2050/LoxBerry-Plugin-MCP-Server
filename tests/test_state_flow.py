@@ -84,9 +84,9 @@ def test_equal_conditional_and_default_values_are_independent():
         lambda b: b.replace(b"17020828", b"17010727"),
         lambda b: b.replace(b'V="178"', b'V="175"'),
         lambda b: b.replace(b'CondT0="1"', b'CondT0="0"'),
-        lambda b: b.replace(b'Input0="2"', b'Input0="1"'),
+        lambda b: b.replace(b'Input0="2"', b'Input0="9"'),
         lambda b: b.replace(b'TextV="5"', b'TextV="NaN"'),
-        lambda b: b.replace(b'TextV="5"', b'TextV="5" Cond0="1"'),
+        lambda b: b.replace(b'TextV="5"', b'TextV="5" Cond0="0"'),
         lambda b: b.replace(b'TextV="5"', b'TextV="5" TextV="0"'),
         lambda b: b.replace(b'Valid="true"', b'Valid="false"'),
     ],
@@ -297,3 +297,170 @@ def test_semantic_gap_preserves_traversal_truncation_reason():
     assert trace["truncation_reason"] == "max_nodes"
     assert trace["semantic_gaps"]
     ProjectTraceData.model_validate(trace)
+
+
+def condition_row(input_number, code=None, numeric="2", text=None, result="5"):
+    fields = f'Input0="{input_number}"'
+    if code is not None:
+        fields += f' Cond0="{code}"'
+    if numeric is not None:
+        fields += f' CondV0="{numeric}"'
+    if text is not None:
+        fields += f' CondT0="{text}"'
+    return f'<StateText Valid="true" ValidV="true" {fields} TextV="{result}"/>'
+
+
+DEFAULT_ROW = '<StateText Valid="true" ValidV="true" TextV="0"/>'
+
+
+def query_for(g):
+    from mcpserver.loxone.project.graph import ProjectPartSummary, ProjectSnapshot
+    from mcpserver.loxone.project.mapping import ProjectView, map_runtime
+    from mcpserver.loxone.project.query import ProjectQuery
+
+    snapshot = ProjectSnapshot("synthetic", 10, (ProjectPartSummary("synthetic", 20, ()),), g)
+    structure = SimpleNamespace(controls=(), last_modified="synthetic")
+    return ProjectQuery(ProjectView(snapshot, map_runtime(snapshot, structure), "synthetic"), {})
+
+
+@pytest.mark.parametrize("input_number", range(1, 9))
+@pytest.mark.parametrize("code", [None, *map(str, range(1, 10))])
+def test_every_proven_operator_and_input_has_shared_occurrence_evidence(input_number, code):
+    from mcpserver.tools import ProjectTraceData
+
+    text = "2" if code in {"6", "7", "8", "9"} else None
+    g = graph(xml([condition_row(input_number, code, text=text), DEFAULT_ROW]))
+    assert g.state_flows[0].reason is None
+    assert g.state_flows[0].dependencies == (f"I{input_number}",)
+    q = query_for(g)
+    for source in ("aq", f"i{input_number}"):
+        node = next(n for n in g.nodes if n.source_id == source)
+        for direction in ("upstream", "downstream"):
+            generic = q.trace(node, direction=direction, max_depth=16, max_nodes=200)
+            contact = OpeningGraph(q).trace([node.key], direction, 16, 200)
+            ProjectTraceData.model_validate(generic)
+            assert {
+                (e["source"], e["target"], e["rule_id"]) for e in generic["semantic_edges"]
+            } == {
+                (e["source"], e["target"], e["semantic_rule_id"])
+                for e in contact["edges"]
+                if e["kind"] == "derived_semantic"
+            }
+            assert {(x["project_node_id"], x["code"]) for x in generic["semantic_gaps"]} == {
+                (x["project_node_id"], x["reason"]) for x in contact["gaps"]
+            }
+
+
+def test_original_table_dependencies_and_all_wired_independent_neighbors():
+    from pathlib import Path
+
+    data = Path("tests/fixtures/project/state-original-274.xml").read_bytes()
+    for i in range(4, 9):
+        data = data.replace(
+            f'<Co K="I{i}" U="i{i}"/>'.encode(),
+            f'<Co K="I{i}" U="i{i}"><In Input="neighbor{i}"/></Co>'.encode(),
+        )
+    others = "".join(
+        f'<C Type="Unknown" U="other{i}"><Co K="Q" U="neighbor{i}"/></C>' for i in range(4, 9)
+    )
+    g = graph(data.replace(b"</ControlList>", (others + "</ControlList>").encode()))
+    flow = g.state_flows[0]
+    assert flow.reason is None and flow.dependencies == ("I1", "I2", "I3")
+    assert [r.numeric for r in flow.rows] == [0, 5, 4, 3, 0]
+    q = query_for(g)
+    aq = next(n for n in g.nodes if n.source_id == "aq")
+    generic = q.trace(aq, direction="upstream", max_depth=16, max_nodes=200)
+    contact = OpeningGraph(q).trace([aq.key], "upstream", 16, 200)
+    assert contact["complete"] and not contact["gaps"]
+    assert len(generic["semantic_edges"]) == len(contact["edges"]) == 3
+    assert not any(n["connector_key"] in {f"I{i}" for i in range(4, 9)} for n in contact["nodes"])
+
+
+def test_operator_specimen_preserves_empty_numeric_gap_and_four_condition_rows():
+    from pathlib import Path
+
+    data = Path("tests/fixtures/project/state-operators-274.xml").read_bytes()
+    assert graph(data).state_flows[0].reason == "state_table_unsupported"
+    # A separately synthetic explicit numeric default supplies a positive case.
+    g = graph(data.replace(b'TextV=""', b'TextV="0"'))
+    assert g.state_flows[0].reason is None
+    assert g.state_flows[0].dependencies == ("I1", "I2", "I4", "I5", "I6", "I7", "I8")
+    assert len(g.state_flows[0].rows[1].conditions) == 4
+    assert len(g.state_flows[0].rows[2].conditions) == 4
+    assert g.state_flows[0].rows[3].conditions[0].operator == "*="
+
+
+def test_distinct_predicates_are_not_shadowed_and_exact_duplicates_are():
+    rows = [condition_row(1), condition_row(2), condition_row(1, result="99"), DEFAULT_ROW]
+    flow = graph(xml(rows)).state_flows[0]
+    assert flow.dependencies == ("I1", "I2")
+    assert [r.numeric for r in flow.rows] == [5, 5, 0]
+    # Different encoding presence/spelling must not be equated by conversion.
+    changed = condition_row(1, numeric="2.0", result="7")
+    assert len(graph(xml([rows[0], changed, DEFAULT_ROW])).state_flows[0].rows) == 3
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        condition_row(1, "0"),
+        condition_row(1, "10"),
+        condition_row(0),
+        condition_row(9),
+        condition_row(1, "6", text=None),
+        condition_row(1, "2", numeric=None),
+        condition_row(1, numeric="NaN"),
+        condition_row(1, text="different"),
+        condition_row(1, "6", text="&lt;v2&gt;"),
+        condition_row(1, "6", text="x" * 257),
+        condition_row(1, "1", text="2"),
+        condition_row(1, result=""),
+        '<StateText Valid="true" ValidV="true" Cond0="1" TextV="5"/>',
+        '<StateText Valid="true" ValidV="true" Input1="1" CondV1="1" TextV="5"/>',
+        '<StateText Valid="true" ValidV="true" Input0="1" Input4="2" TextV="5"/>',
+    ],
+)
+def test_unknown_or_ambiguous_operands_do_not_prove_independence(row):
+    g = graph(xml([row, DEFAULT_ROW]))
+    assert g.state_flows[0].reason == "state_table_unsupported"
+    assert not g.semantic_edges
+
+
+def test_operator_data_stays_internal_and_equal_outputs_remain_independent():
+    g = graph(
+        xml([condition_row(8, "6", numeric=None, text="private-marker", result="0"), DEFAULT_ROW])
+    )
+    assert g.state_flows[0].reason is None and not g.state_flows[0].dependencies
+    q = query_for(g)
+    state = next(n for n in g.nodes if n.source_id == "state")
+    assert "private-marker" not in repr(g.state_flows)
+    assert "private-marker" not in str(q.describe(state, limit=100))
+
+
+def test_state_cycle_and_traversal_bound_remain_explicit():
+    data = xml().replace(b'<Co K="I2" U="i2"/>', b'<Co K="I2" U="i2"><In Input="aq"/></Co>')
+    g = graph(data)
+    node = next(n for n in g.nodes if n.source_id == "aq")
+    q = query_for(g)
+    assert len(q.trace(node, direction="upstream", max_depth=16, max_nodes=200)["nodes"]) == 3
+    assert (
+        q.trace(node, direction="upstream", max_depth=16, max_nodes=1)["truncation_reason"]
+        == "max_nodes"
+    )
+
+
+@pytest.mark.parametrize("input_number", range(1, 9))
+def test_each_relevant_unresolved_provider_remains_incomplete(input_number):
+    data = xml([condition_row(input_number), DEFAULT_ROW])
+    data = data.replace(
+        f'<Co K="I{input_number}" U="i{input_number}"/>'.encode(),
+        f'<Co K="I{input_number}" U="i{input_number}"><In Input="missing"/></Co>'.encode(),
+    )
+    g = graph(data)
+    aq = next(n for n in g.nodes if n.source_id == "aq")
+    q = query_for(g)
+    assert q.trace(aq, direction="upstream", max_depth=16, max_nodes=200)[
+        "unresolved_relationships"
+    ]
+    result = OpeningGraph(q).trace([aq.key], "upstream", 16, 200)
+    assert not result["complete"] and "unresolved_relationship" in result["warnings"]

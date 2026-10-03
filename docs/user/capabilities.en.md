@@ -222,7 +222,7 @@ analysis coverage or establish physical actuator compatibility.
 `loxone_analyze_project(scope="modbus")` and Explorer provide Modbus version 1:
 `inventory`, `configured_register_mappings`, `direct_consumers`,
 `configured_polling` and `evidence_gaps`. Omission selects all five; KNX remains
-the default scope (version 9). Changing Explorer scope clears selection and cursor.
+the default scope (version 10). Changing Explorer scope clears selection and cursor.
 Mapping review compares exact raw commands `3`/`4` and explicit lexical addresses
 within uniquely observed project transport/device ancestry in one source.
 Repeated mappings or differing explicit raw attributes are review candidates,
@@ -277,7 +277,7 @@ separate KNX signal-use observations, while trace returns separately marked deri
 and bounded `knx_to_loxone`, `loxone_to_knx`, or `knx_to_knx` paths. Unknown block or connector
 behaviour is not guessed. These are static project paths, not evidence that a bus telegram or
 historical state change caused an action.
-`loxone_analyze_project` version 9 summarizes bounded project-local KNX evidence: address and
+`loxone_analyze_project` version 10 summarizes bounded project-local KNX evidence: address and
 source-name patterns, raw datatype reuse, reviewed signal-use differences, exact runtime-mapping
 context, local peer and graph outliers, path counts, and endpoints without direct configured
 wiring. Graph outliers identify raw edge degree and show signal, reference, and separately derived
@@ -488,14 +488,20 @@ applies only to known candidate families, never the physical installation;
 
 ### Version-bound State signal flow
 
-Project traces and opening-contact analysis derive `State.I2 -> State.AQ` only
-from the verified equality/default table encoding for ConfigVersion 17020828,
-XML 274 and State revision 178. The ordered table must be complete and use only
-the confirmed `I2 == 1` predicate and numeric results, with an unconditional
-default; at most 100 rows are evaluated. Equal reachable numeric results or an
-early unconditional row can establish AQ independence. Exact external wiring
-and derived edges remain separate. A wired independent input does not invalidate
-an upstream AQ path. Unknown versions, operators, malformed tables and
-unsupported TQ/OutputAPI contracts retain explicit gaps. The earlier live State
-version is not included. Describe exposes bounded `state_semantics` provenance;
-trace exposes `semantic_gaps`, without exporting private table rows or texts.
+Project traces and opening-contact analysis derive possible `State.I1` through
+`State.I8` influences on AQ from complete fixed-operand tables for ConfigVersion
+17020828, XML 274 and State revision 178. Rule `state_table_aq_v2` recognizes
+omitted equality and documented operator codes 1–9 (`>`, `>=`, `<`, `<=`, `!=`,
+`*=`, `!*`, `:=`, `!:`). Up to four conditions per row are ANDed; the first
+matching row wins. Limits are 100 rows and 256 characters per text operand.
+Numeric results must be explicit; an empty `TextV` stays unsupported.
+
+This is structural influence evidence, not runtime evaluation or text conversion.
+Inputs not used before the first unconditional row, exactly shadowed predicates,
+or identical numeric results for all possibly reachable rows can prove AQ
+independence. Otherwise used inputs retain possible dependency edges. Wired
+independent neighbors do not invalidate an upstream AQ path. External wiring and
+derived evidence remain separate. Unknown versions, malformed tables, variable
+comparison expressions and TQ/OutputAPI contracts retain explicit gaps. No global
+connector alias is introduced. Describe exposes bounded `state_semantics` and
+trace `semantic_gaps`; private rows and operands are never published.

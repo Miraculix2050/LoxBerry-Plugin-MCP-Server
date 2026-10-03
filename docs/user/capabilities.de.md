@@ -247,7 +247,7 @@ erweitern weder die Analyseabdeckung noch belegen sie physische Aktorkompatibili
 `loxone_analyze_project(scope="modbus")` und Explorer bieten Modbus-Version 1:
 `inventory`, `configured_register_mappings`, `direct_consumers`,
 `configured_polling` und `evidence_gaps`. Ohne Auswahl laufen alle fünf; KNX bleibt
-Standard-Scope (Version 9). Ein Scopewechsel im Explorer leert Auswahl und Cursor.
+Standard-Scope (Version 10). Ein Scopewechsel im Explorer leert Auswahl und Cursor.
 Der Mappingvergleich verwendet exakte Rohbefehle `3`/`4` und explizite lexikalische
 Adressen bei eindeutig beobachteter Transport-/Gerätehierarchie innerhalb einer Quelle.
 Wiederholte Mappings oder unterschiedliche explizite Rohattribute sind Prüfkandidaten,
@@ -304,7 +304,7 @@ mehrere getrennte KNX-Signalnutzungsbeobachtungen. Trace liefert getrennt markie
 Connectorkanten sowie begrenzte Pfade `knx_to_loxone`, `loxone_to_knx` oder `knx_to_knx`.
 Unbekanntes Block- oder Connector-Verhalten wird nicht geraten. Diese Ergebnisse beschreiben
 statische Projektpfade, keine Bus-Telegramme und keine historische Ursache einer Aktion.
-`loxone_analyze_project` Version 9 fasst begrenzte, projektlokale KNX-Evidenz zusammen:
+`loxone_analyze_project` Version 10 fasst begrenzte, projektlokale KNX-Evidenz zusammen:
 Adress- und Quellnamensmuster, Wiederverwendung von Rohdatentypen, geprüfte Unterschiede der
 Signalnutzung, Kontext aus exakten Runtime-Mappings, lokale Peer- und Graph-Ausreißer,
 Pfadzähler und Endpunkte ohne direkte konfigurierte Verdrahtung. Graph-Ausreißer benennen den
@@ -533,16 +533,23 @@ Installation; `total_active` bleibt bei partieller Auswertung null.
 
 ### Versionsgebundener State-Signalfluss
 
-Project-Trace und Opening-Contact-Analyse leiten `State.I2 -> State.AQ` nur aus
-der belegten Gleichheits-/Default-Kodierung für ConfigVersion 17020828, XML 274
-und State-Revision 178 ab. Die geordnete Tabelle muss vollständig sein und nur
-die bestätigte Bedingung `I2 == 1` sowie numerische Ergebnisse mit einem
-bedingungslosen Default enthalten; maximal 100 Zeilen werden ausgewertet. Gleiche
-erreichbare Zahlenwerte oder eine frühe bedingungslose Zeile können die
-Unabhängigkeit von AQ belegen. Externe Verdrahtung und abgeleitete Kanten bleiben
-getrennt. Ein verdrahteter unabhängiger Eingang invalidiert einen AQ-Pfad
-rückwärts nicht. Unbekannte Versionen, Operatoren, fehlerhafte Tabellen sowie
-unbelegte TQ-/OutputAPI-Verträge bleiben explizite Gaps. Die ältere Live-Version
-ist nicht enthalten. Describe liefert begrenzte `state_semantics`-Provenienz,
-Trace liefert `semantic_gaps`; private Tabellenzeilen und Texte werden nicht
-exportiert.
+Project-Trace und Opening-Contact-Analyse leiten mögliche Einflüsse von
+`State.I1` bis `State.I8` auf AQ aus vollständigen Tabellen mit festen Operanden
+für ConfigVersion 17020828, XML 274 und State-Revision 178 ab. Die Regel
+`state_table_aq_v2` erkennt Gleichheit durch fehlenden Operator sowie belegte
+Operatorcodes 1–9 (`>`, `>=`, `<`, `<=`, `!=`, `*=`, `!*`, `:=`, `!:`).
+Bis zu vier Bedingungen je Zeile sind UND-verknüpft; die erste passende Zeile
+gewinnt. Grenzen sind 100 Zeilen und 256 Zeichen je Textoperand. Numerische
+Ergebnisse müssen explizit sein; ein leeres `TextV` bleibt unsupported.
+
+Dies ist strukturelle Einfluss-Evidenz, keine Laufzeitauswertung oder
+Textkonvertierung. Nicht vor der ersten bedingungslosen Zeile verwendete Eingänge,
+exakt überschattete Bedingungen oder identische numerische Ergebnisse aller
+möglicherweise erreichbaren Zeilen können AQ-Unabhängigkeit belegen. Sonst
+bleiben verwendete Eingänge mögliche Abhängigkeiten. Verdrahtete unabhängige
+Nachbarports invalidieren einen AQ-Pfad rückwärts nicht. Externe Verdrahtung und
+abgeleitete Evidenz bleiben getrennt. Unbekannte Versionen, fehlerhafte Tabellen,
+variable Vergleichsausdrücke und TQ-/OutputAPI-Verträge bleiben explizite Gaps.
+Es gibt keine globalen Connector-Aliase. Describe liefert begrenzte
+`state_semantics`, Trace `semantic_gaps`; private Zeilen und Operanden werden
+nicht veröffentlicht.
