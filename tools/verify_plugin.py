@@ -54,6 +54,7 @@ _REQUIRED: Final = {
     "webfrontend/htmlauth/event_history.cgi",
     "webfrontend/htmlauth/event-history/api.js",
     "webfrontend/htmlauth/event-history/page.js",
+    "webfrontend/htmlauth/event-history/chart-cache.js",
     "webfrontend/htmlauth/event-history/charts.js",
     "webfrontend/htmlauth/event-history/charts.css",
     "webfrontend/htmlauth/event-history/vendor/uplot/uPlot.iife.min.js",
