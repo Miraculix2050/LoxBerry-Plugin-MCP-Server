@@ -530,7 +530,7 @@ class StateData(BaseModel):
     semantic_value: JsonValue | None = Field(
         default=None,
         description=(
-            "Bounded additive interpretation for documented Irrigation and AlarmClock states. "
+            "Bounded additive interpretation for documented Irrigation, AlarmClock and StatusMonitor states. "
             "The original value remains unchanged."
         ),
     )

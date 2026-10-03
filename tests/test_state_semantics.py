@@ -766,6 +766,11 @@ async def test_status_monitor_description_keeps_uuid_and_source_coverage(monkeyp
     result = await server._tool_manager.get_tool("loxone_describe_control").fn("control")
     mapping = result.data.capabilities.status_monitor
     assert mapping.statuses[0].uuid == "status-four"
+    state_schema = server._tool_manager.get_tool("loxone_get_states").output_schema
+    assert (
+        "StatusMonitor"
+        in state_schema["$defs"]["StateData"]["properties"]["semantic_value"]["description"]
+    )
     assert mapping.statuses_total == mapping.statuses_returned == 2
     assert mapping.statuses_complete and not mapping.statuses_truncated
     assert mapping.inputs_total == mapping.inputs_returned == 2
@@ -803,3 +808,79 @@ async def test_state_batch_requires_fresh_visibility_without_cached_fallback(mon
     server, _ = read_tool(monkeypatch, runtime)
     result = await server._tool_manager.get_tool("loxone_get_states").fn(["inputs"])
     assert not result.ok and runtime.snapshots == [True] and runtime.reads == []
+
+
+@pytest.mark.parametrize(
+    "state,value", [("inputStates", "4,1"), ("numState1", 1), ("numDef", None)]
+)
+def test_status_monitor_invalid_metadata_survives_decodable_or_missing_values(state, value):
+    c = replace(status_control(), semantics_invalid_fields=("status_monitor",))
+    descriptor, decoded = resolve(c, state, value)
+    assert descriptor.interpretation_status == "invalid"
+    assert descriptor.reason == "invalid_structure_metadata"
+    if value is not None:
+        assert decoded is not None and not decoded["mapping_complete"]
+
+
+@pytest.mark.parametrize(
+    "collection,field,value",
+    [
+        ("inputs", "uuid", 42),
+        ("inputs", "room", True),
+        ("inputs", "installPlace", []),
+        ("inputs", "uuid", "x" * 201),
+        ("status", "color", "red"),
+        ("status", "uuid", False),
+        ("status", "uuid", "x" * 201),
+    ],
+)
+def test_status_monitor_malformed_optional_metadata_is_not_complete(collection, field, value):
+    input_entry = {"name": "Input"}
+    status_entry = {"id": 1, "name": "Configured", "prio": 0}
+    (input_entry if collection == "inputs" else status_entry)[field] = value
+    raw = {
+        "msInfo": {"serialNr": "fixture"},
+        "controls": {
+            "monitor": {
+                "name": "Monitor",
+                "type": "StatusMonitor",
+                "states": {"inputStates": "input"},
+                "details": {"inputs": [input_entry], "status": {"one": status_entry}},
+            }
+        },
+    }
+    c = normalize_structure(raw, username="reader").controls[0]
+    descriptor, decoded = resolve(c, "inputStates", "1")
+    assert c.semantics_invalid_fields == ("status_monitor",)
+    assert descriptor.reason == "invalid_structure_metadata"
+    assert not decoded["mapping_complete"]
+    if field == "uuid":
+        assert (
+            c.status_monitor_inputs[0].uuid
+            if collection == "inputs"
+            else c.status_monitor_statuses[0].uuid
+        ) is None
+
+
+@pytest.mark.parametrize(
+    "optional", [{}, {"uuid": None, "room": "", "installPlace": "", "color": None}]
+)
+def test_status_monitor_absent_optional_metadata_can_be_complete(optional):
+    raw = {
+        "msInfo": {"serialNr": "fixture"},
+        "controls": {
+            "monitor": {
+                "name": "Monitor",
+                "type": "StatusMonitor",
+                "states": {"inputStates": "input"},
+                "details": {
+                    "inputs": [{"name": "Input", **optional}],
+                    "status": {"one": {"id": 1, "name": "Configured", "prio": 0, **optional}},
+                },
+            }
+        },
+    }
+    c = normalize_structure(raw, username="reader").controls[0]
+    descriptor, decoded = resolve(c, "inputStates", "1")
+    assert not c.semantics_invalid_fields and descriptor.interpretation_status == "known"
+    assert decoded["mapping_complete"]

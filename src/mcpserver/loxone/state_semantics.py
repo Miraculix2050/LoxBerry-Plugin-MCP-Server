@@ -383,6 +383,11 @@ class StateSemanticsResolver:
                 ]
             )
             result.value_type = "string" if state_name == "inputStates" else "integer"
+            if "status_monitor" in control.semantics_invalid_fields:
+                result.interpretation_status, result.reason = (
+                    "invalid",
+                    "invalid_structure_metadata",
+                )
             if value is None:
                 if result.interpretation_status != "invalid":
                     result.interpretation_status, result.reason = "partial", "value_unavailable"
@@ -394,6 +399,11 @@ class StateSemanticsResolver:
                     result.interpretation_status, result.reason = (
                         "invalid",
                         "invalid_documented_value",
+                    )
+                elif "status_monitor" in control.semantics_invalid_fields:
+                    result.interpretation_status, result.reason = (
+                        "invalid",
+                        "invalid_structure_metadata",
                     )
                 elif isinstance(semantic_value, dict):
                     complete = semantic_value.get("mapping_complete") is True
