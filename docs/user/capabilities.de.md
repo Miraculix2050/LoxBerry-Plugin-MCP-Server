@@ -192,8 +192,8 @@ melden Abschneiden explizit; unbekannte Blocktypen und unaufgelöste Beziehungen
 erfundene Semantik sichtbar. Ein Trace begrenzt unaufgelöste Beziehungen unabhängig und meldet
 dies über `unresolved_truncated`.
 Exakte `ModbusASensor`-Objekte ergänzen optionale, schreibgeschützte `modbus`-Evidenz in
-Projektsuche und Describe. Die Suche erfolgt weiter per `block_type`; es gibt keinen neuen
-Technologiefilter oder Analyse-Scope. Die Allowlist umfasst `ModbusAddress`, `ModbusCmd`,
+Projektsuche und Describe. Die Suche erfolgt weiter per `block_type`, ohne neuen
+Technologiefilter. Die Allowlist umfasst `ModbusAddress`, `ModbusCmd`,
 `ModbusDataType`, `ModbusPollingCycle`, `SourceValHigh`, `DestValHigh`; beobachtete
 `ModbusDev`-Vorfahren zeigen den roh konfigurierten `Channel`, `ModbusServer` zeigt `Timeout`,
 `Comm485` zeigt `RxTimeout`, `Baudrate`, `Databits`, `Parity`, `Pause`, `Protocol`.

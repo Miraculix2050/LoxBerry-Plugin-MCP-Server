@@ -172,7 +172,7 @@ not an observed historical cause. Results are limited and explicitly report trun
 block types and unresolved relationships remain visible without invented semantics. A trace caps
 its unresolved-relationship entries independently and reports that with `unresolved_truncated`.
 Exact `ModbusASensor` objects add optional read-only `modbus` evidence to project search and
-describe. Search remains by `block_type`; there is no new technology filter or analysis scope.
+describe. Search remains by `block_type`, without a new technology filter.
 The allowlist is `ModbusAddress`, `ModbusCmd`, `ModbusDataType`, `ModbusPollingCycle`,
 `SourceValHigh`, `DestValHigh`; observed `ModbusDev` ancestors expose raw configured `Channel`,
 `ModbusServer` exposes `Timeout`, and `Comm485` exposes `RxTimeout`, `Baudrate`, `Databits`,
