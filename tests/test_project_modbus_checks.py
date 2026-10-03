@@ -276,7 +276,14 @@ def test_selection_independent_relationship_budget_preserves_mapping_ids():
     limits = ModbusLimits(relationships=2)
     alone = run(project, frozenset({"configured_register_mappings"}), limits=limits)
     together = run(project, ALL, limits=limits)
-    assert alone.check_status["configured_register_mappings"].status == "blocked"
+    assert alone.check_status["configured_register_mappings"].status == "partial"
+    assert alone.check_status["configured_register_mappings"].evaluated_occurrences.count_kind == (
+        "lower_bound"
+    )
+    assert alone.summaries["configured_register_mappings"][0].count.count_kind == "lower_bound"
+    assert alone.coverage.evaluated_sensor_occurrences.count_kind == "lower_bound"
+    assert together.check_status["configured_polling"].evaluated_occurrences.count_kind == "exact"
+    assert together.coverage.evaluated_sensor_occurrences.count_kind == "exact"
     assert [f.finding_id for f in alone.findings] == [
         f.finding_id for f in together.findings if f.analysis == "configured_register_mappings"
     ]
@@ -307,3 +314,18 @@ def test_unresolved_record_limit_preserves_complete_ancestry_and_positive_edges(
         "unresolved_relationships_truncated" in data.check_status["direct_consumers"].reason_codes
     )
     assert data.check_status["inventory"].status == "complete"
+
+
+def test_ancestry_depth_limit_marks_mapping_count_domains_as_lower_bounds():
+    project = view("<P>" + device(sensor(), sensor()) + "</P>")
+    data = run(
+        project, frozenset({"configured_register_mappings"}), limits=ModbusLimits(ancestry_depth=1)
+    )
+    status = data.check_status["configured_register_mappings"]
+    assert status.status == "partial"
+    assert status.eligible_occurrences.value == 2
+    assert status.eligible_occurrences.count_kind == "exact"
+    assert status.evaluated_occurrences.value == 0
+    assert status.evaluated_occurrences.count_kind == "lower_bound"
+    assert data.summaries["configured_register_mappings"][0].count.count_kind == "lower_bound"
+    assert data.coverage.evaluated_sensor_occurrences.count_kind == "lower_bound"

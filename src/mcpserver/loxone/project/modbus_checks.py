@@ -82,6 +82,7 @@ def configured_checks(
     emit: Emit,
     count: Callable[[int, bool], dict[str, object]],
     complete: bool,
+    mapping_complete: bool,
     sample_limit: int,
     summary_limit: int,
 ) -> dict[str, CheckResult]:
@@ -140,7 +141,11 @@ def configured_checks(
                     "ModbusPollingCycle",
                 )
 
-    def group_extra(members: list[SensorEvidence], name: str = "ModbusAddress") -> Record:
+    def group_extra(
+        members: list[SensorEvidence],
+        name: str = "ModbusAddress",
+        group_complete: bool | None = None,
+    ) -> Record:
         identities = [identity_record(s.identity) for s in members[:sample_limit]]
         evidence = [
             {
@@ -154,7 +159,9 @@ def configured_checks(
         return {
             "affected_occurrences": identities,
             "affected_occurrences_omitted": len(members) - len(identities),
-            "source_occurrences": count(len(members), complete),
+            "source_occurrences": count(
+                len(members), complete if group_complete is None else group_complete
+            ),
             "evidence": evidence,
             "evidence_omitted": len(members) - len(evidence),
         }
@@ -163,7 +170,7 @@ def configured_checks(
         if len(members) < 2:
             continue
         common = {
-            **group_extra(members),
+            **group_extra(members, group_complete=mapping_complete),
             "configured_mapping": {
                 "model_source_id": key[0],
                 "transport_project_node_id": key[1],
@@ -206,7 +213,7 @@ def configured_checks(
             if len(values) > 1:
                 extra = {
                     **common,
-                    **group_extra(members, name),
+                    **group_extra(members, name, mapping_complete),
                     "comparison_field": name,
                     "raw_variants": values[:sample_limit],
                     "raw_variants_omitted": max(0, len(values) - sample_limit),
@@ -248,7 +255,7 @@ def configured_checks(
         )
     mapping = results["configured_register_mappings"]
     mapping.summaries = [
-        {"key": "comparable_occurrences", "count": count(len(mapping.evaluated), complete)}
+        {"key": "comparable_occurrences", "count": count(len(mapping.evaluated), mapping_complete)}
     ]
     poll = results["configured_polling"]
     buckets = [

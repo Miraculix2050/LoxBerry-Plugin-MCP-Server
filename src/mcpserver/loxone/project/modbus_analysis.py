@@ -632,6 +632,11 @@ def analyze_modbus(
     ingestion_complete = view.snapshot.source_ingestion_complete
     domain_complete = scan_complete and ingestion_complete
     sensor_complete = domain_complete and "max_sensor_occurrences" not in reasons
+    mapping_complete = (
+        sensor_complete
+        and (relationships_complete or counters["supported_sensor_occurrences"] == 0)
+        and "max_ancestry_depth" not in reasons
+    )
     field_complete = (
         sensor_complete
         and (relationships_complete or evaluated == 0)
@@ -652,6 +657,7 @@ def analyze_modbus(
                 emit,
                 count,
                 sensor_complete,
+                mapping_complete,
                 limits.evidence_records,
                 limits.summary_groups,
             )
@@ -782,30 +788,37 @@ def analyze_modbus(
         if analysis in checks:
             result = checks[analysis]
             eligible = counters["supported_sensor_occurrences"]
+            check_complete = (
+                mapping_complete
+                if analysis == "configured_register_mappings"
+                else sensor_complete and (relationships_complete or eligible == 0)
+                if analysis == "direct_consumers"
+                else sensor_complete
+            )
             excluded = eligible - len(result.evaluated)
             partial = (
                 bool(excluded)
                 or result.partial
-                or not sensor_complete
+                or not check_complete
                 or bool(findings_omitted[analysis])
             )
             blocked = (
                 bool(eligible)
                 and not result.evaluated
-                and sensor_complete
+                and check_complete
                 and analysis != "direct_consumers"
             )
             statuses[analysis] = {
                 "status": "blocked" if blocked else "partial" if partial else "complete",
                 "eligible_occurrences": count(eligible),
-                "evaluated_occurrences": count(len(result.evaluated), sensor_complete),
+                "evaluated_occurrences": count(len(result.evaluated), check_complete),
                 "excluded_occurrences": count(excluded),
                 "reason_codes": sorted(
                     result.reasons
                     | reasons
                     | ({"source_ingestion_incomplete"} if not ingestion_complete else set())
                 ),
-                "omitted_count": findings_omitted[analysis] if domain_complete else None,
+                "omitted_count": findings_omitted[analysis] if check_complete else None,
             }
             summaries[analysis] = result.summaries
             omissions[analysis] = result.summary_omitted
@@ -876,6 +889,17 @@ def analyze_modbus(
     presentation_complete = not reasons.intersection(
         {"max_findings", "max_summary_groups", "max_evidence_records", "max_raw_value_bytes"}
     )
+    union_complete = sensor_complete and (
+        len(evaluated_union) == counters["supported_sensor_occurrences"]
+        or (
+            ("configured_register_mappings" not in analyses or mapping_complete)
+            and (
+                "direct_consumers" not in analyses
+                or relationships_complete
+                or counters["supported_sensor_occurrences"] == 0
+            )
+        )
+    )
     output = {
         "analysis_version": MODBUS_ANALYSIS_VERSION,
         "scope": "modbus",
@@ -886,7 +910,7 @@ def analyze_modbus(
             "sensor_source_occurrences": count(counters["supported_sensor_occurrences"]),
             "supported_sensor_occurrences": count(counters["supported_sensor_occurrences"]),
             "evaluated_sensor_occurrences": (
-                count(len(evaluated_union), sensor_complete)
+                count(len(evaluated_union), union_complete)
                 if analyses - {"evidence_gaps"}
                 else count(0, True)
             ),
