@@ -285,7 +285,13 @@ bleiben getrennt. Muster und Ausreißer nennen ihre lokale Vergleichsgruppe,
 bewerten aber keine Konfiguration. Optionale KNX-Adresslabels aus der
 Admin-Konfiguration gelten nur für den konfigurierten Miniserver, erscheinen als
 `admin_configured`-Metadaten, erfordern ein explizites zwei- oder dreistufiges
-Adressformat und ändern keine Projektfakten. Namen und
+Adressformat und ändern keine Projektfakten. Bei dreistufigen Gruppenadressen
+kennzeichnet `3:6/2=Label` eine Mittelgruppe;
+`2:6/2=Label` kennzeichnet dagegen eine vollständige zweistufige Adresse.
+Die Admin-Seite kann den aktuellen Text als UTF-8-Datei exportieren und eine
+solche Datei ins Eingabefeld laden. Erst „KNX-Adresslabels speichern“ übernimmt
+geladene Labels. Die Datei enthält nur den Labeltext und keine Miniserver-Adresse.
+Namen und
 Adressformen belegen weder Etagen, Funktionen, DPTs, ETS-Bedeutung noch Busaktivität.
 `loxone_analyze_observability` bewertet getrennt einen begrenzten, ausdrücklich angefragten
 Zeitraum für ein Projektziel. Es verbindet nur exakte UUID-gemappte strukturelle Erreichbarkeit,

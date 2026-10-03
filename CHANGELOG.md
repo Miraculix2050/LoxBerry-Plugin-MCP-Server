@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Let administrators export and load KNX prefix labels as a local UTF-8 text file.
+  Loading is a draft until saved; clarify two- versus three-level address formats
+  in the Admin help (#370, follow-up to #199).
+
 - Expose bounded StatusMonitor configured tuples and position-stable current-state
   mapping through existing readers, with count semantics and explicit coverage (#348).
   State batch reads now require fresh visibility rather than cached visibility.
