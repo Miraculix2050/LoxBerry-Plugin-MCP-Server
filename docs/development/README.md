@@ -13,6 +13,7 @@
 - [Support matrix](support-matrix.md) — confirmed platforms, clients and limits.
 - [Evidence](../evidence/README.md) — current public evidence summary.
 - [Test strategy](test-strategy.md) — change-driven validation.
+- [OAuth-family project deduplication preparation](project-family-deduplication.md) — offline baseline and pending investigation gates for #379 ([DE](project-family-deduplication.de.md)).
 - [Release process](release-process.md) — publication workflow.
 - [Release criteria](release-criteria.md) — feature freeze and publication gate.
 - [Architecture decisions](adr/README.md) — recorded decisions and their status.
