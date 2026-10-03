@@ -408,6 +408,51 @@ def test_native_history_normalization_skips_invalid_and_bounds_entries() -> None
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("available", [False, True])
+async def test_window_current_readability_does_not_establish_native_history(available):
+    control = Control(
+        "monitor",
+        "Window overview",
+        "WindowMonitor",
+        None,
+        None,
+        "action",
+        (("windowStates", "state"),),
+        has_history=available,
+    )
+    session = SimpleNamespace(
+        control_history=AsyncMock(
+            return_value=[
+                {
+                    "ts": 123,
+                    "what": "Contact changed",
+                    "trigger": "",
+                    "triggerType": "",
+                    "impacts": [],
+                }
+            ]
+        )
+    )
+
+    @asynccontextmanager
+    async def history_session(*_args):
+        yield control, session
+
+    runtime = object.__new__(LoxoneRuntime)
+    runtime._history_session = history_session
+    if available:
+        returned, entries = await runtime.get_control_history(_access(), "monitor")
+        assert returned is control and entries[0].what == "Contact changed"
+        assert not hasattr(entries[0], "semantic_value")
+        session.control_history.assert_awaited_once_with("action")
+    else:
+        with pytest.raises(ControlOperationError) as exc:
+            await runtime.get_control_history(_access(), "monitor")
+        assert exc.value.code == "not_found"
+        session.control_history.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_project_marker_authentication_respects_shared_breaker(tmp_path: Path) -> None:
     runtime = object.__new__(LoxoneRuntime)
     open_session = AsyncMock(side_effect=LoxoneSourceIpBlocked("blocked"))

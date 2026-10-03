@@ -1,5 +1,33 @@
 # Tool schema reference
 
+## WindowMonitor contact-state decoding
+
+Exact `WindowMonitor.windowStates` values share one decoder in state reads,
+state semantics, optional compact-read semantics and opening-contact analysis.
+`semantic_value.kind=window_contact_states` supplies at most 100 indexed contacts
+with raw tokens (up to 200 characters, explicit token truncation), bitmasks,
+all documented state labels, retained metadata, and independent decoding/mapping
+statuses. Provenance identifies the monitor/state and Structure File 17.1 pp.152–153.
+Bits 1/2/4/8/16 mean closed/tilted/open/locked/unlocked; zero means
+`unknown_or_offline`, not confirmed offline. All documented-bit combinations are
+preserved without priority or alarm inference; unknown bits are invalid.
+ASCII decimal tokens of 1–10 digits accept surrounding ASCII whitespace.
+
+Inputs above 65,536 characters are rejected before splitting; nested semantic
+enrichment is bounded to 16 KiB independently of raw-value response limits.
+`values_total`, `positions_total`, `positions_returned`, `alignment`, `truncated`,
+`metadata_complete`, `decoding_complete` and `mapping_complete` expose coverage.
+Missing or duplicate positions and malformed metadata never shift the join.
+Freshness and observation time remain in the existing outer state quality fields.
+Opening analysis adds optional `decoded_state` per retained item and optional
+decoding/mapping/truncation flags in monitor state; its existing nonnumeric raw-token
+redaction remains intact. Ordinary state readers retain their original raw values.
+
+History readers are unchanged. Native `has_history` and actual Event History source
+inventory/coverage govern availability; current state readability is not retention
+evidence. Historical values are not joined to today's metadata automatically.
+WindowMonitor remains unsupported in Active Alerts.
+
 ## Structure overview counts
 
 `loxone_get_structure_overview` counts the authorized visible discovery corpus,

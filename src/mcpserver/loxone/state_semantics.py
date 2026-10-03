@@ -14,6 +14,7 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from .models import Control, LoxoneStructure
+from .window_states import WINDOW_DOCUMENT, decode_window_states
 
 
 @dataclass(frozen=True, slots=True)
@@ -407,6 +408,41 @@ class StateSemanticsResolver:
                     )
                 elif isinstance(semantic_value, dict):
                     complete = semantic_value.get("mapping_complete") is True
+                    result.interpretation_status = "known" if complete else "partial"
+                    result.reason = "documented_decoder" if complete else "incomplete_metadata"
+
+        if control.control_type == "WindowMonitor" and state_name == "windowStates":
+            result.value_type = "string"
+            result.sources.extend(
+                [
+                    SemanticsSource(
+                        "decoder_rule",
+                        WINDOW_DOCUMENT + "#page=152",
+                        ("semantic_value",),
+                        rule_id="WindowMonitor.windowStates.v1",
+                        document_version="17.1",
+                    ),
+                    SemanticsSource("structure_file", "details.windows", ("semantic_value",)),
+                    SemanticsSource(
+                        "runtime_state",
+                        "states.windowStates",
+                        ("semantic_value",),
+                        state_uuid=dict(control.state_uuids).get(state_name),
+                    ),
+                ]
+            )
+            result.interpretation_status, result.reason = "partial", "value_unavailable"
+            if value is not None:
+                semantic_value, invalid = decode_state_value(
+                    structure, control, state_name, value, companion_values
+                )
+                if invalid:
+                    result.interpretation_status, result.reason = (
+                        "invalid",
+                        "invalid_documented_value",
+                    )
+                elif isinstance(semantic_value, dict):
+                    complete = semantic_value["mapping_complete"] is True
                     result.interpretation_status = "known" if complete else "partial"
                     result.reason = "documented_decoder" if complete else "incomplete_metadata"
 
@@ -810,6 +846,11 @@ def decode_state_value(
     companion_values: Mapping[str, object],
 ) -> tuple[object | None, bool]:
     try:
+        if control.control_type == "WindowMonitor" and state_name == "windowStates":
+            decoded_window = decode_window_states(control, value)
+            return decoded_window, decoded_window is None or decoded_window[
+                "invalid_values"
+            ] is True
         if control.control_type == "StatusMonitor":
             if state_name == "inputStates":
                 decoded = _status_inputs(structure, control, value)

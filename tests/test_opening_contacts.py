@@ -421,6 +421,29 @@ def test_state_vector_uses_original_positions(value, alignment):
         assert [i["state_value"] for i in result["monitors"][0]["items"]] == ["0", None]
 
 
+@pytest.mark.parametrize("freshness", list(Freshness))
+def test_window_analysis_keeps_decoder_and_observation_quality_separate(freshness):
+    from mcpserver.loxone.window_states import decode_window_states
+
+    structure, project = fixture()
+    value = None if freshness is Freshness.UNAVAILABLE else "1,18"
+    result = analyze(
+        structure,
+        project,
+        include_current_state=True,
+        records={"state": StateRecord("state", value, freshness, 1)},
+    )
+    monitor = result["monitors"][0]
+    assert monitor["state"]["freshness"] == freshness.value
+    assert monitor["state"]["observed_at"] == 1
+    if value is not None:
+        decoded = decode_window_states(structure.controls[0], value)
+        assert [i["decoded_state"] for i in monitor["items"]] == decoded["contacts"]
+        assert monitor["state"]["mapping_complete"]
+    else:
+        assert monitor["state"]["alignment"] == "unavailable"
+
+
 def test_state_missing_stale_and_invalid_tokens_are_explicit():
     result = analyze(include_current_state=True)
     assert "state_unavailable" in result["monitors"][0]["state"]["warnings"]
