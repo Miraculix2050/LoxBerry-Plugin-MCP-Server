@@ -154,7 +154,7 @@ def test_chart_page_preserves_unsafe_integers_for_browser(tmp_path):
     store.initialize()
     store.record_transition(*source, observed_at=now - 1, old_value=2**53, new_value=2**53 + 1)
     event = store.chart_page(*source, start=now - 10, end=now)["events"][0]
-    assert event["old_value"] == {"integer_decimal": str(2**53)}
+    assert "old_value" not in event
     assert event["new_value"] == {"integer_decimal": str(2**53 + 1)}
 
 
@@ -187,6 +187,7 @@ def test_dense_chart_sample_retains_middle_spikes_and_boolean_states(tmp_path):
             ),
         )
     result = store.chart_page(*source, start=now - 64, end=now)
+    assert all("old_value" not in event for event in result["events"])
     values = [event["new_value"] for event in result["events"]]
     assert -999 in values and 999 in values
     assert any(value is True for value in values)

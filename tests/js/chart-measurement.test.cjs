@@ -94,6 +94,7 @@ test('fixture serves real local scripts and rejects writes and arbitrary paths',
     const html = await (await fetch(origin + '/?case=dense&count=4')).text();
     assert.ok(html.includes('charts.js')); assert.ok(!html.includes('TMPL_VAR'));
     assert.equal((await fetch(origin + '/api.js')).status, 200);
+    assert.equal((await fetch(origin + '/chart-cache.js')).status, 200);
     assert.equal((await fetch(origin + '/../../config/default-config.json')).status, 404);
     assert.equal((await fetch(origin + '/event_history.cgi', {method: 'POST',
       body: 'action=event_history_purge_source'})).status, 403);
