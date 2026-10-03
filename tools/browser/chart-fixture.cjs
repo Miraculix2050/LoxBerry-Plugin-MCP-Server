@@ -6,7 +6,8 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '../..');
 const assets = new Map([
   ['/probe.js', path.join(__dirname, 'chart-probe.js')],
-  ...['api.js', 'charts.js', 'charts.css', 'vendor/uplot/uPlot.iife.min.js', 'vendor/uplot/uPlot.min.css']
+  ...['api.js', 'chart-cache.js', 'charts.js', 'charts.css',
+    'vendor/uplot/uPlot.iife.min.js', 'vendor/uplot/uPlot.min.css']
     .map((name) => ['/' + name, path.join(root, 'webfrontend/htmlauth/event-history', name)]),
   ['/mcp-ui.css', path.join(root, 'webfrontend/htmlauth/mcp-ui.css')],
 ]);
@@ -19,7 +20,7 @@ function events(query, dense, now) {
   const count = Math.max(0, last - first + 1), size = Math.min(count, 2000);
   return {events: Array.from({length: size}, (_, index) => {
     const id = size === 1 ? first : first + Math.floor(index * (count - 1) / (size - 1));
-    return {id, observed_at: start + id * step, old_value: 0, new_value: Math.sin(id / 20)};
+    return {id, observed_at: start + id * step, new_value: Math.sin(id / 20)};
   }), reduced: count > size, has_more: false, latest_id: total, next_id: last,
   generation: 1, coverage: [{started_at: start, ended_at: now}],
   capture_started_at: start, retained_from: start,

@@ -9,6 +9,10 @@ extracted from the matching version heading.
   comparison exclusions; reject reversed or contradictory containment as a
   grouping identity (#359).
 
+- Reduce Chart View transfer and tab-local snapshot data by omitting previous
+  event values that the charts do not display. Existing history storage and
+  general history reads retain those values.
+
 - Complete Modbus V1 static project analysis with configured mapping, direct
   consumer and raw polling checks, and expose all five checks through MCP and
   Explorer (#358–#360). Preserve KNX defaults, explicit coverage and evidence

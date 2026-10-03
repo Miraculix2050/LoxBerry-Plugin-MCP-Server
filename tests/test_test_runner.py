@@ -67,6 +67,7 @@ def test_shared_language_files_select_both_ui_groups() -> None:
     "changed_file",
     (
         "webfrontend/htmlauth/event-history/charts.js",
+        "webfrontend/htmlauth/event-history/chart-cache.js",
         "webfrontend/htmlauth/event-history/api.js",
         "webfrontend/htmlauth/event-history/charts.css",
         "webfrontend/htmlauth/event-history/vendor/uplot/uPlot.iife.min.js",

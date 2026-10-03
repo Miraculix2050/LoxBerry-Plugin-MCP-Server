@@ -277,6 +277,7 @@ def test_v4_package_manifest_is_present() -> None:
         "webfrontend/htmlauth/admin/sessions.js",
         "webfrontend/htmlauth/admin/page.js",
         "webfrontend/htmlauth/event-history/charts.js",
+        "webfrontend/htmlauth/event-history/chart-cache.js",
         "webfrontend/htmlauth/event-history/charts.css",
         "webfrontend/htmlauth/event-history/vendor/uplot/uPlot.iife.min.js",
         "webfrontend/htmlauth/event-history/vendor/uplot/uPlot.min.css",

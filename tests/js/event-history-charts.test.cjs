@@ -8,6 +8,8 @@ const source = {control_uuid: '00000000-0000-0000-0000000000000001',
   state_uuid: '00000000-0000-0000-0000000000000002'};
 const script = fs.readFileSync(path.join(__dirname,
   '../../webfrontend/htmlauth/event-history/charts.js'), 'utf8');
+const cacheScript = fs.readFileSync(path.join(__dirname,
+  '../../webfrontend/htmlauth/event-history/chart-cache.js'), 'utf8');
 const html = `<main class="mcp-history-charts" data-loading="Loading"
   data-chart-denied="Denied" data-chart-error="Failed" data-chart-empty="Empty"
   data-chart-timeout="Timed out" data-chart-unavailable="Unavailable"
@@ -24,6 +26,20 @@ const html = `<main class="mcp-history-charts" data-loading="Loading"
 const flush = async () => {
   for (let index = 0; index < 10; index++) await new Promise((resolve) => setImmediate(resolve));
 };
+
+test('chart cache keeps interval and event operations independent of the DOM', () => {
+  const dom = new JSDOM('', {runScripts: 'outside-only'});
+  dom.window.eval(cacheScript);
+  const cache = dom.window.McpEventHistoryChartCache;
+  const intervals = cache.mergeInterval([{start: 0, end: 10}], 8, 20);
+  assert.deepEqual(JSON.parse(JSON.stringify(intervals)), [{start: 0, end: 20}]);
+  assert.deepEqual(JSON.parse(JSON.stringify(cache.missingIntervals(intervals, 0, 25))),
+    [{start: 20, end: 25}]);
+  assert.deepEqual(JSON.parse(JSON.stringify(cache.compactEvent({id: 1,
+    observed_at: 5, old_value: 'private', new_value: 'visible'}))),
+  {id: 1, observed_at: 5, new_value: 'visible'});
+  dom.window.close();
+});
 
 test('reload reuses bounded values only after fresh visibility and history checks', async () => {
   const url = `https://example.test/event_history.cgi?view=charts&sources=${encodeURIComponent(JSON.stringify([source]))}`;
@@ -67,6 +83,7 @@ test('reload reuses bounded values only after fresh visibility and history check
       }
       throw new Error(`Unexpected action ${action}`);
     }};
+    window.eval(cacheScript);
     window.eval(script);
     await flush();
     return {window, calls,
@@ -76,10 +93,16 @@ test('reload reuses bounded values only after fresh visibility and history check
   assert.equal(first.calls.length, 2, first.window.document.querySelector('#chart-status').textContent);
   assert.equal(JSON.parse(first.calls[1].fields.queries)[0].after_id, 0);
   assert.ok(first.saved);
+  assert.equal(JSON.parse(first.saved).sources[0].events[0].old_value, undefined);
   const reload = await open({saved: first.saved});
   assert.deepEqual(reload.calls.map(({action}) => action),
     ['event_history_chart_prepare', 'event_history_chart_query']);
   assert.equal(JSON.parse(reload.calls[1].fields.queries)[0].after_id, 7);
+  const legacyValue = JSON.parse(first.saved);
+  legacyValue.sources[0].events[0].old_value = 0;
+  const legacy = await open({saved: JSON.stringify(legacyValue)});
+  assert.equal(JSON.parse(legacy.calls[1].fields.queries)[0].after_id, 7);
+  assert.equal(JSON.parse(legacy.saved).sources[0].events[0].old_value, undefined);
   assert.match(reload.window.document.querySelector('#chart-panels').textContent, /Control/);
   const hour = first.window.document.querySelector('#chart-range');
   hour.value = '3600';
@@ -99,7 +122,7 @@ test('reload reuses bounded values only after fresh visibility and history check
   assert.deepEqual(revoked.calls.map(({action}) => action), ['event_history_chart_prepare']);
   assert.equal(revoked.saved, null);
   assert.equal(revoked.window.document.querySelector('#chart-panels').textContent, '');
-  for (const page of [first, reload, hourReload, changed, expired, renamed, revoked]) {
+  for (const page of [first, reload, legacy, hourReload, changed, expired, renamed, revoked]) {
     page.window.close();
   }
 });
@@ -189,6 +212,7 @@ test('chart tab loads only selected values, pauses hidden polling, and clears re
     }
     throw new Error(`Unexpected action ${action}`);
   }};
+  window.eval(cacheScript);
   window.eval(script);
   await flush();
   assert.deepEqual(calls.map(({action}) => action),

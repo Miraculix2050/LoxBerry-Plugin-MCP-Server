@@ -855,6 +855,9 @@ def test_event_history_chart_tab_keeps_values_out_of_the_overview() -> None:
     assert "event_history_chart_query" in chart
     assert "event_history_chart_prepare" in chart
     assert "event-history/vendor/uplot/uPlot.iife.min.js" in template
+    assert template.index("event-history/chart-cache.js") < template.index(
+        "event-history/charts.js"
+    )
     assert "event_history_chart_query" in cgi
     assert "CHART_DENIED=" in english and "CHART_DENIED=" in german
 
