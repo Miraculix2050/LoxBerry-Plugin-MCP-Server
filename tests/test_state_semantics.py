@@ -96,7 +96,8 @@ def test_position_bound_statuses_expose_normalization_loss_and_limits():
         status_monitor_input_complete=True,
     )
     descriptor, value = resolve(c, "inputStates", "[1]")
-    assert value is None and descriptor.interpretation_status == "partial"
+    assert value["inputs"][0]["mapping_status"] == "invalid"
+    assert descriptor.interpretation_status == "invalid"
     assert len(descriptor.encoding) == 100 and descriptor.encoding_total == 150
     assert descriptor.encoding_truncated and not descriptor.encoding_complete
     assert descriptor.positions[0].index == 0 and descriptor.positions_complete
@@ -610,3 +611,309 @@ async def test_wire_call_rejects_boolean_page_parameters(monkeypatch, parameter)
             "loxone_get_state_semantics", {"control_uuid": "control", parameter: True}
         )
     assert runtime.snapshots == []
+
+
+def status_control(**kwargs):
+    return control(
+        "StatusMonitor",
+        states=(("inputStates", "inputs"), ("numState1", "count")),
+        status_monitor_statuses=(
+            StatusMonitorStatus(4, "Ready", 2, "#00FF00", "status-four"),
+            StatusMonitorStatus(1, "Busy", 0, "#FF0000", "status-one"),
+        ),
+        status_monitor_inputs=(
+            StatusMonitorInput(0, "First", "Office", "referenced", "room"),
+            StatusMonitorInput(1, "Second", None, None, None),
+        ),
+        status_monitor_status_total=2,
+        status_monitor_status_complete=True,
+        status_monitor_input_total=2,
+        status_monitor_input_complete=True,
+        **kwargs,
+    )
+
+
+def test_status_monitor_maps_multiple_tuples_without_global_status():
+    c = status_control()
+    descriptor, value = resolve(c, "inputStates", "4,1")
+    assert descriptor.interpretation_status == "known"
+    assert value["decoding_complete"] and value["mapping_complete"]
+    assert [v["configured_status"]["name"] for v in value["inputs"]] == ["Ready", "Busy"]
+    assert value["inputs"][0]["input"]["uuid"] == "referenced"
+    assert value["inputs"][1]["configured_status"] == {
+        "status_id": 1,
+        "name": "Busy",
+        "priority": 0,
+        "color": "#FF0000",
+        "uuid": "status-one",
+    }
+    assert "alert_active" not in value and "current_status" not in value
+    assert any(
+        s.document_version == "17.1" and "#page=130" in s.reference for s in descriptor.sources
+    )
+    assert any(s.state_uuid == "inputs" for s in descriptor.sources)
+
+
+@pytest.mark.parametrize("raw", ["1,,4", "1,1.0", "1,-1", "1,true", "1,256", "1, 4", "1,[4]"])
+def test_status_monitor_invalid_tokens_keep_positions(raw):
+    _, value = resolve(status_control(), "inputStates", raw)
+    assert value["invalid_values"] and not value["decoding_complete"]
+    assert value["inputs"][1]["index"] == 1
+    assert value["inputs"][1]["raw_token"] == raw.split(",")[1]
+    assert value["inputs"][1]["mapping_status"] == "invalid"
+
+
+@pytest.mark.parametrize("raw", ["1,255", "1,3"])
+def test_status_monitor_unmatched_is_not_alarm_or_unconfigured_claim(raw):
+    descriptor, value = resolve(status_control(), "inputStates", raw)
+    assert descriptor.interpretation_status == "partial"
+    assert value["decoding_complete"] and not value["mapping_complete"]
+    assert value["inputs"][1]["mapping_status"] == "unmatched"
+    assert value["inputs"][1]["is_aggregated"] is None
+
+
+def test_status_monitor_missing_extra_and_duplicate_metadata():
+    c = status_control()
+    _, missing = resolve(c, "inputStates", "1")
+    assert missing["inputs"][1]["mapping_status"] == "missing_value"
+    assert missing["inputs"][1]["raw_token"] is None and not missing["mapping_complete"]
+    _, extra = resolve(c, "inputStates", "1,4,1")
+    assert len(extra["inputs"]) == 3 and not extra["inputs"][2]["input_resolved"]
+    duplicate = replace(
+        c, status_monitor_statuses=(*c.status_monitor_statuses, c.status_monitor_statuses[1])
+    )
+    _, value = resolve(duplicate, "inputStates", "1,4")
+    assert value["inputs"][0]["mapping_status"] == "ambiguous"
+    assert value["inputs"][0]["configured_status"] is None
+    _, value = resolve(
+        replace(c, status_monitor_statuses=(), status_monitor_status_complete=False),
+        "inputStates",
+        "1,4",
+    )
+    assert all(i["mapping_status"] == "unmatched" for i in value["inputs"])
+    assert not value["mapping_complete"]
+
+
+def test_status_monitor_bounds_and_visible_aggregation():
+    c = status_control()
+    descriptor, value = resolve(c, "inputStates", ",".join(["1"] * 101))
+    assert descriptor.interpretation_status == "partial"
+    assert value["values_total"] == 101 and 0 < value["positions_returned"] <= 100
+    assert value["truncated"] and not value["decoding_complete"]
+    assert resolve(c, "inputStates", "x" * 65537)[1] is None
+    _, invalid = resolve(c, "inputStates", "x" * 201 + ",1")
+    assert len(invalid["inputs"][0]["raw_token"]) == 200
+    assert invalid["inputs"][0]["raw_token_truncated"]
+    visible = replace(c, uuid="referenced")
+    hidden = replace(visible, is_hidden=True)
+    for controls, is_aggregated in [((visible,), True), ((hidden,), None), ((), None)]:
+        snapshot = replace(structure(c), controls=(c, *controls))
+        _, value = StateSemanticsResolver().resolve(snapshot, c, "inputStates", "4,1", {})
+        assert value["inputs"][0]["is_aggregated"] is is_aggregated
+
+
+@pytest.mark.parametrize("name,code", [(f"numState{i}", i) for i in range(10)] + [("numDef", 10)])
+def test_status_monitor_counts_are_counts_not_global_states(name, code):
+    c = status_control()
+    descriptor, value = resolve(c, name, 2)
+    assert value["kind"] == "status_count" and value["count"] == 2
+    assert value["status_id"] == code and "alert_active" not in value
+    assert descriptor.interpretation_status == ("known" if code in {1, 4} else "partial")
+    assert resolve(c, name, -1)[0].interpretation_status == "invalid"
+    assert resolve(c, name, True)[1] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "freshness", [Freshness.CURRENT, Freshness.STALE, Freshness.UNAVAILABLE, Freshness.UNKNOWN]
+)
+async def test_status_monitor_shared_readers_preserve_quality_and_no_reference_reads(
+    monkeypatch, freshness
+):
+    c = status_control()
+    runtime = Runtime(c)
+    raw = None if freshness is Freshness.UNAVAILABLE else "4,1"
+    runtime.records["inputs"] = StateRecord("inputs", raw, freshness, 1700000000)
+    server, compact = read_tool(monkeypatch, runtime)
+    semantics = await server._tool_manager.get_tool("loxone_get_state_semantics").fn(
+        "control", ["inputStates"]
+    )
+    states = await server._tool_manager.get_tool("loxone_get_states").fn(["inputs"])
+    enriched = await compact.fn(
+        [ControlReadTarget(control_uuid="control", state_names=["inputStates"])], True
+    )
+    assert states.ok and semantics.ok and enriched.ok
+    item = semantics.data.items[0]
+    assert item.semantic_value == states.data.states[0].semantic_value
+    assert item == enriched.data.items[0].semantics[0]
+    assert item.quality.freshness == freshness.value
+    assert item.value == raw and states.data.states[0].value == raw
+    assert runtime.snapshots == [True, True, True]
+    assert set(runtime.reads) <= {
+        "inputs",
+        "count",
+    }  # existing get_states reads same-control companions
+    assert "referenced" not in runtime.reads
+    if raw is not None:
+        assert item.semantic_value["provenance"]["state_uuid"] == "inputs"
+        assert item.semantic_value["provenance"]["document_version"] == "17.1"
+
+
+@pytest.mark.asyncio
+async def test_status_monitor_description_keeps_uuid_and_source_coverage(monkeypatch):
+    runtime = Runtime(status_control())
+    server, _ = read_tool(monkeypatch, runtime)
+    result = await server._tool_manager.get_tool("loxone_describe_control").fn("control")
+    mapping = result.data.capabilities.status_monitor
+    assert mapping.statuses[0].uuid == "status-four"
+    state_schema = server._tool_manager.get_tool("loxone_get_states").output_schema
+    assert (
+        "StatusMonitor"
+        in state_schema["$defs"]["StateData"]["properties"]["semantic_value"]["description"]
+    )
+    assert mapping.statuses_total == mapping.statuses_returned == 2
+    assert mapping.statuses_complete and not mapping.statuses_truncated
+    assert mapping.inputs_total == mapping.inputs_returned == 2
+    assert mapping.inputs_complete and not mapping.inputs_truncated
+
+
+@pytest.mark.asyncio
+async def test_status_monitor_long_tuples_obey_compact_bytes(monkeypatch):
+    c = replace(
+        status_control(),
+        status_monitor_inputs=tuple(
+            StatusMonitorInput(i, "N" * 200, "P" * 200, "U" * 128, "R" * 128) for i in range(100)
+        ),
+        status_monitor_statuses=(StatusMonitorStatus(1, "S" * 200, 0, "#FF0000"),),
+        status_monitor_input_total=100,
+        status_monitor_status_total=1,
+    )
+    runtime = Runtime(c)
+    runtime.records["inputs"] = StateRecord(
+        "inputs", ",".join(["1"] * 100), Freshness.CURRENT, 1700000000
+    )
+    _, compact = read_tool(monkeypatch, runtime)
+    result = await compact.fn(
+        [ControlReadTarget(control_uuid="control", state_names=["inputStates"])], True
+    )
+    assert result.ok and len(result.model_dump_json().encode("utf-8")) <= 65536
+    assert result.data.items[0].semantics[0].semantic_value["truncated"]
+    assert not result.data.items[0].semantics[0].semantic_value["mapping_complete"]
+
+
+@pytest.mark.asyncio
+async def test_state_batch_requires_fresh_visibility_without_cached_fallback(monkeypatch):
+    runtime = Runtime(status_control())
+    runtime.failure = RuntimeUnavailable("fresh visibility failed")
+    server, _ = read_tool(monkeypatch, runtime)
+    result = await server._tool_manager.get_tool("loxone_get_states").fn(["inputs"])
+    assert not result.ok and runtime.snapshots == [True] and runtime.reads == []
+
+
+@pytest.mark.parametrize(
+    "state,value", [("inputStates", "4,1"), ("numState1", 1), ("numDef", None)]
+)
+def test_status_monitor_invalid_metadata_survives_decodable_or_missing_values(state, value):
+    c = replace(status_control(), semantics_invalid_fields=("status_monitor",))
+    descriptor, decoded = resolve(c, state, value)
+    assert descriptor.interpretation_status == "invalid"
+    assert descriptor.reason == "invalid_structure_metadata"
+    if value is not None:
+        assert decoded is not None and not decoded["mapping_complete"]
+
+
+@pytest.mark.parametrize(
+    "collection,field,value",
+    [
+        ("inputs", "uuid", 42),
+        ("inputs", "room", True),
+        ("inputs", "installPlace", []),
+        ("inputs", "uuid", "x" * 201),
+        ("status", "color", "red"),
+        ("status", "uuid", False),
+        ("status", "uuid", "x" * 201),
+    ],
+)
+def test_status_monitor_malformed_optional_metadata_is_not_complete(collection, field, value):
+    input_entry = {"name": "Input"}
+    status_entry = {"id": 1, "name": "Configured", "prio": 0}
+    (input_entry if collection == "inputs" else status_entry)[field] = value
+    raw = {
+        "msInfo": {"serialNr": "fixture"},
+        "controls": {
+            "monitor": {
+                "name": "Monitor",
+                "type": "StatusMonitor",
+                "states": {"inputStates": "input"},
+                "details": {"inputs": [input_entry], "status": {"one": status_entry}},
+            }
+        },
+    }
+    c = normalize_structure(raw, username="reader").controls[0]
+    descriptor, decoded = resolve(c, "inputStates", "1")
+    assert c.semantics_invalid_fields == ("status_monitor",)
+    assert descriptor.reason == "invalid_structure_metadata"
+    assert not decoded["mapping_complete"]
+    if field == "uuid":
+        assert (
+            c.status_monitor_inputs[0].uuid
+            if collection == "inputs"
+            else c.status_monitor_statuses[0].uuid
+        ) is None
+
+
+@pytest.mark.parametrize(
+    "optional", [{}, {"uuid": None, "room": "", "installPlace": "", "color": None}]
+)
+def test_status_monitor_absent_optional_metadata_can_be_complete(optional):
+    raw = {
+        "msInfo": {"serialNr": "fixture"},
+        "controls": {
+            "monitor": {
+                "name": "Monitor",
+                "type": "StatusMonitor",
+                "states": {"inputStates": "input"},
+                "details": {
+                    "inputs": [{"name": "Input", **optional}],
+                    "status": {"one": {"id": 1, "name": "Configured", "prio": 0, **optional}},
+                },
+            }
+        },
+    }
+    c = normalize_structure(raw, username="reader").controls[0]
+    descriptor, decoded = resolve(c, "inputStates", "1")
+    assert not c.semantics_invalid_fields and descriptor.interpretation_status == "known"
+    assert decoded["mapping_complete"]
+
+
+@pytest.mark.parametrize("normalized", [False, True])
+def test_status_monitor_reserved_255_never_matches_a_configured_definition(normalized):
+    if normalized:
+        raw = {
+            "msInfo": {"serialNr": "fixture"},
+            "controls": {
+                "monitor": {
+                    "name": "Monitor",
+                    "type": "StatusMonitor",
+                    "states": {"inputStates": "input"},
+                    "details": {
+                        "inputs": [{"name": "Input"}],
+                        "status": {"reserved": {"id": 255, "name": "Arbitrary", "prio": 0}},
+                    },
+                }
+            },
+        }
+        c = normalize_structure(raw, username="reader").controls[0]
+        assert c.status_monitor_statuses == ()
+        assert c.status_monitor_status_total == 1 and not c.status_monitor_status_complete
+    else:
+        c = replace(
+            status_control(),
+            status_monitor_statuses=(StatusMonitorStatus(255, "Arbitrary", 0, "#FF0000"),),
+            status_monitor_status_total=1,
+        )
+    descriptor, decoded = resolve(c, "inputStates", "255")
+    assert decoded["inputs"][0]["status_id"] == 255
+    assert decoded["inputs"][0]["mapping_status"] == "unmatched"
+    assert decoded["inputs"][0]["configured_status"] is None
+    assert not decoded["mapping_complete"] and descriptor.interpretation_status != "known"

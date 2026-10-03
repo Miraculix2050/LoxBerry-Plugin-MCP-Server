@@ -523,6 +523,21 @@ def _weather_metadata(document: Mapping[str, object]) -> WeatherMetadata:
     return WeatherMetadata(tuple(formats), tuple(type_texts))
 
 
+def _status_optional_metadata_valid(item: Mapping[str, object]) -> bool:
+    """Distinguish absent optional metadata from malformed published values."""
+    for name in ("uuid", "room"):
+        value = item.get(name)
+        if value not in (None, "") and (not isinstance(value, str) or len(value) > 200):
+            return False
+    place = item.get("installPlace")
+    if place is not None and (not isinstance(place, str) or len(place) > 200):
+        return False
+    color = item.get("color")
+    return color is None or (
+        isinstance(color, str) and re.fullmatch(r"#[0-9A-Fa-f]{6}", color) is not None
+    )
+
+
 def _status_monitor_details(
     details: Mapping[str, object],
 ) -> tuple[tuple[StatusMonitorInput, ...], tuple[StatusMonitorStatus, ...]]:
@@ -545,8 +560,8 @@ def _status_monitor_details(
                     index=index,
                     name=name,
                     install_place=install_place,
-                    uuid=_optional_uuid(item.get("uuid")),
-                    room_uuid=_optional_uuid(item.get("room")),
+                    uuid=_bounded_text(item.get("uuid")),
+                    room_uuid=_bounded_text(item.get("room")),
                 )
             )
     statuses_value = details.get("status")
@@ -559,7 +574,7 @@ def _status_monitor_details(
             if (
                 not isinstance(status_id, int)
                 or isinstance(status_id, bool)
-                or not 0 <= status_id <= 255
+                or not 0 <= status_id < 255
                 or not isinstance(name, str)
                 or len(name) > 200
                 or not isinstance(priority, int)
@@ -570,12 +585,15 @@ def _status_monitor_details(
             color = item.get("color")
             if not isinstance(color, str) or re.fullmatch(r"#[0-9A-Fa-f]{6}", color) is None:
                 color = None
+            if len(statuses) == 100:
+                break
             statuses.append(
                 StatusMonitorStatus(
                     status_id=status_id,
                     name=name,
                     priority=priority,
                     color=color,
+                    uuid=_bounded_text(item.get("uuid")),
                 )
             )
     return tuple(inputs), tuple(sorted(statuses, key=lambda status: status.status_id))
@@ -836,15 +854,27 @@ def _controls(
         input_labels_valid = not isinstance(raw_inputs, list) or all(
             isinstance(v, Mapping)
             and ("name" not in v or (isinstance(v["name"], str) and len(v["name"]) <= 200))
+            and _status_optional_metadata_valid(v)
             for v in raw_inputs[:100]
         )
+        status_optional_valid = not isinstance(raw_statuses, Mapping) or all(
+            _status_optional_metadata_valid(v)
+            for v in islice(raw_statuses.values(), 100)
+            if isinstance(v, Mapping)
+        )
         input_complete = input_complete and input_labels_valid
+        status_complete = (
+            status_complete
+            and status_optional_valid
+            and len({s.status_id for s in status_monitor_statuses}) == len(status_monitor_statuses)
+        )
         if item.get("type") == "StatusMonitor" and (
             ("status" in details and not isinstance(raw_statuses, Mapping))
             or (status_total is not None and len(status_monitor_statuses) < status_total)
             or len({s.status_id for s in status_monitor_statuses}) != len(status_monitor_statuses)
             or ("inputs" in details and not isinstance(raw_inputs, list))
             or not input_labels_valid
+            or not status_optional_valid
         ):
             semantics_invalid_fields.append("status_monitor")
         controls.append(

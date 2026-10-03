@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -92,6 +93,10 @@ class StateSemantics:
 
 
 _DOCUMENT = "https://www.loxone.com/enen/kb/api/"
+_STATUS_DOCUMENT = (
+    "https://www.loxone.com/dede/wp-content/uploads/sites/2/2021/10/1701_Structure-File.pdf"
+)
+_STATUS_COUNTS = {**{f"numState{i}": i for i in range(10)}, "numDef": 10}
 _IRRIGATION_RULES = {"zones", "rainActive", "currentZone"}
 _ALARM_RULES = {
     "isEnabled",
@@ -352,6 +357,59 @@ class StateSemanticsResolver:
             elif not result.encoding_complete or not result.positions_complete:
                 result.reason = "incomplete_metadata"
 
+        if control.control_type == "StatusMonitor" and (
+            state_name == "inputStates" or state_name in _STATUS_COUNTS
+        ):
+            result.sources.extend(
+                [
+                    SemanticsSource(
+                        "decoder_rule",
+                        _STATUS_DOCUMENT + "#page=130",
+                        ("semantic_value",),
+                        rule_id=f"StatusMonitor.{state_name}.v1",
+                        document_version="17.1",
+                    ),
+                    SemanticsSource(
+                        "structure_file",
+                        "details.inputs/status",
+                        ("semantic_value",),
+                    ),
+                    SemanticsSource(
+                        "runtime_state",
+                        "states." + state_name,
+                        ("semantic_value",),
+                        state_uuid=dict(control.state_uuids).get(state_name),
+                    ),
+                ]
+            )
+            result.value_type = "string" if state_name == "inputStates" else "integer"
+            if "status_monitor" in control.semantics_invalid_fields:
+                result.interpretation_status, result.reason = (
+                    "invalid",
+                    "invalid_structure_metadata",
+                )
+            if value is None:
+                if result.interpretation_status != "invalid":
+                    result.interpretation_status, result.reason = "partial", "value_unavailable"
+            else:
+                semantic_value, invalid = decode_state_value(
+                    structure, control, state_name, value, companion_values
+                )
+                if invalid:
+                    result.interpretation_status, result.reason = (
+                        "invalid",
+                        "invalid_documented_value",
+                    )
+                elif "status_monitor" in control.semantics_invalid_fields:
+                    result.interpretation_status, result.reason = (
+                        "invalid",
+                        "invalid_structure_metadata",
+                    )
+                elif isinstance(semantic_value, dict):
+                    complete = semantic_value.get("mapping_complete") is True
+                    result.interpretation_status = "known" if complete else "partial"
+                    result.reason = "documented_decoder" if complete else "incomplete_metadata"
+
         supported = (control.control_type == "Irrigation" and state_name in _IRRIGATION_RULES) or (
             control.control_type == "AlarmClock" and state_name in _ALARM_RULES
         )
@@ -609,6 +667,141 @@ def _alarm_entry_reference(value: object, entries_value: object) -> dict[str, ob
     return result
 
 
+def _status_provenance(control: Control, state_name: str) -> dict[str, object]:
+    return {
+        "document": _STATUS_DOCUMENT,
+        "document_version": "17.1",
+        "pages": [130, 131],
+        "rule_id": f"StatusMonitor.{state_name}.v1",
+        "state_uuid": dict(control.state_uuids).get(state_name),
+        "structure_fields": ["details.inputs", "details.status"],
+    }
+
+
+def _status_definition(control: Control, code: int) -> tuple[dict[str, object] | None, str]:
+    # 255 is reserved for an integrated, unconfigured monitor, never a configured tuple.
+    if code == 255:
+        return None, "unmatched"
+    matches = [s for s in control.status_monitor_statuses[:100] if s.status_id == code]
+    if len(matches) != 1:
+        return None, "ambiguous" if matches else "unmatched"
+    item = matches[0]
+    return {
+        "status_id": item.status_id,
+        "name": item.name,
+        "priority": item.priority,
+        "color": item.color,
+        "uuid": item.uuid,
+    }, "matched"
+
+
+def _visible_status_input_types(structure: LoxoneStructure) -> dict[str, str]:
+    """Use only already-visible controls; never expand navigation references or read states."""
+    result: dict[str, str] = {}
+    stack = [iter(structure.controls)]
+    examined = 0
+    while stack and examined < 1000:
+        item = next(stack[-1], None)
+        if item is None:
+            stack.pop()
+            continue
+        examined += 1
+        if item.is_hidden:
+            continue
+        result[item.uuid] = item.control_type
+        stack.append(iter(item.subcontrols))
+    return result
+
+
+def _status_inputs(
+    structure: LoxoneStructure, control: Control, value: object
+) -> dict[str, object]:
+    if not isinstance(value, str) or len(value) > _MAX_SEMANTIC_JSON_TEXT:
+        raise _SemanticValueError
+    total = value.count(",") + 1
+    # maxsplit prevents unbounded list materialization; keep empty positions.
+    tokens = value.split(",", _MAX_SEMANTIC_ENTRIES)[:_MAX_SEMANTIC_ENTRIES]
+    inputs = {s.index: s for s in control.status_monitor_inputs[:100]}
+    types = _visible_status_input_types(structure)
+    expected = control.status_monitor_input_total
+    positions = min(max(total, expected or 0), _MAX_SEMANTIC_ENTRIES)
+    items: list[dict[str, object]] = []
+    decoding_complete = True
+    for index in range(positions):
+        token = tokens[index] if index < len(tokens) else None
+        item = inputs.get(index)
+        code: int | None = None
+        definition: dict[str, object] | None = None
+        mapping = "missing_value" if token is None else "invalid"
+        if token is not None and re.fullmatch(r"[0-9]{1,3}", token):
+            code = int(token)
+            if code <= 255:
+                definition, mapping = _status_definition(control, code)
+            else:
+                code = None
+        if token is not None and code is None:
+            decoding_complete = False
+        source = None
+        aggregated: bool | None = None
+        if item is not None:
+            source = {
+                "index": item.index,
+                "name": item.name,
+                "install_place": item.install_place,
+                "uuid": item.uuid,
+                "room_uuid": item.room_uuid,
+            }
+            if item.uuid in types:
+                aggregated = types[item.uuid] == "StatusMonitor"
+        # Keep independent input and definition resolution; neither invents source wiring.
+        items.append(
+            {
+                "index": index,
+                "raw_token": token[:200] if token is not None else None,
+                "raw_token_truncated": token is not None and len(token) > 200,
+                "status_id": code,
+                "input": source,
+                "configured_status": definition,
+                "mapping_status": mapping,
+                "input_resolved": item is not None,
+                "is_aggregated": aggregated,
+            }
+        )
+    truncated = max(total, expected or 0) > positions
+    mapping_complete = (
+        decoding_complete
+        and not truncated
+        and expected == total
+        and control.status_monitor_input_complete
+        and control.status_monitor_status_complete
+        and all(v["mapping_status"] == "matched" and v["input_resolved"] for v in items)
+        and "status_monitor" not in control.semantics_invalid_fields
+    )
+    result: dict[str, object] = {
+        "kind": "input_states",
+        "provenance": _status_provenance(control, "inputStates"),
+        "inputs": items,
+        "values_total": total,
+        "positions_returned": len(items),
+        "truncated": truncated,
+        "decoding_complete": decoding_complete and not truncated,
+        "mapping_complete": mapping_complete,
+        "invalid_values": any(v["mapping_status"] == "invalid" for v in items),
+        "input_metadata_complete": control.status_monitor_input_complete,
+        "status_metadata_complete": control.status_monitor_status_complete,
+    }
+    # Bound enrichment bytes independently of the caller's raw-value/delivery budget.
+    while items and len(json.dumps(result, ensure_ascii=False).encode("utf-8")) > 16_384:
+        items.pop()
+        result.update(
+            positions_returned=len(items),
+            truncated=True,
+            decoding_complete=False,
+            mapping_complete=False,
+        )
+    return result
+
+
 def decode_state_value(
     structure: LoxoneStructure,
     control: Control,
@@ -617,6 +810,26 @@ def decode_state_value(
     companion_values: Mapping[str, object],
 ) -> tuple[object | None, bool]:
     try:
+        if control.control_type == "StatusMonitor":
+            if state_name == "inputStates":
+                decoded = _status_inputs(structure, control, value)
+                return decoded, decoded["invalid_values"] is True
+            if state_name in _STATUS_COUNTS:
+                code = _STATUS_COUNTS[state_name]
+                count = _semantic_integer(value, minimum=0, maximum=9_007_199_254_740_991)
+                definition, mapping = _status_definition(control, code)
+                return {
+                    "kind": "status_count",
+                    "provenance": _status_provenance(control, state_name),
+                    "status_id": code,
+                    "count": count,
+                    "configured_status": definition,
+                    "mapping_status": mapping,
+                    "mapping_complete": mapping == "matched"
+                    and control.status_monitor_status_complete
+                    and len(control.status_monitor_statuses) <= 100
+                    and "status_monitor" not in control.semantics_invalid_fields,
+                }, False
         if control.control_type == "Irrigation":
             if state_name == "zones":
                 return _irrigation_zones(value), False

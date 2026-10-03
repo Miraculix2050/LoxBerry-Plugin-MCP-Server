@@ -613,7 +613,7 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert tool.annotations.destructiveHint is False
     assert tool.annotations.openWorldHint is False
     assert result.data.name == "using-loxberry-mcp"  # type: ignore[union-attr]
-    assert result.data.revision == 47  # type: ignore[union-attr]
+    assert result.data.revision == 48  # type: ignore[union-attr]
     assert "prefer `loxone_read_controls`" in result.data.content  # type: ignore[union-attr]
     assert "`loxone_get_structure_overview`" in result.data.content  # type: ignore[union-attr]
     assert result.data.media_type == "text/markdown"  # type: ignore[union-attr]
@@ -2977,7 +2977,9 @@ async def test_get_states_accepts_advertised_global_metadata_states(
             assert uuid == "state-1"
             return StateRecord(uuid, 1.0, Freshness.CURRENT, 1_700_000_000.0)
 
-    async def snapshot(_runtime: object) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+    async def snapshot(
+        _runtime: object, *, fresh_visibility: bool = False
+    ) -> tuple[StoredAccessToken, RuntimeSnapshot]:
         return access, RuntimeSnapshot("family", structure, True)
 
     monkeypatch.setattr(tools_module, "_snapshot", snapshot)
@@ -3043,7 +3045,9 @@ async def test_room_snapshot_matches_additive_irrigation_state_semantics(
         def state(self, _snapshot: RuntimeSnapshot, uuid: str) -> StateRecord:
             return records[uuid]
 
-    async def snapshot(_runtime: object) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+    async def snapshot(
+        _runtime: object, *, fresh_visibility: bool = False
+    ) -> tuple[StoredAccessToken, RuntimeSnapshot]:
         return access, RuntimeSnapshot("family", structure, True)
 
     monkeypatch.setattr(tools_module, "_snapshot", snapshot)
@@ -3369,7 +3373,9 @@ async def test_alarm_clock_model_and_semantics_remain_read_only(
         def state(self, _snapshot: RuntimeSnapshot, uuid: str) -> StateRecord:
             return records[uuid]
 
-    async def snapshot(_runtime: object) -> tuple[StoredAccessToken, RuntimeSnapshot]:
+    async def snapshot(
+        _runtime: object, *, fresh_visibility: bool = False
+    ) -> tuple[StoredAccessToken, RuntimeSnapshot]:
         return access, RuntimeSnapshot("family", structure, True)
 
     monkeypatch.setattr(tools_module, "_snapshot", snapshot)

@@ -279,7 +279,13 @@ def test_structure_preserves_status_monitor_input_mapping() -> None:
                         {"name": 3},
                     ],
                     "status": {
-                        "status1": {"id": 1, "name": "Offline", "prio": 0, "color": "#E4354A"},
+                        "status1": {
+                            "id": 1,
+                            "name": "Offline",
+                            "prio": 0,
+                            "color": "#E4354A",
+                            "uuid": "status-one",
+                        },
                         "invalid": {"id": "0", "name": "Online", "prio": 1},
                     },
                 },
@@ -297,6 +303,7 @@ def test_structure_preserves_status_monitor_input_mapping() -> None:
     assert control.status_monitor_inputs[2].name is None
     assert control.status_monitor_statuses[0].status_id == 1
     assert control.status_monitor_statuses[0].color == "#E4354A"
+    assert control.status_monitor_statuses[0].uuid == "status-one"
 
 
 def test_structure_preserves_window_monitor_mapping_entries() -> None:

@@ -451,13 +451,22 @@ class StatusMonitorStatusData(BaseModel):
     name: str
     priority: int
     color: str | None
+    uuid: str | None = None
 
 
 class StatusMonitorData(BaseModel):
     """Static mapping used to interpret a StatusMonitor inputStates state."""
 
-    inputs: list[StatusMonitorInputData]
-    statuses: list[StatusMonitorStatusData]
+    inputs: list[StatusMonitorInputData] = Field(max_length=100)
+    statuses: list[StatusMonitorStatusData] = Field(max_length=100)
+    inputs_total: int | None = None
+    inputs_returned: int = 0
+    inputs_complete: bool = False
+    inputs_truncated: bool = False
+    statuses_total: int | None = None
+    statuses_returned: int = 0
+    statuses_complete: bool = False
+    statuses_truncated: bool = False
 
 
 class ControlDescriptionData(ControlSummaryData):
@@ -521,7 +530,8 @@ class StateData(BaseModel):
     semantic_value: JsonValue | None = Field(
         default=None,
         description=(
-            "Bounded additive interpretation for documented Irrigation and AlarmClock states. "
+            "Bounded additive interpretation for documented Irrigation, AlarmClock "
+            "and StatusMonitor states. "
             "The original value remains unchanged."
         ),
     )
@@ -4684,7 +4694,7 @@ def register_read_tools(
                                     else None
                                 ),
                             }
-                            for item in control.status_monitor_inputs
+                            for item in control.status_monitor_inputs[:100]
                         ],
                         "statuses": [
                             {
@@ -4692,9 +4702,30 @@ def register_read_tools(
                                 "name": item.name,
                                 "priority": item.priority,
                                 "color": item.color,
+                                "uuid": item.uuid,
                             }
-                            for item in control.status_monitor_statuses
+                            for item in control.status_monitor_statuses[:100]
                         ],
+                        "inputs_total": control.status_monitor_input_total,
+                        "inputs_returned": min(len(control.status_monitor_inputs), 100),
+                        "inputs_complete": control.status_monitor_input_complete
+                        and len(control.status_monitor_inputs) <= 100,
+                        "inputs_truncated": len(control.status_monitor_inputs) > 100
+                        or (
+                            control.status_monitor_input_total is not None
+                            and control.status_monitor_input_total
+                            > len(control.status_monitor_inputs[:100])
+                        ),
+                        "statuses_total": control.status_monitor_status_total,
+                        "statuses_returned": min(len(control.status_monitor_statuses), 100),
+                        "statuses_complete": control.status_monitor_status_complete
+                        and len(control.status_monitor_statuses) <= 100,
+                        "statuses_truncated": len(control.status_monitor_statuses) > 100
+                        or (
+                            control.status_monitor_status_total is not None
+                            and control.status_monitor_status_total
+                            > len(control.status_monitor_statuses[:100])
+                        ),
                     }
                     if control.control_type == "StatusMonitor"
                     else None
@@ -5253,7 +5284,7 @@ def register_read_tools(
                 "state_uuids must contain 1 to 100 unique values",
             )
         try:
-            _access_token, snapshot = await _snapshot(runtime)
+            _access_token, snapshot = await _snapshot(runtime, fresh_visibility=True)
             allowed = {
                 uuid
                 for control in _controls_for_diagnosis(
