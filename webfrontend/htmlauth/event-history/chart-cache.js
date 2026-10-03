@@ -36,6 +36,18 @@ window.McpEventHistoryChartCache = (() => {
   const compactEvent = (event) => ({
     id: event.id, observed_at: event.observed_at, new_value: event.new_value,
   });
+  const eventCount = (state, events) => new Set([
+    ...state.events.keys(), ...events.map((event) => event.id),
+  ]).size;
+  const trimToRange = (state, range) => {
+    for (const name of ['loaded', 'exact', 'sampled', 'coverageExact',
+      'coverageTruncatedRanges']) state[name] = trimIntervals(state[name], range.start, range.end);
+    for (const [id, event] of state.events) {
+      if (event.observed_at < range.start || event.observed_at > range.end) state.events.delete(id);
+    }
+    state.coverage = state.coverage.filter((item) => item.started_at <= range.end
+      && (item.ended_at ?? Infinity) >= range.start);
+  };
   const resetCache = (state) => {
     state.events.clear();
     state.loaded = [];
@@ -69,5 +81,5 @@ window.McpEventHistoryChartCache = (() => {
     return true;
   };
   return {mergeInterval, missingIntervals, loadedForRange, unresolvedInRange,
-    trimIntervals, compactEvent, resetCache, limitCache};
+    trimIntervals, compactEvent, eventCount, trimToRange, resetCache, limitCache};
 })();

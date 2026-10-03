@@ -15,6 +15,7 @@ const html = `<main class="mcp-history-charts" data-loading="Loading"
   data-chart-timeout="Timed out" data-chart-unavailable="Unavailable"
   data-chart-invalid="Invalid range" data-chart-stale="Data may be stale"
   data-chart-reference="Reference"
+  data-chart-reloading="Refreshing" data-chart-cache-full="Display limit"
   data-chart-reduced="Reduced" data-chart-value="Value" data-chart-number="Number"
   data-chart-boolean="Boolean value">
   <select id="chart-range"><option value="3600">Hour</option><option value="86400">Day</option><option value="custom">Custom</option></select>
@@ -27,6 +28,224 @@ const flush = async () => {
   for (let index = 0; index < 10; index++) await new Promise((resolve) => setImmediate(resolve));
 };
 
+const otherSource = {...source, state_uuid: '00000000-0000-0000-0000000000000003'};
+async function overflowFixture({initialCount = 4000, replacement = 'reduced',
+  both = false, duplicate = false, controller = script, saved = null} = {}) {
+  const now = Date.now() / 1000;
+  const dom = new JSDOM(html, {url: 'https://example.test/?sources=' +
+    encodeURIComponent(JSON.stringify([source, otherSource])), runScripts: 'outside-only'});
+  const {window} = dom;
+  if (saved) window.sessionStorage.setItem('mcp-event-history-chart-v1', JSON.stringify(saved));
+  window.Date.now = () => now * 1000;
+  let hidden = false, tick, release, updating = false, replacing = false;
+  const calls = [], plots = [];
+  Object.defineProperty(window.document, 'hidden', {get: () => hidden});
+  window.setInterval = (callback) => { tick = callback; return 1; };
+  window.uPlot = class {
+    static paths = {stepped: () => () => ({})};
+    constructor(options, data, host) {
+      this.options = options; this.data = data; this.host = host;
+      this.scales = {x: {min: 0, max: 1}};
+      this.over = window.document.createElement('div'); host.append(this.over); plots.push(this);
+    }
+    setData(data) { this.data = data; }
+    setScale(_key, value) { this.scales.x = value; }
+    destroy() { this.destroyed = true; this.host.replaceChildren(); }
+  };
+  const event = (id) => ({id, observed_at: now - 5000 + id, new_value: id});
+  const page = (events, overrides = {}) => ({events, generation: 1,
+    has_more: false, latest_id: events.at(-1)?.id || 0, next_id: events.at(-1)?.id || 0,
+    reduced: false, coverage: [{started_at: now - 86400, ended_at: null, outcome: 'recording'}],
+    capture_started_at: now - 86400, retained_from: now - 86400,
+    recording_ended_at: null, ...overrides});
+  window.McpEventHistoryApi = {request: async (action, fields) => {
+    calls.push({action, fields});
+    if (action === 'event_history_chart_prepare') return {
+      generation: 'a'.repeat(24), history_generation: 1, verified_at: now,
+      sources: [source, otherSource].map((item, index) => ({...item,
+        control_name: `Control ${index}`, state_name: 'State', room: 'Room',
+        category: 'Category', control_type: 'Number'}))};
+    const queries = JSON.parse(fields.queries);
+    if (updating && queries.some((query) => query.after_id === 0
+      || (queries.length === 1 && replacing
+        && ['pages', 'paged-exact'].includes(replacement) && query.after_id < 4000))) {
+      replacing = true;
+      await new Promise((resolve) => { release = resolve; });
+      if (replacement === 'timeout') throw Object.assign(new Error(), {code: 'query_timeout'});
+      if (replacement === 'network') throw new window.TypeError('Network');
+      if (replacement === 'forbidden') throw Object.assign(new Error(), {code: 'forbidden'});
+      if (replacement === 'stale') throw Object.assign(new Error(), {code: 'stale_configuration'});
+      return {results: queries.map(() => replacement === 'overflow'
+        ? page(Array.from({length: 4001}, (_, index) => event(index + 1)))
+        : replacement === 'pages'
+          ? page([event(queries[0].after_id + 1)], {has_more: true,
+            next_id: queries[0].after_id + 1, latest_id: 5000})
+        : replacement === 'paged-exact'
+          ? page([event(queries[0].after_id + 1)], {has_more: queries[0].after_id === 0,
+            next_id: queries[0].after_id + 1, latest_id: 4001})
+        : page([event(1), event(4001)], {latest_id: 4001,
+          reduced: replacement === 'reduced', generation: replacement === 'changed' ? 2 : 1}))};
+    }
+    return {results: queries.map((query) => {
+      const primary = query.state_uuid === source.state_uuid;
+      if (updating) return primary || both
+        ? page([event(duplicate ? initialCount : 4001)], {latest_id: duplicate ? initialCount : 4001})
+        : page([event(11)]);
+      const total = primary || both ? initialCount : 10;
+      const first = query.after_id + 1, last = Math.min(total, first + 499);
+      return page(Array.from({length: Math.max(0, last - first + 1)}, (_, index) => event(first + index)),
+        {has_more: last < total, latest_id: total, next_id: last});
+    })};
+  }};
+  window.eval(cacheScript); window.eval(controller); await flush();
+  return {window, calls, plots, event, page,
+    snapshot: () => JSON.parse(window.sessionStorage.getItem('mcp-event-history-chart-v1')),
+    update: async () => { updating = true; tick(); await flush(); },
+    release: async () => { release?.(); await flush(); },
+    get replacing() { return replacing; },
+    hide: () => { hidden = true; }, tick, close: () => dom.window.close()};
+}
+
+test('cache overflow keeps both plots visible and atomically replaces only its source', async () => {
+  const fixture = await overflowFixture();
+  const {window, plots, calls} = fixture;
+  assert.equal(fixture.snapshot().sources[0].events.length, 4000);
+  await fixture.update();
+  assert.equal(fixture.replacing, true);
+  assert.equal(plots.length, 2);
+  assert.ok(plots.every((plot) => !plot.destroyed && plot.data[0].length));
+  assert.match(window.document.querySelector('#chart-panels section').textContent, /Refreshing/);
+  const replacementQuery = JSON.parse(calls.at(-1).fields.queries);
+  assert.equal(replacementQuery.length, 1);
+  assert.equal(replacementQuery[0].after_id, 0);
+  assert.equal(replacementQuery[0].state_uuid, source.state_uuid);
+  await fixture.release();
+  const saved = fixture.snapshot();
+  assert.deepEqual(saved.sources[0].events.map((event) => event.id), [1, 4001]);
+  assert.equal(saved.sources[0].cursor, 4001);
+  assert.equal(saved.sources[0].exact.length, 0);
+  assert.equal(saved.sources[0].sampled.length, 1);
+  assert.equal(saved.sources[1].events.length, 11);
+  assert.equal(saved.sources[1].cursor, 11);
+  assert.deepEqual(saved.sources[0].coverage, saved.sources[1].coverage);
+  assert.match(window.document.querySelector('#chart-panels section').textContent, /Reduced/);
+  const before = calls.length;
+  await fixture.update();
+  assert.equal(calls.length, before + 1, 'next incremental update does not reload');
+  assert.equal(fixture.snapshot().sources[0].events.length, 2, 'duplicate IDs stay unique');
+  assert.ok(plots.every((plot) => !plot.destroyed));
+  const restored = await overflowFixture({saved: fixture.snapshot()});
+  assert.equal(restored.snapshot().sources[0].events.length, 2);
+  assert.equal(restored.snapshot().sources[0].sampled.length, 1);
+  assert.ok(restored.calls.filter((call) => call.action === 'event_history_chart_query')
+    .every((call) => JSON.parse(call.fields.queries).every((query) => query.after_id > 0)),
+  'restored replacement fetches only newer values after fresh preparation');
+  restored.close();
+  fixture.close();
+});
+
+for (const replacement of ['timeout', 'network', 'overflow']) {
+  test(`failed ${replacement} replacement retains values and retries only on a later update`, async () => {
+    const fixture = await overflowFixture({replacement});
+    await fixture.update(); await fixture.release();
+    assert.equal(fixture.snapshot().sources[0].events.length, 4000);
+    assert.equal(fixture.snapshot().sources[0].cursor, 4000);
+    assert.equal(fixture.snapshot().sources[1].events.length, 11);
+    const count = fixture.calls.length;
+    await flush();
+    assert.equal(fixture.calls.length, count, 'no immediate retry loop');
+    assert.match(fixture.window.document.querySelector('#chart-panels section').textContent,
+      replacement === 'overflow' ? /Display limit/ : /stale/);
+    fixture.hide(); fixture.tick(); await flush();
+    assert.equal(fixture.calls.length, count, 'hidden tabs do not retry');
+    fixture.close();
+  });
+}
+
+test('3999 events accept the 4000th and 4000 events accept duplicate IDs without replacement', async () => {
+  for (const options of [{initialCount: 3999}, {initialCount: 4000, duplicate: true}]) {
+    const fixture = await overflowFixture(options);
+    const before = fixture.calls.length;
+    await fixture.update();
+    assert.equal(fixture.replacing, false);
+    assert.equal(fixture.snapshot().sources[0].events.length, 4000);
+    assert.equal(fixture.calls.length, before + 1);
+    fixture.close();
+  }
+});
+
+test('a range change discards an in-flight replacement', async () => {
+  const fixture = await overflowFixture();
+  await fixture.update();
+  fixture.window.document.querySelector('#chart-zoom-in').click();
+  await fixture.release();
+  assert.equal(fixture.snapshot().sources[0].events.length, 4000);
+  assert.equal(fixture.snapshot().sources[0].sampled.length, 0);
+  fixture.close();
+});
+
+test('permission loss during replacement clears values and metadata', async () => {
+  const fixture = await overflowFixture({replacement: 'forbidden'});
+  await fixture.update(); await fixture.release();
+  assert.equal(fixture.window.document.querySelector('#chart-panels').textContent, '');
+  assert.equal(fixture.window.document.querySelector('#chart-status').textContent, 'Denied');
+  fixture.close();
+});
+
+test('exact replacement commits only after its last page', async () => {
+  const fixture = await overflowFixture({replacement: 'paged-exact'});
+  await fixture.update(); await fixture.release();
+  assert.equal(fixture.snapshot().sources[0].events.length, 4000);
+  assert.ok(fixture.plots.every((plot) => !plot.destroyed));
+  await fixture.release();
+  assert.equal(fixture.snapshot().sources[0].events.length, 2);
+  assert.equal(fixture.snapshot().sources[0].cursor, 4001);
+  assert.equal(fixture.snapshot().sources[0].sampled.length, 0);
+  assert.equal(fixture.snapshot().sources[0].exact.length, 1);
+  fixture.close();
+});
+
+test('replacement pagination stops at eight pages without committing a partial cursor', async () => {
+  const fixture = await overflowFixture({replacement: 'pages'});
+  const initialCalls = fixture.calls.length;
+  await fixture.update();
+  for (let index = 0; index < 8; index++) await fixture.release();
+  const replacements = fixture.calls.slice(initialCalls).filter((call) => call.action === 'event_history_chart_query'
+    && JSON.parse(call.fields.queries).length === 1);
+  assert.equal(replacements.length, 8);
+  assert.equal(fixture.snapshot().sources[0].cursor, 4000);
+  assert.equal(fixture.snapshot().sources[0].events.length, 4000);
+  fixture.close();
+});
+
+test('two overflowing sources recover independently without destroying either plot', async () => {
+  const fixture = await overflowFixture({both: true});
+  await fixture.update(); await fixture.release(); await fixture.release();
+  assert.deepEqual(fixture.snapshot().sources.map((state) => state.events.length), [2, 2]);
+  assert.ok(fixture.plots.every((plot) => !plot.destroyed));
+  fixture.close();
+});
+
+test('initial page-limit exhaustion stops locally without clearing a completed second source', async () => {
+  const fixture = await overflowFixture({initialCount: 4001});
+  assert.equal(fixture.snapshot().sources[1].events.length, 10);
+  assert.ok(fixture.snapshot().sources[0].events.length <= 4000);
+  assert.match(fixture.window.document.querySelector('#chart-panels section').textContent, /Display limit/);
+  assert.ok(fixture.plots.every((plot) => !plot.destroyed));
+  const before = fixture.calls.length;
+  await flush();
+  assert.equal(fixture.calls.length, before);
+  fixture.close();
+});
+
+test('an actual history-generation change during replacement retains global invalidation', async () => {
+  const fixture = await overflowFixture({replacement: 'changed'});
+  await fixture.update(); await fixture.release();
+  assert.ok(fixture.plots.every((plot) => plot.destroyed));
+  assert.equal(fixture.window.sessionStorage.getItem('mcp-event-history-chart-v1'), null);
+  fixture.close();
+});
+
 test('chart cache keeps interval and event operations independent of the DOM', () => {
   const dom = new JSDOM('', {runScripts: 'outside-only'});
   dom.window.eval(cacheScript);
@@ -38,6 +257,14 @@ test('chart cache keeps interval and event operations independent of the DOM', (
   assert.deepEqual(JSON.parse(JSON.stringify(cache.compactEvent({id: 1,
     observed_at: 5, old_value: 'private', new_value: 'visible'}))),
   {id: 1, observed_at: 5, new_value: 'visible'});
+  const state = {events: new Map([[1, {id: 1, observed_at: 5}], [2, {id: 2, observed_at: 15}]]),
+    loaded: [{start: 0, end: 20}], exact: [{start: 0, end: 20}], sampled: [],
+    coverageExact: [{start: 0, end: 20}], coverageTruncatedRanges: [], coverage: [], cursor: 2};
+  assert.equal(cache.eventCount(state, [{id: 2}, {id: 3}]), 3);
+  cache.trimToRange(state, {start: 10, end: 20});
+  assert.deepEqual([...state.events.keys()], [2]);
+  assert.equal(state.exact[0].start, 10, 'evicted periods lose their exact interval claim');
+  assert.equal(state.cursor, 2, 'trimming does not move the incremental cursor');
   dom.window.close();
 });
 

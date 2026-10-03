@@ -170,6 +170,7 @@
   };
   const resetSource = (state) => {
     cache.resetCache(state);
+    state.recoveryNotice = '';
     state.refs = [];
     state.focusIndex = null;
     state.focus.textContent = '';
@@ -213,10 +214,10 @@
     const reduced = unresolvedInRange(state.sampled, state.exact, range.start, range.end);
     const coverageTruncated = unresolvedInRange(state.coverageTruncatedRanges,
       state.coverageExact, range.start, range.end);
-    state.notice.textContent = reduced || coverageTruncated
+    state.notice.textContent = state.recoveryNotice || (reduced || coverageTruncated
       || events.some((event) => decimalInteger(event.new_value))
       ? label('chartReduced')
-      : (events.length ? '' : label('chartEmpty'));
+      : (events.length ? '' : label('chartEmpty')));
     const numeric = events.filter((event) => Number.isFinite(numericValue(event.new_value)));
     const boolean = events.filter((event) => typeof event.new_value === 'boolean');
     const plottedKind = numeric.length && boolean.length ? 'mixed'
@@ -443,9 +444,10 @@
     }
     restoreSnapshot();
   };
-  const fetchJobs = async (jobs, token) => {
+  const fetchJobs = async (jobs, token, context, replacement = false) => {
     let pending = jobs;
-    const counts = new Map(jobs.map((job) => [job, 0]));
+    const pages = new Map(jobs.map((job) => [job, 0]));
+    const recover = new Set();
     while (pending.length) {
       const response = await api.request('event_history_chart_query', {
         queries: JSON.stringify(pending.map((job) => ({
@@ -466,6 +468,18 @@
         const result = response.results[index];
         if (state.generation !== null && result.generation !== state.generation) {
           throw Object.assign(new Error('History changed'), {code: 'history_changed'});
+        }
+        pages.set(job, pages.get(job) + 1);
+        if (cache.eventCount(state, result.events) > maxEvents && !replacement) {
+          cache.trimToRange(state, range);
+          snapshotDirty = true;
+        }
+        if (cache.eventCount(state, result.events) > maxEvents
+          || (result.has_more && pages.get(job) >= 8)) {
+          if (replacement) throw Object.assign(new Error('Chart replacement limit reached'),
+            {code: 'cache_full'});
+          recover.add(state);
+          continue;
         }
         const coverage = state.coverage.filter((item) => job.initial
           || item.started_at > job.end || (item.ended_at ?? Infinity) < job.start);
@@ -493,15 +507,8 @@
         state.retained = result.retained_from;
         state.removed = result.recording_ended_at;
         for (const event of result.events) state.events.set(event.id, compactEvent(event));
-        if (state.events.size > maxEvents) {
-          throw Object.assign(new Error('Chart memory limit reached'), {code: 'cache_full'});
-        }
-        counts.set(job, counts.get(job) + result.events.length);
-        state.cursor = Math.max(state.cursor, result.latest_id);
+        if (!result.has_more) state.cursor = Math.max(state.cursor, result.latest_id);
         if (result.has_more) {
-          if (counts.get(job) >= maxEvents) {
-            throw Object.assign(new Error('Chart page limit reached'), {code: 'cache_full'});
-          }
           job.afterId = result.next_id;
           next.push(job);
         } else if (job.initial) {
@@ -509,18 +516,50 @@
           if (result.reduced) state.sampled.push({start: job.start, end: job.end});
           else state.exact = mergeInterval(state.exact, job.start, job.end);
         }
-        if (renderNeeded || job.initial) render(state);
-        limitCache(state);
+        if (!replacement) {
+          state.recoveryNotice = '';
+          if (renderNeeded || job.initial) render(state);
+          limitCache(state);
+        }
       }
       pending = next;
+    }
+    for (const state of recover) {
+      context.blocked.add(state);
+      const staged = {...state, events: new Map()};
+      cache.resetCache(staged);
+      staged.generation = state.generation;
+      state.recoveryNotice = label('chartReloading');
+      render(state);
+      try {
+        if (!await fetchJobs([{state: staged, start: range.start, end: range.end,
+          afterId: 0, initial: true}], token, context, true)) return false;
+        if (token !== sequence) return false;
+        for (const name of ['events', 'loaded', 'exact', 'sampled', 'coverageExact',
+          'coverageTruncatedRanges', 'cursor', 'generation', 'coverage', 'capture',
+          'retained', 'removed']) state[name] = staged[name];
+        state.recoveryNotice = '';
+        state.focusIndex = null;
+        state.focus.textContent = '';
+        snapshotDirty = true;
+        render(state);
+      } catch (error) {
+        if (token !== sequence) return false;
+        if (['history_changed', 'forbidden', 'stale_configuration'].includes(error.code)) throw error;
+        state.recoveryNotice = error.code === 'cache_full'
+          ? label('chartCacheFull') : queryErrorStatus(error);
+        render(state);
+      }
     }
     return true;
   };
   const query = async (token, poll) => {
     const initiallyEmpty = sourceStates.every((state) => state.loaded.length === 0);
     const liveTails = new Map();
+    const context = {blocked: new Set()};
     while (true) {
       const jobs = sourceStates.flatMap((state) => {
+        if (context.blocked.has(state)) return [];
         const missing = missingIntervals(loadedForRange(state, range.start, range.end),
           range.start, range.end);
         if (rolling && poll && state.loaded.length && missing.length === 1
@@ -532,12 +571,14 @@
         return missing.length ? [{state, ...missing[0], afterId: 0, initial: true}] : [];
       });
       if (!jobs.length) break;
-      if (!await fetchJobs(jobs, token)) return;
+      if (!await fetchJobs(jobs, token, context)) return;
     }
     if (poll && !initiallyEmpty) {
-      if (!await fetchJobs(sourceStates.map((state) => ({state,
-        start: range.start, end: range.end, afterId: state.cursor, initial: false})), token)) return;
+      if (!await fetchJobs(sourceStates.filter((state) => !context.blocked.has(state))
+        .map((state) => ({state, start: range.start, end: range.end,
+          afterId: state.cursor, initial: false})), token, context)) return;
       for (const [state, tail] of liveTails) {
+        if (context.blocked.has(state)) continue;
         state.loaded = mergeInterval(state.loaded, tail.start, tail.end);
         state.exact = mergeInterval(state.exact, tail.start, tail.end);
         snapshotDirty = true;
@@ -604,7 +645,7 @@
       }
     } catch (error) {
       if (token !== sequence) return;
-      if (error.code === 'history_changed' || error.code === 'cache_full') {
+      if (error.code === 'history_changed') {
         discardSnapshot();
         for (const state of sourceStates) {
           resetSource(state);
@@ -666,6 +707,7 @@
     sequence++;
     applyingScale = true;
     for (const state of sourceStates) {
+      state.recoveryNotice = '';
       state.plot?.setScale('x', {min: start, max: end});
       state.focus.textContent = '';
       state.focusIndex = null;
