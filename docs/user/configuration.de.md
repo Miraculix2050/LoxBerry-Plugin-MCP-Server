@@ -4,6 +4,26 @@
 
 ## Grundeinstellungen
 
+### Admin-Zugriff und Reverse-Proxys
+
+Admin- und Ereignishistorie-Aktionen benötigen einen POST mit einer Origin, deren
+Schema, Host und effektiver Port zur Browseradresse der Anfrage passen. Direkte
+HTTP- und HTTPS-Zugriffe bleiben unterstützt; ein fehlender Port bedeutet 80 bei
+HTTP und 443 bei HTTPS. Schemafremde Anfragen sowie fehlende oder ungültige Origins
+werden abgelehnt.
+
+Das Plugin ignoriert `Forwarded`- und `X-Forwarded-*`-Header. Bei TLS-Terminierung
+durch einen Reverse-Proxy muss der Administrator eingehende Weiterleitungsheader
+bereinigen und über eine ausdrücklich vertrauenswürdige Webserver-Konfiguration
+den externen Host samt Port als `HTTP_HOST` und das externe Schema als konsistente
+CGI-Metadaten bereitstellen: `HTTPS=on/1` für HTTPS beziehungsweise `off/0` für HTTP
+und/oder `REQUEST_SCHEME=https/http`. Widersprüchliche oder ungültige Angaben
+werden abgelehnt; fehlen beide Schemaangaben, gilt die native Apache-Konvention
+HTTP. Backend-TLS-Angaben müssen gegebenenfalls überschrieben werden. Die
+konfigurierte MCP-Origin ersetzt diese Request-Metadaten nicht. Prüfe beide
+Admin-Seiten nach einer Proxy-Änderung; daraus folgt keine allgemeine Zusage zur
+Kompatibilität mit Reverse-Proxys.
+
 ### Persistenz und Speicherfehler
 
 Auf unterstützten LoxBerry/Linux-Dateisystemen synchronisieren Änderungen an

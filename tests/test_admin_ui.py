@@ -203,8 +203,19 @@ def _admin_cgi_environment(tmp_path: Path) -> dict[str, str]:
         encoding="utf-8",
     )
     helper.chmod(0o755)
+    security_module = tmp_path / "lib/MCPServer/RequestSecurity.pm"
+    security_module.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(ROOT / "bin/lib/MCPServer/RequestSecurity.pm", security_module)
     return {
-        **os.environ,
+        **{
+            key: value
+            for key, value in os.environ.items()
+            if key not in {"HTTPS", "REQUEST_SCHEME", "HTTP_ORIGIN", "HTTP_HOST"}
+            and not key.startswith("HTTP_X_FORWARDED_")
+            and key != "HTTP_FORWARDED"
+        },
+        "HTTPS": "on",
+        "REQUEST_SCHEME": "https",
         "LB_TEST_HOME": str(tmp_path),
         "LB_TEST_CONFIG_DIR": str(tmp_path),
         "LB_TEST_DATA_DIR": str(tmp_path),

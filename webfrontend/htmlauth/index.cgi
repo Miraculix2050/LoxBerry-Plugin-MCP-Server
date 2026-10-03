@@ -15,6 +15,8 @@ use LoxBerry::System;
 use LoxBerry::Web;
 use LoxBerry::Log;
 
+require "$lbpbindir/lib/MCPServer/RequestSecurity.pm";
+
 my $cgi = CGI->new;
 my $q = $cgi->Vars;
 # LoxBerry may initialize its process-global language before readlanguage()
@@ -217,11 +219,7 @@ sub admin_call {
 }
 
 sub same_origin_post {
-    return 0 if uc($ENV{REQUEST_METHOD} // '') ne 'POST';
-    my $origin = $ENV{HTTP_ORIGIN} // '';
-    my $host = $ENV{HTTP_HOST} // '';
-    return 0 if $origin eq '' || $host eq '';
-    return $origin =~ m{^https?://\Q$host\E$}i ? 1 : 0;
+    return MCPServer::RequestSecurity::same_origin_post();
 }
 
 sub security_header_args {
