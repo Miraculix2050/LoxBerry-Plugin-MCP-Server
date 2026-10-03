@@ -57,6 +57,9 @@ hierarchy nodes without observed ancestry are excluded from the raw-field gap
 check rather than represented as evaluated. `hierarchy_fields_not_inspected`
 explains this prerequisite gap with bounded affected occurrences. Coverage carries
 the same exclusions.
+Global evaluated sensor coverage counts the distinct union evaluated by selected
+non-gap checks. Gap-only inspection reports exactly zero in this global count,
+while its own CheckStatus retains the inspected evidence domain.
 Raw field status counts include evaluated sensor fields and each observed ancestor's fields
 once. Search/describe retain their existing ancestry limits; internal analysis
 uses at most 32 hops and reports gaps instead of inferred physical identity.

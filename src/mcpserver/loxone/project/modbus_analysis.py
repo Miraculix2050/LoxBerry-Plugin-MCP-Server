@@ -729,7 +729,9 @@ def analyze_modbus(
         "coverage": {
             "sensor_source_occurrences": count(counters["supported_sensor_occurrences"]),
             "supported_sensor_occurrences": count(counters["supported_sensor_occurrences"]),
-            "evaluated_sensor_occurrences": count(evaluated, sensor_complete),
+            "evaluated_sensor_occurrences": (
+                count(evaluated, sensor_complete) if "inventory" in analyses else count(0, True)
+            ),
             **{
                 key: count(counters[key])
                 for key in (

@@ -61,6 +61,17 @@ def test_check_counts_include_unsupported_and_unresolved_occurrences():
         assert status.excluded_occurrences.value == 0
 
 
+@pytest.mark.parametrize("sensor_limit", [1, 10_000])
+def test_gap_only_inspection_is_not_non_gap_sensor_evaluation(sensor_limit):
+    project = view(b'<P><C Type="ModbusASensor"/><C Type="ModbusASensor"/></P>')
+    result = analyze(
+        project, frozenset({"evidence_gaps"}), limits=ModbusLimits(sensor_occurrences=sensor_limit)
+    )
+    assert result.coverage.evaluated_sensor_occurrences.value == 0
+    assert result.coverage.evaluated_sensor_occurrences.count_kind == "exact"
+    assert result.check_status["evidence_gaps"].evaluated_occurrences.value == min(sensor_limit, 2)
+
+
 def test_unobserved_hierarchy_is_in_inventory_but_excluded_from_raw_gap_check():
     result = analyze(view(b'<P><C Type="ModbusDev"/></P>'))
     assert result.check_status["inventory"].evaluated_occurrences.value == 1
