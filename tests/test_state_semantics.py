@@ -19,6 +19,8 @@ from mcpserver.loxone.models import (
     StateRecord,
     StatusMonitorInput,
     StatusMonitorStatus,
+    WindowMonitorItem,
+    WindowMonitorSummary,
 )
 from mcpserver.loxone.runtime import RuntimeSnapshot, RuntimeUnavailable
 from mcpserver.loxone.state_semantics import StateSemanticsResolver
@@ -631,6 +633,134 @@ def status_control(**kwargs):
         status_monitor_input_complete=True,
         **kwargs,
     )
+
+
+def window_control(count=2):
+    return control(
+        "WindowMonitor",
+        states=(("windowStates", "windows"), ("numOpen", "count")),
+        window_monitor_items=tuple(
+            WindowMonitorItem(i, f"Contact {i}", "room", f"reference-{i}", "Place")
+            for i in range(count)
+        ),
+        window_monitor_summary=WindowMonitorSummary(count, count),
+    )
+
+
+@pytest.mark.parametrize("mask", range(32))
+def test_window_masks_preserve_all_documented_bits(mask):
+    descriptor, decoded = resolve(window_control(1), "windowStates", str(mask))
+    assert descriptor.interpretation_status == "known"
+    item = decoded["contacts"][0]
+    assert item["bitmask"] == mask and item["raw_token"] == str(mask)
+    bits = [(1, "closed"), (2, "tilted"), (4, "open"), (8, "locked"), (16, "unlocked")]
+    assert item["states"] == [name for bit, name in bits if mask & bit]
+    assert item["decoding_status"] == ("unknown_or_offline" if mask == 0 else "decoded")
+    assert decoded["mapping_complete"] and "alert_active" not in decoded
+    assert decoded["provenance"]["state_uuid"] == "windows"
+
+
+@pytest.mark.parametrize("raw", ["32", "63", "-1", "1.0", "true", "\uff11", "", "99999999999"])
+def test_window_invalid_or_empty_tokens_never_become_closed(raw):
+    descriptor, decoded = resolve(window_control(), "windowStates", "1," + raw)
+    assert descriptor.interpretation_status == "invalid"
+    assert decoded["contacts"][1]["bitmask"] is None
+    assert decoded["contacts"][1]["index"] == 1
+    assert not decoded["decoding_complete"]
+
+
+def test_window_join_keeps_gaps_and_unmatched_positions():
+    c = window_control()
+    _, missing = resolve(c, "windowStates", "1")
+    assert missing["alignment"] == "mismatch"
+    assert missing["contacts"][1]["decoding_status"] == "missing"
+    _, extra = resolve(c, "windowStates", "1, 18 ,4")
+    assert extra["contacts"][1]["raw_token"] == " 18 "
+    assert extra["contacts"][1]["states"] == ["tilted", "unlocked"]
+    assert extra["contacts"][2]["mapping_status"] == "missing_metadata"
+    assert not extra["mapping_complete"]
+    c = replace(c, window_monitor_items=(c.window_monitor_items[1],))
+    _, sparse = resolve(c, "windowStates", "1,4")
+    assert sparse["contacts"][0]["contact"] is None
+    assert sparse["contacts"][1]["contact"]["control_uuid"] == "reference-1"
+    _, unknown = resolve(replace(c, window_monitor_summary=None), "windowStates", "1,4")
+    assert unknown["alignment"] == "unknown" and not unknown["mapping_complete"]
+    bad = replace(c.window_monitor_items[0], diagnostics=("invalid_window_monitor_entry",))
+    _, malformed = resolve(replace(c, window_monitor_items=(bad,)), "windowStates", "1,4")
+    assert malformed["contacts"][1]["mapping_status"] == "invalid_metadata"
+    _, duplicate = resolve(replace(c, window_monitor_items=(bad, bad)), "windowStates", "1,4")
+    assert duplicate["contacts"][1]["mapping_status"] == "ambiguous"
+    assert duplicate["contacts"][1]["contact"] is None
+
+
+def test_window_bounds_are_independent_of_raw_and_metadata_size():
+    import json
+
+    c = window_control(101)
+    _, many = resolve(c, "windowStates", ",".join(["1"] * 101))
+    assert many["values_total"] == 101 and many["truncated"]
+    assert many["positions_returned"] <= 100 and not many["mapping_complete"]
+    c = replace(
+        c,
+        window_monitor_items=tuple(
+            replace(i, name="X" * 200, room_uuid="R" * 200, install_place="P" * 200)
+            for i in c.window_monitor_items
+        ),
+    )
+    _, bounded = resolve(c, "windowStates", ",".join(["1"] * 101))
+    assert len(json.dumps(bounded, ensure_ascii=False).encode()) <= 16_384
+    assert bounded["positions_returned"] < 100
+    descriptor, decoded = resolve(c, "windowStates", "1" * 65_536)
+    assert descriptor.interpretation_status == "invalid" and decoded is not None
+    descriptor, decoded = resolve(c, "windowStates", "1" * 65_537)
+    assert descriptor.interpretation_status == "invalid" and decoded is None
+    assert resolve(replace(c, control_type="Other"), "windowStates", "1")[1] is None
+    descriptor, decoded = resolve(window_control(1), "windowStates", "1" + " " * 65_535)
+    assert descriptor.interpretation_status == "known"
+    assert decoded["contacts"][0]["raw_token_truncated"]
+    assert decoded["contacts"][0]["bitmask"] == 1
+    unknown_total = replace(
+        window_control(), window_monitor_summary=WindowMonitorSummary(None, 2, None, True)
+    )
+    assert resolve(unknown_total, "windowStates", "1,4")[1]["truncated"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("freshness", list(Freshness))
+async def test_window_readers_share_decode_without_reference_or_count_reads(monkeypatch, freshness):
+    runtime = Runtime(window_control())
+    raw = None if freshness is Freshness.UNAVAILABLE else "1,18"
+    runtime.records["windows"] = StateRecord("windows", raw, freshness, 1700000000)
+    server, compact = read_tool(monkeypatch, runtime)
+    semantics = await server._tool_manager.get_tool("loxone_get_state_semantics").fn(
+        "control", ["windowStates"]
+    )
+    states = await server._tool_manager.get_tool("loxone_get_states").fn(["windows"])
+    enriched = await compact.fn(
+        [ControlReadTarget(control_uuid="control", state_names=["windowStates"])], True
+    )
+    assert semantics.ok and states.ok and enriched.ok
+    item = semantics.data.items[0]
+    assert item.semantic_value == states.data.states[0].semantic_value
+    assert item == enriched.data.items[0].semantics[0]
+    assert item.quality.freshness == freshness.value and item.value == raw
+    assert runtime.snapshots == [True, True, True]
+    assert set(runtime.reads) == {"windows"}
+
+
+@pytest.mark.asyncio
+async def test_window_hidden_control_is_not_read_by_any_shared_reader(monkeypatch):
+    runtime = Runtime(window_control())
+    runtime.structure = replace(runtime.structure, controls=(), hidden_controls=(window_control(),))
+    server, compact = read_tool(monkeypatch, runtime)
+    results = [
+        await server._tool_manager.get_tool("loxone_get_state_semantics").fn(
+            "control", ["windowStates"]
+        ),
+        await server._tool_manager.get_tool("loxone_get_states").fn(["windows"]),
+        await compact.fn([ControlReadTarget(control_uuid="control")], True),
+    ]
+    assert all(not result.ok for result in results) and runtime.reads == []
 
 
 def test_status_monitor_maps_multiple_tuples_without_global_status():

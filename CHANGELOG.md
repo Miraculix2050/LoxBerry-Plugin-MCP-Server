@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Decode bounded WindowMonitor contact bitmasks and original configured positions
+  through shared state readers and opening-contact analysis. Preserve observation
+  quality, malformed/missing values and mapping/truncation gaps; history remains
+  source-dependent and contact conditions are not alarms (#349).
+
 - Derive configuration-bound State I2-to-AQ signal flow for the verified source
   version and equality/default table; retain connector-specific gaps for unknown
   State contracts and expose bounded provenance (#335).

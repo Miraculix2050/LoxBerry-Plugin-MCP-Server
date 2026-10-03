@@ -122,6 +122,12 @@ def test_window_monitor_summary_is_in_generated_description_contract() -> None:
     tools = {tool["name"]: tool for tool in tool_schema_catalog(VERSION)["tools"]}
     definitions = tools["loxone_describe_control"]["outputSchema"]["$defs"]
     assert "window_monitor_summary" in definitions["ControlModelData"]["properties"]
+    analysis = tools["loxone_analyze_opening_contacts"]["outputSchema"]["$defs"]
+    assert analysis["OpeningItemData"]["properties"]["decoded_state"]["default"] is None
+    state = analysis["OpeningStateData"]["properties"]
+    assert "unavailable" in state["freshness"]["enum"]
+    for field in ("decoding_complete", "mapping_complete", "decoding_truncated"):
+        assert state[field]["default"] is None
     summary = definitions["WindowMonitorSummaryData"]["properties"]
     assert set(summary) == {
         "total",

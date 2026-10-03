@@ -31,6 +31,12 @@ The old #167 StatusMonitor-first suggestion is superseded by this gate.
 
 ## WindowMonitor source review (#349)
 
+Historical alarm-adapter review: #349 was reclassified on 2026-10-03 as ordinary
+contact-state presentation. The missing alarm predicate blocks only an Active
+Alerts adapter, not shared contact-state decoding or completion of #349. The
+implemented read path uses these documented bits with separate observation and
+mapping quality; the historical review below remains unchanged.
+
 Checked on 2026-10-03 against master `0cf9240`. The official Structure File
 17.1 (6 August 2026, 168 pages) was downloaded from the source URL above;
 printed pages 152–153 and the immediately adjacent section boundaries were

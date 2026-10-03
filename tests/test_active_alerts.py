@@ -234,8 +234,9 @@ async def test_gaps_never_mean_inactive(monkeypatch, value, freshness, reason):
 
 
 @pytest.mark.asyncio
-async def test_visibility_and_unsupported_families(monkeypatch):
-    runtime = Runtime(control("StatusMonitor"))
+@pytest.mark.parametrize("kind", ["StatusMonitor", "WindowMonitor"])
+async def test_visibility_and_unsupported_families(monkeypatch, kind):
+    runtime = Runtime(control(kind))
     runtime.structure = replace(runtime.structure, hidden_controls=(control("AalEmergency"),))
     result = await make_tool(monkeypatch, runtime).fn()
     assert result.data.coverage.candidate_controls == 1

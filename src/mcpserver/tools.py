@@ -1326,15 +1326,22 @@ class ToolEnvelope(BaseModel):
 
 class OpeningStateData(BaseModel):
     state_uuid: str | None
-    freshness: Literal["current", "stale", "unknown"]
+    freshness: Literal["current", "stale", "unknown", "unavailable"]
     observed_at: float | None = Field(description="State observation Unix time, not analysis time.")
     vector_length: int | None
     alignment: Literal["match", "mismatch", "unknown", "unavailable", "invalid"]
     warnings: list[str]
+    decoding_complete: bool | None = None
+    mapping_complete: bool | None = None
+    decoding_truncated: bool | None = None
 
 
 class OpeningItemData(WindowMonitorItemData):
     state_value: str | None = Field(default=None, description="Uninterpreted numeric source token.")
+    decoded_state: JsonValue | None = Field(
+        default=None,
+        description="Bounded contact bitmask decoding; freshness belongs to monitor state.",
+    )
 
 
 class OpeningMonitorData(BaseModel):
@@ -3636,7 +3643,7 @@ def _state_payload(
     semantic_invalid = False
     if control is not None and state_name is not None and record.value is not None:
         companion_values = {}
-        for name, uuid in control.state_uuids:
+        for name, uuid in () if control.control_type == "WindowMonitor" else control.state_uuids:
             companion = runtime.state(snapshot, uuid)
             if companion.freshness is Freshness.CURRENT:
                 companion_values[name] = companion.value

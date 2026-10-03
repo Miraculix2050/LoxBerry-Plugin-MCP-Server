@@ -13,6 +13,7 @@ from .presentation import visible_controls, window_monitor_description
 from .project.graph import GraphEdge, GraphNode, SemanticEdge
 from .project.query import ProjectQuery
 from .project.semantics import STATE_RULE_ID, StateFlow, signal_use_rules, state_connector_reason
+from .window_states import decode_window_states
 
 type OpeningScope = Literal["monitor", "room", "contact", "consumer"]
 MAX_MONITORS = 100
@@ -286,6 +287,8 @@ def _state_alignment(
         "alignment": "unavailable",
         "warnings": [],
     }
+    if record is not None:
+        result.update(freshness=record.freshness.value, observed_at=record.observed_at)
     if record is None or record.value is None:
         result["warnings"] = ["state_unavailable"]
         return result
@@ -312,12 +315,30 @@ def _state_alignment(
         )
     if record.freshness.value != "current":
         result["warnings"].append("state_not_current")
+    decoded = decode_window_states(monitor, record.value)
+    assert decoded is not None
+    result.update(
+        decoding_complete=decoded["decoding_complete"],
+        mapping_complete=decoded["mapping_complete"],
+        decoding_truncated=decoded["truncated"],
+    )
+    decoded_items = {contact["index"]: contact for contact in decoded["contacts"]}
     for item in items:
         index = item["index"]
         value = values[index].strip() if index < len(values) else None
         # Preserve source tokens only when they are small numeric codes; no state verdict.
         valid = value is not None and value.isascii() and value.isdigit() and len(value) <= 10
         item["state_value"] = value if valid else None
+        item["decoded_state"] = decoded_items.get(index)
+        if item["decoded_state"] is not None and not valid:
+            # Preserve this analysis tool's existing nonnumeric-token redaction boundary.
+            item["decoded_state"] = {
+                **item["decoded_state"],
+                "raw_token": None,
+                "raw_token_redacted": value is not None,
+            }
+        if item["decoded_state"] is None or item["decoded_state"]["bitmask"] is None:
+            result["warnings"].append("invalid_or_missing_state_value")
         if not valid:
             result["warnings"].append("invalid_or_missing_state_value")
     result["warnings"] = sorted(set(result["warnings"]))

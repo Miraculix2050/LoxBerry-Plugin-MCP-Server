@@ -4,6 +4,27 @@
 
 ## Supported scope
 
+WindowMonitor `windowStates` is decoded through ordinary state reads, state
+semantics and optional compact-read semantics. Use `semantic_value.contacts`:
+each original index retains its raw token, documented bitmask labels and available
+contact metadata/reference. Bits 1/2/4/8/16 mean closed/tilted/open/locked/unlocked;
+zero is `unknown_or_offline`. Combined bits remain combined, without alarm priority.
+Inspect decoding/mapping completeness, vector alignment, truncation and observation
+quality separately. Missing, invalid or stale values do not establish a current
+closed contact. Limits are 100 positions, 65,536 input characters and 16 KiB of
+semantic enrichment. Opening-contact analysis uses the same optional `decoded_state`
+and retains its existing redaction of nonnumeric tokens.
+
+For history, inspect the full control description's native history availability
+and `loxone_list_event_history_sources`, then use `loxone_get_control_history` or
+`loxone_get_event_history` only for an available source. Report the actual source,
+requested interval, observed timestamps and reported coverage; native history
+does not promise full-period coverage. Current values, event text and today's
+configuration cannot reconstruct earlier contact states or historical positions.
+Compare separately read arming/heating/temperature/absence evidence with its own
+timestamps and gaps. Such AI assessments are not WindowMonitor alarms, physical
+opening coverage or proof of consumer wiring. No recording is enabled automatically.
+
 `loxone_get_state_semantics` reads semantic evidence and cached values for one
 visible control with `loxone:read`, using a fresh visibility check. Select 1–100
 unique exact `state_names`, or omit them and page all normalized states with

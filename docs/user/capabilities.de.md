@@ -4,6 +4,30 @@
 
 ## Unterstützter Umfang
 
+WindowMonitor `windowStates` wird über gewöhnliche Zustandsleser, Zustandssemantik
+und optionale Semantik kompakter Abfragen dekodiert. Nutzen Sie
+`semantic_value.contacts`: Jeder ursprüngliche Index erhält Roh-Token,
+dokumentierte Bitmaskenlabels und verfügbare Kontaktmetadaten/Referenzen.
+Bits 1/2/4/8/16 bedeuten geschlossen/gekippt/offen/verriegelt/unverriegelt;
+Null bedeutet `unknown_or_offline`. Kombinierte Bits bleiben ohne Alarmpriorität
+kombiniert. Prüfen Sie Dekodierungs-/Zuordnungsvollständigkeit, Vektorausrichtung,
+Kürzung und Beobachtungsqualität getrennt. Fehlende, ungültige oder veraltete Werte
+belegen keinen aktuell geschlossenen Kontakt. Grenzen: 100 Positionen, 65.536
+Eingabezeichen und 16 KiB Semantikanreicherung. Die Öffnungskontaktanalyse nutzt
+dasselbe optionale `decoded_state` und maskiert weiterhin nichtnumerische Tokens.
+
+Prüfen Sie für Historie die native Historienverfügbarkeit in der vollständigen
+Control-Beschreibung und `loxone_list_event_history_sources`. Nutzen Sie dann
+`loxone_get_control_history` oder `loxone_get_event_history` nur für eine verfügbare
+Quelle. Melden Sie tatsächliche Quelle, angefragten Zeitraum, Beobachtungszeitpunkte
+und ausgewiesene Abdeckung; native Historie verspricht keine vollständige
+Zeitraumabdeckung. Aktuelle Werte, Ereignistext und heutige Konfiguration können
+frühere Kontaktzustände oder historische Positionen nicht rekonstruieren.
+Vergleichen Sie getrennt gelesene Scharfschaltungs-/Heizungs-/Temperatur-/
+Abwesenheitsevidenz mit ihren eigenen Zeitpunkten und Lücken. Solche KI-Bewertungen
+sind keine WindowMonitor-Alarme, physische Öffnungsabdeckung oder Belege für
+Verbraucherverdrahtung. Es wird keine Aufzeichnung automatisch aktiviert.
+
 `loxone_get_state_semantics` liest Semantikevidenz und gecachte Werte für ein
 sichtbares Control mit `loxone:read` und frischer Sichtbarkeitsprüfung. Wählen Sie
 1–100 eindeutige exakte `state_names` oder lassen Sie sie weg und paginieren Sie

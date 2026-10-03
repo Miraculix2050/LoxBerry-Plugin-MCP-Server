@@ -613,7 +613,7 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert tool.annotations.destructiveHint is False
     assert tool.annotations.openWorldHint is False
     assert result.data.name == "using-loxberry-mcp"  # type: ignore[union-attr]
-    assert result.data.revision == 50  # type: ignore[union-attr]
+    assert result.data.revision == 51  # type: ignore[union-attr]
     assert "prefer `loxone_read_controls`" in result.data.content  # type: ignore[union-attr]
     assert "`loxone_get_structure_overview`" in result.data.content  # type: ignore[union-attr]
     assert result.data.media_type == "text/markdown"  # type: ignore[union-attr]
@@ -1194,24 +1194,28 @@ async def test_event_history_read_rejects_a_visible_state_outside_the_source_all
 
 
 @pytest.mark.asyncio
-async def test_removed_history_is_readable_only_while_currently_visible(tmp_path: Path) -> None:
+@pytest.mark.parametrize("kind", ["Switch", "WindowMonitor"])
+async def test_removed_history_is_readable_only_while_currently_visible(
+    tmp_path: Path, kind
+) -> None:
     source = ("control", "state")
     now = time.time()
     path = (tmp_path / "history.sqlite3").resolve()
     store = EventHistoryStore(path, retention_days=90, maximum_mib=16)
     store.initialize()
     store.begin_coverage((source,), started_at=now - 30)
-    store.record_transition(*source, observed_at=now - 20, old_value=0, new_value=1)
+    old_value, new_value = ("1,1", "1,4") if kind == "WindowMonitor" else (0, 1)
+    store.record_transition(*source, observed_at=now - 20, old_value=old_value, new_value=new_value)
     store.end_coverage((source,), ended_at=now - 10, outcome="stopped")
     store.mark_removed(*source, removed_at=now - 10)
     control = Control(
         uuid="control",
         name="Visible",
-        control_type="Switch",
+        control_type=kind,
         room_uuid=None,
         category_uuid=None,
         action_uuid=None,
-        state_uuids=(("active", "state"),),
+        state_uuids=(("windowStates" if kind == "WindowMonitor" else "active", "state"),),
     )
 
     @asynccontextmanager
@@ -1259,19 +1263,30 @@ async def test_removed_history_is_readable_only_while_currently_visible(tmp_path
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "kind,coverage",
+    [
+        ("Switch", "not_recorded"),
+        ("WindowMonitor", "not_recorded"),
+        ("WindowMonitor", "partial_coverage"),
+        ("WindowMonitor", "complete"),
+    ],
+)
 async def test_event_history_normalizes_standard_uuid_input_before_runtime_access(
     monkeypatch: pytest.MonkeyPatch,
+    kind,
+    coverage,
 ) -> None:
     control_uuid = "00000000-0000-0000-0000000000000001"
     state_uuid = "00000000-0000-0000-0000000000000002"
     control = Control(
         uuid=control_uuid,
         name="Visible control",
-        control_type="Switch",
+        control_type=kind,
         room_uuid=None,
         category_uuid=None,
         action_uuid=None,
-        state_uuids=(("active", state_uuid),),
+        state_uuids=(("windowStates" if kind == "WindowMonitor" else "active", state_uuid),),
     )
 
     class Runtime:
@@ -1284,9 +1299,9 @@ async def test_event_history_normalizes_standard_uuid_input_before_runtime_acces
             self.arguments = (control, state)
             return (
                 control_object,
-                "active",
+                control_object.state_uuids[0][0],
                 SimpleNamespace(
-                    coverage="not_recorded",
+                    coverage=coverage,
                     entries=(),
                     capture_started_at=None,
                     retained_from=None,
@@ -1318,7 +1333,7 @@ async def test_event_history_normalizes_standard_uuid_input_before_runtime_acces
     assert result.data.control_uuid == control_uuid  # type: ignore[union-attr]
     assert result.data.state_uuid == state_uuid  # type: ignore[union-attr]
     assert result.data.recording_status == "active"  # type: ignore[union-attr]
-    assert result.data.coverage == "not_recorded"  # type: ignore[union-attr]
+    assert result.data.coverage == coverage  # type: ignore[union-attr]
     runtime.active = False
     removed = await server._tool_manager.call_tool(
         "loxone_get_event_history",

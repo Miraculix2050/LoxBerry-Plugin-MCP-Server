@@ -282,6 +282,22 @@ metadata or bundled documentation content and does not acknowledge alarms.
   value with `capabilities.model.window_monitor_items`. Resolve an item to a
   control only when its `control` reference is present; otherwise report its name
   or index without guessing a source contact.
+  Shared state readers provide `semantic_value.contacts` with raw tokens,
+  original indices, metadata/references, decoding/mapping status and provenance
+  (Structure File 17.1 pp.152–153). Bits 1/2/4/8/16 are
+  closed/tilted/open/locked/unlocked; zero is unknown or offline. Retain all bits,
+  never replace them with Hpos enums or infer alarms. Check alignment, missing
+  positions, truncation and outer freshness/observed_at independently. Opening
+  analysis supplies the same decoding through optional `decoded_state`, preserving
+  its nonnumeric-token redaction.
+  Query history separately: inspect native history metadata and authorized
+  `loxone_list_event_history_sources`, then use existing control/Event History
+  readers only where a source exists. Report requested and available time coverage;
+  native history has no full-period guarantee. Do not infer earlier contact states
+  from current values, event text or today's positional configuration. Do not
+  enable recording automatically. Compare arming/heating/outdoor-temperature/
+  absence observations only with explicit time-alignment gaps; these are AI context
+  assessments, not source alarms, physical opening coverage or consumer wiring.
   The full view retains only the first 100 source positions, including malformed
   placeholders. Check `capabilities.model.window_monitor_summary` for `total`,
   `returned`, `omitted`, `truncated`, and fixed collection diagnostics. Unknown
