@@ -28,7 +28,7 @@
 - `loxone_get_state_semantics` adds fixture-tested exact-state evidence for
   existing Irrigation/AlarmClock decoders, `value` format metadata on
   InfoOnlyAnalog/UpDownAnalog/Slider, UpDownAnalog ranges and StatusMonitor
-  `inputStates` position/status metadata. Other meanings remain unknown;
+  `inputStates` position-stable tuple decoding and configured-state counts. Other meanings remain unknown;
   this does not establish new firmware or control-family hardware compatibility.
 - History, diagnostics and cache operation require their documented scopes and local approvals.
 - Control is Gen.-1-only, default-disabled, type-specific and limited to visible operable controls.

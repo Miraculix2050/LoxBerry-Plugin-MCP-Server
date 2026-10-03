@@ -223,3 +223,9 @@ identity and coverage are preserved. If metadata alone exceeds the cap, return
 measurement, polling, history, acknowledgement or notification service is promised.
 Empty partial results never mean no alarms; even complete results apply only to
 known candidate families, never the physical installation.
+
+StatusMonitor ordinary readers share configured tuple/count decoding (Structure File 17.1
+pp.130–131). Description includes optional status UUIDs and bounded input/status
+coverage; semantic values preserve malformed/unmatched/missing positions and
+separate mapping completeness from syntax and observation freshness. No new tool
+or intrinsic alarm classification is introduced.

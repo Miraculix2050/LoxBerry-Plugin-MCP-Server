@@ -247,6 +247,12 @@ controller states can remain unknown. This interface does not retrieve project
 metadata or bundled documentation content and does not acknowledge alarms.
 
 
+- StatusMonitor state readers decode position-stable configured tuples and counts
+  (Structure File 17.1 pp.130–131). Inspect mapping/decoding completeness and
+  freshness independently; stale mappings are historical. IDs are not original
+  input values; counts are not a single monitor status. No alarm inference.
+  AI text/color/grouping review needs project context; missing wiring/intent
+  remains unknown. Integrated status is identified only for visible references.
 - For a `StatusMonitor`, use its `inputStates` state UUID. Map each value at
   position `index` to `capabilities.status_monitor.inputs[index]`, then map the
   numeric value to the matching

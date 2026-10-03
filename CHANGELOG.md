@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Expose bounded StatusMonitor configured tuples and position-stable current-state
+  mapping through existing readers, with count semantics and explicit coverage (#348).
+  State batch reads now require fresh visibility rather than cached visibility.
+
 - Sync parent directories for configuration and MQTT credential updates/deletion
   and configuration upgrades. Report visible changes with unconfirmed durability
   without automatic Admin compensation or service changes (#161).

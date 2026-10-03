@@ -25,7 +25,7 @@ weggelassen, ohne den Text zu verändern.
 
 V1 umfasst bestehende Irrigation-/AlarmClock-Decoder, `value`-Anzeigeformate für
 InfoOnlyAnalog/UpDownAnalog/Slider, UpDownAnalog-Bereiche und positionsgebundene
-Status-/Input-Metadaten von StatusMonitor `inputStates`. Formate belegen keine
+StatusMonitor `inputStates`-Tupelzuordnung und Status-Count-Semantik. Formate belegen keine
 Einheit, Präzision oder Richtung; konfigurierte Bezeichnungen belegen keine
 Schweregrade oder Haushaltsrollen. Kodierungs- und Positionslisten behalten
 höchstens 100 Einträge, Quellen höchstens acht, jeweils mit Anzahl und
@@ -362,6 +362,34 @@ Kategorien enthält, und anschließend `loxone_find_controls` nur für den
 gewählten Raum, die Kategorie oder den Typ verwenden. Die gezielten Aufrufe
 bleiben nötig, wenn einzelne Controls, Beschreibungen oder aktuelle Zustände
 benötigt werden.
+
+### StatusMonitor
+
+StatusMonitor dekodiert kommagetrennte `inputStates` in positionsstabile
+Tupel je Eingang: Roh-Token, konfigurierte ID/Text/Farbe/Priorität/Status-UUID,
+Eingangsreferenz und expliziter Zuordnungsstatus. `loxone_describe_control`
+liefert begrenzte Mengen- und Vollständigkeitsangaben für Definitionen/Eingänge;
+`loxone_get_state_semantics`, `loxone_get_states` und die Semantikprojektionen
+von `loxone_read_controls` verwenden denselben Decoder. State-Lesungen prüfen
+die Sicht frisch; ein fehlgeschlagener Refresh nutzt keine gecachte Autorisierung.
+Höchstens 100 Positionen und 16 KiB Semantik-Enrichment
+werden ausgegeben; leere, fehlerhafte, nicht zugeordnete oder fehlende Positionen
+verschieben keine späteren Eingänge. Prüfen Sie `decoding_complete`,
+`mapping_complete` und `truncated` getrennt von der Freshness. Stale Werte sind
+historische Zuordnungen, kein bestätigter aktueller Status. IDs sind konfigurierte
+Ausgangsindizes, keine ursprünglichen Eingangswerte. `numState0`–`numState9`/
+`numDef` sind Counts zu IDs 0–10; ein positiver Count ist kein Gesamtstatus oder
+Alarm. Aggregation integrierter Monitore wird nur anhand eines bereits sichtbaren
+referenzierten StatusMonitor erkannt; Referenzen werden nicht erweitert und deren
+States nicht gelesen. Für mehrgliedrige Monitore wird kein einzelnes aktuelles
+Tupel abgeleitet.
+
+Nutzen Sie diese Quellfakten für eine kontextuelle KI-Prüfung von Text/Rechtschreibung,
+Farb- und Wertegruppierung sowie Konsistenz. Fehlende Zustände lassen sich nur mit
+belegter Projektlogik und Zweckbestimmung beurteilen; Visualisierungsmetadaten
+beweisen keine vollständige Verdrahtung oder Absicht. Bezeichnungen, Prioritäten
+und Farben belegen keine intrinsische Alarmbedeutung. Quelle: Structure File 17.1,
+Seiten 130–131.
 
 ## Kompakte Reads bekannter Controls
 

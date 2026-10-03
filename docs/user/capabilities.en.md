@@ -22,7 +22,7 @@ with original/returned lengths and explicit truncation instead of altered text.
 
 V1 covers existing Irrigation/AlarmClock decoders, `value` display formats for
 InfoOnlyAnalog/UpDownAnalog/Slider, UpDownAnalog ranges and position-bound
-StatusMonitor `inputStates` status/input metadata. Formats do not prove units,
+StatusMonitor `inputStates` configured tuple mapping and status-count semantics. Formats do not prove units,
 precision or direction; configured labels do not prove severity or household roles.
 Encoding and position lists retain at most 100 entries, sources at most eight,
 with counts and completeness. Page completeness is independent of semantic and
@@ -329,6 +329,31 @@ overview call to see that its authorized visible structure has 18 controls in
 four rooms and three categories, then use `loxone_find_controls` only for the
 chosen room, category, or type. It does not replace those targeted calls when a
 client needs individual controls, descriptions, or current states.
+
+### StatusMonitor
+
+StatusMonitor now decodes comma-separated `inputStates` into position-stable
+per-input tuples: raw token, configured ID/text/color/priority/status UUID, input
+reference and explicit mapping status. `loxone_describe_control` exposes bounded
+definition/input totals and completeness; `loxone_get_state_semantics`,
+`loxone_get_states` and semantic projections of `loxone_read_controls` share the
+decoder. State reads require fresh visibility; a failed refresh does not fall
+back to cached authorization. Enrichment retains at most 100 positions and 16 KiB;
+empty, malformed, unmatched or missing
+positions never shift later inputs. Check `decoding_complete`, `mapping_complete`
+and `truncated` separately from observation freshness. Stale values are historical
+mappings, not confirmed current status. IDs are configured output indexes, not
+original input values. `numState0`–`numState9`/`numDef` are counts mapped to IDs
+0–10; a positive count is not a monitor-wide status or alarm. Integrated-monitor
+aggregation is identified only through an already-visible referenced StatusMonitor;
+no reference expansion or state read is performed. There is no single inferred
+current tuple for a multi-input monitor.
+
+Use these source facts for contextual AI review of text/spelling, configured color
+and value grouping and consistency. Missing statuses can only be assessed when
+project logic and intended purpose provide evidence; visualization metadata does
+not establish complete wiring or intent. Labels, priorities and colors never
+establish an intrinsic alarm meaning. Source: Structure File 17.1, pp.130–131.
 
 ## Compact reads of known controls
 

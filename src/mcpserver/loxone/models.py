@@ -71,6 +71,7 @@ class StatusMonitorStatus:
     name: str
     priority: int
     color: str | None
+    uuid: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

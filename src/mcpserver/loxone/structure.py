@@ -570,12 +570,15 @@ def _status_monitor_details(
             color = item.get("color")
             if not isinstance(color, str) or re.fullmatch(r"#[0-9A-Fa-f]{6}", color) is None:
                 color = None
+            if len(statuses) == 100:
+                break
             statuses.append(
                 StatusMonitorStatus(
                     status_id=status_id,
                     name=name,
                     priority=priority,
                     color=color,
+                    uuid=_optional_uuid(item.get("uuid")),
                 )
             )
     return tuple(inputs), tuple(sorted(statuses, key=lambda status: status.status_id))
