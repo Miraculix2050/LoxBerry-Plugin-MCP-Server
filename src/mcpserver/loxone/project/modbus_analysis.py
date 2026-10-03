@@ -738,9 +738,7 @@ def analyze_modbus(
                     "max_relationships",
                 )
             },
-            "check_exclusions": {
-                a: statuses[a]["excluded_occurrences"] for a in analyses
-            },
+            "check_exclusions": {a: statuses[a]["excluded_occurrences"] for a in analyses},
             "transport_dimensions": {
                 key: count(transport[key], sensor_complete)
                 for key in ("modbus_server_ancestry", "comm485_ancestry", "other_or_unresolved")
