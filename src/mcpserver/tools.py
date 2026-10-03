@@ -1122,6 +1122,8 @@ class ProjectModbusFieldData(BaseModel):
         "Parity",
         "Pause",
         "Protocol",
+        "RepeatRate",
+        "ModbusCoilQuantity",
     ]
     evidence_status: Literal["explicit", "absent", "ambiguous", "invalid"]
     raw_value: str | None = Field(max_length=64)
@@ -1133,7 +1135,7 @@ class ProjectModbusFieldData(BaseModel):
 class ProjectModbusAncestorData(BaseModel):
     project_node_id: str
     model_source_id: str
-    source_type: Literal["ModbusDev", "ModbusServer", "Comm485"]
+    source_type: Literal["ModbusDev", "ModbusServer", "Comm485", "ActorCaption"]
     relationship: Literal["contains"]
     child_project_node_id: str
     fields: list[ProjectModbusFieldData] = Field(max_length=6)
@@ -1143,11 +1145,11 @@ class ProjectModbusAncestorData(BaseModel):
 
 
 class ProjectModbusData(BaseModel):
-    source_type: Literal["ModbusASensor"]
-    flow_direction: Literal["source_read"]
+    source_type: Literal["ModbusASensor", "ModbusAActor"]
+    flow_direction: Literal["source_read", "configured_write"]
     project_node_id: str
     model_source_id: str
-    fields: list[ProjectModbusFieldData] = Field(max_length=6)
+    fields: list[ProjectModbusFieldData] = Field(max_length=8)
     ancestors: list[ProjectModbusAncestorData] = Field(max_length=16)
     ancestry_status: Literal["explicit", "absent", "ambiguous", "invalid"]
     ancestry_truncated: bool

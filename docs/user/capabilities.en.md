@@ -192,14 +192,19 @@ graph evidence rather than raw XML: a signal or reference trace describes struct
 not an observed historical cause. Results are limited and explicitly report truncation; unknown
 block types and unresolved relationships remain visible without invented semantics. A trace caps
 its unresolved-relationship entries independently and reports that with `unresolved_truncated`.
-Exact `ModbusASensor` objects add optional read-only `modbus` evidence to project search and
+Exact `ModbusASensor` and `ModbusAActor` objects add optional read-only `modbus` evidence to project search and
 describe. Search remains by `block_type`, without a new technology filter.
-The allowlist is `ModbusAddress`, `ModbusCmd`, `ModbusDataType`, `ModbusPollingCycle`,
+The sensor allowlist is `ModbusAddress`, `ModbusCmd`, `ModbusDataType`, `ModbusPollingCycle`,
 `SourceValHigh`, `DestValHigh`; observed `ModbusDev` ancestors expose raw configured `Channel`,
 `ModbusServer` exposes `Timeout`, and `Comm485` exposes `RxTimeout`, `Baudrate`, `Databits`,
 `Parity`, `Pause`, `Protocol`. Comm485 is reported only as an observed source type in this
 ancestry, never classified as Modbus by itself. `source_read` derives from the exact sensor
-type; containment is hierarchy, not signal causality. Existing connector and relationship
+type; actors use `configured_write` to describe their configured direction, without granting
+write access. Actor fields are `ModbusAddress`, `ModbusCmd`, `ModbusDataType`, `SourceValHigh`,
+`DestValHigh`, `Channel`, `RepeatRate` and `ModbusCoilQuantity`; repetition and quantity retain
+unknown units/semantics and are not sensor polling or decoded register spans.
+The observed `ActorCaption` ancestor retains containment identity with no extra fields.
+Containment is hierarchy, not signal causality. Existing connector and relationship
 evidence remains available in describe.
 
 Each field carries `explicit`, `absent`, `ambiguous` or `invalid` evidence, source field,
@@ -208,10 +213,12 @@ single `raw_value`; identical duplicate occurrences remain visible. Numeric sour
 limited to 64 characters and eight occurrences per field, with `occurrences_omitted`.
 Malformed or oversized strings remain internal source evidence; public occurrences mark them
 invalid and omit their content. All units/enums and datatype semantics remain `unresolved`.
-Channel is not a proven unit ID. No defaults, scaling formula, bit/word order, actor support,
+Channel is not a proven unit ID. No defaults, scaling formula, bit/word order, actor operations,
 runtime freshness or successful transactions are inferred. Configured polling is static evidence.
 Search shows one ancestor at most; describe shows at most `min(limit, 16)`, with
 `ancestry_status` and `ancestry_truncated`. Unsupported Modbus types receive a describe diagnostic.
+Actors remain unsupported by this analog-sensor analyzer; raw actor metadata does not expand
+analysis coverage or establish physical actuator compatibility.
 `loxone_analyze_project(scope="modbus")` and Explorer provide Modbus version 1:
 `inventory`, `configured_register_mappings`, `direct_consumers`,
 `configured_polling` and `evidence_gaps`. Omission selects all five; KNX remains

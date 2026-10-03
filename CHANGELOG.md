@@ -9,6 +9,8 @@ extracted from the matching version heading.
   through shared state readers and opening-contact analysis. Preserve observation
   quality, malformed/missing values and mapping/truncation gaps; history remains
   source-dependent and contact conditions are not alarms (#349).
+- Expose allowlisted raw analog Modbus actor configuration in project search/describe,
+  preserving unresolved encodings and the sensor-only analysis boundary (#381).
 
 - Derive configuration-bound State I2-to-AQ signal flow for the verified source
   version and equality/default table; retain connector-specific gaps for unknown

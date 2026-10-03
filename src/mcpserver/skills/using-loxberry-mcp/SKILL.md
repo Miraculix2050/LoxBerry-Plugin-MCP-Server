@@ -154,6 +154,11 @@ order require independent device documentation and are not evaluated here.
 Search/describe metadata keeps `semantics="unresolved"` and bounded ancestors;
 analysis reports its own prerequisites and completeness without strengthening
 that metadata into physical topology or installation coverage.
+Search/describe also expose exact `ModbusAActor` raw configuration, including
+`RepeatRate`, `Channel` and `ModbusCoilQuantity`. `configured_write` is a configured
+direction, not an allowed operation. These fields have unresolved semantics and
+do not establish unit identity, timing or register width. Actors remain unsupported
+by the sensor-only V1 analyzer. No live actor writes or hardware support are implied.
 
 ### Inspect one known room
 
