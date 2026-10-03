@@ -180,6 +180,30 @@ def test_raw_differences_and_polling_never_imply_device_invalidity():
     assert findings(data, "configured_polling_values_differ")[0].polling_unit == "unknown"
 
 
+@pytest.mark.parametrize(
+    "name,original",
+    [
+        ("ModbusDataType", "99"),
+        ("SourceValHigh", "100"),
+        ("DestValHigh", "10"),
+        ("ModbusPollingCycle", "60"),
+    ],
+)
+def test_each_comparison_dimension_preserves_lexically_distinct_raw_values(name, original):
+    members = [
+        sensor().replace(f'{name}="{original}"', f'{name}="{value}"') for value in ("1", "1.0")
+    ]
+    data = run(view("<P>" + device(*members) + "</P>"))
+    differences = findings(data, "configured_mapping_attributes_differ")
+    assert len(differences) == 1
+    assert differences[0].comparison_field == name
+    assert differences[0].raw_variants == ["1", "1.0"]
+    assert all(e.source_field == name and e.semantics == "unknown" for e in differences[0].evidence)
+    assert bool(findings(data, "configured_polling_values_differ")) == (
+        name == "ModbusPollingCycle"
+    )
+
+
 def test_absent_conflicting_address_and_attribute_evidence_is_gap_not_difference():
     conflicted = sensor(extra='ModbusAddress="2"')
     missing = sensor().replace('ModbusAddress="1"', "")
