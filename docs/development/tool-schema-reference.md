@@ -60,6 +60,8 @@ the same exclusions.
 Global evaluated sensor coverage counts the distinct union evaluated by selected
 non-gap checks. Gap-only inspection reports exactly zero in this global count,
 while its own CheckStatus retains the inspected evidence domain.
+Source-type and per-check occurrence counts use distinct identities even when a
+candidate also has an observed ancestry role; role-group totals are not additive.
 Raw field status counts include evaluated sensor fields and each observed ancestor's fields
 once. Search/describe retain their existing ancestry limits; internal analysis
 uses at most 32 hops and reports gaps instead of inferred physical identity.

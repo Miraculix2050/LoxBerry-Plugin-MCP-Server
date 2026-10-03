@@ -61,6 +61,28 @@ def test_check_counts_include_unsupported_and_unresolved_occurrences():
         assert status.excluded_occurrences.value == 0
 
 
+def test_overlapping_candidate_and_ancestor_roles_keep_distinct_occurrence_counts():
+    result = analyze(
+        view(
+            b'<P><C Type="Comm485" ModbusAddress="1">'
+            b'<C Type="ModbusDev"><C Type="ModbusASensor"/></C></C></P>'
+        )
+    )
+    role = next(t for t in result.coverage_by_source_type if t.source_type == "Comm485")
+    assert role.source_occurrences.value == 1
+    assert role.unresolved_candidate_occurrences.value == 1
+    for status in result.check_status.values():
+        assert status.eligible_occurrences.value == 3
+        assert status.evaluated_occurrences.value == 3
+    identities = {
+        i.project_node_id
+        for f in result.findings
+        if f.analysis == "inventory"
+        for i in f.affected_occurrences
+    }
+    assert len(identities) == 3
+
+
 @pytest.mark.parametrize("sensor_limit", [1, 10_000])
 def test_gap_only_inspection_is_not_non_gap_sensor_evaluation(sensor_limit):
     project = view(b'<P><C Type="ModbusASensor"/><C Type="ModbusASensor"/></P>')

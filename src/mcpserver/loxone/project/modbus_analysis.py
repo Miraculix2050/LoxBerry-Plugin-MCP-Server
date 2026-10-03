@@ -307,6 +307,7 @@ def analyze_modbus(
     reasons: set[str] = set()
     counters: Counter[str] = Counter()
     types: dict[str, Counter[str]] = defaultdict(Counter)
+    source_type_occurrences: dict[str, set[tuple[str, str]]] = defaultdict(set)
     field_counts: Counter[str] = Counter()
     gaps: Counter[str] = Counter()
     transport: Counter[str] = Counter()
@@ -314,9 +315,11 @@ def analyze_modbus(
     hierarchy_nodes: set[tuple[str, str]] = set()
     inspected_ancestor_fields: set[tuple[str, str]] = set()
     inventory_counts: Counter[tuple[str, str]] = Counter()
+    inventory_occurrences: set[tuple[str, str]] = set()
     inventory_samples: dict[tuple[str, str], list[GraphNode]] = defaultdict(list)
 
     def observe_inventory(node: GraphNode, source_type: str, ancestry_class: str) -> None:
+        inventory_occurrences.add(occurrence_identity(node))
         key = (source_type, ancestry_class)
         inventory_counts[key] += 1
         if len(inventory_samples[key]) < limits.evidence_records:
@@ -427,6 +430,7 @@ def analyze_modbus(
             continue
         type_key = source_type or "unresolved_type"
         types[type_key]["source_occurrences"] += 1
+        source_type_occurrences[type_key].add(occurrence_identity(node))
         if category != "hierarchy":
             types[type_key][category] += 1
             counters[category] += 1
@@ -486,7 +490,9 @@ def analyze_modbus(
                 continue
             inspected_ancestor_fields.add(identity)
             if exact_source_type(ancestor) == "Comm485":
-                types["Comm485"]["source_occurrences"] += 1
+                if identity not in source_type_occurrences["Comm485"]:
+                    types["Comm485"]["source_occurrences"] += 1
+                    source_type_occurrences["Comm485"].add(identity)
                 observe_inventory(ancestor, "Comm485", "observed_hierarchy_node")
             for ancestor_evidence in raw_fields(ancestor):
                 ancestor_status = str(ancestor_evidence["evidence_status"])
@@ -667,7 +673,7 @@ def analyze_modbus(
             or "max_relationships" in reasons
             or "max_ancestry_depth" in reasons
         )
-        eligible = sum(inventory_counts.values())
+        eligible = len(inventory_occurrences)
         statuses[analysis] = {
             "status": "partial" if partial else "complete",
             "eligible_occurrences": count(eligible, domain_complete and field_complete),
