@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Derive configuration-bound State I2-to-AQ signal flow for the verified source
+  version and equality/default table; retain connector-specific gaps for unknown
+  State contracts and expose bounded provenance (#335).
+
 - Preserve actual raw field/status evidence in Modbus mapping and polling
   comparison exclusions; reject reversed or contradictory containment as a
   grouping identity (#359).

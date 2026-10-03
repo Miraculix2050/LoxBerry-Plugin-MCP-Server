@@ -985,6 +985,7 @@ class ProjectSignalUseObservationData(BaseModel):
         "duration_sensitive",
         "logical_or",
         "reference_projection",
+        "configured_state_selection",
     ]
     effect: Literal["toggle", "set_on", "set_off"] | None
 
@@ -1180,7 +1181,18 @@ class ProjectSearchNodeSummaryData(ProjectNodeSummaryData):
     modbus: ProjectModbusData | None = None
 
 
+class ProjectStateFlowData(BaseModel):
+    config_version: str | None
+    xml_version: str | None
+    block_revision: str | None
+    rule_id: str | None
+    aq_complete: bool
+    aq_dependencies: list[str] = Field(max_length=8)
+    reason: str | None
+
+
 class ProjectNodeData(BaseModel):
+    state_semantics: ProjectStateFlowData | None = None
     project_node_id: str
     kind: Literal["block", "connector"]
     block_type: str | None
@@ -1295,6 +1307,7 @@ class ProjectTraceData(BaseModel):
     edges: list[ProjectRelationshipData]
     semantic_edges: list[ProjectSemanticRelationshipData] = Field(default_factory=list)
     technology_paths: list[ProjectTechnologyPathData] = Field(default_factory=list)
+    semantic_gaps: list[dict[str, str]] = Field(default_factory=list)
     semantic_truncated: bool = False
     truncated: bool
     truncation_reason: Literal["max_depth", "max_nodes", "max_edges", "max_response_bytes"] | None
@@ -1398,7 +1411,14 @@ class OpeningGapData(BaseModel):
     node_kind: Literal["block", "connector", "unknown"]
     block_type: str | None = Field(max_length=64)
     connector_key: str | None = Field(max_length=64)
-    reason: Literal["block_reference_projection_unavailable", "parent_boundary_incomplete"]
+    reason: Literal[
+        "block_reference_projection_unavailable",
+        "parent_boundary_incomplete",
+        "state_version_unverified",
+        "state_table_unsupported",
+        "state_table_limit",
+        "state_connector_unverified",
+    ]
     connector_rule_version: int
     rule_ids: list[str] = Field(max_length=8)
     rule_ids_omitted: int
@@ -1434,7 +1454,7 @@ class OpeningCountsData(BaseModel):
 
 class OpeningAnalysisData(BaseModel):
     analysis_version: Literal[1]
-    connector_rule_version: Literal[1]
+    connector_rule_version: Literal[1, 2]
     scope_type: Literal["monitor", "room", "contact", "consumer"]
     scope_uuid: str
     physical_opening_coverage: Literal["not_assessable"]
@@ -3228,6 +3248,7 @@ def _fit_project_trace(envelope: ProjectTraceEnvelope) -> bool:
     semantic_edges = data.semantic_edges
     technology_paths = data.technology_paths
     unresolved = data.unresolved_relationships
+    semantic_gaps = data.semantic_gaps
 
     def fit(count: int) -> None:
         data.nodes = nodes[:count]
@@ -3243,6 +3264,7 @@ def _fit_project_trace(envelope: ProjectTraceEnvelope) -> bool:
             and path.target_project_node_id in retained
             and all(key in retained for key in path.evidence_project_node_ids)
         ]
+        data.semantic_gaps = [item for item in semantic_gaps if item["project_node_id"] in retained]
         data.unresolved_relationships = [
             item for item in unresolved if item["project_node_id"] in retained
         ]
@@ -3267,6 +3289,7 @@ def _fit_project_trace(envelope: ProjectTraceEnvelope) -> bool:
         data.semantic_truncated
         or len(data.semantic_edges) < len(semantic_edges)
         or len(data.technology_paths) < len(technology_paths)
+        or len(data.semantic_gaps) < len(semantic_gaps)
     )
     return True
 

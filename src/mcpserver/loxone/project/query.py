@@ -10,7 +10,13 @@ from .coverage import coverage_by_source_type
 from .graph import GraphEdge, GraphNode, SemanticEdge
 from .mapping import ControlMapping, ProjectView
 from .modbus import sensor_projection
-from .semantics import expects_raw_datatype, is_valid_group_address_filter, signal_use_rules
+from .semantics import (
+    STATE_RULE_ID,
+    expects_raw_datatype,
+    is_valid_group_address_filter,
+    signal_use_rules,
+    state_connector_reason,
+)
 
 _KNOWN_KNX_ATTRIBUTES = frozenset(
     {"Type", "U", "Title", "Desc", "IName", "EibAddr", "EibAddrPulse", "EIBType"}
@@ -181,6 +187,25 @@ class ProjectQuery:
     def _detail(self, node: GraphNode, *, limit: int) -> dict[str, object]:
         """Return the one-object projection including all KNX source evidence."""
         result = self._summary(node)
+        flow = next(
+            (
+                f
+                for f in self.view.snapshot.graph.state_flows
+                if f.block_key
+                == (self._parents.get(node.key, node.key) if node.kind == "connector" else node.key)
+            ),
+            None,
+        )
+        if flow is not None:
+            result["state_semantics"] = {
+                "config_version": flow.version[0],
+                "xml_version": flow.version[1],
+                "block_revision": flow.version[2],
+                "rule_id": STATE_RULE_ID if flow.reason is None else None,
+                "aq_complete": flow.reason is None,
+                "aq_dependencies": list(flow.dependencies),
+                "reason": flow.reason,
+            }
         source_diagnostics, labels_truncated, diagnostics_truncated, diagnostics_omitted = (
             self._node_source_diagnostics(node)
         )
@@ -762,7 +787,26 @@ class ProjectQuery:
         technology_paths, paths_truncated = self._technology_paths(
             node, keys, predecessors, max_nodes, direction
         )
+        semantic_gaps: list[dict[str, str]] = []
+        state_flows = {f.block_key: f for f in self.view.snapshot.graph.state_flows}
+        for reached in keys:
+            parent = (
+                self._parents.get(reached) if self._nodes[reached].kind == "connector" else None
+            )
+            flow = state_flows.get(parent or reached)
+            if flow is None:
+                continue
+            reason = (
+                state_connector_reason(
+                    flow, dict(self._nodes[reached].attributes).get("K"), direction
+                )
+                if parent is not None
+                else flow.reason
+            )
+            if reason is not None:
+                semantic_gaps.append({"project_node_id": reached, "code": reason})
         return {
+            "semantic_gaps": semantic_gaps,
             "start": self._summary(node),
             "direction": direction,
             "nodes": [self._summary(self._nodes[key]) for key in keys],

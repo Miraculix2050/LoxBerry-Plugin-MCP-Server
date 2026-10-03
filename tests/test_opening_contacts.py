@@ -765,7 +765,7 @@ def test_anonymized_live_state_gap_preserves_exact_wiring_without_internal_infer
     gap = next(g for g in trace["gaps"] if g["block_type"] == "State")
     assert gap["direction"] == "downstream"
     assert gap["connector_key"] == "I2"
-    assert gap["reason"] == "parent_boundary_incomplete"
+    assert gap["reason"] == "state_version_unverified"
     assert not gap["rule_ids"]
     assert gap["reference_projection_rule_id"] is None
     assert not any(n["connector_key"] == "Wh" for n in trace["nodes"])

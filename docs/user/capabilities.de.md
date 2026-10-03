@@ -215,7 +215,7 @@ Nicht unterstützte Modbus-Typen erhalten eine Describe-Diagnose.
 `loxone_analyze_project(scope="modbus")` und Explorer bieten Modbus-Version 1:
 `inventory`, `configured_register_mappings`, `direct_consumers`,
 `configured_polling` und `evidence_gaps`. Ohne Auswahl laufen alle fünf; KNX bleibt
-Standard-Scope (Version 8). Ein Scopewechsel im Explorer leert Auswahl und Cursor.
+Standard-Scope (Version 9). Ein Scopewechsel im Explorer leert Auswahl und Cursor.
 Der Mappingvergleich verwendet exakte Rohbefehle `3`/`4` und explizite lexikalische
 Adressen bei eindeutig beobachteter Transport-/Gerätehierarchie innerhalb einer Quelle.
 Wiederholte Mappings oder unterschiedliche explizite Rohattribute sind Prüfkandidaten,
@@ -272,7 +272,7 @@ mehrere getrennte KNX-Signalnutzungsbeobachtungen. Trace liefert getrennt markie
 Connectorkanten sowie begrenzte Pfade `knx_to_loxone`, `loxone_to_knx` oder `knx_to_knx`.
 Unbekanntes Block- oder Connector-Verhalten wird nicht geraten. Diese Ergebnisse beschreiben
 statische Projektpfade, keine Bus-Telegramme und keine historische Ursache einer Aktion.
-`loxone_analyze_project` Version 8 fasst begrenzte, projektlokale KNX-Evidenz zusammen:
+`loxone_analyze_project` Version 9 fasst begrenzte, projektlokale KNX-Evidenz zusammen:
 Adress- und Quellnamensmuster, Wiederverwendung von Rohdatentypen, geprüfte Unterschiede der
 Signalnutzung, Kontext aus exakten Runtime-Mappings, lokale Peer- und Graph-Ausreißer,
 Pfadzähler und Endpunkte ohne direkte konfigurierte Verdrahtung. Graph-Ausreißer benennen den
@@ -498,3 +498,19 @@ Ursache oder Schweregrad. Der Snapshot ist kein Alarmierungsdienst und quittiert
 keine Alarme. `limit` erlaubt 1–50 Befunde (Standard 50), ohne Cursor/Familienfilter.
 Die Abdeckung gilt nur für bekannte Kandidatenfamilien, nie für die physische
 Installation; `total_active` bleibt bei partieller Auswertung null.
+
+### Versionsgebundener State-Signalfluss
+
+Project-Trace und Opening-Contact-Analyse leiten `State.I2 -> State.AQ` nur aus
+der belegten Gleichheits-/Default-Kodierung für ConfigVersion 17020828, XML 274
+und State-Revision 178 ab. Die geordnete Tabelle muss vollständig sein und nur
+die bestätigte Bedingung `I2 == 1` sowie numerische Ergebnisse mit einem
+bedingungslosen Default enthalten; maximal 100 Zeilen werden ausgewertet. Gleiche
+erreichbare Zahlenwerte oder eine frühe bedingungslose Zeile können die
+Unabhängigkeit von AQ belegen. Externe Verdrahtung und abgeleitete Kanten bleiben
+getrennt. Ein verdrahteter unabhängiger Eingang invalidiert einen AQ-Pfad
+rückwärts nicht. Unbekannte Versionen, Operatoren, fehlerhafte Tabellen sowie
+unbelegte TQ-/OutputAPI-Verträge bleiben explizite Gaps. Die ältere Live-Version
+ist nicht enthalten. Describe liefert begrenzte `state_semantics`-Provenienz,
+Trace liefert `semantic_gaps`; private Tabellenzeilen und Texte werden nicht
+exportiert.

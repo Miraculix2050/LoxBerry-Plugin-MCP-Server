@@ -12,7 +12,7 @@ from .models import Control, LoxoneStructure, StateRecord
 from .presentation import visible_controls, window_monitor_description
 from .project.graph import GraphEdge, GraphNode, SemanticEdge
 from .project.query import ProjectQuery
-from .project.semantics import signal_use_rules
+from .project.semantics import STATE_RULE_ID, StateFlow, signal_use_rules, state_connector_reason
 
 type OpeningScope = Literal["monitor", "room", "contact", "consumer"]
 MAX_MONITORS = 100
@@ -23,7 +23,7 @@ MAX_RESULT_RELATIONSHIPS = 200
 MAX_GAPS_PER_TRACE = 20
 MAX_GAPS_PER_CALL = 200
 _SAFE_GAP_TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,63}\Z")
-CONNECTOR_RULE_VERSION = 1
+CONNECTOR_RULE_VERSION = 2
 CONSUMER_CONNECTORS = {"AutoJalousie": "Window"}
 
 
@@ -43,12 +43,14 @@ class OpeningGraph:
     backward: dict[str, list[GraphEdge | SemanticEdge]] = field(init=False)
     unresolved: set[str] = field(init=False)
     boundary_incomplete: dict[str, bool] = field(init=False)
+    state_flows: dict[str, StateFlow] = field(init=False)
     starts: int = 0
     gaps_returned: int = 0
 
     def __post_init__(self) -> None:
         graph = self.query.view.snapshot.graph
         self.nodes = {node.key: node for node in graph.nodes}
+        self.state_flows = {flow.block_key: flow for flow in graph.state_flows}
         self.children = defaultdict(list)
         self.parents = {}
         self.forward = defaultdict(list)
@@ -176,7 +178,9 @@ class OpeningGraph:
                     "connector_key": token(dict(node.attributes).get("K")),
                     "reason": reason,
                     "connector_rule_version": CONNECTOR_RULE_VERSION,
-                    "rule_ids": [r.rule_id for r in rules[:8]],
+                    "rule_ids": [STATE_RULE_ID]
+                    if block.key in self.state_flows and self.state_flows[block.key].reason is None
+                    else [r.rule_id for r in rules[:8]],
                     "rule_ids_omitted": max(0, len(rules) - 8),
                     "reference_projection_rule_id": "input_ref_aq_v1"
                     if any(
@@ -209,13 +213,19 @@ class OpeningGraph:
                 warnings.add("unmodeled_internal_flow")
                 append_gap(key, "block_reference_projection_unavailable")
             parent = self.parents.get(key)
-            if (
-                parent is not None
-                and self.nodes[key].kind == "connector"
-                and self.boundary_incomplete[parent]
-            ):
-                warnings.add("unmodeled_internal_flow")
-                append_gap(key, "parent_boundary_incomplete")
+            if parent is not None and self.nodes[key].kind == "connector":
+                flow = self.state_flows.get(parent)
+                if flow is not None:
+                    reason = state_connector_reason(
+                        flow, dict(self.nodes[key].attributes).get("K"), direction
+                    )
+                    # An unresolved configured relationship remains independent evidence.
+                    if reason is not None:
+                        warnings.add("unmodeled_internal_flow")
+                        append_gap(key, reason)
+                elif self.boundary_incomplete[parent]:
+                    warnings.add("unmodeled_internal_flow")
+                    append_gap(key, "parent_boundary_incomplete")
             for edge in adjacency[key]:
                 neighbor = edge.target if direction == "downstream" else edge.source
                 kind = "derived_semantic" if isinstance(edge, SemanticEdge) else edge.kind
