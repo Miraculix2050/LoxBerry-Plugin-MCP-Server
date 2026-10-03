@@ -693,6 +693,29 @@ def test_window_join_keeps_gaps_and_unmatched_positions():
     assert duplicate["contacts"][1]["contact"] is None
 
 
+@pytest.mark.parametrize("entry", [{"name": "Orphan"}, {"uuid": "contact"}, {"room": "room"}])
+def test_window_missing_references_are_incomplete_even_without_normalization_diagnostics(entry):
+    c = normalize_structure(
+        {
+            "msInfo": {"serialNr": "fixture"},
+            "controls": {
+                "monitor": {
+                    "name": "Monitor",
+                    "type": "WindowMonitor",
+                    "states": {"windowStates": "state"},
+                    "details": {"windows": [entry]},
+                }
+            },
+        },
+        username="reader",
+    ).controls[0]
+    assert not c.window_monitor_items[0].diagnostics
+    descriptor, decoded = resolve(c, "windowStates", "1")
+    assert decoded["contacts"][0]["mapping_status"] == "missing_reference"
+    assert not decoded["mapping_complete"] and decoded["decoding_complete"]
+    assert descriptor.interpretation_status == "partial"
+
+
 def test_window_bounds_are_independent_of_raw_and_metadata_size():
     import json
 

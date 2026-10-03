@@ -44,6 +44,8 @@ def decode_window_states(control: Control, value: object) -> dict[str, Any] | No
             if item is None
             else "invalid_metadata"
             if item.diagnostics
+            else "missing_reference"
+            if not item.control_uuid or not item.room_uuid
             else "matched"
         )
         contacts.append(
