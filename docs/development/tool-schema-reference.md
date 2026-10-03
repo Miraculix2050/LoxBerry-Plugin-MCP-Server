@@ -316,8 +316,16 @@ or intrinsic alarm classification is introduced.
 `loxone_describe_project_object` adds optional `state_semantics`: sanitized
 Config/XML/block versions, rule ID, AQ contract status, bounded AQ input keys and
 a fixed unsupported reason. This is static configuration evidence, not a live
-value or physical-role claim. `loxone_trace_project_signal` adds optional
+value or physical-role claim. `loxone_trace_project_logic` adds optional
 `semantic_gaps` referencing retained project nodes. Derived State edges use
-`configured_state_selection` with rule `state_i2_eq1_aq_v1`. Opening connector
-rule version 2 preserves the prior warning and gap limits. Unknown version/table,
+`configured_state_selection` with rule `state_table_aq_v2`. Opening connector
+rule version 3 preserves the prior warning and gap limits. Unknown version/table,
 row limits and unknown output contracts are fixed gap categories.
+
+State rule v2 recognizes fixed operands for I1–I8, four AND conditions per row,
+first-match priority and codes 1–9 plus omitted equality for the evidenced
+17020828/274/178 source triple. Dependencies are conservative possible AQ
+influences; no runtime evaluation or conversion is exposed. Tables are bounded
+at 100 rows and text operands at 256 characters. Empty numeric results, unknown
+operator encodings and variable comparison expressions remain explicit gaps.
+Model and KNX analysis versions are 10; Modbus analysis stays at version 1.

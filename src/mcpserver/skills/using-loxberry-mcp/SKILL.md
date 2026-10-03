@@ -103,7 +103,7 @@ address. Trace keeps raw wiring in `edges` and reports derived internal evidence
 separately in `semantic_edges`. Use `technology_paths` only as static
 reachability evidence, check `semantic_truncated`, and never present a path as
 proof of a bus telegram or a historical cause.
-Use `loxone_analyze_project` version 9 for a bounded installation-level KNX
+Use `loxone_analyze_project` version 10 for a bounded installation-level KNX
 review before retrieving individual traces. It can add source-name patterns,
 exact UUID-mapped runtime context, and local peer or graph outliers to address,
 datatype, usage, path, and connection evidence. Treat all findings as
@@ -678,9 +678,14 @@ reads; do not infer danger, cause or severity from names or colors. This snapsho
 is not an emergency notification service and never acknowledges alarms.
 
 State internal signal flow is version- and configuration-bound. Rule
-`state_i2_eq1_aq_v1` covers only the confirmed Config 17020828 / XML 274 / State
-178 equality/default encoding. Describe `state_semantics` and trace
-`semantic_gaps` distinguish the supported AQ dependency from unknown versions,
-tables and TQ/OutputAPI contracts. Never infer an alias or complete internal
-flow from connector names or neighboring wires. Equal numeric outputs may prove
-AQ independence only for a complete supported table.
+`state_table_aq_v2` covers complete fixed-operand tables for Config 17020828 /
+XML 274 / State 178, selecting I1–I8 with up to four AND conditions per row,
+first-match priority and a numeric unconditional default. Supported codes are
+omitted equality and 1–9 (`>`, `>=`, `<`, `<=`, `!=`, `*=`, `!*`, `:=`, `!:`).
+Edges describe possible configured AQ influences, not runtime evaluation, text
+coercion or physical roles. Bounds are 100 rows and 256 characters per text
+operand; empty numeric results and variable comparison expressions remain gaps.
+Describe `state_semantics` and trace `semantic_gaps` distinguish supported AQ
+from unknown versions/tables and TQ/OutputAPI contracts. Never infer an alias
+or complete internal flow from names or neighboring wires. Independence needs
+a complete table plus unused inputs, exact shadowing or identical numeric results.

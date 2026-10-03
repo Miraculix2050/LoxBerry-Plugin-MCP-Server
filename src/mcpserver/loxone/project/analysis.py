@@ -15,7 +15,7 @@ from .graph import GraphEdge, GraphNode, SemanticEdge
 from .mapping import ProjectView, RuntimeEvidence
 from .taxonomy import AddressTaxonomyEntry
 
-ANALYSIS_VERSION = 9
+ANALYSIS_VERSION = 10
 _FINDING_ID_VERSION = 6
 ANALYSES = frozenset(
     {

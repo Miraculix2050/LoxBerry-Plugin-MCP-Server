@@ -1463,7 +1463,7 @@ class OpeningCountsData(BaseModel):
 
 class OpeningAnalysisData(BaseModel):
     analysis_version: Literal[1]
-    connector_rule_version: Literal[1, 2]
+    connector_rule_version: Literal[1, 2, 3]
     scope_type: Literal["monitor", "room", "contact", "consumer"]
     scope_uuid: str
     physical_opening_coverage: Literal["not_assessable"]
