@@ -53,6 +53,37 @@ def analyze(project, selected=BOTH, **kwargs):
     return ProjectModbusAnalysisData.model_validate(analyze_modbus(project, selected, **kwargs))
 
 
+def test_check_counts_include_unsupported_and_unresolved_occurrences():
+    result = analyze(view(b'<P><C Type="ModbusAActor"/><C ModbusAddress="1"/></P>'))
+    for status in result.check_status.values():
+        assert status.eligible_occurrences.value == 2
+        assert status.evaluated_occurrences.value == 2
+        assert status.excluded_occurrences.value == 0
+
+
+def test_unobserved_hierarchy_is_in_inventory_but_excluded_from_raw_gap_check():
+    result = analyze(view(b'<P><C Type="ModbusDev"/></P>'))
+    assert result.check_status["inventory"].evaluated_occurrences.value == 1
+    assert result.check_status["evidence_gaps"].eligible_occurrences.value == 1
+    assert result.check_status["evidence_gaps"].excluded_occurrences.value == 1
+    assert result.coverage.check_exclusions["evidence_gaps"].value == 1
+    assert result.check_status["evidence_gaps"].status == "partial"
+
+
+@pytest.mark.parametrize("selected", [BOTH, frozenset({"inventory"})])
+def test_unreturned_raw_occurrences_do_not_claim_presentation_truncation(selected):
+    project = view(b'<P><C Type="ModbusASensor" ModbusAddress="1"/></P>')
+    sensor = next(n for n in project.snapshot.graph.nodes if n.kind == "block")
+    repeated = replace(sensor, attributes=sensor.attributes + (("ModbusAddress", "1"),) * 9)
+    graph = replace(
+        project.snapshot.graph,
+        nodes=tuple(repeated if n.key == sensor.key else n for n in project.snapshot.graph.nodes),
+    )
+    project = replace(project, snapshot=replace(project.snapshot, graph=graph))
+    result = analyze(project, selected)
+    assert "max_evidence_records" not in result.truncation_reasons
+
+
 @pytest.mark.parametrize(
     "fixture,sensors,actors,dimension",
     [

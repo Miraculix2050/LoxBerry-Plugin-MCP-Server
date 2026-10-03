@@ -311,6 +311,7 @@ def analyze_modbus(
     gaps: Counter[str] = Counter()
     transport: Counter[str] = Counter()
     device_nodes: set[tuple[str, str]] = set()
+    hierarchy_nodes: set[tuple[str, str]] = set()
     inspected_ancestor_fields: set[tuple[str, str]] = set()
     inventory_counts: Counter[tuple[str, str]] = Counter()
     inventory_samples: dict[tuple[str, str], list[GraphNode]] = defaultdict(list)
@@ -380,6 +381,8 @@ def analyze_modbus(
         if evidence and raw_evidence is not None:
             evidence[0]["occurrences"] = raw_evidence["occurrences"]
             evidence[0]["occurrences_omitted"] = raw_evidence["occurrences_omitted"]
+        if evidence and raw_evidence is not None and raw_evidence["occurrences_omitted"]:
+            reasons.add("max_evidence_records")
         findings[analysis].append(
             (
                 json.dumps(basis, sort_keys=True, ensure_ascii=False),
@@ -430,6 +433,7 @@ def analyze_modbus(
         if source_type == "ModbusAActor":
             counters["actor_source_occurrences"] += 1
         if category == "hierarchy":
+            hierarchy_nodes.add(occurrence_identity(node))
             observe_inventory(node, type_key, "observed_hierarchy_node")
             if source_type == "ModbusDev":
                 device_nodes.add(occurrence_identity(node))
@@ -469,8 +473,6 @@ def analyze_modbus(
                     warning=field_status in {"ambiguous", "invalid"},
                     raw_evidence=evidence,
                 )
-            if evidence["occurrences_omitted"]:
-                reasons.add("max_evidence_records")
         ancestors: list[GraphNode]
         if not relationships_complete:
             ancestors, ancestry_status = [], "max_relationships"
@@ -502,8 +504,6 @@ def analyze_modbus(
                         warning=ancestor_status in {"ambiguous", "invalid"},
                         raw_evidence=ancestor_evidence,
                     )
-                if ancestor_evidence["occurrences_omitted"]:
-                    reasons.add("max_evidence_records")
         if ancestry_status in {"explicit", "absent"}:
             ancestor_types = [exact_source_type(a) for a in ancestors]
             hierarchy_resolved = (
@@ -645,17 +645,21 @@ def analyze_modbus(
         if analysis not in analyses:
             continue
         excluded = counters["supported_sensor_occurrences"] - evaluated
+        if analysis == "evidence_gaps":
+            excluded += len(hierarchy_nodes - inspected_ancestor_fields)
         partial = (
-            not domain_complete
+            bool(excluded)
+            or not domain_complete
             or not sensor_complete
             or bool(findings_omitted[analysis])
             or "max_relationships" in reasons
             or "max_ancestry_depth" in reasons
         )
+        eligible = sum(inventory_counts.values())
         statuses[analysis] = {
             "status": "partial" if partial else "complete",
-            "eligible_occurrences": count(counters["supported_sensor_occurrences"]),
-            "evaluated_occurrences": count(evaluated, sensor_complete),
+            "eligible_occurrences": count(eligible, domain_complete and field_complete),
+            "evaluated_occurrences": count(eligible - excluded, domain_complete and field_complete),
             "excluded_occurrences": count(excluded),
             "reason_codes": sorted(
                 reasons | ({"source_ingestion_incomplete"} if not ingestion_complete else set())
@@ -735,7 +739,7 @@ def analyze_modbus(
                 )
             },
             "check_exclusions": {
-                a: count(counters["supported_sensor_occurrences"] - evaluated) for a in analyses
+                a: statuses[a]["excluded_occurrences"] for a in analyses
             },
             "transport_dimensions": {
                 key: count(transport[key], sensor_complete)

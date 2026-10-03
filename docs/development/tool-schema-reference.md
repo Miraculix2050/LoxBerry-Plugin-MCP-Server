@@ -51,8 +51,11 @@ Counts describe `(model_source_id, project_node_id)` occurrences and carry
 `exact` or `lower_bound`. Source ingestion, candidate scanning, supported-type
 coverage and presentation are separate; physical installation coverage is
 always unknown. A successful loader consumes all admitted sources or fails;
-bounded diagnostic presentation does not make ingestion incomplete. Raw field
-status counts include evaluated sensor fields and each observed ancestor's fields
+bounded diagnostic presentation does not make ingestion incomplete.
+Per-check occurrence counts include unsupported and unresolved inventory items;
+hierarchy nodes without observed ancestry are excluded from the raw-field gap
+check rather than represented as evaluated. Coverage carries the same exclusions.
+Raw field status counts include evaluated sensor fields and each observed ancestor's fields
 once. Search/describe retain their existing ancestry limits; internal analysis
 uses at most 32 hops and reports gaps instead of inferred physical identity.
 
