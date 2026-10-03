@@ -279,3 +279,14 @@ pp.130–131). Description includes optional status UUIDs and bounded input/stat
 coverage; semantic values preserve malformed/unmatched/missing positions and
 separate mapping completeness from syntax and observation freshness. No new tool
 or intrinsic alarm classification is introduced.
+
+## State project semantics
+
+`loxone_describe_project_object` adds optional `state_semantics`: sanitized
+Config/XML/block versions, rule ID, AQ contract status, bounded AQ input keys and
+a fixed unsupported reason. This is static configuration evidence, not a live
+value or physical-role claim. `loxone_trace_project_signal` adds optional
+`semantic_gaps` referencing retained project nodes. Derived State edges use
+`configured_state_selection` with rule `state_i2_eq1_aq_v1`. Opening connector
+rule version 2 preserves the prior warning and gap limits. Unknown version/table,
+row limits and unknown output contracts are fixed gap categories.

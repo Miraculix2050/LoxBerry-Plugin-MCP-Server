@@ -103,7 +103,7 @@ address. Trace keeps raw wiring in `edges` and reports derived internal evidence
 separately in `semantic_edges`. Use `technology_paths` only as static
 reachability evidence, check `semantic_truncated`, and never present a path as
 proof of a bus telegram or a historical cause.
-Use `loxone_analyze_project` version 8 for a bounded installation-level KNX
+Use `loxone_analyze_project` version 9 for a bounded installation-level KNX
 review before retrieving individual traces. It can add source-name patterns,
 exact UUID-mapped runtime context, and local peer or graph outliers to address,
 datatype, usage, path, and connection evidence. Treat all findings as
@@ -655,3 +655,11 @@ results do not establish absence of alarms. The tool does not classify StatusMon
 WindowMonitor states as alarms. Use source control/state references for targeted
 reads; do not infer danger, cause or severity from names or colors. This snapshot
 is not an emergency notification service and never acknowledges alarms.
+
+State internal signal flow is version- and configuration-bound. Rule
+`state_i2_eq1_aq_v1` covers only the confirmed Config 17020828 / XML 274 / State
+178 equality/default encoding. Describe `state_semantics` and trace
+`semantic_gaps` distinguish the supported AQ dependency from unknown versions,
+tables and TQ/OutputAPI contracts. Never infer an alias or complete internal
+flow from connector names or neighboring wires. Equal numeric outputs may prove
+AQ independence only for a complete supported table.

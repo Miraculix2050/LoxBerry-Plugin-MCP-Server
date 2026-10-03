@@ -8,7 +8,15 @@ from dataclasses import dataclass, field
 from .decoder import decode_loxcc
 from .models import DEFAULT_LIMITS, ProjectBundle, ProjectError, ProjectLimits
 from .parser import ParsedProject, parse_project
-from .semantics import KnxSemantics, classify_knx, expects_raw_datatype, signal_use_rules
+from .semantics import (
+    STATE_RULE_ID,
+    KnxSemantics,
+    StateFlow,
+    classify_knx,
+    decode_state_flow,
+    expects_raw_datatype,
+    signal_use_rules,
+)
 
 _DIAGNOSTIC_GROUP_LIMIT = 2048
 _DIAGNOSTIC_SAMPLE_LIMIT = 3
@@ -64,6 +72,8 @@ class ProjectGraph:
     edges: tuple[GraphEdge, ...] = field(repr=False)
     unresolved: tuple[tuple[str, str], ...]
     semantic_edges: tuple[SemanticEdge, ...] = field(default=(), repr=False)
+
+    state_flows: tuple[StateFlow, ...] = field(default=(), repr=False)
 
     def traverse(
         self, start: str, *, upstream: bool = False, depth: int = 8, limit: int = 500
@@ -215,6 +225,7 @@ def build_graph(
     edges: set[GraphEdge] = set()
     semantic_edges: set[SemanticEdge] = set()
     unresolved: list[tuple[str, str]] = []
+    state_flows: list[StateFlow] = []
     node: GraphNode | None
     for namespace, project in projects:
         local: dict[int, GraphNode] = {}
@@ -263,7 +274,7 @@ def build_graph(
                     unresolved.append((destination.key, "signal_unresolved"))
             if len(edges) > limits.edges:
                 raise ProjectError("project_graph_limit")
-        semantic_edges.update(_build_semantic_edges(project, local))
+        semantic_edges.update(_build_semantic_edges(project, local, state_flows))
         if len(semantic_edges) > limits.edges:
             raise ProjectError("project_graph_limit")
     return ProjectGraph(
@@ -271,10 +282,13 @@ def build_graph(
         tuple(sorted(edges, key=lambda e: (e.source, e.target, e.kind))),
         tuple(unresolved),
         tuple(sorted(semantic_edges, key=lambda e: (e.source, e.target, e.rule_id))),
+        tuple(state_flows),
     )
 
 
-def _build_semantic_edges(project: ParsedProject, local: dict[int, GraphNode]) -> set[SemanticEdge]:
+def _build_semantic_edges(
+    project: ParsedProject, local: dict[int, GraphNode], state_flows: list[StateFlow]
+) -> set[SemanticEdge]:
     """Build only explicit, allowlisted internal connector relationships."""
 
     result: set[SemanticEdge] = set()
@@ -286,6 +300,22 @@ def _build_semantic_edges(project: ParsedProject, local: dict[int, GraphNode]) -
     for child_index, child in enumerate(project.elements):
         if child.parent is not None:
             children[child.parent].append(child_index)
+    version_elements = [
+        e for e in project.elements if any(k == "ConfigVersion" for k, _ in e.attributes)
+    ]
+    configs = {e.value("ConfigVersion") for e in version_elements}
+    config_version = (
+        next(iter(configs))
+        if len(configs) == 1
+        and all(
+            e.tag == "C"
+            and e.value("Type") == "Document"
+            and sum(k == "Type" for k, _ in e.attributes) == 1
+            and sum(k == "ConfigVersion" for k, _ in e.attributes) == 1
+            for e in version_elements
+        )
+        else None
+    )
     for index, element in enumerate(project.elements):
         if element.tag != "C":
             continue
@@ -299,6 +329,46 @@ def _build_semantic_edges(project: ParsedProject, local: dict[int, GraphNode]) -
             key = child.value("K")
             if connector is not None and key is not None:
                 connectors[key].append(connector)
+        if element.value("Type") == "State":
+            flow = decode_state_flow(project, index, local[index].key, children, config_version)
+            if flow.reason is None and (
+                any(sum(k == name for k, _ in element.attributes) != 1 for name in ("Type", "U"))
+                or any(
+                    sum(k == "K" for k, _ in c.attributes) != 1
+                    or sum(k == "U" for k, _ in c.attributes) != 1
+                    for c in (project.elements[i] for i in children.get(index, []))
+                    if c.tag == "Co"
+                )
+                or any(
+                    len(connectors.get(k, [])) != 1
+                    for k in ("AQ", "TQ", "OutputAPI", *(f"I{i}" for i in range(1, 9)))
+                )
+            ):
+                flow = StateFlow(flow.block_key, flow.version, "state_connector_unverified")
+            if flow.reason is None:
+                for child_index in children.get(index, []):
+                    child = project.elements[child_index]
+                    if (
+                        child.tag == "Co"
+                        and child.value("K") not in {f"I{i}" for i in range(1, 9)}
+                        and any(
+                            project.elements[c].tag == "In" for c in children.get(child_index, [])
+                        )
+                    ):
+                        flow = StateFlow(flow.block_key, flow.version, "state_connector_unverified")
+                        break
+            state_flows.append(flow)
+            if flow.reason is None:
+                for input_key in flow.dependencies:
+                    result.add(
+                        SemanticEdge(
+                            connectors[input_key][0].key,
+                            connectors["AQ"][0].key,
+                            STATE_RULE_ID,
+                            "configured_state_selection",
+                            None,
+                        )
+                    )
         # Observed InputRef: explicit Ref to one source block, with one AQ output.
         # This projects the explicit reference onto that output, not containment
         # or an arbitrary internal input/output relationship. Unknown references
@@ -493,6 +563,7 @@ def build_snapshot(
     nodes: list[GraphNode] = []
     edges: list[GraphEdge] = []
     semantic_edges: list[SemanticEdge] = []
+    state_flows: list[StateFlow] = []
     unresolved: list[tuple[str, str]] = []
     anomalies: list[tuple[str, int | None, str]] = []
     for member in bundle.files:
@@ -510,6 +581,7 @@ def build_snapshot(
         nodes.extend(part_graph.nodes)
         edges.extend(part_graph.edges)
         semantic_edges.extend(part_graph.semantic_edges)
+        state_flows.extend(part_graph.state_flows)
         unresolved.extend(part_graph.unresolved)
         for index, code in project.anomalies:
             context: int | None = index
@@ -529,7 +601,9 @@ def build_snapshot(
                 tuple(code for _, code in project.anomalies),
             )
         )
-    graph = ProjectGraph(tuple(nodes), tuple(edges), tuple(unresolved), tuple(semantic_edges))
+    graph = ProjectGraph(
+        tuple(nodes), tuple(edges), tuple(unresolved), tuple(semantic_edges), tuple(state_flows)
+    )
     logical_aliases, logical_source_ids = _logical_knx_nodes(graph)
     # These private dicts are constructed once with the immutable snapshot and
     # never exposed to callers. They must remain pickle-compatible because the
@@ -541,7 +615,7 @@ def build_snapshot(
     )
     return ProjectSnapshot(
         bundle.fingerprint,
-        8,
+        9,
         tuple(projects),
         graph,
         _source_diagnostics(graph, tuple(anomalies)),
