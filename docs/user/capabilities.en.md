@@ -258,7 +258,12 @@ relationship; unresolved relationships remain separate. Pattern and outlier
 candidates report a local peer baseline, not a configuration verdict. The
 optional Admin-managed KNX address labels apply only to the configured Miniserver,
 require an explicit two- or three-level format, appear as `admin_configured`
-metadata, and do not change project facts. Names and
+metadata, and do not change project facts.
+For three-level group addresses, `3:6/2=Label` labels a middle group;
+`2:6/2=Label` labels a complete two-level address instead. The Admin page can
+export the current text as a UTF-8 file and load such a file into the text field.
+Loading does not save labels; use “Save KNX address labels” to apply them. The
+file contains only label text, without a Miniserver address. Names and
 address shape never establish floors, functions, DPTs, ETS meaning or bus activity.
 `loxone_analyze_observability` separately assesses a bounded, explicitly requested
 time range for a project target. It combines exact UUID-mapped structural reachability,
