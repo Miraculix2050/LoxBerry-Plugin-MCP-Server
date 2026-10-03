@@ -219,7 +219,11 @@ Standard-Scope (Version 8). Ein Scopewechsel im Explorer leert Auswahl und Curso
 Der Mappingvergleich verwendet exakte Rohbefehle `3`/`4` und explizite lexikalische
 Adressen bei eindeutig beobachteter Transport-/Gerätehierarchie innerhalb einer Quelle.
 Wiederholte Mappings oder unterschiedliche explizite Rohattribute sind Prüfkandidaten,
-keine Defekte. Pollingwerte haben unbekannte Einheiten und belegen weder erreichte
+keine Defekte.
+Vergleichsausschlüsse erhalten den konkreten Grund sowie das betroffene Rohfeld,
+seinen Wert und Evidenzstatus. Ein expliziter unbekannter Befehl bleibt explizit;
+er wird weder als fehlender Wert noch als ungültige Gerätekonfiguration behandelt.
+Pollingwerte haben unbekannte Einheiten und belegen weder erreichte
 Raten noch Buslast. Direkte Signalkanten und verschiedene Verbraucher werden getrennt
 gezählt; Referenzen bleiben separat und fehlende direkte Verbraucher beweisen keine Nichtnutzung.
 Prüfstatus, Abdeckung, Lücken, Auslassungen und Pagination beachten. Diese Prüfungen

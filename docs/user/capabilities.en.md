@@ -198,7 +198,11 @@ the default scope (version 8). Changing Explorer scope clears selection and curs
 Mapping review compares exact raw commands `3`/`4` and explicit lexical addresses
 within uniquely observed project transport/device ancestry in one source.
 Repeated mappings or differing explicit raw attributes are review candidates,
-not defects. Polling values have unknown units and establish no achieved rate or
+not defects.
+Comparison exclusions preserve the specific reason, affected raw field, value
+and evidence status. An explicit unknown command remains explicit; it is treated
+as neither an absent value nor an invalid device configuration.
+Polling values have unknown units and establish no achieved rate or
 bus load. Direct signal edges and distinct consumers are counted separately;
 references remain separate and no observed direct consumer does not prove non-use.
 Inspect check status, coverage, gaps, omissions and pagination. These checks
