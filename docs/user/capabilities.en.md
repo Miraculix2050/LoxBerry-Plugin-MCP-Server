@@ -191,6 +191,10 @@ Channel is not a proven unit ID. No defaults, scaling formula, bit/word order, a
 runtime freshness or successful transactions are inferred. Configured polling is static evidence.
 Search shows one ancestor at most; describe shows at most `min(limit, 16)`, with
 `ancestry_status` and `ancestry_truncated`. Unsupported Modbus types receive a describe diagnostic.
+The internal Modbus V1 foundation (#358) adds inventory and evidence-gap checks
+for later integration. Public `loxone_analyze_project` and Explorer remain KNX-only;
+Modbus activation requires all five checks from #354 after #359/#360 are integrated.
+This foundation generates no bus traffic and proves neither device health nor current measurements.
 Describe carries bounded parser diagnostics for observed ancestors and caps the structured
 envelope at 65,536 UTF-8 bytes: it shortens ancestry with an explicit truncation flag or returns
 `response_too_large` if the remaining description cannot fit.

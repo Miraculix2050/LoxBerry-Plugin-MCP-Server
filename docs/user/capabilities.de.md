@@ -212,6 +212,10 @@ Actor-Unterstützung, Laufzeitfrische oder erfolgreiche Transaktionen werden nic
 Konfiguriertes Polling ist statische Evidenz. Die Suche zeigt höchstens einen Vorfahren,
 Describe höchstens `min(limit, 16)`, mit `ancestry_status` und `ancestry_truncated`.
 Nicht unterstützte Modbus-Typen erhalten eine Describe-Diagnose.
+Die interne Modbus-V1-Grundlage (#358) ergänzt Inventar- und Evidenzlückenprüfungen
+für spätere Integration. `loxone_analyze_project` und der Explorer bleiben öffentlich
+KNX-only; Modbus wird erst mit allen fünf Prüfungen aus #354 nach #359/#360 freigeschaltet.
+Diese Grundlage erzeugt keinen Busverkehr und belegt weder Gerätefunktion noch aktuelle Messwerte.
 Describe führt begrenzte Parser-Diagnosen beobachteter Vorfahren mit und begrenzt den
 strukturierten Envelope auf 65.536 UTF-8-Bytes: Die Ancestry wird mit explizitem Kürzungsflag
 verkürzt; passt die verbleibende Beschreibung nicht, folgt `response_too_large`.
