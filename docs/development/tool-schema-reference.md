@@ -37,6 +37,44 @@ synchronized capability guides and issue #352 for the narrow sensor-only boundar
 The generated HTML/JSON schema reference derives these definitions from the same
 public Pydantic models; it is generated during packaging, not checked in separately.
 
+## Internal Modbus V1 analysis foundation (#358)
+
+`ProjectModbusAnalysisData` and the internal scope-discriminated success envelope
+prepare Modbus version 1 independently of KNX version 8. Only `inventory` and
+`evidence_gaps` execute internally. The final selection contract contains five
+checks; omitted selection selects all five and is rejected internally until
+the remaining checks are implemented. Empty, duplicate and cross-scope selections
+are rejected before project loading. The registered MCP schema, catalog and
+Explorer remain KNX-only; activation awaits #359 and #360.
+
+Counts describe `(model_source_id, project_node_id)` occurrences and carry
+`exact` or `lower_bound`. Source ingestion, candidate scanning, supported-type
+coverage and presentation are separate; physical installation coverage is
+always unknown. A successful loader consumes all admitted sources or fails;
+bounded diagnostic presentation does not make ingestion incomplete.
+Per-check occurrence counts include unsupported and unresolved inventory items;
+hierarchy nodes without observed ancestry are excluded from the raw-field gap
+check rather than represented as evaluated. `hierarchy_fields_not_inspected`
+explains this prerequisite gap with bounded affected occurrences. Coverage carries
+the same exclusions.
+Global evaluated sensor coverage counts the distinct union evaluated by selected
+non-gap checks. Gap-only inspection reports exactly zero in this global count,
+while its own CheckStatus retains the inspected evidence domain.
+Source-type and per-check occurrence counts use distinct identities even when a
+candidate also has an observed ancestry role; role-group totals are not additive.
+Raw field status counts include evaluated sensor fields and each observed ancestor's fields
+once. Search/describe retain their existing ancestry limits; internal analysis
+uses at most 32 hops and reports gaps instead of inferred physical identity.
+
+The shared worker/cache/page path preserves authorization and binds cursors to
+scope, scoped version, caller identity, project marker/fingerprint/model version,
+structure fingerprint and selection. Findings use a separate `modbus:` ID namespace.
+Construction quotas and presentation omissions follow #354. Pagination fits the
+whole envelope into 65,536 UTF-8 bytes, retains count/check/limitation truth and
+advances only over emitted findings. Static fixture evidence does not establish
+live sensor acceptance. Register mappings, direct consumers and polling checks
+remain separate implementation tasks; no register decoding or bus access is added.
+
 ## Compact control reads
 
 `loxone_read_controls` is an additive `loxone:read` tool for known visible UUIDs.

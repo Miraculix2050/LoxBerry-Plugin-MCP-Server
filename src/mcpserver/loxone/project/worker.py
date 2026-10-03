@@ -14,6 +14,7 @@ from time import perf_counter
 from .analysis import analyze_knx
 from .graph import GraphEdge, GraphNode, ProjectSnapshot, SemanticEdge, build_snapshot
 from .mapping import ProjectView
+from .modbus_analysis import analyze_modbus, require_implemented
 from .models import DEFAULT_LIMITS, ProjectBundle, ProjectError, ProjectLimits
 from .source import unpack_project
 from .taxonomy import AddressTaxonomyEntry
@@ -46,7 +47,10 @@ def _reduce_semantic_edge(edge: SemanticEdge) -> tuple[type[SemanticEdge], tuple
 
 
 def _analysis_payload(
-    view: ProjectView, analyses: frozenset[str], taxonomy: tuple[AddressTaxonomyEntry, ...]
+    view: ProjectView,
+    analyses: frozenset[str],
+    taxonomy: tuple[AddressTaxonomyEntry, ...],
+    scope: str = "knx",
 ) -> bytes:
     """Avoid per-object frozen-slot field introspection; retain every graph field.
 
@@ -60,7 +64,7 @@ def _analysis_payload(
         GraphEdge: _reduce_graph_edge,
         SemanticEdge: _reduce_semantic_edge,
     }
-    pickler.dump((view, analyses, taxonomy))
+    pickler.dump((view, analyses, taxonomy, scope))
     return stream.getvalue()
 
 
@@ -129,6 +133,7 @@ async def process_analysis(
     analyses: frozenset[str],
     taxonomy: tuple[AddressTaxonomyEntry, ...] = (),
     *,
+    scope: str = "knx",
     timings: dict[str, float | int] | None = None,
 ) -> dict[str, object]:
     """Run analysis; optional private diagnostics contain only durations and byte counts.
@@ -137,6 +142,12 @@ async def process_analysis(
     byte; stdout measures the remaining stream through EOF, including child exit.
     Child durations overlap these parent intervals and must not be added to them.
     """
+    if scope not in {"knx", "modbus"}:
+        raise ValueError("Unknown project analysis scope")
+    if scope == "modbus":
+        require_implemented(analyses)
+        if taxonomy:
+            raise ValueError("KNX taxonomy does not belong to Modbus analysis")
     if timings is not None:
         timings.clear()
     started = perf_counter()
@@ -153,7 +164,7 @@ async def process_analysis(
     spawned = perf_counter()
     assert process.stdin is not None and process.stdout is not None and process.stderr is not None
     stderr_task = asyncio.create_task(process.stderr.read())
-    payload = _analysis_payload(view, analyses, taxonomy)
+    payload = _analysis_payload(view, analyses, taxonomy, scope)
     serialized = perf_counter()
     if len(payload) > MAX_ANALYSIS_INPUT:
         process.kill()
@@ -238,16 +249,23 @@ def main() -> None:
             received = perf_counter()
             if len(raw) > MAX_ANALYSIS_INPUT:
                 raise ProjectError("project_worker_limit")
-            view, analyses, taxonomy = pickle.loads(raw)
+            view, analyses, taxonomy, scope = pickle.loads(raw)
             deserialized = perf_counter()
             if (
                 not isinstance(view, ProjectView)
                 or not isinstance(analyses, frozenset)
                 or not isinstance(taxonomy, tuple)
                 or any(not isinstance(item, AddressTaxonomyEntry) for item in taxonomy)
+                or scope not in {"knx", "modbus"}
             ):
                 raise ProjectError("project_worker_invalid")
-            analysis_result = analyze_knx(view, analyses, taxonomy)
+            if scope == "modbus":
+                require_implemented(analyses)
+                if taxonomy:
+                    raise ProjectError("project_worker_invalid")
+                analysis_result = analyze_modbus(view, analyses)
+            else:
+                analysis_result = analyze_knx(view, analyses, taxonomy)
             analyzed = perf_counter()
             payload = pickle.dumps(analysis_result, protocol=5)
             serialized = perf_counter()

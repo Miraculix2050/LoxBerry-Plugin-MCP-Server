@@ -13,6 +13,11 @@ extracted from the matching version heading.
   mapping through existing readers, with count semantics and explicit coverage (#348).
   State batch reads now require fresh visibility rather than cached visibility.
 
+- Prepare an internal, typed Modbus V1 inventory/evidence-gap foundation with
+  occurrence coverage, bounded construction, scoped cache/cursors and full-envelope
+  byte fitting (#358). Public analysis remains KNX-only until #359/#360 complete
+  all five checks; no Modbus traffic, device semantics or live compatibility claim.
+
 - Sync parent directories for configuration and MQTT credential updates/deletion
   and configuration upgrades. Report visible changes with unconfirmed durability
   without automatic Admin compensation or service changes (#161).

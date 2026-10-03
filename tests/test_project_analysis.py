@@ -58,11 +58,12 @@ def test_analysis_pickler_preserves_all_graph_fields_and_shared_nodes():
         assert constructor(*arguments) == item
     dispatch_before = copyreg.dispatch_table.copy()
     payload = _analysis_payload(view, frozenset({"datatype_consistency"}), ())
-    restored, selected, taxonomy = pickle.loads(payload)
+    restored, selected, taxonomy, scope = pickle.loads(payload)
     assert restored == view
     for field in fields(view.snapshot):
         assert getattr(restored.snapshot, field.name) == getattr(view.snapshot, field.name)
     assert selected == frozenset({"datatype_consistency"}) and taxonomy == ()
+    assert scope == "knx"
     assert restored.snapshot._logical_nodes[0] is restored.snapshot.graph.nodes[0]
     assert copyreg.dispatch_table == dispatch_before
     names = sorted(project_analysis.ANALYSES)

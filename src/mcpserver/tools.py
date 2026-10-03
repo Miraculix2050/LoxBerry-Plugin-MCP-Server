@@ -78,7 +78,14 @@ from mcpserver.loxone.presentation import (
 from mcpserver.loxone.presentation import structure_overview as _structure_overview
 from mcpserver.loxone.presentation import visible_controls as _visible_controls
 from mcpserver.loxone.presentation import window_monitor_description as _window_monitor_description
+from mcpserver.loxone.project.analysis import ANALYSES as KNX_ANALYSES
 from mcpserver.loxone.project.analysis import ANALYSIS_VERSION
+from mcpserver.loxone.project.modbus_analysis import (
+    MODBUS_ANALYSIS_VERSION,
+    ProjectModbusAnalysisData,
+    require_implemented,
+    validate_modbus_selection,
+)
 from mcpserver.loxone.project.models import ProjectError
 from mcpserver.loxone.project.query import ProjectQuery, ProjectQueryError
 from mcpserver.loxone.project.semantics import is_valid_group_address_filter
@@ -1686,6 +1693,15 @@ class ProjectAnalysisEnvelope(ToolEnvelope):
     data: ProjectAnalysisData | ErrorData
 
 
+class _PreparedProjectAnalysisEnvelope(ToolEnvelope):
+    """Internal success union; not registered in the released MCP schema."""
+
+    data: (
+        Annotated[ProjectAnalysisData | ProjectModbusAnalysisData, Field(discriminator="scope")]
+        | ErrorData
+    )
+
+
 class ObservabilityCurrentStateData(BaseModel):
     uuid: str
     name: str
@@ -3257,13 +3273,38 @@ def _fit_project_trace(envelope: ProjectTraceEnvelope) -> bool:
 
 
 def _fit_project_analysis_page(
-    envelope: ProjectAnalysisEnvelope, codec: _CursorCodec, scope: str, cursor: str | None
+    envelope: ProjectAnalysisEnvelope | _PreparedProjectAnalysisEnvelope,
+    codec: _CursorCodec,
+    scope: str,
+    cursor: str | None,
 ) -> bool:
-    if not isinstance(envelope.data, ProjectAnalysisData):
+    if not isinstance(envelope.data, ProjectAnalysisData | ProjectModbusAnalysisData):
         return True
     data = envelope.data
     if len(envelope.model_dump_json().encode("utf-8")) <= PROJECT_RESPONSE_MAX_BYTES:
         return True
+    if isinstance(data, ProjectModbusAnalysisData):
+        # Trim presentation context with explicit omissions, retaining all count
+        # and check-status truth. Findings paginate; context does not.
+        data.coverage.presentation_complete = False
+        data.analysis_truncated = True
+        if "max_summary_groups" not in data.truncation_reasons:
+            data.truncation_reasons.append("max_summary_groups")
+        data.source_types_omitted += len(data.coverage_by_source_type)
+        data.coverage_by_source_type = []
+        data.model_sources_omitted += len(data.model_sources)
+        data.model_sources = []
+        for check, buckets in data.summaries.items():
+            data.summaries_omitted[check] += len(buckets)
+        data.summaries = {check: [] for check in data.summaries}
+        data.source_diagnostics.groups_omitted += len(data.source_diagnostics.entries)
+        data.source_diagnostics.entries = []
+        if data.source_diagnostics.groups_omitted:
+            data.source_diagnostics.complete = False
+        data.page_truncated = True
+        data.page_truncation_reason = "max_response_bytes"
+        if len(envelope.model_dump_json().encode("utf-8")) <= PROJECT_RESPONSE_MAX_BYTES:
+            return True
     offset = codec.decode(scope, cursor)
     findings = data.findings
     data.page_truncated = True
@@ -5368,6 +5409,151 @@ def register_skill_tool(server: FastMCP) -> None:
         )
 
 
+class _ProjectAnalysisRunner:
+    """Shared authorization/cache/page path, with internal-only Modbus dispatch."""
+
+    def __init__(
+        self,
+        runtime: LoxoneRuntime | None,
+        config_store: AtomicConfigStore | None = None,
+    ) -> None:
+        self.runtime = runtime
+        self.config_store = config_store
+        self.cursors = _CursorCodec()
+        self.cache: OrderedDict[str, tuple[float, dict[str, object], int]] = OrderedDict()
+        self.locks = tuple(asyncio.Lock() for _ in range(16))
+        self.cache_bytes = 0
+
+    async def run(
+        self,
+        scope: str,
+        analyses: list[str] | None,
+        cursor: str | None = None,
+        limit: int = 20,
+    ) -> _PreparedProjectAnalysisEnvelope:
+        try:
+            version: int
+            if scope == "modbus":
+                selected = validate_modbus_selection(analyses)
+                require_implemented(selected)
+                version = MODBUS_ANALYSIS_VERSION
+            elif scope == "knx":
+                allowed = frozenset(KNX_ANALYSES)
+                selected = frozenset(analyses) if analyses is not None else allowed
+                if not selected or (analyses is not None and len(selected) != len(analyses)):
+                    raise ValueError("analyses must be a non-empty unique list")
+                if not selected <= allowed:
+                    raise ValueError("analyses do not belong to the selected scope")
+                version = ANALYSIS_VERSION
+            else:
+                raise ValueError("Unknown project analysis scope")
+            if not 1 <= limit <= 50:
+                raise ValueError("limit must be between 1 and 50")
+            project, snapshot = await _project_query(self.runtime)
+            if self.runtime is None or self.runtime.projects is None:
+                raise RuntimeUnavailable("the service is not configured")
+            projects = self.runtime.projects
+            access = _access()
+            taxonomy: tuple[AddressTaxonomyEntry, ...] = ()
+            if scope == "knx" and self.config_store is not None and "address_hierarchy" in selected:
+                config = await asyncio.to_thread(self.config_store.load)
+                if config.knx_address_taxonomy_endpoint == self.runtime.endpoint.origin:
+                    taxonomy = config.knx_address_taxonomy
+            analysis_scope = (
+                "project-analysis:"
+                + hashlib.sha256(
+                    json.dumps(
+                        [
+                            scope,
+                            access.family_id,
+                            access.miniserver_id,
+                            access.identity_id,
+                            project.view.marker,
+                            project.view.snapshot.fingerprint,
+                            project.view.snapshot.model_version,
+                            version,
+                            project.view.mapping.structure_fingerprint,
+                            sorted(selected),
+                            [
+                                (entry.address_format, entry.prefix, entry.label)
+                                for entry in taxonomy
+                            ],
+                        ],
+                        separators=(",", ":"),
+                    ).encode()
+                ).hexdigest()
+            )
+            self.cursors.decode(analysis_scope, cursor)
+            async with self.locks[int(analysis_scope[-2:], 16) % len(self.locks)]:
+                now = time.monotonic()
+                for key, (expires, _value, size) in tuple(self.cache.items()):
+                    if expires <= now:
+                        self.cache.pop(key)
+                        self.cache_bytes -= size
+                cached = self.cache.get(analysis_scope)
+                if cached is None:
+                    if cursor is not None:
+                        raise ValueError("cursor has expired; start a new analysis")
+                    _LOGGER.debug("component=project_analysis_cache outcome=miss")
+                    async with self.runtime.worker_slot():
+                        if scope == "knx":
+                            result = await process_analysis(project.view, selected, taxonomy)
+                        else:
+                            result = await process_analysis(project.view, selected, scope=scope)
+                    await projects.authorize(access)
+                    size = len(json.dumps(result, separators=(",", ":")).encode())
+                    if size > 64 * 1024 * 1024:
+                        raise ProjectError("project_worker_limit")
+                    self.cache[analysis_scope] = (now + 300, result, size)
+                    self.cache_bytes += size
+                    while len(self.cache) > 4 or self.cache_bytes > 64 * 1024 * 1024:
+                        _key, (_expires, _value, removed) = self.cache.popitem(last=False)
+                        self.cache_bytes -= removed
+                else:
+                    _LOGGER.debug("component=project_analysis_cache outcome=hit")
+                    self.cache.move_to_end(analysis_scope)
+                    result = cached[1]
+                    await projects.authorize(access)
+            findings = result.get("findings")
+            if not isinstance(findings, list):
+                raise ProjectError("project_worker_invalid")
+            page = _page(self.cursors, analysis_scope, findings, cursor, limit)
+            page["findings"] = page.pop("items")
+            envelope = _result(
+                _PreparedProjectAnalysisEnvelope,
+                {**result, **page},
+                stale=not snapshot.connected,
+            )
+            if not _fit_project_analysis_page(envelope, self.cursors, analysis_scope, cursor):
+                return _error(
+                    _PreparedProjectAnalysisEnvelope,
+                    "temporarily_unavailable",
+                    "Project analysis result exceeds the response limit",
+                )
+            return envelope
+        except ConfigError:
+            return _error(
+                _PreparedProjectAnalysisEnvelope,
+                "temporarily_unavailable",
+                "KNX address taxonomy configuration is unavailable",
+            )
+        except ValueError as exc:
+            return _error(_PreparedProjectAnalysisEnvelope, "invalid_input", str(exc))
+        except PermissionError:
+            return _error(
+                _PreparedProjectAnalysisEnvelope,
+                "unauthenticated",
+                "Authentication with loxone:read is required",
+            )
+        except (ProjectError, ProjectQueryError) as exc:
+            code, message, diagnostic_code = _project_error_code(exc)
+            return _error(
+                _PreparedProjectAnalysisEnvelope, code, message, diagnostic_code=diagnostic_code
+            )
+        except RuntimeUnavailable as exc:
+            return _availability_error(_PreparedProjectAnalysisEnvelope, exc)
+
+
 def register_project_tools(
     server: FastMCP,
     runtime: LoxoneRuntime | None,
@@ -5379,9 +5565,7 @@ def register_project_tools(
     find_cache: OrderedDict[str, tuple[float, list[Any], int]] = OrderedDict()
     find_locks = tuple(asyncio.Lock() for _ in range(16))
     find_cache_bytes = 0
-    analysis_cache: OrderedDict[str, tuple[float, dict[str, object], int]] = OrderedDict()
-    analysis_locks = tuple(asyncio.Lock() for _ in range(16))
-    analysis_cache_bytes = 0
+    analysis_runner = _ProjectAnalysisRunner(runtime, config_store)
 
     @server.tool(
         name="loxone_get_project_status",
@@ -5699,125 +5883,17 @@ def register_project_tools(
         cursor: CursorArgument = None,
         limit: Annotated[int, Field(ge=1, le=50)] = 20,
     ) -> ProjectAnalysisEnvelope:
-        nonlocal analysis_cache_bytes
-        try:
-            selected = (
-                frozenset(analyses)
-                if analyses is not None
-                else frozenset(
-                    {
-                        "address_hierarchy",
-                        "address_patterns",
-                        "naming_consistency",
-                        "datatype_consistency",
-                        "signal_usage_consistency",
-                        "technology_architecture",
-                        "graph_outliers",
-                        "project_connectivity",
-                        "peer_group_consistency",
-                    }
-                )
-            )
-            if not selected or (analyses is not None and len(selected) != len(analyses)):
-                raise ValueError("analyses must be a non-empty unique list")
-            project, snapshot = await _project_query(runtime)
-            if runtime is None or runtime.projects is None:
-                raise RuntimeUnavailable("the service is not configured")
-            projects = runtime.projects
-            access = _access()
-            taxonomy: tuple[AddressTaxonomyEntry, ...] = ()
-            if config_store is not None and "address_hierarchy" in selected:
-                config = await asyncio.to_thread(config_store.load)
-                if config.knx_address_taxonomy_endpoint == runtime.endpoint.origin:
-                    taxonomy = config.knx_address_taxonomy
-            analysis_scope = (
-                "project-analysis:"
-                + hashlib.sha256(
-                    json.dumps(
-                        [
-                            scope,
-                            access.family_id,
-                            access.miniserver_id,
-                            access.identity_id,
-                            project.view.marker,
-                            project.view.snapshot.fingerprint,
-                            project.view.snapshot.model_version,
-                            ANALYSIS_VERSION,
-                            project.view.mapping.structure_fingerprint,
-                            sorted(selected),
-                            [
-                                (entry.address_format, entry.prefix, entry.label)
-                                for entry in taxonomy
-                            ],
-                        ],
-                        separators=(",", ":"),
-                    ).encode()
-                ).hexdigest()
-            )
-            cursors.decode(analysis_scope, cursor)
-            async with analysis_locks[int(analysis_scope[-2:], 16) % len(analysis_locks)]:
-                now = time.monotonic()
-                for key, (expires, _value, size) in tuple(analysis_cache.items()):
-                    if expires <= now:
-                        analysis_cache.pop(key)
-                        analysis_cache_bytes -= size
-                cached = analysis_cache.get(analysis_scope)
-                if cached is None:
-                    if cursor is not None:
-                        raise ValueError("cursor has expired; start a new analysis")
-                    _LOGGER.debug("component=project_analysis_cache outcome=miss")
-                    async with runtime.worker_slot():
-                        result = await process_analysis(project.view, selected, taxonomy)
-                    await projects.authorize(access)
-                    size = len(json.dumps(result, separators=(",", ":")).encode())
-                    if size > 64 * 1024 * 1024:
-                        raise ProjectError("project_worker_limit")
-                    analysis_cache[analysis_scope] = (now + 300, result, size)
-                    analysis_cache_bytes += size
-                    while len(analysis_cache) > 4 or analysis_cache_bytes > 64 * 1024 * 1024:
-                        _key, (_expires, _value, removed) = analysis_cache.popitem(last=False)
-                        analysis_cache_bytes -= removed
-                else:
-                    _LOGGER.debug("component=project_analysis_cache outcome=hit")
-                    analysis_cache.move_to_end(analysis_scope)
-                    result = cached[1]
-                    await projects.authorize(access)
-            findings = result.get("findings")
-            if not isinstance(findings, list):
-                raise ProjectError("project_worker_invalid")
-            page = _page(cursors, analysis_scope, findings, cursor, limit)
-            page["findings"] = page.pop("items")
-            envelope = _result(
-                ProjectAnalysisEnvelope,
-                {**result, **page},
-                stale=not snapshot.connected,
-            )
-            if not _fit_project_analysis_page(envelope, cursors, analysis_scope, cursor):
-                return _error(
-                    ProjectAnalysisEnvelope,
-                    "temporarily_unavailable",
-                    "Project analysis result exceeds the response limit",
-                )
-            return envelope
-        except ConfigError:
+        if scope != "knx":
             return _error(
-                ProjectAnalysisEnvelope,
-                "temporarily_unavailable",
-                "KNX address taxonomy configuration is unavailable",
+                ProjectAnalysisEnvelope, "invalid_input", "Modbus analysis is not publicly enabled"
             )
-        except ValueError as exc:
-            return _error(ProjectAnalysisEnvelope, "invalid_input", str(exc))
-        except PermissionError:
-            return _error(
-                ProjectAnalysisEnvelope,
-                "unauthenticated",
-                "Authentication with loxone:read is required",
-            )
-        except (ProjectError, ProjectQueryError) as exc:
-            code, message, diagnostic_code = _project_error_code(exc)
-            return _error(ProjectAnalysisEnvelope, code, message, diagnostic_code=diagnostic_code)
-        except RuntimeUnavailable as exc:
-            return _availability_error(ProjectAnalysisEnvelope, exc)
+        prepared = await analysis_runner.run(
+            scope,
+            list(analyses) if analyses is not None else None,
+            cursor,
+            limit,
+        )
+        return ProjectAnalysisEnvelope.model_validate(prepared.model_dump())
 
 
 def register_observability_tools(

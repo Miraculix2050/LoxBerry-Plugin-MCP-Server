@@ -142,6 +142,9 @@ class ProjectSnapshot:
     )
     logical_aliases: tuple[tuple[str, str], ...] = field(default=(), repr=False)
     logical_source_ids: tuple[tuple[str, tuple[str, ...]], ...] = field(default=(), repr=False)
+    # Successful loaders inspect every admitted source or fail the whole load.
+    # Diagnostic presentation truncation is independent of source ingestion.
+    source_ingestion_complete: bool = field(default=True, kw_only=True)
     _logical_alias_lookup: Mapping[str, str] = field(
         default_factory=dict, repr=False, compare=False
     )
