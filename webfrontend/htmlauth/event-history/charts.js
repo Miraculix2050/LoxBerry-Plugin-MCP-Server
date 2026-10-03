@@ -48,7 +48,7 @@
         requested, selector_generation: selection.generation,
         history_generation: selection.history_generation, range, rolling,
         sources: sourceStates.map((state) => ({
-          events: [...state.events.values()].map(compactEvent), loaded: state.loaded, exact: state.exact,
+          events: [...state.events.values()], loaded: state.loaded, exact: state.exact,
           sampled: state.sampled, coverageExact: state.coverageExact,
           coverageTruncatedRanges: state.coverageTruncatedRanges,
           cursor: state.cursor, generation: state.generation, coverage: state.coverage,
