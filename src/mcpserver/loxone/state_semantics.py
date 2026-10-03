@@ -679,6 +679,9 @@ def _status_provenance(control: Control, state_name: str) -> dict[str, object]:
 
 
 def _status_definition(control: Control, code: int) -> tuple[dict[str, object] | None, str]:
+    # 255 is reserved for an integrated, unconfigured monitor, never a configured tuple.
+    if code == 255:
+        return None, "unmatched"
     matches = [s for s in control.status_monitor_statuses[:100] if s.status_id == code]
     if len(matches) != 1:
         return None, "ambiguous" if matches else "unmatched"

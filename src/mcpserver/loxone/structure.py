@@ -574,7 +574,7 @@ def _status_monitor_details(
             if (
                 not isinstance(status_id, int)
                 or isinstance(status_id, bool)
-                or not 0 <= status_id <= 255
+                or not 0 <= status_id < 255
                 or not isinstance(name, str)
                 or len(name) > 200
                 or not isinstance(priority, int)

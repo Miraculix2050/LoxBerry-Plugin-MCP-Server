@@ -884,3 +884,36 @@ def test_status_monitor_absent_optional_metadata_can_be_complete(optional):
     descriptor, decoded = resolve(c, "inputStates", "1")
     assert not c.semantics_invalid_fields and descriptor.interpretation_status == "known"
     assert decoded["mapping_complete"]
+
+
+@pytest.mark.parametrize("normalized", [False, True])
+def test_status_monitor_reserved_255_never_matches_a_configured_definition(normalized):
+    if normalized:
+        raw = {
+            "msInfo": {"serialNr": "fixture"},
+            "controls": {
+                "monitor": {
+                    "name": "Monitor",
+                    "type": "StatusMonitor",
+                    "states": {"inputStates": "input"},
+                    "details": {
+                        "inputs": [{"name": "Input"}],
+                        "status": {"reserved": {"id": 255, "name": "Arbitrary", "prio": 0}},
+                    },
+                }
+            },
+        }
+        c = normalize_structure(raw, username="reader").controls[0]
+        assert c.status_monitor_statuses == ()
+        assert c.status_monitor_status_total == 1 and not c.status_monitor_status_complete
+    else:
+        c = replace(
+            status_control(),
+            status_monitor_statuses=(StatusMonitorStatus(255, "Arbitrary", 0, "#FF0000"),),
+            status_monitor_status_total=1,
+        )
+    descriptor, decoded = resolve(c, "inputStates", "255")
+    assert decoded["inputs"][0]["status_id"] == 255
+    assert decoded["inputs"][0]["mapping_status"] == "unmatched"
+    assert decoded["inputs"][0]["configured_status"] is None
+    assert not decoded["mapping_complete"] and descriptor.interpretation_status != "known"
