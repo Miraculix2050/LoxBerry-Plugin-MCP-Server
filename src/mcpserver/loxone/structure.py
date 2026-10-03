@@ -533,11 +533,9 @@ def _status_optional_metadata_valid(item: Mapping[str, object]) -> bool:
     if place is not None and (not isinstance(place, str) or len(place) > 200):
         return False
     color = item.get("color")
-    if color is not None and (
-        not isinstance(color, str) or re.fullmatch(r"#[0-9A-Fa-f]{6}", color) is None
-    ):
-        return False
-    return True
+    return color is None or (
+        isinstance(color, str) and re.fullmatch(r"#[0-9A-Fa-f]{6}", color) is not None
+    )
 
 
 def _status_monitor_details(
