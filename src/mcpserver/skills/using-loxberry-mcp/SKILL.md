@@ -103,7 +103,7 @@ address. Trace keeps raw wiring in `edges` and reports derived internal evidence
 separately in `semantic_edges`. Use `technology_paths` only as static
 reachability evidence, check `semantic_truncated`, and never present a path as
 proof of a bus telegram or a historical cause.
-Use `loxone_analyze_project` version 7 for a bounded installation-level KNX
+Use `loxone_analyze_project` version 8 for a bounded installation-level KNX
 review before retrieving individual traces. It can add source-name patterns,
 exact UUID-mapped runtime context, and local peer or graph outliers to address,
 datatype, usage, path, and connection evidence. Treat all findings as
@@ -136,6 +136,24 @@ sample `project_node_id` with describe; unknown source values are intentionally 
 When a project tool returns an error, use its fixed value-free `diagnostic_code` to distinguish
 invalid, unsupported, limited, timed-out and failed source processing before retrying or reporting
 the problem.
+
+For static Modbus review, call `loxone_analyze_project` with `scope="modbus"`
+(analysis version 1). Omitted selection runs `inventory`,
+`configured_register_mappings`, `direct_consumers`, `configured_polling` and
+`evidence_gaps`; explicit selections must be unique and belong to that scope.
+Separate facts, review candidates and evidence gaps. Inspect per-check status,
+coverage, limitations, omissions and every cursor before describing completeness.
+Mappings compare only exact raw commands `3`/`4` and explicit lexical addresses
+under uniquely observed transport/device ancestry in one model source. Shared
+sensor/actor registers can be intentional read/write combinations. Raw polling
+units remain unknown; configuration proves neither bus load nor current values.
+Direct signal edges and distinct consumers have separate counts; references and
+unresolved connectors do not establish direct signal use. Missing direct consumers
+never prove non-use. Register width, overlaps, device addressing, scaling and byte
+order require independent device documentation and are not evaluated here.
+Search/describe metadata keeps `semantics="unresolved"` and bounded ancestors;
+analysis reports its own prerequisites and completeness without strengthening
+that metadata into physical topology or installation coverage.
 
 ### Inspect one known room
 

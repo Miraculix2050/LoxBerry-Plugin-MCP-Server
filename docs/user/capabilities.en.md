@@ -191,10 +191,20 @@ Channel is not a proven unit ID. No defaults, scaling formula, bit/word order, a
 runtime freshness or successful transactions are inferred. Configured polling is static evidence.
 Search shows one ancestor at most; describe shows at most `min(limit, 16)`, with
 `ancestry_status` and `ancestry_truncated`. Unsupported Modbus types receive a describe diagnostic.
-The internal Modbus V1 foundation (#358) adds inventory and evidence-gap checks
-for later integration. Public `loxone_analyze_project` and Explorer remain KNX-only;
-Modbus activation requires all five checks from #354 after #359/#360 are integrated.
-This foundation generates no bus traffic and proves neither device health nor current measurements.
+`loxone_analyze_project(scope="modbus")` and Explorer provide Modbus version 1:
+`inventory`, `configured_register_mappings`, `direct_consumers`,
+`configured_polling` and `evidence_gaps`. Omission selects all five; KNX remains
+the default scope (version 8). Changing Explorer scope clears selection and cursor.
+Mapping review compares exact raw commands `3`/`4` and explicit lexical addresses
+within uniquely observed project transport/device ancestry in one source.
+Repeated mappings or differing explicit raw attributes are review candidates,
+not defects. Polling values have unknown units and establish no achieved rate or
+bus load. Direct signal edges and distinct consumers are counted separately;
+references remain separate and no observed direct consumer does not prove non-use.
+Inspect check status, coverage, gaps, omissions and pagination. These checks
+create no bus traffic and establish no current measurement or device health.
+Shared sensor/actor registers can be intentional. Register width, overlap,
+device addressing, scaling and byte order require independent register documentation.
 Describe carries bounded parser diagnostics for observed ancestors and caps the structured
 envelope at 65,536 UTF-8 bytes: it shortens ancestry with an explicit truncation flag or returns
 `response_too_large` if the remaining description cannot fit.

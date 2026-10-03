@@ -1,4 +1,4 @@
-"""Internal Modbus V1 foundation; public activation requires all five checks.
+"""Bounded Modbus V1 project evidence with five independent static checks.
 
 Only static source occurrences are inspected. No device identity, register width,
 defaults, traffic, runtime values or physical installation coverage is inferred.
@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from .graph import GraphNode
 from .mapping import ProjectView
 from .modbus import FIELDS, raw_fields
+from .modbus_checks import CheckResult, SensorEvidence, configured_checks, direct_check
 
 MODBUS_ANALYSIS_VERSION: Literal[1] = 1
 MODBUS_ANALYSES = (
@@ -24,7 +25,7 @@ MODBUS_ANALYSES = (
     "configured_polling",
     "evidence_gaps",
 )
-IMPLEMENTED_ANALYSES = frozenset({"inventory", "evidence_gaps"})
+IMPLEMENTED_ANALYSES = frozenset(MODBUS_ANALYSES)
 ModbusAnalysis = Literal[
     "inventory",
     "configured_register_mappings",
@@ -124,6 +125,24 @@ class ProjectModbusEvidenceData(ProjectModbusOccurrenceIdentityData):
     occurrences_omitted: int = Field(default=0, ge=0)
 
 
+class ProjectModbusConfiguredMappingData(BaseModel):
+    model_source_id: str
+    transport_project_node_id: str
+    device_project_node_id: str
+    function_code: Literal["3", "4"]
+    requested_register_table: Literal["holding_registers", "input_registers"]
+    requested_register_table_semantics: Literal["proven"] = "proven"
+    raw_address: str = Field(max_length=200)
+    rule_reference: str
+
+
+class ProjectModbusDirectEdgeData(BaseModel):
+    model_source_id: str
+    source_connector_project_node_id: str
+    target_connector_project_node_id: str
+    consumer_project_node_id: str
+
+
 class ProjectModbusFindingData(BaseModel):
     finding_id: str
     analysis: ModbusAnalysis
@@ -149,6 +168,29 @@ class ProjectModbusFindingData(BaseModel):
     source_type_truncated: bool = False
     ancestry_class: AncestryClass | None = None
     source_occurrences: ProjectModbusCountData | None = None
+    configured_mapping: ProjectModbusConfiguredMappingData | None = None
+    comparison_field: (
+        Literal["ModbusDataType", "SourceValHigh", "DestValHigh", "ModbusPollingCycle"] | None
+    ) = None
+    raw_variants: list[Annotated[str, Field(max_length=200)]] = Field(
+        default_factory=list, max_length=20
+    )
+    raw_variants_omitted: int = Field(default=0, ge=0)
+    polling_unit: Literal["unknown"] | None = None
+    blocked_check: ModbusAnalysis | None = None
+    reason_code: str | None = None
+    direct_edge_count: ProjectModbusCountData | None = None
+    consumer_occurrence_count: ProjectModbusCountData | None = None
+    direct_edges: list[ProjectModbusDirectEdgeData] = Field(default_factory=list, max_length=20)
+    direct_edges_omitted: int = Field(default=0, ge=0)
+    consumer_occurrences: list[ProjectModbusOccurrenceIdentityData] = Field(
+        default_factory=list, max_length=20
+    )
+    consumer_occurrences_omitted: int = Field(default=0, ge=0)
+    connectors_inspected: ProjectModbusCountData | None = None
+    connectors_omitted: int | None = Field(default=None, ge=0)
+    reference_edge_count: ProjectModbusCountData | None = None
+    direct_slice_complete: bool | None = None
 
 
 class ProjectModbusSummaryData(BaseModel):
@@ -157,6 +199,8 @@ class ProjectModbusSummaryData(BaseModel):
     source_type: str | None = Field(default=None, max_length=100)
     source_type_truncated: bool = False
     ancestry_class: AncestryClass | None = None
+    raw_value: str | None = Field(default=None, max_length=200)
+    polling_unit: Literal["unknown"] | None = None
 
 
 class ProjectModbusLimitationData(BaseModel):
@@ -223,6 +267,7 @@ class ModbusLimits:
     findings_per_check: int = 2_000
     summary_groups: int = 50
     evidence_records: int = 20
+    connectors_per_sensor: int = 100
 
 
 DEFAULT_MODBUS_LIMITS = ModbusLimits()
@@ -329,15 +374,25 @@ def analyze_modbus(
     # never establish that a node has a unique parent or no parent.
     nodes = {node.key: node for node in graph.nodes}
     parents: dict[str, list[str]] = defaultdict(list)
+    relevant_edges = []
+    relevant_unresolved = []
     relationships = 0
     relationships_complete = True
-    for edge in graph.edges:
-        if edge.kind != "contains":
+    for edge in sorted(graph.edges, key=lambda e: (e.source, e.target, e.kind)):
+        if edge.kind not in {"contains", "signal", "reference"}:
             continue
         if relationships == limits.relationships:
             relationships_complete = False
             break
-        parents[edge.target].append(edge.source)
+        relevant_edges.append(edge)
+        if edge.kind == "contains":
+            parents[edge.target].append(edge.source)
+        relationships += 1
+    for unresolved in sorted(graph.unresolved):
+        if relationships == limits.relationships:
+            relationships_complete = False
+            break
+        relevant_unresolved.append(unresolved)
         relationships += 1
     # A quota bounds construction and samples, independently for every check.
     findings: dict[str, list[tuple[str, dict[str, object]]]] = {
@@ -358,6 +413,7 @@ def analyze_modbus(
         warning: bool = False,
         classification: str = "evidence_gap",
         raw_evidence: dict[str, object] | None = None,
+        extra: dict[str, object] | None = None,
     ) -> None:
         if analysis not in analyses:
             return
@@ -385,6 +441,22 @@ def analyze_modbus(
             evidence[0]["occurrences_omitted"] = raw_evidence["occurrences_omitted"]
         if evidence and raw_evidence is not None and raw_evidence["occurrences_omitted"]:
             reasons.add("max_evidence_records")
+        if extra and any(
+            extra.get(key)
+            for key in (
+                "affected_occurrences_omitted",
+                "evidence_omitted",
+                "raw_variants_omitted",
+                "direct_edges_omitted",
+                "consumer_occurrences_omitted",
+            )
+        ):
+            reasons.add("max_evidence_records")
+        extra_evidence = extra.get("evidence") if extra else None
+        if isinstance(extra_evidence, list) and any(
+            isinstance(item, dict) and item.get("occurrences_omitted") for item in extra_evidence
+        ):
+            reasons.add("max_evidence_records")
         findings[analysis].append(
             (
                 json.dumps(basis, sort_keys=True, ensure_ascii=False),
@@ -399,12 +471,14 @@ def analyze_modbus(
                     "affected_occurrences": [] if identity is None else [identity],
                     "affected_occurrences_omitted": 0,
                     "evidence_omitted": 0,
+                    **(extra or {}),
                 },
             )
         )
 
     scanned = 0
     evaluated = 0
+    sensor_evidence: list[SensorEvidence] = []
     scan_complete = True
     for node in sorted(graph.nodes, key=occurrence_identity):
         if node.kind != "block":
@@ -461,7 +535,8 @@ def analyze_modbus(
             observe_inventory(node, type_key, "other_or_unresolved")
             continue
         evaluated += 1
-        for evidence in raw_fields(node):
+        fields = raw_fields(node)
+        for evidence in fields:
             field_status = str(evidence["evidence_status"])
             field_counts[field_status] += 1
             if field_status != "explicit":
@@ -548,6 +623,11 @@ def analyze_modbus(
             )
             transport[dimension] += 1
             observe_inventory(node, type_key, dimension)
+        sensor_evidence.append(
+            SensorEvidence(
+                node, {str(f["source_field"]): f for f in fields}, tuple(ancestors), ancestry_status
+            )
+        )
     ingestion_complete = view.snapshot.source_ingestion_complete
     domain_complete = scan_complete and ingestion_complete
     sensor_complete = domain_complete and "max_sensor_occurrences" not in reasons
@@ -561,6 +641,41 @@ def analyze_modbus(
 
     def count(value: int, complete: bool = domain_complete) -> dict[str, object]:
         return {"value": value, "count_kind": "exact" if complete else "lower_bound"}
+
+    checks: dict[str, CheckResult] = {}
+    if analyses & {"configured_register_mappings", "configured_polling"}:
+        checks.update(
+            configured_checks(
+                sensor_evidence,
+                analyses,
+                emit,
+                count,
+                sensor_complete,
+                limits.evidence_records,
+                limits.summary_groups,
+            )
+        )
+    if "direct_consumers" in analyses:
+        checks["direct_consumers"] = direct_check(
+            sensor_evidence,
+            nodes,
+            relevant_edges,
+            relevant_unresolved,
+            relationships_complete,
+            emit,
+            count,
+            sensor_complete,
+            limits.connectors_per_sensor,
+            limits.evidence_records,
+        )
+        if "max_connectors" in checks["direct_consumers"].reasons:
+            reasons.add("max_connectors")
+    evaluated_union: set[tuple[str, str]] = set()
+    if "inventory" in analyses:
+        evaluated_union.update(s.identity for s in sensor_evidence)
+    for name, result in checks.items():
+        if name in analyses:
+            evaluated_union.update(result.evaluated)
 
     type_records: list[dict[str, object]] = []
     for source_type, values in sorted(types.items()):
@@ -663,6 +778,39 @@ def analyze_modbus(
     for analysis in MODBUS_ANALYSES:
         if analysis not in analyses:
             continue
+        if analysis in checks:
+            result = checks[analysis]
+            eligible = counters["supported_sensor_occurrences"]
+            excluded = eligible - len(result.evaluated)
+            partial = (
+                bool(excluded)
+                or result.partial
+                or not sensor_complete
+                or bool(findings_omitted[analysis])
+            )
+            blocked = (
+                bool(eligible)
+                and not result.evaluated
+                and sensor_complete
+                and analysis != "direct_consumers"
+            )
+            statuses[analysis] = {
+                "status": "blocked" if blocked else "partial" if partial else "complete",
+                "eligible_occurrences": count(eligible),
+                "evaluated_occurrences": count(len(result.evaluated), sensor_complete),
+                "excluded_occurrences": count(excluded),
+                "reason_codes": sorted(
+                    result.reasons
+                    | reasons
+                    | ({"source_ingestion_incomplete"} if not ingestion_complete else set())
+                ),
+                "omitted_count": findings_omitted[analysis] if domain_complete else None,
+            }
+            summaries[analysis] = result.summaries
+            omissions[analysis] = result.summary_omitted
+            if result.summary_omitted:
+                reasons.add("max_summary_groups")
+            continue
         excluded = counters["supported_sensor_occurrences"] - evaluated
         if analysis == "evidence_gaps":
             excluded += len(uninspected_hierarchy)
@@ -737,7 +885,9 @@ def analyze_modbus(
             "sensor_source_occurrences": count(counters["supported_sensor_occurrences"]),
             "supported_sensor_occurrences": count(counters["supported_sensor_occurrences"]),
             "evaluated_sensor_occurrences": (
-                count(evaluated, sensor_complete) if "inventory" in analyses else count(0, True)
+                count(len(evaluated_union), sensor_complete)
+                if analyses - {"evidence_gaps"}
+                else count(0, True)
             ),
             **{
                 key: count(counters[key])

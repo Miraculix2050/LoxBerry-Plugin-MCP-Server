@@ -921,6 +921,32 @@ def test_unknown_tool_uses_generic_explorer_path() -> None:
     assert run_core(f"core.toolIsMutating({encoded})") is False
 
 
+def test_modbus_selection_validation_uses_scope_annotation() -> None:
+    schema = {
+        "type": "object",
+        "properties": {
+            "scope": {"type": "string", "enum": ["knx", "modbus"], "default": "knx"},
+            "analyses": {
+                "type": "array",
+                "items": {"type": "string"},
+                "x-analyses-by-scope": {
+                    "knx": ["address_patterns"],
+                    "modbus": ["inventory", "evidence_gaps"],
+                },
+            },
+        },
+    }
+    encoded = json.dumps(schema)
+    assert run_core(f"core.validateArguments({{scope:'modbus'}},{encoded})") == []
+    for analyses in ([], ["inventory", "inventory"], ["address_patterns"]):
+        arguments = json.dumps({"scope": "modbus", "analyses": analyses})
+        assert run_core(f"core.validateArguments({arguments},{encoded})")
+    assert (
+        run_core(f"core.validateArguments({{scope:'modbus',analyses:['inventory']}},{encoded})")
+        == []
+    )
+
+
 def test_registry_keeps_tool_hints_out_of_authorization_and_defaults_unknown_safely() -> None:
     assert run_adapters("adapters.toolGroup({name:'future_loxone_tool'})") == "other"
     assert run_adapters("adapters.requiredMutationScope({name:'future_write'})") is None

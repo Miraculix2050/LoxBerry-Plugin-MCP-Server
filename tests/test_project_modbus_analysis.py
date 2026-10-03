@@ -12,7 +12,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 from mcp.server.fastmcp import FastMCP
-from pydantic import ValidationError
 
 import mcpserver.tools as tools
 from mcpserver.loxone.project.graph import (
@@ -190,13 +189,14 @@ def test_synthetic_type_classification_does_not_guess_or_deduplicate():
     assert "Comm485" not in {t.source_type for t in result.coverage_by_source_type}
 
 
-def test_empty_domain_and_deferred_selection_contract():
+def test_empty_domain_and_complete_selection_contract():
     result = analyze(view())
     assert not result.findings
     assert all(s.status == "complete" for s in result.check_status.values())
     assert validate_modbus_selection(None) == frozenset(MODBUS_ANALYSES)
-    with pytest.raises(ValueError, match="not yet implemented"):
-        analyze_modbus(view(), validate_modbus_selection(None))
+    default = analyze_modbus(view(), validate_modbus_selection(None))
+    assert default["analyses"] == list(MODBUS_ANALYSES)
+    assert not default["findings"]
 
 
 @pytest.mark.parametrize(
@@ -371,12 +371,14 @@ def test_ids_order_and_gap_context_are_selection_independent():
 
 
 @pytest.mark.asyncio
-async def test_real_worker_dispatch_and_unimplemented_default():
+async def test_real_worker_dispatch_and_complete_default():
     project = view((FIXTURES / "rtu-meter.xml").read_bytes())
     result = await process_analysis(project, BOTH, scope="modbus")
     assert result == analyze_modbus(project, BOTH)
-    with pytest.raises(ValueError, match="not yet implemented"):
-        await process_analysis(project, frozenset(MODBUS_ANALYSES), scope="modbus")
+    default = frozenset(MODBUS_ANALYSES)
+    assert await process_analysis(project, default, scope="modbus") == analyze_modbus(
+        project, default
+    )
 
 
 def envelope(data):
@@ -470,16 +472,16 @@ def test_truncated_type_labels_do_not_merge_identity_or_change_count_truth():
 
 
 @pytest.mark.asyncio
-async def test_public_contract_stays_knx_only():
+async def test_public_contract_adds_modbus_and_preserves_knx_default():
     server = FastMCP("modbus-foundation")
     tools.register_project_tools(server, None)
     tool = server._tool_manager.get_tool("loxone_analyze_project")
-    assert tool.parameters["properties"]["scope"]["const"] == "knx"
-    assert "ProjectModbusAnalysisData" not in json.dumps(tool.output_schema)
+    assert tool.parameters["properties"]["scope"]["enum"] == ["knx", "modbus"]
+    assert tool.parameters["properties"]["scope"]["default"] == "knx"
+    assert "ProjectModbusAnalysisData" in json.dumps(tool.output_schema)
     assert tool.parameters["properties"]["limit"]["minimum"] == 1
     assert tool.parameters["properties"]["limit"]["maximum"] == 50
-    with pytest.raises(ValidationError):
-        tools.ProjectAnalysisEnvelope.model_validate(envelope(analyze(view())).model_dump())
+    assert tools.ProjectAnalysisEnvelope.model_validate(envelope(analyze(view())).model_dump()).ok
 
 
 @pytest.mark.asyncio
@@ -488,7 +490,6 @@ async def test_internal_runner_validation_precedes_loading(monkeypatch):
     monkeypatch.setattr(tools, "_project_query", load)
     runner = tools._ProjectAnalysisRunner(None)
     for scope, selected in [
-        ("modbus", None),
         ("modbus", []),
         ("modbus", ["inventory", "inventory"]),
         ("modbus", ["address_patterns"]),

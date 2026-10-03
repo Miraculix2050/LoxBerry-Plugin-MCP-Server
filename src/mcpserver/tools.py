@@ -81,6 +81,7 @@ from mcpserver.loxone.presentation import window_monitor_description as _window_
 from mcpserver.loxone.project.analysis import ANALYSES as KNX_ANALYSES
 from mcpserver.loxone.project.analysis import ANALYSIS_VERSION
 from mcpserver.loxone.project.modbus_analysis import (
+    MODBUS_ANALYSES,
     MODBUS_ANALYSIS_VERSION,
     ProjectModbusAnalysisData,
     require_implemented,
@@ -1690,16 +1691,14 @@ class ProjectAnalysisData(BaseModel):
 
 
 class ProjectAnalysisEnvelope(ToolEnvelope):
-    data: ProjectAnalysisData | ErrorData
-
-
-class _PreparedProjectAnalysisEnvelope(ToolEnvelope):
-    """Internal success union; not registered in the released MCP schema."""
-
     data: (
         Annotated[ProjectAnalysisData | ProjectModbusAnalysisData, Field(discriminator="scope")]
         | ErrorData
     )
+
+
+class _PreparedProjectAnalysisEnvelope(ProjectAnalysisEnvelope):
+    """Shared worker/cache response before finding pagination."""
 
 
 class ObservabilityCurrentStateData(BaseModel):
@@ -5853,15 +5852,17 @@ def register_project_tools(
     @server.tool(
         name="loxone_analyze_project",
         description=(
-            "Analyze bounded KNX project evidence, including source-type coverage, "
-            "for local patterns and review candidates. Findings are facts, not verdicts."
+            "Analyze bounded KNX or Modbus project evidence, including coverage and evidence gaps. "
+            "Modbus checks inspect configured mappings, polling and direct consumers; "
+            "they do not establish bus health, unused sensors or device validity."
         ),
         annotations=annotations,
         structured_output=True,
     )
     async def analyze_project(
         scope: Annotated[
-            Literal["knx"], Field(description="Project technology analysis scope.")
+            Literal["knx", "modbus"],
+            Field(description="Project technology analysis scope; default KNX."),
         ] = "knx",
         analyses: Annotated[
             list[
@@ -5875,18 +5876,30 @@ def register_project_tools(
                     "graph_outliers",
                     "project_connectivity",
                     "peer_group_consistency",
+                    "inventory",
+                    "configured_register_mappings",
+                    "direct_consumers",
+                    "configured_polling",
+                    "evidence_gaps",
                 ]
             ]
             | None,
-            Field(description="Optional unique bounded analyses; omit for all KNX analyses."),
+            Field(
+                description=(
+                    "Optional unique analyses from the selected scope; omit for all "
+                    "checks of that scope."
+                ),
+                json_schema_extra={
+                    "x-analyses-by-scope": {
+                        "knx": sorted(KNX_ANALYSES),
+                        "modbus": list(MODBUS_ANALYSES),
+                    }
+                },
+            ),
         ] = None,
         cursor: CursorArgument = None,
         limit: Annotated[int, Field(ge=1, le=50)] = 20,
     ) -> ProjectAnalysisEnvelope:
-        if scope != "knx":
-            return _error(
-                ProjectAnalysisEnvelope, "invalid_input", "Modbus analysis is not publicly enabled"
-            )
         prepared = await analysis_runner.run(
             scope,
             list(analyses) if analyses is not None else None,

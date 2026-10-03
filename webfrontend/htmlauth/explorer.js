@@ -254,10 +254,22 @@
   }
 
   function setDraftField(name, included, value) {
+    const focusedId = document.activeElement?.id;
+    const previousScope = state.arguments.scope ?? 'knx';
     explorerState.setField(name, included, value);
+    const scopeChanged = state.selectedTool?.name === 'loxone_analyze_project' && name === 'scope' &&
+      previousScope !== (included ? value : 'knx');
+    if (scopeChanged) {
+      explorerState.setField('analyses', false);
+      explorerState.setField('cursor', false);
+    }
     elements.json.value = JSON.stringify(state.arguments, null, 2);
     saveCurrentDraft();
     validateDraft(false);
+    if (scopeChanged) {
+      renderSelectedTool();
+      if (focusedId) document.getElementById(focusedId)?.focus();
+    }
   }
 
   function setAction(value) {
