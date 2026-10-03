@@ -206,6 +206,20 @@ test('permission loss during replacement clears values and metadata', async () =
   fixture.close();
 });
 
+test('repeated stale visibility ends the source loading notice after the single fresh retry', async () => {
+  const fixture = await overflowFixture({replacement: 'stale'});
+  await fixture.update(); await fixture.release(); await fixture.release();
+  const section = fixture.window.document.querySelector('#chart-panels section');
+  assert.doesNotMatch(section.textContent, /Refreshing/);
+  assert.match(section.textContent, /stale/);
+  assert.equal(fixture.snapshot().sources[0].events.length, 4000);
+  assert.equal(fixture.calls.filter((call) => call.action === 'event_history_chart_prepare').length, 2);
+  const count = fixture.calls.length;
+  await flush();
+  assert.equal(fixture.calls.length, count, 'no further immediate retries');
+  fixture.close();
+});
+
 test('exact replacement commits only after its last page', async () => {
   const fixture = await overflowFixture({replacement: 'paged-exact'});
   await fixture.update(); await fixture.release();

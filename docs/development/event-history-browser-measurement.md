@@ -73,6 +73,12 @@ asset suffixes. Zoom worked without changing target histories. This confirms
 the installed path only: no suitable 4,000-event history was present in the
 inspected selection, so overflow reproduction remains synthetic.
 
+The final console check also reported native Admin-shell CSP diagnostics: four
+blocked inline scripts and one blocked data-URL image. The same five diagnostics
+occurred on the unchanged Event History overview; there were no failed HTTP
+resources or Chart View JavaScript exceptions. These shared-shell diagnostics
+are outside #371 and do not establish an error-free native Admin console.
+
 ## Reproduction
 
 Use an existing Playwright browser page, with Node.js and the repository checkout.

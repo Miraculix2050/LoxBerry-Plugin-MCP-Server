@@ -546,7 +546,14 @@
         render(state);
       } catch (error) {
         if (token !== sequence) return false;
-        if (['history_changed', 'forbidden', 'stale_configuration'].includes(error.code)) throw error;
+        if (['history_changed', 'forbidden', 'stale_configuration'].includes(error.code)) {
+          state.recoveryNotice = '';
+          if (error.code === 'stale_configuration') {
+            state.recoveryNotice = label('chartStale');
+            render(state);
+          }
+          throw error;
+        }
         state.recoveryNotice = error.code === 'cache_full'
           ? label('chartCacheFull') : queryErrorStatus(error);
         render(state);
