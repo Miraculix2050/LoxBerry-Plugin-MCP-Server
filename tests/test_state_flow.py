@@ -416,7 +416,7 @@ def test_distinct_predicates_are_not_shadowed_and_exact_duplicates_are():
         condition_row(1, "1", text="2"),
         condition_row(1, result=""),
         '<StateText Valid="true" ValidV="true" Cond0="1" TextV="5"/>',
-        '<StateText Valid="true" ValidV="true" Input1="1" CondV1="1" TextV="5"/>',
+        '<StateText Valid="true" ValidV="true" CondV1="1" TextV="5"/>',
         '<StateText Valid="true" ValidV="true" Input0="1" Input4="2" TextV="5"/>',
     ],
 )
@@ -464,3 +464,127 @@ def test_each_relevant_unresolved_provider_remains_incomplete(input_number):
     ]
     result = OpeningGraph(q).trace([aq.key], "upstream", 16, 200)
     assert not result["complete"] and "unresolved_relationship" in result["warnings"]
+
+
+def visible_query(data, visible=True):
+    from mcpserver.loxone.models import Control
+    from mcpserver.loxone.project.graph import ProjectPartSummary, ProjectSnapshot
+    from mcpserver.loxone.project.mapping import ProjectView, map_runtime
+    from mcpserver.loxone.project.query import ProjectQuery
+
+    uuid = "00000000-0000-0000-0000000000000009"
+    g = graph(data.replace(b'U="state"', f'U="{uuid}"'.encode()))
+    snap = ProjectSnapshot("synthetic", 11, (ProjectPartSummary("synthetic", 20, ()),), g)
+    control = Control(uuid, "Visible State", "TextState", None, None, None, ())
+    structure = SimpleNamespace(controls=(control,) if visible else (), last_modified="synthetic")
+    q = ProjectQuery(
+        ProjectView(snap, map_runtime(snap, structure), "synthetic"), {uuid: "Visible State"}
+    )
+    return q, next(n for n in g.nodes if n.source_id == uuid)
+
+
+def test_sparse_positions_are_active_conditions_not_missing_zero_inputs():
+    from pathlib import Path
+
+    from mcpserver.tools import ProjectDescriptionData
+
+    q, node = visible_query(Path("tests/fixtures/project/state-sparse-274.xml").read_bytes())
+    detail = q.describe(node, limit=100, include_state_table=True)
+    ProjectDescriptionData.model_validate(detail)
+    assert detail["state_semantics"]["aq_dependencies"] == ["I1", "I2", "I3"]
+    table = detail["state_table"]
+    assert table["complete"] and len(table["rows"]) == 11
+    first = table["rows"][0]
+    assert first["conditions"] == [
+        {
+            "position": 2,
+            "input_key": "I3",
+            "operator": "==",
+            "numeric_operand": "3",
+            "text_operand": "3",
+        }
+    ]
+    assert first["aq_value"] == "4000"
+    assert [c["input_key"] for c in table["rows"][1]["conditions"]] == ["I1", "I3"]
+    assert "state_table" not in q.describe(node, limit=100)
+    aq = next(n for n in q.view.snapshot.graph.nodes if n.source_id == "aq")
+    generic = q.trace(aq, direction="upstream", max_depth=16, max_nodes=200)
+    contact = OpeningGraph(q).trace([aq.key], "upstream", 16, 200)
+    assert len(generic["semantic_edges"]) == 3 and contact["complete"]
+
+
+def test_table_projection_retains_shadowed_rows_and_literal_text_templates():
+    rows = [DEFAULT_ROW, condition_row(2).replace("/>", ' Text="example &lt;v1&gt;"/>')]
+    q, node = visible_query(xml(rows))
+    table = q.describe(node, limit=100, include_state_table=True)["state_table"]
+    assert len(table["rows"]) == 2
+    assert table["rows"][1]["text_template"] == "example <v1>"
+    assert table["text_semantics"] == "literal_template_only"
+    assert table["output_api_complete"] is False
+    limited = q.describe(node, limit=1, include_state_table=True)["state_table"]
+    assert not limited["complete"] and limited["rows_omitted"] == 1
+    assert limited["rows_total"] == 2
+
+
+def test_table_contents_are_not_exposed_for_unmapped_or_hidden_state():
+    data = xml().replace(b'TextV="5"', b'TextV="5" Text="private text"')
+    q, node = visible_query(data, visible=False)
+    result = q.describe(node, limit=100, include_state_table=True)
+    assert result["state_table"]["reason"] == "state_table_unavailable"
+    assert not result["state_table"]["rows"] and "private text" not in str(result)
+
+
+def test_text_and_response_limits_do_not_claim_complete_delivery(monkeypatch):
+    import mcpserver.tools as tools
+
+    rows = [DEFAULT_ROW.replace("/>", ' Text="' + "x" * 600 + '"/>')] * 100
+    q, node = visible_query(xml(rows))
+    detail = q.describe(node, limit=100, include_state_table=True)
+    assert detail["state_table"]["rows"][0]["text_truncated"]
+    assert not detail["state_table"]["complete"]
+    envelope = tools.ProjectDescriptionEnvelope(
+        ok=True, data=detail, observed_at="synthetic", stale=False, trace_id="synthetic"
+    )
+    monkeypatch.setattr(tools, "PROJECT_RESPONSE_MAX_BYTES", 4000)
+    assert tools._fit_project_state_table(envelope)
+    table = envelope.data.state_table
+    assert table.rows_omitted > 0 and table.rows_total == 100
+    assert len(table.rows) + table.rows_omitted == 100
+    assert table.reason == "max_response_bytes" and not table.complete
+    assert len(envelope.model_dump_json().encode()) <= 4000
+
+
+def test_ambiguous_state_mapping_does_not_expose_rows():
+    data = xml().replace(
+        b"</ControlList>",
+        xml()
+        .split(b'<C Type="State"')[1]
+        .split(b"</ControlList>")[0]
+        .join([b'<C Type="State"', b"</ControlList>"]),
+    )
+    q, node = visible_query(data)
+    table = q.describe(node, limit=100, include_state_table=True)["state_table"]
+    assert table["reason"] == "state_table_unavailable" and not table["rows"]
+
+
+@pytest.mark.asyncio
+async def test_optional_table_tool_contract_and_fresh_authorization(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from mcp.server.fastmcp import FastMCP
+
+    import mcpserver.tools as tools
+
+    q, node = visible_query(xml())
+    query = AsyncMock(return_value=(q, SimpleNamespace(connected=True)))
+    monkeypatch.setattr(tools, "_project_query", query)
+    server = FastMCP("state-table")
+    tools.register_project_tools(server, None)
+    tool = server._tool_manager.get_tool("loxone_describe_project_object")
+    assert tool.parameters["properties"]["include_state_table"]["default"] is False
+    result = await tool.fn(node.key, include_state_table=True, limit=100)
+    assert result.ok and result.data.state_table.complete
+    query.assert_awaited_once()
+    query.side_effect = PermissionError()
+    denied = await tool.fn(node.key, include_state_table=True)
+    assert not denied.ok and denied.data.error == "unauthenticated"

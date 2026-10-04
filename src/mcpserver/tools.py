@@ -1183,6 +1183,34 @@ class ProjectSearchNodeSummaryData(ProjectNodeSummaryData):
     modbus: ProjectModbusData | None = None
 
 
+class ProjectStateConditionData(BaseModel):
+    position: int = Field(ge=0, le=3)
+    input_key: Literal["I1", "I2", "I3", "I4", "I5", "I6", "I7", "I8"]
+    operator: Literal["==", ">", ">=", "<", "<=", "!=", "*=", "!*", ":=", "!:"]
+    numeric_operand: str | None = Field(max_length=64)
+    text_operand: str | None = Field(max_length=256)
+
+
+class ProjectStateRowData(BaseModel):
+    position: int = Field(ge=0, le=99)
+    conditions: list[ProjectStateConditionData] = Field(max_length=4)
+    aq_value: str = Field(max_length=64)
+    text_template: str = Field(max_length=512)
+    text_truncated: bool
+
+
+class ProjectStateTableData(BaseModel):
+    selection: Literal["first_match"]
+    conjunction: Literal["and"]
+    complete: bool
+    reason: str | None
+    rows_total: int = Field(ge=0, le=100)
+    rows_omitted: int = Field(ge=0, le=100)
+    rows: list[ProjectStateRowData] = Field(max_length=100)
+    text_semantics: Literal["literal_template_only"]
+    output_api_complete: Literal[False]
+
+
 class ProjectStateFlowData(BaseModel):
     config_version: str | None
     xml_version: str | None
@@ -1194,6 +1222,7 @@ class ProjectStateFlowData(BaseModel):
 
 
 class ProjectNodeData(BaseModel):
+    state_table: ProjectStateTableData | None = None
     state_semantics: ProjectStateFlowData | None = None
     project_node_id: str
     kind: Literal["block", "connector"]
@@ -1463,7 +1492,7 @@ class OpeningCountsData(BaseModel):
 
 class OpeningAnalysisData(BaseModel):
     analysis_version: Literal[1]
-    connector_rule_version: Literal[1, 2, 3]
+    connector_rule_version: Literal[1, 2, 3, 4]
     scope_type: Literal["monitor", "room", "contact", "consumer"]
     scope_uuid: str
     physical_opening_coverage: Literal["not_assessable"]
@@ -3242,6 +3271,20 @@ def _fit_project_page(
     data.next_cursor = (
         codec.encode(scope, offset + low) if low < original_count or had_more else None
     )
+    return len(envelope.model_dump_json().encode("utf-8")) <= PROJECT_RESPONSE_MAX_BYTES
+
+
+def _fit_project_state_table(envelope: ProjectDescriptionEnvelope) -> bool:
+    if not isinstance(envelope.data, ProjectDescriptionData) or envelope.data.state_table is None:
+        return True
+    table = envelope.data.state_table
+    while (
+        len(envelope.model_dump_json().encode("utf-8")) > PROJECT_RESPONSE_MAX_BYTES and table.rows
+    ):
+        table.rows.pop()
+        table.rows_omitted += 1
+        table.complete = False
+        table.reason = "max_response_bytes"
     return len(envelope.model_dump_json().encode("utf-8")) <= PROJECT_RESPONSE_MAX_BYTES
 
 
@@ -5802,14 +5845,33 @@ def register_project_tools(
                 le=100,
             ),
         ] = DEFAULT_PAGE_SIZE,
+        include_state_table: Annotated[
+            bool,
+            Field(
+                description=(
+                    "Include bounded ordered State rows for an exactly mapped visible "
+                    "control; templates are not evaluated."
+                )
+            ),
+        ] = False,
     ) -> ProjectDescriptionEnvelope:
         try:
             project, snapshot = await _project_query(runtime)
             envelope = _result(
                 ProjectDescriptionEnvelope,
-                project.describe(project.resolve(identifier, identifier_type), limit=limit),
+                project.describe(
+                    project.resolve(identifier, identifier_type),
+                    limit=limit,
+                    include_state_table=include_state_table,
+                ),
                 stale=not snapshot.connected,
             )
+            if not _fit_project_state_table(envelope):
+                return _error(
+                    ProjectDescriptionEnvelope,
+                    "response_too_large",
+                    "Project description exceeds the response byte limit",
+                )
             if (
                 isinstance(envelope.data, ProjectDescriptionData)
                 and envelope.data.modbus is not None

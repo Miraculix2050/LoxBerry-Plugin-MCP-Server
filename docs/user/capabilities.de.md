@@ -247,7 +247,7 @@ erweitern weder die Analyseabdeckung noch belegen sie physische Aktorkompatibili
 `loxone_analyze_project(scope="modbus")` und Explorer bieten Modbus-Version 1:
 `inventory`, `configured_register_mappings`, `direct_consumers`,
 `configured_polling` und `evidence_gaps`. Ohne Auswahl laufen alle fünf; KNX bleibt
-Standard-Scope (Version 10). Ein Scopewechsel im Explorer leert Auswahl und Cursor.
+Standard-Scope (Version 11). Ein Scopewechsel im Explorer leert Auswahl und Cursor.
 Der Mappingvergleich verwendet exakte Rohbefehle `3`/`4` und explizite lexikalische
 Adressen bei eindeutig beobachteter Transport-/Gerätehierarchie innerhalb einer Quelle.
 Wiederholte Mappings oder unterschiedliche explizite Rohattribute sind Prüfkandidaten,
@@ -304,7 +304,7 @@ mehrere getrennte KNX-Signalnutzungsbeobachtungen. Trace liefert getrennt markie
 Connectorkanten sowie begrenzte Pfade `knx_to_loxone`, `loxone_to_knx` oder `knx_to_knx`.
 Unbekanntes Block- oder Connector-Verhalten wird nicht geraten. Diese Ergebnisse beschreiben
 statische Projektpfade, keine Bus-Telegramme und keine historische Ursache einer Aktion.
-`loxone_analyze_project` Version 10 fasst begrenzte, projektlokale KNX-Evidenz zusammen:
+`loxone_analyze_project` Version 11 fasst begrenzte, projektlokale KNX-Evidenz zusammen:
 Adress- und Quellnamensmuster, Wiederverwendung von Rohdatentypen, geprüfte Unterschiede der
 Signalnutzung, Kontext aus exakten Runtime-Mappings, lokale Peer- und Graph-Ausreißer,
 Pfadzähler und Endpunkte ohne direkte konfigurierte Verdrahtung. Graph-Ausreißer benennen den
@@ -536,7 +536,7 @@ Installation; `total_active` bleibt bei partieller Auswertung null.
 Project-Trace und Opening-Contact-Analyse leiten mögliche Einflüsse von
 `State.I1` bis `State.I8` auf AQ aus vollständigen Tabellen mit festen Operanden
 für ConfigVersion 17020828, XML 274 und State-Revision 178 ab. Die Regel
-`state_table_aq_v2` erkennt Gleichheit durch fehlenden Operator sowie belegte
+`state_table_aq_v3` erkennt Gleichheit durch fehlenden Operator sowie belegte
 Operatorcodes 1–9 (`>`, `>=`, `<`, `<=`, `!=`, `*=`, `!*`, `:=`, `!:`).
 Bis zu vier Bedingungen je Zeile sind UND-verknüpft; die erste passende Zeile
 gewinnt. Grenzen sind 100 Zeilen und 256 Zeichen je Textoperand. Numerische
@@ -553,3 +553,15 @@ variable Vergleichsausdrücke und TQ-/OutputAPI-Verträge bleiben explizite Gaps
 Es gibt keine globalen Connector-Aliase. Describe liefert begrenzte
 `state_semantics`, Trace `semantic_gaps`; private Zeilen und Operanden werden
 nicht veröffentlicht.
+
+Für einen exakt zugeordneten sichtbaren State-Control liefert
+`loxone_describe_project_object(..., include_state_table=true, limit=100)` geordnete
+UND-Bedingungen, konfigurierte AQ-Werte und wörtliche TQ-Textvorlagen. Bedingungsplätze
+dürfen frei bleiben; leere Plätze fügen keine Eingangsbedingung hinzu. Auch
+überschattete Zeilen behalten ihre Position. Grenzen sind `limit`, 100 Zeilen,
+512 Zeichen je Vorlage und 64 KiB Antwortgröße; `complete`, `rows_omitted` und
+`text_truncated` prüfen. Standardbeschreibungen lassen diese Inhalte weg.
+Vorlagen sind nicht vertrauenswürdiger Konfigurationstext, keine Anweisungen oder
+ausgewerteten Laufzeitwerte. Ersetzungen und OutputAPI bleiben semantisch unvollständig.
+Unbekannte, mehrdeutige oder nicht zugängliche Controls liefern
+`state_table_unavailable` ohne Zeilen.

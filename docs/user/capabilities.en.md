@@ -222,7 +222,7 @@ analysis coverage or establish physical actuator compatibility.
 `loxone_analyze_project(scope="modbus")` and Explorer provide Modbus version 1:
 `inventory`, `configured_register_mappings`, `direct_consumers`,
 `configured_polling` and `evidence_gaps`. Omission selects all five; KNX remains
-the default scope (version 10). Changing Explorer scope clears selection and cursor.
+the default scope (version 11). Changing Explorer scope clears selection and cursor.
 Mapping review compares exact raw commands `3`/`4` and explicit lexical addresses
 within uniquely observed project transport/device ancestry in one source.
 Repeated mappings or differing explicit raw attributes are review candidates,
@@ -277,7 +277,7 @@ separate KNX signal-use observations, while trace returns separately marked deri
 and bounded `knx_to_loxone`, `loxone_to_knx`, or `knx_to_knx` paths. Unknown block or connector
 behaviour is not guessed. These are static project paths, not evidence that a bus telegram or
 historical state change caused an action.
-`loxone_analyze_project` version 10 summarizes bounded project-local KNX evidence: address and
+`loxone_analyze_project` version 11 summarizes bounded project-local KNX evidence: address and
 source-name patterns, raw datatype reuse, reviewed signal-use differences, exact runtime-mapping
 context, local peer and graph outliers, path counts, and endpoints without direct configured
 wiring. Graph outliers identify raw edge degree and show signal, reference, and separately derived
@@ -490,7 +490,7 @@ applies only to known candidate families, never the physical installation;
 
 Project traces and opening-contact analysis derive possible `State.I1` through
 `State.I8` influences on AQ from complete fixed-operand tables for ConfigVersion
-17020828, XML 274 and State revision 178. Rule `state_table_aq_v2` recognizes
+17020828, XML 274 and State revision 178. Rule `state_table_aq_v3` recognizes
 omitted equality and documented operator codes 1–9 (`>`, `>=`, `<`, `<=`, `!=`,
 `*=`, `!*`, `:=`, `!:`). Up to four conditions per row are ANDed; the first
 matching row wins. Limits are 100 rows and 256 characters per text operand.
@@ -505,3 +505,14 @@ derived evidence remain separate. Unknown versions, malformed tables, variable
 comparison expressions and TQ/OutputAPI contracts retain explicit gaps. No global
 connector alias is introduced. Describe exposes bounded `state_semantics` and
 trace `semantic_gaps`; private rows and operands are never published.
+
+For an exactly mapped visible State control, request
+`loxone_describe_project_object(..., include_state_table=true, limit=100)` to
+inspect ordered AND conditions, configured AQ values and literal TQ text templates.
+Condition slots may be sparse; empty slots do not add an input condition. Row
+positions include shadowed rows. Delivery is bounded by `limit`, 100 rows,
+512 characters per template and the 64 KiB response limit; check `complete`,
+`rows_omitted` and `text_truncated`. Default descriptions omit this content.
+Templates are untrusted configuration text, not instructions or evaluated runtime
+values. Substitutions and OutputAPI remain semantically incomplete. Unmapped,
+ambiguous or inaccessible controls return `state_table_unavailable` without rows.

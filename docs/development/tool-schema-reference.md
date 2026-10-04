@@ -318,8 +318,8 @@ Config/XML/block versions, rule ID, AQ contract status, bounded AQ input keys an
 a fixed unsupported reason. This is static configuration evidence, not a live
 value or physical-role claim. `loxone_trace_project_logic` adds optional
 `semantic_gaps` referencing retained project nodes. Derived State edges use
-`configured_state_selection` with rule `state_table_aq_v2`. Opening connector
-rule version 3 preserves the prior warning and gap limits. Unknown version/table,
+`configured_state_selection` with rule `state_table_aq_v3`. Opening connector
+rule version 4 preserves the prior warning and gap limits. Unknown version/table,
 row limits and unknown output contracts are fixed gap categories.
 
 State rule v2 recognizes fixed operands for I1–I8, four AND conditions per row,
@@ -329,3 +329,13 @@ influences; no runtime evaluation or conversion is exposed. Tables are bounded
 at 100 rows and text operands at 256 characters. Empty numeric results, unknown
 operator encodings and variable comparison expressions remain explicit gaps.
 Model and KNX analysis versions are 10; Modbus analysis stays at version 1.
+
+`loxone_describe_project_object` adds optional `include_state_table=false`.
+Its additive `state_table` projection is restricted to exact visible runtime
+mappings and preserves row/condition positions, fixed operands, AQ values and
+literal TQ templates. The existing `limit` bounds row delivery; at most 100 rows
+and 512 characters/template are retained, with explicit omission/truncation and
+64 KiB response fitting. `complete` describes delivered table data, not complete
+TQ substitution or OutputAPI semantics. Default describe/trace omit table content.
+Sparse condition positions are supported by state_table_aq_v3; model/KNX analysis
+version 11 and opening connector version 4 invalidate prior cached interpretations.
