@@ -43,6 +43,22 @@ class GraphNode:
     knx: KnxSemantics | None = field(default=None, repr=False)
 
 
+API_CONNECTOR_RULE_ID = "api_connector_metadata_v1"
+
+
+def is_api_connector(node: GraphNode) -> bool:
+    """Classify exact stored port keys, never aliases or command compatibility."""
+    keys = [value for key, value in node.attributes if key == "K"]
+    return node.kind == "connector" and len(keys) == 1 and keys[0] in {"OutputAPI", "API"}
+
+
+def _is_api_relationship(destination: GraphNode, candidates: list[GraphNode]) -> bool:
+    """Ambiguous sources retain metadata only if every known candidate is API."""
+    return is_api_connector(destination) or (
+        bool(candidates) and all(is_api_connector(source) for source in candidates)
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class GraphEdge:
     source: str
@@ -84,7 +100,7 @@ class ProjectGraph:
             raise ProjectError("project_node_unknown")
         adjacency: dict[str, list[str]] = defaultdict(list)
         for edge in self.edges:
-            if edge.kind not in {"signal", "reference"}:
+            if edge.kind not in {"signal", "reference", "api_connection"}:
                 continue
             source, target = (edge.target, edge.source) if upstream else (edge.source, edge.target)
             adjacency[source].append(target)
@@ -261,17 +277,41 @@ def build_graph(
                 if reference:
                     candidates = by_id.get(normalize_id(reference), [])
                     if len(candidates) == 1:
-                        edges.add(GraphEdge(candidates[0].key, node.key, "reference"))
+                        kind = (
+                            "api_connection"
+                            if is_api_connector(candidates[0]) or is_api_connector(node)
+                            else "reference"
+                        )
+                        edges.add(GraphEdge(candidates[0].key, node.key, kind))
                     else:
-                        unresolved.append((node.key, "reference_unresolved"))
+                        unresolved.append(
+                            (
+                                node.key,
+                                "api_connection_unresolved"
+                                if _is_api_relationship(node, candidates)
+                                else "reference_unresolved",
+                            )
+                        )
             if element.tag == "In" and element.parent in local:
                 destination = local[element.parent]
                 candidates = by_id.get(normalize_id(element.value("Input")), [])
                 # Observed schema: Co(input) contains In(Input=source Co UUID).
                 if len(candidates) == 1 and candidates[0].kind == destination.kind == "connector":
-                    edges.add(GraphEdge(candidates[0].key, destination.key, "signal"))
+                    kind = (
+                        "api_connection"
+                        if is_api_connector(candidates[0]) or is_api_connector(destination)
+                        else "signal"
+                    )
+                    edges.add(GraphEdge(candidates[0].key, destination.key, kind))
                 else:
-                    unresolved.append((destination.key, "signal_unresolved"))
+                    unresolved.append(
+                        (
+                            destination.key,
+                            "api_connection_unresolved"
+                            if _is_api_relationship(destination, candidates)
+                            else "signal_unresolved",
+                        )
+                    )
             if len(edges) > limits.edges:
                 raise ProjectError("project_graph_limit")
         semantic_edges.update(_build_semantic_edges(project, local, state_flows))
@@ -350,7 +390,7 @@ def _build_semantic_edges(
                     child = project.elements[child_index]
                     if (
                         child.tag == "Co"
-                        and child.value("K") not in {f"I{i}" for i in range(1, 9)}
+                        and child.value("K") not in {"OutputAPI", *(f"I{i}" for i in range(1, 9))}
                         and any(
                             project.elements[c].tag == "In" for c in children.get(child_index, [])
                         )
@@ -615,7 +655,7 @@ def build_snapshot(
     )
     return ProjectSnapshot(
         bundle.fingerprint,
-        11,
+        12,
         tuple(projects),
         graph,
         _source_diagnostics(graph, tuple(anomalies)),

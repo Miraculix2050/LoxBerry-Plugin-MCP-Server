@@ -392,6 +392,8 @@ def analyze_modbus(
             parents[edge.target].append(edge.source)
         relationships += 1
     for unresolved in sorted(graph.unresolved):
+        if unresolved[1] == "api_connection_unresolved":
+            continue  # API metadata does not affect scalar consumer completeness or budgets.
         if relationships == limits.relationships:
             unresolved_complete = False
             break

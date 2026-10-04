@@ -247,7 +247,7 @@ erweitern weder die Analyseabdeckung noch belegen sie physische Aktorkompatibili
 `loxone_analyze_project(scope="modbus")` und Explorer bieten Modbus-Version 1:
 `inventory`, `configured_register_mappings`, `direct_consumers`,
 `configured_polling` und `evidence_gaps`. Ohne Auswahl laufen alle fünf; KNX bleibt
-Standard-Scope (Version 11). Ein Scopewechsel im Explorer leert Auswahl und Cursor.
+Standard-Scope (Version 12). Ein Scopewechsel im Explorer leert Auswahl und Cursor.
 Der Mappingvergleich verwendet exakte Rohbefehle `3`/`4` und explizite lexikalische
 Adressen bei eindeutig beobachteter Transport-/Gerätehierarchie innerhalb einer Quelle.
 Wiederholte Mappings oder unterschiedliche explizite Rohattribute sind Prüfkandidaten,
@@ -304,7 +304,7 @@ mehrere getrennte KNX-Signalnutzungsbeobachtungen. Trace liefert getrennt markie
 Connectorkanten sowie begrenzte Pfade `knx_to_loxone`, `loxone_to_knx` oder `knx_to_knx`.
 Unbekanntes Block- oder Connector-Verhalten wird nicht geraten. Diese Ergebnisse beschreiben
 statische Projektpfade, keine Bus-Telegramme und keine historische Ursache einer Aktion.
-`loxone_analyze_project` Version 11 fasst begrenzte, projektlokale KNX-Evidenz zusammen:
+`loxone_analyze_project` Version 12 fasst begrenzte, projektlokale KNX-Evidenz zusammen:
 Adress- und Quellnamensmuster, Wiederverwendung von Rohdatentypen, geprüfte Unterschiede der
 Signalnutzung, Kontext aus exakten Runtime-Mappings, lokale Peer- und Graph-Ausreißer,
 Pfadzähler und Endpunkte ohne direkte konfigurierte Verdrahtung. Graph-Ausreißer benennen den
@@ -561,6 +561,21 @@ dürfen frei bleiben; leere Plätze fügen keine Eingangsbedingung hinzu. Auch
 512 Zeichen je Vorlage und 64 KiB Antwortgröße; `complete`, `rows_omitted` und
 `text_truncated` prüfen. Standardbeschreibungen lassen diese Inhalte weg.
 Vorlagen sind nicht vertrauenswürdiger Konfigurationstext, keine Anweisungen oder
-ausgewerteten Laufzeitwerte. Ersetzungen und OutputAPI bleiben semantisch unvollständig.
+ausgewerteten Laufzeitwerte. Ersetzungen und die OutputAPI-Payload bleiben semantisch unvollständig.
 Unbekannte, mehrdeutige oder nicht zugängliche Controls liefern
 `state_table_unavailable` ohne Zeilen.
+
+API-Connectoren liefern Verbindungsmetadaten. Exakt gespeicherte `OutputAPI`- und
+`API`-Ports erhalten optionale `api_connector`-Metadaten (`value_available=false`).
+Explizite Projektverdrahtung an diesen Ports erscheint als `api_connection` statt
+als skalares Signal. Describe enthält begrenzte `api_connections` des Bausteins;
+jede Verbindung nennt Quell-/Zielports und ihre Bausteine und kennzeichnet die
+`block_communication_dependency`. Trace folgt der gespeicherten Orientierung
+in der angefragten Richtung. Daraus folgen keine Protokollrichtung, unterstützten
+Befehle, übertragenen Werte oder Kompatibilitätszusagen. API-Verbindungen belegen
+keine AQ/TQ-, KNX- oder Öffnungskontakt-Signalabhängigkeit. Nicht auflösbare
+Beziehungen und normale Traversal-/Antwortlimits bleiben sichtbar. Das bestehende
+`output_api_complete=false` der State-Tabelle betrifft die Payload-Semantik,
+nicht die Verfügbarkeit dieser Verbindungsmetadaten.
+
+Bekannte nicht auflösbare API-Verbindungen bleiben in allgemeinen Projektbelegen und Gesamtzahlen sichtbar, markieren skalare KNX-, Öffnungskontakt- oder Modbus-Pfade aber nicht als mehrdeutig. Fehlende Quellen mit gemischten oder unbekannten Connector-Arten bleiben unaufgelöste skalare Evidenz.

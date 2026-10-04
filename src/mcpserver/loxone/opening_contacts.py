@@ -10,7 +10,7 @@ from typing import Any, Literal
 
 from .models import Control, LoxoneStructure, StateRecord
 from .presentation import visible_controls, window_monitor_description
-from .project.graph import GraphEdge, GraphNode, SemanticEdge
+from .project.graph import GraphEdge, GraphNode, SemanticEdge, is_api_connector
 from .project.query import ProjectQuery
 from .project.semantics import STATE_RULE_ID, StateFlow, signal_use_rules, state_connector_reason
 from .window_states import decode_window_states
@@ -24,7 +24,7 @@ MAX_RESULT_RELATIONSHIPS = 200
 MAX_GAPS_PER_TRACE = 20
 MAX_GAPS_PER_CALL = 200
 _SAFE_GAP_TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,63}\Z")
-CONNECTOR_RULE_VERSION = 4
+CONNECTOR_RULE_VERSION = 5
 CONSUMER_CONNECTORS = {"AutoJalousie": "Window"}
 
 
@@ -56,7 +56,9 @@ class OpeningGraph:
         self.parents = {}
         self.forward = defaultdict(list)
         self.backward = defaultdict(list)
-        self.unresolved = {key for key, _code in graph.unresolved}
+        self.unresolved = {
+            key for key, code in graph.unresolved if code != "api_connection_unresolved"
+        }
         self.unresolved.update(
             key
             for key, codes in self.query.view.snapshot.source_diagnostics.parser_codes_by_node
@@ -98,7 +100,8 @@ class OpeningGraph:
                 output_keys.add("AQ")
             reviewed_boundary = bool(rules) or bool(consumer_connector) or reference_block
             uncovered_connections = reviewed_boundary and any(
-                dict(self.nodes[child].attributes).get("K") not in covered_keys
+                not is_api_connector(self.nodes[child])
+                and dict(self.nodes[child].attributes).get("K") not in covered_keys
                 and (
                     child in self.unresolved
                     or any(isinstance(e, GraphEdge) for e in adjacency[child])
@@ -224,7 +227,7 @@ class OpeningGraph:
                     if reason is not None:
                         warnings.add("unmodeled_internal_flow")
                         append_gap(key, reason)
-                elif self.boundary_incomplete[parent]:
+                elif not is_api_connector(self.nodes[key]) and self.boundary_incomplete[parent]:
                     warnings.add("unmodeled_internal_flow")
                     append_gap(key, "parent_boundary_incomplete")
             for edge in adjacency[key]:
