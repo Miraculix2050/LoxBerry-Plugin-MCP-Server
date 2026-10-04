@@ -319,8 +319,8 @@ a fixed unsupported reason. This is static configuration evidence, not a live
 value or physical-role claim. `loxone_trace_project_logic` adds optional
 `semantic_gaps` referencing retained project nodes. Derived State edges use
 `configured_state_selection` with rule `state_table_aq_v3`. Opening connector
-rule version 4 preserves the prior warning and gap limits. Unknown version/table,
-row limits and unknown output contracts are fixed gap categories.
+rule version 5 preserves the prior warning and gap limits. Unknown version/table,
+row limits and unknown output payload contracts are fixed gap categories.
 
 State rule v3 recognizes fixed operands for I1–I8, four AND conditions per row,
 first-match priority and codes 1–9 plus omitted equality for the evidenced
