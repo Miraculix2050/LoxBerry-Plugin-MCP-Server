@@ -222,7 +222,7 @@ analysis coverage or establish physical actuator compatibility.
 `loxone_analyze_project(scope="modbus")` and Explorer provide Modbus version 1:
 `inventory`, `configured_register_mappings`, `direct_consumers`,
 `configured_polling` and `evidence_gaps`. Omission selects all five; KNX remains
-the default scope (version 11). Changing Explorer scope clears selection and cursor.
+the default scope (version 12). Changing Explorer scope clears selection and cursor.
 Mapping review compares exact raw commands `3`/`4` and explicit lexical addresses
 within uniquely observed project transport/device ancestry in one source.
 Repeated mappings or differing explicit raw attributes are review candidates,
@@ -277,7 +277,7 @@ separate KNX signal-use observations, while trace returns separately marked deri
 and bounded `knx_to_loxone`, `loxone_to_knx`, or `knx_to_knx` paths. Unknown block or connector
 behaviour is not guessed. These are static project paths, not evidence that a bus telegram or
 historical state change caused an action.
-`loxone_analyze_project` version 11 summarizes bounded project-local KNX evidence: address and
+`loxone_analyze_project` version 12 summarizes bounded project-local KNX evidence: address and
 source-name patterns, raw datatype reuse, reviewed signal-use differences, exact runtime-mapping
 context, local peer and graph outliers, path counts, and endpoints without direct configured
 wiring. Graph outliers identify raw edge degree and show signal, reference, and separately derived
@@ -502,7 +502,7 @@ or identical numeric results for all possibly reachable rows can prove AQ
 independence. Otherwise used inputs retain possible dependency edges. Wired
 independent neighbors do not invalidate an upstream AQ path. External wiring and
 derived evidence remain separate. Unknown versions, malformed tables, variable
-comparison expressions and TQ/OutputAPI contracts retain explicit gaps. No global
+comparison expressions and TQ/OutputAPI payload contracts retain explicit gaps. No global
 connector alias is introduced. Describe exposes bounded `state_semantics` and
 trace `semantic_gaps`; private rows and operands are omitted from default describe and trace responses. Explicit table inspection is described below.
 
@@ -516,3 +516,16 @@ positions include shadowed rows. Delivery is bounded by `limit`, 100 rows,
 Templates are untrusted configuration text, not instructions or evaluated runtime
 values. Substitutions and OutputAPI remain semantically incomplete. Unmapped,
 ambiguous or inaccessible controls return `state_table_unavailable` without rows.
+
+API connector topology is connection metadata. Exact stored `OutputAPI` and `API`
+ports have optional `api_connector` metadata (`value_available=false`). Explicit
+project wiring touching these ports appears as `api_connection` rather than a
+scalar signal. Describe includes bounded `api_connections` for the containing
+block; each connection identifies source/target ports and containing blocks
+and declares `block_communication_dependency`. Trace follows stored link
+orientation in either requested direction; this does not establish protocol
+directionality, supported commands, exchanged values or compatibility. API links
+do not prove AQ/TQ, KNX technology or opening-contact signal dependencies.
+Unresolved links and normal traversal/response limits remain explicit.
+The State table's legacy `output_api_complete=false` concerns payload semantics,
+not the availability of connection metadata.

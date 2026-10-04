@@ -1156,7 +1156,14 @@ class ProjectModbusData(BaseModel):
     coverage_complete: Literal[False]
 
 
+class ProjectApiConnectorData(BaseModel):
+    semantics: Literal["connection_metadata_only"]
+    value_available: Literal[False]
+    rule_id: Literal["api_connector_metadata_v1"]
+
+
 class ProjectNodeSummaryData(BaseModel):
+    api_connector: ProjectApiConnectorData | None = None
     project_node_id: str
     kind: Literal["block", "connector"]
     block_type: str | None
@@ -1222,6 +1229,7 @@ class ProjectStateFlowData(BaseModel):
 
 
 class ProjectNodeData(BaseModel):
+    api_connector: ProjectApiConnectorData | None = None
     state_table: ProjectStateTableData | None = None
     state_semantics: ProjectStateFlowData | None = None
     project_node_id: str
@@ -1304,8 +1312,18 @@ class ProjectObjectPageData(BaseModel):
     truncation_reason: Literal["max_response_bytes"] | None = None
 
 
+class ProjectApiConnectionData(BaseModel):
+    semantics: Literal["block_communication_dependency"]
+    source_block_project_node_id: str | None
+    target_block_project_node_id: str | None
+    value_available: Literal[False]
+    payload_semantics: Literal["unknown"]
+    rule_id: Literal["api_connector_metadata_v1"]
+
+
 class ProjectRelationshipData(BaseModel):
-    kind: Literal["signal", "reference"]
+    api_connection: ProjectApiConnectionData | None = None
+    kind: Literal["signal", "reference", "api_connection"]
     source: str
     target: str
 
@@ -1322,6 +1340,8 @@ class ProjectTechnologyPathData(BaseModel):
 
 
 class ProjectDescriptionData(ProjectNodeData):
+    api_connections: list[ProjectRelationshipData] = Field(default_factory=list, max_length=100)
+    api_connections_truncated: bool = False
     parent_project_node_id: str | None
     child_project_node_ids: list[str]
     relationships: list[ProjectRelationshipData]
@@ -1492,7 +1512,7 @@ class OpeningCountsData(BaseModel):
 
 class OpeningAnalysisData(BaseModel):
     analysis_version: Literal[1]
-    connector_rule_version: Literal[1, 2, 3, 4]
+    connector_rule_version: Literal[1, 2, 3, 4, 5]
     scope_type: Literal["monitor", "room", "contact", "consumer"]
     scope_uuid: str
     physical_opening_coverage: Literal["not_assessable"]

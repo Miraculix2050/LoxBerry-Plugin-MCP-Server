@@ -5,9 +5,10 @@ from __future__ import annotations
 import hashlib
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
+from itertools import pairwise
 
 from .coverage import coverage_by_source_type
-from .graph import GraphEdge, GraphNode, SemanticEdge
+from .graph import API_CONNECTOR_RULE_ID, GraphEdge, GraphNode, SemanticEdge, is_api_connector
 from .mapping import ControlMapping, ProjectView
 from .modbus import sensor_projection
 from .semantics import (
@@ -64,6 +65,21 @@ class ProjectQuery:
         object.__setattr__(self, "_parents", parents)
         object.__setattr__(self, "_containment_parents", containment_parents)
         object.__setattr__(self, "_children", children)
+
+    def _edge_data(self, edge: GraphEdge) -> dict[str, object]:
+        data: dict[str, object] = {"kind": edge.kind, "source": edge.source, "target": edge.target}
+        if edge.kind == "api_connection":
+            source = self._endpoint_block(edge.source)
+            target = self._endpoint_block(edge.target)
+            data["api_connection"] = {
+                "semantics": "block_communication_dependency",
+                "source_block_project_node_id": source.key if source else None,
+                "target_block_project_node_id": target.key if target else None,
+                "value_available": False,
+                "payload_semantics": "unknown",
+                "rule_id": API_CONNECTOR_RULE_ID,
+            }
+        return data
 
     @staticmethod
     def _semantic_edge_data(edge: SemanticEdge) -> dict[str, object]:
@@ -145,6 +161,15 @@ class ProjectQuery:
             "block_type": node.block_type,
             "source_id": node.source_id,
             "connector_key": connector_key,
+            "api_connector": (
+                {
+                    "semantics": "connection_metadata_only",
+                    "value_available": False,
+                    "rule_id": API_CONNECTOR_RULE_ID,
+                }
+                if is_api_connector(node)
+                else None
+            ),
             "source_occurrence_count": len(self.view.snapshot.source_ids_for(node.key)) or 1,
             "model_source_ids": list(
                 self.view.snapshot.source_ids_for(node.key) or (node.project,)
@@ -602,9 +627,15 @@ class ProjectQuery:
             if edge.kind == "contains" and edge.source == node.key
         ]
         direct = [
-            {"kind": edge.kind, "source": edge.source, "target": edge.target}
+            self._edge_data(edge)
             for edge in graph.edges
             if edge.kind != "contains" and (edge.source == node.key or edge.target == node.key)
+        ]
+        api_connections = [
+            self._edge_data(edge)
+            for edge in graph.edges
+            if edge.kind == "api_connection"
+            and (edge.source in contains_out or edge.target in contains_out)
         ]
         child_ids = sorted(contains_out)
         unresolved = [code for key, code in graph.unresolved if key == node.key]
@@ -621,6 +652,8 @@ class ProjectQuery:
             "parent_project_node_id": contains_in[0] if len(contains_in) == 1 else None,
             "child_project_node_ids": child_ids[:limit],
             "relationships": direct[:limit],
+            "api_connections": api_connections[:limit],
+            "api_connections_truncated": len(api_connections) > limit,
             "unresolved_relationships": unresolved[:limit],
             "truncated_fields": truncated_fields,
         }
@@ -658,10 +691,17 @@ class ProjectQuery:
         if start_kind is None:
             return [], False
         paths: list[dict[str, object]] = []
+        api_pairs = {
+            (edge.source, edge.target)
+            for edge in self.view.snapshot.graph.edges
+            if edge.kind == "api_connection"
+        }
         identities: set[tuple[str, str, str]] = set()
         truncated = False
         included_keys = set(keys)
         for key in keys:
+            if key not in predecessors:
+                continue  # Context-only containing blocks do not establish a path.
             end = self._endpoint_block(key)
             if end is None or end.key == start.key:
                 continue
@@ -696,7 +736,6 @@ class ProjectQuery:
             if len(paths) >= limit:
                 truncated = True
                 break
-            identities.add(identity)
             walked = [key]
             current = key
             previous = predecessors.get(current)
@@ -705,6 +744,9 @@ class ProjectQuery:
                 walked.append(current)
                 previous = predecessors.get(current)
             walked.reverse()
+            if any((a, b) in api_pairs or (b, a) in api_pairs for a, b in pairwise(walked)):
+                continue
+            identities.add(identity)
             if source is not start:
                 walked.reverse()
             paths.append(
@@ -746,7 +788,7 @@ class ProjectQuery:
             raise ProjectQueryError("project_query_invalid")
         adjacency: dict[str, list[GraphEdge | SemanticEdge]] = defaultdict(list)
         for edge in self.view.snapshot.graph.edges:
-            if edge.kind not in {"signal", "reference"}:
+            if edge.kind not in {"signal", "reference", "api_connection"}:
                 continue
             key = edge.target if direction == "upstream" else edge.source
             adjacency[key].append(edge)
@@ -771,7 +813,7 @@ class ProjectQuery:
         visited = seed_set
         queue = deque((key, 0) for key in seeds)
         keys = seeds
-        edges: list[dict[str, str]] = []
+        edges: list[dict[str, object]] = []
         semantic_edges: list[dict[str, object]] = []
         predecessors: dict[str, str | None] = {key: None for key in seeds}
         truncated = seed_truncated
@@ -791,13 +833,7 @@ class ProjectQuery:
                     if isinstance(relationship, SemanticEdge):
                         semantic_edges.append(self._semantic_edge_data(relationship))
                     else:
-                        edges.append(
-                            {
-                                "kind": relationship.kind,
-                                "source": relationship.source,
-                                "target": relationship.target,
-                            }
-                        )
+                        edges.append(self._edge_data(relationship))
                     continue
                 if len(keys) >= max_nodes:
                     truncated, reason = True, "max_nodes"
@@ -812,13 +848,7 @@ class ProjectQuery:
                 if isinstance(relationship, SemanticEdge):
                     semantic_edges.append(self._semantic_edge_data(relationship))
                 else:
-                    edges.append(
-                        {
-                            "kind": relationship.kind,
-                            "source": relationship.source,
-                            "target": relationship.target,
-                        }
-                    )
+                    edges.append(self._edge_data(relationship))
             if truncated:
                 break
         unresolved_relationships: list[dict[str, str]] = []
@@ -830,13 +860,14 @@ class ProjectQuery:
                 unresolved_truncated = True
                 break
             unresolved_relationships.append({"project_node_id": key, "code": code})
+        semantic_scope = tuple(keys)
         boundary_truncated = self._append_trace_boundaries(keys, max_nodes)
         technology_paths, paths_truncated = self._technology_paths(
             node, keys, predecessors, max_nodes, direction
         )
         semantic_gaps: list[dict[str, str]] = []
         state_flows = {f.block_key: f for f in self.view.snapshot.graph.state_flows}
-        for reached in keys:
+        for reached in semantic_scope:
             parent = (
                 self._parents.get(reached) if self._nodes[reached].kind == "connector" else None
             )

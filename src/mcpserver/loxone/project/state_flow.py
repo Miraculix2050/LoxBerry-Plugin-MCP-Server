@@ -216,6 +216,8 @@ def decode_state_flow(
 
 def state_connector_reason(flow: StateFlow, connector: str | None, direction: str) -> str | None:
     """AQ has an isolated verified contract; other outputs remain unknown."""
+    if connector in {"OutputAPI", "API"}:
+        return None  # Connection metadata has no scalar State output contract.
     if flow.reason:
         return flow.reason
     if connector == "AQ":

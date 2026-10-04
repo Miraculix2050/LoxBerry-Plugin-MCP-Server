@@ -5,6 +5,13 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Represent explicit Loxone API-connector wiring as bounded block communication
+  dependencies in project describe/trace, with port/block metadata and no scalar
+  values or inferred signal semantics. Preserve unresolved links and expose
+  metadata for exact OutputAPI/API ports. Model/KNX analysis version 12, Opening
+  connector rules 5 and canonical skill revision 54 invalidate prior projections.
+
+
 - Support sparse State condition slots and optional bounded table inspection for
   exactly mapped visible controls, preserving literal templates and output gaps.
 

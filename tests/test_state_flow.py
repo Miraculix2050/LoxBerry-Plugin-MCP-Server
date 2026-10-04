@@ -111,7 +111,7 @@ def test_limit_and_duplicate_connectors_are_explicit():
 
 def test_unknown_outputs_remain_gaps_in_both_directions():
     g = graph(xml())
-    for key in ("tq", "api"):
+    for key in ("tq",):
         node = next(n.key for n in g.nodes if n.source_id == key)
         for direction in ("upstream", "downstream"):
             t = opening(g).trace([node], direction, 16, 200)
@@ -197,11 +197,12 @@ def test_fixture_is_synthetic_and_matches_confirmed_table():
     ].dependencies == ("I2",)
 
 
-def test_unknown_inbound_api_cannot_be_declared_independent():
+def test_unresolved_api_metadata_does_not_invalidate_aq_table():
     data = xml().replace(
         b'<Co K="OutputAPI" U="api"/>', b'<Co K="OutputAPI" U="api"><In Input="unknown"/></Co>'
     )
-    assert graph(data).state_flows[0].reason == "state_connector_unverified"
+    assert graph(data).state_flows[0].reason is None
+    assert any(code == "api_connection_unresolved" for _, code in graph(data).unresolved)
 
 
 def test_duplicate_version_marker_fails_closed():
@@ -588,3 +589,12 @@ async def test_optional_table_tool_contract_and_fresh_authorization(monkeypatch)
     query.side_effect = PermissionError()
     denied = await tool.fn(node.key, include_state_table=True)
     assert not denied.ok and denied.data.error == "unauthenticated"
+
+
+def test_api_port_metadata_has_no_scalar_gap_in_either_direction():
+    g = graph(xml())
+    node = next(n.key for n in g.nodes if n.source_id == "api")
+    for direction in ("upstream", "downstream"):
+        result = opening(g).trace([node], direction, 16, 200)
+        assert result["gaps"] == []
+        assert result["complete"] is True

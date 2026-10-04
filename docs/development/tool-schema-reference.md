@@ -328,7 +328,7 @@ first-match priority and codes 1–9 plus omitted equality for the evidenced
 influences; no runtime evaluation or conversion is exposed. Tables are bounded
 at 100 rows and text operands at 256 characters. Empty numeric results, unknown
 operator encodings and variable comparison expressions remain explicit gaps.
-Model and KNX analysis versions are 11; Modbus analysis stays at version 1.
+Model and KNX analysis versions are 12; Modbus analysis stays at version 1.
 
 `loxone_describe_project_object` adds optional `include_state_table=false`.
 Its additive `state_table` projection is restricted to exact visible runtime
@@ -336,6 +336,30 @@ mappings and preserves row/condition positions, fixed operands, AQ values and
 literal TQ templates. The existing `limit` bounds row delivery; at most 100 rows
 and 512 characters/template are retained, with explicit omission/truncation and
 64 KiB response fitting. `complete` describes delivered table data, not complete
-TQ substitution or OutputAPI semantics. Default describe/trace omit table content.
+TQ substitution or OutputAPI payload semantics. Default describe/trace omit table content.
 Sparse condition positions are supported by state_table_aq_v3; model/KNX analysis
-version 11 and opening connector version 4 invalidate prior cached interpretations.
+version 12 and opening connector version 5 invalidate prior cached interpretations.
+
+### API connector connection metadata
+
+Project model and KNX analysis version 12, Opening connector rules 5 and canonical
+skill revision 54 apply. Exact stored connector keys `OutputAPI` and `API` expose
+optional `api_connector` with `semantics=connection_metadata_only`,
+`value_available=false` and `rule_id=api_connector_metadata_v1`. No aliases are added.
+
+Explicit Co/In or Ref relationships touching such a port have kind
+`api_connection` in describe/trace. Optional `api_connection` edge metadata names
+`source_block_project_node_id` and `target_block_project_node_id`,
+`semantics=block_communication_dependency`, `payload_semantics=unknown`,
+`value_available=false` and the same rule ID. Describe exposes at most `limit`
+(maximum 100) block-level `api_connections`, with `api_connections_truncated`.
+Trace follows explicit edges, preserving existing bounds, unresolved evidence
+and authorization. Link orientation is a project fact, not a protocol contract.
+Signal-use/KNX/Opening analysis excludes these metadata edges. Containing blocks
+appended for context do not introduce unrelated State scalar gaps. The legacy
+State `output_api_complete=false` field still denotes unknown payload semantics.
+
+Sources: [Loxone Status](https://www.loxone.com/dede/kb/status-baustein/),
+[Loxone Status Monitor](https://www.loxone.com/dede/kb/status-monitor/), exact
+project Co/K port evidence and the user's API-connector contract clarification.
+Connected-edge tests are synthetic; no live wired API example is claimed.
