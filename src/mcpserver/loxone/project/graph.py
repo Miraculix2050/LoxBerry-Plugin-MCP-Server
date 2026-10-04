@@ -277,7 +277,14 @@ def build_graph(
                         )
                         edges.add(GraphEdge(candidates[0].key, node.key, kind))
                     else:
-                        unresolved.append((node.key, "reference_unresolved"))
+                        unresolved.append(
+                            (
+                                node.key,
+                                "api_connection_unresolved"
+                                if is_api_connector(node)
+                                else "reference_unresolved",
+                            )
+                        )
             if element.tag == "In" and element.parent in local:
                 destination = local[element.parent]
                 candidates = by_id.get(normalize_id(element.value("Input")), [])

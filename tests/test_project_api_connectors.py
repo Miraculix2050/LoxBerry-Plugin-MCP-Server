@@ -246,3 +246,29 @@ def test_api_neighbor_does_not_suppress_independent_knx_signal_path():
     assert path["classification"] == "knx_to_loxone"
     assert port(q, "OutputAPI").key not in path["evidence_project_node_ids"]
     assert port(q, "API").key not in path["evidence_project_node_ids"]
+
+
+@pytest.mark.parametrize("sources", ["", '<Co K="AQ" U="source"/><Co K="AQ" U="source"/>'])
+@pytest.mark.parametrize(
+    "key,code",
+    [
+        ("API", "api_connection_unresolved"),
+        ("OutputAPI", "api_connection_unresolved"),
+        ("AI", "reference_unresolved"),
+    ],
+)
+def test_unresolved_ref_keeps_exact_api_classification(sources, key, code):
+    data = f'<P><C Type="Unknown">{sources}<Co K="{key}" U="target" Ref="source"/></C></P>'.encode()
+    graph = build_graph((("p", parse_project(data)),))
+    snapshot = ProjectSnapshot("synthetic", 12, (), graph)
+    q = ProjectQuery(
+        ProjectView(
+            snapshot, map_runtime(snapshot, SimpleNamespace(last_modified="v", controls=()))
+        ),
+        {},
+    )
+    target = port(q, key)
+    assert q.describe(target, limit=100)["unresolved_relationships"] == [code]
+    result = q.trace(target, direction="upstream", max_depth=4, max_nodes=20)
+    assert result["unresolved_relationships"] == [{"project_node_id": target.key, "code": code}]
+    assert result["edges"] == []
