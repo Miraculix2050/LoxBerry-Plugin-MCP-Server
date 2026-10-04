@@ -10,7 +10,7 @@ from .parser import ParsedProject
 # encoding and owner simulation. Extended operators and original table: #335
 # comments 5973151293, 5973582354, 5973686935. Primary behavior:
 # loxone.com/dede/kb/status-baustein/.
-STATE_RULE_ID = "state_table_aq_v2"
+STATE_RULE_ID = "state_table_aq_v3"
 MAX_STATE_ROWS = 100
 
 
@@ -28,6 +28,8 @@ class StateRow:
     conditions: tuple[StateCondition, ...] = field(repr=False)
     numeric: Decimal = field(repr=False)
     source_index: int
+    text: str = field(default="", repr=False)
+    text_truncated: bool = False
 
     @property
     def conditional(self) -> bool:
@@ -111,6 +113,7 @@ class StateFlow:
     reason: str | None
     dependencies: tuple[str, ...] = ()
     rows: tuple[StateRow, ...] = field(default=(), repr=False)
+    table_rows: tuple[StateRow, ...] = field(default=(), repr=False)
 
 
 def decode_state_flow(
@@ -173,8 +176,6 @@ def decode_state_flow(
         ):
             return gap("state_table_unsupported")
         positions = [n for n in range(4) if f"Input{n}" in attrs]
-        if positions != list(range(len(positions))):
-            return gap("state_table_unsupported")
         if any(
             f"Input{n}" not in attrs
             and any(f"{prefix}{n}" in attrs for prefix in ("Cond", "CondV", "CondT"))
@@ -190,7 +191,8 @@ def decode_state_flow(
         numeric = _number(attrs.get("TextV", ""))
         if numeric is None:
             return gap("state_table_unsupported")
-        rows.append(StateRow(tuple(conditions), numeric, row_index))
+        text = attrs.get("Text", "")
+        rows.append(StateRow(tuple(conditions), numeric, row_index, text[:512], len(text) > 512))
     # The entire table must be known, even if an earlier default shadows a row.
     reachable: list[StateRow] = []
     for decoded_row in rows:
@@ -209,7 +211,7 @@ def decode_state_flow(
         if len({r.numeric for r in reachable}) > 1
         else ()
     )
-    return StateFlow(key, version, None, dependencies, tuple(reachable))
+    return StateFlow(key, version, None, dependencies, tuple(reachable), tuple(rows))
 
 
 def state_connector_reason(flow: StateFlow, connector: str | None, direction: str) -> str | None:

@@ -542,10 +542,55 @@ class ProjectQuery:
             raise ProjectQueryError("project_mapping_ambiguous")
         return self._nodes[mapping.node_keys[0]]
 
-    def describe(self, node: GraphNode, *, limit: int) -> dict[str, object]:
+    def describe(
+        self, node: GraphNode, *, limit: int, include_state_table: bool = False
+    ) -> dict[str, object]:
         if not 1 <= limit <= 100:
             raise ProjectQueryError("project_query_invalid")
         graph = self.view.snapshot.graph
+        table: dict[str, object] | None = None
+        if include_state_table:
+            block = self._endpoint_block(node.key)
+            flow = next((f for f in graph.state_flows if block and f.block_key == block.key), None)
+            visible = block is not None and self._summary(block).get("runtime_control") is not None
+            if flow is not None:
+                selected = flow.table_rows[:limit] if visible and flow.reason is None else ()
+                total = len(flow.table_rows) if visible else 0
+                omitted = total - len(selected)
+                table = {
+                    "selection": "first_match",
+                    "conjunction": "and",
+                    "complete": visible
+                    and flow.reason is None
+                    and not omitted
+                    and not any(row.text_truncated for row in selected),
+                    "reason": flow.reason if visible else "state_table_unavailable",
+                    "rows_total": total,
+                    "rows_omitted": omitted,
+                    "text_semantics": "literal_template_only",
+                    "output_api_complete": False,
+                    "rows": [
+                        {
+                            "position": position,
+                            "conditions": [
+                                {
+                                    "position": int(condition.encoding[0][0][-1]),
+                                    "input_key": condition.input_key,
+                                    "operator": condition.operator,
+                                    "numeric_operand": str(condition.numeric)
+                                    if condition.numeric is not None
+                                    else None,
+                                    "text_operand": condition.text,
+                                }
+                                for condition in row.conditions
+                            ],
+                            "aq_value": str(row.numeric),
+                            "text_template": row.text,
+                            "text_truncated": row.text_truncated,
+                        }
+                        for position, row in enumerate(selected)
+                    ],
+                }
         contains_in = [
             edge.source
             for edge in graph.edges
@@ -572,6 +617,7 @@ class ProjectQuery:
             truncated_fields.append("unresolved_relationships")
         return {
             **self._detail(node, limit=limit),
+            **({"state_table": table} if table is not None else {}),
             "parent_project_node_id": contains_in[0] if len(contains_in) == 1 else None,
             "child_project_node_ids": child_ids[:limit],
             "relationships": direct[:limit],

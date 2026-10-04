@@ -5,6 +5,9 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Support sparse State condition slots and optional bounded table inspection for
+  exactly mapped visible controls, preserving literal templates and output gaps.
+
 - Extend version-bound State AQ evidence to I1–I8 and all demonstrated fixed-operand operators, with first-match/AND semantics and conservative numeric independence. Preserve gaps for empty results and unsupported contracts; synchronize generic and opening traces.
 
 - Recover a full Chart View cache per source, keeping existing plots visible while
