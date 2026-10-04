@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from itertools import pairwise
 
 from .coverage import coverage_by_source_type
 from .graph import API_CONNECTOR_RULE_ID, GraphEdge, GraphNode, SemanticEdge, is_api_connector
@@ -691,11 +690,6 @@ class ProjectQuery:
         if start_kind is None:
             return [], False
         paths: list[dict[str, object]] = []
-        api_pairs = {
-            (edge.source, edge.target)
-            for edge in self.view.snapshot.graph.edges
-            if edge.kind == "api_connection"
-        }
         identities: set[tuple[str, str, str]] = set()
         truncated = False
         included_keys = set(keys)
@@ -744,8 +738,6 @@ class ProjectQuery:
                 walked.append(current)
                 previous = predecessors.get(current)
             walked.reverse()
-            if any((a, b) in api_pairs or (b, a) in api_pairs for a, b in pairwise(walked)):
-                continue
             identities.add(identity)
             if source is not start:
                 walked.reverse()
@@ -776,6 +768,34 @@ class ProjectQuery:
             included_keys.add(boundary.key)
             keys.append(boundary.key)
         return truncated
+
+    @staticmethod
+    def _signal_predecessors(
+        seeds: list[str], relationships: list[dict[str, object]], direction: str, max_depth: int
+    ) -> tuple[dict[str, str | None], bool]:
+        """Find scalar alternatives only inside already bounded trace evidence."""
+        adjacency: dict[str, list[str]] = defaultdict(list)
+        for relationship in relationships:
+            if relationship.get("kind") == "api_connection":
+                continue
+            source, target = relationship["source"], relationship["target"]
+            assert isinstance(source, str) and isinstance(target, str)
+            if direction == "upstream":
+                source, target = target, source
+            adjacency[source].append(target)
+        predecessors: dict[str, str | None] = {key: None for key in seeds}
+        pending = deque((key, 0) for key in seeds)
+        truncated = False
+        while pending:
+            key, depth = pending.popleft()
+            if depth >= max_depth:
+                truncated |= any(neighbor not in predecessors for neighbor in adjacency[key])
+                continue
+            for neighbor in adjacency[key]:
+                if neighbor not in predecessors:
+                    predecessors[neighbor] = key
+                    pending.append((neighbor, depth + 1))
+        return predecessors, truncated
 
     def trace(
         self, node: GraphNode, *, direction: str, max_depth: int, max_nodes: int
@@ -812,10 +832,9 @@ class ProjectQuery:
                 pending.append(child)
         visited = seed_set
         queue = deque((key, 0) for key in seeds)
-        keys = seeds
+        keys = list(seeds)
         edges: list[dict[str, object]] = []
         semantic_edges: list[dict[str, object]] = []
-        predecessors: dict[str, str | None] = {key: None for key in seeds}
         truncated = seed_truncated
         reason: str | None = "max_nodes" if seed_truncated else None
         while queue:
@@ -844,7 +863,6 @@ class ProjectQuery:
                 visited.add(neighbor)
                 keys.append(neighbor)
                 queue.append((neighbor, depth + 1))
-                predecessors[neighbor] = current
                 if isinstance(relationship, SemanticEdge):
                     semantic_edges.append(self._semantic_edge_data(relationship))
                 else:
@@ -862,8 +880,11 @@ class ProjectQuery:
             unresolved_relationships.append({"project_node_id": key, "code": code})
         semantic_scope = tuple(keys)
         boundary_truncated = self._append_trace_boundaries(keys, max_nodes)
+        signal_predecessors, signal_truncated = self._signal_predecessors(
+            seeds, [*edges, *semantic_edges], direction, max_depth
+        )
         technology_paths, paths_truncated = self._technology_paths(
-            node, keys, predecessors, max_nodes, direction
+            node, keys, signal_predecessors, max_nodes, direction
         )
         semantic_gaps: list[dict[str, str]] = []
         state_flows = {f.block_key: f for f in self.view.snapshot.graph.state_flows}
@@ -893,7 +914,9 @@ class ProjectQuery:
             "technology_paths": technology_paths,
             # A raw traversal limit can hide a semantic edge or a projected
             # technology path, so semantic output must not claim completeness.
-            "semantic_truncated": truncated or boundary_truncated or paths_truncated,
+            "semantic_truncated": (
+                truncated or boundary_truncated or paths_truncated or signal_truncated
+            ),
             "truncated": truncated,
             "truncation_reason": reason,
             "unresolved_relationships": unresolved_relationships,

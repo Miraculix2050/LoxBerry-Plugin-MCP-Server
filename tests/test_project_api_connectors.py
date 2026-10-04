@@ -272,3 +272,48 @@ def test_unresolved_ref_keeps_exact_api_classification(sources, key, code):
     result = q.trace(target, direction="upstream", max_depth=4, max_nodes=20)
     assert result["unresolved_relationships"] == [{"project_node_id": target.key, "code": code}]
     assert result["edges"] == []
+
+
+@pytest.mark.parametrize("api_first", [True, False])
+def test_same_destination_preserves_scalar_alternative_regardless_of_api_order(api_first):
+    api = '<Co K="OutputAPI" U="api"/>'
+    signal = '<Co K="Q" U="signal"/>'
+    ports = api + signal if api_first else signal + api
+    data = (
+        f'<P><C Type="EIBsensor" EibAddr="1/2/3" U="source">{ports}</C>'
+        '<C Type="Target" U="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb">'
+        '<Co K="AI" U="value"><In Input="api"/><In Input="signal"/></Co></C></P>'
+    ).encode()
+    graph = build_graph((("p", parse_project(data)),))
+    snapshot = ProjectSnapshot("synthetic", 12, (), graph)
+    structure = SimpleNamespace(
+        last_modified="v",
+        controls=(SimpleNamespace(uuid="b" * 32, action_uuid=None, subcontrols=()),),
+    )
+    q = ProjectQuery(ProjectView(snapshot, map_runtime(snapshot, structure)), {})
+    start = next(n for n in graph.nodes if n.block_type == "EIBsensor")
+    result = q.trace(start, direction="downstream", max_depth=8, max_nodes=50)
+    assert {edge["kind"] for edge in result["edges"]} == {"signal", "api_connection"}
+    assert len(result["technology_paths"]) == 1
+    evidence = result["technology_paths"][0]["evidence_project_node_ids"]
+    assert port(q, "Q").key in evidence
+    assert port(q, "OutputAPI").key not in evidence
+
+
+def test_signal_alternative_search_preserves_depth_bound_and_cycles():
+    relationships = [
+        {"source": "start", "target": "end", "kind": "api_connection"},
+        {"source": "start", "target": "middle", "kind": "signal"},
+        {"source": "middle", "target": "end", "kind": "reference"},
+        {"source": "end", "target": "start", "kind": "signal"},
+    ]
+    limited, truncated = ProjectQuery._signal_predecessors(
+        ["start"], relationships, "downstream", 1
+    )
+    assert truncated is True
+    assert "end" not in limited
+    complete, truncated = ProjectQuery._signal_predecessors(
+        ["start"], relationships, "downstream", 2
+    )
+    assert truncated is False
+    assert complete["end"] == "middle"
