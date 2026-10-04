@@ -363,3 +363,5 @@ Sources: [Loxone Status](https://www.loxone.com/dede/kb/status-baustein/),
 [Loxone Status Monitor](https://www.loxone.com/dede/kb/status-monitor/), exact
 project Co/K port evidence and the user's API-connector contract clarification.
 Connected-edge tests are synthetic; no live wired API example is claimed.
+
+Known API-only unresolved links use `api_connection_unresolved`, including ambiguous source candidates when all candidates are exact API ports. This evidence remains in generic describe/trace and aggregate unresolved counts, while scalar KNX/Opening/Modbus predicates and Modbus relationship budgets exclude it. Mixed/unknown source candidates keep the original unresolved category.

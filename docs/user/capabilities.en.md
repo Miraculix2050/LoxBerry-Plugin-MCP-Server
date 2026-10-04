@@ -529,3 +529,5 @@ do not prove AQ/TQ, KNX technology or opening-contact signal dependencies.
 Unresolved links and normal traversal/response limits remain explicit.
 The State table's legacy `output_api_complete=false` concerns payload semantics,
 not the availability of connection metadata.
+
+Known unresolved API links remain visible in generic project evidence and aggregate unresolved counts, but do not mark scalar KNX, Opening or Modbus paths as ambiguous. Missing sources with mixed or unknown connector kinds remain unresolved scalar evidence.

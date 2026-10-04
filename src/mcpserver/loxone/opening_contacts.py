@@ -56,7 +56,9 @@ class OpeningGraph:
         self.parents = {}
         self.forward = defaultdict(list)
         self.backward = defaultdict(list)
-        self.unresolved = {key for key, _code in graph.unresolved}
+        self.unresolved = {
+            key for key, code in graph.unresolved if code != "api_connection_unresolved"
+        }
         self.unresolved.update(
             key
             for key, codes in self.query.view.snapshot.source_diagnostics.parser_codes_by_node

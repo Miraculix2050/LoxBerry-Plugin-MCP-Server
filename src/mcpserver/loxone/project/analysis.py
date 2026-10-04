@@ -411,7 +411,7 @@ def analyze_knx(
             if edge.kind in {"signal", "reference"}:
                 hierarchy_outgoing[edge.source].append(edge)
                 hierarchy_incoming[edge.target].append(edge)
-        unresolved = {key for key, _ in graph.unresolved}
+        unresolved = {key for key, code in graph.unresolved if code != "api_connection_unresolved"}
         wiring: dict[str, str] = {}
         for item in endpoints:
             seed = _endpoint_descendants(item, children)
@@ -998,7 +998,7 @@ def analyze_knx(
             if edge.kind in {"signal", "reference"}:
                 outgoing[edge.source].append(edge)
                 incoming[edge.target].append(edge)
-        unresolved = {key for key, _ in graph.unresolved}
+        unresolved = {key for key, code in graph.unresolved if code != "api_connection_unresolved"}
         disconnected = ambiguous = reference_only = 0
         for item in endpoints:
             seed = _endpoint_descendants(item, children)

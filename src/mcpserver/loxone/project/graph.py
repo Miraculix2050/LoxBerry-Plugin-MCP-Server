@@ -52,6 +52,13 @@ def is_api_connector(node: GraphNode) -> bool:
     return node.kind == "connector" and len(keys) == 1 and keys[0] in {"OutputAPI", "API"}
 
 
+def _is_api_relationship(destination: GraphNode, candidates: list[GraphNode]) -> bool:
+    """Ambiguous sources retain metadata only if every known candidate is API."""
+    return is_api_connector(destination) or (
+        bool(candidates) and all(is_api_connector(source) for source in candidates)
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class GraphEdge:
     source: str
@@ -281,7 +288,7 @@ def build_graph(
                             (
                                 node.key,
                                 "api_connection_unresolved"
-                                if is_api_connector(node)
+                                if _is_api_relationship(node, candidates)
                                 else "reference_unresolved",
                             )
                         )
@@ -301,7 +308,7 @@ def build_graph(
                         (
                             destination.key,
                             "api_connection_unresolved"
-                            if is_api_connector(destination)
+                            if _is_api_relationship(destination, candidates)
                             else "signal_unresolved",
                         )
                     )

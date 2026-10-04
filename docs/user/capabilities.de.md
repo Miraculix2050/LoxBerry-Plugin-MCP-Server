@@ -577,3 +577,5 @@ keine AQ/TQ-, KNX- oder Öffnungskontakt-Signalabhängigkeit. Nicht auflösbare
 Beziehungen und normale Traversal-/Antwortlimits bleiben sichtbar. Das bestehende
 `output_api_complete=false` der State-Tabelle betrifft die Payload-Semantik,
 nicht die Verfügbarkeit dieser Verbindungsmetadaten.
+
+Bekannte nicht auflösbare API-Verbindungen bleiben in allgemeinen Projektbelegen und Gesamtzahlen sichtbar, markieren skalare KNX-, Öffnungskontakt- oder Modbus-Pfade aber nicht als mehrdeutig. Fehlende Quellen mit gemischten oder unbekannten Connector-Arten bleiben unaufgelöste skalare Evidenz.

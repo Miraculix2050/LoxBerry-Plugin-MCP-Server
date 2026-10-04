@@ -317,3 +317,81 @@ def test_signal_alternative_search_preserves_depth_bound_and_cycles():
     )
     assert truncated is False
     assert complete["end"] == "middle"
+
+
+@pytest.mark.parametrize("relation", ["input", "ref"])
+@pytest.mark.parametrize("mixed", [False, True])
+def test_source_ambiguity_retains_api_category_only_for_exclusively_api_candidates(relation, mixed):
+    second_key = "AQ" if mixed else "API"
+    link = '<In Input="source"/>' if relation == "input" else ""
+    ref = 'Ref="source"' if relation == "ref" else ""
+    data = (
+        '<P><C Type="Unknown"><Co K="OutputAPI" U="source"/>'
+        f'<Co K="{second_key}" U="source"/></C>'
+        f'<C Type="Unknown"><Co K="AI" U="destination" {ref}>{link}</Co></C></P>'
+    ).encode()
+    graph = build_graph((("p", parse_project(data)),))
+    normal_code = "signal_unresolved" if relation == "input" else "reference_unresolved"
+    assert graph.unresolved[0][1] == (normal_code if mixed else "api_connection_unresolved")
+    assert not any(e.kind in {"signal", "reference", "api_connection"} for e in graph.edges)
+
+
+@pytest.mark.parametrize("source_type", ["EIBsensor", "EIBactor"])
+@pytest.mark.parametrize(
+    "key,scalar_ambiguous", [("OutputAPI", False), ("API", False), ("AQ", True)]
+)
+def test_api_only_failure_does_not_change_knx_scalar_connectivity_or_hierarchy(
+    source_type, key, scalar_ambiguous
+):
+    from mcpserver.loxone.project.analysis import analyze_knx
+
+    data = (
+        f'<P><C Type="{source_type}" U="endpoint" EibAddr="1/2/3">'
+        f'<Co K="{key}" U="port"><In Input="missing"/></Co></C></P>'
+    ).encode()
+    graph = build_graph((("p", parse_project(data)),))
+    snapshot = ProjectSnapshot("synthetic", 12, (), graph)
+    q = ProjectQuery(
+        ProjectView(
+            snapshot, map_runtime(snapshot, SimpleNamespace(last_modified="v", controls=()))
+        ),
+        {},
+    )
+    result = analyze_knx(q.view, frozenset({"project_connectivity", "address_hierarchy"}))
+    connectivity = [f for f in result["findings"] if f["analysis"] == "project_connectivity"]
+    assert len(connectivity) == 1
+    expected = (
+        "project_connectivity_ambiguous" if scalar_ambiguous else "no_project_signal_relationship"
+    )
+    assert connectivity[0]["finding_type"] == expected
+    wiring = "unresolved" if scalar_ambiguous else "without_relationship"
+    prefixes = [f for f in result["findings"] if f["finding_type"] == "address_prefix_summary"]
+    assert all(f["hierarchy"]["direct_wiring"] == {wiring: 1} for f in prefixes)
+    assert result["coverage"]["unresolved_relationships"] == 1
+
+
+def test_unresolved_api_transport_does_not_invalidate_scalar_opening_trace():
+    q = query(extra='<In Input="missing"/>')
+    result = OpeningGraph(q).trace([port(q, "API").key], "upstream", 8, 50)
+    assert result["complete"] is True
+    assert result["gaps"] == []
+    generic = q.trace(port(q, "API"), direction="upstream", max_depth=8, max_nodes=50)
+    assert generic["unresolved_relationships"][0]["code"] == "api_connection_unresolved"
+
+
+def test_modbus_scalar_consumer_evidence_ignores_api_only_failure():
+    from mcpserver.loxone.project.modbus_analysis import analyze_modbus
+
+    data = (
+        b'<P><C Type="ModbusServer" U="server"><C Type="ModbusDev" U="device">'
+        b'<C Type="ModbusASensor" U="sensor"><Co K="AQ" U="value"/>'
+        b'<Co K="OutputAPI" U="api"><In Input="missing"/></Co></C></C></C></P>'
+    )
+    graph = build_graph((("p", parse_project(data)),))
+    snapshot = ProjectSnapshot("synthetic", 12, (), graph)
+    view = ProjectView(
+        snapshot, map_runtime(snapshot, SimpleNamespace(last_modified="v", controls=()))
+    )
+    result = analyze_modbus(view, frozenset({"direct_consumers"}))
+    assert "endpoint_reference_unresolved" not in str(result)
+    assert "unresolved_signal_source_not_attributable" not in str(result)
