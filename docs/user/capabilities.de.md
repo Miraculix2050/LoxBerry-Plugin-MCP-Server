@@ -551,8 +551,7 @@ Nachbarports invalidieren einen AQ-Pfad rückwärts nicht. Externe Verdrahtung u
 abgeleitete Evidenz bleiben getrennt. Unbekannte Versionen, fehlerhafte Tabellen,
 variable Vergleichsausdrücke und TQ-/OutputAPI-Verträge bleiben explizite Gaps.
 Es gibt keine globalen Connector-Aliase. Describe liefert begrenzte
-`state_semantics`, Trace `semantic_gaps`; private Zeilen und Operanden werden
-nicht veröffentlicht.
+`state_semantics`, Trace `semantic_gaps`; private Zeilen und Operanden fehlen in normalen Describe- und Trace-Antworten. Die explizite Tabelleninspektion wird unten beschrieben.
 
 Für einen exakt zugeordneten sichtbaren State-Control liefert
 `loxone_describe_project_object(..., include_state_table=true, limit=100)` geordnete

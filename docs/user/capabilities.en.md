@@ -504,7 +504,7 @@ independent neighbors do not invalidate an upstream AQ path. External wiring and
 derived evidence remain separate. Unknown versions, malformed tables, variable
 comparison expressions and TQ/OutputAPI contracts retain explicit gaps. No global
 connector alias is introduced. Describe exposes bounded `state_semantics` and
-trace `semantic_gaps`; private rows and operands are never published.
+trace `semantic_gaps`; private rows and operands are omitted from default describe and trace responses. Explicit table inspection is described below.
 
 For an exactly mapped visible State control, request
 `loxone_describe_project_object(..., include_state_table=true, limit=100)` to
