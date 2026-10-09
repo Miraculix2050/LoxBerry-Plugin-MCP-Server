@@ -1,6 +1,7 @@
 """Deterministic graph of observed C/Co/In project relationships."""
 
 import hashlib
+import re
 from collections import defaultdict, deque
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -242,6 +243,8 @@ def build_graph(
     semantic_edges: set[SemanticEdge] = set()
     unresolved: list[tuple[str, str]] = []
     state_flows: list[StateFlow] = []
+    model_indexes: list[tuple[ParsedProject, dict[int, GraphNode], dict[str, list[GraphNode]]]] = []
+    bundle_by_id: dict[str, list[GraphNode]] = defaultdict(list)
     node: GraphNode | None
     for namespace, project in projects:
         local: dict[int, GraphNode] = {}
@@ -265,6 +268,9 @@ def build_graph(
                 raise ProjectError("project_graph_limit")
             if node.source_id:
                 by_id[normalize_id(node.source_id)].append(node)
+                bundle_by_id[normalize_id(node.source_id)].append(node)
+        model_indexes.append((project, local, by_id))
+    for project, local, by_id in model_indexes:
         for index, element in enumerate(project.elements):
             node = local.get(index)
             if node is not None:
@@ -276,6 +282,22 @@ def build_graph(
                 reference = element.value("Ref")
                 if reference:
                     candidates = by_id.get(normalize_id(reference), [])
+                    # Observed OutputRef -> VirtualOutCmd links can cross model
+                    # sources in one authorized bundle. Never override local
+                    # ambiguity or generalize this evidence to other link types.
+                    if (
+                        not candidates
+                        and node.kind == "block"
+                        and node.block_type == "OutputRef"
+                        and re.fullmatch(r"[0-9a-f]{32}", normalize_id(reference))
+                    ):
+                        external = bundle_by_id.get(normalize_id(reference), [])
+                        if (
+                            len(external) == 1
+                            and external[0].kind == "block"
+                            and external[0].block_type == "VirtualOutCmd"
+                        ):
+                            candidates = external
                     if len(candidates) == 1:
                         kind = (
                             "api_connection"

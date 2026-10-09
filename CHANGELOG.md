@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Resolve exact, unique cross-model `OutputRef` references to `VirtualOutCmd`
+  within the same authorized project bundle. Preserve local-target precedence,
+  ambiguity and unsupported reference gaps (#374).
+
 - Disable automatic WebSocket transport pings for Loxone sockets, retaining
   bounded application keepalive and strict rejection of unexpected structure
   files. Fix the transport-ping/gzip HTML finding on the observed Gen. 1 target

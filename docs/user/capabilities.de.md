@@ -299,6 +299,11 @@ begrenzt und melden eine Größenkürzung über `truncated` und `truncation_reas
 liefert opake `model_sources`; identische KNX-Quellvorkommen aus getrennten Modellquellen werden
 einmal als logisches Objekt mit `source_occurrence_count` und `model_source_ids` dargestellt.
 Gleiche Titel oder Gruppenadressen führen nie zu einer solchen Zusammenführung.
+Ein `OutputRef` ohne lokales Ziel kann über eine exakte normalisierte UUID auf einen
+eindeutigen `VirtualOutCmd` in einer anderen Modellquelle desselben autorisierten
+Bündels verweisen. Lokale Ziele behalten Vorrang; mehrdeutige, fehlende oder andere
+quellenübergreifende Referenzen bleiben offen. Dies ist statische Referenzevidenz,
+kein Live-Ausgabebefehl.
 Wenn eine exakt geprüfte Block-/Connector-Regel vorliegt, liefert Describe zusätzlich eine oder
 mehrere getrennte KNX-Signalnutzungsbeobachtungen. Trace liefert getrennt markierte abgeleitete
 Connectorkanten sowie begrenzte Pfade `knx_to_loxone`, `loxone_to_knx` oder `knx_to_knx`.
