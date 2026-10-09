@@ -9,6 +9,12 @@
 - Gen. 1 through a local HTTP address; Gen. 2 through HTTPS with a trusted certificate.
 - No credentials in URLs; HTTP Basic authentication is unsupported.
 
+Loxone sockets disable automatic WebSocket transport pings and retain the Loxone
+application keepalive with its timeout handling. On the investigated Gen. 1
+target, transport pings triggered an unexpected gzip HTML file. Unexpected
+structure files remain errors; they are neither decoded nor skipped. This finding
+does not establish compatibility with other firmware or Miniserver generations.
+
 ## Installation and first connection
 
 1. Install the release ZIP with the LoxBerry Plugin Manager.
