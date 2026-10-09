@@ -1,6 +1,6 @@
 # Autorisierte Projektwiederverwendung zwischen OAuth-Familien (#379)
 
-- Status: Implementierung im Review; Zielabnahme noch unvollständig.
+- Status: implementiert; Gen.-1-Abnahme unten dokumentiert.
 - Umfang: OAuth-Familien für `sps.LoxCC`. Service-Identitäts-Discovery in #239 bleibt getrennt.
 - [English version](project-family-deduplication.md)
 
@@ -105,10 +105,71 @@ Stichproben und Konkurrenz. Struktur, Download, Parsing, Speicher und Gesamtzeit
 getrennt messen; Cold-, Warm- und parallele Fälle sowie Fehlschläge melden.
 Unsichere Authentifizierungsfehler nicht automatisch wiederholen.
 
-Die Abnahme benötigt außerdem echte Grants verschiedener Nutzer mit abweichender
-Sichtbarkeit, kontrollierten Entzug der Projektleseberechtigung bei Warm-Aufrufen
-und Fortsetzungen sowie einen kontrollierten Projektwechsel. Bytegleichheit zweier
-Grants desselben Nutzers oder deterministische Mocks beweisen diese Fälle nicht.
+Am 10.10.2026 verglichen je drei erfolgreiche Gen.-1-Stichproben Baseline
+`962be53` mit Runtime `ace8b46`, Modell 13, zwei Grants einer Identität und
+858.414-Byte-Responses. Ein gespeicherter Response-Byte-SHA-256 stimmt zwischen
+Baseline und Kandidat überein. Der Harness lädt vor jedem Aufruf frische Struktur,
+misst aber Snapshot-Laden und nicht den vollständigen MCP-/Query-Pfad.
+
+| Messung (Mittelwert, sofern nicht anders angegeben) | Baseline | Gemeinsamer Inhalt |
+| --- | ---: | ---: |
+| Cold-Aufruf der ersten Familie | 24,31 s | 24,45 s |
+| Cold-Aufruf der zweiten Familie | 24,82 s | 6,15 s |
+| Beide Cold-Aufrufe zusammen | 49,12 s | 30,60 s |
+| Gehaltene einzigartige Graphen | 2 | 1 |
+| Konservatives Graph-Accounting | 74.108.432 B | 37.054.216 B |
+| RSS des Harness-Elternprozesses | 118.797.653 B | 103.383.040 B |
+| Spitzen-RSS des Harness-Elternprozesses | 125.246.123 B | 107.029.845 B |
+| Parser-Worker-Wandzeit, beide Familien | 36,90 s | 18,26 s |
+| Eigene Downloads, zwei kalte plus zwei warme Aufrufe | 2 | 4 |
+
+Der erste Cold-Mittelwert unterscheidet sich um 0,6 %; drei Zeitstichproben
+beweisen weder einen kleinen Erstlade-Rückschritt noch eine allgemeine
+Latenzgarantie. Die Cold-Gesamtzeit zweier Familien sinkt um etwa 38 %, das
+Graph-Accounting um 50 % und der gemessene Elternprozess-RSS um etwa 13 %.
+Worker-Start und IPC bleiben Teil der Cold-Messung. Elternprozess-Spitzen-RSS
+enthält keine Spitzen der Worker-Kindprozesse; Worker-Wandzeit enthält Start und
+IPC und ist keine getrennte CPU-Zeitmessung. Warm-Snapshot-Aufrufe steigen
+wie ausdrücklich freigegeben von etwa 2,6 s auf 6,1 s: Jeder Kandidatenaufruf
+downloadet selbst, ohne erneut zu parsen. Frühere fehlgeschlagene Messungen
+bleiben separat erhalten und gehen nicht in diese Erfolgs-Mittelwerte ein.
+
+Nach dem gezielten Hotswap lieferten zwei echte MCP-Grants unabhängig aktuellen
+Projektstatus mit gleichem Fingerprint/Modell und `stale=false`; der zweite Grant
+benötigte 6,09 s. Eine echte parallele MCP-Prüfung ließ eine Projektanfrage zu,
+wies die zweite mit `local_rate_limit` ab und beendete während des laufenden
+Projektaufrufs eine andere frische Strukturübersicht erfolgreich. Finale
+Source-CI, normales Re-Review und separates Security-Re-Review auf `ace8b46`
+sind grün; der ursprüngliche Zulassungsbefund ist behoben und sein GH-Thread resolved.
+
+Eine zusätzliche Prüfung mit direkten Familientokens verwendete zwei reale
+Identitäten mit abweichender Sichtbarkeit. Beide luden identische Bytes unabhängig
+herunter und teilten einen Graphen; Query-Instanzen und Views blieben getrennt:
+402 gegenüber 60 Root-Steuerungen bei unterschiedlichen Mapping-Zahlen. Diese
+Prüfung ersetzt keine Abnahme der MCP-Zugriffstokens.
+
+Der Restricted-Explorer-Grant führte mit vorübergehendem Projektleserecht auch
+echte MCP-Projektstatusaufrufe kalt und warm sowie erste Objektseite und
+Fortsetzung erfolgreich aus. Der kontrollierte Rechteentzug erforderte einen
+Miniserver-Neustart; der LoxBerry-MCP-Dienst lief mit seinem warmen Familiencache
+weiter. Der ursprüngliche Grant und der vorbereitete Cursor lieferten danach
+keine Daten. Auch normale Strukturaufrufe scheiterten; der Grant erforderte eine
+erneute Anmeldung. Diese Phase belegt deshalb sicheres Sperren beim Neustart,
+keinen isolierten Projektrechteentzug bei sonst gültiger Authentifizierung.
+Nach erneuter Anmeldung durch den Nutzer konnte der Restricted-Grant die aktuelle
+Struktur lesen; Projektstatus und Objektseite wurden mit `permission_denied`
+abgewiesen. Seine Strukturübersicht enthielt 67 Steuerungen gegenüber 456 beim
+primären Leser.
+Projektrechteentzug bei Warm-Aufrufen und Fortsetzungen mit unverändertem Marker
+ist deterministisch geprüft und wird nicht als Live-Beobachtung behauptet.
+
+Der unabhängig autorisierte primäre MCP-Grant lud anschließend das geänderte
+Projekt mit neuem Fingerprint und unveränderten Mapping-Zahlen; das Ergebnis war
+aktuell.
+Mit demselben Restricted-Token war der authentifizierte Marker
+`jdev/sps/LoxAPPversion3` weiterhin verfügbar, während der Download von
+`sps.LoxCC` mit `project_permission_denied` scheiterte. Dieses Live-Gegenbeispiel
+schließt den Zeitstempel als Nachweis der Projekt-Downloadberechtigung aus.
 Steuerungsaktionen in Raum/Kategorie MCP-Test autorisieren keine Administration
 von Nutzerrechten. Gen.-1-Evidenz erlaubt keine Gen.-2-Zusage.
 

@@ -1,6 +1,6 @@
 # Authorized project-content reuse across OAuth families (#379)
 
-- Status: implementation under review; target acceptance is incomplete.
+- Status: implemented; Gen. 1 acceptance recorded below.
 - Scope: OAuth-family `sps.LoxCC` content. Service-identity discovery in #239 remains separate.
 - [German version](project-family-deduplication.de.md)
 
@@ -98,10 +98,71 @@ sampling and contention; separate structure, download, parse, memory and total
 time. Report cold, warm and concurrent cases and unsuccessful samples.
 Do not automatically retry an uncertain authentication failure.
 
-Acceptance also needs real different-user grants with differing visibility,
-controlled project-read permission loss on warm calls and continuations, and
-a controlled project update. These are not established by equal bytes from
-two grants of one user or by deterministic mocks. Test-control operations in
+On 2026-10-10, three successful Gen. 1 samples per revision compared baseline
+`962be53` with runtime `ace8b46`, model 13, two grants of one identity and
+858,414-byte responses. A recorded response-byte SHA-256 agrees across the
+baseline and candidate runs. The harness fetches fresh structure before each
+request but measures snapshot loading, not the full MCP/query path.
+
+| Measurement (mean unless noted) | Baseline | Shared content |
+| --- | ---: | ---: |
+| First-family cold request | 24.31 s | 24.45 s |
+| Second-family cold request | 24.82 s | 6.15 s |
+| Both cold requests together | 49.12 s | 30.60 s |
+| Retained unique graphs | 2 | 1 |
+| Conservative graph accounting | 74,108,432 B | 37,054,216 B |
+| Harness parent RSS | 118,797,653 B | 103,383,040 B |
+| Harness parent peak RSS | 125,246,123 B | 107,029,845 B |
+| Parser worker wall time, both families | 36.90 s | 18.26 s |
+| Own downloads, two cold plus two warm calls | 2 | 4 |
+
+The first cold mean differs by 0.6%; three timing samples do not establish a
+small first-load regression or a universal latency guarantee. The two-family
+cold total drops by approximately 38%, graph accounting by 50%, and measured
+parent RSS by approximately 13%. Worker startup/IPC remain part of cold timing.
+Parent peak RSS excludes child-worker peaks; worker wall time includes startup
+and IPC and is not a separate CPU-time measurement.
+Warm snapshot requests increase from approximately 2.6 s to 6.1 s as explicitly
+accepted: every candidate warm request downloads independently, without parsing
+again. Failed earlier measurements are retained separately and excluded from
+these successful-sample means.
+
+After the focused Hotswap, two real MCP grants independently returned current
+project status with the same fingerprint/model and `stale=false`; the second
+grant took 6.09 s. A real concurrent MCP probe admitted one project request,
+rejected the second with `local_rate_limit`, and completed an unrelated fresh
+structure overview while the admitted project call was active. Final source CI,
+ordinary re-review and the separate security re-review on `ace8b46` are green;
+the original admission finding is addressed and its GitHub thread resolved.
+
+An additional direct-family-token probe used two real identities with different
+visibility. Both independently downloaded identical bytes and shared one graph,
+while their query instances and views remained separate: 402 versus 60 root
+controls, with different runtime-mapping counts. This probe does not replace
+MCP access-token acceptance.
+
+The Restricted Explorer grant also completed real MCP cold/warm project status
+and first/continuation object pages while its temporary project-read right was
+present. Applying the controlled right withdrawal required a Miniserver reboot;
+the LoxBerry MCP service remained running with its warm family cache. Calls with
+the original grant and prepared cursor failed closed afterwards. Ordinary
+structure reads also failed and the grant required renewed authentication, so
+this phase establishes fail-closed behavior across the reboot, not an isolated
+project-permission denial with otherwise valid authentication. After the user
+reauthenticated, the Restricted grant could read current structure, while its
+project status and object-page requests returned `permission_denied`. Its
+structure overview contained 67 controls, versus 456 for the primary reader.
+Same-marker warm and
+continuation permission denial is covered deterministically, not claimed as a
+live unchanged-marker observation.
+
+The independently authorized primary MCP grant then loaded the changed project
+with a new fingerprint and unchanged mapping counts; the result was current.
+With the same Restricted token, the authenticated `jdev/sps/LoxAPPversion3`
+marker remained available while downloading `sps.LoxCC` returned
+`project_permission_denied`. This live counterexample rules out using that
+timestamp as proof of project-download permission.
+Test-control operations in
 room/category MCP-Test do not themselves authorize user-rights administration.
 No Gen. 2 claim follows from Gen. 1 evidence.
 
