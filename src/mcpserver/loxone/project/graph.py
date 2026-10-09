@@ -19,6 +19,7 @@ from .semantics import (
     signal_use_rules,
 )
 
+PROJECT_MODEL_VERSION = 13
 _DIAGNOSTIC_GROUP_LIMIT = 2048
 _DIAGNOSTIC_SAMPLE_LIMIT = 3
 _DIAGNOSTIC_LABEL_LIMIT = 100
@@ -660,7 +661,7 @@ def build_snapshot(
     )
     return ProjectSnapshot(
         bundle.fingerprint,
-        13,
+        PROJECT_MODEL_VERSION,
         tuple(projects),
         graph,
         _source_diagnostics(graph, tuple(anomalies)),

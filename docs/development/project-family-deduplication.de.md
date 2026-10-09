@@ -1,133 +1,107 @@
-# Vorarbeiten zur Projekt-Deduplizierung zwischen OAuth-Familien (#379)
+# Autorisierte Projektwiederverwendung zwischen OAuth-Familien (#379)
 
-- Stand: Vorbereitung einer Untersuchung; das Produktverhalten bleibt unverändert.
-- Umfang: OAuth-Familien und `sps.LoxCC`; keine Abhängigkeit von der Umsetzung von #239.
-- Zielevidenz: In diesen Vorarbeiten nicht erhoben.
+- Status: Implementierung im Review; Zielabnahme noch unvollständig.
+- Umfang: OAuth-Familien für `sps.LoxCC`. Service-Identitäts-Discovery in #239 bleibt getrennt.
 - [English version](project-family-deduplication.md)
 
-## Bestehender Pfad und Grenze der Wiederverwendung
+## Autorisierung vor Wiederverwendung
 
-`LoxoneClient.download_project()` lädt ausschließlich die feste Projektressource
-mit Loxone-Token und Benutzer der anfragenden Familie. Größe und Zeit sind
-begrenzt; Weiterleitungen und automatische Wiederholungen sind ausgeschlossen.
-Service-Zugangsdaten werden nicht eingesetzt. `ProjectService._load()` prüft
-Scope, Familie und Tokenbestätigung, holt den Familientoken und serialisiert
-Ladevorgänge über ein Semaphore. Der Cache-Schlüssel lautet
-`(miniserver_id, identity_id, family_id)`; ein gleicher Marker erlaubt ausschließlich
-die Wiederverwendung dieses Eintrags. Bei einem Miss folgen Download, Verarbeitung
-im separaten `process_project()`-Subprozess, erneute Autorisierung und Markerprüfung.
-Der Graph-Cache ist auf acht Einträge und 128 MiB konservative Größenberechnung
-begrenzt; Familienansichten und Abfragen separat auf acht Einträge und 64 MiB.
+Jeder Projektaufruf, einschließlich Warm-Cache-Treffern und Pagination-Fortsetzungen,
+lädt das Projekt mit dem eigenen Loxone-Token der aufrufenden Familie herunter.
+Ein Marker, eine sichtbare Struktur oder der Graph einer anderen Familie beweist
+keine aktuelle Projektleseberechtigung. Ein belastbarer kleinerer Nachweis fehlt.
 
-`ProjectService.view()` verlangt die Übereinstimmung von Runtime-Subjekt und
-Familie. Mapping und Abfragen vergleichen zusätzlich die Struktur des Aufrufers.
-Die frische sichtbare Struktur wird im Tool-/Runtime-Pfad beschafft, nicht in
-`load_snapshot()`. Ein Benchmark dieser Methode beweist deshalb weder frische
-Sichtbarkeit noch MCP-Autorisierung. Widerruf beendet Ladevorgänge der betroffenen
-Familie und entfernt deren Cache/Ansichten; Schließen entfernt sämtliche Inhalte.
-Bestehende Worker-Tests decken Markerfehler, Projektwechsel, Widerruf und Grenzen
-ab. `test_project_family_baseline.py` ergänzt Downloadisolation zweier Familien
-einschließlich überlappender Aufrufe, abgelehnten Download, ungültigen Zugriff auf
-einen warmen Familiencache, unabhängigen Widerruf und getrennte Ansichten.
+Der Tool-/Runtime-Pfad prüft weiterhin OAuth-Scope, aktuellen Access-Token und
+Familie, Tokenbestätigung sowie frisch geladene nutzersichtbare Struktur.
+`ProjectService` prüft den Zugriff nach dem Download, nach Parsing oder
+Wiederverwendung und nach der abschließenden authentifizierten Markerprüfung
+erneut. Verweigerte Berechtigung, Markerfehler, Projektwechsel während der
+Prüfung, Abbruch und Revocation liefern keine Daten.
+Service-Zugangsdaten autorisieren keinen OAuth-Familienzugriff.
 
-Der untersuchte Code liefert keinen zuverlässigen unabhängigen Nachweis der
-Projektleseberechtigung ohne Projektdownload. Authentifizierter Programmmarker
-und sichtbare Struktur sind dafür kein Nachweis. Bis passende Ziel-/Protokollevidenz
-vorliegt, muss jede neue Familie vor einem möglichen gemeinsamen Inhaltszugriff
-selbst autorisiert herunterladen. Bestehende Cache-Hits sind eine Ausgangsbasis,
-kein Beleg, dass sämtliche künftigen Berechtigungsgates aus #379 bereits erfüllt sind.
+Der Eigentümer hat zusätzliche Downloads und Markerprüfungen bei Warm-Aufrufen
+und Fortsetzungen freigegeben. Das ist eine bewusste Autorisierungsänderung,
+keine Optimierung der Warm-Latenz. Cold-Load-Zeit und gehaltener Graphspeicher
+sind die Vergleichsziele; die Architekturänderung ist das primäre Ziel.
 
-## Reproduzierbare lokale Ausgangsmessung
+## Begrenzter unveränderlicher Inhalt und getrennte Familiensichten
 
-Im Repository mit Python 3.13 und Entwicklungsabhängigkeiten ausführen:
+Erst nach eigenem erfolgreichen Download darf eine Familie Parse-Ergebnisse
+mit gleicher Miniserver-Identität, SHA-256 der exakten Response-Bytes,
+Parser-/Cache-Epoche, Projektmodellversion und Verarbeitungslimits verwenden.
+Der Bundle-Fingerprint gehört zu einer anderen Hash-Domäne und ersetzt die
+Bytegleichheit nicht. Geänderte Bytes bei gleichem Marker erneuern Snapshot
+und Sicht der aufrufenden Familie.
+
+Der vorhandene Lade-Semaphor serialisiert Downloads und Parsing. Zwei erfolgreiche
+identische Downloads können deshalb ein abgeschlossenes Parse-Ergebnis teilen;
+Downloads und Autorisierung werden nie zusammengelegt. Eine widerrufene Familie
+kann keinen gemeinsamen Parse-Task eines anderen Aufrufers abbrechen.
+
+Familienreferenzen bleiben an Miniserver, Identität und Familie gebunden.
+Sichtbare Strukturen, Mappings, Queries, Cursor, Tokens und Rate Limits bleiben
+getrennt. Der Inhaltsindex enthält nur Schlüssel; Graphen bleiben in den
+vorhandenen Familien-/Sicht-Caches. Weder Rohbytes noch Graphspeicher werden
+persistiert. Private Snapshot-Lookup-Tabellen werden einmal aufgebaut und von
+allen Verbrauchern nur gelesen.
+
+Familienreferenzen bleiben auf acht Einträge begrenzt. Das Graphbudget von
+128 MiB zählt jeden einzigartigen gehaltenen Snapshot einmal. Sichten/Queries
+behalten ihr separates konservatives Budget von acht Einträgen und 64 MiB.
+Eviction entfernt Familienreferenz, Inhaltsschlüssel und Sichten gemeinsam.
+Bereits laufende Aufrufe können zurückgegebene Snapshots halten; Cache-Accounting
+ist weder eine RSS-Messung noch eine harte Grenze des Prozessspeichers.
+
+Revocation bricht nur Ladevorgänge dieser Familie ab und entfernt ihre Referenzen
+sofort. Eine andere gültige Familie muss ihren nächsten Aufruf weiterhin selbst
+downloaden und autorisieren. Shutdown entfernt alle Referenzen; ein Neustart
+verwendet keinen früheren Prozessspeicher. Andere Miniserver, Parser-/Cache-Epochen
+oder Verarbeitungslimits teilen keinen inkompatiblen Graphen. Ein Identitätswechsel
+verwendet keine alten Familiensichten.
+
+## Deterministische Prüfung
+
+`tests/test_project_family_baseline.py` prüft eigene Downloads gleicher und
+verschiedener Identitäten, Miniserver-Isolation, überlappende Ladevorgänge,
+verweigerte Cold-/Warm-Zugriffe, getrennte Sichten, geänderte Bytes bei gleichem
+Marker, Revocation nach Download, Abbruch wartender Aufrufe, Limit-/Parserwechsel,
+begrenzte Referenz-Eviction und Shutdown-Bereinigung.
+Die vorhandenen Worker-/Tool-Tests erhalten Markerwechsel-, Token-,
+Fresh-Visibility-, Mapping-, Query- und Cursorprüfungen.
+
+Der ausschließlich synthetische Benchmark verwendet den echten Wegwerf-Worker
+mit gemockter Autorisierung und Download. Mit Python 3.13 und Repository-Abhängigkeiten:
 
 ```powershell
 $env:PYTHONPATH = 'src'
 python tools/benchmark_project_families.py --nodes 1000 --families 2 --samples 3 --warm-calls 3
 ```
 
-Das Werkzeug nimmt ausschließlich Anzahlen entgegen und erzeugt synthetisches
-LoxCC mit Literalblöcken im Speicher. Es liest weder Projektdateien, Zugangsdaten,
-Konfiguration noch Netzwerk. Die Ausgabe enthält feste Bezeichnungen, einen
-synthetischen Hash und numerische Messwerte.
+Er meldet Cold-/Warm-Download- und Worker-Zähler, Worker-Wall-Time, getracete
+Elternprozess-Allokationen, Familienreferenzen, einzigartige Inhalte und
+konservatives Graph-Accounting. Tracing verzerrt Zeiten; Worker-Wall-Time enthält
+Start und IPC. Es beweist weder echte OAuth-Prüfung noch Rechteänderungen,
+RSS oder Ziellatenz.
 
-- Die Parsermessung im eigenen Prozess umfasst Entpacken, Decodieren und
-  Graphaufbau sowie Python-Allokationen, CPU- und Laufzeit. IPC und Spitzen-RSS
-  des separaten Workers werden nicht erfasst. Tracing beeinflusst die Laufzeit;
-  nur Läufe mit gleicher Tracing-Konfiguration vergleichen.
-- Die Servicephasen verwenden den unveränderten echten Worker mit simuliertem
-  Download, Marker und Autorisierung. Pro Familie werden Cold-/Warm-Aufrufe,
-  Downloadanzahl/-bytes und Worker-Laufzeit erfasst. Cold verarbeitet einmal;
-  Warm verwendet den eigenen Graph wieder. Jede neue Familie lädt und verarbeitet.
-- Tracemalloc im Elternprozess umfasst Mocks, Phasenberichte, IPC und Graphen;
-  diese Werte sind kein Prozess-RSS. Die Cache-Größenberechnung ist eine
-  konservative Schätzung. Worker-Laufzeit umfasst Start und Serialisierung und
-  ist keine Parser-CPU-Zeit. Frische Struktur, Mapping, Abfrage und Cursor sind
-  nicht Teil dieser Zeitmessung.
-- Dies ist ausschließlich eine Vorher-Messung. Sie beweist weder Bytegleichheit
-  zwischen echten Nutzern noch Berechtigungsverhalten, Ziellatenz oder Nutzen
-  einer Optimierung.
+## Zielevidenz und verbleibende Gates
 
-## Möglicher Entwurf unter Evidenz- und Reviewvorbehalt
+Der unveränderte Gen.-1-Pfad wurde mit zwei bestehenden Grants einer Identität
+gemessen, jeweils mit eigenem autorisiertem Download und frisch geladener Struktur.
+Die Response-Hashes waren identisch; Parsing erzeugte getrennte Snapshots.
+Dieser direkte Familien-Token-Harness ist keine MCP-Access-Token-Abnahme.
+Evidenz enthält nur anonyme Labels, Hashes, Bytezahlen und numerische Messwerte.
 
-Nach dem erfolgreichen autorisierten Download jeder Familie werden die exakten
-Antwortbytes gehasht. Unveränderlicher geparster Inhalt könnte nach Miniserver,
-SHA-256 und expliziter Parser-/Modellversion adressiert werden. Der bestehende
-Bundle-Digest hasht sortierte entpackte Mitglieder und ist eine andere Domäne;
-er darf nicht stillschweigend als Beleg gleicher Antwortbytes dienen.
-Autorisierungsepoche/-referenz, sichtbare Struktur, Mapping, Abfrage, Cursor,
-Ratenlimits und Token bleiben je Familie getrennt. Kein neuer Cache und kein
-persistenter Store darf rohe Projektbytes behalten.
+Vorher-/Nachher-Läufe benötigen gleiche Last, Graph-/Modellversion,
+Stichproben und Konkurrenz. Struktur, Download, Parsing, Speicher und Gesamtzeit
+getrennt messen; Cold-, Warm- und parallele Fälle sowie Fehlschläge melden.
+Unsichere Authentifizierungsfehler nicht automatisch wiederholen.
 
-Eintrags- und Bytegrenzen müssen auch Graphen berücksichtigen, die Ansichten und
-aktive Anfragen halten. Nur Parsing darf nach unabhängigen autorisierten Downloads
-zusammengeführt werden. Abbruch oder Widerruf eines Wartenden darf weder Arbeit
-einer anderen gültigen Familie abbrechen noch eine neue Referenz ermöglichen.
-Nach dem Warten und vor Ausgabe sind Familie und Version erneut zu prüfen.
-Widerruf entfernt ihre Referenz sofort; Dienstende entfernt alle Referenzen.
-Versions-/Identitätswechsel oder fehlgeschlagene frische Nachweise erlauben keinen
-Rückfall auf alte Inhalte. Diese Vorarbeiten liefern weder gemeinsamen Cache noch
-Berechtigungsprobe oder produktive Instrumentierung.
+Die Abnahme benötigt außerdem echte Grants verschiedener Nutzer mit abweichender
+Sichtbarkeit, kontrollierten Entzug der Projektleseberechtigung bei Warm-Aufrufen
+und Fortsetzungen sowie einen kontrollierten Projektwechsel. Bytegleichheit zweier
+Grants desselben Nutzers oder deterministische Mocks beweisen diese Fälle nicht.
+Steuerungsaktionen in Raum/Kategorie MCP-Test autorisieren keine Administration
+von Nutzerrechten. Gen.-1-Evidenz erlaubt keine Gen.-2-Zusage.
 
-## Zielmessprotokoll (offen)
-
-Explizit autorisierte Test-Grants und kontrollierte Berechtigungs-/Projektänderungen
-verwenden. Ziel reservieren; Revision, Parserversion, anonyme Fallbezeichnungen,
-Stichprobenanzahl, Arbeitslast, Aufwärmung, Cache-Zustand und Konkurrenz erfassen.
-Projektbytes, Benutzernamen, Token, URLs und Installationskennungen weder behalten
-noch veröffentlichen.
-
-Zwei Grants eines Nutzers sowie Grants verschiedener Nutzer vor und nach
-Sichtbarkeitsänderung, verweigertem Projektlesen und Projektupdate vergleichen.
-Nur bereinigte Hashes, Bytegrößen und numerische Zeiten/Zähler aufzeichnen.
-Frische Sichtbarkeitsprüfung, autorisierten Download, Parser-CPU/-Laufzeit,
-Mapping/Abfrage, Gesamtlatenz und Eltern-/Worker-Speicher getrennt erfassen.
-Passende Cold-, Warm- und konkurrierende Wiederholungen einschließlich Fehlern
-erheben. Unsichere Autorisierungsfehler nicht automatisch wiederholen.
-
-Zuerst den unveränderten Dienst messen. Ein späterer experimenteller Entwurf braucht
-vergleichbare Arbeitslast, Rechte, Revisionen, Stichproben und Konkurrenz für
-Vorher/Nachher. Eine Schwelle für wesentlichen Nutzen vor Auswertung vereinbaren;
-hier werden weder eine Schwelle noch positive Zielergebnisse behauptet.
-
-## Sicherheits- und Lifecycle-Matrix
-
-| Fall | Erforderlicher Nachweis vor produktiver Wiederverwendung |
-| --- | --- |
-| Zwei Familien, gleiche Bytes/Marker | Jede lädt mit eigenen Rechten; erst danach gemeinsames Parsing/Inhalt |
-| Gleicher Marker, Sichtbarkeit entfernt | Frische Aufruferstruktur entfernt Controls; Mapping/Abfrage/Cursor übernehmen keine fremde Sichtbarkeit |
-| Gleicher Marker, Projektlesen verweigert | Kein Inhalt über fremde Referenz; Berechtigung auch bei Cache-Hits nachweisen |
-| Widerruf während Download/Parsing/Warten | Kein Ergebnis/Referenz für widerrufene Familie; andere gültige Familie bleibt unabhängig |
-| Projektwechsel während Verifikation | Inkonsistente Version ablehnen; kein alter Ersatz |
-| Identitäts-/Miniserverwechsel | Keine Referenz, Ansicht oder Cursor überschreitet die Grenze |
-| Marker-/Strukturfehler, Bestätigung nötig, Auth busy, Quell-IP-Sperre | Geschlossen fehlschlagen; begrenzten Coordinator und Ratenlimits erhalten |
-| Konkurrierende gleiche/verschiedene Inhalte | Unabhängige Downloads; begrenztes gemeinsames Parsing und Warteschlangen |
-| Abbruch, Verdrängung, aktive Ansichten | Keine verlorenen Referenzen, unberechtigte Ausgabe oder unberücksichtigten Inhalte |
-| Neustart/Stopp/Parserwechsel | Speicherreferenzen löschen; keine persistierten Projektdaten oder inkompatible Wiederverwendung |
-| MCP-Cache-Hit und Folgeseite | Scope, Familie, Bestätigung, Projektberechtigung und frische Sichtbarkeit erneut prüfen |
-
-Die neuen Tests belegen ausgewählte **bestehende Isolationsgrenzen**, keine Abnahme
-eines gemeinsamen Caches. Weitere Fälle benötigen deterministische Tests des
-Entwurfs und passende reale Berechtigungs-/Lifecycle-Evidenz. #379 erst nach diesen
-Gates und nachgewiesenem Zielnutzen umsetzen. #239 behält eigene Service-Identitäts-,
-Transport- und Discovery-Gates; keines der Issues liefert den Nachweis des anderen.
+Merge und Issue-Abschluss benötigen abgeschlossene Ziel-Gates, grüne finale CI,
+normales Review und separates Security-Audit ohne relevante offene Befunde.

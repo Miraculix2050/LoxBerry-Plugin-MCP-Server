@@ -5,6 +5,12 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Share identical parsed project content across OAuth families only after each
+  caller's own authorized download. Recheck project-read permission through a
+  download on warm calls and continuations too; retain separate visible mappings,
+  queries and cursors. Bound family references and account shared graphs once.
+  Warm requests incur additional download/verification cost (#379).
+
 - Resolve exact, unique cross-model `OutputRef` references to `VirtualOutCmd`
   within the same authorized project bundle. Preserve local-target precedence,
   ambiguity and unsupported reference gaps. Project model version 13 distinguishes

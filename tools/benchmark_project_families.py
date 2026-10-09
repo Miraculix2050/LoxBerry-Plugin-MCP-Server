@@ -1,4 +1,4 @@
-"""Offline baseline for #379; synthetic input only, no shared-cache implementation."""
+"""Offline OAuth-family content-reuse benchmark; synthetic input only."""
 
 from __future__ import annotations
 
@@ -66,7 +66,7 @@ def parser_baseline(data: bytes, samples: int) -> dict[str, int | float]:
 
 
 async def family_baseline(data: bytes, families: int, warm_calls: int) -> dict[str, object]:
-    """Exercise the unchanged service with fake authorization and real worker IPC."""
+    """Exercise the service with fake authorization and real worker IPC."""
     client = SimpleNamespace(
         download_project=AsyncMock(return_value=data),
         project_marker=AsyncMock(return_value="synthetic-version"),
@@ -126,7 +126,8 @@ async def family_baseline(data: bytes, families: int, warm_calls: int) -> dict[s
         return {
             "phases": phases,
             "cache_entries": len(service._cache),
-            "cache_accounted_bytes": sum(entry[2] for entry in service._cache.values()),
+            "cache_accounted_bytes": service._cache_bytes(),
+            "content_entries": len({id(entry[1]) for entry in service._cache.values()}),
             "parent_python_retained_bytes": current,
             "parent_python_peak_bytes": peak,
         }

@@ -1,6 +1,7 @@
 """Identity-bound orchestration; cached content never grants permission."""
 
 import asyncio
+import hashlib
 import logging
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable
@@ -18,7 +19,7 @@ from mcpserver.loxone.client import (
 from mcpserver.loxone.events import LoxoneProtocolError
 from mcpserver.loxone.models import LoxoneStructure
 
-from .graph import ProjectSnapshot
+from .graph import PROJECT_MODEL_VERSION, ProjectSnapshot
 from .mapping import ProjectView, map_runtime
 from .models import DEFAULT_LIMITS, ProjectBundle, ProjectError, ProjectLimits
 from .query import ProjectQuery
@@ -31,6 +32,9 @@ _LOGGER = logging.getLogger(__name__)
 _MAX_CACHE_BYTES = 128 * 1024 * 1024
 _MAX_CACHE_ENTRIES = 8
 _MAX_VIEW_CACHE_BYTES = 64 * 1024 * 1024
+_CONTENT_VERSION = (1, PROJECT_MODEL_VERSION)
+type _FamilyKey = tuple[str, str, str]
+type _ContentKey = tuple[str, str, tuple[int, int], ProjectLimits]
 
 
 class ProjectService:
@@ -56,11 +60,14 @@ class ProjectService:
             OrderedDict()
         )
         self._markers: dict[tuple[str, str, str], str] = {}
+        # These keys describe already-authorized family references, never permission.
+        # Snapshots live only in the bounded family/view caches, not a second pool.
+        self._content_keys: dict[_FamilyKey, _ContentKey] = {}
         self._views: OrderedDict[
             tuple[str, str, str, str],
             tuple[LoxoneStructure, ProjectView, ProjectQuery | None, int],
         ] = OrderedDict()
-        self.cache_counts = {"hit": 0, "miss": 0, "invalidate": 0, "evict": 0}
+        self.cache_counts = {"hit": 0, "shared_hit": 0, "miss": 0, "invalidate": 0, "evict": 0}
 
     def _record_cache(self, outcome: str) -> None:
         self.cache_counts[outcome] += 1
@@ -161,6 +168,17 @@ class ProjectService:
             if key[:3] == cache_key:
                 self._views.pop(key)
 
+    def _cache_bytes(self) -> int:
+        """Charge each retained immutable graph once, including shared references."""
+        return sum({id(entry[1]): entry[2] for entry in self._cache.values()}.values())
+
+    def _discard(self, cache_key: _FamilyKey, outcome: str = "invalidate") -> None:
+        self._content_keys.pop(cache_key, None)
+        self._markers.pop(cache_key, None)
+        self._invalidate_views(cache_key)
+        if self._cache.pop(cache_key, None) is not None:
+            self._record_cache(outcome)
+
     async def _load(
         self, access: StoredAccessToken, *, bundle_only: bool, verified_marker: str | None
     ) -> ProjectBundle | ProjectSnapshot:
@@ -190,55 +208,67 @@ class ProjectService:
                     )
                     if not marker or len(marker) > 128:
                         raise ProjectError("project_marker_invalid")
-                    # A supplied runtime marker needs no network await; the
-                    # initial authorization check still covers a cache hit.
                     if verified_marker is None:
                         await self._check(access)
-                    cached = self._cache.get(cache_key)
-                    if cached is not None and cached[0] == marker:
-                        self._cache.move_to_end(cache_key)
-                        self._markers[cache_key] = marker
-                        self._record_cache("hit")
-                        return cached[1]
-                    if cached is not None:
-                        self._cache.pop(cache_key)
-                        self._invalidate_views(cache_key)
-                        self._record_cache("invalidate")
-                    self._record_cache("miss")
+                    # Neither a marker nor another family's bytes authorize this
+                    # request. Even warm hits and continuations download with the
+                    # caller's token before looking up immutable parsed content.
                     data = await self.client.download_project(token, self.limits)
                     await self._check(access)
-                    snapshot, serialized_size = await process_project(data, self.limits)
-                    assert isinstance(snapshot, ProjectSnapshot)
+                    content_key = (
+                        access.miniserver_id,
+                        hashlib.sha256(data).hexdigest(),
+                        _CONTENT_VERSION,
+                        self.limits,
+                    )
+                    cached = self._cache.get(cache_key)
+                    if cached is not None and (
+                        cached[0] != marker or self._content_keys.get(cache_key) != content_key
+                    ):
+                        self._discard(cache_key)
+                        cached = None
+                    shared = next(
+                        (
+                            entry
+                            for key, entry in self._cache.items()
+                            if self._content_keys.get(key) == content_key
+                        ),
+                        None,
+                    )
+                    if shared is None:
+                        self._record_cache("miss")
+                        snapshot, serialized_size = await process_project(data, self.limits)
+                        assert isinstance(snapshot, ProjectSnapshot)
+                        # Conservative object overhead allowance beyond serialized content.
+                        size = (
+                            serialized_size * 4
+                            + sum(project.element_count * 128 for project in snapshot.projects)
+                            + (len(snapshot.graph.nodes) + len(snapshot.graph.edges)) * 512
+                        )
+                    else:
+                        _, snapshot, size = shared
+                    del data
                     await self._check(access)
                     if await self._marker(token) != marker:
                         raise ProjectError("project_changed_during_load")
                     await self._check(access)
                     self._markers[cache_key] = marker
+                    if shared is not None:
+                        self._record_cache("hit" if cached is not None else "shared_hit")
                 finally:
                     token.destroy()
-                # Conservative object overhead allowance in addition to serialized content.
-                size = (
-                    serialized_size * 4
-                    + sum(project.element_count * 128 for project in snapshot.projects)
-                    + (len(snapshot.graph.nodes) + len(snapshot.graph.edges)) * 512
-                )
                 if size <= _MAX_CACHE_BYTES:
                     self._cache[cache_key] = (marker, snapshot, size)
+                    self._content_keys[cache_key] = content_key
                     self._cache.move_to_end(cache_key)
                     while (
                         len(self._cache) > _MAX_CACHE_ENTRIES
-                        or sum(v[2] for v in self._cache.values()) > _MAX_CACHE_BYTES
+                        or self._cache_bytes() > _MAX_CACHE_BYTES
                     ):
-                        evicted_key, _ = self._cache.popitem(last=False)
-                        self._markers.pop(evicted_key, None)
-                        self._invalidate_views(evicted_key)
-                        self._record_cache("evict")
+                        self._discard(next(iter(self._cache)), "evict")
                 return snapshot
         except BaseException:
-            self._markers.pop(cache_key, None)
-            self._invalidate_views(cache_key)
-            if self._cache.pop(cache_key, None) is not None:
-                self._record_cache("invalidate")
+            self._discard(cache_key)
             raise
         finally:
             self._tasks.pop(task, None)
@@ -247,10 +277,7 @@ class ProjectService:
         """Discard unverified project generations without cancelling callers."""
         for key in tuple(self._cache):
             if key[2] == family_id:
-                self._cache.pop(key)
-                self._markers.pop(key, None)
-                self._invalidate_views(key)
-                self._record_cache("invalidate")
+                self._discard(key)
         for key in tuple(self._markers):
             if key[2] == family_id:
                 self._markers.pop(key)
@@ -266,6 +293,7 @@ class ProjectService:
     async def close(self) -> None:
         self._closed = True
         self._cache.clear()
+        self._content_keys.clear()
         self._markers.clear()
         self._views.clear()
         tasks = tuple(self._tasks)
