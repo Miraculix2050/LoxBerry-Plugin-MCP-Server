@@ -272,7 +272,8 @@ report a size trim through `truncated` and `truncation_reason`.
 Status exposes opaque `model_sources`; identical KNX source occurrences from separate model
 sources are presented once as a logical object with `source_occurrence_count` and
 `model_source_ids`. Equal titles or group addresses never cause such a merge.
-An `OutputRef` without a local target can resolve to a unique `VirtualOutCmd` in
+Project model version 13 allows an `OutputRef` without a local target to resolve
+to a unique `VirtualOutCmd` in
 another model source of the same authorized bundle using an exact normalized UUID.
 Local targets retain precedence; ambiguous, missing or other cross-source references
 remain unresolved. This is static reference evidence, not a live output operation.

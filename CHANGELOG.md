@@ -7,7 +7,8 @@ extracted from the matching version heading.
 
 - Resolve exact, unique cross-model `OutputRef` references to `VirtualOutCmd`
   within the same authorized project bundle. Preserve local-target precedence,
-  ambiguity and unsupported reference gaps (#374).
+  ambiguity and unsupported reference gaps. Project model version 13 distinguishes
+  the new graph interpretation; KNX analysis remains version 12 (#374).
 
 - Disable automatic WebSocket transport pings for Loxone sockets, retaining
   bounded application keepalive and strict rejection of unexpected structure

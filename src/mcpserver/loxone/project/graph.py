@@ -660,7 +660,7 @@ def build_snapshot(
     )
     return ProjectSnapshot(
         bundle.fingerprint,
-        12,
+        13,
         tuple(projects),
         graph,
         _source_diagnostics(graph, tuple(anomalies)),

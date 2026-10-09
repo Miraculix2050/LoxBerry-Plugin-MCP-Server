@@ -61,6 +61,7 @@ async def test_archive_worker_and_query_resolve_only_unique_cross_model_outputre
                 + packed,
             )
     snapshot, _ = await process_project(archive.getvalue())
+    assert snapshot.model_version == 13
     structure = SimpleNamespace(last_modified="fixture", controls=())
     query = ProjectQuery(ProjectView(snapshot, map_runtime(snapshot, structure)), {})
     node = next(n for n in snapshot.graph.nodes if n.block_type == "OutputRef")
