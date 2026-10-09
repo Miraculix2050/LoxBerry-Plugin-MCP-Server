@@ -9,6 +9,13 @@
 - Gen. 1 über eine lokale HTTP-Adresse; Gen. 2 über HTTPS mit gültigem Zertifikat.
 - Keine Zugangsdaten in URLs; HTTP Basic Auth wird nicht unterstützt.
 
+Loxone-Verbindungen deaktivieren automatische WebSocket-Transport-Pings und
+behalten den Loxone-Anwendungs-Keepalive mit seiner Timeout-Behandlung bei. Auf
+dem untersuchten Gen.-1-Ziel lösten Transport-Pings eine unerwartete gzip-HTML-Datei
+aus. Unerwartete Strukturdateien bleiben Fehler; sie werden weder dekodiert noch
+übersprungen. Dieser Befund belegt keine Kompatibilität mit anderen Firmwareständen
+oder Miniserver-Generationen.
+
 ## Installation und erste Verbindung
 
 1. Installiere das Release-ZIP im LoxBerry Plugin Manager.

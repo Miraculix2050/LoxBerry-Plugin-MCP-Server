@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Disable automatic WebSocket transport pings for Loxone sockets, retaining
+  bounded application keepalive and strict rejection of unexpected structure
+  files. Fix the transport-ping/gzip HTML finding on the observed Gen. 1 target
+  without decoding or skipping unrelated files (#384).
+
 - Represent explicit Loxone API-connector wiring as bounded block communication
   dependencies in project describe/trace, with port/block metadata and no scalar
   values or inferred signal semantics. Preserve unresolved links and expose

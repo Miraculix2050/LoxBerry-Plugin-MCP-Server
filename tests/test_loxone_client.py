@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import gzip
 from contextlib import suppress
 from types import SimpleNamespace
 from typing import Any, cast
@@ -19,6 +20,7 @@ from mcpserver.loxone.client import (
     LoxoneClient,
     LoxoneCommandRejected,
     LoxoneConnectionError,
+    LoxoneProtocolError,
     LoxoneSourceIpBlocked,
     LoxoneToken,
     LoxoneTokenAuthenticationRejected,
@@ -33,6 +35,137 @@ from mcpserver.loxone.client import (
 from mcpserver.loxone.events import MessageHeader, MessageType
 from mcpserver.loxone.runtime import LoxoneRuntime
 from mcpserver.loxone.security import token_hmac
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("endpoint", ["http://192.168.1.10", "https://miniserver.example"])
+async def test_connection_disables_transport_pings(
+    monkeypatch: pytest.MonkeyPatch, endpoint: str
+) -> None:
+    websocket = object()
+    connector = AsyncMock(return_value=websocket)
+    monkeypatch.setattr("mcpserver.loxone.client.connect", connector)
+    client = LoxoneClient(
+        MiniserverEndpoint.parse(endpoint),
+        client_uuid=UUID(int=1),
+        timeout_seconds=2,
+    )
+
+    assert await client._connect_websocket() is websocket
+    options = connector.call_args.kwargs
+    assert "ping_interval" in options
+    assert options["ping_interval"] is None
+    assert options["open_timeout"] == options["close_timeout"] == 2
+
+
+@pytest.mark.asyncio
+async def test_transport_ping_file_does_not_skip_to_later_structure_json() -> None:
+    unexpected_file = gzip.compress(b"<!doctype html><html>Unexpected file</html>", mtime=0)
+    structure = '{"msInfo":{},"rooms":{},"cats":{},"controls":{}}'
+
+    class FakeWebSocket:
+        def __init__(self) -> None:
+            self.messages: list[str | bytes] = []
+            self.sent: list[str] = []
+
+        async def ping(self) -> None:
+            # Reproduce the observed transport-ping/file ordering without a device.
+            self.messages.extend(
+                [
+                    bytes((3, MessageType.BINARY_FILE, 0, 0))
+                    + len(unexpected_file).to_bytes(4, "little"),
+                    unexpected_file,
+                ]
+            )
+
+        async def send(self, command: str) -> None:
+            self.sent.append(command)
+            self.messages.extend(
+                [
+                    bytes((3, MessageType.BINARY_FILE, 0, 0))
+                    + len(structure.encode()).to_bytes(4, "little"),
+                    structure,
+                ]
+            )
+
+        async def recv(self) -> str | bytes:
+            return self.messages.pop(0)
+
+    websocket = FakeWebSocket()
+    session = LoxoneWebSocketSession(
+        cast(Any, websocket),
+        public_key="unused",
+        token=LoxoneToken("jwt", "reader", "key", "SHA256", 100),
+        timeout_seconds=1,
+        max_payload_bytes=1_000,
+    )
+    await websocket.ping()
+    with pytest.raises(LoxoneProtocolError, match="structure response is not text"):
+        await session.load_structure()
+
+    assert websocket.sent == ["data/LoxAPP3.json"]
+    assert websocket.messages[-1] == structure
+    assert len(websocket.messages) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["idle", "disconnect", "out_of_service"])
+async def test_state_stream_keepalive_failure_is_terminal(
+    monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    terminal: bytes | BaseException
+    if failure == "idle":
+        terminal = TimeoutError()
+    elif failure == "disconnect":
+        terminal = ConnectionClosedError(Close(1006, ""), None)
+    else:
+        terminal = bytes((3, MessageType.OUT_OF_SERVICE, 0, 0, 0, 0, 0, 0))
+    messages: list[bytes | BaseException] = [TimeoutError(), terminal]
+
+    async def receive() -> bytes:
+        message = messages.pop(0)
+        if isinstance(message, BaseException):
+            raise message
+        return message
+
+    websocket = SimpleNamespace(recv=receive, send=AsyncMock())
+    session = LoxoneWebSocketSession(
+        cast(Any, websocket),
+        public_key="unused",
+        token=LoxoneToken("jwt", "reader", "key", "SHA256", 100),
+        timeout_seconds=0.1,
+        max_payload_bytes=100,
+    )
+    monkeypatch.setattr(session, "_command", AsyncMock(return_value="OK"))
+    stream = session.state_events()
+
+    with pytest.raises(LoxoneConnectionError):
+        await anext(stream)
+    websocket.send.assert_awaited_once_with("keepalive")
+    assert not messages
+    with pytest.raises(StopAsyncIteration):
+        await anext(stream)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reply", [MessageType.KEEPALIVE, MessageType.OUT_OF_SERVICE])
+async def test_application_keepalive_requires_acknowledgement(reply: MessageType) -> None:
+    websocket = SimpleNamespace(
+        send=AsyncMock(), recv=AsyncMock(return_value=bytes((3, reply, 0, 0, 0, 0, 0, 0)))
+    )
+    session = LoxoneWebSocketSession(
+        cast(Any, websocket),
+        public_key="unused",
+        token=LoxoneToken("jwt", "reader", "key", "SHA256", 100),
+        timeout_seconds=0.1,
+        max_payload_bytes=100,
+    )
+    if reply is MessageType.KEEPALIVE:
+        await session.keepalive()
+    else:
+        with pytest.raises(LoxoneProtocolError, match="did not acknowledge keepalive"):
+            await session.keepalive()
+    websocket.send.assert_awaited_once_with("keepalive")
 
 
 @pytest.mark.asyncio

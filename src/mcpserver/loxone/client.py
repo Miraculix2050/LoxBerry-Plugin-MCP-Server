@@ -387,6 +387,9 @@ class LoxoneClient:
                     max_size=self.max_response_bytes,
                     open_timeout=self.timeout_seconds,
                     close_timeout=self.timeout_seconds,
+                    # Gen. 1 can return an unrelated file after RFC transport pings.
+                    # Session owners retain their bounded Loxone application keepalive.
+                    ping_interval=None,
                     proxy=None,
                 ),
                 timeout=self.timeout_seconds,
