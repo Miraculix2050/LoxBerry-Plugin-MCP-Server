@@ -622,11 +622,7 @@ def build_snapshot(
     total_elements = 0
     total_attributes = 0
     projects: list[ProjectPartSummary] = []
-    nodes: list[GraphNode] = []
-    edges: list[GraphEdge] = []
-    semantic_edges: list[SemanticEdge] = []
-    state_flows: list[StateFlow] = []
-    unresolved: list[tuple[str, str]] = []
+    parsed_projects: list[tuple[str, ParsedProject]] = []
     anomalies: list[tuple[str, int | None, str]] = []
     for member in bundle.files:
         data = decode_loxcc(member.content, limits)
@@ -639,23 +635,12 @@ def build_snapshot(
         if total_elements > limits.elements or total_attributes > limits.attributes:
             raise ProjectError("project_parse_limit")
         namespace = hashlib.sha256(member.key.encode()).hexdigest()[:24]
-        part_graph = build_graph(((namespace, project),), limits)
-        nodes.extend(part_graph.nodes)
-        edges.extend(part_graph.edges)
-        semantic_edges.extend(part_graph.semantic_edges)
-        state_flows.extend(part_graph.state_flows)
-        unresolved.extend(part_graph.unresolved)
+        parsed_projects.append((namespace, project))
         for index, code in project.anomalies:
             context: int | None = index
             while context is not None and project.elements[context].tag not in {"C", "Co"}:
                 context = project.elements[context].parent
             anomalies.append((namespace, context, code))
-        if (
-            len(nodes) > limits.elements
-            or len(edges) > limits.edges
-            or len(semantic_edges) > limits.edges
-        ):
-            raise ProjectError("project_graph_limit")
         projects.append(
             ProjectPartSummary(
                 namespace,
@@ -663,9 +648,7 @@ def build_snapshot(
                 tuple(code for _, code in project.anomalies),
             )
         )
-    graph = ProjectGraph(
-        tuple(nodes), tuple(edges), tuple(unresolved), tuple(semantic_edges), tuple(state_flows)
-    )
+    graph = build_graph(tuple(parsed_projects), limits)
     logical_aliases, logical_source_ids = _logical_knx_nodes(graph)
     # These private dicts are constructed once with the immutable snapshot and
     # never exposed to callers. They must remain pickle-compatible because the

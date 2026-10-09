@@ -1,6 +1,8 @@
 import asyncio
 import struct
+import zipfile
 import zlib
+from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -10,7 +12,9 @@ import mcpserver.loxone.project.service as service_module
 from mcpserver.loxone.client import LoxoneConnectionError, LoxoneTokenAuthenticationRejected
 from mcpserver.loxone.models import Control, LoxoneIdentity, LoxoneStructure
 from mcpserver.loxone.project.graph import ProjectSnapshot
+from mcpserver.loxone.project.mapping import ProjectView, map_runtime
 from mcpserver.loxone.project.models import ProjectError
+from mcpserver.loxone.project.query import ProjectQuery
 from mcpserver.loxone.project.service import ProjectService
 from mcpserver.loxone.project.worker import process_project
 
@@ -27,6 +31,52 @@ async def test_real_worker_returns_immutable_snapshot():
     assert isinstance(result, ProjectSnapshot)
     assert len(result.graph.nodes) == 1
     assert size > 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("target_count", [0, 1, 2])
+@pytest.mark.parametrize("reference_first", [False, True])
+async def test_archive_worker_and_query_resolve_only_unique_cross_model_outputrefs(
+    target_count, reference_first
+):
+    reference = b'<P><C Type="OutputRef" Ref="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"/></P>'
+    target = (
+        b"<P>"
+        + b'<C Type="VirtualOutCmd" U="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"/>' * target_count
+        + b"</P>"
+    )
+    archive = BytesIO()
+    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as output:
+        for name, plain in zip(
+            ("a.LoxCC", "b.LoxCC"),
+            (reference, target) if reference_first else (target, reference),
+            strict=True,
+        ):
+            packed = (
+                bytes([len(plain) << 4]) if len(plain) < 15 else bytes([0xF0, len(plain) - 15])
+            ) + plain
+            output.writestr(
+                name,
+                struct.pack("<IIII", 0xAABBCCEE, len(packed), len(plain), zlib.crc32(plain))
+                + packed,
+            )
+    snapshot, _ = await process_project(archive.getvalue())
+    structure = SimpleNamespace(last_modified="fixture", controls=())
+    query = ProjectQuery(ProjectView(snapshot, map_runtime(snapshot, structure)), {})
+    node = next(n for n in snapshot.graph.nodes if n.block_type == "OutputRef")
+    assert query.status()["project_parts"] == 2
+    assert query.status()["unresolved_relationships"] == (0 if target_count == 1 else 1)
+    trace = query.trace(node, direction="upstream", max_depth=1, max_nodes=10)
+    assert not trace["truncated"]
+    if target_count == 1:
+        (edge,) = trace["edges"]
+        assert edge["kind"] == "reference" and edge["target"] == node.key
+        assert edge["source"].split(":")[0] != node.project
+        assert not trace["unresolved_relationships"]
+        assert query.describe(node, limit=10)["relationships"][0]["kind"] == "reference"
+    else:
+        assert not trace["edges"]
+        assert trace["unresolved_relationships"]
 
 
 @pytest.mark.asyncio
