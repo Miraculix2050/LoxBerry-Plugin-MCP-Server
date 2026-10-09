@@ -328,7 +328,7 @@ first-match priority and codes 1–9 plus omitted equality for the evidenced
 influences; no runtime evaluation or conversion is exposed. Tables are bounded
 at 100 rows and text operands at 256 characters. Empty numeric results, unknown
 operator encodings and variable comparison expressions remain explicit gaps.
-Model and KNX analysis versions are 12; Modbus analysis stays at version 1.
+Project model version is 13; KNX analysis stays at version 12 and Modbus analysis at version 1.
 
 `loxone_describe_project_object` adds optional `include_state_table=false`.
 Its additive `state_table` projection is restricted to exact visible runtime
@@ -337,12 +337,12 @@ literal TQ templates. The existing `limit` bounds row delivery; at most 100 rows
 and 512 characters/template are retained, with explicit omission/truncation and
 64 KiB response fitting. `complete` describes delivered table data, not complete
 TQ substitution or OutputAPI payload semantics. Default describe/trace omit table content.
-Sparse condition positions are supported by state_table_aq_v3; model/KNX analysis
-version 12 and opening connector version 5 invalidate prior cached interpretations.
+Sparse condition positions are supported by state_table_aq_v3; project model
+version 13, KNX analysis version 12 and opening connector version 5 distinguish cached interpretations.
 
 ### API connector connection metadata
 
-Project model and KNX analysis version 12, Opening connector rules 5 and canonical
+Project model version 13, KNX analysis version 12, Opening connector rules 5 and canonical
 skill revision 54 apply. Exact stored connector keys `OutputAPI` and `API` expose
 optional `api_connector` with `semantics=connection_metadata_only`,
 `value_available=false` and `rule_id=api_connector_metadata_v1`. No aliases are added.

@@ -1,6 +1,7 @@
 """Deterministic graph of observed C/Co/In project relationships."""
 
 import hashlib
+import re
 from collections import defaultdict, deque
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -242,6 +243,8 @@ def build_graph(
     semantic_edges: set[SemanticEdge] = set()
     unresolved: list[tuple[str, str]] = []
     state_flows: list[StateFlow] = []
+    model_indexes: list[tuple[ParsedProject, dict[int, GraphNode], dict[str, list[GraphNode]]]] = []
+    bundle_by_id: dict[str, list[GraphNode]] = defaultdict(list)
     node: GraphNode | None
     for namespace, project in projects:
         local: dict[int, GraphNode] = {}
@@ -265,6 +268,9 @@ def build_graph(
                 raise ProjectError("project_graph_limit")
             if node.source_id:
                 by_id[normalize_id(node.source_id)].append(node)
+                bundle_by_id[normalize_id(node.source_id)].append(node)
+        model_indexes.append((project, local, by_id))
+    for project, local, by_id in model_indexes:
         for index, element in enumerate(project.elements):
             node = local.get(index)
             if node is not None:
@@ -276,6 +282,22 @@ def build_graph(
                 reference = element.value("Ref")
                 if reference:
                     candidates = by_id.get(normalize_id(reference), [])
+                    # Observed OutputRef -> VirtualOutCmd links can cross model
+                    # sources in one authorized bundle. Never override local
+                    # ambiguity or generalize this evidence to other link types.
+                    if (
+                        not candidates
+                        and node.kind == "block"
+                        and node.block_type == "OutputRef"
+                        and re.fullmatch(r"[0-9a-f]{32}", normalize_id(reference))
+                    ):
+                        external = bundle_by_id.get(normalize_id(reference), [])
+                        if (
+                            len(external) == 1
+                            and external[0].kind == "block"
+                            and external[0].block_type == "VirtualOutCmd"
+                        ):
+                            candidates = external
                     if len(candidates) == 1:
                         kind = (
                             "api_connection"
@@ -600,11 +622,7 @@ def build_snapshot(
     total_elements = 0
     total_attributes = 0
     projects: list[ProjectPartSummary] = []
-    nodes: list[GraphNode] = []
-    edges: list[GraphEdge] = []
-    semantic_edges: list[SemanticEdge] = []
-    state_flows: list[StateFlow] = []
-    unresolved: list[tuple[str, str]] = []
+    parsed_projects: list[tuple[str, ParsedProject]] = []
     anomalies: list[tuple[str, int | None, str]] = []
     for member in bundle.files:
         data = decode_loxcc(member.content, limits)
@@ -617,23 +635,12 @@ def build_snapshot(
         if total_elements > limits.elements or total_attributes > limits.attributes:
             raise ProjectError("project_parse_limit")
         namespace = hashlib.sha256(member.key.encode()).hexdigest()[:24]
-        part_graph = build_graph(((namespace, project),), limits)
-        nodes.extend(part_graph.nodes)
-        edges.extend(part_graph.edges)
-        semantic_edges.extend(part_graph.semantic_edges)
-        state_flows.extend(part_graph.state_flows)
-        unresolved.extend(part_graph.unresolved)
+        parsed_projects.append((namespace, project))
         for index, code in project.anomalies:
             context: int | None = index
             while context is not None and project.elements[context].tag not in {"C", "Co"}:
                 context = project.elements[context].parent
             anomalies.append((namespace, context, code))
-        if (
-            len(nodes) > limits.elements
-            or len(edges) > limits.edges
-            or len(semantic_edges) > limits.edges
-        ):
-            raise ProjectError("project_graph_limit")
         projects.append(
             ProjectPartSummary(
                 namespace,
@@ -641,9 +648,7 @@ def build_snapshot(
                 tuple(code for _, code in project.anomalies),
             )
         )
-    graph = ProjectGraph(
-        tuple(nodes), tuple(edges), tuple(unresolved), tuple(semantic_edges), tuple(state_flows)
-    )
+    graph = build_graph(tuple(parsed_projects), limits)
     logical_aliases, logical_source_ids = _logical_knx_nodes(graph)
     # These private dicts are constructed once with the immutable snapshot and
     # never exposed to callers. They must remain pickle-compatible because the
@@ -655,7 +660,7 @@ def build_snapshot(
     )
     return ProjectSnapshot(
         bundle.fingerprint,
-        12,
+        13,
         tuple(projects),
         graph,
         _source_diagnostics(graph, tuple(anomalies)),

@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from mcpserver.loxone.project.graph import _logical_knx_nodes, _source_diagnostics, build_graph
-from mcpserver.loxone.project.models import ProjectError
+from mcpserver.loxone.project.models import ProjectError, ProjectLimits
 from mcpserver.loxone.project.parser import parse_project
 
 
@@ -36,6 +36,76 @@ def test_duplicate_source_ids_do_not_guess_edges():
     graph = build_graph((("p", project),))
     assert not graph.edges
     assert graph.unresolved
+
+
+def test_outputref_resolves_unique_virtual_output_in_other_model_source():
+    reference = parse_project(
+        b'<P><C Type="Page"><C Type="OutputRef" '
+        b'Ref="ABCDEF01-2345-6789-ABCD-EF0123456789"/></C></P>'
+    )
+    target = parse_project(b'<P><C Type="VirtualOutCmd" U="abcdef0123456789abcdef0123456789"/></P>')
+    for projects in (
+        (("ref", reference), ("target", target)),
+        (("target", target), ("ref", reference)),
+    ):
+        graph = build_graph(projects)
+        assert not graph.unresolved
+        edges = [edge for edge in graph.edges if edge.kind == "reference"]
+        assert [(edge.source, edge.target) for edge in edges] == [("target:1", "ref:2")]
+        assert graph.traverse("ref:2", upstream=True) == ("target:1",)
+
+
+@pytest.mark.parametrize(
+    ("ref_type", "target_type", "identifier", "duplicate", "local"),
+    [
+        ("InputRef", "VirtualOutCmd", "a" * 32, False, False),
+        ("OutputRef", "EIBactor", "a" * 32, False, False),
+        ("OutputRef", "VirtualOutCmd", "not-a-uuid", False, False),
+        ("OutputRef", "VirtualOutCmd", "a" * 32, True, False),
+        ("OutputRef", "VirtualOutCmd", "a" * 32, True, True),
+    ],
+)
+def test_cross_source_outputref_preserves_unproven_or_ambiguous_targets(
+    ref_type, target_type, identifier, duplicate, local
+):
+    target_xml = f'<C Type="{target_type}" U="{identifier}"/>'
+    reference = parse_project(
+        (
+            f'<P><C Type="{ref_type}" Ref="{identifier}"/>'
+            + (target_xml * 2 if local else "")
+            + "</P>"
+        ).encode()
+    )
+    target = parse_project(("<P>" + target_xml * (2 if duplicate else 1) + "</P>").encode())
+    graph = build_graph((("ref", reference), ("target", target)))
+    assert graph.unresolved == (("ref:1", "reference_unresolved"),)
+    assert not any(edge.kind == "reference" for edge in graph.edges)
+
+
+def test_outputref_keeps_local_target_precedence():
+    project = parse_project(
+        b'<P><C Type="OutputRef" Ref="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"/>'
+        b'<C Type="VirtualOutCmd" U="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"/></P>'
+    )
+    graph = build_graph((("one", project), ("two", project)))
+    assert not graph.unresolved
+    assert all(edge.source.split(":")[0] == edge.target.split(":")[0] for edge in graph.edges)
+
+
+def test_outputref_cross_source_uniqueness_includes_other_types_and_sources():
+    reference = parse_project(
+        b'<P><C Type="OutputRef" Ref="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"/></P>'
+    )
+    target = parse_project(b'<P><C Type="VirtualOutCmd" U="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"/></P>')
+    for other in (target, parse_project(b'<P><Co U="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"/></P>')):
+        graph = build_graph((("ref", reference), ("target", target), ("other", other)))
+        assert graph.unresolved == (("ref:1", "reference_unresolved"),)
+        assert not graph.edges
+    assert build_graph((("ref", reference),)).unresolved
+    with pytest.raises(ProjectError, match="project_graph_limit"):
+        build_graph((("ref", reference), ("target", target)), ProjectLimits(edges=0))
+    with pytest.raises(ProjectError, match="project_graph_limit"):
+        build_graph((("ref", reference), ("target", target)), ProjectLimits(elements=1))
 
 
 def test_logical_knx_nodes_merge_only_identical_cross_source_occurrences():
