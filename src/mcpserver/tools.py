@@ -3112,11 +3112,11 @@ async def _snapshot(
 
 
 async def _project_query(runtime: LoxoneRuntime | None) -> tuple[ProjectQuery, RuntimeSnapshot]:
-    """Load one authorization-checked project view within the normal call slot."""
+    """Admit bounded project work before acquiring a shared call slot."""
     if runtime is None or runtime.projects is None:
         raise RuntimeUnavailable("the project service is not configured")
     access = _access()
-    async with runtime.call_slot(access):
+    async with runtime.project_call_slot(access):
         try:
             snapshot = await runtime.snapshot(access, fresh_visibility=True)
         except RuntimeUnavailable:
@@ -3133,7 +3133,7 @@ async def _history_project_query(
 
     if runtime is None or runtime.projects is None:
         raise RuntimeUnavailable("the project service is not configured")
-    async with runtime.history_call_slot(access):
+    async with runtime.history_project_call_slot(access):
         try:
             snapshot = await runtime.snapshot(access, fresh_visibility=True)
         except RuntimeUnavailable:
@@ -3943,7 +3943,8 @@ def register_opening_contact_tool(server: FastMCP, runtime: LoxoneRuntime | None
             if runtime is None:
                 raise RuntimeUnavailable("the service is not configured")
             access = _access()
-            async with runtime.call_slot(access):
+            slot = runtime.project_call_slot if runtime.projects is not None else runtime.call_slot
+            async with slot(access):
                 try:
                     snapshot = await runtime.snapshot(access, fresh_visibility=True)
                 except RuntimeUnavailable:

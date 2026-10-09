@@ -344,6 +344,8 @@ class LoxoneRuntime:
         self._control_locks = _FamilyLocks()
         self._control_confirmation_seconds = control_confirmation_seconds
         self._parallel = asyncio.Semaphore(max_parallel_calls)
+        self._project_admission = asyncio.Semaphore(1)
+        self._project_rate: deque[float] = deque()
         self._history_rate: defaultdict[str, deque[float]] = defaultdict(deque)
         self._history_rate_limit = history_requests_per_minute
         self._rate_prune_at = 0.0
@@ -393,6 +395,51 @@ class LoxoneRuntime:
         values.append(now)
         async with self._parallel:
             await self._require_access(access)
+            yield
+
+    @asynccontextmanager
+    async def _project_slot(self, access: StoredAccessToken) -> AsyncIterator[None]:
+        """Reject excess project work before it can occupy shared read slots."""
+        if READ_SCOPE not in access.scopes:
+            raise PermissionError("loxone:read scope is required")
+        await self._require_access(access)
+        if self._closed:
+            raise RuntimeUnavailable("the service is closed")
+        # No await between the availability check and acquisition: there are no waiters.
+        if self._project_admission.locked():
+            raise RuntimeUnavailable(
+                "project request already active",
+                reason=AvailabilityReason.LOCAL_RATE_LIMIT,
+                phase=AvailabilityPhase.LOCAL_BUDGET,
+                retry_after_seconds=1,
+            )
+        async with self._project_admission:
+            now = time.monotonic()
+            if not self._consume_rate(self._project_rate, 12, now):
+                raise RuntimeUnavailable(
+                    "project request rate limit exceeded",
+                    reason=AvailabilityReason.LOCAL_RATE_LIMIT,
+                    phase=AvailabilityPhase.LOCAL_BUDGET,
+                    retry_after_seconds=max(
+                        1, min(60, math.ceil(self._project_rate[0] + 60 - now))
+                    ),
+                )
+            yield
+
+    @asynccontextmanager
+    async def project_call_slot(self, access: StoredAccessToken) -> AsyncIterator[None]:
+        async with self._project_slot(access), self.call_slot(access):
+            yield
+
+    @asynccontextmanager
+    async def history_project_call_slot(self, access: StoredAccessToken) -> AsyncIterator[None]:
+        if READ_SCOPE not in access.scopes or HISTORY_SCOPE not in access.scopes:
+            raise ControlOperationError("permission_denied", "loxone:history is required")
+        if not self.history_enabled:
+            raise ControlOperationError(
+                "permission_denied", "Loxone history requires administrator activation"
+            )
+        async with self._project_slot(access), self.history_call_slot(access):
             yield
 
     @asynccontextmanager

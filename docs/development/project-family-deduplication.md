@@ -36,6 +36,14 @@ identical downloads can therefore share one completed parse; downloads and
 authorization are never coalesced. There is no shared parse task for a revoked
 waiter to cancel.
 
+Project-backed MCP calls use a separate admission gate before acquiring shared
+read slots: one active call, no waiting queue, and at most twelve calls per
+rolling minute across all families on this runtime/Miniserver. Excess calls
+return the existing temporary-unavailability envelope with a local rate-limit
+diagnostic. Normal family and history limits still apply. This also covers
+project-backed opening analysis and history/observability queries. Unrelated
+reads keep their shared slots available during a project-call burst.
+
 Family references remain keyed by Miniserver, identity and family. Visible
 structures, mappings, queries, cursors, tokens and rate limits remain separate.
 The content index contains keys only; graphs live in the existing family/view

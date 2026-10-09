@@ -10,6 +10,8 @@ extracted from the matching version heading.
   download on warm calls and continuations too; retain separate visible mappings,
   queries and cursors. Bound family references and account shared graphs once.
   Warm requests incur additional download/verification cost (#379).
+  Admit one project-backed call at a time without a waiting queue, with a shared
+  twelve-per-minute budget, before acquiring general read slots.
 
 - Resolve exact, unique cross-model `OutputRef` references to `VirtualOutCmd`
   within the same authorized project bundle. Preserve local-target precedence,

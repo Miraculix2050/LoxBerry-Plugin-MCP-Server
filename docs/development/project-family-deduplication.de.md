@@ -38,6 +38,15 @@ identische Downloads können deshalb ein abgeschlossenes Parse-Ergebnis teilen;
 Downloads und Autorisierung werden nie zusammengelegt. Eine widerrufene Familie
 kann keinen gemeinsamen Parse-Task eines anderen Aufrufers abbrechen.
 
+Projektgestützte MCP-Aufrufe durchlaufen vor den gemeinsamen Leseslots eine
+eigene Zulassung: ein aktiver Aufruf, keine Warteschlange und höchstens zwölf
+Aufrufe pro rollender Minute über alle Familien dieser Runtime/dieses
+Miniservers. Weitere Aufrufe liefern die vorhandene Temporarily-unavailable-
+Antwort mit lokaler Rate-Limit-Diagnose. Normale Familien- und History-Limits
+gelten weiterhin. Dies umfasst auch projektgestützte Öffnungsanalysen sowie
+History-/Observability-Abfragen. Andere Leseaufrufe behalten bei einer Flut
+von Projektaufrufen verfügbare gemeinsame Slots.
+
 Familienreferenzen bleiben an Miniserver, Identität und Familie gebunden.
 Sichtbare Strukturen, Mappings, Queries, Cursor, Tokens und Rate Limits bleiben
 getrennt. Der Inhaltsindex enthält nur Schlüssel; Graphen bleiben in den

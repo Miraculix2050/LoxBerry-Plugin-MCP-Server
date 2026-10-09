@@ -426,7 +426,7 @@ async def test_failed_fresh_visibility_invalidates_project_graph(monkeypatch):
         projects = SimpleNamespace(invalidate=Mock(), query=AsyncMock())
 
         @asynccontextmanager
-        async def call_slot(self, _access):
+        async def project_call_slot(self, _access):
             yield
 
         async def snapshot(self, _access, *, fresh_visibility):
