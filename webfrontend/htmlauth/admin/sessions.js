@@ -30,6 +30,12 @@ window.McpAdmin.createSessions = (core) => {
       return;
     }
     const notices = [];
+    if (status.recovery_guard_state === 'pending') {
+      notices.push(remoteCleanupWarning.dataset.recoveryLabel);
+      if (Number.isInteger(status.next_auth_attempt_at)) {
+        notices.push(`${Math.max(0, Math.ceil(status.next_auth_attempt_at - Date.now() / 1000))} s`);
+      }
+    }
     if (status.failure_guard_state && status.failure_guard_state !== 'closed') {
       notices.push(status.failure_guard_state === 'persistence_uncertain'
         ? remoteCleanupWarning.dataset.uncertainLabel : remoteCleanupWarning.dataset.cooldownLabel);

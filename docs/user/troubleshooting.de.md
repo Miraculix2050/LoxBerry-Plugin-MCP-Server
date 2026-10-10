@@ -28,6 +28,8 @@ Eine bestehende Source-IP-Wiederanlaufpolicy kann eine lÃ¤ngere Reservierung erf
 Zugangsdaten und Tokenwerte erscheinen nicht im Status. Eine umfassende
 Token-Bereinigung wird nicht angeboten; ihre Folgen werden getrennt untersucht.
 
+Ein noch ungeklärtes Authentifizierungsergebnis reserviert zusätzlich den vorhandenen globalen IP-Wiederanlaufabstand. Bei einem Absturz oder nicht speicherbaren Ergebnis kann dieser Schutz alle neuen Anmeldungen vorübergehend zurückstellen; normale gespeicherte Passwortablehnungen lösen ihn nicht aus. Bereits ausgestellte Token werden bei unterdrücktem Anmeldeabschluss verschlüsselt für den koordinierten Widerruf gespeichert. Scheitert auch dies, bleibt der Token in der Transaktion erhalten und eine neue Ausstellung ist bis zur Bereinigung gesperrt.
+
 [English](troubleshooting.en.md)
 
 | Symptom | Sichere PrÃ¼fung |

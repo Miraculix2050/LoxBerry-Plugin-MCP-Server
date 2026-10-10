@@ -832,6 +832,8 @@ async def test_public_pause_manual_probe_and_network_recovery(tmp_path, monkeypa
 
 @pytest.mark.asyncio
 async def test_unsaved_public_password_failure_reserves_only_public_guard(tmp_path, monkeypatch):
+    now = [1000]
+    monkeypatch.setattr("mcpserver.loxone.auth_diagnostics.time.time", lambda: now[0])
     path = tmp_path / "auth.json"
     coordinator = MiniserverAuthCoordinator(path)
 
@@ -851,6 +853,10 @@ async def test_unsaved_public_password_failure_reserves_only_public_guard(tmp_pa
             rejected, owner="tool_request", phase="session", public_login=True
         )
     restarted = MiniserverAuthCoordinator(path)
+    assert restarted.status()["recovery_guard_state"] == "pending"
+    with pytest.raises(MiniserverAuthenticationCooldown):
+        await restarted.attempt(_authenticate, owner="runtime_event_stream", phase="session")
+    now[0] = 1900  # Unknown outcomes reserve the existing IP delay, not a rejection budget.
     await restarted.attempt(_authenticate, owner="runtime_event_stream", phase="session")
     assert restarted.status()["public_failure_guard_state"] == "cooldown"
 
@@ -884,3 +890,31 @@ async def test_public_token_phase_is_reserved_under_the_same_lock(tmp_path):
     assert phases == ["password", "token"]
     assert coordinator.status()["failure_guard_state"] == "closed"
     assert coordinator.status()["public_failure_guard_state"] == "closed"
+
+
+@pytest.mark.asyncio
+async def test_unsaved_public_ip_block_keeps_global_recovery_reservation(tmp_path, monkeypatch):
+    now = [1000]
+    monkeypatch.setattr("mcpserver.loxone.auth_diagnostics.time.time", lambda: now[0])
+    path = tmp_path / "auth.json"
+    coordinator = MiniserverAuthCoordinator(path, initial_probe_seconds=300)
+
+    async def blocked():
+        def cannot_save():
+            raise OSError("synthetic disk failure")
+
+        monkeypatch.setattr(coordinator, "_save", cannot_save)
+        raise LoxoneSourceIpBlocked("blocked")
+
+    with pytest.raises(LoxoneSourceIpBlocked):
+        await coordinator.attempt(blocked, owner="tool_request", phase="session", public_login=True)
+    restarted = MiniserverAuthCoordinator(path, initial_probe_seconds=300)
+    assert restarted.status()["recovery_guard_state"] == "pending"
+    assert restarted.status()["failure_count"] == 0
+    assert restarted.status()["public_failure_count"] == 0
+    assert restarted.status()["next_auth_attempt_at"] == 1300
+    for public in (False, True):
+        with pytest.raises(MiniserverAuthenticationCooldown):
+            await restarted.attempt(
+                _authenticate, owner="tool_request", phase="session", public_login=public
+            )

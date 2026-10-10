@@ -81,6 +81,7 @@ async def test_suppressed_login_is_retryable_without_consuming_form_failure_budg
         auth_coordinator=coordinator,
     )
     transaction = object.__new__(LoginTransaction)
+    transaction.cleanup_pending = False
     transaction.attempts = 0
     transaction.client_id = "synthetic-client"
     transaction.phase = "login"
@@ -111,10 +112,14 @@ async def test_oauth_fresh_sign_in_is_one_attempt_until_session_authentication(
     now = [1000]
     monkeypatch.setattr("mcpserver.loxone.auth_diagnostics.time.time", lambda: now[0])
     coordinator = MiniserverAuthCoordinator(tmp_path / "auth.json")
-    token = LoxoneToken("synthetic", "reader", "key", "SHA1", 999999)
+    key = tmp_path / "install.key"
+    key.write_bytes(b"k" * 32)
+    token_store = EncryptedLoxoneTokenStore((tmp_path / "tokens.json").resolve(), key.resolve())
     fake = SimpleNamespace(
         probe=AsyncMock(return_value=ProbeResult("synthetic", "1", False, False)),
-        acquire_token=AsyncMock(return_value=token),
+        acquire_token=AsyncMock(
+            side_effect=lambda *_args: LoxoneToken("synthetic", "reader", "key", "SHA1", 999999)
+        ),
         open_session=AsyncMock(
             side_effect=LoxoneTokenAuthenticationRejected("rejected", response_code="401")
         ),
@@ -127,9 +132,12 @@ async def test_oauth_fresh_sign_in_is_one_attempt_until_session_authentication(
         issuer=ISSUER,
         resource=RESOURCE,
         auth_coordinator=coordinator,
+        loxone_store=token_store,
     )
     monkeypatch.setattr(web, "_login_page", lambda *_args: Response(status_code=401))
     transaction = object.__new__(LoginTransaction)
+    transaction.cleanup_pending = False
+    transaction.transaction_id = "synthetic-transaction"
     transaction.attempts = 0
     transaction.client_id = "synthetic-client"
     transaction.phase = "login"
@@ -2007,3 +2015,145 @@ async def test_token_route_enforces_pkce_resource_replay_and_revoke(tmp_path: Pa
     assert replay.json() == {"error": "invalid_grant"}
     assert revoked.status_code == 200
     assert await provider.load_access_token(issued.json()["access_token"]) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("queue_write_fails", [False, True])
+async def test_boundary_persistence_suppression_retains_issued_token_for_cleanup(
+    tmp_path, monkeypatch, queue_write_fails
+):
+    from unittest.mock import AsyncMock
+
+    coordinator = MiniserverAuthCoordinator(tmp_path / "auth.json")
+    key = tmp_path / "install.key"
+    key.write_bytes(b"k" * 32)
+    token_store = EncryptedLoxoneTokenStore((tmp_path / "tokens.json").resolve(), key.resolve())
+    token = LoxoneToken("sensitive-jwt", "reader", "key", "SHA256", 999999999)
+    fake = SimpleNamespace(
+        probe=AsyncMock(return_value=ProbeResult("1", "serial", False, False)),
+        acquire_token=AsyncMock(return_value=token),
+        open_session=AsyncMock(),
+    )
+    monkeypatch.setattr(auth_web, "LoxoneClient", lambda *_args, **_kwargs: fake)
+    original_save = coordinator._save
+    saves = [0]
+
+    def boundary_failure():
+        saves[0] += 1
+        if saves[0] >= 2:
+            raise OSError("synthetic guard write failure")
+        original_save()
+
+    monkeypatch.setattr(coordinator, "_save", boundary_failure)
+    original_put = token_store.put
+    if queue_write_fails:
+
+        def failed_queue(*_args, **_kwargs):
+            raise OSError("synthetic queue write failure")
+
+        monkeypatch.setattr(token_store, "put", failed_queue)
+    web = Phase0OAuthWeb(
+        _provider(tmp_path),
+        endpoint=MiniserverEndpoint.parse_gen1("http://192.168.255.254"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+        auth_coordinator=coordinator,
+        loxone_store=token_store,
+    )
+    tx = LoginTransaction(
+        transaction_id="cleanup",
+        csrf_token="csrf",
+        client_id="synthetic",
+        client_name="Client",
+        redirect_uri=REDIRECT,
+        state="state",
+        code_challenge=CHALLENGE,
+        resource=RESOURCE,
+        created_at=1,
+    )
+    response = await web._login(tx, {"username": "reader", "password": "synthetic"})
+    assert response.status_code == 429
+    assert tx.attempts == 0
+    assert fake.open_session.await_count == 0
+    assert not web._global_login_failures
+    if queue_write_fails:
+        assert tx.loxone_token is token and tx.cleanup_pending
+        assert token.value == "sensitive-jwt"
+        assert (
+            await web._login(tx, {"username": "reader", "password": "synthetic"})
+        ).status_code == 503
+        assert fake.acquire_token.await_count == 1
+        monkeypatch.setattr(token_store, "put", original_put)
+        assert await web._kill(tx)
+    assert tx.loxone_token is None
+    assert token.value == ""
+    restarted = EncryptedLoxoneTokenStore((tmp_path / "tokens.json").resolve(), key.resolve())
+    pending = restarted.pending_remote_revocations(2_000_000_000)
+    assert len(pending) == 1 and pending[0].attempts == 0
+    assert pending[0].token.value == "sensitive-jwt"
+    assert "sensitive-jwt" not in (tmp_path / "tokens.json").read_text()
+    pending[0].token.destroy()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cancel_stage", ["token", "structure"])
+async def test_cancelled_fresh_login_queues_issued_token(tmp_path, monkeypatch, cancel_stage):
+    from unittest.mock import AsyncMock
+
+    coordinator = MiniserverAuthCoordinator(tmp_path / "auth.json")
+    key = tmp_path / "install.key"
+    key.write_bytes(b"k" * 32)
+    token_store = EncryptedLoxoneTokenStore((tmp_path / "tokens.json").resolve(), key.resolve())
+    token = LoxoneToken("sensitive-jwt", "reader", "key", "SHA256", 999999999)
+    reached = asyncio.Event()
+
+    async def interrupted(*_args):
+        reached.set()
+        await asyncio.Event().wait()
+
+    session = SimpleNamespace(load_structure=AsyncMock(side_effect=interrupted), close=AsyncMock())
+    fake = SimpleNamespace(
+        probe=AsyncMock(return_value=ProbeResult("1", "serial", False, False)),
+        acquire_token=AsyncMock(return_value=token),
+        open_session=AsyncMock(side_effect=interrupted)
+        if cancel_stage == "token"
+        else AsyncMock(return_value=session),
+    )
+    monkeypatch.setattr(auth_web, "LoxoneClient", lambda *_args, **_kwargs: fake)
+    web = Phase0OAuthWeb(
+        _provider(tmp_path),
+        endpoint=MiniserverEndpoint.parse_gen1("http://192.168.255.254"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+        auth_coordinator=coordinator,
+        loxone_store=token_store,
+    )
+    tx = LoginTransaction(
+        transaction_id="cancelled",
+        csrf_token="csrf",
+        client_id="synthetic",
+        client_name="Client",
+        redirect_uri=REDIRECT,
+        state="state",
+        code_challenge=CHALLENGE,
+        resource=RESOURCE,
+        created_at=1,
+    )
+    task = asyncio.create_task(web._login(tx, {"username": "reader", "password": "synthetic"}))
+    await asyncio.wait_for(reached.wait(), timeout=5)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert tx.attempts == 0 and tx.phase == "login"
+    assert tx.loxone_token is None and not tx.cleanup_pending
+    assert token.value == ""
+    assert not web._global_login_failures
+    assert coordinator.status()["failure_count"] == 0
+    assert coordinator.status()["public_failure_count"] == 0
+    if cancel_stage == "structure":
+        session.close.assert_awaited_once()
+    restarted = EncryptedLoxoneTokenStore((tmp_path / "tokens.json").resolve(), key.resolve())
+    pending = restarted.pending_remote_revocations(2_000_000_000)
+    assert len(pending) == 1 and pending[0].attempts == 0
+    assert pending[0].token.value == "sensitive-jwt"
+    pending[0].token.destroy()

@@ -26,6 +26,8 @@ processes if an authentication outcome could not be saved. No credentials or tok
 An existing source-IP recovery policy can require a longer reservation and takes priority.
 Token-wide cleanup is not offered; its effects are under separate investigation.
 
+An authentication outcome that is still unknown additionally reserves the existing global IP recovery interval. After a crash or an outcome write failure, this protection can temporarily defer all new authentication; normal persisted password rejections do not activate it. Tokens already issued when sign-in completion is suppressed are encrypted for coordinated revocation. If that write also fails, the transaction retains the token and blocks new issuance until cleanup is queued.
+
 [Deutsch](troubleshooting.de.md)
 
 | Symptom | Safe check |

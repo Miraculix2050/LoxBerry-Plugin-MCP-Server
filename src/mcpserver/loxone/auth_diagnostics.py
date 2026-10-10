@@ -43,11 +43,8 @@ def _interprocess_lock(path: Path) -> Iterator[None]:
             if sys.platform == "win32":  # pragma: win32 cover
                 import msvcrt
 
-                handle.seek(0)
-                if handle.read(1) == b"":
-                    handle.seek(0)
-                    handle.write(b"0")
-                    handle.flush()
+                # Windows can lock beyond EOF. Do not initialize/read this
+                # byte before locking: another process may already own it.
                 handle.seek(0)
                 msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
             else:  # pragma: posix cover
@@ -130,6 +127,7 @@ class MiniserverAuthCoordinator:
             "sequence": 0,
             "events": [],
             "profile_id": self._profile_id,
+            "source_ip_pending_until": 0,
             "failure_guard": {
                 "failures": [],
                 "level": 0,
@@ -171,6 +169,8 @@ class MiniserverAuthCoordinator:
             or any(not isinstance(event, dict) for event in value["events"])
             or (value["opened_at"] is not None and type(value["opened_at"]) is not int)
             or (value["breaker_state"] != "closed" and value["opened_at"] is None)
+            or type(value["source_ip_pending_until"]) is not int
+            or value["source_ip_pending_until"] < 0
         ):
             self._state_uncertain = True
             return fallback
@@ -237,6 +237,7 @@ class MiniserverAuthCoordinator:
             self._retry_not_before() or 0,
             guard["until"],
             guard["pending_until"],
+            self._state["source_ip_pending_until"],
             now + 60 if self._state_uncertain else 0,
         )
         public_guarded = public_guard["until"] > now or public_guard["pending_until"] > now
@@ -246,6 +247,9 @@ class MiniserverAuthCoordinator:
             "retry_not_before": self._retry_not_before(),
             "backoff_seconds": self._delay() if self._state["breaker_state"] != "closed" else None,
             "suppressed_attempts": int(self._state["suppressed_attempts"]),
+            "recovery_guard_state": "pending"
+            if self._state["source_ip_pending_until"] > now
+            else "closed",
             "failure_guard_state": "persistence_uncertain"
             if self._state_uncertain
             else "cooldown"
@@ -270,6 +274,7 @@ class MiniserverAuthCoordinator:
                 guard["pending_until"],
                 public_guard["last_probe"] + 60,
                 public_guard["pending_until"],
+                self._state["source_ip_pending_until"],
             )
             if (guarded or public_guarded)
             and not self._state_uncertain
@@ -466,6 +471,8 @@ class MiniserverAuthCoordinator:
         guards = {key: self._state[key] for key in guard_keys}
         if self._state_uncertain:
             raise MiniserverAuthenticationCooldown("Authentication protection status unavailable")
+        if self._state["source_ip_pending_until"] > now:
+            raise MiniserverAuthenticationCooldown("Previous authentication outcome unavailable")
         if any(
             (early_probe and now < guard["last_probe"] + 60)
             or guard["pending_until"] > now
@@ -482,6 +489,14 @@ class MiniserverAuthCoordinator:
         recovery_reservation = max(3600, self._initial)
         if self._state["breaker_state"] == "open_source_ip_blocked":
             recovery_reservation = max(recovery_reservation, min(self._delay() * 2, self._maximum))
+        # A crashed attempt can have received 4003 before its result was saved.
+        # This global uncertainty reservation is separate from rejection budgets
+        # and is cleared for every durably recorded ordinary outcome.
+        self._state["source_ip_pending_until"] = now + (
+            min(self._delay() * 2, self._maximum)
+            if self._state["breaker_state"] == "open_source_ip_blocked"
+            else self._initial
+        )
         for guard in guards.values():
             guard["failures"] = [stamp for stamp in guard["failures"] if stamp > now - 300]
             guard["last_probe"] = now
@@ -489,6 +504,7 @@ class MiniserverAuthCoordinator:
 
         def finish_guards(*, restart: bool = False, success: bool = False) -> None:
             finished = int(time.time())
+            self._state["source_ip_pending_until"] = 0
             for key, item in guards.items():
                 item["pending_until"] = 0
                 item["last_probe"] = finished

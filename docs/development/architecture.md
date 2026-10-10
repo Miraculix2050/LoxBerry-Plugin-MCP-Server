@@ -98,7 +98,11 @@ not erase recent failures. Fresh token acquisition and session authentication
 share one atomic coordinator attempt; recovery succeeds only after both phases.
 Public sign-ins reserve only the public guard before getjwt, then durably add
 the trusted guard immediately before authwithtoken without releasing the lock.
-A crashed public password phase therefore cannot pause trusted reconnects. Durable preflight reservations cover the maximum one-hour pause so an unsaved
+Public password outcomes never charge or reserve the trusted rejection budget.
+A separate source_ip_pending_until reservation covers an unrecorded 4003 outcome
+in any authentication phase. It uses the existing initial/next IP recovery delay,
+clears on every durably recorded outcome and does not increment rejection counts.
+After a crash or failed outcome write it temporarily gates all new authentication. Durable preflight reservations cover the maximum one-hour pause so an unsaved
 outcome cannot lose protection in another process, and bound crash recovery;
 the source-IP policy's initial or next escalated delay extends this reservation when stronger.
 unreadable or unwritable protection state denies new authentication. Existing
@@ -108,8 +112,13 @@ never grant this exception. Confirmed source-IP blocking retains priority.
 Diagnostics retain the trusted guard fields and add public_failure_guard_state,
 public_failure_count and next_public_login_at. next_auth_attempt_at covers trusted
 authentication and IP blocking; next_public_login_at additionally covers the public
-password pause. Existing source-IP breaker fields keep their meaning. Remote revocations defer without
-consuming their network-attempt budget when the trusted guard or global IP gate is active.
+password pause. recovery_guard_state separately reports an unknown in-flight or
+interrupted outcome; both effective times include this global recovery reservation.
+Existing source-IP breaker fields keep their meaning. Remote revocations defer without
+consuming their network-attempt budget when the trusted guard, global recovery reservation or confirmed IP gate is active.
+An issued OAuth token whose sign-in cannot finish is encrypted with its remote
+revocation marker in one existing token-store write. If that write fails, the
+login transaction retains it and blocks new issuance until cleanup can be queued.
 
 Configuration, encrypted sessions and plugin identity persist outside the package. Secrets are separated from ordinary configuration. Root lifecycle hooks consume service templates only from the current installer staging area, never from the installed plugin configuration or binary directories. The staging area's integrity remains a LoxBerry Core trust boundary because Core runs unprivileged lifecycle hooks before `postroot`; plugin code cannot make that shared staging area root-owned. Within the persistent LoxBerry tree, sensitive root operations use descriptor-relative traversal and reject symbolic links, non-regular files and path replacement. Install, upgrade and removal follow the native LoxBerry layout; upgrade preserves supported configuration and authentication state through idempotent migration. The service starts unprivileged, validates configuration and listens only on loopback.
 

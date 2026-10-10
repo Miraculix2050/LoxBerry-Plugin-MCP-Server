@@ -250,6 +250,7 @@ async def process_remote_revocations(
             if (
                 breaker["breaker_state"] != "closed"
                 or breaker.get("failure_guard_state", "closed") != "closed"
+                or breaker.get("recovery_guard_state", "closed") != "closed"
             ):
                 retry_at = breaker.get("next_auth_attempt_at", breaker["retry_not_before"])
                 value["not_before"] = max(now + _POLL_SECONDS, retry_at or now)

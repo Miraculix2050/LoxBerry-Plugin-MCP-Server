@@ -459,3 +459,27 @@ def test_suppression_release_precedes_sidecar_failure(
     monkeypatch.setattr("mcpserver.auth.remote_revocation.time.time", lambda: now)
     asyncio.run(process_remote_revocations(_ENDPOINT, store, 1, coordinator))
     assert store.pending_remote_revocations(now + 300)[0].attempts == 0
+
+
+def test_unknown_global_authentication_outcome_defers_remote_revocation(tmp_path, monkeypatch):
+    now = int(time.time())
+    store = _store(tmp_path)
+    _queue(store, "family", now)
+    coordinator = MiniserverAuthCoordinator(tmp_path / "auth.json")
+    coordinator._state["source_ip_pending_until"] = now + 900
+    coordinator._save()
+    calls = []
+
+    class Client:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def kill_token(self, _token):
+            calls.append(True)
+
+    monkeypatch.setattr("mcpserver.auth.remote_revocation.LoxoneClient", Client)
+    asyncio.run(process_remote_revocations(_ENDPOINT, store, 1, coordinator))
+    assert calls == []
+    pending = store.pending_remote_revocations(now)
+    assert len(pending) == 1 and pending[0].attempts == 0
+    pending[0].token.destroy()
