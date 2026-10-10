@@ -67,7 +67,8 @@ if (($q->{action} // '') ne '') {
             }
         }
     }
-    print $cgi->header(-type => 'application/json', -charset => 'utf-8', headers());
+    my $status = (($result->{error}{code} // '') eq 'forbidden') ? '403 Forbidden' : '200 OK';
+    print $cgi->header(-status => $status, -type => 'application/json', -charset => 'utf-8', headers());
     print encode_json($result);
     exit;
 }
