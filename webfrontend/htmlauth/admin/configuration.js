@@ -44,6 +44,7 @@ window.McpAdmin.createConfiguration = (
   const loggingCurrent = document.getElementById('logging-current');
   const loggingLevel = document.getElementById('logging-level');
   let emergencyStopDiscoveryGeneration = 0;
+  let emergencyStopListVerified = false;
   let emergencyStopRefreshTimer = null;
   let emergencyStopRefreshSeconds = 300;
   let configurationLoaded = false;
@@ -224,6 +225,7 @@ window.McpAdmin.createConfiguration = (
   };
   const resetEmergencyStopOptions = () => {
     window.clearTimeout(emergencyStopRefreshTimer);
+    emergencyStopListVerified = false;
     emergencyStopDiscoveryGeneration += 1;
     const selectedValue = emergencyStopValue.value;
     emergencyStopSelect.replaceChildren();
@@ -283,7 +285,10 @@ window.McpAdmin.createConfiguration = (
       if (generation !== emergencyStopDiscoveryGeneration) return;
       const options = Array.isArray(result.data.options) ? result.data.options : [];
       const status = result.data.status;
-      if (status === 'available') renderEmergencyStopOptions(options, emergencyStopValue.value);
+      if (status === 'available') {
+        renderEmergencyStopOptions(options, emergencyStopValue.value);
+        emergencyStopListVerified = true;
+      }
       if (status === 'available' && options.length === 0) {
         emergencyStopStatus.textContent = label('SETUP.EMERGENCY_STOP_NO_OPTIONS');
         emergencyStopStatus.dataset.kind = 'info';
@@ -292,7 +297,7 @@ window.McpAdmin.createConfiguration = (
         emergencyStopStatus.textContent = status === 'not_configured'
           ? label('SETUP.EMERGENCY_STOP_NOT_CONFIGURED')
           : result.data.failure_text || label('SETUP.EMERGENCY_STOP_LOAD_ERROR');
-        if (result.data.stale) {
+        if (result.data.stale && emergencyStopListVerified) {
           emergencyStopStatus.textContent += ' ' + label('SETUP.EMERGENCY_STOP_STALE');
         }
         emergencyStopStatus.dataset.kind = 'error';

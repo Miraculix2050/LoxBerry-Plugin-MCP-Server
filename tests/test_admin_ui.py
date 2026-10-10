@@ -1829,7 +1829,7 @@ def test_server_rendered_emergency_stop_status_is_terminal_after_discovery() -> 
     assert "EMERGENCY_STOP_NO_OPTIONS" in cgi
     assert "EMERGENCY_STOP_NOT_CONFIGURED" in cgi
     assert "$options_data->{failure_text}" in cgi
-    assert "if $options_data->{stale};" in cgi
+    assert "if $options_data->{stale} && @$emergency_stop_options;" in cgi
     assert "$L{'SETUP.EMERGENCY_STOP_STALE'}" in cgi
     assert "EMERGENCY_STOP_STATUS_TEXT => $emergency_stop_status_text" in cgi
     assert "EMERGENCY_STOP_STATUS_KIND => $emergency_stop_status_kind" in cgi
@@ -3049,6 +3049,7 @@ const emergencyStopValue = {value: 'saved'};
 const emergencyStopStatus = {dataset: {}, hidden: true, textContent: ''};
 const emergencyStopRetry = {dataset: {}, hidden: false, disabled: false, textContent: ''};
 let emergencyStopDiscoveryGeneration = 0;
+let emergencyStopListVerified = false;
 let emergencyStopRefreshTimer = null;
 let emergencyStopRefreshSeconds = 300;
 const document = {createElement: () => ({})};
@@ -3070,6 +3071,7 @@ eval(source.slice(start, end) + `
     options: [{uuid: 'saved', name: 'Unchecked cached signal'}]}};
   await hydrateEmergencyStopOptions(emergencyStopDiscoveryGeneration);
   assert(!options.some((option) => option.textContent === 'Unchecked cached signal'));
+  assert(!emergencyStopStatus.textContent.includes('SETUP.EMERGENCY_STOP_STALE'));
   assert(options.some((option) => option.value === 'saved' && option.selected));
   response = {data: {status: 'available', cached: true,
     options: [{uuid: 'saved', name: 'Cached signal'}]}};
