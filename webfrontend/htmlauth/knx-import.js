@@ -142,7 +142,10 @@
   document.getElementById('knx-ets-next').addEventListener('click', () => void refresh(frame.offset + 50));
   document.getElementById('knx-conflict-previous').addEventListener('click', () => void refresh(frame.offset, choices, labels, frame.conflict_offset - 5));
   document.getElementById('knx-conflict-next').addEventListener('click', () => void refresh(frame.offset, choices, labels, frame.conflict_offset + 5));
-  mode.addEventListener('change', () => void refresh(0));
+  mode.addEventListener('change', () => {
+    if (mode.value === 'replace' && !orphanPolicy.value) orphanPolicy.value = 'retain_import_name';
+    void refresh(0);
+  });
   orphanPolicy.addEventListener('change', () => void refresh(frame.offset));
   document.getElementById('knx-ets-apply').addEventListener('click', () => void core.run(async () => {
     if (!frame || stale() || frame.conflict_count || frame.name_policy_required

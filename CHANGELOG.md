@@ -36,6 +36,8 @@ extracted from the matching version heading.
   the same reviewed KNX import flow. Show detected format and encoding; preserve
   quoted multiline text and ordered comma-separated DPT declarations across adapters.
   Empty CSV cells remain unknown; source information never changes Loxone names.
+  Complete replacement defaults to preserving the previous additional ETS name for
+  retained overrides without a manual name, with preview before explicit saving.
 
 - Unify configured service-identity credentials and connection ownership for
   emergency-stop and Event History consumers. Keep separate connections, fresh
