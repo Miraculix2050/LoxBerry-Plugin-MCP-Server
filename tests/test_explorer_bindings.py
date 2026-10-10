@@ -4,6 +4,8 @@ from dataclasses import replace
 from pathlib import Path
 from threading import Thread
 
+import pytest
+
 from mcpserver.auth.provider import Phase0OAuthProvider
 from mcpserver.auth.store import AtomicJsonAuthStore
 from mcpserver.config import AtomicConfigStore, PluginConfig
@@ -244,3 +246,35 @@ def test_expired_explorer_cleanup_releases_auth_lock_before_binding_update(tmp_p
     assert not errors
     assert auth_store.snapshot()["families"] == {}
     assert config_store.load().explorer_bindings[0].inactive_since == 200
+
+
+@pytest.mark.parametrize("capability", ["loxberry:read", "loxberry:operate"])
+def test_approval_transition_callback_only_after_creation_or_reactivation(tmp_path, capability):
+    config_store, auth_store = stores(tmp_path)
+    transitions = []
+
+    def committed(binding):
+        assert config_store.load().explorer_bindings[0].binding_id == binding
+        transitions.append(binding)
+
+    binding = record_explorer_approval(
+        config_store, auth_store, capability, family(), now=100, on_transition=committed
+    )
+    record_explorer_approval(
+        config_store, auth_store, capability, family(), now=150, on_transition=committed
+    )
+    assert transitions == [binding]
+    config_store.mutate(
+        lambda config: replace(
+            config,
+            explorer_bindings=(replace(config.explorer_bindings[0], inactive_since=160),),
+        )
+    )
+    record_explorer_approval(
+        config_store, auth_store, capability, family(), now=170, on_transition=committed
+    )
+    assert transitions == [binding, binding]
+    record_explorer_approval(
+        config_store, auth_store, capability, family(), now=180, on_transition=committed
+    )
+    assert transitions == [binding, binding]

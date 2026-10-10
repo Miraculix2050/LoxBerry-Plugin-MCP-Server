@@ -1611,19 +1611,24 @@ def _allow_loxberry_read(payload: object) -> dict[str, Any]:
 
         try:
             record_explorer_approval(
-                _config_store(), _auth_store(), "loxberry:read", record, now=int(time.time())
+                _config_store(),
+                _auth_store(),
+                "loxberry:read",
+                record,
+                now=int(time.time()),
+                on_transition=lambda binding: lifecycle_event(
+                    "approval_granted",
+                    family_id=session_id,
+                    binding_id=binding,
+                    reason="read",
+                    source="admin",
+                    outcome="committed",
+                ),
             )
         except PersistenceUncertain:
             raise
         except ValueError as exc:
             raise AdminError(str(exc)) from exc
-        lifecycle_event(
-            "approval_granted",
-            family_id=session_id,
-            reason="read",
-            source="admin",
-            outcome="committed",
-        )
         return {"loxberry_bindings": _loxberry_bindings(), "sessions": _sessions()}
     binding = _loxberry_binding(record)
 
@@ -1744,19 +1749,24 @@ def _allow_loxberry_operate(payload: object) -> dict[str, Any]:
 
         try:
             record_explorer_approval(
-                _config_store(), _auth_store(), "loxberry:operate", record, now=int(time.time())
+                _config_store(),
+                _auth_store(),
+                "loxberry:operate",
+                record,
+                now=int(time.time()),
+                on_transition=lambda binding: lifecycle_event(
+                    "approval_granted",
+                    family_id=session_id,
+                    binding_id=binding,
+                    reason="operate",
+                    source="admin",
+                    outcome="committed",
+                ),
             )
         except PersistenceUncertain:
             raise
         except ValueError as exc:
             raise AdminError(str(exc)) from exc
-        lifecycle_event(
-            "approval_granted",
-            family_id=session_id,
-            reason="operate",
-            source="admin",
-            outcome="committed",
-        )
         return {
             "sessions": _sessions(),
             "loxberry_operate_bindings": _loxberry_operate_bindings(),
