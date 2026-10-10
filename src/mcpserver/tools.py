@@ -89,6 +89,7 @@ from mcpserver.loxone.project.modbus_analysis import (
 )
 from mcpserver.loxone.project.models import ProjectError
 from mcpserver.loxone.project.query import ProjectQuery, ProjectQueryError
+from mcpserver.loxone.project.result_cache import ProjectResultCache
 from mcpserver.loxone.project.semantics import is_valid_group_address_filter
 from mcpserver.loxone.project.taxonomy import AddressTaxonomyEntry
 from mcpserver.loxone.project.worker import process_analysis
@@ -5521,11 +5522,19 @@ class _ProjectAnalysisRunner:
         self.runtime = runtime
         self.config_store = config_store
         self.cursors = _CursorCodec()
-        self.cache: OrderedDict[str, tuple[float, dict[str, object], int]] = OrderedDict()
-        # Leases contain no results or authorization: cursors stay family-bound.
-        self.leases: OrderedDict[str, tuple[float, str, str]] = OrderedDict()
-        self.locks = tuple(asyncio.Lock() for _ in range(16))
-        self.cache_bytes = 0
+        self.results = ProjectResultCache[dict[str, object]](
+            max_entries=_MAX_ANALYSIS_CACHE_ENTRIES,
+            max_bytes=_MAX_ANALYSIS_CACHE_BYTES,
+            max_leases=_MAX_ANALYSIS_LEASES,
+            ttl=_ANALYSIS_CACHE_TTL,
+        )
+        self.cache = self.results.entries
+        self.leases = self.results.leases
+        self.locks = self.results.locks
+
+    @property
+    def cache_bytes(self) -> int:
+        return self.results.cache_bytes
 
     async def run(
         self,
@@ -5607,19 +5616,12 @@ class _ProjectAnalysisRunner:
             ).hexdigest()
             async with self.locks[int(result_key[-2:], 16) % len(self.locks)]:
                 now = time.monotonic()
-                for key, (expires, _value, size) in tuple(self.cache.items()):
-                    if expires <= now:
-                        self.cache.pop(key)
-                        self.cache_bytes -= size
-                for key, (expires, cached_key, _generation) in tuple(self.leases.items()):
-                    if expires <= now or cached_key not in self.cache:
-                        self.leases.pop(key)
-                lease = self.leases.get(analysis_scope)
-                if cursor is not None and (lease is None or lease[1] != result_key):
-                    raise ValueError("cursor has expired; start a new analysis")
-                cursor_scope = lease[2] if lease else analysis_scope + ":" + secrets.token_hex(16)
+                self.results.prune(now)
+                cursor_scope = self.results.cursor_scope(
+                    analysis_scope, result_key, continuation=cursor is not None
+                )
                 self.cursors.decode(cursor_scope, cursor)
-                cached = self.cache.get(result_key)
+                cached = self.results.get(result_key)
                 if cached is None:
                     if cursor is not None:
                         raise ValueError("cursor has expired; start a new analysis")
@@ -5634,27 +5636,14 @@ class _ProjectAnalysisRunner:
                     if size > _MAX_ANALYSIS_CACHE_BYTES:
                         raise ProjectError("project_worker_limit")
                     expires = now + _ANALYSIS_CACHE_TTL
-                    self.cache[result_key] = (expires, result, size)
-                    self.cache_bytes += size
-                    while (
-                        len(self.cache) > _MAX_ANALYSIS_CACHE_ENTRIES
-                        or self.cache_bytes > _MAX_ANALYSIS_CACHE_BYTES
-                    ):
-                        _key, (_expires, _value, removed) = self.cache.popitem(last=False)
-                        self.cache_bytes -= removed
+                    self.results.put(result_key, result, expires=expires, size=size)
                 else:
                     _LOGGER.debug("component=project_analysis_cache outcome=hit")
-                    self.cache.move_to_end(result_key)
                     result = cached[1]
                     expires = cached[0]
                     await projects.authorize(access)
-                self.leases[analysis_scope] = (expires, result_key, cursor_scope)
-                self.leases.move_to_end(analysis_scope)
-                while len(self.leases) > _MAX_ANALYSIS_LEASES:
-                    self.leases.popitem(last=False)
-                for key, (_expires, cached_key, _generation) in tuple(self.leases.items()):
-                    if cached_key not in self.cache:
-                        self.leases.pop(key)
+                    self.results.retain(result_key, cached, now=time.monotonic())
+                self.results.bind(analysis_scope, result_key, cursor_scope, expires=expires)
             findings = result.get("findings")
             if not isinstance(findings, list):
                 raise ProjectError("project_worker_invalid")
@@ -5703,9 +5692,9 @@ def register_project_tools(
     """Publish bounded read-only Project Intelligence operations."""
     annotations = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
     cursors = _CursorCodec()
-    find_cache: OrderedDict[str, tuple[float, list[Any], int]] = OrderedDict()
-    find_locks = tuple(asyncio.Lock() for _ in range(16))
-    find_cache_bytes = 0
+    find_results = ProjectResultCache[list[dict[str, object]]](
+        max_entries=8, max_bytes=64 * 1024 * 1024, max_leases=8
+    )
     analysis_runner = _ProjectAnalysisRunner(runtime, config_store)
 
     @server.tool(
@@ -5784,7 +5773,6 @@ def register_project_tools(
         cursor: CursorArgument = None,
         limit: LimitArgument = DEFAULT_PAGE_SIZE,
     ) -> ProjectObjectPageEnvelope:
-        nonlocal find_cache_bytes
         try:
             _access()
             if knx_group_address is not None and not is_valid_group_address_filter(
@@ -5797,39 +5785,56 @@ def register_project_tools(
                 )
             project, snapshot = await _project_query(runtime)
             access = _access()
-            scope = (
+            content_identity = project.view.snapshot.content_identity
+            if not content_identity:
+                raise ProjectError("project_worker_invalid")
+            filters = [
+                query.casefold().strip() if query else None,
+                kind,
+                block_type,
+                source_id,
+                runtime_control_uuid,
+                technology,
+                knx_object_kind,
+                knx_flow_direction,
+                knx_group_address,
+            ]
+            result_material = [
+                "project-find-v1",
+                access.miniserver_id,
+                content_identity,
+                project.view.snapshot.model_version,
+                project.view.mapping.structure_fingerprint,
+                filters,
+            ]
+            result_key = hashlib.sha256(
+                json.dumps(result_material, separators=(",", ":")).encode()
+            ).hexdigest()
+            lease_key = (
                 "project-find:"
                 + hashlib.sha256(
                     json.dumps(
                         [
                             access.family_id,
-                            access.miniserver_id,
                             access.identity_id,
                             project.view.marker,
-                            project.view.snapshot.fingerprint,
-                            project.view.mapping.structure_fingerprint,
-                            query,
-                            kind,
-                            block_type,
-                            source_id,
-                            runtime_control_uuid,
-                            technology,
-                            knx_object_kind,
-                            knx_flow_direction,
-                            knx_group_address,
+                            result_material,
                         ],
                         separators=(",", ":"),
                     ).encode()
                 ).hexdigest()
             )
-            cursors.decode(scope, cursor)
-            async with find_locks[int(scope[-2:], 16) % len(find_locks)]:
+            projects = getattr(runtime, "projects", None)
+            if projects is None:
+                raise RuntimeUnavailable("the service is not configured")
+            async with find_results.locks[int(result_key[-2:], 16) % len(find_results.locks)]:
                 now = time.monotonic()
-                for key, (expires, _values, size) in tuple(find_cache.items()):
-                    if expires <= now:
-                        find_cache.pop(key)
-                        find_cache_bytes -= size
-                cached = find_cache.get(scope)
+                find_results.prune(now)
+                scope = find_results.cursor_scope(
+                    lease_key, result_key, continuation=cursor is not None
+                )
+                cursors.decode(scope, cursor)
+                cached = find_results.get(result_key)
                 if cached is None:
                     if cursor is not None:
                         raise ValueError("cursor has expired; restart the project search")
@@ -5846,20 +5851,17 @@ def register_project_tools(
                         knx_group_address=knx_group_address,
                     )
                     size = len(json.dumps(values, separators=(",", ":")).encode())
-                    if size > 64 * 1024 * 1024:
+                    if size > find_results.max_bytes:
                         raise ProjectError("project_worker_limit")
-                    find_cache[scope] = (now + 300, values, size)
-                    find_cache_bytes += size
-                    while len(find_cache) > 8 or find_cache_bytes > 64 * 1024 * 1024:
-                        _key, (_expires, _values, removed) = find_cache.popitem(last=False)
-                        find_cache_bytes -= removed
+                    await projects.authorize(access)
+                    expires = now + find_results.ttl
+                    find_results.put(result_key, values, expires=expires, size=size)
                 else:
                     _LOGGER.debug("component=project_find_cache outcome=hit")
-                    find_cache.move_to_end(scope)
-                    values = cached[1]
-            projects = getattr(runtime, "projects", None)
-            if projects is not None:
-                await projects.authorize(access)
+                    expires, values, _size = cached
+                    await projects.authorize(access)
+                    find_results.retain(result_key, cached, now=time.monotonic())
+                find_results.bind(lease_key, result_key, scope, expires=expires)
             envelope = _result(
                 ProjectObjectPageEnvelope,
                 _page(cursors, scope, values, cursor, limit),

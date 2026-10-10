@@ -228,3 +228,24 @@ Prozessspeicher. Die Gen.-1-Prüfung nutzte zwei eigene Abrufe des einzigen
 verfügbaren Vollzugriffs-Grants; verschiedene Familien und geänderte Sichten sind
 zusätzlich deterministisch geprüft. Der bestehende Restricted-Grant bleibt ein
 Live-Negativtest.
+
+## Gemeinsame Suchergebnisse (#399)
+
+Ein begrenzter ProjectResultCache hält Such-/Analysewerte getrennt von privaten
+Cursor-Leases. Suchschlüssel enthalten Miniserver, exakte Projektidentität,
+Modell-/Suchversion, vollständigen Fingerabdruck der sichtbaren Zuordnung
+(einschließlich Namen) und normalisierte Filter. Limit und Cursor bestimmen nur
+die Pagination. Suchergebnisse sind auf acht Einträge / 64 MiB / 300 Sekunden
+begrenzt; Familien-/Identitäts-/Sicht-Leases haben eine getrennte Grenze von acht
+Einträgen und zufällige Generationen. Analysen behalten ihre Grenzen von vier
+Ergebnissen / vier Leases mit derselben Cache-Komponente.
+
+Jede Suche lädt weiterhin selbst das autorisierte Projekt und die aktuelle Sicht
+und prüft vor Aufnahme oder Rückgabe erneut die Berechtigung. Fehlgeschlagene oder
+abgebrochene Berechtigungsprüfungen nehmen kein Ergebnis auf. Antwortmodelle
+kopieren gespeicherte Daten. Ein bereits laufender autorisierter Treffer nimmt
+sein ausgeliehenes Ergebnis nach gleichzeitiger Verdrängung unter denselben
+Grenzen und ohne TTL-Verlängerung wieder auf, bevor er seinen Cursor zurückgibt.
+Ablauf, Verdrängung und geänderte Eingaben machen
+zugehörige Cursor-Leases ungültig; ein neu erzeugtes Ergebnis reaktiviert keinen
+alten Cursor. Die Cache-Komponente persistiert und autorisiert nichts.
