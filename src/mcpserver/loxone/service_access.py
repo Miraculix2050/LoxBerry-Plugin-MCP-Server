@@ -134,22 +134,12 @@ class ServiceMiniserverConnection:
                 started = time.perf_counter_ns() if self.timing is not None else 0
                 if self.timing is not None and self.coordinator is not None:
                     self.timing["selector_coordinator_wait_ms"] += (started - queued) / 1_000_000
-                try:
-                    return await operation()
-                finally:
-                    if self.timing is not None:
-                        self.timing[f"selector_{phase}_ms"] = (
-                            time.perf_counter_ns() - started
-                        ) / 1_000_000
+                return await operation()
 
             try:
                 if self.coordinator is None:
                     return await measured_operation()
-                probe_options: _ProbeOptions = (
-                    {"early_probe": True}
-                    if self.early_probe and phase == "token_acquisition"
-                    else {}
-                )
+                probe_options: _ProbeOptions = {"early_probe": True} if self.early_probe else {}
                 return await self.coordinator.attempt(
                     measured_operation,
                     owner=self.owner,
@@ -164,16 +154,29 @@ class ServiceMiniserverConnection:
                         time.perf_counter_ns() - queued
                     ) / 1_000_000
 
-        self.stage = "token"
-        self._token = await authenticate(
-            lambda: self.client.acquire_token(username, password), "token_acquisition"
-        )
-        self.stage = "session"
-        token = self._token
-        self._session = await authenticate(
-            lambda: self.client.open_session(token), "session_establishment"
-        )
-        return self._session
+        async def sign_in() -> LoxoneWebSocketSession:
+            self.stage = "token"
+            started = time.perf_counter_ns()
+            try:
+                self._token = await self.client.acquire_token(username, password)
+            finally:
+                if self.timing is not None:
+                    self.timing["selector_token_acquisition_ms"] = (
+                        time.perf_counter_ns() - started
+                    ) / 1_000_000
+            self.stage = "session"
+            started = time.perf_counter_ns()
+            try:
+                self._session = await self.client.open_session(self._token)
+            finally:
+                if self.timing is not None:
+                    self.timing["selector_session_establishment_ms"] = (
+                        time.perf_counter_ns() - started
+                    ) / 1_000_000
+            return self._session
+
+        # Recovery is confirmed only once the issued token establishes a session.
+        return await authenticate(sign_in, "session_establishment")
 
     async def close(self) -> None:
         session, token = self._session, self._token

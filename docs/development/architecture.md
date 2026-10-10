@@ -90,7 +90,8 @@ guard in its existing private JSON file. Only typed 401 rejections at getjwt and
 authwithtoken consume its profile-wide three-in-five-minute budget. A 60-second
 pause doubles on rejected probes up to one hour; network failure and cancellation
 restart the current pause without escalating it. Success outside recovery does
-not erase recent failures. Durable preflight reservations cover the maximum one-hour pause so an unsaved
+not erase recent failures. Fresh token acquisition and session authentication
+share one atomic coordinator attempt; recovery succeeds only after both phases. Durable preflight reservations cover the maximum one-hour pause so an unsaved
 outcome cannot lose protection in another process, and bound crash recovery;
 unreadable or unwritable protection state denies new authentication. Existing
 authenticated sessions are not closed. A separate explicit native Admin action

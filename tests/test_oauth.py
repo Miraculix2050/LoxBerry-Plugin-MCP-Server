@@ -89,6 +89,54 @@ ISSUER = "https://public.example/plugins/mcpserver/oauth"
 RESOURCE = "https://public.example/plugins/mcpserver/mcp"
 
 
+@pytest.mark.asyncio
+async def test_oauth_fresh_sign_in_is_one_attempt_until_session_authentication(
+    tmp_path, monkeypatch
+):
+    from unittest.mock import AsyncMock
+
+    from starlette.responses import Response
+
+    from mcpserver.loxone.client import LoxoneTokenAuthenticationRejected
+
+    now = [1000]
+    monkeypatch.setattr("mcpserver.loxone.auth_diagnostics.time.time", lambda: now[0])
+    coordinator = MiniserverAuthCoordinator(tmp_path / "auth.json")
+    token = LoxoneToken("synthetic", "reader", "key", "SHA1", 999999)
+    fake = SimpleNamespace(
+        probe=AsyncMock(return_value=ProbeResult("synthetic", "1", False, False)),
+        acquire_token=AsyncMock(return_value=token),
+        open_session=AsyncMock(
+            side_effect=LoxoneTokenAuthenticationRejected("rejected", response_code="401")
+        ),
+        kill_token=AsyncMock(),
+    )
+    monkeypatch.setattr("mcpserver.auth.web.LoxoneClient", lambda *_args, **_kwargs: fake)
+    web = Phase0OAuthWeb(
+        _provider(tmp_path),
+        endpoint=MiniserverEndpoint.parse_gen1("http://192.168.255.254"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+        auth_coordinator=coordinator,
+    )
+    monkeypatch.setattr(web, "_login_page", lambda *_args: Response(status_code=401))
+    transaction = object.__new__(LoginTransaction)
+    transaction.attempts = 0
+    transaction.client_id = "synthetic-client"
+    transaction.phase = "login"
+    for delay in (0, 0, 60, 120):
+        response = await web._login(transaction, {"username": "reader", "password": "synthetic"})
+        assert response.status_code == 401
+        assert coordinator.status()["next_auth_attempt_at"] == (now[0] + delay if delay else None)
+        now[0] += delay
+    assert (
+        fake.probe.await_count
+        == fake.acquire_token.await_count
+        == fake.open_session.await_count
+        == 4
+    )
+
+
 def test_provider_preserves_scope_exports_and_order() -> None:
     expected = (
         READ_SCOPE,

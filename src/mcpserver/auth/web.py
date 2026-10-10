@@ -53,6 +53,7 @@ from mcpserver.loxone.client import (
     LoxoneClient,
     LoxoneConnectionError,
     LoxoneToken,
+    LoxoneWebSocketSession,
     MiniserverEndpoint,
     ProbeResult,
 )
@@ -968,21 +969,17 @@ sync();
                     session = await client.open_session(token)
                 else:
 
-                    async def acquire() -> tuple[ProbeResult, LoxoneToken]:
-                        # Suppression must precede even the unauthenticated probe.
+                    async def sign_in() -> tuple[ProbeResult, LoxoneWebSocketSession]:
+                        nonlocal token
+                        # Suppression precedes the probe; recovery covers both
+                        # token acquisition and session authentication atomically.
                         result = await client.probe()
-                        acquired = await client.acquire_token(username, password)
-                        return result, acquired
+                        token = await client.acquire_token(username, password)
+                        authenticated = await client.open_session(token)
+                        return result, authenticated
 
-                    probe, token = await self.auth_coordinator.attempt(
-                        acquire,
-                        owner="tool_request",
-                        phase="token_acquisition",
-                    )
-                    acquired_token = token
-                    assert acquired_token is not None
-                    session = await self.auth_coordinator.attempt(
-                        lambda: client.open_session(acquired_token),
+                    probe, session = await self.auth_coordinator.attempt(
+                        sign_in,
                         owner="tool_request",
                         phase="session_establishment",
                     )
