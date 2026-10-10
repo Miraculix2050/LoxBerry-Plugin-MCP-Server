@@ -22,7 +22,6 @@ from mcpserver.loxone.event_history import (
     EventHistoryStoreSummary,
     source_revision_for_snapshot,
 )
-from mcpserver.loxone.presentation import flatten_controls
 from mcpserver.loxone.service_access import LoxBerryServiceCredentials
 from mcpserver.loxone.uuid import normalize_loxone_uuid
 
@@ -314,59 +313,9 @@ def _selector_projection(
     config: PluginConfig, *, timing: dict[str, float | int] | None = None
 ) -> dict[str, Any]:
     bridge = _bridge()
-    from mcpserver.loxone.auth_diagnostics import (
-        MiniserverAuthenticationCooldown,
-        MiniserverAuthenticationSuppressed,
-    )
-    from mcpserver.loxone.client import LoxoneSourceIpBlocked
+    from mcpserver.service_discovery import request_projection
 
-    try:
-        structure = asyncio.run(
-            asyncio.wait_for(
-                _monitor(config).visible_structure(
-                    **({"timing": timing} if timing is not None else {})
-                ),
-                timeout=_DISCOVERY_TIMEOUT,
-            )
-        )
-    except LoxoneSourceIpBlocked as exc:
-        raise bridge.AdminError(
-            "Miniserver source IP is blocked", code="source_ip_blocked"
-        ) from exc
-    except MiniserverAuthenticationCooldown as exc:
-        raise bridge.AdminError(
-            "Miniserver authentication rejection cooldown", code="authentication_cooldown"
-        ) from exc
-    except MiniserverAuthenticationSuppressed as exc:
-        raise bridge.AdminError(
-            "Miniserver authentication is busy or suppressed", code="authentication_busy"
-        ) from exc
-    except TimeoutError as exc:
-        raise bridge.AdminError(
-            "Miniserver discovery timed out", code="temporarily_unavailable"
-        ) from exc
-    except Exception as exc:
-        raise bridge.AdminError(
-            "visible Miniserver structure is unavailable", code="temporarily_unavailable"
-        ) from exc
-    rooms = {room.uuid: room.name for room in structure.rooms}
-    categories = {category.uuid: category.name for category in structure.categories}
-    controls: list[dict[str, Any]] = [
-        {
-            "uuid": control.uuid,
-            "name": control.name,
-            "type": control.control_type,
-            "room_id": control.room_uuid,
-            "room": rooms.get(control.room_uuid) if control.room_uuid else None,
-            "category_id": control.category_uuid,
-            "category": categories.get(control.category_uuid) if control.category_uuid else None,
-            "states": [[name, uuid] for name, uuid in control.state_uuids],
-        }
-        for control in flatten_controls(structure.controls)
-        if control.control_type != "Daytimer" and control.state_uuids
-    ]
-    controls.sort(key=lambda item: (item["name"].casefold(), item["uuid"]))
-    return {"last_modified": structure.last_modified, "controls": controls}
+    return request_projection(config, bridge._auth_store(), "event_history", timing=timing)
 
 
 def _selector_visible(
@@ -409,7 +358,7 @@ def prepare_selector() -> dict[str, Any]:
     config = bridge._config_store().load()
     cache = _selector_cache(config)
     try:
-        document = cache.refresh(lambda: _selector_projection(config))
+        document = cache.refresh(lambda: _selector_projection(config), join_concurrent=False)
     except TimeoutError as exc:
         raise bridge.AdminError(
             "Miniserver discovery is busy", code="temporarily_unavailable"
@@ -521,7 +470,8 @@ def chart_prepare(
             lambda: cache.refresh(
                 lambda: _selector_projection(
                     config, **({"timing": timing} if timing is not None else {})
-                )
+                ),
+                join_concurrent=False,
             ),
         )
     except (TimeoutError, SelectorCacheError, OSError, ValueError) as exc:

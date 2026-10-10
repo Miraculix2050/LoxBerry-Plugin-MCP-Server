@@ -7,7 +7,7 @@ import hashlib
 import json
 import logging
 import re
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any, Final, Protocol
 from urllib.parse import quote
@@ -617,9 +617,13 @@ class LoxoneWebSocketSession:
             raise LoxoneConnectionError("Miniserver returned an invalid token hashing key")
         return token_hmac(self._token.value, key, self._token.hash_algorithm)
 
-    async def load_structure(self) -> LoxoneStructure:
+    async def load_structure(
+        self,
+        *,
+        receive: Callable[[], Awaitable[tuple[MessageHeader, str | bytes | None]]] | None = None,
+    ) -> LoxoneStructure:
         await self._websocket.send("data/LoxAPP3.json")
-        header, payload = await self._receive()
+        header, payload = await (receive() if receive is not None else self._receive())
         if header.message_type not in {MessageType.TEXT, MessageType.BINARY_FILE} or not isinstance(
             payload, str
         ):

@@ -192,8 +192,18 @@ _TEST_GROUPS: Final = (
         ),
     ),
     (
-        ("src/mcpserver/server.py",),
-        ("tests/test_oauth.py", "tests/test_server.py", "tests/test_tools.py"),
+        ("src/mcpserver/server.py", "src/mcpserver/service_discovery.py"),
+        (
+            "tests/test_oauth.py",
+            "tests/test_server.py",
+            "tests/test_tools.py",
+            "tests/test_service_discovery.py",
+            "tests/test_service_miniserver_access.py",
+            "tests/test_event_history_admin.py",
+            "tests/test_event_history_selector_cache.py",
+            "tests/test_emergency_options_cache.py",
+            "tests/test_admin.py",
+        ),
     ),
     (
         ("src/mcpserver/settings.py",),

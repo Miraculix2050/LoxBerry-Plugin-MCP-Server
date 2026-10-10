@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import logging
 import os
@@ -305,6 +306,8 @@ class _ForwardedHostFastMCP(FastMCP):
     ) = None
     explorer_binding_maintenance: tuple[AtomicConfigStore, AtomicJsonAuthStore] | None = None
 
+    admin_discovery: Any = None
+
     def streamable_http_app(self) -> Starlette:
         app = super().streamable_http_app()
         session_lifespan = app.router.lifespan_context
@@ -318,6 +321,7 @@ class _ForwardedHostFastMCP(FastMCP):
                     self.remote_revocation,
                     self.event_history,
                     self.explorer_binding_maintenance,
+                    self.admin_discovery,
                 ),
                 session_lifespan(starlette_app),
             ):
@@ -371,6 +375,7 @@ async def _runtime_lifespan(
     | None = None,
     event_history: EventHistoryMonitor | None = None,
     explorer_binding_maintenance: tuple[AtomicConfigStore, AtomicJsonAuthStore] | None = None,
+    admin_discovery: Any = None,
 ) -> AsyncIterator[None]:
     """Close all live Miniserver sessions when the HTTP application stops."""
     worker = (
@@ -402,6 +407,8 @@ async def _runtime_lifespan(
             await event_history.start()
         yield
     finally:
+        if admin_discovery is not None:
+            await admin_discovery.close()
         if worker is not None:
             worker.cancel()
             with suppress(asyncio.CancelledError):
@@ -866,6 +873,120 @@ def create_server(settings: ServerSettings) -> FastMCP:
             methods=["GET"],
             include_in_schema=False,
         )(oauth_web.authorization_metadata)
+
+    from mcpserver.service_discovery import (
+        MAX_RESPONSE_BYTES,
+        AdminDiscovery,
+        admin_key,
+        configured_loader,
+    )
+    from mcpserver.service_discovery import (
+        PATH as discovery_path,
+    )
+
+    discovery_store = auth_store or _configured_auth_store()
+    if settings.plugin_config is not None and discovery_store is not None:
+        server.admin_discovery = AdminDiscovery(
+            discovery_store,
+            configured_loader,
+            lambda config: _miniserver_auth_coordinator(
+                discovery_store, MiniserverEndpoint.parse(config.loxone_endpoint), config
+            ),
+        )
+
+    @server.custom_route(discovery_path, methods=["POST"], include_in_schema=False)  # type: ignore[misc]
+    async def admin_discovery_projection(request: Request) -> Response:
+        if (
+            request.client is None
+            or request.client.host not in {"127.0.0.1", "::1"}
+            or discovery_store is None
+            or not re.fullmatch(
+                r"[0-9a-f]{64}", request.headers.get("X-LoxBerry-Admin-Discovery", "")
+            )
+            or not hmac.compare_digest(
+                request.headers.get("X-LoxBerry-Admin-Discovery", ""), admin_key(discovery_store)
+            )
+        ):
+            return JSONResponse({"ok": False}, status_code=403)
+        raw = bytearray()
+        async for chunk in request.stream():
+            raw.extend(chunk)
+            if len(raw) > 1024:
+                return JSONResponse({"ok": False}, status_code=413)
+        try:
+            value = json.loads(raw)
+        except ValueError:
+            return JSONResponse({"ok": False}, status_code=400)
+        if (
+            not isinstance(value, dict)
+            or set(value) != {"projection", "binding", "manual_retry", "early_probe"}
+            or not isinstance(value["projection"], str)
+            or value["projection"] not in {"event_history", "emergency_stop"}
+            or not isinstance(value["binding"], str)
+            or not re.fullmatch(r"[0-9a-f]{64}", value["binding"])
+            or type(value["manual_retry"]) is not bool
+            or type(value["early_probe"]) is not bool
+            or (value["early_probe"] and not value["manual_retry"])
+        ):
+            return JSONResponse({"ok": False}, status_code=400)
+        if server.admin_discovery is None:
+            return JSONResponse({"ok": False, "error": "temporarily_unavailable"})
+        task = asyncio.create_task(
+            server.admin_discovery.project(
+                value["projection"],
+                value["binding"],
+                manual_retry=value["manual_retry"],
+                early_probe=value["early_probe"],
+            )
+        )
+
+        async def disconnected() -> None:
+            # Body is fully consumed; this is now the only ASGI request reader.
+            # is_disconnected() uses a cancellation scope that can swallow the
+            # watcher's cancellation on some middleware stacks.
+            while True:
+                message = await request.receive()
+                if message["type"] == "http.disconnect":
+                    return
+
+        watcher = asyncio.create_task(disconnected())
+        try:
+            done, _ = await asyncio.wait({task, watcher}, return_when=asyncio.FIRST_COMPLETED)
+            if watcher in done:
+                task.cancel()
+                return JSONResponse({"ok": False}, status_code=499)
+            result = {"ok": True, **await task}
+            if len(json.dumps(result).encode()) > MAX_RESPONSE_BYTES:
+                return JSONResponse({"ok": False, "error": "temporarily_unavailable"})
+            return JSONResponse(result)
+        except Exception as exc:
+            from mcpserver.loxone.auth_diagnostics import (
+                MiniserverAuthenticationCooldown,
+                MiniserverAuthenticationSuppressed,
+            )
+            from mcpserver.loxone.client import LoxoneSourceIpBlocked
+
+            code = (
+                "source_ip_blocked"
+                if isinstance(exc, LoxoneSourceIpBlocked)
+                else (
+                    "authentication_cooldown"
+                    if isinstance(exc, MiniserverAuthenticationCooldown)
+                    else "authentication_busy"
+                    if isinstance(exc, MiniserverAuthenticationSuppressed)
+                    else "temporarily_unavailable"
+                )
+            )
+            retry = server.admin_discovery.retry_not_before()
+            if code == "authentication_busy":
+                retry = int(time.time()) + 5
+            return JSONResponse({"ok": False, "error": code, "retry_not_before": retry})
+        finally:
+            task.cancel()
+            watcher.cancel()
+            for pending in (task, watcher):
+                with suppress(asyncio.CancelledError, Exception):
+                    await pending
 
     @server.custom_route(  # type: ignore[misc]
         "/healthz", methods=["GET"], include_in_schema=False

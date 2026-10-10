@@ -82,3 +82,21 @@ Nutze für Support autorisierte, maskierte Dienstdiagnosen mit der Trace-ID der
 Antwort. Warnungen werden je Kategorie und Phase 60 Sekunden unterdrückt;
 Ereigniszahlen zählen keine fehlgeschlagenen Aufrufe, fehlende Ereignisse benennen
 keine Ursache.
+
+### Admin-Discovery-Verbindung
+
+Event History und die Emergency-Stop-Auswahl verwenden eine eigene Verbindung mit
+der in LoxBerry konfigurierten Miniserver-Identität. Jede neue Auswahl-Anfrage lädt
+weiterhin die vollständige Struktur. Aufgezeichnete History und normale MCP-Clients
+behalten ihre eigenen Autorisierungsgrenzen. Bei gestopptem Dienst oder einem
+Discovery-Fehler beginnt der CGI-Helfer keine neue Anmeldung. Die gespeicherte
+Auswahl bleibt erhalten; nach Behebung der Ursache ausdrücklich erneut versuchen.
+Zurückbehaltene Emergency-Stop-Optionen sind als veraltet gekennzeichnet und
+autorisieren keine Aktionen.
+
+Die Verbindung verfällt nach 60 Sekunden Inaktivität oder fünf Minuten Nutzung.
+Änderungen an Zugangsdaten oder Konfiguration sowie Verbindungsfehler verwerfen sie.
+Eine akzeptierte Einschränkung bleibt: Teilweise Rechteänderungen wirken eventuell
+erst nach Trennung oder Ersatz einer noch offenen Miniserver-Sitzung. Ein neuer
+Strukturabruf beweist deshalb keinen universellen sofortigen Rechteentzug. MCP-Clients
+erhalten über den Auswahl-Endpunkt niemals die Rechte dieser Dienstidentität.

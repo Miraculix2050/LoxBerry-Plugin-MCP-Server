@@ -287,6 +287,35 @@ class MiniserverAuthCoordinator:
         self._reload_state()
         return self.status()
 
+    async def observe_source_ip_blocked(self) -> None:
+        """Persist a discovery transport's definite 4003 without a fake login."""
+        async with self._lock:
+            deadline = time.monotonic() + 30
+            while True:
+                try:
+                    with _interprocess_lock(self._path.with_name(f".{self._path.name}.lock")):
+                        self._reload_state(locked_attempt=True)
+                        if self._state["breaker_state"] == "closed":
+                            self._open_source_ip_breaker(
+                                now=int(time.time()),
+                                owner="local_admin",
+                                phase="session_establishment",
+                                provenance=None,
+                            )
+                        self._save_best_effort()
+                        return
+                except _InterprocessLockUnavailable:
+                    if time.monotonic() >= deadline:
+                        self._open_source_ip_breaker(
+                            now=int(time.time()),
+                            owner="local_admin",
+                            phase="session_establishment",
+                            provenance=None,
+                        )
+                        self._retain_open_state = self._state_uncertain = True
+                        return
+                    await asyncio.sleep(0.1)
+
     def events_for(self, binding_id: str | None) -> list[dict[str, Any]]:
         if not binding_id:
             return []

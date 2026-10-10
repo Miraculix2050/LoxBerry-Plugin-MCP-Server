@@ -75,3 +75,20 @@ for these failures; do not invent one or infer it from a healthy service.
 Use authorized, sanitized service diagnostics with the response's trace ID for
 support. Warnings are suppressed for 60 seconds per category and phase; event
 counts do not count failed calls, and missing events do not identify a cause.
+
+### Admin discovery connection
+
+Event History and emergency-stop selectors reuse a dedicated connection with the
+LoxBerry-configured Miniserver identity. Each fresh selector request still downloads
+the complete structure; captured history and normal MCP clients keep their existing
+authorization boundaries. If the service is stopped or discovery fails, no fresh
+login is started in the CGI helper. Keep the saved selection and retry explicitly
+after correcting the cause. Retained emergency options are marked stale and do not
+authorize operations.
+
+The connection expires after 60 seconds of inactivity or five minutes of reuse.
+Credential/configuration changes and connection failures discard it. An accepted
+limitation remains: partial rights changes may not affect a still-open Miniserver
+session until it disconnects or is replaced. A fresh structure download is not a
+universal proof of immediate permission revocation. MCP clients never receive this
+service identity's access through the selector endpoint.

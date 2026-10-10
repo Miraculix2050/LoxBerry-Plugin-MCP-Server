@@ -175,12 +175,14 @@ class EventHistorySelectorCache:
             return None
         return (metadata.st_dev, metadata.st_ino, metadata.st_mtime_ns, metadata.st_size)
 
-    def refresh(self, discover: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+    def refresh(
+        self, discover: Callable[[], dict[str, Any]], *, join_concurrent: bool = True
+    ) -> dict[str, Any]:
         """Join a concurrent refresh, but start a new one on a later page visit."""
         marker = self._refresh_marker()
         with self._locked():
             current = self.read()
-            if current is not None and self._refresh_marker() != marker:
+            if join_concurrent and current is not None and self._refresh_marker() != marker:
                 return current
             # A failed fresh visibility check must not leave old names queryable.
             try:
