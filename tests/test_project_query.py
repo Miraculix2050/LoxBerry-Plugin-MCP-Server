@@ -1,3 +1,4 @@
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -393,3 +394,71 @@ def test_trace_keeps_converging_edges_without_unbounded_edge_output():
 
     assert len(result["edges"]) == 4
     assert result["truncated"] is False
+
+
+def test_shared_topology_keeps_visible_mappings_and_names_separate():
+    first = query()
+    snapshot = first.view.snapshot
+    other_structure = SimpleNamespace(last_modified="v2", controls=())
+    second = ProjectQuery(
+        ProjectView(snapshot, map_runtime(snapshot, other_structure)),
+        {},
+        graph_index=first.graph_index,
+    )
+    assert second.graph_index is first.graph_index
+    arguments = dict(
+        query="living", kind=None, block_type=None, source_id=None, runtime_control_uuid=None
+    )
+    assert first.find(**arguments)
+    assert second.find(**arguments) == []
+    with pytest.raises(ProjectQueryError, match="project_node_unknown"):
+        second.resolve("b" * 32, "runtime_control_uuid")
+    assert first.resolve("b" * 32, "runtime_control_uuid")
+    first.control_names.clear()
+    assert second.control_names == {}
+
+
+def test_shared_index_is_immutable_and_leaf_reads_do_not_grow_it():
+    project = query()
+    index = project.graph_index
+    assert index is not None and index.container_bytes > 0
+    before = dict(index.children)
+    with pytest.raises(KeyError):
+        index.children["missing"]
+    assert dict(index.children) == before
+    with pytest.raises(TypeError):
+        index.nodes["injected"] = next(iter(index.nodes.values()))
+    with pytest.raises(TypeError):
+        index.parents["injected"] = "parent"
+    with pytest.raises(AttributeError):
+        next(iter(index.children.values())).append("injected")
+    for node in project.view.snapshot.graph.nodes:
+        project.describe(node, limit=3)
+        project.trace(node, direction="downstream", max_depth=1, max_nodes=3)
+    assert dict(index.children) == before
+
+
+def test_equal_but_distinct_graph_cannot_borrow_index():
+    project = query()
+    graph = replace(project.view.snapshot.graph)
+    assert graph == project.view.snapshot.graph and graph is not project.view.snapshot.graph
+    view = replace(project.view, snapshot=replace(project.view.snapshot, graph=graph))
+    with pytest.raises(ProjectQueryError, match="project_index_mismatch"):
+        ProjectQuery(view, {}, graph_index=project.graph_index)
+
+
+def test_repeated_containment_preserves_ambiguity_order_and_last_parent():
+    from mcpserver.loxone.project.graph import GraphEdge
+    from mcpserver.loxone.project.query import ProjectQueryIndex
+
+    project = query()
+    graph = project.view.snapshot.graph
+    edge = next(edge for edge in graph.edges if edge.kind == "contains")
+    other_parent = next(node.key for node in graph.nodes if node.key != edge.source)
+    extra = (GraphEdge(other_parent, edge.target, "contains"),) * 1000
+    index = ProjectQueryIndex(replace(graph, edges=graph.edges + extra))
+    parents = index.containment_parents[edge.target]
+    assert parents[0] == edge.source and parents[-1000:] == (other_parent,) * 1000
+    assert index.parents[edge.target] == other_parent
+    assert index.children[other_parent].count(edge.target) >= 1000
+    assert isinstance(parents, tuple)

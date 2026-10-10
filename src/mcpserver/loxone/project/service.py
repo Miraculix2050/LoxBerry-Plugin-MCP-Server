@@ -136,8 +136,18 @@ class ProjectService:
         return view
 
     async def query(self, access: StoredAccessToken, runtime: "RuntimeSnapshot") -> ProjectQuery:
-        view = await self.view(access, runtime)
         cache_key = (access.miniserver_id, access.identity_id, access.family_id)
+        # A fresh view can replace this family's cached query. Keep only its
+        # immutable topology candidate until the independent load completes.
+        previous_index = next(
+            (
+                entry[2].graph_index
+                for key, entry in self._views.items()
+                if key[:3] == cache_key and entry[2] is not None
+            ),
+            None,
+        )
+        view = await self.view(access, runtime)
         view_key = (*cache_key, view.marker)
         cached = self._views.get(view_key)
         if cached is not None and cached[0] == runtime.structure and cached[2] is not None:
@@ -148,19 +158,38 @@ class ProjectService:
             control = pending.pop()
             names[control.uuid] = control.name
             pending.extend(control.subcontrols)
-        query = ProjectQuery(view, names)
+        index = next(
+            (
+                entry[2].graph_index
+                for entry in self._views.values()
+                if entry[2] is not None and entry[2].view.snapshot.graph is view.snapshot.graph
+            ),
+            previous_index,
+        )
+        if index is not None and index.graph is not view.snapshot.graph:
+            index = None
+        query = ProjectQuery(view, names, graph_index=index)
         if cached is not None:
-            size = cached[3] + len(view.snapshot.graph.nodes) * 256
-            if size <= _MAX_VIEW_CACHE_BYTES:
+            size = cached[3] + len(view.mapping.entries) * 256
+            assert query.graph_index is not None
+            if size + query.graph_index.container_bytes <= _MAX_VIEW_CACHE_BYTES:
                 self._views[view_key] = (runtime.structure, view, query, size)
                 self._views.move_to_end(view_key)
                 self._prune_views()
         return query
 
+    def _view_cache_bytes(self) -> int:
+        indexes = {
+            id(query.graph_index): query.graph_index.container_bytes
+            for _structure, _view, query, _size in self._views.values()
+            if query is not None and query.graph_index is not None
+        }
+        return sum(entry[3] for entry in self._views.values()) + sum(indexes.values())
+
     def _prune_views(self) -> None:
         while (
             len(self._views) > _MAX_CACHE_ENTRIES
-            or sum(value[3] for value in self._views.values()) > _MAX_VIEW_CACHE_BYTES
+            or self._view_cache_bytes() > _MAX_VIEW_CACHE_BYTES
         ):
             self._views.popitem(last=False)
 

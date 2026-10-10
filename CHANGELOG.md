@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Share read-only project query topology indexes across independently authorized
+  views of the same graph. Keep visible mappings and names separate, reuse graph
+  topology when a family's visible structure changes, and count shared index
+  containers once within the existing bounded view cache (#398).
+
 - Reuse authorized project-analysis results across OAuth families with identical
   inputs. Keep KNX visibility/taxonomy inputs and family cursor leases separate;
   retain independent downloads, fresh visibility and final authorization on every

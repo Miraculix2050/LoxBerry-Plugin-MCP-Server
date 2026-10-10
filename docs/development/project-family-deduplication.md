@@ -195,3 +195,22 @@ unchanged. Additional search/relationship index caches are outside this change.
 The loader binds the private content identity to exact downloaded response bytes,
 Miniserver, parser epoch/model and processing limits, including graphs too large
 for the graph cache. A marker alone cannot prove authorization or identify bytes.
+
+## Shared query topology (#398)
+
+ProjectQuery separates a read-only ProjectQueryIndex (nodes and containment
+parents/children) from family-visible mappings and control names. Queries may
+borrow an index only for the exact same graph object after their independent
+authorized load. The same family can keep topology when visible structure changes
+and the graph survives. Missing-child reads do not grow the shared mappings.
+
+Existing bounded view/query references own the indexes; there is no additional
+global pool, persistence or worker serialization. The eight-entry / 64 MiB view
+cache charges shared owned index containers once, plus separate family mapping/
+query estimates. Eviction, revocation and close remove the respective references.
+A valid result can remain uncached if it exceeds these retention limits.
+
+Construction/allocation measurements are separate from network downloads and
+whole-service RSS. Gen. 1 assessment used two independent loads of the one
+available full grant; distinct-family and changed-view sharing is also covered
+deterministically. The existing Restricted grant remains a live negative gate.

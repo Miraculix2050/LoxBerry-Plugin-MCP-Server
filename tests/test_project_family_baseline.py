@@ -368,3 +368,91 @@ async def test_uncached_snapshots_keep_loader_identity_without_retaining_graph(m
         assert third.content_identity != first.content_identity
     finally:
         await service.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("other_miniserver", [False, True])
+async def test_query_indexes_follow_shared_graph_but_not_family_context(other_miniserver):
+    service, client, _ = service_fixture()
+    structure = LoxoneStructure(LoxoneIdentity("synthetic", "synthetic"), "same-marker", (), (), ())
+    first_access = access("first")
+    second_access = access(
+        "second", "other-user", "other-miniserver" if other_miniserver else "synthetic-miniserver"
+    )
+    try:
+        first = await service.query(
+            first_access, SimpleNamespace(subject="first", structure=structure)
+        )
+        second = await service.query(
+            second_access, SimpleNamespace(subject="second", structure=structure)
+        )
+        assert first is not second and first.view is not second.view
+        assert (first.graph_index is second.graph_index) == (not other_miniserver)
+        assert client.download_project.await_count == 2
+        assert service._view_cache_bytes() == sum(v[3] for v in service._views.values()) + sum(
+            {id(q.graph_index): q.graph_index.container_bytes for q in (first, second)}.values()
+        )
+        await service.revoke("first")
+        assert all(key[2] != "first" for key in service._views)
+        assert (
+            await service.query(
+                second_access, SimpleNamespace(subject="second", structure=structure)
+            )
+            is second
+        )
+        assert client.download_project.await_count == 3
+    finally:
+        await service.close()
+    assert not service._views and service._view_cache_bytes() == 0
+
+
+@pytest.mark.asyncio
+async def test_same_family_new_visible_structure_keeps_only_graph_index():
+    service, _, _ = service_fixture()
+    structure = LoxoneStructure(LoxoneIdentity("synthetic", "synthetic"), "same-marker", (), (), ())
+    runtime = SimpleNamespace(subject="first", structure=structure)
+    try:
+        first = await service.query(access("first"), runtime)
+        runtime.structure = replace(
+            structure,
+            controls=(Control("a" * 32, "Visible", "Switch", None, None, None, ()),),
+        )
+        second = await service.query(access("first"), runtime)
+        assert second is not first and second.view.mapping is not first.view.mapping
+        assert second.graph_index is first.graph_index
+        assert first.control_names == {} and second.control_names == {"a" * 32: "Visible"}
+        assert second.view.mapping.structure_fingerprint != first.view.mapping.structure_fingerprint
+    finally:
+        await service.close()
+
+
+@pytest.mark.asyncio
+async def test_query_index_bound_counts_shared_containers_once_and_evicts(monkeypatch):
+    service, _, _ = service_fixture()
+    structure = LoxoneStructure(LoxoneIdentity("synthetic", "synthetic"), "same-marker", (), (), ())
+    try:
+        first = await service.query(
+            access("first"), SimpleNamespace(subject="first", structure=structure)
+        )
+        monkeypatch.setattr(
+            service_module, "_MAX_VIEW_CACHE_BYTES", first.graph_index.container_bytes
+        )
+        second = await service.query(
+            access("second"), SimpleNamespace(subject="second", structure=structure)
+        )
+        assert first.graph_index is second.graph_index and len(service._views) == 2
+        assert service._view_cache_bytes() == first.graph_index.container_bytes
+        monkeypatch.setattr(service_module, "_MAX_CACHE_ENTRIES", 2)
+        await service.query(access("third"), SimpleNamespace(subject="third", structure=structure))
+        assert len(service._views) <= 2 and all(key[2] != "first" for key in service._views)
+        monkeypatch.setattr(service_module, "_MAX_VIEW_CACHE_BYTES", 1)
+        service._prune_views()
+        assert not service._views
+        unretained = await service.query(
+            access("second"), SimpleNamespace(subject="second", structure=structure)
+        )
+        assert unretained.graph_index is not None
+        assert all(entry[2] is None for entry in service._views.values())
+        assert service._view_cache_bytes() <= 1
+    finally:
+        await service.close()

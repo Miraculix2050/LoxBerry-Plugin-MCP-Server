@@ -206,3 +206,25 @@ gleich. Zusätzliche Such-/Verbindungsindex-Caches gehören nicht zu dieser Änd
 Der Loader bindet die private Projektidentität an exakte heruntergeladene Bytes,
 Miniserver, Parser-Epoche/Modell und Verarbeitungsgrenzen, auch bei Graphen oberhalb
 der Graph-Cachegrenze. Ein Zeitstempel beweist weder Berechtigung noch Byteidentität.
+
+## Gemeinsame Query-Topologie (#398)
+
+ProjectQuery trennt einen schreibgeschützten ProjectQueryIndex (Knoten und
+Containment-Eltern/-Kinder) von familienspezifischen Zuordnungen und Kontrollnamen.
+Queries können nach ihrem eigenen autorisierten Abruf nur beim exakt gleichen
+Graphobjekt einen Index übernehmen. Dieselbe Familie kann die Topologie bei
+geänderter sichtbarer Struktur behalten, wenn der Graph erhalten bleibt. Zugriffe
+auf fehlende Kinder vergrößern die gemeinsamen Zuordnungen nicht.
+
+Die vorhandenen begrenzten Sicht-/Query-Referenzen halten die Indizes; es gibt
+keinen zusätzlichen globalen Pool, Persistenz oder Worker-Serialisierung. Der
+Sichtcache mit acht Einträgen / 64 MiB zählt gemeinsam gehaltene Indexcontainer
+einmal und familienspezifische Zuordnungs-/Query-Schätzungen getrennt. Verdrängung,
+Widerruf und Schließen entfernen die jeweiligen Referenzen. Ein gültiges Ergebnis
+kann oberhalb dieser Speichergrenzen ohne Cache-Aufnahme zurückgegeben werden.
+
+Aufbau-/Allokationsmessungen sind getrennt von Netzwerkdownloads und dem gesamten
+Prozessspeicher. Die Gen.-1-Prüfung nutzte zwei eigene Abrufe des einzigen
+verfügbaren Vollzugriffs-Grants; verschiedene Familien und geänderte Sichten sind
+zusätzlich deterministisch geprüft. Der bestehende Restricted-Grant bleibt ein
+Live-Negativtest.
