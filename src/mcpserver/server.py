@@ -49,6 +49,7 @@ from mcpserver.loxone.client import MiniserverEndpoint
 from mcpserver.loxone.event_history import EventHistoryMonitor, EventHistoryStore
 from mcpserver.loxone.project.service import ProjectService
 from mcpserver.loxone.runtime import LoxoneRuntime
+from mcpserver.loxone.service_access import LoxBerryServiceCredentials
 from mcpserver.loxone.statistics import StatisticsCache
 from mcpserver.mqtt_health import MqttHealthPublisher
 from mcpserver.settings import ServerSettings
@@ -491,7 +492,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
                     retention_days=settings.plugin_config.event_history_retention_days,
                     maximum_mib=settings.plugin_config.event_history_maximum_mib,
                 ),
-                emergency_stop,
+                LoxBerryServiceCredentials(settings.plugin_config),
                 auth_coordinator,
             )
     if settings.plugin_config is not None and settings.plugin_config.mqtt_enabled:

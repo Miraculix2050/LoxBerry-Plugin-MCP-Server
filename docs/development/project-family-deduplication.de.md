@@ -291,3 +291,32 @@ ihren bisherigen Parserpfad. Beim ersten kalten Abruf ohne passenden Datensatz
 läuft die begrenzte SHA-256-Berechnung parallel zur Normalisierung; erst die fertige
 Identität kann an den Eigentümer zurückgegeben werden. Abbruch nimmt nichts auf.
 Öffentliche Antwortschemas bleiben gleich.
+
+## Zugriff mit konfigurierter Dienstidentität (#406, Folge-Issue zu #239)
+
+LoxBerryServiceCredentials liest die konfigurierte Identität über den bestehenden
+nativen Helfer emergency-stop-miniserver.php mit unveränderten Pfad-, Validierungs-
+und Timeoutregeln. Der historische Helfername bleibt für die Kompatibilität des
+nativen Plugin-Layouts erhalten. Der Provider hält keine Zugangsdaten. Die Admin-
+Cacheprofile verwenden ihn direkt; Event History benötigt keinen Notaus-Monitor
+mehr als Zugangsdaten-Provider.
+
+ServiceMiniserverConnection besitzt jeweils einen internen Token und eine Sitzung.
+Notaus-Überwachung/-Auswahl und Event-History-Aufzeichnung/-Erkennung verwenden
+denselben Ablauf für Anmeldung, Koordination, Phasenmessung und Bereinigung mit
+ihren bisherigen getrennten Client-UUIDs und Verbindungen. Hintergrundverbraucher
+behalten die Koordination ohne Wartezeit und die bestehende Cooldown-Probe-Regel.
+Admin-Erkennung teilt ihr bestehendes 15-Sekunden-Koordinationsbudget zwischen
+Tokenabruf und Sitzungsaufbau. Manuelles Wiederholen bleibt explizit. Bereinigung
+zerstört den eigenen Token auch bei fehlgeschlagenem Sitzungsschließen; wiederholte
+Bereinigung beeinflusst keine andere Verbindung.
+
+Es gibt keinen gemeinsamen Token-/Sitzungspool, zusätzlichen Sichtbarkeitssnapshot,
+neue Persistenz oder Schnittstelle. Jede Erkennung lädt weiterhin eine frische
+Struktur. Auswahlcaches, Aufzeichnungs-Lebenszyklus, gesperrter Notauszustand bei
+Unsicherheit und Source-IP-Sperre bleiben erhalten. Projekt-, Live-, History- und
+Statistikaufrufe verwenden weiterhin die eigene OAuth-Identität des Clients; der
+Adapter autorisiert keine Clientaufrufe. Der Architekturgewinn vereinheitlicht
+doppelte Lebenszykluslogik; eine gemessene Latenzverbesserung wird nicht behauptet.
+Künftige dauerhafte Sitzungswiederverwendung benötigt eine eigene Nutzen- und
+Berechtigungsaktualitätsentscheidung gemäß #239.

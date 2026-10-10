@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import Any, cast
 
 from mcpserver.config import ConfigError, PluginConfig
-from mcpserver.emergency_stop import EmergencyStopMonitor
 from mcpserver.event_history_selector_cache import EventHistorySelectorCache, SelectorCacheError
 from mcpserver.loxone.event_history import (
     EventHistoryMonitor,
@@ -24,6 +23,7 @@ from mcpserver.loxone.event_history import (
     source_revision_for_snapshot,
 )
 from mcpserver.loxone.presentation import flatten_controls
+from mcpserver.loxone.service_access import LoxBerryServiceCredentials
 from mcpserver.loxone.uuid import normalize_loxone_uuid
 
 _DISCOVERY_TIMEOUT = 35
@@ -66,7 +66,9 @@ def _monitor(config: PluginConfig) -> EventHistoryMonitor:
         maximum_probe_seconds=config.miniserver_auth_probe_max_seconds,
         profile_id=auth_store.pseudonym("miniserver-auth-profile-v1", endpoint.origin),
     )
-    return EventHistoryMonitor(config, _store(config), EmergencyStopMonitor(config), coordinator)
+    return EventHistoryMonitor(
+        config, _store(config), LoxBerryServiceCredentials(config), coordinator
+    )
 
 
 def _controls(config: PluginConfig) -> tuple[Any, ...]:
@@ -297,7 +299,7 @@ def _selector_cache(config: PluginConfig) -> EventHistorySelectorCache:
         raise bridge.AdminError("Miniserver is not configured", code="temporarily_unavailable")
     try:
         store = bridge._auth_store()
-        username, password = asyncio.run(EmergencyStopMonitor(config)._credentials())
+        username, password = asyncio.run(LoxBerryServiceCredentials(config).load())
         profile = store.pseudonym(
             "event-history-selector-v1", config.loxone_endpoint, username, password
         )

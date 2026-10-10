@@ -12,20 +12,20 @@ import secrets
 import sqlite3
 import threading
 import time
-from collections.abc import Awaitable, Callable, Iterator
+from collections.abc import Iterator
 from contextlib import closing, contextmanager, suppress
 from dataclasses import dataclass
-from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, Protocol, TypeVar
+from typing import TYPE_CHECKING, Final
 from uuid import NAMESPACE_URL, uuid5
 
 if TYPE_CHECKING:
     from mcpserver.config import PluginConfig
     from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
-    from mcpserver.loxone.client import LoxoneClient, LoxoneToken, LoxoneWebSocketSession
     from mcpserver.loxone.models import Control, LoxoneStructure
 
+
+from mcpserver.loxone.service_access import ServiceCredentials, ServiceMiniserverConnection
 
 _LOGGER = logging.getLogger("mcpserver.event_history")
 
@@ -35,7 +35,6 @@ _MAX_TEXT_BYTES: Final = 4096
 _UNSUPPORTED_SOURCE_CONTROL_TYPES: Final = frozenset({"Daytimer"})
 _MAX_SAFE_BROWSER_INTEGER: Final = 2**53 - 1
 _ADMIN_AUTH_BUSY_WAIT_SECONDS: Final = 15
-_T = TypeVar("_T")
 
 
 class EventHistoryUnavailable(RuntimeError):
@@ -58,18 +57,6 @@ def _chart_json_value(value: object) -> object:
 
 def _storage_failure_reason(exc: EventHistoryUnavailable) -> str:
     return "size_enforcement_failed" if "size limit" in str(exc) else "store_unavailable"
-
-
-class _LoxBerryCredentials(Protocol):
-    async def _credentials(self) -> tuple[str, str]: ...
-
-
-async def _acquire_token(client: LoxoneClient, username: str, password: str) -> LoxoneToken:
-    return await client.acquire_token(username, password)
-
-
-async def _open_session(client: LoxoneClient, token: LoxoneToken) -> LoxoneWebSocketSession:
-    return await client.open_session(token)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1246,7 +1233,7 @@ class EventHistoryMonitor:
         self,
         config: PluginConfig,
         store: EventHistoryStore,
-        credentials: _LoxBerryCredentials,
+        credentials: ServiceCredentials,
         auth_coordinator: MiniserverAuthCoordinator | None = None,
     ) -> None:
         self.config = config
@@ -1332,13 +1319,13 @@ class EventHistoryMonitor:
         from mcpserver.loxone.client import MiniserverEndpoint
 
         while True:
-            token = None
+            connection = None
             session = None
             active: tuple[tuple[str, str], ...] = ()
             coverage_active = False
             try:
                 await asyncio.to_thread(self.store.initialize)
-                username, password = await self.credentials._credentials()
+                username, password = await self.credentials.load()
                 from mcpserver.loxone.client import LoxoneClient
 
                 client = LoxoneClient(
@@ -1348,22 +1335,10 @@ class EventHistoryMonitor:
                     ),
                     timeout_seconds=self.config.connection_timeout,
                 )
-                if self.auth_coordinator is None:
-                    token = await client.acquire_token(username, password)
-                    session = await client.open_session(token)
-                else:
-                    acquired_token = await self.auth_coordinator.attempt(
-                        partial(_acquire_token, client, username, password),
-                        owner="runtime_event_stream",
-                        phase="token_acquisition",
-                    )
-                    token = acquired_token
-                    opened_session = await self.auth_coordinator.attempt(
-                        partial(_open_session, client, acquired_token),
-                        owner="runtime_event_stream",
-                        phase="session_establishment",
-                    )
-                    session = opened_session
+                connection = ServiceMiniserverConnection(
+                    client, self.auth_coordinator, owner="runtime_event_stream", manual_retry=True
+                )
+                session = await connection.connect(username, password)
                 structure = await session.load_structure()
                 visible = {
                     (control.uuid, state_uuid)
@@ -1461,10 +1436,8 @@ class EventHistoryMonitor:
                             outcome="disconnected",
                         )
                         self._notify_update()
-                if session is not None:
-                    await session.close()
-                if token is not None:
-                    token.destroy()
+                if connection is not None:
+                    await connection.close()
 
     async def close(self) -> None:
         if self._task is not None:
@@ -1484,45 +1457,10 @@ class EventHistoryMonitor:
         """Load one current service-owned structure for selection and validation."""
         from mcpserver.loxone.client import MiniserverEndpoint
 
-        token = None
-        session = None
-
-        async def authenticate(operation: Callable[[], Awaitable[_T]], phase: str) -> _T:
-            queued = time.perf_counter_ns() if timing is not None else 0
-            entered = False
-
-            async def measured_operation() -> _T:
-                nonlocal entered
-                entered = True
-                started = time.perf_counter_ns() if timing is not None else 0
-                if timing is not None and self.auth_coordinator is not None:
-                    timing["selector_coordinator_wait_ms"] += (started - queued) / 1_000_000
-                try:
-                    return await operation()
-                finally:
-                    if timing is not None:
-                        timing[f"selector_{phase}_ms"] = (
-                            time.perf_counter_ns() - started
-                        ) / 1_000_000
-
-            try:
-                if self.auth_coordinator is None:
-                    return await measured_operation()
-                return await self.auth_coordinator.attempt(
-                    measured_operation,
-                    owner="local_admin",
-                    phase=phase,
-                    allow_cooldown_probe=False,
-                    busy_wait_seconds=max(0.0, auth_wait_deadline - time.monotonic()),
-                )
-            finally:
-                if timing is not None and not entered:
-                    timing["selector_coordinator_wait_ms"] += (
-                        time.perf_counter_ns() - queued
-                    ) / 1_000_000
+        connection = None
 
         try:
-            username, password = await self.credentials._credentials()
+            username, password = await self.credentials.load()
             from mcpserver.loxone.client import LoxoneClient
 
             client = LoxoneClient(
@@ -1532,15 +1470,14 @@ class EventHistoryMonitor:
                 ),
                 timeout_seconds=self.config.connection_timeout,
             )
-            if timing is not None:
-                timing["selector_coordinator_wait_ms"] = 0.0
-            auth_wait_deadline = time.monotonic() + _ADMIN_AUTH_BUSY_WAIT_SECONDS
-            token = await authenticate(
-                partial(_acquire_token, client, username, password), "token_acquisition"
+            connection = ServiceMiniserverConnection(
+                client,
+                self.auth_coordinator,
+                owner="local_admin",
+                busy_wait_seconds=_ADMIN_AUTH_BUSY_WAIT_SECONDS,
+                timing=timing,
             )
-            session = await authenticate(
-                partial(_open_session, client, token), "session_establishment"
-            )
+            session = await connection.connect(username, password)
             started = time.perf_counter_ns() if timing is not None else 0
             try:
                 return await session.load_structure()
@@ -1550,10 +1487,8 @@ class EventHistoryMonitor:
                         time.perf_counter_ns() - started
                     ) / 1_000_000
         finally:
-            if session is not None:
-                await session.close()
-            if token is not None:
-                token.destroy()
+            if connection is not None:
+                await connection.close()
 
     async def visible_controls(self) -> tuple[Control, ...]:
         """Return only visible controls from a current authorized structure."""

@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Unify configured service-identity credentials and connection ownership for
+  emergency-stop and Event History consumers. Keep separate connections, fresh
+  visibility, existing authentication budgets and client OAuth authorization;
+  always destroy owned tokens even when session cleanup fails (#406).
+
 - Reuse immutable runtime mappings between independently authorized families of
   the same identity and Miniserver, with the exact shared snapshot and complete
   visible mapping inputs. Preserve private queries, fresh downloads and existing
