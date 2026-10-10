@@ -212,6 +212,8 @@ class EncryptedLoxoneTokenStore:
         miniserver_id: str,
         identity_id: str,
         token: LoxoneToken,
+        *,
+        remote_revoke_pending: bool = False,
     ) -> None:
         if not all((family_id, miniserver_id, identity_id, token.value, token.username)):
             raise ValueError("token metadata must not be empty")
@@ -239,6 +241,10 @@ class EncryptedLoxoneTokenStore:
                 "nonce": _encoded(nonce),
                 "ciphertext": _encoded(ciphertext),
             }
+            if remote_revoke_pending:
+                document["tokens"][family_id].update(
+                    remote_revoke_pending=True, remote_revoke_attempts=0, remote_revoke_after=0
+                )
             self._write(document)
 
     def get(self, family_id: str, miniserver_id: str, identity_id: str) -> LoxoneToken | None:

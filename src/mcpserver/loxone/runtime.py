@@ -24,6 +24,7 @@ from mcpserver.availability import AvailabilityPhase, AvailabilityReason
 from mcpserver.loxone.auth_diagnostics import (
     MiniserverAuthCoordinator,
     MiniserverAuthenticationBusy,
+    MiniserverAuthenticationCooldown,
     MiniserverAuthenticationSuppressed,
     MiniserverSourceIpSuppressed,
 )
@@ -1275,6 +1276,8 @@ class LoxoneRuntime:
             reason = (
                 AvailabilityReason.REFRESH_AUTH_BUSY
                 if isinstance(exc, MiniserverAuthenticationBusy)
+                else AvailabilityReason.REFRESH_AUTH_COOLDOWN
+                if isinstance(exc, MiniserverAuthenticationCooldown)
                 else AvailabilityReason.REFRESH_SOURCE_IP
                 if isinstance(exc, MiniserverSourceIpSuppressed | LoxoneSourceIpBlocked)
                 or (isinstance(exc, LoxoneCommandRejected) and exc.response_code == "4003")

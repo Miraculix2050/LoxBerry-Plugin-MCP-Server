@@ -5,6 +5,12 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Pause new Miniserver authentication after three definite rejections in five
+  minutes, with persisted 60-second to 60-minute backoff. Isolate public OAuth
+  password failures from the shared service/token budget. Keep network
+  failures, contention, project permissions and actual source-IP blocks distinct;
+  allow explicit local Admin probes at least 60 seconds apart (#408).
+
 - Unify configured service-identity credentials and connection ownership for
   emergency-stop and Event History consumers. Keep separate connections, fresh
   visibility, existing authentication budgets and client OAuth authorization;

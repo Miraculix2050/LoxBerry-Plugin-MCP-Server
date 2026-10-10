@@ -1,5 +1,33 @@
 # Troubleshooting
 
+## Repeated Miniserver authentication rejection
+
+Three definite authentication rejections in five minutes pause new sign-ins
+for 60 seconds. Public OAuth password failures have their own budget and pause
+only public sign-ins. Service and token rejections share a second budget; its
+pause also covers the token phase of public sign-ins. A public password pause
+does not block service connections or token revocations. Actual IP blocks remain
+global. Rejected recovery probes double that pause
+up to 60 minutes. Network errors, timeouts, busy coordination and denied project
+permissions do not consume this budget. Existing authenticated connections stay
+open. This is plugin policy, not a guaranteed Miniserver IP-block threshold.
+
+The Sessions section shows the protection reason and remaining wait. A local
+administrator can explicitly try one sign-in with the LoxBerry-configured
+credentials, at least 60 seconds after the previous attempt. Confirm the warning:
+another rejection can extend the pause or cause an IP block. Automatic retries and
+MCP clients cannot bypass the pause; a confirmed Miniserver IP block takes priority.
+
+If protection persistence is unavailable, new sign-ins stop. Restore access to the
+private plugin state file and restart the service after resolving the cause; do
+not delete an active protection record merely to retry. An interrupted process
+leaves a conservative reservation of at most one hour. This also protects other
+processes if an authentication outcome could not be saved. No credentials or token values appear in status.
+An existing source-IP recovery policy can require a longer reservation and takes priority.
+Token-wide cleanup is not offered; its effects are under separate investigation.
+
+An authentication outcome that is still unknown additionally reserves the existing global IP recovery interval. After a crash or an outcome write failure, this protection can temporarily defer all new authentication; normal persisted password rejections do not activate it. Tokens already issued when sign-in completion is suppressed are encrypted for coordinated revocation. If that write also fails, the transaction retains the token and blocks new issuance until cleanup is queued.
+
 [Deutsch](troubleshooting.de.md)
 
 | Symptom | Safe check |
@@ -28,7 +56,9 @@ the configured connection timeout; waiting and login share that budget. Cancella
 stops waiting. Fresh MCP visibility still requires the caller's authenticated
 structure; the Admin identity or an old cached structure cannot replace it.
 `structure_refresh_auth_busy` means local coordination exhausted its wait before
-login. `structure_refresh_source_ip_suppressed` means source-IP blocking or the
+login. `structure_refresh_auth_cooldown` means the preventive rejection pause or
+uncertain protection persistence prevented network access.
+`structure_refresh_source_ip_suppressed` means source-IP blocking or the
 persistent breaker prevented access. Neither identifies the caller's rate budget.
 Transport failures and remote session limits remain separate; a connection-category
 error alone does not establish a Miniserver session limit. These diagnostics cannot

@@ -15,8 +15,10 @@ from pathlib import Path
 from typing import Any, Final, TypeVar
 
 from mcpserver.loxone.client import (
+    LoxoneAuthenticationRejected,
     LoxoneCommandRejected,
     LoxoneConnectionError,
+    LoxoneCredentialAuthenticationRejected,
     LoxoneSourceIpBlocked,
 )
 
@@ -35,17 +37,14 @@ def _interprocess_lock(path: Path) -> Iterator[None]:
     """Serialize state reloads and updates across the service and Admin process."""
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     descriptor = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
-    with os.fdopen(descriptor, "a+b") as handle:
+    with os.fdopen(descriptor, "r+b") as handle:
         locked = False
         try:
             if sys.platform == "win32":  # pragma: win32 cover
                 import msvcrt
 
-                handle.seek(0)
-                if handle.read(1) == b"":
-                    handle.seek(0)
-                    handle.write(b"0")
-                    handle.flush()
+                # Windows can lock beyond EOF. Do not initialize/read this
+                # byte before locking: another process may already own it.
                 handle.seek(0)
                 msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
             else:  # pragma: posix cover
@@ -82,6 +81,10 @@ class MiniserverSourceIpSuppressed(MiniserverAuthenticationSuppressed):
     """The persistent source-IP breaker prevented a network attempt."""
 
 
+class MiniserverAuthenticationCooldown(MiniserverAuthenticationSuppressed):
+    """The preventive rejection guard or uncertain persistence prevented login."""
+
+
 @dataclass(frozen=True, slots=True)
 class AttemptProvenance:
     """Only a request that starts an attempt may provide this context."""
@@ -109,10 +112,12 @@ class MiniserverAuthCoordinator:
         self._profile_id = profile_id
         self._lock = asyncio.Lock()
         self._last_suppression_persisted = 0.0
+        self._state_uncertain = False
         self._state = self._load()
         self._retain_open_state = False
 
     def _load(self) -> dict[str, Any]:
+        self._state_uncertain = False
         fallback: dict[str, Any] = {
             "schema_version": _SCHEMA_VERSION,
             "breaker_state": "closed",
@@ -122,21 +127,69 @@ class MiniserverAuthCoordinator:
             "sequence": 0,
             "events": [],
             "profile_id": self._profile_id,
+            "source_ip_pending_until": 0,
+            "failure_guard": {
+                "failures": [],
+                "level": 0,
+                "until": 0,
+                "last_probe": 0,
+                "pending_until": 0,
+            },
         }
+        fallback["public_failure_guard"] = dict(fallback["failure_guard"], failures=[])
         try:
             value = json.loads(self._path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return fallback
         except (OSError, ValueError, UnicodeError):
+            self._state_uncertain = True
             return fallback
         if (
             not isinstance(value, dict)
             or value.get("schema_version") != _SCHEMA_VERSION
             or value.get("profile_id") != self._profile_id
         ):
+            self._state_uncertain = not (
+                isinstance(value, dict) and value.get("profile_id") != self._profile_id
+            )
             return fallback
         for key, default in fallback.items():
             value.setdefault(key, default)
         if value["breaker_state"] not in {"closed", "open_source_ip_blocked"}:
+            self._state_uncertain = True
             return fallback
+        if (
+            type(value["backoff_level"]) is not int
+            or not 0 <= value["backoff_level"] <= 31
+            or type(value["suppressed_attempts"]) is not int
+            or value["suppressed_attempts"] < 0
+            or type(value["sequence"]) is not int
+            or value["sequence"] < 0
+            or not isinstance(value["events"], list)
+            or any(not isinstance(event, dict) for event in value["events"])
+            or (value["opened_at"] is not None and type(value["opened_at"]) is not int)
+            or (value["breaker_state"] != "closed" and value["opened_at"] is None)
+            or type(value["source_ip_pending_until"]) is not int
+            or value["source_ip_pending_until"] < 0
+        ):
+            self._state_uncertain = True
+            return fallback
+        for guard_key in ("failure_guard", "public_failure_guard"):
+            guard = value[guard_key]
+            if (
+                not isinstance(guard, dict)
+                or set(guard) != set(fallback["failure_guard"])
+                or not isinstance(guard.get("failures"), list)
+                or len(guard["failures"]) > 3
+                or any(type(item) is not int or item < 0 for item in guard["failures"])
+                or any(
+                    type(guard.get(key)) is not int or guard[key] < 0
+                    for key in ("level", "until", "last_probe", "pending_until")
+                )
+                or guard["level"] > 6
+            ):
+                self._state_uncertain = True
+                value[guard_key] = fallback[guard_key]
         return value
 
     def _save(self) -> None:
@@ -157,11 +210,12 @@ class MiniserverAuthCoordinator:
         try:
             self._save()
         except OSError:
-            self._retain_open_state = self._state["breaker_state"] == "open_source_ip_blocked"
+            self._retain_open_state = True
+            self._state_uncertain = True
 
-    def _reload_state(self) -> None:
+    def _reload_state(self, *, locked_attempt: bool = False) -> None:
         """Reload persisted diagnostics unless an unwritten local breaker is stricter."""
-        if self._retain_open_state and self._state["breaker_state"] == "open_source_ip_blocked":
+        if self._retain_open_state or (self._lock.locked() and not locked_attempt):
             return
         self._state = self._load()
 
@@ -173,12 +227,59 @@ class MiniserverAuthCoordinator:
         return opened_at + self._delay() if isinstance(opened_at, int) else None
 
     def status(self) -> dict[str, int | str | None]:
+        guard = self._state["failure_guard"]
+        public_guard = self._state["public_failure_guard"]
+        now = int(time.time())
+        guarded = bool(
+            guard["until"] > now or guard["pending_until"] > now or self._state_uncertain
+        )
+        next_attempt = max(
+            self._retry_not_before() or 0,
+            guard["until"],
+            guard["pending_until"],
+            self._state["source_ip_pending_until"],
+            now + 60 if self._state_uncertain else 0,
+        )
+        public_guarded = public_guard["until"] > now or public_guard["pending_until"] > now
         return {
             "breaker_state": self._state["breaker_state"],
             "opened_at": self._state.get("opened_at"),
             "retry_not_before": self._retry_not_before(),
             "backoff_seconds": self._delay() if self._state["breaker_state"] != "closed" else None,
             "suppressed_attempts": int(self._state["suppressed_attempts"]),
+            "recovery_guard_state": "pending"
+            if self._state["source_ip_pending_until"] > now
+            else "closed",
+            "failure_guard_state": "persistence_uncertain"
+            if self._state_uncertain
+            else "cooldown"
+            if guarded
+            else "closed",
+            "failure_count": len([stamp for stamp in guard["failures"] if stamp > now - 300]),
+            "next_auth_attempt_at": next_attempt or None,
+            "public_failure_guard_state": "persistence_uncertain"
+            if self._state_uncertain
+            else "cooldown"
+            if public_guarded
+            else "closed",
+            "public_failure_count": len(
+                [stamp for stamp in public_guard["failures"] if stamp > now - 300]
+            ),
+            "next_public_login_at": max(
+                next_attempt, public_guard["until"], public_guard["pending_until"]
+            )
+            or None,
+            "manual_probe_at": max(
+                guard["last_probe"] + 60,
+                guard["pending_until"],
+                public_guard["last_probe"] + 60,
+                public_guard["pending_until"],
+                self._state["source_ip_pending_until"],
+            )
+            if (guarded or public_guarded)
+            and not self._state_uncertain
+            and self._state["breaker_state"] == "closed"
+            else None,
         }
 
     def current_status(self) -> dict[str, int | str | None]:
@@ -283,20 +384,36 @@ class MiniserverAuthCoordinator:
         provenance: AttemptProvenance | None = None,
         force_probe: bool = False,
         allow_cooldown_probe: bool = True,
+        early_probe: bool = False,
+        public_login: bool = False,
+        token_phase: Callable[[], Awaitable[None]] | None = None,
         busy_wait_seconds: float = 0,
         before_attempt: Callable[[], Awaitable[None]] | None = None,
     ) -> _T:
         """Run one authorized authentication attempt after an optional bounded wait."""
         if owner not in {"runtime_event_stream", "tool_request", "local_admin"}:
             raise ValueError("invalid connection owner")
+        if early_probe and owner != "local_admin":
+            raise ValueError("early authentication probes require local administration")
+        if public_login and (owner != "tool_request" or early_probe):
+            raise ValueError("public login admission requires a tool-request owner")
+        if token_phase is not None and not public_login:
+            raise ValueError("separate token phases require public login admission")
         if not 0 <= busy_wait_seconds <= 30:
             raise ValueError("invalid authentication wait budget")
-        async with self._lock:
-            deadline = time.monotonic() + busy_wait_seconds
+        deadline = time.monotonic() + busy_wait_seconds
+        try:
+            async with asyncio.timeout(busy_wait_seconds):
+                await self._lock.acquire()
+        except TimeoutError:
+            raise MiniserverAuthenticationBusy(
+                "Miniserver authentication wait budget expired"
+            ) from None
+        try:
             while True:
                 try:
                     with _interprocess_lock(self._path.with_name(f".{self._path.name}.lock")):
-                        self._reload_state()
+                        self._reload_state(locked_attempt=True)
                         return await self._attempt_locked(
                             operation,
                             owner=owner,
@@ -304,6 +421,9 @@ class MiniserverAuthCoordinator:
                             provenance=provenance,
                             force_probe=force_probe,
                             allow_cooldown_probe=allow_cooldown_probe,
+                            early_probe=early_probe,
+                            public_login=public_login,
+                            token_phase=token_phase,
                             before_attempt=before_attempt,
                         )
                 except _InterprocessLockUnavailable as exc:
@@ -313,6 +433,8 @@ class MiniserverAuthCoordinator:
                             "Miniserver authentication is already being coordinated"
                         ) from exc
                     await asyncio.sleep(min(0.1, remaining))
+        finally:
+            self._lock.release()
 
     async def _attempt_locked(
         self,
@@ -323,6 +445,9 @@ class MiniserverAuthCoordinator:
         provenance: AttemptProvenance | None,
         force_probe: bool,
         allow_cooldown_probe: bool,
+        early_probe: bool,
+        public_login: bool,
+        token_phase: Callable[[], Awaitable[None]] | None,
         before_attempt: Callable[[], Awaitable[None]] | None,
     ) -> _T:
         """Execute one attempt while both coordinator locks are held."""
@@ -347,14 +472,102 @@ class MiniserverAuthCoordinator:
                 raise MiniserverSourceIpSuppressed(
                     "Miniserver authentication is temporarily suppressed"
                 )
+        guard_keys = (
+            ("failure_guard", "public_failure_guard")
+            if public_login or early_probe
+            else ("failure_guard",)
+        )
+        guards = {key: self._state[key] for key in guard_keys}
+        if self._state_uncertain:
+            raise MiniserverAuthenticationCooldown("Authentication protection status unavailable")
+        if self._state["source_ip_pending_until"] > now:
+            raise MiniserverAuthenticationCooldown("Previous authentication outcome unavailable")
+        if any(
+            (early_probe and now < guard["last_probe"] + 60)
+            or guard["pending_until"] > now
+            or (guard["until"] > now and not early_probe)
+            for guard in guards.values()
+        ):
+            raise MiniserverAuthenticationCooldown("Authentication rejection cooldown active")
+        was_guarded = {key: bool(guard["until"]) for key, guard in guards.items()}
+        # Public password failures, including unsaved outcomes, must not reserve
+        # the trusted budget. Admit both phases under one uninterrupted lock,
+        # but durably reserve the trusted guard only at the token phase boundary.
+        if public_login:
+            guards.pop("failure_guard")
+        recovery_reservation = max(3600, self._initial)
+        if self._state["breaker_state"] == "open_source_ip_blocked":
+            recovery_reservation = max(recovery_reservation, min(self._delay() * 2, self._maximum))
+        # A crashed attempt can have received 4003 before its result was saved.
+        # This global uncertainty reservation is separate from rejection budgets
+        # and is cleared for every durably recorded ordinary outcome.
+        self._state["source_ip_pending_until"] = now + (
+            min(self._delay() * 2, self._maximum)
+            if self._state["breaker_state"] == "open_source_ip_blocked"
+            else self._initial
+        )
+        for guard in guards.values():
+            guard["failures"] = [stamp for stamp in guard["failures"] if stamp > now - 300]
+            guard["last_probe"] = now
+            guard["pending_until"] = now + recovery_reservation
+
+        def finish_guards(*, restart: bool = False, success: bool = False) -> None:
+            finished = int(time.time())
+            self._state["source_ip_pending_until"] = 0
+            for key, item in guards.items():
+                item["pending_until"] = 0
+                item["last_probe"] = finished
+                if success:
+                    item["until"] = item["level"] = 0
+                elif restart and was_guarded[key]:
+                    item["until"] = finished + min(60 * 2 ** item["level"], 3600)
+
+        try:
+            self._save()
+        except OSError:
+            self._state_uncertain = self._retain_open_state = True
+            raise MiniserverAuthenticationCooldown(
+                "Authentication protection cannot be persisted"
+            ) from None
         self._record(owner=owner, phase=phase, outcome="attempt_started", provenance=provenance)
         try:
             result = await operation()
+            if token_phase is not None:
+                trusted = self._state["failure_guard"]
+                trusted["failures"] = [
+                    stamp for stamp in trusted["failures"] if stamp > int(time.time()) - 300
+                ]
+                trusted["last_probe"] = int(time.time())
+                trusted["pending_until"] = int(time.time()) + recovery_reservation
+                guards["failure_guard"] = trusted
+                try:
+                    self._save()
+                except OSError:
+                    self._state_uncertain = self._retain_open_state = True
+                    raise MiniserverAuthenticationCooldown(
+                        "Token authentication protection cannot be persisted"
+                    ) from None
+                await token_phase()
         except LoxoneSourceIpBlocked:
+            finish_guards()
             self._open_source_ip_breaker(now=now, owner=owner, phase=phase, provenance=provenance)
             self._save_best_effort()
             raise
         except LoxoneCommandRejected as exc:
+            finish_guards()
+            finished = int(time.time())
+            if isinstance(exc, LoxoneAuthenticationRejected):
+                key = (
+                    "public_failure_guard"
+                    if public_login and isinstance(exc, LoxoneCredentialAuthenticationRejected)
+                    else "failure_guard"
+                )
+                guard = guards[key]
+                guard["failures"] = [stamp for stamp in guard["failures"] if stamp > finished - 300]
+                guard["failures"] = (guard["failures"] + [finished])[-3:]
+                if was_guarded[key] or len(guard["failures"]) >= 3:
+                    guard["level"] = min(guard["level"] + (1 if was_guarded[key] else 0), 6)
+                    guard["until"] = finished + min(60 * 2 ** guard["level"], 3600)
             if exc.response_code == "4003":
                 self._open_source_ip_breaker(
                     now=now, owner=owner, phase=phase, provenance=provenance
@@ -366,19 +579,24 @@ class MiniserverAuthCoordinator:
                     now=now,
                     owner=owner,
                     phase=phase,
-                    outcome="authentication_rejected",
+                    outcome="authentication_rejected"
+                    if isinstance(exc, LoxoneAuthenticationRejected)
+                    else "command_rejected",
                     provenance=provenance,
                 )
             else:
                 self._record(
                     owner=owner,
                     phase=phase,
-                    outcome="authentication_rejected",
+                    outcome="authentication_rejected"
+                    if isinstance(exc, LoxoneAuthenticationRejected)
+                    else "command_rejected",
                     provenance=provenance,
                 )
             self._save_best_effort()
             raise exc
         except asyncio.CancelledError:
+            finish_guards(restart=True)
             self._refresh_failed_probe(
                 now=now,
                 owner=owner,
@@ -389,6 +607,7 @@ class MiniserverAuthCoordinator:
             self._save_best_effort()
             raise
         except Exception:
+            finish_guards(restart=True)
             self._refresh_failed_probe(
                 now=now,
                 owner=owner,
@@ -399,6 +618,7 @@ class MiniserverAuthCoordinator:
             self._save_best_effort()
             raise
         transition = None
+        finish_guards(success=True)
         if self._state["breaker_state"] == "open_source_ip_blocked":
             self._state["breaker_state"] = "closed"
             self._state["opened_at"] = None

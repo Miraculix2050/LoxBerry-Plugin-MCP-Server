@@ -4,7 +4,30 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
+from mcpserver.loxone.client import LoxoneTokenAuthenticationRejected
 from mcpserver.loxone.service_access import ServiceMiniserverConnection
+
+
+@pytest.mark.asyncio
+async def test_session_rejection_after_token_acquisition_preserves_recovery_escalation(
+    tmp_path, monkeypatch
+):
+    now = [1000]
+    monkeypatch.setattr("mcpserver.loxone.auth_diagnostics.time.time", lambda: now[0])
+    coordinator = MiniserverAuthCoordinator(tmp_path / "auth.json")
+    for delay in (0, 0, 60, 120, 240):
+        client, token, _session = client_fixture()
+        client.open_session.side_effect = LoxoneTokenAuthenticationRejected(
+            "rejected", response_code="401"
+        )
+        connection = ServiceMiniserverConnection(client, coordinator, owner="local_admin")
+        with pytest.raises(LoxoneTokenAuthenticationRejected):
+            await connection.connect("synthetic", "synthetic")
+        await connection.close()
+        assert coordinator.status()["next_auth_attempt_at"] == (now[0] + delay if delay else None)
+        assert token.destroy.call_count == 1
+        now[0] += delay
 
 
 def client_fixture():

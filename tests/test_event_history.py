@@ -873,15 +873,13 @@ async def test_monitor_records_updates_following_the_initial_baseline_in_one_bat
     assert recorded == [(0.0, 1.0)]
     assert await monitor.validate_source(*source) == ("Control", "Switch", "State")
     assert attempts == [
-        ("runtime_event_stream", "token_acquisition", True),
         ("runtime_event_stream", "session_establishment", True),
-        ("local_admin", "token_acquisition", False),
         ("local_admin", "session_establishment", False),
     ]
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("busy_phase", ["token_acquisition", "session_establishment"])
+@pytest.mark.parametrize("busy_phase", ["session_establishment"])
 async def test_admin_structure_waits_for_concurrent_authentication(
     tmp_path, monkeypatch, busy_phase
 ):
@@ -971,7 +969,7 @@ async def test_admin_structure_authentication_shares_one_wait_deadline(tmp_path,
 
     class Client:
         async def acquire_token(self, _username, _password):
-            return Token()
+            pytest.fail("an exhausted authentication wait must not acquire a token")
 
         async def open_session(self, _token):
             pytest.fail("an exhausted authentication wait must not open a session")
@@ -984,9 +982,6 @@ async def test_admin_structure_authentication_shares_one_wait_deadline(tmp_path,
         async def attempt(self, operation, **kwargs):
             waits.append(kwargs["busy_wait_seconds"])
             assert kwargs["allow_cooldown_probe"] is False
-            if kwargs["phase"] == "token_acquisition":
-                clock[0] += 16
-                return await operation()
             raise MiniserverAuthenticationSuppressed("busy")
 
     # Replace only this module's clock, not the event loop or coordinator clock.
@@ -1007,8 +1002,8 @@ async def test_admin_structure_authentication_shares_one_wait_deadline(tmp_path,
     )
     with pytest.raises(MiniserverAuthenticationSuppressed):
         await monitor.visible_structure()
-    assert waits == [15.0, 0.0]
-    assert cleaned == ["token"]
+    assert waits == [15.0]
+    assert cleaned == []
 
 
 @pytest.mark.asyncio
@@ -1239,8 +1234,6 @@ async def test_admin_structure_numeric_subphases(tmp_path, monkeypatch, coordina
             expected["selector_coordinator_wait_ms"] += 13.0
         if effective_failure != "token_acquisition":
             expected["selector_session_establishment_ms"] = 5.0
-            if coordinated:
-                expected["selector_coordinator_wait_ms"] += 13.0
             if effective_failure != "session_establishment":
                 expected["selector_structure_load_ms"] = 7.0
     assert timing == expected

@@ -16,8 +16,8 @@ import secrets
 import time
 from collections import deque
 from collections.abc import AsyncIterator, Mapping
-from contextlib import asynccontextmanager, suppress
-from dataclasses import dataclass, field
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, field, replace
 from typing import Final
 from urllib.parse import urlencode, urlsplit
 from uuid import NAMESPACE_URL, uuid5
@@ -45,12 +45,18 @@ from mcpserver.auth.provider import (
     normalize_scopes,
     scope_text,
 )
-from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
+from mcpserver.loxone.auth_diagnostics import (
+    MiniserverAuthCoordinator,
+    MiniserverAuthenticationBusy,
+    MiniserverAuthenticationSuppressed,
+)
 from mcpserver.loxone.client import (
     LoxoneClient,
     LoxoneConnectionError,
     LoxoneToken,
+    LoxoneWebSocketSession,
     MiniserverEndpoint,
+    ProbeResult,
 )
 from mcpserver.loxone.events import LoxoneProtocolError
 
@@ -85,6 +91,8 @@ class LoginTransaction:
     scopes: tuple[str, ...] = (READ_SCOPE,)
     attempts: int = 0
     loxone_token: LoxoneToken | None = None
+    cleanup_pending: bool = False
+    cleanup_id: str | None = None
     identity_name: str | None = None
     identity_id: str | None = None
     miniserver_id: str | None = None
@@ -267,23 +275,77 @@ class Phase0OAuthWeb:
             if entry.users == 0 and self._explorer_locks.get(session_id) is entry:
                 self._explorer_locks.pop(session_id)
 
+    def _queue_retained_login_token(self, transaction: LoginTransaction) -> bool:
+        """Atomically encrypt an issued token together with its cleanup marker."""
+        token = transaction.loxone_token
+        if token is None:
+            return True
+        if (
+            self.loxone_store is None
+            or not transaction.miniserver_id
+            or not transaction.identity_id
+        ):
+            return False
+        try:
+            if transaction.cleanup_id is None:
+                transaction.cleanup_id = secrets.token_urlsafe(32)
+            self.loxone_store.put(
+                "login-cleanup-" + transaction.cleanup_id,
+                transaction.miniserver_id,
+                transaction.identity_id,
+                token,
+                remote_revoke_pending=True,
+            )
+        except (LoxoneTokenStoreError, OSError):
+            return False
+        token.destroy()
+        transaction.loxone_token = None
+        transaction.cleanup_pending = False
+        transaction.cleanup_id = None
+        return True
+
+    def _retain_issued_login_token(
+        self, transaction: LoginTransaction, token: LoxoneToken, probe: ProbeResult
+    ) -> None:
+        transaction.loxone_token = token
+        transaction.cleanup_pending = True
+        transaction.cleanup_id = secrets.token_urlsafe(32)
+        transaction.miniserver_id = self.provider.store.pseudonym(
+            self.endpoint.origin, probe.serial
+        )
+        transaction.identity_id = self.provider.store.pseudonym(
+            self.endpoint.origin, probe.serial, token.username
+        )
+        self._queue_retained_login_token(transaction)
+
     async def _kill(self, transaction: LoginTransaction) -> bool:
         token = transaction.loxone_token
         if token is None:
             return True
+        transaction.cleanup_pending = True
+        if self.loxone_store is not None:
+            return self._queue_retained_login_token(transaction)
+        # Keep the owned token until remote revocation is confirmed. The client
+        # destroys its argument even when authentication or transport fails.
+        cleanup_token = replace(token)
         try:
             client = LoxoneClient(self.endpoint, client_uuid=self._client_uuid)
             if self.auth_coordinator is None:
-                await client.kill_token(token)
+                await client.kill_token(cleanup_token)
             else:
                 await self.auth_coordinator.attempt(
-                    lambda: client.kill_token(token),
+                    lambda: client.kill_token(cleanup_token),
                     owner="tool_request",
                     phase="token_cleanup",
                 )
         except (LoxoneConnectionError, LoxoneProtocolError):
-            token.destroy()
+            return False
+        finally:
+            cleanup_token.destroy()
+        token.destroy()
         transaction.loxone_token = None
+        transaction.cleanup_pending = False
+        transaction.cleanup_id = None
         return True
 
     async def _cleanup(self) -> None:
@@ -928,6 +990,13 @@ sync();
         )
 
     async def _login(self, transaction: LoginTransaction, form: Mapping[str, str]) -> Response:
+        if transaction.cleanup_pending and not await self._kill(transaction):
+            return _message_page(
+                "Sign-in temporarily unavailable",
+                "Sign-in temporarily unavailable / Anmeldung vorübergehend nicht verfügbar",
+                "Previous sign-in cleanup is pending. / Bereinigung der vorherigen Anmeldung steht aus.",
+                status=503,
+            )
         transaction.attempts += 1
         if transaction.attempts > _MAX_LOGIN_ATTEMPTS:
             self.transactions.pop(transaction.transaction_id, None)
@@ -956,30 +1025,79 @@ sync();
             return self._login_page(transaction, "Sign-in failed. / Anmeldung fehlgeschlagen.")
         client = LoxoneClient(self.endpoint, client_uuid=self._client_uuid)
         token: LoxoneToken | None = None
+        session: LoxoneWebSocketSession | None = None
+        probe: ProbeResult | None = None
         try:
             async with self._login_slots:
-                probe = await client.probe()
                 if self.auth_coordinator is None:
+                    probe = await client.probe()
                     token = await client.acquire_token(username, password)
                     session = await client.open_session(token)
                 else:
-                    token = await self.auth_coordinator.attempt(
-                        lambda: client.acquire_token(username, password),
-                        owner="tool_request",
-                        phase="token_acquisition",
-                    )
-                    session = await self.auth_coordinator.attempt(
-                        lambda: client.open_session(token),
+
+                    async def sign_in() -> ProbeResult:
+                        nonlocal token, probe
+                        # Suppression precedes the probe; recovery covers both
+                        # token acquisition and session authentication atomically.
+                        result = await client.probe()
+                        probe = result
+                        token = await client.acquire_token(username, password)
+                        return result
+
+                    async def authenticate_token() -> None:
+                        nonlocal session
+                        assert token is not None
+                        session = await client.open_session(token)
+
+                    probe = await self.auth_coordinator.attempt(
+                        sign_in,
                         owner="tool_request",
                         phase="session_establishment",
+                        public_login=True,
+                        token_phase=authenticate_token,
                     )
+                assert session is not None
                 try:
                     structure = await session.load_structure()
                 finally:
                     await session.close()
-        except Exception:
+        except asyncio.CancelledError:
             if token is not None:
-                with suppress(LoxoneConnectionError):
+                assert probe is not None
+                self._retain_issued_login_token(transaction, token, probe)
+            transaction.attempts -= 1
+            transaction.phase = "login"
+            raise
+        except MiniserverAuthenticationSuppressed as exc:
+            if token is not None:
+                assert probe is not None
+                self._retain_issued_login_token(transaction, token, probe)
+            transaction.attempts -= 1
+            transaction.phase = "login"
+            retry_at = (
+                self.auth_coordinator.current_status()["next_public_login_at"]
+                if self.auth_coordinator and not isinstance(exc, MiniserverAuthenticationBusy)
+                else None
+            )
+            wait = max(
+                1,
+                (retry_at if isinstance(retry_at, int) else int(time.time()) + 5)
+                - int(time.time()),
+            )
+            response = _message_page(
+                "Sign-in temporarily unavailable",
+                "Sign-in temporarily unavailable / Anmeldung vorübergehend nicht verfügbar",
+                f"Try again in {wait} seconds. / Versuchen Sie es in {wait} Sekunden erneut.",
+                status=429,
+            )
+            response.headers["Retry-After"] = str(wait)
+            return response
+        except Exception:
+            if token is not None and self.loxone_store is not None:
+                assert probe is not None
+                self._retain_issued_login_token(transaction, token, probe)
+            elif token is not None:
+                try:
                     if self.auth_coordinator is None:
                         await client.kill_token(token)
                     else:
@@ -988,9 +1106,15 @@ sync();
                             owner="tool_request",
                             phase="token_cleanup",
                         )
+                except (LoxoneConnectionError, LoxoneProtocolError):
+                    assert probe is not None
+                    self._retain_issued_login_token(transaction, token, probe)
+                else:
+                    token.destroy()
             self._record_login_failure(rate_keys, now)
             transaction.phase = "login"
             return self._login_page(transaction, "Sign-in failed. / Anmeldung fehlgeschlagen.")
+        assert probe is not None
         miniserver_id = self.provider.store.pseudonym(self.endpoint.origin, probe.serial)
         identity_id = self.provider.store.pseudonym(
             self.endpoint.origin,

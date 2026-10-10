@@ -750,7 +750,9 @@ def _cached_emergency_stop_options() -> dict[str, Any]:
     )
 
 
-def _discover_emergency_stop_options(config: PluginConfig, *, manual_retry: bool) -> dict[str, Any]:
+def _discover_emergency_stop_options(
+    config: PluginConfig, *, manual_retry: bool, early_probe: bool = False
+) -> dict[str, Any]:
     from mcpserver.auth.store import AtomicJsonAuthStore
     from mcpserver.emergency_stop import VirtualStatusOptions, virtual_status_options
     from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
@@ -771,7 +773,11 @@ def _discover_emergency_stop_options(config: PluginConfig, *, manual_retry: bool
             maximum_probe_seconds=config.miniserver_auth_probe_max_seconds,
             profile_id=auth_store.pseudonym("miniserver-auth-profile-v1", endpoint.origin),
         )
-    if coordinator is None:
+    if early_probe and coordinator is None:
+        raise AdminError("Authentication protection unavailable", code="temporarily_unavailable")
+    if early_probe:
+        discovery = virtual_status_options(config, coordinator, manual_retry=True, early_probe=True)
+    elif coordinator is None:
         discovery = virtual_status_options(config)
     elif manual_retry:
         discovery = virtual_status_options(config, coordinator, manual_retry=True)
@@ -845,7 +851,7 @@ def _remote_cleanup_status() -> dict[str, Any]:
                 maximum_probe_seconds=config.miniserver_auth_probe_max_seconds,
                 profile_id=auth_store.pseudonym("miniserver-auth-profile-v1", endpoint.origin),
             )
-            result["breaker_state"] = coordinator.current_status()["breaker_state"]
+            result.update(coordinator.current_status())
         else:
             result["breaker_state"] = "closed"
         result["available"] = True
@@ -1952,6 +1958,12 @@ def _dispatch(request: object, *, timing: dict[str, float | int] | None = None) 
         return _cached_emergency_stop_options()
     if action == "emergency_stop_retry":
         return _emergency_stop_options(manual_retry=True)
+    if action == "miniserver_auth_probe":
+        # Only the authenticated native Admin bridge exposes this explicit action.
+        result = _discover_emergency_stop_options(
+            _config_store().load(), manual_retry=True, early_probe=True
+        )
+        return {"status": result["status"], "remote_cleanup": _remote_cleanup_status()}
     if action == "clear_event_history":
         return _clear_event_history(payload)
     if action == "set_logging":

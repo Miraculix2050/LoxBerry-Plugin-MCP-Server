@@ -85,6 +85,45 @@ error cleanup also aborts the transport before propagating.
 
 ## Persistence and lifecycle
 
+The same coordinator maintains an independent preventive authentication-rejection
+guard in its existing private JSON file and under the same process lock. Typed
+401 rejections use two separate three-in-five-minute budgets: public OAuth
+getjwt password failures affect only public sign-ins; configured service getjwt
+and all authwithtoken failures share the trusted budget. Public sign-ins observe
+both budgets before any network probe; trusted reconnects and remote revocations
+ignore the public password budget. Confirmed IP blocking remains global. A 60-second
+pause doubles on rejected probes up to one hour; network failure and cancellation
+restart the current pause without escalating it. Success outside recovery does
+not erase recent failures. Fresh token acquisition and session authentication
+share one atomic coordinator attempt; recovery succeeds only after both phases.
+Public sign-ins reserve only the public guard before getjwt, then durably add
+the trusted guard immediately before authwithtoken without releasing the lock.
+Public password outcomes never charge or reserve the trusted rejection budget.
+A separate source_ip_pending_until reservation covers an unrecorded 4003 outcome
+in any authentication phase. It uses the existing initial/next IP recovery delay,
+clears on every durably recorded outcome and does not increment rejection counts.
+After a crash or failed outcome write it temporarily gates all new authentication. Durable preflight reservations cover the maximum one-hour pause so an unsaved
+outcome cannot lose protection in another process, and bound crash recovery;
+the source-IP policy's initial or next escalated delay extends this reservation when stronger.
+unreadable or unwritable protection state denies new authentication. Existing
+authenticated sessions are not closed. A separate explicit native Admin action
+allows an early probe no more often than once per minute; background retry flags
+never grant this exception. Confirmed source-IP blocking retains priority.
+Diagnostics retain the trusted guard fields and add public_failure_guard_state,
+public_failure_count and next_public_login_at. next_auth_attempt_at covers trusted
+authentication and IP blocking; next_public_login_at additionally covers the public
+password pause. recovery_guard_state separately reports an unknown in-flight or
+interrupted outcome; both effective times include this global recovery reservation.
+Existing source-IP breaker fields keep their meaning. Remote revocations defer without
+consuming their network-attempt budget when the trusted guard, global recovery reservation or confirmed IP gate is active.
+An issued OAuth token whose sign-in or consent cannot finish is encrypted with its remote
+revocation marker in one existing token-store write. If that write fails, the
+login transaction retains it and blocks new issuance until cleanup can be queued.
+Consent denial and expiration use this same durable queue rather than opening a
+separate foreground cleanup connection; an authentication pause cannot discard
+the only token copy. Without a token store, failed cleanup retains the transaction
+and a separate temporary token copy is used for the remote attempt.
+
 Configuration, encrypted sessions and plugin identity persist outside the package. Secrets are separated from ordinary configuration. Root lifecycle hooks consume service templates only from the current installer staging area, never from the installed plugin configuration or binary directories. The staging area's integrity remains a LoxBerry Core trust boundary because Core runs unprivileged lifecycle hooks before `postroot`; plugin code cannot make that shared staging area root-owned. Within the persistent LoxBerry tree, sensitive root operations use descriptor-relative traversal and reject symbolic links, non-regular files and path replacement. Install, upgrade and removal follow the native LoxBerry layout; upgrade preserves supported configuration and authentication state through idempotent migration. The service starts unprivileged, validates configuration and listens only on loopback.
 
 Local OAuth revocation is immediate. The service attempts remote Loxone `killtoken` through a persisted, profile-wide queue gate. Token-authentication rejection, confirmed remote kill, nominal expiry and unresolved failure are distinct outcomes; unresolved records stop after five network attempts. An atomically replaced, permission-restricted sidecar stores only aggregate status and anonymous expiring outcome markers. Cleanup never probes an open Miniserver authentication breaker.

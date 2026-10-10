@@ -1,5 +1,35 @@
 # Fehlerbehebung
 
+## Wiederholte Miniserver-Authentifizierungsablehnung
+
+Drei eindeutige Ablehnungen innerhalb von fünf Minuten pausieren neue Anmeldungen
+für 60 Sekunden. Öffentliche OAuth-Passwortfehler haben ein eigenes Budget und
+pausieren nur öffentliche Anmeldungen. Dienst- und Token-Ablehnungen teilen ein
+zweites Budget; dessen Pause gilt auch für die Token-Phase öffentlicher Anmeldungen.
+Eine öffentliche Passwortpause blockiert weder Dienstverbindungen noch Token-Widerrufe.
+Tatsächliche IP-Sperren gelten weiterhin global. Erneut abgelehnte Prüfversuche verdoppeln
+die Pause bis auf 60 Minuten. Netzwerkfehler, Timeouts, Anmeldekonkurrenz und
+verweigerte Projektberechtigungen verbrauchen dieses Budget nicht. Bestehende
+authentifizierte Verbindungen bleiben offen. Diese Plugin-Policy garantiert keine
+bestimmte Miniserver-IP-Sperrschwelle.
+
+Der Abschnitt Sitzungen zeigt Schutzgrund und verbleibende Wartezeit. Ein lokaler
+Administrator kann ausdrücklich eine Anmeldung mit den in LoxBerry konfigurierten
+Zugangsdaten prüfen, frühestens 60 Sekunden nach dem vorherigen Versuch. Den
+Warnhinweis beachten: Eine weitere Ablehnung kann die Pause verlängern oder eine
+IP-Sperre auslösen. Automatische Wiederholungen und MCP-Clients dürfen die Pause
+nicht umgehen; eine bestätigte Miniserver-IP-Sperre hat Vorrang.
+
+Bei nicht verfügbarer Schutzpersistenz stoppen neue Anmeldungen. Den Zugriff auf
+die private Plugin-Zustandsdatei wiederherstellen und nach Behebung der Ursache
+den Dienst neu starten; einen aktiven Schutzstatus nicht nur für weitere Versuche
+löschen. Ein abgebrochener Prozess hinterlässt eine konservative Reservierung von bis zu einer Stunde.
+Eine bestehende Source-IP-Wiederanlaufpolicy kann eine längere Reservierung erfordern und hat Vorrang.
+Zugangsdaten und Tokenwerte erscheinen nicht im Status. Eine umfassende
+Token-Bereinigung wird nicht angeboten; ihre Folgen werden getrennt untersucht.
+
+Ein noch ungeklärtes Authentifizierungsergebnis reserviert zusätzlich den vorhandenen globalen IP-Wiederanlaufabstand. Bei einem Absturz oder nicht speicherbaren Ergebnis kann dieser Schutz alle neuen Anmeldungen vorübergehend zurückstellen; normale gespeicherte Passwortablehnungen lösen ihn nicht aus. Bereits ausgestellte Token werden bei unterdrücktem Anmeldeabschluss verschlüsselt für den koordinierten Widerruf gespeichert. Scheitert auch dies, bleibt der Token in der Transaktion erhalten und eine neue Ausstellung ist bis zur Bereinigung gesperrt.
+
 [English](troubleshooting.en.md)
 
 | Symptom | Sichere Prüfung |
@@ -28,10 +58,13 @@ Der Runtime-Sitzungsaufbau wartet innerhalb des konfigurierten Verbindungszeitli
 auf lokale Authentifizierungskoordination; Warten und Login teilen dieses Budget.
 Cancellation beendet das Warten. Frische MCP-Sichtbarkeit erfordert weiterhin die
 authentifizierte Struktur des Aufrufers; die Admin-Identität oder eine alte gecachte
-Struktur kann sie nicht ersetzen. `structure_refresh_auth_busy` bedeutet, dass die
+Struktur kann sie nicht ersetzen. `structure_refresh_auth_cooldown` bezeichnet die
+vorbeugende Schutzpause oder
+unsichere Schutzpersistenz vor einem Netzwerkzugriff. `structure_refresh_auth_busy`
+bedeutet, dass die
 lokale Koordination ihr Wartebudget vor dem Login ausgeschöpft hat.
 `structure_refresh_source_ip_suppressed` bezeichnet Source-IP-Blocking oder den
-persistent gespeicherten Breaker. Beide bezeichnen nicht das Aufrufbudget des Clients.
+persistent gespeicherten Breaker. Diese Kategorien bezeichnen nicht das Aufrufbudget des Clients.
 Transportfehler und entfernte Sitzungslimits bleiben getrennt; ein Fehler der
 Verbindungskategorie allein belegt kein Miniserver-Sitzungslimit. Diese Diagnosen
 erlauben keine Zuordnung älterer Fehler ohne erhaltene zugrunde liegende Exception (#332).

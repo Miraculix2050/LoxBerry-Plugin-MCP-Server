@@ -18,6 +18,7 @@ from mcpserver.loxone.auth_diagnostics import (
 )
 from mcpserver.loxone.client import (
     LoxoneCommandRejected,
+    LoxoneCredentialAuthenticationRejected,
     LoxoneSourceIpBlocked,
     LoxoneToken,
     LoxoneTokenAuthenticationRejected,
@@ -43,6 +44,49 @@ def _queue(store: EncryptedLoxoneTokenStore, family: str, now: int, lifetime: in
         LoxoneToken("jwt", "user", "key", "SHA256", now - _EPOCH + lifetime),
     )
     store.schedule_remote_revoke(family)
+
+
+@pytest.mark.parametrize("public_only", [False, True])
+def test_preventive_guard_allows_cleanup_after_its_pause_expires(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, public_only: bool
+) -> None:
+    now = [2_000_000_000]
+    monkeypatch.setattr("mcpserver.auth.remote_revocation.time.time", lambda: now[0])
+    store = _store(tmp_path)
+    _queue(store, "family", now[0])
+    coordinator = MiniserverAuthCoordinator(tmp_path / "auth-status.json")
+
+    async def rejected() -> None:
+        error = (
+            LoxoneCredentialAuthenticationRejected
+            if public_only
+            else LoxoneTokenAuthenticationRejected
+        )
+        raise error("rejected", response_code="401")
+
+    for _ in range(3):
+        with pytest.raises(LoxoneCommandRejected):
+            asyncio.run(
+                coordinator.attempt(
+                    rejected, owner="tool_request", phase="session", public_login=public_only
+                )
+            )
+    calls = []
+
+    class Client:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
+
+        async def kill_token(self, _token: LoxoneToken) -> None:
+            calls.append(True)
+
+    monkeypatch.setattr("mcpserver.auth.remote_revocation.LoxoneClient", Client)
+    asyncio.run(process_remote_revocations(_ENDPOINT, store, 1, coordinator))
+    assert calls == ([True] if public_only else [])
+    now[0] += 60
+    asyncio.run(process_remote_revocations(_ENDPOINT, store, 1, coordinator))
+    assert calls == [True]
+    assert store.get("family", "miniserver", "identity") is None
 
 
 def test_rejected_token_is_terminal_and_staggers_other_work(
@@ -415,3 +459,27 @@ def test_suppression_release_precedes_sidecar_failure(
     monkeypatch.setattr("mcpserver.auth.remote_revocation.time.time", lambda: now)
     asyncio.run(process_remote_revocations(_ENDPOINT, store, 1, coordinator))
     assert store.pending_remote_revocations(now + 300)[0].attempts == 0
+
+
+def test_unknown_global_authentication_outcome_defers_remote_revocation(tmp_path, monkeypatch):
+    now = int(time.time())
+    store = _store(tmp_path)
+    _queue(store, "family", now)
+    coordinator = MiniserverAuthCoordinator(tmp_path / "auth.json")
+    coordinator._state["source_ip_pending_until"] = now + 900
+    coordinator._save()
+    calls = []
+
+    class Client:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def kill_token(self, _token):
+            calls.append(True)
+
+    monkeypatch.setattr("mcpserver.auth.remote_revocation.LoxoneClient", Client)
+    asyncio.run(process_remote_revocations(_ENDPOINT, store, 1, coordinator))
+    assert calls == []
+    pending = store.pending_remote_revocations(now)
+    assert len(pending) == 1 and pending[0].attempts == 0
+    pending[0].token.destroy()

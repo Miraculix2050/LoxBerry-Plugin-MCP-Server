@@ -166,7 +166,7 @@ def test_busy_coordinator_offers_short_manual_retry(
     assert isinstance(result.retry_not_before, int)
 
 
-def test_admin_signal_discovery_waits_for_busy_authentication_phases(
+def test_admin_signal_discovery_waits_once_for_atomic_sign_in(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     coordinator = MiniserverAuthCoordinator(tmp_path / "auth-diagnostics.json")
@@ -209,9 +209,8 @@ def test_admin_signal_discovery_waits_for_busy_authentication_phases(
         virtual_status_options(PluginConfig(loxone_endpoint="http://192.168.1.10"), coordinator)
     )
     assert result.status == "available"
-    assert len(waits) == 2
+    assert len(waits) == 1
     assert 0.15 < waits[0] <= 0.2
-    assert 0 <= waits[1] < waits[0] - 0.03
 
 
 def test_emergency_stop_enables_only_for_a_confirmed_one_value() -> None:

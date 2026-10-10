@@ -234,6 +234,10 @@
     <div class="mcp-collapsible-content">
     <p id="remote-cleanup-warning" class="mcp-status" data-kind="warning" role="status" <TMPL_UNLESS REMOTE_CLEANUP_WARNING_VISIBLE>hidden</TMPL_UNLESS>
       data-breaker-label="<TMPL_VAR SESSIONS.REMOTE_BREAKER_WARNING ESCAPE=HTML>"
+      data-cooldown-label="<TMPL_VAR SESSIONS.AUTH_COOLDOWN ESCAPE=HTML>"
+      data-public-cooldown-label="<TMPL_VAR SESSIONS.AUTH_PUBLIC_COOLDOWN ESCAPE=HTML>"
+      data-recovery-label="<TMPL_VAR SESSIONS.AUTH_RECOVERY ESCAPE=HTML>"
+      data-uncertain-label="<TMPL_VAR SESSIONS.AUTH_UNCERTAIN ESCAPE=HTML>"
       data-pending-label="<TMPL_VAR SESSIONS.REMOTE_PENDING_WARNING ESCAPE=HTML>"
       data-retryable-label="<TMPL_VAR SESSIONS.REMOTE_RETRYABLE_WARNING ESCAPE=HTML>"
       data-unconfirmed-label="<TMPL_VAR SESSIONS.REMOTE_UNCONFIRMED_WARNING ESCAPE=HTML>"
@@ -243,6 +247,8 @@
       data-transport-label="<TMPL_VAR SESSIONS.REMOTE_TRANSPORT ESCAPE=HTML>"
       data-command-label="<TMPL_VAR SESSIONS.REMOTE_COMMAND ESCAPE=HTML>"
       data-unavailable-label="<TMPL_VAR SESSIONS.REMOTE_STATUS_UNAVAILABLE ESCAPE=HTML>"><TMPL_VAR REMOTE_CLEANUP_WARNING ESCAPE=HTML></p>
+    <button id="miniserver-auth-probe" type="button" class="lb-button" hidden
+      data-confirm="<TMPL_VAR SESSIONS.AUTH_PROBE_CONFIRM ESCAPE=HTML>"><TMPL_VAR SESSIONS.AUTH_PROBE></button>
     <div id="session-list"><TMPL_UNLESS SERVER_RENDERED_FALLBACK><p class="mcp-status" data-kind="working" role="status"><TMPL_VAR AJAX.WORKING></p></TMPL_UNLESS>
     <TMPL_IF HAS_SESSIONS>
       <div class="mcp-table-wrap mcp-session-table-wrap"><table class="mcp-table mcp-session-table"><thead><tr><th><TMPL_VAR SESSIONS.CLIENT></th><th><TMPL_VAR SESSIONS.INSTANCE></th><th><TMPL_VAR SESSIONS.IDENTITY></th><th><TMPL_VAR SESSIONS.TOKEN></th><th><TMPL_VAR SESSIONS.SCOPES></th><th><TMPL_VAR SESSIONS.EXPIRES></th><th><TMPL_VAR SESSIONS.ACTION></th></tr></thead><tbody>

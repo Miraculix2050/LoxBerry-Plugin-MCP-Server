@@ -10,13 +10,17 @@ import subprocess
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Protocol, TypeVar
+from typing import Protocol, TypedDict, TypeVar
 
 from mcpserver.config import PluginConfig
 from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
 from mcpserver.loxone.client import LoxoneClient, LoxoneToken, LoxoneWebSocketSession
 
 _T = TypeVar("_T")
+
+
+class _ProbeOptions(TypedDict, total=False):
+    early_probe: bool
 
 
 class ServiceCredentialsUnavailable(RuntimeError):
@@ -97,6 +101,7 @@ class ServiceMiniserverConnection:
         owner: str,
         busy_wait_seconds: float = 0,
         manual_retry: bool = False,
+        early_probe: bool = False,
         timing: dict[str, float | int] | None = None,
     ) -> None:
         self.client = client
@@ -104,6 +109,7 @@ class ServiceMiniserverConnection:
         self.owner = owner
         self.busy_wait_seconds = busy_wait_seconds
         self.manual_retry = manual_retry
+        self.early_probe = early_probe
         self.timing = timing
         self.stage = "token"
         self._started = False
@@ -128,22 +134,18 @@ class ServiceMiniserverConnection:
                 started = time.perf_counter_ns() if self.timing is not None else 0
                 if self.timing is not None and self.coordinator is not None:
                     self.timing["selector_coordinator_wait_ms"] += (started - queued) / 1_000_000
-                try:
-                    return await operation()
-                finally:
-                    if self.timing is not None:
-                        self.timing[f"selector_{phase}_ms"] = (
-                            time.perf_counter_ns() - started
-                        ) / 1_000_000
+                return await operation()
 
             try:
                 if self.coordinator is None:
                     return await measured_operation()
+                probe_options: _ProbeOptions = {"early_probe": True} if self.early_probe else {}
                 return await self.coordinator.attempt(
                     measured_operation,
                     owner=self.owner,
                     phase=phase,
                     allow_cooldown_probe=self.manual_retry,
+                    **probe_options,
                     busy_wait_seconds=max(0.0, deadline - time.monotonic()),
                 )
             finally:
@@ -152,16 +154,29 @@ class ServiceMiniserverConnection:
                         time.perf_counter_ns() - queued
                     ) / 1_000_000
 
-        self.stage = "token"
-        self._token = await authenticate(
-            lambda: self.client.acquire_token(username, password), "token_acquisition"
-        )
-        self.stage = "session"
-        token = self._token
-        self._session = await authenticate(
-            lambda: self.client.open_session(token), "session_establishment"
-        )
-        return self._session
+        async def sign_in() -> LoxoneWebSocketSession:
+            self.stage = "token"
+            started = time.perf_counter_ns()
+            try:
+                self._token = await self.client.acquire_token(username, password)
+            finally:
+                if self.timing is not None:
+                    self.timing["selector_token_acquisition_ms"] = (
+                        time.perf_counter_ns() - started
+                    ) / 1_000_000
+            self.stage = "session"
+            started = time.perf_counter_ns()
+            try:
+                self._session = await self.client.open_session(self._token)
+            finally:
+                if self.timing is not None:
+                    self.timing["selector_session_establishment_ms"] = (
+                        time.perf_counter_ns() - started
+                    ) / 1_000_000
+            return self._session
+
+        # Recovery is confirmed only once the issued token establishes a session.
+        return await authenticate(sign_in, "session_establishment")
 
     async def close(self) -> None:
         session, token = self._session, self._token
