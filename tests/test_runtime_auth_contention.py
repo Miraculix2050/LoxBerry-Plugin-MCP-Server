@@ -166,7 +166,7 @@ async def test_wait_and_network_share_connection_budget(contender, monkeypatch):
     monkeypatch.setattr(asyncio, "timeout", observed_timeout)
 
     async def slow_login(_):
-        assert len(scopes) == 1
+        assert not scopes[0].expired()
         # The first contended poll consumed time from this same deadline;
         # network login has not received a fresh connection budget.
         remaining = scopes[0].when() - asyncio.get_running_loop().time()
@@ -184,6 +184,7 @@ async def test_wait_and_network_share_connection_budget(contender, monkeypatch):
     await asyncio.wait_for(entered.wait(), 2)
     with pytest.raises(TimeoutError):
         await request
+    assert scopes[0].expired()
     assert (
         await coordinator.attempt(AsyncMock(return_value="ok"), owner="local_admin", phase="test")
         == "ok"

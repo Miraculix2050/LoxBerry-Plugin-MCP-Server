@@ -918,3 +918,99 @@ async def test_unsaved_public_ip_block_keeps_global_recovery_reservation(tmp_pat
             await restarted.attempt(
                 _authenticate, owner="tool_request", phase="session", public_login=public
             )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("budget", [0, 0.03])
+async def test_local_lock_observes_the_requested_wait_budget(tmp_path, budget):
+    from mcpserver.loxone.auth_diagnostics import MiniserverAuthenticationBusy
+
+    coordinator = MiniserverAuthCoordinator(tmp_path / "auth.json")
+    entered, release = asyncio.Event(), asyncio.Event()
+    calls = []
+
+    async def holding():
+        entered.set()
+        await release.wait()
+        return True
+
+    async def forbidden():
+        calls.append(True)
+
+    holder = asyncio.create_task(coordinator.attempt(holding, owner="local_admin", phase="session"))
+    await entered.wait()
+    try:
+        started = time.monotonic()
+        with pytest.raises(MiniserverAuthenticationBusy):
+            await coordinator.attempt(
+                forbidden, owner="tool_request", phase="session", busy_wait_seconds=budget
+            )
+        elapsed = time.monotonic() - started
+        assert budget <= elapsed < 0.5
+        assert not calls
+        assert coordinator._lock.locked()
+    finally:
+        release.set()
+        assert await holder
+    assert (
+        coordinator.status()["failure_count"] == coordinator.status()["public_failure_count"] == 0
+    )
+
+
+@pytest.mark.asyncio
+async def test_cancelled_local_lock_wait_does_not_release_its_owner(tmp_path):
+    coordinator = MiniserverAuthCoordinator(tmp_path / "auth.json")
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def holding():
+        entered.set()
+        await release.wait()
+
+    holder = asyncio.create_task(coordinator.attempt(holding, owner="local_admin", phase="session"))
+    await entered.wait()
+    waiter = asyncio.create_task(
+        coordinator.attempt(
+            _authenticate, owner="tool_request", phase="session", busy_wait_seconds=1
+        )
+    )
+    await asyncio.sleep(0)
+    waiter.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await waiter
+    assert coordinator._lock.locked()
+    release.set()
+    await holder
+    assert not coordinator._lock.locked()
+
+
+@pytest.mark.asyncio
+async def test_zero_wait_does_not_queue_behind_an_awakened_waiter(tmp_path):
+    from mcpserver.loxone.auth_diagnostics import MiniserverAuthenticationBusy
+
+    coordinator = MiniserverAuthCoordinator(tmp_path / "auth.json")
+    await coordinator._lock.acquire()
+    entered, release = asyncio.Event(), asyncio.Event()
+    calls = []
+
+    async def holding():
+        entered.set()
+        await release.wait()
+
+    async def forbidden():
+        calls.append(True)
+
+    waiter = asyncio.create_task(
+        coordinator.attempt(holding, owner="local_admin", phase="session", busy_wait_seconds=1)
+    )
+    await asyncio.sleep(0)
+    coordinator._lock.release()
+    try:
+        with pytest.raises(MiniserverAuthenticationBusy):
+            await coordinator.attempt(forbidden, owner="tool_request", phase="session")
+        assert not calls
+        await entered.wait()
+        assert coordinator._lock.locked()
+    finally:
+        release.set()
+        await waiter
+    assert not coordinator._lock.locked()

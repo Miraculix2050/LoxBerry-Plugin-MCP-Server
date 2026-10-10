@@ -2157,3 +2157,64 @@ async def test_cancelled_fresh_login_queues_issued_token(tmp_path, monkeypatch, 
     assert len(pending) == 1 and pending[0].attempts == 0
     assert pending[0].token.value == "sensitive-jwt"
     pending[0].token.destroy()
+
+
+@pytest.mark.asyncio
+async def test_repeated_failed_logins_keep_distinct_token_cleanup_records(tmp_path, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    coordinator = MiniserverAuthCoordinator(tmp_path / "auth.json")
+    key = tmp_path / "install.key"
+    key.write_bytes(b"k" * 32)
+    token_store = EncryptedLoxoneTokenStore((tmp_path / "tokens.json").resolve(), key.resolve())
+    issued = []
+
+    async def acquire(*_args):
+        token = LoxoneToken("jwt-" + str(len(issued)), "reader", "key", "SHA256", 999999999)
+        issued.append(token)
+        return token
+
+    session = SimpleNamespace(
+        load_structure=AsyncMock(side_effect=LoxoneProtocolError("synthetic")), close=AsyncMock()
+    )
+    fake = SimpleNamespace(
+        probe=AsyncMock(return_value=ProbeResult("1", "serial", False, False)),
+        acquire_token=AsyncMock(side_effect=acquire),
+        open_session=AsyncMock(return_value=session),
+    )
+    monkeypatch.setattr(auth_web, "LoxoneClient", lambda *_args, **_kwargs: fake)
+    web = Phase0OAuthWeb(
+        _provider(tmp_path),
+        endpoint=MiniserverEndpoint.parse_gen1("http://192.168.255.254"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+        auth_coordinator=coordinator,
+        loxone_store=token_store,
+    )
+    tx = LoginTransaction(
+        transaction_id="same-transaction",
+        csrf_token="csrf",
+        client_id="synthetic",
+        client_name="Client",
+        redirect_uri=REDIRECT,
+        state="state",
+        code_challenge=CHALLENGE,
+        resource=RESOURCE,
+        created_at=1,
+    )
+    for _ in range(2):
+        assert (
+            await web._login(tx, {"username": "reader", "password": "synthetic"})
+        ).status_code == 200
+    queued = token_store.pending_remote_revocations(2_000_000_000)
+    assert len(queued) == 2
+    assert len({item.family_id for item in queued}) == 2
+    assert {item.token.value for item in queued} == {"jwt-0", "jwt-1"}
+    assert all(token.value == "" for token in issued)
+    token_store.delete(
+        queued[0].family_id
+    )  # Completion of an older worker never deletes its replacement.
+    remaining = token_store.pending_remote_revocations(2_000_000_000)
+    assert len(remaining) == 1 and remaining[0].family_id == queued[1].family_id
+    for item in (*queued, *remaining):
+        item.token.destroy()

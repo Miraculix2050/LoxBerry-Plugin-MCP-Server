@@ -47,6 +47,7 @@ from mcpserver.auth.provider import (
 )
 from mcpserver.loxone.auth_diagnostics import (
     MiniserverAuthCoordinator,
+    MiniserverAuthenticationBusy,
     MiniserverAuthenticationSuppressed,
 )
 from mcpserver.loxone.client import (
@@ -91,6 +92,7 @@ class LoginTransaction:
     attempts: int = 0
     loxone_token: LoxoneToken | None = None
     cleanup_pending: bool = False
+    cleanup_id: str | None = None
     identity_name: str | None = None
     identity_id: str | None = None
     miniserver_id: str | None = None
@@ -285,8 +287,10 @@ class Phase0OAuthWeb:
         ):
             return False
         try:
+            if transaction.cleanup_id is None:
+                transaction.cleanup_id = secrets.token_urlsafe(32)
             self.loxone_store.put(
-                "login-cleanup-" + transaction.transaction_id,
+                "login-cleanup-" + transaction.cleanup_id,
                 transaction.miniserver_id,
                 transaction.identity_id,
                 token,
@@ -297,6 +301,7 @@ class Phase0OAuthWeb:
         token.destroy()
         transaction.loxone_token = None
         transaction.cleanup_pending = False
+        transaction.cleanup_id = None
         return True
 
     def _retain_issued_login_token(
@@ -304,6 +309,7 @@ class Phase0OAuthWeb:
     ) -> None:
         transaction.loxone_token = token
         transaction.cleanup_pending = True
+        transaction.cleanup_id = secrets.token_urlsafe(32)
         transaction.miniserver_id = self.provider.store.pseudonym(
             self.endpoint.origin, probe.serial
         )
@@ -1056,7 +1062,7 @@ sync();
             transaction.attempts -= 1
             transaction.phase = "login"
             raise
-        except MiniserverAuthenticationSuppressed:
+        except MiniserverAuthenticationSuppressed as exc:
             if token is not None:
                 assert probe is not None
                 self._retain_issued_login_token(transaction, token, probe)
@@ -1064,7 +1070,7 @@ sync();
             transaction.phase = "login"
             retry_at = (
                 self.auth_coordinator.current_status()["next_public_login_at"]
-                if self.auth_coordinator
+                if self.auth_coordinator and not isinstance(exc, MiniserverAuthenticationBusy)
                 else None
             )
             wait = max(

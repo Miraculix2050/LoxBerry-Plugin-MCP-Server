@@ -401,8 +401,15 @@ class MiniserverAuthCoordinator:
             raise ValueError("separate token phases require public login admission")
         if not 0 <= busy_wait_seconds <= 30:
             raise ValueError("invalid authentication wait budget")
-        async with self._lock:
-            deadline = time.monotonic() + busy_wait_seconds
+        deadline = time.monotonic() + busy_wait_seconds
+        try:
+            async with asyncio.timeout(busy_wait_seconds):
+                await self._lock.acquire()
+        except TimeoutError:
+            raise MiniserverAuthenticationBusy(
+                "Miniserver authentication wait budget expired"
+            ) from None
+        try:
             while True:
                 try:
                     with _interprocess_lock(self._path.with_name(f".{self._path.name}.lock")):
@@ -426,6 +433,8 @@ class MiniserverAuthCoordinator:
                             "Miniserver authentication is already being coordinated"
                         ) from exc
                     await asyncio.sleep(min(0.1, remaining))
+        finally:
+            self._lock.release()
 
     async def _attempt_locked(
         self,
