@@ -500,6 +500,8 @@ class Runtime:
             raise PermissionError
         yield
 
+    project_call_slot = call_slot
+
 
 async def invoke(monkeypatch, runtime, **kwargs):
     monkeypatch.setattr(

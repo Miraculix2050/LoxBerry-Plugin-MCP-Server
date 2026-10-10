@@ -103,11 +103,11 @@ async def test_cache_uses_authenticated_marker_and_revocation_clears_it():
     )
     first = await service.load_snapshot(access)
     assert await service.load_snapshot(access) is first
-    assert client.download_project.await_count == 1
+    assert client.download_project.await_count == 2
     assert service.cache_counts["hit"] == 1
     client.project_marker.return_value = "v2"
     assert await service.load_snapshot(access) is not first
-    assert client.download_project.await_count == 2
+    assert client.download_project.await_count == 3
     assert service.cache_counts["invalidate"] == 1
     await service.revoke("f")
     assert not service._cache
@@ -149,7 +149,7 @@ async def test_cache_fails_closed_on_marker_error_and_project_change():
     )
     client = SimpleNamespace(
         download_project=AsyncMock(return_value=sample()),
-        project_marker=AsyncMock(side_effect=["v1", "v1", "v1", "v2", "v3"]),
+        project_marker=AsyncMock(side_effect=["v1", "v1", "v1", "v1", "v1", "v2"]),
     )
     service = ProjectService(
         client,
@@ -235,7 +235,7 @@ async def test_rejected_remote_auth_never_returns_cached_graph():
 
 
 @pytest.mark.asyncio
-async def test_concurrent_marker_reads_download_only_once():
+async def test_concurrent_calls_download_independently_and_parse_once():
     access = SimpleNamespace(
         scopes=["loxone:read"], family_id="f", miniserver_id="m", identity_id="i"
     )
@@ -253,7 +253,7 @@ async def test_concurrent_marker_reads_download_only_once():
         service.load_snapshot(access), service.load_snapshot(access)
     )
     assert first is second
-    assert client.download_project.await_count == 1
+    assert client.download_project.await_count == 2
     await service.close()
 
 
@@ -331,7 +331,7 @@ async def test_same_marker_and_visible_structure_reuse_mapping_and_query():
     )
     assert second is first
     assert second.view.marker == "v1"
-    assert client.download_project.await_count == 1
+    assert client.download_project.await_count == 2
     changed_structure = LoxoneStructure(
         LoxoneIdentity("reader", "serial"),
         "v1",
@@ -348,7 +348,7 @@ async def test_same_marker_and_visible_structure_reuse_mapping_and_query():
 
 
 @pytest.mark.asyncio
-async def test_warm_query_checks_access_once_and_rejects_revocation():
+async def test_warm_query_rechecks_access_around_download_and_rejects_revocation():
     access = SimpleNamespace(
         scopes=["loxone:read"], family_id="f", miniserver_id="m", identity_id="i"
     )
@@ -369,7 +369,7 @@ async def test_warm_query_checks_access_once_and_rejects_revocation():
 
     validate.reset_mock()
     await service.query(access, runtime)
-    assert validate.await_count == 1
+    assert validate.await_count == 4
 
     validate.return_value = False
     with pytest.raises(ProjectError, match="project_access_denied"):

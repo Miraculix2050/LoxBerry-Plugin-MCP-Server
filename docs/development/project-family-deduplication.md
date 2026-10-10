@@ -1,125 +1,173 @@
-# OAuth-family project deduplication preparation (#379)
+# Authorized project-content reuse across OAuth families (#379)
 
-- Status: investigation preparation; production behavior is unchanged.
-- Scope: OAuth-family `sps.LoxCC` content. No dependency on implementing #239.
-- Target evidence: none collected by this preparation.
+- Status: implemented; Gen. 1 acceptance recorded below.
+- Scope: OAuth-family `sps.LoxCC` content. Service-identity discovery in #239 remains separate.
 - [German version](project-family-deduplication.de.md)
 
-## Current path and reuse boundary
+## Authorization before reuse
 
-`LoxoneClient.download_project()` performs the fixed project request with the
-requesting family's Loxone token and username, with bounded bytes, timeout,
-redirect rejection and no automatic retry. It never substitutes service credentials.
-`ProjectService._load()` validates scope, family and token confirmation, gets the
-family token, and serializes loads through one semaphore. The cache key is
-`(miniserver_id, identity_id, family_id)`; marker equality reuses only that entry.
-On a miss it downloads, invokes the disposable `process_project()` subprocess,
-rechecks authorization and checks the marker again before caching. The graph
-cache is bounded to eight entries and 128 MiB of conservative accounting; separate
-family views/queries are bounded to eight entries and 64 MiB.
+Every project request, including warm cache hits and pagination continuations,
+downloads the project with the requesting family's own Loxone token. A marker,
+a visible structure or another family's cached graph cannot prove current
+project-read permission. No reliable smaller permission probe is established.
 
-`ProjectService.view()` requires the runtime subject to match the family; mapping
-and query reuse additionally compare the caller's structure. Fresh visible
-structure acquisition belongs to the tool/runtime path, not `load_snapshot()`.
-Benchmarking that method alone cannot prove fresh visibility or MCP authorization.
-Revocation cancels that family's loads and removes its cache/views; close removes
-all retained content. Existing worker tests cover marker errors, project changes,
-revocation and bounded caching. `test_project_family_baseline.py` adds two-family
-download isolation (including overlapping calls), denied download, invalid warm
-family access, independent revocation and view isolation.
+The tool/runtime path still validates OAuth scope, the current access token and
+family, token confirmation and freshly fetched caller-visible structure.
+`ProjectService` rechecks access after the download, after parsing or reuse, and
+after the final authenticated marker check. Permission denial, marker failure,
+project changes during verification, cancellation and revocation fail closed.
+Service credentials never authorize an OAuth-family request.
 
-No inspected code establishes a reliable independent project-read permission
-proof without the project download. An authenticated program marker or visible
-structure is not such a proof. Until target/protocol evidence establishes one,
-each new family must perform its own authorized download before any proposed
-shared parsed-content lookup. Existing cache-hit behavior is a baseline, not proof
-that all future #379 permission gates are already satisfied.
+The owner accepted the extra download and marker-check cost of warm calls and
+continuations. This is a deliberate authorization change, not a warm-latency
+optimization. Cold-load time and retained graph memory are the comparison targets;
+the architecture change is the primary objective.
 
-## Reproducible offline baseline
+## Bounded immutable content and separate family views
 
-Run from the repository with Python 3.13 and development dependencies:
+Only after its own successful download may a family reuse parsed content with
+the same Miniserver identity, SHA-256 of exact response bytes, parser/cache epoch,
+project model version and processing limits. The bundle fingerprint is a different
+hash domain and is not substituted for response-byte equality. Changed bytes with
+an unchanged marker rebuild that family's snapshot and view.
+
+The existing load semaphore serializes downloads and parsing. Two successful
+identical downloads can therefore share one completed parse; downloads and
+authorization are never coalesced. There is no shared parse task for a revoked
+waiter to cancel.
+
+Project-backed MCP calls use a separate admission gate before acquiring shared
+read slots: one active call, no waiting queue, and at most twelve calls per
+rolling minute across all families on this runtime/Miniserver. Excess calls
+return the existing temporary-unavailability envelope with a local rate-limit
+diagnostic. Normal family and history limits still apply.
+The global budget is charged only after family/history admission and current
+access validation succeed; rejected or cancelled admission cannot consume
+another family's project allowance. Admitted work remains charged on failure.
+This also covers project-backed opening analysis and history/observability queries. Unrelated
+reads keep their shared slots available during a project-call burst.
+
+Family references remain keyed by Miniserver, identity and family. Visible
+structures, mappings, queries, cursors, tokens and rate limits remain separate.
+The content index contains keys only; graphs live in the existing family/view
+caches. No raw bytes or graph store is persisted. Private snapshot lookup tables
+are built once and treated as read-only by all consumers.
+
+Family references remain bounded to eight entries. The 128 MiB graph allowance
+counts each unique retained snapshot once. Views/queries retain their separate
+eight-entry, 64 MiB conservative allowance. Eviction drops the family reference,
+content key and views together. Existing active requests may retain their returned
+snapshots; cache accounting is not a measurement or hard bound of process RSS.
+
+Revocation cancels only that family's loads and immediately drops its references.
+Another valid family must still download and authorize its next request.
+Shutdown clears all references; restart cannot reuse previous process memory.
+A different Miniserver, parser/cache epoch or processing limit cannot reuse an
+incompatible graph. Family identity changes cannot reuse old family views.
+
+## Deterministic verification
+
+`tests/test_project_family_baseline.py` covers independent downloads for the same
+and different identities, Miniserver isolation, overlapping loads, denied cold
+and warm reads, caller-view isolation, unchanged-marker response changes,
+revocation after download, cancelled queued loads, processing-limit and parser
+epoch changes, bounded reference eviction and shutdown cleanup.
+The existing worker/tool tests retain marker-change, token, fresh-visibility,
+mapping, query and cursor checks.
+
+The synthetic-only benchmark exercises the real disposable worker with mocked
+authorization and download. Run with Python 3.13 and repository dependencies:
 
 ```powershell
 $env:PYTHONPATH = 'src'
 python tools/benchmark_project_families.py --nodes 1000 --families 2 --samples 3 --warm-calls 3
 ```
 
-The tool accepts counts only. It generates literal-only synthetic LoxCC in memory;
-it does not read project files, credentials, configuration or the network and
-prints only fixed labels, synthetic hash and numeric measurements.
+It reports cold/warm download and worker counts, worker wall time, traced parent
+allocations, family references, unique content entries and conservative graph
+accounting. Tracing distorts timing; worker wall time includes startup and IPC.
+It does not prove real OAuth validation, permission changes, RSS or target latency.
 
-- In-process parser measurements cover unpacking, decoding, graph construction,
-  Python allocation peak/retained bytes, CPU and wall time. They exclude IPC and
-  do not measure the disposable worker's peak RSS. Tracing adds timing overhead;
-  compare only runs with the same tracing setup.
-- Service phases exercise the unchanged real worker subprocess with mocked
-  download, marker and authorization. Per-family cold/warm counts, bytes and
-  worker wall time are recorded. A cold call includes one worker invocation;
-  warm calls reuse that family's graph. Every new family still downloads/parses.
-- Parent traced allocations include mocks, phase records, IPC and retained graphs;
-  they are not process RSS. Cache-accounted bytes are conservative estimates,
-  not measured object size. Worker wall time includes startup and serialization;
-  it is not parser CPU. No fresh structure, mapping, query or cursor is timed.
-- This is a before baseline only. No synthetic result demonstrates actual byte
-  equality across users, permission behavior, target latency or optimization benefit.
+## Target evidence and remaining gates
 
-## Candidate design, subject to evidence and review
+The unchanged Gen. 1 path was measured using two existing grants of one identity,
+each with its own authorized download and freshly fetched structure. Response
+hashes were identical and parsing produced separate snapshots. This direct
+family-token harness is not MCP access-token acceptance. Evidence retains only
+anonymous labels, hashes, byte counts and numeric measurements.
 
-After each family's successful authorized download, hash exact response bytes and
-look up immutable parsed content by Miniserver identity, SHA-256 and explicit
-parser/model version. The existing bundle digest hashes sorted unpacked members;
-it is a different domain and must not be silently substituted for response-byte
-equality. Keep family authorization epoch/reference and visible structure, mapping,
-query, cursors, rate limits and tokens separate. Do not retain raw bytes in a new
-cache or persistent store.
+Matched before/after runs must use the same workload, graph/model version,
+sampling and contention; separate structure, download, parse, memory and total
+time. Report cold, warm and concurrent cases and unsuccessful samples.
+Do not automatically retry an uncertain authentication failure.
 
-Bound content entries/bytes and account for graphs retained by views and active
-requests. Coalesce parsing only after each family independently downloads and
-validates; do not coalesce family authorization or downloads. A cancelled/revoked
-waiter must not cancel another valid family's work or acquire a new reference.
-Recheck the requesting family and version after waiting and before returning.
-Remove its reference immediately on revocation; clear all references on shutdown.
-Version/identity changes and failed fresh proof cannot fall back to stale content.
-No shared cache, permission probe or production instrumentation is shipped here.
+On 2026-10-10, three successful Gen. 1 samples per revision compared baseline
+`962be53` with runtime `ace8b46`, model 13, two grants of one identity and
+858,414-byte responses. A recorded response-byte SHA-256 agrees across the
+baseline and candidate runs. The harness fetches fresh structure before each
+request but measures snapshot loading, not the full MCP/query path.
 
-## Target measurement protocol (pending)
+| Measurement (mean unless noted) | Baseline | Shared content |
+| --- | ---: | ---: |
+| First-family cold request | 24.31 s | 24.45 s |
+| Second-family cold request | 24.82 s | 6.15 s |
+| Both cold requests together | 49.12 s | 30.60 s |
+| Retained unique graphs | 2 | 1 |
+| Conservative graph accounting | 74,108,432 B | 37,054,216 B |
+| Harness parent RSS | 118,797,653 B | 103,383,040 B |
+| Harness parent peak RSS | 125,246,123 B | 107,029,845 B |
+| Parser worker wall time, both families | 36.90 s | 18.26 s |
+| Own downloads, two cold plus two warm calls | 2 | 4 |
 
-Use explicitly authorized test grants and controlled permission/project changes.
-Reserve the target and record code revision, parser version, anonymous case labels,
-sample counts, workload size, warm-up, cache state and contention. Never retain or
-publish project bytes, usernames, tokens, URLs or installation identifiers.
+The first cold mean differs by 0.6%; three timing samples do not establish a
+small first-load regression or a universal latency guarantee. The two-family
+cold total drops by approximately 38%, graph accounting by 50%, and measured
+parent RSS by approximately 13%. Worker startup/IPC remain part of cold timing.
+Parent peak RSS excludes child-worker peaks; worker wall time includes startup
+and IPC and is not a separate CPU-time measurement.
+Warm snapshot requests increase from approximately 2.6 s to 6.1 s as explicitly
+accepted: every candidate warm request downloads independently, without parsing
+again. Failed earlier measurements are retained separately and excluded from
+these successful-sample means.
 
-Compare two grants of one user and grants of different users, before and after a
-controlled visibility change, project-read denial and project update. Record only
-sanitized hashes, byte counts and numeric timings/counters. Separate fresh visible
-structure validation, authorized project download, parsing CPU/wall time,
-mapping/query, end-to-end latency and parent/worker memory. Collect matched cold,
-warm and concurrent repetitions; report failures as well as successful samples.
-Do not retry an uncertain authorization failure automatically.
+After the focused Hotswap, two real MCP grants independently returned current
+project status with the same fingerprint/model and `stale=false`; the second
+grant took 6.09 s. A real concurrent MCP probe admitted one project request,
+rejected the second with `local_rate_limit`, and completed an unrelated fresh
+structure overview while the admitted project call was active. Final source CI,
+ordinary re-review and the separate security re-review on `ace8b46` are green;
+the original admission finding is addressed and its GitHub thread resolved.
 
-First measure the unchanged service. A later experimental implementation needs
-the same workload, identity permissions, revisions, sampling and contention for a
-before/after comparison. Agree a material benefit threshold before evaluating that
-experiment; no threshold or positive target result is asserted here.
+An additional direct-family-token probe used two real identities with different
+visibility. Both independently downloaded identical bytes and shared one graph,
+while their query instances and views remained separate: 402 versus 60 root
+controls, with different runtime-mapping counts. This probe does not replace
+MCP access-token acceptance.
 
-## Security and lifecycle matrix
+The Restricted Explorer grant also completed real MCP cold/warm project status
+and first/continuation object pages while its temporary project-read right was
+present. Applying the controlled right withdrawal required a Miniserver reboot;
+the LoxBerry MCP service remained running with its warm family cache. Calls with
+the original grant and prepared cursor failed closed afterwards. Ordinary
+structure reads also failed and the grant required renewed authentication, so
+this phase establishes fail-closed behavior across the reboot, not an isolated
+project-permission denial with otherwise valid authentication. After the user
+reauthenticated, the Restricted grant could read current structure, while its
+project status and object-page requests returned `permission_denied`. Its
+structure overview contained 67 controls, versus 456 for the primary reader.
+Same-marker warm and
+continuation permission denial is covered deterministically, not claimed as a
+live unchanged-marker observation.
 
-| Case | Required evidence before productive sharing |
-| --- | --- |
-| Two families, identical bytes and marker | Each downloads with its own authorization; only parsing/content may be shared afterward |
-| Same marker, visibility removed | Fresh caller structure hides removed controls; own mapping/query/cursor cannot use another family's visibility |
-| Same marker, project-read denied | Denied family cannot obtain content from another reference; prove permission handling on cache hits too |
-| Revocation during download/parse/wait | No result/reference for revoked family; another valid family remains independent |
-| Project changes during verification | Reject inconsistent version; no stale fallback |
-| Identity or Miniserver changes | No reference, view or cursor crosses the changed boundary |
-| Marker/structure failure, confirmation required, auth busy, source-IP suppression | Fail closed; preserve existing bounded coordinator/rate-limit behavior |
-| Concurrent identical/different content | Independent authorized downloads; bounded parse coalescing and queue/backpressure |
-| Cancellation, eviction, active views | No leaked references, unauthorized delivery or unaccounted retained content |
-| Restart/stop/parser version change | Clear memory-only references; no persistent project data or incompatible parsed reuse |
-| MCP cache hit and pagination continuation | Recheck caller scope, family, token confirmation, project permission and fresh visibility |
+The independently authorized primary MCP grant then loaded the changed project
+with a new fingerprint and unchanged mapping counts; the result was current.
+With the same Restricted token, the authenticated `jdev/sps/LoxAPPversion3`
+marker remained available while downloading `sps.LoxCC` returned
+`project_permission_denied`. This live counterexample rules out using that
+timestamp as proof of project-download permission.
+Test-control operations in
+room/category MCP-Test do not themselves authorize user-rights administration.
+No Gen. 2 claim follows from Gen. 1 evidence.
 
-The added tests establish selected **current isolation baselines**, not acceptance
-of a future shared cache. Remaining cases require deterministic candidate tests
-and matching live authorization/lifecycle evidence. Implement #379 only if those
-gates and matched target benefit measurements pass. #239 retains its separate
-service-identity transport and discovery gates; neither issue proves the other.
+Merge/issue closure requires completed target gates, green final CI, ordinary
+review and the separate security audit with no relevant unresolved findings.
