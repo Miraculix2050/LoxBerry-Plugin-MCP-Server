@@ -6,6 +6,14 @@
   const labels = document.getElementById('knx-taxonomy-form');
   const textarea = document.getElementById('knx-taxonomy-entries');
   const rows = document.getElementById('knx-addresses');
+  const dialog = document.getElementById('knx-confirm');
+  const ask = (text) => new Promise((resolve) => {
+    document.getElementById('knx-confirm-message').textContent = text;
+    dialog.returnValue = 'cancel';
+    dialog.addEventListener('close', () => resolve(dialog.returnValue === 'continue'), {once: true});
+    dialog.showModal();
+    document.getElementById('knx-confirm-cancel').focus();
+  });
   let state = null;
   let busy = false;
   let labelsDirty = false;
@@ -60,8 +68,8 @@
       const actions = document.createElement('td');
       const edit = document.createElement('button');
       edit.type = 'button'; edit.textContent = page.dataset.edit;
-      edit.addEventListener('click', () => {
-        if (recordDirty && !confirm(page.dataset.unsaved)) return;
+      edit.addEventListener('click', async () => {
+        if (recordDirty && !await ask(page.dataset.unsaved)) return;
         editingFields = {...item.overrides};
         recordRevision = state.revision;
         form.elements.namedItem('address').readOnly = true;
@@ -72,8 +80,8 @@
       });
       const remove = document.createElement('button');
       remove.type = 'button'; remove.textContent = page.dataset.delete;
-      remove.addEventListener('click', () => {
-        if (!confirm(page.dataset.confirm)) return;
+      remove.addEventListener('click', async () => {
+        if (!await ask(`${page.dataset.confirm} ${item.address}`)) return;
         void run(async () => {
           render(await api('knx_delete', {target: state.target, revision: state.revision,
             address_id: item.address_id, offset: Math.max(0, state.offset - (state.items.length === 1 ? 50 : 0))}));
@@ -86,10 +94,22 @@
   };
   labels.addEventListener('input', () => { labelsRevision ??= state.taxonomy_revision; labelsDirty = true; });
   form.addEventListener('input', () => { recordRevision ??= state.revision; recordDirty = true; });
-  window.addEventListener('beforeunload', (event) => {
-    if (dirty()) { event.preventDefault(); event.returnValue = ''; }
+  document.getElementById('knx-back').addEventListener('click', async (event) => {
+    const href = event.currentTarget.href;
+    if (busy || dirty()) event.preventDefault();
+    if (busy || !dirty()) return;
+    if (await ask(page.dataset.unsaved)) window.location.assign(href);
   });
-  form.addEventListener('reset', () => { editingFields = {}; recordDirty = false; recordRevision = null; form.elements.namedItem('address').readOnly = false; });
+  form.addEventListener('reset', (event) => {
+    if (recordDirty) {
+      event.preventDefault();
+      void ask(page.dataset.unsaved).then((accepted) => {
+        if (accepted) { recordDirty = false; form.reset(); }
+      });
+      return;
+    }
+    editingFields = {}; recordRevision = null; form.elements.namedItem('address').readOnly = false;
+  });
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     const input = new FormData(form);

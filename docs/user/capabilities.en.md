@@ -544,3 +544,5 @@ The dedicated KNX page is accessible from administration. It manages prefix labe
 Label text can still be loaded and exported. Versioned JSON exchange includes address metadata only, without a Miniserver endpoint or secrets, and is not an ETS import format. Loading shows a preview; explicit application adds/updates records. Absent addresses remain. Concurrent changes or a target switch can reject application; reload in that case.
 
 JSON export contains the displayed address page. Larger catalogs can be exchanged page by page so every file remains within the import bound.
+
+Deletion and discarding form input are confirmed in a dialog within the page. Cancel and Escape retain the input. Save before reloading or closing the browser tab: unsaved input is discarded by those browser actions.

@@ -106,6 +106,9 @@ def test_knx_page_uses_authenticated_narrow_same_origin_boundary() -> None:
     assert "knx_put|knx_delete|knx_export|knx_restore|knx_taxonomy" in cgi
     assert "textContent = value" in js
     assert "taxonomy_revision: labelsRevision ?? state.taxonomy_revision" in js
+    assert "beforeunload" not in js
+    assert "confirm(" not in js
+    assert "$navbar" not in cgi
     assert 'href="knx.cgi"' in (root / "templates/index.html").read_text(encoding="utf-8")
 
 
@@ -123,7 +126,11 @@ const record = {address_id: 2563, address: '1/2/3', address_format: 'three_level
 let state = {target: 'target', revision: 1, taxonomy_revision: 'labels', offset: 0,
   total: 1, items: [record],
   taxonomy: [{address_format: 'three_level', prefix: '1/2', label: 'Saved'}]};
-w.confirm = () => true;
+w.confirm = () => { throw new Error('Native browser dialogs are forbidden'); };
+w.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+w.HTMLDialogElement.prototype.close = function (value = '') {
+  this.returnValue = value; this.open = false; this.dispatchEvent(new w.Event('close'));
+};
 w.fetch = async (_url, options) => {
   const action = options.body.get('action');
   w.requests = (w.requests || []).concat(action);
@@ -149,7 +156,12 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 10));
   await tick();
   assert.equal(labels.value, '3:1/2=Unsaved');
   const unload = new w.Event('beforeunload', {cancelable: true});
-  w.dispatchEvent(unload); assert.equal(unload.defaultPrevented, true);
+  w.dispatchEvent(unload); assert.equal(unload.defaultPrevented, false);
+  const dialog = w.document.getElementById('knx-confirm');
+  w.document.getElementById('knx-back').click();
+  assert.equal(dialog.open, true);
+  assert.equal(w.document.activeElement.id, 'knx-confirm-cancel');
+  dialog.close('cancel'); await tick();
   w.document.querySelector('#knx-addresses button').click();
   assert.equal(form.elements.namedItem('address').readOnly, true);
   assert.equal(form.elements.namedItem('name').value, 'Additional');
@@ -174,7 +186,22 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 10));
   // The old target remains bound to the retained edit after rejected refresh.
   form.reset(); assert.equal(form.elements.namedItem('address').readOnly, false);
   const stillDirty = new w.Event('beforeunload', {cancelable: true});
-  w.dispatchEvent(stillDirty); assert.equal(stillDirty.defaultPrevented, true);
+  w.dispatchEvent(stillDirty); assert.equal(stillDirty.defaultPrevented, false);
+  const remove = w.document.querySelectorAll('#knx-addresses button')[1];
+  const beforeDelete = w.requests.length;
+  remove.click(); assert.equal(dialog.open, true);
+  assert.match(w.document.getElementById('knx-confirm-message').textContent, /1\/2\/3/);
+  dialog.close('cancel'); await tick();
+  assert.equal(w.requests.length, beforeDelete);
+  remove.click(); dialog.close('continue'); await tick();
+  assert.equal(w.requests.at(-1), 'knx_delete');
+  form.elements.namedItem('name').value = 'Retain draft';
+  form.dispatchEvent(new w.Event('input', {bubbles: true}));
+  form.reset(); assert.equal(dialog.open, true);
+  dialog.close('cancel'); await tick();
+  assert.equal(form.elements.namedItem('name').value, 'Retain draft');
+  form.reset(); dialog.close('continue'); await tick();
+  assert.equal(form.elements.namedItem('name').value, '');
   dom.window.close();
 })().catch(error => { console.error(error); process.exitCode = 1; });
 """

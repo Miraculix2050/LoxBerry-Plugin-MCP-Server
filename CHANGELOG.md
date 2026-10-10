@@ -11,6 +11,7 @@ extracted from the matching version heading.
   failures, contention, project permissions and actual source-IP blocks distinct;
   allow explicit local Admin probes at least 60 seconds apart (#408).
 - Add a dedicated KNX administration page with target-bound manual address metadata and JSON exchange; retain existing prefix-label text transfer.
+  Confirm local deletion and form changes with accessible HTML dialogs.
 
 - Unify configured service-identity credentials and connection ownership for
   emergency-stop and Event History consumers. Keep separate connections, fresh

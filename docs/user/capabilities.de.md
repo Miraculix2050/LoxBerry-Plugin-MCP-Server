@@ -593,3 +593,5 @@ Die eigene KNX-Seite ist aus der Administration erreichbar. Sie verwaltet Präfi
 Labeltext lässt sich weiterhin laden und exportieren. Der versionierte JSON-Austausch enthält nur Adressmetadaten, keine Miniserver-Adresse oder Secrets, und ist kein ETS-Importformat. Laden zeigt eine Vorschau; erst die ausdrückliche Übernahme ergänzt/aktualisiert Datensätze. Nicht enthaltene Adressen bleiben erhalten. Gleichzeitige Änderungen oder ein Zielwechsel können die Übernahme ablehnen; dann neu laden.
 
 Der JSON-Export enthält die angezeigte Adressseite. Größere Bestände lassen sich seitenweise übertragen, damit jede Datei innerhalb der Importgrenze bleibt.
+
+Löschen und das Verwerfen von Eingaben werden in einem Dialog innerhalb der Seite bestätigt. Abbrechen und Escape erhalten die Eingaben. Vor dem Neuladen oder Schließen des Browser-Tabs speichern: Nicht gespeicherte Eingaben werden dabei verworfen.

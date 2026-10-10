@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v1">
+<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v2">
 <main class="mcp-page mcp-knx" id="knx-page"
  data-saved="<TMPL_VAR KNX.SAVED ESCAPE=HTML>"
  data-failed="<TMPL_VAR KNX.FAILED ESCAPE=HTML>"
@@ -6,7 +6,7 @@
  data-edit="<TMPL_VAR KNX.EDIT ESCAPE=HTML>"
  data-delete="<TMPL_VAR KNX.DELETE ESCAPE=HTML>"
  data-confirm="<TMPL_VAR KNX.CONFIRM_DELETE ESCAPE=HTML>">
- <div class="mcp-actions"><a class="lb-button" href="index.cgi"><TMPL_VAR KNX.BACK></a></div>
+ <div class="mcp-actions"><a class="lb-button" id="knx-back" href="index.cgi"><TMPL_VAR KNX.BACK></a></div>
  <h1><TMPL_VAR KNX.TITLE></h1>
  <p><TMPL_VAR KNX.SOURCE_HELP></p>
  <p id="knx-status" role="status" aria-live="polite"></p>
@@ -45,4 +45,12 @@
   <div class="mcp-actions"><button class="lb-button" id="knx-previous" type="button"><TMPL_VAR KNX.PREVIOUS></button><span id="knx-count"></span><button class="lb-button" id="knx-next" type="button"><TMPL_VAR KNX.NEXT></button></div>
  </section>
 </main>
-<script src="knx.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v2" defer></script>
+<dialog class="mcp-dialog" id="knx-confirm" aria-labelledby="knx-confirm-title" aria-describedby="knx-confirm-message">
+ <h2 id="knx-confirm-title"><TMPL_VAR KNX.CONFIRM_TITLE></h2>
+ <p id="knx-confirm-message"></p>
+ <form method="dialog" class="mcp-actions">
+  <button class="lb-button" id="knx-confirm-cancel" value="cancel" autofocus><TMPL_VAR KNX.CANCEL></button>
+  <button class="lb-button" value="continue"><TMPL_VAR KNX.CONTINUE></button>
+ </form>
+</dialog>
+<script src="knx.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v3" defer></script>
