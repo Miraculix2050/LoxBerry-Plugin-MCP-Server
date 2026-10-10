@@ -42,6 +42,8 @@ w.confirm = w.alert = w.prompt = () => {throw new Error('Native dialog forbidden
 w.fetch = async (_url, options) => {
   const action = options.body.get('action'), payload = JSON.parse(options.body.get('payload'));
   requests.push({action, payload});
+  if (action === 'knx_page' && w.failPage)
+    return {ok: true, json: async () => ({ok: false, error: {code: 'knx_revision_conflict'}})};
   if (action === 'knx_import_preview' && w.delayPreview)
     await new Promise(resolve => {w.resumePreview = resolve;});
   if (action === 'knx_import_load' && rejectUpload)
@@ -86,7 +88,11 @@ const click = async id => {w.document.getElementById(id).click(); await tick();}
   assert.deepEqual(requests.at(-1).payload.filters,
     {query: 'Hidden imported name', source: 'both', deviations_only: true});
   assert.equal(requests.at(-1).payload.target, 't');
+  w.failPage = true; await click('knx-next');
+  assert.match(w.document.getElementById('knx-status').textContent, /knx_revision_conflict/);
+  w.failPage = false;
   await click('knx-next');
+  assert.equal(w.document.getElementById('knx-status').textContent, '');
   assert.equal(requests.at(-1).payload.offset, 50);
   assert.equal(requests.at(-1).payload.query_revision, 1);
   assert.equal(requests.at(-1).payload.filters.query, 'Hidden imported name');

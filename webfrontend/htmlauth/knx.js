@@ -167,6 +167,7 @@
       actions.append(edit, remove); tr.append(actions); rows.append(tr);
     }
     document.getElementById('knx-count').textContent = `${data.offset + (data.total ? 1 : 0)}\u2013${Math.min(data.offset + 50, data.total)} / ${data.total}`;
+    message('');
     page.dispatchEvent(new CustomEvent('knx-state'));
   };
   const renderEditorSources = () => {
