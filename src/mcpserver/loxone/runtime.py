@@ -328,6 +328,7 @@ class LoxoneRuntime:
             max_structure_controls=max_structure_controls,
             max_structure_state_references=max_structure_state_references,
             max_structure_depth=max_structure_depth,
+            structure_lookup=self,
         )
         self.auth_coordinator = auth_coordinator
         self._validate_access = validate_access
@@ -1215,6 +1216,21 @@ class LoxoneRuntime:
             await self.disconnect(subject)
             active = [item for item in active if item[0] != subject]
 
+    def _find_received_structure(self, parse_identity: str) -> LoxoneStructure | None:
+        # Existing bounded connection records own immutable values, never access.
+        if not parse_identity:
+            return None
+        for record in self._records.values():
+            if record.structure.parse_identity == parse_identity:
+                return record.structure
+        return None
+
+    def _has_received_structure(self, username: str) -> bool:
+        return any(
+            record.structure.parse_identity and record.structure.identity.username == username
+            for record in self._records.values()
+        )
+
     async def _refresh_structure(
         self,
         access: StoredAccessToken,
@@ -1295,6 +1311,8 @@ class LoxoneRuntime:
             raise RuntimeUnavailable("Loxone runtime connection changed during structure refresh")
         record.last_structure_check = time.monotonic()
         if structure == record.structure:
+            # Equal normalized data can originate from different exact bytes.
+            record.structure = structure
             _LOGGER.debug("component=structure outcome=unchanged")
             return
         if not fresh_visibility and structure.last_modified == record.structure.last_modified:

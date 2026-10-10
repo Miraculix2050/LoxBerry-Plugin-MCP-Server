@@ -33,8 +33,170 @@ from mcpserver.loxone.client import (
     _websocket_command,
 )
 from mcpserver.loxone.events import MessageHeader, MessageType
+from mcpserver.loxone.models import LoxoneStructure
 from mcpserver.loxone.runtime import LoxoneRuntime
 from mcpserver.loxone.security import token_hmac
+
+
+@pytest.mark.asyncio
+async def test_structure_reuse_still_receives_own_complete_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import mcpserver.loxone.client as client_module
+
+    payload = (
+        '{"lastModified":"now","msInfo":{"serialNr":"000000000000"},'
+        '"rooms":{},"cats":{},"controls":{}}'
+    )
+    owner: dict[str, LoxoneStructure] = {}
+    websocket = SimpleNamespace(send=AsyncMock())
+    session = LoxoneWebSocketSession(
+        cast(Any, websocket),
+        public_key="unused",
+        token=LoxoneToken("jwt", "reader", "key", "SHA256", 100),
+        timeout_seconds=1,
+        max_payload_bytes=1000,
+        structure_lookup=SimpleNamespace(
+            _find_received_structure=owner.get,
+            _has_received_structure=lambda username: any(
+                v.identity.username == username for v in owner.values()
+            ),
+        ),
+        structure_namespace="http://miniserver.example",
+    )
+    receive = AsyncMock(
+        return_value=(MessageHeader(MessageType.BINARY_FILE, False, len(payload)), payload)
+    )
+    monkeypatch.setattr(session, "_receive", receive)
+    normalize = Mock(wraps=client_module.normalize_structure)
+    monkeypatch.setattr(client_module, "normalize_structure", normalize)
+    first = await session.load_structure()
+    owner[first.parse_identity] = first
+    assert await session.load_structure() is first
+    assert normalize.call_count == 1
+    assert websocket.send.await_count == receive.await_count == 2
+    assert first.parse_identity and first.parse_identity not in repr(first)
+    receive.side_effect = LoxoneProtocolError("incomplete response")
+    with pytest.raises(LoxoneProtocolError, match="incomplete"):
+        await session.load_structure()
+    assert normalize.call_count == 1
+
+
+@pytest.mark.parametrize(
+    "change", ["bytes", "username", "namespace", "controls", "states", "depth", "payload_limit"]
+)
+@pytest.mark.asyncio
+async def test_structure_reuse_context_is_exact(
+    monkeypatch: pytest.MonkeyPatch, change: str
+) -> None:
+    payload = '{"msInfo":{"serialNr":"000000000000"},"rooms":{},"cats":{},"controls":{}}'
+    owner: dict[str, LoxoneStructure] = {}
+    session = LoxoneWebSocketSession(
+        cast(Any, SimpleNamespace(send=AsyncMock())),
+        public_key="unused",
+        token=LoxoneToken("jwt", "reader", "key", "SHA256", 100),
+        timeout_seconds=1,
+        max_payload_bytes=1000,
+        structure_lookup=SimpleNamespace(
+            _find_received_structure=owner.get,
+            _has_received_structure=lambda username: any(
+                v.identity.username == username for v in owner.values()
+            ),
+        ),
+        structure_namespace="first-server",
+    )
+    receive = AsyncMock(
+        return_value=(MessageHeader(MessageType.TEXT, False, len(payload)), payload)
+    )
+    monkeypatch.setattr(session, "_receive", receive)
+    first = await session.load_structure()
+    owner[first.parse_identity] = first
+    if change == "bytes":
+        receive.return_value = (
+            MessageHeader(MessageType.TEXT, False, len(payload) + 1),
+            payload + " ",
+        )
+    elif change == "username":
+        session._token.username = "other-reader"
+    elif change == "namespace":
+        session._structure_namespace = "second-server"
+    else:
+        attribute = {
+            "controls": "_max_structure_controls",
+            "states": "_max_structure_state_references",
+            "depth": "_max_structure_depth",
+            "payload_limit": "_max_payload",
+        }[change]
+        setattr(session, attribute, getattr(session, attribute) - 1)
+    second = await session.load_structure()
+    assert second is not first
+    assert second.parse_identity != first.parse_identity
+
+
+@pytest.mark.asyncio
+async def test_structure_lookup_cannot_replace_invalid_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lookup = Mock(return_value=None)
+    session = LoxoneWebSocketSession(
+        cast(Any, SimpleNamespace(send=AsyncMock())),
+        public_key="unused",
+        token=LoxoneToken("jwt", "reader", "key", "SHA256", 100),
+        timeout_seconds=1,
+        max_payload_bytes=1000,
+        structure_lookup=SimpleNamespace(
+            _find_received_structure=lookup, _has_received_structure=lambda _username: False
+        ),
+    )
+    monkeypatch.setattr(
+        session,
+        "_receive",
+        AsyncMock(return_value=(MessageHeader(MessageType.BINARY_FILE, False, 3), b"bad")),
+    )
+    with pytest.raises(LoxoneProtocolError, match="not text"):
+        await session.load_structure()
+    lookup.assert_not_called()
+    monkeypatch.setattr(
+        session,
+        "_receive",
+        AsyncMock(return_value=(MessageHeader(MessageType.TEXT, False, 3), "bad")),
+    )
+    with pytest.raises(LoxoneProtocolError, match="not JSON"):
+        await session.load_structure()
+
+
+@pytest.mark.asyncio
+async def test_cancelled_cold_structure_does_not_publish_pending_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loop = asyncio.get_running_loop()
+    pending = loop.create_future()
+    monkeypatch.setattr(loop, "run_in_executor", lambda *_args: pending)
+    owner: dict[str, LoxoneStructure] = {}
+    session = LoxoneWebSocketSession(
+        cast(Any, SimpleNamespace(send=AsyncMock())),
+        public_key="unused",
+        token=LoxoneToken("jwt", "reader", "key", "SHA256", 100),
+        timeout_seconds=1,
+        max_payload_bytes=1000,
+        structure_lookup=SimpleNamespace(
+            _find_received_structure=owner.get,
+            _has_received_structure=lambda _username: False,
+        ),
+    )
+    payload = '{"msInfo":{"serialNr":"000000000000"},"rooms":{},"cats":{},"controls":{}}'
+    monkeypatch.setattr(
+        session,
+        "_receive",
+        AsyncMock(return_value=(MessageHeader(MessageType.TEXT, False, len(payload)), payload)),
+    )
+    task = asyncio.create_task(session.load_structure())
+    await asyncio.sleep(0)
+    assert not task.done()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert pending.cancelled() and not owner
 
 
 @pytest.mark.asyncio

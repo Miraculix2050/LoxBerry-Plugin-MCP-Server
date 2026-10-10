@@ -251,3 +251,22 @@ owners, eviction, revocation and close manage references, with the existing
 conservative per-family mapping charges and retention limits. There is no new
 pool, persistence, cursor sharing or worker serialization. Measurements concern
 CPU and retained Python allocations, excluding transport and service RSS.
+
+## Independently received structure reuse (#401)
+
+Each structure load still sends its own authenticated LoxAPP3 request and fully
+receives/validates the bounded response. Only then may the client reuse immutable
+normalization from existing bounded runtime connection records. The private key
+contains exact received UTF-8 text, Miniserver origin, normalization epoch, exact
+username and payload/control/state-reference/depth limits. Different users or
+contexts cannot share a hit; modification markers alone never identify content.
+
+Connection records own the values; there is no additional cache, raw document
+retention, persistence or shared state/session/token. Refresh ownership and final
+access checks remain family-specific. Eviction/revocation/close remove record
+references. Equal normalized structures from changed bytes update the private
+identity without incrementing the visibility generation. Plain clients without a
+lookup retain their original parsing path. On the first cold load without an
+eligible record, bounded SHA-256 calculation runs concurrently with normalization;
+only the completed identity can be returned to the owner. Cancellation publishes
+nothing. Public response schemas stay unchanged.

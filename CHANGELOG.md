@@ -10,6 +10,11 @@ extracted from the matching version heading.
   visible mapping inputs. Preserve private queries, fresh downloads and existing
   bounded view ownership without adding a cache pool (#404).
 
+- Reuse immutable structure normalization after each own authenticated complete
+  response, keyed by exact text, Miniserver/user and parser limits. Existing bounded
+  connections own shared values; preserve private state, refresh ownership and
+  authorization without another cache or retained raw document (#401).
+
 - Reuse identical authorized project searches across families with complete visible
   mapping/filter keys, independent downloads and final permission checks. Keep
   bounded search results separate from private cursor generations and use the same
