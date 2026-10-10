@@ -1,6 +1,8 @@
 """Independent authorization before immutable OAuth-family content reuse."""
 
 import asyncio
+import struct
+import zlib
 from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
@@ -8,7 +10,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 import mcpserver.loxone.project.service as service_module
-from mcpserver.loxone.models import Control, LoxoneIdentity, LoxoneStructure
+from mcpserver.loxone.models import Control, LoxoneIdentity, LoxoneStructure, NamedGroup, Room
 from mcpserver.loxone.project.models import ProjectError
 from mcpserver.loxone.project.service import ProjectService
 from mcpserver.loxone.project.worker import process_project
@@ -34,6 +36,120 @@ def service_fixture(download=None):
         validate,
     )
     return service, client, validate
+
+
+def mapping_structure():
+    return LoxoneStructure(
+        LoxoneIdentity("synthetic", "serial"),
+        "same-marker",
+        (Room("room", "Room"),),
+        (NamedGroup("category", "Category"),),
+        (Control("a" * 32, "Visible", "Switch", "room", "category", None, ()),),
+    )
+
+
+@pytest.mark.asyncio
+async def test_mapping_reuse_has_own_downloads_local_queries_and_existing_owners(monkeypatch):
+    plain = b'<Root><C U="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" Type="Switch"/></Root>'
+    packed = b"\xf0" + bytes([len(plain) - 15]) + plain
+    data = struct.pack("<IIII", 0xAABBCCEE, len(packed), len(plain), zlib.crc32(plain)) + packed
+    service, client, _ = service_fixture(AsyncMock(return_value=data))
+    builder = Mock(wraps=service_module.map_runtime)
+    monkeypatch.setattr(service_module, "map_runtime", builder)
+    structure = mapping_structure()
+    try:
+        first = await service.query(
+            access("first"), SimpleNamespace(subject="first", structure=structure)
+        )
+        second = await service.query(
+            access("second"), SimpleNamespace(subject="second", structure=replace(structure))
+        )
+        assert first is not second and first.view is not second.view
+        assert first.view.mapping is second.view.mapping
+        assert builder.call_count == 1 and client.download_project.await_count == 2
+        first.control_names["a" * 32] = "First query only"
+        assert second.control_names["a" * 32] == "Visible"
+        assert second.view.mapping.entries[0].evidence.name == "Visible"
+        await service.revoke("first")
+        assert all(key[2] != "first" for key in service._views)
+        again = await service.query(
+            access("second"), SimpleNamespace(subject="second", structure=structure)
+        )
+        assert again is second and builder.call_count == 1
+        client.download_project.side_effect = ProjectError("project_permission_denied")
+        with pytest.raises(ProjectError, match="project_permission_denied"):
+            await service.query(
+                access("denied"), SimpleNamespace(subject="denied", structure=structure)
+            )
+        assert builder.call_count == 1 and client.download_project.await_count == 4
+        assert all(key[2] != "denied" for key in service._views)
+    finally:
+        await service.close()
+    assert not service._views
+
+
+@pytest.mark.parametrize(
+    "changed",
+    [
+        "identity",
+        "miniserver",
+        "bytes",
+        "epoch",
+        "name",
+        "type",
+        "action",
+        "room",
+        "category",
+        "hierarchy",
+        "visibility",
+    ],
+)
+@pytest.mark.asyncio
+async def test_mapping_reuse_requires_exact_snapshot_identity_and_visible_inputs(
+    monkeypatch, changed
+):
+    service, client, _ = service_fixture()
+    builder = Mock(wraps=service_module.map_runtime)
+    monkeypatch.setattr(service_module, "map_runtime", builder)
+    structure = mapping_structure()
+    second_access = access("second")
+    try:
+        first = await service.view(
+            access("first"), SimpleNamespace(subject="first", structure=structure)
+        )
+        if changed == "identity":
+            second_access.identity_id = "other-reader"
+        elif changed == "miniserver":
+            second_access.miniserver_id = "other-server"
+        elif changed == "bytes":
+            client.download_project.return_value = synthetic_project(3)
+        elif changed == "epoch":
+            monkeypatch.setattr(service_module, "_CONTENT_VERSION", (999,))
+        elif changed == "room":
+            structure = replace(structure, rooms=(Room("room", "Changed room name"),))
+        elif changed == "category":
+            structure = replace(
+                structure, categories=(NamedGroup("category", "Changed category name"),)
+            )
+        elif changed == "visibility":
+            structure = replace(structure, controls=())
+        elif changed == "hierarchy":
+            child = structure.controls[0]
+            structure = replace(
+                structure, controls=(replace(child, uuid="b" * 32, subcontrols=(child,)),)
+            )
+        else:
+            attribute = {"name": "name", "type": "control_type", "action": "action_uuid"}[changed]
+            structure = replace(
+                structure, controls=(replace(structure.controls[0], **{attribute: "changed"}),)
+            )
+        second = await service.view(
+            second_access, SimpleNamespace(subject="second", structure=structure)
+        )
+        assert second.mapping is not first.mapping and builder.call_count == 2
+        assert client.download_project.await_count == 2
+    finally:
+        await service.close()
 
 
 @pytest.mark.asyncio

@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Reuse immutable runtime mappings between independently authorized families of
+  the same identity and Miniserver, with the exact shared snapshot and complete
+  visible mapping inputs. Preserve private queries, fresh downloads and existing
+  bounded view ownership without adding a cache pool (#404).
+
 - Reuse identical authorized project searches across families with complete visible
   mapping/filter keys, independent downloads and final permission checks. Keep
   bounded search results separate from private cursor generations and use the same

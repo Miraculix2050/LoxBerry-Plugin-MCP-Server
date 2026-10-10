@@ -1,9 +1,35 @@
 from dataclasses import replace
 from types import SimpleNamespace
 
+import pytest
+
+from mcpserver.loxone.models import Control, LoxoneIdentity, LoxoneStructure, NamedGroup, Room
 from mcpserver.loxone.project.graph import ProjectPartSummary, ProjectSnapshot, build_graph
-from mcpserver.loxone.project.mapping import map_runtime
+from mcpserver.loxone.project.mapping import map_runtime, prepare_runtime_mapping
 from mcpserver.loxone.project.parser import parse_project
+
+
+def test_prepared_mapping_is_immutable_and_bound_to_its_structure():
+    uuid = "a" * 32
+    parsed = parse_project(f'<P><C U="{uuid}"/></P>'.encode())
+    snapshot = ProjectSnapshot(
+        "hash", 1, (ProjectPartSummary("p", 2, ()),), build_graph((("p", parsed),))
+    )
+    structure = LoxoneStructure(
+        LoxoneIdentity("reader", "serial"),
+        "marker",
+        (Room("room", "Room"),),
+        (NamedGroup("category", "Category"),),
+        (Control(uuid, "Visible", "Switch", "room", "category", None, ()),),
+    )
+    prepared = prepare_runtime_mapping(structure)
+    assert map_runtime(snapshot, structure, prepared=prepared) == map_runtime(snapshot, structure)
+    with pytest.raises(TypeError):
+        prepared.rooms["room"] = "Changed"
+    with pytest.raises(TypeError):
+        prepared.categories["category"] = "Changed"
+    with pytest.raises(ValueError, match="another structure"):
+        map_runtime(snapshot, replace(structure), prepared=prepared)
 
 
 def control(uuid, action=None, children=(), **kwargs):

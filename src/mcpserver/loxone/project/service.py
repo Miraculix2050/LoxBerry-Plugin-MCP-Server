@@ -21,7 +21,7 @@ from mcpserver.loxone.events import LoxoneProtocolError
 from mcpserver.loxone.models import LoxoneStructure
 
 from .graph import PROJECT_MODEL_VERSION, ProjectSnapshot
-from .mapping import ProjectView, map_runtime
+from .mapping import ProjectView, map_runtime, prepare_runtime_mapping
 from .models import DEFAULT_LIMITS, ProjectBundle, ProjectError, ProjectLimits
 from .query import ProjectQuery
 from .worker import process_project
@@ -125,7 +125,19 @@ class ProjectService:
         if cached is not None and cached[0] == runtime.structure:
             self._views.move_to_end(view_key)
             return cached[1]
-        mapping = map_runtime(snapshot, runtime.structure)
+        inputs = prepare_runtime_mapping(runtime.structure)
+        mapping = next(
+            (
+                entry[1].mapping
+                for key, entry in self._views.items()
+                if key[:2] == cache_key[:2]
+                and entry[1].snapshot is snapshot
+                and entry[1].mapping.structure_fingerprint == inputs.fingerprint
+            ),
+            None,
+        )
+        if mapping is None:
+            mapping = map_runtime(snapshot, runtime.structure, prepared=inputs)
         view = ProjectView(snapshot, mapping, marker)
         if cache_key in self._cache:
             size = len(mapping.entries) * 512
