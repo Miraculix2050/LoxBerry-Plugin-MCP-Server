@@ -111,7 +111,7 @@ def test_admin_modules_load_in_order_with_versioned_localized_assets() -> None:
     for name in ADMIN_SCRIPTS:
         source = _admin_script(name)
         assert "<TMPL_" not in source
-        asset_version = {"configuration.js": "v14", "page.js": "v13", "sessions.js": "v13"}.get(
+        asset_version = {"configuration.js": "v14", "page.js": "v14", "sessions.js": "v13"}.get(
             name, "v12"
         )
         assert (
@@ -3750,3 +3750,101 @@ def test_native_admin_log_receives_helper_lifecycle_events(tmp_path: Path) -> No
     events = marker.read_text(encoding="utf-8")
     assert "event=family_revoked" in events and "reason=admin_session" in events
     assert "request_id=" in events
+
+
+def test_diagnostic_download_serializes_masked_document_and_releases_blob() -> None:
+    node = shutil.which("node")
+    assert node is not None
+    function = re.search(
+        r"  const downloadDiagnostic = \(data\) => \{.*?\n  \};",
+        _admin_script("page.js"),
+        re.DOTALL,
+    )
+    assert function is not None
+    script = (
+        "const assert = require('node:assert/strict');\n"
+        + function.group(0)
+        + r"""
+const label = (key) => key;
+let blobs = [], links = [], timers = [], revoked = [];
+let failClick = false;
+global.document = {
+  body: {append: (link) => links.push(link)},
+  createElement: (tag) => {
+    assert.equal(tag, 'a');
+    return {click() {
+      this.clicked = true;
+      if (failClick) throw new Error('synthetic click failure');
+    },
+      remove() { this.removed = true; }};
+  },
+};
+global.window = {setTimeout: (callback) => timers.push(callback)};
+URL.createObjectURL = (blob) => { blobs.push(blob); return 'blob:synthetic'; };
+URL.revokeObjectURL = (url) => revoked.push(url);
+(async () => {
+  const data = {schema_version: 2,
+    auth_lifecycle: {availability: 'available', retained_revoked: 1}};
+  for (failClick of [false, true]) {
+    if (failClick) assert.throws(() => downloadDiagnostic(data), /synthetic click failure/);
+    else downloadDiagnostic(data);
+    const link = links.at(-1);
+    assert.equal(link.download, 'mcpserver-diagnostic.json');
+    assert.equal(link.href, 'blob:synthetic');
+    assert.equal(link.hidden, true);
+    assert.equal(link.clicked, true);
+    assert.equal(link.removed, true);
+    assert.equal(blobs.at(-1).type, 'application/json');
+    assert.deepEqual(JSON.parse(await blobs.at(-1).text()), data);
+    timers.shift()();
+    assert.equal(revoked.at(-1), 'blob:synthetic');
+  }
+  const prior = blobs.length;
+  for (const invalid of [null, undefined, [], true, 'private-detail']) {
+    assert.throws(() => downloadDiagnostic(invalid), /AJAX.ERROR/);
+  }
+  assert.equal(blobs.length, prior);
+  assert.equal(timers.length, 0);
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+"""
+    )
+    subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
+    markup = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    assert 'data-ajax="diagnostic"><input type="hidden" name="action" value="diagnostic"' in markup
+
+
+def test_diagnostic_cgi_keeps_native_attachment_and_ajax_envelope(tmp_path: Path) -> None:
+    perl = shutil.which("perl")
+    if perl is None or os.name == "nt":
+        return
+    environment = _admin_cgi_environment(tmp_path)
+    document = {
+        "schema_version": 2,
+        "auth_lifecycle": {"availability": "available", "retained_revoked": 1},
+    }
+    reply = {"ok": True, "data": document}
+    (tmp_path / "mcpserver-admin").write_text(
+        "#!/usr/bin/env perl\nmy $request = <STDIN>; print q(" + json.dumps(reply) + ");\n",
+        encoding="utf-8",
+    )
+    for ajax in (False, True):
+        body = "action=diagnostic" + ("&ajax=1" if ajax else "")
+        result = subprocess.run(
+            [perl, f"-I{ROOT / 'tests/perl_stubs'}", str(ROOT / "webfrontend/htmlauth/index.cgi")],
+            input=body,
+            capture_output=True,
+            text=True,
+            check=True,
+            env={
+                **environment,
+                "REQUEST_METHOD": "POST",
+                "CONTENT_TYPE": "application/x-www-form-urlencoded",
+                "CONTENT_LENGTH": str(len(body)),
+                "HTTP_ORIGIN": "https://loxberry.example",
+                "HTTP_HOST": "loxberry.example",
+            },
+        )
+        headers, _, payload = result.stdout.partition("\n\n")
+        assert ("Content-Disposition: attachment" in headers) is (not ajax)
+        assert json.loads(payload) == (reply if ajax else document)
+        _assert_admin_security_headers(result.stdout)

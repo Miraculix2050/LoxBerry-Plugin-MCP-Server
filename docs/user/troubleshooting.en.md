@@ -56,6 +56,10 @@ A startup that never receives its first state batch closes with
 local disconnect. OAuth expiry and refresh revocation causes are forwarded to
 the corresponding runtime close.
 
+The browser diagnostic download requires JavaScript. It uses the same-origin
+AJAX path and downloads the masked JSON locally; strict Origin checks and the
+no-referrer policy remain active.
+
 ## Repeated Miniserver authentication rejection
 
 Three definite authentication rejections in five minutes pause new sign-ins

@@ -749,7 +749,7 @@ if ($action ne '') {
         $result = {ok => JSON::PP::false, error => {code => 'invalid_request', message => 'Unsupported action'}};
     }
     localize_admin_error($result);
-    if ($action eq 'diagnostic' && $result->{ok}) {
+    if ($action eq 'diagnostic' && $result->{ok} && !$q->{ajax}) {
         print $cgi->header(
             -type => 'application/json',
             -charset => 'utf-8',

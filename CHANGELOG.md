@@ -5,6 +5,8 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Fixed the masked Admin diagnostic download through same-origin AJAX when browser HTML submissions carry Origin null (#428).
+
 - Preserve first OAuth revocation causes and correlate sanitized client, approval,
   runtime and remote-cleanup lifecycle events; expose bounded retained causes in
   local Admin diagnostics without transferring authorization (#425).

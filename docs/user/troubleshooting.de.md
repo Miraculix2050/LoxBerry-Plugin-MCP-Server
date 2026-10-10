@@ -63,6 +63,10 @@ die anschließende Abbruchanforderung macht daraus kein normales lokales
 Verbindungsende. OAuth-Ablauf und Refresh-Widerrufsursachen werden an das
 zugehörige Laufzeitende weitergegeben.
 
+Der Diagnose-Download im Browser benötigt JavaScript. Er nutzt den Same-Origin-
+AJAX-Pfad und speichert das maskierte JSON lokal; die strikte Origin-Prüfung
+und die no-referrer-Richtlinie bleiben aktiv.
+
 ## Wiederholte Miniserver-Authentifizierungsablehnung
 
 Drei eindeutige Ablehnungen innerhalb von fünf Minuten pausieren neue Anmeldungen
