@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import sqlite3
+import subprocess
+import sys
 from dataclasses import replace
 from pathlib import Path
 
@@ -27,6 +30,55 @@ def document(rows: str) -> bytes:
 
 def apply_payload(preview: dict) -> dict:
     return {key: preview[key] for key in ("target", "draft_id", "preview_token")}
+
+
+@pytest.mark.parametrize(
+    ("raw", "code"),
+    [(b"<invalid", "knx_xml_invalid"), (b"<!DOCTYPE x><x/>", "knx_xml_unsafe")],
+)
+def test_native_module_entrypoint_preserves_knx_error_codes(
+    tmp_path: Path, raw: bytes, code: str
+) -> None:
+    configuration = tmp_path / "config.json"
+    AtomicConfigStore(configuration).save(
+        replace(PluginConfig.defaults(), loxone_endpoint="http://192.168.10.20")
+    )
+    environment = {
+        **os.environ,
+        "MCPSERVER_CONFIG": str(configuration),
+        "LBPDATA": str(tmp_path),
+        "MCPSERVER_KNX_ADMIN": "1",
+        "MCPSERVER_KNX_ADMIN_SESSION": "a" * 64,
+    }
+    page = subprocess.run(
+        [sys.executable, "-m", "mcpserver.admin"],
+        input=json.dumps({"action": "knx_page", "payload": {}}),
+        text=True,
+        capture_output=True,
+        check=True,
+        env=environment,
+        timeout=30,
+    )
+    request = {
+        "action": "knx_import_load",
+        "payload": {
+            "target": json.loads(page.stdout)["data"]["target"],
+            "file": base64.b64encode(raw).decode(),
+        },
+    }
+    result = subprocess.run(
+        [sys.executable, "-m", "mcpserver.admin"],
+        input=json.dumps(request),
+        text=True,
+        capture_output=True,
+        check=True,
+        env=environment,
+        timeout=30,
+    )
+    assert json.loads(result.stdout) == {
+        "ok": False,
+        "error": {"code": code, "message": "KNX operation rejected"},
+    }
 
 
 def test_identical_duplicates_merge_but_conflicting_candidates_require_explicit_choice() -> None:

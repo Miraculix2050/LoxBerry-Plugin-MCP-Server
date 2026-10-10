@@ -27,6 +27,7 @@ from urllib.request import Request, urlopen
 from uuid import UUID
 
 from mcpserver import __version__
+from mcpserver.admin_errors import AdminError as AdminError
 from mcpserver.persistence import PersistenceUncertain
 
 if TYPE_CHECKING:
@@ -49,14 +50,6 @@ _INTERNAL_EVENT_HISTORY_STATUS_URL: Final = "http://127.0.0.1:8765/internal/even
 _INTERNAL_RESPONSE_MAX_BYTES: Final = 4 * 1024
 _EMERGENCY_STOP_STATES: Final = frozenset({"not_configured", "clear", "active", "unknown"})
 _EMERGENCY_STOP_DISCOVERY_DEADLINE_SECONDS: Final = 90
-
-
-class AdminError(RuntimeError):
-    """A sanitized, user-actionable administrative error."""
-
-    def __init__(self, message: str, *, code: str = "invalid_request") -> None:
-        super().__init__(message)
-        self.code = code
 
 
 @dataclass(frozen=True)
