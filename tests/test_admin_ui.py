@@ -721,6 +721,8 @@ def test_knx_labels_moved_to_dedicated_same_origin_page() -> None:
     js = (ROOT / "webfrontend/htmlauth/knx.js").read_text(encoding="utf-8")
     assert 'id="knx-taxonomy-form"' in template
     assert 'href="knx.cgi"' in _admin_source()
+    assert "configuration.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v14" in _admin_source()
+    assert "-knx-management-v1" in template
     assert 'id="knx-taxonomy-form"' not in _admin_source()
     assert "same_origin_post()" in cgi
     assert "knx_taxonomy" in cgi
