@@ -8,6 +8,7 @@ import secrets
 from contextlib import closing
 from typing import Any
 
+from .csv_adapter import parse_csv
 from .drafts import DraftStore
 from .import_model import MAX_GROUPS, ImportDocument, ImportSelection
 from .import_repository import ImportRepository
@@ -38,19 +39,32 @@ class CatalogService:
 
     @staticmethod
     def parse(raw: bytes, options: dict[str, Any]) -> ImportDocument:
-        if options.get("file_format") != "xml":
+        kind = options.get("file_format")
+        if kind == "auto":
+            prefix = raw.removeprefix(b"\xef\xbb\xbf").lstrip(b" \r\n\t")
+            kind = "xml" if prefix.startswith(b"<") else "csv"
+        if kind not in ("xml", "csv"):
             raise KnxError("knx_import_format_unsupported")
-        return parse_xml(
+        parser = parse_xml if kind == "xml" else parse_csv
+        return parser(
             raw, encoding=options["encoding"], address_format=options.get("address_format")
         )
 
     def create(
-        self, raw: bytes, *, encoding: str, complete_export: bool, address_format: str | None = None
+        self,
+        raw: bytes,
+        *,
+        encoding: str,
+        complete_export: bool,
+        address_format: str | None = None,
+        file_format: str = "xml",
     ) -> dict[str, Any]:
         if type(complete_export) is not bool:
             raise KnxError("knx_scope_invalid")
+        if address_format not in (None, "two_level", "three_level"):
+            raise KnxError("knx_format_invalid")
         options: dict[str, Any] = {
-            "file_format": "xml",
+            "file_format": file_format,
             "encoding": encoding,
             "address_format": address_format,
             "complete_export": complete_export,
@@ -60,6 +74,7 @@ class CatalogService:
             "preview_token": secrets.token_hex(16),
         }
         document = self.parse(raw, options)
+        options["file_format"] = document.file_format
         snapshot = self.repository.snapshot(self.target)
         options["selected_groups"] = [
             group_identity(*key) for key, group in snapshot["groups"].items() if group["selected"]
@@ -341,6 +356,7 @@ class CatalogService:
             "preview_token": options["preview_token"],
             "file_format": document.file_format,
             "encoding": document.encoding,
+            "layout": document.source.get("layout", ""),
             "address_format": document.address_format,
             "complete_export": options["complete_export"],
             "mode": options["mode"],

@@ -85,6 +85,7 @@ const click = async id => {w.document.getElementById(id).click(); await tick();}
   Object.defineProperty(file, 'files', {value: [{size: 6,
     arrayBuffer: async () => new Uint8Array([60, 120, 109, 108, 47, 62]).buffer}]});
   await click('knx-ets-load');
+  assert.equal(requests.at(-1).payload.file_format, 'auto');
   assert.equal(w.document.getElementById('knx-ets-preview').hidden, false);
   assert.equal(w.document.getElementById('knx-ets-apply').disabled, true);
   w.document.querySelectorAll('#knx-ets-conflicts input')[1].click(); await tick();
@@ -100,8 +101,13 @@ const click = async id => {w.document.getElementById(id).click(); await tick();}
   assert.equal(boxes[1].checked, false);
   w.delayPreview = false; w.resumePreview(); await tick();
   assert.deepEqual(requests.at(-1).payload.selected_groups, ['group:three_level:1']);
+  const fileFormat = w.document.getElementById('knx-ets-file-format');
+  fileFormat.value = 'csv'; fileFormat.dispatchEvent(new w.Event('change', {bubbles: true}));
+  assert.equal(w.document.getElementById('knx-ets-apply').disabled, true);
+  assert.equal(w.document.getElementById('knx-ets-stale').textContent, 'Stale');
   rejectUpload = true;
   await click('knx-ets-load');
+  assert.equal(requests.at(-1).payload.file_format, 'csv');
   assert.match(w.document.getElementById('knx-status').textContent, /knx_xml_invalid/);
   assert.match(w.document.getElementById('knx-ets-changes').textContent, /B/);
   assert.equal(w.document.getElementById('knx-ets-preview').hidden, false);

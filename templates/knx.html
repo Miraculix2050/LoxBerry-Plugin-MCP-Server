@@ -20,6 +20,7 @@
  data-error-file="<TMPL_VAR KNX.ERROR_FILE ESCAPE=HTML>"
  data-error-unsafe="<TMPL_VAR KNX.ERROR_UNSAFE ESCAPE=HTML>"
  data-error-xml="<TMPL_VAR KNX.ERROR_XML ESCAPE=HTML>"
+ data-error-csv="<TMPL_VAR KNX.ERROR_CSV ESCAPE=HTML>"
  data-error-stale="<TMPL_VAR KNX.ERROR_STALE ESCAPE=HTML>"
  data-error-labels="<TMPL_VAR KNX.ERROR_LABELS ESCAPE=HTML>"
  data-error-storage="<TMPL_VAR KNX.ERROR_STORAGE ESCAPE=HTML>">
@@ -73,9 +74,11 @@
   data-complete="<TMPL_VAR KNX.COMPLETE_EXPORT ESCAPE=HTML>">
   <h2><TMPL_VAR KNX.ETS_IMPORT></h2>
   <p class="mcp-help"><TMPL_VAR KNX.XML_HELP></p>
+  <p class="mcp-help"><TMPL_VAR KNX.CSV_HELP></p>
   <fieldset class="mcp-configuration-fields" disabled>
    <div class="mcp-grid">
-    <label class="mcp-field"><span><TMPL_VAR KNX.IMPORT_FILE></span><input id="knx-ets-file" type="file" accept=".xml,application/xml,text/xml"></label>
+    <label class="mcp-field"><span><TMPL_VAR KNX.IMPORT_FILE></span><input id="knx-ets-file" type="file" accept=".xml,.csv,application/xml,text/xml,text/csv,text/tab-separated-values"></label>
+    <label class="mcp-field"><span><TMPL_VAR KNX.FILE_FORMAT></span><select id="knx-ets-file-format"><option value="auto"><TMPL_VAR KNX.FILE_FORMAT_AUTO></option><option value="xml">XML</option><option value="csv">CSV</option></select></label>
     <label class="mcp-field"><span><TMPL_VAR KNX.ENCODING></span><select id="knx-ets-encoding"><option value="auto"><TMPL_VAR KNX.ENCODING_AUTO></option><option value="utf-8">UTF-8</option><option value="windows-1252">Windows-1252</option></select></label>
     <label class="mcp-field"><span><TMPL_VAR KNX.FORMAT></span><select id="knx-ets-format"><option value=""><TMPL_VAR KNX.ENCODING_AUTO></option><option value="three_level">1/2/3</option><option value="two_level">1/123</option></select></label>
    </div>
@@ -132,5 +135,5 @@
   <button class="lb-button" value="continue"><TMPL_VAR KNX.CONTINUE></button>
  </form>
 </dialog>
-<script src="knx.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v4" defer></script>
-<script src="knx-import.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-import-v1" defer></script>
+<script src="knx.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v5" defer></script>
+<script src="knx-import.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-import-v2" defer></script>

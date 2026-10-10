@@ -35,6 +35,7 @@
       errorFile: ['knx_file_limit', 'knx_xml_structure_limit', 'knx_address_limit', 'knx_group_limit'],
       errorUnsafe: ['knx_xml_unsafe'],
       errorXml: ['knx_xml_invalid', 'knx_xml_element_unsupported', 'knx_xml_text_unsupported'],
+      errorCsv: ['knx_csv_invalid', 'knx_csv_header_unsupported', 'knx_csv_row_invalid', 'knx_csv_structure_limit'],
       errorStale: ['knx_revision_conflict', 'knx_target_conflict', 'knx_preview_changed',
         'knx_draft_expired', 'knx_session_missing'],
       errorLabels: ['knx_label_limit', 'knx_label_selection_invalid'],
