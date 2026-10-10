@@ -287,4 +287,7 @@ Sitzungen oder Token. Refresh-Eigentümerschaft und abschließende Zugriffsprüf
 bleiben familienbezogen. Verdrängung/Widerruf/Schließen entfernen Referenzen.
 Gleiche normalisierte Strukturen aus geänderten Bytes aktualisieren die private
 Identität ohne Erhöhung der Sichtbarkeitsgeneration. Clients ohne Lookup behalten
-ihren bisherigen Parserpfad. Öffentliche Antwortschemas bleiben gleich.
+ihren bisherigen Parserpfad. Beim ersten kalten Abruf ohne passenden Datensatz
+läuft die begrenzte SHA-256-Berechnung parallel zur Normalisierung; erst die fertige
+Identität kann an den Eigentümer zurückgegeben werden. Abbruch nimmt nichts auf.
+Öffentliche Antwortschemas bleiben gleich.

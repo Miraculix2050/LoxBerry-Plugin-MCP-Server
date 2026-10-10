@@ -71,11 +71,14 @@ def test_structure_reuse_has_only_existing_record_owners() -> None:
     runtime = _project_runtime(max_active_sessions=2)
     first = replace(_structure("current"), parse_identity="exact-input")
     runtime._records = {"first": SimpleNamespace(structure=first)}
+    assert runtime._has_received_structure("reader")
+    assert not runtime._has_received_structure("other-reader")
     assert runtime._find_received_structure("exact-input") is first
     assert runtime._find_received_structure("different-input") is None
     assert runtime._find_received_structure("") is None
     runtime._records.clear()
     assert runtime._find_received_structure("exact-input") is None
+    assert not runtime._has_received_structure("reader")
 
 
 @pytest.mark.asyncio

@@ -328,7 +328,7 @@ class LoxoneRuntime:
             max_structure_controls=max_structure_controls,
             max_structure_state_references=max_structure_state_references,
             max_structure_depth=max_structure_depth,
-            structure_lookup=self._find_received_structure,
+            structure_lookup=self,
         )
         self.auth_coordinator = auth_coordinator
         self._validate_access = validate_access
@@ -1224,6 +1224,12 @@ class LoxoneRuntime:
             if record.structure.parse_identity == parse_identity:
                 return record.structure
         return None
+
+    def _has_received_structure(self, username: str) -> bool:
+        return any(
+            record.structure.parse_identity and record.structure.identity.username == username
+            for record in self._records.values()
+        )
 
     async def _refresh_structure(
         self,

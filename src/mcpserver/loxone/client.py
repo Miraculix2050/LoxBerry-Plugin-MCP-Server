@@ -7,9 +7,9 @@ import hashlib
 import json
 import logging
 import re
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass, field, replace
-from typing import Any, Final
+from typing import Any, Final, Protocol
 from urllib.parse import quote
 from uuid import UUID
 
@@ -44,6 +44,21 @@ _LOGGER = logging.getLogger(__name__)
 _MAX_RESPONSE_BYTES: Final = 8 * 1024 * 1024
 _DEFAULT_TIMEOUT_SECONDS: Final = 10.0
 _APP_PERMISSION: Final = 4
+
+
+class _StructureLookup(Protocol):
+    def _find_received_structure(self, parse_identity: str) -> LoxoneStructure | None: ...
+
+    def _has_received_structure(self, username: str) -> bool: ...
+
+
+def _structure_parse_identity(payload: str, context: tuple[str | int, ...]) -> str:
+    digest = hashlib.sha256(json.dumps(context, separators=(",", ":")).encode())
+    digest.update(b"\0")
+    digest.update(payload.encode("utf-8"))
+    return digest.hexdigest()
+
+
 _PERCENT_COMMAND = r"(?:100(?:\.0+)?|(?:[0-9]|[1-9][0-9])(?:\.[0-9]+)?)"
 _CONTROL_COMMAND = re.compile(
     rf"(?:on|off|pulse|reset|FullUp|FullDown|shade|stop|auto|NoAuto|"
@@ -217,7 +232,7 @@ class LoxoneClient:
         max_structure_controls: int = 20_000,
         max_structure_state_references: int = 100_000,
         max_structure_depth: int = 32,
-        structure_lookup: Callable[[str], LoxoneStructure | None] | None = None,
+        structure_lookup: _StructureLookup | None = None,
     ) -> None:
         self.endpoint = endpoint
         self.client_uuid = client_uuid
@@ -524,7 +539,7 @@ class LoxoneWebSocketSession:
         max_structure_controls: int = 20_000,
         max_structure_state_references: int = 100_000,
         max_structure_depth: int = 32,
-        structure_lookup: Callable[[str], LoxoneStructure | None] | None = None,
+        structure_lookup: _StructureLookup | None = None,
         structure_namespace: str = "",
     ) -> None:
         self._websocket = websocket
@@ -595,26 +610,21 @@ class LoxoneWebSocketSession:
         ):
             raise LoxoneProtocolError("Miniserver structure response is not text")
         parse_identity = ""
-        if self._structure_lookup is not None:
-            # Only a complete independently received response may identify reuse.
-            digest = hashlib.sha256(
-                json.dumps(
-                    [
-                        "structure-normalization-v1",
-                        self._structure_namespace,
-                        self._token.username,
-                        self._max_payload,
-                        self._max_structure_controls,
-                        self._max_structure_state_references,
-                        self._max_structure_depth,
-                    ],
-                    separators=(",", ":"),
-                ).encode()
-            )
-            digest.update(b"\0")
-            digest.update(payload.encode("utf-8"))
-            parse_identity = digest.hexdigest()
-            candidate = self._structure_lookup(parse_identity)
+        context = (
+            "structure-normalization-v1",
+            self._structure_namespace,
+            self._token.username,
+            self._max_payload,
+            self._max_structure_controls,
+            self._max_structure_state_references,
+            self._max_structure_depth,
+        )
+        # Only a complete independently received response may identify reuse.
+        if self._structure_lookup is not None and self._structure_lookup._has_received_structure(
+            self._token.username
+        ):
+            parse_identity = _structure_parse_identity(payload, context)
+            candidate = self._structure_lookup._find_received_structure(parse_identity)
             if (
                 candidate is not None
                 and candidate.parse_identity == parse_identity
@@ -628,6 +638,13 @@ class LoxoneWebSocketSession:
             raise LoxoneProtocolError("Miniserver structure response is not JSON") from exc
         if not isinstance(document, Mapping):
             raise LoxoneProtocolError("Miniserver structure response is invalid")
+        identity_future = None
+        if self._structure_lookup is not None and not parse_identity:
+            # With no eligible owner there can be no hit. Hash concurrently with
+            # normalization instead of adding hashing time to the first cold load.
+            identity_future = asyncio.get_running_loop().run_in_executor(
+                None, _structure_parse_identity, payload, context
+            )
         try:
             structure = normalize_structure(
                 document,
@@ -636,6 +653,8 @@ class LoxoneWebSocketSession:
                 max_state_references=self._max_structure_state_references,
                 max_depth=self._max_structure_depth,
             )
+            if identity_future is not None:
+                parse_identity = await identity_future
             return (
                 replace(structure, parse_identity=parse_identity) if parse_identity else structure
             )
@@ -645,6 +664,9 @@ class LoxoneWebSocketSession:
                 str(exc).replace(" ", "_"),
             )
             raise LoxoneProtocolError("Miniserver structure response is invalid") from exc
+        finally:
+            if identity_future is not None:
+                identity_future.cancel()
 
     async def structure_version(self) -> str:
         """Return the current LoxAPP3 modification marker without downloading it."""

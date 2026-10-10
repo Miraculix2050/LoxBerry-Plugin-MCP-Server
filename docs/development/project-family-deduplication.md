@@ -266,4 +266,7 @@ retention, persistence or shared state/session/token. Refresh ownership and fina
 access checks remain family-specific. Eviction/revocation/close remove record
 references. Equal normalized structures from changed bytes update the private
 identity without incrementing the visibility generation. Plain clients without a
-lookup retain their original parsing path. Public response schemas stay unchanged.
+lookup retain their original parsing path. On the first cold load without an
+eligible record, bounded SHA-256 calculation runs concurrently with normalization;
+only the completed identity can be returned to the owner. Cancellation publishes
+nothing. Public response schemas stay unchanged.
