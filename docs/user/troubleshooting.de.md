@@ -19,7 +19,7 @@ nicht umgehen; eine bestätigte Miniserver-IP-Sperre hat Vorrang.
 Bei nicht verfügbarer Schutzpersistenz stoppen neue Anmeldungen. Den Zugriff auf
 die private Plugin-Zustandsdatei wiederherstellen und nach Behebung der Ursache
 den Dienst neu starten; einen aktiven Schutzstatus nicht nur für weitere Versuche
-löschen. Ein abgebrochener Prozess hinterlässt eine 60-Sekunden-Reservierung.
+löschen. Ein abgebrochener Prozess hinterlässt eine konservative Reservierung von bis zu einer Stunde.
 Zugangsdaten und Tokenwerte erscheinen nicht im Status. Eine umfassende
 Token-Bereinigung wird nicht angeboten; ihre Folgen werden getrennt untersucht.
 
