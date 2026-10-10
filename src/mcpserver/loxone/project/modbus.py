@@ -1,7 +1,7 @@
 """Allowlisted raw analog endpoint evidence; no defaults or protocol decoder."""
 
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 from .graph import GraphNode
 
@@ -69,7 +69,7 @@ def raw_fields(node: GraphNode) -> list[dict[str, object]]:
 def sensor_projection(
     node: GraphNode,
     nodes: Mapping[str, GraphNode],
-    parents: Mapping[str, list[str]],
+    parents: Mapping[str, Sequence[str]],
     limit: int,
 ) -> dict[str, object] | None:
     if node.kind != "block" or node.block_type not in {"ModbusASensor", "ModbusAActor"}:

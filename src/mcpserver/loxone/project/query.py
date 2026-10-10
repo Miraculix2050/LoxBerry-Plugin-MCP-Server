@@ -4,10 +4,21 @@ from __future__ import annotations
 
 import hashlib
 from collections import defaultdict, deque
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from sys import getsizeof
+from types import MappingProxyType
+from typing import cast
 
 from .coverage import coverage_by_source_type
-from .graph import API_CONNECTOR_RULE_ID, GraphEdge, GraphNode, SemanticEdge, is_api_connector
+from .graph import (
+    API_CONNECTOR_RULE_ID,
+    GraphEdge,
+    GraphNode,
+    ProjectGraph,
+    SemanticEdge,
+    is_api_connector,
+)
 from .mapping import ControlMapping, ProjectView
 from .modbus import sensor_projection
 from .semantics import (
@@ -29,23 +40,104 @@ class ProjectQueryError(ValueError):
     """A fixed public query category; never carries source content."""
 
 
+def _freeze_index_groups(
+    groups: dict[str, list[str]] | dict[str, list[str] | tuple[str, ...]],
+) -> Mapping[str, tuple[str, ...]]:
+    """Freeze temporary groups in place; no backing list escapes construction."""
+    frozen = cast(dict[str, tuple[str, ...]], groups)
+    for key, values in groups.items():
+        if not isinstance(values, tuple):
+            frozen[key] = tuple(values)
+    if isinstance(groups, defaultdict):
+        groups.default_factory = None
+    return MappingProxyType(frozen)
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectQueryIndex:
+    """Read-only topology only; owned by bounded queries, never authorization."""
+
+    graph: ProjectGraph = field(repr=False)
+    nodes: Mapping[str, GraphNode] = field(init=False, repr=False)
+    parents: Mapping[str, str] = field(init=False, repr=False)
+    containment_parents: Mapping[str, tuple[str, ...]] = field(init=False, repr=False)
+    children: Mapping[str, tuple[str, ...]] = field(init=False, repr=False)
+    container_bytes: int = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        parents: dict[str, str] = {}
+        containment: dict[str, list[str] | tuple[str, ...]] = {}
+        children: dict[str, list[str]] = defaultdict(list)
+        containment_links = 0
+        for edge in self.graph.edges:
+            if edge.kind == "contains":
+                containment_links += 1
+                parents[edge.target] = edge.source
+                prior = containment.get(edge.target)
+                if prior is None:
+                    containment[edge.target] = (edge.source,)
+                elif isinstance(prior, tuple):
+                    # Ambiguous ancestry accumulates linearly, never by tuple concatenation.
+                    containment[edge.target] = [prior[0], edge.source]
+                else:
+                    prior.append(edge.source)
+                children[edge.source].append(edge.target)
+        nodes = {node.key: node for node in self.graph.nodes}
+        containment_size = getsizeof(containment)
+        children_size = getsizeof(children)
+        containment_index = _freeze_index_groups(containment)
+        children_index = _freeze_index_groups(children)
+        object.__setattr__(self, "nodes", MappingProxyType(nodes))
+        object.__setattr__(self, "parents", MappingProxyType(parents))
+        object.__setattr__(self, "containment_parents", containment_index)
+        object.__setattr__(self, "children", children_index)
+        # Keys/nodes/graph strings are borrowed; count owned containers once.
+        object.__setattr__(
+            self,
+            "container_bytes",
+            (
+                getsizeof(self)
+                + getsizeof(nodes)
+                + getsizeof(parents)
+                + containment_size
+                + children_size
+                + getsizeof(()) * (len(containment_index) + len(children_index))
+                + (getsizeof((None,)) - getsizeof(())) * containment_links * 2
+                + sum(
+                    getsizeof(value)
+                    for value in (self.nodes, self.parents, self.containment_parents, self.children)
+                )
+            ),
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class ProjectQuery:
     """One read-only, identity-bound view of a project graph."""
 
     view: ProjectView
     control_names: dict[str, str]
-    _nodes: dict[str, GraphNode] = field(init=False, repr=False)
+    graph_index: ProjectQueryIndex | None = field(
+        default=None, kw_only=True, repr=False, compare=False
+    )
+    _nodes: Mapping[str, GraphNode] = field(init=False, repr=False)
     _mappings: dict[str, ControlMapping] = field(init=False, repr=False)
     _mapped_nodes: dict[str, list[ControlMapping]] = field(init=False, repr=False)
-    _parents: dict[str, str] = field(init=False, repr=False)
-    _containment_parents: dict[str, list[str]] = field(init=False, repr=False)
-    _children: dict[str, list[str]] = field(init=False, repr=False)
+    _parents: Mapping[str, str] = field(init=False, repr=False)
+    _containment_parents: Mapping[str, tuple[str, ...]] = field(init=False, repr=False)
+    _children: Mapping[str, tuple[str, ...]] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        object.__setattr__(
-            self, "_nodes", {node.key: node for node in self.view.snapshot.graph.nodes}
-        )
+        index = self.graph_index
+        if index is None:
+            index = ProjectQueryIndex(self.view.snapshot.graph)
+        elif index.graph is not self.view.snapshot.graph:
+            raise ProjectQueryError("project_index_mismatch")
+        object.__setattr__(self, "graph_index", index)
+        object.__setattr__(self, "_nodes", index.nodes)
+        object.__setattr__(self, "_parents", index.parents)
+        object.__setattr__(self, "_containment_parents", index.containment_parents)
+        object.__setattr__(self, "_children", index.children)
         mappings = {entry.control_uuid: entry for entry in self.view.mapping.entries}
         object.__setattr__(self, "_mappings", mappings)
         mapped_nodes: dict[str, list[ControlMapping]] = defaultdict(list)
@@ -53,17 +145,6 @@ class ProjectQuery:
             for key in entry.node_keys:
                 mapped_nodes[key].append(entry)
         object.__setattr__(self, "_mapped_nodes", mapped_nodes)
-        parents: dict[str, str] = {}
-        containment_parents: dict[str, list[str]] = defaultdict(list)
-        children: dict[str, list[str]] = defaultdict(list)
-        for edge in self.view.snapshot.graph.edges:
-            if edge.kind == "contains":
-                parents[edge.target] = edge.source
-                containment_parents[edge.target].append(edge.source)
-                children[edge.source].append(edge.target)
-        object.__setattr__(self, "_parents", parents)
-        object.__setattr__(self, "_containment_parents", containment_parents)
-        object.__setattr__(self, "_children", children)
 
     def _edge_data(self, edge: GraphEdge) -> dict[str, object]:
         data: dict[str, object] = {"kind": edge.kind, "source": edge.source, "target": edge.target}
@@ -96,7 +177,7 @@ class ProjectQuery:
         pending = deque([key])
         while pending:
             current = pending.popleft()
-            for child in self._children[current]:
+            for child in self._children.get(current, ()):
                 if child in seen:
                     continue
                 if len(result) >= limit:
@@ -263,7 +344,7 @@ class ProjectQuery:
             connector_ids = sorted(
                 key
                 for occurrence in self.view.snapshot.occurrence_keys_for(node.key)
-                for key in self._children[occurrence]
+                for key in self._children.get(occurrence, ())
                 if self._nodes[key].kind == "connector"
             )
             connector_evidence_truncated = len(connector_ids) > limit
@@ -369,7 +450,7 @@ class ProjectQuery:
                 diagnostics.append({"code": "unreviewed_knx_logic"})
             else:
                 connectors: dict[str, int] = defaultdict(int)
-                for child_key in self._children[node.key]:
+                for child_key in self._children.get(node.key, ()):
                     connector_key = next(
                         (value for name, value in self._nodes[child_key].attributes if name == "K"),
                         None,
@@ -821,7 +902,7 @@ class ProjectQuery:
         seed_truncated = False
         while pending and not seed_truncated:
             current = pending.popleft()
-            for child in self._children[current]:
+            for child in self._children.get(current, ()):
                 if child in seed_set:
                     continue
                 if len(seeds) >= max_nodes:
