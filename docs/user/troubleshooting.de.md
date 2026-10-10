@@ -20,6 +20,7 @@ Bei nicht verfügbarer Schutzpersistenz stoppen neue Anmeldungen. Den Zugriff au
 die private Plugin-Zustandsdatei wiederherstellen und nach Behebung der Ursache
 den Dienst neu starten; einen aktiven Schutzstatus nicht nur für weitere Versuche
 löschen. Ein abgebrochener Prozess hinterlässt eine konservative Reservierung von bis zu einer Stunde.
+Eine bestehende Source-IP-Wiederanlaufpolicy kann eine längere Reservierung erfordern und hat Vorrang.
 Zugangsdaten und Tokenwerte erscheinen nicht im Status. Eine umfassende
 Token-Bereinigung wird nicht angeboten; ihre Folgen werden getrennt untersucht.
 

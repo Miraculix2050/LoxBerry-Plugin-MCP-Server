@@ -19,6 +19,7 @@ private plugin state file and restart the service after resolving the cause; do
 not delete an active protection record merely to retry. An interrupted process
 leaves a conservative reservation of at most one hour. This also protects other
 processes if an authentication outcome could not be saved. No credentials or token values appear in status.
+An existing source-IP recovery policy can require a longer reservation and takes priority.
 Token-wide cleanup is not offered; its effects are under separate investigation.
 
 [Deutsch](troubleshooting.de.md)

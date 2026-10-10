@@ -439,7 +439,10 @@ class MiniserverAuthCoordinator:
         # Reserve the maximum pause before network access. If the outcome cannot
         # be persisted, other processes must not lose a rejection or escalation.
         # Normal outcomes clear this reservation; a crashed process is bounded.
-        guard["pending_until"] = now + 3600
+        recovery_reservation = max(3600, self._initial)
+        if self._state["breaker_state"] == "open_source_ip_blocked":
+            recovery_reservation = max(recovery_reservation, min(self._delay() * 2, self._maximum))
+        guard["pending_until"] = now + recovery_reservation
         try:
             self._save()
         except OSError:

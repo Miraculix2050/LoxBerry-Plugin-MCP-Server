@@ -93,6 +93,7 @@ restart the current pause without escalating it. Success outside recovery does
 not erase recent failures. Fresh token acquisition and session authentication
 share one atomic coordinator attempt; recovery succeeds only after both phases. Durable preflight reservations cover the maximum one-hour pause so an unsaved
 outcome cannot lose protection in another process, and bound crash recovery;
+the source-IP policy's initial or next escalated delay extends this reservation when stronger.
 unreadable or unwritable protection state denies new authentication. Existing
 authenticated sessions are not closed. A separate explicit native Admin action
 allows an early probe no more often than once per minute; background retry flags

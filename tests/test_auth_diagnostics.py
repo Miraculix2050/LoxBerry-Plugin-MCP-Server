@@ -523,6 +523,39 @@ async def test_unsaved_outcome_is_guarded_in_another_coordinator(
 
 
 @pytest.mark.asyncio
+async def test_unsaved_ip_block_probe_keeps_the_stronger_ip_recovery_delay(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = [5800]
+    monkeypatch.setattr("mcpserver.loxone.auth_diagnostics.time.time", lambda: now[0])
+    path = tmp_path / "auth.json"
+    coordinator = MiniserverAuthCoordinator(
+        path, initial_probe_seconds=300, maximum_probe_seconds=10000
+    )
+    coordinator._state.update(
+        breaker_state="open_source_ip_blocked", opened_at=1000, backoff_level=4
+    )
+    coordinator._save()
+
+    async def blocked() -> None:
+        def failed_save() -> None:
+            raise OSError("synthetic disk failure")
+
+        monkeypatch.setattr(coordinator, "_save", failed_save)
+        raise LoxoneSourceIpBlocked("blocked")
+
+    with pytest.raises(LoxoneSourceIpBlocked):
+        await coordinator.attempt(blocked, owner="tool_request", phase="session")
+    now[0] = 9401
+    restarted = MiniserverAuthCoordinator(
+        path, initial_probe_seconds=300, maximum_probe_seconds=10000
+    )
+    with pytest.raises(MiniserverAuthenticationCooldown):
+        await restarted.attempt(_authenticate, owner="tool_request", phase="session")
+    assert restarted.status()["next_auth_attempt_at"] == 15400
+
+
+@pytest.mark.asyncio
 async def test_crash_reservation_and_corrupt_state_fail_closed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
