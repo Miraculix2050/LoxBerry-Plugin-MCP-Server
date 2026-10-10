@@ -249,3 +249,23 @@ Grenzen und ohne TTL-Verlängerung wieder auf, bevor er seinen Cursor zurückgib
 Ablauf, Verdrängung und geänderte Eingaben machen
 zugehörige Cursor-Leases ungültig; ein neu erzeugtes Ergebnis reaktiviert keinen
 alten Cursor. Die Cache-Komponente persistiert und autorisiert nichts.
+
+## Gemeinsame Runtime-Zuordnungen (#404)
+
+Nach eigenem autorisiertem Projektdownload und aktueller sichtbarer Struktur darf
+eine Familie eine unveränderliche RuntimeMapping aus einer vorhandenen begrenzten
+Sicht desselben Nutzers und Miniservers übernehmen. Der Snapshot muss dasselbe
+Objekt sein. Der bestehende Zuordnungsfingerprint muss alle geordneten Steuerungs-
+UUIDs, Aktions-UUIDs, Elternbeziehungen, Namen, Typen, Raum-/Kategorie-IDs und deren
+sichtbare Namen sowie den Strukturmarker einschließen. Änderungen erzeugen eine
+neue Zuordnung.
+
+Vorbereitete Eingaben sind unveränderlich, kurzlebig und an das aktuelle
+Strukturobjekt gebunden. Die Konstruktion bereitet sie dadurch nur einmal vor.
+Der Projekt-UUID-Index berücksichtigt ausschließlich Bausteine. Familienbezogene
+Abfragen und veränderliche Namensverzeichnisse bleiben getrennt; die Zuordnung
+autorisiert keinen Zugriff. Bestehende Sichtbesitzer, Verdrängung, Widerruf und
+Schließen verwalten die Referenzen bei unveränderten konservativen Speicheransätzen
+pro Familie und bestehenden Grenzen. Es gibt keinen zusätzlichen Pool, keine
+Persistenz, Cursorfreigabe oder Worker-Serialisierung. Messungen betreffen CPU und
+gehaltene Python-Allokationen, ohne Transport und gesamten Dienst-RSS.

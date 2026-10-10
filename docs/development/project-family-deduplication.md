@@ -233,3 +233,21 @@ within the same bounds and original TTL before returning its own cursor.
 Expiry, eviction and changed input invalidate dependent cursor leases; recreating
 a result cannot resurrect an old cursor. There is no persistence or authorization
 in the cache primitive.
+
+## Shared runtime mappings (#404)
+
+After its own authorized project download and current visible structure, a family
+may borrow an immutable RuntimeMapping from an existing bounded view of the same
+identity and Miniserver. The snapshot must be the exact same object, and the
+existing mapping fingerprint must match all ordered control UUIDs, action UUIDs,
+parent relationships, names, types, room/category IDs and their visible names,
+and the structure marker. Changed inputs rebuild the mapping.
+
+Prepared inputs are immutable, ephemeral and bound to the current structure
+object. They avoid duplicate preparation during construction. Project UUID
+indexing considers block nodes only. Family queries and mutable control-name
+lookups remain separate; the mapping never authorizes access. Existing view
+owners, eviction, revocation and close manage references, with the existing
+conservative per-family mapping charges and retention limits. There is no new
+pool, persistence, cursor sharing or worker serialization. Measurements concern
+CPU and retained Python allocations, excluding transport and service RSS.
