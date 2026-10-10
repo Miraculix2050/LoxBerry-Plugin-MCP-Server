@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Reuse identical authorized project searches across families with complete visible
+  mapping/filter keys, independent downloads and final permission checks. Keep
+  bounded search results separate from private cursor generations and use the same
+  cache owner for project analysis without changing its bounds (#399).
+
 - Share read-only project query topology indexes across independently authorized
   views of the same graph. Keep visible mappings and names separate, reuse graph
   topology when a family's visible structure changes, and count shared index

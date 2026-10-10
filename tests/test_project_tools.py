@@ -270,7 +270,7 @@ async def test_project_tools_publish_bounded_read_only_contracts(monkeypatch):
         lambda: SimpleNamespace(family_id="family", miniserver_id="server", identity_id="identity"),
     )
     server = FastMCP("project-tools")
-    register_project_tools(server, None)
+    register_project_tools(server, SimpleNamespace(projects=SimpleNamespace(authorize=AsyncMock())))
 
     status = await server._tool_manager.get_tool("loxone_get_project_status").fn()  # type: ignore[union-attr]
     found = await server._tool_manager.get_tool("loxone_find_project_objects").fn()  # type: ignore[union-attr]
@@ -298,7 +298,7 @@ async def test_project_tools_keep_structured_mapping_and_cursor_errors(monkeypat
         lambda: SimpleNamespace(family_id="family", miniserver_id="server", identity_id="identity"),
     )
     server = FastMCP("project-tool-errors")
-    register_project_tools(server, None)
+    register_project_tools(server, SimpleNamespace(projects=SimpleNamespace(authorize=AsyncMock())))
 
     describe = await server._tool_manager.get_tool("loxone_describe_project_object").fn(  # type: ignore[union-attr]
         "ambiguous"
@@ -331,7 +331,7 @@ async def test_project_find_validates_address_before_loading_or_caching(monkeypa
         lambda: SimpleNamespace(family_id="family", miniserver_id="server", identity_id="identity"),
     )
     server = FastMCP("project-find-address-validation")
-    register_project_tools(server, None)
+    register_project_tools(server, SimpleNamespace(projects=SimpleNamespace(authorize=AsyncMock())))
     find = server._tool_manager.get_tool("loxone_find_project_objects").fn  # type: ignore[union-attr]
 
     invalid = await find(knx_group_address="6/2/27:2")
@@ -366,7 +366,9 @@ async def test_project_find_reuses_one_ordered_result_and_rejects_changed_marker
         view = SimpleNamespace(
             marker="v1",
             mapping=SimpleNamespace(structure_fingerprint="b" * 64),
-            snapshot=SimpleNamespace(fingerprint="a" * 64, model_version=1),
+            snapshot=SimpleNamespace(
+                fingerprint="a" * 64, model_version=1, content_identity="content"
+            ),
         )
 
         def __init__(self):
@@ -389,7 +391,7 @@ async def test_project_find_reuses_one_ordered_result_and_rejects_changed_marker
         lambda: SimpleNamespace(family_id="family", miniserver_id="server", identity_id="identity"),
     )
     server = FastMCP("project-find-pages")
-    register_project_tools(server, None)
+    register_project_tools(server, SimpleNamespace(projects=SimpleNamespace(authorize=AsyncMock())))
     tool = server._tool_manager.get_tool("loxone_find_project_objects")
     first, repeated = await asyncio.gather(
         tool.fn(limit=1),
@@ -1045,7 +1047,7 @@ async def test_project_tools_publish_fixed_source_failure_diagnostics(monkeypatc
 
     monkeypatch.setattr(tools_module, "_project_query", project_query)
     server = FastMCP("project-source-errors")
-    register_project_tools(server, None)
+    register_project_tools(server, SimpleNamespace(projects=SimpleNamespace(authorize=AsyncMock())))
 
     result = await server._tool_manager.get_tool("loxone_get_project_status").fn()  # type: ignore[union-attr]
 
@@ -1097,7 +1099,7 @@ async def test_project_tools_bound_large_find_and_trace_responses(monkeypatch):
         lambda: SimpleNamespace(family_id="family", miniserver_id="server", identity_id="identity"),
     )
     server = FastMCP("project-tool-size-limit")
-    register_project_tools(server, None)
+    register_project_tools(server, SimpleNamespace(projects=SimpleNamespace(authorize=AsyncMock())))
 
     found = await server._tool_manager.get_tool("loxone_find_project_objects").fn(limit=100)  # type: ignore[union-attr]
     traced = await server._tool_manager.get_tool("loxone_trace_project_logic").fn(  # type: ignore[union-attr]
@@ -1260,7 +1262,7 @@ async def test_registered_project_description_preserves_availability_contract(mo
 
     monkeypatch.setattr(tools_module, "_project_query", project_query)
     server = FastMCP("availability-contract")
-    register_project_tools(server, None)
+    register_project_tools(server, SimpleNamespace(projects=SimpleNamespace(authorize=AsyncMock())))
     tool = server._tool_manager.get_tool("loxone_describe_project_object")
     result = await tool.fn(identifier="visible-object", identifier_type="project_node_id")
     assert not result.ok
@@ -1274,3 +1276,99 @@ async def test_registered_project_description_preserves_availability_contract(mo
     assert schema["retry_after_seconds"]["anyOf"][0]["maximum"] == 60
     assert schema["retry_after_seconds"]["anyOf"][0]["minimum"] == 1
     assert "availability_phase" in schema
+
+
+@pytest.mark.asyncio
+async def test_project_find_shares_results_but_not_family_cursors(monkeypatch):
+    project = Query()
+    project.find = Mock(
+        return_value=[
+            {**Query().find()[0], "project_node_id": "p:1"},
+            {**Query().find()[0], "project_node_id": "p:2"},
+        ]
+    )
+    loader = AsyncMock(return_value=(project, SimpleNamespace(connected=True)))
+    access = SimpleNamespace(family_id="first", miniserver_id="server", identity_id="identity")
+    authorize = AsyncMock()
+    monkeypatch.setattr(tools_module, "_project_query", loader)
+    monkeypatch.setattr(tools_module, "_access", lambda: access)
+    server = FastMCP("shared-find")
+    register_project_tools(server, SimpleNamespace(projects=SimpleNamespace(authorize=authorize)))
+    find = server._tool_manager.get_tool("loxone_find_project_objects").fn
+    first = await find(query=" Switch ", limit=1)
+    access.family_id = "second"
+    second = await find(query="switch", limit=1)
+    assert first.ok and second.ok
+    assert first.data.next_cursor != second.data.next_cursor
+    foreign = await find(query="switch", cursor=first.data.next_cursor, limit=1)
+    assert foreign.data.error == "invalid_input"
+    own = await find(query="switch", cursor=second.data.next_cursor, limit=1)
+    assert own.data.items[0].project_node_id == "p:2"
+    assert project.find.call_count == 1
+    assert loader.await_count == 4
+    assert authorize.await_count == 3
+    second.data.items[0].project_node_id = "mutated"
+    repeated = await find(query="switch", limit=1)
+    assert repeated.data.items[0].project_node_id == "p:1"
+    authorize.side_effect = ProjectError("project_permission_denied")
+    denied = await find(query="switch", limit=1)
+    assert not denied.ok
+    assert project.find.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_project_find_failed_authorization_does_not_publish(monkeypatch):
+    project = Query()
+    project.find = Mock(side_effect=lambda **kwargs: Query().find(**kwargs))
+    monkeypatch.setattr(
+        tools_module,
+        "_project_query",
+        AsyncMock(return_value=(project, SimpleNamespace(connected=True))),
+    )
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: SimpleNamespace(family_id="family", miniserver_id="server", identity_id="identity"),
+    )
+    authorize = AsyncMock(side_effect=ProjectError("project_permission_denied"))
+    server = FastMCP("failed-find")
+    register_project_tools(server, SimpleNamespace(projects=SimpleNamespace(authorize=authorize)))
+    find = server._tool_manager.get_tool("loxone_find_project_objects").fn
+    assert not (await find()).ok
+    authorize.side_effect = None
+    assert (await find()).ok
+    assert project.find.call_count == 2
+
+
+@pytest.mark.parametrize("changed", ["server", "content", "model", "visibility", "filter"])
+@pytest.mark.asyncio
+async def test_project_find_different_inputs_do_not_share(monkeypatch, changed):
+    project = Query()
+    project.view = SimpleNamespace(
+        marker="view",
+        snapshot=SimpleNamespace(content_identity="content", model_version=1),
+        mapping=SimpleNamespace(structure_fingerprint="visible-names-and-controls"),
+    )
+    project.find = Mock(side_effect=lambda **kwargs: Query().find(**kwargs))
+    access = SimpleNamespace(family_id="first", identity_id="identity", miniserver_id="server")
+    monkeypatch.setattr(
+        tools_module,
+        "_project_query",
+        AsyncMock(return_value=(project, SimpleNamespace(connected=True))),
+    )
+    monkeypatch.setattr(tools_module, "_access", lambda: access)
+    server = FastMCP("isolated-find")
+    register_project_tools(server, SimpleNamespace(projects=SimpleNamespace(authorize=AsyncMock())))
+    find = server._tool_manager.get_tool("loxone_find_project_objects").fn
+    assert (await find()).ok
+    access.family_id = "second"
+    if changed == "server":
+        access.miniserver_id = "other-server"
+    elif changed == "content":
+        project.view.snapshot.content_identity = "other-bytes"
+    elif changed == "model":
+        project.view.snapshot.model_version = 2
+    elif changed == "visibility":
+        project.view.mapping.structure_fingerprint = "changed-visible-name"
+    assert (await find(kind="block" if changed == "filter" else None)).ok
+    assert project.find.call_count == 2

@@ -214,3 +214,20 @@ Construction/allocation measurements are separate from network downloads and
 whole-service RSS. Gen. 1 assessment used two independent loads of the one
 available full grant; distinct-family and changed-view sharing is also covered
 deterministically. The existing Restricted grant remains a live negative gate.
+
+## Shared search results (#399)
+
+A bounded ProjectResultCache owns shared search/analysis values separately from
+private cursor leases. Search keys include the Miniserver, exact project content
+identity, model/search version, complete visible mapping fingerprint (including
+names), and normalized filters. Limit and cursor affect pagination only. Search
+results are limited to eight entries / 64 MiB / 300 seconds; family/identity/view
+leases have a separate eight-entry limit and random generations. Analysis retains
+its four-entry / four-lease bounds using the same owner primitive.
+
+Every search still independently loads authorized project and current visibility,
+then authorizes again before publishing or returning cached values. Failed or
+cancelled authorization publishes no result. Response models copy retained data.
+Expiry, eviction and changed input invalidate dependent cursor leases; recreating
+a result cannot resurrect an old cursor. There is no persistence or authorization
+in the cache primitive.
