@@ -179,3 +179,30 @@ von Nutzerrechten. Gen.-1-Evidenz erlaubt keine Gen.-2-Zusage.
 
 Merge und Issue-Abschluss benötigen abgeschlossene Ziel-Gates, grüne finale CI,
 normales Review und separates Security-Audit ohne relevante offene Befunde.
+
+## Autorisierte Wiederverwendung von Analyseergebnissen (#396)
+
+Analyseergebnisse nutzen einen getrennten, begrenzten Cache im Arbeitsspeicher:
+vier Einträge, insgesamt 64 MiB und fünf Minuten Gültigkeit. Modbus berücksichtigt
+die vom Loader gebundene Projektidentität, Modell-/Analyseversionen und die
+gewählten Analysen. KNX berücksichtigt zusätzlich den vollständigen Fingerprint
+der sichtbaren Laufzeitzuordnung und gegebenenfalls die Adresstaxonomie.
+Unterschiedliche KNX-Zuordnungen teilen keine fertigen Ergebnisse.
+
+Jeder Aufruf, auch ein Treffer oder eine Fortsetzung, lädt das Projekt mit dem
+eigenen Grant herunter und aktualisiert die sichtbare Struktur. Nach Berechnung
+oder Abruf wird die Berechtigung erneut geprüft. Die Berechnung wird je
+Ergebnisschlüssel serialisiert; abgebrochene oder nicht mehr berechtigte Erzeuger
+veröffentlichen nichts.
+
+Cursor-Leases bleiben an Familie, Identität und Sicht gebunden, sind auf vier
+Einträge begrenzt und enthalten weder Ergebnisse noch Berechtigungsnachweise.
+Eine zufällige Generation verhindert, dass abgelaufene oder verdrängte Cursor
+wieder gültig werden, wenn eine andere Familie dasselbe Ergebnis neu erzeugt.
+Ablauf und Ergebnisverdrängung machen zugehörige Leases ungültig. Ergebnisse und
+Leases werden nicht persistiert. Öffentliche Schemas und Analyseversionen bleiben
+gleich. Zusätzliche Such-/Verbindungsindex-Caches gehören nicht zu dieser Änderung.
+
+Der Loader bindet die private Projektidentität an exakte heruntergeladene Bytes,
+Miniserver, Parser-Epoche/Modell und Verarbeitungsgrenzen, auch bei Graphen oberhalb
+der Graph-Cachegrenze. Ein Zeitstempel beweist weder Berechtigung noch Byteidentität.

@@ -5504,6 +5504,12 @@ def register_skill_tool(server: FastMCP) -> None:
         )
 
 
+_MAX_ANALYSIS_CACHE_ENTRIES = 4
+_MAX_ANALYSIS_CACHE_BYTES = 64 * 1024 * 1024
+_MAX_ANALYSIS_LEASES = 4
+_ANALYSIS_CACHE_TTL = 300
+
+
 class _ProjectAnalysisRunner:
     """Shared authorization/cache/page path, with internal-only Modbus dispatch."""
 
@@ -5516,6 +5522,8 @@ class _ProjectAnalysisRunner:
         self.config_store = config_store
         self.cursors = _CursorCodec()
         self.cache: OrderedDict[str, tuple[float, dict[str, object], int]] = OrderedDict()
+        # Leases contain no results or authorization: cursors stay family-bound.
+        self.leases: OrderedDict[str, tuple[float, str, str]] = OrderedDict()
         self.locks = tuple(asyncio.Lock() for _ in range(16))
         self.cache_bytes = 0
 
@@ -5554,12 +5562,16 @@ class _ProjectAnalysisRunner:
                 config = await asyncio.to_thread(self.config_store.load)
                 if config.knx_address_taxonomy_endpoint == self.runtime.endpoint.origin:
                     taxonomy = config.knx_address_taxonomy
+            content_identity = project.view.snapshot.content_identity
+            if not content_identity:
+                raise ProjectError("project_worker_invalid")
             analysis_scope = (
                 "project-analysis:"
                 + hashlib.sha256(
                     json.dumps(
                         [
                             scope,
+                            content_identity,
                             access.family_id,
                             access.miniserver_id,
                             access.identity_id,
@@ -5578,14 +5590,36 @@ class _ProjectAnalysisRunner:
                     ).encode()
                 ).hexdigest()
             )
-            self.cursors.decode(analysis_scope, cursor)
-            async with self.locks[int(analysis_scope[-2:], 16) % len(self.locks)]:
+            result_key = hashlib.sha256(
+                json.dumps(
+                    [
+                        scope,
+                        access.miniserver_id,
+                        content_identity,
+                        project.view.snapshot.model_version,
+                        version,
+                        sorted(selected),
+                        project.view.mapping.structure_fingerprint if scope == "knx" else None,
+                        [(entry.address_format, entry.prefix, entry.label) for entry in taxonomy],
+                    ],
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest()
+            async with self.locks[int(result_key[-2:], 16) % len(self.locks)]:
                 now = time.monotonic()
                 for key, (expires, _value, size) in tuple(self.cache.items()):
                     if expires <= now:
                         self.cache.pop(key)
                         self.cache_bytes -= size
-                cached = self.cache.get(analysis_scope)
+                for key, (expires, cached_key, _generation) in tuple(self.leases.items()):
+                    if expires <= now or cached_key not in self.cache:
+                        self.leases.pop(key)
+                lease = self.leases.get(analysis_scope)
+                if cursor is not None and (lease is None or lease[1] != result_key):
+                    raise ValueError("cursor has expired; start a new analysis")
+                cursor_scope = lease[2] if lease else analysis_scope + ":" + secrets.token_hex(16)
+                self.cursors.decode(cursor_scope, cursor)
+                cached = self.cache.get(result_key)
                 if cached is None:
                     if cursor is not None:
                         raise ValueError("cursor has expired; start a new analysis")
@@ -5597,29 +5631,41 @@ class _ProjectAnalysisRunner:
                             result = await process_analysis(project.view, selected, scope=scope)
                     await projects.authorize(access)
                     size = len(json.dumps(result, separators=(",", ":")).encode())
-                    if size > 64 * 1024 * 1024:
+                    if size > _MAX_ANALYSIS_CACHE_BYTES:
                         raise ProjectError("project_worker_limit")
-                    self.cache[analysis_scope] = (now + 300, result, size)
+                    expires = now + _ANALYSIS_CACHE_TTL
+                    self.cache[result_key] = (expires, result, size)
                     self.cache_bytes += size
-                    while len(self.cache) > 4 or self.cache_bytes > 64 * 1024 * 1024:
+                    while (
+                        len(self.cache) > _MAX_ANALYSIS_CACHE_ENTRIES
+                        or self.cache_bytes > _MAX_ANALYSIS_CACHE_BYTES
+                    ):
                         _key, (_expires, _value, removed) = self.cache.popitem(last=False)
                         self.cache_bytes -= removed
                 else:
                     _LOGGER.debug("component=project_analysis_cache outcome=hit")
-                    self.cache.move_to_end(analysis_scope)
+                    self.cache.move_to_end(result_key)
                     result = cached[1]
+                    expires = cached[0]
                     await projects.authorize(access)
+                self.leases[analysis_scope] = (expires, result_key, cursor_scope)
+                self.leases.move_to_end(analysis_scope)
+                while len(self.leases) > _MAX_ANALYSIS_LEASES:
+                    self.leases.popitem(last=False)
+                for key, (_expires, cached_key, _generation) in tuple(self.leases.items()):
+                    if cached_key not in self.cache:
+                        self.leases.pop(key)
             findings = result.get("findings")
             if not isinstance(findings, list):
                 raise ProjectError("project_worker_invalid")
-            page = _page(self.cursors, analysis_scope, findings, cursor, limit)
+            page = _page(self.cursors, cursor_scope, findings, cursor, limit)
             page["findings"] = page.pop("items")
             envelope = _result(
                 _PreparedProjectAnalysisEnvelope,
                 {**result, **page},
                 stale=not snapshot.connected,
             )
-            if not _fit_project_analysis_page(envelope, self.cursors, analysis_scope, cursor):
+            if not _fit_project_analysis_page(envelope, self.cursors, cursor_scope, cursor):
                 return _error(
                     _PreparedProjectAnalysisEnvelope,
                     "temporarily_unavailable",

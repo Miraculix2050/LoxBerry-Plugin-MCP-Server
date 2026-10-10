@@ -68,6 +68,10 @@ async def test_same_bytes_and_marker_do_not_skip_another_family_download(identit
         second = await service.load_snapshot(access("second", identity, miniserver))
         assert first == second
         assert (first is second) == (miniserver == "synthetic-miniserver")
+        assert first.content_identity and second.content_identity
+        assert (first.content_identity == second.content_identity) == (
+            miniserver == "synthetic-miniserver"
+        )
         assert client.download_project.await_count == 2
         assert [call.args[0].family_id for call in client.download_project.await_args_list] == [
             "first",
@@ -122,6 +126,7 @@ async def test_changed_response_bytes_with_same_marker_replace_snapshot_and_view
         assert updated is not first
         assert updated.view.snapshot is not other
         assert len(updated.view.snapshot.graph.nodes) == 3
+        assert updated.view.snapshot.content_identity != other.content_identity
         client.download_project.return_value = synthetic_project(2)
         assert await service.load_snapshot(access("second")) is other
     finally:
@@ -149,7 +154,9 @@ async def test_parser_epoch_change_does_not_reuse_old_content(monkeypatch):
     try:
         first = await service.load_snapshot(access("first"))
         monkeypatch.setattr(service_module, "_CONTENT_VERSION", (2, 13))
-        assert await service.load_snapshot(access("second")) is not first
+        second = await service.load_snapshot(access("second"))
+        assert second is not first
+        assert second.content_identity != first.content_identity
         assert worker.await_count == 2
     finally:
         await service.close()
@@ -341,5 +348,23 @@ async def test_same_marker_visibility_change_rebuilds_only_callers_view():
             is second
         )
         assert client.download_project.await_count == 4
+    finally:
+        await service.close()
+
+
+@pytest.mark.asyncio
+async def test_uncached_snapshots_keep_loader_identity_without_retaining_graph(monkeypatch):
+    service, client, _ = service_fixture()
+    monkeypatch.setattr(service_module, "_MAX_CACHE_BYTES", 0)
+    try:
+        first = await service.load_snapshot(access("first"))
+        second = await service.load_snapshot(access("second"))
+        assert first is not second
+        assert first.content_identity and first.content_identity == second.content_identity
+        assert not service._cache and not service._content_keys
+        assert client.download_project.await_count == 2
+        service.limits = replace(service.limits, elements=3)
+        third = await service.load_snapshot(access("third"))
+        assert third.content_identity != first.content_identity
     finally:
         await service.close()

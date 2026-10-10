@@ -5,6 +5,12 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Reuse authorized project-analysis results across OAuth families with identical
+  inputs. Keep KNX visibility/taxonomy inputs and family cursor leases separate;
+  retain independent downloads, fresh visibility and final authorization on every
+  cache hit and continuation. Bound shared results and invalidate expired cursors
+  across result recreation (#396).
+
 - Share identical parsed project content across OAuth families only after each
   caller's own authorized download. Recheck project-read permission through a
   download on warm calls and continuations too; retain separate visible mappings,

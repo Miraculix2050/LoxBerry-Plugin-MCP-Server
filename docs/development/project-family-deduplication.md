@@ -171,3 +171,27 @@ No Gen. 2 claim follows from Gen. 1 evidence.
 
 Merge/issue closure requires completed target gates, green final CI, ordinary
 review and the separate security audit with no relevant unresolved findings.
+
+## Authorized analysis result reuse (#396)
+
+Analysis results use a separate bounded in-memory cache: four entries, 64 MiB
+in total and a five-minute TTL. Modbus results depend on the loader-bound
+project content identity, model/analysis versions and selected analyses. KNX
+also includes the complete visible runtime-mapping fingerprint and any applicable
+address taxonomy. Different KNX mappings never share completed results.
+
+Every request, including a hit or continuation, independently downloads the
+project with its own grant and refreshes visible structure. Authorization is
+checked again after computing or retrieving the result. Shared computation is
+serialized per result key; cancelled or unauthorized producers publish nothing.
+
+Cursor leases remain family/identity/view-bound, are limited to four entries,
+and contain no results or authorization. A random lease generation prevents an
+expired or evicted cursor from becoming valid when another family recreates the
+same result. Expiry and result eviction invalidate dependent leases. Neither
+results nor leases are persisted. Public schemas and analysis versions stay
+unchanged. Additional search/relationship index caches are outside this change.
+
+The loader binds the private content identity to exact downloaded response bytes,
+Miniserver, parser epoch/model and processing limits, including graphs too large
+for the graph cache. A marker alone cannot prove authorization or identify bytes.

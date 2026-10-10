@@ -176,7 +176,7 @@ class Query:
     view = SimpleNamespace(
         marker="revision",
         mapping=SimpleNamespace(structure_fingerprint="b" * 64),
-        snapshot=SimpleNamespace(fingerprint="a" * 64, model_version=1),
+        snapshot=SimpleNamespace(fingerprint="a" * 64, model_version=1, content_identity="content"),
     )
 
     def status(self):
@@ -1145,7 +1145,9 @@ async def test_project_analysis_is_read_only_bounded_and_cursor_scoped(monkeypat
     class Runtime:
         def __init__(self):
             self.active_workers = 0
-            self.projects = SimpleNamespace(authorize=AsyncMock())
+            self.projects = SimpleNamespace(
+                authorize=AsyncMock(),
+            )
 
         @asynccontextmanager
         async def worker_slot(self):
