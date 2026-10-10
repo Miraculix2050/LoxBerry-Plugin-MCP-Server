@@ -202,3 +202,35 @@ is the detailed per-object evidence projection.
 ## KNX metadata administration
 
 The dedicated authenticated KNX CGI uses narrow local admin actions. Small prefix labels remain in the atomic configuration; per-target address records are indexed by numeric KNX address in `data/plugins/mcpserver/knx/metadata.sqlite3`. Database transactions and expected revisions reject concurrent updates. Metadata never changes Loxone names or authorizes project access. JSON exchange is separate from ETS file adapters.
+
+## Service-owned Admin discovery (#239)
+
+Admin Event History selection/validation and emergency-stop option discovery use
+one lazy, dedicated service-owned connection. Recorder and emergency-stop event
+subscriptions retain their separate sockets; MCP tools retain their own OAuth
+family's Loxone identity. The fixed loopback-only `POST /internal/admin-discovery`
+requires an installation-secret-derived local helper key, a fresh configuration/
+credential binding and one of two fixed projections. Apache does not proxy it.
+It never returns raw structure, credentials, project content or arbitrary commands.
+
+Each serviced request sends a complete new `data/LoxAPP3.json` request. A single
+receiver starts after authentication, with one pending file and no response queue.
+Valid state tables and keepalives have frame/byte/time budgets; unexpected text,
+unsolicited files and binary/Gzip files terminate the connection. No Gzip payload
+is assumed to be a structure response. Cancellation, timeout, provider failure,
+disconnect, identity/configuration change and service shutdown discard the affected
+connection and result. A failed request never reconnects automatically or returns
+an old snapshot. A later explicit request can establish a new guarded connection.
+Idle expiry is 60 seconds (checked every five seconds); absolute reuse is at most
+five minutes. Current credentials and configuration are checked before and after
+each load; source-IP blocking also prevents warm reuse. New authentication uses
+the shared rejection/coordinator protections from #408.
+
+**Accepted residual risk:** a partial permission change might leave an
+uninterrupted Miniserver session able to return previously visible objects until
+disconnect or bounded replacement. A complete structure download, a keepalive and
+an unchanged project marker do not prove universal permission freshness. The owner
+accepted this uncertainty for this internal Admin path. The 2026-10-10 full-access
+withdrawal test closed a held OAuth-identity socket with code 4004 and rejected its
+old token with 401 without an operator-triggered reboot. It did not test partial
+changes or the configured service identity and is not a firmware-wide guarantee.

@@ -183,12 +183,14 @@ class EmergencyOptionsCache:
         finally:
             temporary.unlink(missing_ok=True)
 
-    def refresh(self, discover: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+    def refresh(
+        self, discover: Callable[[], dict[str, Any]], *, join_concurrent: bool = True
+    ) -> dict[str, Any]:
         before = self.read()
         generation = before["generation"] if before is not None else 0
         with self._locked():
             current = self.read()
-            if current is not None and current["generation"] != generation:
+            if join_concurrent and current is not None and current["generation"] != generation:
                 return self.response(current, cached_only=False)
             result = discover()
             status = result.get("status")

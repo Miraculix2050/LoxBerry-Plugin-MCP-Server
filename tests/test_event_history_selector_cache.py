@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Barrier
 
 import pytest
 
@@ -69,6 +70,27 @@ def test_concurrent_refreshes_share_one_result(tmp_path):
         results = [future.result() for future in futures]
     assert len(calls) == 1
     assert results[0]["generation"] == results[1]["generation"]
+
+
+def test_concurrent_admin_refreshes_each_perform_fresh_discovery(tmp_path):
+    cache = _cache(tmp_path)
+    start = Barrier(3)
+    calls = []
+
+    def discover():
+        calls.append(1)
+        return _projection()
+
+    def refresh():
+        start.wait(timeout=5)
+        return cache.refresh(discover, join_concurrent=False)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        requests = [pool.submit(refresh) for _ in range(2)]
+        start.wait(timeout=5)
+        results = [request.result(timeout=5) for request in requests]
+    assert len(calls) == 2
+    assert all(result["controls"] for result in results)
 
 
 def test_concurrent_unchanged_refreshes_share_one_result_with_existing_cache(tmp_path):

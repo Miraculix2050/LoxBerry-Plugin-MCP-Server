@@ -10,9 +10,11 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from mcpserver import admin
 from mcpserver.admin import (
     AdminError,
     _allow_loxberry_operate,
@@ -648,7 +650,7 @@ def test_emergency_stop_options_distinguishes_empty_available_results(
     monkeypatch.setattr("mcpserver.admin._config_store", ConfigStore)
     monkeypatch.setattr("mcpserver.emergency_stop.virtual_status_options", empty_available)
 
-    assert dispatch({"action": "emergency_stop_options"}) == {
+    assert admin._discover_emergency_stop_options(ConfigStore().load(), manual_retry=False) == {
         "status": "available",
         "options": [],
     }
@@ -697,7 +699,7 @@ def test_emergency_stop_cache_failure_marks_retained_options_stale(
     monkeypatch.setattr("mcpserver.admin._config_store", ConfigStore)
     monkeypatch.setattr("mcpserver.admin._emergency_stop_cache", lambda _config: cache)
 
-    def fail(_discover: object) -> dict[str, object]:
+    def fail(_discover: object, **_kwargs: object) -> dict[str, object]:
         raise failure
 
     monkeypatch.setattr(cache, "refresh", fail)
@@ -752,7 +754,7 @@ def test_emergency_stop_options_uses_the_shared_authentication_breaker(
     monkeypatch.setattr("mcpserver.admin._config_store", ConfigStore)
     monkeypatch.setattr("mcpserver.emergency_stop.virtual_status_options", available)
 
-    assert dispatch({"action": "emergency_stop_options"}) == {
+    assert admin._discover_emergency_stop_options(ConfigStore().load(), manual_retry=False) == {
         "status": "available",
         "options": [],
     }
@@ -776,7 +778,7 @@ def test_emergency_stop_options_returns_a_fixed_internal_failure_code(
     monkeypatch.setattr("mcpserver.admin._config_store", ConfigStore)
     monkeypatch.setattr("mcpserver.emergency_stop.virtual_status_options", unavailable)
 
-    assert dispatch({"action": "emergency_stop_options"}) == {
+    assert admin._discover_emergency_stop_options(ConfigStore().load(), manual_retry=False) == {
         "status": "unavailable",
         "options": [],
         "discovery_failure_code": "credentials_helper_missing",
@@ -804,7 +806,7 @@ def test_emergency_stop_discovery_deadline_cancels_and_returns_fixed_failure(
     monkeypatch.setattr("mcpserver.admin._EMERGENCY_STOP_DISCOVERY_DEADLINE_SECONDS", 0.001)
     monkeypatch.setattr("mcpserver.emergency_stop.virtual_status_options", slow_discovery)
 
-    assert dispatch({"action": "emergency_stop_options"}) == {
+    assert admin._discover_emergency_stop_options(ConfigStore().load(), manual_retry=False) == {
         "status": "unavailable",
         "options": [],
         "discovery_failure_code": "connection_failed",
@@ -812,27 +814,21 @@ def test_emergency_stop_discovery_deadline_cancels_and_returns_fixed_failure(
     assert cancelled
 
 
-def test_admin_manual_emergency_stop_retry_is_explicit(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    class ConfigStore:
-        def load(self) -> PluginConfig:
-            return PluginConfig(loxone_endpoint="http://192.168.1.10")
+def test_admin_manual_emergency_stop_retry_is_explicit(monkeypatch, tmp_path):
+    from mcpserver import admin
 
-    seen: list[bool] = []
+    config = PluginConfig(loxone_endpoint="http://192.168.1.10")
+    seen = []
 
-    async def options(
-        _config: PluginConfig,
-        _coordinator: MiniserverAuthCoordinator,
-        *,
-        manual_retry: bool = False,
-    ) -> VirtualStatusOptions:
+    def project(_config, _store, kind, *, manual_retry):
+        assert kind == "emergency_stop"
         seen.append(manual_retry)
-        return VirtualStatusOptions(status="available", options=())
+        return {"status": "available", "options": []}
 
-    monkeypatch.setenv("MCPSERVER_AUTH_STORE", str((tmp_path / "auth.json").resolve()))
-    monkeypatch.setattr("mcpserver.admin._config_store", ConfigStore)
-    monkeypatch.setattr("mcpserver.emergency_stop.virtual_status_options", options)
+    monkeypatch.setattr(admin, "_config_store", lambda: SimpleNamespace(load=lambda: config))
+    monkeypatch.setattr(admin, "_auth_store", lambda: object())
+    monkeypatch.setattr(admin, "_emergency_stop_cache", lambda _config: None)
+    monkeypatch.setattr("mcpserver.service_discovery.request_projection", project)
     dispatch({"action": "emergency_stop_options"})
     dispatch({"action": "emergency_stop_retry"})
     assert seen == [False, True]

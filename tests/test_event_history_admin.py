@@ -112,7 +112,7 @@ def test_chart_query_requires_fresh_profile_bound_visibility(tmp_path, monkeypat
     class Cache:
         profile = "test-profile"
 
-        def refresh(self, discover):
+        def refresh(self, discover, **kwargs):
             discover()
             document["verified_at"] = int(time.time())
             return document
@@ -205,7 +205,7 @@ def test_chart_prepare_phase_diagnostics_are_value_free(tmp_path, monkeypatch):
     class Cache:
         profile = "private-profile-marker"
 
-        def refresh(self, discover):
+        def refresh(self, discover, **kwargs):
             discover()
             return document
 
@@ -821,23 +821,21 @@ def test_chart_prepare_serialization_diagnostics_do_not_echo_private_values(monk
 
 
 def test_selector_projection_passes_numeric_subphase_channel(monkeypatch):
-    from mcpserver.loxone.models import LoxoneIdentity, LoxoneStructure
-
     seen = []
 
-    async def visible_structure(*, timing):
+    def project(_config, _store, kind, *, timing):
+        assert kind == "event_history"
         seen.append(timing)
-        timing["selector_coordinator_wait_ms"] = 13.0
-        timing["selector_token_acquisition_ms"] = 3.0
-        timing["selector_session_establishment_ms"] = 5.0
-        timing["selector_structure_load_ms"] = 7.0
-        return LoxoneStructure(LoxoneIdentity("private-name", "private-serial"), "", (), (), ())
+        timing.update(
+            selector_coordinator_wait_ms=13.0,
+            selector_token_acquisition_ms=3.0,
+            selector_session_establishment_ms=5.0,
+            selector_structure_load_ms=7.0,
+        )
+        return {"controls": []}
 
-    monkeypatch.setattr(
-        event_history_admin,
-        "_monitor",
-        lambda _config: SimpleNamespace(visible_structure=visible_structure),
-    )
+    monkeypatch.setattr(admin, "_auth_store", lambda: object())
+    monkeypatch.setattr("mcpserver.service_discovery.request_projection", project)
     timing = {}
     assert event_history_admin._selector_projection(None, timing=timing)["controls"] == []
     assert seen == [timing]

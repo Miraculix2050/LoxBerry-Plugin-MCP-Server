@@ -5,6 +5,12 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Reuse a dedicated service-owned discovery connection for Admin selectors,
+  downloading a complete current structure for each request while keeping MCP
+  client authorization and recorder sockets separate. Bound session lifetime,
+  frame dispatch and failures; document the accepted partial-permission-change
+  uncertainty on uninterrupted sessions (#239, #297).
+
 - Pause new Miniserver authentication after three definite rejections in five
   minutes, with persisted 60-second to 60-minute backoff. Isolate public OAuth
   password failures from the shared service/token budget. Keep network

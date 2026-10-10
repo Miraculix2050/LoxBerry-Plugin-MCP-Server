@@ -805,12 +805,27 @@ def _emergency_stop_options(*, manual_retry: bool = False) -> dict[str, Any]:
     cache = _emergency_stop_cache(config)
 
     def discover() -> dict[str, Any]:
-        return _discover_emergency_stop_options(config, manual_retry=manual_retry)
+        from mcpserver.service_discovery import request_projection
+
+        if not config.loxone_endpoint:
+            return {"status": "not_configured", "options": []}
+        try:
+            return request_projection(
+                config, _auth_store(), "emergency_stop", manual_retry=manual_retry
+            )
+        except Exception as exc:
+            code = getattr(exc, "code", "temporarily_unavailable")
+            reason = {
+                "authentication_busy": "authentication_busy",
+                "authentication_cooldown": "authentication_cooldown",
+                "source_ip_blocked": "authentication_suppressed",
+            }.get(code, "connection_failed")
+            return {"status": "unavailable", "options": [], "discovery_failure_code": reason}
 
     if cache is None:
         return discover()
     try:
-        return cache.refresh(discover)
+        return cache.refresh(discover, join_concurrent=False)
     except TimeoutError:
         existing = cache.read()
         retained = bool(existing and existing["has_options"])
