@@ -141,6 +141,7 @@ class Phase0OAuthProvider(
         resource: str,
         clock: Callable[[], float] = time.time,
         on_family_revoked: Callable[[str], None] | None = None,
+        on_family_ended: Callable[[str, str], None] | None = None,
         on_family_started: Callable[[dict[str, Any]], None] | None = None,
         on_family_expired: Callable[[dict[str, Any]], None] | None = None,
         control_enabled: bool = False,
@@ -158,6 +159,7 @@ class Phase0OAuthProvider(
         self.resource = resource
         self._clock = clock
         self._on_family_revoked = on_family_revoked
+        self._on_family_ended = on_family_ended
         self._on_family_started = on_family_started
         self._on_family_expired = on_family_expired
         self.control_enabled = control_enabled
@@ -355,8 +357,7 @@ class Phase0OAuthProvider(
             if isinstance(family, dict):
                 expired.append(dict(family))
             document["families"].pop(family_id, None)
-            if self._on_family_revoked is not None:
-                self._on_family_revoked(family_id)
+            self._notify_family_ended(family_id, "family_expired")
         document["codes"] = {
             digest: record
             for digest, record in document["codes"].items()
@@ -643,6 +644,12 @@ class Phase0OAuthProvider(
             refresh_token=raw_refresh,
         )
 
+    def _notify_family_ended(self, family_id: str, reason: str) -> None:
+        if self._on_family_ended is not None:
+            self._on_family_ended(family_id, reason)
+        elif self._on_family_revoked is not None:
+            self._on_family_revoked(family_id)
+
     def _revoke_family(
         self, document: dict[str, Any], family_id: str, *, reason: str = "oauth_revocation"
     ) -> None:
@@ -653,9 +660,9 @@ class Phase0OAuthProvider(
             for record in document[collection].values():
                 if record.get("family_id") == family_id:
                     record["status"] = "revoked"
-        if self._on_family_revoked is not None:
+        if self._on_family_revoked is not None or self._on_family_ended is not None:
             try:
-                self._on_family_revoked(family_id)
+                self._notify_family_ended(family_id, reason)
             except Exception as exc:
                 _LOGGER.warning(
                     "component=oauth severity=WARNING outcome=token_cleanup_failed error_type=%s",

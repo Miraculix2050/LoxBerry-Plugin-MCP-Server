@@ -1501,11 +1501,11 @@ class LoxoneRuntime:
             self.cache.clear(family_id)
         self._prune_rate_state(time.monotonic())
 
-    async def revoke(self, family_id: str) -> None:
+    async def revoke(self, family_id: str, *, reason: str = "oauth_revocation") -> None:
         projects = getattr(self, "projects", None)
         if projects is not None:
             await projects.revoke(family_id)
-        await self.disconnect(family_id, reason="oauth_revocation")
+        await self.disconnect(family_id, reason=reason)
 
     async def close(self) -> None:
         # Stop queued admission before waiting for a connection already opening.

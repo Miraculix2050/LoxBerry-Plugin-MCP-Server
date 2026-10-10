@@ -2380,3 +2380,37 @@ async def test_approval_match_diagnostics_distinguish_capabilities_without_trans
     assert "capability=operate reason=no_exact_match" in matches[1]
     assert "capability=read reason=no_exact_match" in matches[2]
     assert "approved-client" not in caplog.text and "different-client" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "oauth_revocation",
+        "refresh_reuse",
+        "refresh_invalid_state",
+        "explorer_logout",
+        "family_expired",
+    ],
+)
+def test_family_end_callback_preserves_initiating_cause(tmp_path, reason):
+    clock = Clock()
+    ended = []
+    store = AtomicJsonAuthStore(tmp_path / "sessions.json")
+    provider = Phase0OAuthProvider(
+        store,
+        issuer=ISSUER,
+        resource=RESOURCE,
+        clock=clock,
+        on_family_ended=lambda family, cause: ended.append((family, cause)),
+    )
+    store.mutate(
+        lambda doc: doc["families"].update(
+            {"family": {"revoked": False, "expires_at": clock.value + 10}}
+        )
+    )
+    if reason == "family_expired":
+        clock.value += 10
+        provider._mutate_with_cleanup(lambda doc: None)
+    else:
+        store.mutate(lambda doc: provider._revoke_family(doc, "family", reason=reason))
+    assert ended == [("family", reason)]

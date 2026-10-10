@@ -1065,7 +1065,17 @@ def test_availability_retry_rejects_invalid_delays(delay) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("close_reason", ["shutdown", "idle_eviction", "oauth_revocation"])
+@pytest.mark.parametrize(
+    "close_reason",
+    [
+        "shutdown",
+        "idle_eviction",
+        "oauth_revocation",
+        "refresh_reuse",
+        "refresh_invalid_state",
+        "family_expired",
+    ],
+)
 async def test_disconnect_logs_one_terminal_close_with_initiating_reason(close_reason, caplog):
     access = _access()
     access.family_id = "private-disconnect-family"
@@ -1088,8 +1098,8 @@ async def test_disconnect_logs_one_terminal_close_with_initiating_reason(close_r
     runtime._records = {access.family_id: record}
     await started.wait()
     caplog.set_level("INFO", logger="mcpserver.auth.lifecycle")
-    await runtime.disconnect(access.family_id, reason=close_reason)
-    await runtime.disconnect(access.family_id, reason=close_reason)
+    await runtime.revoke(access.family_id, reason=close_reason)
+    await runtime.revoke(access.family_id, reason=close_reason)
     closes = [entry for entry in caplog.records if "event=connection_closed " in entry.getMessage()]
     assert len(closes) == 1
     assert f"reason={close_reason}" in closes[0].getMessage()
