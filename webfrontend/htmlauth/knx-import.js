@@ -4,6 +4,7 @@
   const page = document.getElementById('knx-page');
   const core = window.MCPKnx;
   const fileInput = document.getElementById('knx-ets-file');
+  const fileFormat = document.getElementById('knx-ets-file-format');
   const encoding = document.getElementById('knx-ets-encoding');
   const addressFormat = document.getElementById('knx-ets-format');
   const complete = document.getElementById('knx-ets-complete');
@@ -59,7 +60,8 @@
     const tokens = {addresses: frame.addresses, groups: frame.groups_count, additions: frame.additions,
       updates: frame.updates, duplicates: frame.merged_duplicates, conflicts: frame.conflict_count,
       removals: frame.removals, preserved: frame.preserved_overrides,
-      encoding: frame.encoding, style: frame.address_format === 'three_level' ? '1/2/3' : '1/123'};
+      encoding: frame.encoding, style: frame.address_format === 'three_level' ? '1/2/3' : '1/123',
+      file_format: `${(frame.file_format || 'xml').toUpperCase()}${frame.layout ? ` ${frame.layout}` : ''}`};
     document.getElementById('knx-ets-summary').textContent = ui.dataset.summary.replace(/\{(\w+)\}/g, (_all, key) => tokens[key])
       + ` ${frame.complete_export ? ui.dataset.complete : ui.dataset.partial}`;
     mode.value = frame.mode; orphanPolicy.value = frame.orphan_name_policy || '';
@@ -127,19 +129,23 @@
   };
   document.getElementById('knx-ets-load').addEventListener('click', () => void core.run(async () => {
     const payload = {target: core.snapshot().target, file: await encoded(fileInput.files[0]),
-      encoding: encoding.value, complete_export: complete.checked, address_format: addressFormat.value || null};
+      encoding: encoding.value, file_format: fileFormat.value,
+      complete_export: complete.checked, address_format: addressFormat.value || null};
     const result = await core.api('knx_import_load', payload);
     settingsDirty = false; taxonomyRevision = core.snapshot().taxonomy_revision;
     accept(result, {}); core.message(ui.dataset.review);
   }));
-  for (const control of [fileInput, encoding, complete, addressFormat]) control.addEventListener('change', () => {
+  for (const control of [fileInput, fileFormat, encoding, complete, addressFormat]) control.addEventListener('change', () => {
     settingsDirty = true; controls();
   });
   document.getElementById('knx-ets-previous').addEventListener('click', () => void refresh(frame.offset - 50));
   document.getElementById('knx-ets-next').addEventListener('click', () => void refresh(frame.offset + 50));
   document.getElementById('knx-conflict-previous').addEventListener('click', () => void refresh(frame.offset, choices, labels, frame.conflict_offset - 5));
   document.getElementById('knx-conflict-next').addEventListener('click', () => void refresh(frame.offset, choices, labels, frame.conflict_offset + 5));
-  mode.addEventListener('change', () => void refresh(0));
+  mode.addEventListener('change', () => {
+    if (mode.value === 'replace' && !orphanPolicy.value) orphanPolicy.value = 'retain_import_name';
+    void refresh(0);
+  });
   orphanPolicy.addEventListener('change', () => void refresh(frame.offset));
   document.getElementById('knx-ets-apply').addEventListener('click', () => void core.run(async () => {
     if (!frame || stale() || frame.conflict_count || frame.name_policy_required

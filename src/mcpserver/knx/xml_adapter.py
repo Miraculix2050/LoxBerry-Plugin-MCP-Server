@@ -7,27 +7,12 @@ import xml.etree.ElementTree as ET
 from typing import Any, cast
 
 from .import_model import MAX_GROUPS, ImportAddress, ImportDocument, ImportGroup
-from .model import MAX_ADDRESSES, MAX_FILE_BYTES, KnxError, address, metadata, text
+from .input_encoding import decode_input
+from .model import MAX_ADDRESSES, KnxError, address, text
+from .source_fields import source_fields
 
 NAMESPACE = "http://knx.org/xml/ga-export/01"
 TAG = "{" + NAMESPACE + "}"
-
-
-def decode_input(raw: bytes, encoding: str = "auto") -> tuple[str, str]:
-    if not raw or len(raw) > MAX_FILE_BYTES:
-        raise KnxError("knx_file_limit")
-    if encoding not in {"auto", "utf-8", "windows-1252"}:
-        raise KnxError("knx_encoding_invalid")
-    if b"\0" in raw:
-        raise KnxError("knx_encoding_unsupported")
-    candidates = ("utf-8", "windows-1252") if encoding == "auto" else (encoding,)
-    for candidate in candidates:
-        try:
-            value = raw.decode("utf-8-sig" if candidate == "utf-8" else "cp1252")
-            return value, candidate
-        except UnicodeDecodeError:
-            continue
-    raise KnxError("knx_encoding_invalid")
 
 
 class _BoundedTree:
@@ -88,24 +73,6 @@ class _BoundedTree:
 
     def close(self) -> ET.Element:
         return self.builder.close()
-
-
-def _fields(attrs: dict[str, str], *, group: bool = False) -> dict[str, Any]:
-    fields: dict[str, Any] = {}
-    for source, field in (("Name", "name"), ("Description", "description")):
-        if source in attrs:
-            fields[field] = attrs[source]
-    if not group:
-        if "DPTs" in attrs:
-            fields["dpts"] = attrs["DPTs"].split()
-        for source, field in (("Central", "central"), ("Unfiltered", "unfiltered")):
-            if source in attrs:
-                if attrs[source] not in {"true", "false"}:
-                    raise KnxError("knx_flag_invalid")
-                fields[field] = attrs[source] == "true"
-        if "Security" in attrs:
-            fields["security"] = attrs["Security"]
-    return metadata(fields, require_name=True)
 
 
 def _range(element: ET.Element, depth: int) -> tuple[int, int, str]:
@@ -177,7 +144,12 @@ def parse_xml(
                 ):
                     raise KnxError("knx_range_invalid")
                 ranges.append(
-                    (prefix, _fields(child.attrib, group=True), dict(child.attrib), len(parents))
+                    (
+                        prefix,
+                        source_fields(child.attrib, group=True),
+                        dict(child.attrib),
+                        len(parents),
+                    )
                 )
                 if len(ranges) > MAX_GROUPS:
                     raise KnxError("knx_group_limit")
@@ -203,7 +175,7 @@ def parse_xml(
                         number,
                         fmt,
                         original,
-                        _fields(child.attrib),
+                        source_fields(child.attrib),
                         {
                             "attributes": dict(child.attrib),
                             "parents": parent_prefixes(parents),

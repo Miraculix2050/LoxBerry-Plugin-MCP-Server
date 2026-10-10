@@ -85,7 +85,14 @@ def _run(
     if action not in {"knx_page", "knx_export"} and payload.get("target") != token:
         raise AdminError("KNX target changed; reload", code="knx_target_conflict")
     import_fields = {
-        "knx_import_load": {"target", "file", "encoding", "complete_export", "address_format"},
+        "knx_import_load": {
+            "target",
+            "file",
+            "encoding",
+            "complete_export",
+            "address_format",
+            "file_format",
+        },
         "knx_import_preview": {
             "target",
             "draft_id",
@@ -155,6 +162,7 @@ def _run(
                     encoding=payload.get("encoding", "auto"),
                     complete_export=payload.get("complete_export", False),
                     address_format=payload.get("address_format"),
+                    file_format=payload.get("file_format", "xml"),
                 ),
                 "target": token,
                 "target_display": target,

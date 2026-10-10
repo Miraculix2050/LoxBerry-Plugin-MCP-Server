@@ -31,7 +31,13 @@ extracted from the matching version heading.
   decisions, selected group metadata, field overrides and transactional reimport.
   Complete replacement preserves manual records and explicitly reviewed overrides;
   native upgrades retain the KNX database through an integrity-checked SQLite snapshot.
-  Loxone names remain primary. CSV and project metadata integration follow separately.
+  Loxone names remain primary. Project metadata integration follows separately.
+- Import modern ETS CSV 3/1 and 3/3 with tab separator and positional headers through
+  the same reviewed KNX import flow. Show detected format and encoding; preserve
+  quoted multiline text and ordered comma-separated DPT declarations across adapters.
+  Empty CSV cells remain unknown; source information never changes Loxone names.
+  Complete replacement defaults to preserving the previous additional ETS name for
+  retained overrides without a manual name, with preview before explicit saving.
 
 - Unify configured service-identity credentials and connection ownership for
   emergency-stop and Event History consumers. Keep separate connections, fresh

@@ -50,6 +50,7 @@ w.fetch = async (_url, options) => {
   if (action === 'knx_import_preview') {
     preview.selected_groups = payload.selected_groups;
     preview.mode = payload.mode;
+    preview.orphan_name_policy = payload.orphan_name_policy;
     if (Object.hasOwn(payload.choices, 'address:2563')) {
       preview.conflict_count = 0; preview.conflicts = [];
       preview.changes = [{address: '1/2/3', kind: 'changed', old_imported: {name: 'ETS'},
@@ -85,6 +86,7 @@ const click = async id => {w.document.getElementById(id).click(); await tick();}
   Object.defineProperty(file, 'files', {value: [{size: 6,
     arrayBuffer: async () => new Uint8Array([60, 120, 109, 108, 47, 62]).buffer}]});
   await click('knx-ets-load');
+  assert.equal(requests.at(-1).payload.file_format, 'auto');
   assert.equal(w.document.getElementById('knx-ets-preview').hidden, false);
   assert.equal(w.document.getElementById('knx-ets-apply').disabled, true);
   w.document.querySelectorAll('#knx-ets-conflicts input')[1].click(); await tick();
@@ -100,8 +102,23 @@ const click = async id => {w.document.getElementById(id).click(); await tick();}
   assert.equal(boxes[1].checked, false);
   w.delayPreview = false; w.resumePreview(); await tick();
   assert.deepEqual(requests.at(-1).payload.selected_groups, ['group:three_level:1']);
+  const mode = w.document.getElementById('knx-ets-mode');
+  mode.value = 'replace'; mode.dispatchEvent(new w.Event('change', {bubbles: true})); await tick();
+  assert.equal(requests.at(-1).payload.orphan_name_policy, 'retain_import_name');
+  const orphan = w.document.getElementById('knx-ets-orphan-policy');
+  orphan.value = 'keep_unknown';
+  orphan.dispatchEvent(new w.Event('change', {bubbles: true})); await tick();
+  assert.equal(requests.at(-1).payload.orphan_name_policy, 'keep_unknown');
+  mode.value = 'merge'; mode.dispatchEvent(new w.Event('change', {bubbles: true})); await tick();
+  mode.value = 'replace'; mode.dispatchEvent(new w.Event('change', {bubbles: true})); await tick();
+  assert.equal(requests.at(-1).payload.orphan_name_policy, 'keep_unknown');
+  const fileFormat = w.document.getElementById('knx-ets-file-format');
+  fileFormat.value = 'csv'; fileFormat.dispatchEvent(new w.Event('change', {bubbles: true}));
+  assert.equal(w.document.getElementById('knx-ets-apply').disabled, true);
+  assert.equal(w.document.getElementById('knx-ets-stale').textContent, 'Stale');
   rejectUpload = true;
   await click('knx-ets-load');
+  assert.equal(requests.at(-1).payload.file_format, 'csv');
   assert.match(w.document.getElementById('knx-status').textContent, /knx_xml_invalid/);
   assert.match(w.document.getElementById('knx-ets-changes').textContent, /B/);
   assert.equal(w.document.getElementById('knx-ets-preview').hidden, false);
