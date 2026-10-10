@@ -1735,7 +1735,7 @@ async def test_parallel_login_posts_acquire_only_one_loxone_token(
 
 @pytest.mark.parametrize("failure_type", [LoxoneConnectionError, LoxoneProtocolError])
 @pytest.mark.asyncio
-async def test_expired_login_transaction_is_removed_when_remote_kill_fails(
+async def test_expired_login_transaction_is_retained_when_remote_kill_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     failure_type: type[Exception],
@@ -1767,14 +1767,16 @@ async def test_expired_login_transaction_is_removed_when_remote_kill_fails(
             pass
 
         async def kill_token(self, value: LoxoneToken) -> None:
+            value.destroy()
             raise failure_type("remote unavailable")
 
     monkeypatch.setattr("mcpserver.auth.web.LoxoneClient", FailingLoxoneClient)
     await web._cleanup()
 
-    assert web.transactions == {}
-    assert transaction.loxone_token is None
-    assert token.value == ""
+    assert web.transactions == {transaction.transaction_id: transaction}
+    assert transaction.loxone_token is token
+    assert transaction.cleanup_pending
+    assert token.value == "sensitive-jwt"
 
 
 @pytest.mark.asyncio
@@ -1824,7 +1826,8 @@ async def test_transaction_cleanup_is_gated_by_authentication_breaker(
     await web._kill(transaction)
 
     assert calls == 0
-    assert transaction.loxone_token is None
+    assert transaction.loxone_token is not None
+    assert transaction.cleanup_pending
 
 
 @pytest.mark.asyncio
@@ -2218,3 +2221,65 @@ async def test_repeated_failed_logins_keep_distinct_token_cleanup_records(tmp_pa
     assert len(remaining) == 1 and remaining[0].family_id == queued[1].family_id
     for item in (*queued, *remaining):
         item.token.destroy()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("queue_write_fails", [False, True])
+async def test_consent_cleanup_is_durable_even_while_authentication_is_suppressed(
+    tmp_path, monkeypatch, queue_write_fails
+):
+    from unittest.mock import AsyncMock
+
+    from mcpserver.loxone.auth_diagnostics import MiniserverAuthenticationSuppressed
+
+    key = tmp_path / "install.key"
+    key.write_bytes(b"k" * 32)
+    token_store = EncryptedLoxoneTokenStore((tmp_path / "tokens.json").resolve(), key.resolve())
+    coordinator = MiniserverAuthCoordinator(tmp_path / "guard.json")
+    coordinator.attempt = AsyncMock(side_effect=MiniserverAuthenticationSuppressed("paused"))
+    web = Phase0OAuthWeb(
+        _provider(tmp_path),
+        endpoint=MiniserverEndpoint.parse_gen1("http://192.168.255.254"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+        auth_coordinator=coordinator,
+        loxone_store=token_store,
+    )
+    token = LoxoneToken("synthetic-consent-jwt", "reader", "key", "SHA256", 999999999)
+    tx = LoginTransaction(
+        transaction_id="expired-consent",
+        client_id="client",
+        client_name="Client",
+        redirect_uri=REDIRECT,
+        state="state",
+        code_challenge=CHALLENGE,
+        resource=RESOURCE,
+        csrf_token="csrf",
+        created_at=0,
+        loxone_token=token,
+        miniserver_id="synthetic-server",
+        identity_id="synthetic-reader",
+    )
+    web.transactions[tx.transaction_id] = tx
+    original_put = token_store.put
+    if queue_write_fails:
+
+        def failed_queue(*_args, **_kwargs):
+            raise OSError("synthetic queue write failure")
+
+        monkeypatch.setattr(token_store, "put", failed_queue)
+    await web._cleanup()
+    coordinator.attempt.assert_not_awaited()
+    if queue_write_fails:
+        assert web.transactions[tx.transaction_id] is tx
+        assert tx.loxone_token is token and token.value == "synthetic-consent-jwt"
+        assert tx.cleanup_pending
+        monkeypatch.setattr(token_store, "put", original_put)
+        await web._cleanup()
+    assert tx.transaction_id not in web.transactions
+    assert tx.loxone_token is None and token.value == ""
+    pending = token_store.pending_remote_revocations(2_000_000_000)
+    assert len(pending) == 1
+    assert pending[0].token.value == "synthetic-consent-jwt"
+    pending[0].token.destroy()
+    assert "synthetic-consent-jwt" not in (tmp_path / "tokens.json").read_text()

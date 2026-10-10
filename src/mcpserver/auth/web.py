@@ -17,7 +17,7 @@ import time
 from collections import deque
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Final
 from urllib.parse import urlencode, urlsplit
 from uuid import NAMESPACE_URL, uuid5
@@ -322,24 +322,30 @@ class Phase0OAuthWeb:
         token = transaction.loxone_token
         if token is None:
             return True
-        if transaction.cleanup_pending and self.loxone_store is not None:
+        transaction.cleanup_pending = True
+        if self.loxone_store is not None:
             return self._queue_retained_login_token(transaction)
+        # Keep the owned token until remote revocation is confirmed. The client
+        # destroys its argument even when authentication or transport fails.
+        cleanup_token = replace(token)
         try:
             client = LoxoneClient(self.endpoint, client_uuid=self._client_uuid)
             if self.auth_coordinator is None:
-                await client.kill_token(token)
+                await client.kill_token(cleanup_token)
             else:
                 await self.auth_coordinator.attempt(
-                    lambda: client.kill_token(token),
+                    lambda: client.kill_token(cleanup_token),
                     owner="tool_request",
                     phase="token_cleanup",
                 )
         except (LoxoneConnectionError, LoxoneProtocolError):
-            if transaction.cleanup_pending:
-                return False
-            token.destroy()
+            return False
+        finally:
+            cleanup_token.destroy()
+        token.destroy()
         transaction.loxone_token = None
         transaction.cleanup_pending = False
+        transaction.cleanup_id = None
         return True
 
     async def _cleanup(self) -> None:

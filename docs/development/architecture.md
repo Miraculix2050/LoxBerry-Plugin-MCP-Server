@@ -116,9 +116,13 @@ password pause. recovery_guard_state separately reports an unknown in-flight or
 interrupted outcome; both effective times include this global recovery reservation.
 Existing source-IP breaker fields keep their meaning. Remote revocations defer without
 consuming their network-attempt budget when the trusted guard, global recovery reservation or confirmed IP gate is active.
-An issued OAuth token whose sign-in cannot finish is encrypted with its remote
+An issued OAuth token whose sign-in or consent cannot finish is encrypted with its remote
 revocation marker in one existing token-store write. If that write fails, the
 login transaction retains it and blocks new issuance until cleanup can be queued.
+Consent denial and expiration use this same durable queue rather than opening a
+separate foreground cleanup connection; an authentication pause cannot discard
+the only token copy. Without a token store, failed cleanup retains the transaction
+and a separate temporary token copy is used for the remote attempt.
 
 Configuration, encrypted sessions and plugin identity persist outside the package. Secrets are separated from ordinary configuration. Root lifecycle hooks consume service templates only from the current installer staging area, never from the installed plugin configuration or binary directories. The staging area's integrity remains a LoxBerry Core trust boundary because Core runs unprivileged lifecycle hooks before `postroot`; plugin code cannot make that shared staging area root-owned. Within the persistent LoxBerry tree, sensitive root operations use descriptor-relative traversal and reject symbolic links, non-regular files and path replacement. Install, upgrade and removal follow the native LoxBerry layout; upgrade preserves supported configuration and authentication state through idempotent migration. The service starts unprivileged, validates configuration and listens only on loopback.
 
