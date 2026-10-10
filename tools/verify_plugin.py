@@ -94,6 +94,7 @@ _EXECUTABLES: Final = {
     "bin/renew-web-certificate",
     "bin/root-lifecycle-paths.py",
     "webfrontend/htmlauth/index.cgi",
+    "webfrontend/htmlauth/knx.cgi",
     "webfrontend/htmlauth/explorer.cgi",
     "webfrontend/htmlauth/explorer_callback.cgi",
     "webfrontend/htmlauth/event_history.cgi",

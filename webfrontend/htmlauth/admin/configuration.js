@@ -8,15 +8,9 @@ window.McpAdmin.createConfiguration = (
   const manualEndpointFields = document.getElementById('manual-endpoint-fields');
   const miniserverEndpoint = document.getElementById('miniserver-endpoint');
   const mcpConfigForm = document.getElementById('mcp-config-form');
-  const taxonomyEntries = document.getElementById('knx-taxonomy-entries');
-  const taxonomyExport = document.getElementById('knx-taxonomy-export');
-  const taxonomyImport = document.getElementById('knx-taxonomy-import');
-  const taxonomyFile = document.getElementById('knx-taxonomy-file');
-  const taxonomyFileStatus = document.getElementById('knx-taxonomy-file-status');
   const mqttConfigForm = document.querySelector('form[data-ajax="save_mqtt_config"]');
   const configurationFieldsets = [
     document.getElementById('mcp-config-fields'),
-    document.getElementById('knx-taxonomy-fields'),
     document.getElementById('mqtt-config-fields'),
     document.getElementById('logging-config-fields'),
   ];
@@ -53,50 +47,6 @@ window.McpAdmin.createConfiguration = (
   let configurationLoaded = false;
   let configurationLoadInFlight = false;
   let savedPublicOrigin = null;
-  let displayedTaxonomyEndpoint = '';
-  const renderTaxonomy = (configuration) => {
-    const endpoint = String(configuration?.loxone?.endpoint || '').replace(/\/$/, '');
-    const taxonomy = configuration?.knx_address_taxonomy || {};
-    displayedTaxonomyEndpoint = endpoint;
-    taxonomyEntries.value = taxonomy.endpoint === endpoint
-      ? (taxonomy.entries || []).map((entry) =>
-        (entry.address_format === 'two_level' ? '2:' : '3:') + entry.prefix + '=' + entry.label,
-      ).join('\n')
-      : '';
-    taxonomyFileStatus.textContent = '';
-  };
-  const taxonomyFileLimit = 64 * 1024;
-  taxonomyExport.hidden = false;
-  taxonomyImport.hidden = false;
-  taxonomyExport.addEventListener('click', () => {
-    const content = new Blob([taxonomyEntries.value], {type: 'text/plain;charset=utf-8'});
-    const url = URL.createObjectURL(content);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'knx-address-labels.txt';
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 30000);
-    taxonomyFileStatus.textContent = taxonomyFileStatus.dataset.exported;
-  });
-  taxonomyImport.addEventListener('click', () => taxonomyFile.click());
-  taxonomyFile.addEventListener('change', async () => {
-    const file = taxonomyFile.files?.[0];
-    taxonomyFile.value = '';
-    if (!file) return;
-    try {
-      if (file.size > taxonomyFileLimit) throw new Error('file_too_large');
-      const content = new TextDecoder('utf-8', {fatal: true}).decode(await file.arrayBuffer());
-      if (content.length > taxonomyEntries.maxLength || content.includes('\0')) {
-        throw new Error('invalid_file_content');
-      }
-      taxonomyEntries.value = content;
-      taxonomyFileStatus.textContent = taxonomyFileStatus.dataset.loaded;
-    } catch {
-      taxonomyFileStatus.textContent = taxonomyFileStatus.dataset.invalid;
-    }
-  });
   const renderLogging = (configuration) => {
     const configured = configuration && configuration.logging ? configuration.logging : {};
     const level = ['off', 'error', 'warning', 'info', 'debug'].includes(configured.level)
@@ -148,7 +98,6 @@ window.McpAdmin.createConfiguration = (
     const mqtt = configuration?.mqtt || {};
     const emergencyStop = configuration?.emergency_stop || {};
     const eventHistory = configuration?.event_history || {};
-    renderTaxonomy(configuration);
     const publicOrigin = String(server.public_origin || '')
       || String(mcpConfigForm.elements.namedItem('public_origin')?.value || '');
     savedPublicOrigin = String(server.public_origin || '');
@@ -473,9 +422,6 @@ window.McpAdmin.createConfiguration = (
     void loadCachedEmergencyStopOptions(emergencyStopDiscoveryGeneration);
     service.scheduleServicePoll(0);
     miniserverEndpoint.value = savedEndpoint;
-    if (String(savedEndpoint || '').replace(/\/$/, '') !== displayedTaxonomyEndpoint) {
-      renderTaxonomy(data.configuration);
-    }
     explorerLink.href = `${window.location.origin}${explorerPath}`;
   };
   const onMqttSaved = (data) => {
@@ -484,9 +430,6 @@ window.McpAdmin.createConfiguration = (
     mqttPasswordStatus.hidden = !Boolean(data.mqtt_password_configured);
     renderConfigurationBadges(data.configuration);
   };
-  const onTaxonomySaved = (data) => {
-    renderTaxonomy(data.configuration);
-  };
   return {mcpConfigForm, loadConfiguration, loadInitialState,
-    onMcpSaved, onMqttSaved, onTaxonomySaved, renderLogging, renderConfigurationBadges};
+    onMcpSaved, onMqttSaved, renderLogging, renderConfigurationBadges};
 };

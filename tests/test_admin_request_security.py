@@ -204,7 +204,7 @@ def test_origin_tuple(overrides: dict[str, str | None], allowed: bool) -> None:
 
 
 @pytest.mark.skipif(os.name == "nt", reason="CGI executable-helper integration requires Linux")
-@pytest.mark.parametrize("endpoint", ("index.cgi", "event_history.cgi"))
+@pytest.mark.parametrize("endpoint", ("index.cgi", "event_history.cgi", "knx.cgi"))
 @pytest.mark.parametrize(("overrides", "allowed"), CASES)
 def test_cgi_guard_before_helper(
     tmp_path: Path, endpoint: str, overrides: dict[str, str | None], allowed: bool
@@ -226,7 +226,11 @@ def test_cgi_guard_before_helper(
         encoding="utf-8",
     )
     helper.chmod(0o755)
-    action = "get_config" if endpoint == "index.cgi" else "event_history_local_overview"
+    action = {
+        "index.cgi": "get_config",
+        "event_history.cgi": "event_history_local_overview",
+        "knx.cgi": "knx_page",
+    }[endpoint]
     body = f"action={action}&ajax=1"
     command = [
         perl,

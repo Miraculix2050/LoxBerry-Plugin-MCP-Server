@@ -198,3 +198,7 @@ classifies KNX/Loxone boundary paths whose endpoints are exact KNX endpoints or
 exact runtime mappings. Search and trace use compact node projections and
 enforce a 64-KiB envelope limit with explicit response-size truncation; describe
 is the detailed per-object evidence projection.
+
+## KNX metadata administration
+
+The dedicated authenticated KNX CGI uses narrow local admin actions. Small prefix labels remain in the atomic configuration; per-target address records are indexed by numeric KNX address in `data/plugins/mcpserver/knx/metadata.sqlite3`. Database transactions and expected revisions reject concurrent updates. Metadata never changes Loxone names or authorizes project access. JSON exchange is separate from ETS file adapters.

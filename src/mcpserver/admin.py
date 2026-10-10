@@ -544,6 +544,7 @@ def _save(payload: object) -> dict[str, Any]:
             config,
             knx_address_taxonomy_endpoint=previous.knx_address_taxonomy_endpoint,
             knx_address_taxonomy=previous.knx_address_taxonomy,
+            knx_taxonomy_targets=previous.knx_taxonomy_targets,
         )
     if "policies" not in payload:
         config = replace(
@@ -1836,6 +1837,10 @@ def _dispatch(request: object, *, timing: dict[str, float | int] | None = None) 
         raise AdminError("request is invalid")
     action = request["action"]
     payload = request.get("payload", {})
+    if action.startswith("knx_"):
+        from mcpserver.knx.admin import dispatch_knx
+
+        return dispatch_knx(action, payload, _config_store())
     if action == "page_snapshot":
         sections: dict[str, dict[str, Any]] = {}
         for section_action in (
@@ -2021,8 +2026,11 @@ def main() -> None:
     timing: dict[str, float | int] = {}
     action: str | None = None
     try:
-        raw = sys.stdin.buffer.read(_MAX_REQUEST_BYTES + 1)
-        if len(raw) > _MAX_REQUEST_BYTES:
+        maximum = (
+            24 * 1024 * 1024 if os.getenv("MCPSERVER_KNX_ADMIN") == "1" else _MAX_REQUEST_BYTES
+        )
+        raw = sys.stdin.buffer.read(maximum + 1)
+        if len(raw) > maximum:
             raise AdminError("request is too large")
         request = json.loads(raw)
         action = request.get("action") if isinstance(request, dict) else None
