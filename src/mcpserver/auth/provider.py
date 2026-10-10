@@ -33,6 +33,7 @@ from mcpserver.auth.store import (
     lifecycle_client_reference,
     lifecycle_event,
     mark_family_revoked,
+    revocation_details,
     token_digest,
 )
 
@@ -662,7 +663,10 @@ class Phase0OAuthProvider(
                     record["status"] = "revoked"
         if self._on_family_revoked is not None or self._on_family_ended is not None:
             try:
-                self._notify_family_ended(family_id, reason)
+                callback_reason = (
+                    revocation_details(family)[0] if isinstance(family, dict) else reason
+                )
+                self._notify_family_ended(family_id, callback_reason)
             except Exception as exc:
                 _LOGGER.warning(
                     "component=oauth severity=WARNING outcome=token_cleanup_failed error_type=%s",

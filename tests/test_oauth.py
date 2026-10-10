@@ -2414,3 +2414,40 @@ def test_family_end_callback_preserves_initiating_cause(tmp_path, reason):
     else:
         store.mutate(lambda doc: provider._revoke_family(doc, "family", reason=reason))
     assert ended == [("family", reason)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("first_reason", ["admin_session", "refresh_reuse", None])
+async def test_repeated_revocation_callback_uses_persisted_first_cause(tmp_path, first_reason):
+    ended = []
+    provider = Phase0OAuthProvider(
+        AtomicJsonAuthStore(tmp_path / "sessions.json"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+        on_family_ended=lambda family, cause: ended.append((family, cause)),
+    )
+    family = {
+        "revoked": True,
+        "expires_at": provider.now() + 1000,
+        "revoked_at": provider.now() - 1,
+    }
+    if first_reason is not None:
+        family.update(revocation_reason=first_reason, revocation_source="admin")
+    provider.store.mutate(
+        lambda doc: (
+            doc["families"].update({"family": family}),
+            doc["refresh_tokens"].update(
+                {
+                    hashlib.sha256(b"synthetic-repeat-token").hexdigest(): {
+                        "family_id": "family",
+                        "client_id": "client",
+                        "status": "revoked",
+                    }
+                }
+            ),
+        )
+    )
+    await provider.revoke_raw_token("synthetic-repeat-token", "client", reason="explorer_logout")
+    await provider.revoke_raw_token("synthetic-repeat-token", "client")
+    assert ended == [("family", first_reason or "unknown")] * 2
+    assert provider.store.snapshot()["families"]["family"] == family
