@@ -405,6 +405,33 @@ async def test_only_typed_auth_rejections_consume_budget(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("expired", [False, True])
+@pytest.mark.parametrize("code", ["401", "403"])
+async def test_command_rejection_never_restarts_a_recovery_pause(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, expired: bool, code: str
+) -> None:
+    now = [1000]
+    monkeypatch.setattr("mcpserver.loxone.auth_diagnostics.time.time", lambda: now[0])
+    coordinator = MiniserverAuthCoordinator(tmp_path / "auth.json")
+    await _open_guard(coordinator)
+    coordinator._state["failure_guard"]["until"] = 1120
+    coordinator._state["failure_guard"]["level"] = 1
+    coordinator._save()
+    now[0] = 1121 if expired else 1060
+
+    async def denied() -> None:
+        raise LoxoneCommandRejected("permission", response_code=code)
+
+    with pytest.raises(LoxoneCommandRejected):
+        await coordinator.attempt(
+            denied, owner="local_admin", phase="token_cleanup", early_probe=not expired
+        )
+    assert coordinator.status()["next_auth_attempt_at"] == 1120
+    assert coordinator.status()["failure_guard_state"] == ("closed" if expired else "cooldown")
+    assert coordinator._state["failure_guard"]["level"] == 1
+
+
+@pytest.mark.asyncio
 async def test_rejected_probes_escalate_and_manual_probes_are_globally_spaced(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

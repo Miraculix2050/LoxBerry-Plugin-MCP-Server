@@ -36,7 +36,7 @@ def _interprocess_lock(path: Path) -> Iterator[None]:
     """Serialize state reloads and updates across the service and Admin process."""
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     descriptor = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
-    with os.fdopen(descriptor, "a+b") as handle:
+    with os.fdopen(descriptor, "r+b") as handle:
         locked = False
         try:
             if sys.platform == "win32":  # pragma: win32 cover
@@ -465,8 +465,6 @@ class MiniserverAuthCoordinator:
                 if was_guarded or len(guard["failures"]) >= 3:
                     guard["level"] = min(guard["level"] + (1 if was_guarded else 0), 6)
                     guard["until"] = finished + min(60 * 2 ** guard["level"], 3600)
-            elif was_guarded:
-                guard["until"] = finished + min(60 * 2 ** guard["level"], 3600)
             if exc.response_code == "4003":
                 self._open_source_ip_breaker(
                     now=now, owner=owner, phase=phase, provenance=provenance
