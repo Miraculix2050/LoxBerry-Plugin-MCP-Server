@@ -12,6 +12,7 @@ import stat
 import sys
 import threading
 import time
+import unicodedata
 from collections.abc import Callable
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
@@ -207,6 +208,31 @@ def _bindings(value: object, *, name: str) -> tuple[str, ...]:
     return tuple(bindings)
 
 
+def binding_application_name(value: object) -> str:
+    """Return bounded display metadata; never an authorization identity."""
+    if not isinstance(value, str):
+        return ""
+    name = value.strip()
+    if (
+        not name
+        or len(name) > 200
+        or any(unicodedata.category(char).startswith("C") for char in name)
+    ):
+        return ""
+    return name
+
+
+def _binding_names(value: object, *, bindings: tuple[str, ...]) -> tuple[tuple[str, str], ...]:
+    if not isinstance(value, dict) or len(value) > 2 * MAX_LOXBERRY_BINDINGS:
+        raise ConfigError("policies.loxberry_binding_names must be a bounded object")
+    result: list[tuple[str, str]] = []
+    for binding, name in value.items():
+        if binding not in bindings or not binding_application_name(name) or name != name.strip():
+            raise ConfigError("policies.loxberry_binding_names has unsupported display metadata")
+        result.append((binding, name))
+    return tuple(result)
+
+
 @dataclass(frozen=True, slots=True)
 class ExplorerBindingApproval:
     """Pseudonymous, reusable approval for the fixed local Tool Explorer."""
@@ -310,6 +336,7 @@ class PluginConfig:
     log_level: str = DEFAULT_LOG_LEVEL
     loxberry_read_bindings: tuple[str, ...] = ()
     loxberry_operate_bindings: tuple[str, ...] = ()
+    loxberry_binding_names: tuple[tuple[str, str], ...] = ()
     explorer_bindings: tuple[ExplorerBindingApproval, ...] = ()
     statistics_memory_max_mib: int = DEFAULT_STATISTICS_MEMORY_MAX_MIB
     event_history_enabled: bool = False
@@ -564,6 +591,10 @@ class PluginConfig:
             policies.get("loxberry_operate_bindings", []),
             name="policies.loxberry_operate_bindings",
         )
+        loxberry_binding_names = _binding_names(
+            policies.get("loxberry_binding_names", {}),
+            bindings=loxberry_read_bindings + loxberry_operate_bindings,
+        )
         explorer_bindings = _explorer_bindings(policies.get("explorer_bindings", []))
         cache_max_mib = _integer(
             cache.get("statistics_memory_max_mib", DEFAULT_STATISTICS_MEMORY_MAX_MIB),
@@ -647,6 +678,7 @@ class PluginConfig:
             log_level=log_level,
             loxberry_read_bindings=loxberry_read_bindings,
             loxberry_operate_bindings=loxberry_operate_bindings,
+            loxberry_binding_names=loxberry_binding_names,
             explorer_bindings=explorer_bindings,
             statistics_memory_max_mib=cache_max_mib,
             event_history_enabled=event_history_enabled,
@@ -732,6 +764,7 @@ class PluginConfig:
         document["logging"].pop("debug_until", None)
         document["policies"]["loxberry_read_bindings"] = list(self.loxberry_read_bindings)
         document["policies"]["loxberry_operate_bindings"] = list(self.loxberry_operate_bindings)
+        document["policies"]["loxberry_binding_names"] = dict(self.loxberry_binding_names)
         document["policies"]["explorer_bindings"] = [
             {
                 "binding_id": item.binding_id,

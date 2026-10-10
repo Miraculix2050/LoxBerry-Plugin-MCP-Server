@@ -2607,3 +2607,117 @@ def test_revoke_queues_remote_tokens_without_waiting_for_miniserver(
 
     assert _revoke(None) == 2
     assert sorted(queued) == ["family-0", "family-1"]
+
+
+@pytest.mark.parametrize("capability", ["read", "operate"])
+def test_approval_retains_original_name_after_family_and_client_are_deleted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capability: str
+) -> None:
+    config_path = (tmp_path / "config.json").resolve()
+    auth_path = (tmp_path / "auth.json").resolve()
+    config_store = AtomicConfigStore(config_path)
+    config_store.save(PluginConfig.defaults())
+    auth = AtomicJsonAuthStore(auth_path)
+    auth.mutate(
+        lambda doc: (
+            doc["clients"].update({"client": {"client_name": "<Codex> Original"}}),
+            doc["families"].update(
+                {
+                    "family": {
+                        "scope": (
+                            f"{READ_SCOPE} {HISTORY_SCOPE} "
+                            f"{LOXBERRY_READ_SCOPE} {LOXBERRY_OPERATE_SCOPE}"
+                        ),
+                        "client_id": "client",
+                        "identity_id": "identity",
+                        "miniserver_id": "miniserver",
+                        "expires_at": 2_000_000_000,
+                        "revoked": False,
+                        "pending_loxberry_read": True,
+                        "pending_loxberry_operate": True,
+                    }
+                }
+            ),
+        )
+    )
+    monkeypatch.setenv("MCPSERVER_CONFIG", str(config_path))
+    monkeypatch.setenv("MCPSERVER_AUTH_STORE", str(auth_path))
+    allow = _allow_loxberry_read if capability == "read" else _allow_loxberry_operate
+    rows = _loxberry_bindings if capability == "read" else _loxberry_operate_bindings
+    revoke = _revoke_loxberry_read if capability == "read" else _revoke_loxberry_operate
+    allow({"session_id": "family"})
+    binding = rows()[0]["id"]
+    assert dict(config_store.load().loxberry_binding_names) == {binding: "<Codex> Original"}
+    auth.mutate(lambda doc: doc["clients"]["client"].update(client_name="Renamed"))
+    allow({"session_id": "family"})
+    assert dict(config_store.load().loxberry_binding_names)[binding] == "<Codex> Original"
+    auth.mutate(lambda doc: (doc["families"].clear(), doc["clients"].clear()))
+    inactive = rows()[0]["rows"][0]
+    assert inactive["inactive"] is True
+    assert inactive["client_name"] == "<Codex> Original"
+    revoke({"binding_id": binding})
+    assert config_store.load().loxberry_binding_names == ()
+
+
+@pytest.mark.parametrize("capability", ["read", "operate"])
+def test_legacy_name_enrichment_requires_exact_retained_binding_and_never_activates_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capability: str
+) -> None:
+    config_path = (tmp_path / "config.json").resolve()
+    auth_path = (tmp_path / "auth.json").resolve()
+    auth = AtomicJsonAuthStore(auth_path)
+    namespace = f"loxberry-{capability}-binding-v1"
+    binding = auth.pseudonym(namespace, "old-client", "identity", "miniserver")
+    config_store = AtomicConfigStore(config_path)
+    config_store.save(
+        PluginConfig.from_document(
+            {"schema_version": 11, "policies": {f"loxberry_{capability}_bindings": [binding]}}
+        )
+    )
+    auth.mutate(
+        lambda doc: (
+            doc["clients"].update(
+                {"old-client": {"client_name": "Codex"}, "new-client": {"client_name": "Codex"}}
+            ),
+            doc["families"].update(
+                {
+                    "old": {
+                        "client_id": "old-client",
+                        "identity_id": "identity",
+                        "miniserver_id": "miniserver",
+                        "expires_at": 1,
+                        "revoked": True,
+                    },
+                    "new": {
+                        "client_id": "new-client",
+                        "identity_id": "identity",
+                        "miniserver_id": "miniserver",
+                        "expires_at": 2_000_000_000,
+                        "revoked": False,
+                        "scope": (
+                            f"{READ_SCOPE} {HISTORY_SCOPE} "
+                            f"{LOXBERRY_READ_SCOPE} {LOXBERRY_OPERATE_SCOPE}"
+                        ),
+                        "pending_loxberry_read": True,
+                        "pending_loxberry_operate": True,
+                    },
+                }
+            ),
+        )
+    )
+    monkeypatch.setenv("MCPSERVER_CONFIG", str(config_path))
+    monkeypatch.setenv("MCPSERVER_AUTH_STORE", str(auth_path))
+    rows = _loxberry_bindings if capability == "read" else _loxberry_operate_bindings
+    config_before = config_path.read_bytes()
+    auth_before = auth_path.read_bytes()
+    old = rows()[0]
+    assert old["active"] is False and old["sessions"] == []
+    assert old["rows"][0]["client_name"] == "Codex"
+    assert config_path.read_bytes() == config_before and auth_path.read_bytes() == auth_before
+    allow = _allow_loxberry_read if capability == "read" else _allow_loxberry_operate
+    allow({"session_id": "new"})
+    assert dict(config_store.load().loxberry_binding_names)[binding] == "Codex"
+    auth.mutate(lambda doc: doc["families"].pop("old"))
+    assert rows()[0]["rows"][0]["client_name"] == "Codex"
+    assert rows()[0]["active"] is False
+    assert rows()[1]["active"] is True

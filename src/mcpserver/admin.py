@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     from mcpserver.emergency_options_cache import EmergencyOptionsCache
     from mcpserver.loxone.client import LoxoneClient, MiniserverEndpoint
 
-from mcpserver.config import AtomicConfigStore, PluginConfig
+from mcpserver.config import AtomicConfigStore, PluginConfig, binding_application_name
 
 _MODULE_IMPORT_FINISHED_NS = time.time_ns()
 
@@ -551,6 +551,7 @@ def _save(payload: object) -> dict[str, Any]:
             config,
             loxberry_read_bindings=previous.loxberry_read_bindings,
             loxberry_operate_bindings=previous.loxberry_operate_bindings,
+            loxberry_binding_names=previous.loxberry_binding_names,
             explorer_bindings=previous.explorer_bindings,
         )
     control_families: list[str] = []
@@ -1268,7 +1269,49 @@ def _loxberry_operate_binding(record: dict[str, Any], *, subject_key: bytes | No
     )
 
 
-def _binding_rows(binding: str, sessions: list[dict[str, str]]) -> list[dict[str, Any]]:
+def _binding_display_names(
+    configuration: PluginConfig | None, document: dict[str, Any], subject_key: bytes | None
+) -> dict[str, str]:
+    """Enrich old hash-only approvals only through exact retained family matches."""
+    if configuration is None:
+        return {}
+    names = dict(configuration.loxberry_binding_names)
+    if subject_key is None:
+        return names
+    clients = document.get("clients", {})
+    if not isinstance(clients, dict):
+        return names
+    for record in document.get("families", {}).values():
+        if not isinstance(record, dict) or not all(
+            isinstance(record.get(field), str) and record[field]
+            for field in ("client_id", "identity_id", "miniserver_id")
+        ):
+            continue
+        client = clients.get(record["client_id"], {})
+        name = binding_application_name(
+            client.get("client_name") if isinstance(client, dict) else None
+        )
+        if not name:
+            continue
+        for namespace, bindings in (
+            ("loxberry-read-binding-v1", configuration.loxberry_read_bindings),
+            ("loxberry-operate-binding-v1", configuration.loxberry_operate_bindings),
+        ):
+            binding = _binding_pseudonym(subject_key, namespace, record)
+            if binding in bindings:
+                names.setdefault(binding, name)
+    return names
+
+
+def _retain_binding_names(configuration: PluginConfig, document: dict[str, Any]) -> PluginConfig:
+    subject_key = base64.urlsafe_b64decode(document["subject_key"].encode("ascii"))
+    names = _binding_display_names(configuration, document, subject_key)
+    return replace(configuration, loxberry_binding_names=tuple(names.items()))
+
+
+def _binding_rows(
+    binding: str, sessions: list[dict[str, str]], *, client_name: str = ""
+) -> list[dict[str, Any]]:
     if sessions:
         return [
             {
@@ -1282,7 +1325,7 @@ def _binding_rows(binding: str, sessions: list[dict[str, str]]) -> list[dict[str
     return [
         {
             "client": binding[:12],
-            "client_name": "",
+            "client_name": client_name,
             "identity": "",
             "binding_id": binding,
             "fingerprint": binding[:12],
@@ -1352,13 +1395,14 @@ def _loxberry_bindings(snapshot: _AdminReadSnapshot | None = None) -> list[dict[
                 "scopes": str(record.get("scope", "")),
             }
         )
+    names = _binding_display_names(snapshot.configuration, document, snapshot.subject_key)
     legacy = [
         {
             "id": binding,
             "fingerprint": binding[:12],
             "active": bool(related[binding]),
             "sessions": related[binding],
-            "rows": _binding_rows(binding, related[binding]),
+            "rows": _binding_rows(binding, related[binding], client_name=names.get(binding, "")),
         }
         for binding in bindings
     ]
@@ -1459,13 +1503,14 @@ def _loxberry_operate_bindings(snapshot: _AdminReadSnapshot | None = None) -> li
                 "scopes": str(record.get("scope", "")),
             }
         )
+    names = _binding_display_names(snapshot.configuration, document, snapshot.subject_key)
     legacy = [
         {
             "id": binding,
             "fingerprint": binding[:12],
             "active": bool(related[binding]),
             "sessions": related[binding],
-            "rows": _binding_rows(binding, related[binding]),
+            "rows": _binding_rows(binding, related[binding], client_name=names.get(binding, "")),
         }
         for binding in bindings
     ]
@@ -1558,12 +1603,15 @@ def _allow_loxberry_read(payload: object) -> dict[str, Any]:
 
     def add_binding(previous: PluginConfig) -> PluginConfig:
         if binding in previous.loxberry_read_bindings:
-            return previous
+            return _retain_binding_names(previous, document)
         if len(previous.loxberry_read_bindings) >= 64:
             raise AdminError("LoxBerry approval capacity reached")
-        return replace(
-            previous,
-            loxberry_read_bindings=(*previous.loxberry_read_bindings, binding),
+        return _retain_binding_names(
+            replace(
+                previous,
+                loxberry_read_bindings=(*previous.loxberry_read_bindings, binding),
+            ),
+            document,
         )
 
     _config_store().mutate(add_binding)
@@ -1591,6 +1639,9 @@ def _revoke_loxberry_read(payload: object) -> dict[str, Any]:
             previous,
             loxberry_read_bindings=tuple(
                 item for item in previous.loxberry_read_bindings if item != binding
+            ),
+            loxberry_binding_names=tuple(
+                (key, name) for key, name in previous.loxberry_binding_names if key != binding
             ),
             explorer_bindings=explorer_matches,
         )
@@ -1664,12 +1715,15 @@ def _allow_loxberry_operate(payload: object) -> dict[str, Any]:
 
     def add_binding(previous: PluginConfig) -> PluginConfig:
         if binding in previous.loxberry_operate_bindings:
-            return previous
+            return _retain_binding_names(previous, document)
         if len(previous.loxberry_operate_bindings) >= 64:
             raise AdminError("LoxBerry operation approval capacity reached")
-        return replace(
-            previous,
-            loxberry_operate_bindings=(*previous.loxberry_operate_bindings, binding),
+        return _retain_binding_names(
+            replace(
+                previous,
+                loxberry_operate_bindings=(*previous.loxberry_operate_bindings, binding),
+            ),
+            document,
         )
 
     _config_store().mutate(add_binding)
@@ -1701,6 +1755,9 @@ def _revoke_loxberry_operate(payload: object) -> dict[str, Any]:
             previous,
             loxberry_operate_bindings=tuple(
                 item for item in previous.loxberry_operate_bindings if item != binding
+            ),
+            loxberry_binding_names=tuple(
+                (key, name) for key, name in previous.loxberry_binding_names if key != binding
             ),
             explorer_bindings=explorer_matches,
         )

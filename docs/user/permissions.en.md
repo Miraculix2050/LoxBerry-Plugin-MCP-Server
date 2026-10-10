@@ -16,6 +16,8 @@ Use a separate Loxone account for each assistant. The server only exposes elemen
 
 Control is disabled by default. Local LoxBerry approvals are bound to the client application, Loxone identity, Miniserver, and exact capability; they never replace Loxone rights or OAuth consent. For the strictly validated local Tool Explorer, a new OAuth login can reuse its application approval until the displayed inactive-retention deadline. Other dynamically registered clients remain bound to their exact OAuth client identifier.
 
+Both approval tables show the stored original application name for inactive bindings. The name is display information only and does not transfer permissions to a new client identifier. Older approvals without name metadata can be named through an exactly matching retained OAuth session; without that evidence, the application remains unnamed. New approvals persist the name and also enrich exactly matched older entries. Revoking an approval removes its stored name.
+
 Project Intelligence does not add a scope. Every invocation checks the bound identity and reads
 the currently visible Loxone structure through an authenticated session. Its project change marker
 and the fresh visibility result determine cache validity. An unchanged marker

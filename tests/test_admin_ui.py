@@ -3601,3 +3601,57 @@ console.log(JSON.stringify(process.argv.slice(1).map(parseExpiry)));
     assert result.stdout.strip() == (
         "[1900000000,4102444799,null,null,null,null,null,null,null,null,null]"
     )
+
+
+def test_inactive_binding_rows_render_names_and_status_safely_for_both_capabilities() -> None:
+    node = shutil.which("node")
+    assert node is not None
+    source = _admin_script("sessions.js")
+    start = source.index("const loxberryBindingRows =")
+    end = source.index("const updateLoxberryBindingTable =", start)
+    function = source[start:end]
+    script = r"""
+const assert = require('node:assert/strict');
+const vm = require('node:vm');
+class Element {
+  constructor(tag) { this.tag = tag; this.dataset = {}; this.children = []; this.textContent = ''; }
+  append(...children) { this.children.push(...children); }
+}
+const context = {
+  document: {createElement: (tag) => new Element(tag)},
+  label: (key) => key,
+  Date,
+};
+vm.createContext(context);
+vm.runInContext(process.argv[1] + 'this.renderRows = loxberryBindingRows;', context);
+for (const action of ['revoke_loxberry_read', 'revoke_loxberry_operate']) {
+  for (const [name, inactive, explorer] of [
+    ['<img src=x onerror=alert(1)>', true, false],
+    ['LoxBerry MCP Tool Explorer', true, true],
+    ['', true, false],
+    ['Codex', false, false],
+  ]) {
+    const rows = context.renderRows([{rows: [{
+      client_name: name, inactive, inactive_login_required: explorer,
+      binding_id: 'a'.repeat(64), retention_expires_at: explorer ? 2000000000 : null,
+    }]}], {dataset: {unnamedLabel: 'Unnamed', noIdentityLabel: 'No identity'}}, action);
+    const cell = rows[0].children[0];
+    assert.equal(cell.textContent, name || 'Unnamed');
+    assert.equal(cell.children.length, inactive ? (explorer ? 2 : 1) : 0);
+    assert(!cell.children.some((element) => element.tag === 'img'));
+    if (inactive) assert.equal(cell.children[0].textContent,
+      explorer ? 'SESSIONS.INACTIVE_LOGIN_REQUIRED' : 'SESSIONS.LEGACY_INACTIVE');
+    assert.equal(rows[0].children[4].children[0].dataset.ajax, action);
+  }
+}
+"""
+    completed = subprocess.run(
+        [node, "-e", script, function], check=False, text=True, capture_output=True
+    )
+    assert completed.returncode == 0, completed.stderr
+    template = (ROOT / "templates/index.html").read_text(encoding="utf-8")
+    for loop in ("LOXBERRY_BINDINGS", "LOXBERRY_OPERATE_BINDINGS"):
+        row = template[template.index(f"<TMPL_LOOP {loop}><TMPL_LOOP rows><tr") :]
+        row = row[: row.index("</tr>")]
+        assert "<TMPL_IF inactive><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML>" in row
+        assert '<div class="mcp-help"><TMPL_IF inactive_login_required>' in row

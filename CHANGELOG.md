@@ -10,6 +10,9 @@ extracted from the matching version heading.
   client authorization and recorder sockets separate. Bound session lifetime,
   frame dispatch and failures; document the accepted partial-permission-change
   uncertainty on uninterrupted sessions (#239, #297).
+- Retain application display names for inactive LoxBerry read and operate approvals.
+  Enrich old approvals only through exact retained session matches; keep client-bound
+  authorization and unnamed fallbacks unchanged (#421).
 
 - Pause new Miniserver authentication after three definite rejections in five
   minutes, with persisted 60-second to 60-minute backoff. Isolate public OAuth
