@@ -82,7 +82,7 @@
       });
       actions.append(edit, remove); tr.append(actions); rows.append(tr);
     }
-    document.getElementById('knx-count').textContent = `${data.offset + (data.total ? 1 : 0)}â€“${Math.min(data.offset + 50, data.total)} / ${data.total}`;
+    document.getElementById('knx-count').textContent = `${data.offset + (data.total ? 1 : 0)}\u2013${Math.min(data.offset + 50, data.total)} / ${data.total}`;
   };
   labels.addEventListener('input', () => { labelsRevision ??= state.taxonomy_revision; labelsDirty = true; });
   form.addEventListener('input', () => { recordRevision ??= state.revision; recordDirty = true; });

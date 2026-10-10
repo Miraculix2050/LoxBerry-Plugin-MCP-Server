@@ -139,6 +139,7 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 10));
 (async () => {
   w.eval(fs.readFileSync('webfrontend/htmlauth/knx.js', 'utf8'));
   await tick();
+  assert.equal(w.document.getElementById('knx-count').textContent, '1\u20131 / 1');
   const labels = w.document.getElementById('knx-taxonomy-entries');
   const form = w.document.getElementById('knx-record-form');
   labels.value = '3:1/2=Unsaved'; labels.dispatchEvent(new w.Event('input', {bubbles: true}));
