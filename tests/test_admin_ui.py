@@ -111,7 +111,7 @@ def test_admin_modules_load_in_order_with_versioned_localized_assets() -> None:
     for name in ADMIN_SCRIPTS:
         source = _admin_script(name)
         assert "<TMPL_" not in source
-        asset_version = "v13" if name == "configuration.js" else "v12"
+        asset_version = {"configuration.js": "v14", "page.js": "v13"}.get(name, "v12")
         assert (
             f'<script defer src="admin/{name}?v='
             f'<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-{asset_version}"></script>'
@@ -1902,7 +1902,7 @@ def test_admin_cards_use_consistent_vertical_spacing() -> None:
     explorer = (ROOT / "templates" / "explorer.html").read_text(encoding="utf-8")
     stylesheet = (ROOT / "webfrontend" / "htmlauth" / "mcp-ui.css").read_text(encoding="utf-8")
 
-    assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-summary-badges-v1"' in template
+    assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v1"' in template
     assert (
         '<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>'
         '-collapsible-v2">' in explorer
@@ -2761,7 +2761,7 @@ def test_admin_sections_are_native_persistent_collapsibles() -> None:
     cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
     template = _admin_source()
 
-    assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-summary-badges-v1"' in template
+    assert 'href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v1"' in template
     expected_sections = [
         ("status", "STATUS.TITLE"),
         ("configuration", "SETUP.TITLE"),
