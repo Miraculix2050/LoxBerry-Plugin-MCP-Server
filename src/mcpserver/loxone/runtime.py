@@ -415,7 +415,9 @@ class LoxoneRuntime:
             )
         async with self._project_admission:
             now = time.monotonic()
-            if not self._consume_rate(self._project_rate, 12, now):
+            while self._project_rate and self._project_rate[0] <= now - 60:
+                self._project_rate.popleft()
+            if len(self._project_rate) >= 12:
                 raise RuntimeUnavailable(
                     "project request rate limit exceeded",
                     reason=AvailabilityReason.LOCAL_RATE_LIMIT,
@@ -429,6 +431,8 @@ class LoxoneRuntime:
     @asynccontextmanager
     async def project_call_slot(self, access: StoredAccessToken) -> AsyncIterator[None]:
         async with self._project_slot(access), self.call_slot(access):
+            # Charge only work admitted by the family and current-access gates.
+            self._project_rate.append(time.monotonic())
             yield
 
     @asynccontextmanager
@@ -440,6 +444,7 @@ class LoxoneRuntime:
                 "permission_denied", "Loxone history requires administrator activation"
             )
         async with self._project_slot(access), self.history_call_slot(access):
+            self._project_rate.append(time.monotonic())
             yield
 
     @asynccontextmanager

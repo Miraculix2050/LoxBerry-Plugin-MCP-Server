@@ -43,7 +43,11 @@ eigene Zulassung: ein aktiver Aufruf, keine Warteschlange und höchstens zwölf
 Aufrufe pro rollender Minute über alle Familien dieser Runtime/dieses
 Miniservers. Weitere Aufrufe liefern die vorhandene Temporarily-unavailable-
 Antwort mit lokaler Rate-Limit-Diagnose. Normale Familien- und History-Limits
-gelten weiterhin. Dies umfasst auch projektgestützte Öffnungsanalysen sowie
+gelten weiterhin. Das globale Budget wird erst nach erfolgreicher Familien-/
+History-Zulassung und aktueller Zugriffsprüfung belastet. Abgewiesene oder
+abgebrochene Zulassung verbraucht kein Projektbudget anderer Familien;
+zugelassene Arbeit bleibt auch bei einem Fehler belastet.
+Dies umfasst auch projektgestützte Öffnungsanalysen sowie
 History-/Observability-Abfragen. Andere Leseaufrufe behalten bei einer Flut
 von Projektaufrufen verfügbare gemeinsame Slots.
 

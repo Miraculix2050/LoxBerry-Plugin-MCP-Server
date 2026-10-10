@@ -12,6 +12,8 @@ extracted from the matching version heading.
   Warm requests incur additional download/verification cost (#379).
   Admit one project-backed call at a time without a waiting queue, with a shared
   twelve-per-minute budget, before acquiring general read slots.
+  Charge that budget only after family/history limits and current access admit
+  the call, so rejected or cancelled admission cannot throttle other families.
 
 - Resolve exact, unique cross-model `OutputRef` references to `VirtualOutCmd`
   within the same authorized project bundle. Preserve local-target precedence,

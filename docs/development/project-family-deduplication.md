@@ -40,8 +40,11 @@ Project-backed MCP calls use a separate admission gate before acquiring shared
 read slots: one active call, no waiting queue, and at most twelve calls per
 rolling minute across all families on this runtime/Miniserver. Excess calls
 return the existing temporary-unavailability envelope with a local rate-limit
-diagnostic. Normal family and history limits still apply. This also covers
-project-backed opening analysis and history/observability queries. Unrelated
+diagnostic. Normal family and history limits still apply.
+The global budget is charged only after family/history admission and current
+access validation succeed; rejected or cancelled admission cannot consume
+another family's project allowance. Admitted work remains charged on failure.
+This also covers project-backed opening analysis and history/observability queries. Unrelated
 reads keep their shared slots available during a project-call burst.
 
 Family references remain keyed by Miniserver, identity and family. Visible

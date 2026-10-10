@@ -131,6 +131,7 @@ async def test_project_admission_checks_authorization_and_releases_on_failure() 
     with pytest.raises(ValueError):
         async with runtime.project_call_slot(_access()):
             raise ValueError("failed project")
+    assert len(runtime._project_rate) == 1
     async with runtime.project_call_slot(_access()):
         pass
     with pytest.raises(ControlOperationError, match="history"):
@@ -143,6 +144,72 @@ async def test_project_admission_checks_authorization_and_releases_on_failure() 
     runtime.history_enabled = True
     async with runtime.history_project_call_slot(history_access):
         pass
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("budget", ["read", "history"])
+async def test_throttled_family_cannot_exhaust_other_families_project_budget(budget) -> None:
+    runtime = _project_runtime(
+        requests_per_minute=1 if budget == "read" else 60,
+        history_requests_per_minute=1,
+        history_enabled=True,
+    )
+    access = _access().model_copy(update={"scopes": [READ_SCOPE, HISTORY_SCOPE]})
+    slot = runtime.project_call_slot if budget == "read" else runtime.history_project_call_slot
+    family_slot = runtime.call_slot if budget == "read" else runtime.history_call_slot
+    async with family_slot(access):
+        pass
+    for _ in range(12):
+        with pytest.raises((RuntimeUnavailable, ControlOperationError)):
+            async with slot(access):
+                pytest.fail("throttled family admitted project work")
+    assert not runtime._project_rate
+    other = access.model_copy(update={"family_id": "other-family"})
+    async with slot(other):
+        pass
+    assert len(runtime._project_rate) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("history", [False, True])
+async def test_project_budget_is_not_charged_when_current_access_is_rejected(history) -> None:
+    validator = AsyncMock(side_effect=[True, False])
+    runtime = _project_runtime(validate_access=validator, history_enabled=True)
+    access = _access().model_copy(update={"scopes": [READ_SCOPE, HISTORY_SCOPE]})
+    slot = runtime.history_project_call_slot if history else runtime.project_call_slot
+    with pytest.raises((PermissionError, ControlOperationError)):
+        async with slot(access):
+            pytest.fail("invalid current access admitted project work")
+    assert not runtime._project_rate
+    assert not runtime._project_admission.locked()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("history", [False, True])
+async def test_cancelled_project_wait_does_not_charge_global_budget(history) -> None:
+    runtime = _project_runtime(max_parallel_calls=1, history_enabled=True)
+    access = _access().model_copy(update={"scopes": [READ_SCOPE, HISTORY_SCOPE]})
+    slot = runtime.history_project_call_slot if history else runtime.project_call_slot
+
+    async def waiting_project() -> None:
+        async with slot(access):
+            pytest.fail("occupied shared slot was bypassed")
+
+    async with runtime.call_slot(access.model_copy(update={"family_id": "holding-family"})):
+        task = asyncio.create_task(waiting_project())
+        try:
+            async with asyncio.timeout(1):
+                while not runtime._project_admission.locked():
+                    await asyncio.sleep(0)
+        finally:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        assert not runtime._project_rate
+        assert not runtime._project_admission.locked()
+    async with slot(access):
+        pass
+    assert len(runtime._project_rate) == 1
 
 
 class _Session:
