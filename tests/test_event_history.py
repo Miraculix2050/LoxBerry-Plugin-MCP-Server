@@ -835,7 +835,7 @@ async def test_monitor_records_updates_following_the_initial_baseline_in_one_bat
             return Session()
 
     class Credentials:
-        async def _credentials(self) -> tuple[str, str]:
+        async def load(self) -> tuple[str, str]:
             return "service", "password"
 
     attempts: list[tuple[str, str, bool]] = []
@@ -930,7 +930,7 @@ async def test_admin_structure_waits_for_concurrent_authentication(
             return Session()
 
     class Credentials:
-        async def _credentials(self):
+        async def load(self):
             return "service", "password"
 
     class Coordinator:
@@ -977,7 +977,7 @@ async def test_admin_structure_authentication_shares_one_wait_deadline(tmp_path,
             pytest.fail("an exhausted authentication wait must not open a session")
 
     class Credentials:
-        async def _credentials(self):
+        async def load(self):
             return "service", "password"
 
     class Coordinator:
@@ -993,7 +993,7 @@ async def test_admin_structure_authentication_shares_one_wait_deadline(tmp_path,
     from types import SimpleNamespace
 
     monkeypatch.setattr(
-        "mcpserver.loxone.event_history.time",
+        "mcpserver.loxone.service_access.time",
         SimpleNamespace(monotonic=lambda: clock[0], time=time.time),
     )
     monkeypatch.setattr("mcpserver.loxone.client.LoxoneClient", lambda *_a, **_kw: Client())
@@ -1029,7 +1029,7 @@ async def test_monitor_reports_storage_failure_during_run(
             raise EventHistoryUnavailable(message)
 
     class Credentials:
-        async def _credentials(self) -> tuple[str, str]:
+        async def load(self) -> tuple[str, str]:
             pytest.fail("storage failure must stop before authentication")
 
     async def backoff(_seconds: float) -> None:
@@ -1093,7 +1093,7 @@ async def test_monitor_preserves_unsupported_value_reason_during_backoff(
             return Session()
 
     class Credentials:
-        async def _credentials(self) -> tuple[str, str]:
+        async def load(self) -> tuple[str, str]:
             return "service", "password"
 
     async def backoff(_seconds: float) -> None:
@@ -1177,7 +1177,7 @@ async def test_admin_structure_numeric_subphases(tmp_path, monkeypatch, coordina
             return Session()
 
     class Credentials:
-        async def _credentials(self):
+        async def load(self):
             fail("credentials")
             return "private-name", "private-password"
 
@@ -1198,6 +1198,10 @@ async def test_admin_structure_numeric_subphases(tmp_path, monkeypatch, coordina
             time=time.time,
         ),
     )
+
+    from mcpserver.loxone import event_history
+
+    monkeypatch.setattr("mcpserver.loxone.service_access.time", event_history.time)
 
     def client(*_a, **_kw):
         fail("client")

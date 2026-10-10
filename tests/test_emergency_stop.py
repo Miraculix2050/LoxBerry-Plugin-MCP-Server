@@ -19,6 +19,7 @@ from mcpserver.loxone.auth_diagnostics import (
     MiniserverAuthenticationSuppressed,
 )
 from mcpserver.loxone.client import LoxoneSourceIpBlocked
+from mcpserver.loxone.service_access import LoxBerryServiceCredentials
 
 
 def test_virtual_status_options_are_sorted_case_insensitively_with_a_stable_tie_breaker() -> None:
@@ -45,7 +46,7 @@ def test_virtual_status_options_reports_unavailable_without_provider_details(mon
     async def unavailable(_self: EmergencyStopMonitor) -> tuple[str, str]:
         raise RuntimeError("private provider failure")
 
-    monkeypatch.setattr(EmergencyStopMonitor, "_credentials", unavailable)
+    monkeypatch.setattr(LoxBerryServiceCredentials, "load", unavailable)
 
     result = asyncio.run(
         virtual_status_options(PluginConfig(loxone_endpoint="http://miniserver.test"))
@@ -82,7 +83,7 @@ def test_virtual_status_options_does_not_bypass_an_open_authentication_breaker(
             nonlocal calls
             calls += 1
 
-    monkeypatch.setattr(EmergencyStopMonitor, "_credentials", credentials)
+    monkeypatch.setattr(LoxBerryServiceCredentials, "load", credentials)
     monkeypatch.setattr("mcpserver.emergency_stop.LoxoneClient", RecordingLoxoneClient)
 
     result = asyncio.run(
@@ -131,7 +132,7 @@ def test_failed_manual_probe_keeps_new_breaker_retry_visible(
         async def acquire_token(self, username: str, password: str) -> None:
             raise TimeoutError()
 
-    monkeypatch.setattr(EmergencyStopMonitor, "_credentials", credentials)
+    monkeypatch.setattr(LoxBerryServiceCredentials, "load", credentials)
     monkeypatch.setattr("mcpserver.emergency_stop.LoxoneClient", FailingClient)
     result = asyncio.run(
         virtual_status_options(
@@ -156,7 +157,7 @@ def test_busy_coordinator_offers_short_manual_retry(
     async def busy(*_args: object, **_kwargs: object) -> None:
         raise MiniserverAuthenticationSuppressed("busy")
 
-    monkeypatch.setattr(EmergencyStopMonitor, "_credentials", credentials)
+    monkeypatch.setattr(LoxBerryServiceCredentials, "load", credentials)
     monkeypatch.setattr(coordinator, "attempt", busy)
     result = asyncio.run(
         virtual_status_options(PluginConfig(loxone_endpoint="http://192.168.1.10"), coordinator)
@@ -200,7 +201,7 @@ def test_admin_signal_discovery_waits_for_busy_authentication_phases(
         waits.append(kwargs["busy_wait_seconds"])
         return await operation()
 
-    monkeypatch.setattr(EmergencyStopMonitor, "_credentials", credentials)
+    monkeypatch.setattr(LoxBerryServiceCredentials, "load", credentials)
     monkeypatch.setattr("mcpserver.emergency_stop.LoxoneClient", Client)
     monkeypatch.setattr("mcpserver.emergency_stop._ADMIN_AUTH_BUSY_WAIT_SECONDS", 0.2)
     monkeypatch.setattr(coordinator, "attempt", record_attempt)
@@ -267,10 +268,13 @@ def test_emergency_stop_provider_receives_the_loxberry_perl_runtime(monkeypatch,
             stdout=json.dumps({"username": "provider-user", "password": "provider-password"}),
         )
 
-    monkeypatch.setattr("mcpserver.emergency_stop.subprocess.run", run)
+    monkeypatch.setattr("mcpserver.loxone.service_access.subprocess.run", run)
     monitor = EmergencyStopMonitor(PluginConfig(loxone_endpoint="http://miniserver.test"))
 
-    assert asyncio.run(monitor._credentials()) == ("provider-user", "provider-password")
+    assert asyncio.run(LoxBerryServiceCredentials(monitor.config).load()) == (
+        "provider-user",
+        "provider-password",
+    )
     assert captured["argv"] == [
         "perl",
         "-I",
@@ -303,7 +307,10 @@ def test_emergency_stop_provider_recovers_from_an_unexpanded_service_bin_path(
             stdout=json.dumps({"username": "provider-user", "password": "provider-password"}),
         )
 
-    monkeypatch.setattr("mcpserver.emergency_stop.subprocess.run", run)
+    monkeypatch.setattr("mcpserver.loxone.service_access.subprocess.run", run)
     monitor = EmergencyStopMonitor(PluginConfig(loxone_endpoint="http://miniserver.test"))
 
-    assert asyncio.run(monitor._credentials()) == ("provider-user", "provider-password")
+    assert asyncio.run(LoxBerryServiceCredentials(monitor.config).load()) == (
+        "provider-user",
+        "provider-password",
+    )

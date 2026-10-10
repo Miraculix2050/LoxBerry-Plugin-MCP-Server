@@ -50,6 +50,7 @@ from mcpserver.emergency_stop import VirtualStatusOptions
 from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
 from mcpserver.loxone.client import LoxoneToken
 from mcpserver.loxone.events import LoxoneProtocolError
+from mcpserver.loxone.service_access import LoxBerryServiceCredentials
 from tools.benchmark_admin_page_state import measure
 
 
@@ -713,14 +714,13 @@ def test_emergency_stop_cache_changes_with_configured_identity(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     from mcpserver.admin import _emergency_stop_cache
-    from mcpserver.emergency_stop import EmergencyStopMonitor
 
     credentials = ["admin", "first-password"]
 
-    async def configured_credentials(_self: EmergencyStopMonitor) -> tuple[str, str]:
+    async def configured_credentials(_self: LoxBerryServiceCredentials) -> tuple[str, str]:
         return credentials[0], credentials[1]
 
-    monkeypatch.setattr(EmergencyStopMonitor, "_credentials", configured_credentials)
+    monkeypatch.setattr(LoxBerryServiceCredentials, "load", configured_credentials)
     monkeypatch.setenv("MCPSERVER_AUTH_STORE", str((tmp_path / "auth.json").resolve()))
     config = PluginConfig(loxone_endpoint="http://miniserver.test")
     first = _emergency_stop_cache(config)

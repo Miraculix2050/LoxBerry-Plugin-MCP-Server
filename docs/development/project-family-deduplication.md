@@ -270,3 +270,29 @@ lookup retain their original parsing path. On the first cold load without an
 eligible record, bounded SHA-256 calculation runs concurrently with normalization;
 only the completed identity can be returned to the owner. Cancellation publishes
 nothing. Public response schemas stay unchanged.
+
+## Configured service-identity access (#406, follow-up to #239)
+
+LoxBerryServiceCredentials reads the configured identity through the existing
+native emergency-stop-miniserver.php helper, with the same path, validation and
+timeout rules. The historical helper name remains for native-layout compatibility.
+It retains no credentials. Admin cache-profile binding uses this provider directly;
+Event History no longer depends on EmergencyStopMonitor as a credential provider.
+
+ServiceMiniserverConnection owns one internal token and session. Emergency-stop
+monitoring/options and Event History capture/discovery use the same acquisition,
+coordination, phase timing and cleanup path with their existing separate client
+UUIDs and connections. Background consumers retain zero coordinator wait and the
+existing cooldown-probe policy; Admin discovery shares its existing 15-second
+coordination wait budget across token acquisition and session establishment.
+Manual retry stays explicit. Cleanup releases the owned token even if closing its
+session fails; repeated cleanup does not affect another consumer.
+
+There is no shared token/session pool, additional retained visibility snapshot,
+persistence or endpoint. Each discovery still loads a fresh structure. Existing
+selector caches, recorder lifecycle, emergency fail-closed behavior and source-IP
+breaker remain. Client project, live, history and statistics operations continue
+with their own OAuth identity; this adapter grants no client authorization.
+The architectural improvement centralizes duplicated lifecycle logic; it does not
+claim a measured latency reduction. Any future retained-session optimization needs
+a separate benefit and permission-freshness decision, as recorded in #239.

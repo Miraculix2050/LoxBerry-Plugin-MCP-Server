@@ -723,13 +723,13 @@ def _emergency_stop_cache(config: PluginConfig) -> EmergencyOptionsCache | None:
     """Bind cached options to the current configured Miniserver credentials."""
     from mcpserver.auth.store import AtomicJsonAuthStore
     from mcpserver.emergency_options_cache import EmergencyOptionsCache
-    from mcpserver.emergency_stop import EmergencyStopMonitor
+    from mcpserver.loxone.service_access import LoxBerryServiceCredentials
 
     store_path = Path(os.getenv("MCPSERVER_AUTH_STORE", "").strip())
     if not config.loxone_endpoint or not store_path.is_absolute() or store_path.suffix != ".json":
         return None
     try:
-        username, password = asyncio.run(EmergencyStopMonitor(config)._credentials())
+        username, password = asyncio.run(LoxBerryServiceCredentials(config).load())
         profile = AtomicJsonAuthStore(store_path).pseudonym(
             "emergency-stop-options-v1", config.loxone_endpoint, username, password
         )
