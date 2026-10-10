@@ -541,6 +541,22 @@ Known unresolved API links remain visible in generic project evidence and aggreg
 
 The dedicated KNX page is accessible from administration. It manages prefix labels and manual group addresses separately for each configured Miniserver. Address, display format and an additional name are required; description and DPT declarations are optional. These declarations do not change Loxone names or project facts.
 
+ETS group addresses can be imported as modern XML: open “Export Group Addresses” in ETS and choose **XML**, not “XML (ETS4 Format)”. Two- and three-level addresses are detected. For an empty file, explicitly select the address format. Free hierarchies, other namespaces, DTDs and external entities are rejected. UTF-8 with/without BOM and Windows-1252 are supported; the preview shows the detected encoding and an explicit selection is available.
+
+For a complete export, select the top-level group-address node in ETS. The importer validates the file but cannot independently prove its completeness for the ETS project. The administrator assigns it to the displayed configured Miniserver.
+
+Load the file, check the target and scope, resolve contradicting duplicates, then choose **Save reviewed import**. Identical duplicates are merged. Preview, cancellation and invalid files do not change saved address data. A valid new draft replaces the previous draft in the same admin session; an invalid upload retains it. Drafts expire after ten minutes and are bound to the session, Miniserver, address revision and manual prefix labels. Changed data requires a new preview.
+
+The default adds/updates import values for addresses included in the file. Absent optional fields become unknown, not intentionally empty; manual field overrides remain. **Use import value** removes that field override when the address is saved. ETS and manual names are displayed separately. Local selection does not give names precedence over Loxone names. Multiple DPT declarations and explicit ETS flags remain source information; they do not replace Loxone `EIBType`.
+
+**Replace the complete imported catalog** is available only after confirming that the file contains the complete project catalog. Absent import addresses are removed; manual records remain. Overrides on removed import addresses are preserved as manual metadata and shown in the preview. If the manual name is missing, an explicit decision is required: retain only the override with an unknown name, or retain the previous additional ETS name as manual metadata. This does not change Loxone configuration.
+
+Imported groups can be explicitly selected as prefix labels. Manual labels take precedence for the same format/prefix. At most 128 active labels with up to 80 characters each are allowed. Unselected group metadata remains stored. Selected import labels already appear on this page; integration into project analysis follows with project integration.
+
+Per-Miniserver bounds: 65,536 addresses, 1,024 imported groups, names up to 255 and descriptions up to 4,096 characters, up to 16 DPT declarations per address. Every import file is limited to 16 MiB. Excess is rejected, never truncated. CSV follows in a separate implementation step.
+
+Upgrades migrate the KNX database idempotently; restarts retain confirmed data. Before uninstalling, separately back up plugin configuration and `data/plugins/mcpserver/knx/metadata.sqlite3`. JSON and label text transfer the documented local metadata but do not preserve original XML attributes and hierarchy as ETS reconstruction evidence. Retain original ETS export files as well. Temporary drafts are not part of the confirmed catalog.
+
 Label text can still be loaded and exported. Versioned JSON exchange includes address metadata only, without a Miniserver endpoint or secrets, and is not an ETS import format. Loading shows a preview; explicit application adds/updates records. Absent addresses remain. Concurrent changes or a target switch can reject application; reload in that case.
 
 JSON export contains the displayed address page. Larger catalogs can be exchanged page by page so every file remains within the import bound.

@@ -590,6 +590,22 @@ Bekannte nicht auflösbare API-Verbindungen bleiben in allgemeinen Projektbelege
 
 Die eigene KNX-Seite ist aus der Administration erreichbar. Sie verwaltet Präfixlabels und manuelle Gruppenadressen getrennt je konfiguriertem Miniserver. Adresse, Darstellungsformat und zusätzlicher Name sind erforderlich; Beschreibung und DPT-Angaben sind optional. Diese Angaben ändern keine Loxone-Namen oder Projektfakten.
 
+ETS-Gruppenadressen lassen sich als modernes XML importieren: In ETS „Gruppenadressen exportieren“ öffnen und **XML** wählen, nicht „XML (ETS4 Format)“. Zwei- und dreistufige Adressen werden erkannt. Bei einer leeren Datei das Adressformat ausdrücklich auswählen. Freie Hierarchien, andere Namespaces, DTDs und externe Entitäten werden abgelehnt. UTF-8 mit/ohne BOM und Windows-1252 werden unterstützt; die Vorschau zeigt die erkannte Kodierung, eine ausdrückliche Auswahl ist möglich.
+
+Für einen vollständigen Export den obersten Gruppenadressen-Knoten in ETS auswählen. Der Import prüft die Datei, kann ihre Vollständigkeit für das ETS-Projekt aber nicht selbst nachweisen. Die Zuordnung zum angezeigten konfigurierten Miniserver erfolgt durch den Administrator.
+
+Datei laden, Ziel und Umfang prüfen, widersprüchliche Duplikate entscheiden und erst dann **Geprüften Import speichern** wählen. Identische Duplikate werden zusammengeführt. Vorschau, Abbruch und ungültige Dateien verändern keine gespeicherten Adressdaten. Ein gültiger neuer Entwurf ersetzt den bisherigen Entwurf derselben Admin-Sitzung; ein ungültiger Upload erhält ihn. Entwürfe verfallen nach zehn Minuten und sind an Sitzung, Miniserver, Adressrevision und manuelle Präfixlabels gebunden. Geänderte Daten verlangen eine neue Vorschau.
+
+Der Standard ergänzt/aktualisiert Importwerte enthaltener Adressen. Fehlende optionale Felder werden dort unbekannt, nicht bewusst leer; feldweise manuelle Overrides bleiben erhalten. **Importwert verwenden** entfernt den jeweiligen Override beim Speichern der Adresse. ETS- und manuelle Namen erscheinen getrennt. Die lokale Auswahl ist kein Vorrang vor Loxone-Namen. Mehrere DPT-Angaben und explizite ETS-Flags bleiben Quellenangaben; sie ersetzen keinen Loxone-`EIBType`.
+
+Nur nach Bestätigung, dass die Datei den vollständigen Projektbestand enthält, ist **Importbestand vollständig ersetzen** verfügbar. Nicht mehr enthaltene Importadressen werden entfernt, manuelle Datensätze bleiben erhalten. Overrides entfernter Importadressen werden als manuelle Angaben erhalten und in der Vorschau ausgewiesen. Fehlt dabei ein manueller Name, muss ausdrücklich entschieden werden: nur den Override mit unbekanntem Namen erhalten oder den bisherigen zusätzlichen ETS-Namen als manuelle Angabe übernehmen. Das ändert keine Loxone-Konfiguration.
+
+Importierte Gruppen lassen sich ausdrücklich als Präfixlabels auswählen. Manuelle Labels haben bei gleichem Format/Präfix Vorrang. Insgesamt sind maximal 128 aktive Labels mit höchstens 80 Zeichen erlaubt. Nicht ausgewählte Gruppenmetadaten bleiben gespeichert. Die ausgewählten Importlabels erscheinen bereits auf dieser Seite; ihre Einbindung in die Projektanalyse folgt mit der Projektintegration.
+
+Grenzen pro Miniserver: 65.536 Einzeladressen, 1.024 importierte Gruppen, Namen mit höchstens 255 und Beschreibungen mit höchstens 4.096 Zeichen, bis zu 16 DPT-Angaben je Adresse. Jede Importdatei ist auf 16 MiB begrenzt. Überschreitungen werden abgelehnt, nicht abgeschnitten. CSV folgt in einem eigenen Umsetzungsschritt.
+
+Upgrades migrieren die KNX-Datenbank idempotent; Neustarts erhalten bestätigte Daten. Vor einer Deinstallation die Plugin-Konfiguration und `data/plugins/mcpserver/knx/metadata.sqlite3` separat sichern. JSON und Labeltext übertragen die dokumentierten lokalen Metadaten, sichern aber nicht die ursprünglichen XML-Attribute und Hierarchie als ETS-Rekonstruktionsnachweis. Originale ETS-Exportdateien deshalb ebenfalls behalten. Temporäre Entwürfe gehören nicht zum bestätigten Bestand.
+
 Labeltext lässt sich weiterhin laden und exportieren. Der versionierte JSON-Austausch enthält nur Adressmetadaten, keine Miniserver-Adresse oder Secrets, und ist kein ETS-Importformat. Laden zeigt eine Vorschau; erst die ausdrückliche Übernahme ergänzt/aktualisiert Datensätze. Nicht enthaltene Adressen bleiben erhalten. Gleichzeitige Änderungen oder ein Zielwechsel können die Übernahme ablehnen; dann neu laden.
 
 Der JSON-Export enthält die angezeigte Adressseite. Größere Bestände lassen sich seitenweise übertragen, damit jede Datei innerhalb der Importgrenze bleibt.

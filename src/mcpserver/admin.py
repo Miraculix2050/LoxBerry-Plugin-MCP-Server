@@ -27,6 +27,7 @@ from urllib.request import Request, urlopen
 from uuid import UUID
 
 from mcpserver import __version__
+from mcpserver.admin_errors import AdminError as AdminError
 from mcpserver.persistence import PersistenceUncertain
 
 if TYPE_CHECKING:
@@ -49,14 +50,6 @@ _INTERNAL_EVENT_HISTORY_STATUS_URL: Final = "http://127.0.0.1:8765/internal/even
 _INTERNAL_RESPONSE_MAX_BYTES: Final = 4 * 1024
 _EMERGENCY_STOP_STATES: Final = frozenset({"not_configured", "clear", "active", "unknown"})
 _EMERGENCY_STOP_DISCOVERY_DEADLINE_SECONDS: Final = 90
-
-
-class AdminError(RuntimeError):
-    """A sanitized, user-actionable administrative error."""
-
-    def __init__(self, message: str, *, code: str = "invalid_request") -> None:
-        super().__init__(message)
-        self.code = code
 
 
 @dataclass(frozen=True)
@@ -539,13 +532,6 @@ def _save(payload: object) -> dict[str, Any]:
     previous = store.load()
     if "logging" not in payload:
         config = replace(config, log_level=previous.log_level)
-    if "knx_address_taxonomy" not in payload:
-        config = replace(
-            config,
-            knx_address_taxonomy_endpoint=previous.knx_address_taxonomy_endpoint,
-            knx_address_taxonomy=previous.knx_address_taxonomy,
-            knx_taxonomy_targets=previous.knx_taxonomy_targets,
-        )
     if "policies" not in payload:
         config = replace(
             config,
@@ -593,12 +579,32 @@ def _save(payload: object) -> dict[str, Any]:
             if disabled_phase4_scopes & set(str(record.get("scope", "")).split())
             and not record.get("revoked", False)
         ]
-    store.save(config)
+
+    def configuration_with_current_knx(
+        candidate: PluginConfig, current: PluginConfig
+    ) -> PluginConfig:
+        from mcpserver.knx.admin import validate_active_labels
+
+        if "knx_address_taxonomy" not in payload:
+            candidate = replace(
+                candidate,
+                knx_address_taxonomy_endpoint=current.knx_address_taxonomy_endpoint,
+                knx_address_taxonomy=current.knx_address_taxonomy,
+                knx_taxonomy_targets=current.knx_taxonomy_targets,
+            )
+        # Resolve the active target after a possible Miniserver switch.
+        candidate = PluginConfig.from_document(candidate.to_document())
+        validate_active_labels(candidate)
+        return candidate
+
+    # Import application uses the same config lock. Preserve omitted KNX fields
+    # from the current configuration and validate immediately before each write.
+    config = store.mutate(lambda current: configuration_with_current_knx(config, current))
     try:
         _restart_service()
     except AdminError as apply_error:
         try:
-            store.save(previous)
+            store.mutate(lambda current: configuration_with_current_knx(previous, current))
             _restart_service()
         except (AdminError, ConfigError) as rollback_error:
             raise AdminError("configuration apply and rollback failed") from rollback_error
@@ -711,11 +717,15 @@ def _save_knx_taxonomy(payload: object) -> dict[str, Any]:
     def update(previous: PluginConfig) -> PluginConfig:
         if not previous.loxone_endpoint:
             raise AdminError("A Miniserver endpoint is required for KNX taxonomy")
-        return replace(
+        updated = replace(
             previous,
             knx_address_taxonomy_endpoint=MiniserverEndpoint.parse(previous.loxone_endpoint).origin,
             knx_address_taxonomy=entries,
         )
+        from mcpserver.knx.admin import validate_active_labels
+
+        validate_active_labels(updated)
+        return updated
 
     config = _config_store().mutate(update)
     return {"configuration": config.to_document(), "applied": True}

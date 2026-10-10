@@ -241,3 +241,9 @@ th[aria-sort="descending"] .mcp-event-history-sort::after { content: ' ↓'; }
 .mcp-knx #knx-status:empty { display: none; }
 .mcp-knx .mcp-field textarea { box-sizing: border-box; width: 100%; max-width: 100%; }
 .mcp-knx #knx-json-preview { white-space: pre-wrap; max-height: 16rem; overflow: auto; }
+.mcp-knx #knx-imported-labels { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 12rem; overflow: auto; }
+.mcp-knx #knx-ets-preview details { margin: .4rem 0; }
+.mcp-knx #knx-ets-preview dl { margin: .5rem; overflow-wrap: anywhere; }
+.mcp-knx #knx-ets-preview dt { font-weight: 600; }
+.mcp-knx #knx-ets-preview dd { margin: 0 0 .4rem .75rem; white-space: pre-wrap; }
+.mcp-knx #knx-ets-groups label, .mcp-knx #knx-ets-conflicts label { display: flex; align-items: baseline; gap: .4rem; margin: .4rem 0; overflow-wrap: anywhere; }
