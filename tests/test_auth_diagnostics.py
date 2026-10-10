@@ -370,6 +370,7 @@ async def test_shared_guard_threshold_window_and_success_do_not_erase_failures(
         with pytest.raises(MiniserverAuthenticationCooldown):
             await restarted.attempt(_authenticate, owner=owner, phase="session_establishment")
     now[0] = 1060
+    assert restarted.status()["failure_guard_state"] == "closed"
     await restarted.attempt(_authenticate, owner="tool_request", phase="session_establishment")
     assert restarted.status()["failure_guard_state"] == "closed"
     assert restarted.status()["failure_count"] == 3

@@ -226,7 +226,7 @@ class MiniserverAuthCoordinator:
     def status(self) -> dict[str, int | str | None]:
         guard = self._state["failure_guard"]
         now = int(time.time())
-        guarded = bool(guard["until"] or guard["pending_until"] > now or self._state_uncertain)
+        guarded = bool(guard["until"] > now or guard["pending_until"] > now or self._state_uncertain)
         next_attempt = max(
             self._retry_not_before() or 0,
             guard["until"],
