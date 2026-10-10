@@ -1,5 +1,25 @@
 # Troubleshooting
 
+## Repeated Miniserver authentication rejection
+
+Three definite password/token authentication rejections in five minutes pause
+new plugin sign-ins for 60 seconds. Rejected recovery probes double that pause
+up to 60 minutes. Network errors, timeouts, busy coordination and denied project
+permissions do not consume this budget. Existing authenticated connections stay
+open. This is plugin policy, not a guaranteed Miniserver IP-block threshold.
+
+The Sessions section shows the protection reason and remaining wait. A local
+administrator can explicitly try one sign-in with the LoxBerry-configured
+credentials, at least 60 seconds after the previous attempt. Confirm the warning:
+another rejection can extend the pause or cause an IP block. Automatic retries and
+MCP clients cannot bypass the pause; a confirmed Miniserver IP block takes priority.
+
+If protection persistence is unavailable, new sign-ins stop. Restore access to the
+private plugin state file and restart the service after resolving the cause; do
+not delete an active protection record merely to retry. An interrupted process
+leaves a 60-second reservation. No credentials or token values appear in status.
+Token-wide cleanup is not offered; its effects are under separate investigation.
+
 [Deutsch](troubleshooting.de.md)
 
 | Symptom | Safe check |

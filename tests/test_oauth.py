@@ -48,6 +48,42 @@ from mcpserver.loxone.client import (
 )
 from mcpserver.loxone.events import LoxoneProtocolError
 
+
+@pytest.mark.asyncio
+async def test_suppressed_login_is_retryable_without_consuming_form_failure_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from unittest.mock import AsyncMock
+
+    from mcpserver.auth.web import LoginTransaction
+    from mcpserver.loxone.auth_diagnostics import MiniserverAuthenticationCooldown
+
+    coordinator = MiniserverAuthCoordinator(tmp_path / "auth-diagnostics.json")
+    monkeypatch.setattr(
+        coordinator, "attempt", AsyncMock(side_effect=MiniserverAuthenticationCooldown("cooldown"))
+    )
+    fake = SimpleNamespace(probe=AsyncMock(), acquire_token=AsyncMock())
+    monkeypatch.setattr("mcpserver.auth.web.LoxoneClient", lambda *_args, **_kwargs: fake)
+    web = Phase0OAuthWeb(
+        _provider(tmp_path),
+        endpoint=MiniserverEndpoint.parse_gen1("http://192.168.255.254"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+        auth_coordinator=coordinator,
+    )
+    transaction = object.__new__(LoginTransaction)
+    transaction.attempts = 0
+    transaction.client_id = "synthetic-client"
+    transaction.phase = "login"
+    for _ in range(6):
+        response = await web._login(transaction, {"username": "reader", "password": "synthetic"})
+        assert response.status_code == 429
+        assert "Retry-After" in response.headers
+    assert transaction.attempts == 0
+    assert len(web._global_login_failures) == 0
+    assert fake.acquire_token.await_count == 0
+
+
 ISSUER = "https://public.example/plugins/mcpserver/oauth"
 RESOURCE = "https://public.example/plugins/mcpserver/mcp"
 

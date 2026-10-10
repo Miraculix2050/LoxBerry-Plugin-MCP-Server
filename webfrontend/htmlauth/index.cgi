@@ -648,6 +648,8 @@ if ($action ne '') {
         $result = admin_call('emergency_stop_cached_options', {});
     } elsif ($action eq 'emergency_stop_retry') {
         $result = admin_call('emergency_stop_retry', {});
+    } elsif ($action eq 'miniserver_auth_probe') {
+        $result = admin_call('miniserver_auth_probe', {});
     } elsif ($action eq 'test_connection') {
         $result = admin_call('test_connection', {endpoint => requested_endpoint($q)});
     } elsif ($action eq 'revoke_session') {

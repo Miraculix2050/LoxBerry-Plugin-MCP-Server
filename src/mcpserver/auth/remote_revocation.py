@@ -247,8 +247,11 @@ async def process_remote_revocations(
             return
         if auth_coordinator is not None:
             breaker = auth_coordinator.current_status()
-            if breaker["breaker_state"] != "closed":
-                retry_at = breaker["retry_not_before"]
+            if (
+                breaker["breaker_state"] != "closed"
+                or breaker.get("failure_guard_state", "closed") != "closed"
+            ):
+                retry_at = breaker.get("next_auth_attempt_at", breaker["retry_not_before"])
                 value["not_before"] = max(now + _POLL_SECONDS, retry_at or now)
                 state.write(value)
                 return
@@ -305,7 +308,7 @@ async def process_remote_revocations(
                 )
         except MiniserverAuthenticationSuppressed:
             retry_at = (
-                auth_coordinator.current_status()["retry_not_before"]
+                auth_coordinator.current_status().get("next_auth_attempt_at")
                 if auth_coordinator is not None
                 else None
             )
@@ -342,7 +345,7 @@ async def process_remote_revocations(
             if category == "source_ip_blocked":
                 delay = max(delay, 3600)
                 if auth_coordinator is not None:
-                    retry_at = auth_coordinator.current_status()["retry_not_before"]
+                    retry_at = auth_coordinator.current_status().get("next_auth_attempt_at")
                     delay = max(delay, retry_at - now if isinstance(retry_at, int) else 0)
             value["not_before"] = now + delay
             if attempts >= _MAX_ATTEMPTS:

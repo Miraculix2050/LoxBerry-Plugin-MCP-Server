@@ -97,6 +97,7 @@ class ServiceMiniserverConnection:
         owner: str,
         busy_wait_seconds: float = 0,
         manual_retry: bool = False,
+        early_probe: bool = False,
         timing: dict[str, float | int] | None = None,
     ) -> None:
         self.client = client
@@ -104,6 +105,7 @@ class ServiceMiniserverConnection:
         self.owner = owner
         self.busy_wait_seconds = busy_wait_seconds
         self.manual_retry = manual_retry
+        self.early_probe = early_probe
         self.timing = timing
         self.stage = "token"
         self._started = False
@@ -144,6 +146,11 @@ class ServiceMiniserverConnection:
                     owner=self.owner,
                     phase=phase,
                     allow_cooldown_probe=self.manual_retry,
+                    **(
+                        {"early_probe": True}
+                        if self.early_probe and phase == "token_acquisition"
+                        else {}
+                    ),
                     busy_wait_seconds=max(0.0, deadline - time.monotonic()),
                 )
             finally:

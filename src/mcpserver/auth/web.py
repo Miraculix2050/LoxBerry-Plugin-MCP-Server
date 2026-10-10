@@ -45,7 +45,10 @@ from mcpserver.auth.provider import (
     normalize_scopes,
     scope_text,
 )
-from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
+from mcpserver.loxone.auth_diagnostics import (
+    MiniserverAuthCoordinator,
+    MiniserverAuthenticationSuppressed,
+)
 from mcpserver.loxone.client import (
     LoxoneClient,
     LoxoneConnectionError,
@@ -977,6 +980,29 @@ sync();
                     structure = await session.load_structure()
                 finally:
                     await session.close()
+        except MiniserverAuthenticationSuppressed:
+            if token is not None:
+                token.destroy()
+            transaction.attempts -= 1
+            transaction.phase = "login"
+            retry_at = (
+                self.auth_coordinator.current_status()["next_auth_attempt_at"]
+                if self.auth_coordinator
+                else None
+            )
+            wait = max(
+                1,
+                (retry_at if isinstance(retry_at, int) else int(time.time()) + 5)
+                - int(time.time()),
+            )
+            response = _message_page(
+                "Sign-in temporarily unavailable",
+                "Sign-in temporarily unavailable / Anmeldung vorübergehend nicht verfügbar",
+                f"Try again in {wait} seconds. / Versuchen Sie es in {wait} Sekunden erneut.",
+                status=429,
+            )
+            response.headers["Retry-After"] = str(wait)
+            return response
         except Exception:
             if token is not None:
                 with suppress(LoxoneConnectionError):

@@ -13,6 +13,7 @@ from uuid import NAMESPACE_URL, uuid5
 from mcpserver.config import PluginConfig
 from mcpserver.loxone.auth_diagnostics import (
     MiniserverAuthCoordinator,
+    MiniserverAuthenticationCooldown,
     MiniserverAuthenticationSuppressed,
 )
 from mcpserver.loxone.client import (
@@ -191,6 +192,7 @@ async def virtual_status_options(
     auth_coordinator: MiniserverAuthCoordinator | None = None,
     *,
     manual_retry: bool = False,
+    early_probe: bool = False,
 ) -> VirtualStatusOptions:
     """Return selectable visible digital statuses without retaining credentials."""
     if not config.loxone_endpoint:
@@ -218,6 +220,7 @@ async def virtual_status_options(
             owner="local_admin",
             busy_wait_seconds=_ADMIN_AUTH_BUSY_WAIT_SECONDS,
             manual_retry=manual_retry,
+            early_probe=early_probe,
         )
         session = await connection.connect(username, password)
         stage = "structure"
@@ -239,7 +242,9 @@ async def virtual_status_options(
         if connection is not None and stage == "token":
             stage = connection.stage
         breaker = auth_coordinator.current_status() if auth_coordinator is not None else None
-        if isinstance(exc, MiniserverAuthenticationSuppressed):
+        if isinstance(exc, MiniserverAuthenticationCooldown):
+            reason = "authentication_cooldown"
+        elif isinstance(exc, MiniserverAuthenticationSuppressed):
             reason = (
                 "authentication_suppressed"
                 if breaker is not None and breaker.get("breaker_state") != "closed"
@@ -254,8 +259,9 @@ async def virtual_status_options(
         else:
             reason = "structure_failed" if stage == "structure" else "connection_failed"
         retry_at = (
-            breaker.get("retry_not_before")
-            if breaker is not None and breaker.get("breaker_state") != "closed"
+            breaker.get("next_auth_attempt_at")
+            if breaker is not None
+            and (breaker.get("breaker_state") != "closed" or reason == "authentication_cooldown")
             else int(time.time()) + 5
             if reason == "authentication_busy"
             else None

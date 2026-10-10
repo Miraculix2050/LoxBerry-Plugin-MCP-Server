@@ -20,6 +20,7 @@ from mcpserver.loxone.client import (
     LoxoneClient,
     LoxoneCommandRejected,
     LoxoneConnectionError,
+    LoxoneCredentialAuthenticationRejected,
     LoxoneProtocolError,
     LoxoneSourceIpBlocked,
     LoxoneToken,
@@ -36,6 +37,36 @@ from mcpserver.loxone.events import MessageHeader, MessageType
 from mcpserver.loxone.models import LoxoneStructure
 from mcpserver.loxone.runtime import LoxoneRuntime
 from mcpserver.loxone.security import token_hmac
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase,code", [("getjwt", "401"), ("getjwt", "403"), ("getkey2", "401")])
+async def test_credential_rejection_is_typed_only_at_getjwt_401(
+    monkeypatch: pytest.MonkeyPatch, phase: str, code: str
+) -> None:
+    client = LoxoneClient(
+        MiniserverEndpoint.parse("https://miniserver.example"), client_uuid=UUID(int=1)
+    )
+    socket = SimpleNamespace(close=AsyncMock())
+    monkeypatch.setattr(client, "_connect_websocket", AsyncMock(return_value=socket))
+
+    async def command(_socket: object, _encryptor: object, name: str, **_kwargs: object) -> object:
+        if phase in name:
+            raise LoxoneCommandRejected("private response", response_code=code)
+        return {"key": "00112233", "salt": "a1b2", "hashAlg": "SHA256"}
+
+    monkeypatch.setattr("mcpserver.loxone.client._websocket_command", command)
+    expected = (
+        LoxoneCredentialAuthenticationRejected
+        if (phase, code) == ("getjwt", "401")
+        else LoxoneCommandRejected
+    )
+    with pytest.raises(expected) as rejected:
+        await client.acquire_token("reader", "synthetic-password")
+    assert type(rejected.value) is expected
+    assert socket.close.await_count == 1
+    if expected is LoxoneCredentialAuthenticationRejected:
+        assert "private response" not in str(rejected.value)
 
 
 @pytest.mark.asyncio

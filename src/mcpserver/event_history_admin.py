@@ -314,7 +314,10 @@ def _selector_projection(
     config: PluginConfig, *, timing: dict[str, float | int] | None = None
 ) -> dict[str, Any]:
     bridge = _bridge()
-    from mcpserver.loxone.auth_diagnostics import MiniserverAuthenticationSuppressed
+    from mcpserver.loxone.auth_diagnostics import (
+        MiniserverAuthenticationCooldown,
+        MiniserverAuthenticationSuppressed,
+    )
     from mcpserver.loxone.client import LoxoneSourceIpBlocked
 
     try:
@@ -329,6 +332,10 @@ def _selector_projection(
     except LoxoneSourceIpBlocked as exc:
         raise bridge.AdminError(
             "Miniserver source IP is blocked", code="source_ip_blocked"
+        ) from exc
+    except MiniserverAuthenticationCooldown as exc:
+        raise bridge.AdminError(
+            "Miniserver authentication rejection cooldown", code="authentication_cooldown"
         ) from exc
     except MiniserverAuthenticationSuppressed as exc:
         raise bridge.AdminError(

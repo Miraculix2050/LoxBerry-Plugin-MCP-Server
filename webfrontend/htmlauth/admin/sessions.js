@@ -10,6 +10,8 @@ window.McpAdmin.createSessions = (core) => {
   const loxberryOperateBindingSection = document.getElementById('loxberry-operate-binding-section');
   const loxberryOperateBindingList = document.getElementById('loxberry-operate-binding-list');
   const remoteCleanupWarning = document.getElementById('remote-cleanup-warning');
+  const authProbe = document.getElementById('miniserver-auth-probe');
+  let authProbeRunning = false;
   let sessionDataVersion = 0;
   let sessionsLoaded = false;
   let nextSessionActionToken = 0;
@@ -18,12 +20,23 @@ window.McpAdmin.createSessions = (core) => {
   let sessionPollInFlight = false;
   let sessionPollTimer = null;
   const renderRemoteCleanup = (status) => {
+    if (authProbe) {
+      authProbe.hidden = !Number.isInteger(status?.manual_probe_at);
+      authProbe.disabled = authProbeRunning || Date.now() < status?.manual_probe_at * 1000;
+    }
     if (!status || status.available !== true) {
       remoteCleanupWarning.textContent = remoteCleanupWarning.dataset.unavailableLabel;
       remoteCleanupWarning.hidden = false;
       return;
     }
     const notices = [];
+    if (status.failure_guard_state && status.failure_guard_state !== 'closed') {
+      notices.push(status.failure_guard_state === 'persistence_uncertain'
+        ? remoteCleanupWarning.dataset.uncertainLabel : remoteCleanupWarning.dataset.cooldownLabel);
+      if (Number.isInteger(status.next_auth_attempt_at)) {
+        notices.push(`${Math.max(0, Math.ceil(status.next_auth_attempt_at - Date.now() / 1000))} s`);
+      }
+    }
     if (status.breaker_state === 'open_source_ip_blocked') {
       notices.push(remoteCleanupWarning.dataset.breakerLabel);
     }
@@ -512,6 +525,23 @@ window.McpAdmin.createSessions = (core) => {
     window.clearTimeout(sessionPollTimer);
     sessionPollTimer = null;
   };
+  authProbe?.addEventListener('click', async () => {
+    if (authProbeRunning || authProbe.disabled || !window.confirm(authProbe.dataset.confirm)) return;
+    authProbeRunning = true;
+    authProbe.disabled = true;
+    try {
+      const body = new URLSearchParams({action: 'miniserver_auth_probe', ajax: '1'});
+      const result = await postAjax(body, 120000);
+      renderRemoteCleanup(result.data.remote_cleanup);
+      setAjaxStatus(result.data.status === 'available' ? 'success' : 'warning',
+        label(result.data.status === 'available' ? 'SESSIONS.AUTH_PROBE_OK' : 'SESSIONS.AUTH_PROBE_FAILED'));
+    } catch {
+      setAjaxStatus('error', label('AJAX.ERROR'));
+    } finally {
+      authProbeRunning = false;
+      scheduleSessionPoll(0);
+    }
+  });
   return {pollSessions, scheduleSessionPoll, stopPoll, isSessionAction,
     beginAction, actionSucceeded, actionFailed, finishAction,
     updateSessionActionControls,

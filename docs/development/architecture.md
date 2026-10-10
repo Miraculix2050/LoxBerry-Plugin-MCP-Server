@@ -85,6 +85,20 @@ error cleanup also aborts the transport before propagating.
 
 ## Persistence and lifecycle
 
+The same coordinator maintains an independent preventive authentication-rejection
+guard in its existing private JSON file. Only typed 401 rejections at getjwt and
+authwithtoken consume its profile-wide three-in-five-minute budget. A 60-second
+pause doubles on rejected probes up to one hour; network failure and cancellation
+restart the current pause without escalating it. Success outside recovery does
+not erase recent failures. Durable preflight reservations bound crash recovery;
+unreadable or unwritable protection state denies new authentication. Existing
+authenticated sessions are not closed. A separate explicit native Admin action
+allows an early probe no more often than once per minute; background retry flags
+never grant this exception. Confirmed source-IP blocking retains priority.
+Diagnostics add a separate guard state and effective next-attempt time while
+preserving existing source-IP breaker fields. Remote revocations defer without
+consuming their network-attempt budget when either protection gate is active.
+
 Configuration, encrypted sessions and plugin identity persist outside the package. Secrets are separated from ordinary configuration. Root lifecycle hooks consume service templates only from the current installer staging area, never from the installed plugin configuration or binary directories. The staging area's integrity remains a LoxBerry Core trust boundary because Core runs unprivileged lifecycle hooks before `postroot`; plugin code cannot make that shared staging area root-owned. Within the persistent LoxBerry tree, sensitive root operations use descriptor-relative traversal and reject symbolic links, non-regular files and path replacement. Install, upgrade and removal follow the native LoxBerry layout; upgrade preserves supported configuration and authentication state through idempotent migration. The service starts unprivileged, validates configuration and listens only on loopback.
 
 Local OAuth revocation is immediate. The service attempts remote Loxone `killtoken` through a persisted, profile-wide queue gate. Token-authentication rejection, confirmed remote kill, nominal expiry and unresolved failure are distinct outcomes; unresolved records stop after five network attempts. An atomically replaced, permission-restricted sidecar stores only aggregate status and anonymous expiring outcome markers. Cleanup never probes an open Miniserver authentication breaker.

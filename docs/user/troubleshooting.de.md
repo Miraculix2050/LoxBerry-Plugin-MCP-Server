@@ -1,5 +1,28 @@
 # Fehlerbehebung
 
+## Wiederholte Miniserver-Authentifizierungsablehnung
+
+Drei eindeutige Passwort-/Token-Ablehnungen innerhalb von fünf Minuten pausieren
+neue Plugin-Anmeldungen für 60 Sekunden. Erneut abgelehnte Prüfversuche verdoppeln
+die Pause bis auf 60 Minuten. Netzwerkfehler, Timeouts, Anmeldekonkurrenz und
+verweigerte Projektberechtigungen verbrauchen dieses Budget nicht. Bestehende
+authentifizierte Verbindungen bleiben offen. Diese Plugin-Policy garantiert keine
+bestimmte Miniserver-IP-Sperrschwelle.
+
+Der Abschnitt Sitzungen zeigt Schutzgrund und verbleibende Wartezeit. Ein lokaler
+Administrator kann ausdrücklich eine Anmeldung mit den in LoxBerry konfigurierten
+Zugangsdaten prüfen, frühestens 60 Sekunden nach dem vorherigen Versuch. Den
+Warnhinweis beachten: Eine weitere Ablehnung kann die Pause verlängern oder eine
+IP-Sperre auslösen. Automatische Wiederholungen und MCP-Clients dürfen die Pause
+nicht umgehen; eine bestätigte Miniserver-IP-Sperre hat Vorrang.
+
+Bei nicht verfügbarer Schutzpersistenz stoppen neue Anmeldungen. Den Zugriff auf
+die private Plugin-Zustandsdatei wiederherstellen und nach Behebung der Ursache
+den Dienst neu starten; einen aktiven Schutzstatus nicht nur für weitere Versuche
+löschen. Ein abgebrochener Prozess hinterlässt eine 60-Sekunden-Reservierung.
+Zugangsdaten und Tokenwerte erscheinen nicht im Status. Eine umfassende
+Token-Bereinigung wird nicht angeboten; ihre Folgen werden getrennt untersucht.
+
 [English](troubleshooting.en.md)
 
 | Symptom | Sichere Prüfung |

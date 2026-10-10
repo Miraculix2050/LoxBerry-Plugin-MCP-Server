@@ -88,7 +88,15 @@ class LoxoneCommandRejected(LoxoneConnectionError):
         self.response_code = response_code
 
 
-class LoxoneTokenAuthenticationRejected(LoxoneCommandRejected):
+class LoxoneAuthenticationRejected(LoxoneCommandRejected):
+    """A definite rejection at an authentication command boundary."""
+
+
+class LoxoneCredentialAuthenticationRejected(LoxoneAuthenticationRejected):
+    """The Miniserver rejected getjwt credentials."""
+
+
+class LoxoneTokenAuthenticationRejected(LoxoneAuthenticationRejected):
     """The Miniserver rejected authwithtoken, rather than a later command."""
 
 
@@ -456,14 +464,21 @@ class LoxoneClient:
                 f"jdev/sys/getjwt/{credential_hash}/{escaped_user}/{_APP_PERMISSION}/"
                 f"{_loxone_uuid(self.client_uuid)}/{info}"
             )
-            token_value = await _websocket_command(
-                websocket,
-                encryptor,
-                command,
-                encrypted=not self.endpoint.secure,
-                timeout_seconds=self.timeout_seconds,
-                max_payload_bytes=self.max_response_bytes,
-            )
+            try:
+                token_value = await _websocket_command(
+                    websocket,
+                    encryptor,
+                    command,
+                    encrypted=not self.endpoint.secure,
+                    timeout_seconds=self.timeout_seconds,
+                    max_payload_bytes=self.max_response_bytes,
+                )
+            except LoxoneCommandRejected as exc:
+                if exc.response_code != "401":
+                    raise
+                raise LoxoneCredentialAuthenticationRejected(
+                    "Miniserver rejected credential authentication", response_code="401"
+                ) from None
         finally:
             await _close_websocket(websocket, self.timeout_seconds)
         if not isinstance(token_value, Mapping):
