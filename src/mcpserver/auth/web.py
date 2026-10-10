@@ -961,6 +961,7 @@ sync();
             return self._login_page(transaction, "Sign-in failed. / Anmeldung fehlgeschlagen.")
         client = LoxoneClient(self.endpoint, client_uuid=self._client_uuid)
         token: LoxoneToken | None = None
+        session: LoxoneWebSocketSession | None = None
         try:
             async with self._login_slots:
                 if self.auth_coordinator is None:
@@ -969,21 +970,27 @@ sync();
                     session = await client.open_session(token)
                 else:
 
-                    async def sign_in() -> tuple[ProbeResult, LoxoneWebSocketSession]:
+                    async def sign_in() -> ProbeResult:
                         nonlocal token
                         # Suppression precedes the probe; recovery covers both
                         # token acquisition and session authentication atomically.
                         result = await client.probe()
                         token = await client.acquire_token(username, password)
-                        authenticated = await client.open_session(token)
-                        return result, authenticated
+                        return result
 
-                    probe, session = await self.auth_coordinator.attempt(
+                    async def authenticate_token() -> None:
+                        nonlocal session
+                        assert token is not None
+                        session = await client.open_session(token)
+
+                    probe = await self.auth_coordinator.attempt(
                         sign_in,
                         owner="tool_request",
                         phase="session_establishment",
                         public_login=True,
+                        token_phase=authenticate_token,
                     )
+                assert session is not None
                 try:
                     structure = await session.load_structure()
                 finally:

@@ -758,7 +758,11 @@ async def test_token_and_service_failures_share_trusted_budget(tmp_path, public_
     for _ in range(3):
         with pytest.raises(exception):
             await coordinator.attempt(
-                rejected, owner="tool_request", phase="session", public_login=public_login
+                _authenticate if public_login else rejected,
+                owner="tool_request",
+                phase="session",
+                public_login=public_login,
+                token_phase=rejected if public_login else None,
             )
     assert coordinator.status()["failure_count"] == 3
     assert coordinator.status()["public_failure_count"] == 0
@@ -824,3 +828,59 @@ async def test_public_pause_manual_probe_and_network_recovery(tmp_path, monkeypa
     assert coordinator.status()["public_failure_guard_state"] == "closed"
     assert coordinator._state["public_failure_guard"]["level"] == 0
     assert coordinator.status()["public_failure_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_unsaved_public_password_failure_reserves_only_public_guard(tmp_path, monkeypatch):
+    path = tmp_path / "auth.json"
+    coordinator = MiniserverAuthCoordinator(path)
+
+    async def rejected():
+        persisted = MiniserverAuthCoordinator(path).status()
+        assert persisted["failure_guard_state"] == "closed"
+        assert persisted["public_failure_guard_state"] == "cooldown"
+
+        def cannot_save():
+            raise OSError("synthetic disk failure")
+
+        monkeypatch.setattr(coordinator, "_save", cannot_save)
+        raise LoxoneCredentialAuthenticationRejected("rejected", response_code="401")
+
+    with pytest.raises(LoxoneCredentialAuthenticationRejected):
+        await coordinator.attempt(
+            rejected, owner="tool_request", phase="session", public_login=True
+        )
+    restarted = MiniserverAuthCoordinator(path)
+    await restarted.attempt(_authenticate, owner="runtime_event_stream", phase="session")
+    assert restarted.status()["public_failure_guard_state"] == "cooldown"
+
+
+@pytest.mark.asyncio
+async def test_public_token_phase_is_reserved_under_the_same_lock(tmp_path):
+    from mcpserver.loxone.auth_diagnostics import MiniserverAuthenticationBusy
+
+    path = tmp_path / "auth.json"
+    coordinator = MiniserverAuthCoordinator(path)
+    phases = []
+
+    async def password():
+        assert MiniserverAuthCoordinator(path).status()["failure_guard_state"] == "closed"
+        phases.append("password")
+        return True
+
+    async def token():
+        persisted = MiniserverAuthCoordinator(path).status()
+        assert persisted["failure_guard_state"] == "cooldown"
+        assert persisted["public_failure_guard_state"] == "cooldown"
+        with pytest.raises(MiniserverAuthenticationBusy):
+            await MiniserverAuthCoordinator(path).attempt(
+                _authenticate, owner="local_admin", phase="session"
+            )
+        phases.append("token")
+
+    assert await coordinator.attempt(
+        password, owner="tool_request", phase="session", public_login=True, token_phase=token
+    )
+    assert phases == ["password", "token"]
+    assert coordinator.status()["failure_guard_state"] == "closed"
+    assert coordinator.status()["public_failure_guard_state"] == "closed"

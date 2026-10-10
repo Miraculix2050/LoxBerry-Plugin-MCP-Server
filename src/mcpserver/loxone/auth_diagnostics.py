@@ -381,6 +381,7 @@ class MiniserverAuthCoordinator:
         allow_cooldown_probe: bool = True,
         early_probe: bool = False,
         public_login: bool = False,
+        token_phase: Callable[[], Awaitable[None]] | None = None,
         busy_wait_seconds: float = 0,
         before_attempt: Callable[[], Awaitable[None]] | None = None,
     ) -> _T:
@@ -391,6 +392,8 @@ class MiniserverAuthCoordinator:
             raise ValueError("early authentication probes require local administration")
         if public_login and (owner != "tool_request" or early_probe):
             raise ValueError("public login admission requires a tool-request owner")
+        if token_phase is not None and not public_login:
+            raise ValueError("separate token phases require public login admission")
         if not 0 <= busy_wait_seconds <= 30:
             raise ValueError("invalid authentication wait budget")
         async with self._lock:
@@ -408,6 +411,7 @@ class MiniserverAuthCoordinator:
                             allow_cooldown_probe=allow_cooldown_probe,
                             early_probe=early_probe,
                             public_login=public_login,
+                            token_phase=token_phase,
                             before_attempt=before_attempt,
                         )
                 except _InterprocessLockUnavailable as exc:
@@ -429,6 +433,7 @@ class MiniserverAuthCoordinator:
         allow_cooldown_probe: bool,
         early_probe: bool,
         public_login: bool,
+        token_phase: Callable[[], Awaitable[None]] | None,
         before_attempt: Callable[[], Awaitable[None]] | None,
     ) -> _T:
         """Execute one attempt while both coordinator locks are held."""
@@ -469,9 +474,11 @@ class MiniserverAuthCoordinator:
         ):
             raise MiniserverAuthenticationCooldown("Authentication rejection cooldown active")
         was_guarded = {key: bool(guard["until"]) for key, guard in guards.items()}
-        # Reserve all authentication phases before network access, under one lock.
-        # Public passwords cannot consume the trusted budget; their token phase
-        # still observes it. Both reservations survive an unpersisted outcome.
+        # Public password failures, including unsaved outcomes, must not reserve
+        # the trusted budget. Admit both phases under one uninterrupted lock,
+        # but durably reserve the trusted guard only at the token phase boundary.
+        if public_login:
+            guards.pop("failure_guard")
         recovery_reservation = max(3600, self._initial)
         if self._state["breaker_state"] == "open_source_ip_blocked":
             recovery_reservation = max(recovery_reservation, min(self._delay() * 2, self._maximum))
@@ -500,6 +507,22 @@ class MiniserverAuthCoordinator:
         self._record(owner=owner, phase=phase, outcome="attempt_started", provenance=provenance)
         try:
             result = await operation()
+            if token_phase is not None:
+                trusted = self._state["failure_guard"]
+                trusted["failures"] = [
+                    stamp for stamp in trusted["failures"] if stamp > int(time.time()) - 300
+                ]
+                trusted["last_probe"] = int(time.time())
+                trusted["pending_until"] = int(time.time()) + recovery_reservation
+                guards["failure_guard"] = trusted
+                try:
+                    self._save()
+                except OSError:
+                    self._state_uncertain = self._retain_open_state = True
+                    raise MiniserverAuthenticationCooldown(
+                        "Token authentication protection cannot be persisted"
+                    ) from None
+                await token_phase()
         except LoxoneSourceIpBlocked:
             finish_guards()
             self._open_source_ip_breaker(now=now, owner=owner, phase=phase, provenance=provenance)

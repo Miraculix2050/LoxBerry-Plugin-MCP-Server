@@ -95,7 +95,10 @@ ignore the public password budget. Confirmed IP blocking remains global. A 60-se
 pause doubles on rejected probes up to one hour; network failure and cancellation
 restart the current pause without escalating it. Success outside recovery does
 not erase recent failures. Fresh token acquisition and session authentication
-share one atomic coordinator attempt; recovery succeeds only after both phases. Durable preflight reservations cover the maximum one-hour pause so an unsaved
+share one atomic coordinator attempt; recovery succeeds only after both phases.
+Public sign-ins reserve only the public guard before getjwt, then durably add
+the trusted guard immediately before authwithtoken without releasing the lock.
+A crashed public password phase therefore cannot pause trusted reconnects. Durable preflight reservations cover the maximum one-hour pause so an unsaved
 outcome cannot lose protection in another process, and bound crash recovery;
 the source-IP policy's initial or next escalated delay extends this reservation when stronger.
 unreadable or unwritable protection state denies new authentication. Existing
