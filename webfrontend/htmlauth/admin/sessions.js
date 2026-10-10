@@ -258,11 +258,15 @@ window.McpAdmin.createSessions = (core) => {
         row.dataset.bindingId = String(bindingRow.binding_id || '');
         const clientName = document.createElement('td');
         clientName.dataset.label = label('SESSIONS.CLIENT');
-        clientName.textContent = bindingRow.inactive
-          ? (bindingRow.inactive_login_required
+        clientName.textContent = String(bindingRow.client_name || section.dataset.unnamedLabel);
+        if (bindingRow.inactive) {
+          const status = document.createElement('div');
+          status.className = 'mcp-help';
+          status.textContent = bindingRow.inactive_login_required
             ? label('SESSIONS.INACTIVE_LOGIN_REQUIRED')
-            : label('SESSIONS.LEGACY_INACTIVE'))
-          : String(bindingRow.client_name || section.dataset.unnamedLabel);
+            : label('SESSIONS.LEGACY_INACTIVE');
+          clientName.append(status);
+        }
         if (bindingRow.inactive && bindingRow.retention_expires_at) {
           const expiry = document.createElement('div');
           expiry.className = 'mcp-help';

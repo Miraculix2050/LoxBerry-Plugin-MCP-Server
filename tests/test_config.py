@@ -428,3 +428,49 @@ def test_concurrent_mutations_preserve_each_binding(tmp_path: Path) -> None:
         list(executor.map(add, bindings))
 
     assert set(AtomicConfigStore(path).load().loxberry_read_bindings) == set(bindings)
+
+
+@pytest.mark.parametrize("name", ["Codex", "<img src=x onerror=alert(1)>", "ä" * 200])
+def test_binding_names_round_trip_without_changing_authorization(name: str) -> None:
+    binding = "a" * 64
+    config = PluginConfig.from_document(
+        {
+            "schema_version": 11,
+            "policies": {
+                "loxberry_read_bindings": [binding],
+                "loxberry_binding_names": {binding: name},
+            },
+        }
+    )
+    assert config.loxberry_read_bindings == (binding,)
+    assert config.loxberry_operate_bindings == ()
+    assert PluginConfig.from_document(config.to_document()).loxberry_binding_names == (
+        (binding, name),
+    )
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        [],
+        {"b" * 64: "Codex"},
+        {"a" * 64: ""},
+        {"a" * 64: 42},
+        {"a" * 64: "x" * 201},
+        {"a" * 64: " Codex "},
+        {"a" * 64: "a\nb"},
+        {"a" * 64: "a\u202eb"},
+        {"a" * 64: None},
+    ],
+)
+def test_binding_name_metadata_rejects_invalid_or_unapproved_entries(metadata: object) -> None:
+    with pytest.raises(ConfigError, match="loxberry_binding_names"):
+        PluginConfig.from_document(
+            {
+                "schema_version": 11,
+                "policies": {
+                    "loxberry_read_bindings": ["a" * 64],
+                    "loxberry_binding_names": metadata,
+                },
+            }
+        )

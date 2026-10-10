@@ -16,6 +16,8 @@ Nutze für jeden Assistenten ein eigenes Loxone-Konto. Der Server zeigt nur Elem
 
 Steuerung ist standardmäßig deaktiviert. Lokale LoxBerry-Freigaben sind an Client-Anwendung, Loxone-Identität, Miniserver und die konkrete Capability gebunden und ersetzen weder Loxone-Rechte noch OAuth-Zustimmung. Beim streng geprüften lokalen Tool Explorer kann eine neue OAuth-Anmeldung dessen Anwendungsfreigabe bis zur angezeigten Aufbewahrungsfrist wiederverwenden. Andere dynamisch registrierte Clients bleiben an ihre exakte OAuth-Clientkennung gebunden.
 
+Die beiden Freigabetabellen zeigen auch bei inaktiven Bindungen den gespeicherten ursprünglichen Anwendungsnamen. Der Name dient nur der Anzeige und überträgt keine Rechte auf eine neue Clientkennung. Alte Freigaben ohne Namensmetadaten können über eine exakt passende, noch gespeicherte OAuth-Sitzung benannt werden; ohne diese Daten bleibt die Anwendung unbenannt. Neue Freigaben speichern den Namen dauerhaft; dabei werden auch exakt zuordenbare Alteinträge ergänzt. Beim Widerruf der Freigabe wird ihr gespeicherter Name entfernt.
+
 Project Intelligence ergänzt keinen Scope. Bei jedem Aufruf werden die gebundene Identität
 geprüft und die aktuell sichtbare Loxone-Struktur über eine authentifizierte Sitzung gelesen.
 Ihr Projektänderungsmarker und die frische Sichtbarkeitsprüfung bestimmen die Gültigkeit des Caches.
