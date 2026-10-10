@@ -436,8 +436,10 @@ class MiniserverAuthCoordinator:
         was_guarded = bool(guard["until"])
         guard["failures"] = [stamp for stamp in guard["failures"] if stamp > now - 300]
         guard["last_probe"] = now
-        # A durable reservation bounds recovery after a process dies during login.
-        guard["pending_until"] = now + 60
+        # Reserve the maximum pause before network access. If the outcome cannot
+        # be persisted, other processes must not lose a rejection or escalation.
+        # Normal outcomes clear this reservation; a crashed process is bounded.
+        guard["pending_until"] = now + 3600
         try:
             self._save()
         except OSError:

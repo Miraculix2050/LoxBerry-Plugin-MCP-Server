@@ -51,10 +51,13 @@ Der Runtime-Sitzungsaufbau wartet innerhalb des konfigurierten Verbindungszeitli
 auf lokale Authentifizierungskoordination; Warten und Login teilen dieses Budget.
 Cancellation beendet das Warten. Frische MCP-Sichtbarkeit erfordert weiterhin die
 authentifizierte Struktur des Aufrufers; die Admin-Identität oder eine alte gecachte
-Struktur kann sie nicht ersetzen. `structure_refresh_auth_busy` bedeutet, dass die
+Struktur kann sie nicht ersetzen. `structure_refresh_auth_cooldown` bezeichnet die
+vorbeugende Schutzpause oder
+unsichere Schutzpersistenz vor einem Netzwerkzugriff. `structure_refresh_auth_busy`
+bedeutet, dass die
 lokale Koordination ihr Wartebudget vor dem Login ausgeschöpft hat.
 `structure_refresh_source_ip_suppressed` bezeichnet Source-IP-Blocking oder den
-persistent gespeicherten Breaker. Beide bezeichnen nicht das Aufrufbudget des Clients.
+persistent gespeicherten Breaker. Diese Kategorien bezeichnen nicht das Aufrufbudget des Clients.
 Transportfehler und entfernte Sitzungslimits bleiben getrennt; ein Fehler der
 Verbindungskategorie allein belegt kein Miniserver-Sitzungslimit. Diese Diagnosen
 erlauben keine Zuordnung älterer Fehler ohne erhaltene zugrunde liegende Exception (#332).

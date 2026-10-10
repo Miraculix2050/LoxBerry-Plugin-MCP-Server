@@ -467,6 +467,35 @@ async def test_transport_probe_restarts_pause_without_escalating_and_access_is_c
 
 
 @pytest.mark.asyncio
+async def test_unsaved_outcome_is_guarded_in_another_coordinator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = [1000]
+    monkeypatch.setattr("mcpserver.loxone.auth_diagnostics.time.time", lambda: now[0])
+    path = tmp_path / "auth.json"
+    coordinator = MiniserverAuthCoordinator(path)
+
+    async def rejected() -> None:
+        def failed_save() -> None:
+            raise OSError("synthetic disk failure")
+
+        monkeypatch.setattr(coordinator, "_save", failed_save)
+        raise LoxoneTokenAuthenticationRejected("rejected", response_code="401")
+
+    with pytest.raises(LoxoneTokenAuthenticationRejected):
+        await coordinator.attempt(rejected, owner="tool_request", phase="session")
+    now[0] = 1061
+    restarted = MiniserverAuthCoordinator(path)
+    with pytest.raises(MiniserverAuthenticationCooldown):
+        await restarted.attempt(
+            _authenticate, owner="local_admin", phase="session", early_probe=True
+        )
+    assert restarted.status()["next_auth_attempt_at"] == 4600
+    now[0] = 4600
+    await restarted.attempt(_authenticate, owner="tool_request", phase="session")
+
+
+@pytest.mark.asyncio
 async def test_crash_reservation_and_corrupt_state_fail_closed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

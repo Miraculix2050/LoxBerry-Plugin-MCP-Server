@@ -54,6 +54,7 @@ from mcpserver.loxone.client import (
     LoxoneConnectionError,
     LoxoneToken,
     MiniserverEndpoint,
+    ProbeResult,
 )
 from mcpserver.loxone.events import LoxoneProtocolError
 
@@ -961,18 +962,27 @@ sync();
         token: LoxoneToken | None = None
         try:
             async with self._login_slots:
-                probe = await client.probe()
                 if self.auth_coordinator is None:
+                    probe = await client.probe()
                     token = await client.acquire_token(username, password)
                     session = await client.open_session(token)
                 else:
-                    token = await self.auth_coordinator.attempt(
-                        lambda: client.acquire_token(username, password),
+
+                    async def acquire() -> tuple[ProbeResult, LoxoneToken]:
+                        # Suppression must precede even the unauthenticated probe.
+                        result = await client.probe()
+                        acquired = await client.acquire_token(username, password)
+                        return result, acquired
+
+                    probe, token = await self.auth_coordinator.attempt(
+                        acquire,
                         owner="tool_request",
                         phase="token_acquisition",
                     )
+                    acquired_token = token
+                    assert acquired_token is not None
                     session = await self.auth_coordinator.attempt(
-                        lambda: client.open_session(token),
+                        lambda: client.open_session(acquired_token),
                         owner="tool_request",
                         phase="session_establishment",
                     )

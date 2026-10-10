@@ -17,7 +17,8 @@ MCP clients cannot bypass the pause; a confirmed Miniserver IP block takes prior
 If protection persistence is unavailable, new sign-ins stop. Restore access to the
 private plugin state file and restart the service after resolving the cause; do
 not delete an active protection record merely to retry. An interrupted process
-leaves a 60-second reservation. No credentials or token values appear in status.
+leaves a conservative reservation of at most one hour. This also protects other
+processes if an authentication outcome could not be saved. No credentials or token values appear in status.
 Token-wide cleanup is not offered; its effects are under separate investigation.
 
 [Deutsch](troubleshooting.de.md)
@@ -48,7 +49,9 @@ the configured connection timeout; waiting and login share that budget. Cancella
 stops waiting. Fresh MCP visibility still requires the caller's authenticated
 structure; the Admin identity or an old cached structure cannot replace it.
 `structure_refresh_auth_busy` means local coordination exhausted its wait before
-login. `structure_refresh_source_ip_suppressed` means source-IP blocking or the
+login. `structure_refresh_auth_cooldown` means the preventive rejection pause or
+uncertain protection persistence prevented network access.
+`structure_refresh_source_ip_suppressed` means source-IP blocking or the
 persistent breaker prevented access. Neither identifies the caller's rate budget.
 Transport failures and remote session limits remain separate; a connection-category
 error alone does not establish a Miniserver session limit. These diagnostics cannot

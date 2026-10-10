@@ -82,6 +82,7 @@ async def test_suppressed_login_is_retryable_without_consuming_form_failure_budg
     assert transaction.attempts == 0
     assert len(web._global_login_failures) == 0
     assert fake.acquire_token.await_count == 0
+    assert fake.probe.await_count == 0
 
 
 ISSUER = "https://public.example/plugins/mcpserver/oauth"
