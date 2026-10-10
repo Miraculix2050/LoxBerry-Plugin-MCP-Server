@@ -358,7 +358,13 @@ class Phase0OAuthProvider(
             if isinstance(family, dict):
                 expired.append(dict(family))
             document["families"].pop(family_id, None)
-            self._notify_family_ended(family_id, "family_expired")
+            try:
+                self._notify_family_ended(family_id, "family_expired")
+            except Exception:
+                _LOGGER.warning(
+                    "component=oauth severity=WARNING outcome=token_cleanup_failed "
+                    "reason=family_expired"
+                )
         document["codes"] = {
             digest: record
             for digest, record in document["codes"].items()

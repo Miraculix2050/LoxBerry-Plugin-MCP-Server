@@ -2451,3 +2451,35 @@ async def test_repeated_revocation_callback_uses_persisted_first_cause(tmp_path,
     await provider.revoke_raw_token("synthetic-repeat-token", "client")
     assert ended == [("family", first_reason or "unknown")] * 2
     assert provider.store.snapshot()["families"]["family"] == family
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_expiry_cleanup_survives_family_end_callback_failure(tmp_path, caplog, legacy):
+    clock = Clock()
+    calls = []
+
+    def fail(*args):
+        calls.append(args)
+        raise RuntimeError("private token store detail")
+
+    store = AtomicJsonAuthStore(tmp_path / "sessions.json")
+    callbacks = {"on_family_revoked" if legacy else "on_family_ended": fail}
+    provider = Phase0OAuthProvider(
+        store, issuer=ISSUER, resource=RESOURCE, clock=clock, **callbacks
+    )
+    store.mutate(
+        lambda doc: doc["families"].update(
+            {"expired": {"revoked": False, "expires_at": clock.value}}
+        )
+    )
+    result = provider._mutate_with_cleanup(lambda doc: "operation completed")
+    assert result == "operation completed"
+    assert store.snapshot()["families"] == {}
+    assert calls == [("expired",)] if legacy else calls == [("expired", "family_expired")]
+    assert "outcome=token_cleanup_failed reason=family_expired" in caplog.text
+    assert "private token store detail" not in caplog.text
+    assert (
+        provider._mutate_with_cleanup(lambda doc: "next operation completed")
+        == "next operation completed"
+    )
+    assert len(calls) == 1
