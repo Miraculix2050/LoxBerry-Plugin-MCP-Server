@@ -820,7 +820,9 @@ def _discover_emergency_stop_options(
     return response
 
 
-def _emergency_stop_options(*, manual_retry: bool = False) -> dict[str, Any]:
+def _emergency_stop_options(
+    *, manual_retry: bool = False, automatic: bool = False
+) -> dict[str, Any]:
     config = _config_store().load()
     cache = _emergency_stop_cache(config)
 
@@ -831,7 +833,10 @@ def _emergency_stop_options(*, manual_retry: bool = False) -> dict[str, Any]:
             return {"status": "not_configured", "options": []}
         try:
             return request_projection(
-                config, _auth_store(), "emergency_stop", manual_retry=manual_retry
+                config,
+                _auth_store(),
+                "emergency_stop_display" if automatic else "emergency_stop",
+                manual_retry=manual_retry,
             )
         except Exception as exc:
             code = getattr(exc, "code", "temporarily_unavailable")
@@ -2120,6 +2125,8 @@ def _dispatch(request: object, *, timing: dict[str, float | int] | None = None) 
         return _save_mqtt(payload)
     if action == "emergency_stop_options":
         return _emergency_stop_options()
+    if action == "emergency_stop_refresh":
+        return _emergency_stop_options(automatic=True)
     if action == "emergency_stop_cached_options":
         return _cached_emergency_stop_options()
     if action == "emergency_stop_retry":

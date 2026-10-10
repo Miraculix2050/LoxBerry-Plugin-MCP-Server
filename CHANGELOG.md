@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Automatically check the project change marker before displaying Admin
+  emergency-stop names and options from the private identity-bound display cache.
+  Refresh on marker change, missing marker or stale cache; retain
+  explicit full refresh and preserve the selected signal on failures (#431).
+
 - Fixed the masked Admin diagnostic download through same-origin AJAX when browser HTML submissions carry Origin null (#428).
 
 - Preserve first OAuth revocation causes and correlate sanitized client, approval,

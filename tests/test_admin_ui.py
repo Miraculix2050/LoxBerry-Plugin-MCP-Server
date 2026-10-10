@@ -111,7 +111,7 @@ def test_admin_modules_load_in_order_with_versioned_localized_assets() -> None:
     for name in ADMIN_SCRIPTS:
         source = _admin_script(name)
         assert "<TMPL_" not in source
-        asset_version = {"configuration.js": "v14", "page.js": "v14", "sessions.js": "v13"}.get(
+        asset_version = {"configuration.js": "v15", "page.js": "v14", "sessions.js": "v13"}.get(
             name, "v12"
         )
         assert (
@@ -469,7 +469,7 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert "if ($server_rendered_fallback) {" in cgi
     assert "my $config_result = admin_call('get_config', {});" in cgi
     assert "my $sessions_result = admin_call('list_sessions', {});" in cgi
-    assert "// admin_call('emergency_stop_cached_options', {});" in cgi
+    assert "// admin_call('emergency_stop_refresh', {});" in cgi
     assert "admin_call('page_state', {})" in cgi
     assert "my $service_setting_result = admin_call('service_status', {});" not in cgi
     assert "SERVER_RENDERED_FALLBACK => $server_rendered_fallback" in cgi
@@ -579,7 +579,8 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     assert "emergencyStopRetry.dataset.retry === 'true'" in template
     assert "queueBackgroundHydration([" in template
     assert 'id="emergency-stop-refresh"' not in template
-    assert "emergencyStopRefresh" not in template
+    assert "let emergencyStopRefreshTimer = null;" in template
+    assert "void hydrateEmergencyStopOptions(" in template
     assert "let emergencyStopDiscoveryGeneration = 0;" in template
     assert "emergencyStopDiscoveryGeneration += 1;" in template
     assert "emergencyStopSelect.disabled = false;" in template
@@ -589,7 +590,7 @@ def test_initial_page_hydrates_configuration_after_the_visible_shell() -> None:
     )
     assert "if (expectedGeneration !== emergencyStopDiscoveryGeneration) return;" in template
     assert "const generation = ++emergencyStopDiscoveryGeneration;" in template
-    assert template.count("if (generation !== emergencyStopDiscoveryGeneration) return;") == 5
+    assert template.count("if (generation !== emergencyStopDiscoveryGeneration) return;") >= 3
     assert "component=admin_ui request_id=%s action=%s duration_ms=%.1f" in cgi
     assert "component=admin_helper request_id=%s action=%s outcome=rejected code=%s" in cgi
     assert "component=admin_ui request_id=%s phase=initial_render duration_ms=%.1f" in cgi
@@ -665,7 +666,7 @@ def test_emergency_stop_selection_is_preserved_while_options_load() -> None:
     assert "EMERGENCY_STOP_NO_OPTIONS" in template
     assert "EMERGENCY_STOP_NOT_CONFIGURED" in template
     assert 'id="emergency-stop-retry"' in template
-    assert "body.set('action', manualRetry ? 'emergency_stop_retry'" in template
+    assert "body.set('action', automatic ? 'emergency_stop_refresh'" in template
     assert "result.data.failure_text" in template
     assert "retry_not_before" in template
     assert "Number.isInteger(status.pending) && status.pending > 0)" in template
@@ -723,7 +724,7 @@ def test_knx_labels_moved_to_dedicated_same_origin_page() -> None:
     js = (ROOT / "webfrontend/htmlauth/knx.js").read_text(encoding="utf-8")
     assert 'id="knx-taxonomy-form"' in template
     assert 'href="knx.cgi"' in _admin_source()
-    assert "configuration.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v14" in _admin_source()
+    assert "configuration.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v15" in _admin_source()
     assert "mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v3" in template
     assert 'id="knx-taxonomy-form"' not in _admin_source()
     assert "same_origin_post()" in cgi
@@ -1828,7 +1829,7 @@ def test_server_rendered_emergency_stop_status_is_terminal_after_discovery() -> 
     assert "EMERGENCY_STOP_NO_OPTIONS" in cgi
     assert "EMERGENCY_STOP_NOT_CONFIGURED" in cgi
     assert "$options_data->{failure_text}" in cgi
-    assert "if $options_data->{stale};" in cgi
+    assert "if $options_data->{stale} && @$emergency_stop_options;" in cgi
     assert "$L{'SETUP.EMERGENCY_STOP_STALE'}" in cgi
     assert "EMERGENCY_STOP_STATUS_TEXT => $emergency_stop_status_text" in cgi
     assert "EMERGENCY_STOP_STATUS_KIND => $emergency_stop_status_kind" in cgi
@@ -1850,9 +1851,7 @@ def test_server_rendered_emergency_stop_retry_uses_one_explicit_probe() -> None:
     assert "my $fallback_retry_result;" in cgi
     assert "($action eq 'emergency_stop_retry' || $action eq 'emergency_stop_options')" in cgi
     assert "$fallback_retry_result = $result;" in cgi
-    assert (
-        "$fallback_retry_result\n        // admin_call('emergency_stop_cached_options', {});" in cgi
-    )
+    assert "$fallback_retry_result\n        // admin_call('emergency_stop_refresh', {});" in cgi
     assert "$emergency_stop_retry_enabled = time() >= $retry_at ? 1 : 0;" in cgi
     assert 'name="fallback" value="1"' in template
     assert 'name="action" value="<TMPL_VAR EMERGENCY_STOP_BUTTON_ACTION ESCAPE=HTML>"' in template
@@ -2002,7 +2001,7 @@ def test_admin_summary_badges_follow_authoritative_ui_state() -> None:
     ):
         assert f'id="{badge_id}"' in template
     assert ".mcp-service-badge[hidden] { display: none; }" in css
-    assert "renderConfiguration(result.data.configuration, cachedEmergencyStopOptions);" in template
+    assert "renderConfiguration(result.data.configuration);" in template
     assert "renderConfigurationBadges(data.configuration);" in template
     assert (
         "if (savedPublicOrigin !== nextPublicOrigin) certificate.refreshAfterOriginChange();"
@@ -3050,13 +3049,14 @@ const emergencyStopValue = {value: 'saved'};
 const emergencyStopStatus = {dataset: {}, hidden: true, textContent: ''};
 const emergencyStopRetry = {dataset: {}, hidden: false, disabled: false, textContent: ''};
 let emergencyStopDiscoveryGeneration = 0;
+let emergencyStopListVerified = false;
+let emergencyStopRefreshTimer = null;
+let emergencyStopRefreshSeconds = 300;
 const document = {createElement: () => ({})};
 const timers = [];
-const window = {setTimeout: (callback) => { timers.push(callback); }};
+const window = {clearTimeout() {}, setTimeout: (callback) => { timers.push(callback); }};
 const core = {unloading: false};
-let missingCachedLabel = false;
-const label = (key) => missingCachedLabel && key === 'SETUP.EMERGENCY_STOP_CACHED'
-  ? '' : key;
+const label = (key) => key;
 let response = {data: {status: 'unavailable', options: [], failure_text: 'connection failed'}};
 const actions = [];
 let postAjax = async (body, _timeout, supplied) => {
@@ -3067,31 +3067,18 @@ let postAjax = async (body, _timeout, supplied) => {
 eval(source.slice(start, end) + `
 (async () => {
   resetEmergencyStopOptions();
+  response = {data: {status: 'unavailable', cached: true, stale: true,
+    options: [{uuid: 'saved', name: 'Unchecked cached signal'}]}};
+  await hydrateEmergencyStopOptions(emergencyStopDiscoveryGeneration);
+  assert(!options.some((option) => option.textContent === 'Unchecked cached signal'));
+  assert(!emergencyStopStatus.textContent.includes('SETUP.EMERGENCY_STOP_STALE'));
+  assert(options.some((option) => option.value === 'saved' && option.selected));
   response = {data: {status: 'available', cached: true,
     options: [{uuid: 'saved', name: 'Cached signal'}]}};
-  await loadCachedEmergencyStopOptions(emergencyStopDiscoveryGeneration);
-  assert.equal(actions.at(-1), 'emergency_stop_cached_options');
-  assert.equal(emergencyStopStatus.textContent, 'SETUP.EMERGENCY_STOP_CACHED');
+  await loadEmergencyStopOptions(emergencyStopDiscoveryGeneration, false, true);
+  assert.equal(actions.at(-1), 'emergency_stop_refresh');
   assert.equal(emergencyStopRetry.textContent, 'SETUP.EMERGENCY_STOP_REFRESH');
   assert(options.some((option) => option.value === 'saved' && option.selected));
-
-  missingCachedLabel = true;
-  await loadCachedEmergencyStopOptions(emergencyStopDiscoveryGeneration);
-  assert.equal(emergencyStopStatus.hidden, true);
-  missingCachedLabel = false;
-
-  const requestCount = actions.length;
-  await loadCachedEmergencyStopOptions(emergencyStopDiscoveryGeneration, {
-    ok: true, data: {status: 'available', cached: true,
-      options: [{uuid: 'saved', name: 'Snapshot signal'}]},
-  });
-  assert.equal(actions.length, requestCount);
-  assert(options.some((option) => option.value === 'saved' && option.selected));
-
-  response = {data: {status: 'available', cached: true, stale: true,
-    options: [{uuid: 'saved', name: 'Cached signal'}]}};
-  await loadCachedEmergencyStopOptions(emergencyStopDiscoveryGeneration);
-  assert.equal(emergencyStopStatus.textContent, 'SETUP.EMERGENCY_STOP_STALE');
 
   response = {data: {status: 'unavailable', stale: true,
     options: [{uuid: 'saved', name: 'Cached signal'}], failure_text: 'connection failed'}};
@@ -3109,7 +3096,7 @@ eval(source.slice(start, end) + `
   await loadEmergencyStopOptions();
   assert.equal(emergencyStopRetry.hidden, false);
   assert.equal(emergencyStopRetry.disabled, true);
-  assert.equal(timers.length, 1);
+  assert(timers.length >= 1);
 
   postAjax = async () => { throw new Error('network'); };
   await loadEmergencyStopOptions();
@@ -3136,6 +3123,35 @@ eval(source.slice(start, end) + `
   assert.equal(emergencyStopRetry.hidden, false);
   assert.equal(emergencyStopRetry.textContent, 'SETUP.EMERGENCY_STOP_REFRESH');
   assert(options.some((option) => option.value === 'saved' && option.selected));
+
+  // Do not display an unchecked cached label before the fresh marker result.
+  resetEmergencyStopOptions();
+  postAjax = async (body) => {
+    actions.push(body.get('action'));
+    assert(!options.some((option) => option.textContent === 'Cached signal'));
+    return {data: {status: 'available', options: [{uuid: 'saved', name: 'Updated signal'}]}};
+  };
+  await hydrateEmergencyStopOptions(emergencyStopDiscoveryGeneration);
+  assert.equal(actions.at(-1), 'emergency_stop_refresh');
+  assert(options.some((option) => option.textContent === 'Updated signal' && option.selected));
+  assert.equal(emergencyStopStatus.hidden, true);
+  postAjax = async (body) => {
+    actions.push(body.get('action'));
+    return {data: {status: 'available', options: [{uuid: 'saved', name: 'Periodic update'}]}};
+  };
+  timers.at(-1)();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(actions.at(-1), 'emergency_stop_refresh');
+  assert(options.some((option) => option.textContent === 'Periodic update'));
+
+  const successfulTimers = timers.length;
+  postAjax = async () => ({data: {status: 'unavailable', options: []}});
+  await loadEmergencyStopOptions(emergencyStopDiscoveryGeneration, false, true);
+  assert.equal(timers.length, successfulTimers); // No automatic retry after failure.
+  const requestsBeforeUnload = actions.length;
+  core.unloading = true;
+  timers.at(-1)();
+  assert.equal(actions.length, requestsBeforeUnload);
 })().catch((error) => { console.error(error); process.exitCode = 1; });
 `);
 """

@@ -926,7 +926,8 @@ def create_server(settings: ServerSettings) -> FastMCP:
             not isinstance(value, dict)
             or set(value) != {"projection", "binding", "manual_retry", "early_probe"}
             or not isinstance(value["projection"], str)
-            or value["projection"] not in {"event_history", "emergency_stop"}
+            or value["projection"]
+            not in {"event_history", "emergency_stop", "emergency_stop_display"}
             or not isinstance(value["binding"], str)
             or not re.fullmatch(r"[0-9a-f]{64}", value["binding"])
             or type(value["manual_retry"]) is not bool

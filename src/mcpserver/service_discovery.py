@@ -1,7 +1,8 @@
 """Fixed local Admin projections from a separate, bounded discovery connection.
 
-No OAuth family or recorder socket can enter this path. Every request downloads
-its own complete structure. Permission freshness on an uninterrupted connection
+No OAuth family or recorder socket can enter this path. Visibility requests download
+their own complete structure; a separate marker-checked projection reuses display
+metadata only. Permission freshness on an uninterrupted connection
 has the explicitly accepted, target-dependent residual risk documented in #239.
 """
 
@@ -17,6 +18,7 @@ from contextlib import suppress
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 from uuid import NAMESPACE_URL, uuid5
 
@@ -39,7 +41,8 @@ from mcpserver.loxone.service_access import LoxBerryServiceCredentials, ServiceM
 
 PATH = "/internal/admin-discovery"
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
-_DISCOVERY_DEADLINES = {"event_history": 35, "emergency_stop": 90}
+_DISCOVERY_DEADLINES = {"event_history": 35, "emergency_stop": 90, "emergency_stop_display": 90}
+_MARKER_COMMAND = "jdev/sps/LoxAPPversion3"
 _MAX_INTERLEAVINGS = 32
 _MAX_IGNORED_BYTES = 1024 * 1024
 
@@ -93,11 +96,11 @@ def emergency_projection(structure: LoxoneStructure) -> dict[str, Any]:
         if item.control_type in {"VirtualStatus", "InfoOnlyDigital"} and len(item.state_uuids) == 1
     ]
     options.sort(key=lambda item: (item["name"].casefold(), item["uuid"]))
-    return {"status": "available", "options": options}
+    return {"status": "available", "options": options, "project_marker": structure.last_modified}
 
 
 class DiscoveryReceiver:
-    """One receiver, no response queue, and at most one outstanding file request.
+    """One receiver, no response queue, and one outstanding fixed marker or file.
 
     Only this dedicated socket may use it; state subscriptions and arbitrary
     commands are never sent. Binary gzip/unknown files are always terminal.
@@ -111,6 +114,8 @@ class DiscoveryReceiver:
     ) -> None:
         self.session = session
         self.pending: asyncio.Future[tuple[MessageHeader, str | bytes | None]] | None = None
+        self.operation = "structure"
+        self.marker_controls: set[str] = set()
         self.task = asyncio.create_task(self._run())
         self.failure: BaseException | None = None
         self.interleavings = 0
@@ -152,9 +157,18 @@ class DiscoveryReceiver:
                         document = json.loads(payload)
                     except (ValueError, TypeError):
                         raise DiscoveryUnavailable("invalid structure response") from None
-                    if not isinstance(document, dict) or not isinstance(
-                        document.get("controls"), dict
-                    ):
+                    if not isinstance(document, dict):
+                        raise DiscoveryUnavailable("unexpected text response")
+                    if self.operation == "marker":
+                        reply = document.get("LL")
+                        if (
+                            header.message_type != MessageType.TEXT
+                            or not isinstance(reply, dict)
+                            or not isinstance(reply.get("control"), str)
+                            or reply["control"] not in self.marker_controls
+                        ):
+                            raise DiscoveryUnavailable("unattributed marker response")
+                    elif not isinstance(document.get("controls"), dict):
                         raise DiscoveryUnavailable("unexpected text response")
                     self.pending.set_result((header, payload))
                     continue
@@ -184,12 +198,67 @@ class DiscoveryReceiver:
             if self.pending is not None and not self.pending.done():
                 self.pending.set_exception(exc)
 
+    async def _request(self, operation: str) -> tuple[MessageHeader, str | bytes | None]:
+        """Receive only the fixed marker command; never call the socket reader twice."""
+        if self.failure is not None:
+            raise self.failure
+        if self.pending is not None:
+            raise DiscoveryUnavailable("concurrent discovery request")
+        self.operation = operation
+        self.interleavings = self.ignored_bytes = 0
+        pending: asyncio.Future[tuple[MessageHeader, str | bytes | None]] = (
+            asyncio.get_running_loop().create_future()
+        )
+        self.pending = pending
+        try:
+            outgoing = (
+                _MARKER_COMMAND
+                if self.session._secure_transport
+                else self.session._encryptor.encrypted_command(_MARKER_COMMAND)
+            )
+            # Gen. 1 echoes the encrypted command with URI escapes decoded.
+            # Match this exact request, never an arbitrary encryption prefix.
+            self.marker_controls = {_MARKER_COMMAND, outgoing, unquote(outgoing)}
+            await self.session._websocket.send(outgoing)
+            return await pending
+        finally:
+            if not pending.done():
+                pending.cancel()
+            else:
+                with suppress(asyncio.CancelledError):
+                    pending.exception()
+            self.pending = None
+            self.marker_controls.clear()
+
+    async def marker(self) -> str | None:
+        _, payload = await self._request("marker")
+        assert isinstance(payload, str)
+        reply = json.loads(payload)["LL"]
+        code = str(reply.get("Code", reply.get("code", "")))
+        if code == "4003":
+            if self.on_source_ip_blocked is not None:
+                callback = self.on_source_ip_blocked
+
+                async def observe() -> None:
+                    await callback()
+
+                self.observation = asyncio.create_task(observe())
+                await asyncio.shield(self.observation)
+            raise LoxoneSourceIpBlocked("Miniserver source IP is blocked")
+        if code in {"401", "403"}:
+            raise DiscoveryUnavailable("marker permission denied")
+        if code not in {"200", "404"}:
+            raise DiscoveryUnavailable("marker command rejected")
+        value = reply.get("value")
+        return value if code == "200" and isinstance(value, str) and 0 < len(value) <= 128 else None
+
     async def load(self) -> LoxoneStructure:
         if self.failure is not None:
             raise self.failure
         if self.pending is not None:
             raise DiscoveryUnavailable("concurrent file request")
         self.interleavings = self.ignored_bytes = 0
+        self.operation = "structure"
         self.pending = asyncio.get_running_loop().create_future()
         pending = self.pending
 
@@ -287,7 +356,7 @@ class AdminDiscovery:
         manual_retry: bool = False,
         early_probe: bool = False,
     ) -> dict[str, Any]:
-        if kind not in {"event_history", "emergency_stop"}:
+        if kind not in _DISCOVERY_DEADLINES:
             raise DiscoveryUnavailable("invalid projection")
         async with asyncio.timeout(_DISCOVERY_DEADLINES[kind]), self.lock:
             try:
@@ -355,11 +424,41 @@ class AdminDiscovery:
                     timing["selector_auth_count"] = 1
                     if self.idle_task is None:
                         self.idle_task = asyncio.create_task(self._expire())
+                from mcpserver.emergency_options_cache import EmergencyOptionsCache
+
+                display_cache = EmergencyOptionsCache(
+                    self.store.path,
+                    self.store.pseudonym(
+                        "emergency-stop-options-v1", config.loxone_endpoint, username, password
+                    ),
+                )
                 del username, password
                 assert self.receiver is not None
                 tick = time.perf_counter_ns()
-                structure = await self.receiver.load()
-                timing["selector_structure_load_ms"] = (time.perf_counter_ns() - tick) / 1_000_000
+                cached = None
+                marker = None
+                if kind == "emergency_stop_display":
+                    marker = await self.receiver.marker()
+                    cached = await asyncio.to_thread(display_cache.read)
+                    if not (
+                        marker
+                        and cached
+                        and cached["has_options"]
+                        and cached["result"]["status"] == "available"
+                        and cached.get("project_marker") == marker
+                    ):
+                        cached = None
+                timing["selector_marker_check_ms"] = (
+                    (time.perf_counter_ns() - tick) / 1_000_000
+                    if kind == "emergency_stop_display"
+                    else 0.0
+                )
+                tick = time.perf_counter_ns()
+                structure = None if cached is not None else await self.receiver.load()
+                timing["selector_structure_load_ms"] = (
+                    (time.perf_counter_ns() - tick) / 1_000_000 if structure is not None else 0.0
+                )
+                timing["selector_structure_load_count"] = 0 if structure is None else 1
                 _, username, password, current = await self._identity()
                 del username, password
                 if self.receiver.failure is not None:
@@ -368,11 +467,21 @@ class AdminDiscovery:
                     raise LoxoneSourceIpBlocked("Miniserver source IP is blocked")
                 if self.closed or not hmac.compare_digest(current, profile):
                     raise DiscoveryUnavailable("identity changed during discovery")
-                result = (
-                    selector_projection(structure)
-                    if kind == "event_history"
-                    else emergency_projection(structure)
-                )
+                if cached is not None:
+                    # Display metadata only; a marker is not an authorization proof.
+                    result = {
+                        "status": "available",
+                        "options": cached["options"],
+                        "cached": True,
+                        "project_marker": marker,
+                    }
+                else:
+                    assert structure is not None
+                    result = (
+                        selector_projection(structure)
+                        if kind == "event_history"
+                        else emergency_projection(structure)
+                    )
                 self.last_used = time.monotonic()
                 return {"projection": result, "timing": timing}
             except BaseException:
@@ -468,7 +577,7 @@ def _request_projection(
         )
         if code not in {"authentication_busy", "authentication_cooldown", "source_ip_blocked"}:
             code = "temporarily_unavailable"
-        if kind == "emergency_stop":
+        if kind in {"emergency_stop", "emergency_stop_display"}:
             reason = {
                 "authentication_busy": "authentication_busy",
                 "authentication_cooldown": "authentication_cooldown",
