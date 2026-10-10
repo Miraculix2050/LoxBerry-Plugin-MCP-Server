@@ -3728,7 +3728,7 @@ def test_native_admin_log_receives_helper_lifecycle_events(tmp_path: Path) -> No
         + ') . qq(\\n); print q({"ok":true,"data":{}});\n',
         encoding="utf-8",
     )
-    body = "action=diagnostic&ajax=1"
+    body = "action=status&ajax=1"
     result = subprocess.run(
         [perl, f"-I{ROOT / 'tests/perl_stubs'}", str(ROOT / "webfrontend/htmlauth/index.cgi")],
         input=body,
