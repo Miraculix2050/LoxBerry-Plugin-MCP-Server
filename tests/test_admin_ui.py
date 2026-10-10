@@ -3657,3 +3657,96 @@ for (const action of ['revoke_loxberry_read', 'revoke_loxberry_operate']) {
         row = row[: row.index("</tr>")]
         assert "<TMPL_IF inactive><TMPL_IF client_name><TMPL_VAR client_name ESCAPE=HTML>" in row
         assert '<div class="mcp-help"><TMPL_IF inactive_login_required>' in row
+
+
+def test_admin_lifecycle_bridge_accepts_only_bounded_fixed_fields() -> None:
+    perl = shutil.which("perl")
+    if perl is None:
+        return
+    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
+    function = (
+        "sub safe_admin_lifecycle_events"
+        + cgi.split("sub safe_admin_lifecycle_events", 1)[1].split("\nsub admin_call", 1)[0]
+    )
+    program = (
+        "use strict; use warnings; use JSON::PP; " + function + " local $/; my $input = <STDIN>; "
+        "print encode_json([safe_admin_lifecycle_events($input)]);"
+    )
+    safe = (
+        "mcpserver_auth_lifecycle=INFO component=auth_lifecycle event=family_revoked "
+        "trace_id="
+        + "a" * 24
+        + " family_ref="
+        + "a" * 24
+        + " client_ref=- binding_ref=- capability=- reason=admin_session "
+        "source=admin outcome=committed count=1"
+    )
+    invalid = [
+        safe.replace("admin_session", "private_reason"),
+        safe.replace("family_ref=" + "a" * 24, "family_ref=private-family"),
+        safe + " password=secret",
+        safe.replace("count=1", "count=10001"),
+        safe.replace("source=admin", "source=private"),
+        safe.replace("capability=-", "capability=private"),
+        "unrelated private stderr",
+    ]
+    result = subprocess.run(
+        [perl, "-e", program],
+        input="\n".join(invalid + [safe] * 20),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    events = json.loads(result.stdout)
+    assert len(events) == 7
+    assert all(
+        severity == "info" and message == safe.split("INFO ", 1)[1] for severity, message in events
+    )
+    assert "private" not in result.stdout and "secret" not in result.stdout
+    assert "my $child_status = $?;" in cgi
+    assert "admin_log($event->[0]," in cgi
+
+
+def test_native_admin_log_receives_helper_lifecycle_events(tmp_path: Path) -> None:
+    perl = shutil.which("perl")
+    if perl is None or os.name == "nt":
+        return
+    environment = _admin_cgi_environment(tmp_path)
+    marker = tmp_path / "log-events.txt"
+    safe = (
+        "mcpserver_auth_lifecycle=INFO component=auth_lifecycle event=family_revoked "
+        "trace_id="
+        + "a" * 24
+        + " family_ref="
+        + "a" * 24
+        + " client_ref=- binding_ref=- capability=- reason=admin_session "
+        "source=admin outcome=committed count=1"
+    )
+    (tmp_path / "mcpserver-admin").write_text(
+        "#!/usr/bin/env perl\nmy $request = <STDIN>; print STDERR q("
+        + safe
+        + ') . qq(\\n); print q({"ok":true,"data":{}});\n',
+        encoding="utf-8",
+    )
+    body = "action=diagnostic&ajax=1"
+    result = subprocess.run(
+        [perl, f"-I{ROOT / 'tests/perl_stubs'}", str(ROOT / "webfrontend/htmlauth/index.cgi")],
+        input=body,
+        capture_output=True,
+        text=True,
+        check=True,
+        env={
+            **environment,
+            "REQUEST_METHOD": "POST",
+            "CONTENT_TYPE": "application/x-www-form-urlencoded",
+            "CONTENT_LENGTH": str(len(body)),
+            "HTTP_ORIGIN": "https://loxberry.example",
+            "HTTP_HOST": "loxberry.example",
+            "LB_TEST_LOG_EVENTS_PATH": str(marker),
+            "LB_TEST_PLUGIN_LOGLEVEL": "6",
+        },
+    )
+    assert '"ok":true' in result.stdout
+    events = marker.read_text(encoding="utf-8")
+    assert "event=family_revoked" in events and "reason=admin_session" in events
+    assert "request_id=" in events

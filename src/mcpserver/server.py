@@ -40,7 +40,7 @@ from mcpserver.auth.provider import (
     StoredAccessToken,
 )
 from mcpserver.auth.remote_revocation import run_remote_revocation_worker
-from mcpserver.auth.store import AtomicJsonAuthStore
+from mcpserver.auth.store import AtomicJsonAuthStore, lifecycle_event
 from mcpserver.auth.web import Phase0OAuthWeb
 from mcpserver.config import DEFAULT_LOG_LEVEL, AtomicConfigStore, PluginConfig
 from mcpserver.emergency_stop import EmergencyStopMonitor
@@ -405,8 +405,10 @@ async def _runtime_lifespan(
             await emergency_stop.start()
         if event_history is not None:
             await event_history.start()
+        lifecycle_event("service_started", source="runtime", outcome="opened")
         yield
     finally:
+        lifecycle_event("service_stopped", source="runtime", reason="shutdown", outcome="pending")
         if admin_discovery is not None:
             await admin_discovery.close()
         if worker is not None:
@@ -423,6 +425,7 @@ async def _runtime_lifespan(
             await emergency_stop.close()
         if event_history is not None:
             await event_history.close()
+        lifecycle_event("service_stopped", source="runtime", reason="shutdown", outcome="closed")
 
 
 def _miniserver_auth_coordinator(

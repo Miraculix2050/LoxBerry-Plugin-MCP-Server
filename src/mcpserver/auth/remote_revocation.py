@@ -18,6 +18,7 @@ from mcpserver.auth.loxone_store import (
     EncryptedLoxoneTokenStore,
     LoxoneTokenStoreError,
 )
+from mcpserver.auth.store import lifecycle_event
 from mcpserver.loxone.auth_diagnostics import (
     MiniserverAuthCoordinator,
     MiniserverAuthenticationSuppressed,
@@ -216,6 +217,13 @@ def _terminal(
         value["totals"][outcome] += 1
         state.write(value)
     store.complete_remote_revoke(family_id)
+    lifecycle_event(
+        "remote_cleanup",
+        family_id=family_id,
+        source="remote_worker",
+        reason=outcome,
+        outcome="completed",
+    )
 
 
 async def process_remote_revocations(
@@ -292,6 +300,14 @@ async def process_remote_revocations(
         attempts = store.reserve_remote_revoke_attempt(item.family_id, now + reserved_delay)
         if attempts == 0:
             return
+        lifecycle_event(
+            "remote_cleanup",
+            family_id=item.family_id,
+            source="remote_worker",
+            reason="attempt_reserved",
+            outcome="pending",
+            debug=True,
+        )
         client = LoxoneClient(endpoint, client_uuid=_CLIENT_UUID, timeout_seconds=timeout_seconds)
 
         async def revoke() -> None:
@@ -312,6 +328,14 @@ async def process_remote_revocations(
                 auth_coordinator.current_status().get("next_auth_attempt_at")
                 if auth_coordinator is not None
                 else None
+            )
+            lifecycle_event(
+                "remote_cleanup",
+                family_id=item.family_id,
+                source="remote_worker",
+                reason="authentication_suppressed",
+                outcome="suppressed",
+                debug=True,
             )
             store.release_suppressed_remote_revoke_attempt(
                 item.family_id,
@@ -356,6 +380,13 @@ async def process_remote_revocations(
                 return
             state.write(value)
             store.suspend_remote_revoke(item.family_id, now, delay_seconds=delay)
+            lifecycle_event(
+                "remote_cleanup",
+                family_id=item.family_id,
+                source="remote_worker",
+                reason=category,
+                outcome="failed",
+            )
             _LOGGER.warning("component=remote_revocation outcome=%s", category)
             return
         value["invalid_streak"] = 0

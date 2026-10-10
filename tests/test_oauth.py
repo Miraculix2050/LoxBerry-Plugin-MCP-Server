@@ -350,6 +350,8 @@ def test_disabled_control_scope_is_locally_revoked_without_deleting_remote_token
     assert provider.revoke_scope_locally(CONTROL_SCOPE) == 1
     snapshot = store.snapshot()
     assert snapshot["families"]["family"]["revoked"] is True
+    assert snapshot["families"]["family"]["revocation_reason"] == "scope_disabled"
+    assert snapshot["families"]["family"]["revocation_source"] == "configuration"
     assert snapshot["access_tokens"]["access"]["status"] == "revoked"
     assert deleted == []
 
@@ -820,7 +822,8 @@ async def test_code_access_and_refresh_values_are_never_persisted(tmp_path: Path
 
 
 @pytest.mark.asyncio
-async def test_refresh_replay_revokes_the_entire_family(tmp_path: Path) -> None:
+async def test_refresh_replay_revokes_the_entire_family(tmp_path: Path, caplog) -> None:
+    caplog.set_level("DEBUG", logger="mcpserver.auth.lifecycle")
     provider = _provider(tmp_path)
     client = await _client(provider)
     raw_code = provider.issue_authorization_code(
@@ -844,6 +847,23 @@ async def test_refresh_replay_revokes_the_entire_family(tmp_path: Path) -> None:
     assert await provider.load_access_token(second.access_token) is None
     assert second.refresh_token is not None
     assert await provider.load_refresh_token(client, second.refresh_token) is None
+    family = provider.store.snapshot()["families"][refresh.family_id]
+    assert family["revocation_reason"] == "refresh_reuse"
+    assert family["revocation_source"] == "oauth"
+    assert family["revoked_at"] == provider.now()
+    assert "event=token_rotated" in caplog.text
+    assert "event=family_revoked" in caplog.text
+    for raw in (
+        raw_code,
+        first.access_token,
+        first.refresh_token,
+        second.access_token,
+        second.refresh_token,
+        refresh.family_id,
+    ):
+        assert raw not in caplog.text
+    await provider.revoke_token(refresh)
+    assert provider.store.snapshot()["families"][refresh.family_id] == family
 
 
 @pytest.mark.asyncio
@@ -2283,3 +2303,80 @@ async def test_consent_cleanup_is_durable_even_while_authentication_is_suppresse
     assert pending[0].token.value == "synthetic-consent-jwt"
     pending[0].token.destroy()
     assert "synthetic-consent-jwt" not in (tmp_path / "tokens.json").read_text()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reason", ["oauth_revocation", "explorer_logout"])
+async def test_explicit_revocation_records_initiating_path(tmp_path, reason):
+    provider = _provider(tmp_path)
+    provider.store.mutate(
+        lambda doc: (
+            doc["families"].update({"family": {"revoked": False}}),
+            doc["refresh_tokens"].update(
+                {
+                    hashlib.sha256(b"private-token").hexdigest(): {
+                        "family_id": "family",
+                        "client_id": "client",
+                        "status": "active",
+                    }
+                }
+            ),
+        )
+    )
+    await provider.revoke_raw_token("private-token", "other-client", reason=reason)
+    assert provider.store.snapshot()["families"]["family"]["revoked"] is False
+    await provider.revoke_raw_token("private-token", "client", reason=reason)
+    family = provider.store.snapshot()["families"]["family"]
+    assert (family["revocation_reason"], family["revocation_source"]) == (reason, "oauth")
+
+
+def test_family_expiry_is_logged_using_provider_clock_without_revocation(tmp_path, caplog):
+    clock = Clock()
+    provider = _provider(tmp_path, clock)
+    provider.store.mutate(
+        lambda doc: doc["families"].update(
+            {
+                "expired-private": {
+                    "revoked": False,
+                    "expires_at": clock.value + 10,
+                }
+            }
+        )
+    )
+    caplog.set_level("INFO", logger="mcpserver.auth.lifecycle")
+    caplog.clear()
+    clock.value += 10
+    provider._mutate_with_cleanup(lambda doc: None)
+    assert "event=family_expired" in caplog.text
+    assert "reason=family_expired" in caplog.text
+    assert "event=family_revoked" not in caplog.text
+    assert "expired-private" not in caplog.text
+    assert provider.store.snapshot()["families"] == {}
+
+
+@pytest.mark.asyncio
+async def test_approval_match_diagnostics_distinguish_capabilities_without_transferring_rights(
+    tmp_path, caplog
+):
+    provider = Phase0OAuthProvider(
+        AtomicJsonAuthStore(tmp_path / "sessions.json"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+        loxberry_read_enabled=True,
+        loxberry_operate_enabled=True,
+        loxberry_read_allowed=lambda client, identity, server: client == "approved-client",
+        loxberry_operate_allowed=lambda *args: False,
+    )
+    caplog.set_level("DEBUG", logger="mcpserver.auth.lifecycle")
+    assert provider.loxberry_read_allowed("approved-client", "identity", "server") is True
+    assert provider.loxberry_operate_allowed("approved-client", "identity", "server") is False
+    assert provider.loxberry_read_allowed("different-client", "identity", "server") is False
+    matches = [
+        entry.getMessage()
+        for entry in caplog.records
+        if "event=approval_match " in entry.getMessage()
+    ]
+    assert "capability=read reason=exact_match" in matches[0]
+    assert "capability=operate reason=no_exact_match" in matches[1]
+    assert "capability=read reason=no_exact_match" in matches[2]
+    assert "approved-client" not in caplog.text and "different-client" not in caplog.text

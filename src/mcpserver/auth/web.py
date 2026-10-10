@@ -480,7 +480,9 @@ class Phase0OAuthWeb:
                     self.loxone_store.delete_explorer_session(session_id)
                 return response
             if action == "logout" and set(payload) == {"action"}:
-                await self.provider.revoke_raw_token(current.refresh_token, current.client_id)
+                await self.provider.revoke_raw_token(
+                    current.refresh_token, current.client_id, reason="explorer_logout"
+                )
                 self.loxone_store.delete_explorer_session(current.session_id)
                 logout_response = Response(status_code=204, headers=_security_headers())
                 self._delete_explorer_cookie(logout_response)

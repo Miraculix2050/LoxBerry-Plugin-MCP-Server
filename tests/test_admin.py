@@ -2280,7 +2280,9 @@ def test_disabling_control_revokes_control_sessions_after_successful_restart(
         *,
         endpoint: str | None = None,
         timeout_seconds: float | None = None,
+        reason: str = "admin_session",
     ) -> int:
+        assert reason == "scope_disabled"
         events.append(f"revoke:{','.join(family_ids)}")
         revocations.append((family_ids, endpoint, timeout_seconds))
         return len(family_ids)
@@ -2721,3 +2723,48 @@ def test_legacy_name_enrichment_requires_exact_retained_binding_and_never_activa
     assert rows()[0]["rows"][0]["client_name"] == "Codex"
     assert rows()[0]["active"] is False
     assert rows()[1]["active"] is True
+
+
+@pytest.mark.parametrize(
+    "target,reason", [("family", "admin_session"), (None, "admin_all_sessions")]
+)
+def test_admin_revocation_retains_first_cause_and_exports_safe_diagnostics(
+    tmp_path, monkeypatch, target, reason
+):
+    from types import SimpleNamespace
+
+    from mcpserver.auth.store import lifecycle_reference
+
+    auth = AtomicJsonAuthStore(tmp_path / "auth.json")
+    config = AtomicConfigStore(tmp_path / "config.json")
+    config.save(PluginConfig())
+    auth.mutate(
+        lambda doc: doc["families"].update(
+            {
+                "family": {
+                    "client_id": "private-client",
+                    "identity_id": "private-identity",
+                    "miniserver_id": "private-miniserver",
+                    "revoked": False,
+                    "expires_at": 2000000000,
+                }
+            }
+        )
+    )
+    monkeypatch.setattr("mcpserver.admin._auth_store", lambda: auth)
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: config)
+    monkeypatch.setattr(
+        "mcpserver.admin._token_store",
+        lambda: SimpleNamespace(schedule_remote_revoke=lambda family: True),
+    )
+    monkeypatch.setattr("mcpserver.admin._service_active", lambda: True)
+    assert _revoke(target) == 1
+    family = auth.snapshot()["families"]["family"]
+    assert (family["revocation_reason"], family["revocation_source"]) == (reason, "admin")
+    _revoke("family")
+    assert auth.snapshot()["families"]["family"] == family
+    summary = dispatch({"action": "diagnostic"})["auth_lifecycle"]
+    assert summary["reason_counts"] == {reason: 1}
+    assert summary["recent_revocations"][0]["family_ref"] == lifecycle_reference("family", "family")
+    for raw in ("private-client", "private-identity", "private-miniserver"):
+        assert raw not in json.dumps(summary)

@@ -7,11 +7,13 @@ import copy
 import hashlib
 import hmac
 import json
+import logging
 import os
 import secrets
 import stat
 import sys
 import threading
+import time
 from collections.abc import Callable
 from contextlib import contextmanager, suppress
 from pathlib import Path
@@ -23,6 +25,335 @@ _SCHEMA_VERSION: Final = 1
 _COLLECTIONS: Final = ("clients", "codes", "access_tokens", "refresh_tokens", "families")
 _MAX_STORE_BYTES: Final = 4 * 1024 * 1024
 T = TypeVar("T")
+
+
+_LIFECYCLE_LOGGER = logging.getLogger("mcpserver.auth.lifecycle")
+_REVOCATION_REASONS = frozenset(
+    {
+        "unknown",
+        "oauth_revocation",
+        "explorer_logout",
+        "refresh_reuse",
+        "refresh_invalid_state",
+        "admin_session",
+        "admin_all_sessions",
+        "approval_read_removed",
+        "approval_operate_removed",
+        "scope_disabled",
+    }
+)
+_LIFECYCLE_SOURCES = frozenset(
+    {"unknown", "oauth", "admin", "configuration", "maintenance", "runtime", "remote_worker"}
+)
+_LIFECYCLE_EVENTS = frozenset(
+    {
+        "client_registered",
+        "client_removed",
+        "family_created",
+        "family_revoked",
+        "family_removed",
+        "token_rotated",
+        "token_issued",
+        "refresh_rejected",
+        "approval_granted",
+        "approval_removed",
+        "approval_match",
+        "remote_cleanup",
+        "connection_opened",
+        "connection_closed",
+        "connection_close_requested",
+        "runtime_closed",
+        "service_started",
+        "service_stopped",
+        "family_expired",
+        "batch_summary",
+    }
+)
+_LIFECYCLE_REASONS = _REVOCATION_REASONS | frozenset(
+    {
+        "retention_cleanup",
+        "family_expired",
+        "refresh_rotation",
+        "authorization_code",
+        "exact_match",
+        "no_exact_match",
+        "capability_disabled",
+        "explorer_logout",
+        "transport_failed",
+        "teardown_failed",
+        "stream_ended",
+        "token_refresh",
+        "idle_eviction",
+        "capacity_eviction",
+        "shutdown",
+        "local_disconnect",
+        "confirmed_killed",
+        "already_invalid",
+        "expired_without_confirmation",
+        "unconfirmed",
+        "queued",
+        "attempt_reserved",
+        "authentication_suppressed",
+        "source_ip_blocked",
+        "command_rejected",
+        "read",
+        "operate",
+    }
+)
+_LIFECYCLE_OUTCOMES = frozenset(
+    {
+        "unknown",
+        "committed",
+        "removed",
+        "accepted",
+        "rejected",
+        "opened",
+        "closed",
+        "pending",
+        "completed",
+        "failed",
+        "suppressed",
+        "matched",
+        "unmatched",
+    }
+)
+
+
+def lifecycle_reference(kind: str, value: str) -> str:
+    """Domain-separated reference for opaque random family IDs or existing binding hashes."""
+    if not value or kind not in {"family", "binding"}:
+        return "-"
+    return hashlib.sha256(f"auth-lifecycle-v1\0{kind}\0{value}".encode()).hexdigest()[:24]
+
+
+def lifecycle_client_reference(document: dict[str, Any], client_id: str) -> str:
+    """Key client references so chosen client identifiers cannot be dictionary-matched."""
+    if not client_id:
+        return "-"
+    key = base64.urlsafe_b64decode(document["subject_key"].encode("ascii"))
+    return hmac.new(
+        key, f"auth-lifecycle-client-v1\0{client_id}".encode(), hashlib.sha256
+    ).hexdigest()[:24]
+
+
+def revocation_details(family: dict[str, Any]) -> tuple[str, str]:
+    reason, source = family.get("revocation_reason"), family.get("revocation_source")
+    return (
+        reason if isinstance(reason, str) and reason in _REVOCATION_REASONS else "unknown",
+        source if isinstance(source, str) and source in _LIFECYCLE_SOURCES else "unknown",
+    )
+
+
+def mark_family_revoked(family: dict[str, Any], *, now: int, reason: str, source: str) -> bool:
+    """Record only the first transition; never attribute a historical revocation retroactively."""
+    if reason not in _REVOCATION_REASONS or source not in _LIFECYCLE_SOURCES:
+        raise ValueError("Unsupported revocation cause")
+    if family.get("revoked", False):
+        return False
+    family.update(revoked=True, revoked_at=now, revocation_reason=reason, revocation_source=source)
+    return True
+
+
+def lifecycle_event(
+    event: str,
+    *,
+    family_id: str = "",
+    client_ref: str = "-",
+    binding_id: str = "",
+    reason: str = "unknown",
+    source: str = "unknown",
+    outcome: str = "unknown",
+    count: int = 1,
+    capability: str = "-",
+    debug: bool = False,
+) -> None:
+    """Emit only fixed fields, never source IDs, names, token material or exception text."""
+    if event not in _LIFECYCLE_EVENTS:
+        return
+    family_ref = lifecycle_reference("family", family_id)
+    binding_ref = lifecycle_reference("binding", binding_id)
+    if len(client_ref) != 24 or any(c not in "0123456789abcdef" for c in client_ref):
+        client_ref = "-"
+    reason = reason if reason in _LIFECYCLE_REASONS else "unknown"
+    source = source if source in _LIFECYCLE_SOURCES else "unknown"
+    outcome = outcome if outcome in _LIFECYCLE_OUTCOMES else "unknown"
+    capability = capability if capability in {"read", "operate"} else "-"
+    correlation = next((ref for ref in (family_ref, binding_ref, client_ref) if ref != "-"), "-")
+    # Diagnostic failure must not change an authorization or persistence result.
+    with suppress(Exception):
+        _LIFECYCLE_LOGGER.log(
+            logging.DEBUG if debug else logging.WARNING if outcome == "failed" else logging.INFO,
+            "component=auth_lifecycle event=%s trace_id=%s family_ref=%s client_ref=%s "
+            "binding_ref=%s capability=%s reason=%s source=%s outcome=%s count=%d",
+            event,
+            correlation,
+            family_ref,
+            client_ref,
+            binding_ref,
+            capability,
+            reason,
+            source,
+            outcome,
+            max(0, min(count, 10000)),
+        )
+
+
+@contextmanager
+def admin_lifecycle_logging():  # type: ignore[no-untyped-def]
+    """Bound stderr below a small pipe budget; CGI forwards only its fixed safe grammar."""
+
+    class Handler(logging.Handler):
+        emitted = 0
+        dropped = 0
+
+        def emit(self, record: logging.LogRecord) -> None:
+            text = f"mcpserver_auth_lifecycle={record.levelname} {record.getMessage()}"
+            if self.emitted < 6 and len(text.encode("ascii", "replace")) <= 512:
+                sys.stderr.write(text + "\n")
+                self.emitted += 1
+            else:
+                self.dropped += 1
+
+    handler = Handler()
+    prior_level, prior_propagate = _LIFECYCLE_LOGGER.level, _LIFECYCLE_LOGGER.propagate
+    _LIFECYCLE_LOGGER.setLevel(logging.DEBUG)
+    _LIFECYCLE_LOGGER.propagate = False
+    _LIFECYCLE_LOGGER.addHandler(handler)
+    try:
+        yield
+    finally:
+        if handler.dropped:
+            with suppress(Exception):
+                sys.stderr.write(
+                    "mcpserver_auth_lifecycle=INFO component=auth_lifecycle event=batch_summary "
+                    "trace_id=- family_ref=- client_ref=- binding_ref=- capability=- "
+                    "reason=unknown source=admin outcome=unknown "
+                    f"count={min(handler.dropped, 10000)}\n"
+                )
+        _LIFECYCLE_LOGGER.removeHandler(handler)
+        _LIFECYCLE_LOGGER.setLevel(prior_level)
+        _LIFECYCLE_LOGGER.propagate = prior_propagate
+
+
+def _committed_lifecycle_events(
+    original: dict[str, Any], document: dict[str, Any], *, now: int
+) -> None:
+    """Derive rare lifecycle transitions from the committed store delta, bounded per mutation."""
+    emitted = 0
+    total = 0
+
+    def emit(event: str, **fields: Any) -> None:
+        nonlocal emitted, total
+        total += 1
+        if emitted < 32:
+            lifecycle_event(event, **fields)
+            emitted += 1
+
+    before_clients, clients = original["clients"], document["clients"]
+    for client_id in clients.keys() - before_clients.keys():
+        emit(
+            "client_registered",
+            client_ref=lifecycle_client_reference(document, client_id),
+            source="oauth",
+            outcome="committed",
+        )
+    for client_id in before_clients.keys() - clients.keys():
+        emit(
+            "client_removed",
+            client_ref=lifecycle_client_reference(document, client_id),
+            source="maintenance",
+            reason="retention_cleanup",
+            outcome="removed",
+        )
+    before, families = original["families"], document["families"]
+    for family_id, family in families.items():
+        if not isinstance(family, dict):
+            continue
+        fields = {
+            "family_id": family_id,
+            "client_ref": lifecycle_client_reference(document, str(family.get("client_id", ""))),
+        }
+        prior = before.get(family_id)
+        if prior is None:
+            emit("family_created", **fields, source="oauth", outcome="committed")
+        if family.get("revoked") and (not isinstance(prior, dict) or not prior.get("revoked")):
+            reason, source = revocation_details(family)
+            emit("family_revoked", **fields, reason=reason, source=source, outcome="committed")
+    for family_id in before.keys() - families.keys():
+        family = before[family_id]
+        expired = (
+            isinstance(family, dict)
+            and type(family.get("expires_at")) is int
+            and family["expires_at"] <= now
+        )
+        emit(
+            "family_expired" if expired else "family_removed",
+            family_id=family_id,
+            source="maintenance",
+            reason="family_expired" if expired else "retention_cleanup",
+            outcome="removed",
+        )
+    rotated = {
+        record.get("family_id")
+        for digest, record in document["refresh_tokens"].items()
+        if isinstance(record, dict)
+        and record.get("status") == "consumed"
+        and original["refresh_tokens"].get(digest, {}).get("status") == "active"
+    }
+    issued = {
+        record.get("family_id")
+        for digest, record in document["access_tokens"].items()
+        if digest not in original["access_tokens"] and isinstance(record, dict)
+    }
+    for family_id in issued:
+        if isinstance(family_id, str):
+            emit(
+                "token_rotated" if family_id in rotated else "token_issued",
+                family_id=family_id,
+                reason="refresh_rotation" if family_id in rotated else "authorization_code",
+                source="oauth",
+                outcome="accepted",
+                debug=True,
+            )
+    if total > emitted:
+        lifecycle_event(
+            "batch_summary", source="maintenance", outcome="committed", count=total - emitted
+        )
+
+
+def lifecycle_summary(document: dict[str, Any]) -> dict[str, Any]:
+    """Bounded local-admin diagnostics; no raw records or identifiers are exported."""
+    families = document.get("families")
+    if not isinstance(families, dict) or "subject_key" not in document:
+        return {"availability": "unavailable"}
+    counts: dict[str, int] = {}
+    recent: list[dict[str, Any]] = []
+    for family_id, family in families.items():
+        if not isinstance(family, dict) or not family.get("revoked"):
+            continue
+        reason, source = revocation_details(family)
+        counts[reason] = counts.get(reason, 0) + 1
+        at = family.get("revoked_at")
+        recent.append(
+            {
+                "family_ref": lifecycle_reference("family", family_id),
+                "client_ref": lifecycle_client_reference(
+                    document, str(family.get("client_id", ""))
+                ),
+                "reason": reason,
+                "source": source,
+                "revoked_at": at if type(at) is int and 0 <= at <= 253402300799 else None,
+            }
+        )
+    recent.sort(
+        key=lambda item: item["revoked_at"] if item["revoked_at"] is not None else -1, reverse=True
+    )
+    return {
+        "availability": "available",
+        "retained_revoked": sum(counts.values()),
+        "reason_counts": counts,
+        "recent_revocations": recent[:20],
+    }
 
 
 class _UidProvider(Protocol):
@@ -193,10 +524,13 @@ class AtomicJsonAuthStore:
         with self._locked():
             return copy.deepcopy(self._read_unlocked())
 
-    def mutate(self, operation: Callable[[dict[str, Any]], T]) -> T:
+    def mutate(
+        self, operation: Callable[[dict[str, Any]], T], *, lifecycle_now: int | None = None
+    ) -> T:
         """Apply and durably commit one operation while holding both locks."""
         result: T | None = None
         failure: BaseException | None = None
+        committed: tuple[dict[str, Any], dict[str, Any]] | None = None
         with self._locked():
             try:
                 document = self._read_unlocked()
@@ -204,10 +538,16 @@ class AtomicJsonAuthStore:
                 result = operation(document)
                 if document != original:
                     self._write_unlocked(document)
+                    committed = (original, document)
             except BaseException as exc:
                 failure = exc
         if failure is not None:
             raise failure
+        if committed is not None:
+            with suppress(Exception):
+                _committed_lifecycle_events(
+                    *committed, now=int(time.time()) if lifecycle_now is None else lifecycle_now
+                )
         return result  # type: ignore[return-value]
 
     def pseudonym(self, *parts: str) -> str:

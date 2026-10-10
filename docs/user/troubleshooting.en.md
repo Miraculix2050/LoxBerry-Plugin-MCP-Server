@@ -1,5 +1,56 @@
 # Troubleshooting
 
+## OAuth session and approval lifecycle
+
+Use the local Admin diagnostic download when a session disappears or an approval
+stays inactive. `auth_lifecycle` reports retained revoked-family counts by cause
+and at most 20 recent revocations with time, source and masked references. This
+is local LoxBerry-admin diagnostics; Loxone authorization does not grant access.
+
+The first revocation stores `revoked_at`, `revocation_reason` and
+`revocation_source` on the existing family. Repeated revocations preserve that
+first cause. Historical records without a cause remain `unknown`; no later
+Admin action is attributed as their original trigger. Metadata follows existing
+family retention and disappears when that family is collected.
+
+| Cause | Recorded initiating path |
+| --- | --- |
+| `oauth_revocation` / `explorer_logout` | Explicit OAuth revocation / Explorer logout |
+| `refresh_reuse` / `refresh_invalid_state` | Reuse of a consumed refresh token / invalid refresh state causing revocation |
+| `admin_session` / `admin_all_sessions` | Local Admin revoked one / all sessions |
+| `approval_read_removed` / `approval_operate_removed` | Local Admin removed the matching LoxBerry approval |
+| `scope_disabled` | Configuration disabled an authorized capability |
+| `unknown` | Original cause was not recorded or is unsupported |
+
+Plugin logs use `component=auth_lifecycle` with fixed event, reason, source,
+capability, outcome and correlation fields. `family_ref` is a domain-separated
+hash of a randomly issued opaque family ID and correlates OAuth, runtime and
+remote-cleanup events. `client_ref` is keyed per installation; `binding_ref`
+is a separate hash of the existing opaque binding. References grant no rights
+and do not imply that two differently registered clients are interchangeable.
+Source labels identify the initiating path, not a verified human operator.
+
+At normal INFO logging, rare events cover registration, family creation and
+revocation, expiry/removal, approval changes, connection opening/termination,
+service start/stop and remote cleanup outcomes. DEBUG adds successful token
+issuance/rotation, exact approval matching per capability, rejected refreshes,
+close requests and cleanup attempts/suppression. Ordinary store reads produce
+no lifecycle entries. Existing log-level controls and rotation remain in effect;
+a process crash cannot emit a graceful stop, and missing logs are not proof of
+an absent event.
+
+Admin helper events are forwarded to the native LoxBerry Admin log through a
+strict fixed-field filter, following the native plugin log level. Each helper
+forwards at most six detailed entries plus a count summary to bound pipe output.
+
+Store transition events are emitted after a successful durable commit. A bulk
+mutation emits at most 32 detailed entries plus a count summary; persisted
+first causes remain available independently of log rotation. Remote cleanup
+queueing, confirmed kill, already invalid, nominal expiry and unconfirmed
+outcomes remain distinct. A connection ending is not an OAuth-family revocation.
+No tokens, raw client/family IDs, names, endpoints, credentials or arbitrary
+exception messages are added to these diagnostics.
+
 ## Repeated Miniserver authentication rejection
 
 Three definite authentication rejections in five minutes pause new sign-ins

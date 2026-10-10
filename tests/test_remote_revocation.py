@@ -284,7 +284,9 @@ def test_uncertain_outcomes_stop_after_five_network_attempts(
 def test_success_and_nominal_expiry_have_distinct_outcomes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
+    caplog.set_level("DEBUG", logger="mcpserver.auth.lifecycle")
     store = _store(tmp_path)
     now = 2_000_000_000
     _queue(store, "success", now)
@@ -314,6 +316,17 @@ def test_success_and_nominal_expiry_have_distinct_outcomes(
     totals = RemoteRevocationState(store.path).read()["totals"]
     assert totals["confirmed_killed"] == 1
     assert totals["expired_without_confirmation"] == 1
+    terminal = [
+        record.getMessage()
+        for record in caplog.records
+        if "event=remote_cleanup " in record.getMessage()
+        and "outcome=completed" in record.getMessage()
+    ]
+    assert len(terminal) == 2
+    assert any("reason=confirmed_killed" in text for text in terminal)
+    assert any("reason=expired_without_confirmation" in text for text in terminal)
+    for raw in ("jwt", "miniserver", "identity", "http://192.168"):
+        assert raw not in "\n".join(terminal)
 
 
 def test_expired_anonymous_tombstones_are_pruned_without_network(
