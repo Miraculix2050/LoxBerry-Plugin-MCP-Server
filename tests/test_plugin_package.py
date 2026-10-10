@@ -659,6 +659,7 @@ def test_package_builder_emits_unix_executable_modes(tmp_path: Path) -> None:
         assert executable.external_attr >> 16 & 0o777 == 0o755
         assert regular.external_attr >> 16 & 0o777 == 0o644
         assert "bin/healthcheck" in _EXECUTABLES
+        assert "webfrontend/htmlauth/knx.cgi" in _EXECUTABLES
 
 
 def test_package_builder_normalizes_installed_text_to_lf(tmp_path: Path) -> None:
