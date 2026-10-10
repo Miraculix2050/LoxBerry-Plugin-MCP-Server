@@ -1191,9 +1191,15 @@ class LoxoneRuntime:
                 await record.task
                 raise RuntimeUnavailable("Miniserver state subscription failed")
             if not record.initial_state_batch.is_set():
+                record.close_reason = "initial_state_timeout"
                 raise RuntimeUnavailable("Miniserver initial state timed out")
-        except BaseException:
+        except BaseException as exc:
             if not record.task.done():
+                if (
+                    not isinstance(exc, asyncio.CancelledError)
+                    and record.close_reason == "local_disconnect"
+                ):
+                    record.close_reason = "transport_failed"
                 record.task.cancel()
             with suppress(asyncio.CancelledError, Exception):
                 await record.task

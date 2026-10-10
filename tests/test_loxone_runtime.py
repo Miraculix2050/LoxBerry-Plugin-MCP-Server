@@ -1105,3 +1105,39 @@ async def test_disconnect_logs_one_terminal_close_with_initiating_reason(close_r
     assert f"reason={close_reason}" in closes[0].getMessage()
     assert "outcome=closed" in closes[0].getMessage()
     assert access.family_id not in closes[0].getMessage()
+
+
+@pytest.mark.asyncio
+async def test_initial_state_timeout_logs_setup_failure_before_cancellation(caplog):
+    caplog.set_level("INFO", logger="mcpserver.auth.lifecycle")
+    closed = False
+
+    class Session(_Session):
+        async def load_structure(self):
+            return _structure("current")
+
+        async def state_events(self):
+            await asyncio.Event().wait()
+            yield ()
+
+        async def close(self):
+            nonlocal closed
+            closed = True
+
+    runtime = object.__new__(LoxoneRuntime)
+    runtime.token_health = None
+    runtime.token_store = SimpleNamespace(
+        get=lambda *_args: SimpleNamespace(valid_until=2_000_000_000)
+    )
+    runtime.client = SimpleNamespace(open_session=AsyncMock(return_value=Session()))
+    runtime.cache = UserStateCache()
+    runtime._initial_state_timeout_seconds = 0.01
+    with pytest.raises(RuntimeUnavailable, match="initial state timed out"):
+        await runtime._connect(_access())
+    assert closed
+    terminal = [
+        r.getMessage() for r in caplog.records if "event=connection_closed " in r.getMessage()
+    ]
+    assert len(terminal) == 1
+    assert "reason=initial_state_timeout" in terminal[0]
+    assert "reason=local_disconnect" not in terminal[0]

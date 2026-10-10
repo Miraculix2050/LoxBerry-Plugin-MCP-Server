@@ -51,6 +51,11 @@ outcomes remain distinct. A connection ending is not an OAuth-family revocation.
 No tokens, raw client/family IDs, names, endpoints, credentials or arbitrary
 exception messages are added to these diagnostics.
 
+A startup that never receives its first state batch closes with
+`initial_state_timeout`; cancellation does not turn that failure into a normal
+local disconnect. OAuth expiry and refresh revocation causes are forwarded to
+the corresponding runtime close.
+
 ## Repeated Miniserver authentication rejection
 
 Three definite authentication rejections in five minutes pause new sign-ins

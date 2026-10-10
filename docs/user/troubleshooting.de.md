@@ -58,6 +58,11 @@ Ein Verbindungsende ist kein Widerruf der OAuth-Familie. Diese Diagnose ergänzt
 keine Tokens, rohen Client-/Familien-IDs, Namen, Endpunkte, Zugangsdaten oder
 beliebigen Exception-Texte.
 
+Ein Start ohne erste Zustandsnachricht endet mit `initial_state_timeout`;
+die anschließende Abbruchanforderung macht daraus kein normales lokales
+Verbindungsende. OAuth-Ablauf und Refresh-Widerrufsursachen werden an das
+zugehörige Laufzeitende weitergegeben.
+
 ## Wiederholte Miniserver-Authentifizierungsablehnung
 
 Drei eindeutige Ablehnungen innerhalb von fünf Minuten pausieren neue Anmeldungen

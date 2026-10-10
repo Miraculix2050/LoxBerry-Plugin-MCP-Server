@@ -137,7 +137,7 @@ sub safe_admin_lifecycle_events {
         client_ref=(?:-|[0-9a-f]{24})\x20
         binding_ref=(?:-|[0-9a-f]{24})\x20
         capability=(?:-|read|operate)\x20
-        reason=(?:admin_all_sessions|admin_session|already_invalid|approval_operate_removed|approval_read_removed|attempt_reserved|authentication_suppressed|authorization_code|capability_disabled|capacity_eviction|command_rejected|confirmed_killed|exact_match|expired_without_confirmation|explorer_logout|family_expired|idle_eviction|local_disconnect|no_exact_match|oauth_revocation|operate|queued|read|refresh_invalid_state|refresh_reuse|refresh_rotation|retention_cleanup|scope_disabled|shutdown|source_ip_blocked|stream_ended|teardown_failed|token_refresh|transport_failed|unconfirmed|unknown)\x20
+        reason=(?:admin_all_sessions|admin_session|already_invalid|approval_operate_removed|approval_read_removed|attempt_reserved|authentication_suppressed|authorization_code|capability_disabled|capacity_eviction|command_rejected|confirmed_killed|exact_match|expired_without_confirmation|explorer_logout|family_expired|idle_eviction|initial_state_timeout|local_disconnect|no_exact_match|oauth_revocation|operate|queued|read|refresh_invalid_state|refresh_reuse|refresh_rotation|retention_cleanup|scope_disabled|shutdown|source_ip_blocked|stream_ended|teardown_failed|token_refresh|transport_failed|unconfirmed|unknown)\x20
         source=(?:admin|configuration|maintenance|oauth|remote_worker|runtime|unknown)\x20
         outcome=(?:accepted|closed|committed|completed|failed|matched|opened|pending|rejected|removed|suppressed|unknown|unmatched)\x20
         count=\d{1,5})\z/x) {

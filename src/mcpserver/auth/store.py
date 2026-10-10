@@ -84,6 +84,7 @@ _LIFECYCLE_REASONS = _REVOCATION_REASONS | frozenset(
         "stream_ended",
         "token_refresh",
         "idle_eviction",
+        "initial_state_timeout",
         "capacity_eviction",
         "shutdown",
         "local_disconnect",
