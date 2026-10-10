@@ -126,6 +126,24 @@
     service_status: 7000,
     list_sessions: 15000,
   })[action] || 15000;
+  const downloadDiagnostic = (data) => {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      throw new Error(label('AJAX.ERROR'));
+    }
+    const blob = new Blob([JSON.stringify(data, null, 2) + '\n'], {type: 'application/json'});
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    try {
+      link.href = url;
+      link.download = 'mcpserver-diagnostic.json';
+      link.hidden = true;
+      document.body.append(link);
+      link.click();
+    } finally {
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    }
+  };
   document.addEventListener('submit', async (event) => {
     const form = event.target.closest('form[data-ajax]');
     if (!form) return;
@@ -158,6 +176,7 @@
     try {
       const result = await postAjax(body, actionTimeout(submittedAction));
       service.validateEnabledResult(result, requestedServiceEnabled);
+      if (submittedAction === 'diagnostic') downloadDiagnostic(result.data);
       if (sessionAction && sessions.hasFailures) {
         sessions.showSessionActionFailure();
       } else {

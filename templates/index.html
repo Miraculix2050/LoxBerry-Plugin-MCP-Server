@@ -289,7 +289,7 @@
     <summary><TMPL_VAR DIAGNOSTICS.TITLE></summary>
     <div class="mcp-collapsible-content mcp-form">
     <p><TMPL_VAR DIAGNOSTICS.TEXT></p>
-    <form method="post" action="index.cgi"><input type="hidden" name="action" value="diagnostic"><button class="lb-button" type="submit"><TMPL_VAR ACTION.DIAGNOSTIC></button></form>
+    <form method="post" action="index.cgi" data-ajax="diagnostic"><input type="hidden" name="action" value="diagnostic"><button class="lb-button" type="submit"><TMPL_VAR ACTION.DIAGNOSTIC></button></form>
     <section class="mcp-log-section" aria-labelledby="service-log-heading">
     <h3 id="service-log-heading"><TMPL_VAR DIAGNOSTICS.SERVICE_SECTION></h3>
     <p class="mcp-help"><TMPL_VAR DIAGNOSTICS.SERVICE_LOG_FILES></p>
@@ -406,5 +406,5 @@
 <script defer src="admin/sessions.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v13"></script>
 <script defer src="admin/service.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v12"></script>
 <script defer src="admin/configuration.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v14"></script>
-<script defer src="admin/page.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v13"></script>
+<script defer src="admin/page.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v14"></script>
 </TMPL_UNLESS>
