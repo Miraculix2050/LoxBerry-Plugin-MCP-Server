@@ -235,6 +235,7 @@
     <p id="remote-cleanup-warning" class="mcp-status" data-kind="warning" role="status" <TMPL_UNLESS REMOTE_CLEANUP_WARNING_VISIBLE>hidden</TMPL_UNLESS>
       data-breaker-label="<TMPL_VAR SESSIONS.REMOTE_BREAKER_WARNING ESCAPE=HTML>"
       data-cooldown-label="<TMPL_VAR SESSIONS.AUTH_COOLDOWN ESCAPE=HTML>"
+      data-public-cooldown-label="<TMPL_VAR SESSIONS.AUTH_PUBLIC_COOLDOWN ESCAPE=HTML>"
       data-uncertain-label="<TMPL_VAR SESSIONS.AUTH_UNCERTAIN ESCAPE=HTML>"
       data-pending-label="<TMPL_VAR SESSIONS.REMOTE_PENDING_WARNING ESCAPE=HTML>"
       data-retryable-label="<TMPL_VAR SESSIONS.REMOTE_RETRYABLE_WARNING ESCAPE=HTML>"

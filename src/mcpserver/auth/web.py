@@ -982,6 +982,7 @@ sync();
                         sign_in,
                         owner="tool_request",
                         phase="session_establishment",
+                        public_login=True,
                     )
                 try:
                     structure = await session.load_structure()
@@ -993,7 +994,7 @@ sync();
             transaction.attempts -= 1
             transaction.phase = "login"
             retry_at = (
-                self.auth_coordinator.current_status()["next_auth_attempt_at"]
+                self.auth_coordinator.current_status()["next_public_login_at"]
                 if self.auth_coordinator
                 else None
             )

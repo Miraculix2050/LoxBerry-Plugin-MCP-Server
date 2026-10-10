@@ -16,7 +16,8 @@ const {JSDOM} = require('jsdom');
 const fs = require('node:fs');
 const assert = require('node:assert/strict');
 const dom = new JSDOM(`<details id="sessions"><p id="remote-cleanup-warning"
- data-cooldown-label="Paused" data-uncertain-label="Unavailable"></p>
+ data-cooldown-label="Paused" data-public-cooldown-label="Public passwords paused"
+ data-uncertain-label="Unavailable"></p>
  <button id="miniserver-auth-probe" data-confirm="Risk warning" hidden></button>
  <div id="session-list"></div></details>`, {runScripts:'outside-only'});
 const w = dom.window;
@@ -53,7 +54,13 @@ const sessions = w.McpAdmin.createSessions({
  guard = {available:true,failure_guard_state:'persistence_uncertain'};
  await sessions.pollSessions({initial:true}); sessions.stopPoll();
  assert.equal(button.hidden,true); assert.match(warning.textContent,/Unavailable/);
- guard = {available:true,failure_guard_state:'closed'};
+ guard = {available:true,failure_guard_state:'closed',public_failure_guard_state:'cooldown',
+ next_public_login_at:Math.floor(Date.now()/1000)+180,manual_probe_at:Math.floor(Date.now()/1000)+60};
+ await sessions.pollSessions({initial:true}); sessions.stopPoll();
+ assert.equal(button.hidden,false); assert.equal(button.disabled,true);
+ assert.match(warning.textContent,/Public passwords paused/);
+ assert.match(warning.textContent,/180 s/);
+ guard = {available:true,failure_guard_state:'closed',public_failure_guard_state:'closed'};
  await sessions.pollSessions({initial:true}); sessions.stopPoll();
  assert.equal(button.hidden,true); assert.equal(warning.hidden,true);
  dom.window.close();

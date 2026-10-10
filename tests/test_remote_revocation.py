@@ -18,6 +18,7 @@ from mcpserver.loxone.auth_diagnostics import (
 )
 from mcpserver.loxone.client import (
     LoxoneCommandRejected,
+    LoxoneCredentialAuthenticationRejected,
     LoxoneSourceIpBlocked,
     LoxoneToken,
     LoxoneTokenAuthenticationRejected,
@@ -45,8 +46,9 @@ def _queue(store: EncryptedLoxoneTokenStore, family: str, now: int, lifetime: in
     store.schedule_remote_revoke(family)
 
 
+@pytest.mark.parametrize("public_only", [False, True])
 def test_preventive_guard_allows_cleanup_after_its_pause_expires(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, public_only: bool
 ) -> None:
     now = [2_000_000_000]
     monkeypatch.setattr("mcpserver.auth.remote_revocation.time.time", lambda: now[0])
@@ -55,11 +57,20 @@ def test_preventive_guard_allows_cleanup_after_its_pause_expires(
     coordinator = MiniserverAuthCoordinator(tmp_path / "auth-status.json")
 
     async def rejected() -> None:
-        raise LoxoneTokenAuthenticationRejected("rejected", response_code="401")
+        error = (
+            LoxoneCredentialAuthenticationRejected
+            if public_only
+            else LoxoneTokenAuthenticationRejected
+        )
+        raise error("rejected", response_code="401")
 
     for _ in range(3):
-        with pytest.raises(LoxoneTokenAuthenticationRejected):
-            asyncio.run(coordinator.attempt(rejected, owner="tool_request", phase="session"))
+        with pytest.raises(LoxoneCommandRejected):
+            asyncio.run(
+                coordinator.attempt(
+                    rejected, owner="tool_request", phase="session", public_login=public_only
+                )
+            )
     calls = []
 
     class Client:
@@ -71,7 +82,7 @@ def test_preventive_guard_allows_cleanup_after_its_pause_expires(
 
     monkeypatch.setattr("mcpserver.auth.remote_revocation.LoxoneClient", Client)
     asyncio.run(process_remote_revocations(_ENDPOINT, store, 1, coordinator))
-    assert not calls
+    assert calls == ([True] if public_only else [])
     now[0] += 60
     asyncio.run(process_remote_revocations(_ENDPOINT, store, 1, coordinator))
     assert calls == [True]

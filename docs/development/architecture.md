@@ -86,8 +86,12 @@ error cleanup also aborts the transport before propagating.
 ## Persistence and lifecycle
 
 The same coordinator maintains an independent preventive authentication-rejection
-guard in its existing private JSON file. Only typed 401 rejections at getjwt and
-authwithtoken consume its profile-wide three-in-five-minute budget. A 60-second
+guard in its existing private JSON file and under the same process lock. Typed
+401 rejections use two separate three-in-five-minute budgets: public OAuth
+getjwt password failures affect only public sign-ins; configured service getjwt
+and all authwithtoken failures share the trusted budget. Public sign-ins observe
+both budgets before any network probe; trusted reconnects and remote revocations
+ignore the public password budget. Confirmed IP blocking remains global. A 60-second
 pause doubles on rejected probes up to one hour; network failure and cancellation
 restart the current pause without escalating it. Success outside recovery does
 not erase recent failures. Fresh token acquisition and session authentication
@@ -98,9 +102,11 @@ unreadable or unwritable protection state denies new authentication. Existing
 authenticated sessions are not closed. A separate explicit native Admin action
 allows an early probe no more often than once per minute; background retry flags
 never grant this exception. Confirmed source-IP blocking retains priority.
-Diagnostics add a separate guard state and effective next-attempt time while
-preserving existing source-IP breaker fields. Remote revocations defer without
-consuming their network-attempt budget when either protection gate is active.
+Diagnostics retain the trusted guard fields and add public_failure_guard_state,
+public_failure_count and next_public_login_at. next_auth_attempt_at covers trusted
+authentication and IP blocking; next_public_login_at additionally covers the public
+password pause. Existing source-IP breaker fields keep their meaning. Remote revocations defer without
+consuming their network-attempt budget when the trusted guard or global IP gate is active.
 
 Configuration, encrypted sessions and plugin identity persist outside the package. Secrets are separated from ordinary configuration. Root lifecycle hooks consume service templates only from the current installer staging area, never from the installed plugin configuration or binary directories. The staging area's integrity remains a LoxBerry Core trust boundary because Core runs unprivileged lifecycle hooks before `postroot`; plugin code cannot make that shared staging area root-owned. Within the persistent LoxBerry tree, sensitive root operations use descriptor-relative traversal and reject symbolic links, non-regular files and path replacement. Install, upgrade and removal follow the native LoxBerry layout; upgrade preserves supported configuration and authentication state through idempotent migration. The service starts unprivileged, validates configuration and listens only on loopback.
 

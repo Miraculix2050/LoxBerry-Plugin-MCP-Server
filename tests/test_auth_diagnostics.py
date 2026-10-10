@@ -19,6 +19,7 @@ from mcpserver.loxone.auth_diagnostics import (
 from mcpserver.loxone.client import (
     LoxoneCommandRejected,
     LoxoneConnectionError,
+    LoxoneCredentialAuthenticationRejected,
     LoxoneSourceIpBlocked,
     LoxoneTokenAuthenticationRejected,
 )
@@ -606,20 +607,28 @@ async def test_legacy_state_migration_and_source_ip_priority(
         )
 
 
-def _process_rejection(path: str, queue: object, barrier: object, probe: bool = False) -> None:
+def _process_rejection(
+    path: str, queue: object, barrier: object, probe: bool = False, public_login: bool = False
+) -> None:
+    async def reject():
+        if public_login:
+            raise LoxoneCredentialAuthenticationRejected("rejected", response_code="401")
+        await _reject_auth()
+
     async def run() -> None:
         coordinator = MiniserverAuthCoordinator(Path(path))
         barrier.wait(timeout=20)  # type: ignore[attr-defined]
         try:
             await coordinator.attempt(
-                _authenticate if probe else _reject_auth,
+                _authenticate if probe else reject,
                 owner="local_admin" if probe else "tool_request",
                 phase="session",
                 busy_wait_seconds=5,
                 early_probe=probe,
+                public_login=public_login,
             )
             queue.put("authenticated")  # type: ignore[attr-defined]
-        except LoxoneTokenAuthenticationRejected:
+        except LoxoneCommandRejected:
             queue.put("rejected")  # type: ignore[attr-defined]
         except MiniserverAuthenticationCooldown:
             queue.put("suppressed")  # type: ignore[attr-defined]
@@ -627,13 +636,17 @@ def _process_rejection(path: str, queue: object, barrier: object, probe: bool = 
     asyncio.run(run())
 
 
-def test_process_race_allows_only_three_rejected_attempts(tmp_path: Path) -> None:
+@pytest.mark.parametrize("public_login", [False, True])
+def test_process_race_allows_only_three_rejected_attempts(
+    tmp_path: Path, public_login: bool
+) -> None:
     context = multiprocessing.get_context("spawn")
     queue = context.Queue()
     barrier = context.Barrier(5)
     processes = [
         context.Process(
-            target=_process_rejection, args=(str(tmp_path / "auth.json"), queue, barrier)
+            target=_process_rejection,
+            args=(str(tmp_path / "auth.json"), queue, barrier, False, public_login),
         )
         for _ in range(5)
     ]
@@ -646,6 +659,9 @@ def test_process_race_allows_only_three_rejected_attempts(tmp_path: Path) -> Non
     queue.close()
     assert results.count("rejected") == 3
     assert results.count("suppressed") == 2
+    status = MiniserverAuthCoordinator(tmp_path / "auth.json").current_status()
+    assert status["public_failure_count" if public_login else "failure_count"] == 3
+    assert status["failure_count" if public_login else "public_failure_count"] == 0
 
 
 @pytest.mark.asyncio
@@ -686,3 +702,125 @@ def test_process_race_allows_only_one_successful_manual_probe(tmp_path: Path) ->
     queue.close()
     assert results.count("authenticated") == 1
     assert results.count("suppressed") == 4
+
+
+@pytest.mark.asyncio
+async def test_public_password_budget_cannot_pause_trusted_reconnects(tmp_path, monkeypatch):
+    now = [1000]
+    monkeypatch.setattr("mcpserver.loxone.auth_diagnostics.time.time", lambda: now[0])
+    path = tmp_path / "auth.json"
+    coordinator = MiniserverAuthCoordinator(path)
+
+    async def password_rejected():
+        raise LoxoneCredentialAuthenticationRejected("rejected", response_code="401")
+
+    for _ in range(3):
+        with pytest.raises(LoxoneCredentialAuthenticationRejected):
+            await coordinator.attempt(
+                password_rejected, owner="tool_request", phase="session", public_login=True
+            )
+    restarted = MiniserverAuthCoordinator(path)
+    assert restarted.status()["public_failure_guard_state"] == "cooldown"
+    assert restarted.status()["failure_guard_state"] == "closed"
+    assert restarted.status()["next_public_login_at"] == 1060
+    with pytest.raises(MiniserverAuthenticationCooldown):
+        await restarted.attempt(
+            _authenticate, owner="tool_request", phase="session", public_login=True
+        )
+    await restarted.attempt(_authenticate, owner="runtime_event_stream", phase="session")
+    assert restarted.status()["public_failure_guard_state"] == "cooldown"
+    assert restarted.status()["public_failure_count"] == 3
+    now[0] = 1060
+    with pytest.raises(LoxoneCredentialAuthenticationRejected):
+        await restarted.attempt(
+            password_rejected, owner="tool_request", phase="session", public_login=True
+        )
+    assert restarted.status()["next_public_login_at"] == 1180
+    assert restarted.status()["failure_count"] == 0
+    await restarted.attempt(_authenticate, owner="local_admin", phase="session")
+    assert restarted.status()["next_public_login_at"] == 1180
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "public_login,exception",
+    [
+        (True, LoxoneTokenAuthenticationRejected),
+        (False, LoxoneCredentialAuthenticationRejected),
+    ],
+)
+async def test_token_and_service_failures_share_trusted_budget(tmp_path, public_login, exception):
+    coordinator = MiniserverAuthCoordinator(tmp_path / "auth.json")
+
+    async def rejected():
+        raise exception("rejected", response_code="401")
+
+    for _ in range(3):
+        with pytest.raises(exception):
+            await coordinator.attempt(
+                rejected, owner="tool_request", phase="session", public_login=public_login
+            )
+    assert coordinator.status()["failure_count"] == 3
+    assert coordinator.status()["public_failure_count"] == 0
+    for public in (False, True):
+        with pytest.raises(MiniserverAuthenticationCooldown):
+            await coordinator.attempt(
+                _authenticate, owner="tool_request", phase="session", public_login=public
+            )
+
+
+@pytest.mark.asyncio
+async def test_actual_ip_block_remains_global_for_public_and_trusted(tmp_path):
+    coordinator = MiniserverAuthCoordinator(tmp_path / "auth.json")
+
+    async def blocked():
+        raise LoxoneSourceIpBlocked("blocked")
+
+    with pytest.raises(LoxoneSourceIpBlocked):
+        await coordinator.attempt(blocked, owner="tool_request", phase="session", public_login=True)
+    for public in (False, True):
+        with pytest.raises(MiniserverAuthenticationSuppressed):
+            await MiniserverAuthCoordinator(tmp_path / "auth.json").attempt(
+                _authenticate, owner="tool_request", phase="session", public_login=public
+            )
+
+
+def test_legacy_state_adds_independent_public_budget(tmp_path):
+    path = tmp_path / "auth.json"
+    coordinator = MiniserverAuthCoordinator(path)
+    coordinator._state.pop("public_failure_guard")
+    coordinator._state["failure_guard"]["failures"] = [1000]
+    coordinator._save()
+    restarted = MiniserverAuthCoordinator(path)
+    assert restarted._state["failure_guard"]["failures"] == [1000]
+    assert restarted._state["public_failure_guard"]["failures"] == []
+    assert restarted.status()["public_failure_guard_state"] == "closed"
+
+
+@pytest.mark.asyncio
+async def test_public_pause_manual_probe_and_network_recovery(tmp_path, monkeypatch):
+    now = [1000]
+    monkeypatch.setattr("mcpserver.loxone.auth_diagnostics.time.time", lambda: now[0])
+    coordinator = MiniserverAuthCoordinator(tmp_path / "auth.json")
+    guard = coordinator._state["public_failure_guard"]
+    guard.update(until=1200, last_probe=1000, level=2, failures=[1000])
+    coordinator._save()
+    now[0] = 1060
+
+    async def timeout():
+        raise TimeoutError()
+
+    with pytest.raises(TimeoutError):
+        await coordinator.attempt(timeout, owner="local_admin", phase="session", early_probe=True)
+    assert coordinator.status()["next_public_login_at"] == 1300
+    assert coordinator.status()["public_failure_count"] == 1
+    assert coordinator.status()["failure_count"] == 0
+    with pytest.raises(MiniserverAuthenticationCooldown):
+        await MiniserverAuthCoordinator(tmp_path / "auth.json").attempt(
+            _authenticate, owner="local_admin", phase="session", early_probe=True
+        )
+    now[0] = 1120
+    await coordinator.attempt(_authenticate, owner="local_admin", phase="session", early_probe=True)
+    assert coordinator.status()["public_failure_guard_state"] == "closed"
+    assert coordinator._state["public_failure_guard"]["level"] == 0
+    assert coordinator.status()["public_failure_count"] == 1

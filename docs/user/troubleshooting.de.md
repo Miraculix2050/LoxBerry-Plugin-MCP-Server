@@ -2,8 +2,12 @@
 
 ## Wiederholte Miniserver-Authentifizierungsablehnung
 
-Drei eindeutige Passwort-/Token-Ablehnungen innerhalb von fünf Minuten pausieren
-neue Plugin-Anmeldungen für 60 Sekunden. Erneut abgelehnte Prüfversuche verdoppeln
+Drei eindeutige Ablehnungen innerhalb von fünf Minuten pausieren neue Anmeldungen
+für 60 Sekunden. Öffentliche OAuth-Passwortfehler haben ein eigenes Budget und
+pausieren nur öffentliche Anmeldungen. Dienst- und Token-Ablehnungen teilen ein
+zweites Budget; dessen Pause gilt auch für die Token-Phase öffentlicher Anmeldungen.
+Eine öffentliche Passwortpause blockiert weder Dienstverbindungen noch Token-Widerrufe.
+Tatsächliche IP-Sperren gelten weiterhin global. Erneut abgelehnte Prüfversuche verdoppeln
 die Pause bis auf 60 Minuten. Netzwerkfehler, Timeouts, Anmeldekonkurrenz und
 verweigerte Projektberechtigungen verbrauchen dieses Budget nicht. Bestehende
 authentifizierte Verbindungen bleiben offen. Diese Plugin-Policy garantiert keine

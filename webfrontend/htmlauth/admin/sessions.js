@@ -37,6 +37,12 @@ window.McpAdmin.createSessions = (core) => {
         notices.push(`${Math.max(0, Math.ceil(status.next_auth_attempt_at - Date.now() / 1000))} s`);
       }
     }
+    if (status.public_failure_guard_state === 'cooldown') {
+      notices.push(remoteCleanupWarning.dataset.publicCooldownLabel);
+      if (Number.isInteger(status.next_public_login_at)) {
+        notices.push(`${Math.max(0, Math.ceil(status.next_public_login_at - Date.now() / 1000))} s`);
+      }
+    }
     if (status.breaker_state === 'open_source_ip_blocked') {
       notices.push(remoteCleanupWarning.dataset.breakerLabel);
     }

@@ -2,8 +2,12 @@
 
 ## Repeated Miniserver authentication rejection
 
-Three definite password/token authentication rejections in five minutes pause
-new plugin sign-ins for 60 seconds. Rejected recovery probes double that pause
+Three definite authentication rejections in five minutes pause new sign-ins
+for 60 seconds. Public OAuth password failures have their own budget and pause
+only public sign-ins. Service and token rejections share a second budget; its
+pause also covers the token phase of public sign-ins. A public password pause
+does not block service connections or token revocations. Actual IP blocks remain
+global. Rejected recovery probes double that pause
 up to 60 minutes. Network errors, timeouts, busy coordination and denied project
 permissions do not consume this budget. Existing authenticated connections stay
 open. This is plugin policy, not a guaranteed Miniserver IP-block threshold.

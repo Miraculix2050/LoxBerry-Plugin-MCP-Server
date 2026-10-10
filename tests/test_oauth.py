@@ -50,8 +50,9 @@ from mcpserver.loxone.events import LoxoneProtocolError
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("public_pause", [False, True])
 async def test_suppressed_login_is_retryable_without_consuming_form_failure_budget(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, public_pause: bool
 ) -> None:
     from unittest.mock import AsyncMock
 
@@ -59,9 +60,17 @@ async def test_suppressed_login_is_retryable_without_consuming_form_failure_budg
     from mcpserver.loxone.auth_diagnostics import MiniserverAuthenticationCooldown
 
     coordinator = MiniserverAuthCoordinator(tmp_path / "auth-diagnostics.json")
-    monkeypatch.setattr(
-        coordinator, "attempt", AsyncMock(side_effect=MiniserverAuthenticationCooldown("cooldown"))
-    )
+    if public_pause:
+        import time
+
+        coordinator._state["public_failure_guard"]["until"] = int(time.time()) + 120
+        coordinator._save()
+    else:
+        monkeypatch.setattr(
+            coordinator,
+            "attempt",
+            AsyncMock(side_effect=MiniserverAuthenticationCooldown("cooldown")),
+        )
     fake = SimpleNamespace(probe=AsyncMock(), acquire_token=AsyncMock())
     monkeypatch.setattr("mcpserver.auth.web.LoxoneClient", lambda *_args, **_kwargs: fake)
     web = Phase0OAuthWeb(
