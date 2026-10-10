@@ -243,6 +243,9 @@ Ergebnissen / vier Leases mit derselben Cache-Komponente.
 Jede Suche lädt weiterhin selbst das autorisierte Projekt und die aktuelle Sicht
 und prüft vor Aufnahme oder Rückgabe erneut die Berechtigung. Fehlgeschlagene oder
 abgebrochene Berechtigungsprüfungen nehmen kein Ergebnis auf. Antwortmodelle
-kopieren gespeicherte Daten. Ablauf, Verdrängung und geänderte Eingaben machen
+kopieren gespeicherte Daten. Ein bereits laufender autorisierter Treffer nimmt
+sein ausgeliehenes Ergebnis nach gleichzeitiger Verdrängung unter denselben
+Grenzen und ohne TTL-Verlängerung wieder auf, bevor er seinen Cursor zurückgibt.
+Ablauf, Verdrängung und geänderte Eingaben machen
 zugehörige Cursor-Leases ungültig; ein neu erzeugtes Ergebnis reaktiviert keinen
 alten Cursor. Die Cache-Komponente persistiert und autorisiert nichts.

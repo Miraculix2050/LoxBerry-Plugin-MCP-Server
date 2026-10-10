@@ -42,10 +42,14 @@ class ProjectResultCache[T]:
     def get(self, result_key: str) -> tuple[float, T, int] | None:
         return self.entries.get(result_key)
 
-    def touch(self, result_key: str) -> None:
-        # Another key can evict this entry during the owner's authorization await.
-        if result_key in self.entries:
-            self.entries.move_to_end(result_key)
+    def retain(self, result_key: str, entry: tuple[float, T, int], *, now: float) -> None:
+        """Restore an independently authorized borrowed hit without extending its TTL."""
+        expires, result, size = entry
+        if expires <= now:
+            raise ValueError("cursor has expired; start a new query")
+        # Another key may evict this borrowed value while authorization awaits.
+        # Republish before binding/returning a cursor; all bounds still apply.
+        self.put(result_key, result, expires=expires, size=size)
 
     def put(self, result_key: str, result: T, *, expires: float, size: int) -> None:
         if size < 0 or size > self.max_bytes:

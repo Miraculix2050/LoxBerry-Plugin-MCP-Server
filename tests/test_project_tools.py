@@ -1372,3 +1372,55 @@ async def test_project_find_different_inputs_do_not_share(monkeypatch, changed):
         project.view.mapping.structure_fingerprint = "changed-visible-name"
     assert (await find(kind="block" if changed == "filter" else None)).ok
     assert project.find.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_project_find_hit_evicted_during_authorization_keeps_usable_cursor(monkeypatch):
+    from mcpserver.loxone.project.result_cache import ProjectResultCache
+
+    project = Query()
+    project.find = Mock(
+        return_value=[
+            Query().find()[0],
+            {**Query().find()[0], "project_node_id": "p:2"},
+        ]
+    )
+    monkeypatch.setattr(
+        tools_module,
+        "_project_query",
+        AsyncMock(return_value=(project, SimpleNamespace(connected=True))),
+    )
+    monkeypatch.setattr(
+        tools_module,
+        "_access",
+        lambda: SimpleNamespace(family_id="family", miniserver_id="server", identity_id="identity"),
+    )
+    observed = {}
+    original_get = ProjectResultCache.get
+
+    def capture(cache, key):
+        observed["cache"] = cache
+        return original_get(cache, key)
+
+    monkeypatch.setattr(ProjectResultCache, "get", capture)
+    authorize = AsyncMock()
+    server = FastMCP("evicted-find-hit")
+    register_project_tools(server, SimpleNamespace(projects=SimpleNamespace(authorize=authorize)))
+    find = server._tool_manager.get_tool("loxone_find_project_objects").fn
+    assert (await find(limit=1)).ok
+
+    async def evict(_access):
+        cache = observed["cache"]
+        for index in range(cache.max_entries):
+            cache.put(
+                f"concurrent-{index}", [], expires=tools_module.time.monotonic() + 300, size=1
+            )
+
+    authorize.side_effect = evict
+    hit = await find(limit=1)
+    assert hit.ok and hit.data.next_cursor
+    authorize.side_effect = None
+    continuation = await find(limit=1, cursor=hit.data.next_cursor)
+    assert continuation.ok and continuation.data.items[0].project_node_id == "p:2"
+    assert project.find.call_count == 1
+    assert len(observed["cache"].entries) <= 8

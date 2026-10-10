@@ -228,6 +228,8 @@ its four-entry / four-lease bounds using the same owner primitive.
 Every search still independently loads authorized project and current visibility,
 then authorizes again before publishing or returning cached values. Failed or
 cancelled authorization publishes no result. Response models copy retained data.
+An authorized in-flight hit restores its borrowed result after concurrent eviction
+within the same bounds and original TTL before returning its own cursor.
 Expiry, eviction and changed input invalidate dependent cursor leases; recreating
 a result cannot resurrect an old cursor. There is no persistence or authorization
 in the cache primitive.

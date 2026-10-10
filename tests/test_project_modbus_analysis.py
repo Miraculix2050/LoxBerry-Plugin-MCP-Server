@@ -662,6 +662,27 @@ def reuse_selection(scope):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("scope", ["knx", "modbus"])
+async def test_analysis_hit_evicted_during_authorization_keeps_usable_cursor(analysis_reuse, scope):
+    runner, _access, state, worker, _load, authorize = analysis_reuse
+    selected = reuse_selection(scope)
+    assert (await runner.run(scope, selected, limit=1)).ok
+
+    async def evict(_access):
+        for index in range(runner.results.max_entries):
+            runner.results.put(f"concurrent-{index}", {}, expires=state["now"] + 300, size=1)
+
+    authorize.side_effect = evict
+    hit = await runner.run(scope, selected, limit=1)
+    assert hit.ok and hit.data.next_cursor
+    authorize.side_effect = None
+    continuation = await runner.run(scope, selected, cursor=hit.data.next_cursor, limit=1)
+    assert continuation.ok
+    assert worker.await_count == 1
+    assert len(runner.cache) <= 4
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["knx", "modbus"])
 async def test_reuse_computes_once_but_keeps_own_load_authorization_and_cursors(
     analysis_reuse, scope
 ):

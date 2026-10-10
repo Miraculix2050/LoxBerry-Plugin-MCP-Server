@@ -5642,7 +5642,7 @@ class _ProjectAnalysisRunner:
                     result = cached[1]
                     expires = cached[0]
                     await projects.authorize(access)
-                    self.results.touch(result_key)
+                    self.results.retain(result_key, cached, now=time.monotonic())
                 self.results.bind(analysis_scope, result_key, cursor_scope, expires=expires)
             findings = result.get("findings")
             if not isinstance(findings, list):
@@ -5860,7 +5860,7 @@ def register_project_tools(
                     _LOGGER.debug("component=project_find_cache outcome=hit")
                     expires, values, _size = cached
                     await projects.authorize(access)
-                    find_results.touch(result_key)
+                    find_results.retain(result_key, cached, now=time.monotonic())
                 find_results.bind(lease_key, result_key, scope, expires=expires)
             envelope = _result(
                 ProjectObjectPageEnvelope,
