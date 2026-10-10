@@ -21,6 +21,10 @@ extracted from the matching version heading.
   allow explicit local Admin probes at least 60 seconds apart (#408).
 - Add a dedicated KNX administration page with target-bound manual address metadata and JSON exchange; retain existing prefix-label text transfer.
   Confirm local deletion and form changes with accessible HTML dialogs.
+- Add bounded modern ETS XML import with revision-bound preview, explicit duplicate
+  decisions, selected group metadata, field overrides and transactional reimport.
+  Complete replacement preserves manual records and explicitly reviewed overrides;
+  Loxone names remain primary. CSV and project metadata integration follow separately.
 
 - Unify configured service-identity credentials and connection ownership for
   emergency-stop and Event History consumers. Keep separate connections, fresh

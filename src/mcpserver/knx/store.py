@@ -31,7 +31,7 @@ class KnxStore:
             connection.execute("PRAGMA foreign_keys=ON")
             connection.execute("PRAGMA synchronous=FULL")
             version = connection.execute("PRAGMA user_version").fetchone()[0]
-            if version not in {0, 1}:
+            if version not in {0, 1, 2}:
                 raise KnxError("knx_storage_version")
             if version == 0:
                 connection.executescript(
@@ -42,6 +42,23 @@ class KnxStore:
                     "imported TEXT NOT NULL "
                     "DEFAULT '{}', overrides TEXT NOT NULL, PRIMARY KEY(target,address), "
                     "FOREIGN KEY(target) REFERENCES targets(target)); PRAGMA user_version=1;"
+                )
+            if version < 2:
+                connection.executescript(
+                    "BEGIN IMMEDIATE;"
+                    "CREATE TABLE IF NOT EXISTS ets_sources (target TEXT NOT NULL, address INTEGER "
+                    "NOT NULL, source TEXT NOT NULL, PRIMARY KEY(target,address), "
+                    "FOREIGN KEY(target,address) REFERENCES addresses(target,address) "
+                    "ON DELETE CASCADE);"
+                    "CREATE TABLE IF NOT EXISTS import_groups (target TEXT NOT NULL, "
+                    "format TEXT NOT NULL, prefix TEXT NOT NULL, fields TEXT NOT NULL, "
+                    "source TEXT NOT NULL, selected INTEGER "
+                    "NOT NULL DEFAULT 0, PRIMARY KEY(target,format,prefix), "
+                    "FOREIGN KEY(target) REFERENCES targets(target));"
+                    "CREATE TABLE IF NOT EXISTS import_state (target TEXT PRIMARY KEY, "
+                    "information TEXT "
+                    "NOT NULL, FOREIGN KEY(target) REFERENCES targets(target));"
+                    "PRAGMA user_version=2; COMMIT;"
                 )
             yield connection
         except sqlite3.Error:
@@ -62,8 +79,9 @@ class KnxStore:
 
     @staticmethod
     def project(row: tuple[Any, ...]) -> dict[str, Any]:
-        number, fmt, original, raw, manual = row
+        number, fmt, original, raw, manual = row[:5]
         imported, overrides = json.loads(raw), json.loads(manual)
+        source = json.loads(row[5]) if len(row) > 5 and row[5] else {}
         return {
             "address_id": number,
             "address_format": fmt,
@@ -71,6 +89,16 @@ class KnxStore:
             "imported": imported,
             "overrides": overrides,
             "effective": {**imported, **overrides},
+            "import_info": {
+                key: source[key]
+                for key in ("file_format", "encoding", "imported_at", "digest", "address_format")
+                if key in source
+            }
+            | (
+                {"address": source["attributes"]["Address"]}
+                if "Address" in source.get("attributes", {})
+                else {}
+            ),
         }
 
     def page(self, target: str, offset: int = 0, limit: int = 50) -> dict[str, Any]:
@@ -85,8 +113,10 @@ class KnxStore:
                 "SELECT count(*) FROM addresses WHERE target=?", (target,)
             ).fetchone()[0]
             rows = db.execute(
-                "SELECT address,format,original,imported,overrides FROM addresses "
-                "WHERE target=? ORDER BY address LIMIT ? OFFSET ?",
+                "SELECT a.address,a.format,a.original,a.imported,a.overrides,s.source "
+                "FROM addresses AS a LEFT JOIN ets_sources AS s "
+                "ON s.target=a.target AND s.address=a.address "
+                "WHERE a.target=? ORDER BY a.address LIMIT ? OFFSET ?",
                 (target, limit, offset),
             ).fetchall()
             return {
@@ -100,14 +130,15 @@ class KnxStore:
         if not isinstance(value, dict) or set(value) != {"address", "address_format", "fields"}:
             raise KnxError("knx_record_invalid")
         number, original = address(value["address"], value["address_format"])
-        fields = metadata(value["fields"], require_name=True)
+        fields = metadata(value["fields"])
         with self.connection() as db:
             db.execute("BEGIN IMMEDIATE")
             self.check(db, target, expected)
             db.execute("INSERT OR IGNORE INTO targets(target) VALUES(?)", (target,))
             exists = db.execute(
-                "SELECT 1 FROM addresses WHERE target=? AND address=?", (target, number)
+                "SELECT imported FROM addresses WHERE target=? AND address=?", (target, number)
             ).fetchone()
+            metadata({**(json.loads(exists[0]) if exists else {}), **fields}, require_name=True)
             count = db.execute(
                 "SELECT count(*) FROM addresses WHERE target=?", (target,)
             ).fetchone()[0]
@@ -141,7 +172,8 @@ class KnxStore:
         return {
             "schema_version": 1,
             "records": [
-                {k: v for k, v in row.items() if k != "effective"} for row in page["items"]
+                {k: v for k, v in row.items() if k not in {"effective", "import_info"}}
+                for row in page["items"]
             ],
         }
 
@@ -176,7 +208,12 @@ class KnxStore:
                 raise KnxError("knx_exchange_duplicate")
             seen.add(number)
             imported, overrides = metadata(record["imported"]), metadata(record["overrides"])
-            metadata({**imported, **overrides}, require_name=True)
+            effective = {**imported, **overrides}
+            # A complete replacement may preserve an override without inventing a name.
+            # Such existing source states must remain exchangeable; new form entries still
+            # require a name in put().
+            if imported or not overrides or "name" in effective:
+                metadata(effective, require_name=True)
             records.append(
                 (
                     target,
@@ -245,6 +282,11 @@ class KnxStore:
                 "format=excluded.format, original=excluded.original, imported=excluded.imported, "
                 "overrides=excluded.overrides",
                 records,
+            )
+            # JSON exchange cannot establish reconstruction evidence for an ETS XML export.
+            db.executemany(
+                "DELETE FROM ets_sources WHERE target=? AND address=?",
+                [(target, row[1]) for row in records],
             )
             count = db.execute(
                 "SELECT count(*) FROM addresses WHERE target=?", (target,)
