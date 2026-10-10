@@ -163,24 +163,7 @@
       </div>
       </fieldset>
     </form>
-    <form id="knx-taxonomy-form" class="mcp-form" method="post" action="index.cgi" data-ajax="save_knx_taxonomy">
-      <fieldset id="knx-taxonomy-fields" class="mcp-configuration-fields" <TMPL_UNLESS SERVER_RENDERED_FALLBACK>disabled<TMPL_ELSE><TMPL_UNLESS FALLBACK_CONFIGURATION_LOADED>disabled</TMPL_UNLESS></TMPL_UNLESS>>
-        <input type="hidden" name="action" value="save_knx_taxonomy">
-        <h3><TMPL_VAR SETUP.KNX_TAXONOMY></h3>
-        <label class="mcp-field"><span><TMPL_VAR SETUP.KNX_TAXONOMY_LABEL></span><textarea id="knx-taxonomy-entries" name="taxonomy_entries" rows="5" maxlength="16384" aria-describedby="knx-taxonomy-help"><TMPL_VAR KNX_TAXONOMY_TEXT ESCAPE=HTML></textarea></label>
-        <p id="knx-taxonomy-help" class="mcp-help"><TMPL_VAR SETUP.KNX_TAXONOMY_HELP></p>
-        <div class="mcp-actions">
-          <button class="lb-button" type="submit"><TMPL_VAR ACTION.SAVE_KNX_TAXONOMY></button>
-          <button class="lb-button" type="button" id="knx-taxonomy-export" hidden><TMPL_VAR ACTION.EXPORT_KNX_TAXONOMY></button>
-          <button class="lb-button" type="button" id="knx-taxonomy-import" hidden><TMPL_VAR ACTION.IMPORT_KNX_TAXONOMY></button>
-          <input id="knx-taxonomy-file" type="file" accept=".txt,text/plain" hidden>
-        </div>
-        <p id="knx-taxonomy-file-status" class="mcp-help" role="status" aria-live="polite"
-          data-loaded="<TMPL_VAR SETUP.KNX_TAXONOMY_FILE_LOADED ESCAPE=HTML>"
-          data-exported="<TMPL_VAR SETUP.KNX_TAXONOMY_FILE_EXPORTED ESCAPE=HTML>"
-          data-invalid="<TMPL_VAR SETUP.KNX_TAXONOMY_FILE_INVALID ESCAPE=HTML>"></p>
-      </fieldset>
-    </form>
+    <p><a class="lb-button" href="knx.cgi"><TMPL_VAR KNX.TITLE></a></p>
     <TMPL_IF SERVER_RENDERED_FALLBACK><form id="fallback-emergency-stop-retry-form" method="post" action="index.cgi"><input type="hidden" name="fallback" value="1"><input type="hidden" name="action" value="<TMPL_VAR EMERGENCY_STOP_BUTTON_ACTION ESCAPE=HTML>"></form></TMPL_IF>
     </div>
   </details>

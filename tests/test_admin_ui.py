@@ -715,101 +715,23 @@ def test_common_actions_update_the_page_without_a_reload() -> None:
     assert "for (const row of existing.values()) row.remove()" in template
 
 
-def test_knx_taxonomy_admin_form_uses_the_same_origin_save_path_in_both_languages() -> None:
-    template = _admin_source()
-    cgi = (ROOT / "webfrontend/htmlauth/index.cgi").read_text(encoding="utf-8")
-    js = (ROOT / "webfrontend/htmlauth/admin/configuration.js").read_text(encoding="utf-8")
-    german = (ROOT / "templates/lang/language_de.ini").read_text(encoding="utf-8")
-    english = (ROOT / "templates/lang/language_en.ini").read_text(encoding="utf-8")
+def test_knx_labels_moved_to_dedicated_same_origin_page() -> None:
+    template = (ROOT / "templates/knx.html").read_text(encoding="utf-8")
+    cgi = (ROOT / "webfrontend/htmlauth/knx.cgi").read_text(encoding="utf-8")
+    js = (ROOT / "webfrontend/htmlauth/knx.js").read_text(encoding="utf-8")
     assert 'id="knx-taxonomy-form"' in template
-    assert 'data-ajax="save_knx_taxonomy"' in template
-    assert 'name="taxonomy_entries"' in template
-    assert "admin_call('save_knx_taxonomy', {entries => \\@entries})" in cgi
-    assert "address_format => $format eq '2' ? 'two_level'" in cgi
-    assert "($config->{knx_address_taxonomy}{endpoint} // '') eq $taxonomy_endpoint" in cgi
-    assert "KNX_TAXONOMY_TEXT => $taxonomy_text" in cgi
-    assert "displayedTaxonomyEndpoint" in js
-    assert "renderTaxonomy(data.configuration);" in js
-    assert "KNX_TAXONOMY_HELP=" in german
-    assert "KNX_TAXONOMY_HELP=" in english
-
-
-def test_knx_taxonomy_file_transfer_is_bounded_and_does_not_save() -> None:
-    template = _admin_source()
-    for element in ("knx-taxonomy-export", "knx-taxonomy-import", "knx-taxonomy-file"):
-        assert f'id="{element}"' in template
+    assert 'href="knx.cgi"' in _admin_source()
+    assert 'id="knx-taxonomy-form"' not in _admin_source()
+    assert "same_origin_post()" in cgi
+    assert "knx_taxonomy" in cgi
+    assert "TextDecoder('utf-8', {fatal: true})" in js
+    assert "file.size > 64 * 1024" in js
+    assert "content.includes('\\0')" in js
+    assert "taxonomy_revision: labelsRevision ?? state.taxonomy_revision" in js
     for language in ("de", "en"):
-        source = (ROOT / f"templates/lang/language_{language}.ini").read_text(encoding="utf-8")
-        for key in ("EXPORT_KNX_TAXONOMY", "IMPORT_KNX_TAXONOMY"):
-            assert f"{key}=" in source
-        for key in (
-            "KNX_TAXONOMY_FILE_LOADED",
-            "KNX_TAXONOMY_FILE_EXPORTED",
-            "KNX_TAXONOMY_FILE_INVALID",
-        ):
-            assert f"{key}=" in source
-
-    node = shutil.which("node")
-    assert node is not None
-    script = r"""
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const source = fs.readFileSync(process.argv[1], 'utf8');
-const start = source.indexOf('  const taxonomyFileLimit =');
-const end = source.indexOf('  const renderLogging =', start);
-assert(start >= 0 && end > start);
-const handlers = {};
-const button = (name) => ({hidden: true, addEventListener(event, fn) {
-  handlers[name + ':' + event] = fn;
-}});
-const taxonomyExport = button('export');
-const taxonomyImport = button('import');
-const taxonomyFile = {files: [], value: 'selected', click() { handlers.picker = true; },
-  addEventListener(event, fn) { handlers['file:' + event] = fn; }};
-const taxonomyEntries = {value: '3:6/2=Ground floor', maxLength: 16384};
-const taxonomyFileStatus = {textContent: '', dataset: {
-  loaded: 'loaded', exported: 'exported', invalid: 'invalid',
-}};
-let exportedBlob;
-let revoked = false;
-let revokeDelay = 0;
-const URL = {createObjectURL(blob) { exportedBlob = blob; return 'blob:test'; },
-  revokeObjectURL(url) { assert.equal(url, 'blob:test'); revoked = true; }};
-const document = {body: {appendChild() {}}, createElement() {
-  return {click() { assert.equal(this.download, 'knx-address-labels.txt'); }, remove() {}};
-}};
-const window = {setTimeout(fn, delay) { revokeDelay = delay; fn(); }};
-eval(source.slice(start, end));
-(async () => {
-  assert.equal(taxonomyExport.hidden, false);
-  assert.equal(taxonomyImport.hidden, false);
-  handlers['export:click']();
-  assert.equal(await exportedBlob.text(), '3:6/2=Ground floor');
-  assert.equal(taxonomyFileStatus.textContent, 'exported');
-  assert.equal(revokeDelay, 30000);
-  assert.equal(revoked, true);
-  handlers['import:click']();
-  assert.equal(handlers.picker, true);
-  taxonomyFile.files = [new Blob(['3:6/2=Imported'])];
-  await handlers['file:change']();
-  assert.equal(taxonomyEntries.value, '3:6/2=Imported');
-  assert.equal(taxonomyFileStatus.textContent, 'loaded');
-  assert.equal(taxonomyFile.value, '');
-  taxonomyFile.files = [new Blob(['x'.repeat(65537)])];
-  await handlers['file:change']();
-  assert.equal(taxonomyEntries.value, '3:6/2=Imported');
-  assert.equal(taxonomyFileStatus.textContent, 'invalid');
-  taxonomyFile.files = [new Blob([Uint8Array.of(0xff)])];
-  await handlers['file:change']();
-  assert.equal(taxonomyEntries.value, '3:6/2=Imported');
-})().catch((error) => { console.error(error); process.exitCode = 1; });
-"""
-    subprocess.run(
-        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/admin/configuration.js")],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
+        text = (ROOT / f"templates/lang/language_{language}.ini").read_text(encoding="utf-8")
+        assert "KNX_TAXONOMY_HELP=" in text
+        assert "JSON_APPLY=" in text
 
 
 def test_event_history_enablement_is_preserved_in_server_rendered_fallback() -> None:
@@ -1930,10 +1852,9 @@ def test_server_rendered_emergency_stop_retry_uses_one_explicit_probe() -> None:
     assert 'name="fallback" value="1"' in template
     assert 'name="action" value="<TMPL_VAR EMERGENCY_STOP_BUTTON_ACTION ESCAPE=HTML>"' in template
     assert 'form="fallback-emergency-stop-retry-form"' in template
-    assert template.index(
-        "</form>\n    <TMPL_IF SERVER_RENDERED_FALLBACK>"
-        '<form id="fallback-emergency-stop-retry-form"'
-    ) > template.index('id="mcp-config-form"')
+    assert template.index('<form id="fallback-emergency-stop-retry-form"') > template.index(
+        "</form>", template.index('id="mcp-config-form"')
+    )
     assert "<TMPL_UNLESS EMERGENCY_STOP_RETRY_ENABLED>disabled</TMPL_UNLESS>" in template
     assert 'href="index.cgi?fallback=1"' in template
     assert "EMERGENCY_STOP_RELOAD=" in german

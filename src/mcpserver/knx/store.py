@@ -1,0 +1,257 @@
+"""Revisioned, target-bound indexed KNX metadata persistence."""
+
+from __future__ import annotations
+
+import json
+import os
+import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Any
+
+from .model import MAX_ADDRESSES, KnxError, address, metadata
+
+
+class KnxStore:
+    def __init__(self, path: Path) -> None:
+        if not path.is_absolute() or path.suffix != ".sqlite3":
+            raise KnxError("knx_storage_invalid")
+        self.path = path
+
+    @contextmanager
+    def connection(self) -> Iterator[sqlite3.Connection]:
+        self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if self.path.is_symlink():
+            raise KnxError("knx_storage_invalid")
+        fd = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o600)
+        os.close(fd)
+        connection = sqlite3.connect(self.path, timeout=5)
+        try:
+            connection.execute("PRAGMA foreign_keys=ON")
+            connection.execute("PRAGMA synchronous=FULL")
+            version = connection.execute("PRAGMA user_version").fetchone()[0]
+            if version not in {0, 1}:
+                raise KnxError("knx_storage_version")
+            if version == 0:
+                connection.executescript(
+                    "CREATE TABLE IF NOT EXISTS targets (target TEXT PRIMARY KEY, revision INTEGER "
+                    "NOT NULL DEFAULT 0);"
+                    "CREATE TABLE IF NOT EXISTS addresses (target TEXT NOT NULL, address INTEGER "
+                    "NOT NULL, format TEXT NOT NULL, original TEXT NOT NULL, "
+                    "imported TEXT NOT NULL "
+                    "DEFAULT '{}', overrides TEXT NOT NULL, PRIMARY KEY(target,address), "
+                    "FOREIGN KEY(target) REFERENCES targets(target)); PRAGMA user_version=1;"
+                )
+            yield connection
+        except sqlite3.Error:
+            connection.rollback()
+            raise KnxError("knx_storage_failed") from None
+        finally:
+            connection.close()
+
+    @staticmethod
+    def revision(db: sqlite3.Connection, target: str) -> int:
+        row = db.execute("SELECT revision FROM targets WHERE target=?", (target,)).fetchone()
+        return int(row[0]) if row else 0
+
+    @staticmethod
+    def check(db: sqlite3.Connection, target: str, expected: object) -> None:
+        if type(expected) is not int or expected != KnxStore.revision(db, target):
+            raise KnxError("knx_revision_conflict")
+
+    @staticmethod
+    def project(row: tuple[Any, ...]) -> dict[str, Any]:
+        number, fmt, original, raw, manual = row
+        imported, overrides = json.loads(raw), json.loads(manual)
+        return {
+            "address_id": number,
+            "address_format": fmt,
+            "address": original,
+            "imported": imported,
+            "overrides": overrides,
+            "effective": {**imported, **overrides},
+        }
+
+    def page(self, target: str, offset: int = 0, limit: int = 50) -> dict[str, Any]:
+        if type(offset) is not int or not 0 <= offset <= MAX_ADDRESSES:
+            raise KnxError("knx_page_invalid")
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise KnxError("knx_page_invalid")
+        with self.connection() as db:
+            db.execute("BEGIN")
+            revision = self.revision(db, target)
+            total = db.execute(
+                "SELECT count(*) FROM addresses WHERE target=?", (target,)
+            ).fetchone()[0]
+            rows = db.execute(
+                "SELECT address,format,original,imported,overrides FROM addresses "
+                "WHERE target=? ORDER BY address LIMIT ? OFFSET ?",
+                (target, limit, offset),
+            ).fetchall()
+            return {
+                "revision": revision,
+                "total": total,
+                "offset": offset,
+                "items": [self.project(row) for row in rows],
+            }
+
+    def put(self, target: str, expected: object, value: object) -> int:
+        if not isinstance(value, dict) or set(value) != {"address", "address_format", "fields"}:
+            raise KnxError("knx_record_invalid")
+        number, original = address(value["address"], value["address_format"])
+        fields = metadata(value["fields"], require_name=True)
+        with self.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            self.check(db, target, expected)
+            db.execute("INSERT OR IGNORE INTO targets(target) VALUES(?)", (target,))
+            exists = db.execute(
+                "SELECT 1 FROM addresses WHERE target=? AND address=?", (target, number)
+            ).fetchone()
+            count = db.execute(
+                "SELECT count(*) FROM addresses WHERE target=?", (target,)
+            ).fetchone()[0]
+            if not exists and count >= MAX_ADDRESSES:
+                raise KnxError("knx_address_limit")
+            db.execute(
+                "INSERT INTO addresses(target,address,format,original,overrides) VALUES(?,?,?,?,?) "
+                "ON CONFLICT(target,address) DO UPDATE SET format=excluded.format, "
+                "original=excluded.original, overrides=excluded.overrides",
+                (target, number, value["address_format"], original, json.dumps(fields)),
+            )
+            db.execute("UPDATE targets SET revision=revision+1 WHERE target=?", (target,))
+            revision = self.revision(db, target)
+            db.commit()
+            return revision
+
+    def delete(self, target: str, expected: object, number: object) -> int:
+        if type(number) is not int or not 0 <= number < MAX_ADDRESSES:
+            raise KnxError("knx_address_invalid")
+        with self.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            self.check(db, target, expected)
+            db.execute("DELETE FROM addresses WHERE target=? AND address=?", (target, number))
+            db.execute("UPDATE targets SET revision=revision+1 WHERE target=?", (target,))
+            revision = self.revision(db, target)
+            db.commit()
+            return revision
+
+    def export(self, target: str, offset: int = 0) -> dict[str, Any]:
+        page = self.page(target, offset)
+        return {
+            "schema_version": 1,
+            "records": [
+                {k: v for k, v in row.items() if k != "effective"} for row in page["items"]
+            ],
+        }
+
+    @staticmethod
+    def exchange_records(document: object, target: str) -> list[tuple[Any, ...]]:
+        if (
+            not isinstance(document, dict)
+            or set(document) != {"schema_version", "records"}
+            or type(document["schema_version"]) is not int
+            or document["schema_version"] != 1
+            or not isinstance(document["records"], list)
+            or len(document["records"]) > MAX_ADDRESSES
+        ):
+            raise KnxError("knx_exchange_invalid")
+        records = []
+        seen: set[int] = set()
+        for record in document["records"]:
+            if not isinstance(record, dict) or set(record) != {
+                "address_id",
+                "address_format",
+                "address",
+                "imported",
+                "overrides",
+            }:
+                raise KnxError("knx_exchange_invalid")
+            number, original = address(record["address"], record["address_format"])
+            if (
+                type(record["address_id"]) is not int
+                or number in seen
+                or number != record["address_id"]
+            ):
+                raise KnxError("knx_exchange_duplicate")
+            seen.add(number)
+            imported, overrides = metadata(record["imported"]), metadata(record["overrides"])
+            metadata({**imported, **overrides}, require_name=True)
+            records.append(
+                (
+                    target,
+                    number,
+                    record["address_format"],
+                    original,
+                    json.dumps(imported),
+                    json.dumps(overrides),
+                )
+            )
+        return records
+
+    def preview(self, target: str, document: object) -> dict[str, Any]:
+        records = self.exchange_records(document, target)
+        additions = 0
+        update_count = 0
+        updates: list[dict[str, Any]] = []
+        with self.connection() as db:
+            db.execute("BEGIN")
+            revision = self.revision(db, target)
+            for _, number, fmt, original, imported, overrides in records:
+                existing = db.execute(
+                    "SELECT format,original,imported,overrides FROM addresses "
+                    "WHERE target=? AND address=?",
+                    (target, number),
+                ).fetchone()
+                if existing is None:
+                    additions += 1
+                else:
+                    old = {
+                        "address_format": existing[0],
+                        "address": existing[1],
+                        "imported": json.loads(existing[2]),
+                        "overrides": json.loads(existing[3]),
+                    }
+                    new = {
+                        "address_format": fmt,
+                        "address": original,
+                        "imported": json.loads(imported),
+                        "overrides": json.loads(overrides),
+                    }
+                    changed = sorted(key for key in old if old[key] != new[key])
+                    if changed:
+                        update_count += 1
+                        if len(updates) < 50:
+                            updates.append(
+                                {"address": original, "fields": changed, "old": old, "new": new}
+                            )
+            return {
+                "revision": revision,
+                "additions": additions,
+                "updates": update_count,
+                "changes": updates,
+                "changes_omitted": max(0, update_count - 50),
+            }
+
+    def restore(self, target: str, expected: object, document: object) -> int:
+        records = self.exchange_records(document, target)
+        with self.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            self.check(db, target, expected)
+            db.execute("INSERT OR IGNORE INTO targets(target) VALUES(?)", (target,))
+            db.executemany(
+                "INSERT INTO addresses(target,address,format,original,imported,overrides) "
+                "VALUES(?,?,?,?,?,?) ON CONFLICT(target,address) DO UPDATE SET "
+                "format=excluded.format, original=excluded.original, imported=excluded.imported, "
+                "overrides=excluded.overrides",
+                records,
+            )
+            count = db.execute(
+                "SELECT count(*) FROM addresses WHERE target=?", (target,)
+            ).fetchone()[0]
+            if count > MAX_ADDRESSES:
+                raise KnxError("knx_address_limit")
+            db.execute("UPDATE targets SET revision=revision+1 WHERE target=?", (target,))
+            revision = self.revision(db, target)
+            db.commit()
+            return revision

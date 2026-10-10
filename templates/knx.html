@@ -1,0 +1,47 @@
+<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>">
+<main class="mcp-page mcp-knx" id="knx-page"
+ data-saved="<TMPL_VAR KNX.SAVED ESCAPE=HTML>"
+ data-failed="<TMPL_VAR KNX.FAILED ESCAPE=HTML>"
+ data-unsaved="<TMPL_VAR KNX.UNSAVED ESCAPE=HTML>"
+ data-edit="<TMPL_VAR KNX.EDIT ESCAPE=HTML>"
+ data-delete="<TMPL_VAR KNX.DELETE ESCAPE=HTML>"
+ data-confirm="<TMPL_VAR KNX.CONFIRM_DELETE ESCAPE=HTML>">
+ <h1><TMPL_VAR KNX.TITLE></h1>
+ <p><TMPL_VAR KNX.SOURCE_HELP></p>
+ <p id="knx-status" role="status" aria-live="polite"></p>
+ <section class="mcp-card">
+  <h2><TMPL_VAR SETUP.KNX_TAXONOMY></h2>
+  <form id="knx-taxonomy-form" class="mcp-form">
+   <fieldset class="mcp-configuration-fields" disabled>
+    <label class="mcp-field"><span><TMPL_VAR SETUP.KNX_TAXONOMY_LABEL></span><textarea id="knx-taxonomy-entries" rows="5" maxlength="16384"></textarea></label>
+    <p class="mcp-help"><TMPL_VAR SETUP.KNX_TAXONOMY_HELP></p>
+    <div class="mcp-actions">
+     <button class="lb-button" type="submit"><TMPL_VAR ACTION.SAVE_KNX_TAXONOMY></button>
+     <button class="lb-button" type="button" id="knx-label-export"><TMPL_VAR ACTION.EXPORT_KNX_TAXONOMY></button>
+     <label class="lb-button"><TMPL_VAR ACTION.IMPORT_KNX_TAXONOMY><input id="knx-label-import" type="file" accept=".txt,text/plain"></label>
+    </div>
+   </fieldset>
+  </form>
+ </section>
+ <section class="mcp-card">
+  <h2><TMPL_VAR KNX.ADDRESSES></h2>
+  <button class="lb-button" id="knx-json-export" type="button"><TMPL_VAR KNX.JSON_EXPORT></button>
+  <label class="lb-button"><TMPL_VAR KNX.JSON_IMPORT><input id="knx-json-import" type="file" accept=".json,application/json"></label>
+  <p id="knx-json-preview"></p><button class="lb-button" id="knx-json-apply" type="button" hidden><TMPL_VAR KNX.JSON_APPLY></button>
+  <form id="knx-record-form" class="mcp-form">
+   <fieldset class="mcp-configuration-fields" disabled>
+    <div class="mcp-grid">
+     <label class="mcp-field"><span><TMPL_VAR KNX.FORMAT></span><select name="address_format"><option value="three_level">1/2/3</option><option value="two_level">1/123</option></select></label>
+     <label class="mcp-field"><span><TMPL_VAR KNX.ADDRESS></span><input name="address" required maxlength="16"></label>
+     <label class="mcp-field"><span><TMPL_VAR KNX.NAME></span><input name="name" required maxlength="255"></label>
+     <label class="mcp-field"><span><TMPL_VAR KNX.DESCRIPTION></span><textarea name="description" maxlength="4096"></textarea></label>
+     <label class="mcp-field"><span><TMPL_VAR KNX.DPTS></span><input name="dpts" maxlength="1024"></label>
+    </div>
+    <div class="mcp-actions"><button class="lb-button" type="submit"><TMPL_VAR KNX.SAVE_RECORD></button><button class="lb-button" type="reset"><TMPL_VAR KNX.NEW_RECORD></button></div>
+   </fieldset>
+  </form>
+  <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR KNX.ADDRESS></th><th><TMPL_VAR KNX.NAME></th><th><TMPL_VAR KNX.DESCRIPTION></th><th><TMPL_VAR KNX.ACTIONS></th></tr></thead><tbody id="knx-addresses"></tbody></table></div>
+  <div class="mcp-actions"><button class="lb-button" id="knx-previous" type="button"><TMPL_VAR KNX.PREVIOUS></button><span id="knx-count"></span><button class="lb-button" id="knx-next" type="button"><TMPL_VAR KNX.NEXT></button></div>
+ </section>
+</main>
+<script src="knx.js?v=<TMPL_VAR VERSION ESCAPE=HTML>" defer></script>

@@ -585,3 +585,11 @@ Beziehungen und normale Traversal-/Antwortlimits bleiben sichtbar. Das bestehend
 nicht die Verfügbarkeit dieser Verbindungsmetadaten.
 
 Bekannte nicht auflösbare API-Verbindungen bleiben in allgemeinen Projektbelegen und Gesamtzahlen sichtbar, markieren skalare KNX-, Öffnungskontakt- oder Modbus-Pfade aber nicht als mehrdeutig. Fehlende Quellen mit gemischten oder unbekannten Connector-Arten bleiben unaufgelöste skalare Evidenz.
+
+### KNX-Verwaltung
+
+Die eigene KNX-Seite ist aus der Administration erreichbar. Sie verwaltet Präfixlabels und manuelle Gruppenadressen getrennt je konfiguriertem Miniserver. Adresse, Darstellungsformat und zusätzlicher Name sind erforderlich; Beschreibung und DPT-Angaben sind optional. Diese Angaben ändern keine Loxone-Namen oder Projektfakten.
+
+Labeltext lässt sich weiterhin laden und exportieren. Der versionierte JSON-Austausch enthält nur Adressmetadaten, keine Miniserver-Adresse oder Secrets, und ist kein ETS-Importformat. Laden zeigt eine Vorschau; erst die ausdrückliche Übernahme ergänzt/aktualisiert Datensätze. Nicht enthaltene Adressen bleiben erhalten. Gleichzeitige Änderungen oder ein Zielwechsel können die Übernahme ablehnen; dann neu laden.
+
+Der JSON-Export enthält die angezeigte Adressseite. Größere Bestände lassen sich seitenweise übertragen, damit jede Datei innerhalb der Importgrenze bleibt.

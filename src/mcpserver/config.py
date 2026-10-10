@@ -335,6 +335,7 @@ class PluginConfig:
     emergency_stop_virtual_status_uuid: str = ""
     knx_address_taxonomy_endpoint: str = ""
     knx_address_taxonomy: tuple[AddressTaxonomyEntry, ...] = ()
+    knx_taxonomy_targets: tuple[tuple[str, tuple[AddressTaxonomyEntry, ...]], ...] = ()
     _source: dict[str, Any] | None = None
 
     @classmethod
@@ -609,6 +610,23 @@ class PluginConfig:
             raise ConfigError(str(exc)) from exc
         if taxonomy_entries and not taxonomy_endpoint:
             raise ConfigError("knx_address_taxonomy.endpoint is required")
+        target_document = root.get("knx_taxonomy_targets", {})
+        if not isinstance(target_document, dict) or len(target_document) > 128:
+            raise ConfigError("knx_taxonomy_targets is invalid")
+        target_entries: dict[str, tuple[AddressTaxonomyEntry, ...]] = {}
+        try:
+            for origin, values in target_document.items():
+                if not isinstance(origin, str) or MiniserverEndpoint.parse(origin).origin != origin:
+                    raise ValueError("knx_taxonomy_targets endpoint is invalid")
+                target_entries[origin] = parse_taxonomy(values)
+        except ValueError as exc:
+            raise ConfigError(str(exc)) from exc
+        if taxonomy_endpoint:
+            target_entries[taxonomy_endpoint] = taxonomy_entries
+        active_origin = MiniserverEndpoint.parse(endpoint).origin if endpoint else ""
+        if active_origin in target_entries:
+            taxonomy_endpoint = active_origin
+            taxonomy_entries = target_entries[active_origin]
         return cls(
             enabled=enabled,
             public_origin=public_origin,
@@ -654,6 +672,7 @@ class PluginConfig:
             emergency_stop_virtual_status_uuid=emergency_stop_virtual_status_uuid,
             knx_address_taxonomy_endpoint=taxonomy_endpoint,
             knx_address_taxonomy=taxonomy_entries,
+            knx_taxonomy_targets=tuple(sorted(target_entries.items())),
             _source=copy.deepcopy(root),
         )
 
@@ -739,6 +758,20 @@ class PluginConfig:
             }
             for entry in self.knx_address_taxonomy
         ]
+        targets = dict(self.knx_taxonomy_targets)
+        if self.knx_address_taxonomy_endpoint:
+            targets[self.knx_address_taxonomy_endpoint] = self.knx_address_taxonomy
+        document["knx_taxonomy_targets"] = {
+            origin: [
+                {
+                    "prefix": entry.prefix,
+                    "label": entry.label,
+                    "address_format": entry.address_format,
+                }
+                for entry in entries
+            ]
+            for origin, entries in targets.items()
+        }
         document["event_history"]["retention_days"] = self.event_history_retention_days
         document["event_history"]["maximum_mib"] = self.event_history_maximum_mib
         document["event_history"]["sources"] = [
