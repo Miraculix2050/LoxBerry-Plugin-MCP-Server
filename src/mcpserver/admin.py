@@ -1627,11 +1627,15 @@ def _allow_loxberry_read(payload: object) -> dict[str, Any]:
         return {"loxberry_bindings": _loxberry_bindings(), "sessions": _sessions()}
     binding = _loxberry_binding(record)
 
+    created = False
+
     def add_binding(previous: PluginConfig) -> PluginConfig:
+        nonlocal created
         if binding in previous.loxberry_read_bindings:
             return _retain_binding_names(previous, document)
         if len(previous.loxberry_read_bindings) >= 64:
             raise AdminError("LoxBerry approval capacity reached")
+        created = True
         return _retain_binding_names(
             replace(
                 previous,
@@ -1641,14 +1645,15 @@ def _allow_loxberry_read(payload: object) -> dict[str, Any]:
         )
 
     _config_store().mutate(add_binding)
-    lifecycle_event(
-        "approval_granted",
-        family_id=session_id,
-        binding_id=binding,
-        reason="read",
-        source="admin",
-        outcome="committed",
-    )
+    if created:
+        lifecycle_event(
+            "approval_granted",
+            family_id=session_id,
+            binding_id=binding,
+            reason="read",
+            source="admin",
+            outcome="committed",
+        )
     return {"loxberry_bindings": _loxberry_bindings(), "sessions": _sessions()}
 
 
@@ -1758,11 +1763,15 @@ def _allow_loxberry_operate(payload: object) -> dict[str, Any]:
         }
     binding = _loxberry_operate_binding(record)
 
+    created = False
+
     def add_binding(previous: PluginConfig) -> PluginConfig:
+        nonlocal created
         if binding in previous.loxberry_operate_bindings:
             return _retain_binding_names(previous, document)
         if len(previous.loxberry_operate_bindings) >= 64:
             raise AdminError("LoxBerry operation approval capacity reached")
+        created = True
         return _retain_binding_names(
             replace(
                 previous,
@@ -1772,14 +1781,15 @@ def _allow_loxberry_operate(payload: object) -> dict[str, Any]:
         )
 
     _config_store().mutate(add_binding)
-    lifecycle_event(
-        "approval_granted",
-        family_id=session_id,
-        binding_id=binding,
-        reason="operate",
-        source="admin",
-        outcome="committed",
-    )
+    if created:
+        lifecycle_event(
+            "approval_granted",
+            family_id=session_id,
+            binding_id=binding,
+            reason="operate",
+            source="admin",
+            outcome="committed",
+        )
     return {
         "sessions": _sessions(),
         "loxberry_operate_bindings": _loxberry_operate_bindings(),

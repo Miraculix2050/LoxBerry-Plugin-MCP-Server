@@ -2613,7 +2613,7 @@ def test_revoke_queues_remote_tokens_without_waiting_for_miniserver(
 
 @pytest.mark.parametrize("capability", ["read", "operate"])
 def test_approval_retains_original_name_after_family_and_client_are_deleted(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capability: str
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capability: str, caplog
 ) -> None:
     config_path = (tmp_path / "config.json").resolve()
     auth_path = (tmp_path / "auth.json").resolve()
@@ -2647,11 +2647,16 @@ def test_approval_retains_original_name_after_family_and_client_are_deleted(
     allow = _allow_loxberry_read if capability == "read" else _allow_loxberry_operate
     rows = _loxberry_bindings if capability == "read" else _loxberry_operate_bindings
     revoke = _revoke_loxberry_read if capability == "read" else _revoke_loxberry_operate
+    caplog.set_level("INFO", logger="mcpserver.auth.lifecycle")
+    caplog.clear()
     allow({"session_id": "family"})
+    assert caplog.text.count("event=approval_granted") == 1
     binding = rows()[0]["id"]
     assert dict(config_store.load().loxberry_binding_names) == {binding: "<Codex> Original"}
     auth.mutate(lambda doc: doc["clients"]["client"].update(client_name="Renamed"))
+    caplog.clear()
     allow({"session_id": "family"})
+    assert "event=approval_granted" not in caplog.text
     assert dict(config_store.load().loxberry_binding_names)[binding] == "<Codex> Original"
     auth.mutate(lambda doc: (doc["families"].clear(), doc["clients"].clear()))
     inactive = rows()[0]["rows"][0]
