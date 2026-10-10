@@ -3,6 +3,7 @@
 These tests provide static fixture evidence, never live Modbus acceptance.
 """
 
+import asyncio
 import json
 from contextlib import asynccontextmanager
 from dataclasses import replace
@@ -14,6 +15,7 @@ import pytest
 from mcp.server.fastmcp import FastMCP
 
 import mcpserver.tools as tools
+from mcpserver.loxone.project.analysis import analyze_knx
 from mcpserver.loxone.project.graph import (
     GraphEdge,
     ProjectPartSummary,
@@ -33,6 +35,7 @@ from mcpserver.loxone.project.modbus_analysis import (
 )
 from mcpserver.loxone.project.parser import parse_project
 from mcpserver.loxone.project.query import ProjectQuery
+from mcpserver.loxone.project.taxonomy import AddressTaxonomyEntry
 from mcpserver.loxone.project.worker import process_analysis
 
 FIXTURES = Path(__file__).parent / "fixtures/project/modbus"
@@ -44,7 +47,8 @@ def view(xml=b"<P/>", parts=("part-a",)):
     graph = build_graph(tuple((part, parsed) for part in parts))
     sources = tuple(ProjectPartSummary(p, len(parsed.elements), ()) for p in parts)
     return ProjectView(
-        ProjectSnapshot("fixture", 1, sources, graph), RuntimeMapping("fixture", "v1", ())
+        ProjectSnapshot("fixture", 1, sources, graph, content_identity="fixture-content"),
+        RuntimeMapping("fixture", "v1", ()),
     )
 
 
@@ -526,7 +530,10 @@ async def test_internal_cache_cursor_binding_and_reauthorization(monkeypatch, ch
     async def slot():
         yield
 
-    runtime = SimpleNamespace(projects=SimpleNamespace(authorize=authorize), worker_slot=slot)
+    runtime = SimpleNamespace(
+        projects=SimpleNamespace(authorize=authorize),
+        worker_slot=slot,
+    )
     current = [project]
     monkeypatch.setattr(tools, "_access", lambda: access)
     monkeypatch.setattr(
@@ -581,7 +588,10 @@ async def test_worker_completion_reauthorization_prevents_cache_population(monke
         yield
 
     runtime = SimpleNamespace(
-        projects=SimpleNamespace(authorize=AsyncMock(side_effect=PermissionError)), worker_slot=slot
+        projects=SimpleNamespace(
+            authorize=AsyncMock(side_effect=PermissionError),
+        ),
+        worker_slot=slot,
     )
     monkeypatch.setattr(tools, "_access", lambda: access)
     monkeypatch.setattr(
@@ -596,3 +606,243 @@ async def test_worker_completion_reauthorization_prevents_cache_population(monke
     result = await runner.run("modbus", ["inventory"])
     assert not result.ok and result.data.error == "unauthenticated"
     assert not runner.cache
+
+
+@pytest.fixture
+def analysis_reuse(monkeypatch):
+    project = view(
+        b'<P><C Type="EIBsensor" U="first" Title="First" EibAddr="1/1/1"/>'
+        b'<C Type="EIBsensor" U="second" Title="Second" EibAddr="1/1/2"/>'
+        b'<C Type="ModbusServer"><C Type="ModbusDev">'
+        b'<C Type="ModbusASensor" ModbusCmd="3" ModbusAddress="1" ModbusPollingCycle="1"/>'
+        b'<C Type="ModbusASensor" ModbusCmd="3" ModbusAddress="1" ModbusPollingCycle="2"/>'
+        b"</C></C></P>"
+    )
+    state = {"project": replace(project, marker="marker"), "taxonomy": (), "now": 100.0}
+    access = SimpleNamespace(family_id="first", identity_id="reader", miniserver_id="server")
+    authorize = AsyncMock()
+
+    @asynccontextmanager
+    async def slot():
+        yield
+
+    runtime = SimpleNamespace(
+        projects=SimpleNamespace(authorize=authorize),
+        worker_slot=slot,
+        endpoint=SimpleNamespace(origin="http://synthetic.example"),
+    )
+    load = AsyncMock(
+        side_effect=lambda _: (ProjectQuery(state["project"], {}), SimpleNamespace(connected=True))
+    )
+    worker = AsyncMock(
+        side_effect=lambda v, selected, taxonomy=(), scope="knx": (
+            analyze_modbus(v, selected) if scope == "modbus" else analyze_knx(v, selected, taxonomy)
+        )
+    )
+    config = SimpleNamespace(
+        load=lambda: SimpleNamespace(
+            knx_address_taxonomy_endpoint=runtime.endpoint.origin,
+            knx_address_taxonomy=state["taxonomy"],
+        )
+    )
+    monkeypatch.setattr(tools, "_access", lambda: access)
+    monkeypatch.setattr(tools, "_project_query", load)
+    monkeypatch.setattr(tools, "process_analysis", worker)
+    monkeypatch.setattr(tools, "time", SimpleNamespace(monotonic=lambda: state["now"]))
+    return tools._ProjectAnalysisRunner(runtime, config), access, state, worker, load, authorize
+
+
+def reuse_selection(scope):
+    return (
+        ["project_connectivity"]
+        if scope == "knx"
+        else ["configured_register_mappings", "configured_polling"]
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["knx", "modbus"])
+async def test_reuse_computes_once_but_keeps_own_load_authorization_and_cursors(
+    analysis_reuse, scope
+):
+    runner, access, _state, worker, load, authorize = analysis_reuse
+    selected = reuse_selection(scope)
+    first = await runner.run(scope, selected, limit=1)
+    assert first.ok and first.data.next_cursor
+    access.family_id = "second"
+    second = await runner.run(scope, selected, limit=1)
+    assert second.ok and second.data.next_cursor != first.data.next_cursor
+    assert first.data.findings == second.data.findings
+    assert worker.await_count == 1 and load.await_count == authorize.await_count == 2
+    assert len(runner.cache) == 1 and len(runner.leases) == 2
+    cross = await runner.run(scope, selected, first.data.next_cursor, 1)
+    assert not cross.ok and cross.data.error == "invalid_input"
+    continued = await runner.run(scope, selected, second.data.next_cursor, 1)
+    assert continued.ok
+    assert worker.await_count == 1 and load.await_count == 4 and authorize.await_count == 3
+    authorize.side_effect = PermissionError
+    denied = await runner.run(scope, selected)
+    assert not denied.ok and denied.data.error == "unauthenticated"
+    assert worker.await_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["knx", "modbus"])
+async def test_mapping_dependency_is_present_only_for_knx(analysis_reuse, scope):
+    runner, access, state, worker, _load, _authorize = analysis_reuse
+    first = await runner.run(scope, reuse_selection(scope))
+    access.family_id = "second"
+    access.identity_id = "other-reader"
+    state["project"] = replace(
+        state["project"],
+        mapping=replace(state["project"].mapping, structure_fingerprint="other-visible-mapping"),
+    )
+    second = await runner.run(scope, reuse_selection(scope))
+    assert first.ok and second.ok
+    assert worker.await_count == (2 if scope == "knx" else 1)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("changed", ["content", "model", "miniserver", "version", "taxonomy"])
+async def test_reuse_requires_all_current_analysis_inputs(analysis_reuse, monkeypatch, changed):
+    runner, _access, state, worker, _load, _authorize = analysis_reuse
+    selected = ["address_hierarchy"]
+    assert (await runner.run("knx", selected)).ok
+    if changed == "content":
+        state["project"] = replace(
+            state["project"],
+            snapshot=replace(state["project"].snapshot, content_identity="changed"),
+        )
+    elif changed == "model":
+        state["project"] = replace(
+            state["project"], snapshot=replace(state["project"].snapshot, model_version=2)
+        )
+    elif changed == "miniserver":
+        _access.miniserver_id = "other-server"
+    elif changed == "version":
+        monkeypatch.setattr(tools, "ANALYSIS_VERSION", tools.ANALYSIS_VERSION + 1)
+    else:
+        state["taxonomy"] = (AddressTaxonomyEntry("1", "Synthetic label", "three_level"),)
+    assert (await runner.run("knx", selected)).ok
+    assert worker.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_other_family_cannot_revive_expired_cursor_after_result_recreation(analysis_reuse):
+    runner, access, state, worker, _load, _authorize = analysis_reuse
+    first = await runner.run("knx", reuse_selection("knx"), limit=1)
+    cursor = first.data.next_cursor
+    state["now"] += 301
+    access.family_id = "second"
+    assert (await runner.run("knx", reuse_selection("knx"), limit=1)).ok
+    access.family_id = "first"
+    assert not (await runner.run("knx", reuse_selection("knx"), cursor, 1)).ok
+    recreated = await runner.run("knx", reuse_selection("knx"), limit=1)
+    assert recreated.ok and recreated.data.next_cursor != cursor
+    assert not (await runner.run("knx", reuse_selection("knx"), cursor, 1)).ok
+    assert worker.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_bounded_leases_and_results_do_not_revive_evicted_cursor(analysis_reuse):
+    runner, access, state, worker, _load, _authorize = analysis_reuse
+    first = await runner.run("knx", reuse_selection("knx"), limit=1)
+    for index in range(1, 5):
+        access.family_id = f"family-{index}"
+        assert (await runner.run("knx", reuse_selection("knx"), limit=1)).ok
+    assert len(runner.leases) == 4 and len(runner.cache) == worker.await_count == 1
+    access.family_id = "first"
+    assert not (await runner.run("knx", reuse_selection("knx"), first.data.next_cursor, 1)).ok
+    renewed = await runner.run("knx", reuse_selection("knx"), limit=1)
+    assert renewed.ok and renewed.data.next_cursor != first.data.next_cursor
+    for index in range(1, 5):
+        state["project"] = replace(
+            state["project"],
+            snapshot=replace(state["project"].snapshot, content_identity=str(index)),
+        )
+        assert (await runner.run("knx", reuse_selection("knx"))).ok
+    assert len(runner.cache) == 4
+    assert runner.cache_bytes == sum(entry[2] for entry in runner.cache.values())
+    assert all(lease[1] in runner.cache for lease in runner.leases.values())
+
+
+@pytest.mark.asyncio
+async def test_analysis_byte_bound_rejects_oversized_result_without_lease(
+    analysis_reuse, monkeypatch
+):
+    runner, _access, _state, _worker, _load, _authorize = analysis_reuse
+    monkeypatch.setattr(tools, "_MAX_ANALYSIS_CACHE_BYTES", 1)
+    result = await runner.run("knx", reuse_selection("knx"))
+    assert not result.ok and not runner.cache and not runner.leases and runner.cache_bytes == 0
+
+
+@pytest.mark.asyncio
+async def test_shared_analysis_single_flight_and_producer_cancellation(analysis_reuse):
+    runner, access, _state, worker, _load, _authorize = analysis_reuse
+    started, release = asyncio.Event(), asyncio.Event()
+    ordinary = worker.side_effect
+
+    async def blocked(*args, **kwargs):
+        started.set()
+        await release.wait()
+        return ordinary(*args, **kwargs)
+
+    worker.side_effect = blocked
+    first = asyncio.create_task(runner.run("knx", reuse_selection("knx")))
+    await started.wait()
+    access.family_id = "second"
+    second = asyncio.create_task(runner.run("knx", reuse_selection("knx")))
+    await asyncio.sleep(0)
+    assert worker.await_count == 1
+    first.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await first
+    assert not runner.cache and not runner.leases
+    release.set()
+    assert (await second).ok and worker.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_successful_concurrent_shared_analysis_runs_one_worker(analysis_reuse):
+    runner, access, _state, worker, _load, _authorize = analysis_reuse
+    started, release = asyncio.Event(), asyncio.Event()
+    ordinary = worker.side_effect
+
+    async def blocked(*args, **kwargs):
+        started.set()
+        await release.wait()
+        return ordinary(*args, **kwargs)
+
+    worker.side_effect = blocked
+    first = asyncio.create_task(runner.run("modbus", reuse_selection("modbus")))
+    await started.wait()
+    access.family_id = "second"
+    second = asyncio.create_task(runner.run("modbus", reuse_selection("modbus")))
+    await asyncio.sleep(0)
+    release.set()
+    assert all(result.ok for result in await asyncio.gather(first, second))
+    assert worker.await_count == 1 and len(runner.cache) == 1 and len(runner.leases) == 2
+
+
+@pytest.mark.asyncio
+async def test_response_mutation_cannot_change_another_family_cached_result(analysis_reuse):
+    runner, access, _state, worker, _load, _authorize = analysis_reuse
+    first = await runner.run("knx", reuse_selection("knx"), limit=1)
+    assert first.ok and first.data.findings
+    before = json.dumps(next(iter(runner.cache.values()))[1], sort_keys=True)
+    first.data.findings.clear()
+    access.family_id = "second"
+    second = await runner.run("knx", reuse_selection("knx"), limit=1)
+    assert second.ok and second.data.findings and worker.await_count == 1
+    assert json.dumps(next(iter(runner.cache.values()))[1], sort_keys=True) == before
+
+
+@pytest.mark.asyncio
+async def test_unbound_content_identity_cannot_publish_shared_analysis(analysis_reuse):
+    runner, _access, state, worker, _load, _authorize = analysis_reuse
+    state["project"] = replace(
+        state["project"], snapshot=replace(state["project"].snapshot, content_identity="")
+    )
+    result = await runner.run("knx", reuse_selection("knx"))
+    assert not result.ok and not runner.cache and not runner.leases
+    assert worker.await_count == 0

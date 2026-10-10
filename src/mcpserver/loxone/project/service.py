@@ -5,6 +5,7 @@ import hashlib
 import logging
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from mcpserver.auth.loxone_health import LoxoneTokenHealthStore
@@ -239,6 +240,10 @@ class ProjectService:
                         self._record_cache("miss")
                         snapshot, serialized_size = await process_project(data, self.limits)
                         assert isinstance(snapshot, ProjectSnapshot)
+                        snapshot = replace(
+                            snapshot,
+                            content_identity=hashlib.sha256(repr(content_key).encode()).hexdigest(),
+                        )
                         # Conservative object overhead allowance beyond serialized content.
                         size = (
                             serialized_size * 4

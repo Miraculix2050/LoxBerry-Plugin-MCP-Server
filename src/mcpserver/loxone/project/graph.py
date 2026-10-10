@@ -165,6 +165,8 @@ class ProjectSnapshot:
     model_version: int
     projects: tuple[ProjectPartSummary, ...] = field(repr=False)
     graph: ProjectGraph = field(repr=False)
+    # Loader-bound response bytes/limits; never an authorization decision.
+    content_identity: str = field(default="", repr=False, compare=False, kw_only=True)
     source_diagnostics: ProjectSourceDiagnostics = field(
         default_factory=lambda: ProjectSourceDiagnostics((), True, 0), repr=False
     )
