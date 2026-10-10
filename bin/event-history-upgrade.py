@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Preserve the stopped recorder's SQLite snapshot across a native upgrade."""
+"""Preserve plugin SQLite snapshots across a native upgrade.
+
+The existing executable path remains compatible; event history and KNX metadata
+use the same integrity-checked snapshot operations.
+"""
 
 import os
 import sqlite3
@@ -20,14 +24,14 @@ def backup(source: Path, destination: Path) -> None:
     if not source.exists():
         return
     if not regular_file(source) or destination.exists():
-        raise RuntimeError("unsafe event history upgrade path")
+        raise RuntimeError("unsafe SQLite upgrade path")
     target = sqlite3.connect(destination)
     try:
         with closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True)) as current:
             current.backup(target)
         integrity = target.execute("PRAGMA quick_check").fetchone()[0]
         if integrity != "ok":
-            raise RuntimeError("event history backup failed integrity check")
+            raise RuntimeError("SQLite backup failed integrity check")
     finally:
         target.close()
     os.chmod(destination, 0o600)
@@ -37,14 +41,14 @@ def restore(source: Path, destination: Path) -> None:
     if not source.exists():
         return
     if not regular_file(source) or destination.exists():
-        raise RuntimeError("unsafe event history restore path")
+        raise RuntimeError("unsafe SQLite restore path")
     with closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True)) as snapshot:
         if snapshot.execute("PRAGMA quick_check").fetchone()[0] != "ok":
-            raise RuntimeError("event history restore failed integrity check")
+            raise RuntimeError("SQLite restore failed integrity check")
     parent = destination.parent
     parent.mkdir(mode=0o700, exist_ok=True)
     if not stat.S_ISDIR(parent.lstat().st_mode):
-        raise RuntimeError("unsafe event history restore directory")
+        raise RuntimeError("unsafe SQLite restore directory")
     os.chmod(source, 0o600)
     if os.rename in os.supports_dir_fd and hasattr(os, "O_NOFOLLOW"):
         directory = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)

@@ -67,6 +67,9 @@ done
 python3 "$installer_root/bin/event-history-upgrade.py" restore \
     "$upgrade_backup_dir/state-events.sqlite3" \
     "$plugin_data/event-history/state-events.sqlite3" || exit 2
+python3 "$installer_root/bin/event-history-upgrade.py" restore \
+    "$upgrade_backup_dir/knx-metadata.sqlite3" \
+    "$plugin_data/knx/metadata.sqlite3" || exit 2
 rmdir "$upgrade_backup_dir" 2>/dev/null || true
 
 if [ ! -d "$wheelhouse" ] || ! find "$wheelhouse" -maxdepth 1 -name '*.whl' -print -quit | grep -q .; then

@@ -24,6 +24,7 @@ extracted from the matching version heading.
 - Add bounded modern ETS XML import with revision-bound preview, explicit duplicate
   decisions, selected group metadata, field overrides and transactional reimport.
   Complete replacement preserves manual records and explicitly reviewed overrides;
+  native upgrades retain the KNX database through an integrity-checked SQLite snapshot.
   Loxone names remain primary. CSV and project metadata integration follow separately.
 
 - Unify configured service-identity credentials and connection ownership for

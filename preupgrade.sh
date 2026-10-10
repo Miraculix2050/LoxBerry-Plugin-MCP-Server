@@ -70,4 +70,8 @@ python3 "$installer_root/bin/event-history-upgrade.py" backup \
     "$LBPDATA/$actual_folder/event-history/state-events.sqlite3" \
     "$backup_dir/state-events.sqlite3" || exit 2
 echo "<INFO> Existing event history saved for the upgrade."
+python3 "$installer_root/bin/event-history-upgrade.py" backup \
+    "$LBPDATA/$actual_folder/knx/metadata.sqlite3" \
+    "$backup_dir/knx-metadata.sqlite3" || exit 2
+echo "<INFO> Existing KNX metadata saved for the upgrade."
 exit 0
