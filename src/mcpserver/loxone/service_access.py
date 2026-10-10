@@ -10,13 +10,17 @@ import subprocess
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Protocol, TypeVar
+from typing import Protocol, TypedDict, TypeVar
 
 from mcpserver.config import PluginConfig
 from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
 from mcpserver.loxone.client import LoxoneClient, LoxoneToken, LoxoneWebSocketSession
 
 _T = TypeVar("_T")
+
+
+class _ProbeOptions(TypedDict, total=False):
+    early_probe: bool
 
 
 class ServiceCredentialsUnavailable(RuntimeError):
@@ -141,16 +145,17 @@ class ServiceMiniserverConnection:
             try:
                 if self.coordinator is None:
                     return await measured_operation()
+                probe_options: _ProbeOptions = (
+                    {"early_probe": True}
+                    if self.early_probe and phase == "token_acquisition"
+                    else {}
+                )
                 return await self.coordinator.attempt(
                     measured_operation,
                     owner=self.owner,
                     phase=phase,
                     allow_cooldown_probe=self.manual_retry,
-                    **(
-                        {"early_probe": True}
-                        if self.early_probe and phase == "token_acquisition"
-                        else {}
-                    ),
+                    **probe_options,
                     busy_wait_seconds=max(0.0, deadline - time.monotonic()),
                 )
             finally:
