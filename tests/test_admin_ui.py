@@ -111,7 +111,9 @@ def test_admin_modules_load_in_order_with_versioned_localized_assets() -> None:
     for name in ADMIN_SCRIPTS:
         source = _admin_script(name)
         assert "<TMPL_" not in source
-        asset_version = {"configuration.js": "v14", "page.js": "v13"}.get(name, "v12")
+        asset_version = {"configuration.js": "v14", "page.js": "v13", "sessions.js": "v13"}.get(
+            name, "v12"
+        )
         assert (
             f'<script defer src="admin/{name}?v='
             f'<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-{asset_version}"></script>'
