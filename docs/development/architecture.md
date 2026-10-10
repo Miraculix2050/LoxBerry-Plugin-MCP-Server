@@ -221,6 +221,9 @@ is assumed to be a structure response. Cancellation, timeout, provider failure,
 disconnect, identity/configuration change and service shutdown discard the affected
 connection and result. A failed request never reconnects automatically or returns
 an old snapshot. A later explicit request can establish a new guarded connection.
+Existing discovery deadlines remain projection-specific: 35 seconds for Event
+History and 90 seconds for emergency options, including coordinator/queue wait.
+The local helper allows one additional second for delivery.
 Idle expiry is 60 seconds (checked every five seconds); absolute reuse is at most
 five minutes. Current credentials and configuration are checked before and after
 each load; source-IP blocking also prevents warm reuse. New authentication uses

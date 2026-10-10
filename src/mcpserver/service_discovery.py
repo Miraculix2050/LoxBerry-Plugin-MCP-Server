@@ -39,6 +39,7 @@ from mcpserver.loxone.service_access import LoxBerryServiceCredentials, ServiceM
 
 PATH = "/internal/admin-discovery"
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+_DISCOVERY_DEADLINES = {"event_history": 35, "emergency_stop": 90}
 _MAX_INTERLEAVINGS = 32
 _MAX_IGNORED_BYTES = 1024 * 1024
 
@@ -288,7 +289,7 @@ class AdminDiscovery:
     ) -> dict[str, Any]:
         if kind not in {"event_history", "emergency_stop"}:
             raise DiscoveryUnavailable("invalid projection")
-        async with asyncio.timeout(35), self.lock:
+        async with asyncio.timeout(_DISCOVERY_DEADLINES[kind]), self.lock:
             try:
                 if self.closed:
                     raise DiscoveryUnavailable("service stopped")
@@ -450,7 +451,9 @@ def _request_projection(
         method="POST",
     )
     # Local-helper credentials must never follow redirects or environment proxies.
-    with build_opener(ProxyHandler({}), _NoRedirect()).open(request, timeout=36) as response:
+    with build_opener(ProxyHandler({}), _NoRedirect()).open(
+        request, timeout=_DISCOVERY_DEADLINES[kind] + 1
+    ) as response:
         raw = response.read(MAX_RESPONSE_BYTES + 1)
     if len(raw) > MAX_RESPONSE_BYTES:
         raise DiscoveryUnavailable("projection too large")

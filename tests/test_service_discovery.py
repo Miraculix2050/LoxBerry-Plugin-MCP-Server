@@ -425,3 +425,66 @@ async def test_service_stop_discards_inflight_and_rejects_later_requests(tmp_pat
     with pytest.raises(DiscoveryUnavailable):
         await owner.project("event_history", expected())
     assert len(connects) == 1 and len(closes) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind,deadline", [("event_history", 35), ("emergency_stop", 90)])
+async def test_projection_preserves_existing_discovery_deadline(
+    tmp_path, monkeypatch, kind, deadline
+):
+    import mcpserver.service_discovery as module
+
+    owner, socket, expected, *_rest = owner_fixture(tmp_path, monkeypatch)
+    config = _rest[-2]
+    config[0] = replace(config[0], connection_timeout=60)
+    budgets = []
+    real_timeout = asyncio.timeout
+
+    def observed_timeout(seconds):
+        budgets.append(seconds)
+        return real_timeout(seconds)
+
+    monkeypatch.setattr(module.asyncio, "timeout", observed_timeout)
+    try:
+        await owner.project(kind, expected())
+        assert budgets[0] == deadline
+        assert socket.requests == 1
+    finally:
+        await owner.close()
+
+
+@pytest.mark.parametrize("kind,deadline", [("event_history", 36), ("emergency_stop", 91)])
+def test_local_helper_outlives_projection_discovery_deadline(tmp_path, monkeypatch, kind, deadline):
+    import json
+
+    import mcpserver.service_discovery as module
+
+    async def credentials(_self):
+        return "synthetic", "synthetic-password"
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def read(self, limit):
+            return json.dumps({"ok": True, "projection": {}, "timing": {}}).encode()
+
+    observed = []
+
+    class Opener:
+        def open(self, request, *, timeout):
+            observed.append(timeout)
+            return Response()
+
+    monkeypatch.setattr(module.LoxBerryServiceCredentials, "load", credentials)
+    monkeypatch.setattr(module, "build_opener", lambda *handlers: Opener())
+    assert (
+        module.request_projection(
+            PluginConfig(connection_timeout=60), AtomicJsonAuthStore(tmp_path / "auth.json"), kind
+        )
+        == {}
+    )
+    assert observed == [deadline]
