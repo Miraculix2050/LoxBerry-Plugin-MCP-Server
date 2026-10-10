@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 
 
@@ -211,6 +211,7 @@ class LoxoneStructure:
     global_metadata: tuple[GlobalMetadata, ...] = ()
     room_groups: tuple[NamedGroup, ...] = ()
     weather: WeatherMetadata = WeatherMetadata()
+    parse_identity: str = field(default="", kw_only=True, repr=False, compare=False)
 
 
 type StateValue = float | str | tuple[object, ...] | dict[str, object]

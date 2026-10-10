@@ -269,3 +269,22 @@ Schließen verwalten die Referenzen bei unveränderten konservativen Speicherans
 pro Familie und bestehenden Grenzen. Es gibt keinen zusätzlichen Pool, keine
 Persistenz, Cursorfreigabe oder Worker-Serialisierung. Messungen betreffen CPU und
 gehaltene Python-Allokationen, ohne Transport und gesamten Dienst-RSS.
+
+## Wiederverwendung selbst empfangener Strukturen (#401)
+
+Jeder Strukturabruf sendet weiterhin seine eigene authentifizierte LoxAPP3-Anfrage
+und empfängt/validiert die vollständige begrenzte Antwort. Erst danach kann der
+Client die unveränderliche Normalisierung aus vorhandenen begrenzten Laufzeit-
+Verbindungsdatensätzen übernehmen. Der private Schlüssel enthält den exakten
+empfangenen UTF-8-Text, Miniserver-Ursprung, Normalisierungsepoche, exakten
+Benutzernamen und Grenzen für Payload/Kontrollen/Zustandsreferenzen/Tiefe.
+Verschiedene Nutzer oder Kontexte teilen keinen Treffer; Änderungszeitstempel
+allein identifizieren keinen Inhalt.
+
+Die Verbindungsdatensätze halten die Werte; es gibt keinen zusätzlichen Cache,
+keine Rohdokument-Aufbewahrung, Persistenz oder gemeinsam gehaltenen Zustände,
+Sitzungen oder Token. Refresh-Eigentümerschaft und abschließende Zugriffsprüfungen
+bleiben familienbezogen. Verdrängung/Widerruf/Schließen entfernen Referenzen.
+Gleiche normalisierte Strukturen aus geänderten Bytes aktualisieren die private
+Identität ohne Erhöhung der Sichtbarkeitsgeneration. Clients ohne Lookup behalten
+ihren bisherigen Parserpfad. Öffentliche Antwortschemas bleiben gleich.

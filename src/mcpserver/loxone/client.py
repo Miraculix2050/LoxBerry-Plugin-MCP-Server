@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import re
-from collections.abc import AsyncIterator, Mapping
-from dataclasses import dataclass, field
+from collections.abc import AsyncIterator, Callable, Mapping
+from dataclasses import dataclass, field, replace
 from typing import Any, Final
 from urllib.parse import quote
 from uuid import UUID
@@ -216,6 +217,7 @@ class LoxoneClient:
         max_structure_controls: int = 20_000,
         max_structure_state_references: int = 100_000,
         max_structure_depth: int = 32,
+        structure_lookup: Callable[[str], LoxoneStructure | None] | None = None,
     ) -> None:
         self.endpoint = endpoint
         self.client_uuid = client_uuid
@@ -225,6 +227,7 @@ class LoxoneClient:
         self.max_structure_controls = max_structure_controls
         self.max_structure_state_references = max_structure_state_references
         self.max_structure_depth = max_structure_depth
+        self._structure_lookup = structure_lookup
 
     async def _get_json(self, path: str) -> Mapping[str, Any]:
         body, _encoding = await self._get_bytes(path)
@@ -488,6 +491,8 @@ class LoxoneClient:
             max_structure_controls=self.max_structure_controls,
             max_structure_state_references=self.max_structure_state_references,
             max_structure_depth=self.max_structure_depth,
+            structure_lookup=self._structure_lookup,
+            structure_namespace=self.endpoint.origin,
         )
         try:
             await session.authenticate()
@@ -519,6 +524,8 @@ class LoxoneWebSocketSession:
         max_structure_controls: int = 20_000,
         max_structure_state_references: int = 100_000,
         max_structure_depth: int = 32,
+        structure_lookup: Callable[[str], LoxoneStructure | None] | None = None,
+        structure_namespace: str = "",
     ) -> None:
         self._websocket = websocket
         self._public_key = public_key
@@ -529,6 +536,8 @@ class LoxoneWebSocketSession:
         self._max_structure_controls = max_structure_controls
         self._max_structure_state_references = max_structure_state_references
         self._max_structure_depth = max_structure_depth
+        self._structure_lookup = structure_lookup
+        self._structure_namespace = structure_namespace
         self._encryptor = CommandEncryptor.generate()
 
     async def _receive(self) -> tuple[MessageHeader, str | bytes | None]:
@@ -585,6 +594,34 @@ class LoxoneWebSocketSession:
             payload, str
         ):
             raise LoxoneProtocolError("Miniserver structure response is not text")
+        parse_identity = ""
+        if self._structure_lookup is not None:
+            # Only a complete independently received response may identify reuse.
+            digest = hashlib.sha256(
+                json.dumps(
+                    [
+                        "structure-normalization-v1",
+                        self._structure_namespace,
+                        self._token.username,
+                        self._max_payload,
+                        self._max_structure_controls,
+                        self._max_structure_state_references,
+                        self._max_structure_depth,
+                    ],
+                    separators=(",", ":"),
+                ).encode()
+            )
+            digest.update(b"\0")
+            digest.update(payload.encode("utf-8"))
+            parse_identity = digest.hexdigest()
+            candidate = self._structure_lookup(parse_identity)
+            if (
+                candidate is not None
+                and candidate.parse_identity == parse_identity
+                and candidate.identity.username == self._token.username
+            ):
+                _LOGGER.debug("component=structure_normalization outcome=reused")
+                return candidate
         try:
             document = json.loads(payload)
         except json.JSONDecodeError as exc:
@@ -592,12 +629,15 @@ class LoxoneWebSocketSession:
         if not isinstance(document, Mapping):
             raise LoxoneProtocolError("Miniserver structure response is invalid")
         try:
-            return normalize_structure(
+            structure = normalize_structure(
                 document,
                 username=self._token.username,
                 max_controls=self._max_structure_controls,
                 max_state_references=self._max_structure_state_references,
                 max_depth=self._max_structure_depth,
+            )
+            return (
+                replace(structure, parse_identity=parse_identity) if parse_identity else structure
             )
         except LoxoneStructureError as exc:
             _LOGGER.error(

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -64,6 +65,44 @@ def _project_runtime(**kwargs) -> LoxoneRuntime:
         SimpleNamespace(),  # type: ignore[arg-type]
         **kwargs,
     )
+
+
+def test_structure_reuse_has_only_existing_record_owners() -> None:
+    runtime = _project_runtime(max_active_sessions=2)
+    first = replace(_structure("current"), parse_identity="exact-input")
+    runtime._records = {"first": SimpleNamespace(structure=first)}
+    assert runtime._find_received_structure("exact-input") is first
+    assert runtime._find_received_structure("different-input") is None
+    assert runtime._find_received_structure("") is None
+    runtime._records.clear()
+    assert runtime._find_received_structure("exact-input") is None
+
+
+@pytest.mark.asyncio
+async def test_equal_structure_updates_exact_input_without_changing_generation() -> None:
+    runtime = _project_runtime()
+    task = asyncio.create_task(asyncio.sleep(60))
+    previous = replace(_structure("current"), parse_identity="old-bytes")
+    received = replace(previous, parse_identity="new-equivalent-bytes")
+    assert received == previous
+    record = _ConnectionRecord(previous, frozenset(), _Session(), task)
+    runtime._records = {"family": record}
+    runtime.token_store = SimpleNamespace(get=lambda *_args: object())
+    session = SimpleNamespace(load_structure=AsyncMock(return_value=received), close=AsyncMock())
+    runtime._open_session = AsyncMock(return_value=session)
+    generation = record.generation
+    try:
+        await runtime._refresh_structure(_access(), record, fresh_visibility=True)
+        assert record.structure is received
+        assert record.generation == generation
+        assert runtime._find_received_structure("old-bytes") is None
+        assert runtime._find_received_structure("new-equivalent-bytes") is received
+        session.load_structure.assert_awaited_once()
+        session.close.assert_awaited_once()
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
 
 
 @pytest.mark.asyncio
