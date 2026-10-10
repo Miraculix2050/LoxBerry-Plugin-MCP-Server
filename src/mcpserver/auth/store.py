@@ -196,6 +196,7 @@ def lifecycle_event(
             source,
             outcome,
             max(0, min(count, 10000)),
+            extra={"lifecycle_count": max(0, min(count, 10000)), "lifecycle_source": source},
         )
 
 
@@ -207,13 +208,18 @@ def admin_lifecycle_logging():  # type: ignore[no-untyped-def]
         emitted = 0
         dropped = 0
 
+        def __init__(self) -> None:
+            super().__init__()
+            self.dropped_sources: set[str] = set()
+
         def emit(self, record: logging.LogRecord) -> None:
             text = f"mcpserver_auth_lifecycle={record.levelname} {record.getMessage()}"
             if self.emitted < 6 and len(text.encode("ascii", "replace")) <= 512:
                 sys.stderr.write(text + "\n")
                 self.emitted += 1
             else:
-                self.dropped += 1
+                self.dropped += getattr(record, "lifecycle_count", 1)
+                self.dropped_sources.add(getattr(record, "lifecycle_source", "unknown"))
 
     handler = Handler()
     prior_level, prior_propagate = _LIFECYCLE_LOGGER.level, _LIFECYCLE_LOGGER.propagate
@@ -224,11 +230,16 @@ def admin_lifecycle_logging():  # type: ignore[no-untyped-def]
         yield
     finally:
         if handler.dropped:
+            source = (
+                next(iter(handler.dropped_sources))
+                if len(handler.dropped_sources) == 1
+                else "unknown"
+            )
             with suppress(Exception):
                 sys.stderr.write(
                     "mcpserver_auth_lifecycle=INFO component=auth_lifecycle event=batch_summary "
                     "trace_id=- family_ref=- client_ref=- binding_ref=- capability=- "
-                    "reason=unknown source=admin outcome=unknown "
+                    f"reason=unknown source={source} outcome=unknown "
                     f"count={min(handler.dropped, 10000)}\n"
                 )
         _LIFECYCLE_LOGGER.removeHandler(handler)
@@ -242,6 +253,7 @@ def _committed_lifecycle_events(
     """Derive rare lifecycle transitions from the committed store delta, bounded per mutation."""
     emitted = 0
     total = 0
+    omitted_sources: set[str] = set()
 
     def emit(event: str, **fields: Any) -> None:
         nonlocal emitted, total
@@ -249,6 +261,8 @@ def _committed_lifecycle_events(
         if emitted < 32:
             lifecycle_event(event, **fields)
             emitted += 1
+        else:
+            omitted_sources.add(fields.get("source", "unknown"))
 
     before_clients, clients = original["clients"], document["clients"]
     for client_id in clients.keys() - before_clients.keys():
@@ -318,7 +332,10 @@ def _committed_lifecycle_events(
             )
     if total > emitted:
         lifecycle_event(
-            "batch_summary", source="maintenance", outcome="committed", count=total - emitted
+            "batch_summary",
+            source=next(iter(omitted_sources)) if len(omitted_sources) == 1 else "unknown",
+            outcome="committed",
+            count=total - emitted,
         )
 
 

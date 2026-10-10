@@ -244,3 +244,52 @@ def test_admin_lifecycle_stderr_is_bounded_and_restores_logger(capsys):
     with admin_lifecycle_logging():
         pass
     assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize("source", ["admin", "configuration"])
+def test_bulk_revocation_summary_preserves_source_and_stderr_count(
+    tmp_path, caplog, capsys, source
+):
+    from mcpserver.auth.store import admin_lifecycle_logging, mark_family_revoked
+
+    store = AtomicJsonAuthStore(tmp_path / "sessions.json")
+    store.mutate(lambda doc: doc["families"].update({f"family-{i}": {} for i in range(256)}))
+    caplog.clear()
+    caplog.set_level("INFO", logger="mcpserver.auth.lifecycle")
+
+    def revoke(doc):
+        for family in doc["families"].values():
+            mark_family_revoked(family, now=10, reason="admin_session", source=source)
+
+    store.mutate(revoke)
+    assert len(caplog.records) == 33
+    assert f"source={source} outcome=committed count=224" in caplog.records[-1].message
+    store.mutate(lambda doc: doc["families"].clear())
+    store.mutate(lambda doc: doc["families"].update({f"family-{i}": {} for i in range(256)}))
+    with admin_lifecycle_logging():
+        store.mutate(revoke)
+    lines = capsys.readouterr().err.splitlines()
+    assert len(lines) == 7
+    assert f"source={source} outcome=unknown count=250" in lines[-1]
+    assert sum(len(line) + 1 for line in lines) < 4096
+
+
+def test_bulk_summary_uses_unknown_for_mixed_omitted_sources(tmp_path, caplog):
+    from mcpserver.auth.store import mark_family_revoked
+
+    store = AtomicJsonAuthStore(tmp_path / "sessions.json")
+    store.mutate(lambda doc: doc["families"].update({f"family-{i}": {} for i in range(34)}))
+    caplog.clear()
+    caplog.set_level("INFO", logger="mcpserver.auth.lifecycle")
+
+    def revoke(doc):
+        for index, family in enumerate(doc["families"].values()):
+            mark_family_revoked(
+                family,
+                now=10,
+                reason="admin_session",
+                source="admin" if index < 33 else "configuration",
+            )
+
+    store.mutate(revoke)
+    assert "source=unknown outcome=committed count=2" in caplog.records[-1].message
