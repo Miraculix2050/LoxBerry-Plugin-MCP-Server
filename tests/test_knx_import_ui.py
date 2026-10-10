@@ -20,7 +20,8 @@ Object.assign(page.dataset, {unknown: 'Unknown', empty: 'Empty',
 Object.assign(ui.dataset, {target: 'Target', changed: 'Changed', additional: 'Attributes',
   review: 'Review', discarded: 'Discarded', stale: 'Stale'});
 const row = {address_id: 2563, address_format: 'three_level', address: '1/2/3',
-  imported: {name: 'ETS', description: 'Source'}, overrides: {description: 'Local'},
+  imported: {name: 'ETS', description: 'Source', security: '<img src=x onerror="synthetic">'},
+  overrides: {description: 'Local'},
   effective: {name: 'ETS', description: 'Local'}};
 const state = {target: 't', target_display: 'Configured target', revision: 1,
   taxonomy_revision: 'labels', items: [row], taxonomy: [], total: 1, offset: 0};
@@ -46,6 +47,11 @@ w.fetch = async (_url, options) => {
   if (action === 'knx_import_load' && rejectUpload)
     return {ok: true, json: async () => ({ok: false, error: {code: 'knx_xml_invalid'}})};
   let data = state;
+  if (action === 'knx_page' && payload.filters) {
+    state.filters = {query: payload.filters.query || '', source: payload.filters.source || 'all',
+      deviations_only: payload.filters.deviations_only || false};
+    state.offset = payload.offset;
+  }
   if (action === 'knx_import_load') {preview = structuredClone(initial); data = preview;}
   if (action === 'knx_import_preview') {
     preview.selected_groups = payload.selected_groups;
@@ -68,6 +74,26 @@ const click = async id => {w.document.getElementById(id).click(); await tick();}
   w.eval(fs.readFileSync('webfrontend/htmlauth/knx-import.js', 'utf8'));
   await tick();
   assert.match(w.document.getElementById('knx-target').textContent, /Configured target/);
+  assert.equal(w.document.querySelectorAll('#knx-addresses img').length, 0);
+  assert.match(w.document.querySelector('.mcp-knx-sources').textContent, /<img src=x/);
+  const search = w.document.getElementById('knx-search-form');
+  w.document.getElementById('knx-search-query').value = 'Hidden imported name';
+  w.document.getElementById('knx-search-source').value = 'both';
+  w.document.getElementById('knx-search-deviations').checked = true;
+  state.total = 51;
+  search.dispatchEvent(new w.Event('submit', {bubbles: true, cancelable: true})); await tick();
+  assert.equal(requests.at(-1).action, 'knx_page');
+  assert.deepEqual(requests.at(-1).payload.filters,
+    {query: 'Hidden imported name', source: 'both', deviations_only: true});
+  assert.equal(requests.at(-1).payload.target, 't');
+  await click('knx-next');
+  assert.equal(requests.at(-1).payload.offset, 50);
+  assert.equal(requests.at(-1).payload.query_revision, 1);
+  assert.equal(requests.at(-1).payload.filters.query, 'Hidden imported name');
+  state.total = 1; await click('knx-search-clear');
+  assert.equal(w.document.getElementById('knx-search-query').value, '');
+  assert.equal(w.document.getElementById('knx-search-source').value, 'all');
+  assert.equal(w.document.getElementById('knx-search-deviations').checked, false);
   const form = w.document.getElementById('knx-record-form');
   w.document.querySelector('#knx-addresses button').click();
   form.dispatchEvent(new w.Event('submit', {bubbles: true, cancelable: true})); await tick();

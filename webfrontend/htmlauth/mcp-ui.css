@@ -246,4 +246,8 @@ th[aria-sort="descending"] .mcp-event-history-sort::after { content: ' ↓'; }
 .mcp-knx #knx-ets-preview dl { margin: .5rem; overflow-wrap: anywhere; }
 .mcp-knx #knx-ets-preview dt { font-weight: 600; }
 .mcp-knx #knx-ets-preview dd { margin: 0 0 .4rem .75rem; white-space: pre-wrap; }
+.mcp-knx-sources h4 { margin: .5rem 0 .25rem; }
+.mcp-knx-sources p, .mcp-knx-sources dl { margin: .35rem 0; overflow-wrap: anywhere; }
+.mcp-knx-sources dt { font-weight: 600; }
+.mcp-knx-sources dd { margin: 0 0 .35rem .75rem; white-space: pre-wrap; }
 .mcp-knx #knx-ets-groups label, .mcp-knx #knx-ets-conflicts label { display: flex; align-items: baseline; gap: .4rem; margin: .4rem 0; overflow-wrap: anywhere; }

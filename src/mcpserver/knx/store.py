@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from .model import MAX_ADDRESSES, KnxError, address, metadata
+from .read_model import details, query_filters, query_sql, sql_deviates
 
 
 class KnxStore:
@@ -27,6 +28,13 @@ class KnxStore:
         fd = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o600)
         os.close(fd)
         connection = sqlite3.connect(self.path, timeout=5)
+        connection.create_function(
+            "knx_casefold",
+            1,
+            lambda value: value.casefold() if isinstance(value, str) else "",
+            deterministic=True,
+        )
+        connection.create_function("knx_deviates", 2, sql_deviates, deterministic=True)
         try:
             connection.execute("PRAGMA foreign_keys=ON")
             connection.execute("PRAGMA synchronous=FULL")
@@ -89,6 +97,7 @@ class KnxStore:
             "imported": imported,
             "overrides": overrides,
             "effective": {**imported, **overrides},
+            **details(imported, overrides),
             "import_info": {
                 key: source[key]
                 for key in ("file_format", "encoding", "imported_at", "digest", "address_format")
@@ -101,28 +110,44 @@ class KnxStore:
             ),
         }
 
-    def page(self, target: str, offset: int = 0, limit: int = 50) -> dict[str, Any]:
+    def page(
+        self,
+        target: str,
+        offset: int = 0,
+        limit: int = 50,
+        *,
+        filters: object = None,
+        expected: object = None,
+    ) -> dict[str, Any]:
         if type(offset) is not int or not 0 <= offset <= MAX_ADDRESSES:
             raise KnxError("knx_page_invalid")
         if type(limit) is not int or not 1 <= limit <= 100:
             raise KnxError("knx_page_invalid")
+        selection = query_filters(filters)
+        where, arguments = query_sql(selection)
+        if offset and filters is not None and expected is None:
+            raise KnxError("knx_revision_conflict")
         with self.connection() as db:
             db.execute("BEGIN")
             revision = self.revision(db, target)
+            if expected is not None:
+                self.check(db, target, expected)
             total = db.execute(
-                "SELECT count(*) FROM addresses WHERE target=?", (target,)
+                "SELECT count(*) FROM addresses AS a WHERE a.target=?" + where,
+                [target, *arguments],
             ).fetchone()[0]
             rows = db.execute(
                 "SELECT a.address,a.format,a.original,a.imported,a.overrides,s.source "
                 "FROM addresses AS a LEFT JOIN ets_sources AS s "
                 "ON s.target=a.target AND s.address=a.address "
-                "WHERE a.target=? ORDER BY a.address LIMIT ? OFFSET ?",
-                (target, limit, offset),
+                "WHERE a.target=?" + where + " ORDER BY a.address LIMIT ? OFFSET ?",
+                [target, *arguments, limit, offset],
             ).fetchall()
             return {
                 "revision": revision,
                 "total": total,
                 "offset": offset,
+                "filters": selection,
                 "items": [self.project(row) for row in rows],
             }
 
@@ -167,12 +192,17 @@ class KnxStore:
             db.commit()
             return revision
 
-    def export(self, target: str, offset: int = 0) -> dict[str, Any]:
-        page = self.page(target, offset)
+    def export(
+        self, target: str, offset: int = 0, *, filters: object = None, expected: object = None
+    ) -> dict[str, Any]:
+        page = self.page(target, offset, filters=filters, expected=expected)
         return {
             "schema_version": 1,
             "records": [
-                {k: v for k, v in row.items() if k not in {"effective", "import_info"}}
+                {
+                    k: row[k]
+                    for k in ("address_id", "address_format", "address", "imported", "overrides")
+                }
                 for row in page["items"]
             ],
         }

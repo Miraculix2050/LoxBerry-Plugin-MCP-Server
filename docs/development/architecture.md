@@ -201,6 +201,16 @@ is the detailed per-object evidence projection.
 
 ## KNX metadata administration
 
+`knx.read_model` provides local query validation, literal Unicode substring matching
+and bounded source/DPT projections. Indexed target selection precedes SQLite text
+filters; the process materializes only the selected page, with fixed query count
+and no query per result. No additional persistent index, complete catalog cache or
+project graph is introduced. Local substring filtering can scan the selected target;
+it is not the MCP metadata lookup path. Page queries and JSON exports bind optional
+filters to the expected KNX revision and target. Source projections distinguish
+absent, empty and override values; DPT normalization establishes identifier syntax
+only, not type-registry membership, assignment role or Loxone EIBType equivalence.
+
 The dedicated authenticated KNX CGI uses narrow local admin actions. Small prefix labels remain in the atomic configuration; per-target address records are indexed by numeric KNX address in `data/plugins/mcpserver/knx/metadata.sqlite3`. Database transactions and expected revisions reject concurrent updates. Metadata never changes Loxone names or authorizes project access. JSON exchange is separate from ETS file adapters.
 
 `knx.catalog_service` orchestrates bounded XML/CSV parsing, canonical identity/conflict selection, preview and explicit application. `xml_adapter` preserves address attributes, root attributes once and group attributes once with parent-prefix references. `csv_adapter` uses the standard strict CSV reader with bounded physical lines and explicit positional 3/1 or 3/3 headers; only tab separation and modern Description/DatapointType headers are accepted. Blank optional cells are unknown, not explicit empty values. Both adapters share lossless decoding and source-field normalization, preserving ordered DPT declarations without choosing a preferred type. Resolved file format is bound into each draft; changing the UI file-format selection invalidates its preview. CSV source evidence cannot establish an original XML hierarchy for export. Schema version 2 adds source evidence and selected groups without changing existing address/configuration contracts. Idempotent migrations preserve version-1 manual records. Import addresses, group metadata and group-label selection commit in one SQLite transaction; manual prefix changes retain their separately named configuration transaction. Config-store serialization binds preview/application to both target and manual-label state.
