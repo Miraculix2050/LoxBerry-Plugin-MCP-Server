@@ -139,8 +139,15 @@ counts do not count failed calls, and missing events do not identify a cause.
 ### Admin discovery connection
 
 Event History and emergency-stop selectors reuse a dedicated connection with the
-LoxBerry-configured Miniserver identity. Each fresh selector request still downloads
-the complete structure; captured history and normal MCP clients keep their existing
+LoxBerry-configured Miniserver identity. The emergency-stop list first checks the
+`LoxAPPversion3` project change marker in the background, as the project cache does.
+Only then are matching cached names displayed. Changed/missing markers and missing/stale caches require
+a complete structure load. A visible open page checks again after the configured
+structure-refresh interval (at least 60 seconds). “Load/refresh emergency-stop signals”
+always forces a complete download. A failure stops automatic attempts, preserving
+the selection and previously verified list and marking it stale when necessary. The marker does
+not prove access rights. Event History selector requests still download the complete
+structure; captured history and normal MCP clients keep their existing
 authorization boundaries. If the service is stopped or discovery fails, no fresh
 login is started in the CGI helper. Keep the saved selection and retry explicitly
 after correcting the cause. Retained emergency options are marked stale and do not

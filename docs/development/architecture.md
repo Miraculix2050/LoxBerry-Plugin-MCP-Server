@@ -216,11 +216,29 @@ one lazy, dedicated service-owned connection. Recorder and emergency-stop event
 subscriptions retain their separate sockets; MCP tools retain their own OAuth
 family's Loxone identity. The fixed loopback-only `POST /internal/admin-discovery`
 requires an installation-secret-derived local helper key, a fresh configuration/
-credential binding and one of two fixed projections. Apache does not proxy it.
+credential binding and a fixed selection or display projection. Apache does not proxy it.
 It never returns raw structure, credentials, project content or arbitrary commands.
 
-Each serviced request sends a complete new `data/LoxAPP3.json` request. A single
-receiver starts after authentication, with one pending file and no response queue.
+Event History and explicit emergency-option refresh requests send a complete new
+`data/LoxAPP3.json` request. The separate `emergency_stop_display` projection checks
+`jdev/sps/LoxAPPversion3`, the same change marker used by Project Intelligence.
+It may reuse the private emergency-option display cache only with matching
+credentials/endpoint, a nonempty matching marker and a last successful result.
+Changed/missing markers and old or stale cache entries require a complete load.
+The loaded structure's `lastModified` binds the replacement list to its version.
+This is a display cache, never a fresh visibility or operation authorization proof.
+A single receiver starts after authentication, with one pending fixed marker or
+file request and no response queue. Marker replies require an exact command match;
+unrelated files/text remain terminal. CGI alone owns the atomic cache write lock.
+
+The UI first checks the display projection in the background on configuration
+hydration and only then displays the matching cache or freshly rebuilt list.
+It checks again at the configured structure-refresh
+interval (minimum 60 seconds) while visible. Successful checks schedule the next
+check; failures stop automatic attempts until a new page load or explicit retry.
+The no-JavaScript fallback checks before server-side display. The initial normal
+HTML shell remains local and nonblocking. The manual button always forces a complete structure read. Saved and unsaved
+signal selections survive hydration, concurrent configuration changes and errors.
 Valid state tables and keepalives have frame/byte/time budgets; unexpected text,
 unsolicited files and binary/Gzip files terminate the connection. No Gzip payload
 is assumed to be a structure response. Cancellation, timeout, provider failure,

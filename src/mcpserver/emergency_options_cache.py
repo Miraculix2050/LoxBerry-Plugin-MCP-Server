@@ -84,6 +84,9 @@ class EmergencyOptionsCache:
             return None
         if not _valid_options(document.get("options")):
             return None
+        marker = document.get("project_marker")
+        if marker is not None and (not isinstance(marker, str) or len(marker) > 128):
+            return None
         result = document.get("result")
         if not isinstance(result, dict) or result.get("status") not in {
             "available",
@@ -207,6 +210,13 @@ class EmergencyOptionsCache:
                 "has_options": has_options,
                 "options": (
                     options if status == "available" else current["options"] if current else []
+                ),
+                "project_marker": (
+                    result.get("project_marker")
+                    if status == "available"
+                    else current.get("project_marker")
+                    if current
+                    else None
                 ),
                 "result": {
                     "status": status,

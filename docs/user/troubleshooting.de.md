@@ -153,7 +153,15 @@ keine Ursache.
 ### Admin-Discovery-Verbindung
 
 Event History und die Emergency-Stop-Auswahl verwenden eine eigene Verbindung mit
-der in LoxBerry konfigurierten Miniserver-Identität. Jede neue Auswahl-Anfrage lädt
+der in LoxBerry konfigurierten Miniserver-Identität. Die Notaus-Liste prüft zuerst
+im Hintergrund den Projekt-Änderungsmarker `LoxAPPversion3`, wie der Projektcache.
+Erst danach werden passende gespeicherte Namen angezeigt. Bei geändertem oder fehlendem Marker,
+fehlendem oder veraltetem Cache wird die vollständige Struktur geladen. Eine
+offene sichtbare Seite prüft nach dem konfigurierten Struktur-Aktualisierungsintervall
+(mindestens 60 Sekunden) erneut. „Notaus-Signale laden/aktualisieren“ erzwingt einen
+vollständigen Abruf. Ein Fehler stoppt automatische Versuche; Auswahl und letzte
+bereits bestätigte Liste bleiben erhalten und werden gegebenenfalls als veraltet markiert.
+Der Marker bestätigt keine Zugriffsrechte. Event-History-Auswahl-Anfragen laden
 weiterhin die vollständige Struktur. Aufgezeichnete History und normale MCP-Clients
 behalten ihre eigenen Autorisierungsgrenzen. Bei gestopptem Dienst oder einem
 Discovery-Fehler beginnt der CGI-Helfer keine neue Anmeldung. Die gespeicherte

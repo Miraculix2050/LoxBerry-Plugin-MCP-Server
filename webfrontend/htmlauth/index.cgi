@@ -226,7 +226,8 @@ sub admin_call {
             ));
         }
     }
-    if (($action eq 'emergency_stop_options' || $action eq 'emergency_stop_retry')
+    if (($action eq 'emergency_stop_options' || $action eq 'emergency_stop_retry'
+        || $action eq 'emergency_stop_refresh')
         && $result->{ok} && ref($result->{data}) eq 'HASH') {
         my $failure_code = delete $result->{data}{discovery_failure_code};
         if (defined $failure_code && $failure_code =~ /\A[a-z_]{1,128}\z/) {
@@ -674,6 +675,8 @@ if ($action ne '') {
         $result = admin_call('page_state', {});
     } elsif ($action eq 'emergency_stop_options') {
         $result = admin_call('emergency_stop_options', {});
+    } elsif ($action eq 'emergency_stop_refresh') {
+        $result = admin_call('emergency_stop_refresh', {});
     } elsif ($action eq 'emergency_stop_cached_options') {
         $result = admin_call('emergency_stop_cached_options', {});
     } elsif ($action eq 'emergency_stop_retry') {
@@ -852,10 +855,11 @@ $config->{emergency_stop} = {} if ref($config->{emergency_stop}) ne 'HASH';
 my $selected_emergency_stop = $config->{emergency_stop}{virtual_status_uuid} // '';
 if ($server_rendered_fallback) {
     my $options_result = $fallback_retry_result
-        // admin_call('emergency_stop_cached_options', {});
+        // admin_call('emergency_stop_refresh', {});
     my $options_data = ref($options_result->{data}) eq 'HASH'
         ? $options_result->{data} : {};
-    my $options = $options_data->{options};
+    my $options = ($options_data->{status} // '') eq 'available'
+        ? $options_data->{options} : [];
     if ($options_result->{ok} && ref($options) eq 'ARRAY') {
         for my $option (@$options) {
             next if ref($option) ne 'HASH';

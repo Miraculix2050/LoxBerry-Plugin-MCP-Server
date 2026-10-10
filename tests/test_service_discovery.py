@@ -29,6 +29,7 @@ class SocketHarness:
         self.queue = asyncio.Queue()
         self._timeout = 1
         self._websocket = SimpleNamespace(send=AsyncMock())
+        self._secure_transport = True
         self.requests = 0
         self.frames = [(MessageType.BINARY_FILE, json.dumps({"controls": {}}))]
 
@@ -44,6 +45,26 @@ class SocketHarness:
             self.put(kind, payload)
         await receive()
         return STRUCTURE
+
+    def marker_reply(self, value="marker-a", code=200, control="jdev/sps/LoxAPPversion3"):
+        async def send(command):
+            assert command == "jdev/sps/LoxAPPversion3"
+            self.put(MessageType.KEEPALIVE)
+            self.put(MessageType.VALUE_STATES, b"")
+            self.put(
+                MessageType.TEXT,
+                json.dumps(
+                    {
+                        "LL": {
+                            "control": control,
+                            "Code": code,
+                            "value": value,
+                        }
+                    }
+                ),
+            )
+
+        self._websocket.send.side_effect = send
 
 
 @pytest.mark.asyncio
@@ -102,6 +123,183 @@ async def test_unsolicited_file_is_never_queued_for_a_later_request():
     await receiver.close()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("marker", ["marker-a", "", None, 123])
+async def test_marker_dispatch_accepts_only_the_fixed_reply_and_bounds_missing_values(marker):
+    socket = SocketHarness()
+    socket.marker_reply(marker)
+    receiver = DiscoveryReceiver(socket)
+    try:
+        assert await receiver.marker() == (marker if marker == "marker-a" else None)
+        assert await receiver.load() is STRUCTURE
+    finally:
+        await receiver.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("control", ["other", "dev/fsget/prog/sps.LoxCC"])
+async def test_unrelated_marker_text_is_terminal(control):
+    socket = SocketHarness()
+    socket.marker_reply(control=control)
+    receiver = DiscoveryReceiver(socket)
+    try:
+        with pytest.raises(DiscoveryUnavailable, match="unattributed"):
+            await receiver.marker()
+        assert receiver.failure is not None
+    finally:
+        await receiver.close()
+
+
+@pytest.mark.asyncio
+async def test_marker_source_ip_response_persists_block_without_fallback():
+    socket = SocketHarness()
+    socket.marker_reply(code=4003)
+    observed = AsyncMock()
+    receiver = DiscoveryReceiver(socket, on_source_ip_blocked=observed)
+    try:
+        with pytest.raises(LoxoneSourceIpBlocked):
+            await receiver.marker()
+        observed.assert_awaited_once()
+        assert socket.requests == 0
+    finally:
+        await receiver.close()
+
+
+@pytest.mark.asyncio
+async def test_cancelled_marker_block_observation_is_owned_until_cleanup_finishes():
+    socket = SocketHarness()
+    socket.marker_reply(code=4003)
+    started, release = asyncio.Event(), asyncio.Event()
+    blocked = []
+
+    async def observe():
+        started.set()
+        await release.wait()
+        blocked.append(True)
+
+    receiver = DiscoveryReceiver(socket, on_source_ip_blocked=observe)
+    request = asyncio.create_task(receiver.marker())
+    await started.wait()
+    request.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await request
+    cleanup = asyncio.create_task(receiver.close())
+    await asyncio.sleep(0)
+    assert not cleanup.done() and blocked == [] and socket.requests == 0
+    release.set()
+    await cleanup
+    assert blocked == [True]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("code", [401, 403, 404])
+async def test_marker_permission_denial_never_becomes_a_missing_marker(code):
+    socket = SocketHarness()
+    socket.marker_reply(code=code)
+    receiver = DiscoveryReceiver(socket)
+    try:
+        if code == 404:
+            assert await receiver.marker() is None
+        else:
+            with pytest.raises(DiscoveryUnavailable, match="permission denied"):
+                await receiver.marker()
+        assert socket.requests == 0
+    finally:
+        await receiver.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reply_control", ["plaintext", "encrypted", "decoded"])
+async def test_gen1_marker_command_matches_only_its_exact_encrypted_or_plaintext_echo(
+    reply_control,
+):
+    socket = SocketHarness()
+    socket._secure_transport = False
+    encrypted = []
+
+    def encrypt(command):
+        encrypted.append(command)
+        return "jdev/sys/enc/synthetic%2Fcommand%3D"
+
+    socket._encryptor = SimpleNamespace(encrypted_command=encrypt)
+
+    async def send(command):
+        assert command == "jdev/sys/enc/synthetic%2Fcommand%3D"
+        control = {
+            "plaintext": "jdev/sps/LoxAPPversion3",
+            "encrypted": command,
+            "decoded": "jdev/sys/enc/synthetic/command=",
+        }[reply_control]
+        socket.put(
+            MessageType.TEXT,
+            json.dumps(
+                {
+                    "LL": {
+                        "control": control,
+                        "Code": "200",
+                        "value": "marker-a",
+                    }
+                }
+            ),
+        )
+
+    socket._websocket.send.side_effect = send
+    receiver = DiscoveryReceiver(socket)
+    try:
+        assert await receiver.marker() == "marker-a"
+        assert encrypted == ["jdev/sps/LoxAPPversion3"]
+    finally:
+        await receiver.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("condition", ["same", "changed", "missing", "stale", "old", "identity"])
+async def test_display_cache_only_reuses_matching_successful_identity_bound_marker(
+    tmp_path,
+    monkeypatch,
+    condition,
+):
+    from mcpserver.emergency_options_cache import EmergencyOptionsCache
+
+    owner, socket, expected, connects, _, credentials, config, _ = owner_fixture(
+        tmp_path, monkeypatch
+    )
+    cache = EmergencyOptionsCache(
+        owner.store.path,
+        owner.store.pseudonym(
+            "emergency-stop-options-v1",
+            config[0].loxone_endpoint,
+            *credentials,
+        ),
+    )
+    cache.refresh(
+        lambda: {
+            "status": "available",
+            "options": [{"uuid": "saved", "name": "Signal"}],
+            "project_marker": None if condition == "old" else "marker-a",
+        }
+    )
+    if condition == "stale":
+        cache.refresh(lambda: {"status": "unavailable", "options": []})
+    if condition == "identity":
+        credentials[0] = "new-identity"
+    socket.marker_reply(
+        None if condition == "missing" else "marker-b" if condition == "changed" else "marker-a"
+    )
+    try:
+        result = await owner.project("emergency_stop_display", expected())
+        assert socket.requests == (0 if condition == "same" else 1)
+        assert len(connects) == 1
+        assert result["projection"]["options"] == (
+            [{"uuid": "saved", "name": "Signal"}] if condition == "same" else []
+        )
+        # Ordinary discovery still downloads regardless of marker/cache.
+        await owner.project("emergency_stop", expected())
+        assert socket.requests == (1 if condition == "same" else 2)
+    finally:
+        await owner.close()
+
+
 def owner_fixture(tmp_path, monkeypatch):
     import mcpserver.service_discovery as module
 
@@ -158,7 +356,7 @@ async def test_simultaneous_and_later_requests_each_download_without_reauthentic
         ] == [1, 0, 0]
         assert socket.requests == 3 and len(connects) == 1
         assert first["projection"]["controls"] == []
-        assert second["projection"] == {"status": "available", "options": []}
+        assert second["projection"] == {"status": "available", "options": [], "project_marker": ""}
     finally:
         await owner.close()
     assert len(closes) == 1
