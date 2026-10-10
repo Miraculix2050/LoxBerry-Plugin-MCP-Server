@@ -40,7 +40,7 @@ from mcpserver.auth.provider import (
     StoredAccessToken,
 )
 from mcpserver.auth.remote_revocation import run_remote_revocation_worker
-from mcpserver.auth.store import AtomicJsonAuthStore
+from mcpserver.auth.store import AtomicJsonAuthStore, lifecycle_event
 from mcpserver.auth.web import Phase0OAuthWeb
 from mcpserver.config import DEFAULT_LOG_LEVEL, AtomicConfigStore, PluginConfig
 from mcpserver.emergency_stop import EmergencyStopMonitor
@@ -405,8 +405,10 @@ async def _runtime_lifespan(
             await emergency_stop.start()
         if event_history is not None:
             await event_history.start()
+        lifecycle_event("service_started", source="runtime", outcome="opened")
         yield
     finally:
+        lifecycle_event("service_stopped", source="runtime", reason="shutdown", outcome="pending")
         if admin_discovery is not None:
             await admin_discovery.close()
         if worker is not None:
@@ -423,6 +425,7 @@ async def _runtime_lifespan(
             await emergency_stop.close()
         if event_history is not None:
             await event_history.close()
+        lifecycle_event("service_stopped", source="runtime", reason="shutdown", outcome="closed")
 
 
 def _miniserver_auth_coordinator(
@@ -615,7 +618,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
 
         runtime_ref: dict[str, LoxoneRuntime] = {}
 
-        def on_family_revoked(family_id: str) -> None:
+        def on_family_ended(family_id: str, reason: str) -> None:
             if loxone_store is not None:
                 loxone_store.schedule_remote_revoke(family_id)
                 loxone_store.delete_explorer_family(family_id)
@@ -623,7 +626,9 @@ def create_server(settings: ServerSettings) -> FastMCP:
             if runtime_value is None:
                 return
             try:
-                asyncio.get_running_loop().create_task(runtime_value.revoke(family_id))
+                asyncio.get_running_loop().create_task(
+                    runtime_value.revoke(family_id, reason=reason)
+                )
             except RuntimeError:
                 # Startup cleanup has no running event loop; the token was still removed.
                 return
@@ -675,7 +680,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
             auth_store,
             issuer=settings.phase0_auth.issuer_url,
             resource=settings.phase0_auth.resource_url,
-            on_family_revoked=on_family_revoked,
+            on_family_ended=on_family_ended,
             on_family_started=on_family_started,
             on_family_expired=on_family_expired,
             control_enabled=bool(config and config.loxone_control_enabled),

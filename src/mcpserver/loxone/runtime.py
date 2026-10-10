@@ -20,6 +20,7 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 from mcpserver.auth.loxone_health import LoxoneTokenHealthStore
 from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore, LoxoneTokenStoreError
 from mcpserver.auth.provider import CONTROL_SCOPE, HISTORY_SCOPE, READ_SCOPE, StoredAccessToken
+from mcpserver.auth.store import lifecycle_event
 from mcpserver.availability import AvailabilityPhase, AvailabilityReason
 from mcpserver.loxone.auth_diagnostics import (
     MiniserverAuthCoordinator,
@@ -278,6 +279,7 @@ class _ConnectionRecord:
     session: LoxoneWebSocketSession
     task: asyncio.Task[None]
     connected: bool = True
+    close_reason: str = "local_disconnect"
     generation: int = 1
     last_structure_check: float = 0.0
     last_used: float = 0.0
@@ -1174,6 +1176,9 @@ class LoxoneRuntime:
             last_structure_check=now,
             last_used=now,
         )
+        lifecycle_event(
+            "connection_opened", family_id=access.family_id, source="runtime", outcome="opened"
+        )
         record.task = asyncio.create_task(self._maintain(access, token, record))
         initial_state_wait = asyncio.create_task(record.initial_state_batch.wait())
         try:
@@ -1186,9 +1191,15 @@ class LoxoneRuntime:
                 await record.task
                 raise RuntimeUnavailable("Miniserver state subscription failed")
             if not record.initial_state_batch.is_set():
+                record.close_reason = "initial_state_timeout"
                 raise RuntimeUnavailable("Miniserver initial state timed out")
-        except BaseException:
+        except BaseException as exc:
             if not record.task.done():
+                if (
+                    not isinstance(exc, asyncio.CancelledError)
+                    and record.close_reason == "local_disconnect"
+                ):
+                    record.close_reason = "transport_failed"
                 record.task.cancel()
             with suppress(asyncio.CancelledError, Exception):
                 await record.task
@@ -1206,7 +1217,7 @@ class LoxoneRuntime:
         now = time.monotonic()
         for subject, record in tuple(self._records.items()):
             if subject != keep_subject and now - record.last_used >= self.session_idle_seconds:
-                await self.disconnect(subject)
+                await self.disconnect(subject, reason="idle_eviction")
         active = [
             (subject, record)
             for subject, record in self._records.items()
@@ -1214,7 +1225,7 @@ class LoxoneRuntime:
         ]
         while len(active) >= self.max_active_sessions:
             subject, _record = min(active, key=lambda item: item[1].last_used)
-            await self.disconnect(subject)
+            await self.disconnect(subject, reason="capacity_eviction")
             active = [item for item in active if item[0] != subject]
 
     def _find_received_structure(self, parse_identity: str) -> LoxoneStructure | None:
@@ -1334,6 +1345,7 @@ class LoxoneRuntime:
         record: _ConnectionRecord,
     ) -> None:
         events = asyncio.create_task(self._pump_events(access.family_id, record))
+        close_reason = "stream_ended"
         try:
             while not events.done():
                 refresh_at = token.valid_until + _LOXONE_EPOCH_UNIX - _REFRESH_BEFORE_SECONDS
@@ -1360,10 +1372,15 @@ class LoxoneRuntime:
                         )
                     finally:
                         await refreshed.close()
+                    close_reason = "token_refresh"
                     record.connected = False
                     self.cache.disconnect(access.family_id)
                     break
+        except asyncio.CancelledError:
+            close_reason = record.close_reason
+            raise
         except Exception as exc:
+            close_reason = "transport_failed"
             _LOGGER.warning(
                 "component=state_cache outcome=event_stream_failed error_type=%s",
                 type(exc).__name__,
@@ -1378,7 +1395,25 @@ class LoxoneRuntime:
             # Invalidate freshness before awaiting websocket teardown.
             record.connected = False
             self.cache.disconnect(access.family_id)
-            await record.session.close()
+            try:
+                await record.session.close()
+            except BaseException:
+                lifecycle_event(
+                    "connection_closed",
+                    family_id=access.family_id,
+                    source="runtime",
+                    reason="teardown_failed",
+                    outcome="failed",
+                )
+                raise
+            else:
+                lifecycle_event(
+                    "connection_closed",
+                    family_id=access.family_id,
+                    source="runtime",
+                    reason=close_reason,
+                    outcome="closed",
+                )
 
     async def _open_session(
         self,
@@ -1450,24 +1485,33 @@ class LoxoneRuntime:
     def state(self, snapshot: RuntimeSnapshot, uuid: str) -> StateRecord:
         return self.cache.get(snapshot.subject, uuid)
 
-    async def disconnect(self, family_id: str) -> None:
+    async def disconnect(self, family_id: str, *, reason: str = "local_disconnect") -> None:
         # Wait for an in-flight connection before removing its eventual record.
         # Never acquire the control lock here: control calls acquire connection
         # locks through snapshot(), and cleanup must not reverse that order.
         async with self._locks.hold(family_id):
             record = self._records.pop(family_id, None)
             if record is not None:
+                record.close_reason = reason
+                lifecycle_event(
+                    "connection_close_requested",
+                    family_id=family_id,
+                    source="runtime",
+                    reason=reason,
+                    outcome="pending",
+                    debug=True,
+                )
                 record.task.cancel()
                 with suppress(asyncio.CancelledError):
                     await record.task
             self.cache.clear(family_id)
         self._prune_rate_state(time.monotonic())
 
-    async def revoke(self, family_id: str) -> None:
+    async def revoke(self, family_id: str, *, reason: str = "oauth_revocation") -> None:
         projects = getattr(self, "projects", None)
         if projects is not None:
             await projects.revoke(family_id)
-        await self.disconnect(family_id)
+        await self.disconnect(family_id, reason=reason)
 
     async def close(self) -> None:
         # Stop queued admission before waiting for a connection already opening.
@@ -1477,4 +1521,5 @@ class LoxoneRuntime:
             await projects.close()
         async with self._admission_lock:
             for family_id in tuple(self._records):
-                await self.disconnect(family_id)
+                await self.disconnect(family_id, reason="shutdown")
+        lifecycle_event("runtime_closed", source="runtime", reason="shutdown", outcome="closed")

@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Preserve first OAuth revocation causes and correlate sanitized client, approval,
+  runtime and remote-cleanup lifecycle events; expose bounded retained causes in
+  local Admin diagnostics without transferring authorization (#425).
+
 - Reuse a dedicated service-owned discovery connection for Admin selectors,
   downloading a complete current structure for each request while keeping MCP
   client authorization and recorder sockets separate. Bound session lifetime,

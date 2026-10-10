@@ -16,6 +16,7 @@ from typing import Any, BinaryIO, Final
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
+from mcpserver.auth.store import lifecycle_event
 from mcpserver.loxone.client import LoxoneToken
 from mcpserver.persistence import fsync_parent_directory
 
@@ -246,6 +247,14 @@ class EncryptedLoxoneTokenStore:
                     remote_revoke_pending=True, remote_revoke_attempts=0, remote_revoke_after=0
                 )
             self._write(document)
+        if remote_revoke_pending:
+            lifecycle_event(
+                "remote_cleanup",
+                family_id=family_id,
+                source="remote_worker",
+                reason="queued",
+                outcome="pending",
+            )
 
     def get(self, family_id: str, miniserver_id: str, identity_id: str) -> LoxoneToken | None:
         with self._locked():
@@ -299,11 +308,20 @@ class EncryptedLoxoneTokenStore:
             record = document["tokens"].get(family_id)
             if not isinstance(record, dict):
                 return False
+            newly_pending = record.get("remote_revoke_pending") is not True
             record["remote_revoke_pending"] = True
             record.setdefault("remote_revoke_attempts", 0)
             record.setdefault("remote_revoke_after", 0)
             self._write(document)
-            return True
+        if newly_pending:
+            lifecycle_event(
+                "remote_cleanup",
+                family_id=family_id,
+                source="remote_worker",
+                reason="queued",
+                outcome="pending",
+            )
+        return True
 
     def pending_remote_revocations(self, now: int) -> tuple[RemoteRevocation, ...]:
         with self._locked():

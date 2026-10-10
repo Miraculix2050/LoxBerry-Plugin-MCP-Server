@@ -1,5 +1,68 @@
 # Fehlerbehebung
 
+## OAuth-Sitzungen und Freigaben nachvollziehen
+
+Wenn eine Sitzung verschwindet oder eine Freigabe inaktiv bleibt, nutze den
+lokalen Diagnose-Download der Admin-UI. `auth_lifecycle` enthält die Anzahl
+aufbewahrter widerrufener Sitzungsfamilien je Ursache und höchstens 20 aktuelle
+Widerrufe mit Zeitpunkt, Quelle und maskierten Referenzen. Diese Diagnose gehört
+zur lokalen LoxBerry-Administration; Loxone-Rechte gewähren keinen Zugriff.
+
+Der erste Widerruf speichert `revoked_at`, `revocation_reason` und
+`revocation_source` an der vorhandenen Familie. Wiederholte Widerrufe erhalten
+diese erste Ursache. Historische Datensätze ohne Ursache bleiben `unknown`;
+eine spätere Admin-Aktion wird ihnen nicht als ursprünglicher Auslöser
+zugeordnet. Die Metadaten folgen der vorhandenen Aufbewahrung der Familie und
+verschwinden bei deren Bereinigung.
+
+| Ursache | Erfasster auslösender Pfad |
+| --- | --- |
+| `oauth_revocation` / `explorer_logout` | Expliziter OAuth-Widerruf / Explorer-Abmeldung |
+| `refresh_reuse` / `refresh_invalid_state` | Erneute Nutzung eines verbrauchten Refresh-Tokens / ungültiger Refresh-Zustand mit Widerruf |
+| `admin_session` / `admin_all_sessions` | Lokaler Admin widerruft eine / alle Sitzungen |
+| `approval_read_removed` / `approval_operate_removed` | Lokaler Admin entfernt die passende LoxBerry-Freigabe |
+| `scope_disabled` | Konfiguration deaktiviert eine berechtigte Fähigkeit |
+| `unknown` | Ursprüngliche Ursache wurde nicht erfasst oder wird nicht unterstützt |
+
+Plugin-Logs verwenden `component=auth_lifecycle` mit festen Feldern für Ereignis,
+Ursache, Quelle, Fähigkeit, Ergebnis und Korrelation. `family_ref` ist ein durch
+eigenen Namensraum getrennt berechneter Hash der zufällig ausgestellten opaken
+Familien-ID und verbindet OAuth-, Laufzeit- und Remote-Bereinigungsereignisse.
+`client_ref` wird mit einem installationsgebundenen Schlüssel berechnet;
+`binding_ref` ist ein gesonderter Hash der vorhandenen opaken Bindung.
+Referenzen vergeben keine Rechte und machen unterschiedlich registrierte Clients
+nicht austauschbar. Quellen benennen den auslösenden Pfad, keinen nachgewiesenen
+menschlichen Bediener.
+
+Bei normalem INFO-Logging werden seltene Ereignisse erfasst: Registrierung,
+Familienanlage und Widerruf, Ablauf/Entfernung, Freigabeänderungen,
+Verbindungsaufbau/-ende, Dienststart/-stopp und Remote-Bereinigungsergebnisse.
+DEBUG ergänzt erfolgreiche Token-Ausstellung/-Rotation, exakte Freigabezuordnung
+je Fähigkeit, abgelehnte Refreshes, Schließanforderungen und
+Bereinigungsversuche/-unterdrückung. Normale Store-Lesezugriffe erzeugen keine
+Lebenszyklus-Einträge. Vorhandene Log-Level und Rotation gelten weiter;
+ein Prozessabsturz kann keinen geordneten Stopp protokollieren, und fehlende
+Logs beweisen nicht, dass ein Ereignis ausgeblieben ist.
+
+Admin-Hilfsprozess-Ereignisse gelangen durch einen strikten Filter fester Felder
+in das native LoxBerry-Admin-Log; dessen Plugin-Log-Level gilt weiter. Pro
+Hilfsprozess werden höchstens sechs Detaileinträge plus Zählzusammenfassung
+weitergegeben, damit die Pipe-Ausgabe begrenzt bleibt.
+
+Store-Zustandsänderungen werden nach erfolgreicher dauerhafter Speicherung
+protokolliert. Eine Sammeländerung erzeugt höchstens 32 Detaileinträge plus
+Zählzusammenfassung; gespeicherte Erstursachen bleiben unabhängig von der
+Logrotation verfügbar. Remote-Warteschlange, bestätigtes Beenden, bereits
+ungültiger Token, nomineller Ablauf und unbestätigtes Ergebnis bleiben getrennt.
+Ein Verbindungsende ist kein Widerruf der OAuth-Familie. Diese Diagnose ergänzt
+keine Tokens, rohen Client-/Familien-IDs, Namen, Endpunkte, Zugangsdaten oder
+beliebigen Exception-Texte.
+
+Ein Start ohne erste Zustandsnachricht endet mit `initial_state_timeout`;
+die anschließende Abbruchanforderung macht daraus kein normales lokales
+Verbindungsende. OAuth-Ablauf und Refresh-Widerrufsursachen werden an das
+zugehörige Laufzeitende weitergegeben.
+
 ## Wiederholte Miniserver-Authentifizierungsablehnung
 
 Drei eindeutige Ablehnungen innerhalb von fünf Minuten pausieren neue Anmeldungen

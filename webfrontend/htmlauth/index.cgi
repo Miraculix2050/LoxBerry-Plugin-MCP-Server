@@ -124,6 +124,32 @@ $ENV{MCPSERVER_CA_CERT} = "$lbhomedir/data/system/LoxBerryCA/cacert.pem";
 $ENV{MCPSERVER_CERT_HELPER} = '/usr/local/sbin/loxberry-mcpserver-renew-web-certificate';
 $ENV{MCPSERVER_CERT_STATUS} = "$lbpdatadir/certificate-renewal.json";
 
+sub safe_admin_lifecycle_events {
+    my ($stderr) = @_;
+    my @events;
+    for my $line (split /\n/, $stderr) {
+        next if length($line) > 512;
+        if ($line =~ /\Amcpserver_auth_lifecycle=(DEBUG|INFO|WARNING)\x20
+        (component=auth_lifecycle\x20
+        event=(?:approval_granted|approval_match|approval_removed|batch_summary|client_registered|client_removed|connection_close_requested|connection_closed|connection_opened|family_created|family_expired|family_removed|family_revoked|refresh_rejected|remote_cleanup|runtime_closed|service_started|service_stopped|token_issued|token_rotated)\x20
+        trace_id=(?:-|[0-9a-f]{24})\x20
+        family_ref=(?:-|[0-9a-f]{24})\x20
+        client_ref=(?:-|[0-9a-f]{24})\x20
+        binding_ref=(?:-|[0-9a-f]{24})\x20
+        capability=(?:-|read|operate)\x20
+        reason=(?:admin_all_sessions|admin_session|already_invalid|approval_operate_removed|approval_read_removed|attempt_reserved|authentication_suppressed|authorization_code|capability_disabled|capacity_eviction|command_rejected|confirmed_killed|exact_match|expired_without_confirmation|explorer_logout|family_expired|idle_eviction|initial_state_timeout|local_disconnect|no_exact_match|oauth_revocation|operate|queued|read|refresh_invalid_state|refresh_reuse|refresh_rotation|retention_cleanup|scope_disabled|shutdown|source_ip_blocked|stream_ended|teardown_failed|token_refresh|transport_failed|unconfirmed|unknown)\x20
+        source=(?:admin|configuration|maintenance|oauth|remote_worker|runtime|unknown)\x20
+        outcome=(?:accepted|closed|committed|completed|failed|matched|opened|pending|rejected|removed|suppressed|unknown|unmatched)\x20
+        count=\d{1,5})\z/x) {
+            my ($severity, $message) = (lc($1), $2);
+            next if $message =~ /count=(\d+)\z/ && $1 > 10000;
+            push @events, [$severity, $message];
+            last if @events >= 7;
+        }
+    }
+    return @events;
+}
+
 sub admin_call {
     my ($action, $payload) = @_;
     my $started = clock_gettime(CLOCK_MONOTONIC);
@@ -137,6 +163,10 @@ sub admin_call {
     my $stdout = <$child_out> // '';
     my $stderr = <$child_err> // '';
     waitpid($pid, 0);
+    my $child_status = $?;
+    for my $event (safe_admin_lifecycle_events($stderr)) {
+        admin_log($event->[0], "$event->[1] request_id=$request_id");
+    }
     if ($stderr =~ /(?:\A|\n)mcpserver_admin_timing=(\{[^\r\n]{1,2048}\})/) {
         my $timing = eval { decode_json($1) };
         if (ref($timing) eq 'HASH') {
@@ -164,7 +194,7 @@ sub admin_call {
             $request_id, $action, $duration_ms,
         ));
     }
-    if ($? != 0 || $stdout eq '') {
+    if ($child_status != 0 || $stdout eq '') {
         admin_log('error', 'component=admin_helper outcome=failed');
         return {ok => JSON::PP::false, error => {code => 'internal_error', message => 'Administrative action failed'}};
     }

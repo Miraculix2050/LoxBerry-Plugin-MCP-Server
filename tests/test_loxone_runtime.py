@@ -673,7 +673,7 @@ async def test_runtime_close_disconnects_all_records_without_revoking_tokens() -
     runtime = object.__new__(LoxoneRuntime)
     closed: list[str] = []
 
-    async def disconnect(family_id: str) -> None:
+    async def disconnect(family_id: str, *, reason: str = "local_disconnect") -> None:
         closed.append(family_id)
 
     runtime._records = {"one": object(), "two": object()}
@@ -738,7 +738,8 @@ async def test_state_batch_populates_cache_before_marking_initial_batch_ready() 
 
 
 @pytest.mark.asyncio
-async def test_connect_waits_for_the_initial_state_batch() -> None:
+async def test_connect_waits_for_the_initial_state_batch(caplog) -> None:
+    caplog.set_level("INFO", logger="mcpserver.auth.lifecycle")
     release = asyncio.Event()
 
     class Session(_Session):
@@ -768,10 +769,17 @@ async def test_connect_waits_for_the_initial_state_batch() -> None:
     record = await task
     assert record.initial_state_batch.is_set()
     await record.task
+    events = [
+        entry.getMessage().split(" event=")[1].split()[0]
+        for entry in caplog.records
+        if entry.name == "mcpserver.auth.lifecycle"
+    ]
+    assert events == ["connection_opened", "connection_closed"]
 
 
 @pytest.mark.asyncio
-async def test_connect_fails_closed_when_state_stream_ends_before_initial_batch() -> None:
+async def test_connect_fails_closed_when_state_stream_ends_before_initial_batch(caplog) -> None:
+    caplog.set_level("INFO", logger="mcpserver.auth.lifecycle")
     closed = False
 
     class Session(_Session):
@@ -802,6 +810,12 @@ async def test_connect_fails_closed_when_state_stream_ends_before_initial_batch(
     with pytest.raises(RuntimeUnavailable, match="state subscription failed"):
         await runtime._connect(_access())
     assert closed
+    events = [
+        entry.getMessage().split(" event=")[1].split()[0]
+        for entry in caplog.records
+        if entry.name == "mcpserver.auth.lifecycle"
+    ]
+    assert events == ["connection_opened", "connection_closed"]
     assert runtime.cache.get("family", "state-1").freshness.name == "UNAVAILABLE"
 
 
@@ -879,7 +893,7 @@ async def test_session_pruning_prefers_idle_then_least_recently_used(
     }
     disconnected: list[str] = []
 
-    async def disconnect(family_id: str) -> None:
+    async def disconnect(family_id: str, *, reason: str = "local_disconnect") -> None:
         disconnected.append(family_id)
         record = runtime._records.pop(family_id)
         record.task.cancel()
@@ -1048,3 +1062,82 @@ def test_availability_retry_rejects_invalid_delays(delay) -> None:
         ).retry_after_seconds
         is None
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "close_reason",
+    [
+        "shutdown",
+        "idle_eviction",
+        "oauth_revocation",
+        "refresh_reuse",
+        "refresh_invalid_state",
+        "family_expired",
+    ],
+)
+async def test_disconnect_logs_one_terminal_close_with_initiating_reason(close_reason, caplog):
+    access = _access()
+    access.family_id = "private-disconnect-family"
+    runtime = object.__new__(LoxoneRuntime)
+    runtime.cache = UserStateCache()
+    runtime._locks = runtime_module._FamilyLocks()
+    runtime._prune_rate_state = lambda now: None
+    started = asyncio.Event()
+
+    async def pump(subject, record):
+        started.set()
+        await asyncio.Event().wait()
+
+    runtime._pump_events = pump
+    placeholder = asyncio.create_task(asyncio.sleep(0))
+    record = _ConnectionRecord(_structure("current"), frozenset(), _Session(), placeholder)
+    record.task = asyncio.create_task(
+        runtime._maintain(access, SimpleNamespace(valid_until=2000000000), record)
+    )
+    runtime._records = {access.family_id: record}
+    await started.wait()
+    caplog.set_level("INFO", logger="mcpserver.auth.lifecycle")
+    await runtime.revoke(access.family_id, reason=close_reason)
+    await runtime.revoke(access.family_id, reason=close_reason)
+    closes = [entry for entry in caplog.records if "event=connection_closed " in entry.getMessage()]
+    assert len(closes) == 1
+    assert f"reason={close_reason}" in closes[0].getMessage()
+    assert "outcome=closed" in closes[0].getMessage()
+    assert access.family_id not in closes[0].getMessage()
+
+
+@pytest.mark.asyncio
+async def test_initial_state_timeout_logs_setup_failure_before_cancellation(caplog):
+    caplog.set_level("INFO", logger="mcpserver.auth.lifecycle")
+    closed = False
+
+    class Session(_Session):
+        async def load_structure(self):
+            return _structure("current")
+
+        async def state_events(self):
+            await asyncio.Event().wait()
+            yield ()
+
+        async def close(self):
+            nonlocal closed
+            closed = True
+
+    runtime = object.__new__(LoxoneRuntime)
+    runtime.token_health = None
+    runtime.token_store = SimpleNamespace(
+        get=lambda *_args: SimpleNamespace(valid_until=2_000_000_000)
+    )
+    runtime.client = SimpleNamespace(open_session=AsyncMock(return_value=Session()))
+    runtime.cache = UserStateCache()
+    runtime._initial_state_timeout_seconds = 0.01
+    with pytest.raises(RuntimeUnavailable, match="initial state timed out"):
+        await runtime._connect(_access())
+    assert closed
+    terminal = [
+        r.getMessage() for r in caplog.records if "event=connection_closed " in r.getMessage()
+    ]
+    assert len(terminal) == 1
+    assert "reason=initial_state_timeout" in terminal[0]
+    assert "reason=local_disconnect" not in terminal[0]

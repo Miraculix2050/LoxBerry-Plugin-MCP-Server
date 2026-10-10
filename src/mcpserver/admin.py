@@ -36,6 +36,12 @@ if TYPE_CHECKING:
     from mcpserver.emergency_options_cache import EmergencyOptionsCache
     from mcpserver.loxone.client import LoxoneClient, MiniserverEndpoint
 
+from mcpserver.auth.store import (
+    admin_lifecycle_logging,
+    lifecycle_event,
+    lifecycle_summary,
+    mark_family_revoked,
+)
 from mcpserver.config import AtomicConfigStore, PluginConfig, binding_application_name
 
 _MODULE_IMPORT_FINISHED_NS = time.time_ns()
@@ -616,18 +622,21 @@ def _save(payload: object) -> dict[str, Any]:
             control_families,
             endpoint=previous.loxone_endpoint,
             timeout_seconds=previous.connection_timeout,
+            reason="scope_disabled",
         )
     if loxberry_families:
         _revoke_many(
             loxberry_families,
             endpoint=previous.loxone_endpoint,
             timeout_seconds=previous.connection_timeout,
+            reason="scope_disabled",
         )
     if phase4_families:
         _revoke_many(
             phase4_families,
             endpoint=previous.loxone_endpoint,
             timeout_seconds=previous.connection_timeout,
+            reason="scope_disabled",
         )
     return {
         "configuration": config.to_document(),
@@ -1602,7 +1611,19 @@ def _allow_loxberry_read(payload: object) -> dict[str, Any]:
 
         try:
             record_explorer_approval(
-                _config_store(), _auth_store(), "loxberry:read", record, now=int(time.time())
+                _config_store(),
+                _auth_store(),
+                "loxberry:read",
+                record,
+                now=int(time.time()),
+                on_transition=lambda binding: lifecycle_event(
+                    "approval_granted",
+                    family_id=session_id,
+                    binding_id=binding,
+                    reason="read",
+                    source="admin",
+                    outcome="committed",
+                ),
             )
         except PersistenceUncertain:
             raise
@@ -1611,11 +1632,15 @@ def _allow_loxberry_read(payload: object) -> dict[str, Any]:
         return {"loxberry_bindings": _loxberry_bindings(), "sessions": _sessions()}
     binding = _loxberry_binding(record)
 
+    created = False
+
     def add_binding(previous: PluginConfig) -> PluginConfig:
+        nonlocal created
         if binding in previous.loxberry_read_bindings:
             return _retain_binding_names(previous, document)
         if len(previous.loxberry_read_bindings) >= 64:
             raise AdminError("LoxBerry approval capacity reached")
+        created = True
         return _retain_binding_names(
             replace(
                 previous,
@@ -1625,6 +1650,15 @@ def _allow_loxberry_read(payload: object) -> dict[str, Any]:
         )
 
     _config_store().mutate(add_binding)
+    if created:
+        lifecycle_event(
+            "approval_granted",
+            family_id=session_id,
+            binding_id=binding,
+            reason="read",
+            source="admin",
+            outcome="committed",
+        )
     return {"loxberry_bindings": _loxberry_bindings(), "sessions": _sessions()}
 
 
@@ -1657,6 +1691,9 @@ def _revoke_loxberry_read(payload: object) -> dict[str, Any]:
         )
 
     updated_config = _config_store().mutate(remove_binding)
+    lifecycle_event(
+        "approval_removed", binding_id=binding, reason="read", source="admin", outcome="committed"
+    )
     document = _auth_store().snapshot()
     families = [
         family_id
@@ -1683,6 +1720,7 @@ def _revoke_loxberry_read(payload: object) -> dict[str, Any]:
             families,
             endpoint=updated_config.loxone_endpoint,
             timeout_seconds=updated_config.connection_timeout,
+            reason="approval_read_removed",
         )
     return {"loxberry_bindings": _loxberry_bindings(), "sessions": _sessions()}
 
@@ -1711,7 +1749,19 @@ def _allow_loxberry_operate(payload: object) -> dict[str, Any]:
 
         try:
             record_explorer_approval(
-                _config_store(), _auth_store(), "loxberry:operate", record, now=int(time.time())
+                _config_store(),
+                _auth_store(),
+                "loxberry:operate",
+                record,
+                now=int(time.time()),
+                on_transition=lambda binding: lifecycle_event(
+                    "approval_granted",
+                    family_id=session_id,
+                    binding_id=binding,
+                    reason="operate",
+                    source="admin",
+                    outcome="committed",
+                ),
             )
         except PersistenceUncertain:
             raise
@@ -1723,11 +1773,15 @@ def _allow_loxberry_operate(payload: object) -> dict[str, Any]:
         }
     binding = _loxberry_operate_binding(record)
 
+    created = False
+
     def add_binding(previous: PluginConfig) -> PluginConfig:
+        nonlocal created
         if binding in previous.loxberry_operate_bindings:
             return _retain_binding_names(previous, document)
         if len(previous.loxberry_operate_bindings) >= 64:
             raise AdminError("LoxBerry operation approval capacity reached")
+        created = True
         return _retain_binding_names(
             replace(
                 previous,
@@ -1737,6 +1791,15 @@ def _allow_loxberry_operate(payload: object) -> dict[str, Any]:
         )
 
     _config_store().mutate(add_binding)
+    if created:
+        lifecycle_event(
+            "approval_granted",
+            family_id=session_id,
+            binding_id=binding,
+            reason="operate",
+            source="admin",
+            outcome="committed",
+        )
     return {
         "sessions": _sessions(),
         "loxberry_operate_bindings": _loxberry_operate_bindings(),
@@ -1773,6 +1836,13 @@ def _revoke_loxberry_operate(payload: object) -> dict[str, Any]:
         )
 
     updated_config = _config_store().mutate(remove_binding)
+    lifecycle_event(
+        "approval_removed",
+        binding_id=binding,
+        reason="operate",
+        source="admin",
+        outcome="committed",
+    )
     document = _auth_store().snapshot()
     families = [
         family_id
@@ -1800,6 +1870,7 @@ def _revoke_loxberry_operate(payload: object) -> dict[str, Any]:
             families,
             endpoint=updated_config.loxone_endpoint,
             timeout_seconds=updated_config.connection_timeout,
+            reason="approval_operate_removed",
         )
     return {
         "sessions": _sessions(),
@@ -1817,12 +1888,14 @@ def _revoke(
         None if family_id is None else [family_id],
         endpoint=endpoint,
         timeout_seconds=timeout_seconds,
+        reason="admin_all_sessions" if family_id is None else "admin_session",
     )
 
 
 def _revoke_many(
     family_ids: list[str] | None,
     *,
+    reason: str = "admin_session",
     endpoint: str | None = None,
     timeout_seconds: float | None = None,
 ) -> int:
@@ -1840,8 +1913,12 @@ def _revoke_many(
             family = document["families"].get(target)
             if family is None:
                 continue
-            family["revoked"] = True
-            family["revoked_at"] = int(time.time())
+            mark_family_revoked(
+                family,
+                now=int(time.time()),
+                reason=reason,
+                source="configuration" if reason == "scope_disabled" else "admin",
+            )
             revoked.append(target)
             for collection in ("codes", "access_tokens", "refresh_tokens"):
                 for record in document[collection].values():
@@ -1863,6 +1940,7 @@ def _revoke_many(
 def _diagnostic() -> dict[str, Any]:
     from mcpserver.loxone.client import MiniserverEndpoint
 
+    snapshot = _admin_read_snapshot()
     config = _config_store().load()
     endpoint = MiniserverEndpoint.parse(config.loxone_endpoint) if config.loxone_endpoint else None
     return {
@@ -1873,7 +1951,8 @@ def _diagnostic() -> dict[str, Any]:
         "transport": ("wss" if endpoint is not None and endpoint.secure else "ws")
         if endpoint is not None
         else "not_configured",
-        "session_count": len(_sessions()),
+        "session_count": len(_sessions(snapshot)),
+        "auth_lifecycle": lifecycle_summary(snapshot.auth_document),
     }
 
 
@@ -2116,7 +2195,8 @@ def main() -> None:
             raise AdminError("request is too large")
         request = json.loads(raw)
         action = request.get("action") if isinstance(request, dict) else None
-        response = {"ok": True, "data": dispatch(request, timing=timing)}
+        with admin_lifecycle_logging():
+            response = {"ok": True, "data": dispatch(request, timing=timing)}
     except AdminError as exc:
         response = {"ok": False, "error": {"code": exc.code, "message": str(exc)}}
     except (ValueError, json.JSONDecodeError) as exc:

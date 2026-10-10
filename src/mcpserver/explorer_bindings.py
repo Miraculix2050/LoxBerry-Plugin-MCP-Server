@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import replace
 from typing import Any, Final
 
@@ -68,6 +69,7 @@ def record_explorer_approval(
     family: dict[str, Any],
     *,
     now: int | None = None,
+    on_transition: Callable[[str], None] | None = None,
 ) -> str:
     current = int(time.time()) if now is None else now
     expires_at = int(family.get("expires_at", current))
@@ -82,10 +84,14 @@ def record_explorer_approval(
         explorer_origin,
     )
 
+    transitioned = False
+
     def update(config: PluginConfig) -> PluginConfig:
+        nonlocal transitioned
         entries = list(config.explorer_bindings)
         for index, item in enumerate(entries):
             if item.capability == capability and item.binding_id == binding_id:
+                transitioned = item.inactive_since is not None or item.last_active_until <= current
                 entries[index] = replace(
                     item,
                     last_active_at=max(item.last_active_at, current),
@@ -101,6 +107,7 @@ def record_explorer_approval(
             )
             if legacy_count + sum(item.capability == capability for item in entries) >= 64:
                 raise ValueError("LoxBerry approval capacity reached")
+            transitioned = True
             entries.append(
                 ExplorerBindingApproval(
                     binding_id=binding_id,
@@ -116,6 +123,8 @@ def record_explorer_approval(
         return replace(config, explorer_bindings=tuple(entries))
 
     config_store.mutate(update)
+    if transitioned and on_transition is not None:
+        on_transition(binding_id)
     return binding_id
 
 
