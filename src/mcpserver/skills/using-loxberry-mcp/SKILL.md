@@ -662,6 +662,18 @@ inactive, while acknowledgement never cancels active alarm bits. Rules use
 Structure File 17.1, pages 26–30; document provenance is no firmware promise.
 Only current, available primary states establish activity or inactivity.
 
+`Alarm.level` additionally accepts integral numeric codes 0–6: 1 silent, 2 acoustic,
+3 optical, 4 internal, 5 external, 6 remote. Code 0 means no running alarm under
+an explicit owner-approved assumption (#346, 11 October 2026), not a Loxone guarantee.
+Rule `Alarm.level.v1` exposes separate provenance for Structure File 17.0 p.28
+(stages) and the issue decision (zero/activity and accepted format), with
+`reason=owner_approved_decoder`. If the assumption proves incorrect, it is a bug.
+Stages are not danger ratings. Acknowledgement resets the digital alarm outputs
+while retaining arming; the API level transition and test-mode mapping are not
+specified. Test, acknowledgement and suppression context remains unknown; armed,
+nextLevelAt and startTime do not override activity. Missing, invalid or stale
+levels never establish inactivity.
+
 `semantic_value` exposes decoded source levels/types and context without tool-side
 reinterpretation. Active findings include optional `context`: `test_alarm`, `acknowledged` and
 `signals_suppressed` are true/false/null; null means unknown or not exposed by

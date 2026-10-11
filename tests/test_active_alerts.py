@@ -56,8 +56,75 @@ def test_smart_alarm_enum(code):
     }
 
 
+@pytest.mark.parametrize("code", [*range(7), 0.0, 6.0])
+def test_alarm_owner_approved_enum_and_separate_provenance(code):
+    semantics, value = resolve(control("Alarm"), "level", code)
+    assert semantics.interpretation_status == "known"
+    assert semantics.reason == "owner_approved_decoder"
+    assert value["alert_active"] is (code != 0)
+    assert (
+        value["level"]
+        == ("inactive", "silent", "acoustic", "optical", "internal", "external", "remote")[
+            int(code)
+        ]
+    )
+    assert all(v is None for v in value["context"].values())
+    assert semantics.sources[0].document_version == "17.0"
+    assumption = semantics.sources[1]
+    assert assumption.reference.endswith("#issuecomment-6103804884")
+    assert assumption.document_version is None and assumption.firmware_version is None
+    assert assumption.rule_id == "Alarm.level.v1"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("code", range(7))
+async def test_alarm_alerts_and_shared_reader_agree(monkeypatch, code):
+    runtime = Runtime(control("Alarm", states=(("level", "state"), ("armed", "armed"))))
+    runtime.records = {
+        "state": StateRecord("state", code, Freshness.CURRENT, 1700000000),
+        "armed": StateRecord("armed", 0, Freshness.CURRENT, 1700000000),
+    }
+    result = await make_tool(monkeypatch, runtime).fn()
+    assert result.ok and result.data.coverage.complete
+    assert result.data.total_active == int(code != 0)
+    assert "Alarm" in result.data.supported_families
+    assert runtime.reads == ["state"]
+    server = FastMCP("alarm-semantics")
+    tools.register_read_tools(server, runtime)
+    read = await server._tool_manager.get_tool("loxone_get_state_semantics").fn(
+        control_uuid="control", state_names=["level"]
+    )
+    assert read.data.items[0].semantic_value["alert_active"] is (code != 0)
+    if code:
+        finding = result.data.findings[0]
+        assert finding.semantic_value == read.data.items[0].semantic_value
+        assert finding.source_state.name == "level"
+        assert finding.context.acknowledged is None and finding.context.test_alarm is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("raw", [None, True, "0", -1, 7, 1.5, float("nan"), float("inf")])
+async def test_alarm_unavailable_or_invalid_never_establishes_inactivity(monkeypatch, raw):
+    runtime = Runtime(control("Alarm", states=(("level", "state"),)))
+    runtime.records["state"] = StateRecord("state", raw, Freshness.CURRENT, 1700000000)
+    result = await make_tool(monkeypatch, runtime).fn()
+    assert result.data.total_active is None and not result.data.coverage.complete
+    assert result.data.coverage.reasons[0].reason == ("unavailable" if raw is None else "invalid")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("states", [(), (("armed", "state"),)])
+async def test_alarm_missing_level_is_not_inactive(monkeypatch, states):
+    runtime = Runtime(control("Alarm", states=states))
+    result = await make_tool(monkeypatch, runtime).fn()
+    assert result.data.total_active is None
+    assert result.data.coverage.reasons[0].reason == "missing_state"
+    assert runtime.reads == []
+
+
 @pytest.mark.parametrize(
-    "family,state", [("AalSmartAlarm", "alarmLevel"), ("AlarmChain", "activeAlarmType")]
+    "family,state",
+    [("AalSmartAlarm", "alarmLevel"), ("AlarmChain", "activeAlarmType"), ("Alarm", "level")],
 )
 @pytest.mark.parametrize("raw", [True, "1", -1, 16, 1.5, float("nan"), float("inf"), {}, []])
 def test_additional_family_invalid_formats(family, state, raw):
@@ -100,12 +167,13 @@ async def test_mixed_families_deduplicate_and_preserve_acknowledged_alarm(monkey
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "family,state", [("AalSmartAlarm", "alarmLevel"), ("AlarmChain", "activeAlarmType")]
+    "family,state",
+    [("AalSmartAlarm", "alarmLevel"), ("AlarmChain", "activeAlarmType"), ("Alarm", "level")],
 )
 @pytest.mark.parametrize("freshness", [Freshness.STALE, Freshness.UNKNOWN, Freshness.UNAVAILABLE])
 async def test_new_families_primary_quality_remains_a_gap(monkeypatch, family, state, freshness):
     runtime = Runtime(control(family, states=((state, "state"),)))
-    runtime.records["state"] = StateRecord("state", 2, freshness, 1700000000)
+    runtime.records["state"] = StateRecord("state", 0, freshness, 1700000000)
     result = await make_tool(monkeypatch, runtime).fn()
     assert result.data.known_active == 0 and result.data.total_active is None
     assert result.data.coverage.reasons[0].reason == freshness.value
