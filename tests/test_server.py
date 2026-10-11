@@ -529,6 +529,7 @@ async def test_bundled_skill_is_published_as_an_mcp_resource() -> None:
         ("skill://using-loxberry-mcp/SKILL.md", "text/markdown"),
         ("skill://using-loxberry-mcp/core.md", "text/markdown"),
         ("skill://using-loxberry-mcp/knx.md", "text/markdown"),
+        ("skill://using-loxberry-mcp/alerts.md", "text/markdown"),
     ]
 
     contents = await server.read_resource("skill://using-loxberry-mcp/SKILL.md")

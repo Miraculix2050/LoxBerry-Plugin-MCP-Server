@@ -53,7 +53,7 @@ async def test_resources_and_tool_sections_match_and_full_default_remains_availa
     assert tool is not None
     assert tool.fn().data.content == read_skill_markdown()
     assert tool.fn().data.section == "full"
-    for section in ("core", "knx"):
+    for section in ("core", "knx", "alerts"):
         result = tool.fn(section=section)
         resource = await server.read_resource(f"skill://using-loxberry-mcp/{section}.md")
         assert result.ok and not result.stale
@@ -93,3 +93,28 @@ def test_knx_field_help_distinguishes_sources_and_syntax_validation() -> None:
     comparison = tools.ProjectKnxComparisonRowData.model_json_schema()["properties"]
     assert "Loxone versus ETS" in comparison["names_differ"]["description"]
     assert "Unknown is not" in comparison["name_comparison"]["description"]
+
+
+def test_alerts_is_canonical_bounded_and_retains_follow_up_boundaries() -> None:
+    full = read_skill_markdown()
+    alerts = read_skill_markdown("alerts")
+    assert alerts.strip() in full
+    assert len(alerts.encode()) < len(full.encode()) // 6
+    assert "### Active visible alerts" in alerts
+    for required in (
+        "source control/state/time",
+        "acceptance criterion",
+        "required writer/permission",
+        "total_active=null",
+        "owner-approved assumption",
+        "Static project facts",
+        "intended function",
+        "core rules first",
+        "source control/state references",
+        "not an alarm scope",
+    ):
+        assert required in alerts
+    assert "State internal signal flow is" not in alerts
+    assert "## EFM" not in alerts
+    assert "### Current and historical System Messages" not in alerts
+    assert "section='alerts'" in read_skill_markdown("core")

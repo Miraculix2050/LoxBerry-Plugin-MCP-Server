@@ -275,7 +275,8 @@ try {
     $expectedSkillUris = @(
         'skill://using-loxberry-mcp/SKILL.md',
         'skill://using-loxberry-mcp/core.md',
-        'skill://using-loxberry-mcp/knx.md'
+        'skill://using-loxberry-mcp/knx.md',
+        'skill://using-loxberry-mcp/alerts.md'
     )
     $skillResources = @($resourcesResponse.result.resources)
     if ($resourcesResponse.error -or $skillResources.Count -ne $expectedSkillUris.Count -or
@@ -300,7 +301,7 @@ try {
     $script:nextId = 4
     $skillGuide = Invoke-ReadTool (Get-NextId) 'loxone_get_skill_guide' @{}
     if ($skillGuide.data.name -ne 'using-loxberry-mcp' -or
-        $skillGuide.data.revision -ne 69 -or
+        $skillGuide.data.revision -ne 70 -or
         $skillGuide.data.media_type -ne 'text/markdown' -or
         $skillGuide.data.content -ne $skillMarkdown) {
         throw 'MCP skill guide tool differs from the canonical resource.'

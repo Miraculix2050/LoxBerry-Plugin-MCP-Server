@@ -534,6 +534,11 @@ Die aktuelle Zuordnung von Plattformen, Clients und Nachweisstatus steht in der 
 
 ### Aktive sichtbare Alarme
 
+Für Alarmdiagnosen nach den Core-Regeln `section="alerts"` laden (oder
+`skill://using-loxberry-mcp/alerts.md`). Der kurze Abschnitt enthält Statusprüfung,
+gezielte Projekt-Folgeaufgaben und überprüfbare Abnahmekriterien. Der vollständige
+Guide bleibt vor Schreibaktionen und für andere Abläufe erforderlich.
+
 Für den aktuellen Status zuerst Aktualität, Abdeckung und Kürzung prüfen;
 eine unbekannte Gesamtzahl oder ein leeres Teilergebnis bedeutet keine
 Alarmfreiheit. Exakte Quellenreferenzen für gezielte Zustandsabfragen nutzen.
