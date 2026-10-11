@@ -280,6 +280,13 @@ retrospectively attribute those failures. A healthy service/state stream and
 `stale=false` on a failed envelope do not prove a successful fresh structure read.
 
 
+The active-alert agent workflow checks freshness, coverage and truncation before
+reporting current status, then uses exact source references for focused state
+reads and runtime-to-project mapping. Describe/trace provide static input/output
+evidence, not a proven cause. Report observations, facts, hypotheses and
+optimization candidates separately. The project analyzer has KNX/Modbus scopes,
+not an alarm scope; no arming inference, acknowledgement or test command follows.
+
 `loxone_get_active_alerts` provides a bounded read-only overview from one freshly
 authorized visible structure and captured cached observations. It evaluates
 `AalEmergency.status` (0 normal, 1 alarm, 2 reset, 3 disabled),

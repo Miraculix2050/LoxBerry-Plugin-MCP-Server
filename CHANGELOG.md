@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Clarify the active-alert agent workflow for current status, focused state reads
+  and project follow-up. Distinguish coverage gaps, static wiring, causal
+  hypotheses and optimization candidates; retain read-only alarm semantics (#459).
+
 - Add an experimental, explicitly selected ETS XML name/description correction download on the KNX page, with source reconstruction and fresh project checks. Actual ETS import compatibility remains unconfirmed (#419).
 
 - Compare two selected ETS files or a file against the current imported KNX

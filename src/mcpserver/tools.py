@@ -5362,12 +5362,12 @@ def register_read_tools(
     @server.tool(
         name="loxone_get_active_alerts",
         description=(
-            "Read a bounded overview of active visible alerts. Evaluates AalEmergency, "
-            "AalSmartAlarm, Alarm, AlarmChain and SmokeAlarm "
-            "(Alarm and SmokeAlarm level zero use owner-approved assumptions); "
-            "other known monitor/alarm families remain explicit coverage gaps. One freshly "
-            "authorized structure and cached observations, not simultaneous measurements. "
-            "No acknowledge, polling or history; not an emergency notification service."
+            "Read a bounded snapshot of active authorized visible alerts. Check coverage and "
+            "truncation; empty partial results do not establish alarm absence. Follow source "
+            "references with targeted state/project reads. Supported families only; "
+            "Alarm/SmokeAlarm zero is owner-assumed. Cached observations, not simultaneous "
+            "measurements or proof of cause/severity. Read-only; no acknowledgement, polling "
+            "or history; not an emergency notification service."
         ),
         annotations=annotations,
         structured_output=True,

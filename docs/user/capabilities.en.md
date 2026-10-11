@@ -462,6 +462,17 @@ The current mapping of platforms, clients and evidence status is in the [support
 
 ### Active visible alerts
 
+For current status, check freshness, coverage and truncation before interpreting
+the findings; an unknown total or empty partial result is not alarm freedom.
+Use exact source references for focused state reads. For project diagnosis,
+map the runtime control exactly, inspect its project description and trace
+relevant input/output paths. Static wiring is not proof of a trigger or cause.
+Optimization candidates concern evidenced paths and recording gaps against the
+intended function; they do not establish sensor sufficiency or installation
+safety. Report observations, static facts, hypotheses and suggestions separately.
+The project analyzer supports KNX and Modbus, not an alarm scope. Arming is a
+separate question, and this workflow does not acknowledge or test alarms.
+
 `loxone_get_active_alerts` provides a bounded read-only overview from one freshly
 authorized visible structure and captured cached observations. It evaluates
 `AalEmergency.status` (0 normal, 1 alarm, 2 reset, 3 disabled),
