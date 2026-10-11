@@ -756,3 +756,9 @@ Teilbaumwurzeln werden gezählt; deren unbesuchte Nachfolger bleiben unbekannt.
 Topologie-, Referenz- und Rollenvollständigkeit sind getrennt. Kompakte Views
 bleiben unverändert. Bindings gehören zum separaten #364; es werden weder
 Werte noch entfernte Node-Daten abgerufen.
+
+Aufgelöste Control-Anzeigenamen und -Typen sind auf 200/64 Zeichen begrenzt und
+kennzeichnen Kürzungen. Auch die gesamte serialisierte EFM-Projektion passt in
+32 KiB. `projection_omitted` zählt bereits normalisierte Vorkommen, die das
+abschließende Budget am Ende der Tiefensuchfolge auslässt; erhaltene Eltern und
+Quellpfade bleiben stabil.

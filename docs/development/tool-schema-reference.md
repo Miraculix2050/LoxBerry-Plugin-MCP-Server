@@ -463,3 +463,8 @@ Config application version remains unknown. All fixtures are independently
 authored synthetic data. Flat fields reproduce observed types; nesting,
 missing/malformed data, rest, repetition and bounds remain unobserved synthetic
 cases. Automated tests do not establish device compatibility.
+
+Resolved control display names/types are capped at 200/64 characters with a
+truncation marker. The complete serialized EFM projection also fits 32 KiB.
+`projection_omitted` counts normalized occurrences omitted from the DFS suffix
+by that final budget; retained parents and source paths remain stable.

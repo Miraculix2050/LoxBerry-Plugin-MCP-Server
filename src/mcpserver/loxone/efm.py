@@ -7,7 +7,7 @@ import re
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from mcpserver.loxone.models import Control
@@ -173,18 +173,21 @@ def describe(projection: Projection, visible: Mapping[str, Control]) -> dict[str
                 "control": {
                     "uuid": target.uuid,
                     "name": target.name[:200],
-                    "type": target.control_type,
+                    "type": target.control_type[:64],
                 }
                 if target is not None
                 else None,
+                "control_metadata_truncated": target is not None
+                and (len(target.name) > 200 or len(target.control_type) > 64),
                 "diagnostics": list(row.diagnostics),
             }
         )
-    return {
+    result: dict[str, Any] = {
         "source": "LoxAPP3.details.nodes",
         "participants": participants,
         "residual_display": dict(projection.residual),
         "returned": len(participants),
+        "projection_omitted": 0,
         "omitted_subtrees": projection.omitted_subtrees,
         "omitted_descendants": None if projection.omitted_subtrees else 0,
         "topology_complete": not projection.omitted_subtrees
@@ -206,3 +209,14 @@ def describe(projection: Projection, visible: Mapping[str, Control]) -> dict[str
         "max_metadata_bytes": MAX_BYTES,
         "diagnostics": list(projection.diagnostics),
     }
+
+    # Resolved display metadata must fit the same serialized projection budget.
+    # Remove only a DFS suffix, preserving every retained parent and source path.
+    while participants and len(json.dumps(result, ensure_ascii=True).encode()) > MAX_BYTES:
+        participants.pop()
+        result["returned"] = len(participants)
+        result["projection_omitted"] += 1
+        result["topology_complete"] = False
+        result["references_complete"] = False
+        result["roles_complete"] = False
+    return result

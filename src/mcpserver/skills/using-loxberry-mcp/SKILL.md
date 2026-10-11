@@ -943,3 +943,8 @@ occurrences, eight levels and 32 KiB retained metadata. Omitted subtree roots
 are counted; their unvisited descendants remain unknown. Topology, references
 and roles have separate completeness. Compact views remain unchanged.
 State bindings belong to separate #364; no values or remote node reads occur.
+
+Resolved control display names/types are capped at 200/64 characters with a
+truncation marker. The complete serialized EFM projection also fits 32 KiB.
+`projection_omitted` counts normalized occurrences omitted from the DFS suffix
+by that final budget; retained parents and source paths remain stable.

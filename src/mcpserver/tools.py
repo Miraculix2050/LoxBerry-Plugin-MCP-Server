@@ -386,6 +386,7 @@ class EfmParticipantData(BaseModel):
     role_token: str | int | None
     role: None = None
     role_status: Literal["unknown"] = "unknown"
+    control_metadata_truncated: bool
     reference_status: Literal["resolved", "unavailable", "absent", "malformed"]
     control: LinkedControlData | None
     diagnostics: list[str]
@@ -396,6 +397,7 @@ class EfmProjectionData(BaseModel):
     participants: list[EfmParticipantData]
     residual_display: dict[str, str | bool]
     returned: int
+    projection_omitted: int
     omitted_subtrees: int
     omitted_descendants: int | None
     topology_complete: bool

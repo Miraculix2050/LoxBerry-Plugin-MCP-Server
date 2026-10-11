@@ -205,3 +205,19 @@ def test_synthetic_root_residual_metadata_consumes_shared_byte_budget() -> None:
     assert len(with_rest.participants) < len(plain.participants)
     assert dict(with_rest.residual)["restName"] == "\u2603" * 200
     assert with_rest.omitted_subtrees > plain.omitted_subtrees
+
+
+def test_synthetic_resolved_control_amplification_fits_serialized_projection_budget() -> None:
+    from mcpserver.loxone.efm import MAX_BYTES
+
+    reused = replace(
+        target(9), name="\u2603" * 10000, control_type="private oversized type" * 100000
+    )
+    projection = normalize({"nodes": [node(i + 1, ctrlUuid=uuid(9)) for i in range(100)]})
+    result = describe(projection, {uuid(9): reused})
+    assert len(json.dumps(result, ensure_ascii=True).encode()) <= MAX_BYTES
+    assert result["projection_omitted"] > 0
+    assert result["returned"] + result["projection_omitted"] == len(projection.participants)
+    assert all(r["control_metadata_truncated"] for r in result["participants"])
+    assert all(len(r["control"]["type"]) <= 64 for r in result["participants"])
+    assert not result["topology_complete"] and not result["references_complete"]
