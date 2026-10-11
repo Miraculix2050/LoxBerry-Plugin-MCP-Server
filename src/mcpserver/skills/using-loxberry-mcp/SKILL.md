@@ -667,6 +667,24 @@ when the task needs raw evidence; follow its 100-item pages, which reauthorize
 visibility and invalidate cursors if the source content changes. Deadline/bound
 errors are not complete results. Do not poll unchanged analysis results.
 
+Use `consumer_ranking` only with confirmed consumer bindings, matching energy
+representations/windows and distinct declared boundaries. Ask the user to confirm
+their comparability and exclude parent/child overlap before asserting
+`comparison_options.comparable_boundaries_confirmed=true`; the server cannot prove
+chat confirmation or physical independence. Individual counters are never summed.
+`pv_load_overlap` needs confirmed production and consumer/house bindings; add one
+binary state source only to retain whole hours inside known active phases. Hourly
+coincidence and its energy upper bound are not measured solar self-consumption,
+exact attribution or causation. Zero generation leaves attribution undefined.
+`operating_phases` associates one state history with one numeric source: whole
+active energy hours or unweighted active temperature samples, preserving gaps.
+`baseload` uses the local 00:00-05:00 window by default, overridable with whole
+`night_start_hour`/`night_end_hour` options. It reports a time-weighted median of
+hourly mean powers derived from verified Wh/hour intervals; raw power samples
+cannot establish durations. The 24-hour extrapolation is a labelled estimate for
+the selected channel, not proven whole-installation base load. Respect ambiguous
+local-window errors and the separate native EFM balance gate.
+
 Read `coverage_evidence`: UTC intervals are half-open internally, while existing
 public history/statistic time filters remain inclusive. Sample timestamps prove
 points only. Only documented hourly difference records expose exact energy

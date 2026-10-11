@@ -10,7 +10,7 @@ from contextlib import AsyncExitStack
 from datetime import UTC, datetime
 from math import ceil
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 from uuid import uuid4
 
 from mcp.server.fastmcp import FastMCP
@@ -22,9 +22,16 @@ from mcpserver.history_analysis import (
     AnalysisOperation,
     HistoryAnalysisDeadline,
     SourceAnalysis,
+    StateSegment,
     duration_summary,
     reconstruct_segments,
     statistic_summary,
+)
+from mcpserver.history_comparison import (
+    ComparisonInput,
+    ComparisonOperation,
+    ComparisonResult,
+    compare_history,
 )
 from mcpserver.installation_profile import (
     ProfileError,
@@ -104,6 +111,14 @@ class AnalysisData(BaseModel):
     input_points: int = Field(ge=0, le=100_000)
     raw: list[dict[str, Any]] = Field(default_factory=list, max_length=100)
     next_cursor: str | None = None
+    comparison: ComparisonResult | None = None
+
+
+class ComparisonOptions(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    comparable_boundaries_confirmed: bool = False
+    night_start_hour: int = Field(default=0, ge=0, le=23)
+    night_end_hour: int = Field(default=5, ge=1, le=24)
 
 
 class AnalysisEnvelope(ToolEnvelope):
@@ -160,6 +175,8 @@ def _raw_scope(
     raw: list[dict[str, Any]],
     outputs: list[SourceAnalysis],
     deadline: float,
+    comparison_options: ComparisonOptions | None = None,
+    comparison: ComparisonResult | None = None,
 ) -> str:
     if time.monotonic() >= deadline:
         raise HistoryAnalysisDeadline()
@@ -173,6 +190,8 @@ def _raw_scope(
             [s.model_dump() for s in sources],
             raw,
             [s.model_dump() for s in outputs],
+            comparison_options.model_dump() if comparison_options else None,
+            comparison.model_dump() if comparison else None,
         ],
         sort_keys=True,
         separators=(",", ":"),
@@ -194,7 +213,7 @@ def _state_calculation(
     state_id: str,
     deadline: float,
     include_raw: bool,
-) -> tuple[SourceAnalysis, list[dict[str, Any]]]:
+) -> tuple[SourceAnalysis, list[dict[str, Any]], tuple[StateSegment, ...]]:
     resolver = StateSemanticsResolver()
 
     def decode(value: object) -> object:
@@ -229,7 +248,7 @@ def _state_calculation(
         if include_raw
         else []
     )
-    return result, raw
+    return result, raw, segments
 
 
 def register_history_analysis_tool(
@@ -249,12 +268,21 @@ def register_history_analysis_tool(
         timezone_name: str,
         include_raw: bool,
         cursor: str | None,
+        comparison_options: ComparisonOptions | None,
     ) -> AnalysisEnvelope:
         trace_id = str(uuid4())
         try:
             if runtime is None:
                 raise RuntimeUnavailable("History analysis is not configured")
             access = _access()
+            is_comparison = operation in {
+                "consumer_ranking",
+                "pv_load_overlap",
+                "operating_phases",
+                "baseload",
+            }
+            if comparison_options is not None and not is_comparison:
+                raise ValueError("comparison options require a comparison operation")
             first, last = _rfc3339(start), _rfc3339(end)
             zone = timezone(timezone_name)
             if first >= last or last > datetime.now(UTC):
@@ -311,11 +339,15 @@ def register_history_analysis_tool(
                     seen.add(key)
                     resolved.append((source, binding, control, series_id, state_id))
                 outputs = []
+                comparison_inputs = []
                 raw: list[dict[str, Any]] = []
                 count = 0
                 resolver = StateSemanticsResolver()
-                for source, _binding, control, series_id, state_id in resolved:
+                for source, binding, control, series_id, state_id in resolved:
                     await runtime._require_access(access)
+                    semantics = None
+                    points: tuple[StatisticPoint, ...] = ()
+                    segments: tuple[StateSegment, ...] = ()
                     if series_id is not None:
                         if source.granularity == "raw" and finish - begin > 7 * 86400:
                             raise ValueError("raw statistics are limited to seven days")
@@ -338,9 +370,17 @@ def register_history_analysis_tool(
                             control, series, granularity=source.granularity
                         )
                         phase_started = time.perf_counter()
+                        source_operation: AnalysisOperation = operation
+                        if is_comparison:
+                            source_operation = (
+                                "temperature_summary"
+                                if operation == "operating_phases"
+                                and semantics.measurement_quantity == "temperature"
+                                else "energy"
+                            )
                         result, source_raw = await run_admitted_worker(
                             _statistic_calculation,
-                            operation,
+                            source_operation,
                             semantics,
                             points,
                             begin,
@@ -369,7 +409,8 @@ def register_history_analysis_tool(
                             raise ControlOperationError("not_found", "state is not visible")
                         metadata, _ = resolver.resolve(structure, control, state_name, None, {})
                         if (
-                            operation != "state_duration"
+                            operation
+                            not in {"state_duration", "operating_phases", "pv_load_overlap"}
                             or metadata.measurement_quantity != "binary_state"
                         ):
                             result = SourceAnalysis(
@@ -414,7 +455,7 @@ def register_history_analysis_tool(
                             _timing(trace_id, "sqlite", phase_started)
 
                             phase_started = time.perf_counter()
-                            result, source_raw = await run_admitted_worker(
+                            result, source_raw, segments = await run_admitted_worker(
                                 _state_calculation,
                                 structure,
                                 control,
@@ -434,6 +475,32 @@ def register_history_analysis_tool(
                         )
                     result.binding_id = source.binding_id
                     outputs.append(result)
+                    if is_comparison:
+                        comparison_inputs.append(
+                            ComparisonInput(
+                                result,
+                                semantics,
+                                points,
+                                segments,
+                                binding["role"] if binding else None,
+                                binding["measurement_boundary"] if binding else None,
+                            )
+                        )
+                comparison = None
+                if is_comparison:
+                    options = comparison_options or ComparisonOptions()
+                    comparison = await run_admitted_worker(
+                        compare_history,
+                        cast(ComparisonOperation, operation),
+                        tuple(comparison_inputs),
+                        start=begin,
+                        end=finish,
+                        timezone_name=timezone_name,
+                        comparable_boundaries_confirmed=options.comparable_boundaries_confirmed,
+                        night_start_hour=options.night_start_hour,
+                        night_end_hour=options.night_end_hour,
+                        deadline=deadline,
+                    )
                 scope = await run_admitted_worker(
                     _raw_scope,
                     cursors,
@@ -446,6 +513,8 @@ def register_history_analysis_tool(
                     raw,
                     outputs,
                     deadline,
+                    comparison_options,
+                    comparison,
                 )
                 offset = cursors.decode(scope, cursor)
                 envelope = _result(
@@ -457,6 +526,7 @@ def register_history_analysis_tool(
                         "timezone": timezone_name,
                         "sources": outputs,
                         "input_points": count,
+                        "comparison": comparison,
                         "raw": raw[offset : offset + 100],
                         "next_cursor": cursors.encode(scope, offset + 100)
                         if offset + 100 < len(raw)
@@ -501,8 +571,9 @@ def register_history_analysis_tool(
     @server.tool(
         name="loxone_analyze_history",
         description=(
-            "Compute compact temperature sample summaries, verified energy or observed state "
-            "duration. Exact sources or confirmed visible profile bindings; UTC half-open "
+            "Compute compact temperature, energy, state duration, consumer ranking, PV/load "
+            "windows, operating phases or nighttime estimates. Exact sources or confirmed "
+            "visible profile bindings; UTC half-open "
             "period and explicit IANA timezone. Requires loxone:read and loxone:history. "
             "No raw data unless requested."
         ),
@@ -517,13 +588,16 @@ def register_history_analysis_tool(
         timezone: Annotated[str, Field(min_length=1, max_length=128)],
         include_raw: bool = False,
         cursor: Annotated[str | None, Field(max_length=512)] = None,
+        comparison_options: ComparisonOptions | None = None,
     ) -> AnalysisEnvelope:
         if len(pending) >= 2:
             return _error(
                 AnalysisEnvelope, "temporarily_unavailable", "Two analyses are already running"
             )
         task = asyncio.create_task(
-            calculate(operation, sources, start, end, timezone, include_raw, cursor)
+            calculate(
+                operation, sources, start, end, timezone, include_raw, cursor, comparison_options
+            )
         )
         pending.add(task)
         task.add_done_callback(pending.discard)

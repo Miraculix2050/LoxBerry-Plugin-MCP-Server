@@ -10,7 +10,11 @@ from mcp.server.fastmcp import FastMCP
 from pydantic import ValidationError
 
 from mcpserver.history_analysis import HistoryAnalysisDeadline
-from mcpserver.history_analysis_tools import AnalysisSource, register_history_analysis_tool
+from mcpserver.history_analysis_tools import (
+    AnalysisSource,
+    ComparisonOptions,
+    register_history_analysis_tool,
+)
 from mcpserver.installation_profile import BindingInput, ProfileStore, installation_identity
 from mcpserver.loxone.models import Control, LoxoneIdentity, LoxoneStructure, StatisticSeries
 from mcpserver.loxone.runtime import RuntimeAuthorizationError
@@ -74,6 +78,62 @@ ARGS = dict(
     end="1970-01-01T01:00:00Z",
     timezone="Europe/Berlin",
 )
+
+
+@pytest.mark.asyncio
+async def test_baseload_is_reachable_with_documented_hourly_energy(monkeypatch):
+    runtime, tool = configured(monkeypatch)
+    series = replace(
+        runtime.control.statistic_series[0], output="totalNeg", format="%.1fWh", accumulated=True
+    )
+    control = replace(
+        runtime.control,
+        control_type="Meter",
+        statistic_series=(series,),
+        state_uuids=(("totalNeg", "state"),),
+        format="%.1fWh",
+    )
+    runtime.structure = replace(runtime.structure, controls=(control,))
+    runtime.authorized_statistics.return_value = (
+        control,
+        series,
+        tuple(StatisticPoint(i * 3600, value) for i, value in enumerate((100, 200, 300))),
+    )
+    args = {
+        **ARGS,
+        "operation": "baseload",
+        "start": "1970-01-01T00:00:00Z",
+        "end": "1970-01-01T03:00:00Z",
+        "sources": [AnalysisSource(control_uuid="control", series_id="series", granularity="hour")],
+    }
+    first = await tool.fn(**args)
+    assert first.ok and first.data.comparison.status == "partial"
+    assert first.data.comparison.metrics["nighttime_median_power"] == 200
+    assert first.data.raw == []
+    assert runtime.contexts == 1 and runtime.authorized_statistics.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_comparison_options_cannot_change_old_operations(monkeypatch):
+    runtime, tool = configured(monkeypatch)
+    result = await tool.fn(**ARGS, comparison_options=ComparisonOptions())
+    assert not result.ok and result.data.error == "invalid_input"
+    assert runtime.contexts == 0
+
+
+@pytest.mark.asyncio
+async def test_changed_comparison_options_invalidate_raw_cursor(monkeypatch):
+    runtime, tool = configured(monkeypatch, points=101)
+    args = {**ARGS, "operation": "baseload", "include_raw": True}
+    first = await tool.fn(**args)
+    assert first.ok and first.data.next_cursor
+    changed = await tool.fn(
+        **args,
+        cursor=first.data.next_cursor,
+        comparison_options=ComparisonOptions(night_end_hour=6),
+    )
+    assert not changed.ok and changed.data.error == "invalid_input"
+    assert runtime.contexts == 2
 
 
 @pytest.mark.asyncio

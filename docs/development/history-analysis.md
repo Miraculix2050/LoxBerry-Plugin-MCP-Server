@@ -44,8 +44,44 @@ request and complete raw content; every page reacquires current visibility and
 recomputes bounded evidence. Source changes invalidate old cursors. Raw values
 are omitted by default.
 
-Ranking/mixed comparisons follow in the next PR. Native EFM remains gated by its
-separate reviewed contract; this is not a generic balance calculator.
+`consumer_ranking` requires confirmed consumer bindings, distinct declared
+boundaries, compatible energy representations/observation windows and an explicit
+`comparison_options.comparable_boundaries_confirmed` assertion. The client must
+confirm comparability and exclusion of parent/child overlap with the user; the
+server cannot prove that conversation or physical independence. The result labels
+this as user-declared compatibility and ranks individual counters without summing
+them. Unknown source direction and reset limitations remain separate.
+
+`pv_load_overlap` needs one confirmed production and one confirmed consumer/house
+binding. It compares aligned whole hourly energy intervals, optionally retaining
+only hours wholly within an evidenced binary Event History run/enable phase.
+Hourly coincidence is not instantaneous simultaneity. The minimum of the two
+hourly energies is an upper bound, never measured self-consumption or exact solar
+attribution. Exact attribution stays undefined, including a zero-generation
+denominator. Native EFM remains gated by its separate supported contract; no
+generic balance engine, storage attribution or unmetered-rest inference is added.
+
+`operating_phases` associates one binary capture history with one numeric source.
+It reports energy only for whole hourly records fully contained in known active
+phases, or an explicitly unweighted mean of temperature observations inside those
+phases. Gaps, partial energy records and exclusive state endpoints remain intact;
+association does not establish causation or appliance wiring.
+
+`baseload` reports a time-weighted median of evidenced hourly mean powers for one
+selected channel in the local 00:00-05:00 window. Hourly mean power is derived from
+verified whole-hour Wh values, not held instantaneous samples. The window may be
+overridden by ordered whole `night_start_hour`/`night_end_hour` values (end 24 is
+next midnight). Ambiguous/nonexistent local boundaries fail explicitly; repeated
+DST hours retain their actual duration. A 24-hour energy extrapolation is labelled
+as an estimate and does not establish whole-installation base load. Raw power
+samples without an evidenced duration cannot produce this estimate.
+
+Comparisons reuse the same source context, budgets and worker admission. Outputs
+retain per-source provenance and expose a bounded `comparison` result with method,
+units, usable intervals and limitations. Explicit raw pages preserve the common
+UTC axis and separate original statistic points from observed state segments;
+there is no interpolation or proportional energy allocation. Options and computed
+comparison evidence participate in cursor proofs.
 
 ## Target evidence (2026-10-11)
 
