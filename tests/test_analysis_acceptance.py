@@ -26,7 +26,8 @@ CATALOG = acceptance.read_json(acceptance.CATALOG)
 
 
 def test_final_matrix_preserves_original_questions_and_matches_released_tools() -> None:
-    names = {tool["name"] for tool in tool_schema_catalog("synthetic")["tools"]}
+    tools = {tool["name"]: tool for tool in tool_schema_catalog("synthetic")["tools"]}
+    names = set(tools)
     original = [case for case in CATALOG["cases"] if case["group"] != "knx"]
     assert len(original) == 25
     baseline_rows = [
@@ -43,6 +44,7 @@ def test_final_matrix_preserves_original_questions_and_matches_released_tools() 
             result = case["final_acceptance"]
             assert result["support"] in {"supported", "conditional", "unavailable", "experimental"}
             assert set(result["workflow"]) <= names
+            assert all(tools[name]["annotations"]["readOnlyHint"] for name in result["workflow"])
             assert result["scope_" + language] in matrix and f"| {case['id']} |" in matrix
             assert result["ai_three_independent_runs"] == "incomplete"
             assert case["reference"] and case["completeness"] and case["prohibited_claims"]
@@ -227,6 +229,17 @@ def test_missing_runs_and_missing_metrics_never_pass() -> None:
     assert result["status"] == "incomplete"
     assert result["unavailable_metrics"] == ["input_tokens"]
     assert result["missing_runs"]
+
+
+def test_capture_accepts_delivered_read_workflows_and_rejects_writes() -> None:
+    data = capture()
+    for run in data["runs"]:
+        case = next(case for case in CATALOG["cases"] if case["id"] == run["case_id"])
+        run["calls"] = case.get("final_acceptance", {}).get("workflow", case["baseline_workflow"])
+    assert acceptance.validate_capture(data, CATALOG)
+    data["runs"][0]["calls"] = ["loxberry_save_installation_profile"]
+    with pytest.raises(ValueError, match="read_workflow"):
+        acceptance.validate_capture(data, CATALOG)
 
 
 def test_failed_workflow_is_not_hidden_by_missing_metrics() -> None:
