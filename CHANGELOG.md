@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add documented actual/target temperature and numeric binary-state semantics
+  through the existing resolver. Keep ambiguous temperature units, unsupported
+  codes, physical roles and historical coverage explicit (#435).
+
 - Add independently approved MCP installation-profile save/delete operations,
   expected revisions, explicit confirmation assertions and masked audit records.
   Restrict whole-profile deletion to current visibility; preserve uncertain-write

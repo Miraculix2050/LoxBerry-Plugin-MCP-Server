@@ -1,5 +1,19 @@
 # Tool schema reference
 
+## Temperature and binary measurement semantics (#435)
+
+The shared state-semantic descriptor adds nullable `measurement_quantity` and
+`measurement_role`. Exact `IRoomControllerV2.tempActual`/`tempTarget` return
+`semantic_value={kind:"temperature", role, value, unit}`; the unit remains null
+without complete explicit Celsius/Fahrenheit evidence. Exact
+`InfoOnlyDigital.active`/`Hourcounter.active` return
+`{kind:"binary_state", active, role}` for numeric zero/one. Existing raw value,
+quality, authorization and paging contracts remain unchanged. The semantics
+tool and optional compact enrichment use the same pure resolver. The legacy
+raw-state reader retains its existing decoding contract.
+See the [source/version matrix](analysis-semantic-evidence.md). No historical
+availability, physical-device role or energy inference is added.
+
 ## Locally approved installation-profile maintenance (#434)
 
 `loxberry_save_installation_profile(binding, expected_revision, confirm=false)`

@@ -52,9 +52,20 @@ Structure-Änderungszeiten sind keine Firmwareversion. Formate über 64 Zeichen
 werden mit ursprünglicher/zurückgegebener Länge und expliziter Kürzungsangabe
 weggelassen, ohne den Text zu verändern.
 
+Exakte `IRoomControllerV2.tempActual` und `tempTarget` unterscheiden Ist- und
+Solltemperatur über `measurement_quantity`, `measurement_role` und
+`semantic_value.kind=temperature`. Nur ein vollständiges Temperaturformat mit
+ausdrücklichem Celsius/Fahrenheit belegt die Einheit; bei `%.1f°` bleibt sie
+unbekannt. `InfoOnlyDigital.active` und `Hourcounter.active` dekodieren numerische
+Null/Eins als `semantic_value.kind=binary_state` und unterscheiden Anzeige von
+Zähleraktivität. Fehlende Werte bleiben teilweise; ungültige Codes, Strings,
+Boolesche Werte und nicht endliche Zahlen bleiben ungültig. Daraus entstehen
+keine physischen Verbraucherrollen, Heizaktivität, Energie oder historische
+Abdeckung. Siehe die [versionierte Evidenzmatrix](../development/analysis-semantic-evidence.md).
+
 V1 umfasst bestehende Irrigation-/AlarmClock-Decoder, `value`-Anzeigeformate für
 InfoOnlyAnalog/UpDownAnalog/Slider, UpDownAnalog-Bereiche und positionsgebundene
-StatusMonitor `inputStates`-Tupelzuordnung und Status-Count-Semantik. Formate belegen keine
+StatusMonitor `inputStates`-Tupelzuordnung und Status-Count-Semantik. Allgemeine Analogformate belegen keine
 Einheit, Präzision oder Richtung; konfigurierte Bezeichnungen belegen keine
 Schweregrade oder Haushaltsrollen. Kodierungs- und Positionslisten behalten
 höchstens 100 Einträge, Quellen höchstens acht, jeweils mit Anzahl und
