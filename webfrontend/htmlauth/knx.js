@@ -39,7 +39,8 @@
       errorStale: ['knx_revision_conflict', 'knx_target_conflict', 'knx_preview_changed',
         'knx_draft_expired', 'knx_session_missing'],
       errorLabels: ['knx_label_limit', 'knx_label_selection_invalid'],
-      errorStorage: ['knx_storage_failed', 'knx_draft_storage_failed']
+      errorStorage: ['knx_storage_failed', 'knx_draft_storage_failed'],
+      errorQuery: ['knx_query_invalid']
     };
     const entry = Object.entries(categories).find(([, codes]) => codes.includes(code));
     return entry ? page.dataset[entry[0]] : page.dataset.failed;
@@ -75,11 +76,59 @@
     link.href = url; link.download = name; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
+  const fieldLabels = () => ({name: page.dataset.name, description: page.dataset.description,
+    dpts: page.dataset.dpts, central: page.dataset.central, unfiltered: page.dataset.unfiltered,
+    security: page.dataset.security});
+  const display = (value) => value === '' || (Array.isArray(value) && !value.length)
+    ? page.dataset.empty : Array.isArray(value) ? value.join(', ') : String(value);
+  const sourceDetails = (item) => {
+    const details = document.createElement('details');
+    details.className = 'mcp-knx-sources';
+    const summary = document.createElement('summary');
+    summary.textContent = page.dataset.sources; details.append(summary);
+    if (item.deviations?.length) {
+      const line = document.createElement('p');
+      line.textContent = `${page.dataset.deviations}: ${item.deviations.map(k => fieldLabels()[k]).join(', ')}`;
+      details.append(line);
+    }
+    const stamp = item.import_info?.imported_at;
+    const provenance = document.createElement('p');
+    provenance.textContent = `${page.dataset.importSource}: ${item.import_info?.file_format || page.dataset.unknown}`
+      + (typeof stamp === 'number' ? ` · ${new Date(stamp * 1000).toLocaleString(document.documentElement.lang)}` : '')
+      + (item.import_info?.digest ? ` · ${item.import_info.digest.slice(0, 12)}` : '');
+    details.append(provenance);
+    for (const [label, values, key] of [[page.dataset.importSource, item.imported, 'imported'],
+      [page.dataset.manualSource, item.overrides, 'manual']]) {
+      const title = document.createElement('h4'); title.textContent = label; details.append(title);
+      const list = document.createElement('dl');
+      for (const field of Object.keys(fieldLabels())) {
+        const term = document.createElement('dt'), description = document.createElement('dd');
+        term.textContent = fieldLabels()[field];
+        description.textContent = Object.hasOwn(values, field) ? display(values[field]) : page.dataset.unknown;
+        list.append(term, description);
+      }
+      details.append(list);
+      for (const dpt of item.dpt_details?.[key]?.items || []) {
+        const line = document.createElement('p');
+        line.textContent = `${dpt.raw}${dpt.normalized ? ` → ${dpt.normalized}` : ''}: `
+          + (dpt.status === 'invalid_format' ? page.dataset.dptInvalid : page.dataset.dptValid);
+        if (dpt.normalized) line.textContent += ` (${page.dataset.dptMain}: ${dpt.main}; `
+          + `${page.dataset.dptSubtype}: ${dpt.subtype ?? page.dataset.dptNoSubtype})`;
+        details.append(line);
+      }
+    }
+    const limitation = document.createElement('p'); limitation.textContent = page.dataset.dptAssociation;
+    details.append(limitation); return details;
+  };
   const render = (data) => {
     if (state && state.target !== data.target && (dirty() || form.elements.namedItem('address').readOnly)) {
       throw new Error('knx_target_conflict');
     }
     state = data;
+    const filters = data.filters || {query: '', source: 'all', deviations_only: false};
+    document.getElementById('knx-search-query').value = filters.query;
+    document.getElementById('knx-search-source').value = filters.source;
+    document.getElementById('knx-search-deviations').checked = filters.deviations_only;
     if (!labelsDirty) textarea.value = data.taxonomy.map((e) => `${e.address_format === 'two_level' ? '2' : '3'}:${e.prefix}=${e.label}`).join('\n');
     document.getElementById('knx-imported-labels').textContent = (data.imported_labels || [])
       .map((e) => `${e.address_format === 'two_level' ? '2' : '3'}:${e.prefix}=${e.label}`).join('\n');
@@ -89,6 +138,7 @@
       for (const value of [item.address, item.imported.name || '', item.overrides.name || '', item.effective.description || '']) {
         const td = document.createElement('td'); td.textContent = value; tr.append(td);
       }
+      const sources = document.createElement('td'); sources.append(sourceDetails(item)); tr.append(sources);
       const actions = document.createElement('td');
       const edit = document.createElement('button');
       edit.type = 'button'; edit.textContent = page.dataset.edit;
@@ -117,6 +167,7 @@
       actions.append(edit, remove); tr.append(actions); rows.append(tr);
     }
     document.getElementById('knx-count').textContent = `${data.offset + (data.total ? 1 : 0)}\u2013${Math.min(data.offset + 50, data.total)} / ${data.total}`;
+    message('');
     page.dispatchEvent(new CustomEvent('knx-state'));
   };
   const renderEditorSources = () => {
@@ -194,9 +245,20 @@
   });
   for (const [id, direction] of [['knx-previous', -50], ['knx-next', 50]]) {
     document.getElementById(id).addEventListener('click', () => {
-      void run(async () => { render(await api('knx_page', {offset: state.offset + direction})); });
+      void run(async () => { render(await api('knx_page', {offset: state.offset + direction,
+        target: state.target, query_revision: state.revision, filters: state.filters || {}})); });
     });
   }
+  document.getElementById('knx-search-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const filters = {query: document.getElementById('knx-search-query').value,
+      source: document.getElementById('knx-search-source').value,
+      deviations_only: document.getElementById('knx-search-deviations').checked};
+    void run(async () => {render(await api('knx_page', {offset: 0, target: state.target, filters}));});
+  });
+  document.getElementById('knx-search-clear').addEventListener('click', () => {
+    void run(async () => {render(await api('knx_page', {offset: 0, target: state.target, filters: {}}));});
+  });
   document.getElementById('knx-label-export').addEventListener('click', () => download(textarea.value, 'knx-address-labels.txt', 'text/plain;charset=utf-8'));
   document.getElementById('knx-label-import').addEventListener('change', (event) => {
     const file = event.target.files[0]; event.target.value = '';
@@ -209,7 +271,8 @@
     });
   });
   document.getElementById('knx-json-export').addEventListener('click', () => void run(async () => {
-    const result = await api('knx_export', {offset: state.offset});
+    const result = await api('knx_export', {offset: state.offset, target: state.target,
+      filters: state.filters || {}, query_revision: state.revision});
     download(JSON.stringify(result.document, null, 2), 'knx-metadata.json', 'application/json');
   }));
   document.getElementById('knx-json-import').addEventListener('change', (event) => {

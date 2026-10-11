@@ -84,6 +84,8 @@ def _run(
     token = hashlib.sha256(target.encode()).hexdigest()
     if action not in {"knx_page", "knx_export"} and payload.get("target") != token:
         raise AdminError("KNX target changed; reload", code="knx_target_conflict")
+    if action in {"knx_page", "knx_export"} and "target" in payload and payload["target"] != token:
+        raise AdminError("KNX target changed; reload", code="knx_target_conflict")
     import_fields = {
         "knx_import_load": {
             "target",
@@ -198,7 +200,15 @@ def _run(
         }
     try:
         if action == "knx_export":
-            return {"document": store.export(target, payload.get("offset", 0)), "target": token}
+            return {
+                "document": store.export(
+                    target,
+                    payload.get("offset", 0),
+                    filters=payload.get("filters"),
+                    expected=payload.get("query_revision"),
+                ),
+                "target": token,
+            }
         if action == "knx_preview":
             return {**store.preview(target, payload.get("document")), "target": token}
         if action == "knx_restore":
@@ -207,7 +217,12 @@ def _run(
             store.put(target, payload.get("revision"), payload.get("record"))
         elif action == "knx_delete":
             store.delete(target, payload.get("revision"), payload.get("address_id"))
-        page = store.page(target, payload.get("offset", 0))
+        page = store.page(
+            target,
+            payload.get("offset", 0),
+            filters=payload.get("filters") if action == "knx_page" else None,
+            expected=payload.get("query_revision") if action == "knx_page" else None,
+        )
     except KnxError as exc:
         raise AdminError("KNX operation rejected", code=exc.code) from None
     return {

@@ -10,6 +10,10 @@ extracted from the matching version heading.
   Refresh on marker change, missing marker or stale cache; retain
   explicit full refresh and preserve the selected signal on failures (#431).
 
+- Search local KNX names, descriptions and address representations with bounded,
+  revision-checked pagination and source filters. Show separate source values,
+  overrides and DPT identifier status without choosing types or changing Loxone names.
+
 - Fixed the masked Admin diagnostic download through same-origin AJAX when browser HTML submissions carry Origin null (#428).
 
 - Preserve first OAuth revocation causes and correlate sanitized client, approval,

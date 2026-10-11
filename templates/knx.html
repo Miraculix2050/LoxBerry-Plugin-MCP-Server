@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v3">
+<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v4">
 <main class="mcp-page mcp-knx" id="knx-page"
  data-saved="<TMPL_VAR KNX.SAVED ESCAPE=HTML>"
  data-failed="<TMPL_VAR KNX.FAILED ESCAPE=HTML>"
@@ -14,6 +14,19 @@
  data-empty="<TMPL_VAR KNX.EMPTY ESCAPE=HTML>"
  data-override="<TMPL_VAR KNX.OVERRIDE ESCAPE=HTML>"
  data-inherited="<TMPL_VAR KNX.INHERITED ESCAPE=HTML>"
+ data-sources="<TMPL_VAR KNX.SOURCES ESCAPE=HTML>"
+ data-manual-source="<TMPL_VAR KNX.MANUAL_SOURCE ESCAPE=HTML>"
+ data-deviations="<TMPL_VAR KNX.DEVIATIONS_ONLY ESCAPE=HTML>"
+ data-dpt-valid="<TMPL_VAR KNX.DPT_VALID ESCAPE=HTML>"
+ data-dpt-invalid="<TMPL_VAR KNX.DPT_INVALID ESCAPE=HTML>"
+ data-dpt-main="<TMPL_VAR KNX.DPT_MAIN ESCAPE=HTML>"
+ data-dpt-subtype="<TMPL_VAR KNX.DPT_SUBTYPE ESCAPE=HTML>"
+ data-dpt-no-subtype="<TMPL_VAR KNX.DPT_NO_SUBTYPE ESCAPE=HTML>"
+ data-dpt-association="<TMPL_VAR KNX.DPT_ASSOCIATION ESCAPE=HTML>"
+ data-central="<TMPL_VAR KNX.CENTRAL ESCAPE=HTML>"
+ data-unfiltered="<TMPL_VAR KNX.UNFILTERED ESCAPE=HTML>"
+ data-security="<TMPL_VAR KNX.SECURITY ESCAPE=HTML>"
+ data-error-query="<TMPL_VAR KNX.ERROR_QUERY ESCAPE=HTML>"
  data-error-format="<TMPL_VAR KNX.ERROR_FORMAT ESCAPE=HTML>"
  data-error-hierarchy="<TMPL_VAR KNX.ERROR_HIERARCHY ESCAPE=HTML>"
  data-error-encoding="<TMPL_VAR KNX.ERROR_ENCODING ESCAPE=HTML>"
@@ -102,6 +115,15 @@
  </section>
  <section class="mcp-card">
   <h2><TMPL_VAR KNX.ADDRESSES></h2>
+  <p class="mcp-help"><TMPL_VAR KNX.LOCAL_SOURCE_HELP></p>
+  <form id="knx-search-form" class="mcp-form">
+   <div class="mcp-grid">
+    <label class="mcp-field"><span><TMPL_VAR KNX.SEARCH></span><input id="knx-search-query" maxlength="128" type="search"></label>
+    <label class="mcp-field"><span><TMPL_VAR KNX.SOURCE_FILTER></span><select id="knx-search-source"><option value="all"><TMPL_VAR KNX.SOURCE_ALL></option><option value="imported"><TMPL_VAR KNX.IMPORT_SOURCE></option><option value="manual"><TMPL_VAR KNX.MANUAL_SOURCE></option><option value="both"><TMPL_VAR KNX.SOURCE_BOTH></option></select></label>
+    <label><input type="checkbox" id="knx-search-deviations"><TMPL_VAR KNX.DEVIATIONS_ONLY></label>
+   </div>
+   <div class="mcp-actions"><button class="lb-button" type="submit"><TMPL_VAR KNX.SEARCH_APPLY></button><button class="lb-button" id="knx-search-clear" type="button"><TMPL_VAR KNX.SEARCH_CLEAR></button></div>
+  </form>
   <button class="lb-button" id="knx-json-export" type="button"><TMPL_VAR KNX.JSON_EXPORT></button>
   <label class="lb-button"><TMPL_VAR KNX.JSON_IMPORT><input id="knx-json-import" type="file" accept=".json,application/json"></label>
   <p id="knx-json-preview"></p><button class="lb-button" id="knx-json-apply" type="button" hidden><TMPL_VAR KNX.JSON_APPLY></button>
@@ -123,7 +145,7 @@
     <div class="mcp-actions"><button class="lb-button" type="submit"><TMPL_VAR KNX.SAVE_RECORD></button><button class="lb-button" type="reset"><TMPL_VAR KNX.NEW_RECORD></button></div>
    </fieldset>
   </form>
-  <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR KNX.ADDRESS></th><th><TMPL_VAR KNX.IMPORT_NAME></th><th><TMPL_VAR KNX.MANUAL_NAME></th><th><TMPL_VAR KNX.DESCRIPTION></th><th><TMPL_VAR KNX.ACTIONS></th></tr></thead><tbody id="knx-addresses"></tbody></table></div>
+  <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR KNX.ADDRESS></th><th><TMPL_VAR KNX.IMPORT_NAME></th><th><TMPL_VAR KNX.MANUAL_NAME></th><th><TMPL_VAR KNX.DESCRIPTION></th><th><TMPL_VAR KNX.SOURCES></th><th><TMPL_VAR KNX.ACTIONS></th></tr></thead><tbody id="knx-addresses"></tbody></table></div>
   <div class="mcp-actions"><button class="lb-button" id="knx-previous" type="button"><TMPL_VAR KNX.PREVIOUS></button><span id="knx-count"></span><button class="lb-button" id="knx-next" type="button"><TMPL_VAR KNX.NEXT></button></div>
  </section>
 </main>
@@ -135,5 +157,5 @@
   <button class="lb-button" value="continue"><TMPL_VAR KNX.CONTINUE></button>
  </form>
 </dialog>
-<script src="knx.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v5" defer></script>
+<script src="knx.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v7" defer></script>
 <script src="knx-import.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-import-v3" defer></script>
