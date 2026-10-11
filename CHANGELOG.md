@@ -15,6 +15,9 @@ extracted from the matching version heading.
   direction, boundary, measurement method and reset correction; installation
   bindings reference resolver rules and require review when those rules change (#434, #435).
 
+- Clarify alert status triage, defect and optimization workflows, including
+  inactive sources and explicit project-parameter evidence gaps (#478).
+
 - Add a canonical alerts skill section with concrete evidence-linked follow-up
   tasks, preserving full-guide defaults and read-only alarm boundaries.
 

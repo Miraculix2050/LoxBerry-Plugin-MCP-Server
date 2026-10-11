@@ -508,6 +508,12 @@ For alarm diagnosis load `section="alerts"` after core rules (or
 focused project follow-up tasks and observable acceptance criteria. Full guidance
 remains required before writes and for other workflows.
 
+For defect and optimization audits, discover relevant visible source types with
+`loxone_find_controls`, including inactive sources, and follow pagination. Compare
+complete project paths with the intended function; an empty truncated trace does
+not prove missing wiring. Unknown parameters, units and escalation settings need
+an authorized reader or project-tool handoff before a concrete change is proposed.
+
 For current status, check freshness, coverage and truncation before interpreting
 the findings; an unknown total or empty partial result is not alarm freedom.
 Use exact source references for focused state reads. For project diagnosis,

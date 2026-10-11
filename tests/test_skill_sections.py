@@ -63,7 +63,8 @@ async def test_resources_and_tool_sections_match_and_full_default_remains_availa
         tool.fn_metadata.arg_model.model_validate({"section": "unknown"})
 
 
-def test_failed_section_retrieval_has_sanitized_error(monkeypatch) -> None:
+@pytest.mark.parametrize("section", ("full", "core", "knx", "alerts"))
+def test_failed_section_retrieval_has_sanitized_error(monkeypatch, section) -> None:
     def missing(_section):
         raise ValueError("PRIVATE_PACKAGE_DETAILS")
 
@@ -71,7 +72,7 @@ def test_failed_section_retrieval_has_sanitized_error(monkeypatch) -> None:
     server = FastMCP("guidance-missing")
     tools.register_skill_tool(server)
     tool = server._tool_manager.get_tool("loxone_get_skill_guide")
-    result = tool.fn(section="knx")
+    result = tool.fn(section=section)
     assert not result.ok
     assert result.data.error == "guide_unavailable"
     assert "PRIVATE_PACKAGE_DETAILS" not in result.model_dump_json()
