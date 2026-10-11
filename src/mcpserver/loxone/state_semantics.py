@@ -164,14 +164,24 @@ class StateSemanticsResolver:
                     SemanticsSource(
                         "decoder_rule",
                         "https://www.loxone.com/dede/wp-content/uploads/sites/2/2021/10/1701_Structure-File.pdf#page=126",
-                        ("encoding.1", "encoding.2", "value_type", "semantic_value"),
+                        ("encoding.1", "encoding.2", "value_type")
+                        + (
+                            ("semantic_value.level", "semantic_value.alert_active")
+                            if value in (1, 2) and not isinstance(value, bool)
+                            else ()
+                        ),
                         rule_id="SmokeAlarm.level.active.v1",
                         document_version="17.1",
                     ),
                     SemanticsSource(
                         "decoder_rule",
                         "https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/issues/347",
-                        ("encoding.0", "semantic_value"),
+                        ("encoding.0",)
+                        + (
+                            ("semantic_value.level", "semantic_value.alert_active")
+                            if value == 0 and not isinstance(value, bool)
+                            else ()
+                        ),
                         rule_id="SmokeAlarm.level.zero_owner_assumption.2026-10-11",
                     ),
                 ]

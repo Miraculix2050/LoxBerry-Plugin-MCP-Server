@@ -144,6 +144,11 @@ def test_smoke_stages_and_independent_test_context(code, label, test_raw, expect
     assert "zero_owner_assumption" in assumption.rule_id
     assert assumption.document_version is None and assumption.firmware_version is None
     assert semantics.sources[0].document_version == "17.1"
+    official_fields = semantics.sources[0].fields
+    decision_fields = assumption.fields
+    assert ("semantic_value.alert_active" in official_fields) is (code != 0)
+    assert ("semantic_value.alert_active" in decision_fields) is (code == 0)
+    assert "semantic_value" not in official_fields
     if expected is not None:
         assert semantics.sources[-1].state_uuid == "test"
 
