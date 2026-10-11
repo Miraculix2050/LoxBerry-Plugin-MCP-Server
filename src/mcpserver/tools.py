@@ -803,6 +803,7 @@ class SkillGuideData(BaseModel):
     revision: int
     media_type: str
     content: str
+    section: Literal["full", "core", "knx"] = "full"
 
 
 class SystemStatusData(BaseModel):
@@ -1027,22 +1028,35 @@ class ProjectKnxMetadataFieldsData(TypedDict, total=False):
 
 class ProjectKnxImportInfoData(TypedDict, total=False):
     file_format: str
-    imported_at: float
+    imported_at: Annotated[
+        float, Field(description="Local import time; not an ETS export timestamp.")
+    ]
     digest: str
 
 
 class ProjectKnxDptIdentifierData(TypedDict):
     raw: str
     normalized: str | None
-    status: Literal["invalid_format", "format_valid_type_unverified"]
+    status: Annotated[
+        Literal["invalid_format", "format_valid_type_unverified"],
+        Field(
+            description="Syntax validation only; registry membership and compatibility unverified."
+        ),
+    ]
     main: NotRequired[int]
     subtype: NotRequired[int | None]
 
 
 class ProjectKnxDptDeclarationData(TypedDict):
-    state: Literal["unknown", "empty", "declared"]
+    state: Annotated[
+        Literal["unknown", "empty", "declared"],
+        Field(description="Missing, explicitly empty or supplied declarations; no default type."),
+    ]
     items: Annotated[list[ProjectKnxDptIdentifierData], Field(max_length=16)]
-    association: Literal["not_established"]
+    association: Annotated[
+        Literal["not_established"],
+        Field(description="No proven communication-object association or EIBType mapping."),
+    ]
 
 
 class ProjectKnxDptSourcesData(TypedDict):
@@ -1054,11 +1068,19 @@ class ProjectKnxMetadataData(BaseModel):
     revision: int = Field(ge=0)
     address: str
     address_format: Literal["two_level", "three_level"]
-    imported: ProjectKnxMetadataFieldsData
-    manual: ProjectKnxMetadataFieldsData
-    import_info: ProjectKnxImportInfoData
-    deviations: list[str]
-    dpt_details: ProjectKnxDptSourcesData
+    imported: ProjectKnxMetadataFieldsData = Field(description="Additional ETS source fields.")
+    manual: ProjectKnxMetadataFieldsData = Field(
+        description="Local fields/overrides; never replace primary Loxone names."
+    )
+    import_info: ProjectKnxImportInfoData = Field(
+        description="Admin-assigned import provenance, not proof of the correct ETS project."
+    )
+    deviations: list[str] = Field(
+        description="Manual versus imported field differences, not Loxone/ETS name comparison."
+    )
+    dpt_details: ProjectKnxDptSourcesData = Field(
+        description="Separate declarations and validation per source; no automatic type selection."
+    )
 
 
 class ProjectKnxData(BaseModel):
@@ -1721,7 +1743,7 @@ class ProjectAnalysisConnectorData(BaseModel):
 class ProjectKnxComparisonObjectData(BaseModel):
     project_node_id: str
     loxone_name: str | None
-    name_complete: bool
+    name_complete: bool = Field(description="False for missing or truncated observed names.")
     project_title: str | None
     project_description: str | None
     internal_name: str | None
@@ -1734,13 +1756,21 @@ class ProjectKnxComparisonObjectData(BaseModel):
 class ProjectKnxComparisonRowData(BaseModel):
     address_id: int = Field(ge=0, le=65535)
     relation: Literal["common", "import_only", "observed_project_only"]
-    names_differ: bool
-    name_comparison: Literal["compared", "unknown", "not_applicable"]
-    project_names_complete: bool
-    ambiguous_names: bool
+    names_differ: bool = Field(
+        description="Observed Loxone versus ETS name deviation, not a proven configuration error."
+    )
+    name_comparison: Literal["compared", "unknown", "not_applicable"] = Field(
+        description="Unknown is not a matching name; inspect completeness and ambiguity."
+    )
+    project_names_complete: bool = Field(
+        description="Whether observed names are complete; not proof of whole-project coverage."
+    )
+    ambiguous_names: bool = Field(description="Several observed names; no automatic winner.")
     local_metadata: ProjectKnxMetadataData | None
     project_objects: list[ProjectKnxComparisonObjectData] = Field(max_length=20)
-    project_objects_omitted: int = Field(ge=0)
+    project_objects_omitted: int = Field(
+        ge=0, description="Additional objects omitted from this bounded address row."
+    )
 
 
 class ProjectAnalysisFindingData(BaseModel):
@@ -5583,20 +5613,30 @@ def register_skill_tool(server: FastMCP) -> None:
     @server.tool(
         name="loxone_get_skill_guide",
         description=(
-            "Get the bundled agent workflow for safe Loxone discovery, state reads, and "
-            "explicit control operations. Use when MCP resources are unavailable."
+            "Get canonical guidance: core rules first, knx for ETS comparison, full for other "
+            "workflows and before writes. Use when MCP resources are unavailable."
         ),
         annotations=annotations,
         structured_output=True,
     )
-    def get_skill_guide() -> SkillGuideEnvelope:
+    def get_skill_guide(
+        section: Annotated[
+            Literal["full", "core", "knx"],
+            Field(description="Task section; omitted preserves the complete legacy guide."),
+        ] = "full",
+    ) -> SkillGuideEnvelope:
+        try:
+            content = read_skill_markdown(section)
+        except (OSError, ValueError):
+            return _error(SkillGuideEnvelope, "guide_unavailable", "Requested guide is unavailable")
         return _result(
             SkillGuideEnvelope,
             {
                 "name": SKILL_NAME,
                 "revision": SKILL_REVISION,
                 "media_type": SKILL_MIME_TYPE,
-                "content": read_skill_markdown(),
+                "content": content,
+                "section": section,
             },
         )
 
@@ -5959,7 +5999,10 @@ def register_project_tools(
 
     @server.tool(
         name="loxone_find_project_objects",
-        description="Find bounded project blocks or connectors in the authorized Loxone project.",
+        description=(
+            "Find authorized project objects, also by ETS/manual KNX names and descriptions. "
+            "Loxone names stay primary; standalone local KNX records are not returned."
+        ),
         annotations=annotations,
         structured_output=True,
     )

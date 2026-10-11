@@ -503,7 +503,9 @@ async def test_bundled_skill_is_published_as_an_mcp_resource() -> None:
 
     resources = await server.list_resources()
     assert [(str(item.uri), item.mimeType) for item in resources] == [
-        ("skill://using-loxberry-mcp/SKILL.md", "text/markdown")
+        ("skill://using-loxberry-mcp/SKILL.md", "text/markdown"),
+        ("skill://using-loxberry-mcp/core.md", "text/markdown"),
+        ("skill://using-loxberry-mcp/knx.md", "text/markdown"),
     ]
 
     contents = await server.read_resource("skill://using-loxberry-mcp/SKILL.md")

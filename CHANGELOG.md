@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Offer canonical core/KNX guidance sections through the existing guide tool and
+  resources while retaining full-guide defaults. Explain ETS/manual search,
+  source comparisons, DPT uncertainty and UI-only export boundaries (#455).
+
 - Add bounded local MCP discovery comparison and reconnect guidance, detecting
   additive schema changes without printing schema payloads or changing transport.
   Unexposed client fields remain incomplete, not a confirmed defect (#454).

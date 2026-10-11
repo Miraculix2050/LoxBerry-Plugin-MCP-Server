@@ -1,5 +1,14 @@
 # Tool schema reference
 
+## Task-scoped KNX guidance (#455)
+
+`loxone_get_skill_guide(section="core"|"knx"|"full")` adds optional task selection;
+omitted selection remains the full guide. Static core/KNX resources expose the
+same canonical content, derived from the bundled full document without project
+access. Schema help distinguishes local/imported deviations from Loxone/ETS
+name comparison and explicitly limits DPT validation to syntax. Existing tool
+names and analysis defaults remain unchanged. See the [KNX workflow](../user/knx-mcp.en.md).
+
 ## Explicit ETS/Loxone project comparison (#417)
 
 `loxone_analyze_project(scope="knx", analyses=["ets_project_comparison"])`

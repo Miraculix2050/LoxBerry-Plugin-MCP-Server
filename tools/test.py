@@ -214,8 +214,17 @@ _TEST_GROUPS: Final = (
         ("tests/test_config.py", "tests/test_server.py", "tests/test_settings.py"),
     ),
     (
-        ("src/mcpserver/skill_delivery.py", "src/mcpserver/skills/**"),
-        ("tests/test_plugin_package.py", "tests/test_tools.py"),
+        (
+            "src/mcpserver/skill_delivery.py",
+            "src/mcpserver/skills/**",
+            "tools/test_mcp_client.ps1",
+        ),
+        (
+            "tests/test_plugin_package.py",
+            "tests/test_tools.py",
+            "tests/test_skill_sections.py",
+            "tests/test_server.py",
+        ),
     ),
     (
         ("src/mcpserver/tools.py",),
