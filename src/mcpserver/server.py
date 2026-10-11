@@ -943,6 +943,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
                 value["binding"],
                 manual_retry=value["manual_retry"],
                 early_probe=value["early_probe"],
+                request_id=request.headers.get("X-LoxBerry-Admin-Request", "-"),
             )
         )
 

@@ -152,6 +152,7 @@ sub safe_admin_lifecycle_events {
 
 sub admin_call {
     my ($action, $payload) = @_;
+    local $ENV{MCPSERVER_ADMIN_REQUEST_ID} = $request_id;
     my $started = clock_gettime(CLOCK_MONOTONIC);
     my $routine_poll = $action eq 'service_status' || $action eq 'list_sessions';
     my ($child_in, $child_out);

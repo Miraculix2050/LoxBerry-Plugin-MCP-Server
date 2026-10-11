@@ -5,6 +5,9 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Retain sanitized, correlated Admin discovery failure phases, categories and
+  timing/session metadata without logging private payloads or changing retries (#449).
+
 - Automatically check the project change marker before displaying Admin
   emergency-stop names and options from the private identity-bound display cache.
   Refresh on marker change, missing marker or stale cache; retain

@@ -686,3 +686,192 @@ def test_local_helper_outlives_projection_discovery_deadline(tmp_path, monkeypat
         == {}
     )
     assert observed == [deadline]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failure,category",
+    [
+        (TimeoutError("private-payload"), "timeout"),
+        (OSError("private-payload"), "connection"),
+        (LoxoneProtocolError("private-payload"), "protocol"),
+    ],
+)
+async def test_failure_diagnostic_retains_phase_and_masks_exception(
+    tmp_path, monkeypatch, caplog, failure, category
+):
+    owner, socket, expected, *_ = owner_fixture(tmp_path, monkeypatch)
+    await owner.project("event_history", expected())
+
+    async def failed_marker():
+        raise failure
+
+    monkeypatch.setattr(owner.receiver, "marker", failed_marker)
+    try:
+        with pytest.raises(type(failure)):
+            await owner.project("emergency_stop_display", expected(), request_id="abc-123")
+        message = caplog.records[-1].getMessage()
+        assert "request_id=abc-123" in message
+        assert "phase=marker_check" in message
+        assert f"code={category}" in message
+        assert "session_mode=held" in message
+        assert "pending_requests=1" in message
+        assert "private-payload" not in message
+        assert "synthetic-password" not in message
+        assert owner.pending_requests == 0
+        assert owner.receiver is None
+    finally:
+        await owner.close()
+
+
+@pytest.mark.asyncio
+async def test_queued_cancellation_diagnostic_does_not_drop_active_session(
+    tmp_path, monkeypatch, caplog
+):
+    owner, socket, expected, *_ = owner_fixture(tmp_path, monkeypatch)
+    await owner.project("event_history", expected())
+    await owner.lock.acquire()
+    task = asyncio.create_task(
+        owner.project("emergency_stop", expected(), request_id="secret\nforged")
+    )
+    await asyncio.sleep(0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    owner.lock.release()
+    message = caplog.records[-1].getMessage()
+    assert "request_id=-" in message and "forged" not in message
+    assert "phase=discovery_wait" in message and "code=cancelled" in message
+    assert owner.pending_requests == 0
+    assert owner.receiver is not None
+    await owner.close()
+
+
+@pytest.mark.parametrize(
+    "request_id,expected_id", [("abc-123", "abc-123"), ("private\nforged", "-")]
+)
+def test_helper_forwards_only_valid_cgi_request_id(tmp_path, monkeypatch, request_id, expected_id):
+    import mcpserver.service_discovery as module
+
+    async def credentials(_self):
+        return "synthetic", "synthetic"
+
+    captured = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def read(self, limit):
+            return b'{"ok":true,"projection":{}}'
+
+    def opened(request, **kwargs):
+        captured.append(request.get_header("X-loxberry-admin-request"))
+        return Response()
+
+    monkeypatch.setenv("MCPSERVER_ADMIN_REQUEST_ID", request_id)
+    monkeypatch.setattr(module.LoxBerryServiceCredentials, "load", credentials)
+    monkeypatch.setattr(module, "build_opener", lambda *args: SimpleNamespace(open=opened))
+    module.request_projection(
+        PluginConfig(), AtomicJsonAuthStore(tmp_path / "auth.json"), "emergency_stop"
+    )
+    assert captured == [expected_id]
+
+
+@pytest.mark.asyncio
+async def test_real_receiver_timeout_has_typed_category():
+    import mcpserver.service_discovery as module
+
+    socket = SocketHarness()
+    socket._timeout = 0.01
+    socket.frames = []
+    receiver = DiscoveryReceiver(socket)
+    try:
+        with pytest.raises(module.DiscoveryTimeout) as error:
+            await receiver.load()
+        assert module._failure_category(error.value) == "timeout"
+    finally:
+        await receiver.close()
+
+
+def test_normalized_disconnect_retains_fixed_category():
+    from websockets.exceptions import ConnectionClosedOK
+
+    from mcpserver.loxone.client import LoxoneConnectionError
+    from mcpserver.service_discovery import _failure_category
+
+    try:
+        try:
+            raise ConnectionClosedOK(None, None)
+        except ConnectionClosedOK:
+            raise LoxoneConnectionError("private") from None
+    except LoxoneConnectionError as error:
+        assert _failure_category(error) == "disconnect"
+
+
+def test_both_admin_cgis_forward_request_correlation():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    for name in ("index.cgi", "event_history.cgi"):
+        assert (
+            "local $ENV{MCPSERVER_ADMIN_REQUEST_ID} = $request_id;"
+            in (root / "webfrontend/htmlauth" / name).read_text()
+        )
+
+
+@pytest.mark.asyncio
+async def test_failure_pending_count_includes_later_queued_request(tmp_path, monkeypatch, caplog):
+    owner, socket, expected, *_ = owner_fixture(tmp_path, monkeypatch)
+    await owner.project("event_history", expected())
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def failed_marker():
+        entered.set()
+        await release.wait()
+        raise TimeoutError()
+
+    monkeypatch.setattr(owner.receiver, "marker", failed_marker)
+    first = asyncio.create_task(owner.project("emergency_stop_display", expected()))
+    await entered.wait()
+    second = asyncio.create_task(owner.project("event_history", expected()))
+    await asyncio.sleep(0)
+    release.set()
+    with pytest.raises(TimeoutError):
+        await first
+    await second
+    messages = [r.getMessage() for r in caplog.records if "outcome=failed" in r.getMessage()]
+    assert "pending_requests=2" in messages[-1]
+    assert owner.pending_requests == 0
+    await owner.close()
+
+
+def test_fixed_failure_categories_do_not_parse_messages():
+    import mcpserver.service_discovery as module
+    from mcpserver.loxone.auth_diagnostics import (
+        MiniserverAuthenticationCooldown,
+        MiniserverAuthenticationSuppressed,
+    )
+    from mcpserver.loxone.client import LoxoneTokenAuthenticationRejected
+
+    errors = [
+        (module.DiscoveryTimeout("private"), "timeout"),
+        (module.DiscoveryDisconnected("private"), "disconnect"),
+        (module.DiscoveryProtocolFailure("private"), "protocol"),
+        (module.DiscoveryPermissionDenied("private"), "permission_denied"),
+        (module.DiscoveryIdentityChanged("private"), "identity_changed"),
+        (module.DiscoveryStopped("private"), "service_stopped"),
+        (LoxoneSourceIpBlocked("private"), "source_ip_blocked"),
+        (MiniserverAuthenticationCooldown("private"), "authentication_cooldown"),
+        (MiniserverAuthenticationSuppressed("private"), "authentication_busy"),
+        (
+            LoxoneTokenAuthenticationRejected("private", response_code="401"),
+            "authentication_rejected",
+        ),
+        (RuntimeError("timeout disconnect authentication_busy"), "unknown"),
+    ]
+    for error, category in errors:
+        assert module._failure_category(error) == category

@@ -103,6 +103,7 @@ class ServiceMiniserverConnection:
         manual_retry: bool = False,
         early_probe: bool = False,
         timing: dict[str, float | int] | None = None,
+        diagnostic_phase: Callable[[str], None] | None = None,
     ) -> None:
         self.client = client
         self.coordinator = coordinator
@@ -111,6 +112,7 @@ class ServiceMiniserverConnection:
         self.manual_retry = manual_retry
         self.early_probe = early_probe
         self.timing = timing
+        self.diagnostic_phase = diagnostic_phase
         self.stage = "token"
         self._started = False
         self._token: LoxoneToken | None = None
@@ -125,6 +127,8 @@ class ServiceMiniserverConnection:
             self.timing["selector_coordinator_wait_ms"] = 0.0
 
         async def authenticate(operation: Callable[[], Awaitable[_T]], phase: str) -> _T:
+            if self.diagnostic_phase is not None:
+                self.diagnostic_phase("coordinator_wait")
             queued = time.perf_counter_ns() if self.timing is not None else 0
             entered = False
 
@@ -155,6 +159,8 @@ class ServiceMiniserverConnection:
                     ) / 1_000_000
 
         async def sign_in() -> LoxoneWebSocketSession:
+            if self.diagnostic_phase is not None:
+                self.diagnostic_phase("token_acquisition")
             self.stage = "token"
             started = time.perf_counter_ns()
             try:
@@ -165,6 +171,8 @@ class ServiceMiniserverConnection:
                         time.perf_counter_ns() - started
                     ) / 1_000_000
             self.stage = "session"
+            if self.diagnostic_phase is not None:
+                self.diagnostic_phase("session_establishment")
             started = time.perf_counter_ns()
             try:
                 self._session = await self.client.open_session(self._token)
