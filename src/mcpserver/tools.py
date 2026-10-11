@@ -898,7 +898,7 @@ class SkillGuideData(BaseModel):
     revision: int
     media_type: str
     content: str
-    section: Literal["full", "core", "knx"] = "full"
+    section: Literal["full", "core", "knx", "alerts"] = "full"
 
 
 class SystemStatusData(BaseModel):
@@ -5806,15 +5806,15 @@ def register_skill_tool(server: FastMCP) -> None:
     @server.tool(
         name="loxone_get_skill_guide",
         description=(
-            "Get canonical guidance: core rules first, knx for ETS comparison, full for other "
-            "workflows and before writes. Use when MCP resources are unavailable."
+            "Read core first; knx for ETS, alerts for active alerts; full for other workflows "
+            "and before writes. Use when MCP resources are unavailable."
         ),
         annotations=annotations,
         structured_output=True,
     )
     def get_skill_guide(
         section: Annotated[
-            Literal["full", "core", "knx"],
+            Literal["full", "core", "knx", "alerts"],
             Field(description="Task section; omitted preserves the complete legacy guide."),
         ] = "full",
     ) -> SkillGuideEnvelope:

@@ -10,6 +10,9 @@ extracted from the matching version heading.
   direction, boundary, measurement method and reset correction; installation
   bindings reference resolver rules and require review when those rules change (#434, #435).
 
+- Add a canonical alerts skill section with concrete evidence-linked follow-up
+  tasks, preserving full-guide defaults and read-only alarm boundaries.
+
 - Add documented actual/target temperature and numeric binary-state semantics
   through the existing resolver. Keep ambiguous temperature units, unsupported
   codes, physical roles and historical coverage explicit (#435).

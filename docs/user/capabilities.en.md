@@ -488,6 +488,11 @@ The current mapping of platforms, clients and evidence status is in the [support
 
 ### Active visible alerts
 
+For alarm diagnosis load `section="alerts"` after core rules (or
+`skill://using-loxberry-mcp/alerts.md`). The short section contains status checks,
+focused project follow-up tasks and observable acceptance criteria. Full guidance
+remains required before writes and for other workflows.
+
 For current status, check freshness, coverage and truncation before interpreting
 the findings; an unknown total or empty partial result is not alarm freedom.
 Use exact source references for focused state reads. For project diagnosis,
