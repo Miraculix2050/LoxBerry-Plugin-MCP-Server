@@ -63,6 +63,17 @@ Boolesche Werte und nicht endliche Zahlen bleiben ungültig. Daraus entstehen
 keine physischen Verbraucherrollen, Heizaktivität, Energie oder historische
 Abdeckung. Siehe die [versionierte Evidenzmatrix](../development/analysis-semantic-evidence.md).
 
+Native Reihen liefern jetzt `semantics` in Beschreibung, Observability und
+Statistikabruf. Ausdrückliche Akkumulationsmetadaten unterscheiden Zählerstände,
+Stichproben und die aggregierten Differenzsummen des Adapters. Exakte Meter-Kanäle
+können quellendeklarierte Leistungs-/Energieeinheiten kennzeichnen; Richtung,
+physische Messgrenze, Messverfahren und Reset-/Überlaufkorrektur bleiben ohne
+Belege unbekannt. Temperaturreihen behalten Ist-/Sollrollen und ausdrückliche
+Einheiten; widersprüchliche Einheiten bleiben unbekannt. Der Aufzeichnungsmodus
+belegt keine durchgehende Abdeckung oder Mittel-/Min-/Max-Werte. Die Umrechnung
+lokaler Legacy-Zeit bleibt ungeprüft. Versionierte Regelreferenzen im Profil
+setzen betroffene Zuordnungen bei neuer oder geänderter Evidenz auf Prüfbedarf.
+
 V1 umfasst bestehende Irrigation-/AlarmClock-Decoder, `value`-Anzeigeformate für
 InfoOnlyAnalog/UpDownAnalog/Slider, UpDownAnalog-Bereiche und positionsgebundene
 StatusMonitor `inputStates`-Tupelzuordnung und Status-Count-Semantik. Allgemeine Analogformate belegen keine

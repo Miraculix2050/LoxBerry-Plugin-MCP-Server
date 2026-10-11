@@ -40,6 +40,7 @@ class ProfileBindingData(BaseModel):
     status: Literal["confirmed", "draft", "needs_review", "invalid"]
     fact_origin: Literal["user_declared"] = "user_declared"
     semantic_status: Literal["not_resolved"] = "not_resolved"
+    semantic_reference: str | None = None
     measurement_boundary_origin: Literal["user_declared"] = "user_declared"
 
 

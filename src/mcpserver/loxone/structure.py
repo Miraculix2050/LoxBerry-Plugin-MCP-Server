@@ -656,6 +656,8 @@ def _statistic_v2_series(value: Mapping[str, object]) -> tuple[tuple[StatisticSe
                     title=title,
                     format=format_value,
                     accumulated=accumulated,
+                    recording_mode=mode if mode <= 16 else None,
+                    accumulated_metadata_valid=isinstance(group.get("accumulated", False), bool),
                 )
             )
     return tuple(result[:128]), len(result) > 128

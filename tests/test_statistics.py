@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import struct
 from contextlib import asynccontextmanager
+from dataclasses import replace
 
 import pytest
 
@@ -168,6 +169,64 @@ async def test_runtime_filters_statistic_v2_points_to_requested_interval() -> No
 
     assert returned_series is series
     assert points == (StatisticPoint(100, 2.0),)
+
+
+@pytest.mark.asyncio
+async def test_warm_statistics_are_freshly_authorized_and_bound_to_technical_metadata() -> None:
+    series = StatisticSeries("v2:1:total", "statistic_v2", "1", "total", "Synthetic", "%.1f kWh")
+    control = Control(
+        "control", "Synthetic", "Meter", None, None, None, (), statistic_series=(series,)
+    )
+    access = StoredAccessToken(
+        token="opaque",
+        client_id="client",
+        scopes=[READ_SCOPE, HISTORY_SCOPE],
+        expires_at=2_000_000_000,
+        resource="https://loxberry.local/mcp",
+        subject="identity",
+        claims={},
+        family_id="family",
+        identity_id="identity",
+        miniserver_id="miniserver",
+    )
+    modes = []
+    authorizations = 0
+    visible = True
+
+    class Session:
+        async def statistic_info(self, _control):
+            return [{"id": 1}]
+
+        async def statistic_data(self, _control, **kwargs):
+            modes.append(kwargs["mode"])
+            return struct.pack("<Id", 100, 9 if kwargs["mode"] == "diff" else 2)
+
+    runtime = object.__new__(LoxoneRuntime)
+    runtime.statistics_cache = StatisticsCache()
+
+    @asynccontextmanager
+    async def history_session(*args):
+        nonlocal authorizations
+        authorizations += 1
+        if not visible:
+            raise ControlOperationError("not_found", "source is not visible")
+        yield control, Session()
+
+    runtime._history_session = history_session  # type: ignore[method-assign]
+    for _ in range(2):
+        assert (
+            await runtime.get_statistics(access, "control", series.series_id, 100, 101, "hour")
+        )[2][0].value == 2
+    assert modes == ["raw"] and authorizations == 2
+    control = replace(control, statistic_series=(replace(series, accumulated=True),))
+    assert (await runtime.get_statistics(access, "control", series.series_id, 100, 101, "hour"))[2][
+        0
+    ].value == 9
+    assert modes == ["raw", "diff"]
+    visible = False
+    with pytest.raises(ControlOperationError, match="source is not visible"):
+        await runtime.get_statistics(access, "control", series.series_id, 100, 101, "hour")
+    assert authorizations == 4 and modes == ["raw", "diff"]
 
 
 @pytest.mark.asyncio

@@ -68,6 +68,16 @@ coverage. See the [versioned evidence matrix](../development/analysis-semantic-e
 Other energy, meter or controller meanings can remain unknown. This coverage is
 fixture-tested; it does not establish new hardware or firmware compatibility.
 
+Native series now expose `semantics` through description, observability and
+statistic reads. Explicit accumulated metadata distinguishes cumulative counters
+from samples and the adapter's aggregated difference sums. Exact Meter channels
+can identify source-declared power/energy units; direction, physical boundary,
+measurement method and reset/rollover correction remain unknown without evidence.
+Temperature series retain actual/target roles and explicit units; conflicting
+units remain unknown. Sampling mode does not prove continuous coverage or an
+average/min/max. Legacy local-clock conversion remains unverified. Profile rule
+references are versioned; new/changed evidence requires review of affected bindings.
+
 
 For WindowMonitor controls, the full description retains the first 100 configured
 positions in list or mapping source order, including malformed placeholders.
