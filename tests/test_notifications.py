@@ -34,7 +34,8 @@ def test_latest_event_preserves_raw_context_without_severity_inference() -> None
     nested = json.dumps(json.dumps({"uid": "one", "message": 'Warning "quoted" \\ path'}))[1:-1]
     assert decode_notification(nested).message == 'Warning "quoted" \\ path'
     sanitized = decode_notification(
-        '{"uid":"one","message":"Context","type":"token=secret","data":{"lvl":"password=multi word"}}'
+        '{"uid":"one","message":"Context","type":"token=secret",'
+        '"data":{"lvl":"password=multi word"}}'
     )
     assert sanitized.source_type == "token=[redacted]"
     assert sanitized.source_level == "password=[redacted]"
