@@ -10,14 +10,19 @@
   const state = explorerState.data;
   const label = (key) => ui.dataset[key] || key;
   const elements = Object.fromEntries(['connect', 'disconnect', 'run', 'status', 'summary',
-    'coverage', 'coverage-data', 'rows', 'count', 'next', 'origin-warning', 'origin-link']
+    'coverage', 'coverage-data', 'rows', 'count', 'next', 'origin-warning', 'origin-link',
+    'connection-badge', 'session-expiry', 'session-expiry-time', 'access-scopes',
+    'scope-unavailable', 'scope-list']
     .map((key) => [key, document.getElementById(`knx-project-${key}`)]));
   const channel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('mcp-explorer-session') : null;
   let frame = null;
   let busy = false;
   let generation = 0;
   let expiryTimer = null;
-  const message = (text) => { elements.status.textContent = text; };
+  const message = (text, kind) => {
+    elements.status.textContent = text;
+    elements.status.dataset.kind = kind || (state.oauth ? 'success' : 'inactive');
+  };
   const display = (fields, key) => Object.hasOwn(fields || {}, key)
     ? (fields[key] === '' ? page.dataset.empty : String(fields[key])) : page.dataset.unknown;
   const clearResult = () => {
@@ -31,6 +36,33 @@
     elements.coverage.hidden = true;
   };
   const controls = () => {
+    const connected = Boolean(state.oauth && state.oauth.resumeUntil > Date.now());
+    elements['connection-badge'].textContent = label(connected ? 'connected' : 'disconnected');
+    elements['connection-badge'].dataset.kind = connected ? 'success' : 'inactive';
+    elements['session-expiry'].hidden = !connected;
+    elements['access-scopes'].hidden = !connected;
+    elements['scope-list'].replaceChildren();
+    elements['scope-unavailable'].hidden = true;
+    const time = elements['session-expiry-time'];
+    time.textContent = '';
+    time.removeAttribute('datetime');
+    if (connected) {
+      const expiry = new Date(state.oauth.resumeUntil);
+      time.dateTime = expiry.toISOString();
+      time.textContent = expiry.toLocaleString(document.documentElement.lang || undefined);
+      const granted = core.grantedScopes(state.oauth.scope);
+      elements['scope-unavailable'].hidden = granted !== null;
+      if (granted !== null) for (const scope of core.EXPLORER_SCOPE_ORDER) {
+        const item = document.createElement('li');
+        item.className = 'mcp-explorer-scope';
+        const name = document.createElement('code');
+        name.textContent = scope;
+        const status = document.createElement('span');
+        status.textContent = label(granted.has(scope) ? 'scopeGranted' : 'scopeNotGranted');
+        item.append(name, status);
+        elements['scope-list'].append(item);
+      }
+    }
     const blocked = busy || page.getAttribute('aria-busy') === 'true';
     elements.connect.disabled = blocked || Boolean(state.oauth);
     elements.disconnect.disabled = blocked || !state.oauth;
@@ -69,12 +101,12 @@
     addTranscript: () => { /* This page does not retain transport payloads. */ }});
   const run = async (operation) => {
     if (busy || page.getAttribute('aria-busy') === 'true') return;
-    busy = true; controls(); message(label('working'));
+    busy = true; controls(); message(label('working'), 'working');
     try { await operation(); }
     catch (error) {
       if (error?.httpStatus === 401 || error?.sessionCleared === true) clearSession();
       clearResult(); originWarning(error);
-      message(`${label('error')}: ${error instanceof Error ? error.message : label('error')}`);
+      message(`${label('error')}: ${error instanceof Error ? error.message : label('error')}`, 'error');
     } finally { busy = false; controls(); }
   };
   const relation = (value) => label({common: 'common', import_only: 'importOnly',
@@ -234,7 +266,7 @@
   page.addEventListener('knx-state', () => {
     const current = knx.snapshot();
     if (frame && (!current || frame.target !== current.target || frame.revision !== current.revision)) {
-      clearResult(); message(label('targetChanged'));
+      clearResult(); message(label('targetChanged'), 'warning');
     }
     controls();
   });

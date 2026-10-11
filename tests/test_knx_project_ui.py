@@ -15,6 +15,7 @@ const page=w.document.getElementById('knx-page');
 const ui=w.document.getElementById('knx-project-section');
 Object.assign(page.dataset,{unknown:'Unknown',empty:'Empty',sources:'Sources',description:'Description',importSource:'ETS'});
 Object.assign(ui.dataset,{error:'Error',connected:'Connected',disconnected:'Disconnected',targetChanged:'Stale',
+  scopeGranted:'Granted',scopeNotGranted:'Not granted',
   common:'Common',importOnly:'Import only',observedProjectOnly:'Project only',
   namesDiffer:'Naming deviation',
   namesSame:'No observed difference',namesUnknown:'Incomplete names',ambiguous:'Multiple names',
@@ -67,6 +68,19 @@ const click=async(id)=>{el(id).click();await settle();};
   page.removeAttribute('aria-busy');
   page.dispatchEvent(new w.CustomEvent('knx-idle'));await settle();
   assert.equal(el('run').disabled,false);assert.equal(el('status').textContent,'Connected');
+  assert.equal(el('connection-badge').textContent,'Connected');
+  assert.equal(el('connection-badge').dataset.kind,'success');
+  assert.equal(el('session-expiry').hidden,false);
+  assert.equal(el('session-expiry-time').dateTime,
+    new Date(authOptions.state.oauth.resumeUntil).toISOString());
+  assert.equal(el('access-scopes').hidden,false);
+  assert.equal(el('scope-list').children.length,7);
+  assert.equal(el('scope-list').children[0].textContent,'loxone:readGranted');
+  assert.equal(el('scope-list').children[1].textContent,'loxone:historyNot granted');
+  authOptions.state.oauth.scope='unrecognized:scope';authOptions.renderConnection();
+  assert.equal(el('scope-list').children.length,0);
+  assert.equal(el('scope-unavailable').hidden,false);
+  authOptions.state.oauth.scope='loxone:read';authOptions.renderConnection();
   await click('run');
   assert.equal(requests[0].name,'loxone_analyze_project');
   assert.equal(requests[0].args.analyses.join(','),'ets_project_comparison');
@@ -95,6 +109,8 @@ const click=async(id)=>{el(id).click();await settle();};
   mode='ok';
   saved={target:'binding',revision:2};page.dispatchEvent(new w.CustomEvent('knx-state'));
   assert.equal(el('rows').children.length,0);assert.equal(el('next').disabled,true);
+  assert.equal(el('status').dataset.kind,'warning');
+  assert.equal(el('connection-badge').dataset.kind,'success');
   saved={target:'binding',revision:1};mode='pending';el('run').click();await settle();
   saved={target:'other',revision:1};page.dispatchEvent(new w.CustomEvent('knx-state'));
   pendingResolve({structuredContent:envelope()});await settle();
@@ -103,6 +119,14 @@ const click=async(id)=>{el(id).click();await settle();};
   assert.equal(el('rows').children.length,0);assert.equal(el('run').disabled,true);
   assert.equal(el('connect').disabled,false);
   assert.match(el('status').textContent,/Fresh access denied/);
+  assert.equal(el('status').dataset.kind,'error');
+  assert.equal(el('connection-badge').textContent,'Disconnected');
+  assert.equal(el('connection-badge').dataset.kind,'inactive');
+  assert.equal(el('session-expiry').hidden,true);
+  assert.equal(el('session-expiry-time').textContent,'');
+  assert.equal(el('session-expiry-time').hasAttribute('datetime'),false);
+  assert.equal(el('access-scopes').hidden,true);
+  assert.equal(el('scope-list').children.length,0);
   w.close();
 })().catch(error=>{w.close();console.error(error);process.exitCode=1;});
 """

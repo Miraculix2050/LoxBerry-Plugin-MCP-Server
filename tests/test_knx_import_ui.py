@@ -15,6 +15,13 @@ const html = fs.readFileSync('templates/knx.html', 'utf8').replace(/<TMPL_VAR[^>
 const w = new JSDOM(html, {url: 'http://localhost/knx.cgi', runScripts: 'outside-only'}).window;
 const page = w.document.getElementById('knx-page');
 const ui = w.document.getElementById('knx-import-section');
+const cards = [...page.querySelectorAll(':scope > details.mcp-card')];
+assert.deepEqual(cards.map(card => card.id), ['knx-read-delegation', 'knx-label-section',
+  'knx-address-section', 'knx-project-section', 'knx-compare-section', 'knx-xml-section']);
+assert(cards.every(card => card.firstElementChild.tagName === 'SUMMARY'));
+assert.equal(ui.parentElement.parentElement.id, 'knx-address-section');
+assert.equal(ui.parentElement.firstElementChild, ui);
+assert.equal(ui.firstElementChild.querySelector('h3').textContent, 'label');
 Object.assign(page.dataset, {unknown: 'Unknown', empty: 'Empty',
   override: 'Override', inherited: 'Import'});
 Object.assign(ui.dataset, {target: 'Target', changed: 'Changed', additional: 'Attributes',
@@ -88,6 +95,8 @@ const click = async id => {w.document.getElementById(id).click(); await tick();}
   assert.deepEqual(requests.at(-1).payload.filters,
     {query: 'Hidden imported name', source: 'both', deviations_only: true});
   assert.equal(requests.at(-1).payload.target, 't');
+  assert.equal(w.document.getElementById('knx-address-badge').textContent, String(state.total));
+  assert.equal(w.document.getElementById('knx-address-badge').hidden, false);
   w.failPage = true; await click('knx-next');
   assert.match(w.document.getElementById('knx-status').textContent, /knx_revision_conflict/);
   w.failPage = false;
@@ -97,6 +106,7 @@ const click = async id => {w.document.getElementById(id).click(); await tick();}
   assert.equal(requests.at(-1).payload.query_revision, 1);
   assert.equal(requests.at(-1).payload.filters.query, 'Hidden imported name');
   state.total = 1; await click('knx-search-clear');
+  assert.equal(w.document.getElementById('knx-address-badge').textContent, '1');
   assert.equal(w.document.getElementById('knx-search-query').value, '');
   assert.equal(w.document.getElementById('knx-search-source').value, 'all');
   assert.equal(w.document.getElementById('knx-search-deviations').checked, false);
