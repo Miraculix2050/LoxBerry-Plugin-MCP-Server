@@ -31,6 +31,13 @@ def test_latest_event_preserves_raw_context_without_severity_inference() -> None
     assert "secret" not in record.message and "https://" not in record.message
     escaped = decode_notification(r"{\"uid\":\"test-event\",\"message\":\"Hello\"}")
     assert escaped.message == "Hello"
+    nested = json.dumps(json.dumps({"uid": "one", "message": 'Warning "quoted" \\ path'}))[1:-1]
+    assert decode_notification(nested).message == 'Warning "quoted" \\ path'
+    sanitized = decode_notification(
+        '{"uid":"one","type":"token=secret","data":{"lvl":"password=multi word"}}'
+    )
+    assert sanitized.source_type == "token=[redacted]"
+    assert sanitized.source_level == "password=[redacted]"
 
 
 @pytest.mark.parametrize(
@@ -45,6 +52,7 @@ def test_latest_event_preserves_raw_context_without_severity_inference() -> None
         '{"uid":"one","data":{"lvl":true}}',
         '{"uid":"\\ud800"}',
         '{"uid":"one","type":"\\ud800"}',
+        '{"uid":"token=secret"}',
         "x" * 16_385,
     ],
 )
@@ -94,3 +102,23 @@ async def test_mcp_latest_event_and_unavailable_coverage(monkeypatch, freshness,
     assert result.data.source_state_uuid == record.uuid
     assert tool.annotations.readOnlyHint and not tool.annotations.destructiveHint
     assert len(result.model_dump_json().encode()) < 65_536
+
+
+@pytest.mark.asyncio
+async def test_falsey_non_text_current_state_is_unsupported(monkeypatch):
+    monkeypatch.setattr(tools, "_access", lambda: object())
+    snapshot = SimpleNamespace(connected=True)
+    runtime = SimpleNamespace(
+        get_notification_state=AsyncMock(
+            return_value=(
+                snapshot,
+                "notification-state",
+                StateRecord("notification-state", 0.0, Freshness.CURRENT, 100.0),
+                "17.2.8.28",
+            )
+        )
+    )
+    server = FastMCP("notifications")
+    register_message_tools(server, runtime)
+    result = await server._tool_manager.get_tool("loxone_get_notifications").fn()
+    assert not result.ok and result.data.error == "unsupported_source"

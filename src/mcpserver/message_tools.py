@@ -114,7 +114,10 @@ def register_message_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                 raise RuntimeUnavailable("the service is not configured")
             snapshot, uuid, record, firmware = await runtime.get_notification_state(access)
             available = (
-                snapshot.connected and record.freshness is Freshness.CURRENT and bool(record.value)
+                snapshot.connected
+                and record.freshness is Freshness.CURRENT
+                and record.value is not None
+                and record.value != ""
             )
             latest = decode_notification(record.value) if available else None
             data = {
