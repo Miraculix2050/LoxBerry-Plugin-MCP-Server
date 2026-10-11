@@ -148,3 +148,47 @@ def test_export_draft_purpose_cannot_replace_or_consume_import(tmp_path):
         service.download({**preview, "draft_id": import_id, "confirmed_experimental": True})
     drafts.discard_xml_export()
     assert drafts.load(import_id, "target", 1)[0] == xml().encode()
+
+
+def test_large_preserved_attributes_reject_preview_before_storing_draft(tmp_path):
+    # Non-BMP characters expand into two surrogate escapes in the CGI JSON.
+    attributes = " ".join(f'Custom{i}="{"\U0001f600" * 4096}"' for i in range(3))
+    groups = []
+    numbers = []
+    for main in range(32):
+        middle_groups = []
+        for middle in range(2 if main < 18 else 1):
+            number = main * 2048 + middle * 256 + 1
+            numbers.append(number)
+            middle_groups.append(
+                f'<GroupRange Name="Middle" RangeStart="{number - 1}" '
+                f'RangeEnd="{number + 254}" {attributes}>'
+                f'<GroupAddress Address="{main}/{middle}/1" Name="ETS" {attributes}/>'
+                "</GroupRange>"
+            )
+        groups.append(
+            f'<GroupRange Name="Main" RangeStart="{main * 2048}" '
+            f'RangeEnd="{main * 2048 + 2047}" {attributes}>'
+            + "".join(middle_groups)
+            + "</GroupRange>"
+        )
+    content = (
+        f'<GroupAddress-Export xmlns="{NAMESPACE}">' + "".join(groups) + "</GroupAddress-Export>"
+    )
+    _, drafts, service = setup(tmp_path, content)
+    import_id = drafts.create("target", 1, xml().encode(), {})
+    with pytest.raises(KnxError, match="knx_file_limit"):
+        service.preview(
+            {**request(), "choices": [{"address_id": i, "fields": {}} for i in numbers]}
+        )
+    with drafts.connection() as db:
+        assert db.execute("SELECT id FROM drafts").fetchall() == [(import_id,)]
+
+
+def test_download_checks_json_escaping_response_size(tmp_path, monkeypatch):
+    _, _, service = setup(tmp_path, xml())
+    preview = service.preview(request(description="\u0080" * 4096))
+    # Escaped JSON can exceed the XML byte size substantially.
+    monkeypatch.setattr("mcpserver.knx.xml_export.MAX_EXPORT_RESPONSE_BYTES", preview["bytes"] * 2)
+    with pytest.raises(KnxError, match="knx_file_limit"):
+        service.download({**preview, "confirmed_experimental": True})

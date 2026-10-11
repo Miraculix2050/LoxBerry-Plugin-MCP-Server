@@ -706,6 +706,9 @@ Nur Namen und nichtleere Beschreibungen dürfen geändert werden. Keine neuen
 Adressen, Löschungen, Umadressierung oder Änderungen an Gruppenstruktur/-namen,
 DPTs, Flags und Sicherheit. Ein Download ändert weder ETS noch den Importbestand.
 Vorher/Nachher und unverändert mitgeführte XML-Attribute stehen in der Vorschau.
+Vorschau und Download sind auf jeweils 20 MiB JSON-Antwort begrenzt. Auch eine
+kleinere XML-Datei kann durch Unicode-Escapes oder doppelte Vorher-/Nachher-Angaben
+die Grenze erreichen; dann weniger Adressen auswählen.
 
 **Experimentell, noch nicht durch echten ETS-Import bestätigt:** Vor dem Import
 Projektsicherung erstellen und an einer Projektkopie testen. Parser-Roundtrips,

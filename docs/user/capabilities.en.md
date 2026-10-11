@@ -649,6 +649,9 @@ Only names and nonempty descriptions can change. No new addresses, deletions,
 readdressing or group structure/names, DPT, flag or security changes. Download
 changes neither ETS nor the imported catalog. Before/after and unchanged XML
 attributes are available in the preview.
+Preview and download are each limited to a 20 MiB JSON response. Unicode escapes
+or duplicated before/after attributes can reach this limit even for a smaller XML
+file; select fewer addresses in that case.
 
 **Experimental, not yet confirmed by actual ETS import:** Create a project backup
 and test in a project copy before import. Parser roundtrips, browser, MCP and SSH

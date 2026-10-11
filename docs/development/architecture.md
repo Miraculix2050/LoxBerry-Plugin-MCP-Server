@@ -346,6 +346,10 @@ reimport for correction export. Root attributes, selected-address attributes and
 required parent attributes are carried through unchanged except explicit names
 or nonempty descriptions; unsafe reconstruction is rejected. Leading document
 comments retain their exact positions; other interior positions block v1.
+Preview and download check their ASCII-escaped JSON size against a 20 MiB budget
+before creating a draft, leaving room below the CGI's 24 MiB helper-response limit.
+Download rechecks the same budget; oversized payloads return the normal file-limit
+error rather than a CGI internal error, without evicting another draft.
 
 The project comparison browser bridge reauthorizes the existing read-only
 comparison request before preview/download and checks project fingerprint/model,

@@ -14,6 +14,13 @@ from .store import KnxStore
 from .xml_adapter import NAMESPACE, TAG, parse_xml
 
 MAX_EXPORT_SELECTION = 50
+# Leave room for the admin envelope below the CGI's 24 MiB helper limit.
+MAX_EXPORT_RESPONSE_BYTES = 20 * 1024 * 1024
+
+
+def _check_response(value: dict[str, Any]) -> None:
+    if len(json.dumps(value, ensure_ascii=True, separators=(",", ":"))) > MAX_EXPORT_RESPONSE_BYTES:
+        raise KnxError("knx_file_limit")
 
 
 def _attributes(value: object) -> dict[str, str]:
@@ -194,11 +201,15 @@ class XmlCorrectionExport:
             parsed = parse_xml(body)
             if len(parsed.addresses) != len(requested) or len(parsed.groups) != len(required):
                 raise KnxError("knx_export_source_unavailable")
-        identifier = self.drafts.create(
-            self.target, expected, body, {"project_binding": binding}, slot="xml_export"
-        )
-        return {
-            "draft_id": identifier,
+        download = {
+            "content": body.decode("utf-8"),
+            "filename": "knx-corrections-experimental.xml",
+            "revision": expected,
+            "experimental": True,
+        }
+        _check_response(download)
+        result = {
+            "draft_id": "0" * 48,
             "revision": expected,
             "project_binding": binding,
             "rows": changes,
@@ -210,6 +221,11 @@ class XmlCorrectionExport:
             "sha256": hashlib.sha256(body).hexdigest(),
             "experimental": True,
         }
+        _check_response(result)
+        result["draft_id"] = self.drafts.create(
+            self.target, expected, body, {"project_binding": binding}, slot="xml_export"
+        )
+        return result
 
     @staticmethod
     def _provenance(source: dict[str, Any], state: dict[str, Any]) -> None:
@@ -236,9 +252,11 @@ class XmlCorrectionExport:
                 raise KnxError("knx_draft_invalid")
             if payload.get("project_binding") != options.get("project_binding"):
                 raise KnxError("knx_revision_conflict")
-            return {
+            result = {
                 "content": raw.decode("utf-8"),
                 "filename": "knx-corrections-experimental.xml",
                 "revision": expected,
                 "experimental": True,
             }
+            _check_response(result)
+            return result
