@@ -603,7 +603,7 @@ def _save(payload: object) -> dict[str, Any]:
                 candidate,
                 installation_profile_write_enabled=current.installation_profile_write_enabled,
             )
-        if "policies" not in payload:
+        if "installation_profile_write_bindings" not in payload.get("policies", {}):
             candidate = replace(
                 candidate,
                 installation_profile_write_bindings=current.installation_profile_write_bindings,

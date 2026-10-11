@@ -1471,8 +1471,9 @@ def test_legacy_full_config_save_retains_separately_managed_knx_taxonomy(
 
 
 @pytest.mark.parametrize("restart_failure", [False, True])
+@pytest.mark.parametrize("policies", [None, {"loxberry_read_bindings": []}])
 def test_full_config_save_preserves_concurrently_revoked_profile_approval(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, restart_failure: bool
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, restart_failure: bool, policies
 ) -> None:
     store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
     store.save(
@@ -1509,14 +1510,32 @@ def test_full_config_save_preserves_concurrently_revoked_profile_approval(
     monkeypatch.setattr("mcpserver.admin._restart_service", restart)
     monkeypatch.setattr("mcpserver.admin._sessions", lambda: [])
     monkeypatch.setattr("mcpserver.admin._service_response", lambda: {"service_active": True})
+    payload = {"schema_version": 10, "server": {"enabled": False}}
+    if policies is not None:
+        payload["policies"] = policies
     if restart_failure:
         with pytest.raises(AdminError, match="previous configuration restored"):
-            _save({"schema_version": 10, "server": {"enabled": False}})
+            _save(payload)
     else:
-        _save({"schema_version": 10, "server": {"enabled": False}})
+        _save(payload)
     current = store.load()
     assert current.installation_profile_write_enabled is False
     assert current.installation_profile_write_bindings == ()
+
+
+def test_partial_legacy_policies_preserve_profile_approval(tmp_path, monkeypatch):
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    store.save(
+        PluginConfig(
+            installation_profile_write_enabled=True, installation_profile_write_bindings=("a" * 64,)
+        )
+    )
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._restart_service", lambda: None)
+    monkeypatch.setattr("mcpserver.admin._sessions", lambda: [])
+    monkeypatch.setattr("mcpserver.admin._service_response", lambda: {"service_active": True})
+    _save({"schema_version": 10, "policies": {"loxberry_read_bindings": []}})
+    assert store.load().installation_profile_write_bindings == ("a" * 64,)
 
 
 def test_failed_mcp_section_apply_restores_running_service(
