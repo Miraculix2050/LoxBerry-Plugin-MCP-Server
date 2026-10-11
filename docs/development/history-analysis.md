@@ -46,3 +46,23 @@ are omitted by default.
 
 Ranking/mixed comparisons follow in the next PR. Native EFM remains gated by its
 separate reviewed contract; this is not a generic balance calculator.
+
+## Target evidence (2026-10-11)
+
+Loxberry-Test acceptance used the installed aarch64/Python 3.13.5 plugin
+0.4.0b4 runtime: authenticated MCP compact reads, two raw pages, invalid timezone,
+missing binding, restricted visibility and unauthenticated denial. DE/EN Explorer
+checks covered CSS 1280x800 and 390x844 without horizontal overflow or console
+warnings/errors. SSH verified runtime hashes, preserved existing file modes,
+new-file mode 0644, service health, guide revision 74 and Event History schema 7.
+The original empty profile and configured recording sources were preserved.
+
+Native Meter formats did not establish units; native binary sources without
+recorded phases correctly returned insufficient evidence rather than zero
+activity. Positive numeric results came from isolated installed fixtures,
+including indexed phase-local SQLite predecessors and reconnect gaps; they do
+not establish native measurement compatibility. Three native compact calls took
+2092.77/1826.40/1752.96 ms and returned 2183 bytes each, versus 6429 bytes for the
+corresponding raw reader. These are observations, not a controlled regression
+benchmark or token measurements. Full performance/token acceptance follows in
+the final acceptance PR.
