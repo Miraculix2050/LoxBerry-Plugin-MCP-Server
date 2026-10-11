@@ -249,7 +249,7 @@ th[aria-sort="descending"] .mcp-event-history-sort::after { content: ' ↓'; }
 .mcp-knx .lb-button { box-sizing: border-box; min-height: 2.25rem; padding: .35rem .65rem; font-size: 1rem; line-height: 1.25; }
 .mcp-knx .mcp-table .lb-button { margin: .1rem .25rem .1rem 0; }
 .mcp-knx #knx-project-access-scopes > summary { cursor: pointer; font-weight: 600; }
-@media (pointer: coarse) {
+@media (any-pointer: coarse) {
   .mcp-knx .lb-button { min-height: 2.75rem; }
 }
 .mcp-knx > h1, .mcp-knx > p { margin: .2rem 0; }

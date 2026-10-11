@@ -266,7 +266,7 @@
   page.addEventListener('knx-state', () => {
     const current = knx.snapshot();
     if (frame && (!current || frame.target !== current.target || frame.revision !== current.revision)) {
-      clearResult(); message(label('targetChanged'));
+      clearResult(); message(label('targetChanged'), 'warning');
     }
     controls();
   });

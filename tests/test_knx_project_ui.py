@@ -109,6 +109,8 @@ const click=async(id)=>{el(id).click();await settle();};
   mode='ok';
   saved={target:'binding',revision:2};page.dispatchEvent(new w.CustomEvent('knx-state'));
   assert.equal(el('rows').children.length,0);assert.equal(el('next').disabled,true);
+  assert.equal(el('status').dataset.kind,'warning');
+  assert.equal(el('connection-badge').dataset.kind,'success');
   saved={target:'binding',revision:1};mode='pending';el('run').click();await settle();
   saved={target:'other',revision:1};page.dispatchEvent(new w.CustomEvent('knx-state'));
   pendingResolve({structuredContent:envelope()});await settle();
