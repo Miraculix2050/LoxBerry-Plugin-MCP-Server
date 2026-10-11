@@ -847,6 +847,16 @@ message, lifecycle, action and expected effect. Ask for explicit approval of tha
 message and effect; broad permission to read/diagnose or clear test data does not
 replace this step. Never acknowledge existing messages as an acceptance shortcut.
 
+The preview also requires independent approval in the native LoxBerry Admin page
+`message-approval.cgi` (relative to the plugin Admin directory). Enter the preview ID,
+inspect the server-staged message and effect, then approve exactly that action.
+Only that protected page can create the local single-use approval artifact;
+`user_approved=true` from an MCP client alone never authorizes dispatch. The artifact
+is bound to the preview, identity/family/target, unchanged entry/action and original
+120-second expiry. LoxBerry Admin approval does not replace Loxone authorization.
+If the preview expired while obtaining approval, create a fresh unchanged preview
+and approve it again locally. Never do this automatically after an uncertain write.
+
 `loxone_confirm_system_message(preview_id, user_approved=true)` requires the separate
 `loxone:messages:confirm` OAuth consent and administrator activation through
 `tools.loxone_message_confirmation_enabled` (default false). Control, History and

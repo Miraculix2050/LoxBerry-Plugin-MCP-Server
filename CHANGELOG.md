@@ -25,7 +25,8 @@ extracted from the matching version heading.
   Keep user-declared roles separate from technical semantics (#434).
 - Add default-disabled, separately consented single-message confirmation with an
   expiring preview, fresh authorization, action allowlist and audit. Distinguish
-  native acknowledgement from verified manual-warning Okay historization; never
+  native acknowledgement from verified manual-warning Okay historization; require
+  independent native Admin approval of each staged preview before dispatch; never
   replay uncertain writes or infer repairs from cleared messages (#366, #367).
 
 - Establish the 25-question analysis acceptance catalog, synthetic numeric

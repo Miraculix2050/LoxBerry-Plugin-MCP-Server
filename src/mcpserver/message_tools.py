@@ -111,7 +111,7 @@ class MessageCursors:
 
 def register_message_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> None:
     cursors = MessageCursors()
-    confirmations = MessageConfirmations()
+    confirmations = MessageConfirmations(getattr(runtime, "message_approval_store", None))
 
     @server.tool(
         name="loxone_preview_system_message_confirmation",
@@ -119,6 +119,7 @@ def register_message_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
             "Preview exactly one current, unlocked System Message and its verified native "
             "acknowledgement or historization effect. Read-only; no read marker or action. "
             "Present the message, exact action and effect to the user before requesting approval. "
+            "The local_approval_page requires independent native LoxBerry Admin consent. "
             "The identity-bound preview expires after 120 seconds and can be used once."
         ),
         annotations=ToolAnnotations(
@@ -164,6 +165,7 @@ def register_message_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
         description=(
             "Confirm or historize exactly the message shown in an unexpired preview, only "
             "after explicit human approval of that message and effect. Requires the separate "
+            "local Admin approval artifact, "
             "loxone:messages:confirm scope and fresh administrator activation. Consumes the "
             "preview on approved attempts even on failure; do not retry uncertain writes. "
             "No bulk actions, deletion, "
@@ -200,16 +202,26 @@ def register_message_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
             return tools._result(
                 MessageConfirmationEnvelope, result.model_dump(), trace_id=result._trace_id
             )
-        except PermissionError:
+        except PermissionError as exc:
             return tools._error(
                 MessageConfirmationEnvelope,
                 "unauthenticated",
                 "Authentication with loxone:read is required",
+                trace_id=getattr(exc, "message_confirmation_trace_id", None),
             )
         except ControlOperationError as exc:
-            return tools._error(MessageConfirmationEnvelope, exc.code, str(exc))
+            return tools._error(
+                MessageConfirmationEnvelope,
+                exc.code,
+                str(exc),
+                trace_id=getattr(exc, "message_confirmation_trace_id", None),
+            )
         except RuntimeUnavailable as exc:
-            return tools._availability_error(MessageConfirmationEnvelope, exc)
+            return tools._availability_error(
+                MessageConfirmationEnvelope,
+                exc,
+                trace_id=getattr(exc, "message_confirmation_trace_id", None),
+            )
 
     @server.tool(
         name="loxone_get_notifications",

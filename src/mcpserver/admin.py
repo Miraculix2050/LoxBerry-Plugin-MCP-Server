@@ -13,6 +13,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
 import re
 import socket
@@ -2141,6 +2142,24 @@ def _dispatch(request: object, *, timing: dict[str, float | int] | None = None) 
         return _save(payload)
     if action == "save_mcp_config":
         return _save_mcp(payload)
+    if action in {"inspect_message_confirmation", "approve_message_confirmation"}:
+        from mcpserver.message_approval import MessageApprovalStore
+
+        if not isinstance(payload, dict) or not isinstance(payload.get("preview_id"), str):
+            raise AdminError("Invalid message preview")
+        approvals = MessageApprovalStore(_config_store().path)
+        try:
+            if action == "inspect_message_confirmation":
+                return approvals.inspect(payload["preview_id"])
+            if not isinstance(payload.get("challenge"), str):
+                raise AdminError("Invalid message approval")
+            approvals.approve(payload["preview_id"], payload["challenge"])
+        except (ValueError, OSError) as exc:
+            raise AdminError("Message preview is unavailable or approval does not match") from exc
+        logging.getLogger("mcpserver.message_confirmation").info(
+            "component=message_confirmation_approval severity=INFO outcome=approved"
+        )
+        return {"approved": True}
     if action == "save_knx_taxonomy":
         return _save_knx_taxonomy(payload)
     if action == "save_mqtt_config":

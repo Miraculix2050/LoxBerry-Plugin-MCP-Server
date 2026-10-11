@@ -66,6 +66,7 @@ from mcpserver.loxone.system_messages import (
     decode_messages,
     identifier,
 )
+from mcpserver.message_approval import MessageApprovalStore
 
 _LOXONE_EPOCH_UNIX = 1_230_768_000
 _REFRESH_BEFORE_SECONDS = 24 * 60 * 60
@@ -343,6 +344,7 @@ class LoxoneRuntime:
             structure_lookup=self,
         )
         self.auth_coordinator = auth_coordinator
+        self.message_approval_store: MessageApprovalStore | None = None
         self._validate_access = validate_access
         self.validate_message_confirmation: (
             Callable[[StoredAccessToken], Awaitable[bool]] | None

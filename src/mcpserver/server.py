@@ -790,6 +790,12 @@ def create_server(settings: ServerSettings) -> FastMCP:
             )
             event_history_path = Path(os.getenv("MCPSERVER_EVENT_HISTORY_STORE", ""))
             runtime.validate_message_confirmation = validate_message_confirmation
+            if settings.phase0_auth.config_path is not None:
+                from mcpserver.message_approval import MessageApprovalStore
+
+                runtime.message_approval_store = MessageApprovalStore(
+                    settings.phase0_auth.config_path
+                )
             if settings.phase0_auth.config_path is not None and event_history_path.is_absolute():
                 event_history_runtime = EventHistoryRuntime(
                     runtime,

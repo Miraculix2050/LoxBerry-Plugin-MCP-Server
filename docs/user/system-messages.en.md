@@ -52,7 +52,11 @@ not authorize confirmation.
 
 First call `loxone_preview_system_message_confirmation(entry_uuid)` and review the
 exact message and effect. Only after explicit approval call
-`loxone_confirm_system_message(preview_id, user_approved=true)`. A preview expires
+`loxone_confirm_system_message(preview_id, user_approved=true)`. First approve the
+server-staged message and effect in the native Admin page `message-approval.cgi`,
+using the exact preview ID. This creates a private single-use local approval;
+an MCP client's Boolean alone cannot authorize the action. Local Admin approval
+never substitutes for Loxone authorization and does not extend expiry. A preview expires
 after 120 seconds, is bound to your identity/target and can be used once. The server
 allows ten pending previews per OAuth family; a new preview replaces an older one
 for the same entry. Confirmation invalidates sibling previews of the exact target

@@ -24,6 +24,7 @@ from mcpserver.loxone.system_messages import (
     decode_messages,
     identifier,
 )
+from mcpserver.message_approval import MessageApprovalStore
 
 _LOGGER = logging.getLogger("mcpserver.message_confirmation")
 TTL_SECONDS = 120
@@ -32,6 +33,8 @@ MAX_PREVIEWS_PER_BINDING = 10
 
 
 class MessageConfirmationPreview(BaseModel):
+    local_approval_required: Literal[True] = True
+    local_approval_page: str = "message-approval.cgi"
     preview_id: str
     expires_in_seconds: Literal[120] = 120
     entry_uuid: str
@@ -100,7 +103,8 @@ def _fingerprint(source: MessageSource, record: SystemMessage) -> str:
 
 
 class MessageConfirmations:
-    def __init__(self) -> None:
+    def __init__(self, approvals: MessageApprovalStore | None = None) -> None:
+        self.approvals = approvals
         self.tickets: dict[str, _Ticket] = {}
         self.rates: dict[tuple[str, str, str], deque[float]] = {}
         self.inflight: set[tuple[str, str]] = set()
@@ -160,6 +164,27 @@ class MessageConfirmations:
             record.confirmation_effect,
             self.claims.get((access.miniserver_id, entry_uuid), (None, 0))[0],
         )
+        if self.approvals is not None:
+            try:
+                self.approvals.stage(
+                    preview_id,
+                    self.approvals.binding(binding, _fingerprint(source, record)),
+                    {
+                        "entry_uuid": entry_uuid,
+                        "title": record.title[:256],
+                        "description": record.description[:1024],
+                        "action_id": record.confirmation_action_id,
+                        "effect": record.confirmation_effect,
+                        "historic": record.historic,
+                        "confirmed_at": record.confirmed_at,
+                    },
+                    owner=self.approvals.binding(binding, ""),
+                )
+            except Exception as exc:
+                del self.tickets[preview_id]
+                raise ControlOperationError(
+                    "approval_unavailable", "Local approval could not be staged"
+                ) from exc
         return MessageConfirmationPreview(
             preview_id=preview_id,
             entry_uuid=entry_uuid,
@@ -182,11 +207,13 @@ class MessageConfirmations:
     ) -> MessageConfirmationResult:
         # Invalid/foreign previews and denied approval share normal bounded admission too.
         admitted = False
+        trace_id = str(uuid4())
         try:
             async with runtime.call_slot(access):
                 admitted = True
-                return await self._confirm(runtime, access, preview_id, user_approved)
+                return await self._confirm(runtime, access, preview_id, user_approved, trace_id)
         except BaseException as exc:
+            exc.__dict__["message_confirmation_trace_id"] = trace_id
             if not admitted:
                 ticket = self.tickets.get(preview_id)
                 if ticket is not None and ticket.binding == _binding(access):
@@ -198,7 +225,7 @@ class MessageConfirmations:
                     "admission_cancelled"
                     if isinstance(exc, asyncio.CancelledError)
                     else "admission_rejected",
-                    str(uuid4()),
+                    trace_id,
                 )
             raise
 
@@ -208,17 +235,16 @@ class MessageConfirmations:
         access: StoredAccessToken,
         preview_id: str,
         user_approved: bool,
+        trace_id: str,
     ) -> MessageConfirmationResult:
         ticket = self.tickets.get(preview_id)
         if ticket is None or ticket.binding != _binding(access):
-            self._audit(access, None, None, "invalid_preview", str(uuid4()))
+            self._audit(access, None, None, "invalid_preview", trace_id)
             raise ControlOperationError(
                 "invalid_preview", "Preview is unavailable for this identity"
             )
         if user_approved is not True:
-            self._audit(
-                access, ticket.entry_uuid, ticket.action_id, "approval_required", str(uuid4())
-            )
+            self._audit(access, ticket.entry_uuid, ticket.action_id, "approval_required", trace_id)
             raise ControlOperationError(
                 "approval_required", "Explicit approval of this preview is required"
             )
@@ -229,7 +255,6 @@ class MessageConfirmations:
         result: MessageConfirmationResult | None = None
         dispatched = False
         outcome = "not_dispatched"
-        trace_id = str(uuid4())
         target = (access.miniserver_id, ticket.entry_uuid)
         active = False
         try:
@@ -264,6 +289,19 @@ class MessageConfirmations:
                 if target not in self.claims and len(self.claims) >= MAX_PREVIEWS:
                     raise ControlOperationError(
                         "rate_limited", "Message confirmation capacity exceeded"
+                    )
+                try:
+                    locally_approved = self.approvals is not None and self.approvals.consume(
+                        preview_id, self.approvals.binding(ticket.binding, ticket.fingerprint)
+                    )
+                except Exception as exc:
+                    raise ControlOperationError(
+                        "approval_unavailable", "Local approval could not be verified"
+                    ) from exc
+                if not locally_approved:
+                    raise ControlOperationError(
+                        "local_approval_required",
+                        "This preview requires approval in the local LoxBerry Admin page",
                     )
                 # Only fresh OAuth, config and native permission checks may invalidate
                 # another caller's approval. The claim also invalidates tickets already
@@ -328,10 +366,11 @@ class MessageConfirmations:
                     except Exception:
                         pass
             return result
-        except Exception:
+        except Exception as exc:
             if result is not None:
                 # Cleanup errors must not turn a known dispatch into a retryable failure.
                 return result
+            outcome = exc.code if isinstance(exc, ControlOperationError) else "preflight_rejected"
             raise
         finally:
             if active:

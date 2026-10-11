@@ -11,6 +11,11 @@ LoxBerry-Freigaben ersetzen diese Berechtigung nicht.
 Zuerst `loxone_preview_system_message_confirmation(entry_uuid)` aufrufen und die
 genaue Meldung samt Wirkung prüfen. Erst nach ausdrücklicher Freigabe
 `loxone_confirm_system_message(preview_id, user_approved=true)` ausführen.
+Zuvor auf der nativen Adminseite `message-approval.cgi` die Vorschau-ID eingeben,
+die vom Server bereitgestellte Meldung und Wirkung prüfen und genau diese Aktion
+freigeben. Erst dadurch entsteht eine private, einmalige lokale Freigabe;
+der Wahrheitswert des MCP-Clients allein berechtigt nicht zum Senden. Die lokale
+Adminfreigabe ersetzt keine Loxone-Berechtigung und verlängert die Gültigkeit nicht.
 Die Vorschau ist an Identität und Ziel gebunden, gilt 120 Sekunden und ist einmalig
 nutzbar. Vor dem Senden werden Berechtigung, Aktivierung, aktueller Meldungszustand
 und native Aktion erneut geprüft. Pro OAuth-Familie sind zehn offene Vorschauen

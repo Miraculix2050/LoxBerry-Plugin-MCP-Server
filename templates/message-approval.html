@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Systemmeldung freigeben / Approve System Message</title>
+  <script src="message-approval.js" defer></script>
+</head>
+<body>
+  <main>
+    <h1 id="heading">Systemmeldung freigeben</h1>
+    <p id="explanation">Diese Freigabe gilt nur für die angezeigte Meldung und Aktion. Sie repariert keine Ursache.</p>
+    <form id="preview-form">
+      <label for="preview-id" id="preview-label">Vorschau-ID aus dem MCP-Aufruf</label>
+      <input id="preview-id" required minlength="43" maxlength="43" autocomplete="off">
+      <button id="load" type="submit">Vorschau prüfen</button>
+    </form>
+    <pre id="preview"></pre>
+    <button id="approve" type="button" disabled>Genau diese Aktion freigeben</button>
+    <p id="status" role="status"></p>
+    <a href="index.cgi" id="back">Zur Einrichtung</a>
+  </main>
+</body>
+</html>

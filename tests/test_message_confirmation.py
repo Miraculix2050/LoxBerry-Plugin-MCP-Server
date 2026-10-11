@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from mcp.server.fastmcp import FastMCP
@@ -16,6 +16,7 @@ from mcpserver.loxone.runtime import (
     RuntimeAuthorizationError,
     RuntimeUnavailable,
 )
+from mcpserver.message_approval import MessageApprovalStore
 from mcpserver.message_confirmation import MessageConfirmations
 from mcpserver.message_tools import register_message_tools
 
@@ -25,7 +26,10 @@ def setup_confirmation():
     instance.validate_message_confirmation = AsyncMock(return_value=True)
     session.confirm_system_message = AsyncMock()
     current = access().model_copy(update={"scopes": [READ_SCOPE, MESSAGE_CONFIRM_SCOPE]})
-    return MessageConfirmations(), instance, session, current
+    approvals = Mock(spec=MessageApprovalStore)
+    approvals.binding.side_effect = MessageApprovalStore.binding
+    approvals.consume.return_value = True
+    return MessageConfirmations(approvals), instance, session, current
 
 
 def manual_warning(**updates):

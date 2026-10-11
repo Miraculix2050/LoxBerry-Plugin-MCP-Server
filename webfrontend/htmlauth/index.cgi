@@ -695,6 +695,11 @@ if ($action ne '') {
         $result = admin_call('confirm_loxone_token', {session_id => ($q->{session_id} // '')});
         admin_log($result->{ok} ? 'info' : 'warning',
             'action=confirm_loxone_token outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
+    } elsif ($action eq 'inspect_message_confirmation' || $action eq 'approve_message_confirmation') {
+        $result = admin_call($action, {
+            preview_id => ($q->{preview_id} // ''),
+            challenge => ($q->{challenge} // ''),
+        });
     } elsif ($action eq 'allow_loxberry_read') {
         $result = admin_call('allow_loxberry_read', {session_id => ($q->{session_id} // '')});
         admin_log($result->{ok} ? 'info' : 'warning',
