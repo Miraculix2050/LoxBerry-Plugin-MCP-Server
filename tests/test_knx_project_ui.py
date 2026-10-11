@@ -74,9 +74,10 @@ const click=async(id)=>{el(id).click();await settle();};
   assert.equal(el('session-expiry-time').dateTime,
     new Date(authOptions.state.oauth.resumeUntil).toISOString());
   assert.equal(el('access-scopes').hidden,false);
-  assert.equal(el('scope-list').children.length,7);
+  assert.equal(el('scope-list').children.length,8);
   assert.equal(el('scope-list').children[0].textContent,'loxone:readGranted');
   assert.equal(el('scope-list').children[1].textContent,'loxone:historyNot granted');
+  assert.equal(el('scope-list').children[7].textContent,'loxberry:knx:draftsNot granted');
   authOptions.state.oauth.scope='unrecognized:scope';authOptions.renderConnection();
   assert.equal(el('scope-list').children.length,0);
   assert.equal(el('scope-unavailable').hidden,false);

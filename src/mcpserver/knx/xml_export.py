@@ -43,7 +43,7 @@ class XmlCorrectionExport:
     def __init__(self, store: KnxStore, drafts: DraftStore, target: str) -> None:
         self.store, self.drafts, self.target = store, drafts, target
 
-    def preview(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def preview(self, payload: dict[str, Any], *, persist: bool = True) -> dict[str, Any]:
         expected = payload.get("revision")
         choices = payload.get("choices")
         binding = text(payload.get("project_binding"), 4096, empty=False)
@@ -222,9 +222,12 @@ class XmlCorrectionExport:
             "experimental": True,
         }
         _check_response(result)
-        result["draft_id"] = self.drafts.create(
-            self.target, expected, body, {"project_binding": binding}, slot="xml_export"
-        )
+        if persist:
+            result["draft_id"] = self.drafts.create(
+                self.target, expected, body, {"project_binding": binding}, slot="xml_export"
+            )
+        else:
+            result.pop("draft_id")
         return result
 
     @staticmethod

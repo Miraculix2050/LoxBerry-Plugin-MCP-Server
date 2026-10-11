@@ -164,6 +164,7 @@ def test_provider_preserves_scope_exports_and_order() -> None:
         LOXBERRY_READ_SCOPE,
         LOXBERRY_OPERATE_SCOPE,
         "loxberry:knx:read",
+        "loxberry:knx:drafts",
     )
     assert scopes.SUPPORTED_SCOPES == SUPPORTED_SCOPES == expected
     assert SCOPE == scopes.SCOPE == READ_SCOPE
@@ -1222,6 +1223,7 @@ def test_metadata_advertises_all_requestable_scopes(tmp_path: Path) -> None:
         LOXBERRY_READ_SCOPE,
         LOXBERRY_OPERATE_SCOPE,
         "loxberry:knx:read",
+        "loxberry:knx:drafts",
     ]
     assert response.json()["code_challenge_methods_supported"] == ["S256"]
     assert response.headers["cache-control"] == "no-store"

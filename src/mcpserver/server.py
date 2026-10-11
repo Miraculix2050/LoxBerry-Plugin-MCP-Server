@@ -42,7 +42,7 @@ from mcpserver.auth.provider import (
     StoredAccessToken,
 )
 from mcpserver.auth.remote_revocation import run_remote_revocation_worker
-from mcpserver.auth.scopes import LOXBERRY_KNX_READ_SCOPE
+from mcpserver.auth.scopes import LOXBERRY_KNX_DRAFTS_SCOPE, LOXBERRY_KNX_READ_SCOPE
 from mcpserver.auth.store import AtomicJsonAuthStore, lifecycle_event
 from mcpserver.auth.web import Phase0OAuthWeb
 from mcpserver.config import DEFAULT_LOG_LEVEL, AtomicConfigStore, PluginConfig
@@ -665,7 +665,12 @@ def create_server(settings: ServerSettings) -> FastMCP:
 
             config_store = AtomicConfigStore(settings.phase0_auth.config_path)
             config = config_store.load()
-            for capability in ("loxberry:read", "loxberry:operate", LOXBERRY_KNX_READ_SCOPE):
+            for capability in (
+                "loxberry:read",
+                "loxberry:operate",
+                LOXBERRY_KNX_READ_SCOPE,
+                LOXBERRY_KNX_DRAFTS_SCOPE,
+            ):
                 if capability not in str(family.get("scope", "")).split():
                     continue
                 identity_id = str(family.get("identity_id", ""))
@@ -891,6 +896,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
         LOXBERRY_READ_SCOPE,
         LOXBERRY_OPERATE_SCOPE,
         LOXBERRY_KNX_READ_SCOPE,
+        LOXBERRY_KNX_DRAFTS_SCOPE,
     )
     register_skill_resource(server)
     register_prompt_surface(server)

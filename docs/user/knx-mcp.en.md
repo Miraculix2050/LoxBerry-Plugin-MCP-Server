@@ -116,3 +116,34 @@ omitted groups and diagnostic counts remain separate on every compact page.
 Use `source_details=true` only when full diagnostic/source groups are needed.
 The protocol retains structured and text fallback results; clients should consume
 one representation rather than inserting both into the AI context.
+
+## Shared correction proposals
+
+After discussing concrete changes, an AI may prepare a bounded draft through
+`loxberry_prepare_knx_corrections`. This requires separate OAuth consent to
+`loxberry:knx:drafts`, explicit Admin enablement and an exact target-bound
+approval on the KNX page, in addition to local catalog read permission. Both
+capabilities remain independently disabled by default. A Loxone login grants
+neither. Disabling access retains approvals and proposals but blocks MCP access.
+
+Select local metadata or experimental ETS export targets explicitly. Imported
+source values remain immutable. A proposal changes no overrides, export target,
+ETS or Loxone project. The authenticated KNX page shows the same persisted
+proposal with separate sources; it does not inherit an OAuth client's Loxone
+project credentials. Current project evidence is explicitly unchecked there.
+Editing, per-change decisions and applying changes follow in the next delivery.
+
+Drafts have an absolute 24-hour lifetime, at most 50 changes each, and share the
+existing global eight-draft/32-MiB budget with imports, comparisons and XML
+previews. Edits do not renew expiry. MCP sees only its own target-bound drafts;
+Admin inspection does not transfer ownership to other clients. Stale drafts
+remain inspectable, but preparing a changed source stand requires a new proposal.
+
+Read compact summaries first, then selected pages (default ten, maximum twenty);
+continue with the returned draft revision. Values longer than 128 characters are
+marked truncated; full detail selects one row. After uncertain creation, read by
+the stable request ID; after uncertain editing, inspect the known draft ID. An
+absent result while the worker may still run does not prove failure. Never retry
+automatically. Exact repeated preparation is idempotent; conflicting reuse of a
+request ID is rejected. Reads/preparation share bounded worker admission and
+local read rate limits. Normal draft reads do not parse files or load catalogs.

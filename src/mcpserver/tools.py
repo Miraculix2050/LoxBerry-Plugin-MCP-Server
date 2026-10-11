@@ -8365,8 +8365,10 @@ def register_tool_surface(
     )
     from mcpserver.installation_profile_write import ProfileWriteRuntime
     from mcpserver.knx.catalog_tools import register_catalog_tool
+    from mcpserver.knx.correction_tools import register_correction_tools
 
     register_catalog_tool(server, knx_catalog_runtime)
+    register_correction_tools(server, knx_catalog_runtime, runtime)
 
     register_profile_read_tool(
         server,

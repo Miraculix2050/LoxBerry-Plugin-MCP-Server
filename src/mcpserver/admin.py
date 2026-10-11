@@ -549,6 +549,10 @@ def _save(payload: object) -> dict[str, Any]:
         config = replace(config, loxberry_knx_read_enabled=previous.loxberry_knx_read_enabled)
     if "loxberry_knx_read_bindings" not in payload.get("policies", {}):
         config = replace(config, loxberry_knx_read_bindings=previous.loxberry_knx_read_bindings)
+    if "loxberry_knx_drafts_enabled" not in payload.get("tools", {}):
+        config = replace(config, loxberry_knx_drafts_enabled=previous.loxberry_knx_drafts_enabled)
+    if "loxberry_knx_drafts_bindings" not in payload.get("policies", {}):
+        config = replace(config, loxberry_knx_drafts_bindings=previous.loxberry_knx_drafts_bindings)
     if "policies" not in payload:
         config = replace(
             config,
@@ -620,6 +624,25 @@ def _save(payload: object) -> dict[str, Any]:
                     item
                     for item in current.explorer_bindings
                     if item.capability == "loxberry:knx:read"
+                ),
+            )
+        if "loxberry_knx_drafts_enabled" not in payload.get("tools", {}):
+            candidate = replace(
+                candidate, loxberry_knx_drafts_enabled=current.loxberry_knx_drafts_enabled
+            )
+        if "loxberry_knx_drafts_bindings" not in payload.get("policies", {}):
+            candidate = replace(
+                candidate,
+                loxberry_knx_drafts_bindings=current.loxberry_knx_drafts_bindings,
+                explorer_bindings=tuple(
+                    item
+                    for item in candidate.explorer_bindings
+                    if item.capability != "loxberry:knx:drafts"
+                )
+                + tuple(
+                    item
+                    for item in current.explorer_bindings
+                    if item.capability == "loxberry:knx:drafts"
                 ),
             )
         # Profile approval controls are managed separately. Preserve the live

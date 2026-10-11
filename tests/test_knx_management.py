@@ -23,7 +23,8 @@ def record(name: str = "Additional name") -> dict[str, object]:
     }
 
 
-def test_knx_read_ui_requires_html_confirmation_before_grant_and_enable() -> None:
+@pytest.mark.parametrize("kind", ["read", "drafts"])
+def test_knx_delegation_ui_requires_html_confirmation_before_grant_and_enable(kind) -> None:
     root = Path(__file__).resolve().parents[1]
     script = r"""
 const assert = require('node:assert/strict');
@@ -90,6 +91,13 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   dom.window.close();
 })().catch(error => {console.error(error); process.exitCode = 1;});
 """
+    other = "drafts" if kind == "read" else "read"
+    script = script.replace("knx_read_", f"knx_{kind}_")
+    script = script.replace("getElementById('knx-read-", f"getElementById('knx-{kind}-")
+    script = script.replace(
+        "const w = dom.window;",
+        f"const w = dom.window; w.document.getElementById('knx-{other}-delegation').remove();",
+    )
     node = shutil.which("node")
     assert node is not None
     result = subprocess.run([node, "-e", script], cwd=root, capture_output=True, text=True)

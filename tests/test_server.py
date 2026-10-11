@@ -475,6 +475,8 @@ def test_exact_default_tools_and_mutation_annotations_are_published() -> None:
     assert [tool["name"] for tool in tools] == [
         "loxone_get_skill_guide",
         "loxberry_get_knx_catalog",
+        "loxberry_get_knx_correction_drafts",
+        "loxberry_prepare_knx_corrections",
         "loxone_get_installation_profile",
         "loxberry_save_installation_profile",
         "loxberry_delete_installation_profile",
@@ -503,6 +505,7 @@ def test_exact_default_tools_and_mutation_annotations_are_published() -> None:
         "loxone_analyze_history",
     ]
     mutations = {
+        "loxberry_prepare_knx_corrections",
         "loxberry_save_installation_profile",
         "loxberry_delete_installation_profile",
         "loxone_confirm_system_message",
@@ -600,6 +603,7 @@ def test_oauth_routes_and_protected_resource_metadata_are_exact(tmp_path: Path) 
         LOXBERRY_READ_SCOPE,
         LOXBERRY_OPERATE_SCOPE,
         "loxberry:knx:read",
+        "loxberry:knx:drafts",
     ]
     assert unauthenticated.status_code == 401
     assert all(response.status_code == 404 for response in aliases)
@@ -636,6 +640,7 @@ def test_protected_resource_metadata_advertises_optional_control_scope(tmp_path:
         LOXBERRY_READ_SCOPE,
         LOXBERRY_OPERATE_SCOPE,
         "loxberry:knx:read",
+        "loxberry:knx:drafts",
     ]
     assert unauthenticated.status_code == 401
     assert "scope=" not in unauthenticated.headers["www-authenticate"]

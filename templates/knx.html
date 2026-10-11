@@ -69,6 +69,55 @@
    <tbody id="knx-read-bindings"></tbody>
   </table></div>
  </div></details>
+ <details class="mcp-card" open id="knx-drafts-delegation"
+  data-grant="<TMPL_VAR KNX.DRAFTS_GRANT ESCAPE=HTML>"
+  data-revoke="<TMPL_VAR KNX.DRAFTS_REVOKE ESCAPE=HTML>"
+  data-confirm-enable="<TMPL_VAR KNX.DRAFTS_CONFIRM_ENABLE ESCAPE=HTML>"
+  data-confirm-grant="<TMPL_VAR KNX.DRAFTS_CONFIRM_GRANT ESCAPE=HTML>"
+  data-confirm-revoke="<TMPL_VAR KNX.DRAFTS_CONFIRM_REVOKE ESCAPE=HTML>"
+  data-approved="<TMPL_VAR KNX.DRAFTS_APPROVED ESCAPE=HTML>"
+  data-pending="<TMPL_VAR KNX.DRAFTS_PENDING ESCAPE=HTML>"
+  data-unavailable="<TMPL_VAR KNX.DRAFTS_UNAVAILABLE ESCAPE=HTML>"
+  data-failed="<TMPL_VAR KNX.DRAFTS_FAILED ESCAPE=HTML>">
+  <summary><h2><TMPL_VAR KNX.DRAFTS_TITLE></h2></summary>
+  <div class="mcp-collapsible-content">
+  <p class="mcp-help"><TMPL_VAR KNX.DRAFTS_HELP></p>
+  <form id="knx-drafts-enable-form" class="mcp-form">
+   <label><input type="checkbox" id="knx-drafts-enabled" disabled> <TMPL_VAR KNX.DRAFTS_ENABLE></label>
+   <div class="mcp-actions"><button class="lb-button" type="submit" disabled><TMPL_VAR ACTION.SAVE></button>
+    <button class="lb-button" type="button" id="knx-drafts-reload"><TMPL_VAR KNX.DRAFTS_RELOAD></button></div>
+  </form>
+  <p id="knx-drafts-status" role="status" aria-live="polite"></p>
+  <div class="mcp-table-wrap" tabindex="0" role="region" aria-label="<TMPL_VAR KNX.DRAFTS_TITLE ESCAPE=HTML>"><table class="mcp-table">
+   <thead><tr><th><TMPL_VAR KNX.DRAFTS_CLIENT></th><th><TMPL_VAR KNX.DRAFTS_BINDING></th>
+    <th><TMPL_VAR KNX.DRAFTS_STATE></th><th><TMPL_VAR KNX.ACTIONS></th></tr></thead>
+   <tbody id="knx-drafts-bindings"></tbody>
+  </table></div>
+ </div></details>
+ <details class="mcp-card" open id="knx-corrections"
+  data-failed="<TMPL_VAR KNX.CORRECTIONS_FAILED ESCAPE=HTML>"
+  data-inspect="<TMPL_VAR KNX.CORRECTIONS_INSPECT ESCAPE=HTML>"
+  data-missing="<TMPL_VAR KNX.CORRECTIONS_MISSING ESCAPE=HTML>"
+  data-stale="<TMPL_VAR KNX.CORRECTIONS_STALE ESCAPE=HTML>"
+  data-unchecked="<TMPL_VAR KNX.CORRECTIONS_UNCHECKED ESCAPE=HTML>">
+  <summary><h2><TMPL_VAR KNX.CORRECTIONS_TITLE></h2></summary>
+  <div class="mcp-collapsible-content">
+  <p class="mcp-help"><TMPL_VAR KNX.CORRECTIONS_HELP></p>
+  <button class="lb-button" type="button" id="knx-corrections-reload"><TMPL_VAR KNX.CORRECTIONS_RELOAD></button>
+  <p id="knx-corrections-status" role="status" aria-live="polite"></p>
+  <div class="mcp-table-wrap" tabindex="0" role="region" aria-label="<TMPL_VAR KNX.CORRECTIONS_TITLE ESCAPE=HTML>">
+   <table class="mcp-table"><thead><tr><th><TMPL_VAR KNX.CORRECTIONS_ID></th><th><TMPL_VAR KNX.CORRECTIONS_REVISION></th>
+    <th><TMPL_VAR KNX.CORRECTIONS_EXPIRES></th><th><TMPL_VAR KNX.CORRECTIONS_COUNT></th><th><TMPL_VAR KNX.ACTIONS></th></tr></thead>
+    <tbody id="knx-corrections-list"></tbody></table>
+  </div>
+  <div class="mcp-table-wrap" tabindex="0" role="region" aria-label="<TMPL_VAR KNX.CORRECTIONS_VALUES ESCAPE=HTML>">
+   <table class="mcp-table"><thead><tr><th><TMPL_VAR KNX.ADDRESS></th><th><TMPL_VAR KNX.CORRECTIONS_FIELD></th>
+    <th><TMPL_VAR KNX.CORRECTIONS_DESTINATION></th><th><TMPL_VAR KNX.CORRECTIONS_IMPORTED></th>
+    <th><TMPL_VAR KNX.CORRECTIONS_MANUAL></th><th><TMPL_VAR KNX.CORRECTIONS_PROPOSED></th></tr></thead>
+    <tbody id="knx-corrections-values"></tbody></table>
+  </div>
+  <button class="lb-button" type="button" id="knx-corrections-more" hidden><TMPL_VAR KNX.CORRECTIONS_MORE></button>
+ </div></details>
  <details class="mcp-card" open id="knx-label-section">
   <summary><h2><TMPL_VAR SETUP.KNX_TAXONOMY></h2></summary>
   <div class="mcp-collapsible-content">
@@ -302,7 +351,8 @@
  </form>
 </dialog>
 <script src="knx.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v10" defer></script>
-<script src="knx-read-delegation.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-read-v1" defer></script>
+<script src="knx-read-delegation.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-read-v2" defer></script>
+<script src="knx-corrections.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-corrections-v1" defer></script>
 <script src="knx-import.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-import-v3" defer></script>
 <script src="explorer-core.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-project-v2" defer></script>
 <script src="explorer-state.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-project-v2" defer></script>

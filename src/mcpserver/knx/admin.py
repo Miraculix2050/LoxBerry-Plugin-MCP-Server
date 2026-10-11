@@ -76,6 +76,12 @@ def dispatch_knx(action: str, payload: object, config_store: AtomicConfigStore) 
         "knx_read_enable",
         "knx_read_grant",
         "knx_read_revoke",
+        "knx_drafts_page",
+        "knx_drafts_enable",
+        "knx_drafts_grant",
+        "knx_drafts_revoke",
+        "knx_correction_page",
+        "knx_correction_inspect",
     }
     if action not in allowed or not isinstance(payload, dict):
         raise AdminError("Unsupported KNX action")
@@ -94,20 +100,29 @@ def _run(
         raise AdminError("A configured Miniserver is required", code="knx_target_missing")
     target = MiniserverEndpoint.parse(config.loxone_endpoint).origin
     token = hashlib.sha256(target.encode()).hexdigest()
-    if action not in {"knx_page", "knx_export", "knx_read_page"} and payload.get("target") != token:
+    if (
+        action
+        not in {"knx_page", "knx_export", "knx_read_page", "knx_drafts_page", "knx_correction_page"}
+        and payload.get("target") != token
+    ):
         raise AdminError("KNX target changed; reload", code="knx_target_conflict")
     if (
-        action in {"knx_page", "knx_export", "knx_read_page"}
+        action
+        in {"knx_page", "knx_export", "knx_read_page", "knx_drafts_page", "knx_correction_page"}
         and "target" in payload
         and payload["target"] != token
     ):
         raise AdminError("KNX target changed; reload", code="knx_target_conflict")
-    if action.startswith("knx_read_"):
+    if action.startswith(("knx_read_", "knx_drafts_")):
         from mcpserver.admin import _auth_store
 
-        from .read_admin import dispatch
+        from .read_admin import DRAFT_POLICY, READ_POLICY, dispatch
 
-        return {**dispatch(action, payload, config, save, _auth_store(), target), "target": token}
+        policy = DRAFT_POLICY if action.startswith("knx_drafts_") else READ_POLICY
+        return {
+            **dispatch(action, payload, config, save, _auth_store(), target, policy),
+            "target": token,
+        }
     import_fields = {
         "knx_import_load": {
             "target",
@@ -163,6 +178,35 @@ def _run(
     if not data_root or not Path(data_root).is_absolute():
         raise AdminError("Plugin data directory unavailable")
     store = KnxStore(Path(data_root) / "knx" / "metadata.sqlite3")
+    if action in {"knx_correction_page", "knx_correction_inspect"}:
+        from .correction_drafts import CorrectionDraftStore
+        from .correction_projection import project_draft
+        from .correction_service import CorrectionService
+
+        fields = {"target", "draft_id", "draft_revision", "offset"}
+        if not payload.keys() <= fields:
+            raise KnxError("knx_correction_invalid")
+        corrections = CorrectionDraftStore(
+            Path(data_root) / "knx" / "drafts.sqlite3", os.getenv("MCPSERVER_KNX_ADMIN_SESSION", "")
+        )
+        if action == "knx_correction_page":
+            return {"target": token, "drafts": corrections.list_admin(target)}
+        identifier = payload.get("draft_id")
+        offset = payload.get("offset", 0)
+        if type(offset) is not int or not 0 <= offset <= 50:
+            raise KnxError("knx_correction_invalid")
+        draft = CorrectionService(store, corrections.admin_reader(identifier, target)).inspect(
+            identifier, config, target
+        )
+        if (
+            type(payload.get("draft_revision")) is not int
+            or payload["draft_revision"] != draft["draft_revision"]
+        ):
+            raise KnxError("knx_revision_conflict")
+        return {
+            "target": token,
+            **project_draft({"target_id": token, "draft": draft}, offset, 10, False),
+        }
     repository = ImportRepository(store)
     entries = config.knx_address_taxonomy if config.knx_address_taxonomy_endpoint == target else ()
     taxonomy_document = [

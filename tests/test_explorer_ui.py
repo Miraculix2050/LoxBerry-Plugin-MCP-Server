@@ -1415,8 +1415,8 @@ def test_explorer_granted_scopes_are_exact_and_fail_closed() -> None:
       };
     })()"""
     assert run_core(expression) == {
-        "all": [True] * 7,
-        "partial": [True, True, False, False, True, False, False],
+        "all": [True] * 8,
+        "partial": [True, True, False, False, True, False, False, False],
         "absent": None,
         "empty": None,
         "unknown": None,

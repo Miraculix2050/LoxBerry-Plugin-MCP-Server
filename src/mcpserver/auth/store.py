@@ -100,6 +100,7 @@ _LIFECYCLE_REASONS = _REVOCATION_REASONS | frozenset(
         "read",
         "operate",
         "knx_read",
+        "knx_drafts",
     }
 )
 _LIFECYCLE_OUTCOMES = frozenset(
@@ -179,7 +180,7 @@ def lifecycle_event(
     reason = reason if reason in _LIFECYCLE_REASONS else "unknown"
     source = source if source in _LIFECYCLE_SOURCES else "unknown"
     outcome = outcome if outcome in _LIFECYCLE_OUTCOMES else "unknown"
-    capability = capability if capability in {"read", "operate", "knx_read"} else "-"
+    capability = capability if capability in {"read", "operate", "knx_read", "knx_drafts"} else "-"
     correlation = next((ref for ref in (family_ref, binding_ref, client_ref) if ref != "-"), "-")
     # Diagnostic failure must not change an authorization or persistence result.
     with suppress(Exception):
