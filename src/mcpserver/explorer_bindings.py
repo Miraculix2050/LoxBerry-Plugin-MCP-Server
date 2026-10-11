@@ -13,6 +13,7 @@ TOOL_EXPLORER_APPLICATION_ID: Final = "tool-explorer-v1"
 _NAMESPACES: Final = {
     "loxberry:read": "loxberry-read-explorer-binding-v1",
     "loxberry:operate": "loxberry-operate-explorer-binding-v1",
+    "loxberry:knx:read": "loxberry-knx-read-explorer-binding-v1",
 }
 
 
@@ -22,8 +23,15 @@ def explorer_binding_id(
     identity_id: str,
     miniserver_id: str,
     explorer_origin: str = "",
+    *,
+    target_origin: str = "",
 ) -> str:
     """Derive the installation-local application binding without retaining identifiers."""
+    target: tuple[str, ...] = ()
+    if capability == "loxberry:knx:read":
+        from mcpserver.loxone.endpoint import MiniserverEndpoint
+
+        target = (MiniserverEndpoint.parse(target_origin).origin,)
     return str(
         auth_store.pseudonym(
             _NAMESPACES[capability],
@@ -31,6 +39,7 @@ def explorer_binding_id(
             explorer_origin,
             identity_id,
             miniserver_id,
+            *target,
         )
     )
 
@@ -45,8 +54,15 @@ def active_explorer_binding(
     *,
     now: int | None = None,
 ) -> ExplorerBindingApproval | None:
+    if capability == "loxberry:knx:read" and not config.loxone_endpoint:
+        return None
     binding_id = explorer_binding_id(
-        auth_store, capability, identity_id, miniserver_id, explorer_origin
+        auth_store,
+        capability,
+        identity_id,
+        miniserver_id,
+        explorer_origin,
+        target_origin=config.loxone_endpoint,
     )
     current = int(time.time()) if now is None else now
     retention = config.explorer_binding_retention_hours * 3600
@@ -82,12 +98,24 @@ def record_explorer_approval(
         str(family.get("identity_id", "")),
         str(family.get("miniserver_id", "")),
         explorer_origin,
+        target_origin=config_store.load().loxone_endpoint
+        if capability == "loxberry:knx:read"
+        else "",
     )
 
     transitioned = False
 
     def update(config: PluginConfig) -> PluginConfig:
         nonlocal transitioned
+        if capability == "loxberry:knx:read" and binding_id != explorer_binding_id(
+            auth_store,
+            capability,
+            str(family.get("identity_id", "")),
+            str(family.get("miniserver_id", "")),
+            explorer_origin,
+            target_origin=config.loxone_endpoint,
+        ):
+            raise ValueError("KNX target changed; reload the approval")
         entries = list(config.explorer_bindings)
         for index, item in enumerate(entries):
             if item.capability == capability and item.binding_id == binding_id:
@@ -101,9 +129,11 @@ def record_explorer_approval(
                 break
         else:
             legacy_count = len(
-                config.loxberry_read_bindings
-                if capability == "loxberry:read"
-                else config.loxberry_operate_bindings
+                {
+                    "loxberry:read": config.loxberry_read_bindings,
+                    "loxberry:operate": config.loxberry_operate_bindings,
+                    "loxberry:knx:read": config.loxberry_knx_read_bindings,
+                }[capability]
             )
             if legacy_count + sum(item.capability == capability for item in entries) >= 64:
                 raise ValueError("LoxBerry approval capacity reached")
@@ -139,6 +169,7 @@ def record_explorer_family_end(
         return
     end = min(int(family.get("expires_at", 0)), int(family.get("revoked_at", 2**63 - 1)))
     scopes = set(str(family.get("scope", "")).split())
+    target_origin = config_store.load().loxone_endpoint if "loxberry:knx:read" in scopes else ""
     binding_ids = {
         (
             capability,
@@ -148,10 +179,11 @@ def record_explorer_family_end(
                 str(family.get("identity_id", "")),
                 str(family.get("miniserver_id", "")),
                 explorer_origin,
+                target_origin=target_origin,
             ),
         )
         for capability in _NAMESPACES
-        if capability in scopes
+        if capability in scopes and (capability != "loxberry:knx:read" or target_origin)
     }
     if not binding_ids:
         return
@@ -178,6 +210,7 @@ def maintain_explorer_bindings(
     """Reconcile active families and remove Explorer approvals past retention."""
     current = int(time.time()) if now is None else now
     document = auth_store.snapshot()
+    target_origin = config_store.load().loxone_endpoint
     active: set[tuple[str, str]] = set()
     ended: dict[tuple[str, str], int] = {}
     for family in document.get("families", {}).values():
@@ -188,6 +221,8 @@ def maintain_explorer_bindings(
         for capability in _NAMESPACES:
             if capability not in scopes:
                 continue
+            if capability == "loxberry:knx:read" and not target_origin:
+                continue
             explorer_origin = family.get("explorer_origin")
             if not isinstance(explorer_origin, str) or not explorer_origin:
                 continue
@@ -197,6 +232,7 @@ def maintain_explorer_bindings(
                 str(family.get("identity_id", "")),
                 str(family.get("miniserver_id", "")),
                 explorer_origin,
+                target_origin=target_origin,
             )
             key = (capability, binding_id)
             ended[key] = max(ended.get(key, 0), end)

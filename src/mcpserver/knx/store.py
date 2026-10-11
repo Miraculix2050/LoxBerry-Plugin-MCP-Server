@@ -163,13 +163,28 @@ class KnxStore:
         *,
         filters: object = None,
         expected: object = None,
+        address_id: int | None = None,
+        count_only: bool = False,
+        include_labels: bool = False,
     ) -> dict[str, Any]:
         if type(offset) is not int or not 0 <= offset <= MAX_ADDRESSES:
             raise KnxError("knx_page_invalid")
         if type(limit) is not int or not 1 <= limit <= 100:
             raise KnxError("knx_page_invalid")
+        if (
+            type(count_only) is not bool
+            or type(include_labels) is not bool
+            or (
+                address_id is not None
+                and (type(address_id) is not int or not 0 <= address_id < MAX_ADDRESSES)
+            )
+        ):
+            raise KnxError("knx_page_invalid")
         selection = query_filters(filters)
         where, arguments = query_sql(selection)
+        if address_id is not None:
+            where += " AND a.address=?"
+            arguments.append(address_id)
         if offset and filters is not None and expected is None:
             raise KnxError("knx_revision_conflict")
         with self.connection() as db:
@@ -181,19 +196,37 @@ class KnxStore:
                 "SELECT count(*) FROM addresses AS a WHERE a.target=?" + where,
                 [target, *arguments],
             ).fetchone()[0]
-            rows = db.execute(
-                "SELECT a.address,a.format,a.original,a.imported,a.overrides,s.source "
-                "FROM addresses AS a LEFT JOIN ets_sources AS s "
-                "ON s.target=a.target AND s.address=a.address "
-                "WHERE a.target=?" + where + " ORDER BY a.address LIMIT ? OFFSET ?",
-                [target, *arguments, limit, offset],
-            ).fetchall()
+            rows = (
+                []
+                if count_only
+                else db.execute(
+                    "SELECT a.address,a.format,a.original,a.imported,a.overrides,s.source "
+                    "FROM addresses AS a LEFT JOIN ets_sources AS s "
+                    "ON s.target=a.target AND s.address=a.address "
+                    "WHERE a.target=?" + where + " ORDER BY a.address LIMIT ? OFFSET ?",
+                    [target, *arguments, limit, offset],
+                ).fetchall()
+            )
+            labels = []
+            if include_labels:
+                selected = db.execute(
+                    "SELECT format,prefix,fields FROM import_groups "
+                    "WHERE target=? AND selected=1 ORDER BY format,prefix LIMIT 129",
+                    (target,),
+                ).fetchall()
+                if len(selected) > 128:
+                    raise KnxError("knx_label_limit")
+                labels = [
+                    {"address_format": fmt, "prefix": prefix, "label": json.loads(fields)["name"]}
+                    for fmt, prefix, fields in selected
+                ]
             return {
                 "revision": revision,
                 "total": total,
                 "offset": offset,
                 "filters": selection,
                 "items": [self.project(row) for row in rows],
+                **({"imported_labels": labels} if include_labels else {}),
             }
 
     def put(self, target: str, expected: object, value: object) -> int:

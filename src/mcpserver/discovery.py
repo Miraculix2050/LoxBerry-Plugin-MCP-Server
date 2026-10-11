@@ -9,7 +9,7 @@ from typing import Any
 
 MAX_DISCOVERY_BYTES = 16 * 1024 * 1024
 MAX_DISCOVERY_TOOLS = 512
-CONTRACT_FIELDS = ("description", "annotations", "inputSchema", "outputSchema")
+CONTRACT_FIELDS = ("description", "annotations", "inputSchema", "outputSchema", "_meta")
 
 
 def _digest(value: object) -> str:

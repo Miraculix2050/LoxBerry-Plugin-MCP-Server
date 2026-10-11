@@ -20,7 +20,7 @@ Load the core rules first. Choose the user's question, not every available check
 Inspect the current client tool schema; if an enum/tool is missing, explain the
 discovery limitation and reconnect through the supported client workflow. Never
 probe an undiscovered capability or invent a raw request. This module describes
-read-only project metadata; local catalog/draft writes are not available here.
+read-only project and local metadata; draft writes are not available here.
 
 1. **Locate an object:** `loxone_find_project_objects` searches additional
    imported ETS and manual KNX names/descriptions, including values hidden by a
@@ -46,6 +46,20 @@ read-only project metadata; local catalog/draft writes are not available here.
    Check target/revision, freshness, coverage,
    diagnostic omissions and every required page. State whether the answer covers
    a summary, sample or all delivered pages; never call a page sample a full audit.
+4. **Inspect local inventory:** if discovered, `loxberry_get_knx_catalog` reads
+   standalone ETS/manual addresses (`kind="addresses"`) or active style-bound
+   prefix labels (`kind="prefix_labels"`). It requires separately consented
+   `loxberry:knx:read`, Admin enablement and exact target-bound approval; a Loxone
+   login or diagnostics approval is insufficient. Start with `view="summary"`,
+   narrow literal `query`, `source`, `deviations_only` or exact `address`, then
+   fetch entries (default 50, maximum 100). Prefix labels are context, not signal
+   links. Local resolution never supersedes Loxone project names; the catalog
+   performs no project download and includes no Loxone names. Use project tools
+   for authorized current-project comparison. Repeat all selections and limit
+   on continuation; cursors bind caller, target and both revisions, expire after
+   five minutes and end on restart. Restart after changes. Consume structured
+   output once, not its text fallback too. `import_format` is origin information,
+   not proof of correction-export eligibility.
 
 Interpret sources separately:
 

@@ -28,6 +28,7 @@ if (($q->{lang} // '') =~ /\A(?:de|en)\z/) {
 $ENV{MCPSERVER_KNX_ADMIN} = "1";
 $ENV{LBPDATA} = $lbpdatadir;
 $ENV{MCPSERVER_CONFIG} = "$lbpconfigdir/mcpserver.json";
+$ENV{MCPSERVER_AUTH_STORE} = "$lbpdatadir/auth/sessions.json";
 my $session_token = $cgi->cookie('mcp_knx_admin') // '';
 my $session_cookie;
 if ($session_token !~ /\A[0-9a-f]{64}\z/ && ($ENV{REQUEST_METHOD} // '') eq 'GET') {
@@ -61,7 +62,7 @@ if (($q->{action} // '') ne '') {
     my $result;
     if (!MCPServer::RequestSecurity::same_origin_post()) {
         $result = {ok => JSON::PP::false, error => {code => 'forbidden'}};
-    } elsif ($cgi->cgi_error || ($q->{action} // '') !~ /\A(?:knx_page|knx_put|knx_delete|knx_export|knx_restore|knx_taxonomy|knx_preview|knx_import_load|knx_import_preview|knx_import_apply|knx_import_discard|knx_compare_load|knx_compare_page|knx_compare_discard|knx_xml_preview|knx_xml_download|knx_xml_discard)\z/) {
+    } elsif ($cgi->cgi_error || ($q->{action} // '') !~ /\A(?:knx_page|knx_put|knx_delete|knx_export|knx_restore|knx_taxonomy|knx_preview|knx_import_load|knx_import_preview|knx_import_apply|knx_import_discard|knx_compare_load|knx_compare_page|knx_compare_discard|knx_xml_preview|knx_xml_download|knx_xml_discard|knx_read_page|knx_read_enable|knx_read_grant|knx_read_revoke)\z/) {
         $result = {ok => JSON::PP::false, error => {code => 'invalid_request'}};
     } else {
         my $payload = eval { decode_json($q->{payload} // '{}') };

@@ -35,6 +35,37 @@ _FULL_PATTERNS: Final = (
 _TEST_GROUPS: Final = (
     (
         (
+            "src/mcpserver/knx/**",
+            "src/mcpserver/explorer_bindings.py",
+            "templates/knx.html",
+            "webfrontend/htmlauth/knx*",
+        ),
+        (
+            "tests/test_knx_catalog_runtime.py",
+            "tests/test_knx_catalog_delegation.py",
+            "tests/test_knx_management.py",
+            "tests/test_knx_read_model.py",
+            "tests/test_knx_xml_import.py",
+            "tests/test_knx_xml_export.py",
+            "tests/test_knx_xml_export_ui.py",
+            "tests/test_knx_csv_import.py",
+            "tests/test_knx_import_service.py",
+            "tests/test_knx_import_ui.py",
+            "tests/test_knx_file_comparison.py",
+            "tests/test_knx_file_comparison_ui.py",
+            "tests/test_knx_project_metadata.py",
+            "tests/test_knx_project_comparison.py",
+            "tests/test_knx_project_tools.py",
+            "tests/test_knx_project_ui.py",
+            "tests/test_explorer_bindings.py",
+            "tests/test_admin.py",
+            "tests/test_oauth.py",
+            "tests/test_server.py",
+            "tests/test_schema_reference.py",
+        ),
+    ),
+    (
+        (
             "src/mcpserver/installation_profile*.py",
             "webfrontend/htmlauth/profile.cgi",
             "webfrontend/htmlauth/profile.js",

@@ -163,6 +163,7 @@ def test_provider_preserves_scope_exports_and_order() -> None:
         MESSAGE_CONFIRM_SCOPE,
         LOXBERRY_READ_SCOPE,
         LOXBERRY_OPERATE_SCOPE,
+        "loxberry:knx:read",
     )
     assert scopes.SUPPORTED_SCOPES == SUPPORTED_SCOPES == expected
     assert SCOPE == scopes.SCOPE == READ_SCOPE
@@ -1220,6 +1221,7 @@ def test_metadata_advertises_all_requestable_scopes(tmp_path: Path) -> None:
         MESSAGE_CONFIRM_SCOPE,
         LOXBERRY_READ_SCOPE,
         LOXBERRY_OPERATE_SCOPE,
+        "loxberry:knx:read",
     ]
     assert response.json()["code_challenge_methods_supported"] == ["S256"]
     assert response.headers["cache-control"] == "no-store"
@@ -1268,6 +1270,34 @@ def test_consent_page_uses_one_permission_dialog_for_read_and_control(tmp_path: 
     assert 'name="grant_control" value="true"' in page
     assert "Confirm permissions / Berechtigungen bestätigen" in page
     assert "redirected to your MCP client" in page
+
+
+def test_local_knx_read_is_an_explicit_optional_consent_without_other_delegations(tmp_path):
+    web = Phase0OAuthWeb(
+        _provider(tmp_path),
+        endpoint=MiniserverEndpoint.parse_gen1("http://192.168.255.254"),
+        issuer=ISSUER,
+        resource=RESOURCE,
+    )
+    transaction = LoginTransaction(
+        transaction_id="knx",
+        csrf_token="csrf",
+        client_id="client",
+        client_name="Client",
+        redirect_uri=REDIRECT,
+        state="state",
+        code_challenge=CHALLENGE,
+        resource=RESOURCE,
+        created_at=1_800_000_000,
+        scopes=(READ_SCOPE, "loxberry:knx:read"),
+    )
+    page = web._consent_page(transaction).body.decode()
+    assert 'name="grant_knx_read" value="true" data-optional-scope' in page
+    assert "Requires separate LoxBerry Admin approval" in page
+    assert "Separate LoxBerry-Admin-Freigabe erforderlich" in page
+    assert 'name="grant_loxberry"' not in page
+    assert 'name="grant_loxberry_operate"' not in page
+    assert 'name="grant_history"' not in page
 
 
 @pytest.mark.asyncio
@@ -1438,8 +1468,12 @@ async def test_consent_issues_only_the_scopes_selected_by_the_user(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "capability,field",
+    [(LOXBERRY_READ_SCOPE, "grant_loxberry"), ("loxberry:knx:read", "grant_knx_read")],
+)
 async def test_pending_loxberry_consent_issues_scope_without_local_approval(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capability: str, field: str
 ) -> None:
     provider = Phase0OAuthProvider(
         AtomicJsonAuthStore(tmp_path / "auth" / "sessions.json"),
@@ -1456,7 +1490,7 @@ async def test_pending_loxberry_consent_issues_scope_without_local_approval(
         token_endpoint_auth_method="none",
         grant_types=["authorization_code", "refresh_token"],
         response_types=["code"],
-        scope=f"{READ_SCOPE} {LOXBERRY_READ_SCOPE}",
+        scope=f"{READ_SCOPE} {capability}",
     )
     await provider.register_client(client_info)
     web = Phase0OAuthWeb(
@@ -1475,7 +1509,7 @@ async def test_pending_loxberry_consent_issues_scope_without_local_approval(
         code_challenge=CHALLENGE,
         resource=RESOURCE,
         created_at=provider.now(),
-        scopes=(READ_SCOPE, LOXBERRY_READ_SCOPE),
+        scopes=(READ_SCOPE, capability),
         identity_id="identity",
         miniserver_id="miniserver",
         phase="consent",
@@ -1497,7 +1531,7 @@ async def test_pending_loxberry_consent_issues_scope_without_local_approval(
     ) as client:
         approved = await client.post(
             "/authorize",
-            data={"csrf": "csrf", "action": "approve", "grant_loxberry": "true"},
+            data={"csrf": "csrf", "action": "approve", field: "true"},
         )
 
     code_value = parse_qs(urlsplit(approved.headers["location"]).query)["code"][0]
@@ -1505,8 +1539,8 @@ async def test_pending_loxberry_consent_issues_scope_without_local_approval(
     family = next(iter(provider.store.snapshot()["families"].values()))
     assert approved.status_code == 302
     assert code is not None
-    assert code.scopes == [READ_SCOPE, LOXBERRY_READ_SCOPE]
-    assert family["pending_loxberry_read"] is True
+    assert code.scopes == [READ_SCOPE, capability]
+    assert family["pending_loxberry_read"] is (capability == LOXBERRY_READ_SCOPE)
 
 
 @pytest.mark.parametrize(

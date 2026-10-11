@@ -20,6 +20,8 @@ def test_defaults_are_disabled_and_bounded() -> None:
     assert config.loxone_read_enabled is True
     assert config.loxone_control_enabled is False
     assert config.loxberry_read_enabled is False
+    assert config.loxberry_knx_read_enabled is False
+    assert config.loxberry_knx_read_bindings == ()
     assert config.loxone_history_enabled is False
     assert config.loxberry_operate_enabled is False
     assert config.connection_timeout == 10

@@ -46,6 +46,7 @@ from mcpserver.auth.provider import (
     normalize_scopes,
     scope_text,
 )
+from mcpserver.auth.scopes import LOXBERRY_KNX_READ_SCOPE
 from mcpserver.loxone.auth_diagnostics import (
     MiniserverAuthCoordinator,
     MiniserverAuthenticationBusy,
@@ -757,11 +758,24 @@ class Phase0OAuthWeb:
             if operate_requested
             else ""
         )
+        knx_read_option = (
+            """<label class="scope-option" for="grant_knx_read"><input id="grant_knx_read" type="checkbox" name="grant_knx_read" value="true" data-optional-scope>
+<span><strong>Local KNX catalog / Lokaler KNX-Katalog</strong><small>Optional: read stored ETS/manual names, descriptions, DPT declarations and prefix labels. Requires separate LoxBerry Admin approval; Loxone visibility does not authorize local metadata. / Optional: Gespeicherte ETS-/manuelle Namen, Beschreibungen, DPT-Angaben und Präfixlabels lesen. Separate LoxBerry-Admin-Freigabe erforderlich; Loxone-Sichtbarkeit berechtigt nicht zum Lesen lokaler Metadaten.</small></span></label>"""
+            if LOXBERRY_KNX_READ_SCOPE in transaction.scopes
+            else ""
+        )
         select_all_option = (
             """<label class="scope-select-all" for="grant_all"><input id="grant_all" type="checkbox">
 <span id="grant_all_label" data-select-label="Select all / Alle auswählen" data-deselect-label="Deselect all / Alle abwählen">Select all / Alle auswählen</span></label>"""
             if any(
-                (history_option, control_option, message_option, loxberry_option, operate_option)
+                (
+                    history_option,
+                    control_option,
+                    message_option,
+                    loxberry_option,
+                    operate_option,
+                    knx_read_option,
+                )
             )
             else ""
         )
@@ -795,7 +809,7 @@ sync();
 <fieldset class="scope-list"><legend>Permissions / Berechtigungen</legend>
 {select_all_option}
 <label class="scope-option"><input type="checkbox" checked disabled><span><strong>Read access / Lesezugriff</strong><small>Required: read permitted Loxone structure and states. / Erforderlich: Freigegebene Loxone-Struktur und Zustände lesen.</small></span></label>
-{history_option}{control_option}{message_option}{loxberry_option}{operate_option}</fieldset>
+{history_option}{control_option}{message_option}{loxberry_option}{operate_option}{knx_read_option}</fieldset>
 <p class="notice">After confirmation, you will be redirected to your MCP client. / Nach der Bestätigung werden Sie zu Ihrem MCP-Client weitergeleitet.</p>
 <div class="actions"><button type="submit">Confirm permissions / Berechtigungen bestätigen</button></div></form>
 <form method="post" action="/plugins/mcpserver/oauth/authorize">{self._hidden(transaction, "deny")}
@@ -820,6 +834,7 @@ sync();
                 "grant_messages",
                 "grant_loxberry",
                 "grant_loxberry_operate",
+                "grant_knx_read",
             },
         )
         transaction_id = request.cookies.get(_COOKIE_NAME, "")
@@ -859,11 +874,17 @@ sync();
                 grant_history = form.get("grant_history")
                 grant_loxberry = form.get("grant_loxberry")
                 grant_loxberry_operate = form.get("grant_loxberry_operate")
+                grant_knx_read = form.get("grant_knx_read")
                 if (
                     grant_messages not in {None, "true"}
                     or (
                         grant_messages is not None
                         and MESSAGE_CONFIRM_SCOPE not in transaction.scopes
+                    )
+                    or grant_knx_read not in {None, "true"}
+                    or (
+                        grant_knx_read is not None
+                        and LOXBERRY_KNX_READ_SCOPE not in transaction.scopes
                     )
                     or grant_control not in {None, "true"}
                     or (grant_control is not None and CONTROL_SCOPE not in transaction.scopes)
@@ -910,6 +931,8 @@ sync();
                             status=400,
                         )
                     approved_scopes = (*approved_scopes, LOXBERRY_OPERATE_SCOPE)
+                if grant_knx_read == "true":
+                    approved_scopes = (*approved_scopes, LOXBERRY_KNX_READ_SCOPE)
                 transaction.phase = "approving"
                 family_id: str | None = None
                 if self.loxone_store is None:
@@ -1327,6 +1350,7 @@ sync();
                     MESSAGE_CONFIRM_SCOPE,
                     LOXBERRY_READ_SCOPE,
                     LOXBERRY_OPERATE_SCOPE,
+                    LOXBERRY_KNX_READ_SCOPE,
                 ],
                 "response_types_supported": ["code"],
                 "grant_types_supported": ["authorization_code", "refresh_token"],
