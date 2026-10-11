@@ -116,6 +116,7 @@ def test_original_numeric_references_against_delivered_core() -> None:
         "energy"
     ] == pytest.approx(counter["expected"]["delta_kwh"], abs=1e-9)
     ranked = datasets["ranked_intervals"]
+    assert all(b - a == 3600 for records in ranked["series"].values() for a, b, _v in records)
     sources = [
         source([(a, v) for a, _b, v in records], role="consumer", boundary=name)
         for name, records in ranked["series"].items()
@@ -128,22 +129,37 @@ def test_original_numeric_references_against_delivered_core() -> None:
 
     # Fixtures explicitly evidence held power intervals; only the test converts whole hours.
     mixed = datasets["mixed_overlap"]
+    assert all(b - a == 3600 for a, b, _watts in mixed["power_intervals"])
     production = source(
         [(a, watts) for a, _b, watts in mixed["power_intervals"]], unit="Wh", role="production"
     )
     load = source([(0, 1000), (3600, 1000)], unit="Wh", role="consumer")
-    segments = reconstruct_segments(((0, 7200, True, ((5400, False),)),), start=0, end=7200)
+    initial = mixed["event_baseline"]
+    begin, finish = mixed["capture"][0][0], mixed["capture"][-1][1]
+    phases = tuple(
+        (
+            a,
+            b,
+            initial["value"] if initial["at"] == a else None,
+            tuple((at, new) for at, _old, new in mixed["transitions"] if a <= at < b),
+        )
+        for a, b in mixed["capture"]
+    )
+    segments = reconstruct_segments(phases, start=begin, end=finish)
     state = ComparisonInput(
-        duration_summary(segments, start=0, end=7200, control_uuid="synthetic", source_id="state"),
+        duration_summary(
+            segments, start=begin, end=finish, control_uuid="synthetic", source_id="state"
+        ),
         segments=segments,
     )
-    overlap = comparison("pv_load_overlap", [production, load, state], end=7200)
+    overlap = comparison("pv_load_overlap", [production, load, state], end=finish)
     assert (
         overlap.metrics["positive_production_and_load_seconds"]
         == mixed["expected"]["overlap_seconds"]
     )
     assert overlap.metrics["exact_solar_attribution_fraction"] is None
     night = datasets["night_intervals"]
+    assert all(a % 3600 == b % 3600 == 0 and b > a for a, b, _watts in night["intervals"])
     hours = [(hour, watts) for a, b, watts in night["intervals"] for hour in range(a, b, 3600)]
     baseline = comparison("baseload", [source(hours, unit="Wh")])
     assert baseline.metrics["nighttime_median_power"] == pytest.approx(
