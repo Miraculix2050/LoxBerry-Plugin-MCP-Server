@@ -10,7 +10,7 @@ import unicodedata
 from collections import Counter, defaultdict, deque
 from dataclasses import dataclass
 
-from .coverage import coverage_by_source_type
+from .coverage import coverage_by_source_type, source_diagnostics_projection
 from .graph import GraphEdge, GraphNode, SemanticEdge
 from .mapping import ProjectView, RuntimeEvidence
 from .taxonomy import AddressTaxonomyEntry
@@ -299,7 +299,6 @@ def analyze_knx(
     if not analyses or not analyses <= ANALYSES:
         raise ValueError("project_analysis_invalid")
     graph = view.snapshot.graph
-    source_diagnostics = view.snapshot.source_diagnostics
     nodes = {node.key: node for node in graph.nodes}
     children, parents = _children(graph.edges)
     needs_usage = bool(
@@ -1287,25 +1286,7 @@ def analyze_knx(
             },
             {"code": "unresolved_relationships", "count": len(graph.unresolved)},
         ],
-        "source_diagnostics": {
-            "entries": [
-                {
-                    "code": item.code,
-                    "count": item.count,
-                    "source_type": item.source_type,
-                    "attribute_name": item.attribute_name,
-                    "value_shape": item.value_shape,
-                    "length_bucket": item.length_bucket,
-                    "sample_project_node_ids": list(item.sample_node_ids),
-                    "sample_omitted": item.sample_omitted,
-                }
-                for item in source_diagnostics.entries[:50]
-            ],
-            "complete": source_diagnostics.complete and len(source_diagnostics.entries) <= 50,
-            "groups_omitted": source_diagnostics.groups_omitted
-            + max(0, len(source_diagnostics.entries) - 50),
-            "labels_truncated": source_diagnostics.labels_truncated,
-        },
+        "source_diagnostics": source_diagnostics_projection(view.snapshot),
         "findings": findings,
         "analysis_truncated": bool(truncated_reasons),
         "truncation_reasons": sorted(set(truncated_reasons)),

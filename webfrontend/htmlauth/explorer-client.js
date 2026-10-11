@@ -66,6 +66,7 @@
           const failure = core.mcpFailure(response, http.ok ? 'MCP protocol error' : `${http.status} ${http.statusText}`);
           const error = new Error(failure.message);
           error.mcpResult = failure.result;
+          error.httpStatus = status;
           throw error;
         }
         return response ? response.result : null;

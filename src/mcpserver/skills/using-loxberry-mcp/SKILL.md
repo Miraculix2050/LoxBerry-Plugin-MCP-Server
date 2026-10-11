@@ -126,6 +126,21 @@ taxonomy label as administrator metadata, never a project inference. A local
 pattern or outlier is only a review candidate; address shape and names do not
 prove ETS roles, DPTs, floors, physical wiring or bus activity.
 
+For an imported ETS catalog comparison, explicitly select
+`analyses=["ets_project_comparison"]` with `scope="knx"`. Omitted selection
+keeps the existing standard analyses. Follow cursors and check the revision,
+target binding, model freshness, source coverage and diagnostic limits. This
+compares exact numeric addresses observed in the authorized parsed project;
+two-/three-level spellings share an identity while original `:0`/`:1` variants
+remain separate project objects. Import-only does not establish unused bus
+addresses; project-only does not establish configuration errors. Completeness
+describes the latest input declaration; the catalog may combine imports.
+`comparison` separates primary Loxone names, imported ETS values and manual
+metadata. Different names are deviations, not proven mistakes. Several Loxone
+names remain explicit; missing or truncated names limit the comparison. Manual
+overrides never change Loxone names or the imported-name comparison. The tool
+does not assign addresses by name, repair projects, write data or export ETS.
+
 `project_parts` counts internally ingested model sources, not Loxone Config
 projects. Status returns opaque `model_sources`; KNX object summaries expose a
 logical object once with `source_occurrence_count` and `model_source_ids` when

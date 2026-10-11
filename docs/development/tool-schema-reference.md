@@ -1,5 +1,19 @@
 # Tool schema reference
 
+## Explicit ETS/Loxone project comparison (#417)
+
+`loxone_analyze_project(scope="knx", analyses=["ets_project_comparison"])`
+adds a bounded read-only comparison to analysis version 12; omitted selection
+retains the existing default set. Each comparison finding has a numeric
+`address_id`, relation (`common`, `import_only`, `observed_project_only`),
+separate name-comparison/ambiguity/completeness flags, optional local metadata
+and at most 20 project objects with an omitted count. Objects preserve primary
+Loxone names, original address/style/variant, project fields and truncation.
+The summary identifies target/revision, latest input declaration, full address
+counts and bounded source coverage. Installation coverage and bus usage remain
+unassessed; a naming deviation does not establish an error. Existing cursors,
+authorization, response bounds and source diagnostics still apply.
+
 ## WindowMonitor contact-state decoding
 
 Exact `WindowMonitor.windowStates` values share one decoder in state reads,

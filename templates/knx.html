@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v4">
+<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v5">
 <main class="mcp-page mcp-knx" id="knx-page"
  data-saved="<TMPL_VAR KNX.SAVED ESCAPE=HTML>"
  data-failed="<TMPL_VAR KNX.FAILED ESCAPE=HTML>"
@@ -145,8 +145,48 @@
     <div class="mcp-actions"><button class="lb-button" type="submit"><TMPL_VAR KNX.SAVE_RECORD></button><button class="lb-button" type="reset"><TMPL_VAR KNX.NEW_RECORD></button></div>
    </fieldset>
   </form>
-  <div class="mcp-table-wrap"><table class="mcp-table"><thead><tr><th><TMPL_VAR KNX.ADDRESS></th><th><TMPL_VAR KNX.IMPORT_NAME></th><th><TMPL_VAR KNX.MANUAL_NAME></th><th><TMPL_VAR KNX.DESCRIPTION></th><th><TMPL_VAR KNX.SOURCES></th><th><TMPL_VAR KNX.ACTIONS></th></tr></thead><tbody id="knx-addresses"></tbody></table></div>
+  <div class="mcp-table-wrap" tabindex="0" role="region" aria-label="<TMPL_VAR KNX.ADDRESS ESCAPE=HTML>"><table class="mcp-table"><thead><tr><th><TMPL_VAR KNX.ADDRESS></th><th><TMPL_VAR KNX.IMPORT_NAME></th><th><TMPL_VAR KNX.MANUAL_NAME></th><th><TMPL_VAR KNX.DESCRIPTION></th><th><TMPL_VAR KNX.SOURCES></th><th><TMPL_VAR KNX.ACTIONS></th></tr></thead><tbody id="knx-addresses"></tbody></table></div>
   <div class="mcp-actions"><button class="lb-button" id="knx-previous" type="button"><TMPL_VAR KNX.PREVIOUS></button><span id="knx-count"></span><button class="lb-button" id="knx-next" type="button"><TMPL_VAR KNX.NEXT></button></div>
+ </section>
+ <section class="mcp-card" id="knx-project-section"
+  data-common="<TMPL_VAR KNX.PROJECT_COMMON ESCAPE=HTML>"
+  data-import-only="<TMPL_VAR KNX.PROJECT_IMPORT_ONLY ESCAPE=HTML>"
+  data-observed-project-only="<TMPL_VAR KNX.PROJECT_LOXONE_ONLY ESCAPE=HTML>"
+  data-names-differ="<TMPL_VAR KNX.PROJECT_NAMES_DIFFER ESCAPE=HTML>"
+  data-names-same="<TMPL_VAR KNX.PROJECT_NAMES_SAME ESCAPE=HTML>"
+  data-names-unknown="<TMPL_VAR KNX.PROJECT_NAMES_UNKNOWN ESCAPE=HTML>"
+  data-ambiguous="<TMPL_VAR KNX.PROJECT_AMBIGUOUS ESCAPE=HTML>"
+  data-omitted="<TMPL_VAR KNX.PROJECT_OMITTED ESCAPE=HTML>"
+  data-limited="<TMPL_VAR KNX.PROJECT_LIMITED ESCAPE=HTML>"
+  data-source-limits="<TMPL_VAR KNX.PROJECT_SOURCE_LIMITS ESCAPE=HTML>"
+  data-latest-document="<TMPL_VAR KNX.PROJECT_LATEST_DOCUMENT ESCAPE=HTML>"
+  data-complete="<TMPL_VAR KNX.PROJECT_COMPLETE ESCAPE=HTML>"
+  data-partial="<TMPL_VAR KNX.PROJECT_PARTIAL ESCAPE=HTML>"
+  data-target-changed="<TMPL_VAR KNX.ERROR_STALE ESCAPE=HTML>"
+  data-working="<TMPL_VAR EXPLORER.WORKING ESCAPE=HTML>"
+  data-connected="<TMPL_VAR EXPLORER.CONNECTED ESCAPE=HTML>"
+  data-disconnected="<TMPL_VAR EXPLORER.DISCONNECTED ESCAPE=HTML>"
+  data-error="<TMPL_VAR EXPLORER.ERROR ESCAPE=HTML>"
+  data-popup-blocked="<TMPL_VAR EXPLORER.POPUP_BLOCKED ESCAPE=HTML>"
+  data-auth-cancelled="<TMPL_VAR EXPLORER.AUTH_CANCELLED ESCAPE=HTML>"
+  data-token-expired="<TMPL_VAR EXPLORER.TOKEN_EXPIRED ESCAPE=HTML>"
+  data-timeout="<TMPL_VAR EXPLORER.TIMEOUT ESCAPE=HTML>"
+  data-origin-mismatch="<TMPL_VAR EXPLORER.ORIGIN_MISMATCH ESCAPE=HTML>">
+  <h2><TMPL_VAR KNX.PROJECT_TITLE></h2>
+  <p class="mcp-help"><TMPL_VAR KNX.PROJECT_HELP></p>
+  <div class="mcp-actions">
+   <button class="lb-button" id="knx-project-connect" type="button"><TMPL_VAR EXPLORER.CONNECT></button>
+   <button class="lb-button" id="knx-project-disconnect" type="button" disabled><TMPL_VAR KNX.PROJECT_DISCONNECT></button>
+   <button class="lb-button" id="knx-project-run" type="button" disabled><TMPL_VAR KNX.PROJECT_RUN></button>
+  </div>
+  <p id="knx-project-status" role="status" aria-live="polite"><TMPL_VAR EXPLORER.DISCONNECTED></p>
+  <p id="knx-project-origin-warning" hidden><TMPL_VAR EXPLORER.ORIGIN_MISMATCH> <a class="lb-button" id="knx-project-origin-link" rel="noopener"><TMPL_VAR EXPLORER.OPEN_CANONICAL></a></p>
+  <p id="knx-project-summary"></p>
+  <details id="knx-project-coverage" hidden><summary><TMPL_VAR KNX.PROJECT_COVERAGE></summary><pre id="knx-project-coverage-data"></pre></details>
+  <div class="mcp-table-wrap" tabindex="0" role="region" aria-label="<TMPL_VAR KNX.PROJECT_TITLE ESCAPE=HTML>"><table class="mcp-table"><thead><tr>
+   <th><TMPL_VAR KNX.ADDRESS></th><th><TMPL_VAR KNX.PROJECT_RELATION></th><th><TMPL_VAR KNX.PROJECT_LOXONE_NAMES></th><th><TMPL_VAR KNX.IMPORT_NAME></th><th><TMPL_VAR KNX.MANUAL_NAME></th><th><TMPL_VAR KNX.PROJECT_OBSERVATION></th>
+  </tr></thead><tbody id="knx-project-rows"></tbody></table></div>
+  <div class="mcp-actions"><span id="knx-project-count"></span><button class="lb-button" id="knx-project-next" type="button" disabled><TMPL_VAR KNX.NEXT></button></div>
  </section>
 </main>
 <dialog class="mcp-dialog" id="knx-confirm" aria-labelledby="knx-confirm-title" aria-describedby="knx-confirm-message">
@@ -159,3 +199,8 @@
 </dialog>
 <script src="knx.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v7" defer></script>
 <script src="knx-import.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-import-v3" defer></script>
+<script src="explorer-core.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-project-v1" defer></script>
+<script src="explorer-state.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-project-v1" defer></script>
+<script src="explorer-auth.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-project-v1" defer></script>
+<script src="explorer-client.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-project-v1" defer></script>
+<script src="knx-project.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-project-v1" defer></script>

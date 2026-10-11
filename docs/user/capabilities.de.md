@@ -603,6 +603,22 @@ Bekannte nicht auflösbare API-Verbindungen bleiben in allgemeinen Projektbelege
 
 ### KNX-Verwaltung
 
+**ETS/Loxone-Projektabgleich** benötigt eine separate Loxone-Anmeldung mit
+Projektzugriff. Er zeigt gemeinsame Adressen, Adressen nur im Importbestand
+und Adressen, die nur im autorisierten eingelesenen Projekt beobachtet wurden.
+Alle relevanten primären Loxone-Namen bleiben von ETS-Namen und manuellen
+Metadaten getrennt; begrenzte Objektlisten weisen ausgelassene Einträge aus.
+Unterschiedliche Namen sind Benennungsabweichungen, keine belegten Fehler.
+Fehlende oder gekürzte Namen begrenzen den Vergleich. Originale zwei- und
+dreistufige Adressen sowie `:0`/`:1`-Varianten bleiben sichtbar. Nur im Import
+belegt keine ungenutzte Busadresse; nur im Projekt belegt keinen
+Konfigurationsfehler. Die deklarierte Vollständigkeit der letzten Datei belegt
+keine Vollständigkeit eines Bestands, der mehrere Importe vereinigen kann.
+Quelllücken, Aktualität, Modellversion und Folgeseiten prüfen. Der Abgleich
+ändert keine Daten. MCP-Clients wählen ausdrücklich
+`scope="knx", analyses=["ets_project_comparison"]`; Standardanalysen bleiben
+unverändert. Ziel- oder Metadatenänderungen erfordern einen neuen Abgleich.
+
 Die eigene KNX-Seite ist aus der Administration erreichbar. Sie verwaltet Präfixlabels und manuelle Gruppenadressen getrennt je konfiguriertem Miniserver. Adresse, Darstellungsformat und zusätzlicher Name sind erforderlich; Beschreibung und DPT-Angaben sind optional. Diese Angaben ändern keine Loxone-Namen oder Projektfakten.
 
 Die lokale Suche findet Teiltexte in importierten und manuellen Namen/Beschreibungen, einschließlich vom Override verdeckter Importwerte. Adressen werden auch in der entsprechenden zwei-/dreistufigen Darstellung gefunden. Quellenfilter unterscheiden Importwerte, manuelle Angaben und beide Quellen. **Abweichende lokale und importierte Werte** zeigt ausdrücklich unterschiedliche Angaben, keine belegten Fehler. Präfixlabels bleiben separat. Ergebnisse sind nach Adresse sortiert und auf 50 Einträge pro Seite begrenzt. Änderungen am Ziel oder Datenstand verlangen eine neue Suche; Folgeseiten vermischen keine Stände. Der JSON-Seitenexport verwendet die aktuell angezeigten Filter und Revision.

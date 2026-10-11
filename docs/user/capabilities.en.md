@@ -553,6 +553,20 @@ Known unresolved API links remain visible in generic project evidence and aggreg
 
 ### KNX management
 
+**ETS/Loxone project comparison** requires a separate Loxone login with project
+access. It shows addresses common to both sources, only in the imported catalog,
+or only observed in the authorized parsed project. All relevant primary Loxone
+names stay separate from ETS names and manual metadata; bounded object lists
+show omitted counts. Different names are naming deviations, not proven errors.
+Missing/truncated names limit comparison. Original two-/three-level addresses
+and `:0`/`:1` variants remain visible. Import-only does not prove unused bus
+addresses, and project-only does not prove a configuration error. The latest
+file's declared completeness does not establish completeness of a catalog that
+may combine imports. Check source gaps, freshness, model version and pagination.
+The comparison changes no data. MCP clients explicitly select
+`scope="knx", analyses=["ets_project_comparison"]`; standard analyses stay
+unchanged. A target or metadata revision change requires a new comparison.
+
 Local search matches substrings in imported and manual names/descriptions, including import values hidden by overrides. Addresses also match their equivalent two-/three-level representation. Source filters distinguish imported values, manual declarations and both. **Different local and imported values** identifies differing declarations, not proven errors. Prefix labels remain separate. Results are ordered by address and limited to 50 rows per page. Changes to the target or data revision require a fresh search; subsequent pages never mix revisions. JSON page export uses the displayed filters and revision.
 
 **Sources and DPT declarations** separates import values and manual declarations per field, including unknown and explicitly empty values. Available format, timestamp and import digest identify the source. Multiple DPT identifiers remain intact; ETS identifiers such as `DPST-1-1` are additionally shown as `1.001`, while `DPT-1` specifies only the main type. Unrecognized identifier formats remain visible. Recognized syntax does not confirm type registration/meaning, telegram type or device programming. No type is selected and Loxone `EIBType` is not reinterpreted. Group-address versus communication-object assignment is not established here; CSV may flatten that association. Local search and sources require no Loxone project access. Authorized project search also considers additional ETS/manual names and descriptions, including import values hidden by overrides. Results retain Loxone names and project descriptions as primary and add separate `knx.metadata` source fields. Describe preserves the original `EIBType`; multiple DPT declarations retain syntax status without a preferred type. The Explorer shows an expandable source view. Changing the KNX revision invalidates search/analysis continuations; start a fresh request. Selected imported group labels supplement hierarchy analysis below manual labels.

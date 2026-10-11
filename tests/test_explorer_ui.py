@@ -1724,7 +1724,8 @@ def test_explorer_ui_is_local_scoped_and_progressively_safe() -> None:
     assert "const canonicalUrl = core.canonicalExplorerUrl(" in source
     assert "showConnectionError(_error, label('error'))" in source
     assert 'id="explorer-session-expiry" hidden' in template
-    assert "const scope = core.EXPLORER_SCOPE_ORDER.filter" in source
+    assert "const selectedScopes = requestedScopes || core.EXPLORER_SCOPE_ORDER" in source
+    assert "supported.has(item) && selectedScopes.includes(item)" in source
     assert "const registrationScope = scope" in source
     assert "supported.delete('loxberry:operate')" in source
     assert "return fetchJson(metadata.explorer_session_endpoint" in source

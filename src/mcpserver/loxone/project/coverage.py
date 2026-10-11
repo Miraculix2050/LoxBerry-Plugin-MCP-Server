@@ -12,6 +12,29 @@ _MAX_GROUPS = 50
 _MAX_LABEL = 100
 
 
+def source_diagnostics_projection(snapshot: ProjectSnapshot) -> dict[str, object]:
+    """Share the bounded diagnostic contract across explicit analyses."""
+    diagnostics = snapshot.source_diagnostics
+    return {
+        "entries": [
+            {
+                "code": item.code,
+                "count": item.count,
+                "source_type": item.source_type,
+                "attribute_name": item.attribute_name,
+                "value_shape": item.value_shape,
+                "length_bucket": item.length_bucket,
+                "sample_project_node_ids": list(item.sample_node_ids),
+                "sample_omitted": item.sample_omitted,
+            }
+            for item in diagnostics.entries[:50]
+        ],
+        "complete": diagnostics.complete and len(diagnostics.entries) <= 50,
+        "groups_omitted": diagnostics.groups_omitted + max(0, len(diagnostics.entries) - 50),
+        "labels_truncated": diagnostics.labels_truncated,
+    }
+
+
 def _label(value: str) -> tuple[str, bool]:
     if len(value) <= _MAX_LABEL:
         return value, False
