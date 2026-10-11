@@ -2,7 +2,11 @@
 
 import pytest
 
-from mcpserver.knx.correction_drafts import CORRECTION_TTL_SECONDS, CorrectionDraftStore
+from mcpserver.knx.correction_drafts import (
+    CORRECTION_TTL_SECONDS,
+    MAX_CORRECTION_OPERATIONS,
+    CorrectionDraftStore,
+)
 from mcpserver.knx.drafts import DraftStore
 from mcpserver.knx.model import KnxError
 
@@ -188,13 +192,18 @@ def test_update_request_reconciles_old_result_after_a_later_edit(tmp_path):
 def test_request_history_is_bounded_without_eviction(tmp_path):
     store = CorrectionDraftStore(tmp_path / "drafts.sqlite3", "a" * 64)
     identifier = store.create_correction("target", 7, "b" * 64, proposal())["draft_id"]
-    for number in range(32):
+    for number in range(MAX_CORRECTION_OPERATIONS):
         store.update_correction(
             identifier, "target", number + 1, proposal(), request_id=f"{number:032x}"
         )
     with pytest.raises(KnxError, match="knx_draft_limit"):
-        store.update_correction(identifier, "target", 33, proposal(), request_id="f" * 32)
-    assert store.inspect_correction(identifier, "target")["draft_revision"] == 33
+        store.update_correction(
+            identifier, "target", MAX_CORRECTION_OPERATIONS + 1, proposal(), request_id="f" * 32
+        )
+    assert (
+        store.inspect_correction(identifier, "target")["draft_revision"]
+        == MAX_CORRECTION_OPERATIONS + 1
+    )
 
 
 @pytest.mark.parametrize(

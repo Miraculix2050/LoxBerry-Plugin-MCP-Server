@@ -34,6 +34,12 @@ class ChangeInput(BaseModel):
     evidence_note: Annotated[str | None, Field(max_length=512)] = None
 
 
+class DecisionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    change_id: Annotated[str, Field(pattern=r"^[0-9a-f]{24}$")]
+    decision: Literal["proposed", "accepted", "rejected"]
+
+
 class ValueData(BaseModel):
     state: Literal["missing", "value"]
     value: str | None
@@ -53,7 +59,7 @@ class ChangeData(BaseModel):
     manual: ValueData
     project_object_id: str | None
     evidence_note: ValueData
-    decision: Literal["proposed"]
+    decision: Literal["proposed", "accepted", "rejected"]
 
 
 class DraftSummary(BaseModel):
@@ -230,6 +236,8 @@ def register_correction_tools(
             "Prepare/update own bounded KNX proposals after user discussion. Does not apply "
             "metadata, export XML or write Loxone. Requires separate default-off Admin draft "
             "approval. Stable request_id reconciles uncertainty; never automatically retry."
+            " Use mode=review with explicit per-change user decisions instead of changes. "
+            "Acceptance records a draft decision only; it grants no metadata write or download."
         ),
         annotations=ToolAnnotations(
             readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False
@@ -246,27 +254,58 @@ def register_correction_tools(
             Any,
             Field(
                 json_schema_extra={
-                    "type": "array",
+                    "type": ["array", "null"],
                     "minItems": 1,
                     "maxItems": 50,
                     "items": ChangeInput.model_json_schema(),
                 }
             ),
-        ],
+        ] = None,
         draft_id: Annotated[str | None, Field(pattern=r"^[0-9a-f]{48}$")] = None,
         draft_revision: Annotated[int | None, Field(strict=True, ge=1)] = None,
         use_project_evidence: bool = False,
+        mode: Literal["prepare", "review"] = "prepare",
+        decisions: Annotated[
+            Any,
+            Field(
+                json_schema_extra={
+                    "type": ["array", "null"],
+                    "minItems": 1,
+                    "maxItems": 50,
+                    "items": DecisionInput.model_json_schema(),
+                }
+            ),
+        ] = None,
     ) -> DraftPreparationEnvelope:
         # Validate private change values here, returning only fixed diagnostics;
         # SDK validation errors must not echo proposed descriptions or names.
         try:
-            if not isinstance(changes, list) or not 1 <= len(changes) <= 50:
-                raise KnxError("knx_draft_limit")
-            parsed = [
-                ChangeInput.model_validate(row).model_dump(exclude_unset=True) for row in changes
-            ]
             if (draft_id is None) != (draft_revision is None):
                 raise KnxError("knx_correction_invalid")
+            parsed: list[dict[str, Any]] = []
+            parsed_decisions: list[dict[str, Any]] = []
+            if mode == "prepare":
+                if (
+                    decisions is not None
+                    or not isinstance(changes, list)
+                    or not 1 <= len(changes) <= 50
+                ):
+                    raise KnxError("knx_correction_invalid")
+                parsed = [
+                    ChangeInput.model_validate(row).model_dump(exclude_unset=True)
+                    for row in changes
+                ]
+            else:
+                if (
+                    changes is not None
+                    or draft_id is None
+                    or not isinstance(decisions, list)
+                    or not 1 <= len(decisions) <= 50
+                ):
+                    raise KnxError("knx_correction_invalid")
+                parsed_decisions = [
+                    DecisionInput.model_validate(row).model_dump() for row in decisions
+                ]
         except (KnxError, ValidationError):
             if runtime is not None:
                 runtime.audit(None, "invalid_input")
@@ -283,6 +322,8 @@ def register_correction_tools(
                     changes=parsed,
                     draft_id=draft_id,
                     draft_revision=draft_revision,
+                    mode=mode,
+                    decisions=parsed_decisions,
                 ),
                 use_project_evidence or any("project_object_id" in row for row in parsed),
             ),

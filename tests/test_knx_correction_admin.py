@@ -57,11 +57,39 @@ def test_admin_inspects_same_owner_draft_without_transferring_ownership(tmp_path
     inspected = dispatch_knx("knx_correction_inspect", payload, configs)
     assert inspected["changes"][0]["proposed"]["value"] == "<img src=x>"
     assert inspected["applies_changes"] is False
+    shared = {**payload, "catalog_revision": 1, "manual_revision": plan["manual_revision"]}
+    change_id = created["changes"][0]["change_id"]
+    reviewed = dispatch_knx(
+        "knx_correction_review",
+        {
+            **shared,
+            "request_id": "a" * 32,
+            "decisions": [{"change_id": change_id, "decision": "accepted"}],
+        },
+        configs,
+    )
+    assert reviewed["draft_revision"] == 2 and reviewed["applies_changes"] is False
+    edited = dispatch_knx(
+        "knx_correction_edit",
+        {
+            **shared,
+            "draft_revision": 2,
+            "request_id": "b" * 32,
+            "change_id": change_id,
+            "edit": {"operation": "set", "value": ""},
+        },
+        configs,
+    )
+    assert edited["draft_revision"] == 3
+    own = owner.inspect_correction(created["draft_id"], target)
+    assert own["changes"][0]["decision"] == "proposed"
+    assert own["changes"][0]["value"] == ""
+    assert own["expires_at"] == created["expires_at"]
     foreign = CorrectionDraftStore(owner.path, "c" * 64)
     assert foreign.list_corrections(target) == []
     with pytest.raises(KnxError, match="knx_draft_unavailable"):
         foreign.inspect_correction(created["draft_id"], target)
-    owner.update_correction(created["draft_id"], target, 1, plan["changes"])
+    owner.update_correction(created["draft_id"], target, 3, plan["changes"])
     with pytest.raises(AdminError) as stale:
         dispatch_knx("knx_correction_inspect", payload, configs)
     assert stale.value.code == "knx_revision_conflict"
@@ -153,6 +181,81 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 0));
     w.document.getElementById('knx-corrections').dataset.failed);
   dom.window.close();
 })().catch(error => {console.error(error); process.exitCode = 1;});
+"""
+    node = shutil.which("node")
+    assert node is not None
+    result = subprocess.run(
+        [node, "-e", script],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_shared_view_review_and_full_value_edit_use_html_controls_only():
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const {JSDOM} = require('jsdom');
+const html = fs.readFileSync('templates/knx.html', 'utf8').replace(/<TMPL_VAR[^>]*>/g, 'label');
+const dom = new JSDOM(html, {url: 'https://local.example/knx.cgi', runScripts: 'outside-only'});
+const w = dom.window;
+for (const name of ['confirm','prompt','alert']) w[name] = () => {throw Error('Native dialog');};
+const section = w.document.getElementById('knx-corrections');
+Object.assign(section.dataset, {accepted:'Accept', rejected:'Reject', proposed:'Reset',
+  edit:'Edit', saveEdit:'Save', operation:'Operation', set:'Set', remove:'Remove'});
+const draft = {draft_id:'a'.repeat(48), draft_revision:1, expires_at:2000000000,
+  change_count:1, catalog_revision:5, manual_revision:'c'.repeat(64)};
+const full = '<script>literal</script>' + 'x'.repeat(400);
+let decision = 'proposed', proposed = full;
+const calls = [];
+w.fetch = async (_, options) => {
+  const action=options.body.get('action'), payload=JSON.parse(options.body.get('payload'));
+  calls.push({action,payload});
+  let data;
+  if (action === 'knx_correction_page') data={target:'b'.repeat(64),drafts:[{...draft}]};
+  else if (action === 'knx_correction_review' || action === 'knx_correction_edit') {
+    assert.equal(payload.draft_revision, draft.draft_revision);
+    assert.equal(payload.catalog_revision,5);
+    assert.equal(payload.manual_revision,'c'.repeat(64));
+    assert.match(payload.request_id,/^[0-9a-f]{32}$/);
+    if (action === 'knx_correction_review') decision=payload.decisions[0].decision;
+    else {proposed=payload.edit.value;decision='proposed';}
+    draft.draft_revision++;
+    data={draft_revision:draft.draft_revision};
+  } else data={draft:{...draft},next_offset:null,catalog_stale:false,manual_stale:false,
+    project_status:'not_required',changes:[{change_id:'d'.repeat(24),identity:'1/2/3',
+      destination:'local_metadata',field:'description',operation:'set',decision,
+      imported:{state:'missing'},manual:{state:'value',value:'source',truncated:false},
+      proposed:{state:'value',value:payload.detail?proposed:proposed.slice(0,128),
+                truncated:!payload.detail && proposed.length>128}}]};
+  return {ok:true,json:async()=>({ok:true,data})};
+};
+const tick=()=>new Promise(resolve=>setTimeout(resolve,0));
+(async()=>{
+  w.eval(fs.readFileSync('webfrontend/htmlauth/knx-corrections.js','utf8'));
+  await tick();
+  w.document.querySelector('#knx-corrections-list button').click();await tick();
+  let row=w.document.querySelector('#knx-corrections-values tr');
+  assert.equal(row.querySelector('script'),null);
+  [...row.querySelectorAll('button')].find(b=>b.textContent==='Accept').click();await tick();
+  assert.equal(decision,'accepted');
+  row=w.document.querySelector('#knx-corrections-values tr');
+  row.querySelector('details summary').click();await tick();await tick();
+  const textarea=row.querySelector('textarea');
+  assert.equal(textarea.value,full); // Never save a truncated projection.
+  assert.equal(calls.at(-1).payload.detail,true);
+  textarea.value='';row.querySelector('form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
+  await tick();
+  assert.equal(proposed,'');assert.equal(decision,'proposed');
+  const edit=calls.find(c=>c.action==='knx_correction_edit').payload;
+  assert.deepEqual(edit.edit,{operation:'set',value:''});
+  assert.equal('owner' in edit,false);
+  assert.equal(draft.draft_revision,3);
+  assert.equal(w.document.querySelector('#knx-corrections-values script'),null);
+  dom.window.close();
+})().catch(error=>{console.error(error);process.exitCode=1;});
 """
     node = shutil.which("node")
     assert node is not None

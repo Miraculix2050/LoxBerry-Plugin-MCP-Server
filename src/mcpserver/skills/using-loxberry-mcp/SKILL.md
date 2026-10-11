@@ -114,13 +114,16 @@ Use current target, catalog/manual revisions and a stable request ID; select
 local metadata or export targets explicitly. A selected Loxone object requires
 fresh project evidence and its exact complete field value; multiple objects
 never authorize an automatic winner. Sources stay immutable; nothing is applied,
-exported or written to Loxone. The Admin page inspects the same proposal.
+exported or written to Loxone. The Admin page inspects and edits the same proposal; editing resets the affected decision.
 Read compact own summaries, then selected draft pages with the returned revision;
 request one full row only when truncation matters. A stale draft is inspectable,
 not ready to apply. After timeout reconcile creation by request ID (or an edit by
 known draft ID); absence while a worker may still run is not proof of failure.
 Never automatically retry. Explicit sharing does not grant another MCP client
-ownership. User decisions and applying corrections require their separate workflow.
+ownership. Record concrete agreed change IDs with
+`loxberry_prepare_knx_corrections(mode="review", decisions=...)`; omit `changes`.
+Accepted/rejected/proposed decisions grant no apply or download permission. Keep project
+verification status explicit; local writes remain a separate workflow.
 
 ## Read information
 

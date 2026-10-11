@@ -6,6 +6,7 @@ import base64
 import binascii
 import hashlib
 import json
+import logging
 import os
 from collections.abc import Callable
 from dataclasses import replace
@@ -23,6 +24,8 @@ from .import_repository import ImportRepository
 from .model import MAX_FILE_BYTES, KnxError
 from .store import KnxStore
 from .xml_export import XmlCorrectionExport
+
+LOGGER = logging.getLogger(__name__)
 
 
 def validate_active_labels(config: PluginConfig) -> None:
@@ -82,13 +85,26 @@ def dispatch_knx(action: str, payload: object, config_store: AtomicConfigStore) 
         "knx_drafts_revoke",
         "knx_correction_page",
         "knx_correction_inspect",
+        "knx_correction_review",
+        "knx_correction_edit",
     }
     if action not in allowed or not isinstance(payload, dict):
         raise AdminError("Unsupported KNX action")
+    outcome = "rejected"
     try:
-        return config_store.transaction(lambda config, save: _run(action, payload, config, save))
+        result = config_store.transaction(lambda config, save: _run(action, payload, config, save))
+        outcome = "completed"
+        return result
     except KnxError as exc:
         raise AdminError("KNX operation rejected", code=exc.code) from None
+    finally:
+        if action in {"knx_correction_review", "knx_correction_edit"}:
+            LOGGER.info(
+                "component=knx_draft_admin_audit action=%s outcome=%s",
+                action,
+                outcome,
+                extra={"mcp_audit": True},
+            )
 
 
 def _run(
@@ -178,12 +194,27 @@ def _run(
     if not data_root or not Path(data_root).is_absolute():
         raise AdminError("Plugin data directory unavailable")
     store = KnxStore(Path(data_root) / "knx" / "metadata.sqlite3")
-    if action in {"knx_correction_page", "knx_correction_inspect"}:
+    if action in {
+        "knx_correction_page",
+        "knx_correction_inspect",
+        "knx_correction_review",
+        "knx_correction_edit",
+    }:
         from .correction_drafts import CorrectionDraftStore
         from .correction_projection import project_draft
         from .correction_service import CorrectionService
 
-        fields = {"target", "draft_id", "draft_revision", "offset"}
+        fields = {"target", "draft_id", "draft_revision", "offset", "detail"}
+        if action in {"knx_correction_review", "knx_correction_edit"}:
+            fields = {
+                "target",
+                "draft_id",
+                "draft_revision",
+                "catalog_revision",
+                "manual_revision",
+                "request_id",
+            }
+            fields |= {"decisions"} if action == "knx_correction_review" else {"change_id", "edit"}
         if not payload.keys() <= fields:
             raise KnxError("knx_correction_invalid")
         corrections = CorrectionDraftStore(
@@ -192,12 +223,47 @@ def _run(
         if action == "knx_correction_page":
             return {"target": token, "drafts": corrections.list_admin(target)}
         identifier = payload.get("draft_id")
+        correction_service = CorrectionService(store, corrections.admin_reader(identifier, target))
+        if action in {"knx_correction_review", "knx_correction_edit"}:
+            request_id = payload.get("request_id")
+            if not isinstance(request_id, str):
+                raise KnxError("knx_correction_invalid")
+            args = (
+                identifier,
+                config,
+                target,
+                payload.get("draft_revision"),
+                payload.get("catalog_revision"),
+                payload.get("manual_revision"),
+            )
+            if action == "knx_correction_review":
+                revision = correction_service.review(
+                    *args, payload.get("decisions"), request_id=request_id
+                )
+            else:
+                revision = correction_service.edit(
+                    *args,
+                    payload.get("change_id"),
+                    payload.get("edit"),
+                    request_id=request_id,
+                )
+            result = correction_service.drafts.inspect_correction(identifier, target)
+            return {
+                "target": token,
+                "draft_id": identifier,
+                "draft_revision": result["draft_revision"],
+                "operation_revision": revision,
+                "expires_at": result["expires_at"],
+                "applies_changes": False,
+                "exports_file": False,
+            }
         offset = payload.get("offset", 0)
         if type(offset) is not int or not 0 <= offset <= 50:
             raise KnxError("knx_correction_invalid")
-        draft = CorrectionService(store, corrections.admin_reader(identifier, target)).inspect(
-            identifier, config, target
-        )
+        detail = payload.get("detail", False)
+        if type(detail) is not bool:
+            raise KnxError("knx_correction_invalid")
+        draft = correction_service.inspect(identifier, config, target)
         if (
             type(payload.get("draft_revision")) is not int
             or payload["draft_revision"] != draft["draft_revision"]
@@ -205,7 +271,9 @@ def _run(
             raise KnxError("knx_revision_conflict")
         return {
             "target": token,
-            **project_draft({"target_id": token, "draft": draft}, offset, 10, False),
+            **project_draft(
+                {"target_id": token, "draft": draft}, offset, 1 if detail else 10, detail
+            ),
         }
     repository = ImportRepository(store)
     entries = config.knx_address_taxonomy if config.knx_address_taxonomy_endpoint == target else ()
