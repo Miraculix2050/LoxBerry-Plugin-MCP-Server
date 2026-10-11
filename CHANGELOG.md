@@ -10,6 +10,11 @@ extracted from the matching version heading.
   caller context, preserve unknown gaps/units/resets, and make raw pages opt-in
   (#437, #438).
 
+- Add two optional read-only KNX task prompts for inventory review and exact
+  address explanation. Retrieval validates bounded selectors without data
+  access or permission grants; canonical references and DE/EN guidance retain
+  coverage, source and uncertainty rules (#457).
+
 - Add shared bounded history time/coverage evidence to existing statistic and
   local Event History reads. Persist observed initial values for new capture
   phases; preserve legacy gaps, invalidate pruned boundary evidence and keep

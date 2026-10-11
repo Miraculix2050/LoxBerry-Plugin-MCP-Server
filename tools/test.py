@@ -34,6 +34,16 @@ _FULL_PATTERNS: Final = (
 )
 _TEST_GROUPS: Final = (
     (
+        ("src/mcpserver/prompts.py",),
+        (
+            "tests/test_knx_prompts.py",
+            "tests/test_mcp_discovery.py",
+            "tests/test_schema_reference.py",
+            "tests/test_server.py",
+            "tests/test_plugin_package.py",
+        ),
+    ),
+    (
         (
             "src/mcpserver/knx/**",
             "src/mcpserver/explorer_bindings.py",
@@ -43,6 +53,7 @@ _TEST_GROUPS: Final = (
         (
             "tests/test_knx_catalog_runtime.py",
             "tests/test_knx_catalog_delegation.py",
+            "tests/test_knx_prompts.py",
             "tests/test_knx_management.py",
             "tests/test_knx_read_model.py",
             "tests/test_knx_xml_import.py",

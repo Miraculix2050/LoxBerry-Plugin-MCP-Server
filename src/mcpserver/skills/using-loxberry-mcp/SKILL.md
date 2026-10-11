@@ -22,6 +22,13 @@ discovery limitation and reconnect through the supported client workflow. Never
 probe an undiscovered capability or invent a raw request. This module describes
 read-only project and local metadata; draft writes are not available here.
 
+Optional user-selected `prompts/list` starters are `knx_ets_inventory_review`
+(focus/detail) and `knx_address_explanation` (exact address, preserving variants).
+`prompts/get` returns only a bounded recipe; it executes no reads and grants no
+permission. Prompt support is optional: use this same workflow through discovered
+tools when the client cannot invoke prompts. No automatic scheduling or task
+derivation follows from the listing.
+
 1. **Locate an object:** `loxone_find_project_objects` searches additional
    imported ETS and manual KNX names/descriptions, including values hidden by a
    local override. Results remain authorized, address-linked project objects;

@@ -51,8 +51,9 @@ def test_catalog_preserves_all_questions_and_acceptance_boundaries() -> None:
         "lighting": 6,
         "basic": 7,
         "solar": 12,
+        "knx": 2,
     }
-    assert len({case["id"] for case in CATALOG["cases"]}) == 25
+    assert len({case["id"] for case in CATALOG["cases"]}) == 27
     for case in CATALOG["cases"]:
         assert case["required_sources"] and case["completeness"]
         assert case["valid_insufficient_evidence"] and len(case["prohibited_claims"]) >= 2

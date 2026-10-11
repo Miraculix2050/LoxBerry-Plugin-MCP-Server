@@ -7,6 +7,23 @@ workflow, completeness conditions, valid insufficient-evidence answers and
 prohibited claims. Tool sequences are routing candidates, not proof that a source
 exists. The catalog is not a promise to implement every roadmap workstream here.
 
+Two KNX workflows from #457 extend this original 25-question matrix to 27 cases:
+`knx-01` inventory review and `knx-02` exact address explanation with explicit
+project variant. Both allow qualified answers for missing discovery, permissions,
+imports or associations; different names and DPT declarations prove no defect,
+topology, bus activity, causality or unused address. Separately approved local
+catalog reads are conditional, not inferred from project permission.
+
+For each KNX run record prompt-list and recipe token/byte sizes separately in
+protected evidence, including tokenizer/model/client versions and whether the
+client invokes prompts or uses the normal-tool fallback. Measure relevant guide
+sections, read call counts, bounded coverage and independently judged answer
+quality. Prompt expansion does no source access: zero downloads/SQLite work are
+valid only for that expansion, not the later workflow. Captures may use the
+read-only method labels `prompts.list` and `prompts.get`; arguments and recipe or
+answer content stay outside the value-free capture. Missing client/billing token
+telemetry remains explicitly incomplete, not substituted with character counts.
+
 `tests/fixtures/analysis/reference.json` contains installation-independent
 numeric reference data for the upcoming analysis core. A sample mean of 21 °C
 does not establish a time-weighted mean. Event durations and numeric energy remain
@@ -48,7 +65,7 @@ A capture is an object with exactly `version` (1), `identity`, and `runs`:
 - Each run contains `case_id`, `run` (1–3), `phase` (`cold` or `warm`), independent
   reviewer `outcome` (`pass`, `fail`, `incomplete`), `calls` (read-only tool names),
   `guide_sections`, and every metric listed below. Each independent session has a
-  cold initial workflow and a warm repeat; this yields 150 records for 25 cases.
+  cold initial workflow and a warm repeat; this yields 162 records for 27 cases.
 - Metrics are `duration_ms`, `authorization_ms`, `download_count`, `sqlite_ms`,
   `calculation_ms`, `peak_bytes`, `output_bytes`, `tool_result_tokens`,
   `input_tokens`, and `output_tokens`. Counts, bytes and tokens are integers.

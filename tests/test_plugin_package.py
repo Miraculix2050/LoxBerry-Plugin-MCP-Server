@@ -211,9 +211,16 @@ def test_project_wheel_source_verification_ignores_line_endings(tmp_path: Path) 
     cache.write_bytes(b'"""Emergency options cache."""\r\n')
     selector_cache = source_root / "mcpserver" / "event_history_selector_cache.py"
     selector_cache.write_bytes(b'"""Event History selector cache."""\r\n')
+    prompts = source_root / "mcpserver" / "prompts.py"
+    prompts.write_bytes(b'"""Prompt registration."""\r\n')
+    knx_prompts = source_root / "mcpserver" / "knx" / "prompts.py"
+    knx_prompts.parent.mkdir()
+    knx_prompts.write_bytes(b'"""KNX prompt recipes."""\r\n')
     wheel = tmp_path / "project.whl"
     with zipfile.ZipFile(wheel, "w") as archive:
         archive.writestr("mcpserver/module.py", b'"""Module."""\n')
+        archive.writestr("mcpserver/prompts.py", b'"""Prompt registration."""\n')
+        archive.writestr("mcpserver/knx/prompts.py", b'"""KNX prompt recipes."""\n')
         archive.writestr("mcpserver/auth/scopes.py", b'"""Scope names."""\n')
         archive.writestr(
             "mcpserver/emergency_options_cache.py", b'"""Emergency options cache."""\n'

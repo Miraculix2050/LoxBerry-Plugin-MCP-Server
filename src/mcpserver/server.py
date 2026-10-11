@@ -20,6 +20,7 @@ from mcp.server.auth.routes import create_protected_resource_routes
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecurityMiddleware, TransportSecuritySettings
+from mcp.types import GetPromptResult
 from pydantic import AnyHttpUrl
 from starlette.applications import Starlette
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
@@ -55,6 +56,7 @@ from mcpserver.loxone.runtime import LoxoneRuntime
 from mcpserver.loxone.service_access import LoxBerryServiceCredentials
 from mcpserver.loxone.statistics import StatisticsCache
 from mcpserver.mqtt_health import MqttHealthPublisher
+from mcpserver.prompts import register_prompt_surface
 from mcpserver.settings import ServerSettings
 from mcpserver.skill_delivery import SERVER_INSTRUCTIONS, register_skill_resource
 from mcpserver.tools import (
@@ -270,6 +272,14 @@ class _EmergencyStopMiddleware(BaseHTTPMiddleware):
 
 class _ForwardedHostFastMCP(FastMCP):
     """FastMCP application that also validates Apache's original Host header."""
+
+    async def get_prompt(
+        self, name: str, arguments: dict[str, Any] | None = None
+    ) -> GetPromptResult:
+        """Reject unknown names without the SDK logging caller-supplied name text."""
+        if self._prompt_manager.get_prompt(name) is None:
+            raise ValueError("prompt_unavailable")
+        return await super().get_prompt(name, arguments)
 
     async def run_streamable_http_async(self) -> None:  # pragma: no cover - process boundary
         """Run Uvicorn through the bounded root logger without request access logs."""
@@ -883,6 +893,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
         LOXBERRY_KNX_READ_SCOPE,
     )
     register_skill_resource(server)
+    register_prompt_surface(server)
     from mcpserver.knx.catalog_runtime import CatalogRuntime
 
     knx_catalog_runtime = (

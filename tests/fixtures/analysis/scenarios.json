@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "source": "Collected prompts from Loxone MCP-Server recherchieren; issues #433 and #445",
+  "source": "Collected prompts from Loxone MCP-Server recherchieren; issues #433 and #445; KNX task starters #457",
   "runs_per_case": 3,
   "cases": [
     {
@@ -214,7 +214,7 @@
         "result": {
           "sample_mean": 21
         },
-        "absolute_tolerance": 1e-9
+        "absolute_tolerance": 1e-09
       },
       "completeness": [
         "fresh_caller_visibility",
@@ -250,7 +250,7 @@
         "result": {
           "delta_kwh": 3
         },
-        "absolute_tolerance": 1e-9
+        "absolute_tolerance": 1e-09
       },
       "completeness": [
         "fresh_caller_visibility",
@@ -590,7 +590,7 @@
             2
           ]
         },
-        "absolute_tolerance": 1e-9
+        "absolute_tolerance": 1e-09
       },
       "completeness": [
         "fresh_caller_visibility",
@@ -759,7 +759,7 @@
           "weighted_median_w": 100,
           "extrapolated_24h_kwh": 2.4
         },
-        "absolute_tolerance": 1e-9
+        "absolute_tolerance": 1e-09
       },
       "completeness": [
         "fresh_caller_visibility",
@@ -839,6 +839,88 @@
       "prohibited_claims": [
         "A weather forecast alone is not a PV generation forecast.",
         "No hidden identities, inferred physical roles, write calls or invented historical coverage."
+      ]
+    },
+    {
+      "group": "knx",
+      "baseline_support": "conditional",
+      "reference": {
+        "fixture": "scenario_contract",
+        "result": {
+          "require_evidence": true
+        },
+        "absolute_tolerance": null
+      },
+      "completeness": [
+        "fresh_caller_visibility",
+        "explicit_source_provenance",
+        "separate_freshness_and_completeness",
+        "target_and_revision_bound_coverage",
+        "summary_sample_or_all_requested_pages_explicit"
+      ],
+      "valid_insufficient_evidence": "Explain unavailable tools/authorization, missing or partial imports, unknown meaning and ambiguous observations without inventing a complete review or physical diagnosis.",
+      "prohibited_claims": [
+        "Different names, equal addresses or DPT declarations do not prove defects, topology, bus activity, causality or unused addresses.",
+        "No writes, imports, exports, automatic scheduling, hidden identities or bypass of separate local KNX approval."
+      ],
+      "id": "knx-01",
+      "prompt": "Pruefe ETS- und KNX-Bestand auf Benennungsabweichungen und fehlende Evidenz.",
+      "operation": "knx_inventory_review",
+      "prompt_name": "knx_ets_inventory_review",
+      "required_sources": [
+        "discovered_knx_comparison",
+        "authorized_project",
+        "import_coverage",
+        "separately_approved_local_catalog_if_needed"
+      ],
+      "baseline_workflow": [
+        "prompts.list",
+        "prompts.get",
+        "loxone_get_skill_guide",
+        "loxone_analyze_project",
+        "loxberry_get_knx_catalog"
+      ]
+    },
+    {
+      "group": "knx",
+      "baseline_support": "conditional",
+      "reference": {
+        "fixture": "scenario_contract",
+        "result": {
+          "require_evidence": true
+        },
+        "absolute_tolerance": null
+      },
+      "completeness": [
+        "fresh_caller_visibility",
+        "explicit_source_provenance",
+        "separate_freshness_and_completeness",
+        "target_and_revision_bound_coverage",
+        "summary_sample_or_all_requested_pages_explicit"
+      ],
+      "valid_insufficient_evidence": "Explain unavailable tools/authorization, missing or partial imports, unknown meaning and ambiguous observations without inventing a complete review or physical diagnosis.",
+      "prohibited_claims": [
+        "Different names, equal addresses or DPT declarations do not prove defects, topology, bus activity, causality or unused addresses.",
+        "No writes, imports, exports, automatic scheduling, hidden identities or bypass of separate local KNX approval."
+      ],
+      "id": "knx-02",
+      "prompt": "Erklaere eine KNX-Gruppenadresse mit ausdruecklicher Projektvariante anhand ihrer getrennten Quellen.",
+      "operation": "knx_address_explanation",
+      "prompt_name": "knx_address_explanation",
+      "required_sources": [
+        "exact_address_variant",
+        "authorized_project_objects",
+        "source_names_and_dpt_declarations",
+        "separately_approved_local_catalog_if_needed"
+      ],
+      "baseline_workflow": [
+        "prompts.list",
+        "prompts.get",
+        "loxone_get_skill_guide",
+        "loxone_find_project_objects",
+        "loxone_describe_project_object",
+        "loxberry_get_knx_catalog",
+        "loxone_trace_project_logic"
       ]
     }
   ],

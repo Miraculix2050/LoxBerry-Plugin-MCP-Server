@@ -70,6 +70,42 @@ Client und unterscheiden geladene Schemas, Anleitung und tatsächliche Ergebniss
 Zeichenanzahlen sind keine Tokenzahlen. Bei Discovery-Abweichungen siehe
 [Fehlerbehebung](troubleshooting.de.md).
 
+## Optionale Aufgaben-Prompts
+
+Clients mit MCP-Prompt-Unterstützung können `knx_ets_inventory_review` oder
+`knx_address_explanation` über `prompts/list` auswählen und das Rezept über
+`prompts/get` abrufen. Der Abruf liest kein Projekt und keinen Katalog und erteilt
+keine Berechtigung. Die KI nutzt dieselben entdeckten read-only Tools mit frischer
+Autorisierung. Prompts sind vom Nutzer gewählte Aufgabenstarts, keine
+Hintergrundprüfungen oder automatische Aufgabenableitung. Ohne Prompt-Unterstützung
+kann dieselbe Frage im normalen Chat gestellt werden.
+
+Bestandsparameter: `focus` ist `all` (Standard), `names`, `coverage` oder `dpt`;
+`detail` ist `summary` (Standard) oder `findings`; `language` ist `en` (Standard)
+oder `de`. Beispielsweise startet `prompts/get` mit
+`name="knx_ets_inventory_review"` und
+`arguments={"focus":"names","detail":"findings","language":"de"}` eine
+Benennungsprüfung. Die Antwort unterscheidet Zusammenfassung, Stichprobe und
+vollständig geprüften angeforderten Umfang. Ein fehlender oder teilweiser Import
+ist eine Einschränkung, kein Nachweis ungenutzter Adressen.
+
+Die Adresserklärung benötigt eine gültige zwei-/dreistufige `address` und erhält
+eine ausdrücklich angegebene Variante `:0`/`:1`; `language` ist wie oben optional.
+Beispielsweise erhält `name="knx_address_explanation"`,
+`arguments={"address":"1/2/3:1","language":"de"}` die Projektvariante und fragt
+freigegebene lokale Metadaten über die Basisadresse `1/2/3` ab. Mehrere Objekte und
+Namen bleiben ausdrücklich sichtbar. Beschreibung, DPT-Angaben und Präfixkontext
+sind Zusatzquellen, kein Nachweis physischer Beziehungen oder Busaktivität.
+
+Weichen Liste oder Argumente von dieser Referenz ab, über den unterstützten
+Discovery-Ablauf des Clients neu verbinden. Fehlende Prompt-/Tool-Aufrufe nicht
+erfinden. Fehlende Anleitung/Tools oder verweigerte Rechte beenden die betroffenen
+Prüfungen; diese Prompts importieren keine Dateien, ändern keine Metadaten und
+exportieren keine ETS-Korrekturen.
+Für geschützte lokale `prompts/list`-Erfassungen unterstützt der Offline-
+Discovery-Vergleich zusätzlich `--kind prompts`. Er vergleicht die angebotenen
+Metadaten, keinen Rezepttext und keine erfolgreiche Aufgabenausführung im Client.
+
 ## Kompakter ETS-Abgleich
 
 Ausdrücklich `analyses=["ets_project_comparison"]`, `scope="knx"` und

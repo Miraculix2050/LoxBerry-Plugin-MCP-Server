@@ -300,6 +300,30 @@ try {
     }
 
     $script:nextId = 4
+    $promptListId = Get-NextId
+    Send-JsonRpc @{ jsonrpc = '2.0'; id = $promptListId; method = 'prompts/list'; params = @{} }
+    $promptListResponse = Read-JsonRpc $promptListId
+    $expectedPromptNames = @('knx_ets_inventory_review', 'knx_address_explanation')
+    if ($promptListResponse.error -or
+        @(Compare-Object ($expectedPromptNames | Sort-Object) ($promptListResponse.result.prompts.name | Sort-Object)).Count -ne 0) {
+        throw 'MCP prompt inventory differs from the expected contract.'
+    }
+    foreach ($promptName in $expectedPromptNames) {
+        $promptId = Get-NextId
+        $promptArguments = if ($promptName -eq 'knx_address_explanation') { @{ address = '1/2/3:1' } } else { @{} }
+        Send-JsonRpc @{
+            jsonrpc = '2.0'; id = $promptId; method = 'prompts/get'
+            params = @{ name = $promptName; arguments = $promptArguments }
+        }
+        $promptResponse = Read-JsonRpc $promptId
+        $promptMessages = @($promptResponse.result.messages)
+        if ($promptResponse.error -or $promptMessages.Count -ne 1 -or
+            $promptMessages[0].role -ne 'user' -or $promptMessages[0].content.type -ne 'text' -or
+            $promptMessages[0].content.text.Length -gt 4096 -or
+            $promptMessages[0].content.text -notlike '*read-only*') {
+            throw 'MCP prompt recipe differs from the expected contract.'
+        }
+    }
     $skillGuide = Invoke-ReadTool (Get-NextId) 'loxone_get_skill_guide' @{}
     if ($skillGuide.data.name -ne 'using-loxberry-mcp' -or
         $skillGuide.data.revision -ne 74 -or

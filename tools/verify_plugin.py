@@ -121,6 +121,8 @@ _TEXT_NAMES: Final = {
     "bin/event-history-upgrade.py",
 }
 _REQUIRED_PROJECT_WHEEL_ENTRIES: Final = {
+    "mcpserver/prompts.py",
+    "mcpserver/knx/prompts.py",
     "mcpserver/auth/scopes.py",
     "mcpserver/emergency_options_cache.py",
     "mcpserver/event_history_selector_cache.py",
