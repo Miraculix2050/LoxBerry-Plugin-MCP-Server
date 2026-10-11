@@ -23,3 +23,15 @@ gezielten Lesezugriff, Reparaturvorschlag und Abnahmeprüfung. Eine fehlerhafte 
 kann eine Regelreparatur begründen. Solche Änderungen benötigen ein zukünftiges eigenes
 Regel-Tool und Erlaubnis. Konfigurationsänderungen benötigen eine zukünftige Integration
 zum Projektschreiben über Loxone MCP. Bestätigungsmetadaten erlauben keine Bestätigung.
+
+## Benachrichtigungen
+
+Das Tool loxone_get_notifications liest ausschließlich das zuletzt beobachtete
+Textereignis aus den aktuell für deinen Nutzer sichtbaren globalStates.notifications.
+Dieser experimentelle Vertrag gilt nur für Firmware 17.2.8.28. Er nutzt den vorhandenen
+flüchtigen Zustandscache und ergänzt weder Sammler noch persistente Historie.
+Ein fehlendes oder veraltetes Ereignis wird als nicht verfügbar ausgewiesen und
+belegt keine Benachrichtigungsfreiheit. Die Historie der offiziellen App gehört dem
+Client; eine Miniserver-Historie ist deshalb nicht verfügbar. Typ/Stufe bleiben
+roher Kontext, ohne Alarm-Schweregrad oder Zustellbestätigung. Das Tool versendet
+nichts und ändert keine Lesemarkierung.

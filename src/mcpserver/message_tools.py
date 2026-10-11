@@ -11,12 +11,15 @@ from typing import Annotated, Literal
 
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from mcpserver import tools
 from mcpserver.auth.provider import StoredAccessToken
+from mcpserver.loxone.client import LoxoneConnectionError
+from mcpserver.loxone.models import Freshness
+from mcpserver.loxone.notifications import Notification, decode_notification
 from mcpserver.loxone.runtime import ControlOperationError, LoxoneRuntime, RuntimeUnavailable
-from mcpserver.loxone.system_messages import MessageSource, SystemMessage
+from mcpserver.loxone.system_messages import MessageSource, MessageSourceError, SystemMessage
 from mcpserver.tools import ErrorData, ToolEnvelope
 
 
@@ -32,6 +35,27 @@ class SystemMessagesData(MessageSource):
 
 class SystemMessagesEnvelope(ToolEnvelope):
     data: SystemMessagesData | ErrorData
+
+
+class NotificationsData(BaseModel):
+    source: Literal["globalStates.notifications"] = "globalStates.notifications"
+    experimental: Literal[True] = True
+    context_only: Literal[True] = True
+    history_available: Literal[False] = False
+    retention_complete: Literal[False] = False
+    firmware: str
+    miniserver_serial: str
+    structure_generation: int
+    source_state_uuid: str
+    freshness: Literal["current", "stale", "unknown", "unavailable"]
+    observed_at: float | None
+    availability: Literal["latest_event", "unavailable"]
+    reason: Literal["latest_observed_text_event", "no_current_event"]
+    latest: Notification | None
+
+
+class NotificationsEnvelope(ToolEnvelope):
+    data: NotificationsData | ErrorData
 
 
 class MessageCursors:
@@ -69,6 +93,65 @@ class MessageCursors:
 
 def register_message_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> None:
     cursors = MessageCursors()
+
+    @server.tool(
+        name="loxone_get_notifications",
+        description=(
+            "Read the latest observed authorized notification text event, as context only. "
+            "Experimental verified firmware only; no upstream history is available. "
+            "Unavailable/stale events never establish notification absence. No sending, "
+            "delivery claims, read markers, acknowledgements, polling or new collector."
+        ),
+        annotations=ToolAnnotations(
+            readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False
+        ),
+        structured_output=True,
+    )
+    async def get_notifications() -> NotificationsEnvelope:
+        try:
+            access = tools._access()
+            if runtime is None:
+                raise RuntimeUnavailable("the service is not configured")
+            snapshot, uuid, record, firmware = await runtime.get_notification_state(access)
+            available = (
+                snapshot.connected and record.freshness is Freshness.CURRENT and bool(record.value)
+            )
+            latest = decode_notification(record.value) if available else None
+            data = {
+                "firmware": firmware,
+                "miniserver_serial": snapshot.structure.identity.miniserver_serial,
+                "structure_generation": snapshot.structure_generation,
+                "source_state_uuid": uuid,
+                "freshness": record.freshness.value,
+                "observed_at": record.observed_at,
+                "availability": "latest_event" if latest else "unavailable",
+                "reason": "latest_observed_text_event" if latest else "no_current_event",
+                "latest": latest,
+            }
+            return tools._result(
+                NotificationsEnvelope,
+                data,
+                stale=not available,
+                warnings=["Latest observed event only; no exhaustive history or delivery proof."],
+            )
+        except PermissionError:
+            return tools._error(
+                NotificationsEnvelope,
+                "unauthenticated",
+                "Authentication with loxone:read is required",
+            )
+        except ControlOperationError as exc:
+            return tools._error(NotificationsEnvelope, exc.code, str(exc))
+        except MessageSourceError as exc:
+            return tools._error(NotificationsEnvelope, "unsupported_source", str(exc))
+        except LoxoneConnectionError:
+            return tools._error(
+                NotificationsEnvelope,
+                "temporarily_unavailable",
+                "Notification source could not be read",
+            )
+        except RuntimeUnavailable as exc:
+            return tools._availability_error(NotificationsEnvelope, exc)
 
     @server.tool(
         name="loxone_get_system_messages",

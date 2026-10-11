@@ -1005,6 +1005,36 @@ class LoxoneRuntime:
         _history_phase(trace_id, "history_parse", parse_started)
         return control, entries
 
+    async def get_notification_state(
+        self, access: StoredAccessToken
+    ) -> tuple[RuntimeSnapshot, str, StateRecord, str]:
+        """Use the existing caller-owned state cache, without a history collector."""
+        async with self.call_slot(access):
+            snapshot = await self.snapshot(access, fresh_visibility=True)
+            states = [
+                item.state_uuid
+                for item in snapshot.structure.global_metadata
+                if item.kind == "global_state" and item.identifier == "notifications"
+            ]
+            if len(states) != 1 or states[0] is None:
+                raise ControlOperationError(
+                    "unsupported_source", "Notification state is not advertised"
+                )
+            probe = await self.client.probe()
+            if probe.firmware not in SUPPORTED_FIRMWARE:
+                raise ControlOperationError(
+                    "unsupported_source", "Notification firmware contract is not verified"
+                )
+            if canonical_serial(probe.serial) != canonical_serial(
+                snapshot.structure.identity.miniserver_serial
+            ):
+                raise ControlOperationError(
+                    "unsupported_source", "Notification source identity does not match"
+                )
+            record = self.state(snapshot, states[0])
+            await self._require_access(access)
+            return snapshot, states[0], record, probe.firmware
+
     async def get_system_messages(
         self, access: StoredAccessToken, *, include_history: bool = False
     ) -> MessageSource:
