@@ -11,7 +11,11 @@ from mcpserver import tools
 from mcpserver.auth.provider import MESSAGE_CONFIRM_SCOPE, READ_SCOPE, normalize_scopes
 from mcpserver.config import ConfigError, PluginConfig
 from mcpserver.loxone.client import LoxoneWebSocketSession
-from mcpserver.loxone.runtime import ControlOperationError
+from mcpserver.loxone.runtime import (
+    ControlOperationError,
+    RuntimeAuthorizationError,
+    RuntimeUnavailable,
+)
 from mcpserver.message_confirmation import MessageConfirmations
 from mcpserver.message_tools import register_message_tools
 
@@ -204,6 +208,84 @@ async def test_concurrent_replay_and_separate_write_budget():
     with pytest.raises(ControlOperationError, match="budget exceeded"):
         await confirmations.confirm(instance, current, preview.preview_id, True)
     assert session.confirm_system_message.await_count == 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["budget", "revocation", "cancelled"])
+async def test_outer_admission_denials_and_cancellation_are_audited(failure, caplog):
+    confirmations, instance, session, current = setup_confirmation()
+    preview = await confirmations.preview(instance, current, ENTRY)
+    if failure == "budget":
+        instance._rate_limit = 0
+    elif failure == "revocation":
+        instance._validate_access = AsyncMock(return_value=False)
+    else:
+        instance._parallel = asyncio.Semaphore(0)
+    with caplog.at_level("INFO"):
+        if failure == "cancelled":
+            task = asyncio.create_task(
+                confirmations.confirm(instance, current, preview.preview_id, True)
+            )
+            await asyncio.sleep(0)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        else:
+            with pytest.raises(
+                RuntimeUnavailable if failure == "budget" else RuntimeAuthorizationError
+            ):
+                await confirmations.confirm(instance, current, preview.preview_id, True)
+    assert caplog.text.count("component=message_confirmation_audit") == 1
+    assert (
+        "admission_cancelled" in caplog.text
+        if failure == "cancelled"
+        else "admission_rejected" in caplog.text
+    )
+    assert preview.preview_id not in confirmations.tickets
+    session.confirm_system_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_sibling_previews_and_other_family_cannot_dispatch_same_target_concurrently():
+    confirmations, instance, session, current = setup_confirmation()
+    old = await confirmations.preview(instance, current, ENTRY)
+    latest = await confirmations.preview(instance, current, ENTRY)
+    assert old.preview_id not in confirmations.tickets
+    other = current.model_copy(update={"family_id": "other-family"})
+    sibling = await confirmations.preview(instance, other, ENTRY)
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def delayed_command(*_args):
+        started.set()
+        await release.wait()
+
+    session.confirm_system_message.side_effect = delayed_command
+    task = asyncio.create_task(confirmations.confirm(instance, current, latest.preview_id, True))
+    try:
+        await asyncio.wait_for(started.wait(), 1)
+        with pytest.raises(ControlOperationError):
+            await confirmations.confirm(instance, other, sibling.preview_id, True)
+        with pytest.raises(ControlOperationError, match="in progress"):
+            await confirmations.preview(instance, other, ENTRY)
+    finally:
+        release.set()
+        await task
+    session.confirm_system_message.assert_awaited_once()
+    assert not confirmations.inflight
+
+
+@pytest.mark.asyncio
+async def test_one_reader_cannot_exhaust_another_familys_preview_quota():
+    confirmations, instance, session, current = setup_confirmation()
+    entries = [entry(entryUuid=f"{i:08x}-1111-1111-1111111111111111") for i in range(11)]
+    instance.get_system_messages = AsyncMock(return_value=source(entries))
+    for item in entries[:10]:
+        await confirmations.preview(instance, current, item["entryUuid"])
+    with pytest.raises(ControlOperationError, match="for this identity"):
+        await confirmations.preview(instance, current, entries[10]["entryUuid"])
+    other = current.model_copy(update={"family_id": "other-family"})
+    preview = await confirmations.preview(instance, other, entries[10]["entryUuid"])
+    assert preview.preview_id in confirmations.tickets
 
 
 @pytest.mark.parametrize(

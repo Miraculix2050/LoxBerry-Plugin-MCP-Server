@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -26,7 +27,8 @@ from mcpserver.loxone.system_messages import (
 
 _LOGGER = logging.getLogger("mcpserver.message_confirmation")
 TTL_SECONDS = 120
-MAX_PREVIEWS = 100
+MAX_PREVIEWS = 3000
+MAX_PREVIEWS_PER_BINDING = 10
 
 
 class MessageConfirmationPreview(BaseModel):
@@ -100,6 +102,7 @@ class MessageConfirmations:
     def __init__(self) -> None:
         self.tickets: dict[str, _Ticket] = {}
         self.rates: dict[tuple[str, str, str], deque[float]] = {}
+        self.inflight: set[tuple[str, str]] = set()
 
     def _prune(self, now: float) -> None:
         self.tickets = {key: value for key, value in self.tickets.items() if value.expires > now}
@@ -119,11 +122,29 @@ class MessageConfirmations:
         assert record.confirmation_action_id is not None and record.confirmation_effect is not None
         now = time.monotonic()
         self._prune(now)
+        binding = _binding(access)
+        if (access.miniserver_id, entry_uuid) in self.inflight:
+            raise ControlOperationError(
+                "confirmation_in_progress", "Message confirmation is in progress"
+            )
+        # One current preview per entry/caller. A fresh preview supersedes its older sibling.
+        self.tickets = {
+            key: value
+            for key, value in self.tickets.items()
+            if value.binding != binding or value.entry_uuid != entry_uuid
+        }
+        if (
+            sum(value.binding == binding for value in self.tickets.values())
+            >= MAX_PREVIEWS_PER_BINDING
+        ):
+            raise ControlOperationError(
+                "rate_limited", "Too many pending previews for this identity"
+            )
         if len(self.tickets) >= MAX_PREVIEWS:
             raise ControlOperationError("rate_limited", "Too many pending previews")
         preview_id = secrets.token_urlsafe(32)
         self.tickets[preview_id] = _Ticket(
-            _binding(access),
+            binding,
             now + TTL_SECONDS,
             _fingerprint(source, record),
             entry_uuid,
@@ -151,8 +172,26 @@ class MessageConfirmations:
         user_approved: bool,
     ) -> MessageConfirmationResult:
         # Invalid/foreign previews and denied approval share normal bounded admission too.
-        async with runtime.call_slot(access):
-            return await self._confirm(runtime, access, preview_id, user_approved)
+        admitted = False
+        try:
+            async with runtime.call_slot(access):
+                admitted = True
+                return await self._confirm(runtime, access, preview_id, user_approved)
+        except BaseException as exc:
+            if not admitted:
+                ticket = self.tickets.get(preview_id)
+                if ticket is not None and ticket.binding == _binding(access):
+                    del self.tickets[preview_id]
+                self._audit(
+                    access,
+                    None,
+                    None,
+                    "admission_cancelled"
+                    if isinstance(exc, asyncio.CancelledError)
+                    else "admission_rejected",
+                    str(uuid4()),
+                )
+            raise
 
     async def _confirm(
         self,
@@ -182,9 +221,22 @@ class MessageConfirmations:
         dispatched = False
         outcome = "not_dispatched"
         trace_id = str(uuid4())
+        target = (access.miniserver_id, ticket.entry_uuid)
+        active = False
         try:
             if ticket.expires <= now:
                 raise ControlOperationError("expired_preview", "Create and approve a new preview")
+            if target in self.inflight:
+                raise ControlOperationError(
+                    "confirmation_in_progress", "Message confirmation is in progress"
+                )
+            self.inflight.add(target)
+            active = True
+            self.tickets = {
+                key: value
+                for key, value in self.tickets.items()
+                if value.binding[2] != access.miniserver_id or value.entry_uuid != ticket.entry_uuid
+            }
             await self._authorize(runtime, access)
             rate = self.rates.setdefault(_binding(access), deque())
             if len(rate) >= 3:
@@ -254,6 +306,8 @@ class MessageConfirmations:
                 return result
             raise
         finally:
+            if active:
+                self.inflight.discard(target)
             if result is not None:
                 outcome = result.outcome
             elif dispatched:

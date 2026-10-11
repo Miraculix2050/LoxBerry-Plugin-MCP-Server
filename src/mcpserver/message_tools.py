@@ -165,7 +165,8 @@ def register_message_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
             "Confirm or historize exactly the message shown in an unexpired preview, only "
             "after explicit human approval of that message and effect. Requires the separate "
             "loxone:messages:confirm scope and fresh administrator activation. Consumes the "
-            "preview even on failure; do not retry an uncertain write. No bulk actions, deletion, "
+            "preview on approved attempts even on failure; do not retry uncertain writes. "
+            "No bulk actions, deletion, "
             "read markers or repair of the underlying problem. Report dispatched, accepted and "
             "observed effect separately. Never use this to clear messages as health evidence."
         ),

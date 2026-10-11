@@ -13,7 +13,10 @@ genaue Meldung samt Wirkung prüfen. Erst nach ausdrücklicher Freigabe
 `loxone_confirm_system_message(preview_id, user_approved=true)` ausführen.
 Die Vorschau ist an Identität und Ziel gebunden, gilt 120 Sekunden und ist einmalig
 nutzbar. Vor dem Senden werden Berechtigung, Aktivierung, aktueller Meldungszustand
-und native Aktion erneut geprüft. Pro OAuth-Familie sind höchstens drei
+und native Aktion erneut geprüft. Pro OAuth-Familie sind zehn offene Vorschauen
+zulässig; eine neue Vorschau ersetzt die ältere derselben Meldung. Eine Bestätigung
+verwirft weitere Vorschauen genau dieser Zielmeldung und sperrt parallele Aufrufe
+auch aus anderen Familien. Pro OAuth-Familie sind höchstens drei
 Bestätigungsversuche pro Minute erlaubt.
 
 Bei der geprüften manuellen Warnung (Ereignis 1121) historisiert „Okay“ / 1003 die
