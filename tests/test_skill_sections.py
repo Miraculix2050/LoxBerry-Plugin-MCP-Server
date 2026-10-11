@@ -1,0 +1,95 @@
+"""Task-scoped guidance shares the canonical full document and remains read-only."""
+
+from __future__ import annotations
+
+import pytest
+from mcp.server.fastmcp import FastMCP
+from pydantic import ValidationError
+
+import mcpserver.tools as tools
+from mcpserver.skill_delivery import read_skill_markdown, register_skill_resource
+
+
+@pytest.fixture(autouse=True)
+def clear_guidance_cache():
+    read_skill_markdown.cache_clear()
+    yield
+    read_skill_markdown.cache_clear()
+
+
+def test_core_and_knx_are_small_canonical_sections_without_unrelated_workflows() -> None:
+    full = read_skill_markdown()
+    core = read_skill_markdown("core")
+    knx = read_skill_markdown("knx")
+    assert len(core) + len(knx) < len(full) // 3
+    assert "Never automatically retry uncertain writes" in core
+    assert "Loxone project permission and LoxBerry Admin permission are separate" in core
+    assert "External data" in core
+    assert "core rules first" in knx
+    assert knx.strip() in full
+    assert "## KNX metadata workflow" not in core
+    assert "### Active visible alerts" not in core + knx
+    assert "### Read weather" not in core + knx
+    assert "comfort-temperature" not in core + knx
+    for rule in (
+        "standalone local KNX records",
+        "`deviations` compares manual versus imported",
+        "`names_differ` compares",
+        "format_valid_type_unverified",
+        'association="not_established"',
+        "not ETS export time",
+        "sample a full audit",
+        "(#419)",
+    ):
+        assert rule in knx
+
+
+@pytest.mark.asyncio
+async def test_resources_and_tool_sections_match_and_full_default_remains_available() -> None:
+    server = FastMCP("guidance-sections")
+    register_skill_resource(server)
+    tools.register_skill_tool(server)
+    tool = server._tool_manager.get_tool("loxone_get_skill_guide")
+    assert tool is not None
+    assert tool.fn().data.content == read_skill_markdown()
+    assert tool.fn().data.section == "full"
+    for section in ("core", "knx"):
+        result = tool.fn(section=section)
+        resource = await server.read_resource(f"skill://using-loxberry-mcp/{section}.md")
+        assert result.ok and not result.stale
+        assert result.data.section == section
+        assert result.data.content == resource[0].content == read_skill_markdown(section)
+    with pytest.raises(ValidationError):
+        tool.fn_metadata.arg_model.model_validate({"section": "unknown"})
+
+
+def test_failed_section_retrieval_has_sanitized_error(monkeypatch) -> None:
+    def missing(_section):
+        raise ValueError("PRIVATE_PACKAGE_DETAILS")
+
+    monkeypatch.setattr(tools, "read_skill_markdown", missing)
+    server = FastMCP("guidance-missing")
+    tools.register_skill_tool(server)
+    tool = server._tool_manager.get_tool("loxone_get_skill_guide")
+    result = tool.fn(section="knx")
+    assert not result.ok
+    assert result.data.error == "guide_unavailable"
+    assert "PRIVATE_PACKAGE_DETAILS" not in result.model_dump_json()
+
+
+def test_knx_field_help_distinguishes_sources_and_syntax_validation() -> None:
+    definitions = tools.ProjectKnxMetadataData.model_json_schema()["$defs"]
+    metadata = tools.ProjectKnxMetadataData.model_json_schema()["properties"]
+    assert "Manual versus imported" in metadata["deviations"]["description"]
+    assert "primary Loxone" in metadata["manual"]["description"]
+    assert (
+        "not an ETS export"
+        in definitions["ProjectKnxImportInfoData"]["properties"]["imported_at"]["description"]
+    )
+    assert (
+        "Syntax validation only"
+        in definitions["ProjectKnxDptIdentifierData"]["properties"]["status"]["description"]
+    )
+    comparison = tools.ProjectKnxComparisonRowData.model_json_schema()["properties"]
+    assert "Loxone versus ETS" in comparison["names_differ"]["description"]
+    assert "Unknown is not" in comparison["name_comparison"]["description"]

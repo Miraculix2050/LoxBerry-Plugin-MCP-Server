@@ -604,7 +604,15 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
 
     assert tool.name == "loxone_get_skill_guide"
     assert tool.parameters == {
-        "properties": {},
+        "properties": {
+            "section": {
+                "default": "full",
+                "description": "Task section; omitted preserves the complete legacy guide.",
+                "enum": ["full", "core", "knx"],
+                "title": "Section",
+                "type": "string",
+            }
+        },
         "title": "get_skill_guideArguments",
         "type": "object",
     }
@@ -613,7 +621,7 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert tool.annotations.destructiveHint is False
     assert tool.annotations.openWorldHint is False
     assert result.data.name == "using-loxberry-mcp"  # type: ignore[union-attr]
-    assert result.data.revision == 58  # type: ignore[union-attr]
+    assert result.data.revision == 59  # type: ignore[union-attr]
     assert "prefer `loxone_read_controls`" in result.data.content  # type: ignore[union-attr]
     assert "`loxone_get_structure_overview`" in result.data.content  # type: ignore[union-attr]
     assert result.data.media_type == "text/markdown"  # type: ignore[union-attr]

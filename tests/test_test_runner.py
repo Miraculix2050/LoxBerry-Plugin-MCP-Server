@@ -160,6 +160,8 @@ def test_packaged_skill_markdown_selects_contract_tests() -> None:
     assert plan.effective_profile == "changed"
     assert _pytest_targets(plan) == {
         "tests/test_plugin_package.py",
+        "tests/test_server.py",
+        "tests/test_skill_sections.py",
         "tests/test_tools.py",
     }
 
