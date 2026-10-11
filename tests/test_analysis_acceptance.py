@@ -50,6 +50,11 @@ def test_final_matrix_preserves_original_questions_and_matches_released_tools() 
 
 def test_original_numeric_references_against_delivered_core() -> None:
     datasets = acceptance.read_json(ROOT / "tests/fixtures/analysis/reference.json")["datasets"]
+    tolerances = {
+        case["reference"]["fixture"]: case["reference"]["absolute_tolerance"]
+        for case in CATALOG["cases"]
+        if case["reference"]["fixture"] != "scenario_contract"
+    }
 
     def source(values, meaning="interval_difference_sum", unit="kWh", role=None, boundary=None):
         semantics = SeriesSemantics(
@@ -108,13 +113,13 @@ def test_original_numeric_references_against_delivered_core() -> None:
         source_id="synthetic",
     )
     assert result.metrics["mean"] == pytest.approx(
-        temperatures["expected"]["sample_mean"], abs=1e-9
+        temperatures["expected"]["sample_mean"], rel=0, abs=tolerances["temperature_samples"]
     )
     assert "sample_mean_is_not_time_weighted" in result.limitations
     counter = datasets["energy_counter"]
     assert source(counter["points"], meaning="cumulative_counter").summary.metrics[
         "energy"
-    ] == pytest.approx(counter["expected"]["delta_kwh"], abs=1e-9)
+    ] == pytest.approx(counter["expected"]["delta_kwh"], rel=0, abs=tolerances["energy_counter"])
     ranked = datasets["ranked_intervals"]
     assert all(b - a == 3600 for records in ranked["series"].values() for a, b, _v in records)
     sources = [
@@ -124,7 +129,7 @@ def test_original_numeric_references_against_delivered_core() -> None:
     ranking = comparison("consumer_ranking", sources, end=3600)
     assert [item["binding_id"] for item in ranking.items] == ranked["expected"]["rank"]
     assert [item["energy"] / 1000 for item in ranking.items] == pytest.approx(
-        ranked["expected"]["energy_kwh"]
+        ranked["expected"]["energy_kwh"], rel=0, abs=tolerances["ranked_intervals"]
     )
 
     # Fixtures explicitly evidence held power intervals; only the test converts whole hours.
@@ -163,10 +168,10 @@ def test_original_numeric_references_against_delivered_core() -> None:
     hours = [(hour, watts) for a, b, watts in night["intervals"] for hour in range(a, b, 3600)]
     baseline = comparison("baseload", [source(hours, unit="Wh")])
     assert baseline.metrics["nighttime_median_power"] == pytest.approx(
-        night["expected"]["weighted_median_w"]
+        night["expected"]["weighted_median_w"], rel=0, abs=tolerances["night_intervals"]
     )
     assert baseline.metrics["estimated_24_hour_energy_Wh"] / 1000 == pytest.approx(
-        night["expected"]["extrapolated_24h_kwh"]
+        night["expected"]["extrapolated_24h_kwh"], rel=0, abs=tolerances["night_intervals"]
     )
 
 
