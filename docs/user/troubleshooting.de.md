@@ -175,3 +175,19 @@ Eine akzeptierte Einschränkung bleibt: Teilweise Rechteänderungen wirken event
 erst nach Trennung oder Ersatz einer noch offenen Miniserver-Sitzung. Ein neuer
 Strukturabruf beweist deshalb keinen universellen sofortigen Rechteentzug. MCP-Clients
 erhalten über den Auswahl-Endpunkt niemals die Rechte dieser Dienstidentität.
+
+### Fehler bei der Admin-Discovery
+
+Wenn Notaus-Signale nicht aktualisiert werden können, die `request_id` im
+Admin-CGI-Log mit `component=admin_discovery` im Dienstlog abgleichen. Nur bei
+Fehlern werden eine feste `phase` und ein `code`, Gesamtdauer, Wartezeiten für
+Discovery und Auth-Koordination, Zeiten für Token/Session-Aufbau sowie Anzahl
+laufender Discovery-Anfragen und neue/gehaltene Session mit Alter protokolliert.
+Eine fehlende Request-ID erscheint als `-`. Die Anzahl umfasst nur lokale
+Admin-Discovery-Anfragen und misst nicht den gesamten Miniserver-Datenverkehr.
+`connection_failed` in der UI bleibt ein allgemeiner Fehler. Die korrelierte
+Dienstkategorie unterscheidet Timeout, Verbindungsabbruch, Protokoll,
+Authentifizierung und Identitäts-/Lifecycle-Invalidierung; `unknown` bleibt
+ungeklärt. Keine Exception-Texte, Payloads, Credentials, Tokens, Signalnamen oder
+Objektidentitäten werden protokolliert. Die Diagnose wiederholt keine Anfragen
+und verändert die Autorisierung nicht.

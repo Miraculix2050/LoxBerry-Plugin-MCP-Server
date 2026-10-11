@@ -11,10 +11,13 @@ from __future__ import annotations
 import asyncio
 import hmac
 import json
+import logging
 import os
+import re
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
+from contextvars import ContextVar
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -28,7 +31,9 @@ from mcpserver.auth.store import AtomicJsonAuthStore
 from mcpserver.config import AtomicConfigStore, PluginConfig
 from mcpserver.loxone.auth_diagnostics import MiniserverAuthCoordinator
 from mcpserver.loxone.client import (
+    LoxoneAuthenticationRejected,
     LoxoneClient,
+    LoxoneConnectionError,
     LoxoneSourceIpBlocked,
     LoxoneWebSocketSession,
     MiniserverEndpoint,
@@ -45,10 +50,87 @@ _DISCOVERY_DEADLINES = {"event_history": 35, "emergency_stop": 90, "emergency_st
 _MARKER_COMMAND = "jdev/sps/LoxAPPversion3"
 _MAX_INTERLEAVINGS = 32
 _MAX_IGNORED_BYTES = 1024 * 1024
+_DIAGNOSTIC: ContextVar[dict[str, Any] | None] = ContextVar(
+    "admin_discovery_diagnostic", default=None
+)
+
+
+def _phase(value: str) -> None:
+    diagnostic = _DIAGNOSTIC.get()
+    if diagnostic is not None:
+        diagnostic["phase"] = value
+
+
+def _failure_category(exc: BaseException) -> str:
+    from mcpserver.loxone.auth_diagnostics import (
+        MiniserverAuthenticationCooldown,
+        MiniserverAuthenticationSuppressed,
+        MiniserverSourceIpSuppressed,
+    )
+    from mcpserver.loxone.events import LoxoneProtocolError
+    from mcpserver.loxone.service_access import ServiceCredentialsUnavailable
+
+    if isinstance(exc, asyncio.CancelledError):
+        return "cancelled"
+    if isinstance(exc, LoxoneSourceIpBlocked | MiniserverSourceIpSuppressed):
+        return "source_ip_blocked"
+    if isinstance(exc, MiniserverAuthenticationCooldown):
+        return "authentication_cooldown"
+    if isinstance(exc, MiniserverAuthenticationSuppressed):
+        return "authentication_busy"
+    if isinstance(exc, TimeoutError | _WebSocketIdleTimeout | DiscoveryTimeout):
+        return "timeout"
+    if isinstance(exc, ConnectionClosed | DiscoveryDisconnected):
+        return "disconnect"
+    if isinstance(exc, LoxoneProtocolError | DiscoveryProtocolFailure):
+        return "protocol"
+    if isinstance(exc, DiscoveryPermissionDenied):
+        return "permission_denied"
+    if isinstance(exc, ServiceCredentialsUnavailable):
+        return "credentials_unavailable"
+    if isinstance(exc, LoxoneAuthenticationRejected):
+        return "authentication_rejected"
+    if isinstance(exc, LoxoneConnectionError):
+        if isinstance(exc.__cause__, TimeoutError) or isinstance(exc.__context__, TimeoutError):
+            return "timeout"
+        return "disconnect" if isinstance(exc.__context__, ConnectionClosed) else "connection"
+    if isinstance(exc, OSError):
+        return "connection"
+    if isinstance(exc, DiscoveryIdentityChanged):
+        return "identity_changed"
+    if isinstance(exc, DiscoveryStopped):
+        return "service_stopped"
+    if isinstance(exc, DiscoveryUnavailable):
+        return "discovery_invalidated"
+    return "unknown"
 
 
 class DiscoveryUnavailable(RuntimeError):
     """Fixed failure without source data."""
+
+
+class DiscoveryIdentityChanged(DiscoveryUnavailable):
+    """Configured identity no longer matches this request."""
+
+
+class DiscoveryStopped(DiscoveryUnavailable):
+    """Service lifecycle no longer permits discovery."""
+
+
+class DiscoveryTimeout(DiscoveryUnavailable):
+    """Receiver deadline expired without a complete response."""
+
+
+class DiscoveryDisconnected(DiscoveryUnavailable):
+    """Receiver ended before completing the pending response."""
+
+
+class DiscoveryProtocolFailure(DiscoveryUnavailable):
+    """Fixed response attribution or frame bounds were violated."""
+
+
+class DiscoveryPermissionDenied(DiscoveryUnavailable):
+    """The marker request was explicitly denied."""
 
 
 class _NoRedirect(HTTPRedirectHandler):
@@ -133,7 +215,7 @@ class DiscoveryReceiver:
                         header, payload = await self.session._receive()
                 except (_WebSocketIdleTimeout, TimeoutError):
                     if self.pending is not None or keepalive_pending:
-                        raise DiscoveryUnavailable("discovery response timed out") from None
+                        raise DiscoveryTimeout("discovery response timed out") from None
                     await self.session._websocket.send("keepalive")
                     keepalive_pending = True
                     continue
@@ -146,19 +228,19 @@ class DiscoveryReceiver:
                     MessageType.WEATHER_STATES,
                 }:
                     if not isinstance(payload, bytes):
-                        raise DiscoveryUnavailable("invalid asynchronous frame")
+                        raise DiscoveryProtocolFailure("invalid asynchronous frame")
                     if self.ignored_bytes + len(payload) > _MAX_IGNORED_BYTES:
-                        raise DiscoveryUnavailable("asynchronous frame limit exceeded")
+                        raise DiscoveryProtocolFailure("asynchronous frame limit exceeded")
                     parse_state_events(header.message_type, payload)
                 elif header.message_type in {MessageType.TEXT, MessageType.BINARY_FILE}:
                     if self.pending is None or self.pending.done() or not isinstance(payload, str):
-                        raise DiscoveryUnavailable("unattributed file or response")
+                        raise DiscoveryProtocolFailure("unattributed file or response")
                     try:
                         document = json.loads(payload)
                     except (ValueError, TypeError):
-                        raise DiscoveryUnavailable("invalid structure response") from None
+                        raise DiscoveryProtocolFailure("invalid structure response") from None
                     if not isinstance(document, dict):
-                        raise DiscoveryUnavailable("unexpected text response")
+                        raise DiscoveryProtocolFailure("unexpected text response")
                     if self.operation == "marker":
                         reply = document.get("LL")
                         if (
@@ -167,20 +249,20 @@ class DiscoveryReceiver:
                             or not isinstance(reply.get("control"), str)
                             or reply["control"] not in self.marker_controls
                         ):
-                            raise DiscoveryUnavailable("unattributed marker response")
+                            raise DiscoveryProtocolFailure("unattributed marker response")
                     elif not isinstance(document.get("controls"), dict):
-                        raise DiscoveryUnavailable("unexpected text response")
+                        raise DiscoveryProtocolFailure("unexpected text response")
                     self.pending.set_result((header, payload))
                     continue
                 else:
-                    raise DiscoveryUnavailable("discovery disconnected")
+                    raise DiscoveryDisconnected("discovery disconnected")
                 self.interleavings += 1
                 self.ignored_bytes += len(payload) if payload is not None else 0
                 if (
                     self.interleavings > _MAX_INTERLEAVINGS
                     or self.ignored_bytes > _MAX_IGNORED_BYTES
                 ):
-                    raise DiscoveryUnavailable("asynchronous frame limit exceeded")
+                    raise DiscoveryProtocolFailure("asynchronous frame limit exceeded")
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -203,7 +285,7 @@ class DiscoveryReceiver:
         if self.failure is not None:
             raise self.failure
         if self.pending is not None:
-            raise DiscoveryUnavailable("concurrent discovery request")
+            raise DiscoveryProtocolFailure("concurrent discovery request")
         self.operation = operation
         self.interleavings = self.ignored_bytes = 0
         pending: asyncio.Future[tuple[MessageHeader, str | bytes | None]] = (
@@ -246,9 +328,9 @@ class DiscoveryReceiver:
                 await asyncio.shield(self.observation)
             raise LoxoneSourceIpBlocked("Miniserver source IP is blocked")
         if code in {"401", "403"}:
-            raise DiscoveryUnavailable("marker permission denied")
+            raise DiscoveryPermissionDenied("marker permission denied")
         if code not in {"200", "404"}:
-            raise DiscoveryUnavailable("marker command rejected")
+            raise DiscoveryProtocolFailure("marker command rejected")
         value = reply.get("value")
         return value if code == "200" and isinstance(value, str) and 0 < len(value) <= 128 else None
 
@@ -256,7 +338,7 @@ class DiscoveryReceiver:
         if self.failure is not None:
             raise self.failure
         if self.pending is not None:
-            raise DiscoveryUnavailable("concurrent file request")
+            raise DiscoveryProtocolFailure("concurrent file request")
         self.interleavings = self.ignored_bytes = 0
         self.operation = "structure"
         self.pending = asyncio.get_running_loop().create_future()
@@ -307,6 +389,7 @@ class AdminDiscovery:
         self.disposal: asyncio.Task[None] | None = None
         self.coordinator: MiniserverAuthCoordinator | None = None
         self.coordinator_key: tuple[str, int, int] | None = None
+        self.pending_requests = 0
 
     def retry_not_before(self) -> int | None:
         value = (
@@ -355,18 +438,74 @@ class AdminDiscovery:
         *,
         manual_retry: bool = False,
         early_probe: bool = False,
+        request_id: str = "-",
+    ) -> dict[str, Any]:
+        diagnostic: dict[str, Any] = {
+            "phase": "discovery_wait",
+            "timing": {},
+            "started": time.monotonic(),
+        }
+        token = _DIAGNOSTIC.set(diagnostic)
+        started = time.monotonic()
+        self.pending_requests += 1
+        try:
+            return await self._project(
+                kind, expected, manual_retry=manual_retry, early_probe=early_probe
+            )
+        except BaseException as exc:
+            timing = diagnostic["timing"]
+            logging.getLogger("mcpserver.service").warning(
+                "component=admin_discovery request_id=%s projection=%s outcome=failed "
+                "phase=%s code=%s duration_ms=%.1f pending_requests=%d "
+                "session_mode=%s session_age_ms=%.1f discovery_wait_ms=%.1f "
+                "coordinator_wait_ms=%.1f token_acquisition_ms=%.1f session_establishment_ms=%.1f",
+                request_id if re.fullmatch(r"[0-9a-f]{1,16}-[0-9a-f]{1,16}", request_id) else "-",
+                kind if kind in _DISCOVERY_DEADLINES else "unknown",
+                diagnostic["phase"],
+                _failure_category(exc),
+                (time.monotonic() - started) * 1000,
+                self.pending_requests,
+                diagnostic.get("session_mode", "none"),
+                diagnostic.get("session_age_ms", 0.0),
+                diagnostic.get("discovery_wait_ms", (time.monotonic() - started) * 1000),
+                timing.get("selector_coordinator_wait_ms", 0.0),
+                timing.get("selector_token_acquisition_ms", 0.0),
+                timing.get("selector_session_establishment_ms", 0.0),
+            )
+            raise
+        finally:
+            self.pending_requests -= 1
+            _DIAGNOSTIC.reset(token)
+
+    async def _project(
+        self,
+        kind: str,
+        expected: str,
+        *,
+        manual_retry: bool = False,
+        early_probe: bool = False,
     ) -> dict[str, Any]:
         if kind not in _DISCOVERY_DEADLINES:
             raise DiscoveryUnavailable("invalid projection")
         async with asyncio.timeout(_DISCOVERY_DEADLINES[kind]), self.lock:
             try:
+                diagnostic = _DIAGNOSTIC.get()
+                assert diagnostic is not None
+                diagnostic["discovery_wait_ms"] = (time.monotonic() - diagnostic["started"]) * 1000
+                diagnostic["session_mode"] = "held" if self.connection is not None else "none"
+                diagnostic["session_age_ms"] = (
+                    max(0.0, (time.monotonic() - self.created) * 1000)
+                    if self.connection is not None
+                    else 0.0
+                )
+                _phase("identity_check")
                 if self.closed:
-                    raise DiscoveryUnavailable("service stopped")
+                    raise DiscoveryStopped("service stopped")
                 config, username, password, profile = await self._identity()
                 if not config.enabled or not config.loxone_endpoint:
-                    raise DiscoveryUnavailable("service disabled or unconfigured")
+                    raise DiscoveryStopped("service disabled or unconfigured")
                 if not hmac.compare_digest(profile, expected):
-                    raise DiscoveryUnavailable("configuration changed")
+                    raise DiscoveryIdentityChanged("configuration changed")
                 key = (
                     config.loxone_endpoint,
                     config.miniserver_auth_probe_initial_seconds,
@@ -387,8 +526,11 @@ class AdminDiscovery:
                     or now - self.created >= 300
                     or now - self.last_used >= 60
                 ):
+                    _phase("session_close")
                     await self._drop()
+                _phase("receiver_state")
                 if self.receiver is not None and self.receiver.failure is not None:
+                    _phase("receiver_state")
                     # Fail this request, rather than silently re-authenticating.
                     raise self.receiver.failure
                 timing: dict[str, float | int] = {
@@ -397,6 +539,11 @@ class AdminDiscovery:
                     "selector_session_establishment_ms": 0.0,
                     "selector_auth_count": 0,
                 }
+                diagnostic["timing"] = timing
+                diagnostic["session_mode"] = "held" if self.connection is not None else "new"
+                diagnostic["session_age_ms"] = (
+                    max(0.0, (now - self.created) * 1000) if self.connection is not None else 0.0
+                )
                 if self.connection is None:
                     client = LoxoneClient(
                         MiniserverEndpoint.parse(config.loxone_endpoint),
@@ -414,6 +561,7 @@ class AdminDiscovery:
                         manual_retry=manual_retry,
                         early_probe=early_probe,
                         timing=timing,
+                        diagnostic_phase=_phase,
                     )
                     session = await self.connection.connect(username, password)
                     self.receiver = DiscoveryReceiver(
@@ -438,6 +586,7 @@ class AdminDiscovery:
                 cached = None
                 marker = None
                 if kind == "emergency_stop_display":
+                    _phase("marker_check")
                     marker = await self.receiver.marker()
                     cached = await asyncio.to_thread(display_cache.read)
                     if not (
@@ -454,19 +603,23 @@ class AdminDiscovery:
                     else 0.0
                 )
                 tick = time.perf_counter_ns()
+                _phase("structure_load")
                 structure = None if cached is not None else await self.receiver.load()
                 timing["selector_structure_load_ms"] = (
                     (time.perf_counter_ns() - tick) / 1_000_000 if structure is not None else 0.0
                 )
                 timing["selector_structure_load_count"] = 0 if structure is None else 1
+                _phase("identity_recheck")
                 _, username, password, current = await self._identity()
                 del username, password
                 if self.receiver.failure is not None:
                     raise self.receiver.failure
                 if coordinator.current_status()["breaker_state"] != "closed":
                     raise LoxoneSourceIpBlocked("Miniserver source IP is blocked")
-                if self.closed or not hmac.compare_digest(current, profile):
-                    raise DiscoveryUnavailable("identity changed during discovery")
+                if self.closed:
+                    raise DiscoveryStopped("service stopped during discovery")
+                if not hmac.compare_digest(current, profile):
+                    raise DiscoveryIdentityChanged("identity changed during discovery")
                 if cached is not None:
                     # Display metadata only; a marker is not an authorization proof.
                     result = {
@@ -556,6 +709,13 @@ def _request_projection(
         headers={
             "Content-Type": "application/json",
             "X-LoxBerry-Admin-Discovery": admin_key(store),
+            "X-LoxBerry-Admin-Request": (
+                os.getenv("MCPSERVER_ADMIN_REQUEST_ID", "-")
+                if re.fullmatch(
+                    r"[0-9a-f]{1,16}-[0-9a-f]{1,16}", os.getenv("MCPSERVER_ADMIN_REQUEST_ID", "-")
+                )
+                else "-"
+            ),
         },
         method="POST",
     )

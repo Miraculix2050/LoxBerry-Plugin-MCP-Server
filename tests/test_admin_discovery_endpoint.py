@@ -84,13 +84,21 @@ def test_malformed_or_generic_projection_is_rejected(tmp_path, monkeypatch, fiel
     owner.project.assert_not_awaited()
 
 
-def test_local_helper_and_lifecycle_use_fixed_projection(tmp_path, monkeypatch):
+@pytest.mark.parametrize("request_id", [None, "abc-123"])
+def test_local_helper_and_lifecycle_use_fixed_projection(tmp_path, monkeypatch, request_id):
     client, owner, secret = fixture(tmp_path, monkeypatch)
     with client:
-        response = client.post(PATH, json=body(), headers={"X-LoxBerry-Admin-Discovery": secret})
+        headers = {"X-LoxBerry-Admin-Discovery": secret}
+        if request_id is not None:
+            headers["X-LoxBerry-Admin-Request"] = request_id
+        response = client.post(PATH, json=body(), headers=headers)
         assert response.status_code == 200 and response.json()["projection"] == {"controls": []}
     owner.project.assert_awaited_once_with(
-        "event_history", "a" * 64, manual_retry=False, early_probe=False
+        "event_history",
+        "a" * 64,
+        manual_retry=False,
+        early_probe=False,
+        request_id=request_id or "-",
     )
     owner.close.assert_awaited_once()
 

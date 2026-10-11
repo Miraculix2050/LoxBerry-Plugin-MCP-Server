@@ -159,3 +159,17 @@ limitation remains: partial rights changes may not affect a still-open Miniserve
 session until it disconnects or is replaced. A fresh structure download is not a
 universal proof of immediate permission revocation. MCP clients never receive this
 service identity's access through the selector endpoint.
+
+### Admin discovery failures
+
+When emergency-stop options cannot be refreshed, correlate the Admin CGI log's
+`request_id` with `component=admin_discovery` in the service log. Failure-only
+warnings retain a fixed `phase` and `code`, total duration, discovery/coordinator
+wait, token/session setup timings, pending discovery count, and new/held session
+mode and age. A missing request ID is shown as `-`. Pending counts describe local
+Admin discovery requests only; they do not measure total Miniserver traffic.
+`connection_failed` in the UI remains a generic error. Use the correlated service
+category to distinguish timeout, disconnect, protocol, authentication and identity
+or lifecycle invalidation; `unknown` remains unresolved. No exception messages,
+payloads, credentials, tokens, signal names or object identities are logged.
+These diagnostics do not retry requests or change authorization behavior.

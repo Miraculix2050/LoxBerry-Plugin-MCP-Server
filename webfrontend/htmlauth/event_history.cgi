@@ -64,6 +64,7 @@ sub reply {
 
 sub admin_call {
     my ($action, $payload) = @_;
+    local $ENV{MCPSERVER_ADMIN_REQUEST_ID} = $request_id;
     my ($input, $output);
     my $error = gensym;
     my $pid = open3($input, $output, $error, "$lbpbindir/mcpserver-admin");
