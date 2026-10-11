@@ -608,7 +608,7 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
             "section": {
                 "default": "full",
                 "description": "Task section; omitted preserves the complete legacy guide.",
-                "enum": ["full", "core", "knx"],
+                "enum": ["full", "core", "knx", "alerts"],
                 "title": "Section",
                 "type": "string",
             }
