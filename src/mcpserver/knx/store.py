@@ -107,6 +107,12 @@ class KnxStore:
                     "CREATE INDEX IF NOT EXISTS addresses_search_cover "
                     "ON addresses(target,search_document,address)"
                 )
+            # Address-set comparisons read keys without fetching catalog JSON.
+            # SQLite maintains membership when imports or manual records change.
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS addresses_imported "
+                "ON addresses(target,address) WHERE imported!='{}'"
+            )
             yield connection
         except sqlite3.Error:
             connection.rollback()

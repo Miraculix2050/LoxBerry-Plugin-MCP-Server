@@ -61,13 +61,17 @@ class ProjectComparison:
                 db.set_progress_handler(lambda: int(monotonic() >= deadline), 1000)
             db.execute("BEGIN")
             self.metadata.store.check(db, target, revision)
-            db.execute("CREATE TEMP TABLE compared_project(address INTEGER PRIMARY KEY)")
+            db.execute(
+                "CREATE TEMP TABLE compared_project(address INTEGER PRIMARY KEY, "
+                "name_count INTEGER NOT NULL)"
+            )
             db.execute(
                 "CREATE TEMP TABLE compared_names(address INTEGER NOT NULL,name TEXT NOT NULL, "
                 "PRIMARY KEY(address,name)) WITHOUT ROWID"
             )
             db.executemany(
-                "INSERT INTO compared_project VALUES(?)", ((number,) for number in names)
+                "INSERT INTO compared_project VALUES(?,?)",
+                ((number, len(set(values))) for number, values in names.items()),
             )
             db.executemany(
                 "INSERT INTO compared_names VALUES(?,?)",
@@ -76,34 +80,29 @@ class ProjectComparison:
             # Imported names are additional information. Overrides do not turn a
             # naming deviation into a correction of either source.
             query = (
-                "WITH imported AS (SELECT address FROM addresses WHERE target=? "
-                "AND imported!='{}'), observed AS ("
+                "WITH observed AS ("
                 "SELECT i.address,'common' AS relation,"
                 "EXISTS(SELECT 1 FROM compared_names n WHERE n.address=i.address "
                 "AND json_type(i.imported,'$.name')='text' "
                 "AND n.name!=json_extract(i.imported,'$.name')) AS names_differ, "
-                "(json_type(i.imported,'$.name')='text' AND EXISTS(SELECT 1 FROM compared_names n "
-                "WHERE n.address=i.address)) AS name_assessed "
-                "FROM addresses i JOIN compared_project p ON p.address=i.address "
-                "WHERE i.target=? AND i.imported!='{}' "
-                "UNION ALL SELECT i.address,'import_only',0,0 FROM imported i "
-                "WHERE NOT EXISTS(SELECT 1 FROM compared_project p WHERE p.address=i.address) "
-                "UNION ALL SELECT p.address,'observed_project_only',0,0 FROM compared_project p "
-                "WHERE NOT EXISTS(SELECT 1 FROM imported i WHERE i.address=p.address)) "
-                "SELECT address,relation,names_differ,"
-                "(SELECT count(*) FROM compared_names n WHERE n.address=o.address)>1 "
-                "AS ambiguous_names,CASE WHEN relation!='common' THEN 'not_applicable' "
+                "(json_type(i.imported,'$.name')='text' AND p.name_count>0) AS name_assessed, "
+                "p.name_count>1 AS ambiguous_names "
+                "FROM compared_project p CROSS JOIN addresses i "
+                "WHERE i.target=? AND i.address=p.address AND i.imported!='{}' "
+                "UNION ALL SELECT i.address,'import_only',0,0,0 "
+                "FROM addresses i INDEXED BY addresses_imported "
+                "WHERE i.target=? AND i.imported!='{}' AND NOT EXISTS"
+                "(SELECT 1 FROM compared_project p WHERE p.address=i.address) "
+                "UNION ALL SELECT p.address,'observed_project_only',0,0,p.name_count>1 "
+                "FROM compared_project p WHERE NOT EXISTS(SELECT 1 FROM addresses i "
+                "WHERE i.target=? AND i.address=p.address AND i.imported!='{}')) "
+                "SELECT address,relation,names_differ,ambiguous_names,"
+                "CASE WHEN relation!='common' THEN 'not_applicable' "
                 "WHEN name_assessed THEN 'compared' ELSE 'unknown' END AS name_comparison "
                 "FROM observed o"
             )
-            # Materialize numeric observations once. Counting and paging share
-            # this indexed result instead of re-reading source JSON/name joins.
-            db.execute(
-                "CREATE TEMP TABLE compared_observations(address INTEGER PRIMARY KEY, "
-                "relation TEXT NOT NULL,names_differ INTEGER NOT NULL, "
-                "ambiguous_names INTEGER NOT NULL,name_comparison TEXT NOT NULL)"
-            )
-            db.execute("INSERT INTO compared_observations " + query, (target, target))
+            # Only common addresses need source JSON. Import-only observations
+            # use the compact partial index; do not materialize the full union.
             counts = {
                 "common": 0,
                 "import_only": 0,
@@ -114,7 +113,8 @@ class ProjectComparison:
             }
             for relation, count, different, ambiguous, unknown in db.execute(
                 "SELECT relation,count(*),sum(names_differ),sum(ambiguous_names),"
-                "sum(name_comparison='unknown') FROM compared_observations GROUP BY relation",
+                "sum(name_comparison='unknown') FROM (" + query + ") GROUP BY relation",
+                (target, target, target),
             ):
                 counts[relation] = count
                 counts["name_deviations"] += different
@@ -130,8 +130,8 @@ class ProjectComparison:
                 }
                 for number, relation, different, ambiguous, name_comparison in db.execute(
                     "SELECT address,relation,names_differ,ambiguous_names,name_comparison "
-                    "FROM compared_observations ORDER BY address LIMIT ?",
-                    (MAX_COMPARISON_FINDINGS,),
+                    "FROM (" + query + ") ORDER BY address LIMIT ?",
+                    (target, target, target, MAX_COMPARISON_FINDINGS),
                 )
             ]
             raw_info = db.execute(

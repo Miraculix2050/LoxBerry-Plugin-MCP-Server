@@ -9,6 +9,7 @@ extracted from the matching version heading.
   and project analysis (#417). Keep primary Loxone names, imported values and
   manual metadata separate; show multiple names, source gaps, freshness and
   bounded results without inferring bus usage or configuration defects.
+  Keep wide KNX tables scrollable on mobile and bound expanded coverage details.
 
 - Retain sanitized, correlated Admin discovery failure phases, categories and
   timing/session metadata without logging private payloads or changing retries (#449).

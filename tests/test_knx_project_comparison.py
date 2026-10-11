@@ -123,6 +123,35 @@ def test_revision_target_and_unknown_import_scope(tmp_path):
     assert other["counts"]["observed_project_only"] == 1
 
 
+def test_import_membership_index_migrates_and_tracks_reimport(tmp_path):
+    store, comparison = catalog(tmp_path)
+    with store.connection() as db:
+        db.execute("DROP INDEX addresses_imported")
+        db.commit()
+    # Opening an existing schema-v3 database adds the derived index without
+    # changing its revision or user records.
+    with store.connection() as db:
+        assert store.revision(db, "target") == 3
+        plan = db.execute(
+            "EXPLAIN QUERY PLAN SELECT address FROM addresses "
+            "INDEXED BY addresses_imported WHERE target=? AND imported!='{}' ORDER BY address",
+            ("target",),
+        ).fetchall()
+        assert any("addresses_imported" in item[3] for item in plan)
+        assert not any("TEMP B-TREE" in item[3] for item in plan)
+        db.execute(
+            "UPDATE addresses SET imported='{}' WHERE target=? AND address=?", ("target", 2564)
+        )
+        db.execute(
+            "UPDATE addresses SET imported=? WHERE target=? AND address=?",
+            (json.dumps({"name": "New import"}), "target", 2565),
+        )
+        db.commit()
+    result = comparison.observe("target", 3, {})
+    assert [row["address_id"] for row in result["rows"]] == [2563, 2565]
+    assert result["counts"]["import_only"] == 2
+
+
 def test_missing_catalog_is_not_created_and_maximum_key_set_is_bounded(tmp_path):
     path = tmp_path / "missing.sqlite3"
     comparison = ProjectComparison(ProjectMetadata(path))
