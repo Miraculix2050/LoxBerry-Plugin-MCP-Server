@@ -3,6 +3,7 @@
 from typing import Final
 
 READ_SCOPE: Final = "loxone:read"
+MESSAGE_CONFIRM_SCOPE: Final = "loxone:messages:confirm"
 CONTROL_SCOPE: Final = "loxone:control"
 LOXBERRY_READ_SCOPE: Final = "loxberry:read"
 HISTORY_SCOPE: Final = "loxone:history"
@@ -13,6 +14,7 @@ SUPPORTED_SCOPES: Final = (
     READ_SCOPE,
     HISTORY_SCOPE,
     CONTROL_SCOPE,
+    MESSAGE_CONFIRM_SCOPE,
     LOXBERRY_READ_SCOPE,
     LOXBERRY_OPERATE_SCOPE,
 )

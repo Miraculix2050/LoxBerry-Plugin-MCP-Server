@@ -1,5 +1,42 @@
 # Systemmeldungen
 
+## Genau eine Meldung bestätigen
+
+Administratoren können in den Berechtigungseinstellungen
+`tools.loxone_message_confirmation_enabled` aktivieren; die Funktion ist
+standardmäßig aus. Zusätzlich muss der optionale OAuth-Scope
+`loxone:messages:confirm` separat erteilt werden. Control-, History- oder
+LoxBerry-Freigaben ersetzen diese Berechtigung nicht.
+
+Zuerst `loxone_preview_system_message_confirmation(entry_uuid)` aufrufen und die
+genaue Meldung samt Wirkung prüfen. Erst nach ausdrücklicher Freigabe
+`loxone_confirm_system_message(preview_id, user_approved=true)` ausführen.
+Zuvor auf der nativen Adminseite `message-approval.cgi` die Vorschau-ID eingeben,
+die vom Server bereitgestellte Meldung und Wirkung prüfen und genau diese Aktion
+freigeben. Erst dadurch entsteht eine private, einmalige lokale Freigabe;
+der Wahrheitswert des MCP-Clients allein berechtigt nicht zum Senden. Die lokale
+Adminfreigabe ersetzt keine Loxone-Berechtigung und verlängert die Gültigkeit nicht.
+Die Vorschau ist an Identität und Ziel gebunden, gilt 120 Sekunden und ist einmalig
+nutzbar. Vor dem Senden werden Berechtigung, Aktivierung, aktueller Meldungszustand
+und native Aktion erneut geprüft. Pro OAuth-Familie sind zehn offene Vorschauen
+zulässig; eine neue Vorschau ersetzt die ältere derselben Meldung. Eine Bestätigung
+verwirft weitere Vorschauen genau dieser Zielmeldung und sperrt parallele Aufrufe
+auch aus anderen Familien. Pro OAuth-Familie sind höchstens drei
+Bestätigungsversuche pro Minute erlaubt.
+
+Bei der geprüften manuellen Warnung (Ereignis 1121) historisiert „Okay“ / 1003 die
+Meldung: Sie bleibt in der vorgehaltenen Historie, `confirmed_at` bleibt leer.
+Die native Aktion 1005 bestätigt. Aktionen hängen von der Quelle ab; andere
+manuelle Stufen bleiben bis zur Prüfung ihrer Wirkung unzulässig.
+`acknowledgement_available` behält seine bisherige Bedeutung für 1005;
+`confirmation_action_id` und `confirmation_effect` beschreiben die Vorschauaktion.
+
+Das Ergebnis unterscheidet Senden, Annahme und beobachtete Wirkung. Einen unklaren
+Schreibaufruf niemals automatisch wiederholen. Den Lebenszyklus genau dieser
+Meldung lesend abgleichen und vor einem neuen Versuch erneut die Freigabe einholen.
+Es gibt keine Sammelbestätigung, Löschung, Lesemarkierung, Benachrichtigungsversendung
+oder Reparatur. Eine entfernte aktive Meldung beweist keinen gesunden Systemzustand.
+
 `loxone_get_attention_overview` liefert eine begrenzte Übersicht mit drei getrennten
 Quellen: Baustein-Alarme, Systemmeldungen und das zuletzt beobachtete
 Benachrichtigungsereignis. Abdeckung, Fehler, Zeitpunkte und Bedeutung jeder Quelle

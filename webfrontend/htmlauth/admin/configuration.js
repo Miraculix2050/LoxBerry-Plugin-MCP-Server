@@ -112,6 +112,7 @@ window.McpAdmin.createConfiguration = (
     miniserverEndpoint.value = endpoint;
     miniserverSelect.value = [...miniserverSelect.options].some((option) => option.value === endpoint)
       ? endpoint : '';
+    setFormChecked(mcpConfigForm, 'loxone_message_confirmation_enabled', tools.loxone_message_confirmation_enabled);
     setFormChecked(mcpConfigForm, 'loxone_history_enabled', tools.loxone_history_enabled);
     setFormChecked(mcpConfigForm, 'loxone_control_enabled', tools.loxone_control_enabled);
     setFormChecked(mcpConfigForm, 'loxberry_read_enabled', tools.loxberry_read_enabled);

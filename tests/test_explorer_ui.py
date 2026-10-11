@@ -1415,13 +1415,28 @@ def test_explorer_granted_scopes_are_exact_and_fail_closed() -> None:
       };
     })()"""
     assert run_core(expression) == {
-        "all": [True] * 5,
-        "partial": [True, True, False, True, False],
+        "all": [True] * 6,
+        "partial": [True, True, False, False, True, False],
         "absent": None,
         "empty": None,
         "unknown": None,
         "duplicate": None,
     }
+
+
+def test_message_confirmation_has_its_own_explorer_scope_and_group() -> None:
+    assert run_adapters("adapters.requiredScopes('loxone_confirm_system_message')") == [
+        "loxone:read",
+        "loxone:messages:confirm",
+    ]
+    assert (
+        run_adapters("adapters.requiredMutationScope('loxone_confirm_system_message')")
+        == "loxone:messages:confirm"
+    )
+    assert run_adapters("adapters.toolGroup('loxone_confirm_system_message')") == "loxoneMessages"
+    assert run_adapters(
+        "adapters.requiredScopes('loxone_preview_system_message_confirmation')"
+    ) == ["loxone:read"]
 
 
 def test_explorer_scope_labels_exist_in_both_languages() -> None:

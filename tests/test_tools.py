@@ -621,7 +621,7 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert tool.annotations.destructiveHint is False
     assert tool.annotations.openWorldHint is False
     assert result.data.name == "using-loxberry-mcp"  # type: ignore[union-attr]
-    assert result.data.revision == 66  # type: ignore[union-attr]
+    assert result.data.revision == 68  # type: ignore[union-attr]
     assert "prefer `loxone_read_controls`" in result.data.content  # type: ignore[union-attr]
     assert "`loxone_get_structure_overview`" in result.data.content  # type: ignore[union-attr]
     assert result.data.media_type == "text/markdown"  # type: ignore[union-attr]
@@ -752,6 +752,8 @@ def test_tool_input_schemas_explain_every_argument() -> None:
         "loxone_get_active_alerts": {"limit"},
         "loxone_get_system_messages": {"mode", "limit", "cursor"},
         "loxone_get_notifications": set(),
+        "loxone_preview_system_message_confirmation": {"entry_uuid"},
+        "loxone_confirm_system_message": {"preview_id", "user_approved"},
         "loxone_get_attention_overview": {"limit", "include_history"},
         "loxone_operate_control": {
             "control_uuid",

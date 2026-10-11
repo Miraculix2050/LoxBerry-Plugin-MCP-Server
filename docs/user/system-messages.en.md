@@ -43,6 +43,39 @@ rule repair task. Such writes require a future dedicated rule tool and permissio
 Configuration changes need a future project-writing Loxone MCP integration.
 Acknowledgement metadata does not authorize or execute confirmation.
 
+## Confirm exactly one message
+
+An administrator can enable `tools.loxone_message_confirmation_enabled` in the
+permissions settings; it defaults to false. Separately grant the optional OAuth
+scope `loxone:messages:confirm`. Existing Control, History or LoxBerry grants do
+not authorize confirmation.
+
+First call `loxone_preview_system_message_confirmation(entry_uuid)` and review the
+exact message and effect. Only after explicit approval call
+`loxone_confirm_system_message(preview_id, user_approved=true)`. First approve the
+server-staged message and effect in the native Admin page `message-approval.cgi`,
+using the exact preview ID. This creates a private single-use local approval;
+an MCP client's Boolean alone cannot authorize the action. Local Admin approval
+never substitutes for Loxone authorization and does not extend expiry. A preview expires
+after 120 seconds, is bound to your identity/target and can be used once. The server
+allows ten pending previews per OAuth family; a new preview replaces an older one
+for the same entry. Confirmation invalidates sibling previews of the exact target
+and prevents simultaneous dispatch, including across families. The server
+rechecks permissions, activation, current message and native action before sending.
+There is a separate budget of three confirmation attempts per minute per family.
+
+For the verified manual warning (event 1121), "Okay" / 1003 historizes the message:
+it remains in retained history and `confirmed_at` stays empty. Native 1005 is an
+acknowledgement. Actions are source-specific; other manual levels are unsupported
+until verified. The existing `acknowledgement_available` field retains its 1005
+meaning; `confirmation_action_id` and `confirmation_effect` describe preview support.
+
+The result separates dispatch, acceptance and observed effect. Never retry an
+uncertain write automatically. Read the exact target's lifecycle to reconcile and
+request approval again before a new attempt. No bulk confirmation, deletion,
+read markers, notification sending or repair occurs. Clearing a message does not
+prove a healthy system.
+
 ## Notifications
 
 The tool loxone_get_notifications reads only the latest observed text event from

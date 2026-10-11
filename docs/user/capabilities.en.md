@@ -690,6 +690,11 @@ in ETS for two-/three-level styles. Record the ETS version and compare a fresh e
 
 ## System Messages
 
+Single-message confirmation is a separate default-disabled capability with its
+own optional OAuth scope, expiring exact-message preview and explicit approval.
+Verified manual-warning Okay historizes; native acknowledgement remains distinct.
+No bulk acknowledgement, deletion or underlying repair is performed.
+
 See [System Messages](system-messages.en.md) for experimental current and historical
 reads, source permission, bounds and evidence-linked follow-up tasks.
 
