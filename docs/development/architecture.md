@@ -204,13 +204,16 @@ is the detailed per-object evidence projection.
 `knx.project_comparison` compares imported address keys with the existing
 authorized `ProjectQueryIndex.knx_by_address` reverse index. The explicit
 `ets_project_comparison` analysis does not change default analysis selection or
-build another graph. Temporary indexed SQLite tables hold project address/name
-observations in a read transaction; only bounded compact findings are cached.
+build another graph. A temporary indexed SQLite table holds project address
+keys in a read transaction; only bounded numeric observations are cached.
 An additive partial index of imported target/address keys avoids fetching JSON
 for import-only observations. Its membership follows source updates; creating
 the index on existing schema-v3 stores leaves records and revisions unchanged.
-Counts and bounded keys are selected without materializing a full comparison
-table. Source JSON is inspected only for addresses shared with the project.
+Counts and a bounded JSON array of keys are selected without materializing a
+full comparison table or allocating one Python/SQLite row per import-only key.
+Source JSON is inspected only for addresses shared with the project. Internal
+numeric observations carry address, relation and comparison flags; complete
+finding objects and source values are constructed only for a delivered page.
 Returned pages hydrate at most 50 address records in one metadata lookup and
 at most 20 project objects per address, with omitted counts. No per-hit queries
 or full source-document decoding occurs. A bounded worker lease remains held

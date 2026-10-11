@@ -13,6 +13,23 @@ from .project_metadata import ProjectMetadata
 MAX_COMPARISON_FINDINGS = 10_000
 
 
+def unpack_observation(value: int) -> dict[str, Any]:
+    """Decode an internal numeric observation only when projecting a page."""
+    flags = value >> 16
+    relation = ("import_only", "common", "observed_project_only")[flags & 3]
+    return {
+        "address_id": value & 65535,
+        "relation": relation,
+        "names_differ": bool(flags & 4),
+        "ambiguous_names": bool(flags & 8),
+        "name_comparison": "unknown"
+        if flags & 16
+        else "compared"
+        if relation == "common"
+        else "not_applicable",
+    }
+
+
 class ProjectComparison:
     """Borrow authorized project keys/names; never load the metadata catalog."""
 
@@ -45,13 +62,7 @@ class ProjectComparison:
                     "ambiguous_project_names": sum(len(set(value)) > 1 for value in names.values()),
                 },
                 "rows": [
-                    {
-                        "address_id": number,
-                        "relation": "observed_project_only",
-                        "names_differ": False,
-                        "ambiguous_names": len(set(names[number])) > 1,
-                        "name_comparison": "not_applicable",
-                    }
+                    number | ((2 | (8 if len(set(names[number])) > 1 else 0)) << 16)
                     for number in keys[:MAX_COMPARISON_FINDINGS]
                 ],
                 "truncated": len(keys) > MAX_COMPARISON_FINDINGS,
@@ -61,78 +72,63 @@ class ProjectComparison:
                 db.set_progress_handler(lambda: int(monotonic() >= deadline), 1000)
             db.execute("BEGIN")
             self.metadata.store.check(db, target, revision)
-            db.execute(
-                "CREATE TEMP TABLE compared_project(address INTEGER PRIMARY KEY, "
-                "name_count INTEGER NOT NULL)"
-            )
-            db.execute(
-                "CREATE TEMP TABLE compared_names(address INTEGER NOT NULL,name TEXT NOT NULL, "
-                "PRIMARY KEY(address,name)) WITHOUT ROWID"
-            )
+            db.execute("CREATE TEMP TABLE compared_project(address INTEGER PRIMARY KEY)")
             db.executemany(
-                "INSERT INTO compared_project VALUES(?,?)",
-                ((number, len(set(values))) for number, values in names.items()),
+                "INSERT INTO compared_project VALUES(?)", ((number,) for number in names)
             )
-            db.executemany(
-                "INSERT INTO compared_names VALUES(?,?)",
-                ((number, value) for number, values in names.items() for value in set(values)),
-            )
-            # Imported names are additional information. Overrides do not turn a
-            # naming deviation into a correction of either source.
-            query = (
-                "WITH observed AS ("
-                "SELECT i.address,'common' AS relation,"
-                "EXISTS(SELECT 1 FROM compared_names n WHERE n.address=i.address "
-                "AND json_type(i.imported,'$.name')='text' "
-                "AND n.name!=json_extract(i.imported,'$.name')) AS names_differ, "
-                "(json_type(i.imported,'$.name')='text' AND p.name_count>0) AS name_assessed, "
-                "p.name_count>1 AS ambiguous_names "
-                "FROM compared_project p CROSS JOIN addresses i "
-                "WHERE i.target=? AND i.address=p.address AND i.imported!='{}' "
-                "UNION ALL SELECT i.address,'import_only',0,0,0 "
-                "FROM addresses i INDEXED BY addresses_imported "
-                "WHERE i.target=? AND i.imported!='{}' AND NOT EXISTS"
-                "(SELECT 1 FROM compared_project p WHERE p.address=i.address) "
-                "UNION ALL SELECT p.address,'observed_project_only',0,0,p.name_count>1 "
-                "FROM compared_project p WHERE NOT EXISTS(SELECT 1 FROM addresses i "
-                "WHERE i.target=? AND i.address=p.address AND i.imported!='{}')) "
-                "SELECT address,relation,names_differ,ambiguous_names,"
-                "CASE WHEN relation!='common' THEN 'not_applicable' "
-                "WHEN name_assessed THEN 'compared' ELSE 'unknown' END AS name_comparison "
-                "FROM observed o"
-            )
-            # Only common addresses need source JSON. Import-only observations
-            # use the compact partial index; do not materialize the full union.
+            # Count imported keys directly. Per-import correlated membership and
+            # full-union grouping are unnecessary: only common keys need JSON.
+            imported_count = db.execute(
+                "SELECT count(*) FROM addresses INDEXED BY addresses_imported "
+                "WHERE target=? AND imported!='{}'",
+                (target,),
+            ).fetchone()[0]
             counts = {
                 "common": 0,
-                "import_only": 0,
+                "import_only": imported_count,
                 "observed_project_only": 0,
                 "name_deviations": 0,
                 "name_comparisons_unknown": 0,
-                "ambiguous_project_names": 0,
+                "ambiguous_project_names": sum(len(set(value)) > 1 for value in names.values()),
             }
-            for relation, count, different, ambiguous, unknown in db.execute(
-                "SELECT relation,count(*),sum(names_differ),sum(ambiguous_names),"
-                "sum(name_comparison='unknown') FROM (" + query + ") GROUP BY relation",
-                (target, target, target),
+            flags = {}
+            for number, imported_name, name_type in db.execute(
+                "SELECT i.address,json_extract(i.imported,'$.name'),json_type(i.imported,'$.name') "
+                "FROM compared_project p CROSS JOIN addresses i "
+                "WHERE i.target=? AND i.address=p.address AND i.imported!='{}'",
+                (target,),
             ):
-                counts[relation] = count
-                counts["name_deviations"] += different
-                counts["name_comparisons_unknown"] += unknown
-                counts["ambiguous_project_names"] += ambiguous
-            rows = [
-                {
-                    "address_id": number,
-                    "relation": relation,
-                    "names_differ": bool(different),
-                    "ambiguous_names": bool(ambiguous),
-                    "name_comparison": name_comparison,
-                }
-                for number, relation, different, ambiguous, name_comparison in db.execute(
-                    "SELECT address,relation,names_differ,ambiguous_names,name_comparison "
-                    "FROM (" + query + ") ORDER BY address LIMIT ?",
-                    (target, target, target, MAX_COMPARISON_FINDINGS),
+                values = set(names[number])
+                assessed = name_type == "text" and bool(values)
+                different = assessed and any(value != imported_name for value in values)
+                flags[number] = (
+                    1
+                    | (4 if different else 0)
+                    | (8 if len(values) > 1 else 0)
+                    | (0 if assessed else 16)
                 )
+                counts["common"] += 1
+                counts["name_deviations"] += int(different)
+                counts["name_comparisons_unknown"] += int(not assessed)
+            counts["import_only"] -= counts["common"]
+            project_only = sorted(number for number in names if number not in flags)
+            counts["observed_project_only"] = len(project_only)
+            flags.update(
+                (number, 2 | (8 if len(set(names[number])) > 1 else 0)) for number in project_only
+            )
+            # SQLite returns one bounded numeric array. Avoid 10,000 Python row
+            # callbacks and DTO allocations; only a delivered page is decoded.
+            imported_keys = json.loads(
+                db.execute(
+                    "SELECT json_group_array(address) FROM "
+                    "(SELECT address FROM addresses INDEXED BY addresses_imported "
+                    "WHERE target=? AND imported!='{}' ORDER BY address LIMIT ?)",
+                    (target, MAX_COMPARISON_FINDINGS),
+                ).fetchone()[0]
+            )
+            rows = [
+                number | (flags.get(number, 0) << 16)
+                for number in sorted(imported_keys + project_only)[:MAX_COMPARISON_FINDINGS]
             ]
             raw_info = db.execute(
                 "SELECT information FROM import_state WHERE target=?", (target,)

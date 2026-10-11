@@ -12,7 +12,11 @@ import pytest
 import mcpserver.loxone.project.ets_comparison as comparison_adapter
 import mcpserver.tools as tools
 from mcpserver.knx.model import KnxError, address_number
-from mcpserver.knx.project_comparison import MAX_COMPARISON_FINDINGS, ProjectComparison
+from mcpserver.knx.project_comparison import (
+    MAX_COMPARISON_FINDINGS,
+    ProjectComparison,
+    unpack_observation,
+)
 from mcpserver.knx.project_metadata import ProjectMetadata
 from mcpserver.knx.store import KnxStore
 from mcpserver.loxone.project.analysis import ANALYSES, analyze_knx
@@ -73,7 +77,7 @@ def test_address_sets_all_project_names_and_overrides_remain_separate(tmp_path):
         "name_comparisons_unknown": 0,
         "ambiguous_project_names": 1,
     }
-    assert result["rows"] == [
+    assert [unpack_observation(row) for row in result["rows"]] == [
         {
             "address_id": 2563,
             "relation": "common",
@@ -148,7 +152,7 @@ def test_import_membership_index_migrates_and_tracks_reimport(tmp_path):
         )
         db.commit()
     result = comparison.observe("target", 3, {})
-    assert [row["address_id"] for row in result["rows"]] == [2563, 2565]
+    assert [unpack_observation(row)["address_id"] for row in result["rows"]] == [2563, 2565]
     assert result["counts"]["import_only"] == 2
 
 
@@ -173,14 +177,21 @@ def test_missing_names_and_unicode_are_observations_not_inferred_matches(tmp_pat
             (json.dumps({"description": "Unknown name"}),),
         )
         db.commit()
-    assert not comparison.observe("target", 3, {2563: ("Loxone",)})["rows"][0]["names_differ"]
+    assert not unpack_observation(comparison.observe("target", 3, {2563: ("Loxone",)})["rows"][0])[
+        "names_differ"
+    ]
     with store.connection() as db:
         db.execute(
-            "UPDATE addresses SET imported=? WHERE address=2563", (json.dumps({"name": "Straße"}),)
+            "UPDATE addresses SET imported=? WHERE address=2563",
+            (json.dumps({"name": "Stra\u00dfe"}),),
         )
         db.commit()
-    assert comparison.observe("target", 3, {2563: ("STRASSE",)})["rows"][0]["names_differ"]
-    assert not comparison.observe("target", 3, {2563: ("Straße",)})["rows"][0]["names_differ"]
+    assert unpack_observation(comparison.observe("target", 3, {2563: ("STRASSE",)})["rows"][0])[
+        "names_differ"
+    ]
+    assert not unpack_observation(
+        comparison.observe("target", 3, {2563: ("Stra\u00dfe",)})["rows"][0]
+    )["names_differ"]
 
 
 @pytest.mark.parametrize("number", [-1, 65536, True])
@@ -234,7 +245,12 @@ def test_source_gaps_and_missing_names_are_explicit(tmp_path):
     }
     assert summary["source_coverage_complete"] is False
     assert summary["counts"]["name_comparisons_unknown"] == 1
-    assert result["findings"][0]["comparison"]["project_names_complete"] is False
+    assert (
+        project_page(query, ProjectMetadata(store.path), "target", 3, result["findings"][:1])[0][
+            "comparison"
+        ]["project_names_complete"]
+        is False
+    )
 
 
 def test_existing_project_index_preserves_variants_names_and_page_cache(tmp_path):
@@ -249,7 +265,7 @@ def test_existing_project_index_preserves_variants_names_and_page_cache(tmp_path
     assert summary["installation_coverage"] == "not_assessable"
     assert summary["import_info"]["complete_export"] is False
     assert summary["catalog_scope"] == "may_combine_imports"
-    assert result["findings"][0]["comparison"]["local_metadata"] is None
+    assert isinstance(result["findings"][0], int)
     page = project_page(query, metadata, "target", 3, result["findings"][:1])
     values = page[0]["comparison"]
     assert {item["loxone_name"] for item in values["project_objects"]} == {"Primary A", "Primary B"}
@@ -262,7 +278,7 @@ def test_existing_project_index_preserves_variants_names_and_page_cache(tmp_path
     assert values["local_metadata"]["manual"]["name"] == "Local"
     assert query.graph_index is index
     values["local_metadata"]["manual"]["name"] = "Changed output"
-    assert result["findings"][0]["comparison"]["local_metadata"] is None
+    assert isinstance(result["findings"][0], int)
     assert (
         project_page(query, metadata, "target", 3, result["findings"][:1])[0]["comparison"][
             "local_metadata"
@@ -326,6 +342,13 @@ async def test_explicit_selection_defaults_cursor_revision_and_fresh_permission(
     assert len(found.data.findings[0].comparison.project_objects) == 2
     assert found.data.next_cursor is not None
     assert selections == [ANALYSES]
+    continued = await runner.run(
+        "knx", ["ets_project_comparison"], cursor=found.data.next_cursor, limit=1
+    )
+    assert continued.ok and continued.data.findings[0].comparison.relation == "import_only"
+    assert continued.data.findings[0].comparison.local_metadata.imported["name"] == "Import only"
+    repeated = await runner.run("knx", ["ets_project_comparison"], limit=1)
+    assert repeated.ok and repeated.data.findings == found.data.findings
     combined = await runner.run("knx", ["address_hierarchy", "ets_project_comparison"], limit=50)
     assert combined.ok
     assert selections[-1] == {"address_hierarchy"}

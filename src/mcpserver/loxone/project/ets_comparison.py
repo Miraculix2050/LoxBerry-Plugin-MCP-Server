@@ -8,7 +8,7 @@ from time import monotonic
 from typing import Any
 
 from mcpserver.knx.model import KnxError
-from mcpserver.knx.project_comparison import ProjectComparison
+from mcpserver.knx.project_comparison import ProjectComparison, unpack_observation
 from mcpserver.knx.project_metadata import ProjectMetadata
 
 from .analysis import ANALYSIS_VERSION
@@ -80,38 +80,15 @@ def observe_project(
         if deadline is not None and monotonic() >= deadline:
             raise ProjectError("project_worker_limit") from None
         raise
+    if deadline is not None and monotonic() >= deadline:
+        raise ProjectError("project_worker_limit")
     status: Any = query.status()
     endpoints = [
         node for node in index.nodes.values() if node.knx and node.knx.object_kind == "endpoint"
     ]
     coverage = status["coverage_by_source_type"]
     diagnostics = source_diagnostics_projection(query.view.snapshot)
-    findings = []
-    for row in observed["rows"]:
-        if deadline is not None and monotonic() >= deadline:
-            raise ProjectError("project_worker_limit")
-        number = row["address_id"]
-        keys = index.knx_by_address.get(number, ())
-        findings.append(
-            {
-                "finding_id": "ets-"
-                + hashlib.sha256(f"1:{number}:{row['relation']}".encode()).hexdigest()[:24],
-                "analysis": ETS_COMPARISON,
-                "finding_type": "imported_project_address_observation",
-                "classification": "fact",
-                "evidence_category": "address_structure",
-                "group_address": f"{number >> 11}/{(number >> 8) & 7}/{number & 255}",
-                "affected_project_node_ids": list(keys[:_MAX_OBJECTS]),
-                "affected_omitted": max(0, len(keys) - _MAX_OBJECTS),
-                "comparison": {
-                    **row,
-                    "project_names_complete": len(names.get(number, ())) == len(keys),
-                    "project_objects": [],
-                    "project_objects_omitted": 0,
-                    "local_metadata": None,
-                },
-            }
-        )
+    findings = observed["rows"]
     return {
         "analysis_version": ANALYSIS_VERSION,
         "project_fingerprint": query.view.snapshot.fingerprint,
@@ -220,27 +197,38 @@ def project_page(
     metadata: ProjectMetadata,
     target: str,
     revision: int,
-    findings: list[dict[str, Any]],
+    findings: list[dict[str, Any] | int],
 ) -> list[dict[str, Any]]:
     """Hydrate copies of one output page; never mutate reusable cached findings."""
     index = query.graph_index
     assert index is not None
-    numbers = {
-        item["comparison"]["address_id"] for item in findings if item["analysis"] == ETS_COMPARISON
-    }
+    numbers = {item & 65535 for item in findings if isinstance(item, int)}
     values = metadata.lookup(target, revision, numbers)
     result = []
     for item in findings:
-        if item["analysis"] != ETS_COMPARISON:
+        if not isinstance(item, int):
             result.append(item)
             continue
-        number = item["comparison"]["address_id"]
+        row = unpack_observation(item)
+        number = row["address_id"]
         keys = index.knx_by_address.get(number, ())
         result.append(
             {
-                **item,
+                "finding_id": "ets-"
+                + hashlib.sha256(f"1:{number}:{row['relation']}".encode()).hexdigest()[:24],
+                "analysis": ETS_COMPARISON,
+                "finding_type": "imported_project_address_observation",
+                "classification": "fact",
+                "evidence_category": "address_structure",
+                "group_address": f"{number >> 11}/{(number >> 8) & 7}/{number & 255}",
+                "affected_project_node_ids": list(keys[:_MAX_OBJECTS]),
+                "affected_omitted": max(0, len(keys) - _MAX_OBJECTS),
                 "comparison": {
-                    **item["comparison"],
+                    **row,
+                    "project_names_complete": all(
+                        complete and bool(name)
+                        for name, complete in (_primary_name(query, key) for key in keys)
+                    ),
                     "local_metadata": values.get(number),
                     "project_objects": [_object(query, key) for key in keys[:_MAX_OBJECTS]],
                     "project_objects_omitted": max(0, len(keys) - _MAX_OBJECTS),
