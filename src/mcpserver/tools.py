@@ -674,11 +674,14 @@ class ActiveAlertData(BaseModel):
 class ActiveAlertsData(BaseModel):
     scope: Literal["authorized_visible_runtime"] = "authorized_visible_runtime"
     complete_scope: Literal["known_candidate_families"] = "known_candidate_families"
-    supported_families: list[Literal["AalEmergency", "AalSmartAlarm", "Alarm", "AlarmChain"]] = [
+    supported_families: list[
+        Literal["AalEmergency", "AalSmartAlarm", "Alarm", "AlarmChain", "SmokeAlarm"]
+    ] = [
         "AalEmergency",
         "AalSmartAlarm",
         "Alarm",
         "AlarmChain",
+        "SmokeAlarm",
     ]
     candidate_families: list[str] = Field(default_factory=lambda: sorted(CANDIDATE_TYPES))
     structure_generation: int
@@ -5269,7 +5272,8 @@ def register_read_tools(
         name="loxone_get_active_alerts",
         description=(
             "Read a bounded overview of active visible alerts. Evaluates AalEmergency, "
-            "AalSmartAlarm, Alarm (owner-approved zero-as-inactive rule) and AlarmChain; "
+            "AalSmartAlarm, Alarm, AlarmChain and SmokeAlarm "
+            "(Alarm and SmokeAlarm level zero use owner-approved assumptions); "
             "other known monitor/alarm families remain explicit coverage gaps. One freshly "
             "authorized structure and cached observations, not simultaneous measurements. "
             "No acknowledge, polling or history; not an emergency notification service."

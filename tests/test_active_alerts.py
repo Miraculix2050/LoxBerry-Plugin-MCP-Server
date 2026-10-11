@@ -123,8 +123,137 @@ async def test_alarm_missing_level_is_not_inactive(monkeypatch, states):
 
 
 @pytest.mark.parametrize(
+    "code,label", [(0, "no_alarm"), (1, "pre_alarm"), (2, "main_alarm"), (2.0, "main_alarm")]
+)
+@pytest.mark.parametrize(
+    "test_raw,expected",
+    [(0, False), (1, True), (1.0, True), (None, None), (True, None), ("1", None), (2, None)],
+)
+def test_smoke_stages_and_independent_test_context(code, label, test_raw, expected):
+    c = control("SmokeAlarm", states=(("level", "level"), ("testAlarm", "test")))
+    semantics, value = resolve(c, "level", code, {"testAlarm": test_raw})
+    assert semantics.interpretation_status == "known"
+    assert semantics.reason == "owner_approved_decoder"
+    assert value["level"] == label and value["alert_active"] is (code != 0)
+    assert value["context"] == {
+        "test_alarm": expected,
+        "acknowledged": None,
+        "signals_suppressed": None,
+    }
+    assumption = semantics.sources[1]
+    assert "zero_owner_assumption" in assumption.rule_id
+    assert assumption.document_version is None and assumption.firmware_version is None
+    assert semantics.sources[0].document_version == "17.1"
+    official_fields = semantics.sources[0].fields
+    decision_fields = assumption.fields
+    assert ("semantic_value.alert_active" in official_fields) is (code != 0)
+    assert ("semantic_value.alert_active" in decision_fields) is (code == 0)
+    assert "semantic_value" not in official_fields
+    if expected is not None:
+        assert semantics.sources[-1].state_uuid == "test"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("level", [0, 1, 2])
+@pytest.mark.parametrize("freshness", list(Freshness))
+async def test_smoke_optional_quality_never_changes_activity(monkeypatch, level, freshness):
+    runtime = Runtime(
+        control(
+            "SmokeAlarm",
+            states=(("level", "level"), ("testAlarm", "test"), ("acousticAlarm", "sound")),
+        )
+    )
+    runtime.records = {
+        "level": StateRecord("level", level, Freshness.CURRENT, 1700000000),
+        "test": StateRecord("test", 1, freshness, 1700000001),
+        "sound": StateRecord("sound", 0, Freshness.CURRENT, 1700000001),
+    }
+    result = await make_tool(monkeypatch, runtime).fn()
+    assert result.data.coverage.complete and result.data.total_active == int(level != 0)
+    assert "sound" not in runtime.reads
+    assert "SmokeAlarm" in result.data.supported_families
+    if level:
+        context = result.data.findings[0].context
+        assert context.test_alarm is (True if freshness is Freshness.CURRENT else None)
+        assert context.source_states[0].value == 1
+        assert context.source_states[0].freshness == freshness.value
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "states,raw,reason",
+    [
+        ((), 0, "missing_state"),
+        ((("level", "level"),), None, "unavailable"),
+        ((("level", "level"),), 3, "invalid"),
+    ],
+)
+async def test_smoke_missing_and_invalid_primary_are_coverage_gaps(
+    monkeypatch, states, raw, reason
+):
+    runtime = Runtime(control("SmokeAlarm", states=states))
+    runtime.records = {"level": StateRecord("level", raw, Freshness.CURRENT, 1700000000)}
+    result = await make_tool(monkeypatch, runtime).fn()
+    assert result.data.total_active is None and not result.data.coverage.complete
+    assert result.data.coverage.reasons[0].reason == reason
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("test_raw", [None, "1", True, 2, float("nan")])
+async def test_smoke_invalid_test_observation_is_retained(monkeypatch, test_raw):
+    runtime = Runtime(control("SmokeAlarm", states=(("level", "level"), ("testAlarm", "test"))))
+    runtime.records = {
+        "level": StateRecord("level", 2, Freshness.CURRENT, 1700000000),
+        "test": StateRecord("test", test_raw, Freshness.CURRENT, 1700000001),
+    }
+    result = await make_tool(monkeypatch, runtime).fn()
+    assert result.data.total_active == 1 and result.data.coverage.complete
+    assert result.data.findings[0].context.test_alarm is None
+    assert result.data.findings[0].context.source_states[0].name == "testAlarm"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("freshness", [Freshness.CURRENT, Freshness.STALE])
+@pytest.mark.parametrize("has_test_reference", [False, True])
+async def test_smoke_shared_read_paths_agree(monkeypatch, freshness, has_test_reference):
+    from mcpserver.tools import ControlReadTarget
+
+    refs = (
+        (("level", "level"), ("testAlarm", "test")) if has_test_reference else (("level", "level"),)
+    )
+    runtime = Runtime(control("SmokeAlarm", states=refs))
+    runtime.records = {
+        "level": StateRecord("level", 1, Freshness.CURRENT, 1700000000),
+        "test": StateRecord("test", 1, freshness, 1700000001),
+    }
+    monkeypatch.setattr(tools, "_access", lambda: object())
+    server = FastMCP("smoke-shared")
+    tools.register_read_tools(server, runtime)
+    semantic = await server._tool_manager.get_tool("loxone_get_state_semantics").fn(
+        control_uuid="control", state_names=["level"]
+    )
+    batch = await server._tool_manager.get_tool("loxone_read_controls").fn(
+        targets=[ControlReadTarget(control_uuid="control", state_names=["level"])],
+        include_semantics=True,
+    )
+    active = await server._tool_manager.get_tool("loxone_get_active_alerts").fn()
+    decoded = semantic.data.items[0].semantic_value
+    assert decoded == active.data.findings[0].semantic_value
+    assert batch.data.items[0].semantics[0].semantic_value == decoded
+    assert decoded["context"]["test_alarm"] is (
+        True if has_test_reference and freshness is Freshness.CURRENT else None
+    )
+    assert active.data.coverage.complete
+
+
+@pytest.mark.parametrize(
     "family,state",
-    [("AalSmartAlarm", "alarmLevel"), ("AlarmChain", "activeAlarmType"), ("Alarm", "level")],
+    [
+        ("AalSmartAlarm", "alarmLevel"),
+        ("AlarmChain", "activeAlarmType"),
+        ("Alarm", "level"),
+        ("SmokeAlarm", "level"),
+    ],
 )
 @pytest.mark.parametrize("raw", [True, "1", -1, 16, 1.5, float("nan"), float("inf"), {}, []])
 def test_additional_family_invalid_formats(family, state, raw):
@@ -168,7 +297,12 @@ async def test_mixed_families_deduplicate_and_preserve_acknowledged_alarm(monkey
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "family,state",
-    [("AalSmartAlarm", "alarmLevel"), ("AlarmChain", "activeAlarmType"), ("Alarm", "level")],
+    [
+        ("AalSmartAlarm", "alarmLevel"),
+        ("AlarmChain", "activeAlarmType"),
+        ("Alarm", "level"),
+        ("SmokeAlarm", "level"),
+    ],
 )
 @pytest.mark.parametrize("freshness", [Freshness.STALE, Freshness.UNKNOWN, Freshness.UNAVAILABLE])
 async def test_new_families_primary_quality_remains_a_gap(monkeypatch, family, state, freshness):

@@ -130,6 +130,7 @@ class AlertFamily:
 
 ALERT_FAMILIES = {
     "Alarm": AlertFamily("level"),
+    "SmokeAlarm": AlertFamily("level", optional=("testAlarm",)),
     "AalEmergency": AlertFamily("status"),
     "AalSmartAlarm": AlertFamily(
         "alarmLevel", optional=("disableEndTime", "isLeaveActive", "isLocked")
@@ -152,6 +153,89 @@ class StateSemanticsResolver:
         result = StateSemantics()
         semantic_value: object | None = None
         family = ALERT_FAMILIES.get(control.control_type)
+        if control.control_type == "SmokeAlarm" and state_name == "level":
+            smoke_labels = ("no_alarm", "pre_alarm", "main_alarm")
+            result.value_type = "integer"
+            result.encoding = [SemanticsEncoding(i, label) for i, label in enumerate(smoke_labels)]
+            result.encoding_total = result.encoding_returned = 3
+            result.encoding_complete = True
+            result.sources.extend(
+                [
+                    SemanticsSource(
+                        "decoder_rule",
+                        "https://www.loxone.com/dede/wp-content/uploads/sites/2/2021/10/1701_Structure-File.pdf#page=126",
+                        ("encoding.1", "encoding.2", "value_type")
+                        + (
+                            ("semantic_value.level", "semantic_value.alert_active")
+                            if value in (1, 2) and not isinstance(value, bool)
+                            else ()
+                        ),
+                        rule_id="SmokeAlarm.level.active.v1",
+                        document_version="17.1",
+                    ),
+                    SemanticsSource(
+                        "decoder_rule",
+                        "https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/issues/347",
+                        ("encoding.0",)
+                        + (
+                            ("semantic_value.level", "semantic_value.alert_active")
+                            if value == 0 and not isinstance(value, bool)
+                            else ()
+                        ),
+                        rule_id="SmokeAlarm.level.zero_owner_assumption.2026-10-11",
+                    ),
+                ]
+            )
+            result.interpretation_status, result.reason = "partial", "value_unavailable"
+            if value is not None:
+                if (
+                    isinstance(value, int | float)
+                    and not isinstance(value, bool)
+                    and value in (0, 1, 2)
+                ):
+                    raw_test = companion_values.get("testAlarm")
+                    test_alarm = (
+                        bool(raw_test)
+                        if isinstance(raw_test, int | float)
+                        and not isinstance(raw_test, bool)
+                        and raw_test in (0, 1)
+                        else None
+                    )
+                    semantic_value = {
+                        "level": smoke_labels[int(value)],
+                        "alert_active": value != 0,
+                        "context": {
+                            "test_alarm": test_alarm,
+                            "acknowledged": None,
+                            "signals_suppressed": None,
+                        },
+                    }
+                    if test_alarm is not None:
+                        result.sources.extend(
+                            [
+                                SemanticsSource(
+                                    "decoder_rule",
+                                    "https://www.loxone.com/dede/wp-content/uploads/sites/2/2021/10/1701_Structure-File.pdf#page=126",
+                                    ("semantic_value.context.test_alarm",),
+                                    rule_id="SmokeAlarm.testAlarm.v1",
+                                    document_version="17.1",
+                                ),
+                                SemanticsSource(
+                                    "runtime_state",
+                                    "states.testAlarm",
+                                    ("semantic_value.context.test_alarm",),
+                                    state_uuid=dict(islice(control.state_uuids, 100)).get(
+                                        "testAlarm"
+                                    ),
+                                ),
+                            ]
+                        )
+                    result.interpretation_status, result.reason = "known", "owner_approved_decoder"
+                else:
+                    result.interpretation_status, result.reason = (
+                        "invalid",
+                        "invalid_documented_value",
+                    )
         if control.control_type == "Alarm" and state_name == "level":
             alarm_labels = (
                 "inactive",
@@ -210,7 +294,7 @@ class StateSemanticsResolver:
         if (
             family is not None
             and state_name == family.primary
-            and control.control_type not in {"AalEmergency", "Alarm"}
+            and control.control_type not in {"AalEmergency", "Alarm", "SmokeAlarm"}
         ):
             smart = control.control_type == "AalSmartAlarm"
             labels: tuple[str, ...] = (
