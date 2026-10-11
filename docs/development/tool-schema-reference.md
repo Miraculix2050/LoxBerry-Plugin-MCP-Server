@@ -359,8 +359,8 @@ version 13, KNX analysis version 12 and opening connector version 5 distinguish 
 
 ### API connector connection metadata
 
-Project model version 13, KNX analysis version 12, Opening connector rules 5 and canonical
-the skill metadata introduced in revision 54 apply. Exact stored connector keys `OutputAPI` and `API` expose
+Project model version 13, KNX analysis version 12 and Opening connector rules 5 apply.
+The canonical skill introduced this metadata in revision 54. Exact stored connector keys `OutputAPI` and `API` expose
 optional `api_connector` with `semantics=connection_metadata_only`,
 `value_available=false` and `rule_id=api_connector_metadata_v1`. No aliases are added.
 
