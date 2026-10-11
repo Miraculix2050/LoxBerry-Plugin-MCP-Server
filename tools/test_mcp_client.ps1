@@ -221,7 +221,8 @@ try {
         'loxone_analyze_opening_contacts',
         'loxone_get_skill_guide', 'loxone_get_installation_profile', 'loxberry_get_knx_catalog',
         'loxberry_save_installation_profile', 'loxberry_delete_installation_profile',
-        'loxone_list_event_history_sources', 'loxone_get_event_history'
+        'loxone_list_event_history_sources', 'loxone_get_event_history',
+        'loxone_analyze_history'
     )
     $actual = @($toolsResponse.result.tools | ForEach-Object { $_.name } | Sort-Object)
     $optional = @(

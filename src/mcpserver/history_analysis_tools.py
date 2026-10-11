@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
+from contextlib import AsyncExitStack
 from datetime import UTC, datetime
 from math import ceil
 from pathlib import Path
@@ -43,6 +45,7 @@ from mcpserver.loxone.runtime import (
     LoxoneRuntime,
     RuntimeAuthorizationError,
     RuntimeUnavailable,
+    history_trace,
 )
 from mcpserver.loxone.state_semantics import SeriesSemantics, StateSemanticsResolver
 from mcpserver.loxone.statistics import StatisticPoint
@@ -57,6 +60,18 @@ from mcpserver.tools import (
     _result,
     _rfc3339,
 )
+
+
+_LOGGER = logging.getLogger("mcpserver.history_analysis")
+
+
+def _timing(trace_id: str, phase: str, started: float) -> None:
+    _LOGGER.debug(
+        "component=history_analysis trace_id=%s phase=%s duration_ms=%.1f",
+        trace_id,
+        phase,
+        (time.perf_counter() - started) * 1000,
+    )
 
 
 class AnalysisSource(BaseModel):
@@ -256,7 +271,12 @@ def register_history_analysis_tool(
                 raise ValueError("cursor requires explicitly requested raw data")
             begin, finish = first.timestamp(), last.timestamp()
             deadline = time.monotonic() + 30
-            async with asyncio.timeout(30), runtime.history_context(access) as (structure, session):
+            async with AsyncExitStack() as stack:
+                stack.enter_context(history_trace(trace_id))
+                await stack.enter_async_context(asyncio.timeout(30))
+                structure, session = await stack.enter_async_context(
+                    runtime.history_context(access)
+                )
                 controls = visible_controls(structure)
                 resolved = []
                 bindings: dict[str, dict[str, Any]] = {}
@@ -266,7 +286,7 @@ def register_history_analysis_tool(
                             "not_found", "confirmed profile binding is not available"
                         )
                     identity = installation_identity(runtime.endpoint.origin, structure)
-                    document = await asyncio.to_thread(ProfileStore(profile_path).read, identity)
+                    document = await run_admitted_worker(ProfileStore(profile_path).read, identity)
                     projection = project_profile(document, identity, controls, limit=256)
                     bindings = {
                         b["binding_id"]: b
@@ -318,6 +338,7 @@ def register_history_analysis_tool(
                         semantics = resolver.resolve_series(
                             control, series, granularity=source.granularity
                         )
+                        phase_started = time.perf_counter()
                         result, source_raw = await run_admitted_worker(
                             _statistic_calculation,
                             operation,
@@ -331,6 +352,7 @@ def register_history_analysis_tool(
                             include_raw,
                         )
                         raw.extend(source_raw)
+                        _timing(trace_id, "statistics_calculation", phase_started)
                         result.native_source = (
                             "statistic_v2" if series.source == "statistic_v2" else "legacy"
                         )
@@ -379,6 +401,7 @@ def register_history_analysis_tool(
                                 retention_days=config.event_history_retention_days,
                                 maximum_mib=config.event_history_maximum_mib,
                             )
+                            phase_started = time.perf_counter()
                             phases, consumed = await run_admitted_worker(
                                 store.analysis_phases,
                                 control.uuid,
@@ -389,7 +412,9 @@ def register_history_analysis_tool(
                                 deadline=deadline,
                             )
                             count += consumed
+                            _timing(trace_id, "sqlite", phase_started)
 
+                            phase_started = time.perf_counter()
                             result, source_raw = await run_admitted_worker(
                                 _state_calculation,
                                 structure,
@@ -403,6 +428,7 @@ def register_history_analysis_tool(
                                 include_raw,
                             )
                             raw.extend(source_raw)
+                            _timing(trace_id, "state_calculation", phase_started)
                         result.native_source = "event_history"
                         result.semantic_reference = resolver.source_reference(
                             control, state_name=state_name

@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from types import SimpleNamespace
@@ -10,6 +11,7 @@ from pydantic import ValidationError
 
 from mcpserver.history_analysis import HistoryAnalysisDeadline
 from mcpserver.history_analysis_tools import AnalysisSource, register_history_analysis_tool
+from mcpserver.installation_profile import BindingInput, ProfileStore, installation_identity
 from mcpserver.loxone.models import Control, LoxoneIdentity, LoxoneStructure, StatisticSeries
 from mcpserver.loxone.runtime import RuntimeAuthorizationError
 from mcpserver.loxone.statistics import StatisticPoint
@@ -205,3 +207,49 @@ async def test_revocation_during_cursor_proof_blocks_raw_release(monkeypatch):
     result = await tool.fn(**ARGS, include_raw=True)
     assert not result.ok and result.data.error == "permission_denied"
     assert "private-marker" not in result.model_dump_json()
+
+
+@pytest.mark.asyncio
+async def test_profile_binding_requires_confirmation_current_fingerprint_and_visibility(
+    tmp_path, monkeypatch
+):
+    runtime, _tool = configured(monkeypatch)
+    runtime.control = replace(runtime.control, uuid="00000001-0000-0000-0000000000000001")
+    runtime.structure = replace(runtime.structure, controls=(runtime.control,))
+    path = (tmp_path / "profile.json").resolve()
+    identity = installation_identity(runtime.endpoint.origin, runtime.structure)
+    binding = BindingInput(
+        binding_id="room",
+        role="actual_temperature",
+        control_uuid=runtime.control.uuid,
+        source_kind="statistic",
+        series_id="series",
+        confirmed=True,
+    )
+    ProfileStore(path).put(
+        identity,
+        0,
+        binding,
+        runtime.control,
+        origin="local_admin",
+        actor_ref=hashlib.sha256(b"actor").hexdigest(),
+    )
+    server = FastMCP("bound-analysis")
+    register_history_analysis_tool(server, runtime, None, path)
+    tool = server._tool_manager.get_tool("loxone_analyze_history")
+    args = {**ARGS, "sources": [AnalysisSource(binding_id="room")]}
+    assert (await tool.fn(**args)).ok
+    runtime.structure = replace(
+        runtime.structure,
+        controls=(
+            replace(
+                runtime.control,
+                statistic_series=(replace(runtime.control.statistic_series[0], accumulated=True),),
+            ),
+        ),
+    )
+    changed = await tool.fn(**args)
+    assert not changed.ok and changed.data.error == "not_found"
+    runtime.structure = replace(runtime.structure, controls=())
+    hidden = await tool.fn(**args)
+    assert not hidden.ok and hidden.data.error == "not_found"

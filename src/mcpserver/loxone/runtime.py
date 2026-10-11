@@ -947,6 +947,14 @@ class LoxoneRuntime:
         maximum_points: int = 100_000,
     ) -> tuple[Control, StatisticSeries, tuple[StatisticPoint, ...]]:
         """Reuse the native adapter only inside a freshly authorized history context."""
+        if granularity not in {"raw", "hour", "day", "month", "year"}:
+            raise ControlOperationError("invalid_input", "unsupported statistic granularity")
+        if not 0 <= start <= end <= 4_102_444_800 or not 0 <= maximum_points <= 100_000:
+            raise ControlOperationError(
+                "invalid_input", "invalid statistic time range or point budget"
+            )
+        if granularity == "raw" and end - start > 7 * 24 * 60 * 60:
+            raise ControlOperationError("invalid_input", "raw statistics are limited to seven days")
         control_uuid = control.uuid
         trace_id = _HISTORY_TRACE_ID.get() or uuid4().hex
         series = next(
