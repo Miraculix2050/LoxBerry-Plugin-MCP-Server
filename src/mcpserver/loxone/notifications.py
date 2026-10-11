@@ -42,6 +42,8 @@ def decode_notification(value: Any) -> Notification:
         or (isinstance(uid, str) and re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", uid) is None)
     ):
         raise MessageSourceError("notification_event_has_no_message_identity")
+    if isinstance(uid, str) and _text(uid, "uid", 128, []) != uid:
+        raise MessageSourceError("invalid_notification_identity")
     data = raw.get("data", {})
     if not isinstance(data, dict):
         raise MessageSourceError("invalid_notification_reference")
@@ -57,10 +59,14 @@ def decode_notification(value: Any) -> Notification:
         ):
             raise MessageSourceError("invalid_notification_classification")
     truncated: list[str] = []
+    title = _text(raw.get("title"), "title", 512, truncated)
+    message = _text(raw.get("message"), "message", 4096, truncated)
+    if not title.strip() and not message.strip():
+        raise MessageSourceError("notification_event_has_no_text")
     return Notification(
         uid=uid,
-        title=_text(raw.get("title"), "title", 512, truncated),
-        message=_text(raw.get("message"), "message", 4096, truncated),
+        title=title,
+        message=message,
         source_control_uuid=uuid,
         source_type=(
             _text(raw["type"], "source_type", 64, truncated)
