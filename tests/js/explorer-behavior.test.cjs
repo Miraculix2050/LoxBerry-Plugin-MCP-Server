@@ -531,3 +531,18 @@ test('EFM occurrence previews retain reference uncertainty and render titles saf
   assert.match(h.byId('result-tree').textContent, /<script>synthetic<\/script>/);
   assert.equal(h.byId('result-tree').querySelector('script'), null);
 });
+
+// Synthetic binding output; no numeric observation or compatibility evidence.
+test('EFM binding previews expose unsupported and conflicting source status', async (t) => {
+  const h = createHarness({tools: [{...readTool, name: 'loxone_describe_control'}],
+    callResult: {ok: true, data: {bindings: [{status: 'unsupported_version'}, {status: 'conflict'}]}}});
+  t.after(h.close);
+  await h.ready();
+  h.byId('json').value = JSON.stringify({query: 'synthetic'});
+  await h.click(h.byId('run'));
+  await h.waitFor(() => h.byId('result-tree').textContent.includes('bindings'));
+  await h.click([...h.byId('result-tree').querySelectorAll('.mcp-explorer-tree-toggle')]
+    .find((button) => button.textContent.includes('bindings')));
+  assert.match(h.byId('result-tree').textContent, /unsupported_version/);
+  assert.match(h.byId('result-tree').textContent, /conflict/);
+});

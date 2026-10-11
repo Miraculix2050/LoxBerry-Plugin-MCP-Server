@@ -948,3 +948,35 @@ Resolved control display names/types are capped at 200/64 characters with a
 truncation marker. The complete serialized EFM projection also fits 32 KiB.
 `projection_omitted` counts normalized occurrences omitted from the DFS suffix
 by that final budget; retained parents and source paths remain stable.
+
+## EFM state reference bindings (#364)
+
+Full EFM Describe adds `capabilities.model.efm_bindings`, keyed by the participant
+occurrence path from #363. The only decoder joins explicit `actualEfmState`
+UUID-form strings by exact equality to values in the same authorized monitor's
+state-name/UUID map. It requires a fresh firmware probe of **17.2.8.28** whose
+Miniserver identity matches the freshly authorized structure. Unknown/other
+versions and failed or mismatched probes remain unsupported; there is no version
+range, positional/actualN guess, name decoder or XML alias. Compact views perform
+no additional probe. No numeric values or remote node reads are requested.
+
+Source field, observed JSON type, encoding, exact source names and validated
+state UUIDs remain separate from node/control identity. Status distinguishes
+absent, malformed, unsupported encoding/version, missing reference, conflict,
+partial and state-map limit. All aliases and contradictory source facts are
+preserved within bounds; nested absence does not remove a participant. Reference
+completeness does not imply semantics, units, observations or energy balances.
+Config version remains unknown. Duplicate JSON property names are not checked;
+synthetic contradictory normalized pairs do not prove duplicate-wire detection.
+
+The source map is bounded to 1,000 entries, candidates to 100 across the monitor,
+and the serialized binding projection to 32 KiB. Omitted candidates retain counts
+and incomplete status. Structure File 17.1 documents a name reference; the
+observed UUID wire form differs. Only the specimen's UUID encoding is implemented.
+All negative/alias/nested/reordered/conflicting/name-form tests are explicitly
+synthetic. Neither automated tests nor this rule establish general compatibility.
+
+Bindings cover only participant paths emitted by the bounded #363 projection.
+`projection_omitted` separately counts retained occurrences excluded there.
+`firmware_verification` distinguishes verified version metadata, identity mismatch,
+invalid version data, unavailable probes and unrequested/unknown applicability.

@@ -762,3 +762,39 @@ kennzeichnen Kürzungen. Auch die gesamte serialisierte EFM-Projektion passt in
 32 KiB. `projection_omitted` zählt bereits normalisierte Vorkommen, die das
 abschließende Budget am Ende der Tiefensuchfolge auslässt; erhaltene Eltern und
 Quellpfade bleiben stabil.
+
+## EFM-State-Referenzbindungen (#364)
+
+Full EFM Describe ergänzt `capabilities.model.efm_bindings`, zugeordnet über
+den Teilnehmerpfad aus #363. Die einzige Regel verbindet explizite UUID-förmige
+`actualEfmState`-Strings durch exakte Gleichheit mit Werten der State-Namens-/UUID-
+Map desselben autorisierten Monitors. Sie verlangt einen frischen Firmware-Probe
+für **17.2.8.28** mit derselben Miniserver-Identität wie die frisch autorisierte
+Struktur. Unbekannte/andere Versionen und fehlgeschlagene oder abweichende Probes
+bleiben ununterstützt. Es gibt weder Versionsbereiche noch Positions-/actualN-
+Vermutungen, Namensdecoder oder XML-Aliase. Kompakte Views machen keinen
+zusätzlichen Probe; Messwerte und entfernte Node-Daten werden nicht abgerufen.
+
+Quellfeld, JSON-Typ, Encoding, exakte Quellnamen und validierte State-UUIDs bleiben
+von Node-/Control-Identitäten getrennt. Der Status unterscheidet fehlende und
+fehlerhafte Metadaten, ununterstütztes Encoding/Version, nicht gefundenen Verweis,
+Konflikt, Teilabdeckung und Map-Grenze. Aliase und widersprüchliche Quellfakten
+bleiben innerhalb der Grenzen erhalten. Eine fehlende Bindung entfernt keinen
+verschachtelten Teilnehmer. Referenzvollständigkeit belegt keine Semantik,
+Einheiten, Beobachtungen oder Energiebilanzen. Die Config-Version bleibt unbekannt.
+Doppelte JSON-Property-Namen werden nicht geprüft; synthetische widersprüchliche
+normalisierte Paare belegen keine Erkennung solcher Wire-Duplikate.
+
+Grenzen: 1.000 Map-Einträge, insgesamt 100 Kandidaten pro Monitor und 32 KiB
+serialisierte Binding-Projektion. Ausgelassene Kandidaten behalten Zähler und
+unvollständigen Status. Structure File 17.1 beschreibt Namensreferenzen; die
+beobachtete UUID-Form weicht davon ab. Nur die UUID-Form des Specimens wird
+implementiert. Negativ-, Alias-, Hierarchie-, Umordnungs-, Konflikt- und
+Namensformtests sind ausdrücklich synthetisch. Automatisierte Tests und diese
+Regel belegen keine allgemeine Kompatibilität.
+
+Bindings enthalten nur die von der begrenzten #363-Projektion ausgegebenen
+Teilnehmerpfade. `projection_omitted` zählt dort ausgelassene normalisierte
+Vorkommen getrennt. `firmware_verification` unterscheidet verifizierte
+Versionsmetadaten, abweichende Identität, ungültige Versionsdaten, nicht verfügbare
+Probes und nicht angeforderte/unbekannte Anwendbarkeit.

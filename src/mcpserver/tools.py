@@ -10,6 +10,7 @@ import json
 import logging
 import math
 import os
+import re
 import secrets
 import time
 from collections import OrderedDict
@@ -18,7 +19,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from math import ceil, floor, isfinite
 from pathlib import Path
-from typing import Annotated, Any, Final, Literal, NotRequired, TypedDict
+from typing import Annotated, Any, Final, Literal, NotRequired, TypedDict, cast
 from uuid import UUID, uuid4
 
 from mcp.server.auth.middleware.auth_context import get_access_token
@@ -46,8 +47,10 @@ from mcpserver.loxone.active_alerts import (
     select_sources,
     source_states,
 )
+from mcpserver.loxone.client import LoxoneConnectionError
 from mcpserver.loxone.control import allowed_actions
 from mcpserver.loxone.efm import describe as describe_efm
+from mcpserver.loxone.efm_bindings import bind as bind_efm
 from mcpserver.loxone.event_history import (
     EventHistoryCoverage,
     EventHistoryMonitor,
@@ -392,6 +395,52 @@ class EfmParticipantData(BaseModel):
     diagnostics: list[str]
 
 
+class EfmBindingParticipantData(BaseModel):
+    path: list[int]
+    source_wire_type: Literal[
+        "absent", "string", "boolean", "object", "array", "number", "null", "unsupported"
+    ]
+    source_field: Literal["actualEfmState"] | None
+    encoding: Literal["state_uuid"] | None
+    status: Literal[
+        "absent",
+        "malformed",
+        "unsupported_encoding",
+        "unsupported_version",
+        "state_map_limit",
+        "resolved",
+        "partial",
+        "reference_missing",
+        "conflict",
+    ]
+    states: list[StateReferenceData]
+    candidates_omitted: int
+
+
+class EfmBindingsData(BaseModel):
+    rule_id: Literal["efm_actual_state_uuid_17_2_8_28_v1"] | None
+    firmware_version: str | None
+    firmware_verification: Literal[
+        "verified",
+        "unverified",
+        "identity_mismatch",
+        "invalid_version",
+        "unavailable",
+        "not_requested",
+    ]
+    document_version: Literal["17.1"]
+    config_version: None = None
+    reference_complete: bool
+    semantic_complete: Literal[False] = False
+    observation_complete: Literal[False] = False
+    projection_omitted: int
+    max_map_entries: int
+    max_candidates: int
+    max_response_bytes: int
+    source_property_uniqueness: Literal["not_checked"]
+    participants: list[EfmBindingParticipantData]
+
+
 class EfmProjectionData(BaseModel):
     source: Literal["LoxAPP3.details.nodes"]
     participants: list[EfmParticipantData]
@@ -419,6 +468,7 @@ class ControlModelData(BaseModel):
     window_monitor_items: list[WindowMonitorItemData] = Field(default_factory=list)
     window_monitor_summary: WindowMonitorSummaryData | None = None
     efm: EfmProjectionData | None = None
+    efm_bindings: EfmBindingsData | None = None
     connected_inputs: int | None = None
     irrigation: IrrigationModelData | None = None
     alarm_clock: AlarmClockModelData | None = None
@@ -5009,6 +5059,28 @@ def register_read_tools(
             window_monitor_items, window_monitor_summary = _window_monitor_description(
                 control, visible_controls, visible_rooms
             )
+            efm_description = (
+                describe_efm(control.efm, visible_controls) if control.efm is not None else None
+            )
+            efm_firmware = None
+            efm_verification = "not_requested"
+            if (
+                control.efm is not None
+                and runtime is not None
+                and any(row.binding_kind == "uuid" for row in control.efm.participants)
+            ):
+                try:
+                    async with runtime.call_slot(access_token):
+                        probe = await runtime.client.probe()
+                    if probe.serial != snapshot.structure.identity.miniserver_serial:
+                        efm_verification = "identity_mismatch"
+                    elif not re.fullmatch(r"[0-9]{1,5}(?:\.[0-9]{1,5}){3}", probe.firmware):
+                        efm_verification = "invalid_version"
+                    else:
+                        efm_firmware = probe.firmware
+                        efm_verification = "verified"
+                except (LoxoneConnectionError, TimeoutError):
+                    efm_verification = "unavailable"
             value["capabilities"] = {
                 "readable": True,
                 "allowed_actions": (
@@ -5109,9 +5181,18 @@ def register_read_tools(
                             }
                             for item in control.ventilation_timer_profiles
                         ],
-                        "efm": describe_efm(control.efm, visible_controls)
+                        "efm_bindings": bind_efm(
+                            control.efm,
+                            control,
+                            efm_firmware,
+                            verification=efm_verification,
+                            occurrence_limit=cast(int, efm_description["returned"])
+                            if efm_description is not None
+                            else 0,
+                        )
                         if control.efm is not None
                         else None,
+                        "efm": efm_description,
                         "window_monitor_items": window_monitor_items,
                         "window_monitor_summary": window_monitor_summary,
                         "connected_inputs": control.connected_inputs,
