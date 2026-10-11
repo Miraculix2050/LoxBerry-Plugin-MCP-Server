@@ -20,7 +20,7 @@ from mcpserver.knx.project_comparison import (
 from mcpserver.knx.project_metadata import ProjectMetadata
 from mcpserver.knx.store import KnxStore
 from mcpserver.loxone.project.analysis import ANALYSES, analyze_knx
-from mcpserver.loxone.project.ets_compact import filter_observations, selection
+from mcpserver.loxone.project.ets_compact import filter_observations, selected_counts, selection
 from mcpserver.loxone.project.ets_comparison import observe_project, project_page
 from mcpserver.loxone.project.graph import ProjectPartSummary, ProjectSnapshot, build_graph
 from mcpserver.loxone.project.mapping import ProjectView, map_runtime
@@ -570,6 +570,25 @@ def test_false_name_filter_excludes_unknown_and_non_comparisons():
     assert filter_observations(rows, selection("findings", None, True, None, None, False)) == [
         common_different
     ]
+
+
+def test_compact_counts_preserve_overlapping_flags_and_unfiltered_observations():
+    rows = [
+        address | (flags << 16) for flags in range(64) if flags & 3 != 3 for address in range(7)
+    ]
+    retained = filter_observations(rows, selection("summary", None, None, None, None, False))
+    assert retained is rows
+    assert selected_counts(retained) == {
+        "common": 112,
+        "import_only": 112,
+        "observed_project_only": 112,
+        "name_deviations": 168,
+        "name_comparisons_unknown": 168,
+        "ambiguous_project_names": 168,
+    }
+    assert selected_counts([]) == dict.fromkeys(selected_counts(retained), 0)
+    with pytest.raises(ValueError, match="ETS-only"):
+        filter_observations([{}], selection("summary", None, None, None, None, False))
 
 
 def test_incomplete_observed_names_do_not_pass_equality_filter(tmp_path):

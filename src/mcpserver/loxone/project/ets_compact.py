@@ -38,6 +38,10 @@ def selection(
 def filter_observations(rows: list[Any], selected: tuple[Any, ...]) -> list[int]:
     """Select only numeric observations; false never turns unknown comparisons into matches."""
     _, relation, different, ambiguous, number, _ = selected
+    if relation is None and different is None and ambiguous is None and number is None:
+        if any(type(value) is not int for value in rows):
+            raise ValueError("Compact selection requires ETS-only observations")
+        return rows
     relation_flag = {"import_only": 0, "common": 1, "observed_project_only": 2}.get(relation)
     result = []
     for value in rows:
@@ -96,10 +100,14 @@ def selected_counts(rows: list[int]) -> dict[str, int]:
         "ambiguous_project_names": 0,
     }
     relations = ("import_only", "common", "observed_project_only")
-    for value in rows:
-        flags = value >> 16
-        counts[relations[flags & 3]] += 1
-        counts["name_deviations"] += int(bool(flags & 4))
-        counts["name_comparisons_unknown"] += int(bool(flags & 16))
-        counts["ambiguous_project_names"] += int(bool(flags & 8))
+    # Count the small flag vocabulary first, rather than updating five dictionary
+    # entries for every address on each page of the same observation set.
+    for flags, count in Counter(value >> 16 for value in rows).items():
+        counts[relations[flags & 3]] += count
+        if flags & 4:
+            counts["name_deviations"] += count
+        if flags & 16:
+            counts["name_comparisons_unknown"] += count
+        if flags & 8:
+            counts["ambiguous_project_names"] += count
     return counts
