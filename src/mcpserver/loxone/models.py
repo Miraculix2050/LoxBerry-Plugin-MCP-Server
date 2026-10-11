@@ -52,6 +52,8 @@ class StatisticSeries:
     legacy_output_index: int | None = None
     legacy_output_count: int | None = None
     state_uuid: str | None = None
+    recording_mode: int | None = None
+    accumulated_metadata_valid: bool = True
 
 
 @dataclass(frozen=True, slots=True)

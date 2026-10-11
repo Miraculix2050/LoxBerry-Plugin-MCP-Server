@@ -126,6 +126,7 @@ from mcpserver.loxone.runtime import (
 )
 from mcpserver.loxone.state_semantics import (
     ALERT_FAMILIES,
+    SeriesSemantics,
     StateSemantics,
     StateSemanticsResolver,
     decode_state_value,
@@ -550,6 +551,7 @@ class StatisticSeriesData(BaseModel):
     title: str
     format: str
     accumulated: bool
+    semantics: SeriesSemantics | None = None
 
 
 class StatusMonitorInputData(BaseModel):
@@ -2050,6 +2052,7 @@ class ObservabilityStatisticSeriesData(BaseModel):
     title: str
     format: str
     accumulated: bool
+    semantics: SeriesSemantics | None = None
     temporal_coverage: Literal["not_checked"] = "not_checked"
 
 
@@ -2230,6 +2233,7 @@ class StatisticsData(BaseModel):
     end: str
     points: list[StatisticPointData]
     next_cursor: str | None
+    semantics: SeriesSemantics | None = None
 
 
 class StatisticsEnvelope(ToolEnvelope):
@@ -5037,6 +5041,7 @@ def register_read_tools(
                     "title": series.title,
                     "format": series.format,
                     "accumulated": series.accumulated,
+                    "semantics": StateSemanticsResolver().resolve_series(control, series),
                 }
                 for series in control.statistic_series
             ]
@@ -6842,6 +6847,7 @@ def register_observability_tools(
                         "title": series.title,
                         "format": series.format,
                         "accumulated": series.accumulated,
+                        "semantics": StateSemanticsResolver().resolve_series(control, series),
                     }
                     for series in statistic_series
                 ]
@@ -7558,6 +7564,9 @@ def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                     "title": series.title,
                     "format": series.format,
                     "granularity": granularity,
+                    "semantics": StateSemanticsResolver().resolve_series(
+                        _control, series, granularity=granularity
+                    ),
                     "start": start_time.isoformat().replace("+00:00", "Z"),
                     "end": end_time.isoformat().replace("+00:00", "Z"),
                     "points": [

@@ -28,3 +28,31 @@ Unknown units remain unknown. Generic analog format strings and arbitrary
 `Switch.active` states receive no new technical inference. Current observation
 quality remains separate from semantic evidence, and historical coverage is not
 inferred from current state readability.
+
+## Counter and series evidence (prepared before PR 5 decoding)
+
+| Exact source | Proven fields | Source/version | Limit |
+| --- | --- | --- | --- |
+| `statisticV2.groups.accumulated=true` | Cumulative readings; differencing is intended | Structure File 17.1 pp.19–21 | Reset/rollover correction is not specified. False/absent does not prove interval energy. |
+| V2 `raw/all` | Recorded numeric samples, UTC Unix timestamps | pp.22,24 | Sampling mode does not prove continuous coverage or a hold/interpolation rule. |
+| V2 `diff/hour,day,month,year` | Sum of recorded differences; hourly example timestamps the interval start | pp.23–24 | No general timestamp convention for all modes; no proportional splitting of partial intervals. |
+| `Meter.actual/total/totalNeg` | Power or flow, and meter readings; formats belong to each exact channel | pp.105–106; optional subtype fields since 13.01 | Unit formats alone do not prove energy, physical direction or measured versus calculated origin. Reset-to-zero is supported; observed decreases still need evidence. |
+| Meter bidirectional/storage | Runtime subtype tokens are documented | pp.105–106 | Grid versus storage roles and channel sign must not be guessed from names. EFM bindings remain gated by #363/#364/#436. |
+| Legacy statistic output | Explicit state UUID, local-Miniserver seconds since 2009 epoch | pp.18–19 | The existing UTC-shaped projection does not establish timezone conversion or DST uniqueness; retain this limitation. |
+
+Current official [meter](https://www.loxone.com/dede/kb/zaehler/),
+[bidirectional meter](https://www.loxone.com/dede/kb/zaehler-bidirektional/)
+and [storage meter](https://www.loxone.com/dede/kb/zaehler-speicher/) pages
+were checked on 2026-10-11. They describe configurable units and input-dependent
+measurement/calculation. They supply no version-bound installation input proof.
+No new EFM value decoder, XML alias, physical scaling or sign mapping is accepted.
+
+For exact Meter channels plus complete W/kW/Wh/kWh datapoint formats, the resolver
+can expose the configured engineering quantity/unit as `structure_declared`.
+This combined channel/unit evidence is not physical calibration or input-topology
+proof. Exact IRCv2 temperature series similarly use their own explicit format;
+conflicting explicit current/series units remain unknown. Legacy series retain
+their existing fingerprint shape; V2 rule/recording metadata changes require
+profile review. Warm statistic payloads are keyed by fresh technical source
+metadata as well as caller identity and query, so raw/diff changes cannot reuse
+an incompatible payload. Fresh authorization remains mandatory on cache hits.

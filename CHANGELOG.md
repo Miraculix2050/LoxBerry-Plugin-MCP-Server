@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add bounded per-series meaning, source-declared Meter units, aggregation and
+  timestamp evidence to existing statistic/description surfaces. Preserve unknown
+  direction, boundary, measurement method and reset correction; installation
+  bindings reference resolver rules and require review when those rules change (#434, #435).
+
 - Add documented actual/target temperature and numeric binary-state semantics
   through the existing resolver. Keep ambiguous temperature units, unsupported
   codes, physical roles and historical coverage explicit (#435).

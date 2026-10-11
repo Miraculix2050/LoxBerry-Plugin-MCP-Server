@@ -13,7 +13,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field
 
-from .models import Control, LoxoneStructure
+from .models import Control, LoxoneStructure, StatisticSeries
 from .window_states import WINDOW_DOCUMENT, decode_window_states
 
 
@@ -97,6 +97,29 @@ class StateSemantics:
     sources_total: int = 0
     sources_truncated: bool = False
     sources_complete: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class SeriesSemantics:
+    """Source meaning, separate from values, coverage and user-declared roles."""
+
+    interpretation_status: Literal["known", "partial", "unknown", "invalid"]
+    value_meaning: Literal["cumulative_counter", "sample", "interval_difference_sum"] | None
+    unit: str | None = None
+    unit_origin: Literal["structure_declared"] | None = None
+    measurement_quantity: Literal["temperature", "power", "energy"] | None = None
+    measurement_role: str | None = None
+    direction: str | None = None
+    measurement_boundary: str | None = None
+    measurement_method: str | None = None
+    reset_semantics: Literal["control_reset_to_zero_supported"] | None = None
+    rollover_semantics: str | None = None
+    aggregation: Literal["recorded_values", "sum_of_differences"] | None = None
+    timestamp_basis: Literal["unix_utc", "local_miniserver_seconds_since_2009"] | None = None
+    timestamp_position: Literal["observation", "interval_start"] | None = None
+    recording_mode: int | None = None
+    limitations: Annotated[tuple[str, ...], Field(max_length=16)] = ()
+    sources: Annotated[tuple[SemanticsSource, ...], Field(max_length=8)] = ()
 
 
 _DOCUMENT = "https://www.loxone.com/enen/kb/api/"
@@ -268,6 +291,162 @@ def _resolve_measurement(
 
 class StateSemanticsResolver:
     """Resolve only exact, reviewed type/state rules, without I/O or role inference."""
+
+    def source_reference(
+        self,
+        control: Control,
+        *,
+        state_name: str | None = None,
+        series: StatisticSeries | None = None,
+    ) -> str | None:
+        """Stable rule reference for profile invalidation, with no decoder duplication."""
+        if series is not None:
+            sources = self.resolve_series(control, series).sources
+        else:
+            measurement = _resolve_measurement(control, state_name or "", None)
+            sources = tuple(measurement[0].sources) if measurement is not None else ()
+        rules = [source.rule_id for source in sources if source.rule_id]
+        return "+".join(rules) if rules else None
+
+    def resolve_series(
+        self, control: Control, series: StatisticSeries, *, granularity: str = "raw"
+    ) -> SeriesSemantics:
+        """Describe the existing adapter's raw/diff contract; never infer coverage."""
+        if series.source != "statistic_v2":
+            return SeriesSemantics(
+                "unknown",
+                None,
+                timestamp_basis="local_miniserver_seconds_since_2009",
+                limitations=("legacy_timezone_conversion_unverified", "series_meaning_unverified"),
+                sources=(
+                    SemanticsSource(
+                        "structure_file",
+                        _STATUS_DOCUMENT + "#page=19",
+                        ("timestamp_basis",),
+                        document_version="17.1",
+                    ),
+                ),
+            )
+        if not series.accumulated_metadata_valid:
+            return SeriesSemantics("invalid", None, limitations=("invalid_accumulated_metadata",))
+        # These are precisely the modes emitted by the existing native adapter.
+        difference = series.accumulated and granularity in {"hour", "day", "month", "year"}
+        raw = granularity == "raw"
+        meaning: Literal["cumulative_counter", "sample", "interval_difference_sum"] | None = (
+            "interval_difference_sum"
+            if difference
+            else "cumulative_counter"
+            if raw and series.accumulated
+            else "sample"
+            if raw
+            else None
+        )
+        quantity: Literal["temperature", "power", "energy"] | None = None
+        reset: Literal["control_reset_to_zero_supported"] | None = None
+        unit: str | None = None
+        role: str | None = None
+        limits = [
+            "measurement_method_unverified",
+            "measurement_boundary_unverified",
+            "direction_unverified",
+            "rollover_unverified",
+            "continuous_coverage_unverified",
+        ]
+        if series.accumulated:
+            limits.append("decreases_require_reset_evidence")
+        temperature = _resolve_measurement(control, series.output, None)
+        if temperature is not None and temperature[0].measurement_quantity == "temperature":
+            quantity, role = "temperature", temperature[0].measurement_role
+            match_temperature = re.fullmatch(r"(?:%[0-9]*(?:\.[0-9]+)?f\s*)?°([CF])", series.format)
+            if match_temperature and not series.accumulated:
+                unit = "°" + match_temperature[1]
+                if temperature[0].unit is not None and temperature[0].unit != unit:
+                    unit = None
+                    limits.append("channel_unit_conflict")
+            if series.accumulated:
+                limits.append("channel_accumulation_conflict")
+        # Meter exact channels are documented; arbitrary formats/types get no unit inference.
+        if control.control_type == "Meter" and series.output in {"actual", "total", "totalNeg"}:
+            match = re.fullmatch(r"%[0-9]*(?:\.[0-9]+)?f?\s*(kWh|Wh|kW|W)", series.format)
+            if match:
+                candidate = match[1]
+                if (
+                    series.output == "actual"
+                    and candidate in {"W", "kW"}
+                    and not series.accumulated
+                ):
+                    quantity, unit, role = "power", candidate, "power_or_flow_channel"
+                elif series.output in {"total", "totalNeg"} and candidate in {"Wh", "kWh"}:
+                    quantity, unit, role = "energy", candidate, "meter_reading_channel"
+                else:
+                    limits.append("channel_unit_conflict")
+            reset = "control_reset_to_zero_supported"
+        if unit is None:
+            limits.append("unit_unverified")
+        if not raw and not difference:
+            limits.append("aggregation_unverified")
+        sources = [
+            SemanticsSource(
+                "decoder_rule",
+                _STATUS_DOCUMENT + "#page=20",
+                ("value_meaning", "aggregation", "timestamp_basis", "recording_mode"),
+                rule_id="StatisticV2.series.v1",
+                document_version="17.1",
+            )
+        ]
+        if temperature is not None and quantity == "temperature":
+            sources.extend(temperature[0].sources[:2])
+            sources.append(
+                SemanticsSource(
+                    "structure_file",
+                    "statisticV2.groups.dataPoints.format",
+                    ("unit", "unit_origin"),
+                    document_version="17.1",
+                )
+            )
+        if control.control_type == "Meter" and series.output in {"actual", "total", "totalNeg"}:
+            sources.append(
+                SemanticsSource(
+                    "structure_file",
+                    _STATUS_DOCUMENT + "#page=106",
+                    (
+                        "measurement_quantity",
+                        "unit",
+                        "unit_origin",
+                        "measurement_role",
+                        "reset_semantics",
+                    ),
+                    rule_id="Meter.series.v1",
+                    document_version="17.1",
+                )
+            )
+            sources.append(
+                SemanticsSource(
+                    "structure_file",
+                    "statisticV2.groups.dataPoints.format",
+                    ("unit", "unit_origin"),
+                    document_version="17.1",
+                )
+            )
+        return SeriesSemantics(
+            "partial",
+            meaning,
+            unit=unit,
+            unit_origin="structure_declared" if unit else None,
+            measurement_quantity=quantity,
+            measurement_role=role,
+            reset_semantics=reset,
+            aggregation="sum_of_differences" if difference else "recorded_values" if raw else None,
+            timestamp_basis="unix_utc",
+            timestamp_position="observation"
+            if raw
+            else "interval_start"
+            if difference and granularity == "hour"
+            else None,
+            recording_mode=series.recording_mode,
+            limitations=tuple(limits),
+            sources=tuple(sources),
+        )
 
     def resolve(
         self,

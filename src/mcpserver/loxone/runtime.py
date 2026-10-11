@@ -873,10 +873,6 @@ class LoxoneRuntime:
             raise ControlOperationError(
                 "invalid_input", "aggregated statistics are limited to ten years"
             )
-        cache_key = StatisticsCache.source_key(
-            access.family_id, control_uuid, series_id, str(start), str(end), granularity
-        )
-        cached = self.statistics_cache.get(cache_key)
         history_session = (
             self._history_session(access, control_uuid, include_hidden=True)
             if include_hidden
@@ -894,6 +890,26 @@ class LoxoneRuntime:
             )
             if series is None:
                 raise ControlOperationError("not_found", "statistic series is not visible")
+            # Select only after fresh authorization. Technical source changes must
+            # never reinterpret an old raw/diff payload under new semantic metadata.
+            cache_key = StatisticsCache.source_key(
+                access.family_id,
+                control_uuid,
+                series_id,
+                str(start),
+                str(end),
+                granularity,
+                series.source,
+                series.group_id,
+                series.output,
+                str(series.accumulated),
+                str(series.accumulated_metadata_valid),
+                str(series.recording_mode),
+                series.format,
+                str(series.legacy_output_index),
+                str(series.legacy_output_count),
+            )
+            cached = self.statistics_cache.get(cache_key)
             if cached is not None:
                 _LOGGER.debug("component=statistics trace_id=%s outcome=cache_hit", trace_id)
                 return control, series, cached

@@ -631,6 +631,16 @@ tool call can inspect or alter the emergency-stop condition while it is active.
 
 ## Read history and statistics
 
+Inspect each series' `semantics` in the existing description/observability and
+statistic response. `cumulative_counter` requires an explicit accumulated flag;
+aggregated accumulated reads use `interval_difference_sum`. Raw values otherwise
+remain samples, not time averages or energy intervals. Exact Meter channel units
+are source-declared, not physical calibration proof. Preserve unknown direction,
+measurement boundary/method, rollover and unexplained counter decreases. Legacy
+local-clock conversion and aggregated timestamp positions may remain unverified.
+Use profile `semantic_reference` only as a versioned resolver reference; review
+affected bindings when evidence changes. No extra discovery per metric is needed.
+
 Use `loxone_describe_control` first. Call `loxone_get_control_history` only when
 `has_history` is true, and call `loxone_get_statistics` only with a `series_id`
 advertised under `capabilities.statistics`.

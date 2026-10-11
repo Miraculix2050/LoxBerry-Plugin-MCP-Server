@@ -1,5 +1,26 @@
 # Tool schema reference
 
+## Bounded native-series semantics (#435)
+
+`capabilities.statistics[].semantics`, observability `native_statistics[].semantics`
+and `loxone_get_statistics.data.semantics` use the existing pure resolver without
+additional discovery. `value_meaning` distinguishes cumulative readings, raw
+samples and the existing adapter's interval difference sums. Nonaccumulated
+aggregates retain unknown aggregation; no average/min/max is inferred. V2 UTC
+timestamps and the documented hourly difference start convention are separate
+from unverified day/month/year positions and legacy local-clock conversion.
+Exact Meter actual/total/totalNeg channels may carry source-declared W/kW/Wh/kWh
+units (`unit_origin=structure_declared`); names or generic analog formats do not.
+Exact IRCv2 temperature series retain actual/target roles and explicit temperature
+formats; conflicting channel units remain unknown. Direction, measurement method,
+physical boundary, rollover and reset correction remain unknown. A supported
+reset-to-zero command is not evidence that a decrease was a valid reset.
+
+Profile bindings add nullable `semantic_reference` to resolver rule versions.
+Persisted old bindings remain readable. New evidence or changed references marks
+affected bindings `needs_review`; unrelated names do not. A rule reference does
+not establish a value, semantic completeness or user-declared technical truth.
+
 ## Temperature and binary measurement semantics (#435)
 
 The shared state-semantic descriptor adds nullable `measurement_quantity` and

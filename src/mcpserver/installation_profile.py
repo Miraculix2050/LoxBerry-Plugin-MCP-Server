@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from mcpserver.config import _unlock_file
 from mcpserver.loxone.models import Control, LoxoneStructure
+from mcpserver.loxone.state_semantics import StateSemanticsResolver
 from mcpserver.loxone.uuid import normalize_loxone_uuid
 from mcpserver.persistence import PersistenceUncertain, fsync_parent_directory
 
@@ -86,6 +87,7 @@ class BindingInput(BaseModel):
 
 class StoredBinding(BindingInput):
     source_fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
+    semantic_reference: str | None = Field(default=None, max_length=256)
     confirmation_origin: Literal["local_admin", "mcp_user_confirmed"] | None = None
     actor_ref: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
 
@@ -161,6 +163,8 @@ def source_fingerprint(binding: BindingInput, control: Control) -> str:
             series.format,
             series.state_uuid,
         ]
+        if series.source == "statistic_v2":
+            source.extend([str(series.recording_mode), series.accumulated_metadata_valid])
     return _digest(
         [
             control.uuid,
@@ -188,6 +192,17 @@ def source_fingerprint(binding: BindingInput, control: Control) -> str:
             source,
         ]
     )
+
+
+def semantic_reference(binding: BindingInput, control: Control) -> str | None:
+    resolver = StateSemanticsResolver()
+    if binding.source_kind == "statistic":
+        series = next(
+            (s for s in control.statistic_series if s.series_id == binding.series_id), None
+        )
+        return resolver.source_reference(control, series=series) if series else None
+    name = next((name for name, uuid in control.state_uuids if uuid == binding.state_uuid), None)
+    return resolver.source_reference(control, state_name=name)
 
 
 class ProfileStore:
@@ -291,6 +306,7 @@ class ProfileStore:
             stored = StoredBinding(
                 **binding.model_dump(),
                 source_fingerprint=fingerprint,
+                semantic_reference=semantic_reference(binding, control),
                 confirmation_origin=origin if binding.confirmed else None,
                 actor_ref=actor_ref if binding.confirmed else None,
             )
@@ -352,6 +368,9 @@ def project_profile(
         try:
             if source_fingerprint(binding, control) != binding.source_fingerprint:
                 status = "needs_review"
+            current_reference = semantic_reference(binding, control)
+            if current_reference != binding.semantic_reference:
+                status = "needs_review"
         except ProfileError:
             # Keep an invalid binding to a visible control actionable without
             # disclosing the old source identity or user-authored source context.
@@ -372,6 +391,7 @@ def project_profile(
                     "status": "invalid",
                     "fact_origin": "user_declared",
                     "semantic_status": "not_resolved",
+                    "semantic_reference": None,
                     "measurement_boundary_origin": "user_declared",
                 }
             )
@@ -383,6 +403,7 @@ def project_profile(
                 "fact_origin": "user_declared",
                 "control_name": control.name,
                 "semantic_status": "not_resolved",
+                "semantic_reference": current_reference,
                 "measurement_boundary_origin": "user_declared",
             }
         )

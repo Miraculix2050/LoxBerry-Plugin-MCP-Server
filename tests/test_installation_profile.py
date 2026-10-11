@@ -15,7 +15,7 @@ from mcpserver.installation_profile import (
     installation_identity,
     project_profile,
 )
-from mcpserver.loxone.models import Control, LoxoneIdentity, LoxoneStructure
+from mcpserver.loxone.models import Control, LoxoneIdentity, LoxoneStructure, StatisticSeries
 from mcpserver.persistence import PersistenceUncertain
 
 CONTROL = "00000001-0000-0000-0000000000000001"
@@ -71,6 +71,51 @@ def test_draft_confirmation_restart_and_tombstone_revision(tmp_path: Path) -> No
     assert deleted.bindings == [] and deleted.revision == 3
     with pytest.raises(ProfileError, match="revision_conflict"):
         save(storage, 0)
+
+
+def test_profile_rule_references_migrate_without_inventing_semantics(
+    tmp_path: Path, monkeypatch
+) -> None:
+    c = replace(control(), control_type="IRoomControllerV2", state_uuids=(("tempActual", STATE),))
+    storage = store(tmp_path)
+    document = storage.put(
+        TARGET, 0, binding(confirmed=True), c, origin="local_admin", actor_ref=ACTOR
+    )
+    assert document.bindings[0].semantic_reference == "IRoomControllerV2.tempActual.v1"
+    assert project_profile(document, TARGET, {CONTROL: c})["bindings"][0]["status"] == "confirmed"
+    legacy = document.model_copy(
+        update={"bindings": [document.bindings[0].model_copy(update={"semantic_reference": None})]}
+    )
+    assert project_profile(legacy, TARGET, {CONTROL: c})["bindings"][0]["status"] == "needs_review"
+    monkeypatch.setattr(
+        "mcpserver.installation_profile.semantic_reference", lambda *args: "new-rule.v2"
+    )
+    assert (
+        project_profile(document, TARGET, {CONTROL: c})["bindings"][0]["status"] == "needs_review"
+    )
+
+
+def test_pre_pr5_legacy_statistic_document_does_not_get_unrelated_review(tmp_path: Path) -> None:
+    s = StatisticSeries("legacy:0", "legacy", "0", "0", "Synthetic", "%.1f", state_uuid=STATE)
+    c = replace(control(), statistic_series=(s,))
+    storage = store(tmp_path)
+    document = storage.put(
+        TARGET,
+        0,
+        binding(source_kind="statistic", state_uuid=None, series_id="legacy:0", confirmed=True),
+        c,
+        origin="local_admin",
+        actor_ref=ACTOR,
+    ).model_dump()
+    # Independently computed from integrated pre-PR5 a19f5ed source_fingerprint.
+    document["bindings"][0]["source_fingerprint"] = (
+        "df02a051b70428a007c0a3bf2791229ce3cdda161e7ee3daae252adab22613ac"
+    )
+    del document["bindings"][0]["semantic_reference"]
+    storage.path.write_text(json.dumps(document), encoding="utf-8")
+    loaded = storage.read(TARGET)
+    projected = project_profile(loaded, TARGET, {CONTROL: c})["bindings"][0]
+    assert projected["status"] == "confirmed" and projected["semantic_reference"] is None
 
 
 def test_presentation_names_do_not_invalidate_but_technical_changes_do(tmp_path: Path) -> None:
