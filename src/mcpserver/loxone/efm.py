@@ -33,6 +33,9 @@ class Participant:
     diagnostics: tuple[str, ...] = ()
     icon: str | None = None
     residual: tuple[tuple[str, str | bool], ...] = ()
+    binding_reference: str | None = None
+    binding_kind: str = "absent"
+    binding_wire_type: str = "absent"
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +83,9 @@ def normalize(details: Mapping[str, object]) -> Projection:
             node_uuid = control_uuid = title = None
             role: str | int | None = None
             status = "absent"
+            binding_reference = None
+            binding_kind = "absent"
+            binding_wire_type = "absent"
             children = None
             icon = None
             residual: tuple[tuple[str, str | bool], ...] = ()
@@ -97,6 +103,30 @@ def normalize(details: Mapping[str, object]) -> Projection:
                     else:
                         status = "malformed"
                         issues.append("invalid_control_reference")
+                if "actualEfmState" in item:
+                    raw_binding = item["actualEfmState"]
+                    binding_wire_type = (
+                        "string"
+                        if isinstance(raw_binding, str)
+                        else "boolean"
+                        if isinstance(raw_binding, bool)
+                        else "object"
+                        if isinstance(raw_binding, Mapping)
+                        else "array"
+                        if isinstance(raw_binding, list)
+                        else "number"
+                        if isinstance(raw_binding, int | float)
+                        else "null"
+                        if raw_binding is None
+                        else "unsupported"
+                    )
+                    if valid_uuid(raw_binding):
+                        binding_reference = raw_binding
+                        binding_kind = "uuid"
+                    elif isinstance(raw_binding, str) and 0 < len(raw_binding) <= 128:
+                        binding_kind = "unsupported_encoding"
+                    else:
+                        binding_kind = "malformed"
                 raw_role = item.get("nodeType")
                 if (isinstance(raw_role, str) and len(raw_role) <= 64) or (
                     isinstance(raw_role, int)
@@ -121,11 +151,34 @@ def normalize(details: Mapping[str, object]) -> Projection:
                 if "nodes" in item and not isinstance(children, list):
                     issues.append("invalid_child_collection")
             row = Participant(
-                path, node_uuid, control_uuid, status, role, title, tuple(issues), icon, residual
+                path,
+                node_uuid,
+                control_uuid,
+                status,
+                role,
+                title,
+                tuple(issues),
+                icon,
+                residual,
+                binding_reference,
+                binding_kind,
+                binding_wire_type,
             )
             cost = len(
                 json.dumps(
-                    [path, node_uuid, control_uuid, role, title, issues, icon, residual],
+                    [
+                        path,
+                        node_uuid,
+                        control_uuid,
+                        role,
+                        title,
+                        issues,
+                        icon,
+                        residual,
+                        binding_reference,
+                        binding_kind,
+                        binding_wire_type,
+                    ],
                     ensure_ascii=True,
                 ).encode()
             )

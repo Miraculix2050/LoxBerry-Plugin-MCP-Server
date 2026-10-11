@@ -69,7 +69,7 @@
         yield relationPreview(own('source'), own('target'));
         yield relationPreview(own('source_project_node_id'), own('target_project_node_id'));
         for (const field of ['source_field', 'code', 'model_source_id', 'classification', 'kind',
-          'interpretation', 'reference_status', 'role_token', 'state_uuid', 'id', 'uuid', 'observed_at', 'at']) yield own(field);
+          'interpretation', 'reference_status', 'status', 'source_wire_type', 'role_token', 'state_uuid', 'id', 'uuid', 'observed_at', 'at']) yield own(field);
         // Keep timestamp last so a descriptive label or identifier wins when available.
         yield own('timestamp');
       }

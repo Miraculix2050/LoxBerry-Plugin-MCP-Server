@@ -9,6 +9,9 @@ extracted from the matching version heading.
   expected revisions, explicit confirmation assertions and masked audit records.
   Restrict whole-profile deletion to current visibility; preserve uncertain-write
   outcomes without automatic retries (#434).
+- Bind explicit EFM participant UUID state references only for the evidenced
+  17.2.8.28 firmware, preserving aliases, conflicts and uncertainty without values (#364).
+
 - Expose bounded EFM participant occurrences and fresh visible control references
   in full Describe, with independent completeness and unknown role interpretation (#363).
 
