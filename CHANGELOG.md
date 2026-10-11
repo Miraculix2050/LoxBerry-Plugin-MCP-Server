@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add bounded local MCP discovery comparison and reconnect guidance, detecting
+  additive schema changes without printing schema payloads or changing transport.
+  Unexposed client fields remain incomplete, not a confirmed defect (#454).
+
 - Clarify the active-alert agent workflow for current status, focused state reads
   and project follow-up. Distinguish coverage gaps, static wiring, causal
   hypotheses and optimization candidates; retain read-only alarm semantics (#459).

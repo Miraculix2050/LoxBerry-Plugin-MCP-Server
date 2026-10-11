@@ -1,5 +1,40 @@
 # Fehlerbehebung
 
+## MCP-Tools fehlen nach einem Upgrade
+
+Der installierte Skill oder die statische Schemareferenz kann Fähigkeiten
+beschreiben, die eine bestehende Connector-Verbindung noch nicht neu entdeckt
+hat. Die frische `tools/list`-Antwort im Tool Explorer zeigt die installierte
+Oberfläche. Den betroffenen Client aktualisieren beziehungsweise neu verbinden
+und dessen Tooldefinitionen erneut prüfen. Keine Argumente erraten, die im
+aktuellen Client-Schema fehlen, und Discovery nicht durch Rohzugriffe umgehen.
+Das Verhalten beim Neuverbinden muss für den jeweiligen Client geprüft werden;
+das Plugin kann den Schema-Cache eines externen Connectors nicht invalidieren.
+
+Der Server verwendet zustandsloses HTTP mit JSON-Antworten und kündigt keine
+unaufgeforderten Toollisten-Änderungsnachrichten an. Vor Leseaufrufen wird keine
+vollständige Discovery oder Projektladung ergänzt. Neuverbinden erteilt keine
+Projekt- oder Admin-Berechtigung.
+
+Für einen lokalen Vergleich zwei Antworten privat als UTF-8-JSON mit `tools`
+(oder einer JSON-RPC-Antwort mit `result.tools`) speichern und in der
+Entwicklungsumgebung ausführen:
+
+```text
+python tools/check_mcp_discovery.py --reference server.json --observed client.json
+```
+
+Dieselbe aktivierte Installation und den Erfassungszeitpunkt vergleichen. Die
+vollständige statische Release-Referenz kann deaktivierte Tools enthalten; dieser
+Unterschied beweist keinen veralteten Connector. Pro Datei gelten 16 MiB und
+512 Tools. Der Bericht enthält Toolnamen, Schemaidentitäten und geänderte
+Feldnamen, keine Schemainhalte oder Zugangsdaten. Exit 0 bedeutet gleiche sichtbare
+Verträge, 1 abweichende oder unvollständige und 2 ungültige Eingaben. Nicht vom
+Client bereitgestellte Felder bleiben ausdrücklich unvollständig und sind kein
+bestätigter Defekt. Additive Enum-/Ausgabeänderungen werden auch bei unveränderten
+Toolnamen erkannt. Dateien privat halten; Client/Version, Upgrade-/Neuverbindungs-
+Schritte und Skillrevision mit bereinigter Evidenz dokumentieren.
+
 ## OAuth-Sitzungen und Freigaben nachvollziehen
 
 Wenn eine Sitzung verschwindet oder eine Freigabe inaktiv bleibt, nutze den
