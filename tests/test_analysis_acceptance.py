@@ -29,6 +29,14 @@ def test_final_matrix_preserves_original_questions_and_matches_released_tools() 
     names = {tool["name"] for tool in tool_schema_catalog("synthetic")["tools"]}
     original = [case for case in CATALOG["cases"] if case["group"] != "knx"]
     assert len(original) == 25
+    baseline_rows = [
+        {key: value for key, value in case.items() if key != "final_acceptance"}
+        for case in original
+    ]
+    assert (
+        acceptance.digest(baseline_rows)
+        == "34b571991da29aa1fbf3d6fc1c4d9f8e479fe408a447694d80496d028a2fdf89"
+    )
     for language in ("de", "en"):
         matrix = (ROOT / f"docs/user/analysis-support.{language}.md").read_text(encoding="utf-8")
         for case in original:
