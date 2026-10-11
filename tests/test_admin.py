@@ -1419,6 +1419,31 @@ def test_section_saves_are_atomic_and_preserve_the_other_configuration(
     assert after_mqtt.mqtt_enabled is False
 
 
+@pytest.mark.parametrize("enabled", [True, False])
+def test_mcp_section_save_persists_message_confirmation_permission(
+    enabled: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    store.save(PluginConfig(loxone_message_confirmation_enabled=not enabled, mqtt_enabled=True))
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._service_active", lambda: False)
+    monkeypatch.setattr("mcpserver.admin._service_response", lambda: {"service_active": False})
+
+    result = dispatch(
+        {
+            "action": "save_mcp_config",
+            "payload": {
+                "schema_version": 5,
+                "tools": {"loxone_message_confirmation_enabled": enabled},
+            },
+        }
+    )
+
+    assert store.load().loxone_message_confirmation_enabled is enabled
+    assert result["configuration"]["tools"]["loxone_message_confirmation_enabled"] is enabled
+    assert store.load().mqtt_enabled is True
+
+
 def test_knx_taxonomy_save_is_endpoint_scoped_and_preserves_other_settings(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

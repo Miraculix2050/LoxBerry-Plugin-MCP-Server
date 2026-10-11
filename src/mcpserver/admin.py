@@ -679,6 +679,7 @@ def _save_mcp(payload: object) -> dict[str, Any]:
         "loxone_control_enabled",
         "loxberry_read_enabled",
         "loxone_history_enabled",
+        "loxone_message_confirmation_enabled",
         "loxberry_operate_enabled",
         "requests_per_minute",
         "control_requests_per_minute",
