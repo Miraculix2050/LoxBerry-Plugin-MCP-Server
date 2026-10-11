@@ -8,6 +8,10 @@ extracted from the matching version heading.
 - Retain sanitized, correlated Admin discovery failure phases, categories and
   timing/session metadata without logging private payloads or changing retries (#449).
 
+- Add SmokeAlarm pre/main alarm activity with independent test context to shared
+  state semantics and Active Alerts. Level zero uses the explicit owner-approved
+  inactive assumption with separate provenance; unavailable values remain gaps (#347).
+
 - Support burglar-alarm `Alarm.level` in shared state semantics and active alerts:
   use the owner-approved assumption that 0 means no running alarm, alongside
   documented stages 1–6. Retain explicit provenance and unknown test,

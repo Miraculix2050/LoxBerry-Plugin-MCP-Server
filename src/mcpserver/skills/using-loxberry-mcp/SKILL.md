@@ -674,6 +674,8 @@ specified. Test, acknowledgement and suppression context remains unknown; armed,
 nextLevelAt and startTime do not override activity. Missing, invalid or stale
 levels never establish inactivity.
 
+SmokeAlarm.level accepts 0 (inactive), 1 (pre-alarm) and 2 (main alarm). Levels 1/2 and numeric testAlarm 0/1 use Structure File 17.1 p.126; level=0 is an owner-approved assumption from issue #347 (2026-10-11), separately identified in decoder provenance with reason=owner_approved_decoder. If disproven, it is a bug. Optional testAlarm never overrides activity; missing, stale or invalid test context remains unknown. Acknowledgement and signal suppression remain unknown; acousticAlarm=0 does not prove inactivity. No command-transition or hardware compatibility claim follows.
+
 `semantic_value` exposes decoded source levels/types and context without tool-side
 reinterpretation. Active findings include optional `context`: `test_alarm`, `acknowledged` and
 `signals_suppressed` are true/false/null; null means unknown or not exposed by
