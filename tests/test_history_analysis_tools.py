@@ -1,0 +1,207 @@
+import asyncio
+from contextlib import asynccontextmanager
+from dataclasses import replace
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
+from mcp.server.fastmcp import FastMCP
+from pydantic import ValidationError
+
+from mcpserver.history_analysis import HistoryAnalysisDeadline
+from mcpserver.history_analysis_tools import AnalysisSource, register_history_analysis_tool
+from mcpserver.loxone.models import Control, LoxoneIdentity, LoxoneStructure, StatisticSeries
+from mcpserver.loxone.runtime import RuntimeAuthorizationError
+from mcpserver.loxone.statistics import StatisticPoint
+
+
+def configured(monkeypatch, *, points=3):
+    series = StatisticSeries("series", "statistic_v2", "1", "tempActual", "Actual", "%.1f°C")
+    control = Control(
+        "control",
+        "Room",
+        "IRoomControllerV2",
+        None,
+        None,
+        None,
+        (("tempActual", "state"),),
+        statistic_series=(series,),
+        format="%.1f°C",
+    )
+    structure = LoxoneStructure(LoxoneIdentity("user", "serial"), "v1", (), (), (control,))
+    semaphore = asyncio.Semaphore(1)
+    runtime = SimpleNamespace(
+        contexts=0,
+        structure=structure,
+        control=control,
+        _require_access=AsyncMock(),
+        endpoint=SimpleNamespace(origin="http://synthetic.local"),
+    )
+
+    @asynccontextmanager
+    async def context(_access):
+        async with semaphore:
+            runtime.contexts += 1
+            yield runtime.structure, object()
+
+    async def forbidden_slot():
+        raise AssertionError("already admitted; must not reacquire the same semaphore")
+
+    runtime.history_context = context
+    runtime.worker_slot = forbidden_slot
+    runtime.authorized_statistics = AsyncMock(
+        return_value=(
+            control,
+            series,
+            tuple(StatisticPoint(100 + i, 20 + i) for i in range(points)),
+        )
+    )
+    monkeypatch.setattr(
+        "mcpserver.history_analysis_tools._access", lambda: SimpleNamespace(family_id="family")
+    )
+    server = FastMCP("analysis-test")
+    register_history_analysis_tool(server, runtime, None, None)
+    tool = server._tool_manager.get_tool("loxone_analyze_history")
+    return runtime, tool
+
+
+ARGS = dict(
+    operation="temperature_summary",
+    sources=[AnalysisSource(control_uuid="control", series_id="series")],
+    start="1970-01-01T00:01:40Z",
+    end="1970-01-01T01:00:00Z",
+    timezone="Europe/Berlin",
+)
+
+
+@pytest.mark.asyncio
+async def test_single_fresh_context_deduplicates_and_works_with_one_runtime_slot(monkeypatch):
+    runtime, tool = configured(monkeypatch)
+    result = await asyncio.wait_for(tool.fn(**{**ARGS, "sources": ARGS["sources"] * 2}), 2)
+    assert result.ok and result.data.sources[0].metrics["mean"] == 21
+    assert len(result.data.sources) == 1 and result.data.raw == []
+    assert runtime.contexts == 1 and runtime.authorized_statistics.await_count == 1
+    assert tool.annotations.readOnlyHint is True
+
+
+@pytest.mark.asyncio
+async def test_every_raw_page_authorizes_and_binds_to_current_source_content(monkeypatch):
+    runtime, tool = configured(monkeypatch, points=101)
+    first = await tool.fn(**ARGS, include_raw=True)
+    assert first.ok and len(first.data.raw) == 100 and first.data.next_cursor
+    second = await tool.fn(**ARGS, include_raw=True, cursor=first.data.next_cursor)
+    assert second.ok and len(second.data.raw) == 1 and runtime.contexts == 2
+    runtime.structure = replace(runtime.structure, controls=())
+    denied = await tool.fn(**ARGS, include_raw=True, cursor=first.data.next_cursor)
+    assert not denied.ok and denied.data.error == "not_found"
+    assert "Room" not in denied.model_dump_json()
+
+
+@pytest.mark.asyncio
+async def test_revocation_before_result_release_hides_prepared_values(monkeypatch):
+    runtime, tool = configured(monkeypatch)
+    runtime._require_access.side_effect = [None, RuntimeAuthorizationError("secret-marker")]
+    result = await tool.fn(**ARGS)
+    assert not result.ok and result.data.error == "permission_denied"
+    assert "secret-marker" not in result.model_dump_json()
+
+
+@pytest.mark.asyncio
+async def test_cancelled_request_keeps_two_analysis_admissions_until_completion(monkeypatch):
+    runtime, tool = configured(monkeypatch)
+    gate = asyncio.Event()
+    started = asyncio.Event()
+    original = runtime.authorized_statistics.return_value
+
+    async def blocked(*_args, **_kwargs):
+        started.set()
+        await gate.wait()
+        return original
+
+    runtime.authorized_statistics.side_effect = blocked
+    one = asyncio.create_task(tool.fn(**ARGS))
+    await started.wait()
+    two = asyncio.create_task(tool.fn(**ARGS))
+    await asyncio.sleep(0)
+    one.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await one
+    third = await tool.fn(**ARGS)
+    assert not third.ok and third.data.error == "temporarily_unavailable"
+    gate.set()
+    assert (await two).ok
+    for _ in range(5):
+        await asyncio.sleep(0)
+
+
+@pytest.mark.asyncio
+async def test_near_limit_raw_preparation_keeps_event_loop_responsive(monkeypatch):
+    runtime, tool = configured(monkeypatch, points=100_000)
+    arguments = {**ARGS, "end": "1970-01-03T00:00:00Z"}
+    ticks = 0
+    task = asyncio.create_task(tool.fn(**arguments, include_raw=True))
+    while not task.done():
+        ticks += 1
+        await asyncio.sleep(0.005)
+    result = await task
+    assert result.ok and len(result.data.raw) == 100 and result.data.input_points == 100_000
+    assert ticks >= 3
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        {},
+        dict(control_uuid="control"),
+        dict(control_uuid="control", series_id="series", state_uuid="state"),
+        dict(binding_id="binding", control_uuid="control"),
+        dict(control_uuid="control", state_uuid="state", granularity="hour"),
+    ],
+)
+def test_selector_cannot_mix_bindings_or_source_kinds(source):
+    with pytest.raises(ValidationError):
+        AnalysisSource(**source)
+
+
+@pytest.mark.asyncio
+async def test_invalid_window_or_zone_does_not_open_source_context(monkeypatch):
+    runtime, tool = configured(monkeypatch)
+    for changed in (
+        {"timezone": "not/a/zone"},
+        {"end": "1970-01-01T00:01:40Z"},
+        {"end": "1970-03-03T00:00:00Z"},
+        {"end": "2099-01-01T00:00:00Z"},
+    ):
+        result = await tool.fn(**{**ARGS, **changed})
+        assert not result.ok and result.data.error == "invalid_input"
+    assert runtime.contexts == 0
+
+
+@pytest.mark.asyncio
+async def test_computation_deadline_is_not_a_miniserver_connection_failure(monkeypatch):
+    _runtime, tool = configured(monkeypatch)
+
+    def expired(*_args):
+        raise HistoryAnalysisDeadline()
+
+    monkeypatch.setattr("mcpserver.history_analysis_tools._statistic_calculation", expired)
+    result = await tool.fn(**ARGS)
+    assert not result.ok and result.data.error == "deadline_exceeded"
+
+
+@pytest.mark.asyncio
+async def test_revocation_during_cursor_proof_blocks_raw_release(monkeypatch):
+    import mcpserver.history_analysis_tools as module
+
+    runtime, tool = configured(monkeypatch)
+    original = module._raw_scope
+
+    def revoke(*args):
+        proof = original(*args)
+        runtime._require_access.side_effect = RuntimeAuthorizationError("private-marker")
+        return proof
+
+    monkeypatch.setattr(module, "_raw_scope", revoke)
+    result = await tool.fn(**ARGS, include_raw=True)
+    assert not result.ok and result.data.error == "permission_denied"
+    assert "private-marker" not in result.model_dump_json()

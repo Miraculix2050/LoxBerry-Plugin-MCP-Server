@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add bounded read-only historical temperature summaries, verified energy and
+  observed state durations through `loxone_analyze_history`. Reuse one fresh
+  caller context, preserve unknown gaps/units/resets, and make raw pages opt-in
+  (#437, #438).
+
 - Add shared bounded history time/coverage evidence to existing statistic and
   local Event History reads. Persist observed initial values for new capture
   phases; preserve legacy gaps, invalidate pruned boundary evidence and keep

@@ -43,6 +43,33 @@ def test_store_records_typed_transitions_and_pages_them(tmp_path):
     )
 
 
+def test_analysis_uses_phase_local_predecessor_and_preserves_reconnect_gaps(tmp_path):
+    source = ("control", "state")
+    store = EventHistoryStore(
+        (tmp_path / "analysis.sqlite3").resolve(), retention_days=90, maximum_mib=16
+    )
+    now = time.time()
+    store.initialize()
+    store.begin_coverage((source,), started_at=now - 100, initial_values={source: (now - 100, 0)})
+    store.record_transition(*source, observed_at=now - 90, old_value=0, new_value=1)
+    store.end_coverage((source,), ended_at=now - 60, outcome="disconnected")
+    store.begin_coverage((source,), started_at=now - 40)
+    store.record_transition(*source, observed_at=now - 20, old_value=0, new_value=1)
+    phases, count = store.analysis_phases(
+        *source, start=now - 80, end=now - 10, maximum_points=10, deadline=time.monotonic() + 2
+    )
+    assert phases == ((now - 80, now - 60, 1, ()), (now - 40, now - 10, None, ((now - 20, 1),)))
+    assert count == 3
+    with pytest.raises(EventHistoryUnavailable, match="point limit"):
+        store.analysis_phases(
+            *source, start=now - 80, end=now - 10, maximum_points=2, deadline=time.monotonic() + 2
+        )
+    with pytest.raises(EventHistoryUnavailable, match="deadline"):
+        store.analysis_phases(
+            *source, start=now - 80, end=now - 10, maximum_points=10, deadline=time.monotonic() - 1
+        )
+
+
 def test_capture_initial_value_survives_read_without_inventing_legacy_baseline(tmp_path):
     source = ("control", "state")
     store = EventHistoryStore(

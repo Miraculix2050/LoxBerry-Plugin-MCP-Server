@@ -8320,6 +8320,14 @@ def register_tool_surface(
         register_control_tool(server, runtime)
         register_history_tools(server, runtime)
     register_event_history_tools(server, event_history_runtime)
+    from mcpserver.history_analysis_tools import register_history_analysis_tool
+
+    register_history_analysis_tool(
+        server,
+        runtime,
+        event_history_runtime,
+        knx_store_path.parent.parent / "installation-profile.json" if knx_store_path else None,
+    )
     if loxberry_runtime is not None:
         register_loxberry_read_tools(server, loxberry_runtime)
     if loxberry_operate_runtime is not None:

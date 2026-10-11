@@ -22,6 +22,7 @@ from mcpserver.auth.loxone_store import EncryptedLoxoneTokenStore, LoxoneTokenSt
 from mcpserver.auth.provider import CONTROL_SCOPE, HISTORY_SCOPE, READ_SCOPE, StoredAccessToken
 from mcpserver.auth.store import lifecycle_event
 from mcpserver.availability import AvailabilityPhase, AvailabilityReason
+from mcpserver.bounded_worker import run_admitted_worker
 from mcpserver.loxone.auth_diagnostics import (
     MiniserverAuthCoordinator,
     MiniserverAuthenticationBusy,
@@ -150,7 +151,11 @@ def _legacy_statistic_dates(start: int, end: int) -> tuple[str, ...]:
 
 
 def _parse_legacy_statistic_points(
-    payload: bytes, *, output_index: int, output_count: int
+    payload: bytes,
+    *,
+    output_index: int,
+    output_count: int,
+    maximum_points: int = 100_000,
 ) -> tuple[StatisticPoint, ...]:
     """Decode one output from a bounded documented legacy statistic stream."""
     if not 1 <= output_count <= 16 or not 0 <= output_index < output_count:
@@ -160,7 +165,7 @@ def _parse_legacy_statistic_points(
     record = struct.Struct(f"<I{output_count}d")
     if len(payload) % record.size:
         raise LoxoneProtocolError("Statistic response has a truncated entry")
-    if len(payload) // record.size > 100_000:
+    if len(payload) // record.size > maximum_points:
         raise LoxoneProtocolError("Statistic response contains too many points")
     result: list[StatisticPoint] = []
     previous = -1
@@ -174,6 +179,36 @@ def _parse_legacy_statistic_points(
         previous = timestamp
         result.append(StatisticPoint(timestamp=timestamp, value=outputs[output_index]))
     return tuple(result)
+
+
+def _points_in_range(
+    payload: bytes, start: int, end: int, maximum_points: int
+) -> tuple[StatisticPoint, ...]:
+    return tuple(
+        p
+        for p in parse_statistic_points(payload, maximum_points=maximum_points)
+        if start <= p.timestamp <= end
+    )
+
+
+def _legacy_points_in_range(
+    payload: bytes,
+    output_index: int,
+    output_count: int,
+    start: int,
+    end: int,
+    maximum_points: int,
+) -> tuple[StatisticPoint, ...]:
+    return tuple(
+        StatisticPoint(_LOXONE_EPOCH_UNIX + p.timestamp, p.value)
+        for p in _parse_legacy_statistic_points(
+            payload,
+            output_index=output_index,
+            output_count=output_count,
+            maximum_points=maximum_points,
+        )
+        if start <= _LOXONE_EPOCH_UNIX + p.timestamp <= end
+    )
 
 
 class RuntimeAuthorizationError(PermissionError):
@@ -779,13 +814,10 @@ class LoxoneRuntime:
             )
 
     @asynccontextmanager
-    async def _history_session(
+    async def history_context(
         self,
         access: StoredAccessToken,
-        control_uuid: str,
-        *,
-        include_hidden: bool = False,
-    ) -> AsyncIterator[tuple[Control, LoxoneWebSocketSession]]:
+    ) -> AsyncIterator[tuple[LoxoneStructure, LoxoneWebSocketSession]]:
         trace_id = _HISTORY_TRACE_ID.get() or uuid4().hex
         started = time.perf_counter()
         if READ_SCOPE not in access.scopes or HISTORY_SCOPE not in access.scopes:
@@ -794,8 +826,6 @@ class LoxoneRuntime:
             raise ControlOperationError(
                 "permission_denied", "Loxone history requires administrator activation"
             )
-        if not control_uuid or len(control_uuid) > 128:
-            raise ControlOperationError("invalid_input", "invalid control identifier")
         try:
             token = self.token_store.get(access.family_id, access.miniserver_id, access.identity_id)
         except LoxoneTokenStoreError as exc:
@@ -818,14 +848,9 @@ class LoxoneRuntime:
                 )
                 _history_phase(trace_id, "connection", started)
                 structure = await self._history_visible_structure(session, trace_id)
-                started = time.perf_counter()
-                control = self._control(structure, control_uuid, include_hidden=include_hidden)
-                _history_phase(trace_id, "visibility", started)
-                if control is None:
-                    raise ControlOperationError("not_found", "control is not visible")
                 trace_context = _HISTORY_TRACE_ID.set(trace_id)
                 try:
-                    yield control, session
+                    yield structure, session
                 finally:
                     _HISTORY_TRACE_ID.reset(trace_context)
             except RuntimeAuthorizationError as exc:
@@ -841,6 +866,24 @@ class LoxoneRuntime:
             finally:
                 if session is not None:
                     await session.close()
+
+    @asynccontextmanager
+    async def _history_session(
+        self,
+        access: StoredAccessToken,
+        control_uuid: str,
+        *,
+        include_hidden: bool = False,
+    ) -> AsyncIterator[tuple[Control, LoxoneWebSocketSession]]:
+        if not control_uuid or len(control_uuid) > 128:
+            raise ControlOperationError("invalid_input", "invalid control identifier")
+        async with self.history_context(access) as (structure, session):
+            started = time.perf_counter()
+            control = self._control(structure, control_uuid, include_hidden=include_hidden)
+            _history_phase(_HISTORY_TRACE_ID.get() or uuid4().hex, "visibility", started)
+            if control is None:
+                raise ControlOperationError("not_found", "control is not visible")
+            yield control, session
 
     async def _history_visible_structure(
         self,
@@ -887,116 +930,136 @@ class LoxoneRuntime:
                 session,
             )
         ):
-            trace_id = _HISTORY_TRACE_ID.get() or uuid4().hex
-            series = next(
-                (item for item in control.statistic_series if item.series_id == series_id), None
+            return await self.authorized_statistics(
+                access, control, session, series_id, start, end, granularity
             )
-            if series is None:
-                raise ControlOperationError("not_found", "statistic series is not visible")
-            # Select only after fresh authorization. Technical source changes must
-            # never reinterpret an old raw/diff payload under new semantic metadata.
-            cache_key = StatisticsCache.source_key(
-                access.family_id,
-                control_uuid,
-                series_id,
-                str(start),
-                str(end),
-                granularity,
-                series.source,
-                series.group_id,
-                series.output,
-                str(series.accumulated),
-                str(series.accumulated_metadata_valid),
-                str(series.recording_mode),
-                series.format,
-                str(series.legacy_output_index),
-                str(series.legacy_output_count),
-            )
-            cached = self.statistics_cache.get(cache_key)
-            if cached is not None:
-                _LOGGER.debug("component=statistics trace_id=%s outcome=cache_hit", trace_id)
-                return control, series, cached
-            _LOGGER.debug("component=statistics trace_id=%s outcome=cache_miss", trace_id)
-            fetch_seconds = 0.0
-            parse_seconds = 0.0
-            try:
-                if series.source == "legacy":
-                    if (
-                        granularity != "raw"
-                        or series.legacy_output_index is None
-                        or series.legacy_output_count is None
-                    ):
+
+    async def authorized_statistics(
+        self,
+        access: StoredAccessToken,
+        control: Control,
+        session: LoxoneWebSocketSession,
+        series_id: str,
+        start: int,
+        end: int,
+        granularity: str,
+        *,
+        maximum_points: int = 100_000,
+    ) -> tuple[Control, StatisticSeries, tuple[StatisticPoint, ...]]:
+        """Reuse the native adapter only inside a freshly authorized history context."""
+        control_uuid = control.uuid
+        trace_id = _HISTORY_TRACE_ID.get() or uuid4().hex
+        series = next(
+            (item for item in control.statistic_series if item.series_id == series_id), None
+        )
+        if series is None:
+            raise ControlOperationError("not_found", "statistic series is not visible")
+        # Select only after fresh authorization. Technical source changes must
+        # never reinterpret an old raw/diff payload under new semantic metadata.
+        cache_key = StatisticsCache.source_key(
+            access.family_id,
+            control_uuid,
+            series_id,
+            str(start),
+            str(end),
+            granularity,
+            series.source,
+            series.group_id,
+            series.output,
+            str(series.accumulated),
+            str(series.accumulated_metadata_valid),
+            str(series.recording_mode),
+            series.format,
+            str(series.legacy_output_index),
+            str(series.legacy_output_count),
+        )
+        cached = self.statistics_cache.get(cache_key)
+        if cached is not None:
+            if len(cached) > maximum_points:
+                raise ControlOperationError("invalid_input", "analysis input point limit exceeded")
+            _LOGGER.debug("component=statistics trace_id=%s outcome=cache_hit", trace_id)
+            return control, series, cached
+        _LOGGER.debug("component=statistics trace_id=%s outcome=cache_miss", trace_id)
+        fetch_seconds = 0.0
+        parse_seconds = 0.0
+        try:
+            if series.source == "legacy":
+                if (
+                    granularity != "raw"
+                    or series.legacy_output_index is None
+                    or series.legacy_output_count is None
+                ):
+                    raise ControlOperationError(
+                        "invalid_input", "legacy statistics support raw granularity only"
+                    )
+                collected: list[StatisticPoint] = []
+                for date in _legacy_statistic_dates(start, end):
+                    phase_started = time.perf_counter()
+                    payload = await session.legacy_statistic_data(control.uuid, date)
+                    fetch_seconds += time.perf_counter() - phase_started
+                    phase_started = time.perf_counter()
+                    decoded = await run_admitted_worker(
+                        _legacy_points_in_range,
+                        payload,
+                        series.legacy_output_index,
+                        series.legacy_output_count,
+                        start,
+                        end,
+                        maximum_points - len(collected),
+                    )
+                    collected.extend(decoded)
+                    if len(collected) > maximum_points:
                         raise ControlOperationError(
-                            "invalid_input", "legacy statistics support raw granularity only"
+                            "temporarily_unavailable",
+                            "legacy statistic response contains too many points",
                         )
-                    collected: list[StatisticPoint] = []
-                    for date in _legacy_statistic_dates(start, end):
-                        phase_started = time.perf_counter()
-                        payload = await session.legacy_statistic_data(control.uuid, date)
-                        fetch_seconds += time.perf_counter() - phase_started
-                        phase_started = time.perf_counter()
-                        for item in _parse_legacy_statistic_points(
-                            payload,
-                            output_index=series.legacy_output_index,
-                            output_count=series.legacy_output_count,
-                        ):
-                            point = StatisticPoint(_LOXONE_EPOCH_UNIX + item.timestamp, item.value)
-                            if start <= point.timestamp <= end:
-                                collected.append(point)
-                                if len(collected) > 100_000:
-                                    raise ControlOperationError(
-                                        "temporarily_unavailable",
-                                        "legacy statistic response contains too many points",
-                                    )
-                        parse_seconds += time.perf_counter() - phase_started
-                    points = tuple(collected)
-                else:
-                    phase_started = time.perf_counter()
-                    info = await session.statistic_info(control.uuid)
-                    fetch_seconds += time.perf_counter() - phase_started
-                    available = {
-                        str(item.get("id"))
-                        for item in info
-                        if isinstance(item.get("id"), int | str)
-                        and not isinstance(item.get("id"), bool)
-                    }
-                    if series.group_id not in available:
-                        raise ControlOperationError("not_found", "statistic data is not available")
-                    phase_started = time.perf_counter()
-                    payload = await session.statistic_data(
-                        control.uuid,
-                        mode="diff" if series.accumulated and granularity != "raw" else "raw",
-                        start=start,
-                        end=end,
-                        unit="all" if granularity == "raw" else granularity,
-                        group_id=series.group_id,
-                        output=series.output,
-                    )
-                    fetch_seconds += time.perf_counter() - phase_started
-                    phase_started = time.perf_counter()
-                    points = tuple(
-                        point
-                        for point in parse_statistic_points(payload)
-                        if start <= point.timestamp <= end
-                    )
                     parse_seconds += time.perf_counter() - phase_started
-            except ControlOperationError:
-                raise
-            except LoxoneCommandRejected as exc:
-                raise ControlOperationError(
-                    "temporarily_unavailable", "Miniserver rejected the statistic request"
-                ) from exc
-            except LoxoneProtocolError as exc:
-                raise ControlOperationError(
-                    "temporarily_unavailable",
-                    f"Miniserver returned invalid statistic data: {exc}",
-                ) from exc
-            except (LoxoneConnectionError, TimeoutError, ValueError) as exc:
-                raise ControlOperationError(
-                    "temporarily_unavailable", "Statistic data could not be read"
-                ) from exc
-            _history_duration(trace_id, "statistics_fetch", fetch_seconds)
-            _history_duration(trace_id, "statistics_parse", parse_seconds)
+                points = tuple(collected)
+            else:
+                phase_started = time.perf_counter()
+                info = await session.statistic_info(control.uuid)
+                fetch_seconds += time.perf_counter() - phase_started
+                available = {
+                    str(item.get("id"))
+                    for item in info
+                    if isinstance(item.get("id"), int | str)
+                    and not isinstance(item.get("id"), bool)
+                }
+                if series.group_id not in available:
+                    raise ControlOperationError("not_found", "statistic data is not available")
+                phase_started = time.perf_counter()
+                payload = await session.statistic_data(
+                    control.uuid,
+                    mode="diff" if series.accumulated and granularity != "raw" else "raw",
+                    start=start,
+                    end=end,
+                    unit="all" if granularity == "raw" else granularity,
+                    group_id=series.group_id,
+                    output=series.output,
+                )
+                fetch_seconds += time.perf_counter() - phase_started
+                phase_started = time.perf_counter()
+                points = await run_admitted_worker(
+                    _points_in_range, payload, start, end, maximum_points
+                )
+                parse_seconds += time.perf_counter() - phase_started
+        except ControlOperationError:
+            raise
+        except LoxoneCommandRejected as exc:
+            raise ControlOperationError(
+                "temporarily_unavailable", "Miniserver rejected the statistic request"
+            ) from exc
+        except LoxoneProtocolError as exc:
+            raise ControlOperationError(
+                "temporarily_unavailable",
+                f"Miniserver returned invalid statistic data: {exc}",
+            ) from exc
+        except (LoxoneConnectionError, TimeoutError, ValueError) as exc:
+            raise ControlOperationError(
+                "temporarily_unavailable", "Statistic data could not be read"
+            ) from exc
+        _history_duration(trace_id, "statistics_fetch", fetch_seconds)
+        _history_duration(trace_id, "statistics_parse", parse_seconds)
         self.statistics_cache.put(cache_key, points)
         return control, series, points
 

@@ -987,6 +987,98 @@ class EventHistoryStore:
             capture_intervals_truncated=len(coverage_rows) > 128,
         )
 
+    def analysis_phases(
+        self,
+        control_uuid: str,
+        state_uuid: str,
+        *,
+        start: float,
+        end: float,
+        maximum_points: int,
+        deadline: float,
+    ) -> tuple[tuple[tuple[float, float, object, tuple[tuple[float, object], ...]], ...], int]:
+        """Exact bounded read with a phase-local predecessor; never chart downsampling."""
+        if not self.path.exists():
+            return (), 0
+        cutoff = time.time() - self.retention_seconds
+        count = 0
+        phases: list[tuple[float, float, object, tuple[tuple[float, object], ...]]] = []
+        try:
+            with closing(
+                sqlite3.connect(self.path.as_uri() + "?mode=ro", uri=True, timeout=2)
+            ) as db:
+                db.set_progress_handler(lambda: int(time.monotonic() >= deadline), 1000)
+                db.execute("BEGIN")
+                if db.execute("PRAGMA user_version").fetchone()[0] != _SCHEMA_VERSION:
+                    raise EventHistoryUnavailable("local event history needs migration")
+                rows = db.execute(
+                    "SELECT started_at, ended_at, initial_observed_at, initial_value FROM coverage "
+                    "WHERE control_uuid=? AND state_uuid=? AND started_at<? "
+                    "AND COALESCE(ended_at,?)>? ORDER BY started_at LIMIT 129",
+                    (control_uuid, state_uuid, end, time.time(), start),
+                ).fetchall()
+                if len(rows) > 128:
+                    raise EventHistoryUnavailable("analysis capture phase limit exceeded")
+                for phase_start, phase_end, initial_at, initial_json in rows:
+                    if time.monotonic() >= deadline:
+                        raise EventHistoryQueryTimeout("analysis deadline exceeded")
+                    actual_end = min(end, time.time(), phase_end if phase_end is not None else end)
+                    original_start = phase_start
+                    phase_start = max(phase_start, cutoff)
+                    boundary = max(start, phase_start)
+                    if boundary >= actual_end:
+                        continue
+                    initial: object = None
+                    if (
+                        original_start >= cutoff
+                        and initial_at is not None
+                        and initial_at <= original_start
+                        and initial_json is not None
+                    ):
+                        initial = json.loads(initial_json)
+                        count += 1
+                    predecessor = db.execute(
+                        "SELECT new_value FROM events INDEXED BY events_source_time "
+                        "WHERE control_uuid=? AND state_uuid=? "
+                        "AND observed_at>=? AND observed_at<? "
+                        "ORDER BY observed_at DESC,id DESC LIMIT 1",
+                        (control_uuid, state_uuid, phase_start, boundary),
+                    ).fetchone()
+                    if predecessor is not None:
+                        initial = json.loads(predecessor[0])
+                        count += 1
+                    if count > maximum_points:
+                        raise EventHistoryUnavailable("analysis input point limit exceeded")
+                    changes = db.execute(
+                        "SELECT observed_at,new_value FROM events INDEXED BY events_source_time "
+                        "WHERE control_uuid=? AND state_uuid=? "
+                        "AND observed_at>=? AND observed_at<? "
+                        "ORDER BY observed_at,id LIMIT ?",
+                        (
+                            control_uuid,
+                            state_uuid,
+                            boundary,
+                            actual_end,
+                            maximum_points - count + 1,
+                        ),
+                    ).fetchall()
+                    count += len(changes)
+                    if count > maximum_points:
+                        raise EventHistoryUnavailable("analysis input point limit exceeded")
+                    phases.append(
+                        (
+                            boundary,
+                            actual_end,
+                            initial,
+                            tuple((t, json.loads(v)) for t, v in changes),
+                        )
+                    )
+        except sqlite3.Error as exc:
+            if time.monotonic() >= deadline:
+                raise EventHistoryQueryTimeout("analysis deadline exceeded") from exc
+            raise EventHistoryUnavailable("local event history is unavailable") from exc
+        return tuple(phases), count
+
     @staticmethod
     def _chart_sample(
         db: sqlite3.Connection,

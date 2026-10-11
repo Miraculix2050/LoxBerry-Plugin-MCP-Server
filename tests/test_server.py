@@ -500,6 +500,7 @@ def test_exact_default_tools_and_mutation_annotations_are_published() -> None:
         "loxone_get_states",
         "loxone_list_event_history_sources",
         "loxone_get_event_history",
+        "loxone_analyze_history",
     ]
     mutations = {
         "loxberry_save_installation_profile",

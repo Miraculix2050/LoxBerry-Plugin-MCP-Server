@@ -645,6 +645,21 @@ tool call can inspect or alter the emergency-stop condition while it is active.
 
 ## Read history and statistics
 
+For compact historical calculations prefer `loxone_analyze_history` with exact
+advertised series/state IDs or currently confirmed visible profile bindings.
+Inspect the schema, select `temperature_summary`, `energy` or `state_duration`,
+use explicit RFC3339 half-open start/end instants and an IANA timezone. Check
+each source's status, unit, method, usable evidence and limitations. A sample
+mean is not time-weighted. Counter decreases need reset/rollover evidence;
+partial energy intervals are never divided proportionally. State duration is
+not measured energy. Capture gaps and unknown initial values remain unknown.
+Do not infer quantities from profile roles or names. Legacy clock conversion
+remains unverified. Limit requests to 16 sources/31 local days/100,000 input
+points; raw statistic limits can be stricter. Request `include_raw=true` only
+when the task needs raw evidence; follow its 100-item pages, which reauthorize
+visibility and invalidate cursors if the source content changes. Deadline/bound
+errors are not complete results. Do not poll unchanged analysis results.
+
 Read `coverage_evidence`: UTC intervals are half-open internally, while existing
 public history/statistic time filters remain inclusive. Sample timestamps prove
 points only. Only documented hourly difference records expose exact energy

@@ -2,6 +2,17 @@
 
 [English](capabilities.en.md)
 
+`loxone_analyze_history` berechnet kompakte Temperatur-Stichprobenmittel,
+belegte Energie und beobachtete Zustandsdauer mit `loxone:read` und
+`loxone:history`. Wählen Sie exakte Quellen oder bestätigte Profilbindungen,
+einen halboffenen Zeitraum und eine explizite IANA-Zeitzone. Unbekannte Einheiten,
+Resets, Anfangswerte und Erfassungslücken bleiben ausdrücklich eingeschränkt.
+Zustandsdauer ist keine gemessene Energie; ein Stichprobenmittel ist kein
+zeitgewichteter Mittelwert. Rohdaten werden nur auf ausdrücklichen Wunsch in
+Seiten zu höchstens 100 Elementen übertragen. Grenzen: 16 Quellen, 31 lokale
+Tage, 100.000 Eingabepunkte, 30 Sekunden und 64 KiB Ergebnis. Für rohe Statistiken
+gilt weiterhin die strengere Grenze von sieben Tagen.
+
 Statistik- und lokale Event-History-Antworten liefern `coverage_evidence` mit
 UTC-Zeitbasis, halboffenen belegbaren Intervallen beziehungsweise Punktbelegen
 und ausdrücklichen Grenzen. Bestehende inklusive Zeitfilter und Cursor bleiben
