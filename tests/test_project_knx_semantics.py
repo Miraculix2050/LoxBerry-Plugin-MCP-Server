@@ -94,6 +94,8 @@ def test_observed_knx_fixture_keeps_semantics_and_existing_graph_paths():
             "object_kind": "endpoint",
             "flow_direction": "bus_to_loxone",
             "source_type": "EIBsensor",
+            "title": "Anonymized bus input",
+            "description": None,
             "group_address": {
                 "canonical": "14/1/5",
                 "original": "14/1/5",
@@ -105,6 +107,8 @@ def test_observed_knx_fixture_keeps_semantics_and_existing_graph_paths():
             "object_kind": "endpoint",
             "flow_direction": "loxone_to_bus",
             "source_type": "EIBactor",
+            "title": "Anonymized bus output",
+            "description": None,
             "group_address": {
                 "canonical": "14/1/6",
                 "original": "14/1/6",

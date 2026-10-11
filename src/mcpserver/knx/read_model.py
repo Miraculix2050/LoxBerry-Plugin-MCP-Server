@@ -40,13 +40,13 @@ def deviations(imported: dict[str, Any], overrides: dict[str, Any]) -> list[str]
     return result
 
 
-def query_filters(value: object) -> dict[str, Any]:
+def query_filters(value: object, *, query_limit: int = 128) -> dict[str, Any]:
     if value is None:
         return {"query": "", "source": "all", "deviations_only": False}
     if not isinstance(value, dict) or not value.keys() <= {"query", "source", "deviations_only"}:
         raise KnxError("knx_query_invalid")
     try:
-        query = text(value.get("query", ""), 128).strip()
+        query = text(value.get("query", ""), query_limit).strip()
     except KnxError:
         raise KnxError("knx_query_invalid") from None
     source = value.get("source", "all")

@@ -9,6 +9,7 @@ import hmac
 import json
 import logging
 import math
+import os
 import secrets
 import time
 from collections import OrderedDict
@@ -16,7 +17,8 @@ from collections.abc import Mapping
 from dataclasses import replace
 from datetime import UTC, datetime
 from math import ceil, floor, isfinite
-from typing import Annotated, Any, Final, Literal
+from pathlib import Path
+from typing import Annotated, Any, Final, Literal, NotRequired, TypedDict
 from uuid import UUID, uuid4
 
 from mcp.server.auth.middleware.auth_context import get_access_token
@@ -34,6 +36,8 @@ from mcpserver.auth.provider import (
 )
 from mcpserver.availability import AvailabilityPhase, AvailabilityReason
 from mcpserver.config import AtomicConfigStore, ConfigError
+from mcpserver.knx.model import KnxError
+from mcpserver.knx.project_metadata import ProjectMetadata
 from mcpserver.loxberry.diagnostics import DiagnosticsUnavailable, LoxBerryDiagnostics
 from mcpserver.loxone.active_alerts import (
     CANDIDATE_TYPES,
@@ -91,7 +95,7 @@ from mcpserver.loxone.project.models import ProjectError
 from mcpserver.loxone.project.query import ProjectQuery, ProjectQueryError
 from mcpserver.loxone.project.result_cache import ProjectResultCache
 from mcpserver.loxone.project.semantics import is_valid_group_address_filter
-from mcpserver.loxone.project.taxonomy import AddressTaxonomyEntry
+from mcpserver.loxone.project.taxonomy import AddressTaxonomyEntry, parse_taxonomy
 from mcpserver.loxone.project.worker import process_analysis
 from mcpserver.loxone.runtime import (
     ControlHistoryEntry,
@@ -1003,6 +1007,51 @@ class ProjectKnxConnectorEvidenceData(BaseModel):
     outgoing_signals: int = Field(ge=0)
 
 
+class ProjectKnxMetadataFieldsData(TypedDict, total=False):
+    name: Annotated[str, Field(max_length=255)]
+    description: Annotated[str, Field(max_length=4096)]
+    dpts: Annotated[list[str], Field(max_length=16)]
+    central: bool
+    unfiltered: bool
+    security: Annotated[str, Field(max_length=255)]
+
+
+class ProjectKnxImportInfoData(TypedDict, total=False):
+    file_format: str
+    imported_at: float
+    digest: str
+
+
+class ProjectKnxDptIdentifierData(TypedDict):
+    raw: str
+    normalized: str | None
+    status: Literal["invalid_format", "format_valid_type_unverified"]
+    main: NotRequired[int]
+    subtype: NotRequired[int | None]
+
+
+class ProjectKnxDptDeclarationData(TypedDict):
+    state: Literal["unknown", "empty", "declared"]
+    items: Annotated[list[ProjectKnxDptIdentifierData], Field(max_length=16)]
+    association: Literal["not_established"]
+
+
+class ProjectKnxDptSourcesData(TypedDict):
+    imported: ProjectKnxDptDeclarationData
+    manual: ProjectKnxDptDeclarationData
+
+
+class ProjectKnxMetadataData(BaseModel):
+    revision: int = Field(ge=0)
+    address: str
+    address_format: Literal["two_level", "three_level"]
+    imported: ProjectKnxMetadataFieldsData
+    manual: ProjectKnxMetadataFieldsData
+    import_info: ProjectKnxImportInfoData
+    deviations: list[str]
+    dpt_details: ProjectKnxDptSourcesData
+
+
 class ProjectKnxData(BaseModel):
     object_kind: Literal["line", "endpoint", "logic_block"]
     flow_direction: Literal["bus_to_loxone", "loxone_to_bus"] | None
@@ -1013,6 +1062,7 @@ class ProjectKnxData(BaseModel):
     group_address: ProjectKnxGroupAddressData | None
     datatype: ProjectKnxDatatypeData | None
     normalized_dpt_evidence: None = None
+    metadata: ProjectKnxMetadataData | None = None
     truncated_fields: list[
         Literal[
             "title",
@@ -1103,7 +1153,10 @@ class ProjectKnxSummaryData(BaseModel):
     object_kind: Literal["line", "endpoint", "logic_block"]
     flow_direction: Literal["bus_to_loxone", "loxone_to_bus"] | None
     source_type: str
+    title: str | None = None
+    description: str | None = None
     group_address: ProjectKnxGroupAddressSummaryData | None
+    metadata: ProjectKnxMetadataData | None = None
 
 
 class ProjectModbusOccurrenceData(BaseModel):
@@ -5523,9 +5576,11 @@ class _ProjectAnalysisRunner:
         self,
         runtime: LoxoneRuntime | None,
         config_store: AtomicConfigStore | None = None,
+        metadata: ProjectMetadata | None = None,
     ) -> None:
         self.runtime = runtime
         self.config_store = config_store
+        self.metadata = metadata
         self.cursors = _CursorCodec()
         self.results = ProjectResultCache[dict[str, object]](
             max_entries=_MAX_ANALYSIS_CACHE_ENTRIES,
@@ -5572,10 +5627,36 @@ class _ProjectAnalysisRunner:
             projects = self.runtime.projects
             access = _access()
             taxonomy: tuple[AddressTaxonomyEntry, ...] = ()
+            knx_revision = 0
+            knx_target = ""
+            if scope == "knx" and self.metadata is not None:
+                try:
+                    knx_target = self.runtime.endpoint.origin
+                    knx_revision = await asyncio.to_thread(self.metadata.revision, knx_target)
+                    if "address_hierarchy" in selected:
+                        labels = await asyncio.to_thread(
+                            self.metadata.selected_labels,
+                            knx_target,
+                            knx_revision,
+                        )
+                        taxonomy = parse_taxonomy(labels)
+                except (KnxError, ValueError):
+                    raise ProjectError("project_metadata_unavailable") from None
             if scope == "knx" and self.config_store is not None and "address_hierarchy" in selected:
                 config = await asyncio.to_thread(self.config_store.load)
                 if config.knx_address_taxonomy_endpoint == self.runtime.endpoint.origin:
-                    taxonomy = config.knx_address_taxonomy
+                    manual = config.knx_address_taxonomy
+                    manual_keys = {(entry.address_format, entry.prefix) for entry in manual}
+                    taxonomy = (
+                        tuple(
+                            entry
+                            for entry in taxonomy
+                            if (entry.address_format, entry.prefix) not in manual_keys
+                        )
+                        + manual
+                    )
+                    if len(taxonomy) > 128:
+                        raise ProjectError("project_metadata_unavailable")
             content_identity = project.view.snapshot.content_identity
             if not content_identity:
                 raise ProjectError("project_worker_invalid")
@@ -5593,6 +5674,7 @@ class _ProjectAnalysisRunner:
                             project.view.snapshot.fingerprint,
                             project.view.snapshot.model_version,
                             version,
+                            [knx_target, knx_revision],
                             project.view.mapping.structure_fingerprint,
                             sorted(selected),
                             [
@@ -5612,6 +5694,7 @@ class _ProjectAnalysisRunner:
                         content_identity,
                         project.view.snapshot.model_version,
                         version,
+                        [knx_target, knx_revision],
                         sorted(selected),
                         project.view.mapping.structure_fingerprint if scope == "knx" else None,
                         [(entry.address_format, entry.prefix, entry.label) for entry in taxonomy],
@@ -5693,6 +5776,8 @@ def register_project_tools(
     server: FastMCP,
     runtime: LoxoneRuntime | None,
     config_store: AtomicConfigStore | None = None,
+    *,
+    knx_store_path: Path | None = None,
 ) -> None:
     """Publish bounded read-only Project Intelligence operations."""
     annotations = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
@@ -5700,7 +5785,47 @@ def register_project_tools(
     find_results = ProjectResultCache[list[dict[str, object]]](
         max_entries=8, max_bytes=64 * 1024 * 1024, max_leases=8
     )
-    analysis_runner = _ProjectAnalysisRunner(runtime, config_store)
+    data_root = os.getenv("LBPDATA", "")
+    metadata_path = knx_store_path or (
+        Path(data_root) / "knx" / "metadata.sqlite3"
+        if data_root and Path(data_root).is_absolute()
+        else None
+    )
+    metadata = (
+        ProjectMetadata(metadata_path)
+        if metadata_path is not None and getattr(runtime, "endpoint", None)
+        else None
+    )
+    analysis_runner = _ProjectAnalysisRunner(runtime, config_store, metadata)
+
+    async def metadata_revision() -> tuple[str, int]:
+        if metadata is None or runtime is None:
+            return "", 0
+        try:
+            target = runtime.endpoint.origin
+            return target, await asyncio.to_thread(metadata.revision, target)
+        except KnxError:
+            raise ProjectError("project_metadata_unavailable") from None
+
+    async def enrich(
+        items: list[dict[str, Any]], project: ProjectQuery, target: str, revision: int
+    ) -> None:
+        if metadata is None or project.graph_index is None:
+            return
+        numbers = {
+            project.graph_index.knx_addresses[str(item["project_node_id"])]
+            for item in items
+            if str(item.get("project_node_id")) in project.graph_index.knx_addresses
+        }
+        try:
+            values = await asyncio.to_thread(metadata.lookup, target, revision, numbers)
+        except KnxError:
+            raise ProjectError("project_metadata_unavailable") from None
+        for item in items:
+            number = project.graph_index.knx_addresses.get(str(item.get("project_node_id")))
+            knx = item.get("knx")
+            if number in values and isinstance(knx, dict):
+                item["knx"] = {**knx, "metadata": values[number]}
 
     @server.tool(
         name="loxone_get_project_status",
@@ -5790,6 +5915,7 @@ def register_project_tools(
                 )
             project, snapshot = await _project_query(runtime)
             access = _access()
+            metadata_target, knx_revision = await metadata_revision()
             content_identity = project.view.snapshot.content_identity
             if not content_identity:
                 raise ProjectError("project_worker_invalid")
@@ -5811,6 +5937,7 @@ def register_project_tools(
                 project.view.snapshot.model_version,
                 project.view.mapping.structure_fingerprint,
                 filters,
+                [metadata_target, knx_revision],
             ]
             result_key = hashlib.sha256(
                 json.dumps(result_material, separators=(",", ":")).encode()
@@ -5844,6 +5971,16 @@ def register_project_tools(
                     if cursor is not None:
                         raise ValueError("cursor has expired; restart the project search")
                     _LOGGER.debug("component=project_find_cache outcome=miss")
+                    try:
+                        metadata_matches = (
+                            await asyncio.to_thread(
+                                metadata.search, metadata_target, knx_revision, query
+                            )
+                            if metadata is not None and query and query.strip()
+                            else frozenset()
+                        )
+                    except KnxError:
+                        raise ProjectError("project_metadata_unavailable") from None
                     values = project.find(
                         query=query,
                         kind=kind,
@@ -5854,6 +5991,7 @@ def register_project_tools(
                         knx_object_kind=knx_object_kind,
                         knx_flow_direction=knx_flow_direction,
                         knx_group_address=knx_group_address,
+                        metadata_matches=metadata_matches,
                     )
                     size = len(json.dumps(values, separators=(",", ":")).encode())
                     if size > find_results.max_bytes:
@@ -5867,9 +6005,15 @@ def register_project_tools(
                     await projects.authorize(access)
                     find_results.retain(result_key, cached, now=time.monotonic())
                 find_results.bind(lease_key, result_key, scope, expires=expires)
+            page = _page(cursors, scope, values, cursor, limit)
+            # Cached summaries are borrowed; never attach revisioned data to them.
+            page["items"] = [dict(item) for item in page["items"]]
+            await enrich(page["items"], project, metadata_target, knx_revision)
+            if metadata is not None:
+                await projects.authorize(access)
             envelope = _result(
                 ProjectObjectPageEnvelope,
-                _page(cursors, scope, values, cursor, limit),
+                page,
                 stale=not snapshot.connected,
             )
             if not _fit_project_page(envelope, cursors, scope, cursor):
@@ -5931,13 +6075,18 @@ def register_project_tools(
     ) -> ProjectDescriptionEnvelope:
         try:
             project, snapshot = await _project_query(runtime)
+            metadata_target, knx_revision = await metadata_revision()
+            description = project.describe(
+                project.resolve(identifier, identifier_type),
+                limit=limit,
+                include_state_table=include_state_table,
+            )
+            await enrich([description], project, metadata_target, knx_revision)
+            if metadata is not None and runtime is not None and runtime.projects is not None:
+                await runtime.projects.authorize(_access())
             envelope = _result(
                 ProjectDescriptionEnvelope,
-                project.describe(
-                    project.resolve(identifier, identifier_type),
-                    limit=limit,
-                    include_state_table=include_state_table,
-                ),
+                description,
                 stale=not snapshot.connected,
             )
             if not _fit_project_state_table(envelope):
@@ -7665,12 +7814,13 @@ def register_tool_surface(
     event_history_runtime: EventHistoryRuntime | None,
     control_enabled: bool,
     project_config_store: AtomicConfigStore | None = None,
+    knx_store_path: Path | None = None,
 ) -> None:
     """Register one complete live or synthetic MCP tool surface."""
     register_skill_tool(server)
     register_read_tools(server, runtime, control_enabled=control_enabled)
     if runtime is not None:
-        register_project_tools(server, runtime, project_config_store)
+        register_project_tools(server, runtime, project_config_store, knx_store_path=knx_store_path)
         register_observability_tools(server, runtime, event_history_runtime)
         register_control_tool(server, runtime)
         register_history_tools(server, runtime)

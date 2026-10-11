@@ -40,6 +40,17 @@ def address(value: object, address_format: object) -> tuple[int, str]:
     return (parts[0] << 11) | parts[1], value
 
 
+def address_number(value: object) -> int | None:
+    """Discard only a modeled edge suffix for metadata lookup, never display."""
+    if not isinstance(value, str):
+        return None
+    base = value[:-2] if value.endswith((":0", ":1")) else value
+    try:
+        return address(base, "three_level" if base.count("/") == 2 else "two_level")[0]
+    except KnxError:
+        return None
+
+
 def text(value: object, maximum: int, *, empty: bool = True) -> str:
     if (
         not isinstance(value, str)

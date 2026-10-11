@@ -854,6 +854,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
         loxberry_operate_runtime=loxberry_operate_runtime,
         event_history_runtime=event_history_runtime,
         control_enabled=control_enabled,
+        knx_store_path=settings.knx_store_path,
         project_config_store=(
             AtomicConfigStore(settings.phase0_auth.config_path)
             if settings.phase0_auth is not None and settings.phase0_auth.config_path is not None

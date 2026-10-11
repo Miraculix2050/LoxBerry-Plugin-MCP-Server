@@ -211,6 +211,27 @@ filters to the expected KNX revision and target. Source projections distinguish
 absent, empty and override values; DPT normalization establishes identifier syntax
 only, not type-registry membership, assignment role or Loxone EIBType equivalence.
 
+`knx.project_metadata` supplies authorized project tools with revisioned, indexed
+batch reads for at most one output page. A service-owned LRU, including negative
+lookups, stays below 16 MiB with conservative owned-memory accounting. Each request
+checks the current revision before cache reuse; cache entries never authorize access.
+The native unit sets validated `MCPSERVER_KNX_STORE` to the same persistent database
+used by CGI; the server passes this optional path into tool registration explicitly.
+CGI `LBPDATA` is not assumed to exist in systemd. All SQLite work runs in a thread. Search returns numeric address keys from target-bound
+SQL filtering, never a materialized metadata catalog; only returned items are enriched.
+The existing `ProjectQueryIndex` owns the reusable node-to-numeric-address index without
+a second graph. Edge variants remain in original Loxone fields. Search/result/cursor
+identities include the target and KNX revision; analysis identities include that revision
+and effective selected labels. Manual prefix labels override imported labels by exact
+format and prefix. Fresh project authorization remains required after enrichment and
+on cache hits. Storage failure is explicit, not an empty metadata result.
+
+Public `knx.metadata` separates imported/manual fields, source identifiers, deviations
+and all raw/normalized DPT declarations with syntax status. Loxone titles, descriptions
+and EIBType remain unchanged; `normalized_dpt_evidence` retains its existing meaning.
+Explorer builds source disclosures lazily and uses text nodes; imported names never
+become primary result captions. The existing response-size/page/worker bounds remain.
+
 The dedicated authenticated KNX CGI uses narrow local admin actions. Small prefix labels remain in the atomic configuration; per-target address records are indexed by numeric KNX address in `data/plugins/mcpserver/knx/metadata.sqlite3`. Database transactions and expected revisions reject concurrent updates. Metadata never changes Loxone names or authorizes project access. JSON exchange is separate from ETS file adapters.
 
 `knx.catalog_service` orchestrates bounded XML/CSV parsing, canonical identity/conflict selection, preview and explicit application. `xml_adapter` preserves address attributes, root attributes once and group attributes once with parent-prefix references. `csv_adapter` uses the standard strict CSV reader with bounded physical lines and explicit positional 3/1 or 3/3 headers; only tab separation and modern Description/DatapointType headers are accepted. Blank optional cells are unknown, not explicit empty values. Both adapters share lossless decoding and source-field normalization, preserving ordered DPT declarations without choosing a preferred type. Resolved file format is bound into each draft; changing the UI file-format selection invalidates its preview. CSV source evidence cannot establish an original XML hierarchy for export. Schema version 2 adds source evidence and selected groups without changing existing address/configuration contracts. Idempotent migrations preserve version-1 manual records. Import addresses, group metadata and group-label selection commit in one SQLite transaction; manual prefix changes retain their separately named configuration transaction. Config-store serialization binds preview/application to both target and manual-label state.

@@ -18,6 +18,11 @@ extracted from the matching version heading.
   acknowledgement and signal-suppression context; invalid or stale observations
   cannot establish inactivity (#346).
 
+- Enrich authorized project search and descriptions with separately sourced ETS/manual
+  KNX metadata. Preserve Loxone names and raw EIBType; retain multiple DPT declarations.
+  Show sources in Explorer and selected imported hierarchy labels below manual labels.
+  Bind result/cursor identity to KNX revisions and use bounded batched metadata reads.
+
 - Automatically check the project change marker before displaying Admin
   emergency-stop names and options from the private identity-bound display cache.
   Refresh on marker change, missing marker or stale cache; retain

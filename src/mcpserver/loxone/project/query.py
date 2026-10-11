@@ -10,6 +10,8 @@ from sys import getsizeof
 from types import MappingProxyType
 from typing import cast
 
+from mcpserver.knx.model import address_number
+
 from .coverage import coverage_by_source_type
 from .graph import (
     API_CONNECTOR_RULE_ID,
@@ -62,6 +64,7 @@ class ProjectQueryIndex:
     parents: Mapping[str, str] = field(init=False, repr=False)
     containment_parents: Mapping[str, tuple[str, ...]] = field(init=False, repr=False)
     children: Mapping[str, tuple[str, ...]] = field(init=False, repr=False)
+    knx_addresses: Mapping[str, int] = field(init=False, repr=False)
     container_bytes: int = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -83,6 +86,12 @@ class ProjectQueryIndex:
                     prior.append(edge.source)
                 children[edge.source].append(edge.target)
         nodes = {node.key: node for node in self.graph.nodes}
+        knx_addresses = {}
+        for node in self.graph.nodes:
+            if node.knx is not None and node.knx.group_address is not None:
+                number = address_number(node.knx.group_address.canonical)
+                if number is not None:
+                    knx_addresses[node.key] = number
         containment_size = getsizeof(containment)
         children_size = getsizeof(children)
         containment_index = _freeze_index_groups(containment)
@@ -91,6 +100,7 @@ class ProjectQueryIndex:
         object.__setattr__(self, "parents", MappingProxyType(parents))
         object.__setattr__(self, "containment_parents", containment_index)
         object.__setattr__(self, "children", children_index)
+        object.__setattr__(self, "knx_addresses", MappingProxyType(knx_addresses))
         # Keys/nodes/graph strings are borrowed; count owned containers once.
         object.__setattr__(
             self,
@@ -99,13 +109,21 @@ class ProjectQueryIndex:
                 getsizeof(self)
                 + getsizeof(nodes)
                 + getsizeof(parents)
+                + getsizeof(knx_addresses)
+                + sum(getsizeof(number) for number in knx_addresses.values())
                 + containment_size
                 + children_size
                 + getsizeof(()) * (len(containment_index) + len(children_index))
                 + (getsizeof((None,)) - getsizeof(())) * containment_links * 2
                 + sum(
                     getsizeof(value)
-                    for value in (self.nodes, self.parents, self.containment_parents, self.children)
+                    for value in (
+                        self.nodes,
+                        self.parents,
+                        self.containment_parents,
+                        self.children,
+                        self.knx_addresses,
+                    )
                 )
             ),
         )
@@ -229,7 +247,7 @@ class ProjectQuery:
                     pending.append(neighbor)
         return observations, truncated
 
-    def _summary(self, node: GraphNode) -> dict[str, object]:
+    def _summary(self, node: GraphNode, *, include_names: bool = False) -> dict[str, object]:
         mapping = self._mapped_nodes.get(self.view.snapshot.canonical_node_key(node.key), [])
         exact = [item for item in mapping if item.status == "exact"]
         runtime_control = exact[0] if len(exact) == 1 else None
@@ -269,6 +287,11 @@ class ProjectQuery:
                     "object_kind": knx.object_kind,
                     "flow_direction": knx.flow_direction,
                     "source_type": knx.source_type,
+                    **(
+                        {"title": knx.title, "description": knx.description}
+                        if include_names
+                        else {}
+                    ),
                     "group_address": (
                         {
                             "canonical": knx.group_address.canonical,
@@ -556,6 +579,7 @@ class ProjectQuery:
         knx_object_kind: str | None = None,
         knx_flow_direction: str | None = None,
         knx_group_address: str | None = None,
+        metadata_matches: frozenset[int] = frozenset(),
     ) -> list[dict[str, object]]:
         if kind is not None and kind not in {"block", "connector"}:
             raise ProjectQueryError("project_query_invalid")
@@ -582,6 +606,7 @@ class ProjectQuery:
         else:
             candidates = None
         needle = query.casefold().strip() if query else None
+        assert self.graph_index is not None
         result = []
         for node in self.view.snapshot.logical_nodes():
             knx = node.knx
@@ -608,7 +633,7 @@ class ProjectQuery:
                 not in {knx.group_address.original, knx.group_address.canonical}
             ):
                 continue
-            item = self._summary(node)
+            item = self._summary(node, include_names=True)
             item["modbus"] = sensor_projection(node, self._nodes, self._containment_parents, 1)
             if needle is not None:
                 connector_key = next((value for key, value in node.attributes if key == "K"), None)
@@ -625,9 +650,10 @@ class ProjectQuery:
                 searchable = (node.key, node.source_id, node.block_type, connector_key, *knx_values)
                 runtime = item["runtime_control"]
                 runtime_name = runtime.get("name") if isinstance(runtime, dict) else None
+                metadata_number = self.graph_index.knx_addresses.get(node.key)
                 if not any(
                     needle in value.casefold() for value in (*searchable, runtime_name) if value
-                ):
+                ) and (metadata_number is None or metadata_number not in metadata_matches):
                     continue
             result.append(item)
         return result
