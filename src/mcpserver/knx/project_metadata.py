@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import json
 import sqlite3
 from collections import OrderedDict
@@ -25,9 +24,11 @@ _BATCH = 100
 def _owned_size(value: object) -> int:
     size = getsizeof(value)
     if isinstance(value, dict):
-        size += sum(_owned_size(k) + _owned_size(v) for k, v in value.items())
+        for key, item in value.items():
+            size += _owned_size(key) + _owned_size(item)
     elif isinstance(value, list | tuple):
-        size += sum(_owned_size(v) for v in value)
+        for item in value:
+            size += _owned_size(item)
     return size
 
 
@@ -36,9 +37,7 @@ class ProjectMetadata:
 
     def __init__(self, path: Path, *, max_bytes: int = MAX_CACHE_BYTES) -> None:
         self.store = KnxStore(path)
-        self.cache: OrderedDict[tuple[str, int, int], tuple[dict[str, Any] | None, int]] = (
-            OrderedDict()
-        )
+        self.cache: OrderedDict[tuple[str, int, int], tuple[str | None, int]] = OrderedDict()
         self.cache_bytes = 0
         self._lock = RLock()
         self._observed_database = False
@@ -94,13 +93,14 @@ class ProjectMetadata:
         with self._connection() as db:
             db.execute("BEGIN")
             self.store.check(db, target, revision)
-            return frozenset(
-                row[0]
-                for row in db.execute(
-                    "SELECT a.address FROM addresses AS a WHERE a.target=?" + where,
-                    [target, *arguments],
-                )
-            )
+            # At most 65,536 numeric keys; one C-level JSON aggregate avoids a
+            # Python callback/row conversion for every matching address.
+            row = db.execute(
+                "SELECT json_group_array(a.address) FROM addresses AS a "
+                "INDEXED BY addresses_search_cover WHERE a.target=?" + where,
+                [target, *arguments],
+            ).fetchone()
+            return frozenset(json.loads(row[0]))
 
     def lookup(self, target: str, revision: int, numbers: set[int]) -> dict[int, Any]:
         if len(numbers) > _BATCH or any(type(n) is not int or not 0 <= n <= 65535 for n in numbers):
@@ -122,7 +122,7 @@ class ProjectMetadata:
                 else:
                     self.cache.move_to_end(key)
                     if cached[0] is not None:
-                        result[number] = copy.deepcopy(cached[0])
+                        result[number] = json.loads(cached[0])
             fetched: dict[int, Any] = {}
             if missing:
                 rows = db.execute(
@@ -170,7 +170,14 @@ class ProjectMetadata:
                         **details(imported, overrides),
                     }
                 for number in missing:
-                    value = fetched.get(number)
+                    projected = fetched.get(number)
+                    # Immutable serialized values isolate callers without walking/copying
+                    # the entire projection twice. Decoded output remains page-bounded.
+                    value = (
+                        json.dumps(projected, ensure_ascii=False, separators=(",", ":"))
+                        if projected is not None
+                        else None
+                    )
                     key = (target, revision, number)
                     # Conservative per-entry dictionary/LRU overhead is included.
                     size = _owned_size(key) + _owned_size(value) + 256
@@ -179,7 +186,7 @@ class ProjectMetadata:
                             self.cache_bytes -= self.cache.popitem(last=False)[1][1]
                         self.cache[key] = (value, size)
                         self.cache_bytes += size
-                result.update(copy.deepcopy(fetched))
+                result.update(fetched)
             return result
 
     def selected_labels(self, target: str, revision: int) -> list[dict[str, str]]:

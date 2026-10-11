@@ -14,6 +14,19 @@ from .model import MAX_ADDRESSES, KnxError, address, metadata
 from .read_model import details, query_filters, query_sql, sql_deviates
 
 
+def _search_document(number: int, original: str, imported: str, overrides: str) -> str:
+    """Derived Unicode search fields; separators cannot match validated queries."""
+    values = [
+        original,
+        f"{number >> 11}/{number & 2047}",
+        f"{number >> 11}/{(number >> 8) & 7}/{number & 255}",
+    ]
+    for raw in (imported, overrides):
+        fields = json.loads(raw)
+        values.extend(fields.get(key, "") for key in ("name", "description"))
+    return "\x00".join(values).casefold()
+
+
 class KnxStore:
     def __init__(self, path: Path) -> None:
         if not path.is_absolute() or path.suffix != ".sqlite3":
@@ -35,11 +48,12 @@ class KnxStore:
             deterministic=True,
         )
         connection.create_function("knx_deviates", 2, sql_deviates, deterministic=True)
+        connection.create_function("knx_search_document", 4, _search_document, deterministic=True)
         try:
             connection.execute("PRAGMA foreign_keys=ON")
             connection.execute("PRAGMA synchronous=FULL")
             version = connection.execute("PRAGMA user_version").fetchone()[0]
-            if version not in {0, 1, 2}:
+            if version not in {0, 1, 2, 3}:
                 raise KnxError("knx_storage_version")
             if version == 0:
                 connection.executescript(
@@ -67,6 +81,31 @@ class KnxStore:
                     "information TEXT "
                     "NOT NULL, FOREIGN KEY(target) REFERENCES targets(target));"
                     "PRAGMA user_version=2; COMMIT;"
+                )
+            if version < 3:
+                connection.executescript(
+                    "BEGIN IMMEDIATE;"
+                    "ALTER TABLE addresses ADD COLUMN search_document TEXT NOT NULL DEFAULT '';"
+                    "UPDATE addresses SET search_document="
+                    "knx_search_document(address,original,imported,overrides);"
+                    "CREATE TRIGGER addresses_search_insert AFTER INSERT ON addresses BEGIN "
+                    "UPDATE addresses SET search_document=knx_search_document("
+                    "NEW.address,NEW.original,NEW.imported,NEW.overrides) "
+                    "WHERE target=NEW.target AND address=NEW.address; END;"
+                    "CREATE TRIGGER addresses_search_update "
+                    "AFTER UPDATE OF address,original,imported,overrides ON addresses BEGIN "
+                    "UPDATE addresses SET search_document=knx_search_document("
+                    "NEW.address,NEW.original,NEW.imported,NEW.overrides) "
+                    "WHERE target=NEW.target AND address=NEW.address; END;"
+                    "CREATE INDEX addresses_search_cover "
+                    "ON addresses(target,search_document,address);"
+                    "PRAGMA user_version=3; COMMIT;"
+                )
+            else:
+                # Preserve databases from earlier schema-v3 test iterations.
+                connection.execute(
+                    "CREATE INDEX IF NOT EXISTS addresses_search_cover "
+                    "ON addresses(target,search_document,address)"
                 )
             yield connection
         except sqlite3.Error:

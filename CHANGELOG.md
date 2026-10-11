@@ -22,6 +22,8 @@ extracted from the matching version heading.
   KNX metadata. Preserve Loxone names and raw EIBType; retain multiple DPT declarations.
   Show sources in Explorer and selected imported hierarchy labels below manual labels.
   Bind result/cursor identity to KNX revisions and use bounded batched metadata reads.
+  Maintain a transactional derived Unicode search document during schema migration and
+  source changes, avoiding per-row Python processing on project and local searches.
 
 - Automatically check the project change marker before displaying Admin
   emergency-stop names and options from the private identity-bound display cache.

@@ -56,8 +56,7 @@ def text(value: object, maximum: int, *, empty: bool = True) -> str:
         not isinstance(value, str)
         or len(value) > maximum
         or (not empty and not value.strip())
-        or any(ord(c) < 32 and c not in "\r\n\t" for c in value)
-        or any(0xD800 <= ord(c) <= 0xDFFF or ord(c) == 127 for c in value)
+        or re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\ud800-\udfff]", value)
     ):
         raise KnxError("knx_field_invalid")
     return value

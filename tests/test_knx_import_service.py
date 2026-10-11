@@ -364,7 +364,7 @@ def test_version_one_migration_preserves_labels_records_and_revision(tmp_path: P
     assert before["revision"] == 17 and before["items"][0]["effective"] == {"name": "Legacy"}
     assert KnxStore(path).page("t") == before
     with store.connection() as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 3
     repository = ImportRepository(store)
     parsed = parse_xml(document('<GroupAddress Address="1/2/3" Name="ETS"/>'))
     repository.apply("t", 17, parsed, select_candidates(parsed), set(), {})

@@ -17,6 +17,83 @@ def test_numeric_lookup_preserves_aliases_and_edge_variants():
     assert address_number(None) is None
 
 
+def test_search_projection_migrates_v2_and_tracks_all_source_changes(tmp_path):
+    path = tmp_path / "metadata.sqlite3"
+    store = KnxStore(path)
+    store.put(
+        "target",
+        0,
+        {
+            "address": "1/2/3",
+            "address_format": "three_level",
+            "fields": {"name": "Straße", "description": "suffix"},
+        },
+    )
+    with store.connection() as db:
+        db.executescript(
+            "DROP TRIGGER addresses_search_insert; DROP TRIGGER addresses_search_update;"
+            "DROP INDEX addresses_search_cover;"
+            "ALTER TABLE addresses DROP COLUMN search_document; PRAGMA user_version=2;"
+        )
+        original = db.execute("SELECT * FROM addresses").fetchall()
+    service = ProjectMetadata(path)
+    assert service.revision("target") == 1
+    assert service.search("target", 1, "STRASSE") == {2563}
+    assert service.search("target", 1, "straße suffix") == set()
+    with store.connection() as db:
+        assert (
+            db.execute(
+                "SELECT target,address,format,original,imported,overrides FROM addresses"
+            ).fetchall()
+            == original
+        )
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 3
+        db.execute(
+            "UPDATE addresses SET imported=?,overrides='{}'", (json.dumps({"name": "ETS changed"}),)
+        )
+        db.commit()
+    assert service.search("target", 1, "STRASSE") == set()
+    assert service.search("target", 1, "ETS changed") == {2563}
+    assert service.search("other-target", 0, "ETS changed") == set()
+    assert service.search("target", 1, "1/515") == {2563}
+
+
+def test_failed_search_migration_keeps_v2_database_intact(tmp_path):
+    path = tmp_path / "metadata.sqlite3"
+    store = KnxStore(path)
+    with store.connection() as db:
+        db.executescript(
+            "DROP TRIGGER addresses_search_insert; DROP TRIGGER addresses_search_update;"
+            "DROP INDEX addresses_search_cover;"
+            "ALTER TABLE addresses DROP COLUMN search_document; PRAGMA user_version=2;"
+        )
+        db.execute("INSERT INTO targets VALUES('t',7)")
+        db.execute("INSERT INTO addresses VALUES('t',1,'three_level','0/0/1','broken','{}')")
+        db.commit()
+    with pytest.raises(KnxError, match="knx_storage_failed"):
+        ProjectMetadata(path).revision("t")
+    with sqlite3.connect(path) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert len(db.execute("PRAGMA table_info(addresses)").fetchall()) == 6
+        assert db.execute("SELECT revision FROM targets").fetchone()[0] == 7
+
+
+def test_existing_v3_catalog_without_covering_index_is_repaired(tmp_path):
+    path = tmp_path / "metadata.sqlite3"
+    store = KnxStore(path)
+    revision = store.put(
+        "t",
+        0,
+        {"address": "0/0/1", "address_format": "three_level", "fields": {"name": "Preserved"}},
+    )
+    with sqlite3.connect(path) as db:
+        db.execute("DROP INDEX addresses_search_cover")
+    service = ProjectMetadata(path)
+    assert service.search("t", revision, "preserved") == {1}
+    assert service.revision("t") == revision
+    assert KnxStore(path).page("t")["items"][0]["overrides"] == {"name": "Preserved"}
+
+
 def test_missing_database_is_empty_without_creating_files(tmp_path):
     service = ProjectMetadata(tmp_path / "metadata.sqlite3")
     assert service.revision("target") == 0
@@ -187,6 +264,7 @@ def test_corrupt_json_is_storage_failure_and_target_cannot_leak(tmp_path):
     assert service.lookup("second", 0, {1}) == {}
     assert service.search("second", 0, "First") == set()
     with service.store.connection() as db:
+        db.execute("DROP TRIGGER addresses_search_update")
         db.execute("UPDATE addresses SET imported=?", ('{"name":',))
         db.commit()
     with pytest.raises(KnxError, match="knx_storage_failed"):

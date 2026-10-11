@@ -204,16 +204,24 @@ is the detailed per-object evidence projection.
 `knx.read_model` provides local query validation, literal Unicode substring matching
 and bounded source/DPT projections. Indexed target selection precedes SQLite text
 filters; the process materializes only the selected page, with fixed query count
-and no query per result. No additional persistent index, complete catalog cache or
-project graph is introduced. Local substring filtering can scan the selected target;
-it is not the MCP metadata lookup path. Page queries and JSON exports bind optional
+and no query per result. No complete catalog cache or second project graph is
+introduced. Schema version 3 stores a derived casefolded search
+document per address; an atomic migration preserves original source fields and revision.
+Insert/update triggers maintain it in the same transaction for manual, JSON and ETS
+changes. NUL separators prevent matches across field boundaries; validated queries
+cannot contain NUL. SQLite performs literal substring scans within the indexed target
+without per-row Python callbacks or JSON decoding. MCP search reads a covering
+target/search-document/address index without fetching metadata rows.
+Page queries and JSON exports bind optional
 filters to the expected KNX revision and target. Source projections distinguish
 absent, empty and override values; DPT normalization establishes identifier syntax
 only, not type-registry membership, assignment role or Loxone EIBType equivalence.
 
 `knx.project_metadata` supplies authorized project tools with revisioned, indexed
 batch reads for at most one output page. A service-owned LRU, including negative
-lookups, stays below 16 MiB with conservative owned-memory accounting. Each request
+lookups, stores immutable serialized projections below 16 MiB with conservative
+owned-memory accounting. Decoding returned pages isolates mutable caller values.
+Each request
 checks the current revision before cache reuse; cache entries never authorize access.
 The native unit sets validated `MCPSERVER_KNX_STORE` to the same persistent database
 used by CGI; the server passes this optional path into tool registration explicitly.

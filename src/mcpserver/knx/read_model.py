@@ -61,17 +61,8 @@ def query_sql(filters: dict[str, Any]) -> tuple[str, list[Any]]:
     parameters: list[Any] = []
     query = filters["query"]
     if query:
-        text_columns = [
-            "a.original",
-            "printf('%d/%d',a.address >> 11,a.address & 2047)",
-            "printf('%d/%d/%d',a.address >> 11,(a.address >> 8) & 7,a.address & 255)",
-            "json_extract(a.imported,'$.name')",
-            "json_extract(a.overrides,'$.name')",
-            "json_extract(a.imported,'$.description')",
-            "json_extract(a.overrides,'$.description')",
-        ]
-        terms = [f"instr(knx_casefold({column}),?)>0" for column in text_columns]
-        parameters.extend([query.casefold()] * len(terms))
+        terms = ["instr(a.search_document,?)>0"]
+        parameters.append(query.casefold())
         for fmt in ("three_level", "two_level"):
             try:
                 number, _ = address(query, fmt)
