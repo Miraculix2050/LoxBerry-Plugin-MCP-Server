@@ -54,6 +54,9 @@ First call `loxone_preview_system_message_confirmation(entry_uuid)` and review t
 exact message and effect. Only after explicit approval call
 `loxone_confirm_system_message(preview_id, user_approved=true)`. A preview expires
 after 120 seconds, is bound to your identity/target and can be used once. The server
+allows ten pending previews per OAuth family; a new preview replaces an older one
+for the same entry. Confirmation invalidates sibling previews of the exact target
+and prevents simultaneous dispatch, including across families. The server
 rechecks permissions, activation, current message and native action before sending.
 There is a separate budget of three confirmation attempts per minute per family.
 

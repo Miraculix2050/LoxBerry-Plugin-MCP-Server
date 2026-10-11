@@ -834,8 +834,12 @@ replace this step. Never acknowledge existing messages as an acceptance shortcut
 `loxone:messages:confirm` OAuth consent and administrator activation through
 `tools.loxone_message_confirmation_enabled` (default false). Control, History and
 LoxBerry permissions do not substitute. Approval is identity/family/target bound,
-single-use and expires after 120 seconds. The server rechecks current authorization,
-configuration, source permissions and unchanged entry/action before dispatch.
+single-use and expires after 120 seconds.
+There are at most ten pending previews per family; a new preview replaces that
+family's older preview for the same entry. Confirmation invalidates sibling
+previews of the target and blocks simultaneous dispatch across families.
+The server rechecks current authorization, configuration, source permissions and
+unchanged entry/action before dispatch.
 Changing entries, locked/historic/confirmed entries and unverified actions fail closed.
 
 On firmware 17.2.8.28, native action 1005 acknowledges. For the verified manual
