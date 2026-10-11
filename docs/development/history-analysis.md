@@ -102,3 +102,28 @@ not establish native measurement compatibility. Three native compact calls took
 corresponding raw reader. These are observations, not a controlled regression
 benchmark or token measurements. Full performance/token acceptance follows in
 the final acceptance PR.
+
+## PR 8 installed comparison acceptance (2026-10-11)
+
+Runtime `2cc6a7b33cf582898dc9b2837c6f4a90e06396d1` was accepted on the
+same Loxberry-Test aarch64/Python 3.13.5/plugin 0.4.0-beta.4 environment.
+Guarded hot-swap added one module, verified five hashes and preserved existing
+0664 modes (new module 0644). Service health, guide 76 and history schema 7
+passed. Existing recording and configuration were retained; no profile or
+Loxone control writes were used.
+
+Installed isolated fixtures passed ranking (300/100 Wh), PV/load upper bound
+(100 Wh), energy inside complete active intervals (100 Wh), and night median
+(150 W; 3600 Wh labelled daily estimate). These fixtures prove the installed
+calculations, not native device semantics. Real authorized MCP calls exercised
+all four new operations, raw continuation, invalid options, unknown bindings,
+restricted visibility and unauthenticated denial. Native meter formats remain
+unverified and profile roles are absent: comparisons correctly returned
+`insufficient_evidence`, with no fabricated totals or attribution.
+
+DE night-load and EN mixed-phase calls completed in the Explorer (2322/2341 ms).
+Both languages were inspected at CSS 1280x800 and 390x844; no horizontal overflow
+or warning/error console messages occurred. These timings and the three native
+energy calls (2234.67/1809.61/1820.62 ms; 2230 bytes each) are bounded observations,
+not controlled latency or token acceptance. The corresponding raw call returned
+6425 bytes. Bytes are not tokenizer counts.
