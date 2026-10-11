@@ -15,7 +15,7 @@
   const MCP_RESOURCE_PATH = '/plugins/mcpserver/mcp';
   const EXPLORER_PATH = '/admin/plugins/mcpserver/explorer.cgi';
   const EXPLORER_SCOPE_ORDER = [
-    'loxone:read', 'loxone:history', 'loxone:control', 'loxberry:read', 'loxberry:operate',
+    'loxone:read', 'loxone:history', 'loxone:control', 'loxone:messages:confirm', 'loxberry:read', 'loxberry:operate',
   ];
   function grantedScopes(scope) {
     if (typeof scope !== 'string' || !scope.trim()) return null;

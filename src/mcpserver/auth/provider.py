@@ -25,6 +25,7 @@ from mcpserver.auth.scopes import CONTROL_SCOPE as CONTROL_SCOPE
 from mcpserver.auth.scopes import HISTORY_SCOPE as HISTORY_SCOPE
 from mcpserver.auth.scopes import LOXBERRY_OPERATE_SCOPE as LOXBERRY_OPERATE_SCOPE
 from mcpserver.auth.scopes import LOXBERRY_READ_SCOPE as LOXBERRY_READ_SCOPE
+from mcpserver.auth.scopes import MESSAGE_CONFIRM_SCOPE as MESSAGE_CONFIRM_SCOPE
 from mcpserver.auth.scopes import READ_SCOPE as READ_SCOPE
 from mcpserver.auth.scopes import SCOPE as SCOPE
 from mcpserver.auth.scopes import SUPPORTED_SCOPES as SUPPORTED_SCOPES

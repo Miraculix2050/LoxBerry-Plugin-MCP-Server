@@ -40,6 +40,7 @@ from mcpserver.auth.provider import (
     HISTORY_SCOPE,
     LOXBERRY_OPERATE_SCOPE,
     LOXBERRY_READ_SCOPE,
+    MESSAGE_CONFIRM_SCOPE,
     READ_SCOPE,
     Phase0OAuthProvider,
     normalize_scopes,
@@ -715,6 +716,12 @@ class Phase0OAuthWeb:
             if HISTORY_SCOPE in transaction.scopes
             else ""
         )
+        message_option = (
+            """<label class="scope-option" for="grant_messages"><input id="grant_messages" type="checkbox" name="grant_messages" value="true" data-optional-scope>
+<span><strong>System Message confirmation / Systemmeldungen bestätigen</strong><small>Optional: confirm or historize exactly one previewed message after explicit approval. No deletion or bulk actions. / Optional: Genau eine angezeigte Meldung nach ausdrücklicher Freigabe bestätigen oder historisieren. Kein Löschen und keine Sammelaktionen.</small></span></label>"""
+            if MESSAGE_CONFIRM_SCOPE in transaction.scopes
+            else ""
+        )
         control_requested = CONTROL_SCOPE in transaction.scopes
         control_option = (
             """<label class="scope-option" for="grant_control"><input id="grant_control" type="checkbox" name="grant_control" value="true" data-optional-scope>
@@ -753,7 +760,9 @@ class Phase0OAuthWeb:
         select_all_option = (
             """<label class="scope-select-all" for="grant_all"><input id="grant_all" type="checkbox">
 <span id="grant_all_label" data-select-label="Select all / Alle auswählen" data-deselect-label="Deselect all / Alle abwählen">Select all / Alle auswählen</span></label>"""
-            if any((history_option, control_option, loxberry_option, operate_option))
+            if any(
+                (history_option, control_option, message_option, loxberry_option, operate_option)
+            )
             else ""
         )
         select_all_script = (
@@ -786,7 +795,7 @@ sync();
 <fieldset class="scope-list"><legend>Permissions / Berechtigungen</legend>
 {select_all_option}
 <label class="scope-option"><input type="checkbox" checked disabled><span><strong>Read access / Lesezugriff</strong><small>Required: read permitted Loxone structure and states. / Erforderlich: Freigegebene Loxone-Struktur und Zustände lesen.</small></span></label>
-{history_option}{control_option}{loxberry_option}{operate_option}</fieldset>
+{history_option}{control_option}{message_option}{loxberry_option}{operate_option}</fieldset>
 <p class="notice">After confirmation, you will be redirected to your MCP client. / Nach der Bestätigung werden Sie zu Ihrem MCP-Client weitergeleitet.</p>
 <div class="actions"><button type="submit">Confirm permissions / Berechtigungen bestätigen</button></div></form>
 <form method="post" action="/plugins/mcpserver/oauth/authorize">{self._hidden(transaction, "deny")}
@@ -808,6 +817,7 @@ sync();
                 "password",
                 "grant_control",
                 "grant_history",
+                "grant_messages",
                 "grant_loxberry",
                 "grant_loxberry_operate",
             },
@@ -844,12 +854,18 @@ sync();
                 and transaction.identity_id
                 and transaction.miniserver_id
             ):
+                grant_messages = form.get("grant_messages")
                 grant_control = form.get("grant_control")
                 grant_history = form.get("grant_history")
                 grant_loxberry = form.get("grant_loxberry")
                 grant_loxberry_operate = form.get("grant_loxberry_operate")
                 if (
-                    grant_control not in {None, "true"}
+                    grant_messages not in {None, "true"}
+                    or (
+                        grant_messages is not None
+                        and MESSAGE_CONFIRM_SCOPE not in transaction.scopes
+                    )
+                    or grant_control not in {None, "true"}
                     or (grant_control is not None and CONTROL_SCOPE not in transaction.scopes)
                     or grant_loxberry not in {None, "true"}
                     or (
@@ -874,6 +890,8 @@ sync();
                     approved_scopes = (*approved_scopes, HISTORY_SCOPE)
                 if grant_control == "true":
                     approved_scopes = (*approved_scopes, CONTROL_SCOPE)
+                if grant_messages == "true":
+                    approved_scopes = (*approved_scopes, MESSAGE_CONFIRM_SCOPE)
                 pending_loxberry_read = (
                     grant_loxberry == "true" and not transaction.loxberry_read_locally_approved
                 )
@@ -1306,6 +1324,7 @@ sync();
                     READ_SCOPE,
                     HISTORY_SCOPE,
                     CONTROL_SCOPE,
+                    MESSAGE_CONFIRM_SCOPE,
                     LOXBERRY_READ_SCOPE,
                     LOXBERRY_OPERATE_SCOPE,
                 ],

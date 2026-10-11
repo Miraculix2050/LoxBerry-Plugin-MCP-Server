@@ -737,5 +737,10 @@ nachgewiesen sind; ETS-Version dokumentieren und frischen Export vergleichen.
 
 ## Systemmeldungen
 
+Die Bestätigung genau einer Meldung ist eine separate, standardmäßig deaktivierte
+Funktion mit eigenem optionalem OAuth-Scope, befristeter Vorschau und ausdrücklicher
+Freigabe. Das geprüfte „Okay“ einer manuellen Warnung historisiert; die native
+Bestätigung bleibt davon getrennt. Keine Sammelbestätigung, Löschung oder Reparatur.
+
 Siehe [Systemmeldungen](system-messages.de.md) für experimentelle aktuelle und
 historische Lesezugriffe, Quellenrechte, Grenzen und belegte Folgeaufgaben.

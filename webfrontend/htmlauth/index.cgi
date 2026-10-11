@@ -528,6 +528,7 @@ if ($action ne '') {
                     ? JSON::PP::true : JSON::PP::false,
                 loxberry_read_enabled => ($q->{loxberry_read_enabled} // '') eq '1'
                     ? JSON::PP::true : JSON::PP::false,
+                loxone_message_confirmation_enabled => ($q->{loxone_message_confirmation_enabled} // '') eq '1' ? JSON::PP::true : JSON::PP::false,
                 loxone_history_enabled => ($q->{loxone_history_enabled} // '') eq '1'
                     ? JSON::PP::true : JSON::PP::false,
                 loxberry_operate_enabled => ($q->{loxberry_operate_enabled} // '') eq '1'
@@ -1086,6 +1087,7 @@ $template->param(
     CONNECTION_TIMEOUT => $config->{loxone}{connection_timeout} // 10,
     LOXONE_CONTROL_ENABLED => $config->{tools}{loxone_control_enabled} ? 1 : 0,
     LOXBERRY_READ_ENABLED => $config->{tools}{loxberry_read_enabled} ? 1 : 0,
+    LOXONE_MESSAGE_CONFIRMATION_ENABLED => $config->{tools}{loxone_message_confirmation_enabled} ? 1 : 0,
     LOXONE_HISTORY_ENABLED => $config->{tools}{loxone_history_enabled} ? 1 : 0,
     LOXBERRY_OPERATE_ENABLED => $config->{tools}{loxberry_operate_enabled} ? 1 : 0,
     EVENT_HISTORY_ENABLED => $config->{event_history}{enabled} ? 1 : 0,

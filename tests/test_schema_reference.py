@@ -93,6 +93,8 @@ EXPECTED_TOOLS = {
     "loxone_get_system_messages",
     "loxone_get_attention_overview",
     "loxone_get_notifications",
+    "loxone_preview_system_message_confirmation",
+    "loxone_confirm_system_message",
     "loxone_read_controls",
     "loxone_get_states",
     "loxone_get_statistics",

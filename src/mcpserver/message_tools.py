@@ -25,6 +25,11 @@ from mcpserver.loxone.system_messages import (
     SystemMessage,
     identifier,
 )
+from mcpserver.message_confirmation import (
+    MessageConfirmationPreview,
+    MessageConfirmationResult,
+    MessageConfirmations,
+)
 from mcpserver.tools import ErrorData, ToolEnvelope
 
 
@@ -63,6 +68,14 @@ class NotificationsEnvelope(ToolEnvelope):
     data: NotificationsData | ErrorData
 
 
+class MessagePreviewEnvelope(ToolEnvelope):
+    data: MessageConfirmationPreview | ErrorData
+
+
+class MessageConfirmationEnvelope(ToolEnvelope):
+    data: MessageConfirmationResult | ErrorData
+
+
 class MessageCursors:
     """No server-owned history: each page checks an authenticated fresh source revision."""
 
@@ -98,6 +111,104 @@ class MessageCursors:
 
 def register_message_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> None:
     cursors = MessageCursors()
+    confirmations = MessageConfirmations()
+
+    @server.tool(
+        name="loxone_preview_system_message_confirmation",
+        description=(
+            "Preview exactly one current, unlocked System Message and its verified native "
+            "acknowledgement or historization effect. Read-only; no read marker or action. "
+            "Present the message, exact action and effect to the user before requesting approval. "
+            "The identity-bound preview expires after 120 seconds and can be used once."
+        ),
+        annotations=ToolAnnotations(
+            readOnlyHint=True, destructiveHint=False, idempotentHint=False, openWorldHint=False
+        ),
+        structured_output=True,
+    )
+    async def preview_system_message_confirmation(
+        entry_uuid: Annotated[
+            str,
+            Field(
+                min_length=1,
+                max_length=36,
+                description="Exact entry_uuid from the current System Messages reader.",
+            ),
+        ],
+    ) -> MessagePreviewEnvelope:
+        try:
+            access = tools._access()
+            if runtime is None:
+                raise RuntimeUnavailable("the service is not configured")
+            preview = await confirmations.preview(runtime, access, entry_uuid)
+            return tools._result(MessagePreviewEnvelope, preview.model_dump())
+        except PermissionError:
+            return tools._error(
+                MessagePreviewEnvelope,
+                "unauthenticated",
+                "Authentication with loxone:read is required",
+            )
+        except ControlOperationError as exc:
+            return tools._error(MessagePreviewEnvelope, exc.code, str(exc))
+        except RuntimeUnavailable as exc:
+            return tools._availability_error(MessagePreviewEnvelope, exc)
+        except LoxoneConnectionError:
+            return tools._error(
+                MessagePreviewEnvelope,
+                "temporarily_unavailable",
+                "Message preview could not be read",
+            )
+
+    @server.tool(
+        name="loxone_confirm_system_message",
+        description=(
+            "Confirm or historize exactly the message shown in an unexpired preview, only "
+            "after explicit human approval of that message and effect. Requires the separate "
+            "loxone:messages:confirm scope and fresh administrator activation. Consumes the "
+            "preview even on failure; do not retry an uncertain write. No bulk actions, deletion, "
+            "read markers or repair of the underlying problem. Report dispatched, accepted and "
+            "observed effect separately. Never use this to clear messages as health evidence."
+        ),
+        annotations=ToolAnnotations(
+            readOnlyHint=False, destructiveHint=True, idempotentHint=False, openWorldHint=False
+        ),
+        structured_output=True,
+    )
+    async def confirm_system_message(
+        preview_id: Annotated[
+            str,
+            Field(
+                min_length=1,
+                max_length=128,
+                description="Unexpired preview_id approved for exactly one message and effect.",
+            ),
+        ],
+        user_approved: Annotated[
+            bool,
+            Field(
+                strict=True,
+                description="True only after explicit human approval of this preview and effect.",
+            ),
+        ],
+    ) -> MessageConfirmationEnvelope:
+        try:
+            access = tools._access()
+            if runtime is None:
+                raise RuntimeUnavailable("the service is not configured")
+            result = await confirmations.confirm(runtime, access, preview_id, user_approved)
+            return tools._result(
+                MessageConfirmationEnvelope, result.model_dump(), trace_id=result._trace_id
+            )
+        except PermissionError:
+            return tools._error(
+                MessageConfirmationEnvelope,
+                "unauthenticated",
+                "Authentication with loxone:read is required",
+            )
+        except ControlOperationError as exc:
+            return tools._error(MessageConfirmationEnvelope, exc.code, str(exc))
+        except RuntimeUnavailable as exc:
+            return tools._availability_error(MessageConfirmationEnvelope, exc)
 
     @server.tool(
         name="loxone_get_notifications",
