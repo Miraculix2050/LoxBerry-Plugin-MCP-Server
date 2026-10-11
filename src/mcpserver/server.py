@@ -35,6 +35,7 @@ from mcpserver.auth.provider import (
     HISTORY_SCOPE,
     LOXBERRY_OPERATE_SCOPE,
     LOXBERRY_READ_SCOPE,
+    MESSAGE_CONFIRM_SCOPE,
     READ_SCOPE,
     Phase0OAuthProvider,
     StoredAccessToken,
@@ -731,6 +732,24 @@ def create_server(settings: ServerSettings) -> FastMCP:
                     and READ_SCOPE in current.scopes
                 )
 
+            async def validate_message_confirmation(access: StoredAccessToken) -> bool:
+                if settings.phase0_auth is None or settings.phase0_auth.config_path is None:
+                    return False
+                try:
+                    current_config = AtomicConfigStore(settings.phase0_auth.config_path).load()
+                    current_access = await provider.load_access_token(access.token)
+                    return bool(
+                        current_config.loxone_message_confirmation_enabled
+                        and current_access is not None
+                        and current_access.family_id == access.family_id
+                        and current_access.identity_id == access.identity_id
+                        and current_access.miniserver_id == access.miniserver_id
+                        and MESSAGE_CONFIRM_SCOPE in current_access.scopes
+                        and READ_SCOPE in current_access.scopes
+                    )
+                except Exception:
+                    return False
+
             runtime = LoxoneRuntime(
                 settings.phase0_auth.loxone_endpoint,
                 loxone_store,
@@ -770,6 +789,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
                 validate_access=validate_project_access,
             )
             event_history_path = Path(os.getenv("MCPSERVER_EVENT_HISTORY_STORE", ""))
+            runtime.validate_message_confirmation = validate_message_confirmation
             if settings.phase0_auth.config_path is not None and event_history_path.is_absolute():
                 event_history_runtime = EventHistoryRuntime(
                     runtime,
@@ -843,6 +863,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
         READ_SCOPE,
         HISTORY_SCOPE,
         CONTROL_SCOPE,
+        MESSAGE_CONFIRM_SCOPE,
         LOXBERRY_READ_SCOPE,
         LOXBERRY_OPERATE_SCOPE,
     )

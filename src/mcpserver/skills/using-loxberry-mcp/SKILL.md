@@ -838,6 +838,37 @@ project-writing Loxone MCP integration. Never invent those unavailable capabilit
 This read tool never acknowledges entries, marks them read, deletes them or runs
 other Message Center actions. Acknowledgement availability is source metadata only.
 
+### Explicit single-message confirmation
+
+Reading, diagnosing and repairing remain separate from message confirmation.
+Use `loxone_preview_system_message_confirmation(entry_uuid)` to read exactly one
+current, unlocked message and its verified native action. Show the user the exact
+message, lifecycle, action and expected effect. Ask for explicit approval of that
+message and effect; broad permission to read/diagnose or clear test data does not
+replace this step. Never acknowledge existing messages as an acceptance shortcut.
+
+`loxone_confirm_system_message(preview_id, user_approved=true)` requires the separate
+`loxone:messages:confirm` OAuth consent and administrator activation through
+`tools.loxone_message_confirmation_enabled` (default false). Control, History and
+LoxBerry permissions do not substitute. Approval is identity/family/target bound,
+single-use and expires after 120 seconds. The server rechecks current authorization,
+configuration, source permissions and unchanged entry/action before dispatch.
+Changing entries, locked/historic/confirmed entries and unverified actions fail closed.
+
+On firmware 17.2.8.28, native action 1005 acknowledges. For the verified manual
+event 1121 warning only, action 1003 ("Okay") historizes the entry, preserves it in
+retained history and does not set `confirmed_at`. Do not infer actions from severity:
+other manual levels remain unsupported until their effects are independently verified.
+The reader's `acknowledgement_available` still means native 1005; additive
+`confirmation_action_id`/`confirmation_effect` identify the separate preview action.
+
+Report `dispatched`, `accepted`, `effect_observed` and `outcome` independently.
+An uncertain or accepted-unverified result is not proof of the effect. Never retry
+the write or automatically create another preview after uncertainty. Read the exact
+target's lifecycle to reconcile, then ask the user before any new attempt. No deletion,
+read marker, bulk acknowledgement, notification sending or rule/project repair occurs.
+Confirmation is not evidence that the underlying fault is repaired.
+
 ### Active visible alerts
 
 Use this workflow for current alarm status and focused follow-up:

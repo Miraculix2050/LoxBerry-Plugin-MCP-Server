@@ -752,6 +752,8 @@ def test_tool_input_schemas_explain_every_argument() -> None:
         "loxone_get_active_alerts": {"limit"},
         "loxone_get_system_messages": {"mode", "limit", "cursor"},
         "loxone_get_notifications": set(),
+        "loxone_preview_system_message_confirmation": {"entry_uuid"},
+        "loxone_confirm_system_message": {"preview_id", "user_approved"},
         "loxone_get_attention_overview": {"limit", "include_history"},
         "loxone_operate_control": {
             "control_uuid",

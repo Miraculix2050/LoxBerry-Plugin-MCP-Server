@@ -14,7 +14,7 @@
       'loxone_get_state_semantics', 'loxone_get_active_alerts', 'loxone_get_states',
       'loxone_get_system_messages',
         'loxone_get_attention_overview',
-      'loxone_get_notifications',
+      'loxone_get_notifications', 'loxone_preview_system_message_confirmation',
       'loxone_get_installation_profile',
       'loxone_get_structure_overview', 'loxone_get_room_snapshot',
       'loxone_list_global_metadata', 'loxone_get_weather', 'loxone_get_project_status',
@@ -29,6 +29,9 @@
     ]},
     {id: 'loxoneControl', scopes: ['loxone:read', 'loxone:control'], names: [
       'loxone_operate_control',
+    ]},
+    {id: 'loxoneMessages', scopes: ['loxone:read', 'loxone:messages:confirm'], names: [
+      'loxone_confirm_system_message',
     ]},
     {id: 'loxberryRead', scopes: ['loxone:read', 'loxberry:read'], names: [
       'loxberry_get_system_status', 'loxberry_get_plugin_status',
@@ -84,6 +87,7 @@
   }
 
   function requiredScopes(tool) {
+    if ((typeof tool === 'string' ? tool : tool && tool.name) === 'loxone_confirm_system_message') return ['loxone:read', 'loxone:messages:confirm'];
     if ((typeof tool === 'string' ? tool : tool && tool.name) ===
         'loxberry_list_event_history_sources') return ['loxone:read', 'loxone:history'];
     return forTool(tool)?.scopes || null;
@@ -96,7 +100,7 @@
 
   function requiredMutationScope(tool) {
     const scopes = requiredScopes(tool);
-    return scopes && (scopes.includes('loxberry:operate') ? 'loxberry:operate'
+    return scopes && (scopes.includes('loxone:messages:confirm') ? 'loxone:messages:confirm' : scopes.includes('loxberry:operate') ? 'loxberry:operate'
       : scopes.includes('loxone:control') ? 'loxone:control' : null);
   }
 

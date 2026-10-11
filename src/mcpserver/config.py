@@ -325,6 +325,7 @@ class PluginConfig:
     loxone_control_enabled: bool = False
     loxberry_read_enabled: bool = False
     loxone_history_enabled: bool = False
+    loxone_message_confirmation_enabled: bool = False
     loxberry_operate_enabled: bool = False
     installation_profile_write_enabled: bool = False
     requests_per_minute: int = DEFAULT_REQUESTS_PER_MINUTE
@@ -448,6 +449,10 @@ class PluginConfig:
         )
         loxone_history_enabled = _boolean(
             tools.get("loxone_history_enabled", False), name="tools.loxone_history_enabled"
+        )
+        loxone_message_confirmation_enabled = _boolean(
+            tools.get("loxone_message_confirmation_enabled", False),
+            name="tools.loxone_message_confirmation_enabled",
         )
         loxberry_operate_enabled = _boolean(
             tools.get("loxberry_operate_enabled", False), name="tools.loxberry_operate_enabled"
@@ -677,6 +682,7 @@ class PluginConfig:
             loxone_control_enabled=control_enabled,
             loxberry_read_enabled=loxberry_read_enabled,
             loxone_history_enabled=loxone_history_enabled,
+            loxone_message_confirmation_enabled=loxone_message_confirmation_enabled,
             loxberry_operate_enabled=loxberry_operate_enabled,
             installation_profile_write_enabled=installation_profile_write_enabled,
             requests_per_minute=requests,
@@ -747,6 +753,9 @@ class PluginConfig:
         document["tools"]["loxone_control_enabled"] = self.loxone_control_enabled
         document["tools"]["loxberry_read_enabled"] = self.loxberry_read_enabled
         document["tools"]["loxone_history_enabled"] = self.loxone_history_enabled
+        document["tools"]["loxone_message_confirmation_enabled"] = (
+            self.loxone_message_confirmation_enabled
+        )
         document["tools"]["loxberry_operate_enabled"] = self.loxberry_operate_enabled
         document["tools"]["installation_profile_write_enabled"] = (
             self.installation_profile_write_enabled

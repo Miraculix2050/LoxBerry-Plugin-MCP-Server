@@ -15,6 +15,7 @@ from mcpserver.auth.provider import (
     HISTORY_SCOPE,
     LOXBERRY_OPERATE_SCOPE,
     LOXBERRY_READ_SCOPE,
+    MESSAGE_CONFIRM_SCOPE,
     READ_SCOPE,
 )
 from mcpserver.config import PluginConfig
@@ -453,7 +454,7 @@ def test_mcp_initialize_uses_expected_protocol() -> None:
     assert "loxone_get_skill_guide" in instructions
 
 
-def test_exact_default_read_only_tools_are_published() -> None:
+def test_exact_default_tools_and_mutation_annotations_are_published() -> None:
     app = create_server(_settings()).streamable_http_app()
     request = {
         "jsonrpc": "2.0",
@@ -476,6 +477,8 @@ def test_exact_default_read_only_tools_are_published() -> None:
         "loxone_get_installation_profile",
         "loxberry_save_installation_profile",
         "loxberry_delete_installation_profile",
+        "loxone_preview_system_message_confirmation",
+        "loxone_confirm_system_message",
         "loxone_get_notifications",
         "loxone_get_system_messages",
         "loxone_get_attention_overview",
@@ -497,13 +500,9 @@ def test_exact_default_read_only_tools_are_published() -> None:
         "loxone_list_event_history_sources",
         "loxone_get_event_history",
     ]
-    mutations = {"loxberry_save_installation_profile", "loxberry_delete_installation_profile"}
-    assert all(
-        tool["annotations"]["readOnlyHint"] is (tool["name"] not in mutations) for tool in tools
-    )
-    assert all(
-        tool["annotations"]["destructiveHint"]
-        is (tool["name"] == "loxberry_delete_installation_profile")
+    mutations = {"loxberry_save_installation_profile", "loxberry_delete_installation_profile", "loxone_confirm_system_message"}
+    assert all(tool["annotations"]["readOnlyHint"] is (tool["name"] not in mutations) for tool in tools)
+    assert all(tool["annotations"]["destructiveHint"] is (tool["name"] in {"loxberry_delete_installation_profile", "loxone_confirm_system_message"})
         for tool in tools
     )
     assert all(tool["outputSchema"]["properties"]["data"].get("anyOf") for tool in tools)
@@ -583,6 +582,7 @@ def test_oauth_routes_and_protected_resource_metadata_are_exact(tmp_path: Path) 
         READ_SCOPE,
         HISTORY_SCOPE,
         CONTROL_SCOPE,
+        MESSAGE_CONFIRM_SCOPE,
         LOXBERRY_READ_SCOPE,
         LOXBERRY_OPERATE_SCOPE,
     ]
@@ -617,6 +617,7 @@ def test_protected_resource_metadata_advertises_optional_control_scope(tmp_path:
         READ_SCOPE,
         HISTORY_SCOPE,
         CONTROL_SCOPE,
+        MESSAGE_CONFIRM_SCOPE,
         LOXBERRY_READ_SCOPE,
         LOXBERRY_OPERATE_SCOPE,
     ]

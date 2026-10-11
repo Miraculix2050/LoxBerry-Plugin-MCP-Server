@@ -597,6 +597,24 @@ class LoxoneWebSocketSession:
             f"jdev/sps/io/{center_uuid}/getEntries/2", encrypted=not self._secure_transport
         )
 
+    async def confirm_system_message(
+        self, center_uuid: str, entry_uuid: str, action_id: int
+    ) -> None:
+        """Execute one separately authorized, version-bound Message Center action."""
+        from mcpserver.loxone.system_messages import identifier
+
+        if (
+            identifier(center_uuid) is None
+            or identifier(entry_uuid) is None
+            or type(action_id) is not int
+            or action_id not in {1003, 1005}
+        ):
+            raise ValueError("invalid message confirmation")
+        await self._command(
+            f"jdev/sps/io/{center_uuid}/action/{entry_uuid}/{action_id}",
+            encrypted=not self._secure_transport,
+        )
+
     async def authenticate(self) -> None:
         if not self._secure_transport:
             session_key = self._encryptor.encrypted_session_key(self._public_key)

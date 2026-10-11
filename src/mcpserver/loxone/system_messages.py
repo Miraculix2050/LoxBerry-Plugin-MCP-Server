@@ -7,7 +7,7 @@ import json
 import re
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, PrivateAttr
 
 SUPPORTED_FIRMWARE = frozenset({"17.2.8.28"})
 SYSTEM_MESSAGES_PERMISSION = 131072
@@ -25,6 +25,7 @@ class MessageSourceError(ValueError):
 
 
 class SystemMessage(BaseModel):
+    _confirmation_revision: str = PrivateAttr(default="")
     entry_uuid: str
     event_id: int
     title: str
@@ -43,6 +44,8 @@ class SystemMessage(BaseModel):
     read_at: int | None
     visu_locked: bool
     acknowledgement_available: bool
+    confirmation_action_id: int | None = None
+    confirmation_effect: Literal["acknowledge", "historize"] | None = None
     truncated_fields: list[str]
 
 
@@ -161,6 +164,23 @@ def decode_messages(
             and rights & action["requiredPermissions"] == action["requiredPermissions"]
             for action in actions
         )
+        eligible = [
+            action["actionId"]
+            for action in actions
+            if isinstance(action, dict)
+            and type(action.get("actionId")) is int
+            and (
+                action["actionId"] == 1005
+                or (action["actionId"] == 1003 and event_id == 1121 and severity == 2)
+            )
+            and action.get("isSecured") is False
+            and action.get("link") is None
+            and action.get("location") is None
+            and type(action.get("requiredPermissions")) is int
+            and 0 <= action["requiredPermissions"] < 2**32
+            and rights & action["requiredPermissions"] == action["requiredPermissions"]
+        ]
+        confirmation_action = eligible[0] if len(eligible) == 1 else None
         truncated: list[str] = []
         records.append(
             SystemMessage(
@@ -185,9 +205,26 @@ def decode_messages(
                 read_at=_timestamp(entry.get("readAt")),
                 visu_locked=locked,
                 acknowledgement_available=acknowledgement,
+                confirmation_action_id=confirmation_action,
+                confirmation_effect=(
+                    "acknowledge"
+                    if confirmation_action == 1005
+                    else "historize"
+                    if confirmation_action == 1003
+                    else None
+                ),
                 truncated_fields=truncated,
             )
         )
+        # Bind approval to raw entry metadata, including redacted text and action permissions.
+        # Reading the native detail screen changes readAt without changing the action's effect.
+        records[-1]._confirmation_revision = hashlib.sha256(
+            json.dumps(
+                {key: value for key, value in entry.items() if key != "readAt"},
+                sort_keys=True,
+                ensure_ascii=True,
+            ).encode()
+        ).hexdigest()
     records.sort(key=lambda record: (max(record.timestamps), record.entry_uuid), reverse=True)
     return MessageSource(
         firmware=firmware,

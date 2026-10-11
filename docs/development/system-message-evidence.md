@@ -47,3 +47,23 @@ native push history belongs to the device. Neither establishes readable retained
 upstream history. The fresh test structure advertises the notification state.
 Notification source implementation needs a separate bounded latest-event contract;
 never turn missing events into an empty exhaustive history.
+
+## Controlled manual Okay comparison
+
+On 11 October 2026 the owner clicked Okay for exactly the supplied test warning,
+manual event 1121 / severity 2 / native action 1003. Before: isHistoric=false,
+setHistoricAt=null, confirmedAt=null. After: the same entry remained retained,
+isHistoric=true, setHistoricAt was set, confirmedAt remained null. This proves
+historization for that observed contract, not acknowledgement, removal or a repair.
+The native UI opens details with a separate readEntry command; readAt changes are
+not an effect of our readers. A native automation warning of the same severity
+advertised action 1005 instead, so severity does not determine the action.
+The writer allowlist therefore covers 1005 and only the verified 1121 warning/1003.
+Other manually triggered levels are not generalized from the warning observation.
+
+Writer approval binds a bounded, expiring single-use preview to family, identity,
+target, center, firmware and the raw selected entry metadata (excluding readAt).
+Fresh enablement, OAuth scope, source permission and action-specific permission
+checks precede dispatch in the same authenticated caller session. Post-action reads
+return only the selected entry's lifecycle, not unrelated history. The audit uses
+hashed identity/entry references and a correlation ID, never source text or credentials.

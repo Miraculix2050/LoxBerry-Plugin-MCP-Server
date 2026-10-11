@@ -322,7 +322,9 @@
     const granted = state.oauth && core.grantedScopes(state.oauth.scope);
     if (core.toolIsMutating(state.selectedTool) && requiredMutationScope &&
         !(granted && granted.has(requiredMutationScope))) {
-      setCallFeedback(label(requiredMutationScope === 'loxberry:operate' ? 'operateRequired' : 'controlRequired'), 'error');
+      const requiredLabel = requiredMutationScope === 'loxone:messages:confirm' ? 'messagesRequired'
+        : requiredMutationScope === 'loxberry:operate' ? 'operateRequired' : 'controlRequired';
+      setCallFeedback(label(requiredLabel), 'error');
       return;
     }
     if (!(await confirmMutation(state.selectedTool, state.arguments))) return;

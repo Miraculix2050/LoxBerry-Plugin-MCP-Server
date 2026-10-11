@@ -29,6 +29,7 @@ from mcpserver.auth.provider import (
     HISTORY_SCOPE,
     LOXBERRY_OPERATE_SCOPE,
     LOXBERRY_READ_SCOPE,
+    MESSAGE_CONFIRM_SCOPE,
     READ_SCOPE,
     REFRESH_FAMILY_TTL,
     SCOPE,
@@ -159,6 +160,7 @@ def test_provider_preserves_scope_exports_and_order() -> None:
         READ_SCOPE,
         HISTORY_SCOPE,
         CONTROL_SCOPE,
+        MESSAGE_CONFIRM_SCOPE,
         LOXBERRY_READ_SCOPE,
         LOXBERRY_OPERATE_SCOPE,
     )
@@ -1215,6 +1217,7 @@ def test_metadata_advertises_all_requestable_scopes(tmp_path: Path) -> None:
         READ_SCOPE,
         HISTORY_SCOPE,
         CONTROL_SCOPE,
+        MESSAGE_CONFIRM_SCOPE,
         LOXBERRY_READ_SCOPE,
         LOXBERRY_OPERATE_SCOPE,
     ]
@@ -1342,16 +1345,22 @@ async def test_locally_approved_operate_scope_still_requires_current_consent(
 
 
 @pytest.mark.parametrize(
-    ("grant_control", "expected_scopes"),
+    ("requested_scope", "grant_field", "grant_control", "expected_scopes", "expected_status"),
     [
-        (False, [READ_SCOPE]),
-        (True, [READ_SCOPE, CONTROL_SCOPE]),
+        (CONTROL_SCOPE, "grant_control", False, [READ_SCOPE], 302),
+        (CONTROL_SCOPE, "grant_control", True, [READ_SCOPE, CONTROL_SCOPE], 302),
+        (MESSAGE_CONFIRM_SCOPE, "grant_messages", False, [READ_SCOPE], 302),
+        (MESSAGE_CONFIRM_SCOPE, "grant_messages", True, [READ_SCOPE, MESSAGE_CONFIRM_SCOPE], 302),
+        (CONTROL_SCOPE, "grant_messages", True, [], 400),
     ],
 )
 @pytest.mark.asyncio
 async def test_consent_issues_only_the_scopes_selected_by_the_user(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    requested_scope: str,
+    grant_field: str,
+    expected_status: int,
     grant_control: bool,
     expected_scopes: list[str],
 ) -> None:
@@ -1369,7 +1378,7 @@ async def test_consent_issues_only_the_scopes_selected_by_the_user(
         token_endpoint_auth_method="none",
         grant_types=["authorization_code", "refresh_token"],
         response_types=["code"],
-        scope=f"{READ_SCOPE} {CONTROL_SCOPE}",
+        scope=f"{READ_SCOPE} {requested_scope}",
     )
     await provider.register_client(client_info)
     web = Phase0OAuthWeb(
@@ -1388,12 +1397,17 @@ async def test_consent_issues_only_the_scopes_selected_by_the_user(
         code_challenge=CHALLENGE,
         resource=RESOURCE,
         created_at=provider.now(),
-        scopes=(READ_SCOPE, CONTROL_SCOPE),
+        scopes=(READ_SCOPE, requested_scope),
         identity_id="identity",
         miniserver_id="miniserver",
         phase="consent",
     )
     web.transactions[transaction.transaction_id] = transaction
+    page = web._consent_page(transaction).body.decode()
+    if requested_scope == MESSAGE_CONFIRM_SCOPE:
+        assert 'id="grant_messages" type="checkbox"' in page
+        assert 'id="grant_messages" type="checkbox" checked' not in page
+        assert "No deletion or bulk actions" in page
 
     async def kill_token(selected: LoginTransaction) -> bool:
         selected.loxone_token = None
@@ -1403,7 +1417,7 @@ async def test_consent_issues_only_the_scopes_selected_by_the_user(
     app = Starlette(routes=[Route("/authorize", web.authorize, methods=["POST"])])
     data = {"csrf": "csrf", "action": "approve"}
     if grant_control:
-        data["grant_control"] = "true"
+        data[grant_field] = "true"
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(
         transport=transport,
@@ -1413,6 +1427,9 @@ async def test_consent_issues_only_the_scopes_selected_by_the_user(
     ) as client:
         approved = await client.post("/authorize", data=data)
 
+    assert approved.status_code == expected_status
+    if expected_status == 400:
+        return
     code_value = parse_qs(urlsplit(approved.headers["location"]).query)["code"][0]
     code = await provider.load_authorization_code(client_info, code_value)
     assert approved.status_code == 302
