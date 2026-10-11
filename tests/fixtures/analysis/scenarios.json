@@ -1,0 +1,862 @@
+{
+  "version": 1,
+  "source": "Collected prompts from Loxone MCP-Server recherchieren; issues #433 and #445",
+  "runs_per_case": 3,
+  "cases": [
+    {
+      "id": "lighting-01",
+      "group": "lighting",
+      "prompt": "Analysiere die Raumstruktur und liste Räume ohne klare Lichtszene auf.",
+      "operation": "scene_inventory",
+      "required_sources": [
+        "structure",
+        "lighting_intent"
+      ],
+      "baseline_workflow": [
+        "loxone_get_structure_overview",
+        "loxone_describe_control"
+      ],
+      "baseline_support": "conditional",
+      "reference": {
+        "fixture": "scenario_contract",
+        "result": {
+          "require_evidence": true
+        },
+        "absolute_tolerance": null
+      },
+      "completeness": [
+        "fresh_caller_visibility",
+        "explicit_source_provenance",
+        "separate_freshness_and_completeness"
+      ],
+      "valid_insufficient_evidence": "Return the available qualified subset, identify missing evidence, and do not fabricate the requested result.",
+      "prohibited_claims": [
+        "No visible scene is not proof of absent configuration.",
+        "No hidden identities, inferred physical roles, write calls or invented historical coverage."
+      ]
+    },
+    {
+      "id": "lighting-02",
+      "group": "lighting",
+      "prompt": "Welche Lichtkreise wirken doppelt oder unlogisch benannt?",
+      "operation": "naming_review",
+      "required_sources": [
+        "structure"
+      ],
+      "baseline_workflow": [
+        "loxone_find_controls",
+        "loxone_describe_control"
+      ],
+      "baseline_support": "conditional",
+      "reference": {
+        "fixture": "scenario_contract",
+        "result": {
+          "require_evidence": true
+        },
+        "absolute_tolerance": null
+      },
+      "completeness": [
+        "fresh_caller_visibility",
+        "explicit_source_provenance",
+        "separate_freshness_and_completeness"
+      ],
+      "valid_insufficient_evidence": "Return the available qualified subset, identify missing evidence, and do not fabricate the requested result.",
+      "prohibited_claims": [
+        "Similar names do not prove duplicated circuits.",
+        "No hidden identities, inferred physical roles, write calls or invented historical coverage."
+      ]
+    },
+    {
+      "id": "lighting-03",
+      "group": "lighting",
+      "prompt": "Fasse alle Präsenzmelder und zugehörigen Lichtfunktionen raumweise zusammen.",
+      "operation": "presence_links",
+      "required_sources": [
+        "project_mapping"
+      ],
+      "baseline_workflow": [
+        "loxone_find_project_objects",
+        "loxone_trace_project_logic"
+      ],
+      "baseline_support": "conditional",
+      "reference": {
+        "fixture": "scenario_contract",
+        "result": {
+          "require_evidence": true
+        },
+        "absolute_tolerance": null
+      },
+      "completeness": [
+        "fresh_caller_visibility",
+        "explicit_source_provenance",
+        "separate_freshness_and_completeness"
+      ],
+      "valid_insufficient_evidence": "Return the available qualified subset, identify missing evidence, and do not fabricate the requested result.",
+      "prohibited_claims": [
+        "Room membership is not a configured connection.",
+        "No hidden identities, inferred physical roles, write calls or invented historical coverage."
+      ]
+    },
+    {
+      "id": "lighting-04",
+      "group": "lighting",
+      "prompt": "Welche Räume könnten von Tunable White oder besser getrennten Lichtzonen profitieren?",
+      "operation": "lighting_advice",
+      "required_sources": [
+        "lighting_intent",
+        "fixture_inventory"
+      ],
+      "baseline_workflow": [
+        "loxone_get_structure_overview",
+        "loxone_describe_control"
+      ],
+      "baseline_support": "conditional",
+      "reference": {
+        "fixture": "scenario_contract",
+        "result": {
+          "require_evidence": true
+        },
+        "absolute_tolerance": null
+      },
+      "completeness": [
+        "fresh_caller_visibility",
+        "explicit_source_provenance",
+        "separate_freshness_and_completeness"
+      ],
+      "valid_insufficient_evidence": "Return the available qualified subset, identify missing evidence, and do not fabricate the requested result.",
+      "prohibited_claims": [
+        "Structure alone does not establish fixture capabilities or user intent.",
+        "No hidden identities, inferred physical roles, write calls or invented historical coverage."
+      ]
+    },
+    {
+      "id": "lighting-05",
+      "group": "lighting",
+      "prompt": "Prüfe, ob Nachtlicht, Orientierungslicht und Abwesenheitsszenen konsistent benannt sind.",
+      "operation": "scene_roles",
+      "required_sources": [
+        "structure",
+        "lighting_intent"
+      ],
+      "baseline_workflow": [
+        "loxone_describe_control"
+      ],
+      "baseline_support": "conditional",
+      "reference": {
+        "fixture": "scenario_contract",
+        "result": {
+          "require_evidence": true
+        },
+        "absolute_tolerance": null
+      },
+      "completeness": [
+        "fresh_caller_visibility",
+        "explicit_source_provenance",
+        "separate_freshness_and_completeness"
+      ],
+      "valid_insufficient_evidence": "Return the available qualified subset, identify missing evidence, and do not fabricate the requested result.",
+      "prohibited_claims": [
+        "Names do not prove scene functions.",
+        "No hidden identities, inferred physical roles, write calls or invented historical coverage."
+      ]
+    },
+    {
+      "id": "lighting-06",
+      "group": "lighting",
+      "prompt": "Das Projekt ist ein Einfamilienhaus mit Küche, offenem Wohnbereich, Büro, Elternbad und Garage. Schwerpunkt ist hochwertige Lichtsteuerung mit Loxone und 24V-Leuchten. Prüfe die Konfiguration aus Sicht Lichtplanung und Bedienbarkeit.",
+      "operation": "context_review",
+      "required_sources": [
+        "project_mapping",
+        "lighting_intent",
+        "fixture_inventory"
+      ],
+      "baseline_workflow": [
+        "loxone_find_project_objects",
+        "loxone_describe_control"
+      ],
+      "baseline_support": "conditional",
+      "reference": {
+        "fixture": "scenario_contract",
+        "result": {
+          "require_evidence": true
+        },
+        "absolute_tolerance": null
+      },
+      "completeness": [
+        "fresh_caller_visibility",
+        "explicit_source_provenance",
+        "separate_freshness_and_completeness"
+      ],
+      "valid_insufficient_evidence": "Return the available qualified subset, identify missing evidence, and do not fabricate the requested result.",
+      "prohibited_claims": [
+        "A contextual review is not physical installation acceptance.",
+        "No hidden identities, inferred physical roles, write calls or invented historical coverage."
+      ]
+    },
+    {
+      "id": "basic-07",
+      "group": "basic",
+      "prompt": "Wie hoch war gestern die durchschnittliche Temperatur im Wohnzimmer?",
+      "operation": "temperature_summary",
+      "required_sources": [
+        "actual_temperature",
+        "numeric_history",
+        "time_semantics"
+      ],
+      "baseline_workflow": [
+        "loxone_find_controls",
+        "loxone_describe_control",
+        "loxone_get_statistics"
+      ],
+      "baseline_support": "conditional",
+      "reference": {
+        "fixture": "temperature_samples",
+        "result": {
+          "sample_mean": 21
+        },
+        "absolute_tolerance": 1e-9
+      },
+      "completeness": [
+        "fresh_caller_visibility",
+        "explicit_source_provenance",
+        "separate_freshness_and_completeness",
+        "requested_and_usable_period",
+        "explicit_semantic_limitations"
+      ],
+      "valid_insufficient_evidence": "Return the available qualified subset, identify missing evidence, and do not fabricate the requested result.",
+      "prohibited_claims": [
+        "Do not silently present a sample mean as a time-weighted mean.",
+        "No hidden identities, inferred physical roles, write calls or invented historical coverage."
+      ]
+    },
+    {
+      "id": "basic-08",
+      "group": "basic",
+      "prompt": "Wie viel Energie hat die Wärmepumpe letzte Woche verbraucht?",
+      "operation": "consumer_energy",
+      "required_sources": [
+        "optional_consumer",
+        "energy_history",
+        "measurement_boundary"
+      ],
+      "baseline_workflow": [
+        "loxone_find_controls",
+        "loxone_describe_control",
+        "loxone_get_statistics"
+      ],
+      "baseline_support": "conditional",
+      "reference": {
+        "fixture": "energy_counter",
+        "result": {
+          "delta_kwh": 3
+        },
+        "absolute_tolerance": 1e-9
+      },
+      "completeness": [
+        "fresh_caller_visibility",
+        "explicit_source_provenance",
+        "separate_freshness_and_completeness",
+        "requested_and_usable_period",
+        "explicit_semantic_limitations"
+      ],
+      "valid_insufficient_evidence": "Return the available qualified subset, identify missing evidence, and do not fabricate the requested result.",
+      "prohibited_claims": [
+        "Do not invent a heat pump or confuse electrical and thermal energy.",
+        "No hidden identities, inferred physical roles, write calls or invented historical coverage."
+      ]
+    },
+    {
+      "id": "basic-09",
+      "group": "basic",
+      "prompt": "Was ist in Loxone gerade eingeschaltet?",
+      "operation": "active_controls",
+      "required_sources": [
+        "current_states",
+        "operational_semantics"
+      ],
+      "baseline_workflow": [
+        "loxone_find_controls",
+        "loxone_read_controls"
+      ],
+      "baseline_support": "conditional",
+      "reference": {
+        "fixture": "scenario_contract",
+        "result": {
+          "require_evidence": true
+        },
+        "absolute_tolerance": null
+      },
+      "completeness": [
+        "fresh_caller_visibility",
+        "explicit_source_provenance",
+        "separate_freshness_and_completeness"
+      ],
+      "valid_insufficient_evidence": "Return the available qualified subset, identify missing evidence, and do not fabricate the requested result.",
+      "prohibited_claims": [
+        "Unknown or stale values do not establish off.",
+        "No hidden identities, inferred physical roles, write calls or invented historical coverage."
+      ]
+    },
+    {
+      "id": "basic-10",
+      "group": "basic",
+      "prompt": "Wie warm ist es zu Hause?",
+      "operation": "home_temperature",
+      "required_sources": [
+        "current_states",
+        "actual_temperature"
+      ],
+      "baseline_workflow": [
+        "loxone_get_room_snapshot"
+      ],
+      "baseline_support": "conditional",
+      "reference": {
+        "fixture": "scenario_contract",
+        "result": {
+          "require_evidence": true
+        },
+        "absolute_tolerance": null
+      },
+      "completeness": [
+        "fresh_caller_visibility",
+        "explicit_source_provenance",
+        "separate_freshness_and_completeness"
+      ],
+      "valid_insufficient_evidence": "Return the available qualified subset, identify missing evidence, and do not fabricate the requested result.",
+      "prohibited_claims": [
+        "Do not include setpoints as measured room temperatures.",
+        "No hidden identities, inferred physical roles, write calls or invented historical coverage."
+      ]
+    },
+    {
+      "id": "basic-11",
+      "group": "basic",
+      "prompt": "Ist das Licht in der Küche eingeschaltet?",
+      "operation": "kitchen_light",
+      "required_sources": [
+        "current_states",
+        "operational_semantics"
+      ],
+      "baseline_workflow": [
+        "loxone_find_controls",
+        "loxone_read_controls"
+      ],
+      "baseline_support": "conditional",
+      "reference": {
+        "fixture": "scenario_contract",
+        "result": {
+          "require_evidence": true
+        },
+        "absolute_tolerance": null
+      },
+      "completeness": [
+        "fresh_caller_visibility",
+        "explicit_source_provenance",
+        "separate_freshness_and_completeness"
+      ],
+      "valid_insufficient_evidence": "Return the available qualified subset, identify missing evidence, and do not fabricate the requested result.",
+      "prohibited_claims": [
+        "Do not collapse multiple circuits without evidence.",
+        "No hidden identities, inferred physical roles, write calls or invented historical coverage."
+      ]
+    },
+    {
+      "id": "basic-12",
+      "group": "basic",
+      "prompt": "Wie warm ist es in diesem Raum?",
+      "operation": "room_temperature",
+      "required_sources": [
+        "current_states",
+        "actual_temperature"
+      ],
+      "baseline_workflow": [
+        "loxone_get_room_snapshot"
+      ],
+      "baseline_support": "conditional",
+      "reference": {
+        "fixture": "scenario_contract",
+        "result": {
+          "require_evidence": true
+        },
+        "absolute_tolerance": null
+      },
+      "completeness": [
+        "fresh_caller_visibility",
+        "explicit_source_provenance",
+        "separate_freshness_and_completeness"
+      ],
+      "valid_insufficient_evidence": "Return the available qualified subset, identify missing evidence, and do not fabricate the requested result.",
+      "prohibited_claims": [
+        "Ambiguous room or sensor requires clarification.",
+        "No hidden identities, inferred physical roles, write calls or invented historical coverage."
+      ]
+    },
+    {
+      "id": "basic-13",
+      "group": "basic",
+      "prompt": "Ist die Tür offen?",
+      "operation": "door_contact",
+      "required_sources": [
+        "current_states",
+        "contact_semantics"
+      ],
+      "baseline_workflow": [
+        "loxone_find_controls",
+        "loxone_read_controls"
+      ],
+      "baseline_support": "conditional",
+      "reference": {
+        "fixture": "scenario_contract",
+        "result": {
+          "require_evidence": true
+        },
+        "absolute_tolerance": null
+      },
+      "completeness": [
+        "fresh_caller_visibility",
+        "explicit_source_provenance",
+        "separate_freshness_and_completeness"
+      ],
+      "valid_insufficient_evidence": "Return the available qualified subset, identify missing evidence, and do not fabricate the requested result.",
+      "prohibited_claims": [
+        "Unlocked does not mean open.",
+        "No hidden identities, inferred physical roles, write calls or invented historical coverage."
+      ]
+    },
+    {
+      "id": "solar-14",
+      "group": "solar",
+      "prompt": "Wie viel Energie hat unsere Solaranlage heute erzeugt? Vergleiche mit gestern und dem bisherigen Tagesdurchschnitt dieses Monats.",
+      "operation": "yield_comparison",
+      "required_sources": [
+        "production_role",
+        "energy_history",
+        "local_periods"
+      ],
+      "baseline_workflow": [
+        "loxone_describe_control",
+        "loxone_get_statistics"
+      ],
+      "baseline_support": "conditional",
+      "reference": {
+        "fixture": "scenario_contract",
+        "result": {
+          "require_evidence": true
+        },
+        "absolute_tolerance": null
+      },
+      "completeness": [
+        "fresh_caller_visibility",
+        "explicit_source_provenance",
+        "separate_freshness_and_completeness",
+        "requested_and_usable_period",
+        "explicit_semantic_limitations"
+      ],
+      "valid_insufficient_evidence": "Return the available qualified subset, identify missing evidence, and do not fabricate the requested result.",
+      "prohibited_claims": [
+        "Compare equal elapsed intervals for a running day.",
+        "No hidden identities, inferred physical roles, write calls or invented historical coverage."
+      ]
+    },
+    {
+      "id": "solar-15",
+      "group": "solar",
+      "prompt": "Wie viel unseres Solarstroms haben wir gestern selbst verbraucht, wie viel eingespeist und wie viel Strom aus dem Netz bezogen?",
+      "operation": "native_balance",
+      "required_sources": [
+        "native_efm_periods",
+        "measurement_boundary",
+        "storage_context"
+      ],
+      "baseline_workflow": [
+        "loxone_describe_control",
+        "loxone_read_controls",
+        "loxone_get_statistics"
+      ],
+      "baseline_support": "unavailable",
+      "reference": {
+        "fixture": "scenario_contract",
+        "result": {
+          "require_evidence": true
+        },
+        "absolute_tolerance": null
+      },
+      "completeness": [
+        "fresh_caller_visibility",
+        "explicit_source_provenance",
+        "separate_freshness_and_completeness"
+      ],
+      "valid_insufficient_evidence": "Return the available qualified subset, identify missing evidence, and do not fabricate the requested result.",
+      "prohibited_claims": [
+        "Do not substitute a guessed balance for unavailable native EFM values.",
+        "No hidden identities, inferred physical roles, write calls or invented historical coverage."
+      ]
+    },
+    {
+      "id": "solar-16",
+      "group": "solar",
+      "prompt": "Zeige mir für gestern den Verlauf von Solarleistung und Hausverbrauch. Wann hatten wir Überschuss und wann mussten wir Strom beziehen?",
+      "operation": "aligned_curves",
+      "required_sources": [
+        "production_role",
+        "house_load_role",
+        "numeric_history",
+        "measurement_boundary"
+      ],
+      "baseline_workflow": [
+        "loxone_get_statistics"
+      ],
+      "baseline_support": "conditional",
+      "reference": {
+        "fixture": "scenario_contract",
+        "result": {
+          "require_evidence": true
+        },
+        "absolute_tolerance": null
+      },
+      "completeness": [
+        "fresh_caller_visibility",
+        "explicit_source_provenance",
+        "separate_freshness_and_completeness",
+        "requested_and_usable_period",
+        "explicit_semantic_limitations"
+      ],
+      "valid_insufficient_evidence": "Return the available qualified subset, identify missing evidence, and do not fabricate the requested result.",
+      "prohibited_claims": [
+        "PV minus house load does not prove grid flow with unknown storage.",
+        "No hidden identities, inferred physical roles, write calls or invented historical coverage."
+      ]
+    },
+    {
+      "id": "solar-17",
+      "group": "solar",
+      "prompt": "Vergleiche die Solarerzeugung mit unseren einzeln gemessenen Verbrauchern. Welche liefen überwiegend während der Solarproduktion?",
+      "operation": "pv_overlap",
+      "required_sources": [
+        "production_role",
+        "consumer_role",
+        "numeric_history",
+        "optional_event_history"
+      ],
+      "baseline_workflow": [
+        "loxone_get_statistics",
+        "loxone_get_event_history"
+      ],
+      "baseline_support": "conditional",
+      "reference": {
+        "fixture": "mixed_overlap",
+        "result": {
+          "overlap_seconds": 3600
+        },
+        "absolute_tolerance": 0
+      },
+      "completeness": [
+        "fresh_caller_visibility",
+        "explicit_source_provenance",
+        "separate_freshness_and_completeness",
+        "requested_and_usable_period",
+        "explicit_semantic_limitations"
+      ],
+      "valid_insufficient_evidence": "Return the available qualified subset, identify missing evidence, and do not fabricate the requested result.",
+      "prohibited_claims": [
+        "Temporal overlap is not exact solar attribution.",
+        "No hidden identities, inferred physical roles, write calls or invented historical coverage."
+      ]
+    },
+    {
+      "id": "solar-18",
+      "group": "solar",
+      "prompt": "Welche gemessenen Verbraucher haben gestern am meisten Energie benötigt? Stelle ihren Verbrauch dem Solarertrag gegenüber.",
+      "operation": "consumer_ranking",
+      "required_sources": [
+        "consumer_role",
+        "production_role",
+        "energy_history",
+        "measurement_boundary"
+      ],
+      "baseline_workflow": [
+        "loxone_get_statistics"
+      ],
+      "baseline_support": "conditional",
+      "reference": {
+        "fixture": "ranked_intervals",
+        "result": {
+          "rank": [
+            "consumer_b",
+            "consumer_a"
+          ],
+          "energy_kwh": [
+            3,
+            2
+          ]
+        },
+        "absolute_tolerance": 1e-9
+      },
+      "completeness": [
+        "fresh_caller_visibility",
+        "explicit_source_provenance",
+        "separate_freshness_and_completeness",
+        "requested_and_usable_period",
+        "explicit_semantic_limitations"
+      ],
+      "valid_insufficient_evidence": "Return the available qualified subset, identify missing evidence, and do not fabricate the requested result.",
+      "prohibited_claims": [
+        "Do not double-count parent and child meters or invent residual consumers.",
+        "No hidden identities, inferred physical roles, write calls or invented historical coverage."
+      ]
+    },
+    {
+      "id": "solar-19",
+      "group": "solar",
+      "prompt": "Welche Verbrauchsvorgänge der letzten Woche hätten zeitlich besser zu unserem Solarüberschuss gepasst?",
+      "operation": "retrospective_shift",
+      "required_sources": [
+        "operating_phases",
+        "power_profile",
+        "confirmed_operating_constraints"
+      ],
+      "baseline_workflow": [
+        "loxone_get_statistics",
+        "loxone_get_event_history"
+      ],
+      "baseline_support": "unavailable",
+      "reference": {
+        "fixture": "scenario_contract",
+        "result": {
+          "require_evidence": true
+        },
+        "absolute_tolerance": null
+      },
+      "completeness": [
+        "fresh_caller_visibility",
+        "explicit_source_provenance",
+        "separate_freshness_and_completeness"
+      ],
+      "valid_insufficient_evidence": "Return the available qualified subset, identify missing evidence, and do not fabricate the requested result.",
+      "prohibited_claims": [
+        "Overlap alone is not proof that a load is shiftable.",
+        "No hidden identities, inferred physical roles, write calls or invented historical coverage."
+      ]
+    },
+    {
+      "id": "solar-20",
+      "group": "solar",
+      "prompt": "Vergleiche gestern mit Tagen ähnlicher Sonneneinstrahlung, Jahreszeit und Temperatur. Waren Ertrag und Eigenverbrauch auffällig?",
+      "operation": "similar_days",
+      "required_sources": [
+        "historical_weather",
+        "energy_history",
+        "native_efm_periods"
+      ],
+      "baseline_workflow": [
+        "loxone_get_statistics"
+      ],
+      "baseline_support": "unavailable",
+      "reference": {
+        "fixture": "scenario_contract",
+        "result": {
+          "require_evidence": true
+        },
+        "absolute_tolerance": null
+      },
+      "completeness": [
+        "fresh_caller_visibility",
+        "explicit_source_provenance",
+        "separate_freshness_and_completeness",
+        "requested_and_usable_period",
+        "explicit_semantic_limitations"
+      ],
+      "valid_insufficient_evidence": "Return the available qualified subset, identify missing evidence, and do not fabricate the requested result.",
+      "prohibited_claims": [
+        "Current weather forecasts cannot replace historical weather.",
+        "No hidden identities, inferred physical roles, write calls or invented historical coverage."
+      ]
+    },
+    {
+      "id": "solar-21",
+      "group": "solar",
+      "prompt": "Warum war unser Eigenverbrauch gestern niedriger als an vergleichbaren Tagen?",
+      "operation": "self_consumption_difference",
+      "required_sources": [
+        "historical_weather",
+        "native_efm_periods",
+        "context"
+      ],
+      "baseline_workflow": [
+        "loxone_get_statistics"
+      ],
+      "baseline_support": "unavailable",
+      "reference": {
+        "fixture": "scenario_contract",
+        "result": {
+          "require_evidence": true
+        },
+        "absolute_tolerance": null
+      },
+      "completeness": [
+        "fresh_caller_visibility",
+        "explicit_source_provenance",
+        "separate_freshness_and_completeness"
+      ],
+      "valid_insufficient_evidence": "Return the available qualified subset, identify missing evidence, and do not fabricate the requested result.",
+      "prohibited_claims": [
+        "Correlation or configuration reachability does not prove causation.",
+        "No hidden identities, inferred physical roles, write calls or invented historical coverage."
+      ]
+    },
+    {
+      "id": "solar-22",
+      "group": "solar",
+      "prompt": "Gab es in den letzten vier Wochen Tage mit ungewöhnlich niedrigem Solarertrag, obwohl die Wetterbedingungen vergleichbar waren?",
+      "operation": "low_yield",
+      "required_sources": [
+        "historical_weather",
+        "energy_history",
+        "installation_parameters"
+      ],
+      "baseline_workflow": [
+        "loxone_get_statistics"
+      ],
+      "baseline_support": "unavailable",
+      "reference": {
+        "fixture": "scenario_contract",
+        "result": {
+          "require_evidence": true
+        },
+        "absolute_tolerance": null
+      },
+      "completeness": [
+        "fresh_caller_visibility",
+        "explicit_source_provenance",
+        "separate_freshness_and_completeness",
+        "requested_and_usable_period",
+        "explicit_semantic_limitations"
+      ],
+      "valid_insufficient_evidence": "Return the available qualified subset, identify missing evidence, and do not fabricate the requested result.",
+      "prohibited_claims": [
+        "Low yield does not establish a defect or weather-adjusted anomaly.",
+        "No hidden identities, inferred physical roles, write calls or invented historical coverage."
+      ]
+    },
+    {
+      "id": "solar-23",
+      "group": "solar",
+      "prompt": "Wie hoch ist unser nächtlicher Grundverbrauch, und wie viel Energie benötigt er täglich im Verhältnis zum Solarertrag?",
+      "operation": "night_base_load",
+      "required_sources": [
+        "house_power_intervals",
+        "production_role",
+        "energy_history",
+        "local_periods"
+      ],
+      "baseline_workflow": [
+        "loxone_get_statistics"
+      ],
+      "baseline_support": "conditional",
+      "reference": {
+        "fixture": "night_intervals",
+        "result": {
+          "weighted_median_w": 100,
+          "extrapolated_24h_kwh": 2.4
+        },
+        "absolute_tolerance": 1e-9
+      },
+      "completeness": [
+        "fresh_caller_visibility",
+        "explicit_source_provenance",
+        "separate_freshness_and_completeness",
+        "requested_and_usable_period",
+        "explicit_semantic_limitations"
+      ],
+      "valid_insufficient_evidence": "Return the available qualified subset, identify missing evidence, and do not fabricate the requested result.",
+      "prohibited_claims": [
+        "Extrapolated daily base-load energy is an estimate, not a measurement.",
+        "No hidden identities, inferred physical roles, write calls or invented historical coverage."
+      ]
+    },
+    {
+      "id": "solar-24",
+      "group": "solar",
+      "prompt": "Erstelle einen Solarbericht für die letzte Woche: Erzeugung, Hausverbrauch, Eigenverbrauch, Einspeisung, Netzbezug und auffällige Tage.",
+      "operation": "periodic_report",
+      "required_sources": [
+        "energy_history",
+        "native_efm_periods",
+        "measurement_boundary"
+      ],
+      "baseline_workflow": [
+        "loxone_describe_control",
+        "loxone_get_statistics"
+      ],
+      "baseline_support": "conditional",
+      "reference": {
+        "fixture": "scenario_contract",
+        "result": {
+          "require_evidence": true
+        },
+        "absolute_tolerance": null
+      },
+      "completeness": [
+        "fresh_caller_visibility",
+        "explicit_source_provenance",
+        "separate_freshness_and_completeness",
+        "requested_and_usable_period",
+        "explicit_semantic_limitations"
+      ],
+      "valid_insufficient_evidence": "Return the available qualified subset, identify missing evidence, and do not fabricate the requested result.",
+      "prohibited_claims": [
+        "Missing report components must remain explicitly unavailable.",
+        "No hidden identities, inferred physical roles, write calls or invented historical coverage."
+      ]
+    },
+    {
+      "id": "solar-25",
+      "group": "solar",
+      "prompt": "Welche Zeitfenster sind morgen voraussichtlich günstig, um unsere verschiebbaren Verbraucher mit Solarstrom zu betreiben?",
+      "operation": "future_windows",
+      "required_sources": [
+        "pv_forecast",
+        "load_forecast",
+        "confirmed_operating_constraints"
+      ],
+      "baseline_workflow": [
+        "loxone_get_weather"
+      ],
+      "baseline_support": "unavailable",
+      "reference": {
+        "fixture": "scenario_contract",
+        "result": {
+          "require_evidence": true
+        },
+        "absolute_tolerance": null
+      },
+      "completeness": [
+        "fresh_caller_visibility",
+        "explicit_source_provenance",
+        "separate_freshness_and_completeness"
+      ],
+      "valid_insufficient_evidence": "Return the available qualified subset, identify missing evidence, and do not fabricate the requested result.",
+      "prohibited_claims": [
+        "A weather forecast alone is not a PV generation forecast.",
+        "No hidden identities, inferred physical roles, write calls or invented historical coverage."
+      ]
+    }
+  ],
+  "required_fixture_variants": [
+    "event_only",
+    "statistics_only",
+    "mixed",
+    "native_efm",
+    "no_storage",
+    "with_storage",
+    "multiple_meters",
+    "residual_load",
+    "reset",
+    "dst_23h",
+    "dst_25h",
+    "gaps",
+    "revoked_visibility",
+    "unsupported_semantics",
+    "missing_optional_consumer"
+  ]
+}

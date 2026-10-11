@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Establish the 25-question analysis acceptance catalog, synthetic numeric
+  references, DE/EN baseline support matrix and value-free offline workflow
+  measurement validation. Missing telemetry remains incomplete (#445).
+
 - Offer canonical core/KNX guidance sections through the existing guide tool and
   resources while retaining full-guide defaults. Explain ETS/manual search,
   source comparisons, DPT uncertainty and UI-only export boundaries (#455).

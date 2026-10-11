@@ -1,0 +1,146 @@
+{
+  "version": 1,
+  "synthetic": true,
+  "timezone": "Europe/Berlin",
+  "datasets": {
+    "temperature_samples": {
+      "source": "statistics",
+      "quantity": "actual_temperature",
+      "unit": "degC",
+      "points": [
+        [
+          0,
+          20
+        ],
+        [
+          3600,
+          22
+        ]
+      ],
+      "time_representation": "unknown",
+      "expected": {
+        "sample_mean": 21,
+        "time_weighted_mean": null
+      }
+    },
+    "energy_counter": {
+      "source": "statistics",
+      "quantity": "energy",
+      "unit": "kWh",
+      "kind": "counter",
+      "points": [
+        [
+          0,
+          10
+        ],
+        [
+          3600,
+          11
+        ],
+        [
+          7200,
+          13
+        ]
+      ],
+      "expected": {
+        "delta_kwh": 3
+      }
+    },
+    "ranked_intervals": {
+      "source": "statistics",
+      "unit": "kWh",
+      "kind": "interval_total",
+      "measurement_boundaries": [
+        "independent_a",
+        "independent_b"
+      ],
+      "series": {
+        "consumer_a": [
+          [
+            0,
+            3600,
+            2
+          ]
+        ],
+        "consumer_b": [
+          [
+            0,
+            3600,
+            3
+          ]
+        ]
+      },
+      "expected": {
+        "rank": [
+          "consumer_b",
+          "consumer_a"
+        ],
+        "energy_kwh": [
+          3,
+          2
+        ]
+      }
+    },
+    "mixed_overlap": {
+      "source": "mixed",
+      "power_intervals": [
+        [
+          0,
+          3600,
+          1000
+        ],
+        [
+          3600,
+          7200,
+          0
+        ]
+      ],
+      "event_baseline": {
+        "at": 0,
+        "value": true
+      },
+      "transitions": [
+        [
+          5400,
+          true,
+          false
+        ]
+      ],
+      "capture": [
+        [
+          0,
+          7200
+        ]
+      ],
+      "expected": {
+        "overlap_seconds": 3600
+      }
+    },
+    "night_intervals": {
+      "source": "statistics",
+      "quantity": "power",
+      "unit": "W",
+      "intervals": [
+        [
+          0,
+          7200,
+          100
+        ],
+        [
+          7200,
+          10800,
+          200
+        ],
+        [
+          10800,
+          18000,
+          100
+        ]
+      ],
+      "expected": {
+        "weighted_median_w": 100,
+        "extrapolated_24h_kwh": 2.4
+      }
+    }
+  }
+}
