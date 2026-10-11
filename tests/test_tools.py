@@ -3153,7 +3153,7 @@ async def test_weather_tool_pages_actual_and_forecast_without_state_uuid(
     access = _loxberry_access(READ_SCOPE)
     formats = (
         ("relativeHumidity", "%.0f%%"),
-        ("temperature", "%.1f Â°C"),
+        ("temperature", "%.1f °C"),
         ("windSpeed", "%.0f km/h"),
         ("precipitation", "%.1f mm"),
         ("barometricPressure", "%.0f hPa"),
@@ -3227,7 +3227,7 @@ async def test_weather_tool_pages_actual_and_forecast_without_state_uuid(
     assert len(numeric_fields) == 10
     assert all(point_properties[name].get("description") for name in numeric_fields)
     assert "unverified" in point_properties["solar_radiation"]["description"]
-    assert "W/mÂ²" in point_properties["solar_radiation"]["description"]
+    assert "W/m²" in point_properties["solar_radiation"]["description"]
     metadata_schema = output_defs["WeatherFieldMetadataMapData"]
     assert set(metadata_schema["properties"]) == numeric_fields
     assert set(metadata_schema["required"]) == numeric_fields
@@ -3338,9 +3338,9 @@ async def test_weather_tool_pages_actual_and_forecast_without_state_uuid(
 
 
 def test_weather_field_metadata_keeps_missing_source_formats_explicit() -> None:
-    metadata = tools_module._weather_field_metadata({"temperature": "%.1f Â°C"}).model_dump()
+    metadata = tools_module._weather_field_metadata({"temperature": "%.1f °C"}).model_dump()
 
-    assert metadata["temperature"]["source_format"] == "%.1f Â°C"
+    assert metadata["temperature"]["source_format"] == "%.1f °C"
     for field_name, source_key in (
         ("relative_humidity", "relativeHumidity"),
         ("wind_speed", "windSpeed"),
