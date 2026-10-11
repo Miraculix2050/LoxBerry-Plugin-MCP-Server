@@ -20,6 +20,9 @@ Profile bindings add nullable `semantic_reference` to resolver rule versions.
 Persisted old bindings remain readable. New evidence or changed references marks
 affected bindings `needs_review`; unrelated names do not. A rule reference does
 not establish a value, semantic completeness or user-declared technical truth.
+State references use all existing resolver families and a shared ruleset version
+for value-dependent companion branches. Decoder changes must bump that ruleset
+reference even when structure metadata is unchanged.
 
 ## Temperature and binary measurement semantics (#435)
 

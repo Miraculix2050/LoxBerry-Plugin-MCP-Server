@@ -81,7 +81,10 @@ def test_profile_rule_references_migrate_without_inventing_semantics(
     document = storage.put(
         TARGET, 0, binding(confirmed=True), c, origin="local_admin", actor_ref=ACTOR
     )
-    assert document.bindings[0].semantic_reference == "IRoomControllerV2.tempActual.v1"
+    assert (
+        document.bindings[0].semantic_reference
+        == "IRoomControllerV2.tempActual.v1+StateSemanticsResolver.rules.v1"
+    )
     assert project_profile(document, TARGET, {CONTROL: c})["bindings"][0]["status"] == "confirmed"
     legacy = document.model_copy(
         update={"bindings": [document.bindings[0].model_copy(update={"semantic_reference": None})]}

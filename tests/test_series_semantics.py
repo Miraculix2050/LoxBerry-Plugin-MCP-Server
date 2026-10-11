@@ -140,3 +140,30 @@ def test_normalization_retains_semantic_validity(accumulated, valid):
     }
     item = normalize_structure(raw, username="synthetic").controls[0].statistic_series[0]
     assert item.recording_mode == 8 and item.accumulated_metadata_valid is valid
+
+
+@pytest.mark.parametrize(
+    "kind,name,rule",
+    [
+        ("SmokeAlarm", "level", "SmokeAlarm.level.active.v1"),
+        ("Alarm", "level", "Alarm.level.v1"),
+        ("StatusMonitor", "numState1", "StatusMonitor.numState1.v1"),
+        ("WindowMonitor", "windowStates", "WindowMonitor.windowStates.v1"),
+        ("Irrigation", "rainActive", "Irrigation.rainActive.v1"),
+    ],
+)
+def test_profile_references_cover_existing_state_decoder_families(kind, name, rule):
+    c = replace(control(kind), state_uuids=((name, "state"),))
+    reference = StateSemanticsResolver().source_reference(c, state_name=name)
+    assert reference is not None and rule in reference
+    assert reference.endswith("StateSemanticsResolver.rules.v1")
+
+
+def test_profile_reference_changes_with_companion_ruleset(monkeypatch):
+    c = replace(control("SmokeAlarm"), state_uuids=(("level", "state"),))
+    before = StateSemanticsResolver().source_reference(c, state_name="level")
+    monkeypatch.setattr(
+        "mcpserver.loxone.state_semantics._STATE_RULESET_REFERENCE",
+        "StateSemanticsResolver.rules.v2",
+    )
+    assert StateSemanticsResolver().source_reference(c, state_name="level") != before

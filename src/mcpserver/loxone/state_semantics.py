@@ -13,7 +13,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field
 
-from .models import Control, LoxoneStructure, StatisticSeries
+from .models import Control, LoxoneIdentity, LoxoneStructure, StatisticSeries
 from .window_states import WINDOW_DOCUMENT, decode_window_states
 
 
@@ -147,6 +147,10 @@ _ALARM_RULES = {
     "wakeAlarmSoundSettings",
 }
 _FORMAT_TYPES = {"InfoOnlyAnalog", "UpDownAnalog", "Slider"}
+# Bump when a supported decoder/companion rule changes, including branches
+# whose rule provenance depends on a value that profile metadata does not read.
+_STATE_RULESET_REFERENCE = "StateSemanticsResolver.rules.v1"
+_REFERENCE_STRUCTURE = LoxoneStructure(LoxoneIdentity("", ""), "", (), (), ())
 
 
 @dataclass(frozen=True, slots=True)
@@ -303,9 +307,13 @@ class StateSemanticsResolver:
         if series is not None:
             sources = self.resolve_series(control, series).sources
         else:
-            measurement = _resolve_measurement(control, state_name or "", None)
-            sources = tuple(measurement[0].sources) if measurement is not None else ()
-        rules = [source.rule_id for source in sources if source.rule_id]
+            descriptor, _value = self.resolve(
+                _REFERENCE_STRUCTURE, control, state_name or "", None, {}
+            )
+            sources = tuple(descriptor.sources)
+        rules = list(dict.fromkeys(source.rule_id for source in sources if source.rule_id))
+        if series is None and rules:
+            rules.append(_STATE_RULESET_REFERENCE)
         return "+".join(rules) if rules else None
 
     def resolve_series(
