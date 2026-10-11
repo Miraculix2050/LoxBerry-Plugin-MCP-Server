@@ -62,7 +62,7 @@ def digest(value: object) -> str:
 
 
 def _number(value: object, *, maximum: float = 10**12) -> bool:
-    return type(value) in (int, float) and math.isfinite(value) and 0 <= value <= maximum
+    return type(value) in (int, float) and 0 <= value <= maximum and math.isfinite(value)
 
 
 def validate_capture(document: dict, catalog: dict) -> list[dict]:
@@ -162,12 +162,22 @@ def summarize(document: dict, catalog: dict) -> dict:
             results.append({"case_id": case["id"], "phase": phase, "metrics": metrics})
     failed = any(run["outcome"] == "fail" for run in runs)
     unavailable = any(value is None for run in runs for value in (run[m] for m in METRICS))
-    incomplete = missing or unavailable or any(run["outcome"] == "incomplete" for run in runs)
+    identity_missing = any(
+        value.casefold() in {"unavailable", "unknown", "unverified"}
+        for value in document["identity"].values()
+    )
+    incomplete = (
+        missing
+        or unavailable
+        or identity_missing
+        or any(run["outcome"] == "incomplete" for run in runs)
+    )
     return {
         "version": 1,
         "status": "fail" if failed else "incomplete" if incomplete else "pass",
         "catalog_sha256": digest(catalog),
         "identity_sha256": digest(document["identity"]),
+        "identity_complete": not identity_missing,
         "runs": len(runs),
         "missing_runs": missing,
         "unavailable_metrics": sorted({m for r in runs for m in METRICS if r[m] is None}),

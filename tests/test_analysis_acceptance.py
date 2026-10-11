@@ -90,7 +90,7 @@ def test_duplicate_runs_and_write_calls_are_rejected() -> None:
             acceptance.validate_capture(data, CATALOG)
 
 
-@pytest.mark.parametrize("value", [True, -1, float("nan"), float("inf"), "10"])
+@pytest.mark.parametrize("value", [True, -1, float("nan"), float("inf"), "10", 10**400])
 def test_invalid_metrics_are_rejected(value: object) -> None:
     data = capture()
     data["runs"][0]["duration_ms"] = value
@@ -120,3 +120,12 @@ def test_comparison_requires_same_environment_and_does_not_auto_accept_performan
     observed["identity"]["model"] = "other"
     with pytest.raises(ValueError, match="environment_mismatch"):
         acceptance.compare(reference, observed, CATALOG)
+
+
+def test_unknown_model_identity_cannot_establish_matching_benchmark() -> None:
+    reference = capture()
+    reference["identity"]["model"] = "unavailable"
+    result = acceptance.compare(reference, copy.deepcopy(reference), CATALOG)
+    assert result["status"] == "incomplete"
+    assert result["reference"]["identity_complete"] is False
+    assert result["comparisons"][0]["duration_ms_change_percent"] == 0
