@@ -101,6 +101,7 @@ def test_cgi_and_ui_use_same_origin_and_safe_text_and_localized_keys():
     assert "same_origin_post()" in cgi
     assert r"\A(?:profile_page|profile_put|profile_delete)\z" in cgi
     assert "alarm 60" in cgi and "MCPSERVER_EVENT_HISTORY_STORE" in cgi
+    assert '$ENV{MCPSERVER_AUTH_STORE} = "$lbpdatadir/auth/sessions.json";' in cgi
     assert "innerHTML" not in script and ".textContent" in script
     assert 'get("confirmed").checked = false' in script
     assert 'id="profile-fields"' in template and "disabled" in template
