@@ -37,7 +37,9 @@
 See [Gen. 2 compatibility testing](gen2-compatibility-test.md) and the [user capability overview](../user/capabilities.en.md).
 
 - `loxone_get_active_alerts` evaluates documented, fixture-tested AalEmergency,
-  AalSmartAlarm and AlarmChain rules (Structure File 17.1). No active case has
+  AalSmartAlarm and AlarmChain rules (Structure File 17.1), plus Alarm.level
+  stages (Structure File 17.0) with owner-approved zero-as-inactive assumption
+  (#346, 11 October 2026). No active case has
   hardware observation evidence. This adds no hardware-family or firmware compatibility promise. Known
   unsupported monitor/alarm families make coverage partial; this is no safety
   certification or alarm notification service.

@@ -59,6 +59,7 @@ class StateSemantics:
         "value_unavailable",
         "invalid_documented_value",
         "documented_decoder",
+        "owner_approved_decoder",
         "companion_unavailable",
         "metadata_truncated",
     ] = "no_supported_evidence"
@@ -128,6 +129,7 @@ class AlertFamily:
 
 
 ALERT_FAMILIES = {
+    "Alarm": AlertFamily("level"),
     "AalEmergency": AlertFamily("status"),
     "AalSmartAlarm": AlertFamily(
         "alarmLevel", optional=("disableEndTime", "isLeaveActive", "isLocked")
@@ -150,10 +152,65 @@ class StateSemanticsResolver:
         result = StateSemantics()
         semantic_value: object | None = None
         family = ALERT_FAMILIES.get(control.control_type)
+        if control.control_type == "Alarm" and state_name == "level":
+            alarm_labels = (
+                "inactive",
+                "silent",
+                "acoustic",
+                "optical",
+                "internal",
+                "external",
+                "remote",
+            )
+            result.value_type = "integer"
+            result.encoding = [
+                SemanticsEncoding(code, label) for code, label in enumerate(alarm_labels)
+            ]
+            result.encoding_total = result.encoding_returned = len(alarm_labels)
+            result.encoding_complete = True
+            result.sources.extend(
+                (
+                    SemanticsSource(
+                        "decoder_rule",
+                        "https://www.loxone.com/enen/wp-content/uploads/sites/3/2026/04/1700_Structure-File.pdf#page=28",
+                        ("semantic_value.level", "encoding.codes_1_to_6"),
+                        rule_id="Alarm.level.v1",
+                        document_version="17.0",
+                    ),
+                    SemanticsSource(
+                        "decoder_rule",
+                        "https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/issues/346#issuecomment-6103804884",
+                        ("semantic_value.alert_active", "encoding.code_0", "value_type"),
+                        rule_id="Alarm.level.v1",
+                    ),
+                )
+            )
+            result.interpretation_status, result.reason = "partial", "value_unavailable"
+            if value is not None:
+                if (
+                    isinstance(value, int | float)
+                    and not isinstance(value, bool)
+                    and value in range(7)
+                ):
+                    semantic_value = {
+                        "alert_active": value != 0,
+                        "level": alarm_labels[int(value)],
+                        "context": {
+                            "test_alarm": None,
+                            "acknowledged": None,
+                            "signals_suppressed": None,
+                        },
+                    }
+                    result.interpretation_status, result.reason = "known", "owner_approved_decoder"
+                else:
+                    result.interpretation_status, result.reason = (
+                        "invalid",
+                        "invalid_documented_value",
+                    )
         if (
             family is not None
             and state_name == family.primary
-            and control.control_type != "AalEmergency"
+            and control.control_type not in {"AalEmergency", "Alarm"}
         ):
             smart = control.control_type == "AalSmartAlarm"
             labels: tuple[str, ...] = (

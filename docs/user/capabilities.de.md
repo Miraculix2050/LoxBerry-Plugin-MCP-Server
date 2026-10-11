@@ -518,6 +518,19 @@ ist inaktiv; Quittierung hebt aktive Alarmbits nicht auf. Grundlage ist Structur
 File 17.1, Seiten 26–30; daraus folgt keine Firmware-Kompatibilitätszusage.
 Nur aktuelle verfügbare primäre States belegen Aktivität/Inaktivität.
 
+`Alarm.level` akzeptiert zusätzlich ganzzahlige numerische Codes 0–6: 1 still,
+2 akustisch, 3 optisch, 4 intern, 5 extern, 6 fern. Code 0 bedeutet gemäß der
+expliziten Entscheidung des Eigentümers (#346, 11. Oktober 2026) keinen laufenden
+Alarm; dies ist eine Annahme und keine Loxone-Garantie. Regel `Alarm.level.v1`
+trennt die Provenienz von Structure File 17.0 S.28 (Stufen) und Issue-Entscheidung
+(Nullwert/Aktivität und akzeptiertes Format), mit `reason=owner_approved_decoder`.
+Eine widerlegte Annahme wird als Bug korrigiert. Stufen sind keine Gefahrenbewertung.
+Quittierung setzt die digitalen Alarmausgänge zurück und erhält die Scharfschaltung;
+der API-Level-Übergang und die Testmodus-Abbildung sind nicht spezifiziert.
+Test-, Quittierungs- und Unterdrückungskontext bleiben unbekannt; armed,
+nextLevelAt und startTime überschreiben die Aktivität nicht. Fehlende, ungültige
+oder veraltete Levels belegen niemals Inaktivität.
+
 `semantic_value` enthält dekodierte Quell-Level/-Arten und Kontext ohne weitere
 Tool-Interpretation. Aktive Befunde enthalten optional `context`: `test_alarm`, `acknowledged` und
 `signals_suppressed` sind true/false/null. Null bedeutet unbekannt oder von der
