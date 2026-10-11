@@ -655,6 +655,11 @@ def test_package_builder_emits_unix_executable_modes(tmp_path: Path) -> None:
     with zipfile.ZipFile(output, "w") as archive:
         _add(archive, source, "bin/healthcheck")
         _add(archive, ROOT / "webfrontend/htmlauth/knx.cgi", "webfrontend/htmlauth/knx.cgi")
+        _add(
+            archive,
+            ROOT / "webfrontend/htmlauth/message-approval.cgi",
+            "webfrontend/htmlauth/message-approval.cgi",
+        )
         _add(archive, ROOT / "plugin.cfg", "plugin.cfg")
 
     with zipfile.ZipFile(output) as archive:
@@ -665,8 +670,13 @@ def test_package_builder_emits_unix_executable_modes(tmp_path: Path) -> None:
         assert regular.external_attr >> 16 & 0o777 == 0o644
         assert "bin/healthcheck" in _EXECUTABLES
         assert "webfrontend/htmlauth/knx.cgi" in _EXECUTABLES
+        assert "webfrontend/htmlauth/message-approval.cgi" in _EXECUTABLES
         assert _EXECUTABLES == VERIFIED_EXECUTABLES
         assert archive.getinfo("webfrontend/htmlauth/knx.cgi").external_attr >> 16 & 0o777 == 0o755
+        assert (
+            archive.getinfo("webfrontend/htmlauth/message-approval.cgi").external_attr >> 16 & 0o777
+            == 0o755
+        )
 
 
 def test_package_builder_normalizes_installed_text_to_lf(tmp_path: Path) -> None:

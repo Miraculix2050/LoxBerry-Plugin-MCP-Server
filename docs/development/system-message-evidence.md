@@ -67,3 +67,63 @@ Fresh enablement, OAuth scope, source permission and action-specific permission
 checks precede dispatch in the same authenticated caller session. Post-action reads
 return only the selected entry's lifecycle, not unrelated history. The audit uses
 hashed identity/entry references and a correlation ID, never source text or credentials.
+
+## Native MCP and SSH acceptance, 11 October 2026
+
+The current master `a19f5edd1f69d8d420acae8fc55cba6763a1b012` was fetched and is
+included in tested implementation commit `7b4af5753f217f122eb2c7099c08c7741f546520`.
+This was a Hotswap on LoxBerry-Test, not a release-package installation.
+SSH verified an active service started at 14:49:49 CEST, health version
+`0.4.0b4`, and a clear emergency-stop signal. The installed SHA-256 hashes of
+`message_approval.py`, `message_confirmation.py` and `loxone/system_messages.py`
+matched that commit. The connected native MCP server returned full guide revision
+68; fresh source reads verified Miniserver firmware 17.2.8.28. The unchanged
+package version does not identify Hotswap source contents; hashes and runtime guide
+revision provide the additional implementation evidence.
+Only these selected runtime files were compared. Other installed files were not
+verified as a complete current-master deployment; concurrent read-only diagnostics
+reported missing EFM modules. The evidence proves the tested message workflow,
+not whole-target parity with the integrated local master.
+
+| Live operation through the connected Loxone MCP server | Observed result |
+| --- | --- |
+| Current / retained-history / all System Messages | 9 / 9 / 18 initial entries; successful, fresh reads; all page untruncated; retention remains unknown |
+| Source-separated overview, history enabled, limit 5 | Successful; partial alert/message coverage and initially unavailable notification remain explicit; no global absence claim |
+| Owner-authorized notification switch, one on and one off | Both accepted and confirmed; active state 1 then 0; target freshly resolved in the authorized room/category intersection and described before each command |
+| Notification context after on | Current latest-event response from the expected configured source; app-context observation, not proof of Push delivery to a recipient |
+| Exact owner-approved warning preview and local native Admin approval | Unchanged manual warning, event 1121, action 1003; native Admin page inspected and approved the server-staged single-use artifact |
+| Exact warning confirmation | `dispatched=true`, `accepted=true`, `effect_observed=true`, `outcome=observed`; retained historic entry, historic timestamp set, `confirmed_at=null`; no retry |
+| Final administrator capability | Restored to `loxone_message_confirmation_enabled=false` through the regular Admin dispatcher |
+
+The confirmation scope was obtained through the existing authorized OAuth grant;
+no auth-store permissions or token contents were changed for this test. Two preview
+transport calls received HTTP 503 during the Admin-triggered service restart;
+neither dispatched a message action. SSH subsequently verified the restarted
+service and a separate native status read established reachable/current state
+before the successful preview. Failures are part of the acceptance record.
+
+After the test, all other still-retained records matched their earlier fields.
+One unrelated already-historic event-503 record was absent from the later retained
+source (17 entries). Its disappearance has no established cause; retained history
+is not exhaustive. Only the exact approved test warning was dispatched by the
+confirmation tool; no original message was selected for confirmation or repair.
+Read-only SSH reconciliation found exactly one matching observed confirmation
+audit event in the rotated service logs, correlated with the MCP result trace.
+The switch test deliberately included the owner's separately authorized Push
+side effect. End-device delivery and other firmware/manual severity action effects
+remain unverified.
+
+Evidence is sanitized: no private message bodies, host addresses, serials, native
+identifiers, OAuth client identities, tokens, preview IDs or approval challenges
+are included here. Review later identified missing executable CGI archive metadata;
+builder and verifier inventories plus the archive-mode regression were corrected
+separately. This Hotswap evidence does not establish native package-installation
+compatibility.
+
+The initial approval page rendered the exact live test message and the successful
+local approval, with literal HTML text and no executable markup. Responsive testing
+found horizontal overflow from the preformatted text; an external stylesheet now
+wraps it and keeps the form bounded. After the UI-only Hotswap the reloaded empty
+form had equal viewport/scroll width (520 px). The requested 390 px browser override
+was constrained to 520 px by this browser; no true 390 px compatibility claim is made.
+The complete live-message approval was observed before that CSS correction.

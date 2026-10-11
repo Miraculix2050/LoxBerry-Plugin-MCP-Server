@@ -43,6 +43,7 @@ _EXECUTABLES: Final = {
     "bin/root-lifecycle-paths.py",
     "webfrontend/htmlauth/index.cgi",
     "webfrontend/htmlauth/knx.cgi",
+    "webfrontend/htmlauth/message-approval.cgi",
     "webfrontend/htmlauth/explorer.cgi",
     "webfrontend/htmlauth/explorer_callback.cgi",
     "webfrontend/htmlauth/event_history.cgi",
