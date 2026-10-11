@@ -20,6 +20,7 @@ from websockets.typing import Subprotocol
 
 from mcpserver.loxone.endpoint import MiniserverEndpoint as MiniserverEndpoint
 from mcpserver.loxone.events import (
+    LoxonePayloadTooLarge,
     LoxoneProtocolError,
     MessageHeader,
     MessageType,
@@ -176,7 +177,7 @@ async def _receive_websocket(
         if isinstance(payload, str):
             actual_sizes = {len(payload), len(payload.encode("utf-8"))}
             if max(actual_sizes) > max_payload_bytes:
-                raise LoxoneProtocolError("WebSocket text payload exceeds the configured limit")
+                raise LoxonePayloadTooLarge("WebSocket text payload exceeds the configured limit")
             if header.payload_length not in actual_sizes:
                 raise LoxoneProtocolError("WebSocket payload length does not match its header")
             return header, payload
@@ -190,7 +191,15 @@ async def _close_websocket(websocket: ClientConnection, timeout_seconds: float) 
     try:
         await asyncio.wait_for(websocket.close(), timeout=timeout_seconds)
     except (OSError, TimeoutError) as exc:  # pragma: no cover - transport dependent
+        transport = getattr(websocket, "transport", None)
+        if transport is not None:
+            transport.abort()
         _LOGGER.debug("WebSocket close failed: %s", type(exc).__name__)
+    except asyncio.CancelledError:
+        transport = getattr(websocket, "transport", None)
+        if transport is not None:
+            transport.abort()
+        raise
 
 
 async def _websocket_command(
@@ -219,7 +228,7 @@ async def _websocket_command(
         raise LoxoneProtocolError("Miniserver command response is not text")
     try:
         response = json.loads(payload)
-    except json.JSONDecodeError as exc:
+    except (ValueError, RecursionError) as exc:
         raise LoxoneProtocolError("Miniserver command response is not JSON") from exc
     if not isinstance(response, Mapping):
         raise LoxoneProtocolError("Miniserver command response is invalid")
@@ -527,14 +536,18 @@ class LoxoneClient:
         try:
             await session.authenticate()
         except BaseException as exc:
-            try:
-                # Cancellation (including the shared deadline) has no remaining
-                # budget for a peer's graceful-close handshake.
-                if not isinstance(exc, asyncio.CancelledError):
-                    await session.close()
-            finally:
-                # Also abort if cancellation interrupts ordinary error cleanup.
+            if isinstance(exc, asyncio.CancelledError):
                 websocket.transport.abort()
+                raise
+            try:
+                await session.close()
+            except asyncio.CancelledError:
+                # The bounded close helper already aborted the transport.
+                raise
+            except BaseException:
+                websocket.transport.abort()
+                raise
+            websocket.transport.abort()
             raise
         return session
 
@@ -765,6 +778,23 @@ class LoxoneWebSocketSession:
         await self._command(
             f"jdev/sps/io/{quote(action_uuid, safe='')}/{quote(command, safe='/')}",
             encrypted=not self._secure_transport,
+        )
+
+    async def native_efm_result(self, action_uuid: str, view: str) -> Any:
+        """Read one fixed evidenced EFM view with strict transport bounds."""
+        from mcpserver.loxone.native_efm import MAX_OUTER_BYTES, VIEWS
+        from mcpserver.loxone.uuid import normalize_loxone_uuid
+
+        action_uuid = normalize_loxone_uuid(action_uuid)
+        if view not in VIEWS:
+            raise ValueError("invalid native EFM view")
+        return await _websocket_command(
+            self._websocket,
+            self._encryptor,
+            f"jdev/sps/io/{action_uuid}/get/{view}",
+            encrypted=not self._secure_transport,
+            timeout_seconds=min(self._timeout, 10.0),
+            max_payload_bytes=min(self._max_payload, MAX_OUTER_BYTES),
         )
 
     async def control_history(self, action_uuid: str) -> list[Mapping[str, Any]]:

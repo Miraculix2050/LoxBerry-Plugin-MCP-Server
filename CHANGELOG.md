@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add an opt-in native EFM result view to `loxone_read_controls` for freshly
+  verified Loxone administrators on firmware 17.2.8.28. Preserve caller-session
+  authorization, activated history gates, unknown units/period boundaries and
+  existing cached-state reads; no balance calculations or native result cache (#436).
+
 - Publish the 25-question DE/EN analysis support matrix and execute original
   numeric references against the delivered core. Mark unavailable independent
   AI/token and matched performance measurements incomplete (#445).

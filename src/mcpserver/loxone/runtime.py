@@ -37,6 +37,7 @@ from mcpserver.loxone.client import (
     LoxoneConnectionError,
     LoxoneSourceIpBlocked,
     LoxoneToken,
+    LoxoneTokenAuthenticationRejected,
     LoxoneWebSocketSession,
 )
 from mcpserver.loxone.control import (
@@ -44,13 +45,25 @@ from mcpserver.loxone.control import (
     prepare_control_command,
     visible_mood_ids,
 )
-from mcpserver.loxone.events import LoxoneProtocolError
+from mcpserver.loxone.events import LoxonePayloadTooLarge, LoxoneProtocolError
 from mcpserver.loxone.models import (
     Control,
     Freshness,
     LoxoneStructure,
     StateRecord,
     StatisticSeries,
+)
+from mcpserver.loxone.native_efm import (
+    FIRMWARE as NATIVE_EFM_FIRMWARE,
+)
+from mcpserver.loxone.native_efm import (
+    VIEWS as NATIVE_EFM_VIEWS,
+)
+from mcpserver.loxone.native_efm import (
+    NativeEfmError,
+    NativeEfmResult,
+    NativeResultView,
+    decode_native_efm,
 )
 from mcpserver.loxone.project.service import ProjectService
 from mcpserver.loxone.statistics import (
@@ -897,6 +910,144 @@ class LoxoneRuntime:
         _LOGGER.debug("component=history_visibility trace_id=%s outcome=fresh", trace_id)
         return structure
 
+    async def read_native_efm(
+        self, access: StoredAccessToken, control_uuid: str, view: NativeResultView
+    ) -> tuple[Control, LoxoneStructure, NativeEfmResult]:
+        """Admin-first native reads; fresh caller checks before reading and release."""
+        from mcpserver.loxone.uuid import normalize_loxone_uuid
+
+        try:
+            control_uuid = normalize_loxone_uuid(control_uuid)
+        except ValueError:
+            raise ControlOperationError("invalid_input", "Invalid native EFM target") from None
+        if view not in NATIVE_EFM_VIEWS:
+            raise ControlOperationError("invalid_input", "Invalid native EFM view")
+        if READ_SCOPE not in access.scopes:
+            raise PermissionError("loxone:read scope is required")
+        if view != "actual" and (HISTORY_SCOPE not in access.scopes or not self.history_enabled):
+            raise ControlOperationError("permission_denied", "Activated loxone:history is required")
+        if (
+            self.token_health is not None
+            and self.token_health.get(access.family_id).confirmation_required
+        ):
+            raise ControlOperationError("permission_denied", "Token use requires confirmation")
+        session: LoxoneWebSocketSession | None = None
+        token: LoxoneToken | None = None
+        timeout = min(self.client.timeout_seconds, 10.0)
+        deadline = time.monotonic() + 30
+
+        def visible_admin(structure: LoxoneStructure) -> Control:
+            control = next(
+                (c for c in structure.controls if c.uuid == control_uuid and not c.is_hidden), None
+            )
+            if control is None:
+                raise ControlOperationError("not_found", "Native EFM target is not accessible")
+            if structure.caller_is_admin is not True:
+                raise ControlOperationError("permission_denied", "Loxone administrator required")
+            if control.control_type != "EFM":
+                raise ControlOperationError("unsupported_source", "Native EFM source unsupported")
+            return control
+
+        try:
+            async with asyncio.timeout(30):
+                slot = (
+                    self.call_slot(access) if view == "actual" else self.history_call_slot(access)
+                )
+                async with slot:
+                    try:
+                        await self._require_access(access)
+                        if (
+                            self.token_health is not None
+                            and self.token_health.get(access.family_id).confirmation_required
+                        ):
+                            raise ControlOperationError(
+                                "permission_denied", "Token use requires confirmation"
+                            )
+                        token = self.token_store.get(
+                            access.family_id, access.miniserver_id, access.identity_id
+                        )
+                        if token is None:
+                            raise RuntimeUnavailable("Loxone authorization is unavailable")
+                        try:
+                            session = await asyncio.wait_for(
+                                self._open_session(
+                                    token,
+                                    owner="tool_request",
+                                    phase="native_efm",
+                                    access=access,
+                                    require_token_confirmation=True,
+                                ),
+                                timeout,
+                            )
+                        except LoxoneTokenAuthenticationRejected:
+                            if self.token_health is not None:
+                                self.token_health.record_rejected_authentication(access.family_id)
+                            raise ControlOperationError(
+                                "permission_denied", "Loxone authentication rejected"
+                            ) from None
+                        if self.token_health is not None:
+                            self.token_health.record_successful_authentication(access.family_id)
+                        structure = await asyncio.wait_for(session.load_structure(), timeout)
+                        control = visible_admin(structure)
+                        probe = await asyncio.wait_for(self.client.probe(), timeout)
+                        serial = canonical_serial(structure.identity.miniserver_serial)
+                        if (
+                            probe.firmware != NATIVE_EFM_FIRMWARE
+                            or canonical_serial(probe.serial) != serial
+                        ):
+                            raise ControlOperationError(
+                                "unsupported_source", "Native EFM firmware or identity unsupported"
+                            )
+                        await self._require_access(access)
+                        value = await asyncio.wait_for(
+                            session.native_efm_result(control.uuid, view), timeout
+                        )
+                        result = decode_native_efm(
+                            value, view, retrieved_at=datetime.now(UTC).isoformat()
+                        )
+                        await self._require_access(access)
+                        refreshed = await asyncio.wait_for(session.load_structure(), timeout)
+                        control = visible_admin(refreshed)
+                        if canonical_serial(refreshed.identity.miniserver_serial) != serial:
+                            raise ControlOperationError(
+                                "unsupported_source", "Native EFM source identity changed"
+                            )
+                        await self._require_access(access)
+                        return control, refreshed, result
+                    finally:
+                        if session is not None:
+                            with suppress(TimeoutError, LoxoneConnectionError, LoxoneProtocolError):
+                                await asyncio.wait_for(
+                                    session.close(),
+                                    max(0.001, min(timeout, deadline - time.monotonic())),
+                                )
+        except RuntimeAuthorizationError:
+            raise ControlOperationError(
+                "permission_denied", "Loxone authorization unavailable"
+            ) from None
+        except MessageSourceError:
+            raise ControlOperationError(
+                "unsupported_source", "Native EFM identity invalid"
+            ) from None
+        except LoxonePayloadTooLarge:
+            raise ControlOperationError(
+                "response_too_large", "Native EFM response too large"
+            ) from None
+        except NativeEfmError as exc:
+            code = (
+                "response_too_large"
+                if str(exc) == "native_efm_response_too_large"
+                else "temporarily_unavailable"
+            )
+            raise ControlOperationError(code, "Native EFM response invalid") from None
+        except (LoxoneTokenStoreError, LoxoneConnectionError, LoxoneProtocolError, TimeoutError):
+            raise ControlOperationError(
+                "temporarily_unavailable", "Native EFM source unavailable"
+            ) from None
+        finally:
+            if token is not None:
+                token.destroy()
+
     async def get_statistics(
         self,
         access: StoredAccessToken,
@@ -1657,6 +1808,7 @@ class LoxoneRuntime:
         owner: str,
         phase: str,
         access: StoredAccessToken | None = None,
+        require_token_confirmation: bool = False,
     ) -> LoxoneWebSocketSession:
         """Open a session through the shared source-IP breaker when configured."""
         coordinator = getattr(self, "auth_coordinator", None)
@@ -1667,6 +1819,14 @@ class LoxoneRuntime:
             coordinated = True
             if access is not None:
                 await self._require_access(access)
+                if (
+                    require_token_confirmation
+                    and self.token_health is not None
+                    and self.token_health.get(access.family_id).confirmation_required
+                ):
+                    raise ControlOperationError(
+                        "permission_denied", "Token use requires confirmation"
+                    )
             if getattr(self, "_closed", False):
                 raise RuntimeUnavailable("Loxone runtime is closed")
 

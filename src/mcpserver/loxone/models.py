@@ -218,6 +218,7 @@ class LoxoneStructure:
     weather: WeatherMetadata = WeatherMetadata()
     message_center_uuid: str | None = None
     user_rights: int | None = None
+    caller_is_admin: bool | None = None
     parse_identity: str = field(default="", kw_only=True, repr=False, compare=False)
 
 

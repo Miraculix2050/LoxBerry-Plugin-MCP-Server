@@ -263,6 +263,7 @@
       return variants.some((item) => valueMatchesSchema(value, item, rootSchema));
     }
     const type = schemaType(effective, rootSchema);
+    if (type === 'null') return false;
     if (type !== undefined && !JSON_TYPES.has(type)) return false;
     if (type === 'string' && typeof value !== 'string') return false;
     if (type === 'integer' && (!Number.isInteger(value))) return false;

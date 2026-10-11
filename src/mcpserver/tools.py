@@ -25,7 +25,14 @@ from uuid import UUID, uuid4
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    SerializerFunctionWrapHandler,
+    model_serializer,
+)
 
 from mcpserver.auth.provider import (
     CONTROL_SCOPE,
@@ -65,6 +72,7 @@ from mcpserver.loxone.history_evidence import (
     statistic_evidence,
 )
 from mcpserver.loxone.models import Control, Freshness, StateRecord
+from mcpserver.loxone.native_efm import NativeEfmResult, NativeResultView
 from mcpserver.loxone.opening_contacts import OpeningScopeError, analyze_opening_contacts
 from mcpserver.loxone.presentation import (
     control_matches_query as _control_matches_query,
@@ -725,6 +733,16 @@ class ControlReadItemData(BaseModel):
     identity: ControlSummaryData
     values: list[CompactStateData] = Field(max_length=100)
     semantics: list[StateSemanticsItemData] | None = Field(default=None, max_length=100)
+    native_result: NativeEfmResult | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+
+    @model_serializer(mode="wrap")
+    def serialize(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        result: dict[str, Any] = handler(self)
+        if self.native_result is not None:
+            result.pop("semantics", None)
+        return result
 
 
 class ControlsReadData(BaseModel):
@@ -5357,6 +5375,9 @@ def register_read_tools(
             "Select exact state names or omit to read all; at most 100 named states and 64 KiB "
             "per response. Optional semantics reuses the state-semantics evidence model. "
             "All targets are validated atomically against one fresh visible snapshot."
+            " Opt-in native_result_view reads one EFM on verified 17.2.8.28 as a freshly "
+            "verified Loxone administrator; period views additionally require activated history. "
+            "Native source fields have unknown units and period boundaries; no balance calculation."
         ),
         annotations=annotations,
         structured_output=True,
@@ -5376,6 +5397,10 @@ def register_read_tools(
                 description="Include the existing semantic evidence and observation-quality model."
             ),
         ] = False,
+        native_result_view: Annotated[
+            NativeResultView | None,
+            Field(description="Optional native EFM view; one target, no state_names or semantics."),
+        ] = None,
     ) -> ControlsReadEnvelope:
         if (
             not 1 <= len(targets) <= 25
@@ -5388,6 +5413,52 @@ def register_read_tools(
         ):
             return _error(ControlsReadEnvelope, "invalid_input", "Targets and names must be unique")
         try:
+            if native_result_view is not None:
+                if len(targets) != 1 or targets[0].state_names is not None or include_semantics:
+                    return _error(
+                        ControlsReadEnvelope,
+                        "invalid_input",
+                        "Native EFM requires one plain target",
+                    )
+                access = _access()
+                if runtime is None:
+                    raise RuntimeUnavailable("the service is not configured")
+                native_control, structure, native = await runtime.read_native_efm(
+                    access, targets[0].control_uuid, native_result_view
+                )
+                native_snapshot = RuntimeSnapshot(access.family_id, structure, True)
+                envelope = _result(
+                    ControlsReadEnvelope,
+                    {
+                        "items": [
+                            {
+                                "identity": _control_summary(native_control, native_snapshot),
+                                "values": [],
+                                "native_result": native,
+                            }
+                        ],
+                        "requested_controls": 1,
+                        "returned_controls": 1,
+                        "requested_states": 0,
+                        "returned_states": 0,
+                        "complete": native.field_delivery_complete,
+                        "truncated": False,
+                        "omitted_sections": [
+                            "relationships",
+                            "notes",
+                            "history",
+                            "statistics",
+                            "actions",
+                            "project",
+                            "semantics",
+                        ],
+                    },
+                )
+                if len(envelope.model_dump_json().encode("utf-8")) > 65_536:
+                    return _error(
+                        ControlsReadEnvelope, "response_too_large", "Response exceeds 64 KiB"
+                    )
+                return envelope
             _, snapshot = await _snapshot(runtime, fresh_visibility=True)
             visible = {c.uuid: c for c in _visible_controls(snapshot.structure)}
             selected: list[tuple[Control, tuple[tuple[str, str], ...]]] = []
@@ -5491,6 +5562,9 @@ def register_read_tools(
             )
         except RuntimeUnavailable as exc:
             return _availability_error(ControlsReadEnvelope, exc)
+
+        except ControlOperationError as exc:
+            return _operation_error(ControlsReadEnvelope, exc)
 
     @server.tool(
         name="loxone_get_state_semantics",

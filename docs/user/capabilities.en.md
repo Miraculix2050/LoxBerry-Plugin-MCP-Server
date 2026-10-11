@@ -481,6 +481,21 @@ establish an intrinsic alarm meaning. Source: Structure File 17.1, pp.130–131.
 Use `loxone_read_controls` when visible control UUIDs are already known; otherwise
 discover them with `loxone_find_controls` first. For example:
 
+The optional `native_result_view` (`actual`, `day`, `week`, `month`, `year`,
+`lifetime`) reads one native EFM result for a freshly verified **Loxone
+administrator** on firmware **17.2.8.28**. Use one target without `state_names`
+and keep `include_semantics=false`. Periods additionally require `loxone:history`
+and enabled history. A LoxBerry Admin login does not establish this permission.
+Native results use a separate `native_result` section with empty `values` and
+zero state counts. Units, signs, scaling, currency, physical observation freshness
+and period boundaries remain unknown. Missing fields, including `Rest`, are not
+zero. Calendar views are running native periods, not arbitrary historical dates;
+no self-consumption or balance calculation is provided. Omit the option for
+unchanged cached-state reads. Other firmware and non-admin native reads remain
+unsupported; device acceptance is reported separately.
+
+Cached-state example:
+
 ```json
 {"targets":[{"control_uuid":"<visible-control-uuid>","state_names":["value"]}]}
 ```

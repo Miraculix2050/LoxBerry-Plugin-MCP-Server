@@ -296,6 +296,8 @@ async def test_compact_order_aliases_and_optional_shared_semantics(monkeypatch):
     assert runtime.reads == ["state"] and runtime.snapshots == [True]
     assert result.data.items[0].values == []
     assert result.data.items[1].semantics is None
+    serialized = result.model_dump(mode="json")["data"]["items"]
+    assert all("native_result" not in item and item["semantics"] is None for item in serialized)
     enriched = await t.fn(
         [ControlReadTarget(control_uuid="control", state_names=["rainActive"])], True
     )

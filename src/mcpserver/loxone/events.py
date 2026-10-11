@@ -33,6 +33,10 @@ class LoxoneProtocolError(ValueError):
     """Raised when a WebSocket payload violates the documented binary format."""
 
 
+class LoxonePayloadTooLarge(LoxoneProtocolError):
+    """The advertised or received payload exceeds its fixed transport budget."""
+
+
 @dataclass(frozen=True, slots=True)
 class MessageHeader:
     message_type: MessageType
@@ -57,7 +61,7 @@ def parse_header(payload: bytes, *, max_payload_bytes: int) -> MessageHeader:
     except ValueError as exc:
         raise LoxoneProtocolError("WebSocket header contains an unknown message type") from exc
     if payload_length > max_payload_bytes:
-        raise LoxoneProtocolError("WebSocket payload exceeds the configured limit")
+        raise LoxonePayloadTooLarge("WebSocket payload exceeds the configured limit")
     return MessageHeader(
         message_type=message_type,
         estimated=bool(info & 0x80),
