@@ -4201,6 +4201,9 @@ def register_read_tools(
     from mcpserver.message_tools import register_message_tools
 
     register_message_tools(server, runtime)
+    from mcpserver.attention_tools import register_attention_tools
+
+    register_attention_tools(server, runtime)
     register_opening_contact_tool(server, runtime)
     annotations = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
     cursors = _CursorCodec()

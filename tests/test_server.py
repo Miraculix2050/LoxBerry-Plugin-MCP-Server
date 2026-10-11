@@ -476,6 +476,7 @@ def test_exact_default_read_only_tools_are_published() -> None:
         "loxone_get_installation_profile",
         "loxone_get_notifications",
         "loxone_get_system_messages",
+        "loxone_get_attention_overview",
         "loxone_analyze_opening_contacts",
         "loxone_get_system_status",
         "loxone_get_structure_overview",

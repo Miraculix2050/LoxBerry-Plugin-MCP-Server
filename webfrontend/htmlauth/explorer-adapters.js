@@ -13,6 +13,7 @@
       'loxone_get_control_notes', 'loxone_read_controls',
       'loxone_get_state_semantics', 'loxone_get_active_alerts', 'loxone_get_states',
       'loxone_get_system_messages',
+        'loxone_get_attention_overview',
       'loxone_get_notifications',
       'loxone_get_installation_profile',
       'loxone_get_structure_overview', 'loxone_get_room_snapshot',
