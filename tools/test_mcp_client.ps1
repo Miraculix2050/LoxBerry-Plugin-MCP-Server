@@ -216,7 +216,8 @@ try {
         'loxone_get_notifications',
         'loxone_get_states', 'loxone_list_global_metadata',
         'loxone_analyze_opening_contacts',
-        'loxone_get_skill_guide', 'loxone_list_event_history_sources', 'loxone_get_event_history'
+        'loxone_get_skill_guide', 'loxone_get_installation_profile',
+        'loxone_list_event_history_sources', 'loxone_get_event_history'
     )
     $actual = @($toolsResponse.result.tools | ForEach-Object { $_.name } | Sort-Object)
     $optional = @(

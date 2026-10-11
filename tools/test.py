@@ -34,6 +34,22 @@ _FULL_PATTERNS: Final = (
 )
 _TEST_GROUPS: Final = (
     (
+        (
+            "src/mcpserver/installation_profile*.py",
+            "webfrontend/htmlauth/profile.cgi",
+            "webfrontend/htmlauth/profile.js",
+            "templates/profile.html",
+            "tests/js/profile-behavior.test.cjs",
+        ),
+        (
+            "tests/test_installation_profile.py",
+            "tests/test_installation_profile_admin.py",
+            "tests/test_installation_profile_tools.py",
+            "tests/test_schema_reference.py",
+            "tests/test_server.py",
+        ),
+    ),
+    (
         ("tools/analysis_acceptance.py", "tests/fixtures/analysis/**"),
         ("tests/test_analysis_acceptance.py",),
     ),

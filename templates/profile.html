@@ -1,0 +1,61 @@
+<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-profile-v1">
+<main class="mcp-page" id="profile-page"
+ data-saved="<TMPL_VAR PROFILE.SAVED ESCAPE=HTML>"
+ data-error="<TMPL_VAR PROFILE.ERROR ESCAPE=HTML>"
+ data-edit="<TMPL_VAR PROFILE.EDIT ESCAPE=HTML>"
+ data-delete="<TMPL_VAR PROFILE.DELETE ESCAPE=HTML>"
+ data-delete-confirm="<TMPL_VAR PROFILE.DELETE_CONFIRM ESCAPE=HTML>"
+ data-truncated="<TMPL_VAR PROFILE.TRUNCATED ESCAPE=HTML>"
+ data-empty="<TMPL_VAR PROFILE.EMPTY ESCAPE=HTML>"
+ data-draft="<TMPL_VAR PROFILE.DRAFT ESCAPE=HTML>"
+ data-confirmed="<TMPL_VAR PROFILE.CONFIRMED ESCAPE=HTML>"
+ data-needs_review="<TMPL_VAR PROFILE.NEEDS_REVIEW ESCAPE=HTML>"
+ data-invalid="<TMPL_VAR PROFILE.INVALID ESCAPE=HTML>">
+ <a class="lb-button" href="index.cgi"><TMPL_VAR PROFILE.BACK></a>
+ <h1><TMPL_VAR PROFILE.TITLE></h1>
+ <p><TMPL_VAR PROFILE.HELP></p>
+ <p id="profile-status" role="status" aria-live="polite"></p>
+ <section class="mcp-card">
+  <h2><TMPL_VAR PROFILE.BINDINGS></h2>
+  <ul id="profile-bindings"></ul>
+  <button type="button" class="lb-button" id="profile-more" hidden><TMPL_VAR PROFILE.MORE></button>
+  <button type="button" class="lb-button" id="profile-delete-all" disabled><TMPL_VAR PROFILE.DELETE_ALL></button>
+ </section>
+ <section class="mcp-card">
+  <h2><TMPL_VAR PROFILE.EDIT></h2>
+  <form id="profile-form" class="mcp-form">
+   <fieldset disabled id="profile-fields">
+    <label class="mcp-field"><span><TMPL_VAR PROFILE.SOURCE></span><select id="profile-source"></select></label>
+    <p id="profile-source-notice"></p>
+    <details id="profile-exact"><summary><TMPL_VAR PROFILE.EXACT_IDS></summary>
+     <label class="mcp-field"><span><TMPL_VAR PROFILE.CONTROL_ID></span><input id="profile-control" maxlength="128" required></label>
+     <label class="mcp-field"><span><TMPL_VAR PROFILE.SOURCE_KIND></span><select id="profile-kind"><option value="state"><TMPL_VAR PROFILE.STATE></option><option value="statistic"><TMPL_VAR PROFILE.STATISTIC></option></select></label>
+     <label class="mcp-field"><span><TMPL_VAR PROFILE.SOURCE_ID></span><input id="profile-source-id" maxlength="128" required></label>
+    </details>
+    <label class="mcp-field"><span><TMPL_VAR PROFILE.ROLE></span><select id="profile-role">
+     <option value="production"><TMPL_VAR PROFILE.PRODUCTION></option>
+     <option value="grid_import"><TMPL_VAR PROFILE.GRID_IMPORT></option>
+     <option value="grid_export"><TMPL_VAR PROFILE.GRID_EXPORT></option>
+     <option value="house_consumption"><TMPL_VAR PROFILE.HOUSE_CONSUMPTION></option>
+     <option value="storage_charge"><TMPL_VAR PROFILE.STORAGE_CHARGE></option>
+     <option value="storage_discharge"><TMPL_VAR PROFILE.STORAGE_DISCHARGE></option>
+     <option value="consumer"><TMPL_VAR PROFILE.CONSUMER></option>
+     <option value="actual_temperature"><TMPL_VAR PROFILE.ACTUAL_TEMPERATURE></option>
+     <option value="target_temperature"><TMPL_VAR PROFILE.TARGET_TEMPERATURE></option>
+     <option value="room_sensor"><TMPL_VAR PROFILE.ROOM_SENSOR></option>
+     <option value="operating_state"><TMPL_VAR PROFILE.OPERATING_STATE></option>
+     <option value="door_contact"><TMPL_VAR PROFILE.DOOR_CONTACT></option>
+     <option value="window_contact"><TMPL_VAR PROFILE.WINDOW_CONTACT></option>
+     <option value="lighting_intent"><TMPL_VAR PROFILE.LIGHTING_INTENT></option>
+    </select></label>
+    <label class="mcp-field"><span><TMPL_VAR PROFILE.BOUNDARY></span><input id="profile-boundary" maxlength="128"></label>
+    <label class="mcp-field"><span><TMPL_VAR PROFILE.DIRECTION></span><select id="profile-direction"><option value=""><TMPL_VAR PROFILE.UNKNOWN></option><option value="import"><TMPL_VAR PROFILE.GRID_IMPORT></option><option value="export"><TMPL_VAR PROFILE.GRID_EXPORT></option><option value="charge"><TMPL_VAR PROFILE.STORAGE_CHARGE></option><option value="discharge"><TMPL_VAR PROFILE.STORAGE_DISCHARGE></option></select></label>
+    <label class="mcp-field"><span><TMPL_VAR PROFILE.RATIONALE></span><input id="profile-rationale" maxlength="256"></label>
+    <label><input type="checkbox" id="profile-confirmed"><TMPL_VAR PROFILE.CONFIRM_ROLE></label>
+    <p class="mcp-help"><TMPL_VAR PROFILE.CONFIRM_HELP></p>
+    <div class="mcp-actions"><button class="lb-button" type="submit"><TMPL_VAR PROFILE.SAVE></button><button class="lb-button" type="button" id="profile-new"><TMPL_VAR PROFILE.NEW></button></div>
+   </fieldset>
+  </form>
+ </section>
+</main>
+<script src="profile.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-profile-v1" defer></script>

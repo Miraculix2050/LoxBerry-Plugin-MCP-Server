@@ -2003,6 +2003,10 @@ def _dispatch(request: object, *, timing: dict[str, float | int] | None = None) 
         raise AdminError("request is invalid")
     action = request["action"]
     payload = request.get("payload", {})
+    if action.startswith("profile_"):
+        from mcpserver.installation_profile_admin import dispatch_profile
+
+        return dispatch_profile(action, payload, _config_store())
     if action.startswith("knx_"):
         from mcpserver.knx.admin import dispatch_knx
 

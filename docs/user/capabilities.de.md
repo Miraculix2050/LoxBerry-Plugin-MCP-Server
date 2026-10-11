@@ -4,6 +4,10 @@
 
 ## Unterstützter Umfang
 
+Das [bestätigte Anlagenprofil](installation-profile.de.md) speichert minimale
+Zuordnungen über die Admin-Seite. MCP liest sie mit aktueller Sichtbarkeit;
+Nutzerrollen bleiben von technischer Semantik getrennt.
+
 WindowMonitor `windowStates` wird über gewöhnliche Zustandsleser, Zustandssemantik
 und optionale Semantik kompakter Abfragen dekodiert. Nutzen Sie
 `semantic_value.contacts`: Jeder ursprüngliche Index erhält Roh-Token,

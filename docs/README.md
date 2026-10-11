@@ -6,6 +6,10 @@
 
 ## Contents
 
+- [Installation profile (DE)](user/installation-profile.de.md) /
+  [Installation profile (EN)](user/installation-profile.en.md)
+- [Analysis acceptance](development/analysis-acceptance.md)
+
 - [User documentation](user/README.md) — installation, configuration and operation.
 - [Client setup](clients/README.md) — supported client connection guides.
 - [Developer documentation](development/README.md) — architecture, contracts, tests and releases.

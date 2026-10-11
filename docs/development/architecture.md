@@ -25,6 +25,17 @@ MCP client -- HTTPS/OAuth --> LoxBerry Apache -- loopback --> mcpserver service
 | Control registry | Explicit actions and value ranges per supported control type |
 | LoxBerry adapters | Masked diagnostics and the limited plugin-owned cache operation |
 | Admin UI and Explorer | Local configuration, session management and a separate OAuth test client |
+| Installation profile | Bounded, versioned user declarations linked to exact currently visible sources |
+
+The installation profile stores metadata in `installation-profile.json` in the
+plugin data directory. Its strict schema, cross-process lock, atomic replacement
+and monotonically increasing revision protect concurrent Admin edits and restart
+recovery. Deletion retains an empty revision tombstone. The local Admin adapter
+uses fresh service-owned visibility; the read-only MCP adapter obtains fresh
+visibility for the signed-in client on every page. Neither adapter treats a user
+declared role as verified measurement semantics. Source fingerprints ignore
+display names and flag technical changes for review. Hidden controls are omitted;
+retired source identities are removed from invalid binding projections.
 
 The Tool Explorer ships as ordered, same-origin static scripts. Its DOM-free core
 handles schemas, redaction and generic value transfer; the static adapter registry

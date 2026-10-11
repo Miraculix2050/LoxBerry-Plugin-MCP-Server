@@ -164,6 +164,7 @@
       </fieldset>
     </form>
     <p><a class="lb-button" href="knx.cgi"><TMPL_VAR KNX.TITLE></a></p>
+    <p><a class="lb-button" href="profile.cgi"><TMPL_VAR PROFILE.TITLE></a></p>
     <TMPL_IF SERVER_RENDERED_FALLBACK><form id="fallback-emergency-stop-retry-form" method="post" action="index.cgi"><input type="hidden" name="fallback" value="1"><input type="hidden" name="action" value="<TMPL_VAR EMERGENCY_STOP_BUTTON_ACTION ESCAPE=HTML>"></form></TMPL_IF>
     </div>
   </details>
