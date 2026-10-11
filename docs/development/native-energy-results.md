@@ -32,6 +32,45 @@ actual fields and optional/unobserved Rest are named explicitly; period fields
 retain Export/Import/Production/Charge/Discharge/Consumption/Income. No aliases,
 unit/sign inference, balance or self-consumption calculation is performed.
 
+## Partial report components
+
+The native transport rule remains `native_efm_17_2_8_28.v1`. Results now use
+`native_efm_result.v2`; its additive semantic fields and widened `unit` enum
+explicitly distinguish known W/kW from null. The pure rule
+`native_efm_actual_semantics_17_2_8_28.v1` is based on the official
+[Structure File 17.1, pages 64–67](https://www.loxone.com/dede/wp-content/uploads/sites/2/2021/10/1701_Structure-File.pdf#page=64).
+
+| Native component | Proven meaning | Remaining gaps |
+| --- | --- | --- |
+| Actual Gpwr/Ppwr/Spwr | Grid/production/storage power; W or kW only from the same EFM's complete `details.actualFormat` | Sign direction, boundary, observation time |
+| Actual Cpwr | Load power | Unit, sign direction, boundary, observation time |
+| Actual Rest | No supported interpretation | Quantity, unit and boundary |
+| Native calendar/lifetime fields | Source names and current native view | Units, currency, boundaries/reset and historical date selection |
+| Historical report components | Existing independently evidenced StatisticV2/Event History path | Coverage and component-specific semantics must pass that path's gates |
+| EnergyManager / EnergyManager2 | Separate families, outside this slice | No positive target-device evidence |
+
+Only a bounded, fully retained format with one numeric `%…f` followed by literal
+`W` or `kW` is accepted. Formats are never executed and values are never scaled.
+Generic Control formats, participant formats and `totalFormat` are not substitutes.
+Both already required structures must advertise identical format metadata. A
+change retains raw values but drops unit enrichment and reports
+`source_metadata_changed`; no retry or additional source request is made.
+Absent metadata is `missing`; rejected types, bounds or encoding are `invalid`.
+A retained format outside this rule's allowlist is `unsupported`, not evidence
+of a source defect. These statuses never supply units.
+Quantity, unit, field delivery, freshness and `semantic_complete=false` remain
+independent. Provenance records rule, firmware, document pages and metadata path.
+
+For a report, request `native_result_view="actual"` for current partial power
+components. Resolve confirmed historic bindings and use the existing
+`loxone_analyze_history(operation="energy")` with its source semantics and coverage
+for dated energy components. Preserve those time windows separately; this is no
+temporal join between a current snapshot and historical totals. Native fields are
+not valid synthetic statistic/state selectors. Missing self-consumption, storage
+or residual components remain unknown. `report_applicability`,
+`historical_date_selection_supported=false` and `report_limitations` make these
+constraints explicit in the compact result.
+
 Calendar views are running native periods. Start/end/timezone and physical
 observation freshness remain unknown; retrieval time is response receipt time.
 Lifetime start/reset is unknown. Historical reports require independently proven

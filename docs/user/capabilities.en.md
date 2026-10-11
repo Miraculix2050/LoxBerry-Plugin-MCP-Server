@@ -487,12 +487,23 @@ administrator** on firmware **17.2.8.28**. Use one target without `state_names`
 and keep `include_semantics=false`. Periods additionally require `loxone:history`
 and enabled history. A LoxBerry Admin login does not establish this permission.
 Native results use a separate `native_result` section with empty `values` and
-zero state counts. Units, signs, scaling, currency, physical observation freshness
-and period boundaries remain unknown. Missing fields, including `Rest`, are not
+zero state counts. Gpwr/Ppwr/Spwr gain documented power quantity and W/kW only from
+unchanged, evidenced EFM format metadata. Cpwr is documented load power with an
+unknown unit; Rest remains unknown. Signs, scaling, currency, physical observation
+freshness and period boundaries remain unknown. The `native_efm_result.v2` result
+records the source rule and provenance; changed metadata leaves units unknown.
+Missing fields, including `Rest`, are not
 zero. Calendar views are running native periods, not arbitrary historical dates;
 no self-consumption or balance calculation is provided. Omit the option for
 unchanged cached-state reads. Other firmware and non-admin native reads remain
 unsupported; device acceptance is reported separately.
+
+For dated energy reports use confirmed history bindings and the existing
+`loxone_analyze_history(operation="energy")`, respecting its semantics and coverage.
+Current native power values stay separate snapshots; `get/day` cannot provide
+yesterday's values. Missing self-consumption, storage or residual-load components
+remain unknown. `report_applicability` and `report_limitations` describe native
+component suitability and limits.
 
 Cached-state example:
 

@@ -10,6 +10,10 @@ extracted from the matching version heading.
   OAuth session restoration from disconnected state and clear loading hints
   after success or failure while retaining error messages (#490).
 
+- Add versioned partial native EFM power semantics and report applicability.
+  Bind only Gpwr/Ppwr/Spwr W/kW units to unchanged evidenced EFM metadata;
+  preserve unknown signs, boundaries and historical components without extra reads.
+
 - Add an opt-in native EFM result view to `loxone_read_controls` for freshly
   verified Loxone administrators on firmware 17.2.8.28. Preserve caller-session
   authorization, activated history gates, unknown units/period boundaries and

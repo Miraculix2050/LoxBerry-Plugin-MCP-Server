@@ -22,11 +22,13 @@ from mcpserver.loxone.client import (
     LoxoneWebSocketSession,
     _websocket_command,
 )
+from mcpserver.loxone.efm import normalize as normalize_efm
 from mcpserver.loxone.endpoint import MiniserverEndpoint
 from mcpserver.loxone.events import LoxonePayloadTooLarge
 from mcpserver.loxone.models import Control, LoxoneIdentity, LoxoneStructure
 from mcpserver.loxone.native_efm import VIEWS, NativeEfmError, decode_native_efm
 from mcpserver.loxone.runtime import ControlOperationError, LoxoneRuntime
+from mcpserver.loxone.state_semantics import StateSemanticsResolver
 from mcpserver.loxone.structure import normalize_structure
 from mcpserver.tools import ControlReadTarget, register_read_tools
 
@@ -35,6 +37,162 @@ ACTION = "00000000-0000-0000-0000000000000002"
 SERIAL = "001122aabbcc"
 RECEIVED = "2026-10-11T10:00:00+00:00"
 ACTUAL = '{"Gpwr":1,"Ppwr":2,"Spwr":3,"Cpwr":4}'
+
+
+def semantic_control(details, *, generic_format=None):
+    return Control(
+        TARGET,
+        "Monitor",
+        "EFM",
+        None,
+        None,
+        ACTION,
+        (),
+        efm=normalize_efm(details),
+        format=generic_format,
+    )
+
+
+@pytest.mark.parametrize(
+    "source_format,unit",
+    [
+        ("%.3fkW", "kW"),
+        ("%f W", "W"),
+        ("%10.2f kW", "kW"),
+    ],
+)
+def test_actual_power_semantics_bind_only_documented_format(source_format, unit):
+    control = semantic_control({"actualFormat": source_format, "nodes": []})
+    raw = decode_native_efm(
+        '{"Gpwr":-2,"Ppwr":0,"Spwr":3,"Cpwr":4,"Rest":5}', "actual", retrieved_at=RECEIVED
+    )
+    result = StateSemanticsResolver().resolve_native_efm(raw, control, control)
+    assert result.schema_version == "native_efm_result.v2"
+    assert result.source_metadata_status == "stable" and not result.semantic_complete
+    assert [field.unit for field in result.fields] == [unit, unit, unit, None, None]
+    assert [field.measurement_quantity for field in result.fields] == ["power"] * 4 + [None]
+    assert [field.measurement_role for field in result.fields] == [
+        "grid_power",
+        "production_power",
+        "storage_power",
+        "load_power",
+        None,
+    ]
+    assert [field.value for field in result.fields] == [-2, 0, 3, 4, 5]
+    assert all(
+        field.scale is field.sign_convention is field.currency is None for field in result.fields
+    )
+    assert all(field.unit is None for field in raw.fields)  # Pure, non-mutating enrichment.
+    assert result.report_applicability == "current_snapshot"
+    assert not result.historical_date_selection_supported
+    assert "self_consumption_unavailable" in result.report_limitations
+    assert any(
+        source.reference == "controls[target].details.actualFormat"
+        for source in result.semantic_sources
+    )
+    assert all(source.rule_id == result.semantic_rule_version for source in result.semantic_sources)
+    assert {source.document_version for source in result.semantic_sources} == {"17.1"}
+    assert {source.firmware_version for source in result.semantic_sources} == {"17.2.8.28"}
+
+
+@pytest.mark.parametrize(
+    "source_format",
+    [
+        None,
+        True,
+        "",
+        "W",
+        "%.3f MW",
+        "%.3f kWh",
+        "power %.3fkW",
+        "%f %f kW",
+        "%.3f\nkW",
+        "\ud800",
+        "%" + "1" * 128 + "fW",
+    ],
+)
+def test_missing_or_unsupported_formats_never_supply_units(source_format):
+    control = semantic_control({"actualFormat": source_format}, generic_format="%.2f kW")
+    result = StateSemanticsResolver().resolve_native_efm(
+        decode_native_efm(ACTUAL, "actual", retrieved_at=RECEIVED), control, control
+    )
+    rejected = (
+        not isinstance(source_format, str)
+        or not source_format
+        or len(source_format) > 128
+        or source_format == "\ud800"
+    )
+    assert result.source_metadata_status == ("invalid" if rejected else "unsupported")
+    assert all(field.unit is None for field in result.fields)
+    assert "power_units_unverified" in result.report_limitations
+    assert not any(source.kind == "structure_file" for source in result.semantic_sources)
+
+
+def test_absent_root_format_does_not_inherit_participant_or_total_format():
+    control = semantic_control(
+        {
+            "totalFormat": "%.3f kWh",
+            "nodes": [{"actualFormat": "%.3f kW"}],
+        },
+        generic_format="%.3f kW",
+    )
+    result = StateSemanticsResolver().resolve_native_efm(
+        decode_native_efm(ACTUAL, "actual", retrieved_at=RECEIVED), control, control
+    )
+    assert result.source_metadata_status == "missing"
+    assert all(field.unit is None for field in result.fields)
+
+
+def test_changed_format_discards_unit_enrichment_and_preserves_values():
+    before = semantic_control({"actualFormat": "%.3f kW", "nodes": []})
+    after = semantic_control({"actualFormat": "%.3f W", "nodes": []})
+    result = StateSemanticsResolver().resolve_native_efm(
+        decode_native_efm(ACTUAL, "actual", retrieved_at=RECEIVED), before, after
+    )
+    assert result.source_metadata_status == "changed"
+    assert "source_metadata_changed" in result.report_limitations
+    assert all(field.unit is None for field in result.fields)
+    assert [field.value for field in result.fields] == [1, 2, 3, 4, None]
+    assert result.fields[0].measurement_quantity == "power"
+
+
+@pytest.mark.parametrize("view", sorted(VIEWS - {"actual"}))
+def test_native_period_report_does_not_gain_units_or_historical_dates(view):
+    control = semantic_control({"actualFormat": "%.3f kW", "totalFormat": "%.3f kWh", "nodes": []})
+    result = StateSemanticsResolver().resolve_native_efm(
+        decode_native_efm('{"Production":12,"Income":3}', view, retrieved_at=RECEIVED),
+        control,
+        control,
+    )
+    assert result.source_metadata_status == "not_applicable" and not result.semantic_sources
+    assert all(
+        field.unit is field.measurement_quantity is field.measurement_role is None
+        for field in result.fields
+    )
+    assert result.period_start is result.period_end is result.timezone is None
+    assert not result.historical_date_selection_supported
+    assert "period_units_unverified" in result.report_limitations
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("changed", [False, True])
+async def test_runtime_semantics_reuse_exact_pre_and_post_structure(changed):
+    runtime, structure, session, _ = fixture_runtime()
+    before = replace(
+        structure, controls=(semantic_control({"actualFormat": "%.3fkW", "nodes": []}),)
+    )
+    after = (
+        replace(before, controls=(semantic_control({"actualFormat": "%.3fW", "nodes": []}),))
+        if changed
+        else before
+    )
+    session.load_structure.side_effect = [before, after]
+    _, _, result = await runtime.read_native_efm(access(), TARGET, "actual")
+    assert result.source_metadata_status == ("changed" if changed else "stable")
+    assert result.fields[0].unit == (None if changed else "kW")
+    assert session.load_structure.await_count == 2
+    assert session.native_efm_result.await_count == runtime.client.probe.await_count == 1
+    assert not runtime._records
 
 
 @pytest.mark.parametrize("view", sorted(VIEWS))

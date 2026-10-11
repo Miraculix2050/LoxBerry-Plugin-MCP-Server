@@ -5377,7 +5377,8 @@ def register_read_tools(
             "All targets are validated atomically against one fresh visible snapshot."
             " Opt-in native_result_view reads one EFM on verified 17.2.8.28 as a freshly "
             "verified Loxone administrator; period views additionally require activated history. "
-            "Native source fields have unknown units and period boundaries; no balance calculation."
+            "Only three actual power fields have metadata-bound W/kW units; remaining units, "
+            "signs and period boundaries stay unknown. No balance calculation."
         ),
         annotations=annotations,
         structured_output=True,
