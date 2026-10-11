@@ -621,7 +621,7 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert tool.annotations.destructiveHint is False
     assert tool.annotations.openWorldHint is False
     assert result.data.name == "using-loxberry-mcp"  # type: ignore[union-attr]
-    assert result.data.revision == 63  # type: ignore[union-attr]
+    assert result.data.revision == 64  # type: ignore[union-attr]
     assert "prefer `loxone_read_controls`" in result.data.content  # type: ignore[union-attr]
     assert "`loxone_get_structure_overview`" in result.data.content  # type: ignore[union-attr]
     assert result.data.media_type == "text/markdown"  # type: ignore[union-attr]
@@ -3153,7 +3153,7 @@ async def test_weather_tool_pages_actual_and_forecast_without_state_uuid(
     access = _loxberry_access(READ_SCOPE)
     formats = (
         ("relativeHumidity", "%.0f%%"),
-        ("temperature", "%.1f °C"),
+        ("temperature", "%.1f Â°C"),
         ("windSpeed", "%.0f km/h"),
         ("precipitation", "%.1f mm"),
         ("barometricPressure", "%.0f hPa"),
@@ -3227,7 +3227,7 @@ async def test_weather_tool_pages_actual_and_forecast_without_state_uuid(
     assert len(numeric_fields) == 10
     assert all(point_properties[name].get("description") for name in numeric_fields)
     assert "unverified" in point_properties["solar_radiation"]["description"]
-    assert "W/m²" in point_properties["solar_radiation"]["description"]
+    assert "W/mÂ²" in point_properties["solar_radiation"]["description"]
     metadata_schema = output_defs["WeatherFieldMetadataMapData"]
     assert set(metadata_schema["properties"]) == numeric_fields
     assert set(metadata_schema["required"]) == numeric_fields
@@ -3338,9 +3338,9 @@ async def test_weather_tool_pages_actual_and_forecast_without_state_uuid(
 
 
 def test_weather_field_metadata_keeps_missing_source_formats_explicit() -> None:
-    metadata = tools_module._weather_field_metadata({"temperature": "%.1f °C"}).model_dump()
+    metadata = tools_module._weather_field_metadata({"temperature": "%.1f Â°C"}).model_dump()
 
-    assert metadata["temperature"]["source_format"] == "%.1f °C"
+    assert metadata["temperature"]["source_format"] == "%.1f Â°C"
     for field_name, source_key in (
         ("relative_humidity", "relativeHumidity"),
         ("wind_speed", "windSpeed"),
