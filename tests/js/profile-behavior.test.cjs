@@ -28,6 +28,11 @@ function harness() {
     const action = options.body.get('action');
     const payload = JSON.parse(options.body.get('payload'));
     calls.push({action, payload});
+    if (action === 'profile_permissions' || action.startsWith('profile_permission_')) {
+      return {ok: true, json: async () => ({ok: true, data: {
+        enabled: false, sessions: [{id: 'synthetic-session', label: 'Synthetic client', approved: false}], bindings: [],
+      }})};
+    }
     if (action === 'profile_put') revision++;
     return {ok: true, json: async () => ({ok: true, data: {
       status: 'available', installation: 'synthetic-installation', revision,
@@ -74,13 +79,13 @@ test('HTML confirmation distinguishes binding and profile deletion and blocks du
   h.get('bindings').querySelectorAll('button')[1].click();
   h.get('delete-all').click();
   assert.equal(h.get('confirm-message').textContent, 'Binding only');
-  h.get('confirm').close('delete'); await h.tick();
+  h.get('confirm').close('confirm'); await h.tick();
   assert.deepEqual(h.calls.find((item) => item.action === 'profile_delete').payload, {
     installation: 'synthetic-installation', revision: 1, binding_id: 'synthetic', confirm: true,
   });
   h.get('delete-all').click();
   assert.equal(h.get('confirm-message').textContent, 'Entire profile');
-  h.get('confirm').close('delete'); await h.tick();
+  h.get('confirm').close('confirm'); await h.tick();
   assert.equal(h.calls.filter((item) => item.action === 'profile_delete')[1].payload.binding_id, null);
 });
 
@@ -99,4 +104,18 @@ test('saving uses the loaded revision and preserves the explicit confirmation ch
   const saves = h.calls.filter((item) => item.action === 'profile_put');
   assert.equal(saves[1].payload.revision, 2);
   assert.equal(saves[1].payload.binding.confirmed, false);
+});
+
+test('separate profile approval uses an HTML dialog and the captured exact session', async (t) => {
+  const h = harness(); t.after(h.close); await h.tick();
+  h.get('permission-allow').click();
+  assert.equal(h.get('confirm').open, true);
+  assert.ok(h.get('confirm-message').textContent.includes('Synthetic client'));
+  h.get('confirm').close('cancel'); await h.tick();
+  assert.equal(h.calls.filter((item) => item.action === 'profile_permission_allow').length, 0);
+  h.get('permission-allow').click();
+  h.get('confirm').close('confirm'); await h.tick();
+  assert.deepEqual(h.calls.find((item) => item.action === 'profile_permission_allow').payload, {
+    session_id: 'synthetic-session', confirm: true,
+  });
 });

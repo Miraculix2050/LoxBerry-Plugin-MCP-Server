@@ -45,6 +45,7 @@ _TEST_GROUPS: Final = (
             "tests/test_installation_profile.py",
             "tests/test_installation_profile_admin.py",
             "tests/test_installation_profile_tools.py",
+            "tests/test_installation_profile_write.py",
             "tests/test_schema_reference.py",
             "tests/test_server.py",
         ),

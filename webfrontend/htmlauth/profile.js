@@ -8,11 +8,13 @@
   let sources = [];
   let deleting = false;
   const dialog = get("confirm");
-  function askDelete(all) {
+  function ask(text, title, action) {
     return new Promise((resolve) => {
-      get("confirm-message").textContent = all ? page.dataset.deleteAllConfirm : page.dataset.deleteBindingConfirm;
+      get("confirm-message").textContent = text;
+      get("confirm-title").textContent = title;
+      get("confirm-action").textContent = action;
       dialog.returnValue = "cancel";
-      dialog.addEventListener("close", () => resolve(dialog.returnValue === "delete"), { once: true });
+      dialog.addEventListener("close", () => resolve(dialog.returnValue === "confirm"), { once: true });
       dialog.showModal();
       get("confirm-cancel").focus();
     });
@@ -25,7 +27,7 @@
     const deleteDisabled = get("delete-all").disabled;
     let loaded = false;
     try {
-      if (!await askDelete(id === null)) return;
+      if (!await ask(id === null ? page.dataset.deleteAllConfirm : page.dataset.deleteBindingConfirm, page.dataset.deleteConfirmTitle, page.dataset.delete)) return;
       get("fields").disabled = true; get("delete-all").disabled = true;
       await call("profile_delete", payload);
       reset(); await load(); message("saved");
@@ -39,6 +41,50 @@
       (opener.isConnected ? opener : get("delete-all")).focus();
     }
   }
+  async function loadPermissions() {
+    const result = await call("profile_permissions", {});
+    get("permission-enabled").checked = result.enabled;
+    get("permission-client").replaceChildren();
+    for (const session of result.sessions) {
+      const option = document.createElement("option");
+      option.value = session.id; option.textContent = session.label;
+      option.disabled = session.approved;
+      get("permission-client").append(option);
+    }
+    get("permission-allow").disabled = !result.sessions.some((session) => !session.approved);
+    const candidate = result.sessions.find((session) => !session.approved);
+    if (candidate) get("permission-client").value = candidate.id;
+    get("permission-bindings").replaceChildren();
+    for (const binding of result.bindings) {
+      const row = document.createElement("li");
+      row.append(document.createTextNode(`${binding.slice(0, 12)} `));
+      const revoke = document.createElement("button"); revoke.type = "button";
+      revoke.textContent = page.dataset.permissionRevoke;
+      revoke.addEventListener("click", () => changePermission("profile_permission_revoke", { binding_id: binding }, revoke));
+      row.append(revoke); get("permission-bindings").append(row);
+    }
+    get("permission-fields").disabled = false;
+  }
+  async function changePermission(action, payload, opener) {
+    if (deleting) return;
+    deleting = true;
+    try {
+      const target = action === "profile_permission_allow"
+        ? get("permission-client").selectedOptions[0]?.textContent || ""
+        : action === "profile_permission_revoke" ? payload.binding_id.slice(0, 12)
+          : payload.enabled ? page.dataset.permissionEnabled : page.dataset.permissionDisabled;
+      if (!await ask(`${page.dataset.permissionConfirm}\n${opener.textContent}\n${target}`, page.dataset.permissionTitle, opener.textContent)) return;
+      get("permission-fields").disabled = true;
+      await call(action, { ...payload, confirm: true });
+      await loadPermissions(); message("saved");
+    } catch (_) { message("error"); }
+    finally {
+      deleting = false; get("permission-fields").disabled = false;
+      (opener.isConnected ? opener : get("permission-save")).focus();
+    }
+  }
+  get("permission-save").addEventListener("click", () => changePermission("profile_permission_enable", { enabled: get("permission-enabled").checked }, get("permission-save")));
+  get("permission-allow").addEventListener("click", () => changePermission("profile_permission_allow", { session_id: get("permission-client").value }, get("permission-allow")));
   const message = (key) => { get("status").textContent = page.dataset[key] || page.dataset.error; };
   async function call(action, payload) {
     const body = new URLSearchParams({ action, payload: JSON.stringify(payload) });
@@ -137,4 +183,5 @@
     finally { get("fields").disabled = false; }
   });
   load().catch(() => message("error"));
+  loadPermissions().catch(() => message("error"));
 }());

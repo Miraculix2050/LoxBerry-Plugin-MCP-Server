@@ -1,4 +1,4 @@
-"""Thin read-only MCP projection of locally confirmed installation metadata."""
+"""Thin MCP adapters for installation metadata and independently approved writes."""
 
 from __future__ import annotations
 
@@ -11,13 +11,16 @@ from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field
 
 from mcpserver.installation_profile import (
+    BindingInput,
     ProfileError,
     ProfileStore,
     installation_identity,
     project_profile,
     visible_controls,
 )
+from mcpserver.installation_profile_write import ProfileWriteRuntime
 from mcpserver.loxone.runtime import LoxoneRuntime, RuntimeAuthorizationError, RuntimeUnavailable
+from mcpserver.persistence import PersistenceUncertain
 from mcpserver.tools import ErrorData, ToolEnvelope, _error, _result, _snapshot
 
 
@@ -49,6 +52,101 @@ class ProfileData(BaseModel):
 
 class ProfileEnvelope(ToolEnvelope):
     data: ProfileData | ErrorData
+
+
+class ProfileMutationData(BaseModel):
+    revision: int
+    binding_id: str | None
+
+
+class ProfileMutationEnvelope(ToolEnvelope):
+    data: ProfileMutationData | ErrorData
+
+
+def register_profile_write_tools(server: FastMCP, runtime: ProfileWriteRuntime | None) -> None:
+    from mcpserver.tools import _access
+
+    async def change(
+        revision: int, confirm: bool, binding: BindingInput | None, binding_id: str | None
+    ) -> ProfileMutationEnvelope:
+        access = None
+        tool = (
+            "loxberry_save_installation_profile"
+            if binding is not None
+            else "loxberry_delete_installation_profile"
+        )
+        outcome = "failed"
+        try:
+            access = _access()
+            if confirm is not True:
+                raise ProfileError("confirmation_required")
+            if runtime is None:
+                raise RuntimeUnavailable("Profile management is not configured")
+            result = await runtime.change(access, revision, binding=binding, binding_id=binding_id)
+            outcome = "completed"
+            return _result(ProfileMutationEnvelope, result)
+        except (RuntimeAuthorizationError, PermissionError):
+            outcome = "permission_denied"
+            return _error(ProfileMutationEnvelope, outcome, "Profile management is not authorized")
+        except ProfileError as exc:
+            outcome = exc.code
+            return _error(ProfileMutationEnvelope, outcome, "Profile operation rejected")
+        except (TimeoutError, PersistenceUncertain):
+            outcome = "write_outcome_uncertain"
+            return _error(
+                ProfileMutationEnvelope,
+                outcome,
+                "Inspect the profile before another write; do not automatically retry",
+            )
+        except asyncio.CancelledError:
+            outcome = "write_outcome_uncertain"
+            raise
+        except (RuntimeUnavailable, OSError, ValueError):
+            outcome = "temporarily_unavailable"
+            return _error(ProfileMutationEnvelope, outcome, "Profile management is unavailable")
+        finally:
+            if runtime is not None:
+                runtime.audit(access, tool, outcome)
+
+    @server.tool(
+        name="loxberry_save_installation_profile",
+        description=(
+            "Save one exact profile binding after explicit user confirmation in chat. "
+            "Requires loxone:read, loxberry:operate and an independent exact local profile "
+            "approval. The existing operate scope also requires loxone:history. "
+            "Never retry an uncertain write."
+        ),
+        annotations=ToolAnnotations(
+            readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False
+        ),
+        structured_output=True,
+    )
+    async def save_installation_profile(
+        binding: BindingInput,
+        expected_revision: Annotated[int, Field(strict=True, ge=0, lt=2**31 - 1)],
+        confirm: Annotated[bool, Field(strict=True)] = False,
+    ) -> ProfileMutationEnvelope:
+        return await change(expected_revision, confirm, binding, None)
+
+    @server.tool(
+        name="loxberry_delete_installation_profile",
+        description=(
+            "Delete one profile binding, or the entire profile only if all affected bindings "
+            "are currently visible. Requires explicit user confirmation in chat, loxone:read, "
+            "loxberry:operate and an independent exact local profile approval. The existing "
+            "operate scope also requires loxone:history. Never retry an uncertain write."
+        ),
+        annotations=ToolAnnotations(
+            readOnlyHint=False, destructiveHint=True, idempotentHint=False, openWorldHint=False
+        ),
+        structured_output=True,
+    )
+    async def delete_installation_profile(
+        expected_revision: Annotated[int, Field(strict=True, ge=0, lt=2**31 - 1)],
+        binding_id: Annotated[str | None, Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")] = None,
+        confirm: Annotated[bool, Field(strict=True)] = False,
+    ) -> ProfileMutationEnvelope:
+        return await change(expected_revision, confirm, None, binding_id)
 
 
 def register_profile_read_tool(

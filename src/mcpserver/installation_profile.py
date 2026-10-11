@@ -248,11 +248,13 @@ class ProfileStore:
         with self._locked():
             return self._load(installation)
 
-    def _write(self, document: ProfileDocument) -> None:
+    def _write(self, document: ProfileDocument, *, deadline: float | None = None) -> None:
         payload = document.model_dump_json(indent=2).encode() + b"\n"
         if len(payload) > MAX_DOCUMENT_BYTES:
             raise ProfileError("profile_storage_limit")
         temporary = self.path.parent / (".profile-" + secrets.token_hex(16) + ".tmp")
+        if deadline is not None and time.monotonic() >= deadline:
+            raise ProfileError("profile_deadline_expired")
         try:
             fd = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
             with os.fdopen(fd, "wb") as stream:
@@ -276,6 +278,7 @@ class ProfileStore:
         *,
         origin: Literal["local_admin", "mcp_user_confirmed"],
         actor_ref: str,
+        deadline: float | None = None,
     ) -> ProfileDocument:
         fingerprint = source_fingerprint(binding, control)
         with self._locked():
@@ -296,11 +299,16 @@ class ProfileStore:
                 revision=document.revision + 1,
                 bindings=[*retained, stored],
             )
-            self._write(updated)
+            self._write(updated, deadline=deadline)
             return updated
 
     def delete(
-        self, installation: str, expected_revision: int, binding_id: str | None
+        self,
+        installation: str,
+        expected_revision: int,
+        binding_id: str | None,
+        *,
+        deadline: float | None = None,
     ) -> ProfileDocument:
         with self._locked():
             document = self._load(installation)
@@ -316,7 +324,7 @@ class ProfileStore:
             updated = ProfileDocument(
                 installation=installation, revision=document.revision + 1, bindings=retained
             )
-            self._write(updated)
+            self._write(updated, deadline=deadline)
             return updated
 
 

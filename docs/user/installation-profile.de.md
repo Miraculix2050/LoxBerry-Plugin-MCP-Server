@@ -9,8 +9,29 @@ ein Entwurf. Beim Bearbeiten müssen Sie eine Bestätigung erneut setzen.
 Mehrere Erzeuger, Zähler und Verbraucher sind möglich; Speicher und einzelne
 Geräte sind optional. Es werden keine Rollen aus Namen oder Kategorien abgeleitet.
 Eine bestätigte Rolle beweist keine Einheit, Aggregation oder physische Messgrenze.
-Technische Semantik wird separat geprüft. Die erste Profilstufe enthält keine
-Energie- oder Historienberechnung und keine MCP-Schreibfunktion.
+Technische Semantik wird separat geprüft. Das Profil enthält keine eigenen
+Energie- oder Historienberechnungen.
+
+Im Bereich **MCP-Profilpflege freigeben** können Sie die standardmäßig gesperrte
+MCP-Pflege aktivieren und aktive Clients einzeln freigeben oder widerrufen.
+Die Freigabe gilt für den exakten Client, Nutzer und Miniserver. Anzeigenamen
+sind nur Beschriftungen. Neue Explorer-Clients benötigen erneut eine Freigabe.
+Allgemeine LoxBerry-Betriebsrechte erlauben allein keine Profiländerung.
+
+`loxberry_save_installation_profile` speichert eine exakte Zuordnung;
+`loxberry_delete_installation_profile` löscht eine Zuordnung oder das gesamte
+Profil. Beide benötigen `loxone:read`, `loxberry:operate`, die allgemeine lokale
+Betriebsfreigabe und die eigene Profilfreigabe. Die bestehende Betriebs-Scope
+setzt außerdem `loxone:history` voraus. Die KI muss zuerst den konkreten Vorschlag
+oder Löschumfang erläutern und Ihre ausdrückliche Bestätigung im Chat einholen.
+Dann übergibt sie `confirm=true` und `expected_revision` aus einem frischen Lesen.
+Der Server speichert die Bestätigungsangabe des Clients; er kann den Chatinhalt
+nicht unabhängig beweisen. Ein Entwurf bleibt auch nach dem Speichern ein Entwurf.
+Bei `write_outcome_uncertain` gespeicherten Stand prüfen und nicht automatisch
+wiederholen. Eine neue Revision erfordert erneutes Lesen und bei geändertem
+Vorschlag eine neue Bestätigung. Gesamtlöschung über MCP ist gesperrt, wenn eine
+betroffene Zuordnung außerhalb der aktuellen Sichtbarkeit liegt. Anlagenwechsel
+werden im Admin zurückgesetzt.
 
 `loxone_get_installation_profile` benötigt `loxone:read` und liefert maximal 100
 Zuordnungen pro Seite. Folgen Sie `next_offset`, bis es leer ist. Jeder Aufruf

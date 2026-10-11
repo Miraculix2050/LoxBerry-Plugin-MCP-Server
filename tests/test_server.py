@@ -474,6 +474,8 @@ def test_exact_default_read_only_tools_are_published() -> None:
     assert [tool["name"] for tool in tools] == [
         "loxone_get_skill_guide",
         "loxone_get_installation_profile",
+        "loxberry_save_installation_profile",
+        "loxberry_delete_installation_profile",
         "loxone_get_notifications",
         "loxone_get_system_messages",
         "loxone_get_attention_overview",
@@ -495,8 +497,15 @@ def test_exact_default_read_only_tools_are_published() -> None:
         "loxone_list_event_history_sources",
         "loxone_get_event_history",
     ]
-    assert all(tool["annotations"]["readOnlyHint"] is True for tool in tools)
-    assert all(tool["annotations"]["destructiveHint"] is False for tool in tools)
+    mutations = {"loxberry_save_installation_profile", "loxberry_delete_installation_profile"}
+    assert all(
+        tool["annotations"]["readOnlyHint"] is (tool["name"] not in mutations) for tool in tools
+    )
+    assert all(
+        tool["annotations"]["destructiveHint"]
+        is (tool["name"] == "loxberry_delete_installation_profile")
+        for tool in tools
+    )
     assert all(tool["outputSchema"]["properties"]["data"].get("anyOf") for tool in tools)
     assert all(tool["outputSchema"].get("$defs") for tool in tools)
 

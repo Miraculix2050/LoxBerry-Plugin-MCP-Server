@@ -63,7 +63,7 @@ if (($q->{action} // '') ne '') {
     my $result;
     if (!MCPServer::RequestSecurity::same_origin_post()) {
         $result = {ok => JSON::PP::false, error => {code => 'forbidden'}};
-    } elsif ($cgi->cgi_error || ($q->{action} // '') !~ /\A(?:profile_page|profile_put|profile_delete)\z/) {
+    } elsif ($cgi->cgi_error || ($q->{action} // '') !~ /\A(?:profile_page|profile_put|profile_delete|profile_permissions|profile_permission_enable|profile_permission_allow|profile_permission_revoke)\z/) {
         $result = {ok => JSON::PP::false, error => {code => 'invalid_request'}};
     } else {
         my $payload = eval { decode_json($q->{payload} // '{}') };

@@ -37,6 +37,8 @@
     ]},
     {id: 'loxberryOperate', scopes: ['loxone:read', 'loxone:history', 'loxberry:operate'], names: [
       'loxberry_clear_statistics_cache',
+      'loxberry_save_installation_profile',
+      'loxberry_delete_installation_profile',
       'loxberry_add_event_history_source', 'loxberry_remove_event_history_source',
       'loxberry_purge_event_history_source',
     ]},

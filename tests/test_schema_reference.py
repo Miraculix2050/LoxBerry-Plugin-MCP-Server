@@ -64,6 +64,8 @@ async def test_observability_published_limit_matches_validation(limit: int, vali
 
 
 EXPECTED_TOOLS = {
+    "loxberry_save_installation_profile",
+    "loxberry_delete_installation_profile",
     "loxone_analyze_opening_contacts",
     "loxone_list_event_history_sources",
     "loxberry_clear_statistics_cache",

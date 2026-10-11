@@ -4,6 +4,16 @@
 
 ## Basic settings
 
+### MCP profile management
+
+The dedicated [profile page](installation-profile.en.md) manages
+`tools.installation_profile_write_enabled` (default: `false`) and at most
+64 exact approvals in `policies.installation_profile_write_bindings`.
+These approvals supplement general operation rights and survive ordinary
+configuration edits. Revocation is checked on the next write, including an
+in-progress request before persistence. An atomic write that has already started
+cannot be undone; inspect the stored profile after an uncertain outcome.
+
 ### Admin access and reverse proxies
 
 Admin and Event History actions require a POST with an Origin whose scheme, host

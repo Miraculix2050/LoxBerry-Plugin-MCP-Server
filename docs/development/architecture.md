@@ -37,6 +37,15 @@ declared role as verified measurement semantics. Source fingerprints ignore
 display names and flag technical changes for review. Hidden controls are omitted;
 retired source identities are removed from invalid binding projections.
 
+MCP profile mutations use a separate policy/orchestration adapter. It requires
+general local operation approval plus a default-disabled exact client/identity/
+Miniserver profile capability. It rechecks local policy at the persistence boundary,
+uses fresh caller visibility and expected revisions, and rejects whole-profile
+deletion containing hidden bindings. A bounded worker remains admitted until it
+finishes after a deadline or caller cancellation. The server audits the client's
+confirmation assertion without claiming to verify chat content. Pure profile
+storage remains independent from OAuth, MCP and technical decoders.
+
 The Tool Explorer ships as ordered, same-origin static scripts. Its DOM-free core
 handles schemas, redaction and generic value transfer; the static adapter registry
 adds optional presentation hints. A tab-local state module owns drafts, results,

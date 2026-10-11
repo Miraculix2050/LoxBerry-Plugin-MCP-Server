@@ -8110,15 +8110,34 @@ def register_tool_surface(
     control_enabled: bool,
     project_config_store: AtomicConfigStore | None = None,
     knx_store_path: Path | None = None,
+    profile_auth_store: Any = None,
 ) -> None:
     """Register one complete live or synthetic MCP tool surface."""
     register_skill_tool(server)
-    from mcpserver.installation_profile_tools import register_profile_read_tool
+    from mcpserver.installation_profile_tools import (
+        register_profile_read_tool,
+        register_profile_write_tools,
+    )
+    from mcpserver.installation_profile_write import ProfileWriteRuntime
 
     register_profile_read_tool(
         server,
         runtime,
         knx_store_path.parent.parent / "installation-profile.json" if knx_store_path else None,
+    )
+    register_profile_write_tools(
+        server,
+        ProfileWriteRuntime(
+            runtime,
+            knx_store_path.parent.parent / "installation-profile.json",
+            project_config_store,
+            profile_auth_store,
+        )
+        if runtime is not None
+        and knx_store_path is not None
+        and project_config_store is not None
+        and profile_auth_store is not None
+        else None,
     )
     register_read_tools(server, runtime, control_enabled=control_enabled)
     if runtime is not None:

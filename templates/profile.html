@@ -6,6 +6,14 @@
  data-delete="<TMPL_VAR PROFILE.DELETE ESCAPE=HTML>"
  data-delete-binding-confirm="<TMPL_VAR PROFILE.DELETE_BINDING_CONFIRM ESCAPE=HTML>"
  data-delete-all-confirm="<TMPL_VAR PROFILE.DELETE_ALL_CONFIRM ESCAPE=HTML>"
+ data-delete-confirm-title="<TMPL_VAR PROFILE.CONFIRM_TITLE ESCAPE=HTML>"
+ data-permission-title="<TMPL_VAR PROFILE.PERMISSION_TITLE ESCAPE=HTML>"
+ data-permission-confirm="<TMPL_VAR PROFILE.PERMISSION_CONFIRM ESCAPE=HTML>"
+ data-permission-change="<TMPL_VAR PROFILE.PERMISSION_CHANGE ESCAPE=HTML>"
+ data-permission-allow="<TMPL_VAR PROFILE.PERMISSION_ALLOW ESCAPE=HTML>"
+ data-permission-revoke="<TMPL_VAR PROFILE.PERMISSION_REVOKE ESCAPE=HTML>"
+ data-permission-enabled="<TMPL_VAR PROFILE.PERMISSION_ENABLED ESCAPE=HTML>"
+ data-permission-disabled="<TMPL_VAR PROFILE.PERMISSION_DISABLED ESCAPE=HTML>"
  data-truncated="<TMPL_VAR PROFILE.TRUNCATED ESCAPE=HTML>"
  data-empty="<TMPL_VAR PROFILE.EMPTY ESCAPE=HTML>"
  data-draft="<TMPL_VAR PROFILE.DRAFT ESCAPE=HTML>"
@@ -16,6 +24,17 @@
  <h1><TMPL_VAR PROFILE.TITLE></h1>
  <p><TMPL_VAR PROFILE.HELP></p>
  <p id="profile-status" role="status" aria-live="polite"></p>
+ <section class="mcp-card">
+  <h2><TMPL_VAR PROFILE.PERMISSION_TITLE></h2>
+  <p><TMPL_VAR PROFILE.PERMISSION_HELP></p>
+  <fieldset id="profile-permission-fields" disabled>
+   <label><input id="profile-permission-enabled" type="checkbox"><TMPL_VAR PROFILE.PERMISSION_ENABLED></label>
+   <button id="profile-permission-save" class="lb-button" type="button"><TMPL_VAR PROFILE.PERMISSION_CHANGE></button>
+   <label class="mcp-field"><span><TMPL_VAR PROFILE.PERMISSION_CLIENT></span><select id="profile-permission-client"></select></label>
+   <button id="profile-permission-allow" class="lb-button" type="button"><TMPL_VAR PROFILE.PERMISSION_ALLOW></button>
+   <ul id="profile-permission-bindings"></ul>
+  </fieldset>
+ </section>
  <section class="mcp-card">
   <h2><TMPL_VAR PROFILE.BINDINGS></h2>
   <ul id="profile-bindings"></ul>
@@ -63,8 +82,8 @@
   <p id="profile-confirm-message"></p>
   <form method="dialog" class="mcp-actions">
    <button class="lb-button" id="profile-confirm-cancel" value="cancel" autofocus><TMPL_VAR PROFILE.CANCEL></button>
-   <button class="lb-button" value="delete"><TMPL_VAR PROFILE.DELETE></button>
+   <button class="lb-button" id="profile-confirm-action" value="confirm"><TMPL_VAR PROFILE.DELETE></button>
   </form>
  </dialog>
 </main>
-<script src="profile.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-profile-v2" defer></script>
+<script src="profile.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-profile-v3" defer></script>
