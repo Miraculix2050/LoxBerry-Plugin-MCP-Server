@@ -8,6 +8,12 @@ extracted from the matching version heading.
 - Retain sanitized, correlated Admin discovery failure phases, categories and
   timing/session metadata without logging private payloads or changing retries (#449).
 
+- Support burglar-alarm `Alarm.level` in shared state semantics and active alerts:
+  use the owner-approved assumption that 0 means no running alarm, alongside
+  documented stages 1–6. Retain explicit provenance and unknown test,
+  acknowledgement and signal-suppression context; invalid or stale observations
+  cannot establish inactivity (#346).
+
 - Automatically check the project change marker before displaying Admin
   emergency-stop names and options from the private identity-bound display cache.
   Refresh on marker change, missing marker or stale cache; retain
