@@ -83,8 +83,10 @@ def address_recipe(address: object = None, language: object = "en", **extra: obj
     base = "/".join(str(int(part)) for part in base.split("/"))
     return (
         f"Explain exact KNX address {address}. Answer in {response_language}.\n{_RULES}\n"
-        f"Use loxone_find_project_objects(knx_group_address='{address}') and required unchanged "
-        "continuation pages. Preserve the original address style and explicit :0/:1 variant; "
+        f"Use loxone_find_project_objects(knx_group_address='{base}') and required unchanged "
+        "continuation pages. The normalized base query includes observed variants: if the user "
+        "specified :0/:1, retain only that explicit variant using returned address metadata; "
+        "report when none is observed. Preserve original spelling for presentation and style; "
         "do not invent a variant or select one object/name as correct when several match. "
         "Describe relevant returned objects with loxone_describe_project_object; trace only if "
         "structural context is necessary. With separate local approval, inspect "

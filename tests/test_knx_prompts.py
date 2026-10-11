@@ -7,6 +7,7 @@ import json
 import re
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from mcp.server.fastmcp import FastMCP
@@ -14,6 +15,10 @@ from starlette.testclient import TestClient
 
 from mcpserver.discovery import compare_prompt_discovery, prompt_discovery_identity
 from mcpserver.knx.prompts import address_recipe, inventory_recipe
+from mcpserver.loxone.project.graph import ProjectPartSummary, ProjectSnapshot, build_graph
+from mcpserver.loxone.project.mapping import ProjectView, map_runtime
+from mcpserver.loxone.project.parser import parse_project
+from mcpserver.loxone.project.query import ProjectQuery
 from mcpserver.prompts import register_prompt_surface
 from mcpserver.schema_reference import tool_schema_catalog
 
@@ -56,9 +61,11 @@ async def test_address_get_preserves_variant_and_uses_base_only_locally(server, 
     )
     assert len(result.messages) == 1 and result.messages[0].role == "user"
     text = result.messages[0].content.text
-    assert f"knx_group_address='{address}'" in text
     base = address[:-2] if address.endswith((":0", ":1")) else address
     base = "/".join(str(int(part)) for part in base.split("/"))
+    assert f"knx_group_address='{base}'" in text
+    assert "retain only that explicit variant using returned address metadata" in text
+    assert f"Explain exact KNX address {address}" in text
     assert f"loxberry_get_knx_catalog(address='{base}')" in text
     assert "Answer in German" in text
     assert "no match does not prove the address unused" in text
@@ -265,3 +272,45 @@ def test_wire_prompts_need_fresh_oauth_but_expand_without_local_data_grant(tmp_p
         auth.mutate(lambda doc: doc["families"]["synthetic-prompt-family"].update(revoked=True))
         assert client.post("/mcp", json=request, headers=headers).status_code == 401
     assert not list(tmp_path.rglob("*.sqlite3"))
+
+
+def test_padded_variant_recipe_resolves_real_project_variant() -> None:
+    snapshot = ProjectSnapshot(
+        "project",
+        2,
+        (ProjectPartSummary("p", 1, ()),),
+        build_graph(
+            (
+                (
+                    "p",
+                    parse_project(
+                        Path("tests/fixtures/project/knx-edge-variants.xml").read_bytes()
+                    ),
+                ),
+            )
+        ),
+    )
+    project = ProjectQuery(
+        ProjectView(
+            snapshot, map_runtime(snapshot, SimpleNamespace(last_modified="v", controls=()))
+        ),
+        {},
+    )
+    recipe = address_recipe("06/02/027:1")
+    match = re.search(r"knx_group_address='([^']+)'", recipe)
+    assert match is not None
+    rows = project.find(
+        query=None,
+        kind=None,
+        block_type=None,
+        source_id=None,
+        runtime_control_uuid=None,
+        knx_group_address=match.group(1),
+    )
+    assert {row["source_id"] for row in rows} == {"edge-zero", "edge-one", "base"}
+    selected = [
+        row
+        for row in rows
+        if row["knx"]["group_address"].get("variant") == {"kind": "edge", "value": "1"}
+    ]
+    assert [row["source_id"] for row in selected] == ["edge-one"]
