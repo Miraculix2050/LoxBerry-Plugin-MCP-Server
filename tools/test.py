@@ -34,6 +34,10 @@ _FULL_PATTERNS: Final = (
 )
 _TEST_GROUPS: Final = (
     (
+        ("tools/analysis_acceptance.py", "tests/fixtures/analysis/**"),
+        ("tests/test_analysis_acceptance.py",),
+    ),
+    (
         ("src/mcpserver/discovery.py", "tools/check_mcp_discovery.py"),
         ("tests/test_mcp_discovery.py", "tests/test_schema_reference.py", "tests/test_server.py"),
     ),
