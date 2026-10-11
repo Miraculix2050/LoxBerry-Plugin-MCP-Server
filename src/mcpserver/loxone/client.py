@@ -587,6 +587,16 @@ class LoxoneWebSocketSession:
             max_payload_bytes=self._max_payload,
         )
 
+    async def system_messages(self, center_uuid: str) -> Any:
+        """Read retained entries without changing read/acknowledgement state."""
+        from mcpserver.loxone.system_messages import identifier
+
+        if identifier(center_uuid) is None:
+            raise ValueError("invalid message center identifier")
+        return await self._command(
+            f"jdev/sps/io/{center_uuid}/getEntries/2", encrypted=not self._secure_transport
+        )
+
     async def authenticate(self) -> None:
         if not self._secure_transport:
             session_key = self._encryptor.encrypted_session_key(self._public_key)

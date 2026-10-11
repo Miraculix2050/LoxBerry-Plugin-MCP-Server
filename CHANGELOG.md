@@ -12,6 +12,9 @@ extracted from the matching version heading.
 - Add bounded local MCP discovery comparison and reconnect guidance, detecting
   additive schema changes without printing schema payloads or changing transport.
   Unexposed client fields remain incomplete, not a confirmed defect (#454).
+- Read current and retained historical System Messages with fresh source permissions,
+  independent lifecycle/severity fields and bounded identity-bound pagination (#366).
+  Experimental source verified on firmware 17.2.8.28; reads never confirm or mark entries read.
 
 - Clarify the active-alert agent workflow for current status, focused state reads
   and project follow-up. Distinguish coverage gaps, static wiring, causal

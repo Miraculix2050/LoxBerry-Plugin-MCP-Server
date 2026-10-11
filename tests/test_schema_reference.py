@@ -89,6 +89,7 @@ EXPECTED_TOOLS = {
     "loxone_get_skill_guide",
     "loxone_get_state_semantics",
     "loxone_get_active_alerts",
+    "loxone_get_system_messages",
     "loxone_read_controls",
     "loxone_get_states",
     "loxone_get_statistics",

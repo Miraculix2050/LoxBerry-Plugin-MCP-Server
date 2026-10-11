@@ -211,6 +211,8 @@ class LoxoneStructure:
     global_metadata: tuple[GlobalMetadata, ...] = ()
     room_groups: tuple[NamedGroup, ...] = ()
     weather: WeatherMetadata = WeatherMetadata()
+    message_center_uuid: str | None = None
+    user_rights: int | None = None
     parse_identity: str = field(default="", kw_only=True, repr=False, compare=False)
 
 
