@@ -875,3 +875,23 @@ def test_fixed_failure_categories_do_not_parse_messages():
     ]
     for error, category in errors:
         assert module._failure_category(error) == category
+
+
+def test_source_ip_suppression_is_not_ordinary_auth_contention():
+    from mcpserver.loxone.auth_diagnostics import MiniserverSourceIpSuppressed
+    from mcpserver.service_discovery import _failure_category
+
+    assert _failure_category(MiniserverSourceIpSuppressed("private")) == "source_ip_blocked"
+
+
+def test_wrapped_handshake_timeout_retains_timeout_category():
+    from mcpserver.loxone.client import LoxoneConnectionError
+    from mcpserver.service_discovery import _failure_category
+
+    try:
+        try:
+            raise TimeoutError("private")
+        except TimeoutError as original:
+            raise LoxoneConnectionError("private") from original
+    except LoxoneConnectionError as error:
+        assert _failure_category(error) == "timeout"

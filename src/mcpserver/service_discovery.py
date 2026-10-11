@@ -65,13 +65,14 @@ def _failure_category(exc: BaseException) -> str:
     from mcpserver.loxone.auth_diagnostics import (
         MiniserverAuthenticationCooldown,
         MiniserverAuthenticationSuppressed,
+        MiniserverSourceIpSuppressed,
     )
     from mcpserver.loxone.events import LoxoneProtocolError
     from mcpserver.loxone.service_access import ServiceCredentialsUnavailable
 
     if isinstance(exc, asyncio.CancelledError):
         return "cancelled"
-    if isinstance(exc, LoxoneSourceIpBlocked):
+    if isinstance(exc, LoxoneSourceIpBlocked | MiniserverSourceIpSuppressed):
         return "source_ip_blocked"
     if isinstance(exc, MiniserverAuthenticationCooldown):
         return "authentication_cooldown"
@@ -90,6 +91,8 @@ def _failure_category(exc: BaseException) -> str:
     if isinstance(exc, LoxoneAuthenticationRejected):
         return "authentication_rejected"
     if isinstance(exc, LoxoneConnectionError):
+        if isinstance(exc.__cause__, TimeoutError) or isinstance(exc.__context__, TimeoutError):
+            return "timeout"
         return "disconnect" if isinstance(exc.__context__, ConnectionClosed) else "connection"
     if isinstance(exc, OSError):
         return "connection"
