@@ -127,6 +127,9 @@
       throw new Error('knx_target_conflict');
     }
     state = data;
+    const badge = document.getElementById('knx-address-badge');
+    badge.textContent = String(data.total);
+    badge.hidden = false;
     const filters = data.filters || {query: '', source: 'all', deviations_only: false};
     document.getElementById('knx-search-query').value = filters.query;
     document.getElementById('knx-search-source').value = filters.source;
@@ -143,7 +146,7 @@
       const sources = document.createElement('td'); sources.append(sourceDetails(item)); tr.append(sources);
       const actions = document.createElement('td');
       const edit = document.createElement('button');
-      edit.type = 'button'; edit.textContent = page.dataset.edit;
+      edit.type = 'button'; edit.className = 'lb-button'; edit.textContent = page.dataset.edit;
       edit.addEventListener('click', async () => {
         if (recordDirty && !await ask(page.dataset.unsaved)) return;
         editingFields = {...item.overrides};
@@ -157,7 +160,7 @@
         renderEditorSources();
       });
       const remove = document.createElement('button');
-      remove.type = 'button'; remove.textContent = page.dataset.delete;
+      remove.type = 'button'; remove.className = 'lb-button'; remove.textContent = page.dataset.delete;
       remove.addEventListener('click', async () => {
         if (!await ask(`${page.dataset.confirm} ${item.address}`)) return;
         void run(async () => {
