@@ -740,3 +740,19 @@ nachgewiesen sind; ETS-Version dokumentieren und frischen Export vergleichen.
 
 Siehe [Systemmeldungen](system-messages.de.md) für experimentelle aktuelle und
 historische Lesezugriffe, Quellenrechte, Grenzen und belegte Folgeaufgaben.
+
+## EFM-Teilnehmerreferenzen (#363)
+
+Full Describe ergänzt für den exakten Quelltyp `EFM` das Feld
+`capabilities.model.efm`. Geordnete Pfade und Elternpfade beschreiben Vorkommen
+getrennt von kausaler Verdrahtung und Subcontrols. Verweise werden gegen die
+frische Sichtbarkeit des Aufrufers aufgelöst; nicht verfügbare Ziele geben keine
+Identität preis. Wiederverwendete Controls behalten getrennte Vorkommen. Titel,
+Icons und Rest-Metadaten sind Anzeigeinformationen, keine Messwerte. Rollen
+bleiben rohe begrenzte Tokens mit unbekannter Interpretation ohne passende
+Versionsregel; numerische XML-Rollen werden nicht umgedeutet. Grenzen: 100
+Vorkommen, acht Ebenen und 32 KiB erhaltene Metadaten. Ausgelassene
+Teilbaumwurzeln werden gezählt; deren unbesuchte Nachfolger bleiben unbekannt.
+Topologie-, Referenz- und Rollenvollständigkeit sind getrennt. Kompakte Views
+bleiben unverändert. Bindings gehören zum separaten #364; es werden weder
+Werte noch entfernte Node-Daten abgerufen.

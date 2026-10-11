@@ -441,3 +441,25 @@ project Co/K port evidence and the user's API-connector contract clarification.
 Connected-edge tests are synthetic; no live wired API example is claimed.
 
 Known API-only unresolved links use `api_connection_unresolved`, including ambiguous source candidates when all candidates are exact API ports. This evidence remains in generic describe/trace and aggregate unresolved counts, while scalar KNX/Opening/Modbus predicates and Modbus relationship budgets exclude it. Mixed/unknown source candidates keep the original unresolved category.
+
+## EFM participant references (#363)
+
+Full Describe exposes `capabilities.model.efm` for exact source type `EFM`.
+Paths preserve ordered occurrences and parents, separate from causal wiring and
+subcontrols. Associations resolve only against fresh caller visibility;
+unavailable targets disclose no identity. Reused controls remain separate.
+Titles, icons and rest metadata are presentation, never measured values.
+Roles retain bounded source tokens and remain semantically unknown without a
+matching version rule; numeric XML aliases are not decoded. Limits are 100
+occurrences, eight levels and 32 KiB retained metadata. Omitted subtree roots
+are counted; their unvisited descendants remain unknown. Topology, references
+and roles have separate completeness. Compact views remain unchanged.
+State bindings belong to separate #364; no values or remote node reads occur.
+
+Field-shape evidence: sanitized firmware 17.2.8.28 capture,
+[#363 provenance](https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server/issues/363#issuecomment-6108309261),
+SHA-256 `242d191e4cbd2efc82397bc3cfb2026ec3e287278527e74ed451addb741af310`.
+Config application version remains unknown. All fixtures are independently
+authored synthetic data. Flat fields reproduce observed types; nesting,
+missing/malformed data, rest, repetition and bounds remain unobserved synthetic
+cases. Automated tests do not establish device compatibility.

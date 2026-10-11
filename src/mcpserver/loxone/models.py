@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from mcpserver.loxone.efm import Projection
+
 
 class Freshness(StrEnum):
     """Freshness of a user-scoped state value."""
@@ -168,6 +170,7 @@ class Control:
     is_analog: bool | None = None
     statistic_series: tuple[StatisticSeries, ...] = ()
     statistic_series_truncated: bool = False
+    efm: Projection | None = None
     status_monitor_inputs: tuple[StatusMonitorInput, ...] = ()
     status_monitor_statuses: tuple[StatusMonitorStatus, ...] = ()
     format: str | None = None

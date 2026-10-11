@@ -9,6 +9,8 @@ extracted from the matching version heading.
   expected revisions, explicit confirmation assertions and masked audit records.
   Restrict whole-profile deletion to current visibility; preserve uncertain-write
   outcomes without automatic retries (#434).
+- Expose bounded EFM participant occurrences and fresh visible control references
+  in full Describe, with independent completeness and unknown role interpretation (#363).
 
 - Add versioned installation profiles with Admin drafts/confirmation, atomic
   target-bound persistence and a read-only MCP projection using fresh caller
