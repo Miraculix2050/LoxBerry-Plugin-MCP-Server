@@ -68,7 +68,9 @@ def register_attention_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> 
         structured_output=True,
     )
     async def get_attention_overview(
-        limit: Annotated[int, Field(strict=True, ge=1, le=10)] = 5,
+        limit: Annotated[
+            int, Field(strict=True, ge=1, le=10, description="Maximum records per source, 1 to 10.")
+        ] = 5,
         include_history: Annotated[
             bool,
             Field(strict=True, description="System Messages history requires History approval."),
