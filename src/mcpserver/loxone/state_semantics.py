@@ -70,6 +70,11 @@ class StateSemantics:
     display_format_truncated: bool = False
     display_format_complete: bool = False
     unit: str | None = None
+    measurement_quantity: Literal["temperature", "binary_state"] | None = None
+    measurement_role: (
+        Literal["actual_temperature", "target_temperature", "on_off_indication", "counter_activity"]
+        | None
+    ) = None
     range: SemanticsRange | None = None
     precision: int | None = None
     sign_convention: str | None = None
@@ -139,6 +144,123 @@ ALERT_FAMILIES = {
 }
 
 
+def _resolve_measurement(
+    control: Control, state_name: str, value: object
+) -> tuple[StateSemantics, object | None] | None:
+    """Resolve only the reviewed scalar measurement families without I/O."""
+    documented_temperature = control.control_type == "IRoomControllerV2" and state_name in {
+        "tempActual",
+        "tempTarget",
+    }
+    documented_binary = (
+        control.control_type in {"InfoOnlyDigital", "Hourcounter"} and state_name == "active"
+    )
+    if not (documented_temperature or documented_binary):
+        return None
+    state_uuid = dict(control.state_uuids).get(state_name)
+    if state_uuid is None:
+        return None
+    result = StateSemantics()
+    semantic_value: object | None = None
+    result.measurement_quantity = "temperature" if documented_temperature else "binary_state"
+    result.measurement_role = (
+        ("actual_temperature" if state_name == "tempActual" else "target_temperature")
+        if documented_temperature
+        else ("counter_activity" if control.control_type == "Hourcounter" else "on_off_indication")
+    )
+    result.value_type = "number" if documented_temperature else "boolean"
+    page = 76 if documented_temperature else (71 if control.control_type == "Hourcounter" else 72)
+    result.sources.extend(
+        [
+            SemanticsSource(
+                "decoder_rule",
+                _STATUS_DOCUMENT + f"#page={page}",
+                ("measurement_quantity", "measurement_role", "semantic_value"),
+                rule_id=f"{control.control_type}.{state_name}.v1",
+                document_version="17.1",
+            ),
+            SemanticsSource(
+                "runtime_state",
+                "states." + state_name,
+                ("semantic_value",),
+                state_uuid=state_uuid,
+            ),
+        ]
+    )
+    if documented_temperature:
+        result.display_format = (
+            control.format if control.format is not None and len(control.format) <= 64 else None
+        )
+        result.display_format_total_length = (
+            control.format_total_length
+            if control.format_total_length is not None
+            else (len(control.format) if control.format is not None else None)
+        )
+        result.display_format_returned_length = len(result.display_format or "")
+        result.display_format_truncated = (result.display_format_total_length or 0) > 64
+        result.display_format_complete = (
+            control.format is not None and not result.display_format_truncated
+        )
+        # The documented temperature field provides the quantity;
+        # only a complete explicit unit provides Celsius/Fahrenheit.
+        unit_match = re.fullmatch(r"(?:%[0-9]*(?:\.[0-9]+)?f\s*)?°([CF])", control.format or "")
+        if control.format is not None:
+            result.sources.append(
+                SemanticsSource(
+                    "structure_file",
+                    "details.format",
+                    ("display_format",),
+                    document_version="17.1",
+                )
+            )
+        if (
+            unit_match
+            and result.display_format_complete
+            and "format" not in control.semantics_invalid_fields
+        ):
+            result.unit = "°" + unit_match[1]
+            result.sources.append(
+                SemanticsSource(
+                    "structure_file",
+                    "details.format",
+                    ("unit", "display_format"),
+                    document_version="17.1",
+                )
+            )
+    else:
+        result.encoding = [SemanticsEncoding(0, "off"), SemanticsEncoding(1, "on")]
+        result.encoding_total = result.encoding_returned = 2
+        result.encoding_complete = True
+    if value is None:
+        result.interpretation_status, result.reason = "partial", "value_unavailable"
+    elif not _valid_measurement_number(value, binary=documented_binary):
+        result.interpretation_status, result.reason = (
+            "invalid",
+            "invalid_documented_value",
+        )
+    else:
+        result.interpretation_status, result.reason = "known", "documented_decoder"
+        if documented_temperature:
+            semantic_value = {
+                "kind": "temperature",
+                "role": result.measurement_role,
+                "value": value,
+                "unit": result.unit,
+            }
+            if result.unit is None:
+                result.interpretation_status, result.reason = "partial", "metadata_only"
+                if "format" in control.semantics_invalid_fields:
+                    result.reason = "invalid_structure_metadata"
+        else:
+            semantic_value = {
+                "kind": "binary_state",
+                "active": value == 1,
+                "role": result.measurement_role,
+            }
+    result.sources_returned = result.sources_total = len(result.sources)
+    return result, semantic_value
+
+
 class StateSemanticsResolver:
     """Resolve only exact, reviewed type/state rules, without I/O or role inference."""
 
@@ -150,6 +272,9 @@ class StateSemanticsResolver:
         value: object,
         companion_values: Mapping[str, object],
     ) -> tuple[StateSemantics, object | None]:
+        measurement = _resolve_measurement(control, state_name, value)
+        if measurement is not None:
+            return measurement
         result = StateSemantics()
         semantic_value: object | None = None
         family = ALERT_FAMILIES.get(control.control_type)
@@ -1101,3 +1226,14 @@ def _loxone_time(value: object) -> str:
         )
     except (OverflowError, OSError, ValueError) as exc:
         raise ValueError("weather timestamp is invalid") from exc
+
+
+def _valid_measurement_number(value: object, *, binary: bool) -> bool:
+    try:
+        if binary:
+            _semantic_integer(value, minimum=0, maximum=1)
+        else:
+            _semantic_number(value, minimum=-math.inf, maximum=math.inf)
+    except _SemanticValueError:
+        return False
+    return True

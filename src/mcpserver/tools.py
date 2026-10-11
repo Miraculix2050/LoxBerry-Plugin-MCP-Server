@@ -5349,7 +5349,9 @@ def register_read_tools(
         description=(
             "Read bounded semantic evidence and cached values for one visible control. "
             "Interpretation and observation quality are independent; missing units or meanings "
-            "remain explicit. No hidden controls, project data, or documentation download."
+            "remain explicit. Exact reviewed rules distinguish IRCv2 actual/target temperature "
+            "and InfoOnlyDigital/Hourcounter binary activity; ambiguous temperature units stay "
+            "unknown. No hidden controls, project data, or documentation download."
         ),
         annotations=annotations,
         structured_output=True,

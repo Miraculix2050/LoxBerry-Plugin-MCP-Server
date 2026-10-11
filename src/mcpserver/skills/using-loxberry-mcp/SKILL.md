@@ -375,10 +375,18 @@ Keep `value`, `semantic_value`, `quality` and `semantics` separate: a current
 value may have unknown meaning; a known decoder result may describe a stale
 observation. `known` is limited to the named decoder rule. Preserve `reason`,
 per-field `sources`, missing versions, and collection completeness. Missing
-companions yield partial interpretations. Format strings do not prove units or
+companions yield partial interpretations. Generic analog format strings do not prove units or
 precision. Configured StatusMonitor labels and positions do not establish
 severity, household roles or physical danger. Unsupported energy, meter and
-controller states can remain unknown. This interface does not retrieve project
+controller states can remain unknown. For exact `IRoomControllerV2.tempActual`
+and `tempTarget`, use `measurement_role` to distinguish actual/target temperature;
+only a complete explicit Celsius/Fahrenheit format establishes its unit. A bare
+degree format keeps the unit unknown. `InfoOnlyDigital.active` and
+`Hourcounter.active` accept numeric zero/one as indication/counter activity,
+without inferring physical appliance roles, heating activity or energy. Invalid
+codes and missing values do not become inactivity. These rules cite Structure
+File 17.1; current state evidence does not prove historical coverage.
+This interface does not retrieve project
 metadata or bundled documentation content and does not acknowledge alarms.
 
 

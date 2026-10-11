@@ -85,6 +85,125 @@ def test_formats_ranges_and_names_do_not_invent_units_or_roles():
     assert resolve(invalid, "value", 1)[0].reason == "invalid_structure_metadata"
 
 
+@pytest.mark.parametrize(
+    "name,role", [("tempActual", "actual_temperature"), ("tempTarget", "target_temperature")]
+)
+@pytest.mark.parametrize(
+    "display,unit",
+    [("%.1f°C", "°C"), ("%.1f °F", "°F"), ("%.1f°", None), ("%.1f kWh", None), (None, None)],
+)
+def test_exact_temperature_meaning_and_explicit_unit(name, role, display, unit):
+    c = control("IRoomControllerV2", states=((name, "state"),), format=display)
+    descriptor, value = resolve(c, name, 21.5)
+    assert descriptor.measurement_quantity == "temperature"
+    assert descriptor.measurement_role == role and descriptor.unit == unit
+    assert value == {"kind": "temperature", "role": role, "value": 21.5, "unit": unit}
+    assert descriptor.interpretation_status == ("known" if unit else "partial")
+    assert descriptor.sources[0].document_version == "17.1"
+    assert descriptor.sources[0].rule_id == f"IRoomControllerV2.{name}.v1"
+    assert all(source.firmware_version is None for source in descriptor.sources)
+
+
+@pytest.mark.parametrize("kind", ["InfoOnlyDigital", "Hourcounter"])
+@pytest.mark.parametrize(
+    "value,status",
+    [
+        (0, "known"),
+        (1.0, "known"),
+        (None, "partial"),
+        (True, "invalid"),
+        ("1", "invalid"),
+        (2, "invalid"),
+        (float("nan"), "invalid"),
+        (float("inf"), "invalid"),
+    ],
+)
+def test_documented_binary_activity_never_infers_physical_roles(kind, value, status):
+    descriptor, decoded = resolve(control(kind, states=(("active", "state"),)), "active", value)
+    assert descriptor.interpretation_status == status
+    assert descriptor.measurement_quantity == "binary_state"
+    assert descriptor.measurement_role == (
+        "counter_activity" if kind == "Hourcounter" else "on_off_indication"
+    )
+    assert descriptor.unit is None
+    if status == "known":
+        assert decoded["active"] is (value == 1)
+    else:
+        assert decoded is None
+
+
+@pytest.mark.parametrize(
+    "value,status",
+    [
+        (None, "partial"),
+        (True, "invalid"),
+        ("21", "invalid"),
+        (float("nan"), "invalid"),
+        (float("inf"), "invalid"),
+    ],
+)
+def test_temperature_missing_or_invalid_values_keep_evidence(value, status):
+    c = control("IRoomControllerV2", states=(("tempActual", "state"),), format="%.1f°C")
+    descriptor, decoded = resolve(c, "tempActual", value)
+    assert descriptor.interpretation_status == status and decoded is None
+    assert descriptor.measurement_role == "actual_temperature" and descriptor.unit == "°C"
+
+
+def test_temperature_truncation_and_unrelated_states_do_not_invent_units():
+    c = control(
+        "IRoomControllerV2",
+        states=(("tempActual", "state"),),
+        format="%.1f°C",
+        format_total_length=100,
+    )
+    descriptor, _ = resolve(c, "tempActual", 20)
+    assert descriptor.unit is None and descriptor.display_format_truncated
+    descriptor, _ = resolve(replace(c, format="x" * 100), "tempActual", 20)
+    assert descriptor.display_format is None and descriptor.display_format_returned_length == 0
+    descriptor, _ = resolve(
+        replace(c, format_total_length=6, semantics_invalid_fields=("format",)), "tempActual", 20
+    )
+    assert descriptor.unit is None and descriptor.reason == "invalid_structure_metadata"
+    assert resolve(c, "active", 1)[0].interpretation_status == "unknown"
+    assert (
+        resolve(control("Switch", states=(("active", "state"),)), "active", 1)[
+            0
+        ].interpretation_status
+        == "unknown"
+    )
+    assert (
+        resolve(replace(c, control_type="InfoOnlyAnalog"), "tempActual", 20)[0].measurement_quantity
+        is None
+    )
+
+
+def test_oversized_integer_temperature_is_invalid_without_overflow():
+    c = control("IRoomControllerV2", states=(("tempActual", "state"),), format="%.1f°C")
+    descriptor, decoded = resolve(c, "tempActual", 10**1000)
+    assert descriptor.interpretation_status == "invalid" and decoded is None
+
+
+@pytest.mark.asyncio
+async def test_temperature_semantics_are_shared_without_additional_discovery(monkeypatch):
+    c = control("IRoomControllerV2", states=(("tempActual", "state"),), format="%.1f°")
+    runtime = Runtime(c)
+    server, compact_tool = read_tool(monkeypatch, runtime)
+    compact = await compact_tool.fn([ControlReadTarget(control_uuid="control")], True)
+    semantic = await server._tool_manager.get_tool("loxone_get_state_semantics").fn(
+        "control", ["tempActual"]
+    )
+    states = await server._tool_manager.get_tool("loxone_get_states").fn(["state"])
+    assert compact.ok and semantic.ok and states.ok
+    assert compact.data.items[0].semantics == semantic.data.items
+    assert semantic.data.items[0].semantic_value["role"] == "actual_temperature"
+    assert semantic.data.items[0].semantics.unit is None
+    assert states.data.states[0].value == 1
+    assert states.data.states[0].semantic_value is None
+    assert compact.data.items[0].values[0].value == 1
+    assert "semantic_value" not in compact.data.items[0].values[0].model_dump()
+    assert runtime.snapshots == [True, True, True]
+
+
 def test_position_bound_statuses_expose_normalization_loss_and_limits():
     c = control(
         "StatusMonitor",

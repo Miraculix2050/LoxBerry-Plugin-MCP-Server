@@ -48,12 +48,23 @@ with original/returned lengths and explicit truncation instead of altered text.
 
 V1 covers existing Irrigation/AlarmClock decoders, `value` display formats for
 InfoOnlyAnalog/UpDownAnalog/Slider, UpDownAnalog ranges and position-bound
-StatusMonitor `inputStates` configured tuple mapping and status-count semantics. Formats do not prove units,
+StatusMonitor `inputStates` configured tuple mapping and status-count semantics. Generic analog formats do not prove units,
 precision or direction; configured labels do not prove severity or household roles.
 Encoding and position lists retain at most 100 entries, sources at most eight,
 with counts and completeness. Page completeness is independent of semantic and
 metadata completeness. No project join, documentation-content download, hidden
 diagnosis, alarm acknowledgement or installation-wide semantic coverage is provided.
+
+Exact `IRoomControllerV2.tempActual` and `tempTarget` now identify current and
+target temperature. `measurement_quantity`, `measurement_role` and
+`semantic_value.kind=temperature` preserve this distinction. Only a complete,
+explicit Celsius/Fahrenheit temperature format proves the unit; `%.1f°` keeps
+it unknown. `InfoOnlyDigital.active` and `Hourcounter.active` decode numeric
+zero/one as `semantic_value.kind=binary_state`, preserving indication versus
+counter activity. Missing values remain partial; invalid codes, strings,
+booleans and nonfinite numbers remain invalid. These documented rules do not
+establish physical appliance roles, heating activity, energy or historical
+coverage. See the [versioned evidence matrix](../development/analysis-semantic-evidence.md).
 Other energy, meter or controller meanings can remain unknown. This coverage is
 fixture-tested; it does not establish new hardware or firmware compatibility.
 
