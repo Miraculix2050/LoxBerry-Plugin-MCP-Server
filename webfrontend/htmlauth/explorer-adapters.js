@@ -26,6 +26,7 @@
       'loxone_get_statistics', 'loxone_get_control_history', 'loxone_get_event_history',
       'loxone_list_event_history_sources',
       'loxone_analyze_observability',
+      'loxone_analyze_history',
     ]},
     {id: 'loxoneControl', scopes: ['loxone:read', 'loxone:control'], names: [
       'loxone_operate_control',

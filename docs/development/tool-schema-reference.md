@@ -1,5 +1,23 @@
 # Tool schema reference
 
+## Compact historical calculations (#438)
+
+`loxone_analyze_history` requires `loxone:read` and `loxone:history`.
+`operation` is `temperature_summary`, `energy` or `state_duration`. Each of
+1–16 `sources` selects exact control plus series/state IDs or a currently
+confirmed `binding_id`. These selector forms cannot be mixed. Statistic selectors
+have granularity; state history remains raw. UTC-normalized half-open RFC3339
+`start`/`end` instants require explicit IANA `timezone` and a past, nonempty
+interval touching at most 31 local days. Seven raw statistic days, 100,000 total
+input points, 30 seconds, two concurrent analyses and 64 KiB output apply.
+
+`data.sources` identifies source, status, unit, method/version, metrics, usable
+intervals and limitations. Unsupported/unverified semantics produce
+`insufficient_evidence`; partial observations are not complete periods.
+`data.raw` is empty unless `include_raw=true`; then it has at most 100 items
+and identity/request/content-bound `next_cursor`. Each page reauthorizes visibility.
+See [architecture and contract decision](history-analysis.md).
+
 ## Shared history time and coverage evidence (#437)
 
 `loxone_get_statistics.data.coverage_evidence` and local Event History's

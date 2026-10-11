@@ -2,6 +2,16 @@
 
 [Deutsch](capabilities.de.md)
 
+`loxone_analyze_history` computes compact temperature sample means, verified
+energy and observed state duration with `loxone:read` and `loxone:history`.
+Select exact sources or confirmed profile bindings, a half-open period and an
+explicit IANA timezone. Unknown units, resets, initial values and capture gaps
+remain explicit limitations. State duration is not measured energy; sample means
+are not time-weighted means. Raw data is transferred only when explicitly
+requested, with at most 100 items per page. Limits: 16 sources, 31 local days,
+100,000 input points, 30 seconds and 64 KiB results. Raw statistics retain their
+stricter seven-day limit.
+
 Statistics and local Event History responses expose `coverage_evidence` with
 UTC time basis, half-open evidenced intervals or point observations, and explicit
 limitations. Existing inclusive filters and cursors remain compatible. Samples

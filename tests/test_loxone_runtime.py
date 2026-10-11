@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import struct
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from pathlib import Path
@@ -24,7 +25,7 @@ from mcpserver.loxone.client import (
     MiniserverEndpoint,
 )
 from mcpserver.loxone.events import StateEvent
-from mcpserver.loxone.models import Control, LoxoneIdentity, LoxoneStructure
+from mcpserver.loxone.models import Control, LoxoneIdentity, LoxoneStructure, StatisticSeries
 from mcpserver.loxone.runtime import (
     ControlOperationError,
     LoxoneRuntime,
@@ -32,6 +33,7 @@ from mcpserver.loxone.runtime import (
     _ConnectionRecord,
     _FamilyLocks,
 )
+from mcpserver.loxone.statistics import StatisticsCache
 
 
 def _access() -> StoredAccessToken:
@@ -606,6 +608,61 @@ def test_native_history_normalization_skips_invalid_and_bounds_entries() -> None
     entries = runtime_module.normalize_control_history_entries(raw)
     assert len(entries) == 1
     assert entries[0].what == "valid"
+
+
+@pytest.mark.asyncio
+async def test_cold_legacy_adapter_respects_remaining_analysis_point_budget():
+    series = StatisticSeries(
+        "legacy",
+        "legacy",
+        "",
+        "",
+        "Energy",
+        "%.1fkWh",
+        legacy_output_index=0,
+        legacy_output_count=1,
+    )
+    control = Control("control", "Meter", "Meter", None, None, None, (), statistic_series=(series,))
+    runtime = object.__new__(LoxoneRuntime)
+    runtime.statistics_cache = StatisticsCache()
+    session = SimpleNamespace(
+        legacy_statistic_data=AsyncMock(return_value=struct.pack("<IdId", 1, 2.0, 2, 3.0))
+    )
+    epoch = runtime_module._LOXONE_EPOCH_UNIX
+    with pytest.raises(ControlOperationError, match="invalid statistic data"):
+        await runtime.authorized_statistics(
+            _access(), control, session, "legacy", epoch, epoch + 3, "raw", maximum_points=1
+        )
+    session.legacy_statistic_data.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_released_legacy_reader_preserves_partial_final_file_limit(monkeypatch):
+    series = StatisticSeries(
+        "legacy",
+        "legacy",
+        "",
+        "",
+        "Energy",
+        "%.1fkWh",
+        legacy_output_index=0,
+        legacy_output_count=1,
+    )
+    control = Control("control", "Meter", "Meter", None, None, None, (), statistic_series=(series,))
+    runtime = object.__new__(LoxoneRuntime)
+    runtime.statistics_cache = StatisticsCache()
+    monkeypatch.setattr(
+        runtime_module, "_legacy_statistic_dates", lambda *_args: ("200901", "200902")
+    )
+    first = b"".join(struct.pack("<Id", i, 1.0) for i in range(99_000))
+    last = b"".join(struct.pack("<Id", i, 1.0) for i in range(99_000, 101_000))
+    session = SimpleNamespace(legacy_statistic_data=AsyncMock(side_effect=[first, last]))
+    epoch = runtime_module._LOXONE_EPOCH_UNIX
+    _, _, points = await runtime.authorized_statistics(
+        _access(), control, session, "legacy", epoch, epoch + 99_499, "raw"
+    )
+    assert len(points) == 99_500
+    assert session.legacy_statistic_data.await_count == 2
 
 
 @pytest.mark.asyncio
