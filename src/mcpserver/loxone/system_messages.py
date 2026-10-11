@@ -86,11 +86,15 @@ def _text(value: Any, field: str, maximum: int, truncated: list[str]) -> str:
     # Drop source URLs and common credential assignments. Never return action links.
     text = re.sub(r"https?://[^\s<>\"']+", "[link omitted]", value)
     text = re.sub(
-        r"(?i)\b(password|passwd|token|secret|authorization|api[_ -]?key|pin)\s*[:=]\s*[^\s<>]+",
+        r"(?i)\b(password|passwd|token|secret|authorization|api[_ -]?key|pin)\s*[:=][^\r\n]*",
         r"\1=[redacted]",
         text,
     )
-    text = "".join(char for char in text if char in "\n\t" or ord(char) >= 32)
+    text = "".join(
+        char
+        for char in text
+        if (char in "\n\t" or ord(char) >= 32) and not 0xD800 <= ord(char) <= 0xDFFF
+    )
     if len(text) > maximum:
         truncated.append(field)
     return text[:maximum]
@@ -101,7 +105,7 @@ def decode_messages(
 ) -> MessageSource:
     """Reject incompatible payloads rather than silently reporting message absence."""
     if isinstance(raw, str):
-        if len(raw.encode("utf-8")) > MAX_SOURCE_BYTES:
+        if len(raw.encode("utf-8", errors="surrogatepass")) > MAX_SOURCE_BYTES:
             raise MessageSourceError("source_too_large")
         try:
             raw = json.loads(raw)

@@ -1009,11 +1009,8 @@ class LoxoneRuntime:
         self, access: StoredAccessToken, *, include_history: bool = False
     ) -> MessageSource:
         """Read through a fresh caller session, with independent source permission."""
-        async with self.call_slot(access):
-            if include_history and (HISTORY_SCOPE not in access.scopes or not self.history_enabled):
-                raise ControlOperationError(
-                    "permission_denied", "History scope and administrator activation are required"
-                )
+        slot = self.history_call_slot(access) if include_history else self.call_slot(access)
+        async with slot:
             if (
                 self.token_health is not None
                 and self.token_health.get(access.family_id).confirmation_required

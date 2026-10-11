@@ -187,12 +187,43 @@ async def test_fresh_permission_and_version_gate_precede_message_command(rights,
 async def test_history_denial_precedes_network(enabled, scopes) -> None:
     instance, session, token = runtime()
     instance.history_enabled = enabled
-    with pytest.raises(ControlOperationError, match="History scope"):
+    with pytest.raises(ControlOperationError) as error:
         await instance.get_system_messages(
             access().model_copy(update={"scopes": scopes}), include_history=True
         )
+    assert error.value.code == "permission_denied"
     instance._open_session.assert_not_awaited()
     session.system_messages.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "text", ["Authorization: Bearer private-token", "password=multi word secret"]
+)
+def test_complete_credential_values_are_redacted(text):
+    record = source([entry(desc=text + "\nUseful next line")]).records[0]
+    assert "private-token" not in record.description
+    assert "multi word secret" not in record.description
+    assert "Useful next line" in record.description
+
+
+def test_unpaired_surrogate_does_not_break_json_response():
+    record = source([entry(title="Warning\ud800", desc="Detail\udfff")]).records[0]
+    assert record.title == "Warning" and record.description == "Detail"
+    record.model_dump_json().encode("utf-8")
+
+
+@pytest.mark.asyncio
+async def test_historical_reads_consume_the_history_limit_before_network():
+    instance, session, token = runtime()
+    instance.history_enabled = True
+    instance._history_rate_limit = 1
+    current = access().model_copy(update={"scopes": [READ_SCOPE, HISTORY_SCOPE]})
+    await instance.get_system_messages(current, include_history=True)
+    with pytest.raises(ControlOperationError) as error:
+        await instance.get_system_messages(current, include_history=True)
+    assert error.value.code == "rate_limited"
+    session.system_messages.assert_awaited_once()
+    instance._open_session.assert_awaited_once()
 
 
 @pytest.mark.asyncio
