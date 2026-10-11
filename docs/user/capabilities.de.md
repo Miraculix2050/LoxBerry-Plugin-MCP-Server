@@ -507,6 +507,18 @@ Die aktuelle Zuordnung von Plattformen, Clients und Nachweisstatus steht in der 
 
 ### Aktive sichtbare Alarme
 
+Für den aktuellen Status zuerst Aktualität, Abdeckung und Kürzung prüfen;
+eine unbekannte Gesamtzahl oder ein leeres Teilergebnis bedeutet keine
+Alarmfreiheit. Exakte Quellenreferenzen für gezielte Zustandsabfragen nutzen.
+Für die Projektdiagnose das Runtime-Control eindeutig zuordnen, die
+Projektbeschreibung prüfen und relevante Eingangs-/Ausgangspfade verfolgen.
+Statische Verdrahtung beweist weder Auslösung noch Ursache. Optimierungskandidaten
+betreffen belegte Pfade und Aufzeichnungslücken gegenüber der gewünschten
+Funktion; sie belegen weder ausreichende Sensorabdeckung noch Anlagensicherheit.
+Beobachtungen, statische Fakten, Hypothesen und Vorschläge getrennt berichten.
+Der Projektanalysator unterstützt KNX und Modbus, keinen Alarm-Scope.
+Scharfschaltung ist eine eigene Frage; der Ablauf quittiert oder testet keine Alarme.
+
 `loxone_get_active_alerts` liefert einen begrenzten read-only Überblick aus einer
 frisch autorisierten sichtbaren Struktur und erfassten Cache-Beobachtungen.
 Unterstützt werden `AalEmergency.status` (0 Normalbetrieb, 1 Alarm, 2 Reset,

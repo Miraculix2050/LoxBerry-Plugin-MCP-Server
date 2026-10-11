@@ -666,6 +666,31 @@ the requested state was reached.
 
 ### Active visible alerts
 
+Use this workflow for current alarm status and focused follow-up:
+
+1. Call `loxone_get_active_alerts` once. Check `ok`, `stale`, warnings,
+   `coverage.complete`, coverage reasons and `truncated`. `known_active` is the
+   observed active count; `total_active=null` means the total is unknown. Complete
+   coverage concerns known candidate families, not all physical alarm sources.
+2. Report active source levels/types, observation times and unknown context
+   separately. Stages are not danger ratings. No running alarm does not mean
+   disarmed; inspect arming separately only when requested.
+3. Use each finding's exact source control/state references with
+   `loxone_describe_control` and `loxone_get_state_semantics` for targeted reads.
+   Separate this later observation from the original snapshot; do not poll.
+4. For a project question, check `loxone_get_project_status`, describe the exact
+   `runtime_control_uuid` with `loxone_describe_project_object`, then use
+   `loxone_trace_project_logic` for relevant input and output paths. Ambiguous
+   mappings, unresolved edges and truncated traces are evidence gaps. Static
+   paths do not prove a trigger or cause. `loxone_analyze_project` supports KNX
+   and Modbus, not an alarm scope; use it only for related technology objects.
+5. For optimization, review evidenced input/output paths and advertised
+   history/statistics or observability gaps against the user's intended
+   function. Separate observations, static facts, causal hypotheses and
+   improvement candidates. A missing path or recording is not automatically a
+   defect; sensor sufficiency and installation safety are not established.
+   Do not acknowledge, trigger tests or change configuration through this tool.
+
 `loxone_get_active_alerts` provides a bounded read-only overview from one freshly
 authorized visible structure and captured cached observations. It evaluates
 `AalEmergency.status` (0 normal, 1 alarm, 2 reset, 3 disabled),
