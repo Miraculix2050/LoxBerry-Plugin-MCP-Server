@@ -15,6 +15,7 @@ const page=w.document.getElementById('knx-page');
 const ui=w.document.getElementById('knx-project-section');
 Object.assign(page.dataset,{unknown:'Unknown',empty:'Empty',sources:'Sources',description:'Description',importSource:'ETS'});
 Object.assign(ui.dataset,{error:'Error',connected:'Connected',disconnected:'Disconnected',targetChanged:'Stale',
+  restoringSession:'Restoring session',
   scopeGranted:'Granted',scopeNotGranted:'Not granted',
   common:'Common',importOnly:'Import only',observedProjectOnly:'Project only',
   namesDiffer:'Naming deviation',
@@ -65,9 +66,20 @@ const click=async(id)=>{el(id).click();await settle();};
 (async()=>{
   w.eval(fs.readFileSync('webfrontend/htmlauth/knx-project.js','utf8'));
   assert.equal(authOptions.requestedScopes.join(' '),'loxone:read');
+  assert.equal(el('loading').hidden,false);
+  assert.equal(el('loading').getAttribute('aria-hidden'),'true');
+  assert.equal(el('status').getAttribute('role'),'status');
+  assert.equal(page.contains(el('announcement')),false);
+  assert.equal(el('announcement').closest('[aria-busy="true"]'),null);
+  assert.equal(el('announcement').textContent,'Restoring session');
+  assert.equal(el('status').textContent,'Restoring session');
+  assert.equal(el('connection-badge').hidden,true);
   page.removeAttribute('aria-busy');
   page.dispatchEvent(new w.CustomEvent('knx-idle'));await settle();
   assert.equal(el('run').disabled,false);assert.equal(el('status').textContent,'Connected');
+  assert.equal(el('loading').hidden,true);
+  assert.equal(el('announcement').textContent,'');
+  assert.equal(el('connection-badge').hidden,false);
   assert.equal(el('connection-badge').textContent,'Connected');
   assert.equal(el('connection-badge').dataset.kind,'success');
   assert.equal(el('session-expiry').hidden,false);
@@ -113,6 +125,8 @@ const click=async(id)=>{el(id).click();await settle();};
   assert.equal(el('status').dataset.kind,'warning');
   assert.equal(el('connection-badge').dataset.kind,'success');
   saved={target:'binding',revision:1};mode='pending';el('run').click();await settle();
+  assert.equal(ui.getAttribute('aria-busy'),'true');
+  assert.equal(el('announcement').closest('[aria-busy="true"]'),null);
   saved={target:'other',revision:1};page.dispatchEvent(new w.CustomEvent('knx-state'));
   pendingResolve({structuredContent:envelope()});await settle();
   assert.equal(el('rows').children.length,0);assert.match(el('status').textContent,/Stale/);
@@ -128,6 +142,7 @@ const click=async(id)=>{el(id).click();await settle();};
   assert.equal(el('session-expiry-time').hasAttribute('datetime'),false);
   assert.equal(el('access-scopes').hidden,true);
   assert.equal(el('scope-list').children.length,0);
+  assert.equal(ui.hasAttribute('aria-busy'),false);
   w.close();
 })().catch(error=>{w.close();console.error(error);process.exitCode=1;});
 """

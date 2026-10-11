@@ -238,6 +238,8 @@ th[aria-sort="descending"] .mcp-event-history-sort::after { content: ' ↓'; }
 .mcp-knx { max-width: none; margin: 0; padding: .5rem; gap: .75rem; }
 #page_content:has(.mcp-knx) { margin-top: .5rem !important; padding-top: .5rem; }
 .mcp-knx { font-size: 1rem; }
+.mcp-knx-loading { display: inline-block; margin-inline-start: .4rem; color: #1261a0; font-size: .9rem; font-weight: 400; }
+.mcp-knx-announcements { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .mcp-knx details.mcp-card > summary { padding: .65rem .85rem; font-size: 1.15rem; }
 .mcp-knx details.mcp-card > summary h2, .mcp-knx details.mcp-card > summary h3 { display: inline; margin: 0; font: inherit; }
 .mcp-knx .mcp-collapsible-content { display: grid; gap: .65rem; padding: .85rem; }

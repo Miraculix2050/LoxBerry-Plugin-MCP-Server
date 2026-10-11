@@ -102,6 +102,7 @@ for (const id of ['knx-drafts-delegation', 'knx-corrections']) {
 }
 w.confirm = () => {throw new Error('Native confirmations forbidden');};
 const calls = [];
+let pause = true, resume, fail = false;
 const draft = {draft_id: 'a'.repeat(48), draft_revision: 3,
   expires_at: 2000000000, change_count: 11};
 const field = {state: 'value', value: '<img src=x onerror=attack()>', truncated: false};
@@ -109,6 +110,8 @@ w.fetch = async (_, options) => {
   const action = options.body.get('action');
   const payload = JSON.parse(options.body.get('payload'));
   calls.push({action, payload});
+  if (pause) await new Promise(resolve => {resume = resolve;});
+  if (fail) throw new Error('Synthetic correction read failure');
   const data = action === 'knx_correction_page' ? {target: 'b'.repeat(64), drafts: [draft]}
     : {draft, next_offset: payload.offset === 0 ? 10 : null, catalog_stale: true,
        manual_stale: false, project_status: 'not_checked', changes: [{identity: '1/2/3',
@@ -119,7 +122,16 @@ w.fetch = async (_, options) => {
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 (async () => {
   w.eval(fs.readFileSync('webfrontend/htmlauth/knx-corrections.js', 'utf8'));
+  const loading = w.document.getElementById('knx-corrections-loading');
+  const announcement = w.document.getElementById('knx-corrections-announcement');
+  assert.equal(loading.hidden, false);
+  assert.equal(announcement.closest('[aria-busy="true"]'), null);
+  assert.equal(w.document.getElementById('knx-page').contains(announcement), false);
+  assert.equal(announcement.textContent, announcement.dataset.loading);
+  pause = false; resume();
   await tick();
+  assert.equal(loading.hidden, true);
+  assert.equal(announcement.textContent, '');
   w.document.querySelector('#knx-corrections-list button').click(); await tick();
   const rows = w.document.getElementById('knx-corrections-values');
   assert.equal(rows.querySelector('img'), null);
@@ -131,6 +143,14 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(w.document.getElementById('knx-corrections-more').hidden, true);
   assert.deepEqual(calls.map(item => item.action),
     ['knx_correction_page', 'knx_correction_inspect', 'knx_correction_inspect']);
+  pause = true; fail = true;
+  w.document.getElementById('knx-corrections-reload').click(); await tick();
+  assert.equal(loading.hidden, false);
+  pause = false; resume(); await tick();
+  assert.equal(loading.hidden, true);
+  assert.equal(announcement.textContent, '');
+  assert.equal(w.document.getElementById('knx-corrections-status').textContent,
+    w.document.getElementById('knx-corrections').dataset.failed);
   dom.window.close();
 })().catch(error => {console.error(error); process.exitCode = 1;});
 """

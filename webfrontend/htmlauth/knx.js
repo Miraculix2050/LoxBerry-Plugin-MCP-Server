@@ -48,12 +48,27 @@
     return entry ? page.dataset[entry[0]] : page.dataset.failed;
   };
   const api = async (action, payload = {}) => {
-    const response = await fetch('knx.cgi', {method: 'POST', credentials: 'same-origin',
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: new URLSearchParams({action, payload: JSON.stringify(payload)})});
-    const result = await response.json();
-    if (!response.ok || !result.ok) throw new Error(result.error?.code || 'request_failed');
-    return result.data;
+    const hints = action === 'knx_page' ? [...page.querySelectorAll('[data-knx-catalog-loading]')] : [];
+    const loading = (active) => {
+      if (hints.length) {
+        const announcement = document.getElementById('knx-catalog-announcement');
+        announcement.textContent = active ? announcement.dataset.loading : '';
+      }
+      hints.forEach((hint) => {
+        hint.hidden = !active;
+        if (active) hint.closest('.mcp-card').setAttribute('aria-busy', 'true');
+        else hint.closest('.mcp-card').removeAttribute('aria-busy');
+      });
+    };
+    loading(true);
+    try {
+      const response = await fetch('knx.cgi', {method: 'POST', credentials: 'same-origin',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({action, payload: JSON.stringify(payload)})});
+      const result = await response.json();
+      if (!response.ok || !result.ok) throw new Error(result.error?.code || 'request_failed');
+      return result.data;
+    } finally { loading(false); }
   };
   const run = async (operation) => {
     if (busy) return;

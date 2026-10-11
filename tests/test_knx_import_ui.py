@@ -46,10 +46,13 @@ const initial = {target: 't', revision: 1, draft_id: 'd', preview_token: 'token'
   removals: 0, preserved_overrides: 0, nameless_overrides: 0, name_policy_required: false};
 let preview = structuredClone(initial), rejectUpload = false;
 const requests = [];
+w.holdPage = true;
 w.confirm = w.alert = w.prompt = () => {throw new Error('Native dialog forbidden');};
 w.fetch = async (_url, options) => {
   const action = options.body.get('action'), payload = JSON.parse(options.body.get('payload'));
   requests.push({action, payload});
+  if (action === 'knx_page' && w.holdPage)
+    await new Promise(resolve => {w.resumePage = resolve;});
   if (action === 'knx_page' && w.failPage)
     return {ok: true, json: async () => ({ok: false, error: {code: 'knx_revision_conflict'}})};
   if (action === 'knx_import_preview' && w.delayPreview)
@@ -82,7 +85,19 @@ const click = async id => {w.document.getElementById(id).click(); await tick();}
 (async () => {
   w.eval(fs.readFileSync('webfrontend/htmlauth/knx.js', 'utf8'));
   w.eval(fs.readFileSync('webfrontend/htmlauth/knx-import.js', 'utf8'));
+  const hints = [...page.querySelectorAll('[data-knx-catalog-loading]')];
+  assert.equal(hints.length, 3);
+  assert.equal(hints.filter(hint => hint.getAttribute('role') === 'status').length, 0);
+  assert.equal(hints.filter(hint => hint.getAttribute('aria-hidden') === 'true').length, 3);
+  const announcement = w.document.getElementById('knx-catalog-announcement');
+  assert.equal(page.contains(announcement), false);
+  assert.equal(announcement.closest('[aria-busy="true"]'), null);
+  assert.equal(announcement.textContent, announcement.dataset.loading);
+  assert(hints.every(hint => !hint.hidden && hint.closest('.mcp-card').ariaBusy === 'true'));
+  w.holdPage = false; w.resumePage();
   await tick();
+  assert(hints.every(hint => hint.hidden && !hint.closest('.mcp-card').hasAttribute('aria-busy')));
+  assert.equal(announcement.textContent, '');
   assert.match(w.document.getElementById('knx-target').textContent, /Configured target/);
   assert.equal(w.document.querySelectorAll('#knx-addresses img').length, 0);
   assert.match(w.document.querySelector('.mcp-knx-sources').textContent, /<img src=x/);
@@ -100,7 +115,14 @@ const click = async id => {w.document.getElementById(id).click(); await tick();}
   assert.equal(w.document.getElementById('knx-address-badge').hidden, false);
   w.failPage = true; await click('knx-next');
   assert.match(w.document.getElementById('knx-status').textContent, /knx_revision_conflict/);
+  assert(hints.every(hint => hint.hidden));
+  assert.equal(announcement.textContent, '');
   w.failPage = false;
+  w.holdPage = true; w.document.getElementById('knx-next').click(); await tick();
+  assert(hints.every(hint => !hint.hidden));
+  assert.equal(announcement.textContent, announcement.dataset.loading);
+  w.holdPage = false; w.resumePage(); await tick();
+  assert(hints.every(hint => hint.hidden));
   await click('knx-next');
   assert.equal(w.document.getElementById('knx-status').textContent, '');
   assert.equal(requests.at(-1).payload.offset, 50);

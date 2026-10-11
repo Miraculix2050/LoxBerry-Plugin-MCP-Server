@@ -6,6 +6,8 @@
   const values = document.getElementById('knx-corrections-values');
   const status = document.getElementById('knx-corrections-status');
   const more = document.getElementById('knx-corrections-more');
+  const loading = document.getElementById('knx-corrections-loading');
+  const announcement = document.getElementById('knx-corrections-announcement');
   let target = null;
   let selected = null;
   let busy = false;
@@ -26,10 +28,12 @@
   const run = async (operation) => {
     if (busy) return;
     busy = true; section.setAttribute('aria-busy', 'true');
+    loading.hidden = false; announcement.textContent = announcement.dataset.loading;
     section.querySelectorAll('button').forEach((button) => { button.disabled = true; });
     try { await operation(); }
     catch (_) { status.textContent = section.dataset.failed; selected = null; values.textContent = ''; more.hidden = true; }
     finally {
+      loading.hidden = true; announcement.textContent = '';
       busy = false; section.removeAttribute('aria-busy');
       section.querySelectorAll('button').forEach((button) => { button.disabled = false; });
     }

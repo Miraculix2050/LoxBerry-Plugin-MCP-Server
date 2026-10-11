@@ -34,6 +34,7 @@ const html = fs.readFileSync('templates/knx.html', 'utf8').replace(/<TMPL_VAR[^>
 const dom = new JSDOM(html, {url: 'http://localhost/knx.cgi', runScripts: 'outside-only'});
 const w = dom.window;
 const calls = [];
+let pauseRead = true, resumeRead, failRead = false;
 let state = {target: 'synthetic-target', policy_revision: 'revision-1', enabled: false,
   bindings: [{binding: 'a'.repeat(64), client_name: '<img src=x onerror=attack()>',
     client: 'synthetic-client', identity: 'identity-ref', miniserver: 'ms-ref',
@@ -47,6 +48,9 @@ w.fetch = async (_url, options) => {
   const action = options.body.get('action');
   const payload = JSON.parse(options.body.get('payload'));
   calls.push({action, payload});
+  if (action === 'knx_read_page' && pauseRead)
+    await new Promise(resolve => {resumeRead = resolve;});
+  if (action === 'knx_read_page' && failRead) throw new Error('Synthetic read failure');
   if (action !== 'knx_read_page') {
     assert.equal(payload.target, state.target);
     assert.equal(payload.policy_revision, state.policy_revision);
@@ -65,6 +69,17 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   w.eval(fs.readFileSync('webfrontend/htmlauth/knx-read-delegation.js', 'utf8'));
   await tick();
   const section = w.document.getElementById('knx-read-delegation');
+  assert.equal(w.document.getElementById('knx-read-loading').hidden, false);
+  assert.equal(w.document.getElementById('knx-read-loading').getAttribute('aria-hidden'), 'true');
+  assert.equal(w.document.getElementById('knx-read-status').getAttribute('role'), 'status');
+  const announcement = w.document.getElementById('knx-read-announcement');
+  assert.equal(w.document.getElementById('knx-page').contains(announcement), false);
+  assert.equal(announcement.closest('[aria-busy="true"]'), null);
+  assert.equal(announcement.textContent, announcement.dataset.loading);
+  assert.equal(w.document.getElementById('knx-read-status').textContent, section.dataset.loading);
+  pauseRead = false; resumeRead(); await tick();
+  assert.equal(w.document.getElementById('knx-read-loading').hidden, true);
+  assert.equal(announcement.textContent, '');
   const rows = w.document.getElementById('knx-read-bindings');
   assert.equal(rows.querySelector('img'), null);
   const dialog = w.document.getElementById('knx-confirm');
@@ -88,6 +103,13 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   dialog.close('continue'); await tick();
   assert.equal(state.enabled, true);
   assert.equal(section.hasAttribute('aria-busy'), false);
+  pauseRead = true; failRead = true;
+  w.document.getElementById('knx-read-reload').click(); await tick();
+  assert.equal(w.document.getElementById('knx-read-loading').hidden, false);
+  pauseRead = false; resumeRead(); await tick();
+  assert.equal(w.document.getElementById('knx-read-loading').hidden, true);
+  assert.equal(w.document.getElementById('knx-read-status').textContent, section.dataset.failed);
+  assert.equal(announcement.textContent, '');
   dom.window.close();
 })().catch(error => {console.error(error); process.exitCode = 1;});
 """
