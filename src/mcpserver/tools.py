@@ -5597,7 +5597,8 @@ def register_read_tools(
         description=(
             "Read a bounded snapshot of active authorized visible alerts. Check coverage and "
             "truncation; empty partial results do not establish alarm absence. Follow source "
-            "references with targeted state/project reads. Supported families only; "
+            "references with targeted state/project reads for status triage and evidence-linked "
+            "defect/optimization tasks. Supported families only; "
             "Alarm/SmokeAlarm zero is owner-assumed. Cached observations, not simultaneous "
             "measurements or proof of cause/severity. Read-only; no acknowledgement, polling "
             "or history; not an emergency notification service."

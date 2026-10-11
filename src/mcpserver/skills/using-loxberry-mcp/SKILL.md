@@ -927,6 +927,20 @@ Confirmation is not evidence that the underlying fault is repaired.
 Load core rules first, then section='alerts' for current alarm status and read-only
 follow-up. Use full guidance before any write or a different workflow.
 
+Choose the investigation from the user's goal:
+
+- Current status: start with the snapshot below; report observed activity and
+  unknown coverage separately. Arming and past events require separate evidence.
+- Project defects: include inactive sources. Use `loxone_find_controls` with an
+  exact visible source type, follow pagination, and map each relevant control
+  before tracing its configured inputs/outputs. An empty or truncated path does
+  not establish missing wiring. Compare complete evidence with intended function.
+- Optimization: use the same source inventory, then compare evidenced paths and
+  available recording with the intended function. Prioritize concrete proposals
+  by demonstrated impact; unknown parameters, units or escalation settings remain
+  evidence gaps, not guessed values or defects. Use a permitted reader if exposed;
+  otherwise prepare a handoff for inspection with the required project tools.
+
 Use this workflow for current alarm status and focused follow-up:
 
 1. Call `loxone_get_active_alerts` once. Check `ok`, `stale`, warnings,

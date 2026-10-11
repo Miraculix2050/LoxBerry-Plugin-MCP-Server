@@ -556,6 +556,14 @@ Für Alarmdiagnosen nach den Core-Regeln `section="alerts"` laden (oder
 gezielte Projekt-Folgeaufgaben und überprüfbare Abnahmekriterien. Der vollständige
 Guide bleibt vor Schreibaktionen und für andere Abläufe erforderlich.
 
+Für Fehler- und Optimierungsprüfungen relevante sichtbare Quelltypen mit
+`loxone_find_controls` ermitteln, einschließlich inaktiver Quellen und weiterer
+Ergebnisseiten. Vollständig belegte Projektpfade mit der gewünschten Funktion
+vergleichen; ein leerer gekürzter Trace beweist keine fehlende Verdrahtung.
+Unbekannte Parameter, Einheiten und Eskalationseinstellungen benötigen einen
+autorisierten Leser oder eine Übergabe an Projektwerkzeuge vor einem konkreten
+Änderungsvorschlag.
+
 Für den aktuellen Status zuerst Aktualität, Abdeckung und Kürzung prüfen;
 eine unbekannte Gesamtzahl oder ein leeres Teilergebnis bedeutet keine
 Alarmfreiheit. Exakte Quellenreferenzen für gezielte Zustandsabfragen nutzen.
