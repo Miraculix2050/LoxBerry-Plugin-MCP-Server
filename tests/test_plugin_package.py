@@ -141,6 +141,9 @@ def test_mcp_client_smoke_covers_skill_delivery_surfaces() -> None:
     script = (ROOT / "tools" / "test_mcp_client.ps1").read_text(encoding="utf-8")
 
     assert "skill://using-loxberry-mcp/SKILL.md" in script
+    assert "skill://using-loxberry-mcp/core.md" in script
+    assert "skill://using-loxberry-mcp/knx.md" in script
+    assert "$skillResources.Count -ne $expectedSkillUris.Count" in script
     assert "loxone_get_skill_guide" in script
     assert "method = 'resources/list'" in script
     assert "method = 'resources/read'" in script

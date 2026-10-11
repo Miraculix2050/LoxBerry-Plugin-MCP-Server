@@ -265,10 +265,17 @@ try {
 
     Send-JsonRpc @{ jsonrpc = '2.0'; id = 2; method = 'resources/list'; params = @{} }
     $resourcesResponse = Read-JsonRpc 2
-    if ($resourcesResponse.error -or @($resourcesResponse.result.resources).Count -ne 1 -or
-        [string]$resourcesResponse.result.resources[0].uri -ne
-            'skill://using-loxberry-mcp/SKILL.md' -or
-        $resourcesResponse.result.resources[0].mimeType -ne 'text/markdown') {
+    $expectedSkillUris = @(
+        'skill://using-loxberry-mcp/SKILL.md',
+        'skill://using-loxberry-mcp/core.md',
+        'skill://using-loxberry-mcp/knx.md'
+    )
+    $skillResources = @($resourcesResponse.result.resources)
+    if ($resourcesResponse.error -or $skillResources.Count -ne $expectedSkillUris.Count -or
+        @($skillResources | Where-Object {
+            [string]$_.uri -notin $expectedSkillUris -or $_.mimeType -ne 'text/markdown'
+        }).Count -ne 0 -or
+        @($skillResources.uri | Select-Object -Unique).Count -ne $expectedSkillUris.Count) {
         throw 'MCP skill resource inventory differs from the expected contract.'
     }
     Send-JsonRpc @{
