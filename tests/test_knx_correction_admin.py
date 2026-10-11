@@ -246,7 +246,8 @@ const tick=()=>new Promise(resolve=>setTimeout(resolve,0));
   const textarea=row.querySelector('textarea');
   assert.equal(textarea.value,full); // Never save a truncated projection.
   assert.equal(calls.at(-1).payload.detail,true);
-  textarea.value='';row.querySelector('form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
+  textarea.value='';
+  row.querySelector('form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
   await tick();
   assert.equal(proposed,'');assert.equal(decision,'proposed');
   const edit=calls.find(c=>c.action==='knx_correction_edit').payload;
