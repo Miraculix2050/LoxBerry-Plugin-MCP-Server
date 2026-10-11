@@ -31,6 +31,7 @@ from mcpserver.loxone.structure import normalize_structure
 from mcpserver.tools import ControlReadTarget, register_read_tools
 
 TARGET = "00000000-0000-0000-0000000000000001"
+ACTION = "00000000-0000-0000-0000000000000002"
 SERIAL = "001122aabbcc"
 RECEIVED = "2026-10-11T10:00:00+00:00"
 ACTUAL = '{"Gpwr":1,"Ppwr":2,"Spwr":3,"Cpwr":4}'
@@ -124,7 +125,7 @@ def access(*, history=False):
 
 
 def fixture_runtime(*, history=False):
-    control = Control(TARGET, "Monitor", "EFM", None, None, TARGET, ())
+    control = Control(TARGET, "Monitor", "EFM", None, None, ACTION, ())
     structure = LoxoneStructure(
         LoxoneIdentity("reader", SERIAL), "current", (), (), (control,), caller_is_admin=True
     )
@@ -153,7 +154,7 @@ async def test_authorized_native_own_session_pre_post_and_cleanup(view):
     control, returned, result = await runtime.read_native_efm(a, TARGET, view)
     assert control.uuid == TARGET and returned is structure and result.view == view
     assert session.load_structure.await_count == 2
-    session.native_efm_result.assert_awaited_once_with(TARGET, view)
+    session.native_efm_result.assert_awaited_once_with(ACTION, view)
     session.close.assert_awaited_once()
     token.destroy.assert_called_once()
     runtime.token_store.get.assert_called_once_with(a.family_id, a.miniserver_id, a.identity_id)
@@ -162,7 +163,7 @@ async def test_authorized_native_own_session_pre_post_and_cleanup(view):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("post", [False, True])
-@pytest.mark.parametrize("gate", ["admin", "hidden", "absent", "serial", "type"])
+@pytest.mark.parametrize("gate", ["admin", "hidden", "absent", "serial", "type", "action"])
 async def test_fresh_gates_discard_native_values(post, gate):
     runtime, structure, session, token = fixture_runtime()
     if gate == "admin":
@@ -173,6 +174,8 @@ async def test_fresh_gates_discard_native_values(post, gate):
         changed = replace(structure, controls=())
     elif gate == "serial":
         changed = replace(structure, identity=LoxoneIdentity("reader", "112233aabbcc"))
+    elif gate == "action":
+        changed = replace(structure, controls=(replace(structure.controls[0], action_uuid=None),))
     else:
         changed = replace(
             structure, controls=(replace(structure.controls[0], control_type="Switch"),)
@@ -181,6 +184,18 @@ async def test_fresh_gates_discard_native_values(post, gate):
     with pytest.raises(ControlOperationError):
         await runtime.read_native_efm(access(), TARGET, "actual")
     assert session.native_efm_result.await_count == int(post)
+    session.close.assert_awaited_once()
+    token.destroy.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_changed_action_reference_discards_native_result():
+    runtime, structure, session, token = fixture_runtime()
+    changed = replace(structure, controls=(replace(structure.controls[0], action_uuid=TARGET),))
+    session.load_structure.side_effect = [structure, changed]
+    with pytest.raises(ControlOperationError, match="action identity changed"):
+        await runtime.read_native_efm(access(), TARGET, "actual")
+    session.native_efm_result.assert_awaited_once_with(ACTION, "actual")
     session.close.assert_awaited_once()
     token.destroy.assert_called_once()
 

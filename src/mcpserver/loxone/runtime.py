@@ -989,6 +989,12 @@ class LoxoneRuntime:
                             self.token_health.record_successful_authentication(access.family_id)
                         structure = await asyncio.wait_for(session.load_structure(), timeout)
                         control = visible_admin(structure)
+                        try:
+                            action_uuid = normalize_loxone_uuid(control.action_uuid)
+                        except ValueError:
+                            raise ControlOperationError(
+                                "unsupported_source", "Native EFM action identity invalid"
+                            ) from None
                         probe = await asyncio.wait_for(self.client.probe(), timeout)
                         serial = canonical_serial(structure.identity.miniserver_serial)
                         if (
@@ -1000,7 +1006,7 @@ class LoxoneRuntime:
                             )
                         await self._require_access(access)
                         value = await asyncio.wait_for(
-                            session.native_efm_result(control.uuid, view), timeout
+                            session.native_efm_result(action_uuid, view), timeout
                         )
                         result = decode_native_efm(
                             value, view, retrieved_at=datetime.now(UTC).isoformat()
@@ -1008,6 +1014,16 @@ class LoxoneRuntime:
                         await self._require_access(access)
                         refreshed = await asyncio.wait_for(session.load_structure(), timeout)
                         control = visible_admin(refreshed)
+                        try:
+                            refreshed_action = normalize_loxone_uuid(control.action_uuid)
+                        except ValueError:
+                            raise ControlOperationError(
+                                "unsupported_source", "Native EFM action identity invalid"
+                            ) from None
+                        if refreshed_action != action_uuid:
+                            raise ControlOperationError(
+                                "unsupported_source", "Native EFM action identity changed"
+                            )
                         if canonical_serial(refreshed.identity.miniserver_serial) != serial:
                             raise ControlOperationError(
                                 "unsupported_source", "Native EFM source identity changed"
