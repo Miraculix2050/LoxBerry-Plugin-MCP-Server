@@ -62,6 +62,37 @@ Token measurements must name the tokenizer/model/client and distinguish loaded
 schemas, guide content and actual results. Character counts are not token counts.
 For discovery mismatches, see [troubleshooting](troubleshooting.en.md).
 
+## Optional task prompts
+
+Clients supporting MCP prompts can select `knx_ets_inventory_review` or
+`knx_address_explanation` through `prompts/list` and retrieve the recipe through
+`prompts/get`. Retrieval reads no project/catalog and grants no permission. The
+AI uses the same discovered read-only tools with fresh authorization. Prompts
+are user-selected task starters, not background checks or automatic task creation.
+Clients without prompt support can ask the same question in normal chat.
+
+Inventory parameters: `focus` is `all` (default), `names`, `coverage` or `dpt`;
+`detail` is `summary` (default) or `findings`; `language` is `en` (default) or `de`.
+For example, `prompts/get` with `name="knx_ets_inventory_review"` and
+`arguments={"focus":"names","detail":"findings"}` starts a naming review. The
+answer distinguishes summary, sampled findings and complete requested coverage.
+An absent/partial import is a limitation, not evidence of unused addresses.
+
+Address explanation requires a valid two-/three-level `address`, preserving an
+explicit `:0`/`:1`; optional `language` has the same choices. For example,
+`name="knx_address_explanation", arguments={"address":"1/2/3:1"}` keeps the project
+variant and queries approved local metadata by base address `1/2/3`. Multiple
+objects/names stay explicit. Description, DPT declarations and prefix context are
+additional sources, not proof of physical relationships or bus activity.
+
+If listing or arguments differ from this reference, reconnect through the
+client's supported discovery workflow. Do not manufacture a missing prompt/tool
+call. Missing guidance/tools or denied permissions stop the affected checks;
+these prompts cannot import files, modify metadata or export ETS corrections.
+For protected local `prompts/list` captures, the offline discovery comparator
+also supports `--kind prompts`; this compares advertisements, not recipe text
+or whether a client can execute the task.
+
 ## Compact ETS comparison
 
 Explicitly select `analyses=["ets_project_comparison"]`, `scope="knx"` and

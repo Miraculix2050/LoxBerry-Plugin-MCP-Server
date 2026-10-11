@@ -1,4 +1,4 @@
-"""Validate value-free analysis workflow measurements against the 25-question catalog.
+"""Validate value-free analysis workflow measurements against the versioned catalog.
 
 This offline tool never calls a model, a Miniserver or a write operation. Captures
 contain counters and independently adjudicated outcomes, never private prompts,
@@ -81,7 +81,8 @@ def validate_capture(document: dict, catalog: dict) -> list[dict]:
     ):
         raise ValueError("capture_digest_invalid")
     runs = document["runs"]
-    if not isinstance(runs, list) or len(runs) > 150:
+    max_runs = len(catalog["cases"]) * catalog["runs_per_case"] * 2
+    if not isinstance(runs, list) or len(runs) > max_runs:
         raise ValueError("capture_run_limit")
     known = {case["id"] for case in catalog["cases"]}
     seen = set()

@@ -10,6 +10,7 @@ from typing import Any, Final, cast
 from mcp.server.fastmcp import FastMCP
 
 from mcpserver.loxone.runtime import LoxoneRuntime
+from mcpserver.prompts import prompt_reference, register_prompt_surface
 from mcpserver.tools import (
     EventHistoryRuntime,
     LoxBerryOperateRuntime,
@@ -24,6 +25,7 @@ REFERENCE_JSON_PATH: Final = "webfrontend/htmlauth/tool-schema-reference.json"
 def tool_schema_catalog(version: str) -> dict[str, Any]:
     """Return every supported release tool using FastMCP's canonical schemas."""
     server = FastMCP("LoxBerry MCP Server schema reference")
+    register_prompt_surface(server)
     placeholder = object()
     register_tool_surface(
         server,
@@ -58,6 +60,10 @@ def tool_schema_catalog(version: str) -> dict[str, Any]:
             "MCP clients receive the tools enabled for an installation via tools/list."
         ),
         "tools": tools,
+        "prompts": [
+            prompt_reference(prompt)
+            for prompt in sorted(server._prompt_manager.list_prompts(), key=lambda item: item.name)
+        ],
     }
 
 
@@ -87,7 +93,22 @@ def schema_reference_html(version: str) -> bytes:
   <details><summary>Output schema</summary><pre>{output_schema}</pre></details>
 </article>"""
         )
+    prompt_sections = []
+    for prompt in catalog["prompts"]:
+        name = html.escape(prompt["name"])
+        description = html.escape(prompt["description"])
+        arguments = html.escape(json.dumps(prompt["arguments"], indent=2, ensure_ascii=False))
+        prompt_sections.append(
+            f'<article id="{name}" class="tool"><h2><code>{name}</code></h2>'
+            f"<p>{description}</p><pre>{arguments}</pre></article>"
+        )
     content = "\n".join(sections)
+    content += (
+        '<section id="prompts"><h2>User-selected prompts</h2><p>prompts/list advertises '
+        "task starters; prompts/get expands a bounded recipe. Retrieval performs no project "
+        "access, execution or permission grant. Tools remain available in clients without "
+        "prompt support.</p>" + "\n".join(prompt_sections) + "</section>"
+    )
     document = f"""<!doctype html>
 <html lang="en">
 <head>
