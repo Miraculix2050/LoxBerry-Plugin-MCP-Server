@@ -23,3 +23,14 @@ read, proposed repair and acceptance check. A faulty automation rule can justify
 rule repair task. Such writes require a future dedicated rule tool and permission.
 Configuration changes need a future project-writing Loxone MCP integration.
 Acknowledgement metadata does not authorize or execute confirmation.
+
+## Notifications
+
+The tool loxone_get_notifications reads only the latest observed text event from
+the freshly advertised globalStates.notifications of your user connection. This
+experimental contract is restricted to firmware 17.2.8.28. It reuses the existing
+volatile state cache and adds no collector or persistent history. An absent or
+stale event returns explicit unavailable coverage; it does not prove no notifications.
+The official app's notification history is client-owned, so upstream history is
+unavailable. Notification type/level remain raw context, never alarm severity or
+delivery confirmation. This tool sends nothing and changes no read markers.
