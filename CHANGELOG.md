@@ -19,6 +19,12 @@ extracted from the matching version heading.
   hourly-mean-power estimate. Preserve declared boundary assumptions, gaps,
   undefined attribution and existing source/budget/cursor contracts (#438).
 
+- Add separately approved, default-off MCP preparation and inspection of bounded
+  KNX correction proposals. Persistent owner/target/revision-bound drafts share
+  the KNX Admin view and expire after 24 hours; request reconciliation preserves
+  uncertain results. This stage does not apply metadata, download XML or write
+  Loxone (#458).
+
 - Add bounded read-only historical temperature summaries, verified energy and
   observed state durations through `loxone_analyze_history`. Reuse one fresh
   caller context, preserve unknown gaps/units/resets, and make raw pages opt-in

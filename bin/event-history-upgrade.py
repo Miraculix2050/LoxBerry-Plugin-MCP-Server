@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Preserve plugin SQLite snapshots across a native upgrade.
 
-The existing executable path remains compatible; event history and KNX metadata
+The existing executable path remains compatible; event history, KNX metadata and drafts
 use the same integrity-checked snapshot operations.
 """
 

@@ -14,6 +14,7 @@ _NAMESPACES: Final = {
     "loxberry:read": "loxberry-read-explorer-binding-v1",
     "loxberry:operate": "loxberry-operate-explorer-binding-v1",
     "loxberry:knx:read": "loxberry-knx-read-explorer-binding-v1",
+    "loxberry:knx:drafts": "loxberry-knx-drafts-explorer-binding-v1",
 }
 
 
@@ -28,7 +29,7 @@ def explorer_binding_id(
 ) -> str:
     """Derive the installation-local application binding without retaining identifiers."""
     target: tuple[str, ...] = ()
-    if capability == "loxberry:knx:read":
+    if capability in {"loxberry:knx:read", "loxberry:knx:drafts"}:
         from mcpserver.loxone.endpoint import MiniserverEndpoint
 
         target = (MiniserverEndpoint.parse(target_origin).origin,)
@@ -54,7 +55,7 @@ def active_explorer_binding(
     *,
     now: int | None = None,
 ) -> ExplorerBindingApproval | None:
-    if capability == "loxberry:knx:read" and not config.loxone_endpoint:
+    if capability in {"loxberry:knx:read", "loxberry:knx:drafts"} and not config.loxone_endpoint:
         return None
     binding_id = explorer_binding_id(
         auth_store,
@@ -99,7 +100,7 @@ def record_explorer_approval(
         str(family.get("miniserver_id", "")),
         explorer_origin,
         target_origin=config_store.load().loxone_endpoint
-        if capability == "loxberry:knx:read"
+        if capability in {"loxberry:knx:read", "loxberry:knx:drafts"}
         else "",
     )
 
@@ -107,7 +108,10 @@ def record_explorer_approval(
 
     def update(config: PluginConfig) -> PluginConfig:
         nonlocal transitioned
-        if capability == "loxberry:knx:read" and binding_id != explorer_binding_id(
+        if capability in {
+            "loxberry:knx:read",
+            "loxberry:knx:drafts",
+        } and binding_id != explorer_binding_id(
             auth_store,
             capability,
             str(family.get("identity_id", "")),
@@ -133,6 +137,7 @@ def record_explorer_approval(
                     "loxberry:read": config.loxberry_read_bindings,
                     "loxberry:operate": config.loxberry_operate_bindings,
                     "loxberry:knx:read": config.loxberry_knx_read_bindings,
+                    "loxberry:knx:drafts": config.loxberry_knx_drafts_bindings,
                 }[capability]
             )
             if legacy_count + sum(item.capability == capability for item in entries) >= 64:
@@ -169,7 +174,11 @@ def record_explorer_family_end(
         return
     end = min(int(family.get("expires_at", 0)), int(family.get("revoked_at", 2**63 - 1)))
     scopes = set(str(family.get("scope", "")).split())
-    target_origin = config_store.load().loxone_endpoint if "loxberry:knx:read" in scopes else ""
+    target_origin = (
+        config_store.load().loxone_endpoint
+        if {"loxberry:knx:read", "loxberry:knx:drafts"} & scopes
+        else ""
+    )
     binding_ids = {
         (
             capability,
@@ -183,7 +192,8 @@ def record_explorer_family_end(
             ),
         )
         for capability in _NAMESPACES
-        if capability in scopes and (capability != "loxberry:knx:read" or target_origin)
+        if capability in scopes
+        and (capability not in {"loxberry:knx:read", "loxberry:knx:drafts"} or target_origin)
     }
     if not binding_ids:
         return
@@ -221,7 +231,7 @@ def maintain_explorer_bindings(
         for capability in _NAMESPACES:
             if capability not in scopes:
                 continue
-            if capability == "loxberry:knx:read" and not target_origin:
+            if capability in {"loxberry:knx:read", "loxberry:knx:drafts"} and not target_origin:
                 continue
             explorer_origin = family.get("explorer_origin")
             if not isinstance(explorer_origin, str) or not explorer_origin:

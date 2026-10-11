@@ -131,3 +131,39 @@ jeder kompakten Seite separat sichtbar. `source_details=true` nur bei Bedarf fü
 vollständige Diagnose-/Quellengruppen verwenden. Das Protokoll liefert weiterhin
 strukturierte und Text-Fallback-Ergebnisse; Clients sollten eine Darstellung
 nutzen und nicht beide in den KI-Kontext aufnehmen.
+
+## Gemeinsame Korrekturvorschläge
+
+Nach Abstimmung konkreter Änderungen kann eine KI über
+`loxberry_prepare_knx_corrections` einen begrenzten Entwurf vorbereiten. Dafür
+sind eine eigene OAuth-Zustimmung zu `loxberry:knx:drafts`, ausdrückliche
+Admin-Aktivierung und eine genaue zielgebundene Freigabe auf der KNX-Seite nötig,
+zusätzlich zur lokalen Katalog-Lesefreigabe. Beide Fähigkeiten sind unabhängig
+standardmäßig deaktiviert. Ein Loxone-Login gewährt keine davon. Deaktivierung
+erhält Freigaben und Vorschläge, blockiert aber den MCP-Zugriff.
+
+Lokale Metadaten oder experimentelle ETS-Exportziele ausdrücklich auswählen.
+Importierte Quellenwerte bleiben unverändert. Ein Vorschlag verändert keine
+Overrides, Exportziele, ETS oder Loxone-Projekte. Die authentifizierte KNX-Seite
+zeigt denselben gespeicherten Vorschlag mit getrennten Quellen; sie übernimmt
+keine Loxone-Projektzugangsdaten des OAuth-Clients. Der aktuelle Projektstand
+ist dort ausdrücklich ungeprüft. Bearbeitung, Entscheidungen je Änderung und
+Übernahme folgen im nächsten Umsetzungsschritt.
+
+Entwürfe gelten absolut 24 Stunden, enthalten höchstens 50 Änderungen und teilen
+die globale Grenze von acht Entwürfen/32 MiB mit Importen, Vergleichen und
+XML-Vorschauen. Bearbeitung verlängert die Laufzeit nicht. MCP sieht nur eigene
+zielgebundene Entwürfe; Admin-Ansicht überträgt anderen Clients kein Eigentum.
+Veraltete Entwürfe bleiben einsehbar; ein geänderter Quellenstand benötigt einen
+neuen Vorschlag.
+
+Zuerst kompakte Übersichten lesen, anschließend ausgewählte Seiten (Standard
+zehn, höchstens zwanzig); Folgeseiten mit der zurückgegebenen Entwurfsrevision
+abrufen. Werte über 128 Zeichen werden als gekürzt markiert; vollständige
+Details wählen eine Zeile. Nach ungewissem Anlegen über die feste Anfrage-ID
+nachsehen; nach ungewissem Bearbeiten über die bekannte Entwurfs-ID. Ein fehlendes
+Ergebnis bei möglicherweise noch laufendem Worker beweist keinen Fehlschlag.
+Nie automatisch wiederholen. Identische Vorbereitung ist idempotent; abweichende
+Wiederverwendung einer Anfrage-ID wird abgewiesen. Lesen und Vorbereitung teilen
+begrenzte Worker-Plätze und lokale Leseraten. Normale Entwurfsabfragen verarbeiten
+keine Dateien und laden keine vollständigen Kataloge.

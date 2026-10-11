@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from mcpserver.knx.correction_drafts import CorrectionDraftStore
 from mcpserver.knx.import_repository import ImportRepository
 from mcpserver.knx.import_service import select_candidates
 from mcpserver.knx.store import KnxStore
@@ -79,6 +80,35 @@ def test_native_snapshot_preserves_knx_sources_overrides_groups_and_revision(
     with sqlite3.connect(restored) as db:
         assert db.execute("SELECT count(*) FROM ets_sources").fetchone()[0] == 1
     assert not backup.exists()
+
+
+def test_native_upgrade_retains_correction_owner_revision_expiry_and_reconciliation(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr("mcpserver.knx.drafts.time.time", lambda: 1000)
+    original = tmp_path / "old" / "drafts.sqlite3"
+    store = CorrectionDraftStore(original, "a" * 64)
+    changes = [{"field": "name", "value": "Synthetic proposal"}]
+    request_id = "b" * 32
+    created = store.create_correction("target", 7, "c" * 64, changes, request_id=request_id)
+    store.update_correction(created["draft_id"], "target", 1, changes, request_id="d" * 32)
+    expected = store.inspect_correction(created["draft_id"], "target")
+    backup = tmp_path / "installer" / "knx-drafts.sqlite3"
+    backup.parent.mkdir()
+    assert run("backup", original, backup).returncode == 0
+    restored = tmp_path / "new" / "drafts.sqlite3"
+    assert run("restore", backup, restored).returncode == 0
+    upgraded = CorrectionDraftStore(restored, "a" * 64)
+    assert upgraded.inspect_correction(created["draft_id"], "target") == expected
+    assert upgraded.resolve_request(request_id, "target") == created["draft_id"]
+    assert (
+        upgraded.update_correction(created["draft_id"], "target", 1, changes, request_id="d" * 32)
+        == 2
+    )
+    assert CorrectionDraftStore(restored, "e" * 64).list_corrections("target") == []
+    root = HELPER.parent.parent
+    assert "$backup_dir/knx-drafts.sqlite3" in (root / "preupgrade.sh").read_text()
+    assert "$plugin_data/knx/drafts.sqlite3" in (root / "postinstall.sh").read_text()
 
 
 @pytest.mark.skipif(os.name != "posix", reason="native Bash upgrade hook requires POSIX")

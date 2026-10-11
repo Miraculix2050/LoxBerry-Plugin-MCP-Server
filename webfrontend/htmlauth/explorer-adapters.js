@@ -41,6 +41,7 @@
     ]},
     {id: 'knxCatalog', scopes: ['loxone:read', 'loxberry:knx:read'], names: [
       'loxberry_get_knx_catalog',
+      'loxberry_get_knx_correction_drafts', 'loxberry_prepare_knx_corrections',
     ]},
     {id: 'loxberryOperate', scopes: ['loxone:read', 'loxone:history', 'loxberry:operate'], names: [
       'loxberry_clear_statistics_cache',
@@ -91,6 +92,10 @@
   }
 
   function requiredScopes(tool) {
+    const name = typeof tool === 'string' ? tool : tool && tool.name;
+    if (['loxberry_get_knx_correction_drafts', 'loxberry_prepare_knx_corrections'].includes(name)) {
+      return ['loxone:read', 'loxberry:knx:read', 'loxberry:knx:drafts'];
+    }
     if ((typeof tool === 'string' ? tool : tool && tool.name) === 'loxone_confirm_system_message') return ['loxone:read', 'loxone:messages:confirm'];
     if ((typeof tool === 'string' ? tool : tool && tool.name) ===
         'loxberry_list_event_history_sources') return ['loxone:read', 'loxone:history'];
@@ -104,7 +109,7 @@
 
   function requiredMutationScope(tool) {
     const scopes = requiredScopes(tool);
-    return scopes && (scopes.includes('loxone:messages:confirm') ? 'loxone:messages:confirm' : scopes.includes('loxberry:operate') ? 'loxberry:operate'
+    return scopes && (scopes.includes('loxberry:knx:drafts') ? 'loxberry:knx:drafts' : scopes.includes('loxone:messages:confirm') ? 'loxone:messages:confirm' : scopes.includes('loxberry:operate') ? 'loxberry:operate'
       : scopes.includes('loxone:control') ? 'loxone:control' : null);
   }
 

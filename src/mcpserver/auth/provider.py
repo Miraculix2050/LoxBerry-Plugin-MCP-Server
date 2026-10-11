@@ -23,6 +23,7 @@ from pydantic import AnyUrl
 
 from mcpserver.auth.scopes import CONTROL_SCOPE as CONTROL_SCOPE
 from mcpserver.auth.scopes import HISTORY_SCOPE as HISTORY_SCOPE
+from mcpserver.auth.scopes import LOXBERRY_KNX_DRAFTS_SCOPE, LOXBERRY_KNX_READ_SCOPE
 from mcpserver.auth.scopes import LOXBERRY_OPERATE_SCOPE as LOXBERRY_OPERATE_SCOPE
 from mcpserver.auth.scopes import LOXBERRY_READ_SCOPE as LOXBERRY_READ_SCOPE
 from mcpserver.auth.scopes import MESSAGE_CONFIRM_SCOPE as MESSAGE_CONFIRM_SCOPE
@@ -92,8 +93,10 @@ def normalize_scopes(
     requested = value.split() if value else [READ_SCOPE]
     if len(requested) != len(set(requested)) or set(requested) - set(SUPPORTED_SCOPES):
         raise ValueError("unsupported scope")
-    if READ_SCOPE not in requested or (
-        LOXBERRY_OPERATE_SCOPE in requested and HISTORY_SCOPE not in requested
+    if (
+        READ_SCOPE not in requested
+        or (LOXBERRY_OPERATE_SCOPE in requested and HISTORY_SCOPE not in requested)
+        or (LOXBERRY_KNX_DRAFTS_SCOPE in requested and LOXBERRY_KNX_READ_SCOPE not in requested)
     ):
         raise ValueError("unsupported scope")
     return tuple(scope for scope in SUPPORTED_SCOPES if scope in requested)

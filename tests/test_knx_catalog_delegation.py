@@ -5,10 +5,15 @@ from dataclasses import replace
 import pytest
 
 from mcpserver.auth.provider import StoredAccessToken, normalize_scopes
-from mcpserver.auth.scopes import LOXBERRY_KNX_READ_SCOPE, READ_SCOPE
+from mcpserver.auth.scopes import LOXBERRY_KNX_DRAFTS_SCOPE, LOXBERRY_KNX_READ_SCOPE, READ_SCOPE
 from mcpserver.auth.store import AtomicJsonAuthStore
 from mcpserver.config import ConfigError, PluginConfig
-from mcpserver.knx.delegation import authorize_read, read_binding_id
+from mcpserver.knx.delegation import (
+    authorize_drafts,
+    authorize_read,
+    draft_binding_id,
+    read_binding_id,
+)
 
 
 def test_knx_read_policy_is_additive_disabled_and_round_trips():
@@ -39,6 +44,18 @@ def test_knx_scope_requires_core_read_but_not_history_or_diagnostics():
     )
     with pytest.raises(ValueError):
         normalize_scopes(LOXBERRY_KNX_READ_SCOPE, control_enabled=False)
+
+
+def test_draft_scope_requires_independent_catalog_consent_and_defaults_off():
+    config = PluginConfig.defaults()
+    assert not config.loxberry_knx_drafts_enabled and not config.loxberry_knx_drafts_bindings
+    assert PluginConfig.from_document(config.to_document()).to_document() == config.to_document()
+    with pytest.raises(ValueError, match="unsupported scope"):
+        normalize_scopes(f"{READ_SCOPE} {LOXBERRY_KNX_DRAFTS_SCOPE}", control_enabled=False)
+    assert normalize_scopes(
+        f"{LOXBERRY_KNX_DRAFTS_SCOPE} {LOXBERRY_KNX_READ_SCOPE} {READ_SCOPE}",
+        control_enabled=False,
+    ) == (READ_SCOPE, LOXBERRY_KNX_READ_SCOPE, LOXBERRY_KNX_DRAFTS_SCOPE)
 
 
 @pytest.fixture
@@ -72,6 +89,36 @@ def delegated(tmp_path):
         miniserver_id="ms",
     )
     return config, store, access
+
+
+def test_draft_access_never_inherits_read_or_other_local_approvals(delegated):
+    config, auth, access = delegated
+    scopes = [READ_SCOPE, LOXBERRY_KNX_READ_SCOPE, LOXBERRY_KNX_DRAFTS_SCOPE]
+    auth.mutate(lambda doc: doc["families"]["family"].update(scope=" ".join(scopes)))
+    access = access.model_copy(update={"scopes": scopes})
+    family = auth.snapshot()["families"]["family"]
+    binding = draft_binding_id(config, auth, family)
+    assert binding != read_binding_id(config, auth, family)
+    granted = replace(
+        config, loxberry_knx_drafts_enabled=True, loxberry_knx_drafts_bindings=(binding,)
+    )
+    target, owner = authorize_drafts(granted, auth, access, now=100)
+    assert target == "https://first.example" and len(owner) == 64
+    for changed in (
+        config,
+        replace(granted, loxberry_knx_drafts_enabled=False),
+        replace(granted, loxberry_knx_drafts_bindings=config.loxberry_knx_read_bindings),
+        replace(granted, loxberry_knx_read_enabled=False),
+        replace(granted, loxberry_knx_read_bindings=()),
+        replace(granted, loxone_endpoint="https://second.example"),
+    ):
+        with pytest.raises(PermissionError):
+            authorize_drafts(changed, auth, access, now=100)
+    with pytest.raises(PermissionError):
+        authorize_drafts(granted, auth, access, now=200)
+    auth.mutate(lambda doc: doc["families"]["family"].update(revoked=True))
+    with pytest.raises(PermissionError):
+        authorize_drafts(granted, auth, access, now=100)
 
 
 def test_live_knx_delegation_does_not_inherit_diagnostics_or_changed_target(delegated):

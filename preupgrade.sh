@@ -74,4 +74,8 @@ python3 "$installer_root/bin/event-history-upgrade.py" backup \
     "$LBPDATA/$actual_folder/knx/metadata.sqlite3" \
     "$backup_dir/knx-metadata.sqlite3" || exit 2
 echo "<INFO> Existing KNX metadata saved for the upgrade."
+python3 "$installer_root/bin/event-history-upgrade.py" backup \
+    "$LBPDATA/$actual_folder/knx/drafts.sqlite3" \
+    "$backup_dir/knx-drafts.sqlite3" || exit 2
+echo "<INFO> Existing bounded KNX drafts saved for the upgrade."
 exit 0

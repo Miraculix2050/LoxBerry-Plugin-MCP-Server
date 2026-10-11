@@ -53,6 +53,11 @@ _TEST_GROUPS: Final = (
         (
             "tests/test_knx_catalog_runtime.py",
             "tests/test_knx_catalog_delegation.py",
+            "tests/test_knx_correction_admin.py",
+            "tests/test_knx_correction_drafts.py",
+            "tests/test_knx_correction_model.py",
+            "tests/test_knx_correction_runtime.py",
+            "tests/test_knx_correction_service.py",
             "tests/test_knx_prompts.py",
             "tests/test_knx_management.py",
             "tests/test_knx_read_model.py",
