@@ -7,7 +7,8 @@ extracted from the matching version heading.
 
 - Add versioned installation profiles with Admin drafts/confirmation, atomic
   target-bound persistence and a read-only MCP projection using fresh caller
-  visibility. Keep user-declared roles separate from technical semantics (#434).
+  visibility. Use HTML dialogs with distinct binding/profile deletion scope.
+  Keep user-declared roles separate from technical semantics (#434).
 
 - Establish the 25-question analysis acceptance catalog, synthetic numeric
   references, DE/EN baseline support matrix and value-free offline workflow

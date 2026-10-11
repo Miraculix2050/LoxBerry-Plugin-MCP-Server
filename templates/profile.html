@@ -4,7 +4,8 @@
  data-error="<TMPL_VAR PROFILE.ERROR ESCAPE=HTML>"
  data-edit="<TMPL_VAR PROFILE.EDIT ESCAPE=HTML>"
  data-delete="<TMPL_VAR PROFILE.DELETE ESCAPE=HTML>"
- data-delete-confirm="<TMPL_VAR PROFILE.DELETE_CONFIRM ESCAPE=HTML>"
+ data-delete-binding-confirm="<TMPL_VAR PROFILE.DELETE_BINDING_CONFIRM ESCAPE=HTML>"
+ data-delete-all-confirm="<TMPL_VAR PROFILE.DELETE_ALL_CONFIRM ESCAPE=HTML>"
  data-truncated="<TMPL_VAR PROFILE.TRUNCATED ESCAPE=HTML>"
  data-empty="<TMPL_VAR PROFILE.EMPTY ESCAPE=HTML>"
  data-draft="<TMPL_VAR PROFILE.DRAFT ESCAPE=HTML>"
@@ -57,5 +58,13 @@
    </fieldset>
   </form>
  </section>
+ <dialog class="mcp-dialog" id="profile-confirm" aria-labelledby="profile-confirm-title" aria-describedby="profile-confirm-message">
+  <h2 id="profile-confirm-title"><TMPL_VAR PROFILE.CONFIRM_TITLE></h2>
+  <p id="profile-confirm-message"></p>
+  <form method="dialog" class="mcp-actions">
+   <button class="lb-button" id="profile-confirm-cancel" value="cancel" autofocus><TMPL_VAR PROFILE.CANCEL></button>
+   <button class="lb-button" value="delete"><TMPL_VAR PROFILE.DELETE></button>
+  </form>
+ </dialog>
 </main>
-<script src="profile.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-profile-v1" defer></script>
+<script src="profile.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-profile-v2" defer></script>

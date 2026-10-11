@@ -17,7 +17,13 @@ function harness() {
     status: 'invalid', confirmed: false,
   };
   window.HTMLElement.prototype.scrollIntoView = () => {};
-  window.confirm = () => true;
+  window.confirm = () => { throw new Error('Native dialogs must not be used'); };
+  window.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+  window.HTMLDialogElement.prototype.close = function (value) {
+    this.returnValue = value || this.returnValue;
+    this.open = false;
+    this.dispatchEvent(new window.Event('close'));
+  };
   window.fetch = async (_url, options) => {
     const action = options.body.get('action');
     const payload = JSON.parse(options.body.get('payload'));
@@ -42,6 +48,40 @@ test('editing an invalid binding exposes exact IDs and resets confirmation', asy
   assert.equal(h.get('exact').open, true);
   assert.equal(h.get('source-id').value, '');
   assert.equal(h.get('bindings').querySelector('script'), null);
+});
+
+test('delete cancellation and Escape preserve the binding and restore focus', async (t) => {
+  const h = harness(); t.after(h.close); await h.tick();
+  const remove = h.get('bindings').querySelectorAll('button')[1];
+  remove.click();
+  assert.equal(h.get('confirm').open, true);
+  assert.equal(h.window.document.activeElement, h.get('confirm-cancel'));
+  h.get('confirm').close('cancel'); await h.tick();
+  assert.equal(h.calls.filter((item) => item.action === 'profile_delete').length, 0);
+  assert.equal(h.window.document.activeElement, remove);
+  remove.click();
+  // Browsers close an HTML dialog on Escape with its default return value.
+  h.get('confirm').dispatchEvent(new h.window.Event('cancel', {cancelable: true}));
+  h.get('confirm').close(); await h.tick();
+  assert.equal(h.calls.filter((item) => item.action === 'profile_delete').length, 0);
+});
+
+test('HTML confirmation distinguishes binding and profile deletion and blocks duplicate prompts', async (t) => {
+  const h = harness(); t.after(h.close); await h.tick();
+  const page = h.window.document.getElementById('profile-page');
+  page.dataset.deleteBindingConfirm = 'Binding only';
+  page.dataset.deleteAllConfirm = 'Entire profile';
+  h.get('bindings').querySelectorAll('button')[1].click();
+  h.get('delete-all').click();
+  assert.equal(h.get('confirm-message').textContent, 'Binding only');
+  h.get('confirm').close('delete'); await h.tick();
+  assert.deepEqual(h.calls.find((item) => item.action === 'profile_delete').payload, {
+    installation: 'synthetic-installation', revision: 1, binding_id: 'synthetic', confirm: true,
+  });
+  h.get('delete-all').click();
+  assert.equal(h.get('confirm-message').textContent, 'Entire profile');
+  h.get('confirm').close('delete'); await h.tick();
+  assert.equal(h.calls.filter((item) => item.action === 'profile_delete')[1].payload.binding_id, null);
 });
 
 test('saving uses the loaded revision and preserves the explicit confirmation choice', async (t) => {

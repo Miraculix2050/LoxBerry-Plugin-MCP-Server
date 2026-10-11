@@ -6,6 +6,39 @@
   const get = (id) => document.getElementById(`profile-${id}`);
   let revision = 0, installation = "", bindingId = "", nextOffset = null;
   let sources = [];
+  let deleting = false;
+  const dialog = get("confirm");
+  function askDelete(all) {
+    return new Promise((resolve) => {
+      get("confirm-message").textContent = all ? page.dataset.deleteAllConfirm : page.dataset.deleteBindingConfirm;
+      dialog.returnValue = "cancel";
+      dialog.addEventListener("close", () => resolve(dialog.returnValue === "delete"), { once: true });
+      dialog.showModal();
+      get("confirm-cancel").focus();
+    });
+  }
+  async function deleteBinding(id, opener) {
+    if (deleting) return;
+    deleting = true;
+    const payload = { installation, revision, binding_id: id, confirm: true };
+    const fieldsDisabled = get("fields").disabled;
+    const deleteDisabled = get("delete-all").disabled;
+    let loaded = false;
+    try {
+      if (!await askDelete(id === null)) return;
+      get("fields").disabled = true; get("delete-all").disabled = true;
+      await call("profile_delete", payload);
+      reset(); await load(); message("saved");
+      loaded = true;
+    } catch (_) { message("error"); }
+    finally {
+      deleting = false;
+      if (!loaded) {
+        get("delete-all").disabled = deleteDisabled; get("fields").disabled = fieldsDisabled;
+      }
+      (opener.isConnected ? opener : get("delete-all")).focus();
+    }
+  }
   const message = (key) => { get("status").textContent = page.dataset[key] || page.dataset.error; };
   async function call(action, payload) {
     const body = new URLSearchParams({ action, payload: JSON.stringify(payload) });
@@ -53,13 +86,7 @@
       editButton.addEventListener("click", () => edit(binding)); row.append(editButton);
       const remove = document.createElement("button");
       remove.type = "button"; remove.textContent = page.dataset.delete;
-      remove.addEventListener("click", async () => {
-        if (!window.confirm(page.dataset.deleteConfirm)) return;
-        get("fields").disabled = true;
-        try { await call("profile_delete", { installation, revision, binding_id: binding.binding_id, confirm: true }); reset(); await load(); message("saved"); }
-        catch (_) { message("error"); }
-        finally { get("fields").disabled = false; }
-      });
+      remove.addEventListener("click", () => deleteBinding(binding.binding_id, remove));
       row.append(remove); get("bindings").append(row);
     }
   }
@@ -87,13 +114,7 @@
   }
   get("source").addEventListener("change", selectSource);
   get("new").addEventListener("click", reset);
-  get("delete-all").addEventListener("click", async () => {
-    if (!window.confirm(page.dataset.deleteConfirm)) return;
-    get("fields").disabled = true; get("delete-all").disabled = true;
-    try { await call("profile_delete", { installation, revision, binding_id: null, confirm: true }); reset(); await load(); message("saved"); }
-    catch (_) { message("error"); }
-    finally { get("delete-all").disabled = false; get("fields").disabled = false; }
-  });
+  get("delete-all").addEventListener("click", () => deleteBinding(null, get("delete-all")));
   get("more").addEventListener("click", async () => {
     get("more").disabled = true;
     try { if (nextOffset !== null) await load(nextOffset); } catch (_) { message("error"); }

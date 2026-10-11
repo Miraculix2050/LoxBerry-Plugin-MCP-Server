@@ -27,7 +27,8 @@ Nicht verfügbare Daten dürfen nicht als fehlende Anlage interpretiert werden.
 Das Profil ist an Miniserver-Endpunkt und Serienidentität gebunden. Bei einem
 Anlagenwechsel werden alte Zuordnungen nicht übernommen. Löschen Sie das alte
 Profil ausdrücklich und erstellen Sie neue Zuordnungen. Einzelne Zuordnungen
-und das gesamte Profil sind löschbar. Löschung erhält eine Revision als Schutz
+und das gesamte Profil sind löschbar. Ein HTML-Dialog benennt den Löschumfang;
+**Abbrechen** oder Escape schließen ihn ohne Änderung. Löschung erhält eine Revision als Schutz
 gegen veraltete Schreibzugriffe. Bei einem Konflikt laden Sie neu; bei ungewisser
 Persistenz prüfen Sie den gespeicherten Stand statt automatisch zu wiederholen.
 

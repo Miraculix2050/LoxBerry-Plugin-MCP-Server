@@ -25,6 +25,7 @@ be interpreted as an absent installation component.
 The profile is bound to the Miniserver endpoint and serial identity. An installation
 replacement does not inherit old bindings. Explicitly delete the old profile and
 create new bindings. Individual bindings and the entire profile can be deleted.
+An HTML dialog identifies the deletion scope; **Cancel** or Escape closes it without changes.
 Deletion retains a revision to protect against stale writes. Reload after a
 conflict; when persistence is uncertain, inspect the stored state instead of
 automatically retrying.
