@@ -1,5 +1,26 @@
 # Systemmeldungen
 
+`loxone_get_attention_overview` liefert eine begrenzte Übersicht mit drei getrennten
+Quellen: Baustein-Alarme, Systemmeldungen und das zuletzt beobachtete
+Benachrichtigungsereignis. Abdeckung, Fehler, Zeitpunkte und Bedeutung jeder Quelle
+bleiben erhalten. Die Abfragen erfolgen nacheinander; eine vollständige globale
+Entwarnung ist nicht möglich. `limit` ist 1–10 (Standard 5); `include_history=true`
+ergänzt gespeicherte Systemmeldungen mit History-Freigabe. Bei Teilergebnissen,
+einem Cursor oder Details oberhalb des Übersichtsbudgets den jeweiligen Leser
+nutzen. Das vorhandene Active-Alerts-Tool bleibt unverändert.
+
+Die KI soll konkrete Aufgaben ableiten, statt nur den Gesundheitszustand zu
+beschreiben. Jede Aufgabe nennt das beobachtete Problem, genaue Belege/Referenzen,
+Zeitpunkt und Quellrevision, aktuellen oder historischen Zustand, Unsicherheit,
+nächste gezielte Abfrage, vorgeschlagene Korrektur, fehlendes Schreibwerkzeug bzw.
+Erlaubnis und Abnahmekriterium. Ein Automatik-Regelfehler führt zur Identifikation
+der Regel und ungültigen Bedingung sowie zur Vorbereitung einer Korrektur; eine
+unbekannte Regelidentität bleibt offen. Ein eigener Regel-Leser/-Schreiber ist
+Folgearbeit. Konfigurationskandidaten führen zur autorisierten Projektprüfung und
+einer belegten Übergabe an einen zukünftigen projektändernden Loxone-MCP-Server.
+Historische Wiederholungen können Diagnoseaufgaben begründen, ohne aktuelle Alarme
+zu sein. Eine Meldungsbestätigung ist keine Reparatur und belegt keine Fehlerbehebung.
+
 `loxone_get_system_messages` liest aktuelle Meldungen (`mode=current`, Standard),
 gespeicherte historische Meldungen (`history`) oder beide (`all`). Es prüft deine
 aktuellen Miniserver-Rechte für Systemmeldungen. LoxBerry-Rechte sind unabhängig.

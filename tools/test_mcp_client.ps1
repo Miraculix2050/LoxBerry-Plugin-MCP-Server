@@ -213,6 +213,7 @@ try {
         'loxone_find_controls', 'loxone_describe_control', 'loxone_get_control_notes',
         'loxone_read_controls', 'loxone_get_state_semantics', 'loxone_get_active_alerts',
         'loxone_get_system_messages',
+        'loxone_get_attention_overview',
         'loxone_get_notifications',
         'loxone_get_states', 'loxone_list_global_metadata',
         'loxone_analyze_opening_contacts',
@@ -296,7 +297,7 @@ try {
     $script:nextId = 4
     $skillGuide = Invoke-ReadTool (Get-NextId) 'loxone_get_skill_guide' @{}
     if ($skillGuide.data.name -ne 'using-loxberry-mcp' -or
-        $skillGuide.data.revision -ne 63 -or
+        $skillGuide.data.revision -ne 64 -or
         $skillGuide.data.media_type -ne 'text/markdown' -or
         $skillGuide.data.content -ne $skillMarkdown) {
         throw 'MCP skill guide tool differs from the canonical resource.'

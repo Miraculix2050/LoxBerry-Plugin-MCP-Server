@@ -1,5 +1,24 @@
 # System Messages
 
+Use `loxone_get_attention_overview` for a bounded overview with three separate
+sources: control alerts, System Messages and the latest observed notification.
+Each retains its own coverage, errors, timestamps and semantics. Readings are
+sequential; no complete global absence claim is available. `limit` is 1–10 (default
+5); `include_history=true` adds retained System Messages subject to History approval.
+For partial results, a non-null cursor or detail exceeding the overview budget,
+use the dedicated reader. The existing Active Alerts tool remains unchanged.
+
+The agent should produce concrete tasks, not only a health summary. Each task
+states the observed problem, exact evidence/reference/time and source revision,
+current or historical lifecycle, uncertainty, next targeted read, proposed repair,
+missing writer/permission and acceptance criterion. An automation-rule error leads
+to identifying the rule and invalid condition and preparing a correction; unknown
+rule identity stays unresolved. A dedicated rule reader/writer is follow-up work.
+Configuration candidates lead to authorized project inspection and an evidence-led
+handoff to a future project-writing Loxone MCP integration. Historic recurrences
+can justify diagnosis without being current alarms. Confirming a message is not a
+repair and does not prove that the fault is gone.
+
 `loxone_get_system_messages` reads current messages (`mode=current`, default),
 retained historical messages (`history`) or both (`all`). It uses your fresh
 Miniserver System Messages permission. LoxBerry permissions are independent.

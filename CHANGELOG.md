@@ -18,6 +18,10 @@ extracted from the matching version heading.
   relation/name/address filters to project analysis. Retain default full output,
   source uncertainty and counts; summary avoids address detail hydration (#456).
 
+- Add a bounded source-separated attention overview, preserving Active Alerts,
+  System Messages and latest-notification contracts. Guide concrete evidence-linked
+  diagnosis/repair tasks and explicit future-writer handoffs (#366, #367).
+
 - Offer canonical core/KNX guidance sections through the existing guide tool and
   resources while retaining full-guide defaults. Explain ETS/manual search,
   source comparisons, DPT uncertainty and UI-only export boundaries (#455).
@@ -59,7 +63,7 @@ extracted from the matching version heading.
 
 - Support burglar-alarm `Alarm.level` in shared state semantics and active alerts:
   use the owner-approved assumption that 0 means no running alarm, alongside
-  documented stages 1–6. Retain explicit provenance and unknown test,
+  documented stages 1â€“6. Retain explicit provenance and unknown test,
   acknowledgement and signal-suppression context; invalid or stale observations
   cannot establish inactivity (#346).
 
@@ -174,7 +178,7 @@ extracted from the matching version heading.
 - Support sparse State condition slots and optional bounded table inspection for
   exactly mapped visible controls, preserving literal templates and output gaps.
 
-- Extend version-bound State AQ evidence to I1–I8 and all demonstrated fixed-operand operators, with first-match/AND semantics and conservative numeric independence. Preserve gaps for empty results and unsupported contracts; synchronize generic and opening traces.
+- Extend version-bound State AQ evidence to I1â€“I8 and all demonstrated fixed-operand operators, with first-match/AND semantics and conservative numeric independence. Preserve gaps for empty results and unsupported contracts; synchronize generic and opening traces.
 
 - Recover a full Chart View cache per source, keeping existing plots visible while
   bounded replacement data loads. Preserve other sources and distinguish reduced
@@ -205,7 +209,7 @@ extracted from the matching version heading.
 
 - Complete Modbus V1 static project analysis with configured mapping, direct
   consumer and raw polling checks, and expose all five checks through MCP and
-  Explorer (#358–#360). Preserve KNX defaults, explicit coverage and evidence
+  Explorer (#358â€“#360). Preserve KNX defaults, explicit coverage and evidence
   gaps; configuration establishes neither bus activity nor device validity.
 
 - Let administrators export and load KNX prefix labels as a local UTF-8 text file.
