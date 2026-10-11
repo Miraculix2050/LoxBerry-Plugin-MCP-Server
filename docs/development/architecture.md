@@ -335,3 +335,22 @@ accepted this uncertainty for this internal Admin path. The 2026-10-10 full-acce
 withdrawal test closed a held OAuth-identity socket with code 4004 and rejected its
 old token with 401 without an operator-triggered reboot. It did not test partial
 changes or the configured service identity and is not a firmware-wide guarantee.
+
+
+Experimental ETS correction XML is a separate admin-only serializer and temporary
+`xml_export` draft purpose. It performs indexed batch reads of up to 50 selected
+addresses and their required parents; it does not enter MCP read paths. Provenance
+requires XML address and group source records from the latest import timestamp
+and document digest. Older source records remain readable/importable but require
+reimport for correction export. Root attributes, selected-address attributes and
+required parent attributes are carried through unchanged except explicit names
+or nonempty descriptions; unsafe reconstruction is rejected. Leading document
+comments retain their exact positions; other interior positions block v1.
+
+The project comparison browser bridge reauthorizes the existing read-only
+comparison request before preview/download and checks project fingerprint/model,
+page evidence, OAuth session and target/catalog revision. Admin payload text is
+always an explicitly chosen local candidate, never a Loxone authorization grant.
+The serializer never accesses Loxone or edits catalog/overrides. Draft download is
+session/target/revision-bound and requires the visible experimental confirmation.
+An actual ETS project-copy import remains an external acceptance gate for #419.

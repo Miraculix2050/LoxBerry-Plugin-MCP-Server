@@ -41,6 +41,7 @@
       errorLabels: ['knx_label_limit', 'knx_label_selection_invalid'],
       errorStorage: ['knx_storage_failed', 'knx_draft_storage_failed'],
       errorQuery: ['knx_query_invalid'],
+      errorExport: ['knx_export_source_unavailable', 'knx_export_selection_invalid', 'knx_export_confirmation_required'],
       errorComparison: ['knx_comparison_invalid', 'knx_comparison_conflicts', 'knx_comparison_no_import']
     };
     const entry = Object.entries(categories).find(([, codes]) => codes.includes(code));

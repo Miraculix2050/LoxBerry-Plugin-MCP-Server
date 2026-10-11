@@ -682,3 +682,36 @@ Labeltext lässt sich weiterhin laden und exportieren. Der versionierte JSON-Aus
 Der JSON-Export enthält die angezeigte Adressseite. Größere Bestände lassen sich seitenweise übertragen, damit jede Datei innerhalb der Importgrenze bleibt.
 
 Löschen und das Verwerfen von Eingaben werden in einem Dialog innerhalb der Seite bestätigt. Abbrechen und Escape erhalten die Eingaben. Vor dem Neuladen oder Schließen des Browser-Tabs speichern: Nicht gespeicherte Eingaben werden dabei verworfen.
+
+
+## Experimenteller ETS-XML-Korrekturexport
+
+In der KNX-Verwaltungsseite nach einem autorisierten ETS/Loxone-Abgleich einzelne
+importierte Adressen der aktuellen Ergebnisseite auswählen (höchstens 50).
+Name und Beschreibung getrennt wählen: vorhandenen ETS-Wert behalten, einen
+konkret gezeigten Loxone-Wert übernehmen oder ausdrücklich eingeben. Mehrere
+Loxone-Namen erfordern eine eigene Auswahl; keine automatische Sammelübernahme.
+Diese Entscheidung verändert keine lokalen Overrides oder Loxone-Daten.
+
+Vorschau und Download prüfen Ziel, Datenrevision und den frisch autorisierten
+Projektstand. Der XML-Serializer verwendet ausschließlich nachgewiesene Daten
+aus dem jüngsten XML-Import einschließlich zugehöriger Elternhierarchie. Nach
+CSV- oder älteren XML-Importen die ursprüngliche XML-Datei gegebenenfalls erneut
+importieren. Gemischte Herkunft und nicht sicher erhaltbare Angaben sperren den
+Export. Führende Dokumentkommentare werden erhalten; andere Kommentarpositionen
+können bei ausgewählten Adressen nicht sicher rekonstruiert werden und sperren
+Version 1. Es gibt keinen CSV-Korrekturexport.
+
+Nur Namen und nichtleere Beschreibungen dürfen geändert werden. Keine neuen
+Adressen, Löschungen, Umadressierung oder Änderungen an Gruppenstruktur/-namen,
+DPTs, Flags und Sicherheit. Ein Download ändert weder ETS noch den Importbestand.
+Vorher/Nachher und unverändert mitgeführte XML-Attribute stehen in der Vorschau.
+
+**Experimentell, noch nicht durch echten ETS-Import bestätigt:** Vor dem Import
+Projektsicherung erstellen und an einer Projektkopie testen. Parser-Roundtrips,
+Browser, MCP und SSH belegen ausschließlich Dateierzeugung und Plugin-Ablauf.
+Sie beweisen weder ETS-Verhalten bei fehlenden Attributen noch den Erhalt von
+Kommunikationsobjekt-Zuordnungen. #419 und das Gesamttracking #411 bleiben offen,
+bis unveränderter und gezielt korrigierter Import, DPTs/Flags/Sicherheit,
+Gruppenhierarchie und Objektzuordnungen für zwei-/dreistufigen Stil in ETS
+nachgewiesen sind; ETS-Version dokumentieren und frischen Export vergleichen.

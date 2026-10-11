@@ -23,6 +23,7 @@
   const clearResult = () => {
     generation++;
     frame = null;
+    page.dispatchEvent(new CustomEvent('knx-project-state'));
     elements.rows.replaceChildren();
     elements.summary.textContent = '';
     elements.count.textContent = '';
@@ -169,9 +170,44 @@
       throw new Error(label('targetChanged'));
     }
     const count = priorCount + envelope.data.findings.length;
-    frame = {...binding, cursor: envelope.data.next_cursor, count};
+    frame = {...binding, cursor: envelope.data.next_cursor, count, inputCursor: cursor,
+      fingerprint: envelope.data.project_fingerprint, modelVersion: envelope.data.model_version,
+      evidence: envelope.data.findings.map(item => item.comparison).filter(Boolean),
+      stale: envelope.stale, session: expectedSession, generation};
     render(envelope, summary, count);
+    page.dispatchEvent(new CustomEvent('knx-project-state'));
   };
+  const exportSnapshot = () => {
+    if (!frame || frame.stale || !state.oauth || state.oauth !== frame.session) return null;
+    return {binding: JSON.stringify({fingerprint: frame.fingerprint, modelVersion: frame.modelVersion,
+      generation: frame.generation, target: frame.target, revision: frame.revision}),
+      target: frame.target, revision: frame.revision, items: frame.evidence};
+  };
+  window.MCPKnxProject = Object.freeze({snapshot: exportSnapshot, validate: async binding => {
+    const snapshot = exportSnapshot();
+    if (!snapshot || snapshot.binding !== binding) throw new Error('knx_revision_conflict');
+    const expected = frame;
+    try {
+      const result = await mcp.callTool('loxone_analyze_project', {scope: 'knx',
+        analyses: ['ets_project_comparison'], limit: 50,
+        ...(expected.inputCursor ? {cursor: expected.inputCursor} : {})});
+      const envelope = result?.structuredContent;
+      if (envelope?.data?.error === 'unauthenticated') clearSession();
+      const current = knx.snapshot();
+      if (!envelope?.ok || envelope.stale || !current
+          || current.target !== expected.target || current.revision !== expected.revision || state.oauth !== expected.session || frame !== expected
+          || envelope.data.project_fingerprint !== expected.fingerprint
+          || envelope.data.model_version !== expected.modelVersion
+          || envelope.data.summaries?.ets_project_comparison?.knx_revision !== expected.revision
+          || envelope.data.summaries?.ets_project_comparison?.target_binding !== expected.target
+          || JSON.stringify(envelope.data.findings.map(item => item.comparison).filter(Boolean))
+             !== JSON.stringify(expected.evidence)) throw new Error('knx_revision_conflict');
+    } catch (error) {
+      if (error?.httpStatus === 401 || error?.sessionCleared === true) clearSession();
+      throw error;
+    }
+    return snapshot;
+  }});
   elements.run.addEventListener('click', () => void run(() => compare()));
   elements.next.addEventListener('click', () => void run(() => compare(frame?.cursor)));
   elements.connect.addEventListener('click', () => {

@@ -22,6 +22,7 @@ from .file_comparison import FileComparison
 from .import_repository import ImportRepository
 from .model import MAX_FILE_BYTES, KnxError
 from .store import KnxStore
+from .xml_export import XmlCorrectionExport
 
 
 def validate_active_labels(config: PluginConfig) -> None:
@@ -68,6 +69,9 @@ def dispatch_knx(action: str, payload: object, config_store: AtomicConfigStore) 
         "knx_compare_load",
         "knx_compare_page",
         "knx_compare_discard",
+        "knx_xml_preview",
+        "knx_xml_download",
+        "knx_xml_discard",
     }
     if action not in allowed or not isinstance(payload, dict):
         raise AdminError("Unsupported KNX action")
@@ -129,6 +133,15 @@ def _run(
             "offset",
         },
         "knx_compare_discard": {"target", "draft_id"},
+        "knx_xml_preview": {"target", "revision", "choices", "project_binding"},
+        "knx_xml_download": {
+            "target",
+            "revision",
+            "draft_id",
+            "project_binding",
+            "confirmed_experimental",
+        },
+        "knx_xml_discard": {"target", "draft_id"},
     }
     if action in import_fields and not payload.keys() <= import_fields[action]:
         raise KnxError("knx_preview_invalid")
@@ -166,6 +179,20 @@ def _run(
         taxonomy_revision = hashlib.sha256(
             json.dumps(taxonomy_document, sort_keys=True).encode()
         ).hexdigest()
+    if action.startswith("knx_xml_"):
+        drafts = DraftStore(
+            Path(data_root) / "knx" / "drafts.sqlite3", os.getenv("MCPSERVER_KNX_ADMIN_SESSION", "")
+        )
+        exporter = XmlCorrectionExport(store, drafts, target)
+        if action == "knx_xml_preview":
+            return {**exporter.preview(payload), "target": token}
+        if action == "knx_xml_download":
+            return {**exporter.download(payload), "target": token}
+        if "draft_id" in payload:
+            drafts.discard(payload["draft_id"], slots=("xml_export",))
+        else:
+            drafts.discard_xml_export()
+        return {"discarded": True}
     if action.startswith("knx_compare_"):
         drafts = DraftStore(
             Path(data_root) / "knx" / "drafts.sqlite3", os.getenv("MCPSERVER_KNX_ADMIN_SESSION", "")

@@ -191,7 +191,15 @@ class ImportRepository:
                         row.address_format,
                         row.prefix,
                         json.dumps(row.fields, ensure_ascii=False),
-                        json.dumps(row.source, ensure_ascii=False),
+                        json.dumps(
+                            {
+                                "attributes": row.source,
+                                "document_digest": root_digest,
+                                "imported_at": stamp,
+                                "file_format": document.file_format,
+                            },
+                            ensure_ascii=False,
+                        ),
                         int((row.address_format, row.prefix) in selected_groups),
                     )
                     for row in selection.groups
