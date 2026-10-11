@@ -30,7 +30,7 @@ from mcpserver.loxone.service_access import ServiceCredentials, ServiceMiniserve
 _LOGGER = logging.getLogger("mcpserver.event_history")
 
 
-_SCHEMA_VERSION: Final = 6
+_SCHEMA_VERSION: Final = 7
 _MAX_TEXT_BYTES: Final = 4096
 _UNSUPPORTED_SOURCE_CONTROL_TYPES: Final = frozenset({"Daytimer"})
 _MAX_SAFE_BROWSER_INTEGER: Final = 2**53 - 1
@@ -77,6 +77,8 @@ class EventHistoryPage:
     next_event_at: float | None
     has_evidence: bool
     recording_ended_at: float | None
+    capture_intervals: tuple[tuple[float, float | None, float | None, object], ...] = ()
+    capture_intervals_truncated: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,7 +190,7 @@ class EventHistoryStore:
             try:
                 connection.execute("BEGIN IMMEDIATE")
                 version = connection.execute("PRAGMA user_version").fetchone()[0]
-                if version not in {0, 1, 2, 3, 4, 5, _SCHEMA_VERSION}:
+                if version not in {0, 1, 2, 3, 4, 5, 6, _SCHEMA_VERSION}:
                     raise EventHistoryUnavailable("local event history needs migration")
                 connection.execute(
                     """
@@ -253,7 +255,7 @@ class EventHistoryStore:
                     "UPDATE coverage SET ended_at = started_at, outcome = 'interrupted' "
                     "WHERE ended_at IS NULL",
                 )
-                connection.execute("PRAGMA user_version = 6")
+                connection.execute("PRAGMA user_version = 7")
                 connection.execute("COMMIT")
                 connection.execute("BEGIN IMMEDIATE")
                 pruned = self._prune(connection, now=time.time())
@@ -289,6 +291,11 @@ class EventHistoryStore:
 
     @staticmethod
     def _ensure_payload_columns(connection: sqlite3.Connection) -> None:
+        coverage_columns = {row[1] for row in connection.execute("PRAGMA table_info(coverage)")}
+        if "initial_value" not in coverage_columns:
+            connection.execute("ALTER TABLE coverage ADD COLUMN initial_value TEXT")
+        if "initial_observed_at" not in coverage_columns:
+            connection.execute("ALTER TABLE coverage ADD COLUMN initial_observed_at REAL")
         columns = {row[1] for row in connection.execute("PRAGMA table_info(events)")}
         if "logical_value_bytes" not in columns:
             connection.execute("ALTER TABLE events ADD COLUMN logical_value_bytes INTEGER")
@@ -321,14 +328,14 @@ class EventHistoryStore:
             try:
                 connection.execute("BEGIN IMMEDIATE")
                 version = connection.execute("PRAGMA user_version").fetchone()[0]
-                if version in {3, 4, 5}:
+                if version in {3, 4, 5, 6}:
                     self._ensure_history_metadata(connection)
                     self._ensure_payload_columns(connection)
                     connection.execute(
                         "CREATE INDEX IF NOT EXISTS events_source_id "
                         "ON events(control_uuid, state_uuid, id)"
                     )
-                    connection.execute("PRAGMA user_version = 6")
+                    connection.execute("PRAGMA user_version = 7")
                 elif version != _SCHEMA_VERSION:
                     raise EventHistoryUnavailable("local event history needs migration")
                 connection.execute("COMMIT")
@@ -351,7 +358,7 @@ class EventHistoryStore:
                 version = db.execute("PRAGMA user_version").fetchone()[0]
         except sqlite3.Error as exc:
             raise EventHistoryUnavailable("local event history is unavailable") from exc
-        if version in {3, 4, 5}:
+        if version in {3, 4, 5, 6}:
             self._migrate_snapshot()
         elif version != _SCHEMA_VERSION:
             raise EventHistoryUnavailable("local event history needs migration")
@@ -368,9 +375,21 @@ class EventHistoryStore:
         except sqlite3.Error as exc:
             raise EventHistoryUnavailable("local event history is unavailable") from exc
 
-    def begin_coverage(self, sources: tuple[tuple[str, str], ...], *, started_at: float) -> None:
+    def begin_coverage(
+        self,
+        sources: tuple[tuple[str, str], ...],
+        *,
+        started_at: float,
+        initial_values: dict[tuple[str, str], tuple[float, object]] | None = None,
+    ) -> None:
         if not sources:
             return
+        initial_values = initial_values or {}
+        encoded: dict[tuple[str, str], tuple[float, str]] = {}
+        for source, (observed_at, value) in initial_values.items():
+            if source not in sources or not math.isfinite(observed_at) or observed_at > started_at:
+                raise ValueError("capture initial observation is invalid")
+            encoded[source] = (observed_at, json.dumps(_value(value), ensure_ascii=False))
         with self._lock, self._opened() as connection:
             try:
                 connection.execute("BEGIN IMMEDIATE")
@@ -379,10 +398,15 @@ class EventHistoryStore:
                     sources,
                 )
                 connection.executemany(
-                    "INSERT INTO coverage(control_uuid, state_uuid, started_at, ended_at, outcome) "
-                    "VALUES (?, ?, ?, NULL, 'active')",
+                    "INSERT INTO coverage(control_uuid, state_uuid, started_at, ended_at, outcome, "
+                    "initial_observed_at, initial_value) VALUES (?, ?, ?, NULL, 'active', ?, ?)",
                     [
-                        (control_uuid, state_uuid, started_at)
+                        (
+                            control_uuid,
+                            state_uuid,
+                            started_at,
+                            *encoded.get((control_uuid, state_uuid), (None, None)),
+                        )
                         for control_uuid, state_uuid in sources
                     ],
                 )
@@ -575,7 +599,7 @@ class EventHistoryStore:
             ) as db:
                 db.execute("BEGIN")
                 version = db.execute("PRAGMA user_version").fetchone()[0]
-                if version in {3, 4, 5}:
+                if version in {3, 4, 5, 6}:
                     db.execute("ROLLBACK")
                     self._migrate_snapshot()
                     db.execute("BEGIN")
@@ -713,7 +737,7 @@ class EventHistoryStore:
             ) as db:
                 db.execute("BEGIN")
                 version = db.execute("PRAGMA user_version").fetchone()[0]
-                if version in {3, 4, 5}:
+                if version in {3, 4, 5, 6}:
                     db.execute("ROLLBACK")
                     self._migrate_snapshot()
                     db.execute("BEGIN")
@@ -750,7 +774,8 @@ class EventHistoryStore:
         ).rowcount
         deleted = event_deletions
         connection.execute(
-            "UPDATE coverage SET started_at = ? WHERE started_at < ? "
+            "UPDATE coverage SET started_at = ?, initial_value = NULL, initial_observed_at = NULL "
+            "WHERE started_at < ? "
             "AND (ended_at IS NULL OR ended_at > ?)",
             (cutoff, cutoff, cutoff),
         )
@@ -781,7 +806,8 @@ class EventHistoryStore:
             for control_uuid, state_uuid, observed_at in evicted:
                 boundary = math.nextafter(float(observed_at), math.inf)
                 connection.execute(
-                    "UPDATE coverage SET started_at = ? WHERE control_uuid = ? "
+                    "UPDATE coverage SET started_at = ?, initial_value = NULL, "
+                    "initial_observed_at = NULL WHERE control_uuid = ? "
                     "AND state_uuid = ? AND started_at < ? "
                     "AND (ended_at IS NULL OR ended_at > ?)",
                     (boundary, control_uuid, state_uuid, boundary, boundary),
@@ -890,9 +916,10 @@ class EventHistoryStore:
                 connection.execute("COMMIT")
                 self._compact(connection, vacuum=pruned)
                 coverage_rows = connection.execute(
-                    "SELECT started_at, ended_at FROM coverage WHERE control_uuid = ? "
-                    "AND state_uuid = ? "
-                    "AND started_at <= ? AND COALESCE(ended_at, ?) >= ? ORDER BY started_at",
+                    "SELECT started_at, ended_at, initial_observed_at, initial_value FROM coverage "
+                    "WHERE control_uuid = ? AND state_uuid = ? "
+                    "AND started_at <= ? AND COALESCE(ended_at, ?) >= ? "
+                    "ORDER BY started_at LIMIT 129",
                     (control_uuid, state_uuid, end, time.time(), start),
                 ).fetchall()
                 capture = connection.execute(
@@ -929,7 +956,14 @@ class EventHistoryStore:
             EventHistoryEntry(row[0], row[1], json.loads(row[2]), json.loads(row[3]))
             for row in selected
         )
-        coverage = self._coverage_status(coverage_rows, start=start, end=end, now=time.time())
+        coverage = self._coverage_status(
+            [(row[0], row[1]) for row in coverage_rows[:128]],
+            start=start,
+            end=end,
+            now=time.time(),
+        )
+        if len(coverage_rows) > 128:
+            coverage = "partial_coverage"
         return EventHistoryPage(
             entries=entries,
             capture_started_at=capture,
@@ -939,6 +973,11 @@ class EventHistoryStore:
             next_event_at=selected[-1][1] if len(rows) > limit else None,
             has_evidence=has_evidence,
             recording_ended_at=removed[0] if removed is not None else None,
+            capture_intervals=tuple(
+                (row[0], row[1], row[2], json.loads(row[3]) if row[3] is not None else None)
+                for row in coverage_rows[:128]
+            ),
+            capture_intervals_truncated=len(coverage_rows) > 128,
         )
 
     @staticmethod
@@ -1355,6 +1394,7 @@ class EventHistoryMonitor:
                     state_uuid: (control_uuid, state_uuid) for control_uuid, state_uuid in active
                 }
                 baselines: dict[str, object] = {}
+                baseline_times: dict[str, float] = {}
                 async for batch in session.state_events():
                     observed_at = time.time()
                     changed = False
@@ -1370,10 +1410,17 @@ class EventHistoryMonitor:
                             ) from exc
                         if not coverage_active:
                             baselines[event.uuid] = value
+                            baseline_times[event.uuid] = observed_at
                             if len(baselines) == len(active):
                                 started_at = observed_at
                                 await asyncio.to_thread(
-                                    self.store.begin_coverage, active, started_at=started_at
+                                    self.store.begin_coverage,
+                                    active,
+                                    started_at=started_at,
+                                    initial_values={
+                                        source: (baseline_times[source[1]], baselines[source[1]])
+                                        for source in active
+                                    },
                                 )
                                 self.capture_started_at = started_at
                                 self._set_status("recording")

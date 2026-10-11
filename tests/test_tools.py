@@ -1183,7 +1183,8 @@ async def test_event_history_read_rejects_a_visible_state_outside_the_source_all
         history_call_slot = staticmethod(slot)
         worker_slot = staticmethod(slot)
 
-        async def snapshot(self, _access: object) -> object:
+        async def snapshot(self, _access: object, *, fresh_visibility: bool = False) -> object:
+            assert fresh_visibility
             return SimpleNamespace(structure=SimpleNamespace(controls=(control,)))
 
     class ConfigStore:
@@ -1240,7 +1241,8 @@ async def test_removed_history_is_readable_only_while_currently_visible(
         history_call_slot = staticmethod(slot)
         worker_slot = staticmethod(slot)
 
-        async def snapshot(self, _access: object) -> object:
+        async def snapshot(self, _access: object, *, fresh_visibility: bool = False) -> object:
+            assert fresh_visibility
             return SimpleNamespace(
                 structure=SimpleNamespace(controls=(control,) if self.visible else ())
             )

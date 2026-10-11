@@ -2,6 +2,21 @@
 
 [Deutsch](capabilities.de.md)
 
+Statistics and local Event History responses expose `coverage_evidence` with
+UTC time basis, half-open evidenced intervals or point observations, and explicit
+limitations. Existing inclusive filters and cursors remain compatible. Samples
+do not prove continuous recording; missing values are not interpolated. Only
+documented hourly difference records receive an exact one-hour interval. Legacy
+local times remain unresolved without a confirmed Miniserver timezone.
+
+New Event History capture phases persist the observed initial value and its
+timestamp. `capture_intervals` exposes that evidence at phase start; later
+boundary values require replaying intervening transitions. Old or pruned phases
+may lack an initial value. Reconnect gaps stay gaps; no transitions do not prove
+inactivity. Bounded metadata explicitly reports truncation. Local calendar
+boundaries require an explicit IANA timezone; DST can produce 23- or 25-hour
+days. Native Control History remains a separate event source.
+
 ## Supported scope
 
 The [confirmed installation profile](installation-profile.en.md) persists minimal

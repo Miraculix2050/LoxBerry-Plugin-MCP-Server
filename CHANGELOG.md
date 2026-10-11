@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add shared bounded history time/coverage evidence to existing statistic and
+  local Event History reads. Persist observed initial values for new capture
+  phases; preserve legacy gaps, invalidate pruned boundary evidence and keep
+  inclusive public read/cursor contracts (#437).
+
 - Add bounded per-series meaning, source-declared Meter units, aggregation and
   timestamp evidence to existing statistic/description surfaces. Preserve unknown
   direction, boundary, measurement method and reset correction; installation

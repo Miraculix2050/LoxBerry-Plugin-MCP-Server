@@ -2,6 +2,23 @@
 
 [English](capabilities.en.md)
 
+Statistik- und lokale Event-History-Antworten liefern `coverage_evidence` mit
+UTC-Zeitbasis, halboffenen belegbaren Intervallen beziehungsweise Punktbelegen
+und ausdrücklichen Grenzen. Bestehende inklusive Zeitfilter und Cursor bleiben
+erhalten. Stichproben beweisen keine lückenlose Aufzeichnung; fehlende Werte
+werden nicht interpoliert. Nur dokumentierte stündliche Differenzwerte erhalten
+ein eindeutiges Stundenintervall. Legacy-Lokalzeiten bleiben ohne bestätigte
+Miniserver-Zeitzone ungeklärt.
+
+Neue Event-History-Erfassungsphasen speichern den beobachteten Anfangswert samt
+Zeitpunkt. `capture_intervals` zeigt diese Evidenz; sie gilt am Phasenanfang und
+muss für spätere Randwerte mit den Übergängen fortgeschrieben werden. Alte oder
+gekürzte Phasen können keinen Anfangswert liefern. Reconnect-Lücken bleiben
+Lücken; keine Übergänge beweisen keine Inaktivität. Metadaten sind begrenzt und
+melden Kürzung ausdrücklich. Lokale Tagesgrenzen benötigen eine explizite
+IANA-Zeitzone; Zeitumstellung kann 23 oder 25 Stunden ergeben. Native Control
+History bleibt eine separate Ereignisquelle.
+
 ## Unterstützter Umfang
 
 Das [bestätigte Anlagenprofil](installation-profile.de.md) speichert minimale
