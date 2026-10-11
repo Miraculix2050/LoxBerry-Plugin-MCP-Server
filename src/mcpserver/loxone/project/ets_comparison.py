@@ -65,6 +65,7 @@ def observe_project(
     index = query.graph_index
     assert index is not None
     names = {}
+    incomplete_names = set()
     for number, keys in index.knx_by_address.items():
         values = []
         for key in keys:
@@ -73,6 +74,8 @@ def observe_project(
             name, complete = _primary_name(query, key)
             if name and complete:
                 values.append(name)
+            else:
+                incomplete_names.add(number)
         names[number] = tuple(values)
     try:
         observed = ProjectComparison(metadata).observe(target, revision, names, deadline=deadline)
@@ -88,7 +91,11 @@ def observe_project(
     ]
     coverage = status["coverage_by_source_type"]
     diagnostics = source_diagnostics_projection(query.view.snapshot)
-    findings = observed["rows"]
+    # Internal bit 32 retains incomplete names for compact equality filtering.
+    # It does not change the released full row/name_comparison projection.
+    findings = [
+        row | (32 << 16) if row & 65535 in incomplete_names else row for row in observed["rows"]
+    ]
     return {
         "analysis_version": ANALYSIS_VERSION,
         "project_fingerprint": query.view.snapshot.fingerprint,

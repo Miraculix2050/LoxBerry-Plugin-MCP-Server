@@ -84,6 +84,12 @@ from mcpserver.loxone.presentation import visible_controls as _visible_controls
 from mcpserver.loxone.presentation import window_monitor_description as _window_monitor_description
 from mcpserver.loxone.project.analysis import ANALYSES as KNX_ANALYSES
 from mcpserver.loxone.project.analysis import ANALYSIS_VERSION
+from mcpserver.loxone.project.ets_compact import (
+    compact_context,
+    filter_observations,
+    selected_counts,
+)
+from mcpserver.loxone.project.ets_compact import selection as ets_selection
 from mcpserver.loxone.project.ets_comparison import (
     ETS_COMPARISON,
 )
@@ -1894,9 +1900,47 @@ class ProjectAnalysisData(BaseModel):
     page_truncation_reason: Literal["max_response_bytes"] | None = None
 
 
+class ProjectKnxCompactFindingData(BaseModel):
+    finding_id: str
+    group_address: str
+    comparison: ProjectKnxComparisonRowData
+
+
+class ProjectKnxCompactCoverageData(BaseModel):
+    complete: bool
+    groups_omitted: int = Field(ge=0)
+    ambiguous_source_objects: int = Field(ge=0)
+    reported_groups: int = Field(ge=0)
+
+
+class ProjectKnxCompactAnalysisData(BaseModel):
+    scope: Literal["knx"]
+    view: Literal["summary", "findings", "detail"]
+    analysis_version: int
+    project_fingerprint: str
+    model_version: int
+    analyses: list[Literal["ets_project_comparison"]]
+    coverage: ProjectAnalysisCoverageData
+    summaries: dict[str, JsonValue]
+    selection: dict[str, JsonValue] = Field(
+        description="Filtered counts cover retained observations, not an unbounded installation."
+    )
+    source_coverage: ProjectKnxCompactCoverageData
+    source_diagnostics: ProjectSourceDiagnosticsSummaryData
+    source_diagnostics_details: ProjectSourceDiagnosticsData | None = None
+    source_coverage_details: ProjectKnxSourceTypeCoverageData | None = None
+    findings: list[ProjectKnxCompactFindingData] = Field(max_length=50)
+    next_cursor: str | None
+    analysis_truncated: bool
+    truncation_reasons: list[Literal["max_findings"]]
+    page_truncated: bool = False
+    page_truncation_reason: Literal["max_response_bytes"] | None = None
+
+
 class ProjectAnalysisEnvelope(ToolEnvelope):
     data: (
         Annotated[ProjectAnalysisData | ProjectModbusAnalysisData, Field(discriminator="scope")]
+        | ProjectKnxCompactAnalysisData
         | ErrorData
     )
 
@@ -3498,7 +3542,10 @@ def _fit_project_analysis_page(
     scope: str,
     cursor: str | None,
 ) -> bool:
-    if not isinstance(envelope.data, ProjectAnalysisData | ProjectModbusAnalysisData):
+    if not isinstance(
+        envelope.data,
+        ProjectAnalysisData | ProjectModbusAnalysisData | ProjectKnxCompactAnalysisData,
+    ):
         return True
     data = envelope.data
     if len(envelope.model_dump_json().encode("utf-8")) <= PROJECT_RESPONSE_MAX_BYTES:
@@ -5683,6 +5730,13 @@ class _ProjectAnalysisRunner:
         analyses: list[str] | None,
         cursor: str | None = None,
         limit: int = 20,
+        *,
+        view: str = "full",
+        relation: str | None = None,
+        names_differ: bool | None = None,
+        ambiguous_names: bool | None = None,
+        address: str | None = None,
+        source_details: bool = False,
     ) -> _PreparedProjectAnalysisEnvelope:
         try:
             version: int
@@ -5702,6 +5756,20 @@ class _ProjectAnalysisRunner:
                 raise ValueError("Unknown project analysis scope")
             if not 1 <= limit <= 50:
                 raise ValueError("limit must be between 1 and 50")
+            presentation = ets_selection(
+                view, relation, names_differ, ambiguous_names, address, source_details
+            )
+            filtered = any(value is not None for value in presentation[1:5])
+            if view == "full" and (filtered or source_details):
+                raise ValueError("Filters and source_details require a compact ETS view")
+            if (view != "full" or filtered or source_details) and (
+                scope != "knx" or selected != {ETS_COMPARISON}
+            ):
+                raise ValueError(
+                    "Views and filters require only ets_project_comparison in KNX scope"
+                )
+            if view == "summary" and cursor is not None:
+                raise ValueError("summary has no continuation; select findings for pagination")
             project, snapshot = await _project_query(self.runtime)
             if self.runtime is None or self.runtime.projects is None:
                 raise RuntimeUnavailable("the service is not configured")
@@ -5760,6 +5828,7 @@ class _ProjectAnalysisRunner:
                             [knx_target, knx_revision],
                             project.view.mapping.structure_fingerprint,
                             sorted(selected),
+                            presentation,
                             [
                                 (entry.address_format, entry.prefix, entry.label)
                                 for entry in taxonomy
@@ -5854,9 +5923,18 @@ class _ProjectAnalysisRunner:
             findings = result.get("findings")
             if not isinstance(findings, list):
                 raise ProjectError("project_worker_invalid")
-            page = _page(self.cursors, cursor_scope, findings, cursor, limit)
+            retained = (
+                filter_observations(findings, presentation)
+                if filtered or view != "full"
+                else findings
+            )
+            page = (
+                {"items": [], "next_cursor": None}
+                if view == "summary"
+                else _page(self.cursors, cursor_scope, retained, cursor, limit)
+            )
             page["findings"] = page.pop("items")
-            if ETS_COMPARISON in selected:
+            if ETS_COMPARISON in selected and view != "summary":
                 assert self.metadata is not None
                 page["findings"] = await asyncio.to_thread(
                     ets_comparison_page,
@@ -5867,10 +5945,47 @@ class _ProjectAnalysisRunner:
                     page["findings"],
                 )
                 await projects.authorize(access)
+            if view == "full":
+                projected = {**result, **page}
+            else:
+                projected = {
+                    key: result[key]
+                    for key in (
+                        "scope",
+                        "analysis_version",
+                        "project_fingerprint",
+                        "model_version",
+                        "analyses",
+                        "coverage",
+                        "summaries",
+                        "analysis_truncated",
+                        "truncation_reasons",
+                    )
+                }
+                projected.update(compact_context(result, source_details))
+                projected.update(
+                    {
+                        "view": view,
+                        "selection": {
+                            "relation": relation,
+                            "names_differ": names_differ,
+                            "ambiguous_names": ambiguous_names,
+                            "address_id": presentation[4],
+                            "counts": selected_counts(retained),
+                            "counts_scope": "retained_observations",
+                            "retained_observations": len(findings),
+                            "selected_observations": len(retained),
+                            "complete": not result["analysis_truncated"],
+                        },
+                        "findings": [
+                            {key: row[key] for key in ("finding_id", "group_address", "comparison")}
+                            for row in page["findings"]
+                        ],
+                        "next_cursor": page["next_cursor"],
+                    }
+                )
             envelope = _result(
-                _PreparedProjectAnalysisEnvelope,
-                {**result, **page},
-                stale=not snapshot.connected,
+                _PreparedProjectAnalysisEnvelope, projected, stale=not snapshot.connected
             )
             if not _fit_project_analysis_page(envelope, self.cursors, cursor_scope, cursor):
                 return _error(
@@ -6309,6 +6424,7 @@ def register_project_tools(
         name="loxone_analyze_project",
         description=(
             "Analyze bounded KNX or Modbus project evidence, including coverage and evidence gaps. "
+            "Select ets_project_comparison explicitly for compact ETS/KNX metadata review. "
             "Modbus checks inspect configured mappings, polling and direct consumers; "
             "they do not establish bus health, unused sensors or device validity."
         ),
@@ -6356,12 +6472,48 @@ def register_project_tools(
         ] = None,
         cursor: CursorArgument = None,
         limit: Annotated[int, Field(ge=1, le=50)] = 20,
+        view: Annotated[
+            Literal["full", "summary", "findings", "detail"],
+            Field(
+                description="ETS-only view; full preserves defaults, detail needs an exact address."
+            ),
+        ] = "full",
+        relation: Annotated[
+            Literal["common", "import_only", "observed_project_only"] | None,
+            Field(
+                description="ETS-only address observation filter; not bus-use or error evidence."
+            ),
+        ] = None,
+        names_differ: Annotated[
+            bool | None,
+            Field(description="Compact ETS filter; false requires complete, compared equal names."),
+        ] = None,
+        ambiguous_names: Annotated[
+            bool | None,
+            Field(description="ETS-only filter for multiple observed Loxone names."),
+        ] = None,
+        address: Annotated[
+            str | None,
+            Field(
+                max_length=16, description="Exact two-/three-level address, without :0/:1 suffix."
+            ),
+        ] = None,
+        source_details: Annotated[
+            bool,
+            Field(description="Opt in to full source groups for a compact ETS view."),
+        ] = False,
     ) -> ProjectAnalysisEnvelope:
         prepared = await analysis_runner.run(
             scope,
             list(analyses) if analyses is not None else None,
             cursor,
             limit,
+            view=view,
+            relation=relation,
+            names_differ=names_differ,
+            ambiguous_names=ambiguous_names,
+            address=address,
+            source_details=source_details,
         )
         return ProjectAnalysisEnvelope.model_validate(prepared.model_dump())
 

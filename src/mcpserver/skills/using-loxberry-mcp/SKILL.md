@@ -34,7 +34,16 @@ read-only project metadata; local catalog/draft writes are not available here.
    descriptions within the current analysis without bypassing fresh permissions.
 3. **Review an inventory:** explicitly call `loxone_analyze_project` with
    `scope="knx", analyses=["ets_project_comparison"]`. Omitted selection keeps
-   existing default analyses. Check target/revision, freshness, coverage,
+   existing default analyses. If the discovered schema advertises `view`, start
+   with `summary`, review bounded `findings`, then request `detail` with an exact
+   `address` only where needed. Otherwise use the existing bounded full view.
+   Compact filters `relation`, `names_differ` and `ambiguous_names` are optional;
+   `names_differ=false` excludes unknown, unassessed or incomplete names. Summary counts cover
+   the whole observation; selection counts cover retained filtered observations
+   and expose incomplete selection after truncation. `source_details=true` adds
+   diagnostic groups only when needed. Summary has no cursor; findings cursors
+   require unchanged view/filters/source selection, target and revisions.
+   Check target/revision, freshness, coverage,
    diagnostic omissions and every required page. State whether the answer covers
    a summary, sample or all delivered pages; never call a page sample a full audit.
 

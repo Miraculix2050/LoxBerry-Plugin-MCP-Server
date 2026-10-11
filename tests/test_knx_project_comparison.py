@@ -20,6 +20,7 @@ from mcpserver.knx.project_comparison import (
 from mcpserver.knx.project_metadata import ProjectMetadata
 from mcpserver.knx.store import KnxStore
 from mcpserver.loxone.project.analysis import ANALYSES, analyze_knx
+from mcpserver.loxone.project.ets_compact import filter_observations, selected_counts, selection
 from mcpserver.loxone.project.ets_comparison import observe_project, project_page
 from mcpserver.loxone.project.graph import ProjectPartSummary, ProjectSnapshot, build_graph
 from mcpserver.loxone.project.mapping import ProjectView, map_runtime
@@ -391,6 +392,254 @@ def test_expired_worker_budget_does_not_start_comparison(tmp_path):
         observe_project(
             project_view(), ProjectMetadata(tmp_path / "metadata.sqlite3"), "target", 0, deadline=0
         )
+
+
+@pytest.fixture
+def compact_runner(tmp_path, monkeypatch):
+    store, _ = catalog(tmp_path)
+    query = project_view()
+    allowed = {"value": True}
+
+    @asynccontextmanager
+    async def slot():
+        yield
+
+    async def authorize(_access):
+        if not allowed["value"]:
+            raise PermissionError
+
+    async def project_query(_runtime):
+        await authorize(None)
+        return query, SimpleNamespace(connected=True)
+
+    monkeypatch.setattr(tools, "_project_query", project_query)
+    monkeypatch.setattr(
+        tools,
+        "_access",
+        lambda: SimpleNamespace(family_id="family", miniserver_id="server", identity_id="identity"),
+    )
+    runtime = SimpleNamespace(
+        endpoint=SimpleNamespace(origin="target"),
+        worker_slot=slot,
+        projects=SimpleNamespace(authorize=AsyncMock(side_effect=authorize)),
+    )
+    metadata = ProjectMetadata(store.path)
+    return tools._ProjectAnalysisRunner(runtime, metadata=metadata), store, allowed
+
+
+@pytest.mark.asyncio
+async def test_summary_never_hydrates_rows_and_reuses_authorized_observation(
+    compact_runner, monkeypatch
+):
+    runner, _, allowed = compact_runner
+    observe = AsyncMock(wraps=tools.observe_ets_project)
+    monkeypatch.setattr(tools, "observe_ets_project", observe)
+    monkeypatch.setattr(
+        tools, "ets_comparison_page", lambda *_args: pytest.fail("summary hydration")
+    )
+    summary = await runner.run("knx", ["ets_project_comparison"], view="summary")
+    assert summary.ok and isinstance(summary.data, tools.ProjectKnxCompactAnalysisData)
+    assert summary.data.findings == [] and summary.data.next_cursor is None
+    assert summary.data.selection["complete"] is True
+    assert (
+        summary.data.selection["counts"]
+        == summary.data.summaries["ets_project_comparison"]["counts"]
+    )
+    repeated = await runner.run(
+        "knx", ["ets_project_comparison"], view="summary", relation="common"
+    )
+    assert repeated.ok and repeated.data.selection["selected_observations"] == 1
+    assert observe.await_count == 1
+    assert len(runner.cache) == 1
+    allowed["value"] = False
+    denied = await runner.run("knx", ["ets_project_comparison"], view="summary")
+    assert not denied.ok and denied.data.error == "unauthenticated"
+
+
+@pytest.mark.asyncio
+async def test_compact_pages_equal_full_evidence_and_bind_all_filters(compact_runner):
+    runner, store, _ = compact_runner
+    full = await runner.run("knx", ["ets_project_comparison"], limit=50)
+    assert full.ok and isinstance(full.data, tools.ProjectAnalysisData)
+    cursor = None
+    comparisons = []
+    while True:
+        page = await runner.run(
+            "knx", ["ets_project_comparison"], view="findings", cursor=cursor, limit=1
+        )
+        assert page.ok
+        comparisons.extend(row.comparison for row in page.data.findings)
+        cursor = page.data.next_cursor
+        if cursor is None:
+            break
+    assert comparisons == [row.comparison for row in full.data.findings]
+    first = await runner.run("knx", ["ets_project_comparison"], view="findings", limit=1)
+    for changed in (
+        {"view": "full"},
+        {"view": "findings", "relation": "common"},
+        {"view": "findings", "names_differ": True},
+        {"view": "findings", "ambiguous_names": True},
+        {"view": "findings", "address": "1/2/3"},
+        {"view": "findings", "source_details": True},
+    ):
+        denied = await runner.run(
+            "knx", ["ets_project_comparison"], cursor=first.data.next_cursor, **changed
+        )
+        assert not denied.ok and denied.data.error == "invalid_input"
+    detail = await runner.run(
+        "knx", ["ets_project_comparison"], view="detail", address="1/515", source_details=True
+    )
+    assert detail.ok and len(detail.data.findings) == 1
+    assert detail.data.findings[0].comparison == comparisons[0]
+    assert detail.data.source_diagnostics_details is not None
+    assert detail.data.source_coverage_details is not None
+    store.put(
+        "target",
+        3,
+        {"address": "1/2/3", "address_format": "three_level", "fields": {"name": "Changed"}},
+    )
+    stale = await runner.run(
+        "knx", ["ets_project_comparison"], view="findings", cursor=first.data.next_cursor
+    )
+    assert not stale.ok and stale.data.error == "invalid_input"
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"view": "detail"},
+        {"view": "summary", "cursor": "cursor"},
+        {"view": "findings", "address": "1/2/3:0"},
+        {"view": "findings", "address": "32/0"},
+        {"view": "full", "names_differ": False},
+        {"view": "full", "source_details": True},
+    ],
+)
+@pytest.mark.asyncio
+async def test_invalid_compact_selection_is_rejected(compact_runner, arguments):
+    runner, _, _ = compact_runner
+    result = await runner.run("knx", ["ets_project_comparison"], **arguments)
+    assert not result.ok and result.data.error == "invalid_input"
+
+
+@pytest.mark.asyncio
+async def test_compact_views_reject_mixed_analysis_and_other_scope(compact_runner):
+    runner, _, _ = compact_runner
+    for scope, analyses in (
+        ("knx", ["ets_project_comparison", "duplicate_addresses"]),
+        ("modbus", None),
+    ):
+        result = await runner.run(scope, analyses, view="summary")
+        assert not result.ok and result.data.error == "invalid_input"
+
+
+@pytest.mark.asyncio
+async def test_compact_keeps_empty_long_and_multi_dpt_source_values(compact_runner):
+    runner, store, _ = compact_runner
+    with store.connection() as db:
+        db.execute(
+            "UPDATE addresses SET imported=?,overrides=? WHERE address=?",
+            (
+                json.dumps({"name": "ETS", "description": "x" * 4096, "dpts": ["1.001", "5.001"]}),
+                json.dumps({"name": "", "description": ""}),
+                2563,
+            ),
+        )
+        db.commit()
+    full = await runner.run("knx", ["ets_project_comparison"], limit=50)
+    detail = await runner.run("knx", ["ets_project_comparison"], view="detail", address="1/2/3")
+    assert full.ok and detail.ok
+    assert detail.data.findings[0].comparison == full.data.findings[0].comparison
+    dumped = detail.data.findings[0].comparison.model_dump(mode="json")
+    metadata = dumped["local_metadata"]
+    assert metadata["manual"]["name"] == "" and metadata["manual"]["description"] == ""
+    assert metadata["imported"]["description"] == "x" * 4096
+    assert metadata["imported"]["dpts"] == ["1.001", "5.001"]
+
+
+def test_false_name_filter_excludes_unknown_and_non_comparisons():
+    common_equal = 1 | (1 << 16)
+    common_unknown = 2 | (17 << 16)
+    common_different = 3 | (5 << 16)
+    project_only = 4 | (2 << 16)
+    common_incomplete = 5 | (33 << 16)
+    rows = [common_equal, common_unknown, common_different, project_only, common_incomplete]
+    assert filter_observations(rows, selection("findings", None, False, None, None, False)) == [
+        common_equal
+    ]
+    assert filter_observations(rows, selection("findings", None, True, None, None, False)) == [
+        common_different
+    ]
+
+
+def test_compact_counts_preserve_overlapping_flags_and_unfiltered_observations():
+    rows = [
+        address | (flags << 16) for flags in range(64) if flags & 3 != 3 for address in range(7)
+    ]
+    retained = filter_observations(rows, selection("summary", None, None, None, None, False))
+    assert retained is rows
+    assert selected_counts(retained) == {
+        "common": 112,
+        "import_only": 112,
+        "observed_project_only": 112,
+        "name_deviations": 168,
+        "name_comparisons_unknown": 168,
+        "ambiguous_project_names": 168,
+    }
+    assert selected_counts([]) == dict.fromkeys(selected_counts(retained), 0)
+    with pytest.raises(ValueError, match="ETS-only"):
+        filter_observations([{}], selection("summary", None, None, None, None, False))
+
+
+def test_incomplete_observed_names_do_not_pass_equality_filter(tmp_path):
+    store, _ = catalog(tmp_path)
+    query = project_view(
+        b'<P><C Type="EIBextactor" U="known" Title="ETS" EibAddr="1/2/3"/>'
+        b'<C Type="EIBextactor" U="unknown" EibAddr="1/2/3"/></P>'
+    )
+    metadata = ProjectMetadata(store.path)
+    observed = observe_project(query, metadata, "target", 3)
+    assert (
+        filter_observations(
+            observed["findings"], selection("findings", None, False, None, None, False)
+        )
+        == []
+    )
+    # Released full evidence still shows the partial comparison and its limitation.
+    full = project_page(query, metadata, "target", 3, observed["findings"])
+    row = full[0]["comparison"]
+    assert not row["names_differ"] and row["name_comparison"] == "compared"
+    assert not row["project_names_complete"]
+
+
+@pytest.mark.asyncio
+async def test_compact_size_reduction_and_page_limit_keep_complete_rows(
+    compact_runner, monkeypatch
+):
+    runner, _, _ = compact_runner
+    full = await runner.run("knx", ["ets_project_comparison"], limit=50)
+    compact = await runner.run("knx", ["ets_project_comparison"], view="findings", limit=50)
+    summary = await runner.run("knx", ["ets_project_comparison"], view="summary")
+    assert len(compact.model_dump_json().encode()) < len(full.model_dump_json().encode()) * 0.85
+    assert len(summary.model_dump_json().encode()) < len(full.model_dump_json().encode()) * 0.5
+    one = compact.model_copy(deep=True)
+    one.data.findings = one.data.findings[:1]
+    # Reserve room for the continuation token, whose fixed bound is below 300 bytes.
+    budget = len(one.model_dump_json().encode()) + 300
+    assert budget < len(compact.model_dump_json().encode())
+    monkeypatch.setattr(tools, "PROJECT_RESPONSE_MAX_BYTES", budget)
+    bounded = await runner.run("knx", ["ets_project_comparison"], view="findings", limit=50)
+    assert bounded.ok and len(bounded.data.findings) == 1
+    assert bounded.data.page_truncated and bounded.data.next_cursor is not None
+    assert len(bounded.model_dump_json().encode()) <= budget
+    continued = await runner.run(
+        "knx",
+        ["ets_project_comparison"],
+        view="findings",
+        cursor=bounded.data.next_cursor,
+        limit=50,
+    )
+    assert continued.ok and continued.data.findings == compact.data.findings[1:]
 
 
 @pytest.mark.asyncio

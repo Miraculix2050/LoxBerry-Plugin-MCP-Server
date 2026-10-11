@@ -36,3 +36,29 @@ Katalog und erteilt keine Berechtigung. Tokenmessungen nennen Tokenizer/Modell/
 Client und unterscheiden geladene Schemas, Anleitung und tatsächliche Ergebnisse.
 Zeichenanzahlen sind keine Tokenzahlen. Bei Discovery-Abweichungen siehe
 [Fehlerbehebung](troubleshooting.de.md).
+
+## Kompakter ETS-Abgleich
+
+Ausdrücklich `analyses=["ets_project_comparison"]`, `scope="knx"` und
+`view="summary"` für Zählwerte ohne einzelne Adressdetailabfragen wählen.
+`view="findings"` liefert paginierte Quellenbefunde; `view="detail"` mit einer
+genauen zwei-/dreistufigen `address` (ohne Variantensuffix) erklärt eine Adresse.
+Die Projektobjekte behalten ihre ursprünglichen `:0`/`:1`-Varianten und Loxone-Namen.
+Der weggelassene/standardmäßige `view="full"` und andere Analysen bleiben unverändert.
+
+Kompakte Ansichten unterstützen `relation`, `names_differ`, `ambiguous_names` und
+`address`. Ein falscher Namensabweichungsfilter berücksichtigt nur verglichene,
+vollständige beobachtete Namen; unbekannte oder unvollständige Namen sind keine
+Übereinstimmung. Filter stehen in der Vollansicht nicht zur Verfügung und lassen
+sich nicht mit anderen Analysen mischen. Zusammenfassungen haben keinen Folgecursor.
+Ansicht, alle Filter und `source_details` auf Folgeseiten unverändert lassen;
+geänderte Ziel-, Projekt- oder KNX-Stände erfordern eine neue Abfrage.
+
+`summaries.ets_project_comparison.counts` zählt die gesamte begrenzte Beobachtung.
+`selection.counts` zählt erhaltene gefilterte Beobachtungen; `selection.complete`
+ist falsch, wenn die Beobachtungsbegrenzung weitere Treffer verbergen kann.
+Quellenvollständigkeit, ausgelassene Gruppen und Diagnosezählwerte bleiben auf
+jeder kompakten Seite separat sichtbar. `source_details=true` nur bei Bedarf für
+vollständige Diagnose-/Quellengruppen verwenden. Das Protokoll liefert weiterhin
+strukturierte und Text-Fallback-Ergebnisse; Clients sollten eine Darstellung
+nutzen und nicht beide in den KI-Kontext aufnehmen.

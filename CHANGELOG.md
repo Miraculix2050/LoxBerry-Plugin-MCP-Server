@@ -14,6 +14,10 @@ extracted from the matching version heading.
   references, DE/EN baseline support matrix and value-free offline workflow
   measurement validation. Missing telemetry remains incomplete (#445).
 
+- Add opt-in compact ETS summary/findings/detail views and revision-bound
+  relation/name/address filters to project analysis. Retain default full output,
+  source uncertainty and counts; summary avoids address detail hydration (#456).
+
 - Offer canonical core/KNX guidance sections through the existing guide tool and
   resources while retaining full-guide defaults. Explain ETS/manual search,
   source comparisons, DPT uncertainty and UI-only export boundaries (#455).
