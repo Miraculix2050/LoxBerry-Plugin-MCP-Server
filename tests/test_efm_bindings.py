@@ -123,13 +123,21 @@ def test_synthetic_candidate_map_and_response_bounds() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "source", ["verified", "different_serial", "unavailable", "invalid_version"]
+    "source",
+    [
+        "verified",
+        "case_separator",
+        "different_serial",
+        "invalid_identity",
+        "unavailable",
+        "invalid_version",
+    ],
 )
 async def test_synthetic_full_describe_checks_target_version_without_value_reads(
     monkeypatch, source
 ) -> None:
     control = monitor([node(3, actualEfmState=uuid(7))], [("actual9", uuid(7))])
-    structure = LoxoneStructure(LoxoneIdentity("reader", "synthetic"), "1", (), (), (control,))
+    structure = LoxoneStructure(LoxoneIdentity("reader", "020000AABBCC"), "1", (), (), (control,))
     fresh_calls = []
     probe_calls = []
 
@@ -147,7 +155,11 @@ async def test_synthetic_full_describe_checks_target_version_without_value_reads
             raise LoxoneConnectionError("Synthetic failure")
         return ProbeResult(
             "private malformed version" if source == "invalid_version" else FIRMWARE,
-            "different" if source == "different_serial" else "synthetic",
+            {
+                "different_serial": "020000000002",
+                "invalid_identity": "private invalid serial",
+                "case_separator": "02:00:00:aa:bb:cc",
+            }.get(source, "020000AABBCC"),
             True,
             None,
         )
@@ -161,19 +173,24 @@ async def test_synthetic_full_describe_checks_target_version_without_value_reads
     assert result.ok, result
     bindings = result.data.capabilities.model.efm_bindings
     assert bindings.participants[0].status == (
-        "resolved" if source == "verified" else "unsupported_version"
+        "resolved" if source in {"verified", "case_separator"} else "unsupported_version"
     )
-    assert bindings.firmware_version == (FIRMWARE if source == "verified" else None)
+    assert bindings.firmware_version == (
+        FIRMWARE if source in {"verified", "case_separator"} else None
+    )
     assert (
         bindings.firmware_verification
         == {
             "verified": "verified",
+            "case_separator": "verified",
+            "invalid_identity": "invalid_identity",
             "different_serial": "identity_mismatch",
             "unavailable": "unavailable",
             "invalid_version": "invalid_version",
         }[source]
     )
     assert "private malformed version" not in result.model_dump_json()
+    assert "private invalid serial" not in result.model_dump_json()
     assert fresh_calls == [False, True] and probe_calls == [True]
     for view in ("state_refs", "history_targets", "operation_targets"):
         result = await tool.fn(uuid(1), view=view)

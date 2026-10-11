@@ -500,3 +500,7 @@ Bindings cover only participant paths emitted by the bounded #363 projection.
 `projection_omitted` separately counts retained occurrences excluded there.
 `firmware_verification` distinguishes verified version metadata, identity mismatch,
 invalid version data, unavailable probes and unrequested/unknown applicability.
+
+Source identity uses the existing strict MAC serial canonicalization (case and
+colon/hyphen presentation only). Invalid identities remain `invalid_identity`;
+no arbitrary string or installation-name equivalence grants applicability.

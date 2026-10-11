@@ -131,6 +131,7 @@ from mcpserver.loxone.state_semantics import (
     decode_state_value,
 )
 from mcpserver.loxone.statistics import StatisticPoint
+from mcpserver.loxone.system_messages import MessageSourceError, canonical_serial
 from mcpserver.loxone.uuid import normalize_loxone_uuid
 from mcpserver.skill_delivery import (
     SKILL_MIME_TYPE,
@@ -424,6 +425,7 @@ class EfmBindingsData(BaseModel):
         "verified",
         "unverified",
         "identity_mismatch",
+        "invalid_identity",
         "invalid_version",
         "unavailable",
         "not_requested",
@@ -5072,13 +5074,17 @@ def register_read_tools(
                 try:
                     async with runtime.call_slot(access_token):
                         probe = await runtime.client.probe()
-                    if probe.serial != snapshot.structure.identity.miniserver_serial:
+                    if canonical_serial(probe.serial) != canonical_serial(
+                        snapshot.structure.identity.miniserver_serial
+                    ):
                         efm_verification = "identity_mismatch"
                     elif not re.fullmatch(r"[0-9]{1,5}(?:\.[0-9]{1,5}){3}", probe.firmware):
                         efm_verification = "invalid_version"
                     else:
                         efm_firmware = probe.firmware
                         efm_verification = "verified"
+                except MessageSourceError:
+                    efm_verification = "invalid_identity"
                 except (LoxoneConnectionError, TimeoutError):
                     efm_verification = "unavailable"
             value["capabilities"] = {

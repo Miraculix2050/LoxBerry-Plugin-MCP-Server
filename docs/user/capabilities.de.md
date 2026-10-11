@@ -798,3 +798,8 @@ Teilnehmerpfade. `projection_omitted` zählt dort ausgelassene normalisierte
 Vorkommen getrennt. `firmware_verification` unterscheidet verifizierte
 Versionsmetadaten, abweichende Identität, ungültige Versionsdaten, nicht verfügbare
 Probes und nicht angeforderte/unbekannte Anwendbarkeit.
+
+Die Quellidentität nutzt die etablierte strikte MAC-Kanonisierung für Seriennummern
+(nur Großschreibung und Doppelpunkt-/Bindestrichdarstellung). Ungültige Identitäten
+bleiben `invalid_identity`; beliebige Strings oder Installationsnamen begründen
+keine Gleichheit oder Anwendbarkeit.
