@@ -114,6 +114,38 @@ def test_bounded_capture_metadata_reports_truncation(tmp_path):
     assert page.coverage == "partial_coverage"
 
 
+def test_size_eviction_invalidates_every_completed_phase_in_deleted_prefix(tmp_path, monkeypatch):
+    source = ("control", "state")
+    store = EventHistoryStore(
+        (tmp_path / "history.sqlite3").resolve(), retention_days=90, maximum_mib=16
+    )
+    store.initialize()
+    now = time.time()
+    first, second, unaffected = now - 1000, now - 700, now - 300
+    for start in (first, second):
+        store.begin_coverage((source,), started_at=start, initial_values={source: (start, 0)})
+        for i in range(150):
+            store.record_transition(
+                *source, observed_at=start + i + 1, old_value=i, new_value=i + 1
+            )
+        store.end_coverage((source,), ended_at=start + 151, outcome="disconnected")
+    store.begin_coverage((source,), started_at=unaffected, initial_values={source: (unaffected, 7)})
+    sizes = iter((store.maximum_bytes + 1, 0))
+    with monkeypatch.context() as patch:
+        patch.setattr(store, "_used_database_bytes", lambda _db: next(sizes))
+        with store._opened() as db:
+            db.execute("BEGIN IMMEDIATE")
+            assert store._prune(db, now=now)
+            db.execute("COMMIT")
+    page = store.page(*source, start=first, end=now, limit=100)
+    assert len(page.entries) == 44
+    assert all(phase[0] > first for phase in page.capture_intervals)
+    assert page.capture_intervals[0][0] > second
+    assert page.capture_intervals[0][2:] == (None, None)
+    assert page.capture_intervals[1][2:] == (unaffected, 7)
+    assert page.coverage == "partial_coverage"
+
+
 def test_source_inventory_page_filters_before_limiting_many_hidden_sources(tmp_path):
     store = EventHistoryStore(
         (tmp_path / "event-history.sqlite3").resolve(), retention_days=90, maximum_mib=16

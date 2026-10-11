@@ -805,6 +805,13 @@ class EventHistoryStore:
             deleted += removed
             for control_uuid, state_uuid, observed_at in evicted:
                 boundary = math.nextafter(float(observed_at), math.inf)
+                # The deleted oldest-prefix batch can span several completed
+                # phases. None may retain replay evidence from discarded events.
+                deleted += connection.execute(
+                    "DELETE FROM coverage WHERE control_uuid = ? AND state_uuid = ? "
+                    "AND ended_at IS NOT NULL AND ended_at <= ?",
+                    (control_uuid, state_uuid, boundary),
+                ).rowcount
                 connection.execute(
                     "UPDATE coverage SET started_at = ?, initial_value = NULL, "
                     "initial_observed_at = NULL WHERE control_uuid = ? "
