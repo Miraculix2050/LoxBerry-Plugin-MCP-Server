@@ -34,6 +34,10 @@ _FULL_PATTERNS: Final = (
 )
 _TEST_GROUPS: Final = (
     (
+        ("src/mcpserver/discovery.py", "tools/check_mcp_discovery.py"),
+        ("tests/test_mcp_discovery.py", "tests/test_schema_reference.py", "tests/test_server.py"),
+    ),
+    (
         (
             "bin/lib/MCPServer/RequestSecurity.pm",
             "webfrontend/htmlauth/index.cgi",

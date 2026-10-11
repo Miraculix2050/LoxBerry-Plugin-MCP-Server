@@ -1,5 +1,36 @@
 # Troubleshooting
 
+## MCP tools missing after an upgrade
+
+An installed skill or the static schema reference can describe capabilities that
+an existing connector connection has not rediscovered. Use the Tool Explorer's
+fresh `tools/list` response to check the installed surface, then refresh/reconnect
+the affected client and inspect its tool definitions again. Do not guess arguments
+absent from the client's current schema or bypass discovery through raw requests.
+Reconnect behavior must be verified for the particular client; the plugin cannot
+invalidate an external connector's cached schema.
+
+The server uses stateless HTTP with JSON responses. It does not advertise
+unsolicited tool-list change notifications. No full discovery or project load is
+added before each read; reconnecting does not confer project or Admin permission.
+
+For a local comparison, privately save two captures as UTF-8 JSON containing
+`tools` (or a JSON-RPC `result.tools` response), then run in the developer environment:
+
+```text
+python tools/check_mcp_discovery.py --reference server.json --observed client.json
+```
+
+Compare the same enabled installation and capture time. The release's complete
+static reference can include disabled tools; that difference does not prove a
+stale connector. Each file is limited to 16 MiB and 512 tools. The report contains
+tool names, schema identities and changed field names, not schema text or
+credentials. Exit 0 means equal exposed contracts, 1 means different or incomplete,
+and 2 means invalid input. Client fields that are not exposed are explicitly
+incomplete, not a confirmed defect. Additive enum/output changes are detected even
+when tool names are unchanged. Keep captures private and record client/version,
+upgrade/reconnect steps and skill revision with sanitized evidence.
+
 ## OAuth session and approval lifecycle
 
 Use the local Admin diagnostic download when a session disappears or an approval
