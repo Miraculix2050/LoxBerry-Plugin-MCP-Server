@@ -241,3 +241,15 @@ def test_browser_canonical_ipv4_mapped_ipv6_origin_is_retained(
     settings = ServerSettings.from_environment()
 
     assert settings.allowed_origins == ("https://[::ffff:c0a8:101]",)
+
+
+def test_explicit_native_knx_store_path_is_optional_and_validated(monkeypatch, tmp_path):
+    monkeypatch.delenv("MCPSERVER_KNX_STORE", raising=False)
+    assert ServerSettings.from_environment().knx_store_path is None
+    path = tmp_path / "knx" / "metadata.sqlite3"
+    monkeypatch.setenv("MCPSERVER_KNX_STORE", str(path))
+    assert ServerSettings.from_environment().knx_store_path == path
+    for value in ("relative.sqlite3", str(tmp_path / "metadata.json")):
+        monkeypatch.setenv("MCPSERVER_KNX_STORE", value)
+        with pytest.raises(ValueError, match="MCPSERVER_KNX_STORE"):
+            ServerSettings.from_environment()

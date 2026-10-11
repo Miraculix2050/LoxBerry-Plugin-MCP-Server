@@ -359,6 +359,15 @@ version 13, KNX analysis version 12 and opening connector version 5 distinguish 
 
 ### API connector connection metadata
 
+Project find/describe additionally expose optional `knx.metadata`: `revision`,
+the original metadata `address` and `address_format`,
+separate `imported`/`manual` fields, `import_info`, `deviations` and sourced
+`dpt_details`. Missing fields remain unknown; empty values remain explicit.
+DPT status recognizes identifier syntax only and does not replace raw Loxone EIBType
+or establish assignment/registry validity. Search includes additional names and
+descriptions by numeric address while retaining Loxone titles as primary. KNX
+revision changes invalidate continuation cursors. No new MCP write/export tool exists.
+
 Project model version 13, KNX analysis version 12 and Opening connector rules 5 apply.
 The canonical skill introduced this metadata in revision 54. Exact stored connector keys `OutputAPI` and `API` expose
 optional `api_connector` with `semantics=connection_metadata_only`,

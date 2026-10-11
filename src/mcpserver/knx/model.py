@@ -40,13 +40,23 @@ def address(value: object, address_format: object) -> tuple[int, str]:
     return (parts[0] << 11) | parts[1], value
 
 
+def address_number(value: object) -> int | None:
+    """Discard only a modeled edge suffix for metadata lookup, never display."""
+    if not isinstance(value, str):
+        return None
+    base = value[:-2] if value.endswith((":0", ":1")) else value
+    try:
+        return address(base, "three_level" if base.count("/") == 2 else "two_level")[0]
+    except KnxError:
+        return None
+
+
 def text(value: object, maximum: int, *, empty: bool = True) -> str:
     if (
         not isinstance(value, str)
         or len(value) > maximum
         or (not empty and not value.strip())
-        or any(ord(c) < 32 and c not in "\r\n\t" for c in value)
-        or any(0xD800 <= ord(c) <= 0xDFFF or ord(c) == 127 for c in value)
+        or re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\ud800-\udfff]", value)
     ):
         raise KnxError("knx_field_invalid")
     return value

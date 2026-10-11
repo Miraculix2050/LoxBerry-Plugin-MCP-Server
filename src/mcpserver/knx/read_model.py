@@ -40,13 +40,13 @@ def deviations(imported: dict[str, Any], overrides: dict[str, Any]) -> list[str]
     return result
 
 
-def query_filters(value: object) -> dict[str, Any]:
+def query_filters(value: object, *, query_limit: int = 128) -> dict[str, Any]:
     if value is None:
         return {"query": "", "source": "all", "deviations_only": False}
     if not isinstance(value, dict) or not value.keys() <= {"query", "source", "deviations_only"}:
         raise KnxError("knx_query_invalid")
     try:
-        query = text(value.get("query", ""), 128).strip()
+        query = text(value.get("query", ""), query_limit).strip()
     except KnxError:
         raise KnxError("knx_query_invalid") from None
     source = value.get("source", "all")
@@ -61,17 +61,8 @@ def query_sql(filters: dict[str, Any]) -> tuple[str, list[Any]]:
     parameters: list[Any] = []
     query = filters["query"]
     if query:
-        text_columns = [
-            "a.original",
-            "printf('%d/%d',a.address >> 11,a.address & 2047)",
-            "printf('%d/%d/%d',a.address >> 11,(a.address >> 8) & 7,a.address & 255)",
-            "json_extract(a.imported,'$.name')",
-            "json_extract(a.overrides,'$.name')",
-            "json_extract(a.imported,'$.description')",
-            "json_extract(a.overrides,'$.description')",
-        ]
-        terms = [f"instr(knx_casefold({column}),?)>0" for column in text_columns]
-        parameters.extend([query.casefold()] * len(terms))
+        terms = ["instr(a.search_document,?)>0"]
+        parameters.append(query.casefold())
         for fmt in ("three_level", "two_level"):
             try:
                 number, _ = address(query, fmt)

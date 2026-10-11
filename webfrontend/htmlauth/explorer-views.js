@@ -58,6 +58,10 @@
           yield `${own('classification')}: ${own('finding_type')}`;
         }
         for (const field of ['name', 'title', 'label', 'control_name', 'state_name', 'what']) yield own(field);
+        if (typeof own('project_node_id') === 'string') {
+          yield own('runtime_control')?.name;
+          yield own('knx')?.title;
+        }
         const control = own('control');
         yield structured(control) && !Array.isArray(control) &&
           Object.prototype.hasOwnProperty.call(control, 'name') ? control.name : undefined;
@@ -187,6 +191,34 @@
 
   function fieldControlId(index) {
     return `explorer-field-${index}`;
+  }
+
+  function createKnxMetadataInspector(documentObject, item, label) {
+    const metadata = item?.knx?.metadata;
+    if (!metadata) return null;
+    const node = (tag, text) => {
+      const result = documentObject.createElement(tag);
+      result.textContent = text;
+      return result;
+    };
+    const card = documentObject.createElement('details');
+    const primary = item.runtime_control?.name || item.knx.title || item.project_node_id;
+    card.append(node('summary', `${primary} — ${item.knx.group_address?.original || ''} — ${label('knxMetadata')}`));
+    card.addEventListener('toggle', () => {
+      if (!card.open || card.childElementCount > 1) return;
+      card.append(node('p', label('knxSourceNotice')));
+      const text = (fields, field) => !Object.hasOwn(fields, field) || fields[field] == null
+        ? label('knxUnknown') : fields[field] === '' ? label('knxEmpty') : fields[field];
+      for (const [source, fields] of [
+        ['knxLoxone', {name: primary, description: item.knx.description}],
+        ['knxEts', metadata.imported], ['knxManual', metadata.manual],
+      ]) {
+        card.append(node('h4', label(source)));
+        for (const field of ['name', 'description']) card.append(node('p', `${label(field === 'name' ? 'knxName' : 'knxDescription')}: ${text(fields, field)}`));
+      }
+      // Detailed DPT evidence stays in the bounded result tree with raw/status/source fields.
+    });
+    return card;
   }
 
   function createFieldLabel(documentObject, name, input, index) {
@@ -569,6 +601,16 @@
         collapseResult: label('collapseResult'),
         moreResults: label('moreResults'),
       }, actions.openTransfer));
+      if (displayed?.ok && ['loxone_find_project_objects', 'loxone_describe_project_object'].includes(context?.tool)) {
+        const records = context.tool === 'loxone_find_project_objects'
+          ? displayed.data?.items || [] : [displayed.data];
+        const sources = element('div', {className: 'mcp-explorer-stack'});
+        for (const item of records.slice(0, 100)) {
+          const card = createKnxMetadataInspector(document, item, label);
+          if (card) sources.append(card);
+        }
+        if (sources.childElementCount) elements.resultTree.prepend(sources);
+      }
       if (context?.tool === 'loxone_analyze_project' && displayed?.ok && displayed.data?.scope === 'modbus') {
         const data = displayed.data;
         const counts = {fact: 0, review_candidate: 0, evidence_gap: 0};
@@ -645,6 +687,6 @@
     return {renderConnection, renderTools, renderSelectedTool, renderResult,
       appendTranscript, renderTranscript, renderHistory, displayValue};
   }
-  return {create, createResultInspector, clearSensitiveDom, fieldControlId,
+  return {create, createResultInspector, createKnxMetadataInspector, clearSensitiveDom, fieldControlId,
     createFieldLabel, createOptionalToggle};
 });

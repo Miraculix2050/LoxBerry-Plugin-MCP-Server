@@ -270,6 +270,7 @@ class ServerSettings:
     service_enabled: bool = True
     log_level: str = DEFAULT_LOG_LEVEL
     plugin_config: PluginConfig | None = None
+    knx_store_path: Path | None = None
 
     @classmethod
     def from_environment(cls) -> ServerSettings:
@@ -315,6 +316,10 @@ class ServerSettings:
                 allowed_hosts = (*allowed_hosts, public_host)
             if phase_auth.public_origin not in allowed_origins:
                 allowed_origins = (*allowed_origins, phase_auth.public_origin)
+        knx_value = os.getenv("MCPSERVER_KNX_STORE", "").strip()
+        knx_path = Path(knx_value) if knx_value else None
+        if knx_path is not None and (not knx_path.is_absolute() or knx_path.suffix != ".sqlite3"):
+            raise ValueError("MCPSERVER_KNX_STORE must be an absolute SQLite path")
         return cls(
             host=host,
             port=port,
@@ -324,4 +329,5 @@ class ServerSettings:
             service_enabled=service_enabled,
             log_level=plugin_config.log_level if plugin_config is not None else DEFAULT_LOG_LEVEL,
             plugin_config=plugin_config,
+            knx_store_path=knx_path,
         )

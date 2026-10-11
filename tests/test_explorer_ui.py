@@ -1850,3 +1850,30 @@ def test_explorer_page_emits_no_store_and_frame_protection() -> None:
     assert "referrer-policy: no-referrer" in headers
     assert "x-content-type-options: nosniff" in headers
     assert "x-frame-options: deny" in headers
+
+
+def test_knx_sources_are_lazy_separate_and_keep_primary_loxone_name() -> None:
+    result = run_inspector("""
+      Object.defineProperty(Node.prototype, 'childElementCount', {
+        get(){return this.children.length;}});
+      const item = {project_node_id:'p:1',runtime_control:{name:'Primary Loxone'},knx:{
+        title:'Project title',description:'Project description',group_address:{original:'1/2/3:1'},
+        metadata:{imported:{name:'<img src=x onerror=alert(1)>',description:''},
+          manual:{name:'Manual'}}}};
+      const card = core.createKnxMetadataInspector(document,item,key => key);
+      const initial = walk(card).map(node => node.textContent).filter(Boolean);
+      card.open = true; card.handlers.toggle();
+      const expanded = walk(card).map(node => node.textContent).filter(Boolean);
+      const count = walk(card).length; card.handlers.toggle();
+      const tree = inspect([item]);
+      return {initial,expanded,count,repeated:walk(card).length,
+        captions:walk(tree).map(node => node.textContent).filter(Boolean),
+        absent:core.createKnxMetadataInspector(document,{knx:{}},key => key)};
+    """)
+    assert result["initial"] == ["Primary Loxone — 1/2/3:1 — knxMetadata"]
+    assert result["count"] == result["repeated"]
+    assert "knxName: <img src=x onerror=alert(1)>" in result["expanded"]
+    assert "knxDescription: knxEmpty" in result["expanded"]
+    assert "knxDescription: knxUnknown" in result["expanded"]
+    assert "Primary Loxone" in repr(result["captions"])
+    assert result["absent"] is None
