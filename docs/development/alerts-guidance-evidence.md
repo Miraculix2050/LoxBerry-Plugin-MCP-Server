@@ -56,7 +56,9 @@ defaults, bounded section size and sanitized failures for every section.
   These sequential observations do not establish simultaneous installation health.
 - After Hotswap and native package installation, SSH SHA-256 checks matched all
   three changed guidance/runtime files to PR source `3fc8c1b` (the same tree as
-  package source `46a1b225`). Skill revision was 73; systemd was active with a
+  package source `46a1b225`). The native installer reached terminal
+  `INSTALL_STATUS=0` after 93.7 seconds and reported `HEALTH=pass`.
+  Skill revision was 73; systemd was active with a
   nonzero PID; health returned HTTP 200 / `ok=true`. Display version `0.4.0b4`
   identifies the installed package, not the Hotswap commit.
 - Browser acceptance after a fresh Explorer reload showed the updated full
