@@ -190,7 +190,10 @@ def register_message_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
             bool,
             Field(
                 strict=True,
-                description="True only after explicit human approval of this preview and effect.",
+                description=(
+                    "True only after explicit human approval of this preview and effect, "
+                    "including its independent native Admin approval."
+                ),
             ),
         ],
     ) -> MessageConfirmationEnvelope:

@@ -500,9 +500,20 @@ def test_exact_default_tools_and_mutation_annotations_are_published() -> None:
         "loxone_list_event_history_sources",
         "loxone_get_event_history",
     ]
-    mutations = {"loxberry_save_installation_profile", "loxberry_delete_installation_profile", "loxone_confirm_system_message"}
-    assert all(tool["annotations"]["readOnlyHint"] is (tool["name"] not in mutations) for tool in tools)
-    assert all(tool["annotations"]["destructiveHint"] is (tool["name"] in {"loxberry_delete_installation_profile", "loxone_confirm_system_message"})
+    mutations = {
+        "loxberry_save_installation_profile",
+        "loxberry_delete_installation_profile",
+        "loxone_confirm_system_message",
+    }
+    assert all(
+        tool["annotations"]["readOnlyHint"] is (tool["name"] not in mutations) for tool in tools
+    )
+    assert all(
+        tool["annotations"]["destructiveHint"]
+        is (
+            tool["name"]
+            in {"loxberry_delete_installation_profile", "loxone_confirm_system_message"}
+        )
         for tool in tools
     )
     assert all(tool["outputSchema"]["properties"]["data"].get("anyOf") for tool in tools)

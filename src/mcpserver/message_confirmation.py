@@ -171,8 +171,10 @@ class MessageConfirmations:
                     self.approvals.binding(binding, _fingerprint(source, record)),
                     {
                         "entry_uuid": entry_uuid,
-                        "title": record.title[:256],
-                        "description": record.description[:1024],
+                        "title": record.title[:256]
+                        + (" [truncated]" if len(record.title) > 256 else ""),
+                        "description": record.description[:1024]
+                        + (" [truncated]" if len(record.description) > 1024 else ""),
                         "action_id": record.confirmation_action_id,
                         "effect": record.confirmation_effect,
                         "historic": record.historic,
