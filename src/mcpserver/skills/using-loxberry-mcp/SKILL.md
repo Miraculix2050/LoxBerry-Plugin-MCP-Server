@@ -631,6 +631,21 @@ tool call can inspect or alter the emergency-stop condition while it is active.
 
 ## Read history and statistics
 
+Read `coverage_evidence`: UTC intervals are half-open internally, while existing
+public history/statistic time filters remain inclusive. Sample timestamps prove
+points only. Only documented hourly difference records expose exact energy
+intervals; never interpolate missing intervals or divide uncertain interval
+energy proportionally. `truncated` describes the returned evidence page.
+Event `capture_intervals` contain a persisted observed initial value only for
+new capture phases. It applies at that phase's start, not the requested window
+start; replay intervening transitions before treating it as a boundary value.
+Legacy phases and retention-truncated phases may lack an initial value. Capture
+without transitions does not establish inactivity, and reconnect gaps stay gaps.
+Local calendar analysis needs an explicit IANA timezone; DST days may have 23 or
+25 hours. Legacy Miniserver local-clock values require independently confirmed
+Miniserver timezone evidence; the compatible public timestamp shape alone is not
+UTC proof. Native Control History remains a separate event source.
+
 Inspect each series' `semantics` in the existing description/observability and
 statistic response. `cumulative_counter` requires an explicit accumulated flag;
 aggregated accumulated reads use `interval_difference_sum`. Raw values otherwise

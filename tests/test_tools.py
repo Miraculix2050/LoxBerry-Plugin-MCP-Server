@@ -621,7 +621,7 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert tool.annotations.destructiveHint is False
     assert tool.annotations.openWorldHint is False
     assert result.data.name == "using-loxberry-mcp"  # type: ignore[union-attr]
-    assert result.data.revision == 70  # type: ignore[union-attr]
+    assert result.data.revision == 71  # type: ignore[union-attr]
     assert "prefer `loxone_read_controls`" in result.data.content  # type: ignore[union-attr]
     assert "`loxone_get_structure_overview`" in result.data.content  # type: ignore[union-attr]
     assert result.data.media_type == "text/markdown"  # type: ignore[union-attr]
@@ -1183,7 +1183,8 @@ async def test_event_history_read_rejects_a_visible_state_outside_the_source_all
         history_call_slot = staticmethod(slot)
         worker_slot = staticmethod(slot)
 
-        async def snapshot(self, _access: object) -> object:
+        async def snapshot(self, _access: object, *, fresh_visibility: bool = False) -> object:
+            assert fresh_visibility
             return SimpleNamespace(structure=SimpleNamespace(controls=(control,)))
 
     class ConfigStore:
@@ -1240,7 +1241,8 @@ async def test_removed_history_is_readable_only_while_currently_visible(
         history_call_slot = staticmethod(slot)
         worker_slot = staticmethod(slot)
 
-        async def snapshot(self, _access: object) -> object:
+        async def snapshot(self, _access: object, *, fresh_visibility: bool = False) -> object:
+            assert fresh_visibility
             return SimpleNamespace(
                 structure=SimpleNamespace(controls=(control,) if self.visible else ())
             )

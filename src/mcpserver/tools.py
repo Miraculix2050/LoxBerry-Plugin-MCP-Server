@@ -57,6 +57,12 @@ from mcpserver.loxone.event_history import (
     EventHistoryStore,
     EventHistoryUnavailable,
 )
+from mcpserver.loxone.history_evidence import (
+    CaptureInterval,
+    HistoryEvidence,
+    capture_evidence,
+    statistic_evidence,
+)
 from mcpserver.loxone.models import Control, Freshness, StateRecord
 from mcpserver.loxone.opening_contacts import OpeningScopeError, analyze_opening_contacts
 from mcpserver.loxone.presentation import (
@@ -2234,6 +2240,7 @@ class StatisticsData(BaseModel):
     points: list[StatisticPointData]
     next_cursor: str | None
     semantics: SeriesSemantics | None = None
+    coverage_evidence: HistoryEvidence | None = None
 
 
 class StatisticsEnvelope(ToolEnvelope):
@@ -2282,6 +2289,8 @@ class EventHistoryData(BaseModel):
     recording_notice: str | None
     entries: list[EventHistoryEntryData]
     next_cursor: str | None
+    capture_intervals: list[CaptureInterval] = Field(default_factory=list, max_length=128)
+    coverage_evidence: HistoryEvidence | None = None
 
 
 class EventHistoryEnvelope(ToolEnvelope):
@@ -3267,7 +3276,7 @@ class EventHistoryRuntime:
         recording_active = (control_uuid, state_uuid) in config.event_history_sources
         try:
             async with self._runtime.history_call_slot(access):
-                snapshot = await self._runtime.snapshot(access)
+                snapshot = await self._runtime.snapshot(access, fresh_visibility=True)
         except RuntimeUnavailable as exc:
             raise ControlOperationError("temporarily_unavailable", str(exc)) from exc
         control = next(
@@ -7376,6 +7385,13 @@ def register_event_history_tools(server: FastMCP, runtime: EventHistoryRuntime |
                     return None
                 return datetime.fromtimestamp(value, UTC).isoformat().replace("+00:00", "Z")
 
+            phases, evidence = capture_evidence(
+                getattr(page, "capture_intervals", ()),
+                start=start_seconds,
+                end=end_seconds,
+                now=time.time(),
+                truncated=getattr(page, "capture_intervals_truncated", False),
+            )
             return _result(
                 EventHistoryEnvelope,
                 {
@@ -7388,6 +7404,8 @@ def register_event_history_tools(server: FastMCP, runtime: EventHistoryRuntime |
                     "end": timestamp(end_seconds),
                     "outcome": outcome,
                     "coverage": page.coverage,
+                    "capture_intervals": phases,
+                    "coverage_evidence": evidence,
                     "capture_started_at": timestamp(page.capture_started_at),
                     "retained_from": timestamp(page.retained_from),
                     "recording_status": "active" if recording_active else "removed",
@@ -7556,6 +7574,9 @@ def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                     raise ValueError("cursor is invalid")
                 keyed_points = tuple(item for item in keyed_points if item[1] > anchor)
             selected = keyed_points[:limit]
+            series_semantics = StateSemanticsResolver().resolve_series(
+                _control, series, granularity=granularity
+            )
             envelope = _result(
                 StatisticsEnvelope,
                 {
@@ -7564,8 +7585,11 @@ def register_history_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
                     "title": series.title,
                     "format": series.format,
                     "granularity": granularity,
-                    "semantics": StateSemanticsResolver().resolve_series(
-                        _control, series, granularity=granularity
+                    "semantics": series_semantics,
+                    "coverage_evidence": statistic_evidence(
+                        tuple(point for point, _key in selected),
+                        series_semantics,
+                        has_more=len(selected) < len(keyed_points),
                     ),
                     "start": start_time.isoformat().replace("+00:00", "Z"),
                     "end": end_time.isoformat().replace("+00:00", "Z"),

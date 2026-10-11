@@ -43,6 +43,109 @@ def test_store_records_typed_transitions_and_pages_them(tmp_path):
     )
 
 
+def test_capture_initial_value_survives_read_without_inventing_legacy_baseline(tmp_path):
+    source = ("control", "state")
+    store = EventHistoryStore(
+        (tmp_path / "history.sqlite3").resolve(), retention_days=90, maximum_mib=16
+    )
+    store.initialize()
+    now = time.time()
+    store.begin_coverage((source,), started_at=now - 20, initial_values={source: (now - 21, False)})
+    page = store.page(*source, start=now - 10, end=now, limit=10)
+    assert page.entries == ()
+    assert page.capture_intervals == ((now - 20, None, now - 21, False),)
+    store.end_coverage((source,), ended_at=now - 5, outcome="disconnected")
+    store.begin_coverage((source,), started_at=now - 2)
+    page = store.page(*source, start=now - 20, end=now, limit=10)
+    assert page.coverage == "partial_coverage"
+    assert page.capture_intervals[1][2:] == (None, None)
+
+
+def test_schema_six_migration_preserves_events_without_initial_value_backfill(tmp_path):
+    source = ("control", "state")
+    store = EventHistoryStore(
+        (tmp_path / "history.sqlite3").resolve(), retention_days=90, maximum_mib=16
+    )
+    store.initialize()
+    now = time.time()
+    store.begin_coverage((source,), started_at=now - 20)
+    store.record_transition(*source, observed_at=now - 10, old_value=0, new_value=1)
+    with sqlite3.connect(store.path) as db:
+        db.execute("ALTER TABLE coverage DROP COLUMN initial_value")
+        db.execute("ALTER TABLE coverage DROP COLUMN initial_observed_at")
+        db.execute("PRAGMA user_version = 6")
+    store.prepare_chart_read()
+    page = store.page(*source, start=now - 20, end=now, limit=10)
+    assert len(page.entries) == 1
+    assert page.capture_intervals[0][2:] == (None, None)
+    with sqlite3.connect(store.path) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 7
+
+
+def test_retention_truncation_drops_obsolete_initial_evidence(tmp_path):
+    source = ("control", "state")
+    store = EventHistoryStore(
+        (tmp_path / "history.sqlite3").resolve(), retention_days=1, maximum_mib=16
+    )
+    store.initialize()
+    now = time.time()
+    start = now - 90000
+    store.begin_coverage((source,), started_at=start, initial_values={source: (start, 1)})
+    store.record_transition(*source, observed_at=start + 1, old_value=1, new_value=2)
+    page = store.page(*source, start=now - 10, end=now, limit=10)
+    assert page.capture_intervals[0][0] > start
+    assert page.capture_intervals[0][2:] == (None, None)
+
+
+def test_bounded_capture_metadata_reports_truncation(tmp_path):
+    source = ("control", "state")
+    store = EventHistoryStore(
+        (tmp_path / "history.sqlite3").resolve(), retention_days=90, maximum_mib=16
+    )
+    store.initialize()
+    now = time.time()
+    for i in range(130):
+        start = now - 1000 + i * 2
+        store.begin_coverage((source,), started_at=start, initial_values={source: (start, 0)})
+        store.end_coverage((source,), ended_at=start + 1, outcome="disconnected")
+    page = store.page(*source, start=now - 1001, end=now, limit=10)
+    assert len(page.capture_intervals) == 128
+    assert page.capture_intervals_truncated
+    assert page.coverage == "partial_coverage"
+
+
+def test_size_eviction_invalidates_every_completed_phase_in_deleted_prefix(tmp_path, monkeypatch):
+    source = ("control", "state")
+    store = EventHistoryStore(
+        (tmp_path / "history.sqlite3").resolve(), retention_days=90, maximum_mib=16
+    )
+    store.initialize()
+    now = time.time()
+    first, second, unaffected = now - 1000, now - 700, now - 300
+    for start in (first, second):
+        store.begin_coverage((source,), started_at=start, initial_values={source: (start, 0)})
+        for i in range(150):
+            store.record_transition(
+                *source, observed_at=start + i + 1, old_value=i, new_value=i + 1
+            )
+        store.end_coverage((source,), ended_at=start + 151, outcome="disconnected")
+    store.begin_coverage((source,), started_at=unaffected, initial_values={source: (unaffected, 7)})
+    sizes = iter((store.maximum_bytes + 1, 0))
+    with monkeypatch.context() as patch:
+        patch.setattr(store, "_used_database_bytes", lambda _db: next(sizes))
+        with store._opened() as db:
+            db.execute("BEGIN IMMEDIATE")
+            assert store._prune(db, now=now)
+            db.execute("COMMIT")
+    page = store.page(*source, start=first, end=now, limit=100)
+    assert len(page.entries) == 44
+    assert all(phase[0] > first for phase in page.capture_intervals)
+    assert page.capture_intervals[0][0] > second
+    assert page.capture_intervals[0][2:] == (None, None)
+    assert page.capture_intervals[1][2:] == (unaffected, 7)
+    assert page.coverage == "partial_coverage"
+
+
 def test_source_inventory_page_filters_before_limiting_many_hidden_sources(tmp_path):
     store = EventHistoryStore(
         (tmp_path / "event-history.sqlite3").resolve(), retention_days=90, maximum_mib=16
@@ -300,7 +403,7 @@ def test_chart_read_upgrades_v5_and_empty_store_without_maintenance(tmp_path, mo
     monkeypatch.setattr(store, "_prune", lambda *_args, **_kwargs: pytest.fail("maintenance"))
     assert store.prepare_chart_read() == 0
     with sqlite3.connect(store.path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 7
         assert (
             db.execute("SELECT mutation_generation FROM history_metadata WHERE id = 1").fetchone()[
                 0
@@ -345,7 +448,7 @@ def test_source_inventory_page_upgrades_v5_store(tmp_path):
     assert page == (("control", "state", True, None),)
     assert cursor is None
     with sqlite3.connect(store.path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 7
 
 
 def test_v4_logical_bytes_migrate_in_bounded_batches_with_concurrent_writes(tmp_path):
@@ -367,7 +470,7 @@ def test_v4_logical_bytes_migrate_in_bounded_batches_with_concurrent_writes(tmp_
 
     assert store.snapshot((source,)).sources[0].logical_value_bytes is None
     with sqlite3.connect(path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 7
         assert (
             connection.execute(
                 "SELECT COUNT(*) FROM events WHERE logical_value_bytes IS NOT NULL"
@@ -783,8 +886,11 @@ async def test_monitor_records_updates_following_the_initial_baseline_in_one_bat
         def initialize(self) -> None:
             pass
 
-        def begin_coverage(self, _sources: object, *, started_at: float) -> None:
+        def begin_coverage(
+            self, _sources: object, *, started_at: float, initial_values: object
+        ) -> None:
             assert started_at > 0
+            assert initial_values == {source: (started_at, 0.0)}
 
         def record_transition(
             self,

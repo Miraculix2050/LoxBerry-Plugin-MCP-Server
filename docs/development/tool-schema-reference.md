@@ -1,5 +1,31 @@
 # Tool schema reference
 
+## Shared history time and coverage evidence (#437)
+
+`loxone_get_statistics.data.coverage_evidence` and local Event History's
+`coverage_evidence` use `history_evidence.v1`: UTC and half-open internal
+intervals, source evidence kind, bounded intervals/point count and endpoints, limitations
+and explicit truncation. Existing inclusive filters and cursors remain unchanged.
+Statistics metadata describes the returned page only; samples establish points,
+not continuity. Documented hourly difference records establish their one-hour
+intervals; other aggregate positions and legacy local-clock conversion can remain
+unverified. No interpolation or guessed sampling rate is introduced.
+
+Event History adds at most 128 `capture_intervals` with phase start/end and an
+optional persisted initial value/observation timestamp. The value applies at
+phase start, not query start; later transitions must be replayed. Every read/page
+requires fresh caller visibility. Schema 6 migrates additively to 7 without
+backfilling initial values. Reconnects start new phases. Retention or size eviction
+invalidates obsolete initial evidence. More than 128 overlapping phases reports
+truncation/partial coverage rather than complete coverage.
+
+Pure source-time helpers require explicit IANA zones for local calendar boundaries
+and reject ambiguous/nonexistent local timestamps. The legacy public timestamp
+shape remains compatible and explicitly unverified. Supported LoxBerry runtimes
+use installed system IANA data; pinned `tzdata` is a development fallback for
+Windows tests. This is not a separate history cache or native Control History
+decoder.
+
 ## Bounded native-series semantics (#435)
 
 `capabilities.statistics[].semantics`, observability `native_statistics[].semantics`
