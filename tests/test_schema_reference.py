@@ -87,6 +87,7 @@ EXPECTED_TOOLS = {
     "loxone_get_project_status",
     "loxone_get_room_snapshot",
     "loxone_get_skill_guide",
+    "loxone_get_installation_profile",
     "loxone_get_state_semantics",
     "loxone_get_active_alerts",
     "loxone_get_system_messages",

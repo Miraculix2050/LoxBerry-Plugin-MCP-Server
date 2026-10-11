@@ -7958,6 +7958,13 @@ def register_tool_surface(
 ) -> None:
     """Register one complete live or synthetic MCP tool surface."""
     register_skill_tool(server)
+    from mcpserver.installation_profile_tools import register_profile_read_tool
+
+    register_profile_read_tool(
+        server,
+        runtime,
+        knx_store_path.parent.parent / "installation-profile.json" if knx_store_path else None,
+    )
     register_read_tools(server, runtime, control_enabled=control_enabled)
     if runtime is not None:
         register_project_tools(server, runtime, project_config_store, knx_store_path=knx_store_path)

@@ -14,6 +14,7 @@
       'loxone_get_state_semantics', 'loxone_get_active_alerts', 'loxone_get_states',
       'loxone_get_system_messages',
       'loxone_get_notifications',
+      'loxone_get_installation_profile',
       'loxone_get_structure_overview', 'loxone_get_room_snapshot',
       'loxone_list_global_metadata', 'loxone_get_weather', 'loxone_get_project_status',
       'loxone_find_project_objects', 'loxone_describe_project_object',
