@@ -158,6 +158,12 @@ def test_temperature_truncation_and_unrelated_states_do_not_invent_units():
     )
     descriptor, _ = resolve(c, "tempActual", 20)
     assert descriptor.unit is None and descriptor.display_format_truncated
+    descriptor, _ = resolve(replace(c, format=None), "tempActual", 20)
+    assert descriptor.reason == "metadata_truncated" and descriptor.unit is None
+    assert any(
+        source.reference == "details.format" and "display_format_truncated" in source.fields
+        for source in descriptor.sources
+    )
     descriptor, _ = resolve(replace(c, format="x" * 100), "tempActual", 20)
     assert descriptor.display_format is None and descriptor.display_format_returned_length == 0
     descriptor, _ = resolve(

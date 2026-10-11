@@ -204,12 +204,15 @@ def _resolve_measurement(
         # The documented temperature field provides the quantity;
         # only a complete explicit unit provides Celsius/Fahrenheit.
         unit_match = re.fullmatch(r"(?:%[0-9]*(?:\.[0-9]+)?f\s*)?°([CF])", control.format or "")
-        if control.format is not None:
+        if (
+            result.display_format_total_length is not None
+            or "format" in control.semantics_invalid_fields
+        ):
             result.sources.append(
                 SemanticsSource(
                     "structure_file",
                     "details.format",
-                    ("display_format",),
+                    ("display_format", "display_format_total_length", "display_format_truncated"),
                     document_version="17.1",
                 )
             )
@@ -249,6 +252,8 @@ def _resolve_measurement(
             }
             if result.unit is None:
                 result.interpretation_status, result.reason = "partial", "metadata_only"
+                if result.display_format_truncated:
+                    result.reason = "metadata_truncated"
                 if "format" in control.semantics_invalid_fields:
                     result.reason = "invalid_structure_metadata"
         else:
