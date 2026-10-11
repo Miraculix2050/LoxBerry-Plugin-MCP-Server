@@ -8,6 +8,8 @@
     const enabled = document.getElementById(`${prefix}-enabled`);
     const rows = document.getElementById(`${prefix}-bindings`);
     const status = document.getElementById(`${prefix}-status`);
+    const loading = document.getElementById(`${prefix}-loading`);
+    const announcement = document.getElementById(`${prefix}-announcement`);
     let state = null;
     let busy = false;
     const ask = (message) => new Promise((resolve) => {
@@ -20,6 +22,11 @@
       document.getElementById('knx-confirm-cancel').focus();
     });
     const api = async (action, payload = {}) => {
+      if (action === `${actionPrefix}_page`) {
+        loading.hidden = false;
+        announcement.textContent = announcement.dataset.loading;
+        status.textContent = section.dataset.loading;
+      }
       const response = await fetch('knx.cgi', {
         method: 'POST', credentials: 'same-origin',
         headers: {'Content-Type': 'application/x-www-form-urlencoded'},
@@ -72,6 +79,8 @@
       try { await operation(); status.textContent = ''; }
       catch (_) { status.textContent = section.dataset.failed; }
       finally {
+        loading.hidden = true;
+        announcement.textContent = '';
         busy = false; section.removeAttribute('aria-busy');
         section.querySelectorAll('button, input').forEach((control) => { control.disabled = !state; });
         document.getElementById(`${prefix}-reload`).disabled = false;

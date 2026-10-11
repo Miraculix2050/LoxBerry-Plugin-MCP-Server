@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Show localized KNX loading hints in the affected section headings on initial
+  page load and data refresh, including collapsed cards. Distinguish pending
+  OAuth session restoration from disconnected state and clear loading hints
+  after success or failure while retaining error messages (#490).
+
 - Add an opt-in native EFM result view to `loxone_read_controls` for freshly
   verified Loxone administrators on firmware 17.2.8.28. Preserve caller-session
   authorization, activated history gates, unknown units/period boundaries and

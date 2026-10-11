@@ -12,11 +12,12 @@
   const elements = Object.fromEntries(['connect', 'disconnect', 'run', 'status', 'summary',
     'coverage', 'coverage-data', 'rows', 'count', 'next', 'origin-warning', 'origin-link',
     'connection-badge', 'session-expiry', 'session-expiry-time', 'access-scopes',
-    'scope-unavailable', 'scope-list']
+    'scope-unavailable', 'scope-list', 'loading', 'announcement']
     .map((key) => [key, document.getElementById(`knx-project-${key}`)]));
   const channel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('mcp-explorer-session') : null;
   let frame = null;
   let busy = false;
+  let restoring = true;
   let generation = 0;
   let expiryTimer = null;
   const message = (text, kind) => {
@@ -37,6 +38,11 @@
   };
   const controls = () => {
     const connected = Boolean(state.oauth && state.oauth.resumeUntil > Date.now());
+    elements.loading.hidden = !busy && !restoring;
+    elements.loading.textContent = label(restoring ? 'restoringSession' : 'working');
+    const announcement = elements.loading.hidden ? '' : elements.loading.textContent;
+    if (elements.announcement.textContent !== announcement) elements.announcement.textContent = announcement;
+    elements['connection-badge'].hidden = restoring && !connected;
     elements['connection-badge'].textContent = label(connected ? 'connected' : 'disconnected');
     elements['connection-badge'].dataset.kind = connected ? 'success' : 'inactive';
     elements['session-expiry'].hidden = !connected;
@@ -70,6 +76,7 @@
     elements.next.disabled = blocked || !state.oauth || !frame?.cursor;
   };
   const clearSession = () => {
+    restoring = false;
     window.clearTimeout(expiryTimer);
     explorerState.clear();
     clearResult();
@@ -101,13 +108,14 @@
     addTranscript: () => { /* This page does not retain transport payloads. */ }});
   const run = async (operation) => {
     if (busy || page.getAttribute('aria-busy') === 'true') return;
-    busy = true; controls(); message(label('working'), 'working');
+    busy = true; ui.setAttribute('aria-busy', 'true');
+    controls(); message(label(restoring ? 'restoringSession' : 'working'), 'working');
     try { await operation(); }
     catch (error) {
       if (error?.httpStatus === 401 || error?.sessionCleared === true) clearSession();
       clearResult(); originWarning(error);
       message(`${label('error')}: ${error instanceof Error ? error.message : label('error')}`, 'error');
-    } finally { busy = false; controls(); }
+    } finally { busy = false; ui.removeAttribute('aria-busy'); controls(); }
   };
   const relation = (value) => label({common: 'common', import_only: 'importOnly',
     observed_project_only: 'observedProjectOnly'}[value] || 'limited');
@@ -272,6 +280,7 @@
   });
   page.addEventListener('knx-idle', controls);
   controls();
+  message(label('restoringSession'), 'working');
   const restore = async () => {
     const request = generation;
     try {
@@ -287,6 +296,7 @@
       explorerState.setTools(tools);
       scheduleExpiry(); message(label('connected'));
     } catch (error) { if (request === generation) { clearSession(); originWarning(error); } }
+    finally { restoring = false; controls(); }
   };
   if (page.getAttribute('aria-busy') === 'true') {
     page.addEventListener('knx-idle', () => void run(restore), {once: true});
