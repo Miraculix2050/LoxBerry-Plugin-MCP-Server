@@ -258,6 +258,10 @@ device validity, scaling, byte order, bus load or current measurement is evaluat
 Optional `native_result_view` adds one native EFM read. Its fixed view allowlist,
 admin-first authorization, empty state rows, independent source quality and
 budgets are documented in [Native energy results](native-energy-results.md).
+`native_efm_result.v2` adds versioned partial semantics, provenance and report
+applicability; actual Gpwr/Ppwr/Spwr allow metadata-bound `W`/`kW` units. Other
+units, signs and physical boundaries remain unknown. Historical components keep
+the existing independently evidenced history contract.
 Omission/null keeps the contract below unchanged and does not fetch native data.
 `targets` contains 1–25 unique `{control_uuid, state_names?}` objects; identifiers
 and exact state names are 1–128 characters. Each optional name list has 1–100

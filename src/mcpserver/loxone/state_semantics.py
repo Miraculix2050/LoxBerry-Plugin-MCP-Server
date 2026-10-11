@@ -6,15 +6,18 @@ import json
 import math
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from itertools import islice
-from typing import Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Literal
 
 from pydantic import Field
 
 from .models import Control, LoxoneIdentity, LoxoneStructure, StatisticSeries
 from .window_states import WINDOW_DOCUMENT, decode_window_states
+
+if TYPE_CHECKING:
+    from .native_efm import NativeEfmResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -295,6 +298,159 @@ def _resolve_measurement(
 
 class StateSemanticsResolver:
     """Resolve only exact, reviewed type/state rules, without I/O or role inference."""
+
+    def resolve_native_efm(
+        self, result: NativeEfmResult, before: Control, after: Control
+    ) -> NativeEfmResult:
+        """Bind only documented aggregate power fields to unchanged EFM metadata."""
+        rule = "native_efm_actual_semantics_17_2_8_28.v1"
+        limitations = [
+            "sign_convention_unverified",
+            "measurement_boundary_unverified",
+            "physical_observation_time_unverified",
+            "historical_date_selection_unavailable",
+            "self_consumption_unavailable",
+        ]
+        enriched = result.model_copy(
+            deep=True,
+            update={
+                "schema_version": "native_efm_result.v2",
+                "semantic_rule_version": rule if result.view == "actual" else None,
+                "source_metadata_status": "not_applicable",
+                "report_applicability": (
+                    "current_snapshot"
+                    if result.view == "actual"
+                    else "lifetime_accumulator"
+                    if result.view == "lifetime"
+                    else "current_calendar_period"
+                ),
+                "report_limitations": limitations,
+            },
+        )
+        if result.view != "actual":
+            enriched.report_limitations.extend(
+                ["period_units_unverified", "period_boundaries_unverified"]
+            )
+            return enriched
+        if (
+            before.control_type != "EFM"
+            or after.control_type != "EFM"
+            or before.uuid != after.uuid
+            or before.action_uuid != after.action_uuid
+        ):
+            enriched.source_metadata_status = "changed"
+            enriched.report_limitations.append("source_metadata_changed")
+            return enriched
+        roles = {
+            "Gpwr": "grid_power",
+            "Ppwr": "production_power",
+            "Spwr": "storage_power",
+            "Cpwr": "load_power",
+        }
+        enriched.fields = [
+            field.model_copy(
+                update={
+                    "measurement_quantity": "power",
+                    "measurement_role": roles[field.name],
+                    "interpretation_status": "partial",
+                }
+            )
+            if field.name in roles
+            else field
+            for field in enriched.fields
+        ]
+        enriched.semantic_sources.append(
+            SemanticsSource(
+                "decoder_rule",
+                _STATUS_DOCUMENT + "#page=66",
+                (
+                    "fields.Gpwr.measurement_quantity",
+                    "fields.Gpwr.measurement_role",
+                    "fields.Ppwr.measurement_quantity",
+                    "fields.Ppwr.measurement_role",
+                    "fields.Spwr.measurement_quantity",
+                    "fields.Spwr.measurement_role",
+                ),
+                rule_id=rule,
+                document_version="17.1",
+                firmware_version=result.firmware,
+            )
+        )
+        enriched.semantic_sources.append(
+            SemanticsSource(
+                "decoder_rule",
+                _STATUS_DOCUMENT + "#page=67",
+                ("fields.Cpwr.measurement_quantity", "fields.Cpwr.measurement_role"),
+                rule_id=rule,
+                document_version="17.1",
+                firmware_version=result.firmware,
+            )
+        )
+        previous = (
+            (before.efm.actual_format, before.efm.actual_format_status)
+            if before.efm
+            else (None, "missing")
+        )
+        current = (
+            (after.efm.actual_format, after.efm.actual_format_status)
+            if after.efm
+            else (None, "missing")
+        )
+        if previous != current:
+            enriched.source_metadata_status = "changed"
+            enriched.report_limitations.append("source_metadata_changed")
+            return enriched
+        if current[1] != "retained":
+            enriched.source_metadata_status = "invalid" if current[1] == "invalid" else "missing"
+            enriched.report_limitations.append("power_units_unverified")
+            return enriched
+        source_format = current[0] or ""
+        match = (
+            re.fullmatch(r"%[0-9]*(?:\.[0-9]+)?f *(W|kW)", source_format)
+            if len(source_format) <= 128
+            else None
+        )
+        if match is None:
+            enriched.source_metadata_status = "unsupported"
+            enriched.report_limitations.append("power_units_unverified")
+            return enriched
+        enriched.source_metadata_status = "stable"
+        enriched.semantic_sources[0] = replace(
+            enriched.semantic_sources[0],
+            fields=(
+                *enriched.semantic_sources[0].fields,
+                "fields.Gpwr.unit",
+                "fields.Ppwr.unit",
+                "fields.Spwr.unit",
+            ),
+        )
+        enriched.fields = [
+            field.model_copy(update={"unit": match[1]})
+            if field.name in {"Gpwr", "Ppwr", "Spwr"}
+            else field
+            for field in enriched.fields
+        ]
+        enriched.semantic_sources.append(
+            SemanticsSource(
+                "structure_file",
+                "controls[target].details.actualFormat",
+                ("fields.Gpwr.unit", "fields.Ppwr.unit", "fields.Spwr.unit"),
+                rule_id=rule,
+                document_version="17.1",
+                firmware_version=result.firmware,
+            )
+        )
+        enriched.semantic_sources.append(
+            SemanticsSource(
+                "decoder_rule",
+                _STATUS_DOCUMENT + "#page=64",
+                ("fields.Gpwr.unit", "fields.Ppwr.unit", "fields.Spwr.unit"),
+                rule_id=rule,
+                document_version="17.1",
+                firmware_version=result.firmware,
+            )
+        )
+        return enriched
 
     def source_reference(
         self,

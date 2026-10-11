@@ -533,14 +533,25 @@ Administrator** auf Firmware **17.2.8.28**. Verwende genau ein Ziel ohne
 `state_names` und `include_semantics=false`. Perioden benötigen zusätzlich
 `loxone:history` und aktivierte Historie. Ein LoxBerry-Admin-Login belegt diese
 Berechtigung nicht. Native Ergebnisse stehen getrennt in `native_result`, mit
-leeren `values` und null gelesenen States. Einheiten, Vorzeichen, Skalierung,
-Währung, physische Beobachtungsfrische und Periodengrenzen bleiben unbekannt.
+leeren `values` und null gelesenen States. Für `Gpwr`, `Ppwr` und `Spwr` werden
+Leistungsgröße und W/kW aus dem unveränderten, belegten EFM-Format ergänzt.
+`Cpwr` ist belegte Lastleistung mit unbekannter Einheit; `Rest` bleibt unbekannt.
+Vorzeichen, Skalierung, Währung, physische Beobachtungsfrische und Periodengrenzen
+bleiben unbekannt. Das Ergebnis `native_efm_result.v2` nennt Quellenregel und
+Herkunft; bei geändertem Format bleiben Einheiten unbekannt.
 Fehlende Felder einschließlich `Rest` dürfen nicht als Wert 0 interpretiert werden.
 Kalenderansichten sind laufende native Perioden, keine beliebigen historischen
 Zeiträume; Eigenverbrauchs- oder Bilanzrechnung wird nicht angeboten. Ohne die
 Option bleiben zwischengespeicherte State-Lesungen unverändert. Andere Firmware
 und native Nicht-Admin-Lesungen bleiben nicht unterstützt; Geräteabnahme wird
 getrennt ausgewiesen.
+
+Für datierte Energieberichte verwende bestätigte Historienbindungen und
+`loxone_analyze_history(operation="energy")` mit deren Semantik und Abdeckung.
+Aktuelle native Leistungswerte bleiben getrennte Momentaufnahmen; `get/day`
+liefert keine Werte für gestern. Fehlende Eigenverbrauchs-, Speicher- oder
+Restlastkomponenten bleiben unbekannt. `report_applicability` und
+`report_limitations` nennen die Eignung und Grenzen der nativen Komponenten.
 
 Beispiel für zwischengespeicherte States:
 

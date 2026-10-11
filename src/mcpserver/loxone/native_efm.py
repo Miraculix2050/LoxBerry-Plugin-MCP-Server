@@ -8,6 +8,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from mcpserver.loxone.state_semantics import SemanticsSource
+
 type NativeResultView = Literal["actual", "day", "week", "month", "year", "lifetime"]
 VIEWS = frozenset({"actual", "day", "week", "month", "year", "lifetime"})
 FIRMWARE = "17.2.8.28"
@@ -25,7 +27,12 @@ class NativeEfmField(BaseModel):
     name: str
     status: Literal["present", "missing", "invalid"]
     value: float | None = None
-    unit: None = None
+    unit: Literal["W", "kW"] | None = None
+    measurement_quantity: Literal["power"] | None = None
+    measurement_role: (
+        Literal["grid_power", "production_power", "storage_power", "load_power"] | None
+    ) = None
+    interpretation_status: Literal["partial", "unknown"] = "unknown"
     scale: None = None
     sign_convention: None = None
     currency: None = None
@@ -34,7 +41,17 @@ class NativeEfmField(BaseModel):
 class NativeEfmResult(BaseModel):
     source_kind: Literal["native_efm_result"] = "native_efm_result"
     rule_version: Literal["native_efm_17_2_8_28.v1"] = "native_efm_17_2_8_28.v1"
-    schema_version: Literal["native_efm_result.v1"] = "native_efm_result.v1"
+    schema_version: Literal["native_efm_result.v1", "native_efm_result.v2"] = "native_efm_result.v1"
+    semantic_rule_version: Literal["native_efm_actual_semantics_17_2_8_28.v1"] | None = None
+    source_metadata_status: Literal[
+        "not_requested", "not_applicable", "missing", "invalid", "unsupported", "stable", "changed"
+    ] = "not_requested"
+    semantic_sources: list[SemanticsSource] = Field(default_factory=list, max_length=8)
+    report_applicability: (
+        Literal["current_snapshot", "current_calendar_period", "lifetime_accumulator"] | None
+    ) = None
+    historical_date_selection_supported: Literal[False] = False
+    report_limitations: list[str] = Field(default_factory=list, max_length=16)
     firmware: Literal["17.2.8.28"] = "17.2.8.28"
     view: NativeResultView
     retrieved_at: str

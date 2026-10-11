@@ -66,6 +66,7 @@ from mcpserver.loxone.native_efm import (
     decode_native_efm,
 )
 from mcpserver.loxone.project.service import ProjectService
+from mcpserver.loxone.state_semantics import StateSemanticsResolver
 from mcpserver.loxone.statistics import (
     StatisticPoint,
     StatisticsCache,
@@ -1005,6 +1006,7 @@ class LoxoneRuntime:
                                 "unsupported_source", "Native EFM firmware or identity unsupported"
                             )
                         await self._require_access(access)
+                        native_control = control
                         value = await asyncio.wait_for(
                             session.native_efm_result(action_uuid, view), timeout
                         )
@@ -1029,6 +1031,9 @@ class LoxoneRuntime:
                                 "unsupported_source", "Native EFM source identity changed"
                             )
                         await self._require_access(access)
+                        result = StateSemanticsResolver().resolve_native_efm(
+                            result, native_control, control
+                        )
                         return control, refreshed, result
                     finally:
                         if session is not None:

@@ -7,7 +7,7 @@ import re
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     from mcpserver.loxone.models import Control
@@ -44,6 +44,8 @@ class Projection:
     residual: tuple[tuple[str, str | bool], ...] = ()
     omitted_subtrees: int = 0
     diagnostics: tuple[str, ...] = ()
+    actual_format: str | None = None
+    actual_format_status: Literal["missing", "retained", "invalid"] = "missing"
 
 
 def residual_metadata(
@@ -67,10 +69,28 @@ def normalize(details: Mapping[str, object]) -> Projection:
     diagnostics: list[str] = []
     omitted = 0
     residual = residual_metadata(details, diagnostics)
+    raw_format = details.get("actualFormat")
+    format_status: Literal["missing", "retained", "invalid"] = (
+        "missing" if "actualFormat" not in details else "invalid"
+    )
+    actual_format = None
+    if isinstance(raw_format, str) and 0 < len(raw_format) <= 128:
+        try:
+            raw_format.encode("utf-8")
+        except UnicodeError:
+            pass
+        else:
+            actual_format, format_status = raw_format, "retained"
     used = len(json.dumps(residual, ensure_ascii=True).encode())
     nodes = details.get("nodes")
     if not isinstance(nodes, list):
-        return Projection((), residual, diagnostics=(*diagnostics, "invalid_nodes_collection"))
+        return Projection(
+            (),
+            residual,
+            diagnostics=(*diagnostics, "invalid_nodes_collection"),
+            actual_format=actual_format,
+            actual_format_status=format_status,
+        )
 
     def visit(items: list[object], parent: tuple[int, ...]) -> None:
         nonlocal omitted, used
@@ -196,7 +216,9 @@ def normalize(details: Mapping[str, object]) -> Projection:
         diagnostics.append("repeated_node_identity")
     if omitted:
         diagnostics.append("participant_limit")
-    return Projection(tuple(rows), tuple(residual), omitted, tuple(diagnostics))
+    return Projection(
+        tuple(rows), tuple(residual), omitted, tuple(diagnostics), actual_format, format_status
+    )
 
 
 def describe(projection: Projection, visible: Mapping[str, Control]) -> dict[str, object]:

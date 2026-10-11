@@ -354,12 +354,22 @@ by the sensor-only V1 analyzer. No live actor writes or hardware support are imp
    administrator on exact firmware 17.2.8.28; a LoxBerry login does not grant it.
    Period views also require `loxone:history` and administrator-enabled history.
    `native_result` is separate from cached states: `values=[]`, zero state counts,
-   semantics omitted. Check field delivery separately from unknown units, scale,
-   signs, currency, observation freshness and period boundaries. Calendar views
+   state semantics omitted. In `native_efm_result.v2`, only Gpwr/Ppwr/Spwr gain
+   metadata-bound W/kW units and documented power roles; Cpwr is load power with
+   unknown unit and Rest stays unknown. Check rule/provenance and metadata status:
+   changed/missing/invalid/unsupported metadata never supplies units. Check field delivery
+   separately from unknown scale, signs, currency, observation freshness and
+   period boundaries. `semantic_complete` remains false. Calendar views
    describe current running periods, not yesterday or arbitrary historic dates.
    Missing `Rest` is not zero. Do not calculate a balance, infer self-consumption,
    self-sufficiency or aliases, or retry native reads automatically. Omit/null
    `native_result_view` retains the existing cached-state workflow without probes.
+   For dated energy components use confirmed bindings and the existing
+   `loxone_analyze_history(operation="energy")` with source semantics and coverage;
+   keep their time windows separate from current native power snapshots. Native
+   fields are not synthetic statistic/state selectors. Check `report_applicability`
+   and `report_limitations`; missing self-consumption/storage/residual components
+   remain unknown.
    For reference-only selection, hidden diagnosis, or servers without this tool,
    call `loxone_describe_control(view="state_refs")` to get
    complete normalized state-name/UUID references from the freshly loaded
