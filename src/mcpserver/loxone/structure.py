@@ -25,6 +25,7 @@ from mcpserver.loxone.models import (
     WindowMonitorItem,
     WindowMonitorSummary,
 )
+from mcpserver.loxone.system_messages import identifier
 
 _REFERENCED_ONLY_INTERNAL = 1 << 0
 _READ_ONLY_INTERNAL = 1 << 1
@@ -1051,6 +1052,15 @@ def normalize_structure(
         budget=budget,
     )
     room_groups, room_group_uuids = _room_groups(document)
+    # Preserve only the exact source capability and permission bits, not user metadata.
+    user = ms_info.get("currentUser")
+    rights = user.get("userRights") if isinstance(user, Mapping) else None
+    centers = document.get("messageCenter")
+    center = (
+        next(iter(centers.values())) if isinstance(centers, Mapping) and len(centers) == 1 else None
+    )
+    center_uuid = center.get("uuidAction") if isinstance(center, Mapping) else None
+    center_uuid = identifier(center_uuid)
     return LoxoneStructure(
         identity=LoxoneIdentity(
             username=username,
@@ -1082,4 +1092,6 @@ def normalize_structure(
         global_metadata=_global_metadata(document, room_groups=room_groups),
         room_groups=room_groups,
         weather=_weather_metadata(document),
+        message_center_uuid=center_uuid,
+        user_rights=rights if type(rights) is int and 0 <= rights < 2**32 else None,
     )

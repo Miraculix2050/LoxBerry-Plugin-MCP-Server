@@ -22,6 +22,10 @@
 
 ## Product limits
 
+- `loxone_get_system_messages` is experimental and version-bound to firmware
+  17.2.8.28. Its source contract was observed on Gen. 1; plugin/browser acceptance
+  must be recorded separately. No Gen. 2 or exhaustive retained-history promise.
+
 - One Miniserver target is supported.
 - External or cloud-hosted MCP access is unsupported.
 - Read-only tools are available within the signed-in Loxone user's visibility.

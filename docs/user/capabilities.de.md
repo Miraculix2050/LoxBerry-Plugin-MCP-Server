@@ -730,3 +730,8 @@ Kommunikationsobjekt-Zuordnungen. #419 und das Gesamttracking #411 bleiben offen
 bis unveränderter und gezielt korrigierter Import, DPTs/Flags/Sicherheit,
 Gruppenhierarchie und Objektzuordnungen für zwei-/dreistufigen Stil in ETS
 nachgewiesen sind; ETS-Version dokumentieren und frischen Export vergleichen.
+
+## Systemmeldungen
+
+Siehe [Systemmeldungen](system-messages.de.md) für experimentelle aktuelle und
+historische Lesezugriffe, Quellenrechte, Grenzen und belegte Folgeaufgaben.

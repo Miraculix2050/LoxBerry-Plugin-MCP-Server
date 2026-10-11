@@ -750,6 +750,7 @@ def test_tool_input_schemas_explain_every_argument() -> None:
         "loxone_get_state_semantics": {"control_uuid", "state_names", "offset", "limit"},
         "loxone_read_controls": {"targets", "include_semantics"},
         "loxone_get_active_alerts": {"limit"},
+        "loxone_get_system_messages": {"mode", "limit", "cursor"},
         "loxone_operate_control": {
             "control_uuid",
             "action",

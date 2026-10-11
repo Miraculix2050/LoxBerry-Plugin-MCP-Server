@@ -57,6 +57,14 @@ from mcpserver.loxone.statistics import (
     StatisticsCache,
     parse_statistic_points,
 )
+from mcpserver.loxone.system_messages import (
+    SUPPORTED_FIRMWARE,
+    SYSTEM_MESSAGES_PERMISSION,
+    MessageSource,
+    MessageSourceError,
+    canonical_serial,
+    decode_messages,
+)
 
 _LOXONE_EPOCH_UNIX = 1_230_768_000
 _REFRESH_BEFORE_SECONDS = 24 * 60 * 60
@@ -996,6 +1004,93 @@ class LoxoneRuntime:
         entries = normalize_control_history_entries(raw)
         _history_phase(trace_id, "history_parse", parse_started)
         return control, entries
+
+    async def get_system_messages(self, access: StoredAccessToken) -> MessageSource:
+        """Read through a fresh caller session, with independent source permission."""
+        async with self.call_slot(access):
+            if (
+                self.token_health is not None
+                and self.token_health.get(access.family_id).confirmation_required
+            ):
+                raise ControlOperationError(
+                    "permission_denied", "Token use requires administrator confirmation"
+                )
+            session: LoxoneWebSocketSession | None = None
+            token: LoxoneToken | None = None
+            try:
+                token = self.token_store.get(
+                    access.family_id, access.miniserver_id, access.identity_id
+                )
+                if token is None:
+                    raise ControlOperationError(
+                        "permission_denied", "Loxone authorization is unavailable"
+                    )
+                session = await self._open_session(
+                    token, owner="tool_request", phase="session_establishment", access=access
+                )
+                if self.token_health is not None:
+                    self.token_health.record_successful_authentication(access.family_id)
+                structure = await session.load_structure()
+                rights = structure.user_rights
+                if rights is None or not rights & SYSTEM_MESSAGES_PERMISSION:
+                    raise ControlOperationError(
+                        "permission_denied", "System Messages permission is required"
+                    )
+                center = structure.message_center_uuid
+                if center is None:
+                    raise ControlOperationError(
+                        "unsupported_source", "Exactly one valid Message Center is required"
+                    )
+                probe = await self.client.probe()
+                if probe.firmware not in SUPPORTED_FIRMWARE:
+                    raise ControlOperationError(
+                        "unsupported_source", "Message Center firmware contract is not verified"
+                    )
+                if canonical_serial(probe.serial) != canonical_serial(
+                    structure.identity.miniserver_serial
+                ):
+                    raise ControlOperationError(
+                        "unsupported_source", "Message Center source identity does not match"
+                    )
+                await self._require_access(access)
+                raw = await session.system_messages(center)
+                result = decode_messages(
+                    raw,
+                    firmware=probe.firmware,
+                    serial=structure.identity.miniserver_serial,
+                    center=center,
+                    rights=rights,
+                )
+                await self._require_access(access)
+                return result
+            except LoxoneCommandRejected as exc:
+                if session is None and self.token_health is not None:
+                    self.token_health.record_rejected_authentication(access.family_id)
+                raise ControlOperationError(
+                    "permission_denied", "Miniserver rejected message access"
+                ) from exc
+            except RuntimeAuthorizationError as exc:
+                raise ControlOperationError(
+                    "permission_denied", "Loxone authorization is unavailable"
+                ) from exc
+            except MessageSourceError as exc:
+                raise ControlOperationError("unsupported_source", str(exc)) from exc
+            except (
+                LoxoneTokenStoreError,
+                LoxoneConnectionError,
+                LoxoneProtocolError,
+                TimeoutError,
+            ) as exc:
+                raise ControlOperationError(
+                    "temporarily_unavailable", "System Messages source could not be read"
+                ) from exc
+            finally:
+                try:
+                    if session is not None:
+                        await session.close()
+                finally:
+                    if token is not None:
+                        token.destroy()
 
     async def get_control_notes(
         self, access: StoredAccessToken, control_uuid: str, *, include_hidden: bool = False
