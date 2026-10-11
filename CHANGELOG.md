@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Compare two selected ETS files or a file against the current imported KNX
+  catalog on the shared page (#418). Show bounded source changes, completeness
+  limits and separate manual information without applying data or keeping history.
+  Preserve import previews in a separate draft slot.
+
 - Add an explicit read-only ETS/Loxone address comparison to KNX administration
   and project analysis (#417). Keep primary Loxone names, imported values and
   manual metadata separate; show multiple names, source gaps, freshness and

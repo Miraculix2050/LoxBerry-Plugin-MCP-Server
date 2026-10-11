@@ -553,6 +553,34 @@ Known unresolved API links remain visible in generic project evidence and aggreg
 
 ### KNX management
 
+**Compare ETS inputs** compares two explicitly loaded files or a file against
+the current imported catalog on the same page. It requires LoxBerry admin
+access and no Loxone project login. Loading and comparison change no saved
+data. Select the earlier/reference input and later/comparison input, load each
+file with its encoding/style and declared completeness, then compare. Results
+show addresses and prefix groups only in either input, changed source fields,
+and separate manual address overrides/prefix labels for catalog comparisons.
+Manual-only records are not removed import addresses. File-to-file comparison
+does not assess local overrides. No import history is inferred or retained.
+
+Numeric address identity ignores two-/three-level spelling. Prefix groups keep
+their format/prefix identity. Names and descriptions retain exact spelling;
+DPT declarations compare as sets of normalized identifiers, with unrecognized
+identifiers preserved. File order, equivalent DPT spelling and DPT order do not
+create source changes. Missing, explicitly empty and false differ; optional
+information supplied only by one format remains a genuine information gap.
+Missing from a partial input does not prove deletion in ETS. The current catalog
+may combine imports and has unknown project completeness. The comparison never
+applies a change; importing uses its separate reviewed save flow.
+
+Results are paginated in 50-row pages. A changed target/revision requires newly
+loaded inputs. Contradictory duplicates must be resolved in the file before
+comparison; identical duplicates merge. Temporary comparison drafts expire
+after ten minutes, share the existing 32 MiB total draft budget and permit at
+most 16 MiB per file. They do not replace an unsaved import draft. **Discard
+comparison files and results** clears this admin session's comparison drafts
+while retaining its import preview and all confirmed KNX metadata.
+
 **ETS/Loxone project comparison** requires a separate Loxone login with project
 access. It shows addresses common to both sources, only in the imported catalog,
 or only observed in the authorized parsed project. All relevant primary Loxone
@@ -581,7 +609,7 @@ CSV group rows are distinguished from individual addresses; multiple DPTs remain
 
 For a complete export, select the top-level group-address node in ETS. The importer validates the file but cannot independently prove its completeness for the ETS project. The administrator assigns it to the displayed configured Miniserver.
 
-Load the file, check the target and scope, resolve contradicting duplicates, then choose **Save reviewed import**. Identical duplicates are merged. Preview, cancellation and invalid files do not change saved address data. A valid new draft replaces the previous draft in the same admin session; an invalid upload retains it. Drafts expire after ten minutes and are bound to the session, Miniserver, address revision and manual prefix labels. Changed data requires a new preview.
+Load the file, check the target and scope, resolve contradicting duplicates, then choose **Save reviewed import**. Identical duplicates are merged. Preview, cancellation and invalid files do not change saved address data. A valid new import draft replaces the previous import draft in the same admin session; an invalid upload retains it. Drafts expire after ten minutes and are bound to the session, Miniserver, address revision and manual prefix labels. Changed data requires a new preview.
 
 The default adds/updates import values for addresses included in the file. Absent optional fields become unknown, not intentionally empty; manual field overrides remain. **Use import value** removes that field override when the address is saved. ETS and manual names are displayed separately. Local selection does not give names precedence over Loxone names. Multiple DPT declarations and explicit ETS flags remain source information; they do not replace Loxone `EIBType`.
 

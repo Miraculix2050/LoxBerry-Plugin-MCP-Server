@@ -40,7 +40,8 @@
         'knx_draft_expired', 'knx_session_missing'],
       errorLabels: ['knx_label_limit', 'knx_label_selection_invalid'],
       errorStorage: ['knx_storage_failed', 'knx_draft_storage_failed'],
-      errorQuery: ['knx_query_invalid']
+      errorQuery: ['knx_query_invalid'],
+      errorComparison: ['knx_comparison_invalid', 'knx_comparison_conflicts', 'knx_comparison_no_import']
     };
     const entry = Object.entries(categories).find(([, codes]) => codes.includes(code));
     return entry ? page.dataset[entry[0]] : page.dataset.failed;

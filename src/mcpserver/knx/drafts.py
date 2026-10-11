@@ -58,16 +58,36 @@ class DraftStore:
         finally:
             db.close()
 
-    def create(self, target: str, revision: int, raw: bytes, options: dict[str, Any]) -> str:
+    def create(
+        self,
+        target: str,
+        revision: int,
+        raw: bytes,
+        options: dict[str, Any],
+        *,
+        slot: str = "import",
+    ) -> str:
         if not raw or len(raw) > MAX_FILE_BYTES:
             raise KnxError("knx_file_limit")
-        encoded_options = json.dumps(options, sort_keys=True)
+        if slot not in {"import", "compare_left", "compare_right"}:
+            raise KnxError("knx_draft_invalid")
+        stored_options = dict(options)
+        if slot != "import":
+            stored_options["draft_slot"] = slot
+        else:
+            stored_options.pop("draft_slot", None)
+        encoded_options = json.dumps(stored_options, sort_keys=True)
         if len(encoded_options) > 2 * 1024 * 1024:
             raise KnxError("knx_draft_invalid")
         identifier = secrets.token_hex(24)
         with self.connection() as db:
-            # One active import per browser admin session. Failed parses never reach this call.
-            db.execute("DELETE FROM drafts WHERE session=?", (self.session,))
+            # One draft per purpose/session; comparison inputs never evict an
+            # unsaved import. Legacy drafts without a slot belong to import.
+            db.execute(
+                "DELETE FROM drafts WHERE session=? "
+                "AND coalesce(json_extract(options,'$.draft_slot'),'import')=?",
+                (self.session, slot),
+            )
             count, size = db.execute(
                 "SELECT count(*),coalesce(sum(length(raw)+length(options)),0) FROM drafts"
             ).fetchone()
@@ -104,11 +124,18 @@ class DraftStore:
                 raise KnxError("knx_revision_conflict")
             return bytes(row[0]), json.loads(row[1])
 
-    def discard(self, identifier: object) -> None:
+    def discard(self, identifier: object, *, slots: tuple[str, ...] = ("import",)) -> None:
         if not isinstance(identifier, str) or not re.fullmatch(r"[0-9a-f]{48}", identifier):
             raise KnxError("knx_draft_invalid")
+        if not slots or not set(slots) <= {"import", "compare_left", "compare_right"}:
+            raise KnxError("knx_draft_invalid")
         with self.connection() as db:
-            db.execute("DELETE FROM drafts WHERE id=? AND session=?", (identifier, self.session))
+            placeholders = ",".join("?" for _ in slots)
+            db.execute(
+                "DELETE FROM drafts WHERE id=? AND session=? AND "
+                "coalesce(json_extract(options,'$.draft_slot'),'import') IN (" + placeholders + ")",
+                (identifier, self.session, *slots),
+            )
 
     def update(self, identifier: str, options: dict[str, Any]) -> None:
         encoded = json.dumps(options, sort_keys=True)
@@ -131,3 +158,12 @@ class DraftStore:
             if size + raw_size + len(encoded) > MAX_DRAFT_BYTES:
                 raise KnxError("knx_draft_limit")
             db.execute("UPDATE drafts SET options=? WHERE id=?", (encoded, identifier))
+
+    def discard_comparison(self) -> None:
+        """Clear this session's temporary comparison inputs, retaining imports."""
+        with self.connection() as db:
+            db.execute(
+                "DELETE FROM drafts WHERE session=? "
+                "AND json_extract(options,'$.draft_slot') IN ('compare_left','compare_right')",
+                (self.session,),
+            )

@@ -18,6 +18,7 @@ from mcpserver.loxone.project.taxonomy import parse_taxonomy
 
 from .catalog_service import CatalogService
 from .drafts import DraftStore
+from .file_comparison import FileComparison
 from .import_repository import ImportRepository
 from .model import MAX_FILE_BYTES, KnxError
 from .store import KnxStore
@@ -64,6 +65,9 @@ def dispatch_knx(action: str, payload: object, config_store: AtomicConfigStore) 
         "knx_import_preview",
         "knx_import_apply",
         "knx_import_discard",
+        "knx_compare_load",
+        "knx_compare_page",
+        "knx_compare_discard",
     }
     if action not in allowed or not isinstance(payload, dict):
         raise AdminError("Unsupported KNX action")
@@ -107,6 +111,24 @@ def _run(
         },
         "knx_import_apply": {"target", "draft_id", "preview_token"},
         "knx_import_discard": {"target", "draft_id"},
+        "knx_compare_load": {
+            "target",
+            "file",
+            "side",
+            "encoding",
+            "complete_export",
+            "address_format",
+            "file_format",
+        },
+        "knx_compare_page": {
+            "target",
+            "left_id",
+            "right_id",
+            "revision",
+            "taxonomy_revision",
+            "offset",
+        },
+        "knx_compare_discard": {"target", "draft_id"},
     }
     if action in import_fields and not payload.keys() <= import_fields[action]:
         raise KnxError("knx_preview_invalid")
@@ -144,6 +166,39 @@ def _run(
         taxonomy_revision = hashlib.sha256(
             json.dumps(taxonomy_document, sort_keys=True).encode()
         ).hexdigest()
+    if action.startswith("knx_compare_"):
+        drafts = DraftStore(
+            Path(data_root) / "knx" / "drafts.sqlite3", os.getenv("MCPSERVER_KNX_ADMIN_SESSION", "")
+        )
+        comparison_service = FileComparison(store, drafts, target, taxonomy_document)
+        if action == "knx_compare_load":
+            encoded = payload.get("file")
+            if not isinstance(encoded, str) or len(encoded) > ((MAX_FILE_BYTES + 2) // 3) * 4:
+                raise KnxError("knx_file_limit")
+            try:
+                raw = base64.b64decode(encoded, validate=True)
+            except (binascii.Error, ValueError):
+                raise KnxError("knx_file_invalid") from None
+            return {
+                **comparison_service.load(
+                    raw,
+                    payload.get("side"),
+                    {
+                        "encoding": payload.get("encoding", "auto"),
+                        "file_format": payload.get("file_format", "auto"),
+                        "address_format": payload.get("address_format"),
+                        "complete_export": payload.get("complete_export", False),
+                    },
+                ),
+                "target": token,
+            }
+        if action == "knx_compare_discard":
+            if "draft_id" in payload:
+                drafts.discard(payload["draft_id"], slots=("compare_left", "compare_right"))
+            else:
+                drafts.discard_comparison()
+            return {"discarded": True}
+        return {**comparison_service.page(payload), "target": token}
     if action.startswith("knx_import_"):
         drafts = DraftStore(
             Path(data_root) / "knx" / "drafts.sqlite3",

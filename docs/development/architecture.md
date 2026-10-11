@@ -201,6 +201,18 @@ is the detailed per-object evidence projection.
 
 ## KNX metadata administration
 
+`knx.file_comparison` is an admin-only consumer of the same XML/CSV parsers and
+duplicate selection rules. It compares explicit files or streams the current
+import catalog in a revision-checked read transaction. Numeric address keys,
+exact text, normalized DPT sets and missing/empty/false states drive source
+changes; format-bound group identities and manual sources remain separate.
+It returns at most 50 changes per page and has no import-application or MCP
+read-path role. Two comparison draft slots share the existing session/target/
+revision/expiry and size limits; loading or clearing them retains the separate
+import slot. Legacy drafts without a slot remain import drafts. Comparison
+drafts cannot enter the import preview/application path. There is no persistent
+comparison history and no graph, live signal or ETS deletion inference.
+
 `knx.project_comparison` compares imported address keys with the existing
 authorized `ProjectQueryIndex.knx_by_address` reverse index. The explicit
 `ets_project_comparison` analysis does not change default analysis selection or
