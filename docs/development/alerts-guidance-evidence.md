@@ -23,7 +23,11 @@ defaults, bounded section size and sanitized failures for every section.
 
 ## Verification
 
-- Changed profile: 311 tests passed; formatting, lint and strict typing passed.
+- Changed profile initially passed 311 tests; after integrating the final KNX
+  parent fix, 737 tests passed. Formatting, lint and strict typing passed.
+- Final Full/package candidate: 3,173 tests passed, 215 Windows platform skips;
+  native test ZIP validation passed. The newly pinned development timezone data
+  was installed before the successful Full run; runtime dependencies are unchanged.
 - Bundled skill validator passed with its YAML dependency isolated in temporary
   tooling; no product dependency was added.
 - HTML/JSON schema generation passed using the current registry.
@@ -42,8 +46,26 @@ defaults, bounded section size and sanitized failures for every section.
   bounded authorized project reads and establish intended function before a
   correction. Acceptance is a complete evidenced path or an explicit remaining
   coverage gap. No confirmed defect, causal explanation or write is established.
-- Final follow-up deployment and acceptance remain pending. Display version
-  `0.4.0b4` identifies the installed package, not the Hotswap commit.
+- Final acceptance on 11 October 2026: native MCP delivered current core and
+  `alerts` guidance at revision 73 (`alerts`: 7,372 characters). The tool
+  description is 503 characters / 62 words; schemas and read-only annotations
+  remain unchanged. Section character bounds are not a tokenizer measurement.
+- The final read-only workflow reproduced the snapshot and targeted observations
+  above: four candidates, zero evaluated, three unsupported, one unknown;
+  later current SmokeAlarm level zero; exact mapping; 20-node truncated trace.
+  These sequential observations do not establish simultaneous installation health.
+- After Hotswap and native package installation, SSH SHA-256 checks matched all
+  three changed guidance/runtime files to PR source `3fc8c1b` (the same tree as
+  package source `46a1b225`). Skill revision was 73; systemd was active with a
+  nonzero PID; health returned HTTP 200 / `ok=true`. Display version `0.4.0b4`
+  identifies the installed package, not the Hotswap commit.
+- Browser acceptance after a fresh Explorer reload showed the updated full
+  description, read-only metadata, `loxone:read` scope, and all four guide
+  section choices with the legacy full default. SSH also verified the generated
+  static schema description and annotations matched the live registry.
+- No alarm, confirmation, notification or project write was performed. The test
+  lease was valid before and after acceptance, then released; both cooperating
+  chats were informed. Final PR checks/reviews are tracked on PR #479.
 
 No credentials, private names, UUIDs, project paths or raw project data belong in
 this report. Live observations demonstrate the exercised read-only workflow;
