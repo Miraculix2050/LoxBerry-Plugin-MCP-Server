@@ -129,6 +129,11 @@ def validate_capture(document: dict, catalog: dict) -> list[dict]:
                 raise ValueError("capture_labels_invalid")
         read_calls = {call for case in catalog["cases"] for call in case["baseline_workflow"]}
         read_calls.update(
+            call
+            for case in catalog["cases"]
+            for call in case.get("final_acceptance", {}).get("workflow", [])
+        )
+        read_calls.update(
             {"loxone_get_skill_guide", "loxone_get_installation_profile", "loxone_analyze_history"}
         )
         if any(call not in read_calls for call in run["calls"]):

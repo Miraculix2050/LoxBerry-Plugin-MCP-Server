@@ -33,7 +33,19 @@
       "prohibited_claims": [
         "No visible scene is not proof of absent configuration.",
         "No hidden identities, inferred physical roles, write calls or invented historical coverage."
-      ]
+      ],
+      "final_acceptance": {
+        "support": "conditional",
+        "workflow": [
+          "loxone_get_structure_overview",
+          "loxone_describe_control"
+        ],
+        "scope_en": "Visible scenes only; absent visibility does not prove absent configuration.",
+        "scope_de": "Nur sichtbare Szenen; fehlende Sichtbarkeit belegt keine fehlende Konfiguration.",
+        "evidence": "source_contract",
+        "native_result": "qualified_insufficient_evidence_or_visible_subset",
+        "ai_three_independent_runs": "incomplete"
+      }
     },
     {
       "id": "lighting-02",
@@ -64,7 +76,19 @@
       "prohibited_claims": [
         "Similar names do not prove duplicated circuits.",
         "No hidden identities, inferred physical roles, write calls or invented historical coverage."
-      ]
+      ],
+      "final_acceptance": {
+        "support": "supported",
+        "workflow": [
+          "loxone_find_controls",
+          "loxone_describe_control"
+        ],
+        "scope_en": "Naming candidates only; no duplicated physical circuit claim.",
+        "scope_de": "Nur Benennungskandidaten; keine behaupteten doppelten Stromkreise.",
+        "evidence": "source_contract",
+        "native_result": "qualified_insufficient_evidence_or_visible_subset",
+        "ai_three_independent_runs": "incomplete"
+      }
     },
     {
       "id": "lighting-03",
@@ -95,7 +119,19 @@
       "prohibited_claims": [
         "Room membership is not a configured connection.",
         "No hidden identities, inferred physical roles, write calls or invented historical coverage."
-      ]
+      ],
+      "final_acceptance": {
+        "support": "conditional",
+        "workflow": [
+          "loxone_find_project_objects",
+          "loxone_trace_project_logic"
+        ],
+        "scope_en": "Explicit project links required; room membership is not a connection.",
+        "scope_de": "Explizite Projektverbindungen nötig; Raumzugehörigkeit ist keine Verbindung.",
+        "evidence": "source_contract",
+        "native_result": "qualified_insufficient_evidence_or_visible_subset",
+        "ai_three_independent_runs": "incomplete"
+      }
     },
     {
       "id": "lighting-04",
@@ -127,7 +163,19 @@
       "prohibited_claims": [
         "Structure alone does not establish fixture capabilities or user intent.",
         "No hidden identities, inferred physical roles, write calls or invented historical coverage."
-      ]
+      ],
+      "final_acceptance": {
+        "support": "experimental",
+        "workflow": [
+          "loxone_get_installation_profile",
+          "loxone_describe_control"
+        ],
+        "scope_en": "Planning advice needs user intent and fixture inventory; no automatic suitability proof.",
+        "scope_de": "Planungsberatung benötigt Nutzerabsicht und Leuchtenbestand; keine automatische Eignungsprüfung.",
+        "evidence": "source_contract",
+        "native_result": "qualified_insufficient_evidence_or_visible_subset",
+        "ai_three_independent_runs": "incomplete"
+      }
     },
     {
       "id": "lighting-05",
@@ -158,7 +206,19 @@
       "prohibited_claims": [
         "Names do not prove scene functions.",
         "No hidden identities, inferred physical roles, write calls or invented historical coverage."
-      ]
+      ],
+      "final_acceptance": {
+        "support": "conditional",
+        "workflow": [
+          "loxone_get_installation_profile",
+          "loxone_describe_control"
+        ],
+        "scope_en": "Scene roles must be confirmed; labels alone are not technical roles.",
+        "scope_de": "Szenenrollen müssen bestätigt sein; Namen belegen keine technischen Rollen.",
+        "evidence": "source_contract",
+        "native_result": "qualified_insufficient_evidence_or_visible_subset",
+        "ai_three_independent_runs": "incomplete"
+      }
     },
     {
       "id": "lighting-06",
@@ -191,7 +251,19 @@
       "prohibited_claims": [
         "A contextual review is not physical installation acceptance.",
         "No hidden identities, inferred physical roles, write calls or invented historical coverage."
-      ]
+      ],
+      "final_acceptance": {
+        "support": "experimental",
+        "workflow": [
+          "loxone_find_project_objects",
+          "loxone_get_installation_profile"
+        ],
+        "scope_en": "Qualified design review only; specialist lighting work remains outside this foundation.",
+        "scope_de": "Qualifizierte Planungsbewertung; spezielle Lichtprüfung bleibt außerhalb dieser Grundlage.",
+        "evidence": "source_contract",
+        "native_result": "qualified_insufficient_evidence_or_visible_subset",
+        "ai_three_independent_runs": "incomplete"
+      }
     },
     {
       "id": "basic-07",
@@ -227,7 +299,19 @@
       "prohibited_claims": [
         "Do not silently present a sample mean as a time-weighted mean.",
         "No hidden identities, inferred physical roles, write calls or invented historical coverage."
-      ]
+      ],
+      "final_acceptance": {
+        "support": "conditional",
+        "workflow": [
+          "loxone_get_installation_profile",
+          "loxone_analyze_history"
+        ],
+        "scope_en": "temperature_summary: actual-temperature unit and UTC samples; sample mean is not time weighted.",
+        "scope_de": "temperature_summary: Isttemperatur mit Einheit und UTC-Stichproben; Stichprobenmittel ist nicht zeitgewichtet.",
+        "evidence": "numeric_reference",
+        "native_result": "qualified_insufficient_evidence_or_visible_subset",
+        "ai_three_independent_runs": "incomplete"
+      }
     },
     {
       "id": "basic-08",
@@ -263,7 +347,19 @@
       "prohibited_claims": [
         "Do not invent a heat pump or confuse electrical and thermal energy.",
         "No hidden identities, inferred physical roles, write calls or invented historical coverage."
-      ]
+      ],
+      "final_acceptance": {
+        "support": "conditional",
+        "workflow": [
+          "loxone_get_installation_profile",
+          "loxone_analyze_history"
+        ],
+        "scope_en": "energy: optional consumer, confirmed boundary; counter endpoint differences remain partial with unknown resets.",
+        "scope_de": "energy: optionaler Verbraucher mit bestätigter Messgrenze; Zählerdifferenzen bleiben bei unbekannten Resets teilweise.",
+        "evidence": "numeric_reference",
+        "native_result": "qualified_insufficient_evidence_or_visible_subset",
+        "ai_three_independent_runs": "incomplete"
+      }
     },
     {
       "id": "basic-09",
@@ -295,7 +391,19 @@
       "prohibited_claims": [
         "Unknown or stale values do not establish off.",
         "No hidden identities, inferred physical roles, write calls or invented historical coverage."
-      ]
+      ],
+      "final_acceptance": {
+        "support": "conditional",
+        "workflow": [
+          "loxone_find_controls",
+          "loxone_get_state_semantics"
+        ],
+        "scope_en": "Known operational states only; unknown controls prevent a complete installation-wide answer.",
+        "scope_de": "Nur belegte Betriebszustände; unbekannte Controls verhindern eine vollständige Anlagenantwort.",
+        "evidence": "source_contract",
+        "native_result": "qualified_insufficient_evidence_or_visible_subset",
+        "ai_three_independent_runs": "incomplete"
+      }
     },
     {
       "id": "basic-10",
@@ -326,7 +434,19 @@
       "prohibited_claims": [
         "Do not include setpoints as measured room temperatures.",
         "No hidden identities, inferred physical roles, write calls or invented historical coverage."
-      ]
+      ],
+      "final_acceptance": {
+        "support": "supported",
+        "workflow": [
+          "loxone_find_controls",
+          "loxone_get_state_semantics"
+        ],
+        "scope_en": "Exact current actual temperatures, with freshness and explicit units; no inferred house average.",
+        "scope_de": "Exakte aktuelle Isttemperaturen mit Aktualität und Einheit; kein abgeleiteter Hausmittelwert.",
+        "evidence": "source_contract",
+        "native_result": "qualified_insufficient_evidence_or_visible_subset",
+        "ai_three_independent_runs": "incomplete"
+      }
     },
     {
       "id": "basic-11",
@@ -358,7 +478,19 @@
       "prohibited_claims": [
         "Do not collapse multiple circuits without evidence.",
         "No hidden identities, inferred physical roles, write calls or invented historical coverage."
-      ]
+      ],
+      "final_acceptance": {
+        "support": "conditional",
+        "workflow": [
+          "loxone_find_controls",
+          "loxone_get_state_semantics"
+        ],
+        "scope_en": "Select the visible kitchen control and proven operating state; do not infer from names or arbitrary numeric values.",
+        "scope_de": "Sichtbares Küchen-Control mit belegtem Betriebszustand; keine Ableitung aus Namen oder beliebigen Zahlen.",
+        "evidence": "source_contract",
+        "native_result": "qualified_insufficient_evidence_or_visible_subset",
+        "ai_three_independent_runs": "incomplete"
+      }
     },
     {
       "id": "basic-12",
@@ -389,7 +521,19 @@
       "prohibited_claims": [
         "Ambiguous room or sensor requires clarification.",
         "No hidden identities, inferred physical roles, write calls or invented historical coverage."
-      ]
+      ],
+      "final_acceptance": {
+        "support": "supported",
+        "workflow": [
+          "loxone_find_controls",
+          "loxone_get_state_semantics"
+        ],
+        "scope_en": "Room selection must be explicit; report actual temperature separately from target.",
+        "scope_de": "Raumauswahl muss ausdrücklich sein; Isttemperatur getrennt vom Sollwert ausgeben.",
+        "evidence": "source_contract",
+        "native_result": "qualified_insufficient_evidence_or_visible_subset",
+        "ai_three_independent_runs": "incomplete"
+      }
     },
     {
       "id": "basic-13",
@@ -421,7 +565,19 @@
       "prohibited_claims": [
         "Unlocked does not mean open.",
         "No hidden identities, inferred physical roles, write calls or invented historical coverage."
-      ]
+      ],
+      "final_acceptance": {
+        "support": "conditional",
+        "workflow": [
+          "loxone_find_controls",
+          "loxone_read_controls"
+        ],
+        "scope_en": "Exact authorized contact and proven direction; present configuration is not historic state.",
+        "scope_de": "Exakter autorisierter Kontakt und belegte Richtung; heutige Konfiguration ist kein historischer Zustand.",
+        "evidence": "source_contract",
+        "native_result": "qualified_insufficient_evidence_or_visible_subset",
+        "ai_three_independent_runs": "incomplete"
+      }
     },
     {
       "id": "solar-14",
@@ -456,7 +612,19 @@
       "prohibited_claims": [
         "Compare equal elapsed intervals for a running day.",
         "No hidden identities, inferred physical roles, write calls or invented historical coverage."
-      ]
+      ],
+      "final_acceptance": {
+        "support": "conditional",
+        "workflow": [
+          "loxone_get_installation_profile",
+          "loxone_analyze_history"
+        ],
+        "scope_en": "energy per explicit local period; confirmed production binding and complete evidence required for full-day claims.",
+        "scope_de": "energy je lokalem Zeitraum; bestätigte Erzeugungszuordnung und vollständige Evidenz nötig für Tagesaussagen.",
+        "evidence": "source_contract",
+        "native_result": "qualified_insufficient_evidence_or_visible_subset",
+        "ai_three_independent_runs": "incomplete"
+      }
     },
     {
       "id": "solar-15",
@@ -490,7 +658,18 @@
       "prohibited_claims": [
         "Do not substitute a guessed balance for unavailable native EFM values.",
         "No hidden identities, inferred physical roles, write calls or invented historical coverage."
-      ]
+      ],
+      "final_acceptance": {
+        "support": "unavailable",
+        "workflow": [
+          "loxone_describe_control"
+        ],
+        "scope_en": "Native EFM period balance depends on #436/#363/#364; no parallel balance engine.",
+        "scope_de": "Native EFM-Zeitraumbilanz hängt von #436/#363/#364 ab; kein paralleler Bilanzrechner.",
+        "evidence": "source_contract",
+        "native_result": "qualified_insufficient_evidence_or_visible_subset",
+        "ai_three_independent_runs": "incomplete"
+      }
     },
     {
       "id": "solar-16",
@@ -525,7 +704,18 @@
       "prohibited_claims": [
         "PV minus house load does not prove grid flow with unknown storage.",
         "No hidden identities, inferred physical roles, write calls or invented historical coverage."
-      ]
+      ],
+      "final_acceptance": {
+        "support": "conditional",
+        "workflow": [
+          "loxone_analyze_history"
+        ],
+        "scope_en": "pv_load_overlap plus opt-in source-separated UTC raw pages; hourly energy is not instantaneous power or grid flow.",
+        "scope_de": "pv_load_overlap und optionale getrennte UTC-Rohdatenseiten; Stundenenergie ist keine Momentanleistung oder Netzbilanz.",
+        "evidence": "source_contract",
+        "native_result": "qualified_insufficient_evidence_or_visible_subset",
+        "ai_three_independent_runs": "incomplete"
+      }
     },
     {
       "id": "solar-17",
@@ -561,7 +751,19 @@
       "prohibited_claims": [
         "Temporal overlap is not exact solar attribution.",
         "No hidden identities, inferred physical roles, write calls or invented historical coverage."
-      ]
+      ],
+      "final_acceptance": {
+        "support": "conditional",
+        "workflow": [
+          "loxone_get_installation_profile",
+          "loxone_analyze_history"
+        ],
+        "scope_en": "pv_load_overlap with optional observed enable signal; complete active hours only, upper bound rather than exact solar attribution.",
+        "scope_de": "pv_load_overlap mit optionalem beobachtetem Freigabesignal; nur ganze aktive Stunden, Obergrenze statt exakter Solarzuordnung.",
+        "evidence": "numeric_reference",
+        "native_result": "qualified_insufficient_evidence_or_visible_subset",
+        "ai_three_independent_runs": "incomplete"
+      }
     },
     {
       "id": "solar-18",
@@ -603,7 +805,19 @@
       "prohibited_claims": [
         "Do not double-count parent and child meters or invent residual consumers.",
         "No hidden identities, inferred physical roles, write calls or invented historical coverage."
-      ]
+      ],
+      "final_acceptance": {
+        "support": "conditional",
+        "workflow": [
+          "loxone_get_installation_profile",
+          "loxone_analyze_history"
+        ],
+        "scope_en": "consumer_ranking requires explicit comparability confirmation; exclude parent/child overlap and do not sum independent ranks.",
+        "scope_de": "consumer_ranking benötigt ausdrückliche Vergleichbarkeitsbestätigung; Eltern-/Kindüberlappung ausschließen, Rangwerte nicht summieren.",
+        "evidence": "numeric_reference",
+        "native_result": "qualified_insufficient_evidence_or_visible_subset",
+        "ai_three_independent_runs": "incomplete"
+      }
     },
     {
       "id": "solar-19",
@@ -636,7 +850,18 @@
       "prohibited_claims": [
         "Overlap alone is not proof that a load is shiftable.",
         "No hidden identities, inferred physical roles, write calls or invented historical coverage."
-      ]
+      ],
+      "final_acceptance": {
+        "support": "unavailable",
+        "workflow": [
+          "loxone_analyze_history"
+        ],
+        "scope_en": "Historical observations may inform a qualified response; load-shifting recommendations remain #440.",
+        "scope_de": "Historische Beobachtungen können eine Teilantwort stützen; Lastverschiebung bleibt #440.",
+        "evidence": "source_contract",
+        "native_result": "qualified_insufficient_evidence_or_visible_subset",
+        "ai_three_independent_runs": "incomplete"
+      }
     },
     {
       "id": "solar-20",
@@ -670,7 +895,18 @@
       "prohibited_claims": [
         "Current weather forecasts cannot replace historical weather.",
         "No hidden identities, inferred physical roles, write calls or invented historical coverage."
-      ]
+      ],
+      "final_acceptance": {
+        "support": "unavailable",
+        "workflow": [
+          "loxone_get_statistics"
+        ],
+        "scope_en": "Historical weather and matched-day method remain #439.",
+        "scope_de": "Historisches Wetter und Vergleichstagsmethode bleiben #439.",
+        "evidence": "source_contract",
+        "native_result": "qualified_insufficient_evidence_or_visible_subset",
+        "ai_three_independent_runs": "incomplete"
+      }
     },
     {
       "id": "solar-21",
@@ -702,7 +938,18 @@
       "prohibited_claims": [
         "Correlation or configuration reachability does not prove causation.",
         "No hidden identities, inferred physical roles, write calls or invented historical coverage."
-      ]
+      ],
+      "final_acceptance": {
+        "support": "unavailable",
+        "workflow": [
+          "loxone_get_statistics"
+        ],
+        "scope_en": "No causal self-consumption explanation without native EFM, historical weather and context (#436/#439).",
+        "scope_de": "Keine kausale Eigenverbrauchserklärung ohne native EFM-Werte, Wetterhistorie und Kontext (#436/#439).",
+        "evidence": "source_contract",
+        "native_result": "qualified_insufficient_evidence_or_visible_subset",
+        "ai_three_independent_runs": "incomplete"
+      }
     },
     {
       "id": "solar-22",
@@ -736,7 +983,18 @@
       "prohibited_claims": [
         "Low yield does not establish a defect or weather-adjusted anomaly.",
         "No hidden identities, inferred physical roles, write calls or invented historical coverage."
-      ]
+      ],
+      "final_acceptance": {
+        "support": "unavailable",
+        "workflow": [
+          "loxone_get_statistics"
+        ],
+        "scope_en": "Weather-normalized anomalies and installation parameters remain #439.",
+        "scope_de": "Wetterbereinigte Auffälligkeiten und Anlagenparameter bleiben #439.",
+        "evidence": "source_contract",
+        "native_result": "qualified_insufficient_evidence_or_visible_subset",
+        "ai_three_independent_runs": "incomplete"
+      }
     },
     {
       "id": "solar-23",
@@ -772,7 +1030,19 @@
       "prohibited_claims": [
         "Extrapolated daily base-load energy is an estimate, not a measurement.",
         "No hidden identities, inferred physical roles, write calls or invented historical coverage."
-      ]
+      ],
+      "final_acceptance": {
+        "support": "conditional",
+        "workflow": [
+          "loxone_get_installation_profile",
+          "loxone_analyze_history"
+        ],
+        "scope_en": "baseload uses verified whole-hour energy-derived mean power in local 00-05; daily extrapolation is an estimate of the selected channel.",
+        "scope_de": "baseload nutzt belegte stündliche Energie als mittlere Leistung im lokalen Fenster 00-05; Tageshochrechnung ist eine Schätzung des gewählten Kanals.",
+        "evidence": "numeric_reference",
+        "native_result": "qualified_insufficient_evidence_or_visible_subset",
+        "ai_three_independent_runs": "incomplete"
+      }
     },
     {
       "id": "solar-24",
@@ -807,7 +1077,19 @@
       "prohibited_claims": [
         "Missing report components must remain explicitly unavailable.",
         "No hidden identities, inferred physical roles, write calls or invented historical coverage."
-      ]
+      ],
+      "final_acceptance": {
+        "support": "conditional",
+        "workflow": [
+          "loxone_get_installation_profile",
+          "loxone_analyze_history"
+        ],
+        "scope_en": "Qualified component report only; native self-consumption/export/import remain #436, gaps and unknown rest/storage must stay explicit.",
+        "scope_de": "Nur qualifizierter Komponentenbericht; nativer Eigenverbrauch/Einspeisung/Netzbezug bleiben #436, Lücken und unbekannte Restlast/Speicher bleiben ausdrücklich.",
+        "evidence": "source_contract",
+        "native_result": "qualified_insufficient_evidence_or_visible_subset",
+        "ai_three_independent_runs": "incomplete"
+      }
     },
     {
       "id": "solar-25",
@@ -839,7 +1121,18 @@
       "prohibited_claims": [
         "A weather forecast alone is not a PV generation forecast.",
         "No hidden identities, inferred physical roles, write calls or invented historical coverage."
-      ]
+      ],
+      "final_acceptance": {
+        "support": "unavailable",
+        "workflow": [
+          "loxone_get_weather"
+        ],
+        "scope_en": "Tomorrow load/PV forecasts and operating constraints remain #440; weather alone does not establish a schedule.",
+        "scope_de": "Verbrauchs-/PV-Prognosen und Betriebsgrenzen bleiben #440; Wetter allein belegt keinen Zeitplan.",
+        "evidence": "source_contract",
+        "native_result": "qualified_insufficient_evidence_or_visible_subset",
+        "ai_three_independent_runs": "incomplete"
+      }
     },
     {
       "group": "knx",
