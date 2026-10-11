@@ -64,6 +64,7 @@ from mcpserver.loxone.system_messages import (
     MessageSourceError,
     canonical_serial,
     decode_messages,
+    identifier,
 )
 
 _LOXONE_EPOCH_UNIX = 1_230_768_000
@@ -1016,7 +1017,8 @@ class LoxoneRuntime:
                 for item in snapshot.structure.global_metadata
                 if item.kind == "global_state" and item.identifier == "notifications"
             ]
-            if len(states) != 1 or states[0] is None:
+            uuid = identifier(states[0]) if len(states) == 1 else None
+            if uuid is None:
                 raise ControlOperationError(
                     "unsupported_source", "Notification state is not advertised"
                 )
@@ -1031,9 +1033,9 @@ class LoxoneRuntime:
                 raise ControlOperationError(
                     "unsupported_source", "Notification source identity does not match"
                 )
-            record = self.state(snapshot, states[0])
+            record = self.state(snapshot, uuid)
             await self._require_access(access)
-            return snapshot, states[0], record, probe.firmware
+            return snapshot, uuid, record, probe.firmware
 
     async def get_system_messages(
         self, access: StoredAccessToken, *, include_history: bool = False

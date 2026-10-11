@@ -19,7 +19,12 @@ from mcpserver.loxone.client import LoxoneConnectionError
 from mcpserver.loxone.models import Freshness
 from mcpserver.loxone.notifications import Notification, decode_notification
 from mcpserver.loxone.runtime import ControlOperationError, LoxoneRuntime, RuntimeUnavailable
-from mcpserver.loxone.system_messages import MessageSource, MessageSourceError, SystemMessage
+from mcpserver.loxone.system_messages import (
+    MessageSource,
+    MessageSourceError,
+    SystemMessage,
+    identifier,
+)
 from mcpserver.tools import ErrorData, ToolEnvelope
 
 
@@ -113,6 +118,8 @@ def register_message_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
             if runtime is None:
                 raise RuntimeUnavailable("the service is not configured")
             snapshot, uuid, record, firmware = await runtime.get_notification_state(access)
+            if identifier(uuid) is None:
+                raise MessageSourceError("invalid_notification_source_identity")
             available = (
                 snapshot.connected
                 and record.freshness is Freshness.CURRENT

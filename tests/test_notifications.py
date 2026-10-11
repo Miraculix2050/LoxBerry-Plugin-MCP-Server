@@ -84,7 +84,10 @@ def test_notification_text_can_be_serialized_after_surrogate_normalization():
 async def test_mcp_latest_event_and_unavailable_coverage(monkeypatch, freshness, connected):
     monkeypatch.setattr(tools, "_access", lambda: object())
     record = StateRecord(
-        "notification-state", '{"uid":"test","message":"Context"}', freshness, 100.0
+        "11111111-1111-1111-1111111111111111",
+        '{"uid":"test","message":"Context"}',
+        freshness,
+        100.0,
     )
     snapshot = SimpleNamespace(
         connected=connected,
@@ -109,15 +112,22 @@ async def test_mcp_latest_event_and_unavailable_coverage(monkeypatch, freshness,
 
 
 @pytest.mark.asyncio
-async def test_falsey_non_text_current_state_is_unsupported(monkeypatch):
+@pytest.mark.parametrize(
+    "uuid,value",
+    [
+        ("11111111-1111-1111-1111111111111111", 0.0),
+        ("token=secret", '{"uid":"one","message":"Context"}'),
+    ],
+)
+async def test_invalid_current_state_or_source_identity_is_unsupported(monkeypatch, uuid, value):
     monkeypatch.setattr(tools, "_access", lambda: object())
     snapshot = SimpleNamespace(connected=True)
     runtime = SimpleNamespace(
         get_notification_state=AsyncMock(
             return_value=(
                 snapshot,
-                "notification-state",
-                StateRecord("notification-state", 0.0, Freshness.CURRENT, 100.0),
+                uuid,
+                StateRecord(uuid, value, Freshness.CURRENT, 100.0),
                 "17.2.8.28",
             )
         )
