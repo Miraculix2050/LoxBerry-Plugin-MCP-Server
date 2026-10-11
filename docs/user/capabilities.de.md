@@ -527,6 +527,23 @@ Seiten 130–131.
 Nutze `loxone_read_controls`, wenn sichtbare Control-UUIDs bereits bekannt sind;
 ermittle sie sonst zuerst mit `loxone_find_controls`. Beispiel:
 
+Optional liest `native_result_view` (`actual`, `day`, `week`, `month`, `year`,
+`lifetime`) ein natives EFM-Ergebnis für einen frisch bestätigten **Loxone-
+Administrator** auf Firmware **17.2.8.28**. Verwende genau ein Ziel ohne
+`state_names` und `include_semantics=false`. Perioden benötigen zusätzlich
+`loxone:history` und aktivierte Historie. Ein LoxBerry-Admin-Login belegt diese
+Berechtigung nicht. Native Ergebnisse stehen getrennt in `native_result`, mit
+leeren `values` und null gelesenen States. Einheiten, Vorzeichen, Skalierung,
+Währung, physische Beobachtungsfrische und Periodengrenzen bleiben unbekannt.
+Fehlende Felder einschließlich `Rest` dürfen nicht als Wert 0 interpretiert werden.
+Kalenderansichten sind laufende native Perioden, keine beliebigen historischen
+Zeiträume; Eigenverbrauchs- oder Bilanzrechnung wird nicht angeboten. Ohne die
+Option bleiben zwischengespeicherte State-Lesungen unverändert. Andere Firmware
+und native Nicht-Admin-Lesungen bleiben nicht unterstützt; Geräteabnahme wird
+getrennt ausgewiesen.
+
+Beispiel für zwischengespeicherte States:
+
 ```json
 {"targets":[{"control_uuid":"<visible-control-uuid>","state_names":["value"]}]}
 ```

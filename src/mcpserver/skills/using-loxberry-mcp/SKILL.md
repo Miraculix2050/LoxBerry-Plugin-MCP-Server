@@ -332,6 +332,18 @@ by the sensor-only V1 analyzer. No live actor writes or hardware support are imp
    values were returned. `include_semantics=true` optionally reuses the same
    evidence/quality model as `loxone_get_state_semantics`; check descriptor
    completeness separately. Relationships and other detail sections stay omitted.
+   For native EFM results only, pass `native_result_view` (`actual`, `day`, `week`,
+   `month`, `year`, `lifetime`) with one exact target, no `state_names`, and
+   `include_semantics=false`. This first slice requires a freshly verified Loxone
+   administrator on exact firmware 17.2.8.28; a LoxBerry login does not grant it.
+   Period views also require `loxone:history` and administrator-enabled history.
+   `native_result` is separate from cached states: `values=[]`, zero state counts,
+   semantics omitted. Check field delivery separately from unknown units, scale,
+   signs, currency, observation freshness and period boundaries. Calendar views
+   describe current running periods, not yesterday or arbitrary historic dates.
+   Missing `Rest` is not zero. Do not calculate a balance, infer self-consumption,
+   self-sufficiency or aliases, or retry native reads automatically. Omit/null
+   `native_result_view` retains the existing cached-state workflow without probes.
    For reference-only selection, hidden diagnosis, or servers without this tool,
    call `loxone_describe_control(view="state_refs")` to get
    complete normalized state-name/UUID references from the freshly loaded

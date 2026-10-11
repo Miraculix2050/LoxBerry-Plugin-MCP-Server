@@ -255,6 +255,10 @@ device validity, scaling, byte order, bus load or current measurement is evaluat
 ## Compact control reads
 
 `loxone_read_controls` is an additive `loxone:read` tool for known visible UUIDs.
+Optional `native_result_view` adds one native EFM read. Its fixed view allowlist,
+admin-first authorization, empty state rows, independent source quality and
+budgets are documented in [Native energy results](native-energy-results.md).
+Omission/null keeps the contract below unchanged and does not fetch native data.
 `targets` contains 1–25 unique `{control_uuid, state_names?}` objects; identifiers
 and exact state names are 1–128 characters. Each optional name list has 1–100
 unique entries. Omission selects all normalized state references of that control.

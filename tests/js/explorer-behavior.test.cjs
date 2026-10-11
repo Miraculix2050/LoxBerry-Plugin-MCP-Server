@@ -288,8 +288,18 @@ const compactReadTool = {
       properties: {control_uuid: {type: 'string', minLength: 1, maxLength: 128},
         state_names: {anyOf: [{type: 'array', minItems: 1, maxItems: 100, items: {type: 'string'}}, {type: 'null'}], default: null}}},
   }, properties: {targets: {type: 'array', minItems: 1, maxItems: 2, items: {$ref: '#/$defs/Target'}},
-    include_semantics: {type: 'boolean', default: false}}},
+    include_semantics: {type: 'boolean', default: false},
+    native_result_view: {anyOf: [{type: 'string', enum: ['actual', 'day', 'week', 'month', 'year', 'lifetime']}, {type: 'null'}], default: null}}},
 };
+
+test('native EFM selector uses the additive schema without allowing commands', () => {
+  const core = require('../../webfrontend/htmlauth/explorer-core.js');
+  const targets = [{control_uuid: 'visible-efm'}];
+  for (const native_result_view of [null, 'actual', 'day', 'week', 'month', 'year', 'lifetime']) {
+    assert.deepEqual(core.validateArguments({targets, native_result_view}, compactReadTool.inputSchema), []);
+  }
+  assert.notDeepEqual(core.validateArguments({targets, native_result_view: 'get/day/other'}, compactReadTool.inputSchema), []);
+});
 
 test('object-list form edits rows and optional states, preserves drafts and bounds adds', async (t) => {
   const h = createHarness({tools: [compactReadTool, readTool]});

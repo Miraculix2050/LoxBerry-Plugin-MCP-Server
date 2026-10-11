@@ -1059,6 +1059,7 @@ def normalize_structure(
     # Preserve only the exact source capability and permission bits, not user metadata.
     user = ms_info.get("currentUser")
     rights = user.get("userRights") if isinstance(user, Mapping) else None
+    admin = user.get("isAdmin") if isinstance(user, Mapping) else None
     centers = document.get("messageCenter")
     center = (
         next(iter(centers.values())) if isinstance(centers, Mapping) and len(centers) == 1 else None
@@ -1098,4 +1099,5 @@ def normalize_structure(
         weather=_weather_metadata(document),
         message_center_uuid=center_uuid,
         user_rights=rights if type(rights) is int and 0 <= rights < 2**32 else None,
+        caller_is_admin=admin if type(admin) is bool else None,
     )
