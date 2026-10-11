@@ -176,3 +176,21 @@ matched-performance acceptance remains explicitly **incomplete** under the
 available-metrics constraint, without API credentials or fabricated counters.
 External weather (#439), scheduling (#440), lighting (#441), and native EFM
 (#436/#363/#364) workstreams remain outside this closeout.
+
+## Final integrated target verification
+
+PR 9 changes documentation, the offline catalog and acceptance tests only; it
+keeps the PR-8 runtime and guide 76 unchanged. A separate reserved final read-only
+probe made 21 native MCP tool calls, verified guide 76, energy, state duration and the four comparison
+operations across compact/source workflows, raw continuation, source errors,
+restricted visibility and unauthenticated denial. Five installed runtime/guide
+hashes, preserved file modes, history schema 7, active service and `/healthz`
+passed. The existing caller's profile remained empty. No hot-swap was needed for
+this non-rendered documentation/test delta.
+
+The final DE Explorer full-guide request displayed revision 76; the EN profile
+read completed against fresh caller visibility. Both languages were inspected
+at CSS 1280x800 and 390x844, without horizontal overflow or console warnings/errors.
+These final smoke checks complement the per-feature PR 2–8 evidence. They do not
+represent 25 independent model answers or token acceptance. #445 therefore remains
+open for the missing independent AI/token and matched-performance gates.
