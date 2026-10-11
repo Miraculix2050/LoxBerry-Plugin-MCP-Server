@@ -1470,6 +1470,55 @@ def test_legacy_full_config_save_retains_separately_managed_knx_taxonomy(
     assert saved.knx_address_taxonomy == previous.knx_address_taxonomy
 
 
+@pytest.mark.parametrize("restart_failure", [False, True])
+def test_full_config_save_preserves_concurrently_revoked_profile_approval(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, restart_failure: bool
+) -> None:
+    store = AtomicConfigStore((tmp_path / "config" / "mcpserver.json").resolve())
+    store.save(
+        PluginConfig(
+            installation_profile_write_enabled=True, installation_profile_write_bindings=("a" * 64,)
+        )
+    )
+    original_mutate = store.mutate
+    calls = 0
+
+    def mutate(operation):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            original_mutate(
+                lambda current: replace(
+                    current,
+                    installation_profile_write_enabled=False,
+                    installation_profile_write_bindings=(),
+                )
+            )
+        return original_mutate(operation)
+
+    restarts = 0
+
+    def restart():
+        nonlocal restarts
+        restarts += 1
+        if restart_failure and restarts == 1:
+            raise AdminError("synthetic restart failure")
+
+    monkeypatch.setattr(store, "mutate", mutate)
+    monkeypatch.setattr("mcpserver.admin._config_store", lambda: store)
+    monkeypatch.setattr("mcpserver.admin._restart_service", restart)
+    monkeypatch.setattr("mcpserver.admin._sessions", lambda: [])
+    monkeypatch.setattr("mcpserver.admin._service_response", lambda: {"service_active": True})
+    if restart_failure:
+        with pytest.raises(AdminError, match="previous configuration restored"):
+            _save({"schema_version": 10, "server": {"enabled": False}})
+    else:
+        _save({"schema_version": 10, "server": {"enabled": False}})
+    current = store.load()
+    assert current.installation_profile_write_enabled is False
+    assert current.installation_profile_write_bindings == ()
+
+
 def test_failed_mcp_section_apply_restores_running_service(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

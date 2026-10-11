@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add independently approved MCP installation-profile save/delete operations,
+  expected revisions, explicit confirmation assertions and masked audit records.
+  Restrict whole-profile deletion to current visibility; preserve uncertain-write
+  outcomes without automatic retries (#434).
+
 - Add versioned installation profiles with Admin drafts/confirmation, atomic
   target-bound persistence and a read-only MCP projection using fresh caller
   visibility. Use HTML dialogs with distinct binding/profile deletion scope.

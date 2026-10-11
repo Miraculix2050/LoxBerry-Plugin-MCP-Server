@@ -536,6 +536,10 @@ def _save(payload: object) -> dict[str, Any]:
     config = PluginConfig.from_document(payload)
     store = _config_store()
     previous = store.load()
+    if "installation_profile_write_enabled" not in payload.get("tools", {}):
+        config = replace(
+            config, installation_profile_write_enabled=previous.installation_profile_write_enabled
+        )
     if "logging" not in payload:
         config = replace(config, log_level=previous.log_level)
     if "policies" not in payload:
@@ -543,6 +547,7 @@ def _save(payload: object) -> dict[str, Any]:
             config,
             loxberry_read_bindings=previous.loxberry_read_bindings,
             loxberry_operate_bindings=previous.loxberry_operate_bindings,
+            installation_profile_write_bindings=previous.installation_profile_write_bindings,
             loxberry_binding_names=previous.loxberry_binding_names,
             explorer_bindings=previous.explorer_bindings,
         )
@@ -591,6 +596,18 @@ def _save(payload: object) -> dict[str, Any]:
     ) -> PluginConfig:
         from mcpserver.knx.admin import validate_active_labels
 
+        # Profile approval controls are managed separately. Preserve the live
+        # value under this lock, including rollback after a restart failure.
+        if "installation_profile_write_enabled" not in payload.get("tools", {}):
+            candidate = replace(
+                candidate,
+                installation_profile_write_enabled=current.installation_profile_write_enabled,
+            )
+        if "policies" not in payload:
+            candidate = replace(
+                candidate,
+                installation_profile_write_bindings=current.installation_profile_write_bindings,
+            )
         if "knx_address_taxonomy" not in payload:
             candidate = replace(
                 candidate,

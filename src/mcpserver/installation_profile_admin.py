@@ -35,6 +35,15 @@ def _context(config: PluginConfig) -> tuple[str, dict[str, Any]]:
 def dispatch_profile(
     action: str, payload: object, config_store: AtomicConfigStore
 ) -> dict[str, Any]:
+    if action in {
+        "profile_permissions",
+        "profile_permission_enable",
+        "profile_permission_allow",
+        "profile_permission_revoke",
+    } and isinstance(payload, dict):
+        from mcpserver.installation_profile_permissions import dispatch_permissions
+
+        return dispatch_permissions(action, payload, config_store)
     if action not in {"profile_page", "profile_put", "profile_delete"} or not isinstance(
         payload, dict
     ):

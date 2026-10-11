@@ -4,6 +4,17 @@
 
 ## Grundeinstellungen
 
+### MCP-Profilpflege
+
+Die eigene [Profilseite](installation-profile.de.md) verwaltet
+`tools.installation_profile_write_enabled` (Standard: `false`) und die maximal
+64 exakten Freigaben in `policies.installation_profile_write_bindings`.
+Diese Freigaben ergänzen die allgemeinen Betriebsrechte; sie werden bei normalen
+Konfigurationsänderungen erhalten. Widerruf wirkt beim nächsten Schreibzugriff,
+auch auf eine bereits laufende Anfrage vor deren Persistenz. Ein bereits begonnener
+atomarer Schreibvorgang kann nicht rückgängig gemacht werden; bei ungewissem Ausgang
+den gespeicherten Profilstand prüfen.
+
 ### Admin-Zugriff und Reverse-Proxys
 
 Admin- und Ereignishistorie-Aktionen benötigen einen POST mit einer Origin, deren

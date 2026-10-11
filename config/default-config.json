@@ -29,6 +29,7 @@
   "policies": {
     "explorer_bindings": [],
     "loxberry_operate_bindings": [],
+    "installation_profile_write_bindings": [],
     "loxberry_read_bindings": []
   },
   "cache": {
@@ -60,6 +61,7 @@
     "loxone_history_enabled": true,
     "loxone_read_enabled": true,
     "loxberry_read_enabled": true,
-    "loxberry_operate_enabled": false
+    "loxberry_operate_enabled": false,
+    "installation_profile_write_enabled": false
   }
 }

@@ -1,5 +1,25 @@
 # Tool schema reference
 
+## Locally approved installation-profile maintenance (#434)
+
+`loxberry_save_installation_profile(binding, expected_revision, confirm=false)`
+and `loxberry_delete_installation_profile(expected_revision, binding_id=null,
+confirm=false)` require `loxone:read`, `loxone:history`, `loxberry:operate`, an
+active general operation approval and a separate locally enabled approval for
+the exact client, identity and Miniserver. Neither approval is implied by the
+other. The profile capability defaults to disabled.
+
+The caller must obtain explicit human confirmation in the conversation and send
+`confirm=true`; the server cannot independently verify conversation content.
+Both tools return only the new revision and affected binding ID. All affected
+bindings need current visibility, including whole-profile deletion. Revision
+conflicts require rereading; an uncertain write result must not be retried
+automatically. Both tools are non-idempotent mutations; deletion additionally
+advertises the destructive annotation. A single bounded worker, admission rate
+limit and 30-second deadline protect the persistence path. The deadline is
+checked under the profile lock before persistence starts; a write already
+started can have an uncertain outcome after timeout or cancellation.
+
 ## Task-scoped KNX guidance (#455)
 
 `loxone_get_skill_guide(section="core"|"knx"|"full")` adds optional task selection;

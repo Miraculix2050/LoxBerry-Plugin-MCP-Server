@@ -326,6 +326,7 @@ class PluginConfig:
     loxberry_read_enabled: bool = False
     loxone_history_enabled: bool = False
     loxberry_operate_enabled: bool = False
+    installation_profile_write_enabled: bool = False
     requests_per_minute: int = DEFAULT_REQUESTS_PER_MINUTE
     control_requests_per_minute: int = DEFAULT_CONTROL_REQUESTS_PER_MINUTE
     loxberry_requests_per_minute: int = DEFAULT_LOXBERRY_REQUESTS_PER_MINUTE
@@ -336,6 +337,7 @@ class PluginConfig:
     log_level: str = DEFAULT_LOG_LEVEL
     loxberry_read_bindings: tuple[str, ...] = ()
     loxberry_operate_bindings: tuple[str, ...] = ()
+    installation_profile_write_bindings: tuple[str, ...] = ()
     loxberry_binding_names: tuple[tuple[str, str], ...] = ()
     explorer_bindings: tuple[ExplorerBindingApproval, ...] = ()
     statistics_memory_max_mib: int = DEFAULT_STATISTICS_MEMORY_MAX_MIB
@@ -449,6 +451,10 @@ class PluginConfig:
         )
         loxberry_operate_enabled = _boolean(
             tools.get("loxberry_operate_enabled", False), name="tools.loxberry_operate_enabled"
+        )
+        installation_profile_write_enabled = _boolean(
+            tools.get("installation_profile_write_enabled", False),
+            name="tools.installation_profile_write_enabled",
         )
         if loxberry_operate_enabled and not loxone_history_enabled:
             raise ConfigError("tools.loxberry_operate_enabled requires loxone history")
@@ -591,6 +597,10 @@ class PluginConfig:
             policies.get("loxberry_operate_bindings", []),
             name="policies.loxberry_operate_bindings",
         )
+        installation_profile_write_bindings = _bindings(
+            policies.get("installation_profile_write_bindings", []),
+            name="policies.installation_profile_write_bindings",
+        )
         loxberry_binding_names = _binding_names(
             policies.get("loxberry_binding_names", {}),
             bindings=loxberry_read_bindings + loxberry_operate_bindings,
@@ -668,6 +678,7 @@ class PluginConfig:
             loxberry_read_enabled=loxberry_read_enabled,
             loxone_history_enabled=loxone_history_enabled,
             loxberry_operate_enabled=loxberry_operate_enabled,
+            installation_profile_write_enabled=installation_profile_write_enabled,
             requests_per_minute=requests,
             control_requests_per_minute=control_requests,
             loxberry_requests_per_minute=loxberry_requests,
@@ -678,6 +689,7 @@ class PluginConfig:
             log_level=log_level,
             loxberry_read_bindings=loxberry_read_bindings,
             loxberry_operate_bindings=loxberry_operate_bindings,
+            installation_profile_write_bindings=installation_profile_write_bindings,
             loxberry_binding_names=loxberry_binding_names,
             explorer_bindings=explorer_bindings,
             statistics_memory_max_mib=cache_max_mib,
@@ -736,6 +748,9 @@ class PluginConfig:
         document["tools"]["loxberry_read_enabled"] = self.loxberry_read_enabled
         document["tools"]["loxone_history_enabled"] = self.loxone_history_enabled
         document["tools"]["loxberry_operate_enabled"] = self.loxberry_operate_enabled
+        document["tools"]["installation_profile_write_enabled"] = (
+            self.installation_profile_write_enabled
+        )
         document["limits"]["requests_per_minute"] = self.requests_per_minute
         document["limits"]["control_requests_per_minute"] = self.control_requests_per_minute
         document["limits"]["loxberry_requests_per_minute"] = self.loxberry_requests_per_minute
@@ -764,6 +779,9 @@ class PluginConfig:
         document["logging"].pop("debug_until", None)
         document["policies"]["loxberry_read_bindings"] = list(self.loxberry_read_bindings)
         document["policies"]["loxberry_operate_bindings"] = list(self.loxberry_operate_bindings)
+        document["policies"]["installation_profile_write_bindings"] = list(
+            self.installation_profile_write_bindings
+        )
         document["policies"]["loxberry_binding_names"] = dict(self.loxberry_binding_names)
         document["policies"]["explorer_bindings"] = [
             {

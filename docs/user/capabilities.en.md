@@ -5,8 +5,9 @@
 ## Supported scope
 
 The [confirmed installation profile](installation-profile.en.md) persists minimal
-bindings through the Admin page. MCP reads them with fresh visibility;
-user roles remain separate from technical semantics.
+bindings through the Admin page. MCP reads them with fresh visibility and can
+manage them with separate local profile approval, an expected revision and explicit
+user confirmation. User roles remain separate from technical semantics.
 
 WindowMonitor `windowStates` is decoded through ordinary state reads, state
 semantics and optional compact-read semantics. Use `semantic_value.contacts`:
