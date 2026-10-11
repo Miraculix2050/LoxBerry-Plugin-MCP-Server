@@ -87,7 +87,7 @@ def register_message_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
     async def get_system_messages(
         mode: Annotated[
             Literal["current", "history", "all"],
-            Field(description="Current entries, historical entries, or all retained entries."),
+            Field(description="Current entries; history/all require History scope and activation."),
         ] = "current",
         limit: Annotated[
             int,
@@ -115,7 +115,7 @@ def register_message_tools(server: FastMCP, runtime: LoxoneRuntime | None) -> No
             access = tools._access()
             if runtime is None:
                 raise RuntimeUnavailable("the service is not configured")
-            source = await runtime.get_system_messages(access)
+            source = await runtime.get_system_messages(access, include_history=mode != "current")
             binding = cursors.binding(access, source.source_revision, mode)
             try:
                 offset = cursors.decode(cursor, binding)

@@ -4,6 +4,7 @@
 gespeicherte historische Meldungen (`history`) oder beide (`all`). Es prüft deine
 aktuellen Miniserver-Rechte für Systemmeldungen. LoxBerry-Rechte sind unabhängig.
 Nutze das Tool im vorhandenen Explorer oder einem autorisierten MCP-Client.
+`history` und `all` benötigen zusätzlich `loxone:history` und die History-Aktivierung durch den Administrator.
 
 Die Quelle ist experimentell und nur für Firmware 17.2.8.28 belegt. Andere Firmware
 liefert `unsupported_source`. Eine nicht verfügbare Quelle belegt keine Meldungsfreiheit.

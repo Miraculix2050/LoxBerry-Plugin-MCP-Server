@@ -4,6 +4,7 @@
 retained historical messages (`history`) or both (`all`). It uses your fresh
 Miniserver System Messages permission. LoxBerry permissions are independent.
 Use the tool in the existing Explorer or an authorized MCP client.
+`history` and `all` additionally require `loxone:history` and administrator History activation.
 
 The source is experimental and verified only for firmware 17.2.8.28. Other firmware
 returns `unsupported_source`. An unavailable source does not establish absence.

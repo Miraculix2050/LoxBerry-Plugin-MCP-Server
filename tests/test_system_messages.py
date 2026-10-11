@@ -8,7 +8,7 @@ import pytest
 from mcp.server.fastmcp import FastMCP
 
 from mcpserver import tools
-from mcpserver.auth.provider import READ_SCOPE, StoredAccessToken
+from mcpserver.auth.provider import HISTORY_SCOPE, READ_SCOPE, StoredAccessToken
 from mcpserver.loxone.client import MiniserverEndpoint
 from mcpserver.loxone.models import LoxoneIdentity, LoxoneStructure
 from mcpserver.loxone.runtime import ControlOperationError, LoxoneRuntime
@@ -178,6 +178,36 @@ async def test_fresh_permission_and_version_gate_precede_message_command(rights,
     session.system_messages.assert_not_awaited()
     session.close.assert_awaited_once()
     token.destroy.assert_called_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "enabled,scopes", [(False, [READ_SCOPE, HISTORY_SCOPE]), (True, [READ_SCOPE])]
+)
+async def test_history_denial_precedes_network(enabled, scopes) -> None:
+    instance, session, token = runtime()
+    instance.history_enabled = enabled
+    with pytest.raises(ControlOperationError, match="History scope"):
+        await instance.get_system_messages(
+            access().model_copy(update={"scopes": scopes}), include_history=True
+        )
+    instance._open_session.assert_not_awaited()
+    session.system_messages.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_current_runtime_does_not_release_historical_records() -> None:
+    instance, session, token = runtime()
+    session.system_messages.return_value = {
+        "entries": [entry(isHistoric=True, setHistoricAt=1_700_000_001)]
+    }
+    current = await instance.get_system_messages(access())
+    assert current.records == [] and current.source_total == 1
+    instance.history_enabled = True
+    historical = await instance.get_system_messages(
+        access().model_copy(update={"scopes": [READ_SCOPE, HISTORY_SCOPE]}), include_history=True
+    )
+    assert len(historical.records) == 1
 
 
 @pytest.mark.asyncio

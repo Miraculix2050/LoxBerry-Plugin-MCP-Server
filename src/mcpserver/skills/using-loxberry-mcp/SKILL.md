@@ -734,7 +734,9 @@ the requested state was reached.
 
 Use `loxone_get_system_messages` with `mode=current`, `history` or `all` for the
 bound Miniserver. This experimental source requires the caller's fresh System
-Messages permission; an administrator name or a LoxBerry permission is no substitute.
+Messages permission; `history` and `all` also require `loxone:history` and local
+administrator History activation. Historical modes never bypass that capability.
+An administrator name or a LoxBerry permission is no substitute.
 The adapter is currently verified only for firmware 17.2.8.28. An unsupported or
 unavailable source never establishes message absence. Inspect `ok`, `stale`, warnings,
 `truncated`, `page_complete` and `retention_complete=false`. Follow the opaque cursor;
