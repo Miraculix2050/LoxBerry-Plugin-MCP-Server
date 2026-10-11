@@ -288,6 +288,82 @@ async def test_one_reader_cannot_exhaust_another_familys_preview_quota():
     assert preview.preview_id in confirmations.tickets
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("native_denial", [False, True])
+async def test_denied_caller_cannot_invalidate_another_users_preview(native_denial):
+    confirmations, instance, session, current = setup_confirmation()
+    owner_preview = await confirmations.preview(instance, current, ENTRY)
+    other = current.model_copy(update={"family_id": "other-family"})
+    denied_preview = await confirmations.preview(instance, other, ENTRY)
+    if native_denial:
+        from dataclasses import replace
+
+        session.load_structure.return_value = replace(
+            session.load_structure.return_value, user_rights=0
+        )
+    else:
+        other = other.model_copy(update={"scopes": [READ_SCOPE]})
+    with pytest.raises(ControlOperationError):
+        await confirmations.confirm(instance, other, denied_preview.preview_id, True)
+    assert owner_preview.preview_id in confirmations.tickets
+    assert not confirmations.claims and not confirmations.inflight
+    session.confirm_system_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_an_already_consumed_sibling_cannot_replay_after_uncertain_effect():
+    confirmations, instance, session, current = setup_confirmation()
+    other = current.model_copy(update={"family_id": "other-family"})
+    first = await confirmations.preview(instance, current, ENTRY)
+    sibling = await confirmations.preview(instance, other, ENTRY)
+    preflight_ready, release = asyncio.Event(), asyncio.Event()
+    checks = 0
+
+    async def authorize(selected):
+        nonlocal checks
+        if selected.family_id == other.family_id:
+            checks += 1
+            if checks == 2:
+                preflight_ready.set()
+                await release.wait()
+        return True
+
+    instance.validate_message_confirmation = authorize
+    task = asyncio.create_task(confirmations.confirm(instance, other, sibling.preview_id, True))
+    try:
+        await asyncio.wait_for(preflight_ready.wait(), 1)
+        first_result = await confirmations.confirm(instance, current, first.preview_id, True)
+        assert first_result.outcome == "accepted_unverified" and not confirmations.inflight
+    finally:
+        release.set()
+    with pytest.raises(ControlOperationError, match="invalidated this preview"):
+        await task
+    session.confirm_system_message.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_expiry_is_rechecked_after_a_slow_preflight(monkeypatch):
+    confirmations, instance, session, current = setup_confirmation()
+    preview = await confirmations.preview(instance, current, ENTRY)
+    expires = confirmations.tickets[preview.preview_id].expires
+    clock = expires - 1
+    monkeypatch.setattr("mcpserver.message_confirmation.time.monotonic", lambda: clock)
+    checks = 0
+
+    async def authorize(_selected):
+        nonlocal clock, checks
+        checks += 1
+        if checks == 2:
+            clock = expires + 1
+        return True
+
+    instance.validate_message_confirmation = authorize
+    with pytest.raises(ControlOperationError, match="new preview"):
+        await confirmations.confirm(instance, current, preview.preview_id, True)
+    assert not confirmations.claims
+    session.confirm_system_message.assert_not_awaited()
+
+
 @pytest.mark.parametrize(
     "changes",
     [

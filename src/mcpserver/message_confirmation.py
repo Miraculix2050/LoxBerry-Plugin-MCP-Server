@@ -66,6 +66,7 @@ class _Ticket:
     entry_uuid: str
     action_id: int
     effect: Literal["acknowledge", "historize"]
+    attempt_claim: str | None = None
 
 
 def _binding(access: StoredAccessToken) -> tuple[str, str, str]:
@@ -103,6 +104,7 @@ class MessageConfirmations:
         self.tickets: dict[str, _Ticket] = {}
         self.rates: dict[tuple[str, str, str], deque[float]] = {}
         self.inflight: set[tuple[str, str]] = set()
+        self.claims: dict[tuple[str, str], tuple[str, float]] = {}
 
     def _prune(self, now: float) -> None:
         self.tickets = {key: value for key, value in self.tickets.items() if value.expires > now}
@@ -110,6 +112,12 @@ class MessageConfirmations:
             key: deque(t for t in values if t > now - 60)
             for key, values in self.rates.items()
             if values and values[-1] > now - 60
+        }
+        referenced = {(ticket.binding[2], ticket.entry_uuid) for ticket in self.tickets.values()}
+        self.claims = {
+            target: claim
+            for target, claim in self.claims.items()
+            if claim[1] > now or target in referenced or target in self.inflight
         }
 
     async def preview(
@@ -150,6 +158,7 @@ class MessageConfirmations:
             entry_uuid,
             record.confirmation_action_id,
             record.confirmation_effect,
+            self.claims.get((access.miniserver_id, entry_uuid), (None, 0))[0],
         )
         return MessageConfirmationPreview(
             preview_id=preview_id,
@@ -226,17 +235,6 @@ class MessageConfirmations:
         try:
             if ticket.expires <= now:
                 raise ControlOperationError("expired_preview", "Create and approve a new preview")
-            if target in self.inflight:
-                raise ControlOperationError(
-                    "confirmation_in_progress", "Message confirmation is in progress"
-                )
-            self.inflight.add(target)
-            active = True
-            self.tickets = {
-                key: value
-                for key, value in self.tickets.items()
-                if value.binding[2] != access.miniserver_id or value.entry_uuid != ticket.entry_uuid
-            }
             await self._authorize(runtime, access)
             rate = self.rates.setdefault(_binding(access), deque())
             if len(rate) >= 3:
@@ -249,6 +247,36 @@ class MessageConfirmations:
                         "changed_preview", "Message changed; create a new preview"
                     )
                 await self._authorize(runtime, access)
+                dispatch_time = time.monotonic()
+                if ticket.expires <= dispatch_time:
+                    raise ControlOperationError(
+                        "expired_preview", "Create and approve a new preview"
+                    )
+                if target in self.inflight:
+                    raise ControlOperationError(
+                        "confirmation_in_progress", "Message confirmation is in progress"
+                    )
+                if ticket.attempt_claim != self.claims.get(target, (None, 0))[0]:
+                    raise ControlOperationError(
+                        "invalidated_preview",
+                        "Another confirmation attempt invalidated this preview",
+                    )
+                if target not in self.claims and len(self.claims) >= MAX_PREVIEWS:
+                    raise ControlOperationError(
+                        "rate_limited", "Message confirmation capacity exceeded"
+                    )
+                # Only fresh OAuth, config and native permission checks may invalidate
+                # another caller's approval. The claim also invalidates tickets already
+                # consumed by a concurrent preflight, even after this dispatch completes.
+                self.inflight.add(target)
+                active = True
+                self.claims[target] = (secrets.token_urlsafe(16), dispatch_time + TTL_SECONDS)
+                self.tickets = {
+                    key: value
+                    for key, value in self.tickets.items()
+                    if value.binding[2] != access.miniserver_id
+                    or value.entry_uuid != ticket.entry_uuid
+                }
                 dispatched = True
                 result = MessageConfirmationResult(
                     entry_uuid=ticket.entry_uuid,
