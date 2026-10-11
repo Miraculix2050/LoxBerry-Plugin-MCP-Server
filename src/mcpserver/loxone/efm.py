@@ -63,10 +63,11 @@ def normalize(details: Mapping[str, object]) -> Projection:
     rows: list[Participant] = []
     diagnostics: list[str] = []
     omitted = 0
-    used = 0
+    residual = residual_metadata(details, diagnostics)
+    used = len(json.dumps(residual, ensure_ascii=True).encode())
     nodes = details.get("nodes")
     if not isinstance(nodes, list):
-        return Projection((), diagnostics=("invalid_nodes_collection",))
+        return Projection((), residual, diagnostics=(*diagnostics, "invalid_nodes_collection"))
 
     def visit(items: list[object], parent: tuple[int, ...]) -> None:
         nonlocal omitted, used
@@ -140,7 +141,6 @@ def normalize(details: Mapping[str, object]) -> Projection:
     identities = Counter(row.node_uuid for row in rows if row.node_uuid is not None)
     if any(count > 1 for count in identities.values()):
         diagnostics.append("repeated_node_identity")
-    residual = residual_metadata(details, diagnostics)
     if omitted:
         diagnostics.append("participant_limit")
     return Projection(tuple(rows), tuple(residual), omitted, tuple(diagnostics))
@@ -196,10 +196,11 @@ def describe(projection: Projection, visible: Mapping[str, Control]) -> dict[str
         ),
         "references_complete": "invalid_nodes_collection" not in projection.diagnostics
         and not projection.omitted_subtrees
-        and all(r["reference_status"] in {"resolved", "absent"} for r in participants),
+        and all(r["reference_status"] in {"resolved", "absent"} for r in participants)
+        and all("invalid_child_collection" not in r.diagnostics for r in projection.participants),
         "roles_complete": not participants
         and not projection.omitted_subtrees
-        and not projection.diagnostics,
+        and "invalid_nodes_collection" not in projection.diagnostics,
         "max_nodes": MAX_NODES,
         "max_depth": MAX_DEPTH,
         "max_metadata_bytes": MAX_BYTES,

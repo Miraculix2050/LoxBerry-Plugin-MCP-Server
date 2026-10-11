@@ -183,3 +183,25 @@ def test_synthetic_metadata_byte_limit_and_independent_completeness() -> None:
     assert result["topology_complete"]
     assert result["references_complete"]
     assert not result["roles_complete"]
+
+
+def test_synthetic_malformed_children_are_reference_incomplete() -> None:
+    result = describe(normalize({"nodes": [node(nodes={"private": "uninspected"})]}), {})
+    assert not result["topology_complete"] and not result["references_complete"]
+    assert "uninspected" not in json.dumps(result)
+
+
+def test_synthetic_display_diagnostics_do_not_change_empty_role_coverage() -> None:
+    result = describe(normalize({"nodes": [], "restName": {}}), {})
+    assert result["diagnostics"] == ["invalid_residual_metadata"]
+    assert result["roles_complete"] and result["topology_complete"]
+    assert result["references_complete"]
+
+
+def test_synthetic_root_residual_metadata_consumes_shared_byte_budget() -> None:
+    nodes = [node(i + 1, title="\u2603" * 200, icon="\u2603" * 200) for i in range(100)]
+    plain = normalize({"nodes": nodes})
+    with_rest = normalize({"nodes": nodes, "restName": "\u2603" * 200, "restIcon": "\u2603" * 200})
+    assert len(with_rest.participants) < len(plain.participants)
+    assert dict(with_rest.residual)["restName"] == "\u2603" * 200
+    assert with_rest.omitted_subtrees > plain.omitted_subtrees
