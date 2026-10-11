@@ -637,6 +637,35 @@ async def test_cold_legacy_adapter_respects_remaining_analysis_point_budget():
 
 
 @pytest.mark.asyncio
+async def test_released_legacy_reader_preserves_partial_final_file_limit(monkeypatch):
+    series = StatisticSeries(
+        "legacy",
+        "legacy",
+        "",
+        "",
+        "Energy",
+        "%.1fkWh",
+        legacy_output_index=0,
+        legacy_output_count=1,
+    )
+    control = Control("control", "Meter", "Meter", None, None, None, (), statistic_series=(series,))
+    runtime = object.__new__(LoxoneRuntime)
+    runtime.statistics_cache = StatisticsCache()
+    monkeypatch.setattr(
+        runtime_module, "_legacy_statistic_dates", lambda *_args: ("200901", "200902")
+    )
+    first = b"".join(struct.pack("<Id", i, 1.0) for i in range(99_000))
+    last = b"".join(struct.pack("<Id", i, 1.0) for i in range(99_000, 101_000))
+    session = SimpleNamespace(legacy_statistic_data=AsyncMock(side_effect=[first, last]))
+    epoch = runtime_module._LOXONE_EPOCH_UNIX
+    _, _, points = await runtime.authorized_statistics(
+        _access(), control, session, "legacy", epoch, epoch + 99_499, "raw"
+    )
+    assert len(points) == 99_500
+    assert session.legacy_statistic_data.await_count == 2
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("available", [False, True])
 async def test_window_current_readability_does_not_establish_native_history(available):
     control = Control(

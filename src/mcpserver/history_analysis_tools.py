@@ -61,7 +61,6 @@ from mcpserver.tools import (
     _rfc3339,
 )
 
-
 _LOGGER = logging.getLogger("mcpserver.history_analysis")
 
 

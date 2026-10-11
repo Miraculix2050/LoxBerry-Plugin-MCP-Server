@@ -944,12 +944,13 @@ class LoxoneRuntime:
         end: int,
         granularity: str,
         *,
-        maximum_points: int = 100_000,
+        maximum_points: int | None = None,
     ) -> tuple[Control, StatisticSeries, tuple[StatisticPoint, ...]]:
         """Reuse the native adapter only inside a freshly authorized history context."""
         if granularity not in {"raw", "hour", "day", "month", "year"}:
             raise ControlOperationError("invalid_input", "unsupported statistic granularity")
-        if not 0 <= start <= end <= 4_102_444_800 or not 0 <= maximum_points <= 100_000:
+        selected_limit = 100_000 if maximum_points is None else maximum_points
+        if not 0 <= start <= end <= 4_102_444_800 or not 0 <= selected_limit <= 100_000:
             raise ControlOperationError(
                 "invalid_input", "invalid statistic time range or point budget"
             )
@@ -983,7 +984,7 @@ class LoxoneRuntime:
         )
         cached = self.statistics_cache.get(cache_key)
         if cached is not None:
-            if len(cached) > maximum_points:
+            if len(cached) > selected_limit:
                 raise ControlOperationError("invalid_input", "analysis input point limit exceeded")
             _LOGGER.debug("component=statistics trace_id=%s outcome=cache_hit", trace_id)
             return control, series, cached
@@ -1013,10 +1014,12 @@ class LoxoneRuntime:
                         series.legacy_output_count,
                         start,
                         end,
-                        maximum_points - len(collected),
+                        # Released reads retain independent per-file and selected-total
+                        # bounds. Analysis explicitly supplies a remaining parse budget.
+                        100_000 if maximum_points is None else maximum_points - len(collected),
                     )
                     collected.extend(decoded)
-                    if len(collected) > maximum_points:
+                    if len(collected) > selected_limit:
                         raise ControlOperationError(
                             "temporarily_unavailable",
                             "legacy statistic response contains too many points",
@@ -1048,7 +1051,7 @@ class LoxoneRuntime:
                 fetch_seconds += time.perf_counter() - phase_started
                 phase_started = time.perf_counter()
                 points = await run_admitted_worker(
-                    _points_in_range, payload, start, end, maximum_points
+                    _points_in_range, payload, start, end, selected_limit
                 )
                 parse_seconds += time.perf_counter() - phase_started
         except ControlOperationError:
