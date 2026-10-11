@@ -70,6 +70,68 @@ def test_new_explorer_client_instance_reuses_same_application_binding(tmp_path: 
     assert len(config_store.load().explorer_bindings) == 1
 
 
+def test_knx_explorer_approval_is_target_bound_and_retains_existing_lifecycle(tmp_path: Path):
+    config_store, auth_store = stores(tmp_path)
+    config_store.mutate(lambda config: replace(config, loxone_endpoint="https://first.example"))
+    record = {**family(), "scope": "loxone:read loxberry:knx:read"}
+    binding = record_explorer_approval(
+        config_store, auth_store, "loxberry:knx:read", record, now=100
+    )
+    config = config_store.load()
+    assert (
+        active_explorer_binding(
+            config, auth_store, "loxberry:knx:read", "identity-a", "ms-a", EXPLORER_ORIGIN, now=150
+        )
+        is not None
+    )
+    assert (
+        active_explorer_binding(
+            replace(config, loxone_endpoint="https://second.example"),
+            auth_store,
+            "loxberry:knx:read",
+            "identity-a",
+            "ms-a",
+            EXPLORER_ORIGIN,
+            now=150,
+        )
+        is None
+    )
+    assert (
+        active_explorer_binding(
+            replace(config, loxone_endpoint=""),
+            auth_store,
+            "loxberry:knx:read",
+            "identity-a",
+            "ms-a",
+            EXPLORER_ORIGIN,
+            now=150,
+        )
+        is None
+    )
+    record_explorer_family_end(config_store, auth_store, record)
+    ended = config_store.load()
+    assert ended.explorer_bindings[0].binding_id == binding
+    assert (
+        active_explorer_binding(
+            ended,
+            auth_store,
+            "loxberry:knx:read",
+            "identity-a",
+            "ms-a",
+            EXPLORER_ORIGIN,
+            now=200 + ended.explorer_binding_retention_hours * 3600,
+        )
+        is None
+    )
+    assert (
+        maintain_explorer_bindings(
+            config_store, auth_store, now=201 + ended.explorer_binding_retention_hours * 3600
+        )
+        == 1
+    )
+    assert not config_store.load().explorer_bindings
+
+
 def test_explorer_binding_isolated_by_capability_identity_and_miniserver(tmp_path: Path) -> None:
     config_store, auth_store = stores(tmp_path)
     record_explorer_approval(config_store, auth_store, "loxberry:read", family(), now=100)

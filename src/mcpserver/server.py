@@ -41,6 +41,7 @@ from mcpserver.auth.provider import (
     StoredAccessToken,
 )
 from mcpserver.auth.remote_revocation import run_remote_revocation_worker
+from mcpserver.auth.scopes import LOXBERRY_KNX_READ_SCOPE
 from mcpserver.auth.store import AtomicJsonAuthStore, lifecycle_event
 from mcpserver.auth.web import Phase0OAuthWeb
 from mcpserver.config import DEFAULT_LOG_LEVEL, AtomicConfigStore, PluginConfig
@@ -477,6 +478,12 @@ def create_server(settings: ServerSettings) -> FastMCP:
     event_history: EventHistoryMonitor | None = None
     auth_coordinator: MiniserverAuthCoordinator | None = None
     auth_store: AtomicJsonAuthStore | None = None
+    admission_config = (
+        settings.phase0_auth.plugin_config if settings.phase0_auth is not None else None
+    ) or settings.plugin_config
+    call_admission = asyncio.Semaphore(
+        admission_config.max_parallel_calls if admission_config is not None else 4
+    )
     explorer_binding_maintenance: tuple[AtomicConfigStore, AtomicJsonAuthStore] | None = None
     if settings.plugin_config is not None:
         emergency_stop = EmergencyStopMonitor(settings.plugin_config)
@@ -648,7 +655,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
 
             config_store = AtomicConfigStore(settings.phase0_auth.config_path)
             config = config_store.load()
-            for capability in ("loxberry:read", "loxberry:operate"):
+            for capability in ("loxberry:read", "loxberry:operate", LOXBERRY_KNX_READ_SCOPE):
                 if capability not in str(family.get("scope", "")).split():
                     continue
                 identity_id = str(family.get("identity_id", ""))
@@ -757,6 +764,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
                 timeout_seconds=config.connection_timeout if config is not None else 10.0,
                 requests_per_minute=config.requests_per_minute if config is not None else 60,
                 max_parallel_calls=config.max_parallel_calls if config is not None else 4,
+                call_admission=call_admission,
                 control_requests_per_minute=(
                     config.control_requests_per_minute if config is not None else 10
                 ),
@@ -872,8 +880,24 @@ def create_server(settings: ServerSettings) -> FastMCP:
         MESSAGE_CONFIRM_SCOPE,
         LOXBERRY_READ_SCOPE,
         LOXBERRY_OPERATE_SCOPE,
+        LOXBERRY_KNX_READ_SCOPE,
     )
     register_skill_resource(server)
+    from mcpserver.knx.catalog_runtime import CatalogRuntime
+
+    knx_catalog_runtime = (
+        CatalogRuntime(
+            settings.knx_store_path,
+            AtomicConfigStore(settings.phase0_auth.config_path),
+            auth_store,
+            call_admission,
+        )
+        if auth_store is not None
+        and settings.knx_store_path is not None
+        and settings.phase0_auth is not None
+        and settings.phase0_auth.config_path is not None
+        else None
+    )
     register_tool_surface(
         server,
         runtime=runtime,
@@ -883,6 +907,7 @@ def create_server(settings: ServerSettings) -> FastMCP:
         control_enabled=control_enabled,
         knx_store_path=settings.knx_store_path,
         profile_auth_store=auth_store,
+        knx_catalog_runtime=knx_catalog_runtime,
         project_config_store=(
             AtomicConfigStore(settings.phase0_auth.config_path)
             if settings.phase0_auth is not None and settings.phase0_auth.config_path is not None

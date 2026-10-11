@@ -31,6 +31,10 @@ extracted from the matching version heading.
 
 - Expose bounded EFM participant occurrences and fresh visible control references
   in full Describe, with independent completeness and unknown role interpretation (#363).
+- Add a bounded read-only local KNX catalog with sparse ETS/manual sources,
+  independent prefix-label inventory, revision-bound continuation and separate
+  default-off, target-bound Admin delegation. Preserve Loxone name precedence
+  and keep corrections and exports outside this tool (#458).
 
 - Add versioned installation profiles with Admin drafts/confirmation, atomic
   target-bound persistence and a read-only MCP projection using fresh caller

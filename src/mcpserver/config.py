@@ -276,7 +276,7 @@ def _explorer_bindings(value: object) -> tuple[ExplorerBindingApproval, ...]:
         if binding_id.lower() != binding_id:
             raise ConfigError(f"{name}.binding_id must be a lowercase SHA-256 value")
         capability = record.get("capability")
-        if capability not in {"loxberry:read", "loxberry:operate"}:
+        if capability not in {"loxberry:read", "loxberry:operate", "loxberry:knx:read"}:
             raise ConfigError(f"{name}.capability is unsupported")
         if record.get("application_id") != "tool-explorer-v1" or record.get("version") != 1:
             raise ConfigError(f"{name} application identity is unsupported")
@@ -324,6 +324,7 @@ class PluginConfig:
     loxone_read_enabled: bool = True
     loxone_control_enabled: bool = False
     loxberry_read_enabled: bool = False
+    loxberry_knx_read_enabled: bool = False
     loxone_history_enabled: bool = False
     loxone_message_confirmation_enabled: bool = False
     loxberry_operate_enabled: bool = False
@@ -337,6 +338,7 @@ class PluginConfig:
     max_parallel_calls: int = DEFAULT_MAX_PARALLEL_CALLS
     log_level: str = DEFAULT_LOG_LEVEL
     loxberry_read_bindings: tuple[str, ...] = ()
+    loxberry_knx_read_bindings: tuple[str, ...] = ()
     loxberry_operate_bindings: tuple[str, ...] = ()
     installation_profile_write_bindings: tuple[str, ...] = ()
     loxberry_binding_names: tuple[tuple[str, str], ...] = ()
@@ -446,6 +448,9 @@ class PluginConfig:
         )
         loxberry_read_enabled = _boolean(
             tools.get("loxberry_read_enabled", False), name="tools.loxberry_read_enabled"
+        )
+        loxberry_knx_read_enabled = _boolean(
+            tools.get("loxberry_knx_read_enabled", False), name="tools.loxberry_knx_read_enabled"
         )
         loxone_history_enabled = _boolean(
             tools.get("loxone_history_enabled", False), name="tools.loxone_history_enabled"
@@ -598,6 +603,10 @@ class PluginConfig:
         loxberry_read_bindings = _bindings(
             policies.get("loxberry_read_bindings", []), name="policies.loxberry_read_bindings"
         )
+        loxberry_knx_read_bindings = _bindings(
+            policies.get("loxberry_knx_read_bindings", []),
+            name="policies.loxberry_knx_read_bindings",
+        )
         loxberry_operate_bindings = _bindings(
             policies.get("loxberry_operate_bindings", []),
             name="policies.loxberry_operate_bindings",
@@ -608,7 +617,9 @@ class PluginConfig:
         )
         loxberry_binding_names = _binding_names(
             policies.get("loxberry_binding_names", {}),
-            bindings=loxberry_read_bindings + loxberry_operate_bindings,
+            bindings=loxberry_read_bindings
+            + loxberry_operate_bindings
+            + loxberry_knx_read_bindings,
         )
         explorer_bindings = _explorer_bindings(policies.get("explorer_bindings", []))
         cache_max_mib = _integer(
@@ -681,6 +692,7 @@ class PluginConfig:
             loxone_read_enabled=read_enabled,
             loxone_control_enabled=control_enabled,
             loxberry_read_enabled=loxberry_read_enabled,
+            loxberry_knx_read_enabled=loxberry_knx_read_enabled,
             loxone_history_enabled=loxone_history_enabled,
             loxone_message_confirmation_enabled=loxone_message_confirmation_enabled,
             loxberry_operate_enabled=loxberry_operate_enabled,
@@ -694,6 +706,7 @@ class PluginConfig:
             max_parallel_calls=parallel,
             log_level=log_level,
             loxberry_read_bindings=loxberry_read_bindings,
+            loxberry_knx_read_bindings=loxberry_knx_read_bindings,
             loxberry_operate_bindings=loxberry_operate_bindings,
             installation_profile_write_bindings=installation_profile_write_bindings,
             loxberry_binding_names=loxberry_binding_names,
@@ -752,6 +765,7 @@ class PluginConfig:
         document["tools"]["loxone_read_enabled"] = self.loxone_read_enabled
         document["tools"]["loxone_control_enabled"] = self.loxone_control_enabled
         document["tools"]["loxberry_read_enabled"] = self.loxberry_read_enabled
+        document["tools"]["loxberry_knx_read_enabled"] = self.loxberry_knx_read_enabled
         document["tools"]["loxone_history_enabled"] = self.loxone_history_enabled
         document["tools"]["loxone_message_confirmation_enabled"] = (
             self.loxone_message_confirmation_enabled
@@ -787,6 +801,7 @@ class PluginConfig:
         document["logging"]["level"] = self.log_level
         document["logging"].pop("debug_until", None)
         document["policies"]["loxberry_read_bindings"] = list(self.loxberry_read_bindings)
+        document["policies"]["loxberry_knx_read_bindings"] = list(self.loxberry_knx_read_bindings)
         document["policies"]["loxberry_operate_bindings"] = list(self.loxberry_operate_bindings)
         document["policies"]["installation_profile_write_bindings"] = list(
             self.installation_profile_write_bindings

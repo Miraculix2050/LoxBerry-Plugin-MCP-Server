@@ -310,6 +310,7 @@ class LoxoneRuntime:
         timeout_seconds: float = 10.0,
         requests_per_minute: int = 60,
         max_parallel_calls: int = 4,
+        call_admission: asyncio.Semaphore | None = None,
         control_requests_per_minute: int = 10,
         control_confirmation_seconds: float = 3.0,
         history_requests_per_minute: int = 12,
@@ -361,7 +362,9 @@ class LoxoneRuntime:
         self._control_rate_limit = control_requests_per_minute
         self._control_locks = _FamilyLocks()
         self._control_confirmation_seconds = control_confirmation_seconds
-        self._parallel = asyncio.Semaphore(max_parallel_calls)
+        self._parallel = (
+            call_admission if call_admission is not None else asyncio.Semaphore(max_parallel_calls)
+        )
         self._project_admission = asyncio.Semaphore(1)
         self._project_rate: deque[float] = deque()
         self._history_rate: defaultdict[str, deque[float]] = defaultdict(deque)

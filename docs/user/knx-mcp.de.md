@@ -15,6 +15,39 @@ autorisierte Projektobjekte, nicht jede eigenständige lokale Adresse oder jedes
 Präfixlabel. Loxone-Namen bleiben primär. Eine bekannte Adresse gezielt suchen,
 die gefundenen Objekte beschreiben und nur für nötigen Strukturkontext verfolgen.
 
+Für den eigenständigen lokalen Bestand das entdeckte `loxberry_get_knx_catalog`
+verwenden: `kind="addresses"` liest ETS-/manuelle Datensätze;
+`kind="prefix_labels"` aktive darstellungsgebundene Labels auch ohne Adressen.
+Erforderlich sind separate OAuth-Zustimmung zu `loxberry:knx:read`, Aktivierung
+auf der KNX-Admin-Seite und ausdrückliche Freigabe für den konkreten Client,
+die Identität, den Miniserver und das lokale Ziel. Standardmäßig ausgeschaltet.
+Loxone-Anmeldung, Diagnose- und Bedienfreigaben gewähren diesen Zugriff nicht.
+Administratoren können Kandidaten aktualisieren und Freigaben entfernen.
+Explorer-Freigaben nutzen die konfigurierte Inaktivitätsfrist. Ein Zielwechsel
+übernimmt keine Freigabe eines anderen Ziels. Deaktivierung erhält Freigaben,
+blockiert aber Abfragen.
+
+Mit `view="summary"` beginnen, dann literale `query`, `source`,
+`deviations_only` oder exakte `address` eingrenzen und Einträge abrufen
+(Standard 50, Maximum 100). Adressen erlauben kein `:0`/`:1`. Summary lädt keine
+Adresszeilen und hat keinen Cursor. Einträge behalten ausgesparte unbekannte
+Import-/manuelle Felder, lokale Auflösung, unbestätigte DPT-Angaben und deduplizierten
+Präfixkontext. Unbekannte Felder, bewusst leere Werte und `false` bleiben verschieden.
+Präfixlabels belegen keine Signalbeziehung; `import_format` keine XML-Exportfähigkeit.
+Kein Projektdownload und keine Loxone-Namen: Für aktuellen Projektabgleich die
+autorisierten Projekttools nutzen.
+
+`total_matching` und `count_scope` beziehen sich auf ausgewählte lokale Datensätze
+oder aktive Präfixe. Auswahl und Seitengröße bei Folgeseiten wiederholen. Cursor
+binden Aufrufer, Ziel und SQLite-/manuelle Labelrevision. Jeder neu ausgegebene
+Cursor gilt fünf Minuten; erfolgreiche, frisch autorisierte Folgeseiten erneuern
+den nächsten Cursor. Sie enden bei Neustart. Änderungen verlangen eine neue
+Abfrage. Ganze Zeilen passen in 64 KiB; `page_truncated` kennzeichnet eine verkürzte
+Seite. Strukturierte Ausgabe einmal verarbeiten, nicht zusätzlich den Textfallback.
+Abfragen teilen die globale Parallelitätsgrenze und haben eine begrenzte Quote von
+30 pro Minute und Familie. Speicherfehler liefern keinen erfolgreich leeren Bestand;
+vor Rückgabe wird die Berechtigung erneut geprüft.
+
 Für den Bestandsabgleich ausdrücklich `ets_project_comparison` mit KNX-Scope
 auswählen. Die Standardanalysen bleiben unverändert. Ziel, Revision, Aktualität,
 Abdeckung, Diagnoseauslassungen und erforderliche Seiten prüfen. Stichprobe und

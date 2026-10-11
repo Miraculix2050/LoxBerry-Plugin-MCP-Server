@@ -27,6 +27,7 @@
     "level": "warning"
   },
   "policies": {
+    "loxberry_knx_read_bindings": [],
     "explorer_bindings": [],
     "loxberry_operate_bindings": [],
     "installation_profile_write_bindings": [],
@@ -57,6 +58,7 @@
     "public_origin": ""
   },
   "tools": {
+    "loxberry_knx_read_enabled": false,
     "loxone_control_enabled": false,
     "loxone_history_enabled": true,
     "loxone_message_confirmation_enabled": false,

@@ -23,6 +23,79 @@ def record(name: str = "Additional name") -> dict[str, object]:
     }
 
 
+def test_knx_read_ui_requires_html_confirmation_before_grant_and_enable() -> None:
+    root = Path(__file__).resolve().parents[1]
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const {JSDOM} = require('jsdom');
+const html = fs.readFileSync('templates/knx.html', 'utf8').replace(/<TMPL_VAR[^>]*>/g, 'label');
+const dom = new JSDOM(html, {url: 'http://localhost/knx.cgi', runScripts: 'outside-only'});
+const w = dom.window;
+const calls = [];
+let state = {target: 'synthetic-target', policy_revision: 'revision-1', enabled: false,
+  bindings: [{binding: 'a'.repeat(64), client_name: '<img src=x onerror=attack()>',
+    client: 'synthetic-client', identity: 'identity-ref', miniserver: 'ms-ref',
+    eligible: true, approved: false, retained: false}]};
+w.confirm = () => {throw new Error('Native dialog is forbidden');};
+w.HTMLDialogElement.prototype.showModal = function () {this.open = true;};
+w.HTMLDialogElement.prototype.close = function (value) {
+  this.returnValue = value; this.open = false; this.dispatchEvent(new w.Event('close'));
+};
+w.fetch = async (_url, options) => {
+  const action = options.body.get('action');
+  const payload = JSON.parse(options.body.get('payload'));
+  calls.push({action, payload});
+  if (action !== 'knx_read_page') {
+    assert.equal(payload.target, state.target);
+    assert.equal(payload.policy_revision, state.policy_revision);
+    state = structuredClone(state);
+    if (action === 'knx_read_grant') {
+      assert.equal(payload.binding, state.bindings[0].binding);
+      state.bindings[0].approved = state.bindings[0].retained = true;
+    } else if (action === 'knx_read_enable') state.enabled = payload.enabled;
+    else throw new Error('unexpected action');
+    state.policy_revision += '-changed';
+  }
+  return {ok: true, json: async () => ({ok: true, data: structuredClone(state)})};
+};
+const tick = () => new Promise(resolve => setImmediate(resolve));
+(async () => {
+  w.eval(fs.readFileSync('webfrontend/htmlauth/knx-read-delegation.js', 'utf8'));
+  await tick();
+  const section = w.document.getElementById('knx-read-delegation');
+  const rows = w.document.getElementById('knx-read-bindings');
+  assert.equal(rows.querySelector('img'), null);
+  const dialog = w.document.getElementById('knx-confirm');
+  rows.querySelector('button').click(); await tick();
+  assert.equal(dialog.open, true);
+  assert.match(w.document.getElementById('knx-confirm-message').textContent, /aaaaaaaa/);
+  dialog.close('cancel'); await tick();
+  assert.deepEqual(calls.map(call => call.action), ['knx_read_page']);
+  rows.querySelector('button').click(); await tick(); dialog.close('continue'); await tick();
+  assert.equal(calls.at(-1).action, 'knx_read_grant');
+  assert.equal(state.enabled, false);
+  const enabled = w.document.getElementById('knx-read-enabled');
+  const form = w.document.getElementById('knx-read-enable-form');
+  enabled.checked = true;
+  form.dispatchEvent(new w.Event('submit', {cancelable: true})); await tick();
+  dialog.close('cancel'); await tick();
+  assert.equal(enabled.checked, false);
+  assert.equal(calls.at(-1).action, 'knx_read_grant');
+  enabled.checked = true;
+  form.dispatchEvent(new w.Event('submit', {cancelable: true})); await tick();
+  dialog.close('continue'); await tick();
+  assert.equal(state.enabled, true);
+  assert.equal(section.hasAttribute('aria-busy'), false);
+  dom.window.close();
+})().catch(error => {console.error(error); process.exitCode = 1;});
+"""
+    node = shutil.which("node")
+    assert node is not None
+    result = subprocess.run([node, "-e", script], cwd=root, capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_address_identity_preserves_display_and_rejects_variants() -> None:
     assert address("1/2/3", "three_level")[0] == address("1/515", "two_level")[0]
     for value in ("1/8/3", "32/0/0", "1/2/256", "01/2/3", "1/2/3:0"):

@@ -639,7 +639,12 @@ comparison files and results** clears this admin session's comparison drafts
 while retaining its import preview and all confirmed KNX metadata.
 
 **ETS/Loxone project comparison** requires a separate Loxone login with project
-access. It shows addresses common to both sources, only in the imported catalog,
+access. For standalone local ETS/manual addresses and active prefix labels,
+`loxberry_get_knx_catalog` requires separate, default-off target-bound Admin
+delegation and `loxberry:knx:read` consent. See [KNX through MCP](knx-mcp.en.md)
+for bounded views, filters, source interpretation and continuation rules.
+
+The comparison shows addresses common to both sources, only in the imported catalog,
 or only observed in the authorized parsed project. All relevant primary Loxone
 names stay separate from ETS names and manual metadata; bounded object lists
 show omitted counts. Different names are naming deviations, not proven errors.

@@ -44,6 +44,30 @@
  <p><TMPL_VAR KNX.SOURCE_HELP></p>
  <p id="knx-target"></p>
  <p id="knx-status" role="status" aria-live="polite"></p>
+ <section class="mcp-card" id="knx-read-delegation"
+  data-grant="<TMPL_VAR KNX.READ_GRANT ESCAPE=HTML>"
+  data-revoke="<TMPL_VAR KNX.READ_REVOKE ESCAPE=HTML>"
+  data-confirm-enable="<TMPL_VAR KNX.READ_CONFIRM_ENABLE ESCAPE=HTML>"
+  data-confirm-grant="<TMPL_VAR KNX.READ_CONFIRM_GRANT ESCAPE=HTML>"
+  data-confirm-revoke="<TMPL_VAR KNX.READ_CONFIRM_REVOKE ESCAPE=HTML>"
+  data-approved="<TMPL_VAR KNX.READ_APPROVED ESCAPE=HTML>"
+  data-pending="<TMPL_VAR KNX.READ_PENDING ESCAPE=HTML>"
+  data-unavailable="<TMPL_VAR KNX.READ_UNAVAILABLE ESCAPE=HTML>"
+  data-failed="<TMPL_VAR KNX.READ_FAILED ESCAPE=HTML>">
+  <h2><TMPL_VAR KNX.READ_TITLE></h2>
+  <p class="mcp-help"><TMPL_VAR KNX.READ_HELP></p>
+  <form id="knx-read-enable-form" class="mcp-form">
+   <label><input type="checkbox" id="knx-read-enabled" disabled> <TMPL_VAR KNX.READ_ENABLE></label>
+   <div class="mcp-actions"><button class="lb-button" type="submit" disabled><TMPL_VAR ACTION.SAVE></button>
+    <button class="lb-button" type="button" id="knx-read-reload"><TMPL_VAR KNX.READ_RELOAD></button></div>
+  </form>
+  <p id="knx-read-status" role="status" aria-live="polite"></p>
+  <div class="mcp-table-wrap" tabindex="0" role="region" aria-label="<TMPL_VAR KNX.READ_TITLE ESCAPE=HTML>"><table class="mcp-table">
+   <thead><tr><th><TMPL_VAR KNX.READ_CLIENT></th><th><TMPL_VAR KNX.READ_BINDING></th>
+    <th><TMPL_VAR KNX.READ_STATE></th><th><TMPL_VAR KNX.ACTIONS></th></tr></thead>
+   <tbody id="knx-read-bindings"></tbody>
+  </table></div>
+ </section>
  <section class="mcp-card">
   <h2><TMPL_VAR SETUP.KNX_TAXONOMY></h2>
   <form id="knx-taxonomy-form" class="mcp-form">
@@ -261,6 +285,7 @@
  </form>
 </dialog>
 <script src="knx.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v9" defer></script>
+<script src="knx-read-delegation.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-read-v1" defer></script>
 <script src="knx-import.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-import-v3" defer></script>
 <script src="explorer-core.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-project-v2" defer></script>
 <script src="explorer-state.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-project-v2" defer></script>

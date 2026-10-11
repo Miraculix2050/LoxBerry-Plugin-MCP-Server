@@ -41,15 +41,19 @@ def test_equivalent_jsonrpc_capture_and_key_order_have_same_identity() -> None:
     assert report["reference_identity"] == report["observed_identity"]
 
 
-@pytest.mark.parametrize("field", ["description", "annotations", "inputSchema", "outputSchema"])
+@pytest.mark.parametrize(
+    "field", ["description", "annotations", "inputSchema", "outputSchema", "_meta"]
+)
 def test_additive_changes_detected_without_changing_tool_name(field: str) -> None:
     old = _capture()
+    if field == "_meta":
+        old["tools"][0]["_meta"] = {}
     upgraded = copy.deepcopy(old)
     tool = upgraded["tools"][0]
     if field == "description":
         tool[field] = "Read ETS/manual metadata from the authorized project"
     else:
-        tool[field]["new_knx_contract"] = {"enum": ["ets_project_comparison"]}
+        tool.setdefault(field, {})["new_knx_contract"] = {"enum": ["ets_project_comparison"]}
     report = compare_discovery(upgraded, old)
     assert report["status"] == "different"
     assert report["missing_tools"] == []

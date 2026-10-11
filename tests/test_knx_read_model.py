@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import json
 from contextlib import contextmanager
+from dataclasses import replace
 
 import pytest
 
+from mcpserver.config import PluginConfig
+from mcpserver.knx.catalog import catalog_page, labels_revision
 from mcpserver.knx.model import KnxError, address
 from mcpserver.knx.read_model import datapoint
 from mcpserver.knx.store import KnxStore
+from mcpserver.loxone.project.taxonomy import AddressTaxonomyEntry
 
 
 def record(value, imported, overrides, fmt="three_level"):
@@ -19,6 +24,79 @@ def record(value, imported, overrides, fmt="three_level"):
         "imported": imported,
         "overrides": overrides,
     }
+
+
+def test_summary_never_hydrates_catalog_and_exact_id_is_not_name_matching(store, monkeypatch):
+    number = address("1/2/3", "three_level")[0]
+    expected = store.page("target", address_id=number)
+    assert expected["total"] == 1
+    assert expected["items"][0]["address_id"] == number
+    # Pure counts use the same SQL filter/revision but never decode metadata.
+    monkeypatch.setattr(store, "project", lambda _row: pytest.fail("summary hydrated metadata"))
+    summary = store.page("target", address_id=number, count_only=True)
+    assert summary["items"] == []
+    assert summary["total"] == expected["total"]
+    assert summary["revision"] == expected["revision"]
+
+
+@pytest.mark.parametrize("number", [-1, 65536, True, "1"])
+def test_exact_catalog_identity_is_strictly_bounded(store, number):
+    with pytest.raises(KnxError, match="knx_page_invalid"):
+        store.page("target", address_id=number)
+
+
+def test_local_catalog_preserves_sources_empty_values_and_style_bound_prefixes(store):
+    config = replace(
+        PluginConfig.defaults(),
+        knx_address_taxonomy_endpoint="target",
+        knx_address_taxonomy=(
+            AddressTaxonomyEntry("1/2", "Manual group", "three_level"),
+            AddressTaxonomyEntry("1/2/3", "Exact context", "three_level"),
+            AddressTaxonomyEntry("1", "Other style", "two_level"),
+        ),
+    )
+    with store.connection() as db:
+        db.execute(
+            "INSERT INTO import_groups VALUES(?,?,?,?,?,?)",
+            ("target", "three_level", "1/2", json.dumps({"name": "ETS group"}), "{}", 1),
+        )
+        db.commit()
+    page = catalog_page(store, config, "target", address_id=address("1/2/3", "three_level")[0])
+    assert page["total_matching"] == 1
+    assert not page["loxone_names_included"]
+    row = page["records"][0]
+    assert row["sources"]["imported"]["name"] == "Straße Küche"
+    assert row["sources"]["manual"]["name"] == "Local"
+    assert row["sources"]["manual"]["description"] == ""
+    assert row["local_resolution"] == dict.fromkeys(("name", "description", "dpts"), "manual")
+    assert row["sources"]["imported"]["dpts"] == ["DPST-1-1"]
+    assert row["dpt_details"]["imported"]["items"][0]["status"] == "format_valid_type_unverified"
+    assert row["prefix_ids"] == ["three_level:1/2", "three_level:1/2/3"]
+    assert page["active_prefix_count"] == 3
+    assert page["prefix_context"][0]["sources"] == {
+        "imported": "ETS group",
+        "manual": "Manual group",
+    }
+    assert page["prefix_context"][0]["local_label_source"] == "manual"
+    assert page["labels_revision"] == labels_revision(config, "target")
+    assert (
+        labels_revision(replace(config, knx_address_taxonomy_endpoint="other"), "target")
+        != page["labels_revision"]
+    )
+
+
+def test_local_catalog_summary_has_no_rows_and_manual_only_unknown_stays_unknown(
+    store, monkeypatch
+):
+    config = PluginConfig.defaults()
+    manual = catalog_page(store, config, "target", address_id=65535)["records"][0]
+    assert manual["sources"]["imported"] == {}
+    assert manual["local_resolution"]["dpts"] == "unknown"
+    monkeypatch.setattr(store, "project", lambda _row: pytest.fail("summary hydrated rows"))
+    summary = catalog_page(store, config, "target", count_only=True)
+    assert summary["total_matching"] == 3
+    assert summary["records"] == []
+    assert summary["prefix_context"] == []
 
 
 @pytest.fixture
@@ -184,6 +262,29 @@ def test_database_failure_is_not_an_empty_search(tmp_path):
     path.write_bytes(b"not sqlite")
     with pytest.raises(KnxError, match="knx_storage_failed"):
         KnxStore(path).page("target", filters={"query": "absent"})
+
+
+@pytest.mark.parametrize("summary,expected_reads", [(False, 4), (True, 3)])
+def test_catalog_reads_are_constant_and_share_one_snapshot(
+    store, monkeypatch, summary, expected_reads
+):
+    statements = []
+    original = store.connection
+
+    @contextmanager
+    def traced():
+        with original() as db:
+            db.set_trace_callback(statements.append)
+            yield db
+
+    monkeypatch.setattr(store, "connection", traced)
+    result = catalog_page(store, PluginConfig.defaults(), "target", count_only=summary)
+    assert result["total_matching"] == 3
+    assert (
+        len([statement for statement in statements if statement.startswith("SELECT")])
+        == expected_reads
+    )
+    assert len([statement for statement in statements if statement == "BEGIN"]) == 1
 
 
 def test_large_search_returns_only_one_page(tmp_path):

@@ -66,6 +66,7 @@ async def test_observability_published_limit_matches_validation(limit: int, vali
 EXPECTED_TOOLS = {
     "loxberry_save_installation_profile",
     "loxberry_delete_installation_profile",
+    "loxberry_get_knx_catalog",
     "loxone_analyze_opening_contacts",
     "loxone_list_event_history_sources",
     "loxberry_clear_statistics_cache",
@@ -124,6 +125,8 @@ def test_schema_catalog_contains_complete_fastmcp_contract() -> None:
         assert tool["inputSchema"]["type"] == "object"
         assert tool["outputSchema"]["type"] == "object"
         assert tool["outputSchema"]["properties"]["data"]["anyOf"]
+    catalog_tool = next(tool for tool in tools if tool["name"] == "loxberry_get_knx_catalog")
+    assert catalog_tool["_meta"] == {"requiredScopes": ["loxone:read", "loxberry:knx:read"]}
 
 
 def test_window_monitor_summary_is_in_generated_description_contract() -> None:

@@ -38,6 +38,9 @@
       'loxberry_get_service_health', 'loxberry_list_service_events',
       'loxberry_list_event_history_sources',
     ]},
+    {id: 'knxCatalog', scopes: ['loxone:read', 'loxberry:knx:read'], names: [
+      'loxberry_get_knx_catalog',
+    ]},
     {id: 'loxberryOperate', scopes: ['loxone:read', 'loxone:history', 'loxberry:operate'], names: [
       'loxberry_clear_statistics_cache',
       'loxberry_save_installation_profile',

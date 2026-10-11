@@ -72,6 +72,10 @@ def dispatch_knx(action: str, payload: object, config_store: AtomicConfigStore) 
         "knx_xml_preview",
         "knx_xml_download",
         "knx_xml_discard",
+        "knx_read_page",
+        "knx_read_enable",
+        "knx_read_grant",
+        "knx_read_revoke",
     }
     if action not in allowed or not isinstance(payload, dict):
         raise AdminError("Unsupported KNX action")
@@ -90,10 +94,20 @@ def _run(
         raise AdminError("A configured Miniserver is required", code="knx_target_missing")
     target = MiniserverEndpoint.parse(config.loxone_endpoint).origin
     token = hashlib.sha256(target.encode()).hexdigest()
-    if action not in {"knx_page", "knx_export"} and payload.get("target") != token:
+    if action not in {"knx_page", "knx_export", "knx_read_page"} and payload.get("target") != token:
         raise AdminError("KNX target changed; reload", code="knx_target_conflict")
-    if action in {"knx_page", "knx_export"} and "target" in payload and payload["target"] != token:
+    if (
+        action in {"knx_page", "knx_export", "knx_read_page"}
+        and "target" in payload
+        and payload["target"] != token
+    ):
         raise AdminError("KNX target changed; reload", code="knx_target_conflict")
+    if action.startswith("knx_read_"):
+        from mcpserver.admin import _auth_store
+
+        from .read_admin import dispatch
+
+        return {**dispatch(action, payload, config, save, _auth_store(), target), "target": token}
     import_fields = {
         "knx_import_load": {
             "target",

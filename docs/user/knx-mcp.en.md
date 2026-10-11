@@ -14,6 +14,35 @@ not every standalone local address or prefix label. Loxone names stay primary.
 Use an exact address for targeted explanation; describe returned objects and
 trace only when structural context is needed.
 
+Use the discovered `loxberry_get_knx_catalog` for standalone local inventory:
+`kind="addresses"` reads ETS/manual records; `kind="prefix_labels"` reads active
+style-bound labels even without addresses. It requires separate OAuth consent
+to `loxberry:knx:read`, Admin enablement on the KNX page and an explicit approval
+for the exact client, identity, Miniserver and local target. It is disabled by
+default. Loxone login, diagnostic and operation approvals do not grant access.
+Admins can refresh candidates and revoke approvals there. Explorer approvals use
+the configured inactivity lifetime. A target change cannot reuse another target's
+approval. Disabling access retains approvals but blocks reads.
+
+Start with `view="summary"`, then narrow literal `query`, `source`,
+`deviations_only` or exact `address` before fetching entries (default 50, maximum
+100). Addresses accept no `:0`/`:1`. Summary hydrates no address rows and has no
+cursor. Entries keep sparse imported/manual sources, local resolution, unverified
+DPT declarations and deduplicated prefix context. Unknown fields, explicit empty
+values and `false` remain distinct. Prefix labels imply no signal relationship;
+`import_format` proves no XML export eligibility. No project download or Loxone
+names are included: use authorized project tools for current-project comparison.
+
+`total_matching` and `count_scope` refer to selected local records or active
+prefixes. Repeat selection and limit on continuation. Cursors bind caller, target
+and SQLite/manual-label revisions. Each newly issued cursor lasts five minutes;
+successful, freshly authorized continuation renews the next cursor. They end on
+restart. Changes require a fresh query. Whole rows fit within 64 KiB;
+`page_truncated` identifies a shortened page. Consume structured output once,
+not the text fallback too. Reads share global admission and have a bounded
+30/minute family quota. Storage failures never produce successful empty catalogs;
+authorization is checked again before returning data.
+
 For inventory review explicitly select `ets_project_comparison` with KNX scope.
 Defaults are unchanged. Check target, revision, freshness, coverage, diagnostic
 omissions and required pages. Distinguish a sample from a complete requested review.

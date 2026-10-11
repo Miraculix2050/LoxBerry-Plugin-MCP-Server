@@ -37,6 +37,7 @@ from mcpserver.auth.provider import (
 )
 from mcpserver.availability import AvailabilityPhase, AvailabilityReason
 from mcpserver.config import AtomicConfigStore, ConfigError
+from mcpserver.knx.catalog_runtime import CatalogRuntime
 from mcpserver.knx.model import KnxError
 from mcpserver.knx.project_metadata import ProjectMetadata
 from mcpserver.loxberry.diagnostics import DiagnosticsUnavailable, LoxBerryDiagnostics
@@ -8279,6 +8280,7 @@ def register_tool_surface(
     project_config_store: AtomicConfigStore | None = None,
     knx_store_path: Path | None = None,
     profile_auth_store: Any = None,
+    knx_catalog_runtime: CatalogRuntime | None = None,
 ) -> None:
     """Register one complete live or synthetic MCP tool surface."""
     register_skill_tool(server)
@@ -8287,6 +8289,9 @@ def register_tool_surface(
         register_profile_write_tools,
     )
     from mcpserver.installation_profile_write import ProfileWriteRuntime
+    from mcpserver.knx.catalog_tools import register_catalog_tool
+
+    register_catalog_tool(server, knx_catalog_runtime)
 
     register_profile_read_tool(
         server,

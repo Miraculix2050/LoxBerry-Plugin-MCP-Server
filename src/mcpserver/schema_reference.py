@@ -47,6 +47,7 @@ def tool_schema_catalog(version: str) -> dict[str, Any]:
                 ),
                 "inputSchema": tool.parameters,
                 "outputSchema": tool.output_schema,
+                **({"_meta": tool.meta} if tool.meta is not None else {}),
             }
         )
     return {

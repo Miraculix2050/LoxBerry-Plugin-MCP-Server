@@ -697,7 +697,13 @@ Vergleichsentwürfe dieser Admin-Sitzung und erhält ihre Importvorschau sowie a
 bestätigten KNX-Metadaten.
 
 **ETS/Loxone-Projektabgleich** benötigt eine separate Loxone-Anmeldung mit
-Projektzugriff. Er zeigt gemeinsame Adressen, Adressen nur im Importbestand
+Projektzugriff. Für eigenständige lokale ETS-/manuelle Adressen und aktive
+Präfixlabels benötigt `loxberry_get_knx_catalog` eine separate, standardmäßig
+ausgeschaltete und zielgebundene Admin-Freigabe sowie Zustimmung zu
+`loxberry:knx:read`. [KNX über MCP](knx-mcp.de.md) erläutert begrenzte Ansichten,
+Filter, Quelleninterpretation und Folgeseiten.
+
+Der Projektabgleich zeigt gemeinsame Adressen, Adressen nur im Importbestand
 und Adressen, die nur im autorisierten eingelesenen Projekt beobachtet wurden.
 Alle relevanten primären Loxone-Namen bleiben von ETS-Namen und manuellen
 Metadaten getrennt; begrenzte Objektlisten weisen ausgelassene Einträge aus.
