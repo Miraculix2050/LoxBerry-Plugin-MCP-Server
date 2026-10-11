@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Extend bounded history analysis with individual consumer ranking, whole-hour
+  PV/load windows, mixed operating-phase associations and a labelled nighttime
+  hourly-mean-power estimate. Preserve declared boundary assumptions, gaps,
+  undefined attribution and existing source/budget/cursor contracts (#438).
+
 - Add bounded read-only historical temperature summaries, verified energy and
   observed state durations through `loxone_analyze_history`. Reuse one fresh
   caller context, preserve unknown gaps/units/resets, and make raw pages opt-in

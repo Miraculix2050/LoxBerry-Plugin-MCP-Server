@@ -14,7 +14,15 @@ from mcpserver.loxone.history_evidence import HistoryInterval, utc_timestamp
 from mcpserver.loxone.state_semantics import SeriesSemantics
 from mcpserver.loxone.statistics import StatisticPoint
 
-AnalysisOperation = Literal["temperature_summary", "energy", "state_duration"]
+AnalysisOperation = Literal[
+    "temperature_summary",
+    "energy",
+    "state_duration",
+    "consumer_ranking",
+    "pv_load_overlap",
+    "operating_phases",
+    "baseload",
+]
 
 
 class HistoryAnalysisDeadline(RuntimeError):

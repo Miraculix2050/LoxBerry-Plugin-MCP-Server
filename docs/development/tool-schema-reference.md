@@ -3,7 +3,8 @@
 ## Compact historical calculations (#438)
 
 `loxone_analyze_history` requires `loxone:read` and `loxone:history`.
-`operation` is `temperature_summary`, `energy` or `state_duration`. Each of
+`operation` is `temperature_summary`, `energy`, `state_duration`,
+`consumer_ranking`, `pv_load_overlap`, `operating_phases` or `baseload`. Each of
 1–16 `sources` selects exact control plus series/state IDs or a currently
 confirmed `binding_id`. These selector forms cannot be mixed. Statistic selectors
 have granularity; state history remains raw. UTC-normalized half-open RFC3339
@@ -16,6 +17,14 @@ intervals and limitations. Unsupported/unverified semantics produce
 `insufficient_evidence`; partial observations are not complete periods.
 `data.raw` is empty unless `include_raw=true`; then it has at most 100 items
 and identity/request/content-bound `next_cursor`. Each page reauthorizes visibility.
+Comparison operations additionally expose bounded `data.comparison` with status,
+method/version, per-metric units, usable intervals and explicit limitations.
+Optional strict `comparison_options` carries the caller's
+`comparable_boundaries_confirmed` assertion (default false) and whole local
+`night_start_hour`/`night_end_hour` (defaults 0/5, ranges 0–23/1–24). Options are
+invalid on the original three operations and participate in cursor proofs.
+Ranking and production/load roles use currently confirmed profile bindings;
+declared compatibility does not become technical topology proof or permission.
 See [architecture and contract decision](history-analysis.md).
 
 ## Shared history time and coverage evidence (#437)

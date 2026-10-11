@@ -13,6 +13,20 @@ Seiten zu höchstens 100 Elementen übertragen. Grenzen: 16 Quellen, 31 lokale
 Tage, 100.000 Eingabepunkte, 30 Sekunden und 64 KiB Ergebnis. Für rohe Statistiken
 gilt weiterhin die strengere Grenze von sieben Tagen.
 
+Dasselbe Tool bietet `consumer_ranking`, `pv_load_overlap`, `operating_phases`
+und `baseload`. Ranking benötigt bestätigte Verbraucherbindungen, vergleichbare
+Messgrenzen und die ausdrücklich erklärte Vergleichbarkeit über
+`comparison_options.comparable_boundaries_confirmed`; Eltern-/Kindzähler müssen
+ausgeschlossen sein und werden nicht summiert. PV-/Lastvergleich nutzt bestätigte
+Rollen und gemeinsame ganze Stundenintervalle, optional innerhalb belegter
+Ein-Phasen. Zeitliche Überschneidung und eine Energieobergrenze beweisen keinen
+exakten PV-Eigenverbrauch. Betriebsphasen erhalten Lücken und verteilen keine
+Teilintervallenergie. Die Nachtlastschätzung nutzt den zeitgewichteten Median
+belegter Stundenmittel der Leistung aus Stundenenergie im lokalen Fenster
+00:00–05:00; `night_start_hour` und `night_end_hour` überschreiben es in ganzen
+Stunden. Die Tageshochrechnung bleibt eine Schätzung des gewählten Kanals.
+Unbelegte Leistungsstichproben reichen dafür nicht aus.
+
 Statistik- und lokale Event-History-Antworten liefern `coverage_evidence` mit
 UTC-Zeitbasis, halboffenen belegbaren Intervallen beziehungsweise Punktbelegen
 und ausdrücklichen Grenzen. Bestehende inklusive Zeitfilter und Cursor bleiben

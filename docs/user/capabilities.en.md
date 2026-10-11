@@ -12,6 +12,20 @@ requested, with at most 100 items per page. Limits: 16 sources, 31 local days,
 100,000 input points, 30 seconds and 64 KiB results. Raw statistics retain their
 stricter seven-day limit.
 
+The same tool provides `consumer_ranking`, `pv_load_overlap`, `operating_phases`
+and `baseload`. Ranking requires confirmed consumer bindings, comparable
+measurement boundaries and an explicit
+`comparison_options.comparable_boundaries_confirmed` assertion; parent/child
+counters must be excluded and are not summed. PV/load comparison uses confirmed
+roles and common whole hourly intervals, optionally inside evidenced active
+phases. Temporal coincidence and an energy upper bound do not prove exact solar
+self-consumption. Operating phases retain gaps and never allocate partial-interval
+energy. Nighttime estimation uses the time-weighted median of evidenced hourly
+mean powers derived from hourly energy in the local 00:00-05:00 window;
+`night_start_hour` and `night_end_hour` override whole hours. Daily extrapolation
+remains an estimate for the selected channel. Unevidenced power samples cannot
+establish that estimate.
+
 Statistics and local Event History responses expose `coverage_evidence` with
 UTC time basis, half-open evidenced intervals or point observations, and explicit
 limitations. Existing inclusive filters and cursors remain compatible. Samples
