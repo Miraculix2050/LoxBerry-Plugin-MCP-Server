@@ -1,27 +1,37 @@
-# Analysis questions and evidence
+# Analysis questions: support and boundaries
 
-The acceptance catalog covers six lighting questions, seven state/history
-questions and twelve solar questions. Issues #434, #435, #437, #438 and #445 extend
-the foundations incrementally. This overview describes the baseline; it does not
-confirm any particular installed version or hardware.
+The original 25 questions remain in the versioned acceptance catalog. Two later KNX cases are separate extensions. Snapshot: Analysis foundation PRs 1–8, 11 October 2026. Labels describe the evidenced answer scope, not exhaustive hardware coverage or 75 independent AI runs.
 
-| Question area | Baseline | Requirements and limitations |
-| --- | --- | --- |
-| Current room temperature, kitchen light, door contact, active controls | conditional | Fresh visibility and proven state semantics; stale or unknown values remain unresolved. |
-| Mean temperature and consumer energy | conditional | Suitable history, measurement role, unit, period and coverage; a heat pump is optional. |
-| Light names, scenes and presence associations | conditional | Visible structure and evidenced project relationships; planning advice needs user intent and fixture data. |
-| Solar yield, curves, consumer overlap, ranking, base load and report | conditional | Confirmed measurement sources and suitable history; shared analysis core not yet delivered. |
-| Native energy balance and complete self-consumption values | unavailable | Depends on pending evidenced EFM projections and native results. |
-| Weather comparisons, weather-adjusted anomalies and causes | unavailable | Requires further roadmap work and historical weather data. |
-| Load shifting and tomorrow's operating windows | unavailable | Requires confirmed operating constraints, load profiles and a suitable PV forecast. |
+Supported: a bounded existing read workflow. Conditional: required sources, semantics, bindings and coverage must exist. Unavailable: the required feature belongs to open external workstreams. Experimental: advice requires additional user evidence and specialist review. Gen. 2/Compact remain experimental without matching device acceptance.
 
-“Conditional” means that the necessary data and semantics must actually exist;
-it does not promise a complete automated analysis. “Supported” requires matching
-acceptance evidence. “Experimental” describes a delivered capability with
-explicitly outstanding compatibility evidence.
+| ID | Question / operation | Status | Workflow and allowed boundaries |
+| --- | --- | --- | --- |
+| lighting-01 | scene inventory | conditional | `loxone_get_structure_overview` → `loxone_describe_control`; Visible scenes only; absent visibility does not prove absent configuration. |
+| lighting-02 | naming review | supported | `loxone_find_controls` → `loxone_describe_control`; Naming candidates only; no duplicated physical circuit claim. |
+| lighting-03 | presence links | conditional | `loxone_find_project_objects` → `loxone_trace_project_logic`; Explicit project links required; room membership is not a connection. |
+| lighting-04 | lighting advice | experimental | `loxone_get_installation_profile` → `loxone_describe_control`; Planning advice needs user intent and fixture inventory; no automatic suitability proof. |
+| lighting-05 | scene roles | conditional | `loxone_get_installation_profile` → `loxone_describe_control`; Scene roles must be confirmed; labels alone are not technical roles. |
+| lighting-06 | context review | experimental | `loxone_find_project_objects` → `loxone_get_installation_profile`; Qualified design review only; specialist lighting work remains outside this foundation. |
+| basic-07 | temperature summary | conditional | `loxone_get_installation_profile` → `loxone_analyze_history`; temperature_summary: actual-temperature unit and UTC samples; sample mean is not time weighted. |
+| basic-08 | consumer energy | conditional | `loxone_get_installation_profile` → `loxone_analyze_history`; energy: optional consumer, confirmed boundary; counter endpoint differences remain partial with unknown resets. |
+| basic-09 | active controls | conditional | `loxone_find_controls` → `loxone_get_state_semantics`; Known operational states only; unknown controls prevent a complete installation-wide answer. |
+| basic-10 | home temperature | supported | `loxone_find_controls` → `loxone_get_state_semantics`; Exact current actual temperatures, with freshness and explicit units; no inferred house average. |
+| basic-11 | kitchen light | conditional | `loxone_find_controls` → `loxone_get_state_semantics`; Select the visible kitchen control and proven operating state; do not infer from names or arbitrary numeric values. |
+| basic-12 | room temperature | supported | `loxone_find_controls` → `loxone_get_state_semantics`; Room selection must be explicit; report actual temperature separately from target. |
+| basic-13 | door contact | conditional | `loxone_find_controls` → `loxone_read_controls`; Exact authorized contact and proven direction; present configuration is not historic state. |
+| solar-14 | yield comparison | conditional | `loxone_get_installation_profile` → `loxone_analyze_history`; energy per explicit local period; confirmed production binding and complete evidence required for full-day claims. |
+| solar-15 | native balance | unavailable | `loxone_describe_control`; Native EFM period balance depends on #436/#363/#364; no parallel balance engine. |
+| solar-16 | aligned curves | conditional | `loxone_analyze_history`; pv_load_overlap plus opt-in source-separated UTC raw pages; hourly energy is not instantaneous power or grid flow. |
+| solar-17 | pv overlap | conditional | `loxone_get_installation_profile` → `loxone_analyze_history`; pv_load_overlap with optional observed enable signal; complete active hours only, upper bound rather than exact solar attribution. |
+| solar-18 | consumer ranking | conditional | `loxone_get_installation_profile` → `loxone_analyze_history`; consumer_ranking requires explicit comparability confirmation; exclude parent/child overlap and do not sum independent ranks. |
+| solar-19 | retrospective shift | unavailable | `loxone_analyze_history`; Historical observations may inform a qualified response; load-shifting recommendations remain #440. |
+| solar-20 | similar days | unavailable | `loxone_get_statistics`; Historical weather and matched-day method remain #439. |
+| solar-21 | self consumption difference | unavailable | `loxone_get_statistics`; No causal self-consumption explanation without native EFM, historical weather and context (#436/#439). |
+| solar-22 | low yield | unavailable | `loxone_get_statistics`; Weather-normalized anomalies and installation parameters remain #439. |
+| solar-23 | night base load | conditional | `loxone_get_installation_profile` → `loxone_analyze_history`; baseload uses verified whole-hour energy-derived mean power in local 00-05; daily extrapolation is an estimate of the selected channel. |
+| solar-24 | periodic report | conditional | `loxone_get_installation_profile` → `loxone_analyze_history`; Qualified component report only; native self-consumption/export/import remain #436, gaps and unknown rest/storage must stay explicit. |
+| solar-25 | future windows | unavailable | `loxone_get_weather`; Tomorrow load/PV forecasts and operating constraints remain #440; weather alone does not establish a schedule. |
 
-A qualified partial answer is correct when sources are missing. Do not infer
-roles from names, invent history, or present coincidence as causation or exact
-solar attribution. Analysis performs no control commands.
+Numeric references: sample mean 21 °C; counter difference 3 kWh; rank 3/2 kWh; mixed hourly window 3600 s; night median 100 W and estimated 2.4 kWh/day. Conversion of evidenced synthetic power intervals into whole-hour energies is a fixture contract, not a new decoder. Details and measurement limits: [Acceptance report](../development/analysis-acceptance.md).
 
-Details: [Acceptance procedure](../development/analysis-acceptance.md).
+Correct qualified partial answers are allowed when sources are absent. No roles inferred from names, backfilled initial values, hidden identities, control commands or causal solar attribution. Token consumption and the 20-percent token target remain incomplete without available token measurements; response bytes are not tokens.

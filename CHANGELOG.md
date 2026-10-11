@@ -5,6 +5,10 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Publish the 25-question DE/EN analysis support matrix and execute original
+  numeric references against the delivered core. Mark unavailable independent
+  AI/token and matched performance measurements incomplete (#445).
+
 - Extend bounded history analysis with individual consumer ranking, whole-hour
   PV/load windows, mixed operating-phase associations and a labelled nighttime
   hourly-mean-power estimate. Preserve declared boundary assumptions, gaps,
