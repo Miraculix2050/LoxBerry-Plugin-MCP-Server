@@ -513,3 +513,21 @@ test('Modbus results keep facts, review candidates, gaps and partial coverage vi
   assert.ok(summary.querySelector('.mcp-explorer-warning'));
   assert.doesNotMatch(summary.textContent, /unused|healthy|fault/);
 });
+
+// Synthetic output, not an observed Miniserver UI capture.
+test('EFM occurrence previews retain reference uncertainty and render titles safely', async (t) => {
+  const h = createHarness({tools: [{...readTool, name: 'loxone_describe_control'}], callResult: {ok: true, data: {
+    participants: [{reference_status: 'unavailable', role_token: 'Grid'},
+      {title: '<script>synthetic</script>', reference_status: 'absent'}],
+  }}});
+  t.after(h.close);
+  await h.ready();
+  h.byId('json').value = JSON.stringify({query: 'synthetic'});
+  await h.click(h.byId('run'));
+  await h.waitFor(() => h.byId('result-tree').textContent.includes('participants'));
+  await h.click([...h.byId('result-tree').querySelectorAll('.mcp-explorer-tree-toggle')]
+    .find((summary) => summary.textContent.includes('participants')));
+  assert.match(h.byId('result-tree').textContent, /unavailable/);
+  assert.match(h.byId('result-tree').textContent, /<script>synthetic<\/script>/);
+  assert.equal(h.byId('result-tree').querySelector('script'), null);
+});

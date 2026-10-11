@@ -47,6 +47,7 @@ from mcpserver.loxone.active_alerts import (
     source_states,
 )
 from mcpserver.loxone.control import allowed_actions
+from mcpserver.loxone.efm import describe as describe_efm
 from mcpserver.loxone.event_history import (
     EventHistoryCoverage,
     EventHistoryMonitor,
@@ -375,6 +376,39 @@ class AlarmClockModelData(BaseModel):
     wake_alarm_sloping_connected: bool | None = None
 
 
+class EfmParticipantData(BaseModel):
+    path: list[int]
+    parent_path: list[int] | None
+    node_uuid: str | None
+    title: str | None
+    icon: str | None
+    residual_display: dict[str, str | bool]
+    role_token: str | int | None
+    role: None = None
+    role_status: Literal["unknown"] = "unknown"
+    control_metadata_truncated: bool
+    reference_status: Literal["resolved", "unavailable", "absent", "malformed"]
+    control: LinkedControlData | None
+    diagnostics: list[str]
+
+
+class EfmProjectionData(BaseModel):
+    source: Literal["LoxAPP3.details.nodes"]
+    participants: list[EfmParticipantData]
+    residual_display: dict[str, str | bool]
+    returned: int
+    projection_omitted: int
+    omitted_subtrees: int
+    omitted_descendants: int | None
+    topology_complete: bool
+    references_complete: bool
+    roles_complete: bool
+    max_nodes: int
+    max_depth: int
+    max_metadata_bytes: int
+    diagnostics: list[str]
+
+
 class ControlModelData(BaseModel):
     """Bounded documented type metadata; state values remain in loxone_get_states."""
 
@@ -384,6 +418,7 @@ class ControlModelData(BaseModel):
     ventilation_timer_profiles: list[VentilationTimerProfileData] = Field(default_factory=list)
     window_monitor_items: list[WindowMonitorItemData] = Field(default_factory=list)
     window_monitor_summary: WindowMonitorSummaryData | None = None
+    efm: EfmProjectionData | None = None
     connected_inputs: int | None = None
     irrigation: IrrigationModelData | None = None
     alarm_clock: AlarmClockModelData | None = None
@@ -4809,6 +4844,13 @@ def register_read_tools(
                 if view in {"operation_targets", "state_refs"}
                 else await _snapshot(runtime)
             )
+            if view == "full" and any(
+                item.uuid == control_uuid and item.control_type == "EFM"
+                for item in _controls_for_diagnosis(
+                    snapshot.structure, include_hidden=include_hidden
+                )
+            ):
+                access_token, snapshot = await _snapshot(runtime, fresh_visibility=True)
             if view not in {"full", "history_targets", "operation_targets", "state_refs"}:
                 return _error(ControlDescriptionEnvelope, "invalid_input", "view is invalid")
             control = next(
@@ -5067,6 +5109,9 @@ def register_read_tools(
                             }
                             for item in control.ventilation_timer_profiles
                         ],
+                        "efm": describe_efm(control.efm, visible_controls)
+                        if control.efm is not None
+                        else None,
                         "window_monitor_items": window_monitor_items,
                         "window_monitor_summary": window_monitor_summary,
                         "connected_inputs": control.connected_inputs,
@@ -5112,6 +5157,7 @@ def register_read_tools(
                         "ClimateControllerUS",
                         "Ventilation",
                         "WindowMonitor",
+                        "EFM",
                         "Irrigation",
                         "AlarmClock",
                     }

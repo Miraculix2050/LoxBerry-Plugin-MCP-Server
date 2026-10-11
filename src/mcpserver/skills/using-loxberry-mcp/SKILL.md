@@ -929,3 +929,22 @@ dependency, but do not infer payload fields, commands, compatibility, bidirectio
 protocol behavior or AQ/TQ/KNX/contact effects. `value_available=false` means the
 projection exposes no scalar API value. Preserve unresolved links and truncation.
 State `output_api_complete=false` still limits payload semantics, not topology.
+
+## EFM participant references (#363)
+
+Full Describe exposes `capabilities.model.efm` for exact source type `EFM`.
+Paths preserve ordered occurrences and parents, separate from causal wiring and
+subcontrols. Associations resolve only against fresh caller visibility;
+unavailable targets disclose no identity. Reused controls remain separate.
+Titles, icons and rest metadata are presentation, never measured values.
+Roles retain bounded source tokens and remain semantically unknown without a
+matching version rule; numeric XML aliases are not decoded. Limits are 100
+occurrences, eight levels and 32 KiB retained metadata. Omitted subtree roots
+are counted; their unvisited descendants remain unknown. Topology, references
+and roles have separate completeness. Compact views remain unchanged.
+State bindings belong to separate #364; no values or remote node reads occur.
+
+Resolved control display names/types are capped at 200/64 characters with a
+truncation marker. The complete serialized EFM projection also fits 32 KiB.
+`projection_omitted` counts normalized occurrences omitted from the DFS suffix
+by that final budget; retained parents and source paths remain stable.
