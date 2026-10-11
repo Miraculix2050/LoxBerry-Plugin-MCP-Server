@@ -28,6 +28,7 @@ if (($q->{lang} // '') =~ /\A(?:de|en)\z/) {
 $ENV{MCPSERVER_KNX_ADMIN} = "1";
 $ENV{LBPDATA} = $lbpdatadir;
 $ENV{MCPSERVER_CONFIG} = "$lbpconfigdir/mcpserver.json";
+$ENV{MCPSERVER_AUTH_STORE} = "$lbpdatadir/auth/sessions.json";
 my $session_token = $cgi->cookie('mcp_knx_admin') // '';
 my $session_cookie;
 if ($session_token !~ /\A[0-9a-f]{64}\z/ && ($ENV{REQUEST_METHOD} // '') eq 'GET') {

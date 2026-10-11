@@ -176,6 +176,7 @@ def test_knx_page_uses_authenticated_narrow_same_origin_boundary() -> None:
     cgi = (root / "webfrontend/htmlauth/knx.cgi").read_text(encoding="utf-8")
     js = (root / "webfrontend/htmlauth/knx.js").read_text(encoding="utf-8")
     assert "MCPServer::RequestSecurity::same_origin_post()" in cgi
+    assert '$ENV{MCPSERVER_AUTH_STORE} = "$lbpdatadir/auth/sessions.json";' in cgi
     assert "knx_put|knx_delete|knx_export|knx_restore|knx_taxonomy" in cgi
     assert "textContent = value" in js
     assert "taxonomy_revision: labelsRevision ?? state.taxonomy_revision" in js
