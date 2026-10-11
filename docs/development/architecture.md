@@ -201,6 +201,21 @@ is the detailed per-object evidence projection.
 
 ## KNX metadata administration
 
+`knx.project_comparison` compares imported address keys with the existing
+authorized `ProjectQueryIndex.knx_by_address` reverse index. The explicit
+`ets_project_comparison` analysis does not change default analysis selection or
+build another graph. Temporary indexed SQLite tables hold project address/name
+observations in a read transaction; only bounded compact findings are cached.
+Returned pages hydrate at most 50 address records in one metadata lookup and
+at most 20 project objects per address, with omitted counts. No per-hit queries
+or full source-document decoding occurs. A bounded worker lease remains held
+until threaded work actually ends, including cancellation; the existing shared
+analysis deadline also bounds SQLite operations. Target/revision-bound cursors
+and fresh authorization guard every response. The KNX page uses the existing
+Explorer OAuth/transport components with a new read-only grant; existing
+Explorer defaults are preserved. Neither browser login nor metadata access
+grants LoxBerry administration rights.
+
 `knx.read_model` provides local query validation, literal Unicode substring matching
 and bounded source/DPT projections. Indexed target selection precedes SQLite text
 filters; the process materializes only the selected page, with fixed query count

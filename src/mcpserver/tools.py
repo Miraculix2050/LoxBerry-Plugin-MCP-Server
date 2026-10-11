@@ -84,6 +84,15 @@ from mcpserver.loxone.presentation import visible_controls as _visible_controls
 from mcpserver.loxone.presentation import window_monitor_description as _window_monitor_description
 from mcpserver.loxone.project.analysis import ANALYSES as KNX_ANALYSES
 from mcpserver.loxone.project.analysis import ANALYSIS_VERSION
+from mcpserver.loxone.project.ets_comparison import (
+    ETS_COMPARISON,
+)
+from mcpserver.loxone.project.ets_comparison import (
+    observe_project_bounded as observe_ets_project,
+)
+from mcpserver.loxone.project.ets_comparison import (
+    project_page as ets_comparison_page,
+)
 from mcpserver.loxone.project.modbus_analysis import (
     MODBUS_ANALYSES,
     MODBUS_ANALYSIS_VERSION,
@@ -1709,7 +1718,33 @@ class ProjectAnalysisConnectorData(BaseModel):
     connector_key_truncated: bool
 
 
+class ProjectKnxComparisonObjectData(BaseModel):
+    project_node_id: str
+    loxone_name: str | None
+    name_complete: bool
+    project_title: str | None
+    project_description: str | None
+    internal_name: str | None
+    original_address: str | None
+    address_variant: Literal["0", "1"] | None
+    address_format: Literal["two_level", "three_level"] | None
+    truncated_fields: list[str]
+
+
+class ProjectKnxComparisonRowData(BaseModel):
+    address_id: int = Field(ge=0, le=65535)
+    relation: Literal["common", "import_only", "observed_project_only"]
+    names_differ: bool
+    name_comparison: Literal["compared", "unknown", "not_applicable"]
+    project_names_complete: bool
+    ambiguous_names: bool
+    local_metadata: ProjectKnxMetadataData | None
+    project_objects: list[ProjectKnxComparisonObjectData] = Field(max_length=20)
+    project_objects_omitted: int = Field(ge=0)
+
+
 class ProjectAnalysisFindingData(BaseModel):
+    comparison: ProjectKnxComparisonRowData | None = None
     finding_id: str
     analysis: Literal[
         "address_hierarchy",
@@ -1721,8 +1756,10 @@ class ProjectAnalysisFindingData(BaseModel):
         "graph_outliers",
         "project_connectivity",
         "peer_group_consistency",
+        "ets_project_comparison",
     ]
     finding_type: Literal[
+        "imported_project_address_observation",
         "address_prefix_summary",
         "address_hierarchy_pattern",
         "address_hierarchy_outlier",
@@ -1809,6 +1846,7 @@ class ProjectAnalysisData(BaseModel):
             "graph_outliers",
             "project_connectivity",
             "peer_group_consistency",
+            "ets_project_comparison",
         ]
     ]
     coverage: ProjectAnalysisCoverageData
@@ -5610,8 +5648,8 @@ class _ProjectAnalysisRunner:
                 require_implemented(selected)
                 version = MODBUS_ANALYSIS_VERSION
             elif scope == "knx":
-                allowed = frozenset(KNX_ANALYSES)
-                selected = frozenset(analyses) if analyses is not None else allowed
+                allowed = frozenset(KNX_ANALYSES) | {ETS_COMPARISON}
+                selected = frozenset(analyses) if analyses is not None else frozenset(KNX_ANALYSES)
                 if not selected or (analyses is not None and len(selected) != len(analyses)):
                     raise ValueError("analyses must be a non-empty unique list")
                 if not selected <= allowed:
@@ -5626,6 +5664,8 @@ class _ProjectAnalysisRunner:
                 raise RuntimeUnavailable("the service is not configured")
             projects = self.runtime.projects
             access = _access()
+            if ETS_COMPARISON in selected and self.metadata is None:
+                raise ProjectError("project_metadata_unavailable")
             taxonomy: tuple[AddressTaxonomyEntry, ...] = ()
             knx_revision = 0
             knx_target = ""
@@ -5715,8 +5755,44 @@ class _ProjectAnalysisRunner:
                         raise ValueError("cursor has expired; start a new analysis")
                     _LOGGER.debug("component=project_analysis_cache outcome=miss")
                     async with self.runtime.worker_slot():
+                        work_deadline = time.monotonic() + 45
                         if scope == "knx":
-                            result = await process_analysis(project.view, selected, taxonomy)
+                            standard = selected - {ETS_COMPARISON}
+                            if standard:
+                                result = await process_analysis(project.view, standard, taxonomy)
+                            if ETS_COMPARISON in selected:
+                                assert self.metadata is not None
+                                comparison = await observe_ets_project(
+                                    project,
+                                    self.metadata,
+                                    knx_target,
+                                    knx_revision,
+                                    deadline=work_deadline,
+                                )
+                                if not standard:
+                                    result = comparison
+                                else:
+                                    standard_summaries = result.get("summaries")
+                                    standard_findings = result.get("findings")
+                                    standard_reasons = result.get("truncation_reasons")
+                                    if (
+                                        not isinstance(standard_summaries, dict)
+                                        or not isinstance(standard_findings, list)
+                                        or not isinstance(standard_reasons, list)
+                                    ):
+                                        raise ProjectError("project_worker_invalid")
+                                    result["analyses"] = sorted(selected)
+                                    result["summaries"] = {
+                                        **standard_summaries,
+                                        **comparison["summaries"],
+                                    }
+                                    combined = standard_findings + comparison["findings"]
+                                    result["findings"] = combined[:10_000]
+                                    if comparison["analysis_truncated"] or len(combined) > 10_000:
+                                        result["analysis_truncated"] = True
+                                        result["truncation_reasons"] = sorted(
+                                            set(standard_reasons) | {"max_findings"}
+                                        )
                         else:
                             result = await process_analysis(project.view, selected, scope=scope)
                     await projects.authorize(access)
@@ -5737,6 +5813,17 @@ class _ProjectAnalysisRunner:
                 raise ProjectError("project_worker_invalid")
             page = _page(self.cursors, cursor_scope, findings, cursor, limit)
             page["findings"] = page.pop("items")
+            if ETS_COMPARISON in selected:
+                assert self.metadata is not None
+                page["findings"] = await asyncio.to_thread(
+                    ets_comparison_page,
+                    project,
+                    self.metadata,
+                    knx_target,
+                    knx_revision,
+                    page["findings"],
+                )
+                await projects.authorize(access)
             envelope = _result(
                 _PreparedProjectAnalysisEnvelope,
                 {**result, **page},
@@ -5749,6 +5836,12 @@ class _ProjectAnalysisRunner:
                     "Project analysis result exceeds the response limit",
                 )
             return envelope
+        except KnxError:
+            return _error(
+                _PreparedProjectAnalysisEnvelope,
+                "temporarily_unavailable",
+                "KNX import catalog is unavailable or changed; start a new analysis",
+            )
         except ConfigError:
             return _error(
                 _PreparedProjectAnalysisEnvelope,
@@ -6193,6 +6286,7 @@ def register_project_tools(
                     "graph_outliers",
                     "project_connectivity",
                     "peer_group_consistency",
+                    "ets_project_comparison",
                     "inventory",
                     "configured_register_mappings",
                     "direct_consumers",
@@ -6203,12 +6297,12 @@ def register_project_tools(
             | None,
             Field(
                 description=(
-                    "Optional unique analyses from the selected scope; omit for all "
-                    "checks of that scope."
+                    "Optional unique analyses from the selected scope; omit for standard "
+                    "checks. ets_project_comparison is selected explicitly."
                 ),
                 json_schema_extra={
                     "x-analyses-by-scope": {
-                        "knx": sorted(KNX_ANALYSES),
+                        "knx": sorted(KNX_ANALYSES | {ETS_COMPARISON}),
                         "modbus": list(MODBUS_ANALYSES),
                     }
                 },

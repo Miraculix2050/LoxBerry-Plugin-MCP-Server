@@ -65,6 +65,7 @@ class ProjectQueryIndex:
     containment_parents: Mapping[str, tuple[str, ...]] = field(init=False, repr=False)
     children: Mapping[str, tuple[str, ...]] = field(init=False, repr=False)
     knx_addresses: Mapping[str, int] = field(init=False, repr=False)
+    knx_by_address: Mapping[int, tuple[str, ...]] = field(init=False, repr=False)
     container_bytes: int = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -87,11 +88,13 @@ class ProjectQueryIndex:
                 children[edge.source].append(edge.target)
         nodes = {node.key: node for node in self.graph.nodes}
         knx_addresses = {}
+        knx_groups: dict[int, list[str]] = defaultdict(list)
         for node in self.graph.nodes:
             if node.knx is not None and node.knx.group_address is not None:
                 number = address_number(node.knx.group_address.canonical)
                 if number is not None:
                     knx_addresses[node.key] = number
+                    knx_groups[number].append(node.key)
         containment_size = getsizeof(containment)
         children_size = getsizeof(children)
         containment_index = _freeze_index_groups(containment)
@@ -101,6 +104,8 @@ class ProjectQueryIndex:
         object.__setattr__(self, "containment_parents", containment_index)
         object.__setattr__(self, "children", children_index)
         object.__setattr__(self, "knx_addresses", MappingProxyType(knx_addresses))
+        knx_by_address = {number: tuple(keys) for number, keys in knx_groups.items()}
+        object.__setattr__(self, "knx_by_address", MappingProxyType(knx_by_address))
         # Keys/nodes/graph strings are borrowed; count owned containers once.
         object.__setattr__(
             self,
@@ -110,6 +115,8 @@ class ProjectQueryIndex:
                 + getsizeof(nodes)
                 + getsizeof(parents)
                 + getsizeof(knx_addresses)
+                + getsizeof(knx_by_address)
+                + sum(getsizeof(keys) for keys in knx_by_address.values())
                 + sum(getsizeof(number) for number in knx_addresses.values())
                 + containment_size
                 + children_size
@@ -123,6 +130,7 @@ class ProjectQueryIndex:
                         self.containment_parents,
                         self.children,
                         self.knx_addresses,
+                        self.knx_by_address,
                     )
                 )
             ),

@@ -5,7 +5,8 @@
   if (root) root.McpExplorerAuth = api;
 })(typeof window !== 'undefined' ? window : undefined, function () {
   'use strict';
-  function create({core, state, explorerState, label, clearOriginWarning, renderConnection, revokeAndClear}) {
+  function create({core, state, explorerState, label, clearOriginWarning, renderConnection, revokeAndClear,
+    requestedScopes, clientName = 'LoxBerry MCP Tool Explorer'}) {
     async function sha256(value) {
       return new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)));
     }
@@ -87,7 +88,7 @@
         headers: {'Content-Type': 'application/json'},
         cache: 'no-store',
         body: JSON.stringify({
-          client_name: 'LoxBerry MCP Tool Explorer',
+          client_name: clientName,
           redirect_uris: [redirectUri],
           grant_types: ['authorization_code', 'refresh_token'],
           response_types: ['code'],
@@ -156,7 +157,13 @@
       const supported = new Set(discovered.resourceMetadata.scopes_supported || []);
       if (!supported.has('loxone:read')) throw new Error(label('error'));
       if (!supported.has('loxone:history')) supported.delete('loxberry:operate');
-      const scope = core.EXPLORER_SCOPE_ORDER.filter((item) => supported.has(item)).join(' ');
+      const selectedScopes = requestedScopes || core.EXPLORER_SCOPE_ORDER;
+      if (!Array.isArray(selectedScopes) || !selectedScopes.includes('loxone:read')
+        || selectedScopes.some((item) => !core.EXPLORER_SCOPE_ORDER.includes(item))) {
+        throw new Error(label('error'));
+      }
+      const scope = core.EXPLORER_SCOPE_ORDER
+        .filter((item) => supported.has(item) && selectedScopes.includes(item)).join(' ');
       const registrationScope = scope;
       const redirectUri = new URL('explorer_callback.cgi', window.location.href).href;
       const clientId = await registerClient(discovered.authorizationMetadata, registrationScope, redirectUri);
