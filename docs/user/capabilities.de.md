@@ -603,6 +603,38 @@ Bekannte nicht auflösbare API-Verbindungen bleiben in allgemeinen Projektbelege
 
 ### KNX-Verwaltung
 
+**ETS-Eingabestände vergleichen** vergleicht zwei ausdrücklich geladene Dateien
+oder eine Datei gegen den aktuellen Importbestand auf derselben Seite. Dafür
+ist LoxBerry-Admin-Zugriff erforderlich; ein Loxone-Projektlogin wird nicht
+benötigt. Laden und Vergleichen ändern keine gespeicherten Daten. Frühere Eingabe
+beziehungsweise Referenz und spätere Vergleichseingabe wählen, jede Datei mit
+Kodierung/Darstellung und erklärter Vollständigkeit laden und dann vergleichen.
+Ergebnisse zeigen Adressen und Präfixgruppen nur in einer Eingabe, geänderte
+Quellenfelder und bei Bestandsvergleichen separate manuelle Adress-Overrides
+und Präfixlabels. Rein manuelle Datensätze sind keine entfernten Importadressen.
+Ein Datei-/Dateivergleich bewertet keine lokalen Overrides. Es wird keine
+Importhistorie erfunden oder dauerhaft gespeichert.
+
+Die numerische Adressidentität ignoriert zwei-/dreistufige Schreibweisen.
+Präfixgruppen behalten ihre Format-/Präfixidentität. Namen und Beschreibungen
+behalten ihre genaue Schreibweise; DPT-Angaben werden als Mengen normalisierter
+Kennungen verglichen, unbekannte Kennungen bleiben erhalten. Dateireihenfolge,
+gleichwertige DPT-Schreibweisen und DPT-Reihenfolge erzeugen keine Quellenänderung.
+Fehlend, bewusst leer und false unterscheiden sich; optionale Angaben nur in
+einem Format bleiben eine tatsächliche Informationslücke. Fehlen in einer
+Teileingabe belegt keine Löschung in ETS. Der aktuelle Bestand kann mehrere
+Importe enthalten und hat unbekannte Projektvollständigkeit. Der Vergleich
+übernimmt keine Änderung; ein Import nutzt seinen eigenen geprüften Speichervorgang.
+
+Ergebnisse erscheinen auf 50er-Seiten. Ein geändertes Ziel oder eine neue Revision
+verlangen neu geladene Eingaben. Widersprüchliche Duplikate müssen vor dem Vergleich
+in der Datei geklärt werden; identische Duplikate werden zusammengeführt. Temporäre
+Vergleichsentwürfe verfallen nach zehn Minuten, teilen sich das bestehende Gesamtbudget
+von 32 MiB und erlauben höchstens 16 MiB je Datei. Sie ersetzen keine offene
+Importvorschau. **Vergleichsdateien und Ergebnisse verwerfen** entfernt die
+Vergleichsentwürfe dieser Admin-Sitzung und erhält ihre Importvorschau sowie alle
+bestätigten KNX-Metadaten.
+
 **ETS/Loxone-Projektabgleich** benötigt eine separate Loxone-Anmeldung mit
 Projektzugriff. Er zeigt gemeinsame Adressen, Adressen nur im Importbestand
 und Adressen, die nur im autorisierten eingelesenen Projekt beobachtet wurden.
@@ -633,7 +665,7 @@ CSV-Gruppenzeilen werden von Einzeladressen unterschieden; mehrere DPTs bleiben 
 
 Für einen vollständigen Export den obersten Gruppenadressen-Knoten in ETS auswählen. Der Import prüft die Datei, kann ihre Vollständigkeit für das ETS-Projekt aber nicht selbst nachweisen. Die Zuordnung zum angezeigten konfigurierten Miniserver erfolgt durch den Administrator.
 
-Datei laden, Ziel und Umfang prüfen, widersprüchliche Duplikate entscheiden und erst dann **Geprüften Import speichern** wählen. Identische Duplikate werden zusammengeführt. Vorschau, Abbruch und ungültige Dateien verändern keine gespeicherten Adressdaten. Ein gültiger neuer Entwurf ersetzt den bisherigen Entwurf derselben Admin-Sitzung; ein ungültiger Upload erhält ihn. Entwürfe verfallen nach zehn Minuten und sind an Sitzung, Miniserver, Adressrevision und manuelle Präfixlabels gebunden. Geänderte Daten verlangen eine neue Vorschau.
+Datei laden, Ziel und Umfang prüfen, widersprüchliche Duplikate entscheiden und erst dann **Geprüften Import speichern** wählen. Identische Duplikate werden zusammengeführt. Vorschau, Abbruch und ungültige Dateien verändern keine gespeicherten Adressdaten. Ein gültiger neuer Importentwurf ersetzt den bisherigen Importentwurf derselben Admin-Sitzung; ein ungültiger Upload erhält ihn. Entwürfe verfallen nach zehn Minuten und sind an Sitzung, Miniserver, Adressrevision und manuelle Präfixlabels gebunden. Geänderte Daten verlangen eine neue Vorschau.
 
 Der Standard ergänzt/aktualisiert Importwerte enthaltener Adressen. Fehlende optionale Felder werden dort unbekannt, nicht bewusst leer; feldweise manuelle Overrides bleiben erhalten. **Importwert verwenden** entfernt den jeweiligen Override beim Speichern der Adresse. ETS- und manuelle Namen erscheinen getrennt. Die lokale Auswahl ist kein Vorrang vor Loxone-Namen. Mehrere DPT-Angaben und explizite ETS-Flags bleiben Quellenangaben; sie ersetzen keinen Loxone-`EIBType`.
 

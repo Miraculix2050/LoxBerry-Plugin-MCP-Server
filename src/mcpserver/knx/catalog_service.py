@@ -87,6 +87,8 @@ class CatalogService:
     def preview(self, identifier: str, payload: dict[str, Any]) -> dict[str, Any]:
         snapshot = self.repository.snapshot(self.target)
         raw, options = self.drafts.load(identifier, self.target, snapshot["revision"])
+        if options.get("draft_slot", "import") != "import":
+            raise KnxError("knx_draft_invalid")
         if options.get("manual_revision") != self.manual_revision():
             raise KnxError("knx_revision_conflict")
         if not payload.keys() <= {
@@ -148,6 +150,8 @@ class CatalogService:
     def apply(self, identifier: str, token: object) -> dict[str, Any]:
         snapshot = self.repository.snapshot(self.target)
         raw, options = self.drafts.load(identifier, self.target, snapshot["revision"])
+        if options.get("draft_slot", "import") != "import":
+            raise KnxError("knx_draft_invalid")
         if options.get("manual_revision") != self.manual_revision():
             raise KnxError("knx_revision_conflict")
         if not isinstance(token, str) or not secrets.compare_digest(
