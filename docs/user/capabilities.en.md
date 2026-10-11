@@ -626,3 +626,37 @@ Label text can still be loaded and exported. Versioned JSON exchange includes ad
 JSON export contains the displayed address page. Larger catalogs can be exchanged page by page so every file remains within the import bound.
 
 Deletion and discarding form input are confirmed in a dialog within the page. Cancel and Escape retain the input. Save before reloading or closing the browser tab: unsaved input is discarded by those browser actions.
+
+
+## Experimental ETS XML correction export
+
+On the KNX management page, run an authorized ETS/Loxone comparison, then select
+individual imported addresses on its current result page (maximum 50). Choose
+name and description separately: keep the ETS value, use a specifically shown
+Loxone value or explicitly enter a value. Multiple Loxone names require a choice;
+there is no automatic bulk selection. This decision changes no local overrides
+or Loxone data.
+
+Preview and download recheck target, catalog revision and the freshly authorized
+project snapshot. The serializer uses only proven source data from the latest
+XML import, including its parent hierarchy. Following CSV or earlier XML imports,
+you may need to reimport the original XML file. Mixed provenance or information
+that cannot safely be retained blocks export. Leading document comments are
+preserved; other comment positions cannot be safely reconstructed for selected
+addresses and block version 1. There is no CSV correction export.
+
+Only names and nonempty descriptions can change. No new addresses, deletions,
+readdressing or group structure/names, DPT, flag or security changes. Download
+changes neither ETS nor the imported catalog. Before/after and unchanged XML
+attributes are available in the preview.
+Preview and download are each limited to a 20 MiB JSON response. Unicode escapes
+or duplicated before/after attributes can reach this limit even for a smaller XML
+file; select fewer addresses in that case.
+
+**Experimental, not yet confirmed by actual ETS import:** Create a project backup
+and test in a project copy before import. Parser roundtrips, browser, MCP and SSH
+prove only file generation and the plugin flow. They prove neither ETS behavior
+with absent attributes nor retention of communication-object associations.
+#419 and overall tracking #411 remain open until unchanged and targeted correction
+imports, DPTs/flags/security, hierarchy and object associations are demonstrated
+in ETS for two-/three-level styles. Record the ETS version and compare a fresh export.

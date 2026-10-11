@@ -243,6 +243,9 @@ th[aria-sort="descending"] .mcp-event-history-sort::after { content: ' ↓'; }
 .mcp-knx #knx-project-coverage pre { white-space: pre-wrap; max-height: 24rem; overflow: auto; }
 .mcp-knx .mcp-field textarea { box-sizing: border-box; width: 100%; max-width: 100%; }
 .mcp-knx #knx-json-preview { white-space: pre-wrap; max-height: 16rem; overflow: auto; }
+.mcp-knx #knx-xml-result { overflow-wrap: anywhere; }
+.mcp-knx #knx-xml-result pre { white-space: pre-wrap; max-height: 24rem; overflow: auto; }
+.mcp-knx #knx-xml-rows select, .mcp-knx #knx-xml-rows textarea, .mcp-knx #knx-xml-rows input:not([type=checkbox]) { box-sizing: border-box; width: 100%; min-width: 8rem; max-width: 18rem; }
 .mcp-knx #knx-imported-labels { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 12rem; overflow: auto; }
 .mcp-knx #knx-ets-preview details { margin: .4rem 0; }
 .mcp-knx #knx-ets-preview dl { margin: .5rem; overflow-wrap: anywhere; }

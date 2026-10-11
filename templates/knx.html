@@ -1,7 +1,8 @@
-<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v5">
+<link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v6">
 <main class="mcp-page mcp-knx" id="knx-page"
  data-saved="<TMPL_VAR KNX.SAVED ESCAPE=HTML>"
  data-failed="<TMPL_VAR KNX.FAILED ESCAPE=HTML>"
+ data-error-export="<TMPL_VAR KNX.ERROR_EXPORT ESCAPE=HTML>"
  data-error-comparison="<TMPL_VAR KNX.ERROR_COMPARISON ESCAPE=HTML>"
  data-unsaved="<TMPL_VAR KNX.UNSAVED ESCAPE=HTML>"
  data-edit="<TMPL_VAR KNX.EDIT ESCAPE=HTML>"
@@ -241,6 +242,15 @@
   </tr></thead><tbody id="knx-compare-rows"></tbody></table></div>
   <div class="mcp-actions"><button class="lb-button" type="button" id="knx-compare-previous" disabled><TMPL_VAR KNX.PREVIOUS></button><span id="knx-compare-count"></span><button class="lb-button" type="button" id="knx-compare-next" disabled><TMPL_VAR KNX.NEXT></button></div>
  </section>
+ <section class="mcp-card" id="knx-xml-section" data-keep="<TMPL_VAR KNX.XML_EXPORT_KEEP ESCAPE=HTML>" data-manual="<TMPL_VAR KNX.XML_EXPORT_MANUAL ESCAPE=HTML>" data-loxone="<TMPL_VAR KNX.XML_EXPORT_LOXONE ESCAPE=HTML>" data-select="<TMPL_VAR KNX.XML_EXPORT_SELECT ESCAPE=HTML>" data-metadata="<TMPL_VAR KNX.XML_EXPORT_METADATA ESCAPE=HTML>">
+  <h2><TMPL_VAR KNX.XML_EXPORT_TITLE></h2>
+  <p><TMPL_VAR KNX.XML_EXPORT_HELP></p>
+  <div class="mcp-table-wrap" tabindex="0" role="region" aria-label="<TMPL_VAR KNX.XML_EXPORT_TITLE ESCAPE=HTML>"><table class="mcp-table"><thead><tr><th><TMPL_VAR KNX.XML_EXPORT_SELECT></th><th><TMPL_VAR KNX.IMPORT_NAME></th><th><TMPL_VAR KNX.XML_EXPORT_NAME></th><th><TMPL_VAR KNX.XML_EXPORT_DESCRIPTION></th></tr></thead><tbody id="knx-xml-rows"></tbody></table></div>
+  <div class="mcp-actions"><button class="lb-button" type="button" id="knx-xml-preview" disabled><TMPL_VAR KNX.XML_EXPORT_PREVIEW></button><button class="lb-button" type="button" id="knx-xml-clear"><TMPL_VAR KNX.CANCEL></button></div>
+  <div id="knx-xml-result" aria-live="polite"></div>
+  <label><input type="checkbox" id="knx-xml-confirm"> <TMPL_VAR KNX.XML_EXPORT_CONFIRM></label>
+  <div class="mcp-actions"><button class="lb-button" type="button" id="knx-xml-download" disabled><TMPL_VAR KNX.XML_EXPORT_DOWNLOAD></button></div>
+ </section>
 </main>
 <dialog class="mcp-dialog" id="knx-confirm" aria-labelledby="knx-confirm-title" aria-describedby="knx-confirm-message">
  <h2 id="knx-confirm-title"><TMPL_VAR KNX.CONFIRM_TITLE></h2>
@@ -250,11 +260,13 @@
   <button class="lb-button" value="continue"><TMPL_VAR KNX.CONTINUE></button>
  </form>
 </dialog>
-<script src="knx.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v8" defer></script>
+<script src="knx.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v9" defer></script>
 <script src="knx-import.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-import-v3" defer></script>
-<script src="explorer-core.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-project-v1" defer></script>
-<script src="explorer-state.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-project-v1" defer></script>
-<script src="explorer-auth.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-project-v1" defer></script>
-<script src="explorer-client.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-project-v1" defer></script>
-<script src="knx-project.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-project-v1" defer></script>
+<script src="explorer-core.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-project-v2" defer></script>
+<script src="explorer-state.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-project-v2" defer></script>
+<script src="explorer-auth.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-project-v2" defer></script>
+<script src="explorer-client.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-project-v2" defer></script>
+<script src="knx-project.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-project-v2" defer></script>
 <script src="knx-compare.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-compare-v1" defer></script>
+
+<script src="knx-xml-export.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-xml-v1" defer></script>

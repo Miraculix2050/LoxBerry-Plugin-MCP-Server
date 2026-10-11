@@ -53,6 +53,7 @@ const envelope=()=>({ok:true,stale:false,observed_at:'synthetic',
 w.McpExplorerClient={create(){return{initialize:async()=>[],callTool:async(name,args)=>{
   requests.push({name,args});
   if(mode==='pending')return await new Promise(resolve=>{pendingResolve=resolve;});
+  if(mode==='restricted')return{structuredContent:{ok:false,data:{error:'permission_denied'}}};
   if(mode==='denied')return{structuredContent:{ok:false,
     data:{error:'unauthenticated',message:'Fresh access denied'}}};
   return{structuredContent:envelope()};
@@ -83,6 +84,15 @@ const click=async(id)=>{el(id).click();await settle();};
   assert.equal(requests[1].args.cursor,'cursor');
   assert.equal(el('next').disabled,true);
   assert.match(el('count').textContent,/2\u20132 \/ 2/);
+  const correction=w.MCPKnxProject.snapshot();
+  await w.MCPKnxProject.validate(correction.binding);
+  assert.equal(requests.at(-1).args.cursor,'cursor');
+  item.comparison.project_objects[0].loxone_name='Changed since preview';
+  await assert.rejects(()=>w.MCPKnxProject.validate(correction.binding),/knx_revision_conflict/);
+  item.comparison.project_objects[0].loxone_name='Loxone primary A';
+  mode='restricted';
+  await assert.rejects(()=>w.MCPKnxProject.validate(correction.binding),/knx_revision_conflict/);
+  mode='ok';
   saved={target:'binding',revision:2};page.dispatchEvent(new w.CustomEvent('knx-state'));
   assert.equal(el('rows').children.length,0);assert.equal(el('next').disabled,true);
   saved={target:'binding',revision:1};mode='pending';el('run').click();await settle();

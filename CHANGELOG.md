@@ -5,6 +5,8 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Add an experimental, explicitly selected ETS XML name/description correction download on the KNX page, with source reconstruction and fresh project checks. Actual ETS import compatibility remains unconfirmed (#419).
+
 - Compare two selected ETS files or a file against the current imported KNX
   catalog on the shared page (#418). Show bounded source changes, completeness
   limits and separate manual information without applying data or keeping history.

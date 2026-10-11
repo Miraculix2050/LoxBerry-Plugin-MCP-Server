@@ -69,7 +69,7 @@ class DraftStore:
     ) -> str:
         if not raw or len(raw) > MAX_FILE_BYTES:
             raise KnxError("knx_file_limit")
-        if slot not in {"import", "compare_left", "compare_right"}:
+        if slot not in {"import", "compare_left", "compare_right", "xml_export"}:
             raise KnxError("knx_draft_invalid")
         stored_options = dict(options)
         if slot != "import":
@@ -127,7 +127,7 @@ class DraftStore:
     def discard(self, identifier: object, *, slots: tuple[str, ...] = ("import",)) -> None:
         if not isinstance(identifier, str) or not re.fullmatch(r"[0-9a-f]{48}", identifier):
             raise KnxError("knx_draft_invalid")
-        if not slots or not set(slots) <= {"import", "compare_left", "compare_right"}:
+        if not slots or not set(slots) <= {"import", "compare_left", "compare_right", "xml_export"}:
             raise KnxError("knx_draft_invalid")
         with self.connection() as db:
             placeholders = ",".join("?" for _ in slots)
@@ -165,5 +165,13 @@ class DraftStore:
             db.execute(
                 "DELETE FROM drafts WHERE session=? "
                 "AND json_extract(options,'$.draft_slot') IN ('compare_left','compare_right')",
+                (self.session,),
+            )
+
+    def discard_xml_export(self) -> None:
+        with self.connection() as db:
+            db.execute(
+                "DELETE FROM drafts WHERE session=? "
+                "AND json_extract(options,'$.draft_slot')='xml_export'",
                 (self.session,),
             )
