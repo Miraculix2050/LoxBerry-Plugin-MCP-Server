@@ -43,12 +43,20 @@ def test_latest_event_preserves_raw_context_without_severity_inference() -> None
         '{"uids":["one"],"type":"read"}',
         '{"uid":"one","data":{"uuid":"../unsafe"}}',
         '{"uid":"one","data":{"lvl":true}}',
+        '{"uid":"\\ud800"}',
+        '{"uid":"one","type":"\\ud800"}',
         "x" * 16_385,
     ],
 )
 def test_invalid_or_read_marker_payload_is_not_a_notification(value: str) -> None:
     with pytest.raises(MessageSourceError):
         decode_notification(value)
+
+
+def test_notification_text_can_be_serialized_after_surrogate_normalization():
+    record = decode_notification('{"uid":"one","message":"Warning\\ud800"}')
+    assert record.message == "Warning"
+    record.model_dump_json().encode("utf-8")
 
 
 @pytest.mark.asyncio

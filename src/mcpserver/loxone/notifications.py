@@ -21,7 +21,7 @@ class Notification(BaseModel):
 
 
 def decode_notification(value: Any) -> Notification:
-    if not isinstance(value, str) or len(value.encode()) > 16_384:
+    if not isinstance(value, str) or len(value.encode(errors="surrogatepass")) > 16_384:
         raise MessageSourceError("invalid_notification_event")
     try:
         try:
@@ -36,7 +36,7 @@ def decode_notification(value: Any) -> Notification:
         raise MessageSourceError("invalid_notification_event")
     uid = raw.get("uid")
     if (
-        not isinstance(uid, (str, int))
+        not isinstance(uid, str | int)
         or isinstance(uid, bool)
         or (isinstance(uid, str) and not 1 <= len(uid) <= 128)
     ):
@@ -44,6 +44,9 @@ def decode_notification(value: Any) -> Notification:
     data = raw.get("data", {})
     if not isinstance(data, dict):
         raise MessageSourceError("invalid_notification_reference")
+    for field in (uid, raw.get("type"), data.get("lvl")):
+        if isinstance(field, str) and any(0xD800 <= ord(char) <= 0xDFFF for char in field):
+            raise MessageSourceError("invalid_notification_text")
     uuid = data.get("uuid")
     if uuid is not None and identifier(uuid) is None:
         raise MessageSourceError("invalid_notification_reference")
