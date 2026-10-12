@@ -283,3 +283,15 @@ def test_explorer_oauth_requests_independent_knx_write_scope(explicit) -> None:
     )
     scopes = ["loxone:read", "loxberry:knx:read", "loxberry:knx:drafts", "loxberry:knx:write"]
     assert result == {"registration": scopes, "authorization": scopes}
+
+
+def test_knx_write_explorer_assets_and_bilingual_permission_label_are_current() -> None:
+    template = (ROOT / "templates/explorer.html").read_text(encoding="utf-8")
+    for name in ("explorer-adapters", "explorer"):
+        assert f"{name}.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-write-v1" in template
+    assert (
+        'data-knx-write-required="<TMPL_VAR EXPLORER.KNX_WRITE_REQUIRED ESCAPE=HTML>"' in template
+    )
+    for language in ("de", "en"):
+        source = (ROOT / f"templates/lang/language_{language}.ini").read_text(encoding="utf-8")
+        assert "KNX_WRITE_REQUIRED=" in source

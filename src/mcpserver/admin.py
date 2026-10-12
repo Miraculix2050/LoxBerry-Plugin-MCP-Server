@@ -660,12 +660,12 @@ def _save(payload: object) -> dict[str, Any]:
                 explorer_bindings=tuple(
                     item
                     for item in candidate.explorer_bindings
-                    if item.capability != "loxberry:knx:drafts"
+                    if item.capability != "loxberry:knx:write"
                 )
                 + tuple(
                     item
                     for item in current.explorer_bindings
-                    if item.capability == "loxberry:knx:drafts"
+                    if item.capability == "loxberry:knx:write"
                 ),
             )
         # Profile approval controls are managed separately. Preserve the live
