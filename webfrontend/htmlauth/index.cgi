@@ -558,6 +558,8 @@ if ($action ne '') {
             event_history => {
                 enabled => ($q->{event_history_enabled} // '') eq '1'
                     ? JSON::PP::true : JSON::PP::false,
+                weather_enabled => ($q->{weather_history_enabled} // '') eq '1'
+                    ? JSON::PP::true : JSON::PP::false,
             },
             emergency_stop => {
                 virtual_status_uuid => $q->{emergency_stop_virtual_status_uuid} // '',
@@ -716,6 +718,13 @@ if ($action ne '') {
         $result = admin_call('revoke_loxberry_operate', {binding_id => ($q->{binding_id} // '')});
         admin_log($result->{ok} ? 'info' : 'warning',
             'action=revoke_loxberry_operate outcome=' . ($result->{ok} ? 'completed' : 'rejected'));
+    } elsif ($action eq 'weather_history_options') {
+        $result = admin_call($action, {});
+    } elsif ($action eq 'weather_history_add_source' || $action eq 'weather_history_remove_source') {
+        my $payload = eval { JSON::PP::decode_json($q->{payload} // '') };
+        $result = $@ || ref($payload) ne 'HASH'
+            ? {ok => JSON::PP::false, error => {code => 'invalid_request', message => 'Invalid weather source'}}
+            : admin_call($action, $payload);
     } elsif ($action eq 'list_sessions') {
         $result = admin_call('list_sessions', {});
     } elsif ($action eq 'revoke_all') {
@@ -1097,6 +1106,7 @@ $template->param(
     LOXONE_HISTORY_ENABLED => $config->{tools}{loxone_history_enabled} ? 1 : 0,
     LOXBERRY_OPERATE_ENABLED => $config->{tools}{loxberry_operate_enabled} ? 1 : 0,
     EVENT_HISTORY_ENABLED => $config->{event_history}{enabled} ? 1 : 0,
+    WEATHER_HISTORY_ENABLED => $config->{event_history}{weather_enabled} ? 1 : 0,
     EVENT_HISTORY_SOURCE_COUNT => scalar(@{$config->{event_history}{sources} // []}),
     REQUESTS_PER_MINUTE => $config->{limits}{requests_per_minute} // 60,
     CONTROL_REQUESTS_PER_MINUTE => $config->{limits}{control_requests_per_minute} // 10,

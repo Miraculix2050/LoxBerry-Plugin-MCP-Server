@@ -16,6 +16,7 @@ window.McpAdmin.createConfiguration = (
   ];
   const historyEnabled = document.getElementById('loxone-history-enabled');
   const eventHistoryEnabled = document.getElementById('event-history-enabled');
+  const weatherHistoryEnabled = document.getElementById('weather-history-enabled');
   const operateEnabled = document.getElementById('loxberry-operate-enabled');
   const explorerLink = document.getElementById('explorer-link');
   const explorerPath = '/admin/plugins/mcpserver/explorer.cgi';
@@ -128,6 +129,7 @@ window.McpAdmin.createConfiguration = (
     ]) setFormValue(mcpConfigForm, name, limits[name]);
     setFormValue(mcpConfigForm, 'statistics_memory_max_mib', cache.statistics_memory_max_mib);
     setFormChecked(mcpConfigForm, 'event_history_enabled', eventHistory.enabled);
+    setFormChecked(mcpConfigForm, 'weather_history_enabled', eventHistory.weather_enabled);
     const brief = document.getElementById('event-history-brief');
     brief.textContent = `${eventHistory.enabled ? brief.dataset.enabled : brief.dataset.disabled} · `
       + `${(eventHistory.sources || []).length} ${brief.dataset.sources} · ${brief.dataset.sizeUnknown}`;
@@ -205,6 +207,10 @@ window.McpAdmin.createConfiguration = (
     if (operateEnabled.disabled) operateEnabled.checked = false;
     eventHistoryEnabled.disabled = !historyEnabled.checked;
     if (eventHistoryEnabled.disabled) eventHistoryEnabled.checked = false;
+    if (weatherHistoryEnabled) {
+      weatherHistoryEnabled.disabled = !historyEnabled.checked;
+      if (weatherHistoryEnabled.disabled) weatherHistoryEnabled.checked = false;
+    }
   };
   const syncMiniserverSelection = () => {
     const selectedEndpoint = miniserverSelect.value;
@@ -215,6 +221,81 @@ window.McpAdmin.createConfiguration = (
   };
   miniserverSelect.addEventListener('change', syncMiniserverSelection);
   historyEnabled.addEventListener('change', syncOperateDependency);
+  const weatherPanel = document.getElementById('weather-recorder-settings');
+  if (weatherPanel) {
+    const sourceSelect = document.getElementById('weather-recorder-source');
+    const fields = document.getElementById('weather-recorder-fields');
+    const list = document.getElementById('weather-recorder-configured');
+    const load = document.getElementById('weather-recorder-load');
+    const add = document.getElementById('weather-recorder-add');
+    const message = document.getElementById('weather-recorder-status');
+    let busy = false;
+    const request = async (action, payload = {}) => {
+      const body = new URLSearchParams({action, ajax: '1', payload: JSON.stringify(payload)});
+      return postAjax(body, 35000);
+    };
+    const render = (sources) => {
+      list.replaceChildren();
+      for (const source of sources) {
+        const row = document.createElement('li');
+        const text = document.createElement('span');
+        const selected = source.fields.map((field) => label(`PROFILE.${field.toUpperCase()}`));
+        text.textContent = `${label(`SETUP.WEATHER_HISTORY_${source.mode.toUpperCase()}`)}: ${selected.join(', ')} `;
+        const remove = document.createElement('button');
+        remove.type = 'button'; remove.className = 'lb-button';
+        remove.textContent = label('SETUP.WEATHER_HISTORY_REMOVE');
+        remove.addEventListener('click', async () => {
+          if (busy || !window.confirm(label('SETUP.WEATHER_HISTORY_REMOVE_CONFIRM'))) return;
+          busy = true; remove.disabled = true;
+          try {
+            const result = await request('weather_history_remove_source', {source, confirm: true});
+            render(result.data.sources);
+            message.textContent = label('SETUP.WEATHER_HISTORY_SAVED');
+          } catch (error) { message.textContent = error.message; }
+          finally { busy = false; remove.disabled = false; }
+        });
+        row.append(text, remove); list.append(row);
+      }
+    };
+    load.addEventListener('click', async () => {
+      if (busy) return;
+      busy = true; load.disabled = true;
+      try {
+        const result = await request('weather_history_options');
+        sourceSelect.replaceChildren();
+        for (const source of result.data.choices) {
+          const option = document.createElement('option');
+          option.value = JSON.stringify(source);
+          option.textContent = label(`SETUP.WEATHER_HISTORY_${source.mode.toUpperCase()}`);
+          sourceSelect.append(option);
+        }
+        fields.querySelectorAll('label').forEach((item) => item.remove());
+        for (const field of result.data.fields) {
+          const wrapper = document.createElement('label'); wrapper.className = 'mcp-check';
+          const input = document.createElement('input'); input.type = 'checkbox'; input.value = field;
+          const caption = document.createElement('span'); caption.textContent = label(`PROFILE.${field.toUpperCase()}`);
+          wrapper.append(input, caption); fields.append(wrapper);
+        }
+        sourceSelect.disabled = fields.disabled = add.disabled = !result.data.choices.length;
+        render(result.data.sources);
+        message.textContent = label('SETUP.WEATHER_HISTORY_HELP');
+      } catch (error) { message.textContent = error.message; }
+      finally { busy = false; load.disabled = false; }
+    });
+    add.addEventListener('click', async () => {
+      if (busy || !sourceSelect.value) return;
+      const selected = Array.from(fields.querySelectorAll('input:checked'), (input) => input.value);
+      if (!selected.length) { message.textContent = label('SETUP.WEATHER_HISTORY_SELECT_FIELDS'); return; }
+      busy = true; add.disabled = true;
+      try {
+        const source = {...JSON.parse(sourceSelect.value), fields: selected};
+        const result = await request('weather_history_add_source', {source, confirm: true});
+        render(result.data.sources);
+        message.textContent = label('SETUP.WEATHER_HISTORY_SAVED');
+      } catch (error) { message.textContent = error.message; }
+      finally { busy = false; add.disabled = false; }
+    });
+  }
   syncMiniserverSelection();
   syncOperateDependency();
   const addEmergencyStopOption = (value, label, selected = false) => {

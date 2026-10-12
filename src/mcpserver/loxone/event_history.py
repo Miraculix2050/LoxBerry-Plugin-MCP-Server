@@ -12,7 +12,7 @@ import secrets
 import sqlite3
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from contextlib import closing, contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,12 +25,13 @@ if TYPE_CHECKING:
     from mcpserver.loxone.models import Control, LoxoneStructure
 
 
+from mcpserver.loxone.events import StateEvent
 from mcpserver.loxone.service_access import ServiceCredentials, ServiceMiniserverConnection
 
 _LOGGER = logging.getLogger("mcpserver.event_history")
 
 
-_SCHEMA_VERSION: Final = 7
+_SCHEMA_VERSION: Final = 8
 _MAX_TEXT_BYTES: Final = 4096
 _UNSUPPORTED_SOURCE_CONTROL_TYPES: Final = frozenset({"Daytimer"})
 _MAX_SAFE_BROWSER_INTEGER: Final = 2**53 - 1
@@ -190,7 +191,7 @@ class EventHistoryStore:
             try:
                 connection.execute("BEGIN IMMEDIATE")
                 version = connection.execute("PRAGMA user_version").fetchone()[0]
-                if version not in {0, 1, 2, 3, 4, 5, 6, _SCHEMA_VERSION}:
+                if version not in {0, 1, 2, 3, 4, 5, 6, 7, _SCHEMA_VERSION}:
                     raise EventHistoryUnavailable("local event history needs migration")
                 connection.execute(
                     """
@@ -255,7 +256,10 @@ class EventHistoryStore:
                     "UPDATE coverage SET ended_at = started_at, outcome = 'interrupted' "
                     "WHERE ended_at IS NULL",
                 )
-                connection.execute("PRAGMA user_version = 7")
+                from mcpserver.loxone.weather_history import initialize_weather
+
+                initialize_weather(connection)
+                connection.execute("PRAGMA user_version = 8")
                 connection.execute("COMMIT")
                 connection.execute("BEGIN IMMEDIATE")
                 pruned = self._prune(connection, now=time.time())
@@ -328,14 +332,17 @@ class EventHistoryStore:
             try:
                 connection.execute("BEGIN IMMEDIATE")
                 version = connection.execute("PRAGMA user_version").fetchone()[0]
-                if version in {3, 4, 5, 6}:
+                if version in {3, 4, 5, 6, 7}:
                     self._ensure_history_metadata(connection)
                     self._ensure_payload_columns(connection)
                     connection.execute(
                         "CREATE INDEX IF NOT EXISTS events_source_id "
                         "ON events(control_uuid, state_uuid, id)"
                     )
-                    connection.execute("PRAGMA user_version = 7")
+                    from mcpserver.loxone.weather_history import initialize_weather
+
+                    initialize_weather(connection)
+                    connection.execute("PRAGMA user_version = 8")
                 elif version != _SCHEMA_VERSION:
                     raise EventHistoryUnavailable("local event history needs migration")
                 connection.execute("COMMIT")
@@ -358,7 +365,7 @@ class EventHistoryStore:
                 version = db.execute("PRAGMA user_version").fetchone()[0]
         except sqlite3.Error as exc:
             raise EventHistoryUnavailable("local event history is unavailable") from exc
-        if version in {3, 4, 5, 6}:
+        if version in {3, 4, 5, 6, 7}:
             self._migrate_snapshot()
         elif version != _SCHEMA_VERSION:
             raise EventHistoryUnavailable("local event history needs migration")
@@ -599,7 +606,7 @@ class EventHistoryStore:
             ) as db:
                 db.execute("BEGIN")
                 version = db.execute("PRAGMA user_version").fetchone()[0]
-                if version in {3, 4, 5, 6}:
+                if version in {3, 4, 5, 6, 7}:
                     db.execute("ROLLBACK")
                     self._migrate_snapshot()
                     db.execute("BEGIN")
@@ -737,7 +744,7 @@ class EventHistoryStore:
             ) as db:
                 db.execute("BEGIN")
                 version = db.execute("PRAGMA user_version").fetchone()[0]
-                if version in {3, 4, 5, 6}:
+                if version in {3, 4, 5, 6, 7}:
                     db.execute("ROLLBACK")
                     self._migrate_snapshot()
                     db.execute("BEGIN")
@@ -768,11 +775,14 @@ class EventHistoryStore:
         return (int(page_count) - int(free_pages)) * int(page_size)
 
     def _prune(self, connection: sqlite3.Connection, *, now: float) -> bool:
+        from mcpserver.loxone.weather_history import evict_weather, prune_weather
+
         cutoff = now - self.retention_seconds
         event_deletions = connection.execute(
             "DELETE FROM events WHERE observed_at < ?", (cutoff,)
         ).rowcount
-        deleted = event_deletions
+        weather_deletions = prune_weather(connection, cutoff)
+        deleted = event_deletions + weather_deletions
         connection.execute(
             "UPDATE coverage SET started_at = ?, initial_value = NULL, initial_observed_at = NULL "
             "WHERE started_at < ? "
@@ -783,6 +793,11 @@ class EventHistoryStore:
             "DELETE FROM coverage WHERE ended_at IS NOT NULL AND ended_at < ?", (cutoff,)
         ).rowcount
         while self._used_database_bytes(connection) > self.maximum_bytes:
+            weather_removed = evict_weather(connection)
+            if weather_removed:
+                weather_deletions += weather_removed
+                deleted += weather_removed
+                continue
             evicted = connection.execute(
                 "SELECT control_uuid, state_uuid, MAX(observed_at) FROM events WHERE id IN "
                 "(SELECT id FROM events ORDER BY observed_at, id LIMIT 256) "
@@ -799,7 +814,14 @@ class EventHistoryStore:
                     "ORDER BY ended_at, id LIMIT 256)"
                 ).rowcount
                 if removed <= 0:
-                    break
+                    removed = connection.execute(
+                        "DELETE FROM weather_captures WHERE id IN ("
+                        "SELECT id FROM weather_captures WHERE ended_at IS NOT NULL "
+                        "ORDER BY ended_at,id LIMIT 256)"
+                    ).rowcount
+                    weather_deletions += removed
+                    if removed <= 0:
+                        break
             elif removed:
                 event_deletions += removed
             deleted += removed
@@ -828,7 +850,7 @@ class EventHistoryStore:
         ).rowcount
         if event_deletions:
             self._refresh_summaries(connection)
-        if event_deletions:
+        if event_deletions or weather_deletions:
             connection.execute(
                 "UPDATE history_metadata SET mutation_generation = "
                 "mutation_generation + 1 WHERE id = 1"
@@ -1341,6 +1363,7 @@ class EventHistoryStore:
                 connection.execute("DELETE FROM coverage")
                 connection.execute("DELETE FROM removed_sources")
                 connection.execute("DELETE FROM source_totals")
+                connection.execute("DELETE FROM weather_captures")
                 connection.execute(
                     "UPDATE history_metadata SET clear_generation = clear_generation + 1, "
                     "mutation_generation = mutation_generation + 1 "
@@ -1364,6 +1387,24 @@ def _controls(items: tuple[Control, ...]) -> tuple[Control, ...]:
     return tuple(result)
 
 
+async def _rotating_weather_stream(
+    stream: AsyncIterator[tuple[StateEvent, ...]], seconds: float
+) -> AsyncIterator[tuple[StateEvent, ...]]:
+    """Finish the sole socket reader before a new metadata authorization context."""
+    deadline = time.monotonic() + seconds
+    try:
+        while True:
+            try:
+                batch = await asyncio.wait_for(anext(stream), max(0, deadline - time.monotonic()))
+            except (TimeoutError, StopAsyncIteration):
+                return
+            yield batch
+    finally:
+        close = getattr(stream, "aclose", None)
+        if close is not None:
+            await close()
+
+
 class EventHistoryMonitor:
     """Use the LoxBerry-owned identity to record only explicitly selected states."""
 
@@ -1380,12 +1421,17 @@ class EventHistoryMonitor:
         self.auth_coordinator = auth_coordinator
         self._task: asyncio.Task[None] | None = None
         self._backfill_task: asyncio.Task[None] | None = None
-        self.status = "disabled" if not config.event_history_enabled else "unknown"
+        self.status = (
+            "disabled"
+            if not (config.event_history_enabled or config.weather_history_enabled)
+            else "unknown"
+        )
         self.status_reason: str | None = None
         self.status_observed_at = time.time()
         self.capture_started_at: float | None = None
         self._update_token = secrets.token_hex(8)
         self._update_event = asyncio.Event()
+        self._weather_stop_outcome = "disabled"
 
     def _notify_update(self) -> None:
         """Wake local Admin listeners without exposing values or source identities."""
@@ -1422,7 +1468,8 @@ class EventHistoryMonitor:
         return self.config.event_history_sources
 
     async def start(self) -> None:
-        if not self.config.event_history_enabled and not self.store.path.is_file():
+        recording_enabled = self.config.event_history_enabled or self.config.weather_history_enabled
+        if not recording_enabled and not self.store.path.is_file():
             return
         try:
             await asyncio.to_thread(self.store.initialize)
@@ -1434,9 +1481,11 @@ class EventHistoryMonitor:
             _LOGGER.warning("component=event_history outcome=store_unavailable")
             return
         self._backfill_task = asyncio.create_task(self._backfill())
-        if not self.config.event_history_enabled:
+        if not recording_enabled:
             return
-        if not self.sources:
+        if not (self.config.event_history_enabled and self.sources) and not (
+            self.config.weather_history_enabled and self.config.weather_history_sources
+        ):
             self._set_status("unavailable", "no_sources")
             return
         self._task = asyncio.create_task(self._run())
@@ -1454,13 +1503,25 @@ class EventHistoryMonitor:
             await asyncio.sleep(0.25)
 
     async def _run(self) -> None:
+        from mcpserver.bounded_worker import run_admitted_worker
+        from mcpserver.installation_profile import installation_identity
         from mcpserver.loxone.client import MiniserverEndpoint
+        from mcpserver.loxone.weather_history import (
+            WeatherHistory,
+            WeatherHistorySource,
+            source_fingerprint,
+        )
+
+        weather_store = WeatherHistory(self.store)
 
         while True:
             connection = None
             session = None
             active: tuple[tuple[str, str], ...] = ()
             coverage_active = False
+            weather_active: dict[str, list[tuple[WeatherHistorySource, str, int]]] = {}
+            stream_outcome = "disconnected"
+            stream_ended_at = None
             try:
                 await asyncio.to_thread(self.store.initialize)
                 username, password = await self.credentials.load()
@@ -1483,8 +1544,35 @@ class EventHistoryMonitor:
                     for control in _controls(structure.controls)
                     for _state_name, state_uuid in control.state_uuids
                 }
-                active = tuple(source for source in self.sources if source in visible)
-                if not active:
+                active = (
+                    tuple(source for source in self.sources if source in visible)
+                    if self.config.event_history_enabled
+                    else ()
+                )
+                if self.config.weather_history_enabled:
+                    for weather_source in self.config.weather_history_sources:
+                        try:
+                            fingerprint = source_fingerprint(
+                                weather_source,
+                                structure,
+                                installation_identity(
+                                    MiniserverEndpoint.parse(self.config.loxone_endpoint).origin,
+                                    structure,
+                                ),
+                            )
+                        except ValueError:
+                            continue
+                        capture = await run_admitted_worker(
+                            weather_store.begin, weather_source, fingerprint, time.time()
+                        )
+                        weather_active.setdefault(weather_source.state_uuid, []).append(
+                            (
+                                weather_source,
+                                fingerprint,
+                                capture,
+                            )
+                        )
+                if not active and not weather_active:
                     self._set_status("unavailable", "no_visible_sources")
                     _LOGGER.warning("component=event_history outcome=no_configured_sources_visible")
                     await asyncio.sleep(60)
@@ -1494,10 +1582,49 @@ class EventHistoryMonitor:
                 }
                 baselines: dict[str, object] = {}
                 baseline_times: dict[str, float] = {}
-                async for batch in session.state_events():
+                batches = session.state_events()
+                if self.config.weather_history_enabled:
+                    batches = _rotating_weather_stream(
+                        batches, max(60, self.config.structure_refresh_seconds)
+                    )
+                async for batch in batches:
                     observed_at = time.time()
                     changed = False
                     for event in batch:
+                        weather_modes = weather_active.get(event.uuid)
+                        if weather_modes is not None:
+                            for mode_index, weather in enumerate(weather_modes):
+                                weather_source, fingerprint, capture = weather
+                                try:
+                                    changed = (
+                                        await run_admitted_worker(
+                                            weather_store.record,
+                                            capture,
+                                            weather_source,
+                                            event.value,
+                                            observed_at,
+                                        )
+                                        or changed
+                                    )
+                                    if changed:
+                                        self._set_status("recording")
+                                except ValueError:
+                                    await run_admitted_worker(
+                                        weather_store.end, capture, observed_at, "unsupported_value"
+                                    )
+                                    capture = await run_admitted_worker(
+                                        weather_store.begin,
+                                        weather_source,
+                                        fingerprint,
+                                        observed_at,
+                                    )
+                                    weather_modes[mode_index] = (
+                                        weather_source,
+                                        fingerprint,
+                                        capture,
+                                    )
+                                    self._set_status("unavailable", "unsupported_weather_value")
+                            continue
                         source = state_sources.get(event.uuid)
                         if source is None:
                             continue
@@ -1546,9 +1673,15 @@ class EventHistoryMonitor:
                         changed = True
                     if changed:
                         self._notify_update()
+                stream_outcome = "source_changed"
             except asyncio.CancelledError:
+                stream_outcome = self._weather_stop_outcome
                 raise
             except Exception as exc:
+                stream_ended_at = time.time()
+                stream_outcome = (
+                    "storage_error" if isinstance(exc, EventHistoryUnavailable) else "disconnected"
+                )
                 if isinstance(exc, _UnsupportedEventValue):
                     reason = "unsupported_value"
                 elif isinstance(exc, EventHistoryUnavailable):
@@ -1573,13 +1706,24 @@ class EventHistoryMonitor:
                     coverage_active = False
                 await asyncio.sleep(5)
             finally:
+                for weather_modes in weather_active.values():
+                    for _weather_source, _fingerprint, capture in weather_modes:
+                        with suppress(EventHistoryUnavailable):
+                            await run_admitted_worker(
+                                weather_store.end,
+                                capture,
+                                stream_ended_at if stream_ended_at is not None else time.time(),
+                                stream_outcome,
+                            )
                 if coverage_active:
                     with suppress(EventHistoryUnavailable):
                         await asyncio.to_thread(
                             self.store.end_coverage,
                             active,
                             ended_at=time.time(),
-                            outcome="disconnected",
+                            outcome=stream_outcome
+                            if self.config.weather_history_enabled
+                            else "disconnected",
                         )
                         self._notify_update()
                 if connection is not None:
@@ -1655,8 +1799,15 @@ class EventHistoryMonitor:
 
     async def update_config(self, config: PluginConfig) -> None:
         """Apply a persisted source update by recreating only this optional subscription."""
+        self._weather_stop_outcome = (
+            "source_changed" if config.weather_history_enabled else "disabled"
+        )
         await self.close()
         self.config = config
-        self._set_status("unknown" if config.event_history_enabled else "disabled")
+        self._set_status(
+            "unknown"
+            if (config.event_history_enabled or config.weather_history_enabled)
+            else "disabled"
+        )
         self.capture_started_at = None
         await self.start()

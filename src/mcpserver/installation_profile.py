@@ -624,7 +624,7 @@ def project_profile(
                 {
                     "source_format": sources.formats.get(key) if key is not None else None,
                     "unit": None,
-                    "history_status": "unavailable",
+                    "history_status": "not_checked",
                     "value_origin": "current_source_value"
                     if binding.mode == "actual"
                     else "forecast",

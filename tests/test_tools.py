@@ -621,7 +621,7 @@ def test_skill_guide_tool_is_read_only_and_matches_resource_content() -> None:
     assert tool.annotations.destructiveHint is False
     assert tool.annotations.openWorldHint is False
     assert result.data.name == "using-loxberry-mcp"  # type: ignore[union-attr]
-    assert result.data.revision == 82  # type: ignore[union-attr]
+    assert result.data.revision == 83  # type: ignore[union-attr]
     assert "prefer `loxone_read_controls`" in result.data.content  # type: ignore[union-attr]
     assert "`loxone_get_structure_overview`" in result.data.content  # type: ignore[union-attr]
     assert result.data.media_type == "text/markdown"  # type: ignore[union-attr]
@@ -728,7 +728,7 @@ def test_tool_input_schemas_explain_every_argument() -> None:
         "loxone_get_room_snapshot": {"room_uuid", "cursor", "limit"},
         "loxone_list_categories": {"query", "cursor", "limit"},
         "loxone_list_global_metadata": {"kind", "query", "cursor", "limit"},
-        "loxone_get_weather": {"mode", "cursor", "limit"},
+        "loxone_get_weather": {"mode", "cursor", "limit", "history_options"},
         "loxone_find_controls": {
             "query",
             "room_uuid",

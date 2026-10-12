@@ -34,6 +34,13 @@ extracted from the matching version heading.
   close to their descriptions within each help block and preserve the active
   page language when opening individual-message approval from Help.
 
+- Add independently opt-in structured weather recording in the existing history
+  database and subscription, with selected fields, distinct reception/source
+  times, bounded pages and explicit coverage gaps. Extend `loxone_get_weather`
+  with freshly authorized local history; forecasts and unknown units retain
+  their provenance. Shared SQLite v8 requires a consistent v7 backup before
+  rollback to older code; no earlier weather is backfilled (#439).
+
 - Extend confirmed installation profiles with exact structured weather bindings
   and optional user-declared PV parameters. Read-migrate profile v1 without
   persistence, retain separate source visibility, confirmation and unknown units;

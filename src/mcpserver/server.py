@@ -511,7 +511,9 @@ def create_server(settings: ServerSettings) -> FastMCP:
                 emergency_stop.auth_coordinator = auth_coordinator
         event_history_path = Path(os.getenv("MCPSERVER_EVENT_HISTORY_STORE", ""))
         if event_history_path.is_absolute() and (
-            settings.plugin_config.event_history_enabled or event_history_path.is_file()
+            settings.plugin_config.event_history_enabled
+            or settings.plugin_config.weather_history_enabled
+            or event_history_path.is_file()
         ):
             event_history = EventHistoryMonitor(
                 settings.plugin_config,

@@ -739,6 +739,7 @@ def _save_mcp(payload: object) -> dict[str, Any]:
         "max_parallel_calls",
         "statistics_memory_max_mib",
         "event_history_enabled",
+        "weather_history_enabled",
         "structure_refresh_seconds",
         "max_active_runtime_sessions",
         "runtime_session_idle_seconds",
@@ -989,6 +990,9 @@ def _clear_event_history(payload: object = None) -> dict[str, Any]:
             maximum_mib=config.event_history_maximum_mib,
         )
         store.initialize()
+        from mcpserver.loxone.weather_history import WeatherHistory
+
+        weather_removed = WeatherHistory(store).summary()
         removed = store.clear()
     except EventHistoryUnavailable as exc:
         raise AdminError("local event history is unavailable") from exc
@@ -1001,7 +1005,11 @@ def _clear_event_history(payload: object = None) -> dict[str, Any]:
                     "local event history may be cleared but service restart failed",
                     code="outcome_unknown",
                 ) from exc
-    return {"event_history_entries_removed": removed}
+    return {
+        "event_history_entries_removed": removed,
+        "weather_history_deliveries_removed": weather_removed["deliveries"],
+        "weather_history_points_removed": weather_removed["points"],
+    }
 
 
 def _save_mqtt(payload: object) -> dict[str, Any]:
@@ -2175,6 +2183,14 @@ def _dispatch(request: object, *, timing: dict[str, float | int] | None = None) 
         return event_history_admin.purge_source(payload)
     if action == "event_history_runtime_status":
         return _event_history_runtime_status()
+    if action in {
+        "weather_history_options",
+        "weather_history_add_source",
+        "weather_history_remove_source",
+    }:
+        from mcpserver.event_history_admin import weather_sources
+
+        return weather_sources(action, payload)
     if action == "get_config":
         store = _config_store()
         if timing is None:

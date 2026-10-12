@@ -111,7 +111,7 @@ def test_admin_modules_load_in_order_with_versioned_localized_assets() -> None:
     for name in ADMIN_SCRIPTS:
         source = _admin_script(name)
         assert "<TMPL_" not in source
-        asset_version = {"configuration.js": "v15", "page.js": "v14", "sessions.js": "v13"}.get(
+        asset_version = {"configuration.js": "v16", "page.js": "v14", "sessions.js": "v13"}.get(
             name, "v12"
         )
         assert (
@@ -724,7 +724,7 @@ def test_knx_labels_moved_to_dedicated_same_origin_page() -> None:
     js = (ROOT / "webfrontend/htmlauth/knx.js").read_text(encoding="utf-8")
     assert 'id="knx-taxonomy-form"' in template
     assert 'href="knx.cgi"' in _admin_source()
-    assert "configuration.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v15" in _admin_source()
+    assert "configuration.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v16" in _admin_source()
     assert "mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v10" in template
     assert 'id="knx-taxonomy-form"' not in _admin_source()
     assert "same_origin_post()" in cgi

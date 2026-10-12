@@ -168,7 +168,11 @@ def test_clear_event_history_stops_the_recorder_before_deleting_its_store(
     result = _clear_event_history({"confirm": True})
 
     assert calls == ["stop", "start"]
-    assert result == {"event_history_entries_removed": 0}
+    assert result == {
+        "event_history_entries_removed": 0,
+        "weather_history_deliveries_removed": 0,
+        "weather_history_points_removed": 0,
+    }
 
 
 def test_diagnostic_contains_no_paths_endpoint_or_identity(

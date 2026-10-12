@@ -65,7 +65,7 @@ class WeatherProfileBindingData(BaseModel):
     semantic_reference: str | None
     source_format: str | None
     unit: None = None
-    history_status: Literal["unavailable"]
+    history_status: Literal["unavailable", "not_checked"]
     value_origin: Literal["current_source_value", "forecast"]
 
 

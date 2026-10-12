@@ -25,6 +25,8 @@ import idna
 from mcpserver.loxone.endpoint import MiniserverEndpoint
 from mcpserver.loxone.project.taxonomy import AddressTaxonomyEntry, parse_taxonomy
 from mcpserver.loxone.uuid import normalize_loxone_uuid
+from mcpserver.loxone.weather_history import MAX_SOURCES as MAX_WEATHER_HISTORY_SOURCES
+from mcpserver.loxone.weather_history import WeatherHistorySource
 from mcpserver.persistence import PersistenceUncertain, fsync_parent_directory
 
 SCHEMA_VERSION: Final = 11
@@ -208,6 +210,18 @@ def _bindings(value: object, *, name: str) -> tuple[str, ...]:
     return tuple(bindings)
 
 
+def _weather_history_sources(value: object) -> tuple[WeatherHistorySource, ...]:
+    if not isinstance(value, list) or len(value) > MAX_WEATHER_HISTORY_SOURCES:
+        raise ConfigError("event_history.weather_sources is unsupported")
+    try:
+        sources = tuple(WeatherHistorySource.parse(item) for item in value)
+    except (TypeError, ValueError) as exc:
+        raise ConfigError("event_history.weather_sources is unsupported") from exc
+    if len({(s.state_uuid, s.mode) for s in sources}) != len(sources):
+        raise ConfigError("weather history sources must be unique")
+    return sources
+
+
 def binding_application_name(value: object) -> str:
     """Return bounded display metadata; never an authorization identity."""
     if not isinstance(value, str):
@@ -355,6 +369,8 @@ class PluginConfig:
     event_history_retention_days: int = DEFAULT_EVENT_HISTORY_RETENTION_DAYS
     event_history_maximum_mib: int = DEFAULT_EVENT_HISTORY_MAXIMUM_MIB
     event_history_sources: tuple[tuple[str, str], ...] = ()
+    weather_history_enabled: bool = False
+    weather_history_sources: tuple[WeatherHistorySource, ...] = ()
     structure_refresh_seconds: int = DEFAULT_STRUCTURE_REFRESH_SECONDS
     max_active_runtime_sessions: int = DEFAULT_MAX_ACTIVE_RUNTIME_SESSIONS
     runtime_session_idle_seconds: int = DEFAULT_RUNTIME_SESSION_IDLE_SECONDS
@@ -497,6 +513,12 @@ class PluginConfig:
             maximum=1024,
         )
         event_history_sources = _event_history_sources(event_history.get("sources", []))
+        weather_history_enabled = _boolean(
+            event_history.get("weather_enabled", False), name="event_history.weather_enabled"
+        )
+        if weather_history_enabled and not loxone_history_enabled:
+            raise ConfigError("event_history.weather_enabled requires loxone history")
+        weather_history_sources = _weather_history_sources(event_history.get("weather_sources", []))
         if enabled and not read_enabled:
             raise ConfigError("the Phase 1 service requires tools.loxone_read_enabled")
         if control_enabled and endpoint and MiniserverEndpoint.parse(endpoint).secure:
@@ -734,6 +756,8 @@ class PluginConfig:
             event_history_retention_days=event_history_retention_days,
             event_history_maximum_mib=event_history_maximum_mib,
             event_history_sources=event_history_sources,
+            weather_history_enabled=weather_history_enabled,
+            weather_history_sources=weather_history_sources,
             structure_refresh_seconds=structure_refresh_seconds,
             max_active_runtime_sessions=max_active_runtime_sessions,
             runtime_session_idle_seconds=runtime_session_idle_seconds,
@@ -871,6 +895,10 @@ class PluginConfig:
         }
         document["event_history"]["retention_days"] = self.event_history_retention_days
         document["event_history"]["maximum_mib"] = self.event_history_maximum_mib
+        document["event_history"]["weather_enabled"] = self.weather_history_enabled
+        document["event_history"]["weather_sources"] = [
+            s.document() for s in self.weather_history_sources
+        ]
         document["event_history"]["sources"] = [
             {"control_uuid": control_uuid, "state_uuid": state_uuid}
             for control_uuid, state_uuid in self.event_history_sources

@@ -1,8 +1,9 @@
 # Analysis questions: support and boundaries
 
-Energy & solar PR 4 adds confirmed weather-source bindings and optional declared
-PV parameters. This context alone does not deliver solar-20–22: structured weather
-history, numeric radiation semantics and the comparison method remain required.
+Energy & solar PRs 4–5 add confirmed weather-source bindings, optional declared
+PV parameters and independently opt-in [local weather recording](weather-history.en.md).
+This does not yet deliver solar-20–22: numeric radiation semantics and the
+comparison method remain required; recording does not backfill earlier days.
 Existing statistic/state weather sources retain their actual coverage and semantics.
 
 The original 25 questions remain in the versioned acceptance catalog. Two later KNX cases are separate extensions. Snapshot: Analysis foundation PRs 1–8, 11 October 2026. Labels describe the evidenced answer scope, not exhaustive hardware coverage or 75 independent AI runs.
