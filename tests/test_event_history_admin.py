@@ -873,6 +873,43 @@ def weather_admin(tmp_path, monkeypatch):
     return config_store, history, source, calls
 
 
+def test_weather_admin_options_migrates_stopped_v7_archive_and_preserves_scalar(weather_admin):
+    _config, history, _source, _calls = weather_admin
+    history.initialize()
+    history.record_transition(*SOURCE, observed_at=time.time(), old_value=0, new_value=1)
+    with history._opened() as db:
+        for table in ("weather_points", "weather_deliveries", "weather_captures"):
+            db.execute(f"DROP TABLE {table}")
+        db.execute("PRAGMA user_version=7")
+    options = event_history_admin.weather_sources("weather_history_options", {})
+    assert options["retained"] == {"deliveries": 0, "points": 0}
+    with history._opened() as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 8
+        assert db.execute("SELECT count(*) FROM events").fetchone()[0] == 1
+
+
+@pytest.mark.parametrize("action", ["weather_history_options", "weather_history_add_source"])
+@pytest.mark.parametrize("failure", [TimeoutError, OSError, RuntimeError, ValueError])
+def test_weather_admin_discovery_failure_is_actionable_without_mutation(
+    weather_admin, monkeypatch, action, failure
+):
+    config_store, _history, source, _calls = weather_admin
+
+    async def unavailable():
+        raise failure("private-discovery-detail")
+
+    monkeypatch.setattr(
+        event_history_admin,
+        "_monitor",
+        lambda _config: SimpleNamespace(visible_structure=unavailable),
+    )
+    with pytest.raises(admin.AdminError) as error:
+        event_history_admin.weather_sources(action, {"confirm": True, "source": source.document()})
+    assert error.value.code == "temporarily_unavailable"
+    assert "private-discovery-detail" not in str(error.value)
+    assert not config_store.load().weather_history_sources
+
+
 def test_weather_admin_add_is_visible_idempotent_and_never_activates(weather_admin):
     config_store, _history, source, calls = weather_admin
     options = event_history_admin.weather_sources("weather_history_options", {})

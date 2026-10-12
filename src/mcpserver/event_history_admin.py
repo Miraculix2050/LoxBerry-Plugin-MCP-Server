@@ -22,6 +22,7 @@ from mcpserver.loxone.event_history import (
     EventHistoryStoreSummary,
     source_revision_for_snapshot,
 )
+from mcpserver.loxone.models import LoxoneStructure
 from mcpserver.loxone.service_access import LoxBerryServiceCredentials
 from mcpserver.loxone.uuid import normalize_loxone_uuid
 
@@ -823,6 +824,18 @@ def save_policy(payload: object) -> dict[str, Any]:
     }
 
 
+def _weather_structure(config: PluginConfig) -> LoxoneStructure:
+    bridge = _bridge()
+    if not config.loxone_endpoint:
+        raise bridge.AdminError("Miniserver is not configured", code="temporarily_unavailable")
+    try:
+        return asyncio.run(asyncio.wait_for(_monitor(config).visible_structure(), timeout=30))
+    except (TimeoutError, OSError, RuntimeError, ValueError) as exc:
+        raise bridge.AdminError(
+            "visible Miniserver structure is unavailable", code="temporarily_unavailable"
+        ) from exc
+
+
 def weather_sources(action: str, payload: object) -> dict[str, Any]:
     """Local authenticated Admin configures exact weather sources, independently of MCP."""
     from mcpserver.installation_profile import installation_identity
@@ -838,7 +851,7 @@ def weather_sources(action: str, payload: object) -> dict[str, Any]:
     bridge = _bridge()
     config = bridge._config_store().load()
     if action == "weather_history_options":
-        structure = asyncio.run(asyncio.wait_for(_monitor(config).visible_structure(), timeout=30))
+        structure = _weather_structure(config)
         choices = [
             {"state_uuid": m.state_uuid, "mode": m.identifier}
             for m in structure.global_metadata
@@ -860,7 +873,7 @@ def weather_sources(action: str, payload: object) -> dict[str, Any]:
         raise bridge.AdminError("weather source is invalid") from exc
     add = action == "weather_history_add_source"
     if add:
-        structure = asyncio.run(asyncio.wait_for(_monitor(config).visible_structure(), timeout=30))
+        structure = _weather_structure(config)
         try:
             source_fingerprint(
                 source,

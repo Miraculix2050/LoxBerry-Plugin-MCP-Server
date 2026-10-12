@@ -45,3 +45,8 @@ native upgrade helper. Older code rejects v8: a code rollback alone is insuffici
 Save the current v8 database before restoring the v7 snapshot; that restores its
 earlier data state, while subsequent records remain in the separate v8 backup.
 Hotswap evidence does not establish native installation or upgrade compatibility.
+
+Loading weather sources also migrates an existing v7 archive to v8 while the
+service is stopped. Retained scalar events are preserved; the summary does not
+interrupt an active v8 capture. If the current Miniserver structure cannot be
+reached, Admin reports temporary unavailability.

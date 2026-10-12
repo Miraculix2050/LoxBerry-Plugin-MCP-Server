@@ -40,7 +40,9 @@ extracted from the matching version heading.
   with freshly authorized local history; forecasts and unknown units retain
   their provenance. Shared SQLite v8 requires a consistent v7 backup before
   rollback to older code; no earlier weather is backfilled. Admin source changes
-  wait for discovery and service restart before reporting completion (#439).
+  wait for discovery and service restart before reporting completion, record
+  sanitized audit outcomes and report temporary discovery failures. Loading
+  source options safely migrates retained v7 archives with a stopped service (#439).
 
 - Extend confirmed installation profiles with exact structured weather bindings
   and optional user-declared PV parameters. Read-migrate profile v1 without

@@ -317,7 +317,17 @@ def test_schema_migration_restart_and_scalar_data_retained(history):
         weather.record(capture, SOURCE, delivery(now + 7200), now + 2)
 
 
-@pytest.mark.parametrize("entry", ["snapshot", "chart", "inventory"])
+def test_weather_summary_preserves_active_capture(history):
+    store, weather = history
+    capture = weather.begin(SOURCE, "fp", time.time())
+    assert weather.summary() == {"deliveries": 0, "points": 0}
+    with store._opened() as db:
+        assert db.execute(
+            "SELECT ended_at,outcome FROM weather_captures WHERE id=?", (capture,)
+        ).fetchone() == (None, "receiving")
+
+
+@pytest.mark.parametrize("entry", ["snapshot", "chart", "inventory", "weather_summary"])
 def test_direct_v7_read_migrates_to_v8_without_losing_scalar(history, entry):
     store, _weather = history
     now = time.time()
@@ -332,11 +342,13 @@ def test_direct_v7_read_migrates_to_v8_without_losing_scalar(history, entry):
     elif entry == "chart":
         store.prepare_chart_read()
         assert len(store.chart_page(UUID, UUID, start=now - 10, end=now)["events"]) == 1
-    else:
+    elif entry == "inventory":
         rows, _next = store.source_inventory_page(
             ((UUID, UUID),), visible_sources={(UUID, UUID)}, offset=0, limit=10
         )
         assert rows
+    else:
+        assert _weather.summary() == {"deliveries": 0, "points": 0}
     with store._opened() as db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == 8
         assert db.execute("SELECT count(*) FROM events").fetchone()[0] == 1

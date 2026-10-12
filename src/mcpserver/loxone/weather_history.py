@@ -234,6 +234,7 @@ class WeatherHistory:
     def summary(self) -> dict[str, int]:
         if not self.store.path.is_file():
             return {"deliveries": 0, "points": 0}
+        self.store.prepare_chart_read()
         cutoff = time.time() - self.store.retention_seconds
         with _read_connection(self.store.path) as db:
             deadline = time.monotonic() + 10

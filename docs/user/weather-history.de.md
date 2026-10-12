@@ -49,3 +49,8 @@ erstellen. Alter Code lehnt v8 ab; ein reiner Coderollback genügt nicht. Vor Wi
 den aktuellen v8-Stand sichern. Der v7-Snapshot stellt seinen früheren Datenstand wieder
 her; spätere Aufnahmen bleiben im getrennten v8-Backup. Hotswap belegt keine native
 Installation oder Upgradefähigkeit.
+
+Beim Laden der Wetterquellen wird ein vorhandenes v7-Archiv auch bei gestopptem
+Dienst auf v8 migriert. Gespeicherte skalare Ereignisse bleiben erhalten; eine
+laufende v8-Aufnahme wird durch die Übersicht nicht unterbrochen. Ist die aktuelle
+Miniserver-Struktur nicht erreichbar, meldet Admin die vorübergehende Nichtverfügbarkeit.
