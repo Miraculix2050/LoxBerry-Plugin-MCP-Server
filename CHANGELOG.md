@@ -20,7 +20,8 @@ extracted from the matching version heading.
 
 - Organize Admin help links with localized explanations for every destination;
   add KNX, installation-profile and individual-message approval navigation,
-  and reuse the KNX/profile explanations under MCP configuration.
+  and reuse the KNX/profile explanations under MCP configuration. Keep links
+  close to their descriptions within each help block.
 
 - Extend confirmed installation profiles with exact structured weather bindings
   and optional user-declared PV parameters. Read-migrate profile v1 without

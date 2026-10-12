@@ -43,6 +43,7 @@ details.mcp-explorer-card[open] > summary { border-bottom: 1px solid #d7dadd; }
 .mcp-manual-endpoint[hidden] { display: none; }
 [hidden] { display: none !important; }
 .mcp-help { margin: 0; color: #4b5563; }
+.mcp-help-link > p:first-child { margin-bottom: .35rem; }
 .mcp-log-section { display: grid; gap: .85rem; min-width: 0; padding: 1rem; border: 1px solid #d7dadd; border-radius: .4rem; }
 .mcp-log-section h3 { margin: 0; font-size: 1.1rem; }
 .mcp-log-files { display: grid; gap: .35rem; margin: 0; padding-left: 1.25rem; }
