@@ -1,6 +1,10 @@
 """Local KNX delegation is independent from project and diagnostics scopes."""
 
+import os
+import subprocess
+import sys
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -159,3 +163,20 @@ def test_knx_read_rechecks_current_family_before_cached_or_worker_results(delega
     store.mutate(lambda document: document["families"]["family"].update(change))
     with pytest.raises(PermissionError):
         authorize_read(config, store, access, now=100)
+
+
+def test_admin_delegation_reader_does_not_import_mcp_server_stack():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; import mcpserver.knx.read_admin; "
+            "assert 'mcpserver.auth.provider' not in sys.modules; "
+            "assert 'mcp.server.fastmcp' not in sys.modules",
+        ],
+        env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")},
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

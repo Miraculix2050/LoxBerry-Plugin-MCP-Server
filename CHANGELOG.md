@@ -11,7 +11,9 @@ extracted from the matching version heading.
   comparison/export controls and clear empty-table presentation (#497). Preserve
   foreground actions queued during polling and allow discarding retained XML
   previews after the comparison becomes invalid, including potentially persisted
-  comparison/XML drafts after lost or malformed responses.
+  comparison/XML drafts after lost or malformed responses. Keep the full MCP
+  server stack out of KNX Admin reader imports to avoid long configuration-lock
+  holds during frequent status refreshes.
 
 - Extend confirmed installation profiles with exact structured weather bindings
   and optional user-declared PV parameters. Read-migrate profile v1 without
