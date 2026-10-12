@@ -232,7 +232,9 @@ window.McpAdmin.createConfiguration = (
     let busy = false;
     const request = async (action, payload = {}) => {
       const body = new URLSearchParams({action, ajax: '1', payload: JSON.stringify(payload)});
-      return postAjax(body, 35000);
+      // Source changes may need 30 seconds of discovery plus a 65-second restart.
+      const timeout = action === 'weather_history_options' ? 35000 : 120000;
+      return postAjax(body, timeout);
     };
     const render = (sources) => {
       list.replaceChildren();

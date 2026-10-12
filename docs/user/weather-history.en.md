@@ -1,6 +1,6 @@
 # Local weather history
 
-Weather recording is independently **off by default**. In Admin â†’ Configuration,
+Weather recording is independently **off by default**. In Admin → Configuration,
 enable Loxone history, load the current weather sources, select the fields to
 record, save the source, then explicitly save the weather-recording activation.
 Scalar event recording can remain off. Disabling recording preserves retained

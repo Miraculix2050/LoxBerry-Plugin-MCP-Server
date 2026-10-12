@@ -39,7 +39,8 @@ extracted from the matching version heading.
   times, bounded pages and explicit coverage gaps. Extend `loxone_get_weather`
   with freshly authorized local history; forecasts and unknown units retain
   their provenance. Shared SQLite v8 requires a consistent v7 backup before
-  rollback to older code; no earlier weather is backfilled (#439).
+  rollback to older code; no earlier weather is backfilled. Admin source changes
+  wait for discovery and service restart before reporting completion (#439).
 
 - Extend confirmed installation profiles with exact structured weather bindings
   and optional user-declared PV parameters. Read-migrate profile v1 without

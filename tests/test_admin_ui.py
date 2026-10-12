@@ -18,6 +18,72 @@ ADMIN_SCRIPTS = (
 )
 
 
+def test_weather_source_mutations_wait_for_discovery_and_restart() -> None:
+    node = shutil.which("node")
+    assert node is not None
+    script = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const start = source.indexOf("  const weatherPanel =");
+const panel = source.slice(start, source.indexOf("  syncMiniserverSelection();", start));
+class Element {
+  constructor() { this.children = []; this.events = {}; this.disabled = false; }
+  addEventListener(event, handler) { this.events[event] = handler; }
+  append(...children) { this.children.push(...children); }
+  replaceChildren() { this.children = []; }
+  querySelectorAll() { return []; }
+}
+const elements = new Map();
+const get = (id) => {
+  if (!elements.has(id)) elements.set(id, new Element());
+  return elements.get(id);
+};
+const configured = {state_uuid: 'weather', mode: 'actual', fields: ['temperature']};
+const requests = [];
+const context = {
+  URLSearchParams,
+  document: {getElementById: get, createElement: () => new Element()},
+  window: {confirm: () => true},
+  label: (key) => key,
+  postAjax: async (body, timeout) => {
+    const action = body.get('action');
+    requests.push([action, timeout]);
+    // Model a successful server response after the maximum backend work.
+    const elapsed = action === 'weather_history_add_source' ? 95000 :
+                    action === 'weather_history_remove_source' ? 65000 : 30000;
+    if (timeout <= elapsed) throw new Error('premature client abort');
+    return {data: {choices: [configured], fields: ['temperature'], sources:
+      action === 'weather_history_remove_source' ? [] : [configured]}};
+  },
+};
+vm.runInNewContext(panel, context);
+(async () => {
+  await get('weather-recorder-load').events.click();
+  assert.equal(get('weather-recorder-status').textContent, 'SETUP.WEATHER_HISTORY_HELP');
+  get('weather-recorder-source').value = JSON.stringify(configured);
+  get('weather-recorder-fields').querySelectorAll = () => [{value: 'temperature'}];
+  await get('weather-recorder-add').events.click();
+  assert.equal(get('weather-recorder-status').textContent, 'SETUP.WEATHER_HISTORY_SAVED');
+  assert.equal(get('weather-recorder-add').disabled, false);
+  const row = get('weather-recorder-configured').children[0];
+  await row.children[1].events.click();
+  assert.equal(get('weather-recorder-status').textContent, 'SETUP.WEATHER_HISTORY_SAVED');
+  assert.equal(get('weather-recorder-configured').children.length, 0);
+  assert.equal(requests[0][1], 35000);
+  assert.ok(requests[1][1] > 95000);
+  assert.ok(requests[2][1] > 65000);
+})().catch((error) => { console.error(error); process.exitCode = 1; });
+"""
+    subprocess.run(
+        [node, "-e", script, str(ROOT / "webfrontend/htmlauth/admin/configuration.js")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
 def _admin_script(name: str) -> str:
     return (ROOT / "webfrontend/htmlauth/admin" / name).read_text(encoding="utf-8")
 
@@ -111,7 +177,7 @@ def test_admin_modules_load_in_order_with_versioned_localized_assets() -> None:
     for name in ADMIN_SCRIPTS:
         source = _admin_script(name)
         assert "<TMPL_" not in source
-        asset_version = {"configuration.js": "v16", "page.js": "v14", "sessions.js": "v13"}.get(
+        asset_version = {"configuration.js": "v17", "page.js": "v14", "sessions.js": "v13"}.get(
             name, "v12"
         )
         assert (
@@ -724,7 +790,7 @@ def test_knx_labels_moved_to_dedicated_same_origin_page() -> None:
     js = (ROOT / "webfrontend/htmlauth/knx.js").read_text(encoding="utf-8")
     assert 'id="knx-taxonomy-form"' in template
     assert 'href="knx.cgi"' in _admin_source()
-    assert "configuration.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v16" in _admin_source()
+    assert "configuration.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-admin-modules-v17" in _admin_source()
     assert "mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v10" in template
     assert 'id="knx-taxonomy-form"' not in _admin_source()
     assert "same_origin_post()" in cgi
