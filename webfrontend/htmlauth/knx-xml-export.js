@@ -27,8 +27,8 @@
     rows.dataset.emptyMessage = valid ? ui.dataset.noEntries : ui.dataset.needsComparison;
     document.getElementById('knx-xml-preview').disabled = blocked || !eligible || !selected;
     document.getElementById('knx-xml-download').disabled = blocked || !eligible || !preview || !confirm.checked;
-    document.getElementById('knx-xml-clear').disabled = blocked || !eligible
-      || !(selected || edited || preview || retainedPreview);
+    document.getElementById('knx-xml-clear').disabled = blocked
+      || (!retainedPreview && (!eligible || !(selected || edited || preview)));
     confirm.disabled = blocked || !eligible || !preview;
     rows.querySelectorAll('input, select, textarea').forEach(e => { e.disabled = blocked || !eligible; });
   };

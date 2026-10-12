@@ -2,8 +2,11 @@
 
 import subprocess
 
+import pytest
 
-def test_explicit_choices_preview_and_fresh_download_confirmation():
+
+@pytest.mark.parametrize("invalidated", ["logout", "catalog_revision", "empty_comparison"])
+def test_explicit_choices_preview_and_fresh_download_confirmation(invalidated):
     script = r"""
 const assert = require('node:assert/strict'), fs = require('node:fs');
 const {JSDOM} = require('jsdom');
@@ -12,12 +15,13 @@ const w = new JSDOM(html, {url: 'https://example.invalid/knx.cgi',
   runScripts: 'outside-only'}).window;
 const page = w.document.getElementById('knx-page'), requests = [], pending = [], errors = [];
 const el = id => w.document.getElementById('knx-xml-'+id);
-let source = null, fresh = true, checks = 0, downloads = 0;
+let source = null, fresh = true, checks = 0, downloads = 0, failDiscard = false;
 const objects = [{loxone_name: 'First', name_complete: true, project_node_id: 'one',
   project_description: 'Description one', truncated_fields: []},
   {loxone_name: '<img src=x>', name_complete: true, project_node_id: 'two',
    project_description: 'Truncated', truncated_fields: ['description']}];
 const saved = {target: 'target', revision: 1};
+const invalidated = process.argv[1];
 w.MCPKnx = {snapshot: () => saved,
   run: operation => {
     const task = operation().catch(error => errors.push(error.message))
@@ -32,7 +36,9 @@ w.MCPKnx = {snapshot: () => saved,
               after: {Name: payload.choices[0].fields.name || 'ETS'}}]};
     if (action === 'knx_xml_download')
       return {...saved,content: '<xml/>',filename: 'experimental.xml'};
-    assert.equal(action, 'knx_xml_discard'); return {discarded:true};
+    assert.equal(action, 'knx_xml_discard');
+    if (failDiscard) throw new Error('discard_unavailable');
+    return {discarded:true};
   }};
 w.MCPKnxProject = {snapshot: () => source, validate: async binding => {
   checks++;
@@ -74,12 +80,25 @@ const click = async id => {el(id).click(); await Promise.all(pending.splice(0));
   fresh=true; await click('download');
   assert.equal(checks,3); assert.equal(downloads,1);
   assert.equal(requests.at(-1).payload.confirmed_experimental,true);
-  source={...source,binding:'project-2'};
-  page.dispatchEvent(new w.CustomEvent('knx-project-state'));
+  if (invalidated === 'logout') source = null;
+  else if (invalidated === 'catalog_revision') saved.revision++;
+  else source = {...source, binding:'empty', items:[]};
+  const stateEvent = invalidated === 'catalog_revision' ? 'knx-state' : 'knx-project-state';
+  page.dispatchEvent(new w.CustomEvent(stateEvent));
   assert(el('download').disabled); assert(!el('confirm').checked);
-  await click('clear'); assert.equal(requests.at(-1).action,'knx_xml_discard');
+  assert(el('preview').disabled); assert(el('confirm').disabled);
+  assert(!el('clear').disabled);
+  page.setAttribute('aria-busy','true'); page.dispatchEvent(new w.CustomEvent('knx-idle'));
+  assert(el('clear').disabled);
+  page.removeAttribute('aria-busy'); page.dispatchEvent(new w.CustomEvent('knx-idle'));
+  assert(!el('clear').disabled);
+  failDiscard=true; await click('clear');
+  assert.equal(errors.at(-1),'discard_unavailable'); assert(!el('clear').disabled);
+  failDiscard=false; await click('clear');
+  assert.equal(requests.at(-1).action,'knx_xml_discard');
+  assert(el('clear').disabled);
   assert(requests.every(x=>x.action.startsWith('knx_xml_')));
 })().catch(error=>{console.error(error);process.exitCode=1;});
 """
-    result = subprocess.run(["node", "-e", script], capture_output=True, text=True)
+    result = subprocess.run(["node", "-e", script, invalidated], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr

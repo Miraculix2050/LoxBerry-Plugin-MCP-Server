@@ -85,3 +85,52 @@ const fire=async()=>{assert.equal(timers.size,1);const [id,t]=[...timers][0];
         ["node", "-e", script, prefix], capture_output=True, text=True, timeout=30
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("prefix", ["knx-read", "knx-drafts"])
+def test_foreground_actions_queued_during_polling_execute_in_order(prefix):
+    script = r"""
+const assert=require('node:assert/strict'),fs=require('node:fs'),{JSDOM}=require('jsdom');
+const html=fs.readFileSync('templates/knx.html','utf8').replace(/<TMPL_VAR[^>]*>/g,'label');
+const dom=new JSDOM(html,{url:'https://local.example/knx.cgi',runScripts:'outside-only'}),w=dom.window;
+const prefix=process.argv[1],other=prefix==='knx-read'?'knx-drafts':'knx-read';
+w.document.getElementById(other+'-delegation').remove();
+const el=id=>w.document.getElementById(prefix+'-'+id);
+Object.defineProperty(w.document,'hidden',{get:()=>false});
+const calls=[],timers=new Map();let sequence=0,pause=false,resume,active=0,maxActive=0;
+w.setTimeout=(fn,delay)=>{const id=++sequence;timers.set(id,fn);return id;};
+w.clearTimeout=id=>timers.delete(id);
+const data={target:'t',enabled:false,policy_revision:'r1',bindings:[
+  {binding:'binding',eligible:true,approved:false,retained:true}]};
+w.fetch=async(_,options)=>{
+  const action=options.body.get('action');calls.push(action);
+  active++;maxActive=Math.max(maxActive,active);
+  if(pause)await new Promise(resolve=>resume=resolve);
+  active--;return{ok:true,json:async()=>({ok:true,data})};
+};
+const dialog=w.document.getElementById('knx-confirm');
+dialog.showModal=()=>{dialog.returnValue='continue';dialog.dispatchEvent(new w.Event('close'));};
+const settle=async()=>{for(let i=0;i<10;i++)await new Promise(r=>setImmediate(r));};
+(async()=>{
+  w.eval(fs.readFileSync('webfrontend/htmlauth/knx-read-delegation.js','utf8'));await settle();
+  pause=true;const [id,timer]=[...timers][0];timers.delete(id);timer();await settle();
+  assert(!el('reload').disabled);
+  const buttons=[...el('bindings').querySelectorAll('button')];
+  el('enable-form').dispatchEvent(new w.Event('submit',{cancelable:true}));
+  assert(el('reload').disabled);assert(el('enabled').disabled);
+  // Already delivered events must also survive; queueing cannot overwrite a prior action.
+  el('reload').dispatchEvent(new w.Event('click'));
+  buttons.forEach(button=>button.dispatchEvent(new w.Event('click')));
+  assert.equal(calls.length,2);
+  pause=false;resume();await settle();
+  const actionPrefix=prefix.replace('-','_');
+  assert.deepEqual(calls.map(action=>action.slice(actionPrefix.length)),
+    ['_page','_page','_enable','_page','_grant','_revoke']);
+  assert.equal(maxActive,1);assert(!el('reload').disabled);assert(!el('enabled').disabled);
+  assert.equal(timers.size,1);dom.window.close();
+})().catch(error=>{dom.window.close();console.error(error);process.exitCode=1;});
+"""
+    result = subprocess.run(
+        ["node", "-e", script, prefix], capture_output=True, text=True, timeout=30
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

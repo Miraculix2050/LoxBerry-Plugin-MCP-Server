@@ -8,7 +8,9 @@ extracted from the matching version heading.
 - Show persisted KNX read/draft enablement and unique label counts in section
   badges. Refresh delegation state in visible tabs without replacing unsaved
   edits; fix shared Explorer login/logout and provide prerequisite-aware
-  comparison/export controls and clear empty-table presentation (#497).
+  comparison/export controls and clear empty-table presentation (#497). Preserve
+  foreground actions queued during polling and allow discarding retained XML
+  previews after the comparison becomes invalid.
 
 - Extend confirmed installation profiles with exact structured weather bindings
   and optional user-declared PV parameters. Read-migrate profile v1 without

@@ -17,11 +17,11 @@
     let dirty = false;
     let editRevision = null;
     let timer = null;
-    let queued = null;
+    const queued = [];
     let bindingsFingerprint = null;
     const page = document.getElementById('knx-page');
     const controls = () => {
-      const blocked = (busy && !backgroundBusy) || page.getAttribute('aria-busy') === 'true';
+      const blocked = queued.length > 0 || (busy && !backgroundBusy) || page.getAttribute('aria-busy') === 'true';
       section.querySelectorAll('button, input').forEach(control => { control.disabled = blocked || !state; });
       document.getElementById(`${prefix}-reload`).disabled = blocked;
     };
@@ -99,7 +99,10 @@
       if (!document.hidden) timer = window.setTimeout(() => void refresh(true), delay);
     };
     const run = async (operation, background = false) => {
-      if (busy) { if (!background) queued = operation; return; }
+      if (busy) {
+        if (!background) { queued.push(operation); controls(); }
+        return;
+      }
       if (background && page.getAttribute('aria-busy') === 'true') { schedule(); return; }
       busy = true;
       backgroundBusy = background;
@@ -119,7 +122,7 @@
         busy = false; section.removeAttribute('aria-busy');
         controls();
         schedule();
-        if (queued) { const next = queued; queued = null; void run(next); }
+        if (queued.length) void run(queued.shift());
       }
     };
     const refresh = (background = false) => run(async () =>

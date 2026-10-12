@@ -43,6 +43,8 @@ XML correction export requires a current project comparison with eligible
 entries, an explicit selection and a successful preview. The experimental
 checkbox confirms one download; it is not a saved enablement setting.
 
+Delegation actions requested during a status refresh run in order; further input is disabled once the first action is queued. An existing XML preview can still be discarded with **Cancel** after logout or an invalidated project comparison. The action remains disabled while requests are running.
+
 Start with `view="summary"`, then narrow literal `query`, `source`,
 `deviations_only` or exact `address` before fetching entries (default 50, maximum
 100). Addresses accept no `:0`/`:1`. Summary hydrates no address rows and has no
