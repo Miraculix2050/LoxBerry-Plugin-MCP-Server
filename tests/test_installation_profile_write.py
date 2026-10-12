@@ -31,6 +31,69 @@ STATE = "00000002-0000-0000-0000000000000002"
 HIDDEN = "00000003-0000-0000-0000000000000003"
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["replace", "delete", "delete_all"])
+async def test_missing_old_weather_cannot_be_deleted_or_overwritten_by_mcp(context, operation):
+    from mcpserver.installation_profile import ProfileSources, WeatherBindingInput
+
+    c = context
+    old = WeatherBindingInput(
+        binding_id=c.binding.binding_id,
+        role="weather_context",
+        source_kind="weather",
+        weather_state_uuid=HIDDEN,
+        mode="actual",
+        field="temperature",
+        confirmed=True,
+    )
+    ProfileStore(c.runtime.path).put(
+        c.installation,
+        0,
+        old,
+        ProfileSources(c.installation, {CONTROL: c.control}, {("actual", HIDDEN)}),
+        origin="local_admin",
+        actor_ref=profile_binding(c.auth, c.access),
+    )
+    before = c.runtime.path.read_bytes()
+    with pytest.raises(PermissionError, match="not authorized"):
+        await c.runtime.change(
+            c.access,
+            1,
+            binding=c.binding if operation == "replace" else None,
+            binding_id=old.binding_id if operation == "delete" else None,
+        )
+    assert c.runtime.path.read_bytes() == before
+
+
+@pytest.mark.asyncio
+async def test_visible_weather_save_and_legacy_control_anchor_are_independent(context):
+    from mcpserver.installation_profile import WeatherBindingInput
+    from mcpserver.loxone.models import GlobalMetadata
+
+    c = context
+    snapshot = c.snapshot.return_value[1]
+    snapshot.structure = replace(
+        snapshot.structure,
+        global_metadata=(
+            GlobalMetadata("weather_state", "actual", "Synthetic", state_uuid=HIDDEN),
+        ),
+    )
+    binding = WeatherBindingInput(
+        binding_id="weather",
+        role="weather_context",
+        source_kind="weather",
+        weather_state_uuid=HIDDEN,
+        mode="actual",
+        field="solar_radiation",
+        confirmed=True,
+    )
+    await c.runtime.change(c.access, 0, binding=binding)
+    await c.runtime.change(c.access, 1, binding=c.binding)
+    snapshot.structure = replace(snapshot.structure, controls=(replace(c.control, state_uuids=()),))
+    await c.runtime.change(c.access, 2, binding_id=c.binding.binding_id)
+    assert ProfileStore(c.runtime.path).read(c.installation).bindings[0].source_kind == "weather"
+
+
 @pytest.fixture
 def context(tmp_path, monkeypatch):
     access = StoredAccessToken(

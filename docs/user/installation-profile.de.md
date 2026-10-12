@@ -1,5 +1,39 @@
 # Bestätigtes Anlagenprofil
 
+**Wetterkontext** bindet eine genaue aktuelle oder prognostizierte Wetterquelle
+und eine Wettergröße. Diese Quelle hat eine eigene Sichtbarkeitsprüfung und keine
+Kontroll-UUID. Formate sind Darstellungsmetadaten; Einheiten und die Kodierung von
+`solar_radiation` bleiben ungeprüft. Aktuelle Quellenwerte sind nicht automatisch
+gemessene Beobachtungen; Prognosen sind keine historischen Messungen. Bestehende
+Wetterbindungen an Zustände oder Statistiken behalten ihre ursprüngliche Abdeckung.
+Strukturierte Wetterhistorie ist bis zur gesondert aktivierbaren Aufzeichnung
+nicht verfügbar. Geänderte relevante Formate oder Quellenregeln erfordern eine
+Prüfung; Anbieter-, Stations- und Standortwechsel sind nicht vollständig erkennbar.
+
+Erzeugungsbindungen können **PV-Anlagenparameter** enthalten: installierte kWp,
+Breiten- und Längengrad gemeinsam sowie bis zu 16 eindeutig gekennzeichnete
+Teilanlagen mit optionaler Leistung, Ausrichtung (Nord 0°, im Uhrzeigersinn),
+Neigung und einer Beschreibung der Verschattung. Alle Angaben sind Nutzeraussagen
+und benötigen bei jedem Speichern die Bestätigung der gesamten Bindung. Entwürfe
+und zu prüfende Bindungen liefern keine nutzbaren bestätigten Parameter. Unbekannte
+Geometrie verhindert einfache Vergleiche nicht pauschal. Teilanlagenleistungen
+sind unabhängige Angaben; Vollständigkeit, Summengleichheit, gemessene Einzelerträge
+und Verschattungsverluste werden nicht abgeleitet. Bei einer unzugänglichen oder
+ungültigen Erzeugungsquelle werden die zugehörigen PV-Angaben zurückgehalten.
+
+Fehlende Wetterquellen blenden die gesamte Bindung aus. Beim Ersetzen einer Kennung
+prüft MCP alte und neue Quelle, auch bei einem Wechsel der Quellenart. Eine
+unzugängliche alte Wetterbindung kann MCP nicht löschen; ein authentisierter
+lokaler Admin darf verwaiste lokale Metadaten entfernen. Überschreitet eine
+vollständige MCP-Seite 64 KiB, fragen Sie mit kleinerem `limit` erneut ab.
+
+Profilversion 1 wird zunächst nach ihrem ursprünglichen Vertrag geprüft und nur
+im Speicher zu Version 2 migriert. Lesen verändert den Dateiinhalt nicht. Die
+nächste autorisierte Revisionstransaktion schreibt Version 2. Ältere Pluginversionen
+können Version 2 nicht lesen: Für einen Binär-Rollback nach einem Profilschreibzugriff
+muss zusammen mit dem älteren Code die vorherige Profilsicherung wiederhergestellt
+werden. Unbekannte Versionen werden ohne Überschreiben abgelehnt.
+
 Öffnen Sie **Bestätigtes Anlagenprofil** auf der Plugin-Hauptseite. Wählen Sie
 eine sichtbare Messstelle oder einen Zustand und ordnen Sie eine Rolle zu.
 Optional können Sie Messgrenze, Richtung und Begründung als Nutzerangaben ergänzen.

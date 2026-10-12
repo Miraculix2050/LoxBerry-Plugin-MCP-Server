@@ -118,6 +118,20 @@ availability, physical-device role or energy inference is added.
 
 ## Locally approved installation-profile maintenance (#434)
 
+Profile reads/writes add a discriminated weather binding alongside unchanged
+state/statistic inputs: `source_kind="weather"`, `role="weather_context"`, exact
+`weather_state_uuid`, `mode="actual"|"forecast"`, one fixed WeatherPointData field,
+rationale and explicit confirmation. No control selector is accepted for weather.
+Reads return a separate typed weather branch, null unit, source presentation format,
+`history_status="unavailable"` and distinct current-source/forecast origin.
+Production bindings add optional `pv_parameters`: bounded finite installed kWp,
+paired coordinates and up to 16 unique arrays with optional capacity, north-zero
+clockwise azimuth, tilt and qualitative shading. These are declarations, not source
+semantics. `pv_parameters_usable` requires a valid currently confirmed binding.
+Complete profile envelopes are capped at 64 KiB; smaller pages remain available.
+Version-1 documents are strictly validated before read-only in-memory migration;
+revision writes persist v2. Rollback to older code requires the prior profile backup.
+
 `loxberry_save_installation_profile(binding, expected_revision, confirm=false)`
 and `loxberry_delete_installation_profile(expected_revision, binding_id=null,
 confirm=false)` require `loxone:read`, `loxone:history`, `loxberry:operate`, an

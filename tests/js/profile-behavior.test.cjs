@@ -5,13 +5,13 @@ const {test} = require('node:test');
 const fs = require('node:fs');
 const {JSDOM} = require('jsdom');
 
-function harness() {
+function harness(config = {}) {
   const html = fs.readFileSync('templates/profile.html', 'utf8');
   const dom = new JSDOM(html, {runScripts: 'outside-only', url: 'https://synthetic.local/profile.cgi'});
   const {window} = dom;
   const calls = [];
   let revision = 1;
-  const binding = {
+  const binding = config.binding || {
     binding_id: 'synthetic', control_uuid: 'control', control_name: '<script>private</script>',
     source_kind: 'state', state_uuid: null, series_id: null, role: 'operating_state',
     status: 'invalid', confirmed: false,
@@ -36,7 +36,7 @@ function harness() {
     if (action === 'profile_put') revision++;
     return {ok: true, json: async () => ({ok: true, data: {
       status: 'available', installation: 'synthetic-installation', revision,
-      bindings: [binding], sources: [{control_uuid: 'control', source_kind: 'state', source_id: 'state', control_name: 'Synthetic', source_name: 'value'}],
+      bindings: [binding], sources: config.sources || [{control_uuid: 'control', source_kind: 'state', source_id: 'state', control_name: 'Synthetic', source_name: 'value'}],
       next_offset: null, sources_truncated: false,
     }})};
   };
@@ -118,4 +118,68 @@ test('separate profile approval uses an HTML dialog and the captured exact sessi
   assert.deepEqual(h.calls.find((item) => item.action === 'profile_permission_allow').payload, {
     session_id: 'synthetic-session', confirm: true,
   });
+});
+
+test('weather selection has its own mode and field without a fake control anchor', async (t) => {
+  const h = harness({sources: [{source_kind: 'weather', source_id: 'weather', mode: 'forecast', field: 'temperature'}]});
+  t.after(h.close); await h.tick();
+  assert.equal(h.get('kind').value, 'weather');
+  assert.equal(h.get('control').required, false);
+  assert.equal(h.get('weather-fields').hidden, false);
+  assert.equal(h.get('role').value, 'weather_context');
+  h.get('form').dispatchEvent(new h.window.Event('submit', {cancelable: true})); await h.tick();
+  const binding = h.calls.find((item) => item.action === 'profile_put').payload.binding;
+  assert.equal(binding.weather_state_uuid, 'weather');
+  assert.equal(binding.mode, 'forecast'); assert.equal(binding.field, 'temperature');
+  assert.equal('control_uuid' in binding, false); assert.equal('state_uuid' in binding, false);
+});
+
+test('editing PV declarations preserves arrays and coordinates but resets confirmation', async (t) => {
+  const h = harness({binding: {
+    binding_id: 'production', source_kind: 'state', control_uuid: 'control', control_name: 'Synthetic',
+    state_uuid: 'state', role: 'production', status: 'confirmed', confirmed: true,
+    pv_parameters: {installed_kwp: 5, latitude: 50, longitude: 10,
+      arrays: [{array_id: 'south', installed_kwp: 3, azimuth_degrees: 180, tilt_degrees: 30, shading: '<script>declared</script>'}]},
+  }});
+  t.after(h.close); await h.tick();
+  h.get('bindings').querySelector('button').click();
+  assert.equal(h.get('confirmed').checked, false);
+  assert.equal(h.get('pv-fields').disabled, false);
+  assert.equal(h.get('pv-arrays').querySelector('script'), null);
+  h.get('form').dispatchEvent(new h.window.Event('submit', {cancelable: true})); await h.tick();
+  const binding = h.calls.find((item) => item.action === 'profile_put').payload.binding;
+  assert.equal(binding.confirmed, false);
+  assert.equal(binding.pv_parameters.installed_kwp, 5);
+  assert.equal(binding.pv_parameters.latitude, 50);
+  assert.equal(binding.pv_parameters.arrays[0].array_id, 'south');
+  assert.equal(binding.pv_parameters.arrays[0].azimuth_degrees, 180);
+  assert.equal(binding.pv_parameters.arrays[0].shading, '<script>declared</script>');
+});
+
+test('schema-valid small capacities and azimuths below 360 round-trip through Edit', async (t) => {
+  const h = harness({binding: {
+    binding_id: 'production', source_kind: 'state', control_uuid: 'control', control_name: 'Synthetic',
+    state_uuid: 'state', role: 'production', status: 'confirmed', confirmed: true,
+    pv_parameters: {installed_kwp: 1e-7, arrays: [{array_id: 'a', installed_kwp: 1e-7, azimuth_degrees: 359.9999999}]},
+  }});
+  t.after(h.close); await h.tick();
+  h.get('bindings').querySelector('button').click();
+  assert.equal(h.get('form').checkValidity(), true);
+  h.get('form').dispatchEvent(new h.window.Event('submit', {cancelable: true})); await h.tick();
+  const pv = h.calls.find((item) => item.action === 'profile_put').payload.binding.pv_parameters;
+  assert.equal(pv.installed_kwp, 1e-7);
+  assert.equal(pv.arrays[0].azimuth_degrees, 359.9999999);
+});
+
+test('exclusive PV boundaries reject zero capacity and 360 azimuth then clear on reset', async (t) => {
+  const h = harness(); t.after(h.close); await h.tick();
+  h.get('pv-enabled').checked = true; h.get('pv-enabled').dispatchEvent(new h.window.Event('change'));
+  h.get('pv-capacity').value = '0'; h.get('pv-capacity').dispatchEvent(new h.window.Event('input'));
+  assert.equal(h.get('pv-capacity').checkValidity(), false);
+  h.get('pv-add-array').click();
+  const azimuth = h.get('pv-arrays').querySelector('[data-key="azimuth_degrees"]');
+  azimuth.value = '360'; azimuth.dispatchEvent(new h.window.Event('input'));
+  assert.equal(azimuth.checkValidity(), false);
+  h.get('new').click();
+  assert.equal(h.get('pv-capacity').validationMessage, '');
 });

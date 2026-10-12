@@ -96,26 +96,89 @@
   function reset() {
     bindingId = "";
     get("form").reset();
+    validatePVRange(get("pv-capacity"));
+    get("pv-arrays").replaceChildren();
     selectSource();
+    configureFields();
+  }
+  function configureFields() {
+    const weather = get("kind").value === "weather";
+    get("control").required = !weather; get("control").disabled = weather;
+    get("weather-fields").hidden = !weather; get("weather-fields").disabled = !weather;
+    if (weather) get("role").value = "weather_context";
+    else if (get("role").value === "weather_context") get("role").value = "production";
+    get("role").disabled = weather;
+    get("boundary").disabled = weather; get("direction").disabled = weather;
+    const production = !weather && get("role").value === "production";
+    get("pv-section").hidden = !production;
+    get("pv-fields").disabled = !production || !get("pv-enabled").checked;
+  }
+  function addArray(value = {}) {
+    if (get("pv-arrays").children.length >= 16) return;
+    const row = get("pv-array-template").content.firstElementChild.cloneNode(true);
+    for (const input of row.querySelectorAll("[data-key]")) input.value = value[input.dataset.key] ?? "";
+    for (const input of row.querySelectorAll("[data-positive], [data-exclusive-max]")) {
+      input.addEventListener("input", () => validatePVRange(input)); validatePVRange(input);
+    }
+    row.querySelector("[data-remove]").addEventListener("click", () => { row.remove(); get("pv-add-array").focus(); });
+    get("pv-arrays").append(row);
+  }
+  function validatePVRange(input) {
+    const value = Number(input.value);
+    const valid = input.value === "" || (Number.isFinite(value) &&
+      (!input.hasAttribute("data-positive") || value > 0) &&
+      (!input.hasAttribute("data-exclusive-max") || value < Number(input.dataset.exclusiveMax)));
+    input.setCustomValidity(valid ? "" : page.dataset.pvRangeError);
+  }
+  const numberOrNull = (input) => input.value === "" ? null : Number(input.value);
+  function pvParameters() {
+    if (get("role").value !== "production" || !get("pv-enabled").checked) return null;
+    return {
+      installed_kwp: numberOrNull(get("pv-capacity")),
+      latitude: numberOrNull(get("pv-latitude")), longitude: numberOrNull(get("pv-longitude")),
+      arrays: [...get("pv-arrays").children].map((row) => {
+        const array = {};
+        for (const input of row.querySelectorAll("[data-key]")) {
+          array[input.dataset.key] = input.type === "number" ? numberOrNull(input) : input.value || null;
+        }
+        return array;
+      }),
+    };
   }
   function selectSource() {
     const source = sources[Number(get("source").value)];
     if (!source) return;
-    get("control").value = source.control_uuid;
+    get("control").value = source.control_uuid || "";
     get("kind").value = source.source_kind;
     get("source-id").value = source.source_id;
+    if (source.source_kind === "weather") {
+      get("weather-mode").value = source.mode; get("weather-field").value = source.field;
+    }
+    configureFields();
   }
   function edit(binding) {
     bindingId = binding.binding_id;
-    get("control").value = binding.control_uuid;
+    get("control").value = binding.control_uuid || "";
     get("kind").value = binding.source_kind;
-    get("source-id").value = binding.state_uuid || binding.series_id || "";
+    get("source-id").value = binding.weather_state_uuid || binding.state_uuid || binding.series_id || "";
     get("role").value = binding.role;
     get("boundary").value = binding.measurement_boundary || "";
     get("direction").value = binding.declared_direction || "";
     get("rationale").value = binding.rationale || "";
     get("confirmed").checked = false;
-    const index = sources.findIndex((s) => s.control_uuid === binding.control_uuid && s.source_id === get("source-id").value);
+    get("weather-mode").value = binding.mode || "actual";
+    get("weather-field").value = binding.field || "temperature";
+    const pv = binding.pv_parameters;
+    get("pv-enabled").checked = Boolean(pv);
+    get("pv-capacity").value = pv?.installed_kwp ?? "";
+    validatePVRange(get("pv-capacity"));
+    get("pv-latitude").value = pv?.latitude ?? ""; get("pv-longitude").value = pv?.longitude ?? "";
+    get("pv-arrays").replaceChildren();
+    for (const array of pv?.arrays || []) addArray(array);
+    configureFields();
+    const index = sources.findIndex((s) => s.source_kind === binding.source_kind &&
+      s.control_uuid === binding.control_uuid && s.source_id === get("source-id").value &&
+      (s.source_kind !== "weather" || (s.mode === binding.mode && s.field === binding.field)));
     get("source").value = index >= 0 ? String(index) : "";
     get("exact").open = index < 0;
     get("fields").scrollIntoView({ block: "start", behavior: "smooth" });
@@ -125,7 +188,8 @@
       const row = document.createElement("li");
       const label = document.createElement("span");
       const role = [...get("role").options].find((option) => option.value === binding.role);
-      label.textContent = `${binding.control_name} · ${role ? role.textContent : ""} · ${page.dataset[binding.status] || ""} `;
+      const name = binding.source_kind === "weather" ? [...get("weather-field").options].find((option) => option.value === binding.field)?.textContent : binding.control_name;
+      label.textContent = `${name || ""} · ${role ? role.textContent : ""} · ${page.dataset[binding.status] || ""} `;
       row.append(label);
       const editButton = document.createElement("button");
       editButton.type = "button"; editButton.textContent = page.dataset.edit;
@@ -146,7 +210,10 @@
       get("source").replaceChildren();
       sources.forEach((source, index) => {
         const option = document.createElement("option"); option.value = String(index);
-        option.textContent = `${source.control_name} · ${source.source_name}`; get("source").append(option);
+        option.textContent = source.source_kind === "weather"
+          ? `${[...get("weather-mode").options].find((o) => o.value === source.mode)?.textContent} · ${[...get("weather-field").options].find((o) => o.value === source.field)?.textContent}`
+          : `${source.control_name} · ${source.source_name}`;
+        get("source").append(option);
       });
       get("source-notice").textContent = result.sources_truncated ? page.dataset.truncated : "";
       if (!bindingId) selectSource();
@@ -159,6 +226,11 @@
     if (result.status !== "available") message("error");
   }
   get("source").addEventListener("change", selectSource);
+  get("kind").addEventListener("change", configureFields);
+  get("role").addEventListener("change", configureFields);
+  get("pv-enabled").addEventListener("change", configureFields);
+  get("pv-capacity").addEventListener("input", () => validatePVRange(get("pv-capacity")));
+  get("pv-add-array").addEventListener("click", () => addArray());
   get("new").addEventListener("click", reset);
   get("delete-all").addEventListener("click", () => deleteBinding(null, get("delete-all")));
   get("more").addEventListener("click", async () => {
@@ -169,7 +241,12 @@
   get("form").addEventListener("submit", async (event) => {
     event.preventDefault(); get("fields").disabled = true;
     const kind = get("kind").value;
-    const binding = {
+    const binding = kind === "weather" ? {
+      binding_id: bindingId || `b-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
+      role: "weather_context", source_kind: "weather", weather_state_uuid: get("source-id").value,
+      mode: get("weather-mode").value, field: get("weather-field").value,
+      rationale: get("rationale").value, confirmed: get("confirmed").checked,
+    } : {
       binding_id: bindingId || `b-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
       role: get("role").value, control_uuid: get("control").value, source_kind: kind,
       state_uuid: kind === "state" ? get("source-id").value : null,
@@ -177,6 +254,7 @@
       measurement_boundary: get("boundary").value || null,
       declared_direction: get("direction").value || null,
       rationale: get("rationale").value, confirmed: get("confirmed").checked,
+      pv_parameters: pvParameters(),
     };
     try { await call("profile_put", { installation, revision, confirm: true, binding }); reset(); await load(); message("saved"); }
     catch (_) { message("error"); }

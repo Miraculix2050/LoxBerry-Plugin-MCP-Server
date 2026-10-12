@@ -11,6 +11,25 @@ confirmed role does not prove a unit, aggregation or physical measurement bounda
 Technical semantics are checked separately. The profile contains no energy/history
 calculations of its own.
 
+Select **Weather context** to bind an exact current or forecast weather source and
+one weather field. This source has its own visibility check and no control UUID.
+Formats are presentation metadata; units and the `solar_radiation` encoding remain
+unverified. Current source values are not automatically measured observations,
+and forecasts are not historical measurements. Existing state/statistic weather
+bindings keep their original coverage. Structured weather history is unavailable
+until a separately enabled recorder is delivered. Source formats and rule changes
+require review; provider, station and location changes cannot be fully detected.
+
+Production bindings optionally contain **PV installation parameters**: installed
+kWp, paired latitude/longitude and up to 16 uniquely identified arrays with optional
+capacity, north-zero clockwise azimuth, tilt and a qualitative shading description.
+All are user declarations, confirmed with the entire binding on each save.
+Drafts or bindings requiring review do not provide usable confirmed parameters.
+Unknown geometry does not by itself prevent simple comparisons. Array capacities
+are independent declarations; no completeness, sum equality, individual measured
+yield or shading loss factor is inferred. PV details are withheld when their
+production source is inaccessible or invalid.
+
 In **Approve MCP profile management**, enable the default-disabled capability and
 approve or revoke active clients individually. Approval binds the exact client,
 user and Miniserver; names are display labels. New Explorer clients require a new
@@ -34,6 +53,10 @@ bindings per page. Follow `next_offset` until it is null. Every call checks fres
 visibility. Hidden controls and their bindings are omitted; there is no global
 binding count. If an old source disappears from a still-visible control, a
 sanitized invalid binding is shown without the old source ID.
+Missing weather sources omit the complete binding. Replacing a binding ID checks
+both the old and new source, including changes of source kind. MCP cannot delete
+an inaccessible old weather binding; authenticated local Admin can remove orphaned
+local metadata. If a full MCP page exceeds 64 KiB, request a smaller `limit`.
 
 Technical source changes yield **Review required**; presentation renaming does
 not change confirmation. Pages and responses distinguish **Draft**, **Confirmed**,
@@ -53,6 +76,10 @@ plugin-owned data directory, limited to 256 bindings and 1 MiB. Native service
 configuration determines the data directory through the existing KNX store path.
 No credentials, measurements or complete structures are stored in the profile.
 Upgrade preserves it; unknown schema versions are rejected without overwriting.
+Version 1 is validated and migrated to version 2 in memory without changing file
+content on reads. The next authorized revision transaction persists version 2.
+Older plugin versions cannot read version 2: binary rollback after a profile write
+requires restoring the prior profile backup together with the older code.
 
 Admin source selection is limited to 500 entries. Larger installations can enter
 exact IDs from Explorer; current Admin visibility is validated again before saving.

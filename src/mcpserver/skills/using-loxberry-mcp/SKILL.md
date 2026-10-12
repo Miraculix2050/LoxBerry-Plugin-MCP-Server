@@ -126,6 +126,18 @@ ownership. User decisions and applying corrections require their separate workfl
 
 ### Confirmed installation profile
 
+Weather bindings are a separate `source_kind="weather"` with exact
+`weather_state_uuid`, `mode="actual"|"forecast"`, allowlisted `field` and
+`role="weather_context"`; never invent a control UUID. Formats do not verify units.
+Current values are not automatically observations, forecasts are not past weather
+and `solar_radiation` encoding remains unknown. Structured history is unavailable.
+Production bindings may include user-declared `pv_parameters`; only a currently
+confirmed valid binding makes them usable. Obtain confirmation of the complete
+proposal, including changed parameters. Missing geometry is unknown, not a reason
+to invent orientation or reject every simple comparison. Arrays share a source;
+do not infer individual yields or sum completeness. MCP replacement/deletion checks
+old and new source visibility. Use a smaller profile page after `response_too_large`.
+
 Use `loxone_get_installation_profile` for repeated questions about confirmed
 source roles. Follow `next_offset` only as far as needed; every page requires
 fresh caller visibility. Roles, measurement boundaries and directions are user

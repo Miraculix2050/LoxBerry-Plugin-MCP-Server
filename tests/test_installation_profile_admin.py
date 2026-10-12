@@ -18,6 +18,44 @@ STATE = "00000002-0000-0000-0000000000000002"
 TARGET = hashlib.sha256(b"synthetic").hexdigest()
 
 
+def test_local_admin_can_delete_orphaned_weather_without_old_loxone_visibility(
+    tmp_path, monkeypatch
+):
+    from mcpserver.installation_profile import ProfileSources
+
+    config, controls, _calls = setup(tmp_path, monkeypatch)
+    sources = ProfileSources(TARGET, controls, {("actual", STATE)})
+    monkeypatch.setattr(
+        "mcpserver.installation_profile_admin._context", lambda _: (TARGET, sources)
+    )
+    request = payload()
+    request["binding"] = {
+        "binding_id": "weather",
+        "source_kind": "weather",
+        "role": "weather_context",
+        "weather_state_uuid": STATE,
+        "mode": "actual",
+        "field": "temperature",
+        "confirmed": True,
+    }
+    result = dispatch_profile("profile_put", request, config)
+    assert result["bindings"][0]["status"] == "confirmed"
+    sources.weather.clear()
+    result = dispatch_profile("profile_page", {}, config)
+    assert result["bindings"] == []
+    result = dispatch_profile(
+        "profile_delete",
+        {
+            "installation": TARGET,
+            "revision": 1,
+            "binding_id": "weather",
+            "confirm": True,
+        },
+        config,
+    )
+    assert result["revision"] == 2 and result["bindings"] == []
+
+
 def test_profile_dom_confirmation_and_revision_flows():
     root = Path(__file__).resolve().parents[1]
     node = shutil.which("node")

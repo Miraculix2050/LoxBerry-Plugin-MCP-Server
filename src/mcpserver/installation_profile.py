@@ -12,9 +12,17 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    TypeAdapter,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from mcpserver.config import _unlock_file
 from mcpserver.loxone.models import Control, LoxoneStructure
@@ -49,7 +57,7 @@ class ProfileError(ValueError):
         self.code = code
 
 
-class BindingInput(BaseModel):
+class LegacyBindingInput(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     binding_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
     role: Role
@@ -75,7 +83,7 @@ class BindingInput(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def source(self) -> BindingInput:
+    def source(self) -> LegacyBindingInput:
         if self.source_kind == "state":
             valid = self.state_uuid is not None and self.series_id is None
         else:
@@ -85,29 +93,156 @@ class BindingInput(BaseModel):
         return self
 
 
-class StoredBinding(BindingInput):
+class PVArray(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, allow_inf_nan=False)
+    array_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
+    installed_kwp: float | None = Field(default=None, gt=0, le=1_000_000)
+    azimuth_degrees: float | None = Field(default=None, ge=0, lt=360)
+    tilt_degrees: float | None = Field(default=None, ge=0, le=90)
+    shading: str | None = Field(default=None, max_length=256)
+
+    @field_validator("shading")
+    @classmethod
+    def text(cls, value: str | None) -> str | None:
+        if value is not None and (
+            len(value.encode("utf-8")) > 1024 or any(ord(char) < 32 for char in value)
+        ):
+            raise ValueError("profile_text_invalid")
+        return value
+
+
+class PVParameters(BaseModel):
+    """User declarations, never inferred geometry or a technical source rule."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, allow_inf_nan=False)
+    installed_kwp: float | None = Field(default=None, gt=0, le=1_000_000)
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+    arrays: list[PVArray] = Field(default_factory=list, max_length=16)
+
+    @model_validator(mode="after")
+    def geometry(self) -> PVParameters:
+        if (self.latitude is None) != (self.longitude is None):
+            raise ValueError("profile_coordinates_incomplete")
+        if len({item.array_id for item in self.arrays}) != len(self.arrays):
+            raise ValueError("profile_duplicate_array")
+        return self
+
+
+class BindingInput(LegacyBindingInput):
+    pv_parameters: PVParameters | None = None
+
+    @model_validator(mode="after")
+    def production_parameters(self) -> BindingInput:
+        if self.pv_parameters is not None and self.role != "production":
+            raise ValueError("profile_pv_role_invalid")
+        return self
+
+
+WeatherField = Literal[
+    "weather_type",
+    "wind_direction",
+    "solar_radiation",
+    "relative_humidity",
+    "temperature",
+    "perceived_temperature",
+    "dew_point",
+    "precipitation",
+    "wind_speed",
+    "barometric_pressure",
+]
+WEATHER_FIELDS = TypeAdapter(WeatherField).json_schema()["enum"]
+WEATHER_FORMAT_KEYS = {
+    "relative_humidity": "relativeHumidity",
+    "temperature": "temperature",
+    "precipitation": "precipitation",
+    "wind_speed": "windSpeed",
+    "barometric_pressure": "barometricPressure",
+}
+WEATHER_RULE = "installation_weather.raw_fields.v1"
+
+
+class WeatherBindingInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    binding_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
+    role: Literal["weather_context"]
+    source_kind: Literal["weather"]
+    weather_state_uuid: str = Field(max_length=128)
+    mode: Literal["actual", "forecast"]
+    field: WeatherField
+    rationale: str = Field(default="", max_length=256)
+    confirmed: bool = False
+
+    @field_validator("weather_state_uuid")
+    @classmethod
+    def identifier(cls, value: str) -> str:
+        return normalize_loxone_uuid(value)
+
+    @field_validator("rationale")
+    @classmethod
+    def text(cls, value: str) -> str:
+        if any(ord(char) < 32 for char in value):
+            raise ValueError("profile_text_invalid")
+        return value
+
+
+class ConfirmationFields(BaseModel):
     source_fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
     semantic_reference: str | None = Field(default=None, max_length=256)
     confirmation_origin: Literal["local_admin", "mcp_user_confirmed"] | None = None
     actor_ref: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
 
     @model_validator(mode="after")
-    def confirmation(self) -> StoredBinding:
-        if self.confirmed != (self.confirmation_origin is not None and self.actor_ref is not None):
+    def confirmation(self) -> ConfirmationFields:
+        confirmed = getattr(self, "confirmed", False)
+        if confirmed != (self.confirmation_origin is not None and self.actor_ref is not None):
             raise ValueError("profile_confirmation_invalid")
-        if not self.confirmed and (
-            self.confirmation_origin is not None or self.actor_ref is not None
-        ):
+        if not confirmed and (self.confirmation_origin is not None or self.actor_ref is not None):
             raise ValueError("profile_confirmation_invalid")
+        return self
+
+
+class LegacyStoredBinding(LegacyBindingInput, ConfirmationFields):
+    pass
+
+
+class StoredBinding(BindingInput, ConfirmationFields):
+    pass
+
+
+class StoredWeatherBinding(WeatherBindingInput, ConfirmationFields):
+    pass
+
+
+ProfileBindingInput = Annotated[
+    BindingInput | WeatherBindingInput, Field(discriminator="source_kind")
+]
+StoredProfileBinding = Annotated[
+    StoredBinding | StoredWeatherBinding, Field(discriminator="source_kind")
+]
+BINDING_INPUT: TypeAdapter[BindingInput | WeatherBindingInput] = TypeAdapter(ProfileBindingInput)
+
+
+class LegacyProfileDocument(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    schema_version: Literal[1] = 1
+    installation: str = Field(pattern=r"^[a-f0-9]{64}$")
+    revision: int = Field(ge=0, le=2**31 - 1)
+    bindings: list[LegacyStoredBinding] = Field(default_factory=list, max_length=MAX_BINDINGS)
+
+    @model_validator(mode="after")
+    def unique_bindings(self) -> LegacyProfileDocument:
+        if len({binding.binding_id for binding in self.bindings}) != len(self.bindings):
+            raise ValueError("profile_duplicate_binding")
         return self
 
 
 class ProfileDocument(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     installation: str = Field(pattern=r"^[a-f0-9]{64}$")
     revision: int = Field(ge=0, le=2**31 - 1)
-    bindings: list[StoredBinding] = Field(default_factory=list, max_length=MAX_BINDINGS)
+    bindings: list[StoredProfileBinding] = Field(default_factory=list, max_length=MAX_BINDINGS)
 
     @model_validator(mode="after")
     def unique_bindings(self) -> ProfileDocument:
@@ -205,6 +340,59 @@ def semantic_reference(binding: BindingInput, control: Control) -> str | None:
     return resolver.source_reference(control, state_name=name)
 
 
+class ProfileSources:
+    """One freshly authorized snapshot index; no source reads or service privileges."""
+
+    def __init__(
+        self,
+        installation: str,
+        controls: dict[str, Control],
+        weather: set[tuple[str, str]] | None = None,
+        formats: dict[str, str] | None = None,
+    ) -> None:
+        self.installation = installation
+        self.controls = controls
+        self.weather = weather or set()
+        self.formats = formats or {}
+
+    @classmethod
+    def from_structure(cls, installation: str, structure: LoxoneStructure) -> ProfileSources:
+        weather = set()
+        for item in structure.global_metadata:
+            if item.kind == "weather_state" and item.identifier in {"actual", "forecast"}:
+                try:
+                    weather.add((item.identifier, normalize_loxone_uuid(item.state_uuid)))
+                except (ValueError, TypeError):
+                    continue
+        return cls(
+            installation, visible_controls(structure), weather, dict(structure.weather.formats)
+        )
+
+    def authorized(self, binding: ProfileBindingInput) -> bool:
+        # Legacy mutations retain the control anchor even when a state was removed.
+        if isinstance(binding, WeatherBindingInput):
+            return (binding.mode, binding.weather_state_uuid) in self.weather
+        return binding.control_uuid in self.controls
+
+    def evidence(self, binding: ProfileBindingInput) -> tuple[str, str | None]:
+        if not self.authorized(binding):
+            raise ProfileError("profile_source_not_visible")
+        if isinstance(binding, WeatherBindingInput):
+            key = WEATHER_FORMAT_KEYS.get(binding.field)
+            return _digest(
+                [
+                    self.installation,
+                    binding.weather_state_uuid,
+                    binding.mode,
+                    binding.field,
+                    self.formats.get(key) if key is not None else None,
+                    WEATHER_RULE,
+                ]
+            ), WEATHER_RULE
+        control = self.controls[binding.control_uuid]
+        return source_fingerprint(binding, control), semantic_reference(binding, control)
+
+
 class ProfileStore:
     """Revision-checked atomic file store with a cross-process lock and tombstones."""
 
@@ -255,7 +443,13 @@ class ProfileStore:
                 raw = stream.read(MAX_DOCUMENT_BYTES + 1)
             if len(raw) > MAX_DOCUMENT_BYTES:
                 raise ProfileError("profile_storage_limit")
-            return ProfileDocument.model_validate(json.loads(raw))
+            value = json.loads(raw)
+            if isinstance(value, dict) and value.get("schema_version", 1) == 1:
+                # Validate the original contract before the read-only conversion.
+                legacy = LegacyProfileDocument.model_validate(value)
+                value = legacy.model_dump()
+                value["schema_version"] = 2
+            return ProfileDocument.model_validate(value)
         except (OSError, ValueError, ValidationError) as exc:
             raise ProfileError("profile_storage_invalid") from exc
 
@@ -288,14 +482,21 @@ class ProfileStore:
         self,
         installation: str,
         expected_revision: int,
-        binding: BindingInput,
-        control: Control,
+        binding: ProfileBindingInput,
+        control: Control | ProfileSources,
         *,
         origin: Literal["local_admin", "mcp_user_confirmed"],
         actor_ref: str,
         deadline: float | None = None,
     ) -> ProfileDocument:
-        fingerprint = source_fingerprint(binding, control)
+        sources = (
+            control
+            if isinstance(control, ProfileSources)
+            else ProfileSources(installation, {control.uuid: control})
+        )
+        if sources.installation != installation:
+            raise ProfileError("profile_installation_changed")
+        fingerprint, reference = sources.evidence(binding)
         with self._locked():
             document = self._load(installation)
             if document.installation != installation:
@@ -303,10 +504,13 @@ class ProfileStore:
             if document.revision != expected_revision:
                 raise ProfileError("profile_revision_conflict")
             retained = [item for item in document.bindings if item.binding_id != binding.binding_id]
-            stored = StoredBinding(
+            stored_type = (
+                StoredWeatherBinding if isinstance(binding, WeatherBindingInput) else StoredBinding
+            )
+            stored = stored_type(
                 **binding.model_dump(),
                 source_fingerprint=fingerprint,
-                semantic_reference=semantic_reference(binding, control),
+                semantic_reference=reference,
                 confirmation_origin=origin if binding.confirmed else None,
                 actor_ref=actor_ref if binding.confirmed else None,
             )
@@ -347,7 +551,7 @@ class ProfileStore:
 def project_profile(
     document: ProfileDocument,
     installation: str,
-    controls: dict[str, Control],
+    controls: dict[str, Control] | ProfileSources,
     *,
     offset: int = 0,
     limit: int = 100,
@@ -359,21 +563,30 @@ def project_profile(
             "bindings": [],
             "next_offset": None,
         }
+    sources = (
+        controls if isinstance(controls, ProfileSources) else ProfileSources(installation, controls)
+    )
     visible = []
     for binding in document.bindings:
-        control = controls.get(binding.control_uuid)
-        if control is None:
+        if not sources.authorized(binding):
             continue
+        control = (
+            None
+            if isinstance(binding, WeatherBindingInput)
+            else sources.controls[binding.control_uuid]
+        )
         status = "confirmed" if binding.confirmed else "draft"
         try:
-            if source_fingerprint(binding, control) != binding.source_fingerprint:
+            fingerprint, current_reference = sources.evidence(binding)
+            if fingerprint != binding.source_fingerprint:
                 status = "needs_review"
-            current_reference = semantic_reference(binding, control)
             if current_reference != binding.semantic_reference:
                 status = "needs_review"
         except ProfileError:
             # Keep an invalid binding to a visible control actionable without
             # disclosing the old source identity or user-authored source context.
+            if control is None:
+                continue
             visible.append(
                 {
                     "binding_id": binding.binding_id,
@@ -401,12 +614,32 @@ def project_profile(
             {
                 "status": status,
                 "fact_origin": "user_declared",
-                "control_name": control.name,
                 "semantic_status": "not_resolved",
                 "semantic_reference": current_reference,
-                "measurement_boundary_origin": "user_declared",
             }
         )
+        if isinstance(binding, WeatherBindingInput):
+            key = WEATHER_FORMAT_KEYS.get(binding.field)
+            item.update(
+                {
+                    "source_format": sources.formats.get(key) if key is not None else None,
+                    "unit": None,
+                    "history_status": "unavailable",
+                    "value_origin": "current_source_value"
+                    if binding.mode == "actual"
+                    else "forecast",
+                }
+            )
+        else:
+            assert control is not None
+            item.update(
+                {
+                    "control_name": control.name,
+                    "measurement_boundary_origin": "user_declared",
+                    "pv_parameters_usable": status == "confirmed"
+                    and binding.pv_parameters is not None,
+                }
+            )
         visible.append(item)
     selected = visible[offset : offset + limit]
     return {
