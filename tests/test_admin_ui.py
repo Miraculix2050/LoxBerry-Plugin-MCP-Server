@@ -2601,6 +2601,66 @@ def test_unavailable_logmanager_warning_has_request_id_without_private_details(
     assert "private-detail" not in events
 
 
+def test_weather_source_mutations_emit_sanitized_audit_events(tmp_path: Path) -> None:
+    from urllib.parse import urlencode
+
+    perl = shutil.which("perl")
+    if perl is None or os.name == "nt":
+        return
+    environment = _admin_cgi_environment(tmp_path)
+    marker = tmp_path / "weather-audit.txt"
+    environment["LB_TEST_LOG_EVENTS_PATH"] = str(marker)
+    private_payload = json.dumps(
+        {"source": {"state_uuid": "private-source", "fields": ["private-field"]}}
+    )
+    for action in ("weather_history_add_source", "weather_history_remove_source"):
+        for ok, payload in ((True, private_payload), (False, private_payload), (False, "[")):
+            marker.unlink(missing_ok=True)
+            response = (
+                {"ok": ok, "data": {}}
+                if ok
+                else {
+                    "ok": False,
+                    "error": {"code": "not_found", "message": "private-error"},
+                }
+            )
+            (tmp_path / "mcpserver-admin").write_text(
+                f"#!/usr/bin/env perl\nmy $request = <STDIN>;\nprint q({json.dumps(response)});\n",
+                encoding="utf-8",
+            )
+            body = urlencode({"action": action, "ajax": "1", "payload": payload})
+            result = subprocess.run(
+                [
+                    perl,
+                    f"-I{ROOT / 'tests' / 'perl_stubs'}",
+                    str(ROOT / "webfrontend/htmlauth/index.cgi"),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                input=body,
+                env={
+                    **environment,
+                    "REQUEST_METHOD": "POST",
+                    "CONTENT_TYPE": "application/x-www-form-urlencoded",
+                    "CONTENT_LENGTH": str(len(body)),
+                    "HTTP_ORIGIN": "https://loxberry.example",
+                    "HTTP_HOST": "loxberry.example",
+                },
+            )
+            assert json.loads(result.stdout.partition("\n\n")[2])["ok"] is ok
+            events = marker.read_text(encoding="utf-8")
+            severity, outcome = ("info", "completed") if ok else ("warning", "rejected")
+            assert re.search(
+                rf"{severity}:component=weather_history request_id=[0-9a-f]+-[0-9a-f]+ "
+                rf"action={action} outcome={outcome}",
+                events,
+            )
+            assert "private-source" not in events
+            assert "private-field" not in events
+            assert "private-error" not in events
+
+
 def test_admin_logmanager_registration_requires_an_actual_event(tmp_path: Path) -> None:
     perl = shutil.which("perl")
     if perl is None or os.name == "nt":

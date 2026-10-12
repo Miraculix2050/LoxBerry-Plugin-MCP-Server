@@ -725,6 +725,10 @@ if ($action ne '') {
         $result = $@ || ref($payload) ne 'HASH'
             ? {ok => JSON::PP::false, error => {code => 'invalid_request', message => 'Invalid weather source'}}
             : admin_call($action, $payload);
+        admin_log($result->{ok} ? 'info' : 'warning', sprintf(
+            'component=weather_history request_id=%s action=%s outcome=%s',
+            $request_id, $action, $result->{ok} ? 'completed' : 'rejected',
+        ));
     } elsif ($action eq 'list_sessions') {
         $result = admin_call('list_sessions', {});
     } elsif ($action eq 'revoke_all') {
