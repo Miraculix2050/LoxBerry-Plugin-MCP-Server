@@ -15,7 +15,8 @@ extracted from the matching version heading.
   server stack out of KNX Admin reader imports to avoid long configuration-lock
   holds during frequent status refreshes. Use one fresh authorization snapshot
   per delegation-page request and omit successful polling reads from INFO logs
-  while retaining failures and mutation audit records.
+  while retaining failures and mutation audit records. Bound mobile form grids,
+  file inputs and buttons to their cards, including at 400 px width.
 
 - Extend confirmed installation profiles with exact structured weather bindings
   and optional user-declared PV parameters. Read-migrate profile v1 without

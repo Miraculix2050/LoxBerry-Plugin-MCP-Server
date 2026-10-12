@@ -42,6 +42,8 @@ meldet alle verbundenen Explorer-/KNX-Tabs ab. Logout-Fehler bleiben sichtbar;
 Refresh stellt eine erfolgreich getrennte Sitzung nicht wieder her.
 Der lokale Dateivergleich benötigt keine OAuth-Anmeldung.
 
+Formulare und Schaltflächen passen sich auch schmalen mobilen Ansichten an;
+breite Tabellen bleiben innerhalb ihres Rahmens horizontal scrollbar.
 Leere Tabellen behalten Spaltenköpfe, eine dezente Leerfläche und einen passenden
 Hinweis außerhalb der Tabelle. Verwerfen benötigt ausgewählte Dateien, Entwürfe
 oder Ergebnisse. Der XML-Korrekturexport benötigt einen aktuellen Projektabgleich
