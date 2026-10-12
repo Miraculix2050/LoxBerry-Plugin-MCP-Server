@@ -1472,8 +1472,29 @@ class LoxoneRuntime:
     async def snapshot(
         self, access: StoredAccessToken, *, fresh_visibility: bool = False
     ) -> RuntimeSnapshot:
-        subject = access.family_id
         await self._require_access(access)
+        return await self._snapshot_admitted(access, fresh_visibility=fresh_visibility)
+
+    @asynccontextmanager
+    async def snapshot_context(
+        self, access: StoredAccessToken, *, fresh_visibility: bool = True
+    ) -> AsyncIterator[RuntimeSnapshot]:
+        """Hold read admission through local work and authorize before publication.
+
+        Callers must leave this context successfully before returning derived
+        data. Admission already checks access after waiting, so the private
+        snapshot path does not repeat that same pre-admission entry check.
+        """
+        async with self.call_slot(access):
+            snapshot = await self._snapshot_admitted(access, fresh_visibility=fresh_visibility)
+            yield snapshot
+            await self._require_access(access)
+
+    async def _snapshot_admitted(
+        self, access: StoredAccessToken, *, fresh_visibility: bool
+    ) -> RuntimeSnapshot:
+        """Only enter through snapshot's access gate or snapshot_context's slot."""
+        subject = access.family_id
         # Admission precedes family locks. Disconnect never takes admission, so
         # pruning cannot reverse the order while waiting for a family holder.
         async with self._admission_lock:

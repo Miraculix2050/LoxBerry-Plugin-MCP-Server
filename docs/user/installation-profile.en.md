@@ -53,6 +53,9 @@ bindings per page. Follow `next_offset` until it is null. Every call checks fres
 visibility. Hidden controls and their bindings are omitted; there is no global
 binding count. If an old source disappears from a still-visible control, a
 sanitized invalid binding is shown without the old source ID.
+The authorized read context remains admitted through the local file read and
+checks access again before returning a page. Revocation or expiry during a file
+wait prevents publication; the final check does not add a Miniserver request.
 Missing weather sources omit the complete binding. Replacing a binding ID checks
 both the old and new source, including changes of source kind. MCP cannot delete
 an inaccessible old weather binding; authenticated local Admin can remove orphaned

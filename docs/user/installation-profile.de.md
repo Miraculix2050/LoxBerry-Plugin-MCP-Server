@@ -73,6 +73,10 @@ prüft die aktuelle Sichtbarkeit erneut. Verborgene Steuerungen und deren
 Zuordnungen werden nicht ausgegeben; es gibt keine globale Anzahl aller Bindings.
 Fehlt eine alte Quelle an einer weiterhin sichtbaren Steuerung, wird eine
 bereinigte ungültige Zuordnung ohne alte Quellen-ID angezeigt.
+Der autorisierte Lesekontext bleibt während des lokalen Dateizugriffs zugelassen
+und prüft vor der Seitenausgabe erneut die Rechte. Widerruf oder Ablauf während
+des Wartens verhindert die Ausgabe; die abschließende Prüfung erzeugt keine
+zusätzliche Miniserver-Anfrage.
 
 Technische Quellenänderungen ergeben **Erneut prüfen**; reine Umbenennungen
 ändern die Bestätigung nicht. Profilseiten und Antworten unterscheiden

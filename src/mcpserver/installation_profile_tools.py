@@ -24,7 +24,7 @@ from mcpserver.installation_profile import (
 from mcpserver.installation_profile_write import ProfileWriteRuntime
 from mcpserver.loxone.runtime import LoxoneRuntime, RuntimeAuthorizationError, RuntimeUnavailable
 from mcpserver.persistence import PersistenceUncertain
-from mcpserver.tools import ErrorData, ToolEnvelope, _error, _result, _snapshot
+from mcpserver.tools import ErrorData, ToolEnvelope, _error, _result
 
 
 class ProfileBindingData(BaseModel):
@@ -194,31 +194,31 @@ def register_profile_read_tool(
         try:
             if runtime is None or path is None:
                 raise RuntimeUnavailable("Profile storage is not configured")
-            access, snapshot = await _snapshot(runtime, fresh_visibility=True)
-            installation = installation_identity(runtime.endpoint.origin, snapshot.structure)
-            document = await asyncio.to_thread(ProfileStore(path).read, installation)
-            # File locking can yield long enough for revocation or expiry. This
-            # rechecks caller OAuth policy, without another Miniserver probe.
-            await runtime._require_access(access)
-            result = project_profile(
-                document,
-                installation,
-                ProfileSources.from_structure(installation, snapshot.structure),
-                offset=offset,
-                limit=limit,
-            )
-            envelope = _result(
-                ProfileEnvelope,
-                result,
-                warnings=[
-                    "Profile roles and boundaries are user declarations; "
-                    "technical semantics must be resolved independently."
-                ],
-            )
-            if len(json.dumps(envelope.model_dump(), ensure_ascii=False).encode("utf-8")) > 65536:
-                return _error(
-                    ProfileEnvelope, "response_too_large", "Request a smaller profile page"
+            from mcpserver.tools import _access
+
+            async with runtime.snapshot_context(_access(), fresh_visibility=True) as snapshot:
+                installation = installation_identity(runtime.endpoint.origin, snapshot.structure)
+                document = await asyncio.to_thread(ProfileStore(path).read, installation)
+                result = project_profile(
+                    document,
+                    installation,
+                    ProfileSources.from_structure(installation, snapshot.structure),
+                    offset=offset,
+                    limit=limit,
                 )
+                envelope = _result(
+                    ProfileEnvelope,
+                    result,
+                    warnings=[
+                        "Profile roles and boundaries are user declarations; "
+                        "technical semantics must be resolved independently."
+                    ],
+                )
+                encoded = json.dumps(envelope.model_dump(), ensure_ascii=False).encode("utf-8")
+                if len(encoded) > 65536:
+                    envelope = _error(
+                        ProfileEnvelope, "response_too_large", "Request a smaller profile page"
+                    )
             return envelope
         except RuntimeAuthorizationError:
             return _error(ProfileEnvelope, "permission_denied", "Profile access is not authorized")

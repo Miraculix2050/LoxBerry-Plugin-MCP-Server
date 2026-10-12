@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -14,6 +15,28 @@ from mcpserver.loxone.runtime import RuntimeAuthorizationError
 
 CONTROL = "00000001-0000-0000-0000000000000001"
 STATE = "00000002-0000-0000-0000000000000002"
+
+
+@pytest.fixture(autouse=True)
+def caller_access(monkeypatch):
+    monkeypatch.setattr("mcpserver.tools._access", lambda: object())
+
+
+def _runtime(structure, *, snapshot=None, require_access=None):
+    reader = snapshot or AsyncMock(return_value=(object(), SimpleNamespace(structure=structure)))
+    authorize = require_access or AsyncMock()
+
+    @asynccontextmanager
+    async def context(access, *, fresh_visibility):
+        _, value = await reader(fresh_visibility=fresh_visibility)
+        yield value
+        await authorize(access)
+
+    return SimpleNamespace(
+        endpoint=SimpleNamespace(origin="http://synthetic.local"),
+        snapshot_context=context,
+        _require_access=authorize,
+    )
 
 
 @pytest.mark.asyncio
@@ -50,18 +73,10 @@ async def test_profile_output_bounds_entire_envelope_and_smaller_page_remains_us
             bindings=[stored.model_copy(update={"binding_id": f"pv{i}"}) for i in range(8)],
         )
     )
-    monkeypatch.setattr(
-        "mcpserver.installation_profile_tools._snapshot",
-        AsyncMock(
-            return_value=(object(), SimpleNamespace(structure=structure)),
-        ),
-    )
     server = FastMCP("profile-bounds")
     register_profile_read_tool(
         server,
-        SimpleNamespace(
-            endpoint=SimpleNamespace(origin="http://synthetic.local"), _require_access=AsyncMock()
-        ),
+        _runtime(structure),
         store.path,
     )
     tool = server._tool_manager.get_tool("loxone_get_installation_profile")
@@ -96,12 +111,8 @@ async def test_each_profile_read_and_page_uses_fresh_visibility(tmp_path, monkey
         actor_ref=hashlib.sha256(b"synthetic").hexdigest(),
     )
     snapshot = AsyncMock(return_value=(object(), SimpleNamespace(structure=structure)))
-    monkeypatch.setattr("mcpserver.installation_profile_tools._snapshot", snapshot)
     server = FastMCP("profile-test")
-    runtime = SimpleNamespace(
-        endpoint=SimpleNamespace(origin="http://synthetic.local"),
-        _require_access=AsyncMock(),
-    )
+    runtime = _runtime(structure, snapshot=snapshot)
     register_profile_read_tool(server, runtime, path)
     tool = server._tool_manager.get_tool("loxone_get_installation_profile")
     first = await tool.fn()
@@ -167,19 +178,10 @@ async def test_caller_revocation_during_profile_worker_read_blocks_publication(
         raise RuntimeAuthorizationError(reason)
 
     monkeypatch.setattr(ProfileStore, "read", read)
-    monkeypatch.setattr(
-        "mcpserver.installation_profile_tools._snapshot",
-        AsyncMock(
-            return_value=(object(), SimpleNamespace(structure=structure)),
-        ),
-    )
     server = FastMCP("profile-revocation")
     register_profile_read_tool(
         server,
-        SimpleNamespace(
-            endpoint=SimpleNamespace(origin="http://synthetic.local"),
-            _require_access=require_access,
-        ),
+        _runtime(structure, require_access=require_access),
         store.path,
     )
     response = await server._tool_manager.get_tool("loxone_get_installation_profile").fn()
