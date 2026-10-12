@@ -83,6 +83,10 @@ def dispatch_knx(action: str, payload: object, config_store: AtomicConfigStore) 
         "knx_drafts_enable",
         "knx_drafts_grant",
         "knx_drafts_revoke",
+        "knx_write_page",
+        "knx_write_enable",
+        "knx_write_grant",
+        "knx_write_revoke",
         "knx_correction_page",
         "knx_correction_inspect",
         "knx_correction_review",
@@ -124,23 +128,39 @@ def _run(
         raise KnxError("knx_page_invalid")
     if (
         action
-        not in {"knx_page", "knx_export", "knx_read_page", "knx_drafts_page", "knx_correction_page"}
+        not in {
+            "knx_page",
+            "knx_export",
+            "knx_read_page",
+            "knx_drafts_page",
+            "knx_write_page",
+            "knx_correction_page",
+        }
         and payload.get("target") != token
     ):
         raise AdminError("KNX target changed; reload", code="knx_target_conflict")
     if (
         action
-        in {"knx_page", "knx_export", "knx_read_page", "knx_drafts_page", "knx_correction_page"}
+        in {
+            "knx_page",
+            "knx_export",
+            "knx_read_page",
+            "knx_drafts_page",
+            "knx_write_page",
+            "knx_correction_page",
+        }
         and "target" in payload
         and payload["target"] != token
     ):
         raise AdminError("KNX target changed; reload", code="knx_target_conflict")
-    if action.startswith(("knx_read_", "knx_drafts_")):
+    if action.startswith(("knx_read_", "knx_drafts_", "knx_write_")):
         from mcpserver.admin import _auth_store
 
-        from .read_admin import DRAFT_POLICY, READ_POLICY, dispatch
+        from .read_admin import DRAFT_POLICY, READ_POLICY, WRITE_POLICY, dispatch
 
-        policy = DRAFT_POLICY if action.startswith("knx_drafts_") else READ_POLICY
+        policy = {"knx_read": READ_POLICY, "knx_drafts": DRAFT_POLICY, "knx_write": WRITE_POLICY}[
+            action.rsplit("_", 1)[0]
+        ]
         return {
             **dispatch(action, payload, config, save, _auth_store(), target, policy),
             "target": token,

@@ -1,6 +1,7 @@
 <link rel="stylesheet" href="mcp-ui.css?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v10">
 <div class="mcp-knx-announcements">
  <p id="knx-drafts-announcement" role="status" data-loading="<TMPL_VAR KNX.DRAFTS_LOADING ESCAPE=HTML>"></p>
+ <p id="knx-write-announcement" role="status" data-loading="<TMPL_VAR KNX.WRITE_LOADING ESCAPE=HTML>"></p>
  <p id="knx-corrections-announcement" role="status" data-loading="<TMPL_VAR KNX.CORRECTIONS_LOADING ESCAPE=HTML>"></p>
  <p id="knx-catalog-announcement" role="status" data-loading="<TMPL_VAR KNX.CATALOG_LOADING ESCAPE=HTML>"></p>
  <p id="knx-read-announcement" role="status" data-loading="<TMPL_VAR KNX.READ_LOADING ESCAPE=HTML>"></p>
@@ -107,6 +108,32 @@
    <thead><tr><th><TMPL_VAR KNX.DRAFTS_CLIENT></th><th><TMPL_VAR KNX.DRAFTS_BINDING></th>
     <th><TMPL_VAR KNX.DRAFTS_STATE></th><th><TMPL_VAR KNX.ACTIONS></th></tr></thead>
    <tbody id="knx-drafts-bindings" data-empty-message="<TMPL_VAR KNX.NO_BINDINGS ESCAPE=HTML>"></tbody>
+  </table></div>
+ </div></details>
+ <details class="mcp-card" data-persist-collapse open id="knx-write-delegation"
+  data-loading="<TMPL_VAR KNX.LOADING ESCAPE=HTML>"
+  data-grant="<TMPL_VAR KNX.WRITE_GRANT ESCAPE=HTML>"
+  data-revoke="<TMPL_VAR KNX.WRITE_REVOKE ESCAPE=HTML>"
+  data-confirm-enable="<TMPL_VAR KNX.WRITE_CONFIRM_ENABLE ESCAPE=HTML>"
+  data-confirm-grant="<TMPL_VAR KNX.WRITE_CONFIRM_GRANT ESCAPE=HTML>"
+  data-confirm-revoke="<TMPL_VAR KNX.WRITE_CONFIRM_REVOKE ESCAPE=HTML>"
+  data-approved="<TMPL_VAR KNX.WRITE_APPROVED ESCAPE=HTML>"
+  data-pending="<TMPL_VAR KNX.WRITE_PENDING ESCAPE=HTML>"
+  data-unavailable="<TMPL_VAR KNX.WRITE_UNAVAILABLE ESCAPE=HTML>"
+  data-failed="<TMPL_VAR KNX.WRITE_FAILED ESCAPE=HTML>">
+  <summary><h2><TMPL_VAR KNX.WRITE_TITLE></h2> <span id="knx-write-loading" class="mcp-knx-loading" aria-hidden="true"><TMPL_VAR KNX.LOADING></span></summary>
+  <div class="mcp-collapsible-content">
+  <p class="mcp-help"><TMPL_VAR KNX.WRITE_HELP></p>
+  <form id="knx-write-enable-form" class="mcp-form">
+   <label><input type="checkbox" id="knx-write-enabled" disabled> <TMPL_VAR KNX.WRITE_ENABLE></label>
+   <div class="mcp-actions"><button class="lb-button" type="submit" disabled><TMPL_VAR ACTION.SAVE></button>
+    <button class="lb-button" type="button" id="knx-write-reload"><TMPL_VAR KNX.WRITE_RELOAD></button></div>
+  </form>
+  <p id="knx-write-status" role="status" aria-live="polite"></p>
+  <div class="mcp-table-wrap" tabindex="0" role="region" aria-label="<TMPL_VAR KNX.WRITE_TITLE ESCAPE=HTML>"><table class="mcp-table">
+   <thead><tr><th><TMPL_VAR KNX.WRITE_CLIENT></th><th><TMPL_VAR KNX.WRITE_BINDING></th>
+    <th><TMPL_VAR KNX.WRITE_STATE></th><th><TMPL_VAR KNX.ACTIONS></th></tr></thead>
+   <tbody id="knx-write-bindings"></tbody>
   </table></div>
  </div></details>
  <details class="mcp-card" data-persist-collapse open id="knx-corrections"
@@ -386,7 +413,7 @@
  </form>
 </dialog>
 <script src="knx.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v16" defer></script>
-<script src="knx-read-delegation.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-read-v6" defer></script>
+<script src="knx-read-delegation.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-write-v2" defer></script>
 <script src="knx-corrections.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-corrections-v5" defer></script>
 <script src="knx-import.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-import-v3" defer></script>
 <script src="explorer-core.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-project-v2" defer></script>

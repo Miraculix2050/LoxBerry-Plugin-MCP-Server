@@ -15,7 +15,7 @@ from mcpserver.loxone.project.query import ProjectQuery
 from .catalog_runtime import CatalogRuntime
 from .correction_drafts import CorrectionDraftStore
 from .correction_service import CorrectionService
-from .delegation import authorize_drafts
+from .delegation import authorize_drafts, authorize_write
 from .model import KnxError
 
 LOGGER = logging.getLogger(__name__)
@@ -39,8 +39,12 @@ class CorrectionRuntime:
         arguments: dict[str, Any],
         query: ProjectQuery | None = None,
     ) -> dict[str, Any]:
-        if action == "authorize":
-            target, owner = self.authorized(access)
+        if action in {"authorize", "authorize_write"}:
+            target, owner = (
+                authorize_write(self.catalog.config_store.load(), self.catalog.auth_store, access)
+                if action == "authorize_write"
+                else self.authorized(access)
+            )
             return {"target": target, "owner": owner}
 
         def operation(
@@ -48,7 +52,10 @@ class CorrectionRuntime:
         ) -> dict[str, Any]:
             def authorize() -> tuple[str, str]:
                 try:
-                    return authorize_drafts(config, self.catalog.auth_store, access)
+                    authorizer = (
+                        authorize_write if action in {"apply", "receipt"} else authorize_drafts
+                    )
+                    return authorizer(config, self.catalog.auth_store, access)
                 except PermissionError:
                     # Config transactions sanitize OSError, including PermissionError,
                     # as lock failures. Keep a revoked grant a domain denial.
@@ -64,6 +71,24 @@ class CorrectionRuntime:
             )
             service = CorrectionService(self.catalog.store, drafts)
             identifier = arguments.get("draft_id")
+            if action in {"apply", "receipt"}:
+                from .correction_apply import CorrectionApply
+
+                result = CorrectionApply(service, owner).execute(
+                    config,
+                    target,
+                    arguments,
+                    reconcile=action == "receipt",
+                    query=query,
+                    authorize_effect=authorize,
+                )
+                try:
+                    authorize()
+                except KnxError:
+                    if action == "apply":
+                        raise KnxError("write_outcome_uncertain") from None
+                    raise
+                return {"target_id": target_id, **result}
             if action == "read":
                 if arguments.get("request_id") is not None:
                     identifier = drafts.resolve_request(arguments["request_id"], target)
@@ -192,6 +217,19 @@ class CorrectionRuntime:
                     self.catalog.admission.release()
 
                 worker.add_done_callback(finished)
+
+    @staticmethod
+    def audit_apply(access: StoredAccessToken | None, action: str, outcome: str) -> None:
+        identity = (
+            hashlib.sha256(access.family_id.encode()).hexdigest()[:16] if access else "unknown"
+        )
+        LOGGER.info(
+            "component=knx_local_apply_audit family=%s action=%s outcome=%s",
+            identity,
+            action,
+            outcome,
+            extra={"mcp_audit": True},
+        )
 
     @staticmethod
     def audit(access: StoredAccessToken | None, outcome: str) -> None:

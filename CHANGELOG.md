@@ -5,6 +5,11 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Apply explicitly accepted existing-address KNX name/description overrides with a
+  separate default-off local-write delegation. Commit bounded operation receipts
+  with field effects; preserve other metadata and reconcile uncertain outcomes
+  without automatic retries. No prefix, ETS or Loxone writes in this delivery (#458).
+
 - Add conditional retrospective load-shift examples to the existing historical
   analysis: complete confirmed cycles, native hourly energy, declared windows
   and one measured export budget shared across loads. Preserve state gaps,

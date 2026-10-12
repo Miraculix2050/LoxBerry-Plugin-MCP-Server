@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  for (const prefix of ['knx-read', 'knx-drafts']) {
+  for (const prefix of ['knx-read', 'knx-drafts', 'knx-write']) {
     const section = document.getElementById(`${prefix}-delegation`);
     if (!section) continue;
     const actionPrefix = prefix.replace('-', '_');

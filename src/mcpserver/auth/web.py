@@ -46,7 +46,11 @@ from mcpserver.auth.provider import (
     normalize_scopes,
     scope_text,
 )
-from mcpserver.auth.scopes import LOXBERRY_KNX_DRAFTS_SCOPE, LOXBERRY_KNX_READ_SCOPE
+from mcpserver.auth.scopes import (
+    LOXBERRY_KNX_DRAFTS_SCOPE,
+    LOXBERRY_KNX_READ_SCOPE,
+    LOXBERRY_KNX_WRITE_SCOPE,
+)
 from mcpserver.loxone.auth_diagnostics import (
     MiniserverAuthCoordinator,
     MiniserverAuthenticationBusy,
@@ -770,6 +774,12 @@ class Phase0OAuthWeb:
             if LOXBERRY_KNX_DRAFTS_SCOPE in transaction.scopes
             else ""
         )
+        knx_write_option = (
+            """<label class="scope-option" for="grant_knx_write"><input id="grant_knx_write" type="checkbox" name="grant_knx_write" value="true" data-optional-scope>
+<span><strong>Local KNX corrections / Lokale KNX-Korrekturen</strong><small>Optional: apply explicitly approved existing-address name/description overrides. Separate Admin write, draft and read approvals required. No ETS/Loxone writes. / Optional: Ausdrücklich bestätigte Namens-/Beschreibungs-Overrides vorhandener Adressen speichern. Separate Admin-Freigaben für Schreiben, Entwürfe und Lesen erforderlich. Keine ETS-/Loxone-Änderungen.</small></span></label>"""
+            if LOXBERRY_KNX_WRITE_SCOPE in transaction.scopes
+            else ""
+        )
         select_all_option = (
             """<label class="scope-select-all" for="grant_all"><input id="grant_all" type="checkbox">
 <span id="grant_all_label" data-select-label="Select all / Alle auswählen" data-deselect-label="Deselect all / Alle abwählen">Select all / Alle auswählen</span></label>"""
@@ -782,6 +792,7 @@ class Phase0OAuthWeb:
                     operate_option,
                     knx_read_option,
                     knx_drafts_option,
+                    knx_write_option,
                 )
             )
             else ""
@@ -816,7 +827,7 @@ sync();
 <fieldset class="scope-list"><legend>Permissions / Berechtigungen</legend>
 {select_all_option}
 <label class="scope-option"><input type="checkbox" checked disabled><span><strong>Read access / Lesezugriff</strong><small>Required: read permitted Loxone structure and states. / Erforderlich: Freigegebene Loxone-Struktur und Zustände lesen.</small></span></label>
-{history_option}{control_option}{message_option}{loxberry_option}{operate_option}{knx_read_option}{knx_drafts_option}</fieldset>
+{history_option}{control_option}{message_option}{loxberry_option}{operate_option}{knx_read_option}{knx_drafts_option}{knx_write_option}</fieldset>
 <p class="notice">After confirmation, you will be redirected to your MCP client. / Nach der Bestätigung werden Sie zu Ihrem MCP-Client weitergeleitet.</p>
 <div class="actions"><button type="submit">Confirm permissions / Berechtigungen bestätigen</button></div></form>
 <form method="post" action="/plugins/mcpserver/oauth/authorize">{self._hidden(transaction, "deny")}
@@ -843,6 +854,7 @@ sync();
                 "grant_loxberry_operate",
                 "grant_knx_read",
                 "grant_knx_drafts",
+                "grant_knx_write",
             },
         )
         transaction_id = request.cookies.get(_COOKIE_NAME, "")
@@ -884,6 +896,7 @@ sync();
                 grant_loxberry_operate = form.get("grant_loxberry_operate")
                 grant_knx_read = form.get("grant_knx_read")
                 grant_knx_drafts = form.get("grant_knx_drafts")
+                grant_knx_write = form.get("grant_knx_write")
                 if (
                     grant_messages not in {None, "true"}
                     or (
@@ -892,6 +905,11 @@ sync();
                     )
                     or grant_knx_read not in {None, "true"}
                     or grant_knx_drafts not in {None, "true"}
+                    or grant_knx_write not in {None, "true"}
+                    or (
+                        grant_knx_write is not None
+                        and LOXBERRY_KNX_WRITE_SCOPE not in transaction.scopes
+                    )
                     or (
                         grant_knx_drafts is not None
                         and LOXBERRY_KNX_DRAFTS_SCOPE not in transaction.scopes
@@ -956,6 +974,15 @@ sync();
                             status=400,
                         )
                     approved_scopes = (*approved_scopes, LOXBERRY_KNX_DRAFTS_SCOPE)
+                if grant_knx_write == "true":
+                    if LOXBERRY_KNX_DRAFTS_SCOPE not in approved_scopes:
+                        return _message_page(
+                            "Invalid authorization request",
+                            "Invalid authorization request / Ungültige Autorisierungsanfrage",
+                            "Local KNX writes require independent draft/read consent. / Lokale KNX-Änderungen benötigen unabhängige Zustimmungen für Entwürfe und Lesen.",
+                            status=400,
+                        )
+                    approved_scopes = (*approved_scopes, LOXBERRY_KNX_WRITE_SCOPE)
                 transaction.phase = "approving"
                 family_id: str | None = None
                 if self.loxone_store is None:
@@ -1375,6 +1402,7 @@ sync();
                     LOXBERRY_OPERATE_SCOPE,
                     LOXBERRY_KNX_READ_SCOPE,
                     LOXBERRY_KNX_DRAFTS_SCOPE,
+                    LOXBERRY_KNX_WRITE_SCOPE,
                 ],
                 "response_types_supported": ["code"],
                 "grant_types_supported": ["authorization_code", "refresh_token"],

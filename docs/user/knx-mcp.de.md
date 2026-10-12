@@ -212,3 +212,28 @@ begrenzte Worker-Plätze und lokale Leseraten. Normale Entwurfsabfragen verarbei
 keine Dateien und laden keine vollständigen Kataloge.
 
 Jeder Entwurf hält höchstens 128 gehashte Bearbeitungs-/Entscheidungsbelege ohne Verdrängung; weitere Bearbeitung wird an dieser Grenze abgewiesen. So bleiben Einzelprüfungen und Bearbeitung im 50er-Änderungspaket innerhalb der globalen Bytegrenze möglich.
+
+## Bestätigte lokale Änderungen übernehmen
+
+Zusätzlich zu Lesen und Entwürfen sind OAuth-Zustimmung zu `loxberry:knx:write`,
+separate Aktivierung und genaue Client-Freigabe auf der KNX-Seite erforderlich.
+Standardmäßig ist Schreiben deaktiviert. Die Zustimmung zu einer Analyse oder
+einem Entwurf ersetzt weder diese Freigabe noch die konkrete Anwenderentscheidung.
+
+Nach ausdrücklicher Abstimmung `loxberry_apply_knx_corrections(action="apply")`
+mit den angenommenen `approved_change_ids`, Ziel-, Katalog-, Präfix- und
+Entwurfsrevision sowie einer neuen stabilen `request_id` aufrufen. Werte nicht
+erneut senden. Höchstens 50 Änderungen, ausschließlich Namen/Beschreibungen
+vorhandener Einzeladressen; keine Präfix-, DPT-, Flag-, Import-, ETS- oder
+Loxone-Änderungen. Nicht ausgewählte Overrides und die Originaladresse bleiben
+erhalten. Entfernen eines Overrides und eine bewusst leere Beschreibung bleiben
+unterschiedliche Vorgänge. Projektgebundene Entwürfe benötigen ausdrücklich
+`use_project_evidence=true` mit frisch autorisiertem unverändertem Projektstand.
+
+Feldeffekte und ein begrenzter, sieben Tage verfügbarer Vorgangsnachweis werden
+gemeinsam gespeichert. Nach unklarem Ausgang nur `action="reconcile"` mit
+denselben IDs, Revisionen und derselben Vorgangskennung verwenden. Auch ein
+fehlender Nachweis erlaubt keinen automatischen Wiederholungsversuch. Ein
+Nachweis beschreibt das ursprüngliche Ergebnis; danach den aktuellen lokalen
+Katalog erneut lesen und die betroffenen Felder prüfen. Loxone-Namen bleiben
+unverändert primär. Präfixübernahme und Exportübergabe folgen als separate Schritte.

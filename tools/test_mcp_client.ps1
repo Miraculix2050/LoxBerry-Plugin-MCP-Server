@@ -221,6 +221,7 @@ try {
         'loxone_analyze_opening_contacts',
         'loxone_get_skill_guide', 'loxone_get_installation_profile', 'loxberry_get_knx_catalog',
         'loxberry_get_knx_correction_drafts', 'loxberry_prepare_knx_corrections',
+        'loxberry_apply_knx_corrections',
         'loxberry_save_installation_profile', 'loxberry_delete_installation_profile',
         'loxone_list_event_history_sources', 'loxone_get_event_history',
         'loxone_analyze_history'
@@ -245,24 +246,25 @@ try {
         @($actual | Where-Object { $_ -notin ($expected + $optional) }).Count -gt 0) {
         throw 'MCP tool inventory differs from the expected enabled contract.'
     }
+    $mutationAnnotations = @{
+        'loxone_operate_control' = @($true, $false)
+        'loxone_confirm_system_message' = @($true, $false)
+        'loxberry_purge_event_history_source' = @($true, $false)
+        'loxberry_delete_installation_profile' = @($true, $false)
+        'loxberry_clear_statistics_cache' = @($true, $true)
+        'loxberry_apply_knx_corrections' = @($true, $true)
+        'loxberry_add_event_history_source' = @($false, $true)
+        'loxberry_remove_event_history_source' = @($false, $true)
+        'loxberry_prepare_knx_corrections' = @($false, $true)
+        'loxberry_save_installation_profile' = @($false, $false)
+    }
     foreach ($tool in $toolsResponse.result.tools) {
-        if ($tool.name -in @('loxone_operate_control', 'loxberry_purge_event_history_source')) {
+        if ($mutationAnnotations.ContainsKey($tool.name)) {
+            $contract = $mutationAnnotations[$tool.name]
             if ($tool.annotations.readOnlyHint -ne $false -or
-                $tool.annotations.destructiveHint -ne $true -or
-                $tool.annotations.idempotentHint -ne $false) {
-                throw 'MCP destructive tool annotations violate the operate contract.'
-            }
-        } elseif ($tool.name -eq 'loxberry_clear_statistics_cache') {
-            if ($tool.annotations.readOnlyHint -ne $false -or
-                $tool.annotations.destructiveHint -ne $true -or
-                $tool.annotations.idempotentHint -ne $true) {
-                throw 'MCP cache tool annotations violate the operate contract.'
-            }
-        } elseif ($tool.name -in @('loxberry_add_event_history_source', 'loxberry_remove_event_history_source')) {
-            if ($tool.annotations.readOnlyHint -ne $false -or
-                $tool.annotations.destructiveHint -ne $false -or
-                $tool.annotations.idempotentHint -ne $true) {
-                throw 'MCP event-history source tool annotations violate the operate contract.'
+                $tool.annotations.destructiveHint -ne $contract[0] -or
+                $tool.annotations.idempotentHint -ne $contract[1]) {
+                throw 'MCP mutating tool annotations violate their explicit contract.'
             }
         } elseif ($tool.annotations.readOnlyHint -ne $true -or $tool.annotations.destructiveHint -ne $false) {
             throw 'MCP tool annotations violate the read-only contract.'

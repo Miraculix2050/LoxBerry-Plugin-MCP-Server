@@ -47,7 +47,7 @@ def test_search_projection_migrates_v2_and_tracks_all_source_changes(tmp_path):
             ).fetchall()
             == original
         )
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 4
         db.execute(
             "UPDATE addresses SET imported=?,overrides='{}'", (json.dumps({"name": "ETS changed"}),)
         )

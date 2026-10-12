@@ -53,7 +53,7 @@ class KnxStore:
             connection.execute("PRAGMA foreign_keys=ON")
             connection.execute("PRAGMA synchronous=FULL")
             version = connection.execute("PRAGMA user_version").fetchone()[0]
-            if version not in {0, 1, 2, 3}:
+            if version not in {0, 1, 2, 3, 4}:
                 raise KnxError("knx_storage_version")
             if version == 0:
                 connection.executescript(
@@ -106,6 +106,17 @@ class KnxStore:
                 connection.execute(
                     "CREATE INDEX IF NOT EXISTS addresses_search_cover "
                     "ON addresses(target,search_document,address)"
+                )
+            if version < 4:
+                connection.executescript(
+                    "BEGIN IMMEDIATE;"
+                    "CREATE TABLE IF NOT EXISTS local_apply_receipts ("
+                    "owner TEXT NOT NULL,target TEXT NOT NULL,request_key TEXT NOT NULL,"
+                    "digest TEXT NOT NULL,result TEXT NOT NULL,expires INTEGER NOT NULL,"
+                    "PRIMARY KEY(owner,target,request_key));"
+                    "CREATE INDEX IF NOT EXISTS local_apply_expiry "
+                    "ON local_apply_receipts(expires);"
+                    "PRAGMA user_version=4; COMMIT;"
                 )
             # Address-set comparisons read keys without fetching catalog JSON.
             # SQLite maintains membership when imports or manual records change.

@@ -5,7 +5,12 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Any
 
-from mcpserver.auth.scopes import LOXBERRY_KNX_DRAFTS_SCOPE, LOXBERRY_KNX_READ_SCOPE, READ_SCOPE
+from mcpserver.auth.scopes import (
+    LOXBERRY_KNX_DRAFTS_SCOPE,
+    LOXBERRY_KNX_READ_SCOPE,
+    LOXBERRY_KNX_WRITE_SCOPE,
+    READ_SCOPE,
+)
 from mcpserver.config import PluginConfig
 from mcpserver.explorer_bindings import active_explorer_binding
 from mcpserver.loxone.endpoint import MiniserverEndpoint
@@ -29,6 +34,14 @@ def draft_binding_id(config: PluginConfig, auth_store: Any, family: dict[str, An
     if any(not isinstance(value, str) or not value for value in fields):
         raise ValueError("KNX approval identity is incomplete")
     return str(auth_store.pseudonym("loxberry-knx-drafts-binding-v1", *fields, target))
+
+
+def write_binding_id(config: PluginConfig, auth_store: Any, family: dict[str, Any]) -> str:
+    target = MiniserverEndpoint.parse(config.loxone_endpoint).origin
+    fields = tuple(family.get(key) for key in ("client_id", "identity_id", "miniserver_id"))
+    if any(not isinstance(value, str) or not value for value in fields):
+        raise ValueError("KNX approval identity is incomplete")
+    return str(auth_store.pseudonym("loxberry-knx-write-binding-v1", *fields, target))
 
 
 def authorize_drafts(
@@ -80,6 +93,54 @@ def authorize_drafts(
             target,
         )
     )
+    return target, owner
+
+
+def authorize_write(
+    config: PluginConfig, auth_store: Any, access: StoredAccessToken, *, now: int | None = None
+) -> tuple[str, str]:
+    """Local writes require independent live write, draft and read approvals."""
+    current = int(time.time()) if now is None else now
+    target, owner = authorize_drafts(config, auth_store, access, now=current)
+    if LOXBERRY_KNX_WRITE_SCOPE not in access.scopes or not config.loxberry_knx_write_enabled:
+        raise PermissionError("Local KNX writes are not authorized")
+    family = auth_store.snapshot().get("families", {}).get(access.family_id)
+    required = {
+        READ_SCOPE,
+        LOXBERRY_KNX_READ_SCOPE,
+        LOXBERRY_KNX_DRAFTS_SCOPE,
+        LOXBERRY_KNX_WRITE_SCOPE,
+    }
+    if (
+        not isinstance(family, dict)
+        or family.get("revoked", False)
+        or family.get("expires_at", 0) <= current
+        or not required <= set(str(family.get("scope", "")).split())
+        or any(
+            family.get(key) != getattr(access, key)
+            for key in ("client_id", "identity_id", "miniserver_id")
+        )
+    ):
+        raise PermissionError("Local KNX writes are not authorized")
+    if family.get("client_kind") == "tool_explorer":
+        approved = (
+            active_explorer_binding(
+                config,
+                auth_store,
+                LOXBERRY_KNX_WRITE_SCOPE,
+                access.identity_id,
+                access.miniserver_id,
+                str(family.get("explorer_origin", "")),
+                now=current,
+            )
+            is not None
+        )
+    else:
+        approved = (
+            write_binding_id(config, auth_store, family) in config.loxberry_knx_write_bindings
+        )
+    if not approved:
+        raise PermissionError("Local KNX writes are not authorized")
     return target, owner
 
 

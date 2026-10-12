@@ -170,7 +170,7 @@ verify project access or apply changes. MCP can record concrete agreed decisions
 `loxberry_prepare_knx_corrections(mode="review", decisions=[{"change_id": "...",
 "decision": "accepted"}])`, omitting `changes` and supplying current target,
 catalog/manual/draft revisions and a stable request ID. Unselected decisions remain
-unchanged. Local writes and confirmed export handoff follow separately.
+unchanged. Prefix application and confirmed export handoff follow separately.
 
 Drafts have an absolute 24-hour lifetime, at most 50 changes each, and share the
 existing global eight-draft/32-MiB budget with imports, comparisons and XML
@@ -188,3 +188,26 @@ request ID is rejected. Reads/preparation share bounded worker admission and
 local read rate limits. Normal draft reads do not parse files or load catalogs.
 
 Each draft retains at most 128 hashed edit/decision receipts without eviction; further edits are rejected when that bound is reached. This accommodates individual review and edits across the 50-change batch while retaining the global byte bound.
+
+## Apply agreed local changes
+
+In addition to read and draft access, OAuth consent to `loxberry:knx:write`,
+independent enablement and exact client approval on the KNX page are required.
+Writing is disabled by default. Agreement to an analysis or draft replaces
+neither this approval nor the concrete user decision.
+
+After explicit user agreement, call `loxberry_apply_knx_corrections(action="apply")`
+with accepted `approved_change_ids`, target/catalog/manual/draft revisions and
+a new stable `request_id`. Do not resend values. Maximum 50 changes; existing
+single-address name/description overrides only. No prefix, DPT, flag, import, ETS
+or Loxone changes. Preserve unselected overrides and the original address.
+Removing an override differs from intentionally emptying a description.
+Project-bound drafts explicitly require `use_project_evidence=true` with a
+freshly authorized unchanged project snapshot.
+
+Field effects and a bounded operation receipt, available for seven days, commit
+together. After uncertainty use only `action="reconcile"` with the same IDs,
+revisions and request ID. Even an absent receipt does not permit automatic retry.
+A receipt describes the original result; reread the current local catalog and
+verify affected fields afterwards. Loxone names remain primary and unchanged.
+Prefix application and export handoff follow as separate steps.

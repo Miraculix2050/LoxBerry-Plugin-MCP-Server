@@ -124,6 +124,14 @@ ownership. Record concrete agreed change IDs with
 `loxberry_prepare_knx_corrections(mode="review", decisions=...)`; omit `changes`.
 Accepted/rejected/proposed decisions grant no apply or download permission. Keep project
 verification status explicit; local writes remain a separate workflow.
+With independent default-off `loxberry:knx:write` consent/Admin approval, use
+`loxberry_apply_knx_corrections(action="apply")` only for concrete user-agreed,
+accepted IDs and exact target/catalog/manual/draft revisions. Existing address
+name/description overrides only; prefixes/export/Loxone stay separate. Retrieve
+full guidance before this write. After uncertainty use `action="reconcile"` with
+the exact original selection/revisions/request ID; an absent receipt permits no
+automatic retry. Receipts last seven days and describe the original operation.
+Reread the current local catalog to verify; Loxone names remain unchanged.
 
 ## Read information
 

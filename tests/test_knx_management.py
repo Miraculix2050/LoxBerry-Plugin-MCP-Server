@@ -24,7 +24,7 @@ def record(name: str = "Additional name") -> dict[str, object]:
     }
 
 
-@pytest.mark.parametrize("kind", ["read", "drafts"])
+@pytest.mark.parametrize("kind", ["read", "drafts", "write"])
 def test_knx_delegation_ui_requires_html_confirmation_before_grant_and_enable(kind) -> None:
     root = Path(__file__).resolve().parents[1]
     script = r"""
@@ -118,12 +118,15 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   dom.window.close();
 })().catch(error => {console.error(error); process.exitCode = 1;});
 """
-    other = "drafts" if kind == "read" else "read"
+    others = [item for item in ("read", "drafts", "write") if item != kind]
     script = script.replace("knx_read_", f"knx_{kind}_")
     script = script.replace("getElementById('knx-read-", f"getElementById('knx-{kind}-")
     script = script.replace(
         "const w = dom.window;",
-        f"const w = dom.window; w.document.getElementById('knx-{other}-delegation').remove();",
+        "const w = dom.window; "
+        + " ".join(
+            f"w.document.getElementById('knx-{other}-delegation').remove();" for other in others
+        ),
     )
     node = shutil.which("node")
     assert node is not None

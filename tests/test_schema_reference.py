@@ -69,6 +69,7 @@ EXPECTED_TOOLS = {
     "loxberry_get_knx_catalog",
     "loxberry_get_knx_correction_drafts",
     "loxberry_prepare_knx_corrections",
+    "loxberry_apply_knx_corrections",
     "loxone_analyze_opening_contacts",
     "loxone_list_event_history_sources",
     "loxberry_clear_statistics_cache",

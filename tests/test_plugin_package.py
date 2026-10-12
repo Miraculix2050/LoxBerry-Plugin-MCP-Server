@@ -179,6 +179,27 @@ def test_mcp_client_smoke_optional_inventory_covers_release_catalog() -> None:
     assert set(names) == {tool["name"] for tool in tool_schema_catalog("test")["tools"]}
 
 
+def test_mcp_client_smoke_checks_exact_mutation_annotations() -> None:
+    script = (ROOT / "tools" / "test_mcp_client.ps1").read_text(encoding="utf-8")
+    block = re.search(r"\$mutationAnnotations = @\{(.*?)\n    \}", script, re.DOTALL)
+    assert block is not None
+    declarations = re.findall(r"'([^']+)' = @\(\$(true|false), \$(true|false)\)", block.group(1))
+    contracts = {
+        name: (destructive == "true", idempotent == "true")
+        for name, destructive, idempotent in declarations
+    }
+    actual = {
+        tool["name"]: (
+            tool["annotations"]["destructiveHint"],
+            tool["annotations"]["idempotentHint"],
+        )
+        for tool in tool_schema_catalog("test")["tools"]
+        if not tool["annotations"]["readOnlyHint"]
+    }
+    assert len(declarations) == len(contracts)
+    assert contracts == actual
+
+
 @pytest.mark.parametrize("variant", ["extra", "duplicate", "missing"])
 def test_project_wheel_source_set_must_match_exactly(tmp_path: Path, variant: str) -> None:
     wheel = tmp_path / "project.whl"
