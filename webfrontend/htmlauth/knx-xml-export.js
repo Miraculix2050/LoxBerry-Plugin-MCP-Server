@@ -9,6 +9,7 @@
   const previewArea = document.getElementById('knx-xml-result');
   const confirm = document.getElementById('knx-xml-confirm');
   let source = null, preview = null;
+  let retainedPreview = false;
   const node = (tag, value) => {
     const result = document.createElement(tag);
     if (value !== undefined) result.textContent = value;
@@ -18,8 +19,18 @@
     const current = core.snapshot(), live = project.snapshot();
     const valid = current && source && live && live.binding === source.binding
       && current.target === source.target && current.revision === source.revision;
-    document.getElementById('knx-xml-preview').disabled = !valid;
-    document.getElementById('knx-xml-download').disabled = !valid || !preview || !confirm.checked;
+    const blocked = page.getAttribute('aria-busy') === 'true';
+    const eligible = valid && rows.children.length > 0;
+    const selected = rows.querySelector('input[type="checkbox"]:checked') !== null;
+    const edited = [...rows.querySelectorAll('select')].some(e => e.value !== 'keep')
+      || [...rows.querySelectorAll('textarea, input:not([type="checkbox"])')].some(e => e.value !== '');
+    rows.dataset.emptyMessage = valid ? ui.dataset.noEntries : ui.dataset.needsComparison;
+    document.getElementById('knx-xml-preview').disabled = blocked || !eligible || !selected;
+    document.getElementById('knx-xml-download').disabled = blocked || !eligible || !preview || !confirm.checked;
+    document.getElementById('knx-xml-clear').disabled = blocked || !eligible
+      || !(selected || edited || preview || retainedPreview);
+    confirm.disabled = blocked || !eligible || !preview;
+    rows.querySelectorAll('input, select, textarea').forEach(e => { e.disabled = blocked || !eligible; });
   };
   const invalidate = () => { preview = null; previewArea.replaceChildren(); confirm.checked = false; controls(); };
   const valueControl = (item, field) => {
@@ -82,6 +93,7 @@
       throw new Error('knx_revision_conflict');
     const result = await core.api('knx_xml_preview', {target: expectedSource.target, revision: expectedSource.revision,
       choices: selected, project_binding: binding});
+    retainedPreview = true;
     if (!project.snapshot() || project.snapshot().binding !== binding
         || core.snapshot().target !== result.target || core.snapshot().revision !== result.revision)
       throw new Error('knx_revision_conflict');
@@ -117,7 +129,8 @@
     link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }));
   document.getElementById('knx-xml-clear').addEventListener('click', () => void core.run(async () => {
-    await core.api('knx_xml_discard', {target: core.snapshot().target}); renderChoices();
+    if (retainedPreview) await core.api('knx_xml_discard', {target: core.snapshot().target});
+    retainedPreview = false; renderChoices();
   }));
   page.addEventListener('knx-project-state', renderChoices);
   page.addEventListener('knx-state', () => { invalidate(); controls(); });

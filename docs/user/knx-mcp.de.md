@@ -27,6 +27,28 @@ Explorer-Freigaben nutzen die konfigurierte Inaktivitätsfrist. Ein Zielwechsel
 übernimmt keine Freigabe eines anderen Ziels. Deaktivierung erhält Freigaben,
 blockiert aber Abfragen.
 
+Die KNX-Admin-Badges für Lese- und Entwurfszugriff zeigen die gespeicherte
+Aktivierung, keine ungespeicherten Checkbox-Änderungen. Sichtbare Tabs prüfen
+diese Freigaben alle zehn Sekunden und bei Rückkehr zum Tab. Externe Änderungen
+aktualisieren das Badge; offene Eingaben und ihre ursprüngliche Konfliktrevision
+bleiben erhalten. Ein nicht abrufbarer Status wird ausdrücklich angezeigt.
+Das Adresslabel-Badge zählt gespeicherte eindeutige Adressformat-/Präfixpaare
+einschließlich importierter Labels; manuelle/importierte Paare zählen einmal.
+
+Der Projektabgleich teilt die OAuth-Browsersitzung mit dem MCP Tool Explorer.
+Die Anmeldung bietet dieselben optionalen Scopes: erforderlicher Loxone-Lesezugriff
+ist ausgewählt, weitere Rechte erfordern eine ausdrückliche Auswahl. Trennen
+meldet alle verbundenen Explorer-/KNX-Tabs ab. Logout-Fehler bleiben sichtbar;
+Refresh stellt eine erfolgreich getrennte Sitzung nicht wieder her.
+Der lokale Dateivergleich benötigt keine OAuth-Anmeldung.
+
+Leere Tabellen behalten Spaltenköpfe, eine dezente Leerfläche und einen passenden
+Hinweis außerhalb der Tabelle. Verwerfen benötigt ausgewählte Dateien, Entwürfe
+oder Ergebnisse. Der XML-Korrekturexport benötigt einen aktuellen Projektabgleich
+mit geeigneten Einträgen, eine ausdrückliche Auswahl und eine erfolgreiche
+Vorschau. Die Experimentell-Checkbox bestätigt einen einzelnen Download;
+sie ist keine gespeicherte Aktivierung.
+
 Mit `view="summary"` beginnen, dann literale `query`, `source`,
 `deviations_only` oder exakte `address` eingrenzen und Einträge abrufen
 (Standard 50, Maximum 100). Adressen erlauben kein `:0`/`:1`. Summary lädt keine

@@ -258,6 +258,11 @@ th[aria-sort="descending"] .mcp-event-history-sort::after { content: ' ↓'; }
 .mcp-knx .mcp-card > h2 { margin: 0 0 .5rem; }
 .mcp-knx #knx-status:empty { display: none; }
 .mcp-knx .mcp-table { min-width: 48rem; }
+.mcp-knx .mcp-table-wrap[data-empty="true"]::after {
+  content: ""; display: block; height: 2.5rem;
+  background: #f7f8f9; border-bottom: 1px solid #ddd;
+}
+.mcp-knx .mcp-knx-empty-note { margin-top: .5rem; }
 .mcp-knx #knx-project-coverage pre { white-space: pre-wrap; max-height: 24rem; overflow: auto; }
 .mcp-knx .mcp-field textarea { box-sizing: border-box; width: 100%; max-width: 100%; }
 .mcp-knx #knx-json-preview { white-space: pre-wrap; max-height: 16rem; overflow: auto; }

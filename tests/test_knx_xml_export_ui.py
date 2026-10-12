@@ -45,6 +45,10 @@ w.eval(fs.readFileSync('webfrontend/htmlauth/knx-xml-export.js', 'utf8'));
 const click = async id => {el(id).click(); await Promise.all(pending.splice(0));};
 (async () => {
   assert(el('preview').disabled);
+  assert(el('confirm').disabled); assert(el('clear').disabled);
+  source = {...saved,binding:'empty',items:[]};
+  page.dispatchEvent(new w.CustomEvent('knx-project-state'));
+  assert(el('preview').disabled); assert(el('confirm').disabled); assert(el('clear').disabled);
   source = {...saved,binding:'project-1',items:[{address_id:1,project_objects:objects,
     local_metadata:{address:'0/0/1',imported:{name:'ETS'}}}]};
   page.dispatchEvent(new w.CustomEvent('knx-project-state'));
@@ -53,7 +57,9 @@ const click = async id => {el(id).click(); await Promise.all(pending.splice(0));
   assert.equal(selects[0].options.length,4);
   assert.equal(selects[1].options.length,3); // Truncated description is never proposed.
   assert.equal(el('rows').querySelectorAll('img').length,0);
+  assert(el('preview').disabled); assert(el('confirm').disabled); assert(el('clear').disabled);
   el('rows').querySelector('input[type="checkbox"]').click();
+  assert(!el('preview').disabled); assert(!el('clear').disabled); assert(el('confirm').disabled);
   selects[0].value='object:1'; selects[0].dispatchEvent(new w.Event('change'));
   await click('preview');
   assert.equal(requests[0].payload.choices[0].fields.name,'<img src=x>');

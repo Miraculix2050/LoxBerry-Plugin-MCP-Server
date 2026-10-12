@@ -57,6 +57,16 @@ w.eval(fs.readFileSync('webfrontend/htmlauth/knx-compare.js', 'utf8'));
 const click = async id => {
   w.document.getElementById(id).click(); await Promise.all(pending.splice(0));};
 (async () => {
+  const file = w.document.getElementById('knx-compare-right-file');
+  for (const side of ['left','right']) Object.defineProperty(
+    w.document.getElementById(`knx-compare-${side}-file`), 'files',
+    {configurable: true, value: []});
+  page.dispatchEvent(new w.CustomEvent('knx-idle'));
+  assert(w.document.getElementById('knx-compare-clear').disabled);
+  Object.defineProperty(file, 'files', {configurable: true,
+    value: [{size: 1, arrayBuffer: async () => new Uint8Array([120]).buffer}]});
+  file.dispatchEvent(new w.Event('change'));
+  assert(!w.document.getElementById('knx-compare-clear').disabled);
   assert(w.document.getElementById('knx-compare-run').disabled);
   await click('knx-compare-right-load');
   assert.equal(requests[0].payload.file, 'eA==');
@@ -76,6 +86,9 @@ const click = async id => {
   assert(w.document.getElementById('knx-compare-next').disabled);
   const mode = w.document.getElementById('knx-compare-mode');
   mode.value = 'file'; mode.dispatchEvent(new w.Event('change'));
+  Object.defineProperty(w.document.getElementById('knx-compare-left-file'), 'files',
+    {configurable: true, value: [{size: 1,
+      arrayBuffer: async () => new Uint8Array([120]).buffer}]});
   await click('knx-compare-left-load'); await click('knx-compare-run');
   assert.equal(requests.at(-1).payload.left_id, 'left');
   assert.match(w.document.getElementById('knx-compare-scope').textContent,
@@ -98,11 +111,17 @@ const click = async id => {
   assert(w.document.getElementById('knx-compare-run').disabled);
   assert.equal(w.document.getElementById('knx-compare-stale').textContent, 'Stale');
   w.document.getElementById('knx-compare-right-file').dispatchEvent(new w.Event('change'));
+  for (const side of ['left','right']) Object.defineProperty(
+    w.document.getElementById(`knx-compare-${side}-file`), 'files',
+    {configurable: true, value: []});
+  page.dispatchEvent(new w.CustomEvent('knx-idle'));
+  assert(!w.document.getElementById('knx-compare-clear').disabled); // Retained server drafts.
   await click('knx-compare-clear');
   assert.deepEqual(JSON.parse(JSON.stringify(requests.at(-1))),
     {action: 'knx_compare_discard', payload: {target: 'target'}});
   assert.equal(w.document.getElementById('knx-compare-count').textContent, '');
   assert.equal(w.message, 'Cleared');
+  assert(w.document.getElementById('knx-compare-clear').disabled);
   assert(requests.every(item => item.action.startsWith('knx_compare_')));
 })().catch(error => {console.error(error); process.exitCode = 1;});
 """

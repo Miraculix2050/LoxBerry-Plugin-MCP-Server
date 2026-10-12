@@ -10,8 +10,23 @@
     const status = document.getElementById(`${prefix}-status`);
     const loading = document.getElementById(`${prefix}-loading`);
     const announcement = document.getElementById(`${prefix}-announcement`);
+    const badge = document.getElementById(`${prefix}-badge`);
     let state = null;
     let busy = false;
+    let backgroundBusy = false;
+    let dirty = false;
+    let editRevision = null;
+    let timer = null;
+    let queued = null;
+    let bindingsFingerprint = null;
+    const page = document.getElementById('knx-page');
+    const controls = () => {
+      const blocked = (busy && !backgroundBusy) || page.getAttribute('aria-busy') === 'true';
+      section.querySelectorAll('button, input').forEach(control => { control.disabled = blocked || !state; });
+      document.getElementById(`${prefix}-reload`).disabled = blocked;
+    };
+    new MutationObserver(controls).observe(page, {attributes: true, attributeFilter: ['aria-busy']});
+    page.addEventListener('knx-idle', controls);
     const ask = (message) => new Promise((resolve) => {
       const dialog = document.getElementById('knx-confirm');
       document.getElementById('knx-confirm-message').textContent = message;
@@ -21,8 +36,8 @@
       dialog.showModal();
       document.getElementById('knx-confirm-cancel').focus();
     });
-    const api = async (action, payload = {}) => {
-      if (action === `${actionPrefix}_page`) {
+    const api = async (action, payload = {}, background = false) => {
+      if (action === `${actionPrefix}_page` && !background) {
         loading.hidden = false;
         announcement.textContent = announcement.dataset.loading;
         status.textContent = section.dataset.loading;
@@ -36,9 +51,17 @@
       if (!response.ok || !result.ok) throw new Error('delegation_unavailable');
       return result.data;
     };
-    const render = (data) => {
+    const render = (data, background = false) => {
       state = data;
-      enabled.checked = data.enabled;
+      badge.textContent = data.enabled ? section.dataset.enabled : section.dataset.disabled;
+      badge.dataset.kind = data.enabled ? 'success' : 'inactive';
+      if (!background || !dirty) {
+        enabled.checked = data.enabled;
+        dirty = false; editRevision = null;
+      }
+      const fingerprint = JSON.stringify(data.bindings);
+      if (fingerprint === bindingsFingerprint) return;
+      bindingsFingerprint = fingerprint;
       rows.textContent = '';
       for (const item of data.bindings) {
         const row = document.createElement('tr');
@@ -64,40 +87,68 @@
             const question = action === 'grant' ? section.dataset.confirmGrant : section.dataset.confirmRevoke;
             if (!await ask(`${question}\n${client.textContent}\n${item.binding}`)) return;
             render(await api(`${actionPrefix}_${action}`, {target: state.target,
-              policy_revision: state.policy_revision, binding: item.binding}));
+              policy_revision: state.policy_revision, binding: item.binding}), true);
           }));
           actions.append(button);
         }
         row.append(actions); rows.append(row);
       }
     };
-    const run = async (operation) => {
-      if (busy) return;
+    const schedule = (delay = 10000) => {
+      window.clearTimeout(timer);
+      if (!document.hidden) timer = window.setTimeout(() => void refresh(true), delay);
+    };
+    const run = async (operation, background = false) => {
+      if (busy) { if (!background) queued = operation; return; }
+      if (background && page.getAttribute('aria-busy') === 'true') { schedule(); return; }
       busy = true;
-      section.setAttribute('aria-busy', 'true');
-      section.querySelectorAll('button, input').forEach((control) => { control.disabled = true; });
-      try { await operation(); status.textContent = ''; }
-      catch (_) { status.textContent = section.dataset.failed; }
+      backgroundBusy = background;
+      controls();
+      if (!background) {
+        section.setAttribute('aria-busy', 'true');
+        section.querySelectorAll('button, input').forEach((control) => { control.disabled = true; });
+      }
+      try { await operation(); status.textContent = ''; section.dataset.loadFailed = 'false'; }
+      catch (_) {
+        badge.textContent = section.dataset.unknown; delete badge.dataset.kind;
+        status.textContent = section.dataset.failed; section.dataset.loadFailed = 'true';
+      }
       finally {
         loading.hidden = true;
         announcement.textContent = '';
         busy = false; section.removeAttribute('aria-busy');
-        section.querySelectorAll('button, input').forEach((control) => { control.disabled = !state; });
-        document.getElementById(`${prefix}-reload`).disabled = false;
+        controls();
+        schedule();
+        if (queued) { const next = queued; queued = null; void run(next); }
       }
     };
+    const refresh = (background = false) => run(async () =>
+      render(await api(`${actionPrefix}_page`, state ? {target: state.target} : {}, background), background), background);
+    enabled.addEventListener('change', () => {
+      if (!dirty) editRevision = state?.policy_revision;
+      dirty = true;
+    });
     form.addEventListener('submit', (event) => {
       event.preventDefault();
+      if (!state) return;
       const value = enabled.checked;
+      const target = state.target;
+      const revision = editRevision ?? state.policy_revision;
       void run(async () => {
-        if (value && !await ask(section.dataset.confirmEnable)) { enabled.checked = state.enabled; return; }
-        render(await api(`${actionPrefix}_enable`, {target: state.target,
-          policy_revision: state.policy_revision, enabled: value}));
+        if (value && !await ask(section.dataset.confirmEnable)) {
+          enabled.checked = state.enabled; dirty = false; editRevision = null; return;
+        }
+        render(await api(`${actionPrefix}_enable`, {target,
+          policy_revision: revision, enabled: value}));
       });
     });
     document.getElementById(`${prefix}-reload`).addEventListener('click', () => {
-      void run(async () => render(await api(`${actionPrefix}_page`, state ? {target: state.target} : {})));
+      void refresh();
     });
-    void run(async () => render(await api(`${actionPrefix}_page`)));
+    document.addEventListener('visibilitychange', () => {
+      window.clearTimeout(timer);
+      if (!document.hidden) schedule(0);
+    });
+    void refresh();
   }
 })();
