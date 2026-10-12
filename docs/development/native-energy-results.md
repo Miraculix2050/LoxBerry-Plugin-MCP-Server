@@ -47,7 +47,7 @@ explicitly distinguish known W/kW from null. The pure rule
 | Actual Rest | No supported interpretation | Quantity, unit and boundary |
 | Native calendar/lifetime fields | Source names and current native view | Units, currency, boundaries/reset and historical date selection |
 | Historical report components | Existing independently evidenced StatisticV2/Event History path | Coverage and component-specific semantics must pass that path's gates |
-| EnergyManager / EnergyManager2 | Separate families, outside this slice | No positive target-device evidence |
+| EnergyManager / EnergyManager2 | Separate documented generation context below | No positive target-device evidence; no shared EFM algorithm |
 
 Only a bounded, fully retained format with one numeric `%…f` followed by literal
 `W` or `kW` is accepted. Formats are never executed and values are never scaled.
@@ -87,3 +87,44 @@ Pure source projection, session transport, runtime policy and tool serialization
 remain separate. Tests cover their boundaries; fixtures do not establish device
 or broader firmware compatibility. Reserved Browser/MCP/SSH acceptance and matched
 performance measurements are separate required delivery evidence.
+
+## Energy Manager context
+
+`loxone_describe_control(view="energy_context")` returns `energy_context.v1` for
+one exact visible EnergyManager or EnergyManager2. It requires a fresh caller
+structure and strict boolean Loxone administration; `include_hidden=true` is
+rejected. This conservative plugin disclosure policy is not a claimed native
+permission requirement. LoxBerry administration does not substitute. Legacy
+descriptions retain their fields and reads. No new tool, endpoint, session, cache,
+algorithm or action is added.
+
+The [official Structure File 17.1 pp.61–63](https://www.loxone.com/dede/wp-content/uploads/sites/2/2021/10/1701_Structure-File.pdf#page=61)
+provides distinct generation contracts:
+
+| Family | Documented context | Unverified context |
+| --- | --- | --- |
+| EnergyManager | Fresh load ID/name/minOnTime seconds; zero means no trigger. Cached output/preparing/manual-wait/permanent flags; activeUntil seconds since 2009 | Metadata/state temporal association, timezone, priority direction, global power units and physical cycles |
+| EnergyManager2 | Parameter edit locks, connected/valid inputs; global Gpwr/Spwr/Ppwr/MaxSpwr kW and Ssoc/MinSoc percent; last-delivered load identities/status; minimumActiveUntil UTC seconds since 2009 | Load pwr/ppwr units, meter feedback, priority direction, signs, boundaries, general/historical load locks and physical cycles |
+
+Each result separates documented, advertised and missing states. These are
+source-shape capabilities, not device compatibility proof. Unsupported families
+are rejected; installed fixtures remain distinct from real-device acceptance.
+Fresh Gen-1 metadata is never joined to cached IDs: a load can be reconfigured
+after its last state delivery. Gen-2 payload names/UUIDs remain last-delivered
+source facts; references never authorize another control read or implicit join.
+
+`hasActual=true` may be digital feedback; false labels a manager assumption and
+absence stays unknown. Editing locks are not general load locks. Output activation
+does not prove a physical cycle; current states do not establish historical native
+constraints. State observation quality remains separate, including stale records.
+Existing semantic surfaces share the pure decoder but newly decoded loads require
+the same fresh administrator check. Existing raw reads remain unchanged.
+
+Retained metadata and payloads are bounded to 100 loads. Load JSON is at most
+16 KiB, with unique keys/IDs and Gen-2 provided opaque UUIDs, at most 16 flat scalar
+properties per load, strict types and finite numbers. Text is UTF-8 bounded; no
+format, icon or reference is executed. The final envelope is at most 64 KiB;
+oversized output returns an error without partial metadata. New family-specific
+technical rulesets version source fingerprints independently of disclosure rights,
+preserving unchanged legacy families. Rule references alone establish neither
+semantic completeness, present administration nor physical truth.

@@ -59,6 +59,8 @@ from mcpserver.loxone.client import LoxoneConnectionError
 from mcpserver.loxone.control import allowed_actions
 from mcpserver.loxone.efm import describe as describe_efm
 from mcpserver.loxone.efm_bindings import bind as bind_efm
+from mcpserver.loxone.energy_manager import ManagerMetadata
+from mcpserver.loxone.energy_manager import normalize as normalize_energy_manager
 from mcpserver.loxone.event_history import (
     EventHistoryCoverage,
     EventHistoryMonitor,
@@ -703,6 +705,31 @@ class StateSemanticsPageData(BaseModel):
     total: int
     truncated: bool
     complete: bool
+
+
+class EnergyManagerCapabilitiesData(BaseModel):
+    generation: Literal[1, 2]
+    evidence_level: Literal["documented_contract_only"] = "documented_contract_only"
+    document_version: Literal["17.1"] = "17.1"
+    documented_states: list[str] = Field(max_length=7)
+    advertised_states: list[str] = Field(max_length=7)
+    missing_states: list[str] = Field(max_length=7)
+    unverified: list[str] = Field(max_length=12)
+
+
+class ControlEnergyContextData(BaseModel):
+    uuid: str
+    name: str
+    type: Literal["EnergyManager", "EnergyManager2"]
+    view: Literal["energy_context"]
+    schema_version: Literal["energy_context.v1"] = "energy_context.v1"
+    disclosure_policy: Literal["fresh_visible_loxone_administrator"] = (
+        "fresh_visible_loxone_administrator"
+    )
+    metadata: ManagerMetadata
+    metadata_state_association: Literal["unverified"] = "unverified"
+    capabilities: EnergyManagerCapabilitiesData
+    state_context: list[StateSemanticsItemData] = Field(max_length=7)
 
 
 class ControlReadTarget(BaseModel):
@@ -2197,6 +2224,7 @@ class ControlDescriptionEnvelope(ToolEnvelope):
         | ControlHistoryTargetsData
         | ControlOperationTargetsData
         | ControlStateRefsData
+        | ControlEnergyContextData
         | ErrorData
     )
 
@@ -4896,6 +4924,8 @@ def register_read_tools(
             "read-only diagnosis. Use view=history_targets for compact history targets or "
             "view=operation_targets for allowed actions and their required selectable targets, "
             "or view=state_refs for current state-name/UUID references only."
+            " Fresh visible Loxone administrators may use view=energy_context for "
+            "generation-specific documented Energy Manager metadata and cached state context."
         ),
         annotations=annotations,
         structured_output=True,
@@ -4914,18 +4944,30 @@ def register_read_tools(
             Field(
                 description=(
                     "Full description (default), history targets, operation targets, "
-                    "or state references."
+                    "state references, or administrator-only Energy Manager context."
                 ),
                 json_schema_extra={
-                    "enum": ["full", "history_targets", "operation_targets", "state_refs"]
+                    "enum": [
+                        "full",
+                        "history_targets",
+                        "operation_targets",
+                        "state_refs",
+                        "energy_context",
+                    ]
                 },
             ),
         ] = "full",
     ) -> ControlDescriptionEnvelope:
         try:
+            if view == "energy_context" and include_hidden:
+                return _error(
+                    ControlDescriptionEnvelope,
+                    "invalid_input",
+                    "energy_context excludes hidden controls",
+                )
             access_token, snapshot = (
                 await _snapshot(runtime, fresh_visibility=True)
-                if view in {"operation_targets", "state_refs"}
+                if view in {"operation_targets", "state_refs", "energy_context"}
                 else await _snapshot(runtime)
             )
             if view == "full" and any(
@@ -4935,7 +4977,13 @@ def register_read_tools(
                 )
             ):
                 access_token, snapshot = await _snapshot(runtime, fresh_visibility=True)
-            if view not in {"full", "history_targets", "operation_targets", "state_refs"}:
+            if view not in {
+                "full",
+                "history_targets",
+                "operation_targets",
+                "state_refs",
+                "energy_context",
+            }:
                 return _error(ControlDescriptionEnvelope, "invalid_input", "view is invalid")
             control = next(
                 (
@@ -4949,6 +4997,80 @@ def register_read_tools(
             )
             if control is None:
                 return _error(ControlDescriptionEnvelope, "not_found", "control is not visible")
+            if view == "energy_context":
+                if control.is_hidden:
+                    return _error(ControlDescriptionEnvelope, "not_found", "control is not visible")
+                if snapshot.structure.caller_is_admin is not True:
+                    return _error(
+                        ControlDescriptionEnvelope,
+                        "permission_denied",
+                        "A freshly verified Loxone administrator is required",
+                    )
+                metadata = control.energy_manager or normalize_energy_manager(
+                    control.control_type, {}
+                )
+                if metadata is None:
+                    return _error(
+                        ControlDescriptionEnvelope,
+                        "unsupported_source",
+                        "No reviewed Energy Manager source contract",
+                    )
+                if runtime is None:  # pragma: no cover - _snapshot rejects this
+                    raise RuntimeUnavailable("the service is not configured")
+                documented = (
+                    ["currentPower", "currentBat", "loads"]
+                    if metadata.generation == 1
+                    else ["Gpwr", "Spwr", "Ppwr", "Ssoc", "MinSoc", "MaxSpwr", "loads"]
+                )
+                refs = tuple(
+                    (name, uuid) for name, uuid in control.state_uuids if name in documented
+                )
+                # Read each existing cache record once; no direct source read or UUID join.
+                states, stale = _semantic_state_items(runtime, snapshot, control, refs)
+                advertised = {name for name, _uuid in refs}
+                envelope = _result(
+                    ControlDescriptionEnvelope,
+                    {
+                        "uuid": control.uuid,
+                        "name": control.name,
+                        "type": control.control_type,
+                        "view": "energy_context",
+                        "metadata": metadata,
+                        "capabilities": {
+                            "generation": metadata.generation,
+                            "documented_states": documented,
+                            "advertised_states": [
+                                name for name in documented if name in advertised
+                            ],
+                            "missing_states": [
+                                name for name in documented if name not in advertised
+                            ],
+                            "unverified": [
+                                "device_compatibility",
+                                "priority_direction",
+                                "physical_load_cycles",
+                                "load_power_unit",
+                                "power_meter_feedback",
+                                "historical_native_constraints",
+                                "measurement_boundary",
+                                "power_sign_convention",
+                                "storage_interaction",
+                            ]
+                            + (
+                                ["global_power_units", "active_until_timezone"]
+                                if metadata.generation == 1
+                                else []
+                            ),
+                        },
+                        "state_context": states,
+                    },
+                    stale=not snapshot.connected or stale,
+                )
+                if len(envelope.model_dump_json().encode("utf-8")) > 65_536:
+                    return _error(
+                        ControlDescriptionEnvelope, "response_too_large", "Response exceeds 64 KiB"
+                    )
+                return envelope
             if view == "state_refs":
                 return _result(
                     ControlDescriptionEnvelope,
@@ -5644,7 +5766,7 @@ def register_read_tools(
             items, stale = _semantic_state_items(runtime, snapshot, control, page_refs)
             total = len(selected_refs)
             complete = offset == 0 and len(items) == total
-            return _result(
+            envelope = _result(
                 StateSemanticsEnvelope,
                 {
                     "control_uuid": control.uuid,
@@ -5658,6 +5780,14 @@ def register_read_tools(
                 },
                 stale=not snapshot.connected or stale,
             )
+            if (
+                control.control_type in {"EnergyManager", "EnergyManager2"}
+                and len(envelope.model_dump_json().encode("utf-8")) > 64 * 1024
+            ):
+                return _error(
+                    StateSemanticsEnvelope, "response_too_large", "Response exceeds 64 KiB"
+                )
+            return envelope
         except PermissionError:
             return _error(
                 StateSemanticsEnvelope,

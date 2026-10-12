@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING, Annotated, Literal
 
 from pydantic import Field
 
+from .energy_manager import DOCUMENT as MANAGER_DOCUMENT
+from .energy_manager import PERCENT_ROLES, POWER_ROLES, decode_loads
 from .models import Control, LoxoneIdentity, LoxoneStructure, StatisticSeries
 from .window_states import WINDOW_DOCUMENT, decode_window_states
 
@@ -73,9 +75,22 @@ class StateSemantics:
     display_format_truncated: bool = False
     display_format_complete: bool = False
     unit: str | None = None
-    measurement_quantity: Literal["temperature", "binary_state"] | None = None
+    measurement_quantity: Literal["temperature", "binary_state", "power", "percentage"] | None = (
+        None
+    )
     measurement_role: (
-        Literal["actual_temperature", "target_temperature", "on_off_indication", "counter_activity"]
+        Literal[
+            "actual_temperature",
+            "target_temperature",
+            "on_off_indication",
+            "counter_activity",
+            "grid_power",
+            "storage_power",
+            "production_power",
+            "maximum_storage_power_parameter",
+            "storage_state_of_charge",
+            "minimum_storage_soc_parameter",
+        ]
         | None
     ) = None
     range: SemanticsRange | None = None
@@ -296,6 +311,73 @@ def _resolve_measurement(
     return result, semantic_value
 
 
+def _resolve_energy_manager(
+    structure: LoxoneStructure, control: Control, name: str, value: object
+) -> tuple[StateSemantics, object | None] | None:
+    if control.control_type not in {"EnergyManager", "EnergyManager2"}:
+        return None
+    result = StateSemantics()
+    generation: Literal[1, 2] = 1 if control.control_type == "EnergyManager" else 2
+    if name == "loads":
+        # Fresh caller authorization is provided by the existing tool surfaces.
+        # Cached state delivery is never evidence of present administrator rights.
+        if structure.caller_is_admin is not True or control.is_hidden:
+            return result, None
+        result.value_type = "array"
+        result.interpretation_status, result.reason = "partial", "value_unavailable"
+        result.sources.append(
+            SemanticsSource(
+                "decoder_rule",
+                f"{MANAGER_DOCUMENT}#page={61 if generation == 1 else 62}",
+                ("semantic_value",),
+                rule_id=f"energy_manager_gen{generation}.loads.17_1.v1",
+                document_version="17.1",
+            )
+        )
+        decoded = None
+        if value is not None:
+            try:
+                decoded = decode_loads(generation, value)
+                result.reason = "documented_decoder"
+            except (ValueError, UnicodeError, RecursionError, OverflowError):
+                result.interpretation_status, result.reason = "invalid", "invalid_documented_value"
+        result.sources_returned = result.sources_total = len(result.sources)
+        return result, decoded
+    if generation == 2 and name in POWER_ROLES.keys() | PERCENT_ROLES.keys():
+        if name in POWER_ROLES:
+            result.unit, result.measurement_quantity = "kW", "power"
+            result.measurement_role = POWER_ROLES[name]
+        else:
+            result.unit, result.measurement_quantity = "%", "percentage"
+            result.measurement_role = PERCENT_ROLES[name]
+        result.value_type = "number"
+        result.interpretation_status, result.reason = "partial", "value_unavailable"
+        result.sources.append(
+            SemanticsSource(
+                "decoder_rule",
+                f"{MANAGER_DOCUMENT}#page=62",
+                ("unit", "measurement_quantity", "measurement_role"),
+                rule_id=f"energy_manager_gen2.{name}.17_1.v1",
+                document_version="17.1",
+            )
+        )
+        if value is not None:
+            try:
+                valid = (
+                    not isinstance(value, bool)
+                    and isinstance(value, int | float)
+                    and math.isfinite(value)
+                )
+            except OverflowError:
+                valid = False
+            result.reason = "documented_decoder" if valid else "invalid_documented_value"
+            if not valid:
+                result.interpretation_status = "invalid"
+        result.sources_returned = result.sources_total = len(result.sources)
+        return result, None
+    return result, None
+
+
 class StateSemanticsResolver:
     """Resolve only exact, reviewed type/state rules, without I/O or role inference."""
 
@@ -460,6 +542,19 @@ class StateSemanticsResolver:
         series: StatisticSeries | None = None,
     ) -> str | None:
         """Stable rule reference for profile invalidation, with no decoder duplication."""
+        # Source identity is technical evidence, independent of the caller's
+        # temporary permission to decode a cached load payload. New families get
+        # their own ruleset; unchanged legacy families keep their fingerprints.
+        if series is None and control.control_type in {"EnergyManager", "EnergyManager2"}:
+            generation = 1 if control.control_type == "EnergyManager" else 2
+            if state_name == "loads" or (
+                generation == 2 and state_name in POWER_ROLES.keys() | PERCENT_ROLES.keys()
+            ):
+                return (
+                    f"energy_manager_gen{generation}.{state_name}.17_1.v1"
+                    f"+StateSemanticsResolver.energy_manager_gen{generation}.rules.v1"
+                )
+            return None
         if series is not None:
             sources = self.resolve_series(control, series).sources
         else:
@@ -620,6 +715,9 @@ class StateSemanticsResolver:
         value: object,
         companion_values: Mapping[str, object],
     ) -> tuple[StateSemantics, object | None]:
+        manager = _resolve_energy_manager(structure, control, state_name, value)
+        if manager is not None:
+            return manager
         measurement = _resolve_measurement(control, state_name, value)
         if measurement is not None:
             return measurement

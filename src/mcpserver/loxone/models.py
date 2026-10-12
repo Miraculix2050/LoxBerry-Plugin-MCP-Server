@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from mcpserver.loxone.efm import Projection
+from mcpserver.loxone.energy_manager import ManagerMetadata
 
 
 class Freshness(StrEnum):
@@ -173,6 +174,7 @@ class Control:
     statistic_series: tuple[StatisticSeries, ...] = ()
     statistic_series_truncated: bool = False
     efm: Projection | None = None
+    energy_manager: ManagerMetadata | None = None
     status_monitor_inputs: tuple[StatusMonitorInput, ...] = ()
     status_monitor_statuses: tuple[StatusMonitorStatus, ...] = ()
     format: str | None = None

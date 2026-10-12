@@ -73,9 +73,34 @@ Profile bindings add nullable `semantic_reference` to resolver rule versions.
 Persisted old bindings remain readable. New evidence or changed references marks
 affected bindings `needs_review`; unrelated names do not. A rule reference does
 not establish a value, semantic completeness or user-declared technical truth.
-State references use all existing resolver families and a shared ruleset version
-for value-dependent companion branches. Decoder changes must bump that ruleset
-reference even when structure metadata is unchanged.
+State references identify the applicable shared or family-specific ruleset for
+value-dependent companion branches. Decoder changes must bump that applicable
+reference even when structure metadata is unchanged. New manager families retain
+the references of unchanged legacy families. A technical rule reference never
+authorizes disclosure or decoding.
+
+## Native Energy Manager context (#436)
+
+`loxone_describe_control(view="energy_context")` is an opt-in typed
+`energy_context.v1` view for exact `EnergyManager` and `EnergyManager2` controls.
+It requires freshly visible, non-hidden structure and strict current Loxone
+administrator evidence. Unsupported families return `unsupported_source`.
+Legacy views retain their existing fields and network behavior.
+
+The result separates generation-specific metadata, advertised and missing state
+capabilities, and cached state semantics with independent observation quality.
+Generation 1 metadata is not joined to load events by names or numeric IDs.
+Generation 2 editing locks are not load blocking states. Its documented global
+states add `power`/`percentage` quantities and specific roles; load power units,
+priority direction and physical cycle evidence remain unknown.
+
+Load JSON accepts at most 100 flat entries within 16 KiB, rejects duplicate keys,
+ambiguous identifiers, nested values and non-finite numbers, and does not expose
+undocumented fields in the decoded value. Raw states retain their legacy form.
+Manager context and semantic envelopes reject output exceeding 64 KiB using
+`response_too_large`; no partial raw/decoded payload is returned. Source rules
+identify generation and state independently of disclosure rights. Structure
+contract evidence is not device acceptance or historical native lock evidence.
 
 ## Temperature and binary measurement semantics (#435)
 

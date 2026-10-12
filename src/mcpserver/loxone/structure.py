@@ -10,6 +10,7 @@ from itertools import islice
 from typing import Any
 
 from mcpserver.loxone.efm import normalize as normalize_efm
+from mcpserver.loxone.energy_manager import normalize as normalize_energy_manager
 from mcpserver.loxone.models import (
     Control,
     GlobalMetadata,
@@ -916,6 +917,7 @@ def _controls(
                 statistic_series=statistic_series,
                 statistic_series_truncated=statistic_series_truncated,
                 efm=normalize_efm(details) if item.get("type") == "EFM" else None,
+                energy_manager=normalize_energy_manager(str(item.get("type")), details),
                 status_monitor_inputs=status_monitor_inputs,
                 status_monitor_statuses=status_monitor_statuses,
                 format=format_value,
