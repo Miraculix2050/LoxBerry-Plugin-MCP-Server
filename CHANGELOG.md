@@ -18,6 +18,10 @@ extracted from the matching version heading.
   while retaining failures and mutation audit records. Bound mobile form grids,
   file inputs and buttons to their cards, including at 400 px width.
 
+- Organize Admin help links with localized explanations for every destination;
+  add KNX, installation-profile and individual-message approval navigation,
+  and reuse the KNX/profile explanations under MCP configuration.
+
 - Extend confirmed installation profiles with exact structured weather bindings
   and optional user-declared PV parameters. Read-migrate profile v1 without
   persistence, retain separate source visibility, confirmation and unknown units;

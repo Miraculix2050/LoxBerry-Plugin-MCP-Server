@@ -3864,3 +3864,63 @@ def test_diagnostic_cgi_keeps_native_attachment_and_ajax_envelope(tmp_path: Path
         assert ("Content-Disposition: attachment" in headers) is (not ajax)
         assert json.loads(payload) == (reply if ajax else document)
         _assert_admin_security_headers(result.stdout)
+
+
+def test_admin_help_navigation_explains_each_destination_in_order() -> None:
+    template = _admin_source()
+    section = template[template.index('id="help"') : template.index("</main>")]
+    destinations = (
+        (
+            "project-help-link",
+            "https://github.com/Miraculix2050/LoxBerry-Plugin-MCP-Server",
+            "PROJECT",
+            True,
+        ),
+        ("explorer-link", "<TMPL_VAR EXPLORER_URL ESCAPE=HTML>", "EXPLORER", True),
+        ("schema-reference-link", "<TMPL_VAR SCHEMA_REFERENCE_URL ESCAPE=HTML>", "SCHEMA", True),
+        ("event-history-help-link", "event_history.cgi", "HISTORY", False),
+        ("knx-help-link", "knx.cgi", "KNX", False),
+        ("profile-help-link", "profile.cgi", "PROFILE", False),
+        ("message-approval-help-link", "message-approval.cgi", "MESSAGES", False),
+    )
+    positions = []
+    for link_id, target, key, external in destinations:
+        marker = f'id="{link_id}"'
+        assert template.count(marker) == 1
+        positions.append(section.index(marker))
+        start = section.index(marker)
+        link = section[start : section.index("</a>", start)]
+        assert f'href="{target}"' in link
+        assert f'aria-describedby="{link_id}-description"' in link
+        assert ('target="_blank" rel="noopener"' in link) is external
+        assert template.count(f'id="{link_id}-description"') == 1
+        assert f"<TMPL_VAR HELP.{key}_HELP>" in section
+    assert positions == sorted(positions)
+    assert "HELP.TOOL_ACCESS" not in template
+    assert section.count("<details") == 0
+    for key in ("KNX", "PROFILE"):
+        assert template.count(f"<TMPL_VAR HELP.{key}_HELP>") == 2
+    assert 'href="message-approval.cgi"><TMPL_VAR SETUP.MESSAGES_APPROVAL>' in template
+
+
+def test_admin_help_explanations_have_matching_localized_keys() -> None:
+    expected = {
+        "PROJECT_HELP",
+        "EXPLORER_HELP",
+        "SCHEMA_HELP",
+        "HISTORY_HELP",
+        "KNX_HELP",
+        "PROFILE_HELP",
+        "MESSAGES_HELP",
+        "HISTORY",
+        "MESSAGES",
+    }
+    for language in ("de", "en"):
+        text = (ROOT / "templates" / "lang" / f"language_{language}.ini").read_text(
+            encoding="utf-8"
+        )
+        section = text.split("[HELP]", 1)[1].split("[ACCESS]", 1)[0]
+        values = dict(line.split("=", 1) for line in section.splitlines() if "=" in line)
+        assert expected <= values.keys()
+        assert all(values[key].strip() for key in expected)
+        assert "TOOL_ACCESS" not in values
