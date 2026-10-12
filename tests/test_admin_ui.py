@@ -2610,6 +2610,7 @@ def test_weather_source_mutations_emit_sanitized_audit_events(tmp_path: Path) ->
     environment = _admin_cgi_environment(tmp_path)
     marker = tmp_path / "weather-audit.txt"
     environment["LB_TEST_LOG_EVENTS_PATH"] = str(marker)
+    environment["LB_TEST_PLUGIN_LOGLEVEL"] = "6"
     private_payload = json.dumps(
         {"source": {"state_uuid": "private-source", "fields": ["private-field"]}}
     )
