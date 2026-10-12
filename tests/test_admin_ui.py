@@ -3881,7 +3881,12 @@ def test_admin_help_navigation_explains_each_destination_in_order() -> None:
         ("event-history-help-link", "event_history.cgi", "HISTORY", False),
         ("knx-help-link", "knx.cgi", "KNX", False),
         ("profile-help-link", "profile.cgi", "PROFILE", False),
-        ("message-approval-help-link", "message-approval.cgi", "MESSAGES", False),
+        (
+            "message-approval-help-link",
+            "<TMPL_VAR MESSAGE_APPROVAL_HELP_URL ESCAPE=HTML>",
+            "MESSAGES",
+            False,
+        ),
     )
     positions = []
     for link_id, target, key, external in destinations:
@@ -3924,3 +3929,46 @@ def test_admin_help_explanations_have_matching_localized_keys() -> None:
         assert expected <= values.keys()
         assert all(values[key].strip() for key in expected)
         assert "TOOL_ACCESS" not in values
+
+
+def test_admin_message_help_link_preserves_effective_page_language(tmp_path: Path) -> None:
+    perl = shutil.which("perl")
+    if perl is None or os.name == "nt":
+        return
+    environment = _admin_cgi_environment(tmp_path)
+    wrapper = (
+        'no warnings "redefine"; '
+        "*LoxBerry::System::read_file = sub { return q("
+        '<a id="approval" href="<TMPL_VAR MESSAGE_APPROVAL_HELP_URL ESCAPE=HTML>">'
+        "approval</a>); }; "
+        "$LoxBerry::System::lang = $ENV{LB_TEST_SYSTEM_LANG}; "
+        "do $ARGV[0]; die $@ if $@;"
+    )
+    for configured, query, expected in (
+        ("de", "", "de"),
+        ("en", "", "en"),
+        ("de", "lang=en", "en"),
+        ("en", "lang=de", "de"),
+        ("en", "lang=fr", "en"),
+    ):
+        response = subprocess.run(
+            [
+                perl,
+                f"-I{ROOT / 'tests' / 'perl_stubs'}",
+                "-MLoxBerry::System",
+                "-e",
+                wrapper,
+                str(ROOT / "webfrontend/htmlauth/index.cgi"),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            env={
+                **environment,
+                "LB_TEST_SYSTEM_LANG": configured,
+                "REQUEST_METHOD": "GET",
+                "QUERY_STRING": query,
+            },
+            timeout=10,
+        )
+        assert f'href="message-approval.cgi?lang={expected}"' in response.stdout

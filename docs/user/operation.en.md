@@ -67,4 +67,4 @@ MCP clients receive the tool descriptions published by the specific installation
 
 Next: [Troubleshooting](troubleshooting.en.md).
 
-**Help and developer tools** provides links to the project and guides, Tool Explorer, schema reference, local event history, KNX address management, confirmed installation profile and individual message approval. Each link briefly explains the purpose and limits of its destination. KNX address management and the installation profile also remain available under **MCP configuration**, with the same explanations.
+**Help and developer tools** provides links to the project and guides, Tool Explorer, schema reference, local event history, KNX address management, confirmed installation profile and individual message approval. Each link briefly explains the purpose and limits of its destination. KNX address management and the installation profile also remain available under **MCP configuration**, with the same explanations. Message approval opened from Help keeps the current page language.

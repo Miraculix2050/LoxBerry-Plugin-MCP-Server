@@ -1060,6 +1060,7 @@ my $runtime_signal = $server_rendered_fallback && $runtime_availability eq 'avai
         : $L{'SETUP.EMERGENCY_STOP_LOADING'};
 $template->param(
     VERSION => $version,
+    MESSAGE_APPROVAL_HELP_URL => 'message-approval.cgi?lang=' . (($LoxBerry::System::lang // '') eq 'en' ? 'en' : 'de'),
     SERVER_RENDERED_FALLBACK => $server_rendered_fallback,
     FALLBACK_CONFIGURATION_LOADED => $fallback_configuration_loaded,
     FALLBACK_SUMMARY_CONFIGURATION_LOADED => $fallback_summary_configuration_loaded,
