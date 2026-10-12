@@ -101,13 +101,15 @@
     const load = document.getElementById(prefix + 'load');
     load.addEventListener('click', () => void core.run(async () => {
       const state = core.snapshot();
-      const response = await core.api('knx_compare_load', {target: state.target, side,
+      const payload = {target: state.target, side,
         file: await encode(document.getElementById(prefix + 'file').files[0]),
         file_format: document.getElementById(prefix + 'format').value,
         encoding: document.getElementById(prefix + 'encoding').value,
         address_format: document.getElementById(prefix + 'style').value || null,
-        complete_export: document.getElementById(prefix + 'complete').checked});
+        complete_export: document.getElementById(prefix + 'complete').checked};
+      // A lost response cannot prove that the server did not persist a draft.
       retainedDrafts = true;
+      const response = await core.api('knx_compare_load', payload);
       if (!matches(response) || core.snapshot().target !== state.target
           || core.snapshot().revision !== state.revision
           || core.snapshot().taxonomy_revision !== state.taxonomy_revision) throw new Error('knx_revision_conflict');

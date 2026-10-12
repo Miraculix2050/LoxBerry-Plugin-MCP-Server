@@ -49,7 +49,7 @@ mit geeigneten Einträgen, eine ausdrückliche Auswahl und eine erfolgreiche
 Vorschau. Die Experimentell-Checkbox bestätigt einen einzelnen Download;
 sie ist keine gespeicherte Aktivierung.
 
-Während einer Statusabfrage angeforderte Freigabeaktionen werden nacheinander ausgeführt; weitere Eingaben sind ab der ersten vorgemerkten Aktion gesperrt. Eine bereits erzeugte XML-Vorschau kann auch nach Abmeldung oder ungültig gewordenem Projektabgleich über **Abbrechen** verworfen werden. Während laufender Anfragen bleibt die Aktion gesperrt.
+Während einer Statusabfrage angeforderte Freigabeaktionen werden nacheinander ausgeführt; weitere Eingaben sind ab der ersten vorgemerkten Aktion gesperrt. Eine bereits erzeugte XML-Vorschau kann auch nach Abmeldung oder ungültig gewordenem Projektabgleich über **Abbrechen** verworfen werden. Während laufender Anfragen bleibt die Aktion gesperrt. Auch nach einer fehlgeschlagenen Lade- oder Vorschauanfrage werden möglicherweise gespeicherte Vergleichs- und XML-Entwürfe beim Verwerfen serverseitig bereinigt. Ein fehlgeschlagenes Verwerfen erhält den Zustand für einen erneuten Versuch.
 
 Mit `view="summary"` beginnen, dann literale `query`, `source`,
 `deviations_only` oder exakte `address` eingrenzen und Einträge abrufen

@@ -91,9 +91,10 @@
     await project.validate(binding);
     if (source !== expectedSource || !project.snapshot() || project.snapshot().binding !== binding)
       throw new Error('knx_revision_conflict');
+    // Keep cleanup available even if the persisted draft response is lost.
+    retainedPreview = true;
     const result = await core.api('knx_xml_preview', {target: expectedSource.target, revision: expectedSource.revision,
       choices: selected, project_binding: binding});
-    retainedPreview = true;
     if (!project.snapshot() || project.snapshot().binding !== binding
         || core.snapshot().target !== result.target || core.snapshot().revision !== result.revision)
       throw new Error('knx_revision_conflict');

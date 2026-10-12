@@ -10,7 +10,8 @@ extracted from the matching version heading.
   edits; fix shared Explorer login/logout and provide prerequisite-aware
   comparison/export controls and clear empty-table presentation (#497). Preserve
   foreground actions queued during polling and allow discarding retained XML
-  previews after the comparison becomes invalid.
+  previews after the comparison becomes invalid, including potentially persisted
+  comparison/XML drafts after lost or malformed responses.
 
 - Extend confirmed installation profiles with exact structured weather bindings
   and optional user-declared PV parameters. Read-migrate profile v1 without
