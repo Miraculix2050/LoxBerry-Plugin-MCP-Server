@@ -95,7 +95,9 @@ if (($q->{action} // '') ne '') {
             }
             $result = {ok => JSON::PP::false, error => {code => 'internal_error'}}
                 if ref($result) ne 'HASH';
-            if ($q->{action} ne 'knx_page') {
+            my $quiet_read = $result->{ok}
+                && $q->{action} =~ /\A(?:knx_page|knx_read_page|knx_drafts_page)\z/;
+            if (!$quiet_read) {
                 my $log = LoxBerry::Log->new(name => 'admin-ui', package => $lbpplugindir, addtime => 1);
                 $log->INF('action=' . $q->{action} . ' outcome=' . ($result->{ok} ? 'completed' : 'rejected')) if $log;
             }

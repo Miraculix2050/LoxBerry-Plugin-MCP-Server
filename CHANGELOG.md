@@ -13,7 +13,9 @@ extracted from the matching version heading.
   previews after the comparison becomes invalid, including potentially persisted
   comparison/XML drafts after lost or malformed responses. Keep the full MCP
   server stack out of KNX Admin reader imports to avoid long configuration-lock
-  holds during frequent status refreshes.
+  holds during frequent status refreshes. Use one fresh authorization snapshot
+  per delegation-page request and omit successful polling reads from INFO logs
+  while retaining failures and mutation audit records.
 
 - Extend confirmed installation profiles with exact structured weather bindings
   and optional user-declared PV parameters. Read-migrate profile v1 without

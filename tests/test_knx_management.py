@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 from dataclasses import replace
@@ -354,3 +355,34 @@ def test_admin_preview_reports_source_changes_without_writing(
     document["schema_version"] = True
     with pytest.raises(AdminError):
         dispatch_knx("knx_preview", {"target": state["target"], "document": document}, config)
+
+
+def test_polling_logs_omit_successes_but_keep_failures_and_mutations():
+    perl = shutil.which("perl")
+    if perl is None:
+        pytest.skip("Perl is required to execute the native logging predicate")
+    source = (Path(__file__).resolve().parents[1] / "webfrontend/htmlauth/knx.cgi").read_text(
+        encoding="utf-8"
+    )
+    predicate = re.search(r"my \$quiet_read = ([^;]+);", source)
+    assert predicate is not None
+    actions = ["knx_page", "knx_read_page", "knx_drafts_page", "knx_read_enable", "knx_read_grant"]
+    code = (
+        "use strict; use warnings; "
+        + "for my $action (qw("
+        + " ".join(actions)
+        + ")) { "
+        + "for my $success (0, 1) { my $q = {action => $action}; "
+        + "my $result = {ok => $success}; my $quiet_read = "
+        + predicate.group(1)
+        + "; "
+        + 'print "$action:$success:" . ($quiet_read ? 0 : 1) . "\\n"; }}'
+    )
+    result = subprocess.run([perl, "-e", code], capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
+    expected = [
+        f"{action}:{success}:{int(not (success and action in actions[:3]))}"
+        for action in actions
+        for success in (0, 1)
+    ]
+    assert result.stdout.splitlines() == expected

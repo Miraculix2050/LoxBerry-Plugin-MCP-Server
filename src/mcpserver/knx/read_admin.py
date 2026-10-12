@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import hmac
 import json
 import time
 from collections.abc import Callable
@@ -20,6 +22,22 @@ from mcpserver.explorer_bindings import (
 
 from .delegation import draft_binding_id, read_binding_id
 from .model import KnxError
+
+
+class _ReadPageAuthSnapshot:
+    """One validated snapshot for a read-page projection, never an authorization cache."""
+
+    def __init__(self, document: dict[str, Any]) -> None:
+        self._document = document
+        self._key = base64.urlsafe_b64decode(document["subject_key"].encode("ascii"))
+
+    def snapshot(self) -> dict[str, Any]:
+        # Projection helpers only read this isolated, request-local document.
+        return self._document
+
+    def pseudonym(self, *parts: str) -> str:
+        canonical = "\0".join(parts).encode("utf-8")
+        return hmac.new(self._key, canonical, hashlib.sha256).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -189,7 +207,8 @@ def dispatch(
     if action not in allowed or not payload.keys() <= allowed[action]:
         raise KnxError("knx_delegation_invalid")
     if action == f"{policy.prefix}_page":
-        return snapshot(config, auth, target, policy)
+        view = _ReadPageAuthSnapshot(auth.snapshot())
+        return snapshot(config, view, target, policy)
     if payload.get("policy_revision") != policy_revision(config, target, policy):
         raise KnxError("knx_revision_conflict")
     if action == f"{policy.prefix}_enable":
