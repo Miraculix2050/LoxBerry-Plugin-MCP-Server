@@ -1,6 +1,22 @@
 (() => {
   'use strict';
   const page = document.getElementById('knx-page');
+  const collapseStorageKey = 'mcpserver.knx.sections.v1';
+  const collapsibles = [...page.querySelectorAll('details[data-persist-collapse]')];
+  let storedCollapseState = {};
+  try {
+    const value = JSON.parse(window.localStorage.getItem(collapseStorageKey) || '{}');
+    if (value && typeof value === 'object' && !Array.isArray(value)) storedCollapseState = value;
+  } catch { /* Defaults remain usable when browser storage is unavailable. */ }
+  const persistCollapsibles = () => {
+    const state = Object.fromEntries(collapsibles.map((element) => [element.id, element.open]));
+    try { window.localStorage.setItem(collapseStorageKey, JSON.stringify(state)); }
+    catch { /* Toggling remains usable without browser storage. */ }
+  };
+  for (const element of collapsibles) {
+    if (typeof storedCollapseState[element.id] === 'boolean') element.open = storedCollapseState[element.id];
+    element.addEventListener('toggle', persistCollapsibles);
+  }
   // Empty presentation stays outside tbody so counts and row consumers remain exact.
   const emptyNotes = new Map();
   const updateEmptyTables = () => {

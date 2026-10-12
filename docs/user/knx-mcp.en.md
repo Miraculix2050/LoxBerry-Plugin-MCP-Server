@@ -37,6 +37,8 @@ while additional permissions need explicit selection. Disconnect signs out all
 connected Explorer/KNX tabs. Logout errors remain visible; refresh cannot restore
 a successfully disconnected session. Local file comparison needs no OAuth login.
 
+Expanded and collapsed section cards, including ETS import, survive reloads in
+this browser when browser storage is available.
 Forms and buttons adapt to narrow mobile views; wide tables remain horizontally
 scrollable within their container.
 Empty tables retain their headers, a subtle blank area and a contextual note

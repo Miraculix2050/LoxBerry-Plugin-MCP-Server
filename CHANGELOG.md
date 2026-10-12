@@ -5,6 +5,9 @@ extracted from the matching version heading.
 
 ## Unreleased
 
+- Preserve expanded/collapsed KNX section cards, including nested ETS import,
+  across browser reloads, independently of Admin page preferences.
+
 - Show persisted KNX read/draft enablement and unique label counts in section
   badges. Refresh delegation state in visible tabs without replacing unsaved
   edits; fix shared Explorer login/logout and provide prerequisite-aware
