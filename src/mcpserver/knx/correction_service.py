@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from typing import Any
 
 from mcpserver.config import PluginConfig
@@ -175,3 +176,166 @@ class CorrectionService:
             exports_file=False,
         )
         return draft
+
+    def review(
+        self,
+        identifier: object,
+        config: PluginConfig,
+        target: str,
+        expected: object,
+        catalog_revision: object,
+        manual_revision: object,
+        decisions: object,
+        *,
+        request_id: str,
+        query: ProjectQuery | None = None,
+    ) -> int:
+        """Record explicit per-change decisions, without applying any destination.
+
+        An unchecked project binding remains unchecked. Acceptance is the user's
+        proposal decision, never a claim of fresh project authorization or an
+        authorization to write local metadata or export a file.
+        """
+        if not isinstance(decisions, list) or not 1 <= len(decisions) <= 50:
+            raise KnxError("knx_correction_invalid")
+        selected: dict[str, str] = {}
+        for decision in decisions:
+            if (
+                not isinstance(decision, dict)
+                or set(decision) != {"change_id", "decision"}
+                or not isinstance(decision["change_id"], str)
+                or not re.fullmatch(r"[0-9a-f]{24}", decision["change_id"])
+                or not isinstance(decision["decision"], str)
+                or decision["decision"] not in {"accepted", "rejected", "proposed"}
+                or decision["change_id"] in selected
+            ):
+                raise KnxError("knx_correction_invalid")
+            selected[decision["change_id"]] = decision["decision"]
+        operation = ["review", catalog_revision, manual_revision, decisions]
+        previous = self.drafts.reconcile_update(identifier, target, expected, request_id, operation)
+        if previous is not None:
+            return previous
+        draft = self._editable(
+            identifier, config, target, expected, catalog_revision, manual_revision, query
+        )
+        if not selected.keys() <= {row["change_id"] for row in draft["changes"]}:
+            raise KnxError("knx_correction_invalid")
+        changes = [
+            {**row, "decision": selected.get(row["change_id"], row["decision"])}
+            for row in draft["changes"]
+        ]
+        return self._save_edit(
+            identifier, target, expected, catalog_revision, changes, request_id, operation
+        )
+
+    def _editable(
+        self,
+        identifier: object,
+        config: PluginConfig,
+        target: str,
+        expected: object,
+        catalog_revision: object,
+        manual_revision: object,
+        query: ProjectQuery | None,
+    ) -> dict[str, Any]:
+        draft = self.inspect(identifier, config, target, query=query)
+        if (
+            type(expected) is not int
+            or expected != draft["draft_revision"]
+            or type(catalog_revision) is not int
+            or catalog_revision != draft["catalog_revision"]
+            or manual_revision != draft["manual_revision"]
+            or draft["catalog_stale"]
+            or draft["manual_stale"]
+        ):
+            raise KnxError("knx_revision_conflict")
+        if draft["project_status"] == "changed":
+            raise KnxError("knx_project_evidence_changed")
+        return draft
+
+    def edit(
+        self,
+        identifier: object,
+        config: PluginConfig,
+        target: str,
+        expected: object,
+        catalog_revision: object,
+        manual_revision: object,
+        change_id: object,
+        edit: object,
+        *,
+        request_id: str,
+    ) -> int:
+        """An explicit Admin edit keeps identity/source snapshots and resets consent.
+
+        The new literal value is a user selection, not a verified Loxone value.
+        The original project-stand binding is retained conservatively so later
+        application still requires a fresh project check.
+        """
+        if (
+            not isinstance(change_id, str)
+            or not re.fullmatch(r"[0-9a-f]{24}", change_id)
+            or not isinstance(edit, dict)
+            or not edit.keys() <= {"operation", "value", "evidence_note"}
+            or "operation" not in edit
+        ):
+            raise KnxError("knx_correction_invalid")
+        operation = ["edit", catalog_revision, manual_revision, change_id, edit]
+        previous = self.drafts.reconcile_update(identifier, target, expected, request_id, operation)
+        if previous is not None:
+            return previous
+        draft = self._editable(
+            identifier, config, target, expected, catalog_revision, manual_revision, None
+        )
+        existing = next((row for row in draft["changes"] if row["change_id"] == change_id), None)
+        if existing is None:
+            raise KnxError("knx_correction_invalid")
+        raw = {key: existing[key] for key in ("destination", "kind", "address_format", "field")}
+        identity = "address" if existing["kind"] == "address" else "prefix"
+        if "evidence_note" in existing:
+            raw["evidence_note"] = existing["evidence_note"]
+        raw.update({identity: existing[identity], **edit})
+        updated = parse_correction_changes([raw])[0]
+        updated["sources"] = existing["sources"]
+        if updated["destination"] == "ets_export":
+            XmlCorrectionExport(self.store, self.drafts, target).preview(
+                {
+                    "revision": catalog_revision,
+                    "project_binding": draft["project_binding"] or "local-explicit-proposal",
+                    "choices": [
+                        {
+                            "address_id": updated["address_id"],
+                            "fields": {updated["field"]: updated["value"]},
+                        }
+                    ],
+                },
+                persist=False,
+            )
+        changes = [updated if row["change_id"] == change_id else row for row in draft["changes"]]
+        return self._save_edit(
+            identifier, target, expected, catalog_revision, changes, request_id, operation
+        )
+
+    def _save_edit(
+        self,
+        identifier: object,
+        target: str,
+        expected: object,
+        catalog_revision: object,
+        changes: list[dict[str, Any]],
+        request_id: str,
+        operation: object,
+    ) -> int:
+        # Serialize against reimport/address writes until the draft update ends.
+        # Config adapters separately hold the manual-label transaction lock.
+        with self.store.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            self.store.check(db, target, catalog_revision)
+            return self.drafts.update_correction(
+                identifier,
+                target,
+                expected,
+                changes,
+                request_id=request_id,
+                operation_payload=operation,
+            )

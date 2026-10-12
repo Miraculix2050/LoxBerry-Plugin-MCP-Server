@@ -266,3 +266,66 @@ async def test_project_permission_is_checked_after_worker_before_releasing_evide
     )
     assert inspected["data"]["error"] == "project_access_denied"
     assert checks == ["family", "family"]
+
+
+@pytest.mark.asyncio
+async def test_actual_sdk_reviews_selected_changes_without_resending_values(client):
+    server, runtime = client
+    args = arguments(runtime)
+    created = (await call(server, PREPARE, args))["data"]
+    current = (await call(server, READ, {"draft_id": created["draft_id"]}))["data"]
+    review = {key: args[key] for key in ("target_id", "catalog_revision", "manual_revision")}
+    review.update(
+        mode="review",
+        draft_id=created["draft_id"],
+        draft_revision=1,
+        request_id="b" * 32,
+        decisions=[{"change_id": current["changes"][0]["change_id"], "decision": "accepted"}],
+    )
+    result = await call(server, PREPARE, review)
+    assert result["ok"] is True
+    assert result["data"]["draft_revision"] == 2
+    assert result["data"]["applies_changes"] is False
+    assert (await call(server, PREPARE, review))["data"] == result["data"]
+    inspected = (await call(server, READ, {"draft_id": created["draft_id"]}))["data"]
+    assert inspected["changes"][0]["decision"] == "accepted"
+    assert inspected["draft"]["expires_at"] == created["expires_at"]
+    assert arguments(runtime)["catalog_revision"] == 1
+    invalid = await call(server, PREPARE, {**review, "changes": args["changes"]})
+    assert invalid["data"]["error"] == "invalid_input"
+    runtime.config_store.mutate(lambda config: replace(config, loxberry_knx_drafts_bindings=()))
+    revoked = await call(server, PREPARE, {**review, "request_id": "c" * 32, "draft_revision": 2})
+    assert revoked["data"]["error"] == "permission_denied"
+
+
+@pytest.mark.asyncio
+async def test_revocation_after_review_returns_uncertainty_not_false_failure(client, monkeypatch):
+    from mcpserver.knx.correction_service import CorrectionService
+
+    server, runtime = client
+    args = arguments(runtime)
+    created = (await call(server, PREPARE, args))["data"]
+    current = (await call(server, READ, {"draft_id": created["draft_id"]}))["data"]
+    original = CorrectionService.review
+
+    def revoked_after_save(service, *values, **options):
+        revision = original(service, *values, **options)
+        runtime.auth_store.mutate(
+            lambda document: document["families"]["family"].update(revoked=True)
+        )
+        return revision
+
+    monkeypatch.setattr(CorrectionService, "review", revoked_after_save)
+    review = {key: args[key] for key in ("target_id", "catalog_revision", "manual_revision")}
+    review.update(
+        mode="review",
+        draft_id=created["draft_id"],
+        draft_revision=1,
+        request_id="b" * 32,
+        decisions=[{"change_id": current["changes"][0]["change_id"], "decision": "accepted"}],
+    )
+    result = await call(server, PREPARE, review)
+    assert result["data"]["error"] == "write_outcome_uncertain"
+    assert (await call(server, READ, {"draft_id": created["draft_id"]}))["data"][
+        "error"
+    ] == "permission_denied"

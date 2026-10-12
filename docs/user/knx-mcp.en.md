@@ -131,7 +131,14 @@ source values remain immutable. A proposal changes no overrides, export target,
 ETS or Loxone project. The authenticated KNX page shows the same persisted
 proposal with separate sources; it does not inherit an OAuth client's Loxone
 project credentials. Current project evidence is explicitly unchecked there.
-Editing, per-change decisions and applying changes follow in the next delivery.
+The Admin page can edit a selected target value and record accepted/rejected/proposed
+decisions per change. Edits reset the affected decision without changing its identity or
+immutable sources. The exact original project stand remains bound; acceptance does not
+verify project access or apply changes. MCP can record concrete agreed decisions with
+`loxberry_prepare_knx_corrections(mode="review", decisions=[{"change_id": "...",
+"decision": "accepted"}])`, omitting `changes` and supplying current target,
+catalog/manual/draft revisions and a stable request ID. Unselected decisions remain
+unchanged. Local writes and confirmed export handoff follow separately.
 
 Drafts have an absolute 24-hour lifetime, at most 50 changes each, and share the
 existing global eight-draft/32-MiB budget with imports, comparisons and XML
@@ -147,3 +154,5 @@ absent result while the worker may still run does not prove failure. Never retry
 automatically. Exact repeated preparation is idempotent; conflicting reuse of a
 request ID is rejected. Reads/preparation share bounded worker admission and
 local read rate limits. Normal draft reads do not parse files or load catalogs.
+
+Each draft retains at most 128 hashed edit/decision receipts without eviction; further edits are rejected when that bound is reached. This accommodates individual review and edits across the 50-change batch while retaining the global byte bound.

@@ -79,6 +79,33 @@ class CorrectionRuntime:
                 authorize()
                 return {"target_id": target_id, "draft": draft}
             if action == "prepare":
+                if arguments.get("mode", "prepare") == "review":
+                    authorize()
+                    operation_revision = service.review(
+                        identifier,
+                        config,
+                        target,
+                        arguments["draft_revision"],
+                        arguments["catalog_revision"],
+                        arguments["manual_revision"],
+                        arguments["decisions"],
+                        request_id=arguments["request_id"],
+                        query=query,
+                    )
+                    result = drafts.inspect_correction(identifier, target)
+                    try:
+                        authorize()
+                    except KnxError:
+                        raise KnxError("write_outcome_uncertain") from None
+                    return {
+                        "target_id": target_id,
+                        "draft_id": result["draft_id"],
+                        "draft_revision": result["draft_revision"],
+                        "operation_revision": operation_revision,
+                        "expires_at": result["expires_at"],
+                        "applies_changes": False,
+                        "exports_file": False,
+                    }
                 old = (
                     service.inspect(identifier, config, target, query=query) if identifier else None
                 )

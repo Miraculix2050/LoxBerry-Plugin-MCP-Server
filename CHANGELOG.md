@@ -23,6 +23,11 @@ extracted from the matching version heading.
   Bind only Gpwr/Ppwr/Spwr W/kW units to unchanged evidenced EFM metadata;
   preserve unknown signs, boundaries and historical components without extra reads.
 
+- Review shared KNX correction drafts with explicit per-change acceptance/rejection
+  and authenticated Admin value edits. Editing resets the affected decision;
+  sources, absolute expiry and ownership are preserved. Draft decisions apply no
+  metadata changes and authorize no XML download or Loxone write (#458).
+
 - Add an opt-in native EFM result view to `loxone_read_controls` for freshly
   verified Loxone administrators on firmware 17.2.8.28. Preserve caller-session
   authorization, activated history gates, unknown units/period boundaries and

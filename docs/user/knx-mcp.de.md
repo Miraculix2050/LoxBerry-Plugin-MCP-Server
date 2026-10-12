@@ -147,8 +147,16 @@ Importierte Quellenwerte bleiben unverändert. Ein Vorschlag verändert keine
 Overrides, Exportziele, ETS oder Loxone-Projekte. Die authentifizierte KNX-Seite
 zeigt denselben gespeicherten Vorschlag mit getrennten Quellen; sie übernimmt
 keine Loxone-Projektzugangsdaten des OAuth-Clients. Der aktuelle Projektstand
-ist dort ausdrücklich ungeprüft. Bearbeitung, Entscheidungen je Änderung und
-Übernahme folgen im nächsten Umsetzungsschritt.
+ist dort ausdrücklich ungeprüft. Die Admin-Seite kann ausgewählte Zielwerte bearbeiten
+und einzelne Änderungen annehmen, ablehnen oder auf vorgeschlagen zurücksetzen.
+Bearbeiten setzt die betroffene Entscheidung zurück; Identität und unveränderte Quellen
+bleiben erhalten. Der ursprüngliche Projektstand bleibt gebunden; Zustimmung bestätigt
+weder Projektzugriff noch eine Übernahme. MCP zeichnet konkret abgestimmte
+Entscheidungen mit `loxberry_prepare_knx_corrections(mode="review",
+decisions=[{"change_id": "...", "decision": "accepted"}])` auf: `changes` weglassen,
+aktuelle Ziel-/Katalog-/Präfix-/Entwurfsrevisionen und eine stabile Request-ID angeben.
+Nicht ausgewählte Entscheidungen bleiben erhalten. Lokales Schreiben und bestätigte
+Exportübergabe folgen getrennt.
 
 Entwürfe gelten absolut 24 Stunden, enthalten höchstens 50 Änderungen und teilen
 die globale Grenze von acht Entwürfen/32 MiB mit Importen, Vergleichen und
@@ -167,3 +175,5 @@ Nie automatisch wiederholen. Identische Vorbereitung ist idempotent; abweichende
 Wiederverwendung einer Anfrage-ID wird abgewiesen. Lesen und Vorbereitung teilen
 begrenzte Worker-Plätze und lokale Leseraten. Normale Entwurfsabfragen verarbeiten
 keine Dateien und laden keine vollständigen Kataloge.
+
+Jeder Entwurf hält höchstens 128 gehashte Bearbeitungs-/Entscheidungsbelege ohne Verdrängung; weitere Bearbeitung wird an dieser Grenze abgewiesen. So bleiben Einzelprüfungen und Bearbeitung im 50er-Änderungspaket innerhalb der globalen Bytegrenze möglich.

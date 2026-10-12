@@ -17,6 +17,7 @@ from .model import MAX_FILE_BYTES, KnxError, text
 
 CORRECTION_TTL_SECONDS = 24 * 60 * 60
 MAX_CORRECTION_CHANGES = 50
+MAX_CORRECTION_OPERATIONS = 128
 MAX_CORRECTION_OPTIONS_BYTES = MAX_FILE_BYTES
 
 
@@ -334,6 +335,7 @@ class CorrectionDraftStore(DraftStore):
         changes: list[dict[str, Any]],
         *,
         request_id: str | None = None,
+        operation_payload: object = None,
     ) -> int:
         """Optimistic edits preserve the absolute expiry and source revisions."""
         identifier = _identifier(identifier)
@@ -341,7 +343,14 @@ class CorrectionDraftStore(DraftStore):
         if not 1 <= len(changes) <= MAX_CORRECTION_CHANGES:
             raise KnxError("knx_draft_limit")
         request_key = _request(request_id)
-        request_digest = _digest([identifier, target, expected, changes])
+        request_digest = _digest(
+            [
+                identifier,
+                target,
+                expected,
+                changes if operation_payload is None else operation_payload,
+            ]
+        )
         with self.connection() as db:
             row = db.execute(
                 "SELECT options FROM drafts WHERE id=? AND session=? AND target=? "
@@ -363,7 +372,7 @@ class CorrectionDraftStore(DraftStore):
             if options.get("draft_revision") != expected:
                 raise KnxError("knx_revision_conflict")
             if request_key is not None:
-                if len(operations) >= 32:
+                if len(operations) >= MAX_CORRECTION_OPERATIONS:
                     raise KnxError("knx_draft_limit")
                 operations[request_key] = {
                     "digest": request_digest,
@@ -384,6 +393,45 @@ class CorrectionDraftStore(DraftStore):
                 (_revision(expected) + 1, len(changes), identifier),
             )
             return _revision(expected) + 1
+
+    def reconcile_update(
+        self,
+        identifier: object,
+        target: str,
+        expected: object,
+        request_id: str,
+        operation_payload: object,
+    ) -> int | None:
+        """Resolve an exact earlier edit before validating its now-old revisions.
+
+        Callers still check live owner/target authorization. This is a receipt
+        lookup, not an invitation to retry an uncertain request automatically.
+        """
+        identifier = _identifier(identifier)
+        _revision(expected)
+        key = _request(request_id)
+        if key is None:
+            raise KnxError("knx_correction_invalid")
+        digest = _digest([identifier, target, expected, operation_payload])
+        with self.connection() as db:
+            row = db.execute(
+                "SELECT options FROM drafts WHERE id=? AND session=? AND target=? "
+                "AND json_extract(options,'$.draft_slot')='correction'",
+                (identifier, self.session, target),
+            ).fetchone()
+            if row is None:
+                raise KnxError("knx_draft_unavailable")
+            options = _decode(row[0])
+            self._check_index(db, identifier, options)
+            operations = options.get("operations", {})
+            if not isinstance(operations, dict):
+                raise KnxError("knx_draft_storage_failed")
+            previous = operations.get(key)
+            if previous is None:
+                return None
+            if not isinstance(previous, dict) or previous.get("digest") != digest:
+                raise KnxError("knx_correction_request_conflict")
+            return _revision(previous.get("revision"))
 
     def discard_correction(self, identifier: object, target: str, expected: object) -> None:
         identifier = _identifier(identifier)

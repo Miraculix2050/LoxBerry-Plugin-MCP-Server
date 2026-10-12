@@ -108,7 +108,19 @@
   data-inspect="<TMPL_VAR KNX.CORRECTIONS_INSPECT ESCAPE=HTML>"
   data-missing="<TMPL_VAR KNX.CORRECTIONS_MISSING ESCAPE=HTML>"
   data-stale="<TMPL_VAR KNX.CORRECTIONS_STALE ESCAPE=HTML>"
-  data-unchecked="<TMPL_VAR KNX.CORRECTIONS_UNCHECKED ESCAPE=HTML>">
+  data-unchecked="<TMPL_VAR KNX.CORRECTIONS_UNCHECKED ESCAPE=HTML>"
+  data-proposed="<TMPL_VAR KNX.CORRECTIONS_PENDING ESCAPE=HTML>"
+  data-value-label="<TMPL_VAR KNX.CORRECTIONS_PROPOSED ESCAPE=HTML>"
+  data-accept="<TMPL_VAR KNX.CORRECTIONS_ACCEPT ESCAPE=HTML>"
+  data-reject="<TMPL_VAR KNX.CORRECTIONS_REJECT ESCAPE=HTML>"
+  data-reset="<TMPL_VAR KNX.CORRECTIONS_RESET ESCAPE=HTML>"
+  data-accepted="<TMPL_VAR KNX.CORRECTIONS_ACCEPTED ESCAPE=HTML>"
+  data-rejected="<TMPL_VAR KNX.CORRECTIONS_REJECTED ESCAPE=HTML>"
+  data-edit="<TMPL_VAR KNX.CORRECTIONS_EDIT ESCAPE=HTML>"
+  data-save-edit="<TMPL_VAR KNX.CORRECTIONS_SAVE_EDIT ESCAPE=HTML>"
+  data-operation="<TMPL_VAR KNX.CORRECTIONS_OPERATION ESCAPE=HTML>"
+  data-set="<TMPL_VAR KNX.CORRECTIONS_SET ESCAPE=HTML>"
+  data-remove="<TMPL_VAR KNX.CORRECTIONS_REMOVE ESCAPE=HTML>">
   <summary><h2><TMPL_VAR KNX.CORRECTIONS_TITLE></h2> <span id="knx-corrections-loading" class="mcp-knx-loading" aria-hidden="true"><TMPL_VAR KNX.LOADING></span></summary>
   <div class="mcp-collapsible-content">
   <p class="mcp-help"><TMPL_VAR KNX.CORRECTIONS_HELP></p>
@@ -122,7 +134,8 @@
   <div class="mcp-table-wrap" tabindex="0" role="region" aria-label="<TMPL_VAR KNX.CORRECTIONS_VALUES ESCAPE=HTML>">
    <table class="mcp-table"><thead><tr><th><TMPL_VAR KNX.ADDRESS></th><th><TMPL_VAR KNX.CORRECTIONS_FIELD></th>
     <th><TMPL_VAR KNX.CORRECTIONS_DESTINATION></th><th><TMPL_VAR KNX.CORRECTIONS_IMPORTED></th>
-    <th><TMPL_VAR KNX.CORRECTIONS_MANUAL></th><th><TMPL_VAR KNX.CORRECTIONS_PROPOSED></th></tr></thead>
+    <th><TMPL_VAR KNX.CORRECTIONS_MANUAL></th><th><TMPL_VAR KNX.CORRECTIONS_PROPOSED></th>
+    <th><TMPL_VAR KNX.CORRECTIONS_DECISION></th><th><TMPL_VAR KNX.ACTIONS></th></tr></thead>
     <tbody id="knx-corrections-values"></tbody></table>
   </div>
   <button class="lb-button" type="button" id="knx-corrections-more" hidden><TMPL_VAR KNX.CORRECTIONS_MORE></button>
@@ -362,7 +375,7 @@
 </dialog>
 <script src="knx.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-management-v11" defer></script>
 <script src="knx-read-delegation.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-read-v3" defer></script>
-<script src="knx-corrections.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-corrections-v2" defer></script>
+<script src="knx-corrections.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-corrections-v3" defer></script>
 <script src="knx-import.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-import-v3" defer></script>
 <script src="explorer-core.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-project-v2" defer></script>
 <script src="explorer-state.js?v=<TMPL_VAR VERSION ESCAPE=HTML>-knx-project-v2" defer></script>

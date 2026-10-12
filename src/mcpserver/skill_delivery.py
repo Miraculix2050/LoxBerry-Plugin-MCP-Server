@@ -9,7 +9,7 @@ from typing import Final, Literal
 from mcp.server.fastmcp import FastMCP
 
 SKILL_NAME: Final = "using-loxberry-mcp"
-SKILL_REVISION: Final = 81
+SKILL_REVISION: Final = 82
 SKILL_MIME_TYPE: Final = "text/markdown"
 SKILL_RESOURCE_URI: Final = f"skill://{SKILL_NAME}/SKILL.md"
 SERVER_INSTRUCTIONS: Final = (
