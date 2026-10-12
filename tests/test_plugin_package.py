@@ -1034,8 +1034,8 @@ def test_mcp_client_probe_resolves_windows_application_aliases() -> None:
     assert "'loxone_describe_project_object'" in script
     assert "'loxone_trace_project_logic'" in script
     assert "$optional = @(" in script
-    assert "$tool.annotations.idempotentHint -ne $false" in script
-    assert "$tool.name -eq 'loxberry_clear_statistics_cache'" in script
+    assert "$tool.annotations.idempotentHint -ne $contract[1]" in script
+    assert "'loxberry_clear_statistics_cache' = @($true, $true)" in script
 
 
 def _write_claude_config(path: Path, *, configured: bool) -> None:

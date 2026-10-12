@@ -139,7 +139,13 @@ def authorize_write(
         approved = (
             write_binding_id(config, auth_store, family) in config.loxberry_knx_write_bindings
         )
-    if not approved:
+    # Authorization storage locks may have waited beyond the original clock.
+    effect_time = int(time.time()) if now is None else now
+    if (
+        not approved
+        or family.get("expires_at", 0) <= effect_time
+        or (access.expires_at is not None and access.expires_at <= effect_time)
+    ):
         raise PermissionError("Local KNX writes are not authorized")
     return target, owner
 

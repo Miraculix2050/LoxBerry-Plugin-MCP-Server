@@ -190,7 +190,7 @@ weder Projektzugriff noch eine Übernahme. MCP zeichnet konkret abgestimmte
 Entscheidungen mit `loxberry_prepare_knx_corrections(mode="review",
 decisions=[{"change_id": "...", "decision": "accepted"}])` auf: `changes` weglassen,
 aktuelle Ziel-/Katalog-/Präfix-/Entwurfsrevisionen und eine stabile Request-ID angeben.
-Nicht ausgewählte Entscheidungen bleiben erhalten. Lokales Schreiben und bestätigte
+Nicht ausgewählte Entscheidungen bleiben erhalten. Präfixübernahme und bestätigte
 Exportübergabe folgen getrennt.
 
 Entwürfe gelten absolut 24 Stunden, enthalten höchstens 50 Änderungen und teilen

@@ -175,6 +175,8 @@ def apply_addresses(
         if expires_at <= current_time():
             raise KnxError("knx_draft_unavailable")
         authorize_effect()
+        if expires_at <= current_time():
+            raise KnxError("knx_draft_unavailable")
         db.executemany("UPDATE addresses SET overrides=? WHERE target=? AND address=?", updates)
         if updates:
             db.execute("UPDATE targets SET revision=revision+1 WHERE target=?", (target,))

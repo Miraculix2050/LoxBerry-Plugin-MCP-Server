@@ -15,7 +15,7 @@ from test_knx_correction_runtime import (
     client as client,
 )
 
-from mcpserver.knx import address_apply, apply_tools, correction_tools
+from mcpserver.knx import address_apply, apply_tools, correction_tools, delegation
 from mcpserver.knx.delegation import draft_binding_id, read_binding_id, write_binding_id
 
 APPLY = "loxberry_apply_knx_corrections"
@@ -256,3 +256,20 @@ async def test_unaccepted_selection_is_not_an_apply_permission(write_client, mon
     denied = await call(server, APPLY, {**args, "draft_revision": 3})
     assert denied["data"]["error"] == "knx_correction_not_accepted"
     assert snapshot(runtime) == before
+
+
+@pytest.mark.parametrize("expired", ["access", "family"])
+def test_write_authorization_rechecks_expiry_after_auth_lock_wait(
+    write_client, monkeypatch, expired
+):
+    _, runtime = write_client
+    grant(runtime, monkeypatch)
+    access = correction_tools._access()
+    if expired == "access":
+        access = access.model_copy(update={"expires_at": 200})
+    else:
+        runtime.auth_store.mutate(lambda doc: doc["families"]["family"].update(expires_at=200))
+    clock = iter([100, 201])
+    monkeypatch.setattr(delegation.time, "time", lambda: next(clock))
+    with pytest.raises(PermissionError, match="Local KNX writes are not authorized"):
+        delegation.authorize_write(runtime.config_store.load(), runtime.auth_store, access)

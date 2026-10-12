@@ -130,6 +130,27 @@ def test_expired_at_effect_boundary_is_rejected_without_changes(store, monkeypat
     assert snapshot(store) == before
 
 
+def test_expiry_during_live_authorization_rolls_back_effect_and_receipt(store, monkeypatch):
+    def authorize_after_wait():
+        monkeypatch.setattr(module, "current_time", lambda: 201)
+
+    before = snapshot(store)
+    with pytest.raises(KnxError, match="knx_draft_unavailable"):
+        module.apply_addresses(
+            store,
+            "a" * 64,
+            "synthetic",
+            "c" * 32,
+            "b" * 64,
+            2,
+            changes(),
+            now=100,
+            expires_at=200,
+            authorize_effect=authorize_after_wait,
+        )
+    assert snapshot(store) == before
+
+
 def test_live_authorization_failure_before_effect_rolls_back(store):
     def denied():
         raise KnxError("permission_denied")
